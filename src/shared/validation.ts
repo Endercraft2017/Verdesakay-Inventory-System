@@ -45,8 +45,8 @@ const intCoerce = z.coerce.number().int();
 
 // ---- Auth ----
 export const loginSchema = z.object({
-  username: trimmed.min(1, 'Username is required'),
-  password: z.string().min(1, 'Password is required'),
+  username: trimmed.min(1, 'Username is required').max(200),
+  password: z.string().min(1, 'Password is required').max(200),
   /** Borrowed-phone sign-in: a short, idle-limited session with no push (src/shared/auth.ts). */
   shared: z.boolean().optional(),
 });

@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { queryOne, queryAll, run, newToken } from '../shared/db';
+import { queryOne, queryAll, run, newToken, db } from '../shared/db';
 import {
   createSession, destroySession, requireAuth, endUserSessions, endSessionBySid, listUserSessions,
 } from '../shared/auth';
@@ -17,11 +17,13 @@ import {
 import { sendMail, mailReady } from '../shared/mailer';
 import type { UserRow } from '../shared/types';
 import { syncClass } from '../sync';
+import { tenantPublicUrl } from '../platform/platform';
+import { tenantStore } from '../shared/db';
 
 const router = Router();
 
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
-const RESET_TTL_MIN = 60;
+const RESET_TTL_MIN = 15;
 
 // POST /api/auth/login
 router.post('/login', (req, res) => {
@@ -33,6 +35,7 @@ router.post('/login', (req, res) => {
     return;
   }
 
+  req.user = { id: user.id, username: user.username, full_name: user.full_name, role: user.role, department_id: user.department_id, active: user.active, department_name: null, permissions: [] };
   const token = createSession(user.id, { req, shared: !!shared });
   const dept = user.department_id
     ? queryOne<{ name: string }>('SELECT name FROM departments WHERE id = ?', user.department_id)
@@ -130,6 +133,7 @@ router.post('/change-password', requireAuth, syncClass('online'), (req, res) => 
   run('UPDATE users SET password_hash = ? WHERE id = ?', hash, req.user!.id);
   // Keep the current session, end the rest.
   endUserSessions(req.user!.id, 'password', req.token);
+  run('UPDATE password_resets SET used = 1 WHERE user_id = ?', req.user!.id);
   res.json({ ok: true });
 });
 
@@ -145,26 +149,30 @@ router.post('/forgot-password', syncClass('online'), async (req, res, next) => {
       id, id
     )[0];
 
-    const done = { ok: true, sent: false as boolean, reason: '' as string };
+    const done = { ok: true, message: 'If the account is eligible, a reset link will be emailed. Otherwise contact your administrator.' };
     if (user && user.email && mailReady()) {
+      // Do not let changing an IP or switching between username/email flood one mailbox.
+      const recent = queryOne<{ c: number }>(
+        "SELECT COUNT(*) AS c FROM password_resets WHERE user_id = ? AND created_at > datetime('now', '-1 hour')", user.id
+      )!.c;
+      if (recent >= 3) { res.json(done); return; }
+      const slug = tenantStore.getStore()?.slug ?? 'default';
+      const tenantUrl = slug === 'default' ? '' : tenantPublicUrl(slug);
+      const origin = tenantUrl.startsWith('https://') ? tenantUrl : process.env.PUBLIC_APP_URL;
+      if (!origin || !/^https?:\/\//.test(origin)) { res.json(done); return; }
       const raw = newToken();
+      run('UPDATE password_resets SET used = 1 WHERE user_id = ?', user.id);
       run(
         "INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, ?, datetime('now', ?))",
         sha256(raw), user.id, `+${RESET_TTL_MIN} minutes`
       );
-      const proto = (req.get('x-forwarded-proto') || req.protocol || 'https').split(',')[0];
-      const link = `${proto}://${req.get('host')}/?reset=${raw}`;
-      const r = await sendMail({
+      // Never construct email links from attacker-controlled Host/forwarded headers.
+      const link = `${origin.replace(/\/+$/, '')}/?reset=${raw}`;
+      await sendMail({
         to: user.email,
         subject: 'Password reset',
         text: `Hi ${user.full_name},\n\nUse this link within ${RESET_TTL_MIN} minutes to set a new password:\n${link}\n\nIf you didn't ask for this, ignore this email.`,
       }, user.id);
-      done.sent = r.ok;
-      if (!r.ok) done.reason = r.error || 'send failed';
-    } else if (user && !user.email) {
-      done.reason = 'no email on file — ask an admin to reset it';
-    } else if (!mailReady()) {
-      done.reason = 'email is not configured — ask an admin to reset it';
     }
     res.json(done);
   } catch (e) {
@@ -183,9 +191,14 @@ router.post('/reset-password', syncClass('online'), (req, res) => {
     res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new one.' });
     return;
   }
-  run('UPDATE users SET password_hash = ? WHERE id = ?', bcrypt.hashSync(new_password, 10), row.user_id);
-  run('UPDATE password_resets SET used = 1 WHERE token_hash = ?', sha256(token));
-  endUserSessions(row.user_id, 'password'); // force re-login everywhere
+  const hash = bcrypt.hashSync(new_password, 10);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    run('UPDATE users SET password_hash = ? WHERE id = ?', hash, row.user_id);
+    run('UPDATE password_resets SET used = 1 WHERE user_id = ?', row.user_id);
+    endUserSessions(row.user_id, 'password');
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
   res.json({ ok: true });
 });
 

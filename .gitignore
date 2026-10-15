@@ -17,3 +17,8 @@ tests/.tmp/
 # Desktop app (offline-first phase 3d): installer output and the code-signing certificate.
 dist-desktop/
 certs-desktop/
+
+# Local audit and browser test artifacts
+work/
+playwright-report/
+test-results/

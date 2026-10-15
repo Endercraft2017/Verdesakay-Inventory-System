@@ -3,6 +3,7 @@
  * but does NOT start listening — so tests can import it via supertest.
  */
 import path from 'node:path';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import helmet from 'helmet';
@@ -111,7 +112,12 @@ export function createApp() {
   // Security headers. Disable CSP defaults that would block our inline view scripts;
   // a tailored policy can be added later if the app is exposed beyond the LAN.
   // HSTS is off so a device can be pointed back at plain HTTP without getting stuck.
-  app.use(helmet({ contentSecurityPolicy: false, hsts: false }));
+  app.use(helmet({
+    contentSecurityPolicy: false,
+    hsts: BEHIND_PROXY ? { maxAge: 31536000, includeSubDomains: false } : false,
+    frameguard: { action: 'deny' },
+  }));
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   // The installed phone app (docs/OFFLINE-FIRST.md §29) serves its own pages from inside the app
   // (https://localhost on Android, capacitor://localhost on iPhone) and calls this server's API
   // cross-origin. Only those two origins, only /api, and no cookies: requests carry the bearer
@@ -195,6 +201,17 @@ export function createApp() {
     message: { error: 'Too many login attempts. Please wait a few minutes and try again.' },
   });
 
+  const loginAccountLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, limit: 20,
+    keyGenerator: req => crypto.createHash('sha256').update(JSON.stringify([
+      tenantStore.getStore()?.slug, String(req.body?.username || '').toLowerCase().trim().slice(0, 200),
+    ])).digest('hex'),
+    skipSuccessfulRequests: true,
+    standardHeaders: true, legacyHeaders: false,
+    skip: () => process.env.NODE_ENV === 'test',
+    message: { error: 'Too many login attempts. Please wait a few minutes and try again.' },
+  });
+
   // Lightweight API request log + persistent activity log (mutations only; see activity.ts).
   app.use((req, res, next) => {
     const start = Date.now();
@@ -225,7 +242,8 @@ export function createApp() {
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true, time: new Date().toISOString() });
   });
-  app.use('/api/auth/login', loginLimiter);
+  app.use(['/api/auth/login', '/api/auth/forgot-password', '/api/auth/reset-password'], loginLimiter);
+  app.use('/api/auth/login', loginAccountLimiter);
   app.use('/api/auth', authRoutes);
   // Before the bare-'/api' routers below: their blanket requireAuth would otherwise 401 it.
   app.use('/api/anonymous-reports', anonymousReportRoutes);
@@ -365,7 +383,9 @@ export function createApp() {
     for (const part of raw.split(';')) {
       const eq = part.indexOf('=');
       if (eq === -1) continue;
-      if (part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+      if (part.slice(0, eq).trim() === name) {
+        try { return decodeURIComponent(part.slice(eq + 1).trim()); } catch { return undefined; }
+      }
     }
     return undefined;
   }

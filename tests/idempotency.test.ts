@@ -71,3 +71,62 @@ describe('idempotency', () => {
     expect(detail.body.quantity).toBe(16);
   });
 });
+
+it('never replays a protected response to an anonymous or different caller', async () => {
+  const id = await makeItem(100);
+  const key = 'private-replay-key';
+  const path = `/api/inventory/${id}/adjust`;
+  const first = await ctx.api.post(path).set(hdr()).set('Idempotency-Key', key).send({ change: -1 });
+  expect(first.status).toBe(200);
+  const anonymous = await ctx.api.post(path).set('Idempotency-Key', key).send({ change: -1 });
+  expect(anonymous.status).toBe(401);
+  const { createEmployee } = await import('./helpers');
+  const other = await createEmployee(ctx.api, token, { username: 'idem-other', role: 'admin_staff' });
+  await ctx.api.put(`/api/users/${other.id}/permissions`).set(hdr()).send({ overrides: { 'inventory.adjust': false } });
+  const foreign = await ctx.api.post(path).set('Authorization', `Bearer ${other.token}`).set('Idempotency-Key', key).send({ change: -1 });
+  expect(foreign.status).toBe(403);
+  expect(foreign.headers['idempotency-replayed']).toBeUndefined();
+});
+
+it('refuses changed payloads and routes with a reused key', async () => {
+  const id = await makeItem(100);
+  const path = `/api/inventory/${id}/adjust`;
+  const key = 'bound-request-key';
+  expect((await ctx.api.post(path).set(hdr()).set('Idempotency-Key', key).send({ change: -1 })).status).toBe(200);
+  expect((await ctx.api.post(path).set(hdr()).set('Idempotency-Key', key).send({ change: -10 })).status).toBe(409);
+  expect((await ctx.api.post('/api/inventory').set(hdr()).set('Idempotency-Key', key).send({ name: 'Wrong route' })).status).toBe(409);
+});
+
+it('does not cache sign-in tokens or bypass logout revocation', async () => {
+  const key = 'never-cache-login';
+  const first = await ctx.api.post('/api/auth/login').set('Idempotency-Key', key).send({ username: 'admin', password: 'admin123' });
+  expect(first.status).toBe(200);
+  const bad = await ctx.api.post('/api/auth/login').set('Idempotency-Key', key).send({ username: 'admin', password: 'wrong' });
+  expect(bad.status).toBe(401);
+  const id = await makeItem(100);
+  const path = `/api/inventory/${id}/adjust`;
+  const headers = { Authorization: `Bearer ${first.body.token}`, 'Idempotency-Key': 'revoked-replay-key' };
+  expect((await ctx.api.post(path).set(headers).send({ change: -1 })).status).toBe(200);
+  await ctx.api.post('/api/auth/logout').set('Authorization', headers.Authorization).send({});
+  expect((await ctx.api.post(path).set(headers).send({ change: -1 })).status).toBe(401);
+});
+
+it('rejects a concurrent retry while the first asynchronous mutation is in flight', async () => {
+  let writes = 0;
+  ctx.app.post('/api/audit-delayed', (_req, res) => {
+    writes++;
+    setTimeout(() => res.json({ ok: true }), 30);
+  });
+  const results = await Promise.all([0, 1].map(() => ctx.api.post('/api/audit-delayed').set(hdr()).set('Idempotency-Key', 'concurrent-retry-key').send({ value: 1 })));
+  expect(results.map(r => r.status).sort()).toEqual([200, 409]);
+  expect(writes).toBe(1);
+});
+
+it('does not duplicate a pre-upgrade action when its legacy key is retried', async () => {
+  const id = await makeItem(9);
+  const { run } = await import('../src/shared/db');
+  run('INSERT INTO idempotency_keys (key, user_id, method, path, status_code, response) VALUES (?, ?, ?, ?, ?, ?)', 'legacy-stock-key', 1, 'POST', '/adjust', 200, '{"quantity":9}');
+  const retry = await ctx.api.post(`/api/inventory/${id}/adjust`).set(hdr()).set('Idempotency-Key', 'legacy-stock-key').send({ change: -1 });
+  expect(retry.status).toBe(409);
+  expect((await ctx.api.get(`/api/inventory/${id}`).set(hdr())).body.quantity).toBe(9);
+});

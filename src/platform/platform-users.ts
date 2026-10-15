@@ -36,7 +36,9 @@ export function upsertPlatformUser(username: string, password: string, fullName?
        password_hash = excluded.password_hash,
        full_name     = COALESCE(excluded.full_name, platform_users.full_name)`
   ).run(u, hash, fullName ?? null);
-  return (d.prepare('SELECT id FROM platform_users WHERE username = ?').get(u) as { id: number }).id;
+  const id = (d.prepare('SELECT id FROM platform_users WHERE username = ?').get(u) as { id: number }).id;
+  d.prepare('DELETE FROM platform_sessions WHERE user_id = ?').run(id);
+  return id;
 }
 
 export function listPlatformUsers(): PlatformUser[] {

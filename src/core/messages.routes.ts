@@ -3,8 +3,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import dns from 'node:dns/promises';
-import net from 'node:net';
+import { fetchPublicPage } from '../shared/public-fetch';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { queryOne, queryAll, run, uploadDir, tenantStore, DEFAULT_TENANT } from '../shared/db';
@@ -533,41 +532,6 @@ const LINK_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
 const LINK_PREVIEW_MAX_REDIRECTS = 3;
 const LINK_PREVIEW_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-function isPrivateIp(ip: string): boolean {
-  if (net.isIPv4(ip)) {
-    const parts = ip.split('.').map(Number);
-    const [a, b] = parts;
-    if (a === undefined || b === undefined) return true;
-    if (a === 10 || a === 127 || a === 0) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    return false;
-  }
-  if (net.isIPv6(ip)) {
-    const low = ip.toLowerCase();
-    if (low === '::1' || low === '::') return true;
-    if (low.startsWith('fe80:') || low.startsWith('fc') || low.startsWith('fd')) return true;
-    if (low.startsWith('::ffff:')) return isPrivateIp(low.slice(7));
-    return false;
-  }
-  return true; // not a literal IP we recognize -- treat conservatively as unsafe
-}
-
-/** True if `hostname` (as given by `URL#hostname`, which brackets a literal IPv6 address
- *  e.g. `[::1]`) is or resolves to a loopback/private/link-local address, or fails to
- *  resolve at all. Used to block SSRF via the link-preview fetcher. */
-async function isPrivateHost(hostname: string): Promise<boolean> {
-  const host = hostname.replace(/^\[|\]$/g, '');
-  if (net.isIP(host)) return isPrivateIp(host);
-  try {
-    const addrs = await dns.lookup(host, { all: true });
-    return addrs.length === 0 || addrs.some((a) => isPrivateIp(a.address));
-  } catch {
-    return true;
-  }
-}
-
 function decodeHtmlEntities(s: string): string {
   return s
     .replace(/&amp;/g, '&')
@@ -608,7 +572,7 @@ function parseOgTags(html: string, baseUrl: string): LinkPreviewData | null {
 }
 
 /** Fetch `startUrl` and parse its OG tags, re-validating every hop of up to
- *  `LINK_PREVIEW_MAX_REDIRECTS` manual redirects against `isPrivateHost` (a redirect is
+ *  `LINK_PREVIEW_MAX_REDIRECTS` manual redirects through a DNS-pinned public-address fetch (a redirect is
  *  the classic SSRF bypass for a naive "check the URL once" guard). Returns null on any
  *  failure — non-http(s), private/unresolvable host, timeout, non-HTML response, oversized
  *  body, or no recognizable OG/title data. */
@@ -622,22 +586,8 @@ async function fetchLinkPreview(startUrl: string): Promise<LinkPreviewData | nul
       return null;
     }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-    if (await isPrivateHost(parsed.hostname)) return null;
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), LINK_PREVIEW_TIMEOUT_MS);
-    let resp: globalThis.Response;
-    try {
-      resp = await fetch(parsed, {
-        redirect: 'manual',
-        signal: controller.signal,
-        headers: { 'User-Agent': 'VerdesakayLinkPreview/1.0' },
-      });
-    } catch {
-      clearTimeout(timer);
-      return null;
-    }
-    clearTimeout(timer);
+    const resp = await fetchPublicPage(parsed, LINK_PREVIEW_MAX_BYTES, LINK_PREVIEW_TIMEOUT_MS);
+    if (!resp) return null;
 
     if (resp.status >= 300 && resp.status < 400) {
       const loc = resp.headers.get('location');

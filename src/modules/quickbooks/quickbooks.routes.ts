@@ -10,10 +10,13 @@ import {
   getQboStatus, qboConfigured, authUrl, completeConnect, disconnect, setAutoPush, pushOrder, orderLink,
 } from './quickbooks';
 import { currentSlug } from '../../platform/quota';
+import { getTenant, isValidSlug } from '../../platform/platform';
 import type { Order, OrderItem } from '../../shared/types';
 import { syncClass } from '../../sync';
 
 const router = Router();
+
+const htmlText = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 const STATE_KEY = 'qbo_oauth_state'; // { nonce, ts }
 
@@ -27,16 +30,22 @@ router.get('/callback', async (req, res, next) => {
         `<!doctype html><meta charset=utf-8><title>QuickBooks</title>
          <body style="font:15px system-ui;padding:40px;text-align:center">
          <h2>${ok ? '✅ Connected to QuickBooks' : '⚠️ QuickBooks connection failed'}</h2>
-         <p>${msg}</p><p>You can close this tab.</p>
+         <p>${htmlText(msg)}</p><p>You can close this tab.</p>
          <script>try{window.opener&&window.opener.postMessage('qbo:${ok ? 'ok' : 'fail'}','*')}catch(e){}</script>`);
 
-    if (error) { done(`Intuit returned: ${error}`, false); return; }
+    if (error) { done('Intuit declined the connection. Start again from Settings.', false); return; }
     const [slug, nonce] = String(state || '').split('.', 2);
-    if (!slug || !nonce || !code || !realmId) { done('Missing parameters.', false); return; }
+    if (!slug || !nonce || typeof code !== 'string' || typeof realmId !== 'string'
+      || !/^[a-f0-9]{32}$/.test(nonce)
+      || (slug !== 'default' && (!isValidSlug(slug) || !getTenant(slug)))) {
+      done('Invalid connection parameters.', false); return;
+    }
 
     const valid = withTenant(slug, () => {
       const s = getSetting<{ nonce: string; ts: number }>(STATE_KEY);
-      return !!s && s.nonce === nonce && Date.now() - s.ts < 10 * 60_000;
+      const valid = !!s && s.nonce === nonce && Date.now() - s.ts < 10 * 60_000;
+      if (valid) setSetting(STATE_KEY, null); // consume before any asynchronous provider call
+      return valid;
     });
     if (!valid) { done('The connection link expired — start again from Settings.', false); return; }
 

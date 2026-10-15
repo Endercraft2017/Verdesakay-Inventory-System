@@ -206,6 +206,9 @@ export const SCHEMA_VERSION = 61; // 20: employees.late_exempt; 21: attendance_r
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
+  if (slug !== DEFAULT_TENANT && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(slug)) {
+    throw new Error('Invalid workspace identifier');
+  }
   const existing = registry.get(slug);
   if (existing) return existing;
   const conn = openConnection(slug);
@@ -2978,7 +2981,12 @@ function seed(): void {
     const adminDept = db
       .prepare('SELECT id FROM departments WHERE name = ?')
       .get('Administration') as { id: number } | undefined;
-    const password = process.env.ADMIN_PASSWORD || 'admin123';
+    const configuredPassword = process.env.ADMIN_PASSWORD;
+    if (process.env.NODE_ENV === 'production' && tenantStore.getStore()?.slug === DEFAULT_TENANT
+      && (!configuredPassword || configuredPassword.length < 12 || configuredPassword === 'admin123')) {
+      throw new Error('Set ADMIN_PASSWORD to at least 12 characters before initializing production.');
+    }
+    const password = configuredPassword || (process.env.NODE_ENV === 'production' ? newToken() : 'admin123');
     const hash = bcrypt.hashSync(password, 10);
     db.prepare(
       `INSERT INTO users (username, full_name, password_hash, role, department_id)
@@ -2990,7 +2998,7 @@ function seed(): void {
       console.log('========================================================');
       console.log('  Default admin account created:');
       console.log('     username: admin');
-      console.log(`     password: ${password}`);
+      console.log('     password: the configured ADMIN_PASSWORD (development default: see README)');
       console.log('  >> Log in and change this password immediately. <<');
       console.log('========================================================');
     }

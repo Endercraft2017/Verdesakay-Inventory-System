@@ -675,3 +675,20 @@ round → the PC keeps working locally and retries.
 stops working at once; its rows keep their ids); diverged (sync loop stops — re-enrol).
 **Phone setup (site host):** a phone opens `http://<host>:3001`, installs the site certificate
 once, then uses `https://<host>:3000/m` on the office Wi-Fi (D5).
+
+### Session/recovery security additions — 16 October 2026
+
+The account-session pipeline's recovery branch now accepts an identifier with a
+uniform response; eligible mail is limited per account and IP. Links use a trusted
+configured origin and expire in 15 minutes. Requesting another link, changing a
+password or resetting it invalidates sibling recovery links. Reset consumes the
+link, changes the password and ends sessions in one transaction. An ordinary
+password change still preserves the current session (an explicit audit gap).
+
+A mutating retry authenticates first and cannot read another actor's cached
+response. JSON retries must match method, URL, payload and current access scope.
+A pending retry or key from before the security upgrade ends in 409; the caller
+checks the original record before deciding on a new submission. Server-confirmed
+stock changes remain distinct from mobile queued drafts. Chat sockets revalidate
+session/tenant state before delivery, so ending a session stops later messages.
+These extend existing session/retry branches; they create no new business stage.

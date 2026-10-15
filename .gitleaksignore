@@ -1,0 +1,21 @@
+# Exact, reviewed false positives only. Do not allowlist directories or credential patterns.
+# Synthetic test push key/password or token alphabet; reviewed in production audit.
+563beb029a1131018df58906e85b2535c9f7379b:tests/notifications.test.ts:generic-api-key:23
+# Synthetic test push key/password or token alphabet; reviewed in production audit.
+f0f71b272ec007c55a33b55e6422c5ef99db0a3f:tests/qa-hold.test.ts:generic-api-key:31
+# Synthetic test push key/password or token alphabet; reviewed in production audit.
+f0f71b272ec007c55a33b55e6422c5ef99db0a3f:tests/qa-hold.test.ts:generic-api-key:33
+# Synthetic test push key/password or token alphabet; reviewed in production audit.
+c458a5120ec8b6948bb67fd5f9e67a3386e26c26:tests/repair-parts-v2.test.ts:generic-api-key:46
+# Synthetic test push key/password or token alphabet; reviewed in production audit.
+3d56681ecf6d6ad60bd9753b3734c7255c7bc46f:tests/release-auth.test.ts:generic-api-key:23
+# Synthetic test push key/password or token alphabet; reviewed in production audit.
+8f0064f764d289b7775ede57ed18e504dd5b9f82:tests/sync-hr.test.ts:generic-api-key:21
+# Synthetic test push key/password or token alphabet; reviewed in production audit.
+ed687401623539c1242d112585debb146f07dfd9:src/modules/inventory/release-auth.ts:generic-api-key:39
+# Synthetic test push key/password or token alphabet; reviewed in production audit.
+1f484510b311fc5877f9504e97d5325f4b1b694d:tests/me.test.ts:generic-api-key:216
+# Synthetic test push key/password or token alphabet; reviewed in production audit.
+1f484510b311fc5877f9504e97d5325f4b1b694d:tests/me.test.ts:generic-api-key:236
+# Synthetic test push key/password or token alphabet; reviewed in production audit.
+ec5779114ad665164b2300c619bd15777d16446c:tests/push.test.ts:generic-api-key:14

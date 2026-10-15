@@ -10,6 +10,7 @@ const authHdr = () => ({ Authorization: `Bearer ${token}` });
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
 
 beforeAll(async () => {
+  process.env.PUBLIC_APP_URL = 'https://office.example.test';
   ctx = await setupApp();
   token = await login(ctx.api);
   dbmod = await import('../src/shared/db');
@@ -20,7 +21,7 @@ beforeAll(async () => {
     smtp_host: 'smtp.acme.test', smtp_port: 587, smtp_secure: false, smtp_user: 'sys@acme.test', smtp_pass: 'x',
   });
 });
-afterAll(() => cleanup(ctx));
+afterAll(() => { delete process.env.PUBLIC_APP_URL; cleanup(ctx); });
 
 describe('users.email', () => {
   it('is stored on create/update and returned in the directory', async () => {
@@ -41,21 +42,24 @@ describe('POST /api/auth/forgot-password', () => {
     const before = dbmod.queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM password_resets')!.c;
     const r = await ctx.api.post('/api/auth/forgot-password').send({ identifier: 'admin@acme.test' });
     expect(r.status).toBe(200);
-    expect(r.body.sent).toBe(true);
+    expect(r.body.message).toMatch(/eligible/);
+    expect(r.body).not.toHaveProperty('sent');
     expect(dbmod.queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM password_resets')!.c).toBe(before + 1);
   });
 
   it('still 200s for an unknown account, without sending', async () => {
     const r = await ctx.api.post('/api/auth/forgot-password').send({ identifier: 'nobody@nowhere.test' });
     expect(r.status).toBe(200);
-    expect(r.body.sent).toBe(false);
+    expect(r.body.message).toMatch(/eligible/);
+    expect(r.body).not.toHaveProperty('sent');
   });
 
   it('reports when the account has no email on file', async () => {
     await ctx.api.post('/api/users').set(authHdr()).send({ username: 'noemail', full_name: 'No Email', password: 'secret1' });
     const r = await ctx.api.post('/api/auth/forgot-password').send({ identifier: 'noemail' });
-    expect(r.body.sent).toBe(false);
-    expect(r.body.reason).toMatch(/no email/i);
+    expect(r.body.message).toMatch(/eligible/);
+    expect(r.body).not.toHaveProperty('sent');
+    expect(r.body).not.toHaveProperty('reason');
   });
 });
 
@@ -86,4 +90,19 @@ describe('POST /api/auth/reset-password', () => {
     dbmod.run("INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES (?, 1, datetime('now','-1 minute'))", sha256('expiredtok_xxxxxxxx'));
     expect((await ctx.api.post('/api/auth/reset-password').send({ token: 'expiredtok_xxxxxxxx', new_password: 'whatever1' })).status).toBe(400);
   });
+});
+
+it('limits recovery per account, expires within 15 minutes, and invalidates prior links', async () => {
+  const account = await ctx.api.post('/api/users').set(authHdr()).send({ username: 'reset-limited', full_name: 'Limited', password: 'secret123', email: 'limited@example.test' });
+  for (let i = 0; i < 5; i++) {
+    const result = await ctx.api.post('/api/auth/forgot-password').send({ identifier: i % 2 ? 'reset-limited' : 'limited@example.test' });
+    expect(result.status).toBe(200);
+    expect(result.body).not.toHaveProperty('sent');
+  }
+  const rows = dbmod.queryAll<{ used: number; lifetime: number }>(
+    'SELECT used, (julianday(expires_at)-julianday(created_at))*1440 AS lifetime FROM password_resets WHERE user_id = ?', account.body.id
+  );
+  expect(rows).toHaveLength(3);
+  expect(rows.filter(row => row.used === 0)).toHaveLength(1);
+  expect(rows.every(row => Math.abs(row.lifetime - 15) < 0.001)).toBe(true);
 });

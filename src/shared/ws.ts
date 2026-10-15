@@ -25,9 +25,13 @@ export interface ChatEvent {
   data: unknown;
 }
 
-interface Registered {
-  ws: WebSocket;
-  userId: number;
+const authorized = new WeakMap<WebSocket, () => boolean>();
+
+function isAuthorized(ws: WebSocket): boolean {
+  const check = authorized.get(ws);
+  if (check?.()) return true;
+  ws.close(1008, 'Session ended');
+  return false;
 }
 
 // tenantSlug -> userId -> that user's open sockets (multiple tabs/devices at once).
@@ -59,7 +63,7 @@ export function broadcast(slug: string, userIds: number[], event: ChatEvent): vo
   const payload = JSON.stringify(event);
   for (const userId of userIds) {
     for (const ws of tenant.get(userId) ?? []) {
-      if (ws.readyState === WebSocket.OPEN) ws.send(payload);
+      if (ws.readyState === WebSocket.OPEN && isAuthorized(ws)) ws.send(payload);
     }
   }
 }
@@ -70,7 +74,7 @@ const HEARTBEAT_MS = 30_000;
  *  actually listening (the HTTPS one when certs exist, else the plain-HTTP fallback —
  *  never the bare HTTP->HTTPS redirect listener). */
 export function attachWebSocket(server: HttpServer | HttpsServer): void {
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
   server.on('upgrade', (req: IncomingMessage, socket, head) => {
     const url = new URL(req.url || '', 'http://placeholder');
@@ -96,13 +100,21 @@ export function attachWebSocket(server: HttpServer | HttpsServer): void {
     // userFromToken() resolves the tenant DB off tenantStore (see db.ts's `db` proxy) —
     // without this it would silently fall back to the default tenant's DB and accept
     // (or reject) tokens that belong to a completely different workspace.
-    const user = tenantStore.run({ db: getDb(slug), slug }, () => userFromToken(url.searchParams.get('token')));
+    const token = url.searchParams.get('token');
+    const user = tenantStore.run({ db: getDb(slug), slug }, () => userFromToken(token));
     if (!user) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
+      authorized.set(ws, () => {
+        try {
+          const tenant = slug === 'default' ? null : getTenant(slug);
+          if (slug !== 'default' && (!tenant || tenant.status === 'suspended' || tenant.status === 'purged')) return false;
+          return !!tenantStore.run({ db: getDb(slug), slug }, () => userFromToken(token));
+        } catch { return false; }
+      });
       wss.emit('connection', ws, req, { slug, userId: user.id });
     });
   });
@@ -115,6 +127,7 @@ export function attachWebSocket(server: HttpServer | HttpsServer): void {
     ws.on('pong', () => { alive = true; });
 
     ws.on('message', (raw) => {
+      if (!isAuthorized(ws)) return;
       let msg: { type?: string; to?: number } | null = null;
       try { msg = JSON.parse(raw.toString()); } catch { return; }
       // The only inbound message the client sends: an ephemeral typing ping, relayed
@@ -128,6 +141,7 @@ export function attachWebSocket(server: HttpServer | HttpsServer): void {
     ws.on('error', () => unregister(slug, userId, ws));
 
     const heartbeat = setInterval(() => {
+      if (!isAuthorized(ws)) return;
       if (!alive) { ws.terminate(); return; }
       alive = false;
       ws.ping();

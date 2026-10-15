@@ -29,6 +29,7 @@ const NO_CLASS_NEEDED: Record<string, string> = {
   'src/platform/platform.routes.ts:post /login': 'cloud console',
   'src/platform/platform.routes.ts:post /logout': 'cloud console',
   'src/platform/platform.routes.ts:post /tenants': 'cloud console',
+  'src/platform/platform.routes.ts:put /tenants/:slug/subscription': 'cloud console subscription settings; never synced to a node',
   'src/platform/platform.routes.ts:post /tenants/import': 'cloud console',
   'src/platform/platform.routes.ts:patch /tenants/:slug': 'cloud console',
   'src/platform/platform.routes.ts:post /tenants/:slug/purge': 'cloud console',

@@ -16,6 +16,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { requireAuth, requirePermission } from '../../shared/auth';
 import { getToolsForUser, executeTool } from './ai-tools';
@@ -23,7 +24,7 @@ import { REPORT_FILE_RE } from './ai-reporting';
 import { reindex } from './rag';
 import { uploadDir, queryAll, run } from '../../shared/db';
 import { getAiConfig, activeAiConfig, saveAiConfig, addTokenUsage, tokenCapReached, resetTokenUsage } from './ai-config';
-import { enforceQuota, recordAiCall } from '../../platform/quota';
+import { enforceQuota, recordAiCall, currentSlug } from '../../platform/quota';
 import { parseBody, aiConfigSchema } from '../../shared/validation';
 import type { AuthUser } from '../../shared/types';
 import { syncClass } from '../../sync';
@@ -216,20 +217,42 @@ async function callLlm(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+    redirect: 'error',
   });
 
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`LLM API error ${res.status}: ${text.slice(0, 400)}`);
   }
-  return res.json() as Promise<CerebrasResponse>;
+  const data = await res.json();
+  const parsed = z.object({
+    choices: z.array(z.object({
+      message: z.object({
+        role: z.literal('assistant'), content: z.string().max(32000).nullable(),
+        tool_calls: z.array(z.object({ id: z.string().max(200), type: z.literal('function'),
+          function: z.object({ name: z.string().max(100), arguments: z.string().max(32000) }) })).max(20).optional(),
+      }), finish_reason: z.string(),
+    })).max(10),
+    usage: z.object({ total_tokens: z.number().nonnegative().optional() }).optional(),
+  }).safeParse(data);
+  if (!parsed.success) throw new Error('Invalid model response');
+  return parsed.data;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Route
 // ─────────────────────────────────────────────────────────────────────────────
 
-router.post('/chat', syncClass('online'), async (req, res, next) => {
+const chatLimiter = rateLimit({
+  windowMs: 60_000, limit: 10,
+  keyGenerator: req => `${currentSlug()}:${req.user!.id}`,
+  standardHeaders: true, legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test',
+  message: { error: 'Too many AI requests. Please wait a minute.' },
+});
+
+router.post('/chat', chatLimiter, syncClass('online'), async (req, res, next) => {
   try {
     const parsed = chatSchema.safeParse(req.body);
     if (!parsed.success) {

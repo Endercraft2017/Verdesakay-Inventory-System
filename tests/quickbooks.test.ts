@@ -102,3 +102,15 @@ describe('push order', () => {
     expect(p.status).toBe(409);
   });
 });
+
+it('rejects callback HTML injection and unknown workspace state without creating a database', async () => {
+  const payload = '<img src=x onerror=alert(1)>';
+  const error = await ctx.api.get('/api/quickbooks/callback').query({ error: payload });
+  expect(error.status).toBe(400);
+  expect(error.text).not.toContain(payload);
+  const bad = await ctx.api.get('/api/quickbooks/callback').query({ state: 'never-created.' + 'a'.repeat(32), code: 'x', realmId: '1' });
+  expect(bad.status).toBe(400);
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  expect(fs.existsSync(path.join(process.env.DATA_DIR!, 'never-created.db'))).toBe(false);
+});

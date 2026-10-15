@@ -876,3 +876,30 @@ borrowed-phone sign-out clears them too. Borrowed-phone sign-in ("I'm using some
 phone") keeps token + profile in sessionStorage, shows `#m-shared-banner`, and keeps push off.
 Tests: `tests/mobile-shared-phone.test.ts`.
 **Status:** working.
+
+## Production audit hardening (16 October 2026)
+
+Security assessment and unresolved release gates: `docs/audits/production-readiness.md`
+and all 233 checklist results in `docs/audits/production-scorecard.md`. A passing
+suite does not change existing `partial` native/desktop/sync status.
+
+- Shared infrastructure: `shared/public-fetch.ts` owns DNS-pinned public-URL fetches
+  for core chat previews (undici). `idempotency.ts` authenticates before replay,
+  binds JSON outcomes to actor/request/current access, isolates pending requests,
+  excludes authentication responses and returns 409 for legacy unbound keys rather
+  than risking a duplicate action. Tenant fallback encryption keys are no longer
+  cached across tenant contexts. No schema change.
+- Core sessions: recovery uses configured public origins, generic responses,
+  15-minute single-use links, account/IP limits and sibling invalidation. Client
+  browser token storage remains a documented open gap. Chat delivery revalidates
+  session and tenant state after connection; logout stops subsequent delivery.
+- Platform operators: changing/resetting an operator password revokes their
+  sessions. Fresh default production bootstrap requires a configured strong
+  password; production refuses known admin/admin123 credentials.
+- AI/email/S3/QuickBooks adapters: bounded network calls; AI shape/length and
+  tenant/user rate checks; callback state is consumed before provider work and
+  rejects unknown workspaces. AI mutation confirmation/output policy remain open.
+- Shell: readable desktop accent, mobile zoom and grouped Quick Orbit semantics,
+  worker v69. `tests/e2e/`, `playwright.config.ts`, security regressions and
+  `scripts/audit-load.mjs` provide disposable local validation. No role, stock,
+  payroll calculation or manufacturing stage is added or reordered.

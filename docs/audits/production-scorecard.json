@@ -1,0 +1,2109 @@
+{
+  "date": "2026-10-16",
+  "source_commit": "ab1b682aa372dce1fae3c6af904116edded34c4a",
+  "counts": {
+    "UNVERIFIED": 126,
+    "FAIL": 61,
+    "PASS": 27,
+    "N/A": 19
+  },
+  "checks": [
+    {
+      "id": "FRAME-01",
+      "severity": "High",
+      "requirement": "Error handling exists beyond framework defaults: users see helpful, generic messages and fallback states; no white screens or stack traces.",
+      "status": "UNVERIFIED",
+      "evidence": "Central generic error handler and API/offline tests exist; every route/database-failure/third-party-failure state was not exercised. Direct exception-return gap remains under API-06.",
+      "scenario": "",
+      "fix": "Force failures (kill an upstream API, send malformed input, break the DB connection in staging) and observe what the user sees; look for unhandled promise chains and missing error boundaries."
+    },
+    {
+      "id": "FRAME-02",
+      "severity": "High",
+      "requirement": "Development, staging, and production are fully separated: different databases, different API keys, different configuration.",
+      "status": "UNVERIFIED",
+      "evidence": "Tests use disposable SQLite/data/upload paths. No live development/staging/production configuration or credential separation evidence was supplied.",
+      "scenario": "",
+      "fix": "Compare environment configuration per environment; confirm production credentials appear in no non-production config; look for test data in production tables."
+    },
+    {
+      "id": "FRAME-03",
+      "severity": "High",
+      "requirement": "Sensitive actions (plan changes, email/password changes, deletions, permission and role changes, admin actions) write an audit record with actor, target, timestamp, and before/after values.",
+      "status": "UNVERIFIED",
+      "evidence": "Activity middleware captures actor/target/time and redacted submitted snapshot; login actor fixed. Before/after completeness, tamper resistance and all sensitive actions not fully established.",
+      "scenario": "",
+      "fix": "Trace each sensitive handler and confirm it writes an audit entry; confirm the acting user cannot edit audit records."
+    },
+    {
+      "id": "FRAME-04",
+      "severity": "Medium",
+      "requirement": "A feature health inventory exists: what is live, what is broken, what is used. Broken-and-used items are prioritized ahead of new work.",
+      "status": "UNVERIFIED",
+      "evidence": "docs/modules/catalog.md records real working/partial capabilities; no real usage/support telemetry to classify broken-and-used features was supplied.",
+      "scenario": "",
+      "fix": "Ask for or build the inventory from analytics, error tracking, and the support inbox; cross-check against the roadmap."
+    },
+    {
+      "id": "FRAME-05",
+      "severity": "Medium",
+      "requirement": "The product has been used by people who did not build it, without guidance, and \"break it on purpose\" inputs (blank forms, 10,000-character fields, repeated submits, phone screens) have been tried.",
+      "status": "UNVERIFIED",
+      "evidence": "Automated edge tests were run, but they cannot establish usability by independent target users. No user-session notes supplied.",
+      "scenario": "",
+      "fix": "Look for usability-test notes or run the edge-input pass in Chapter 18."
+    },
+    {
+      "id": "AUDIT-01",
+      "severity": "High",
+      "requirement": "A dependency vulnerability scan has been run recently, and no critical or high vulnerabilities in reachable code remain unaddressed.",
+      "status": "UNVERIFIED",
+      "evidence": "Live npm audit was blocked by automatic approval review pending explicit consent to send dependency metadata to registry.npmjs.org. CI/dependabot configs were added; no zero-vulnerability claim is made.",
+      "scenario": "",
+      "fix": "Run the ecosystem audit tool on the lockfile; record counts by severity and whether each is reachable."
+    },
+    {
+      "id": "AUDIT-02",
+      "severity": "Critical",
+      "requirement": "Horizontal authorization holds: user A cannot read or modify user B's resources by changing IDs in the URL path, query string, request body, or token claims.",
+      "status": "UNVERIFIED",
+      "evidence": "Database-per-tenant isolation, route-gate source inventory and broad negative tests were reviewed; critical replay and crypto-scope defects were fixed. Every resource/method/owner combination and every external state has not been exhaustively proven. See tests/access-matrix.test.ts, tenant-path.test.ts, production-security.test.ts and idempotency.test.ts.",
+      "scenario": "",
+      "fix": "With two test accounts, replay every ID-bearing request from A using B's identifiers; expect 403/404."
+    },
+    {
+      "id": "AUDIT-03",
+      "severity": "High",
+      "requirement": "A DAST scan (OWASP ZAP or equivalent) has been run against staging, and high/critical findings are resolved or have documented exceptions.",
+      "status": "UNVERIFIED",
+      "evidence": "OWASP ZAP 2.17.0 standalone active scan completed on local synthetic HTTP app (82 discovered endpoints). One High metadata alert reproduced as identical SPA fallback; one Medium missing-CSP gap remains. Authenticated business APIs tested separately; no production-like staging scan supplied.",
+      "scenario": "",
+      "fix": "Run a ZAP baseline scan against staging (with authorization) or review the latest report."
+    },
+    {
+      "id": "AUDIT-04",
+      "severity": "High",
+      "requirement": "CI runs dependency scanning, static analysis, and secret scanning on every pull request, and failures block the merge.",
+      "status": "UNVERIFIED",
+      "evidence": "Production-checks.yml adds typecheck, Vitest, Playwright/axe, npm audit and Gitleaks jobs. New remote production branch/protection and required-check enforcement must be verified after push; writing YAML does not establish enforced controls.",
+      "scenario": "",
+      "fix": "Inspect CI workflow files and branch-protection required checks."
+    },
+    {
+      "id": "AUDIT-05",
+      "severity": "Medium",
+      "requirement": "Security-sensitive changes get an adversarial review, preferably from a different model or person than the author, before merging.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Check PR history for review evidence on auth, payment, and data-deletion changes."
+    },
+    {
+      "id": "AUDIT-06",
+      "severity": "Medium",
+      "requirement": "Security-questionnaire answers are prepared: encryption at rest and in transit, scan cadence, last pen-test date, incident response plan, data location, and a public security/vulnerability-disclosure page.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Request the documents; check the website for a security page."
+    },
+    {
+      "id": "AUDIT-07",
+      "severity": "Medium",
+      "requirement": "Every AI-generated change gets a short security pass before production (secret scan, auth review, permissions review).",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Check the contribution process and PR templates for this step."
+    },
+    {
+      "id": "WF-01",
+      "severity": "Medium",
+      "requirement": "Code organization follows separation of concerns: no monolithic files mixing routes, business logic, data access, and UI; names describe behavior.",
+      "status": "UNVERIFIED",
+      "evidence": "Module architecture exists, but db.ts and several routes exceed 500 lines and mix schema/seed or route/business logic. Size alone is not a sufficient finding; no indiscriminate refactor performed.",
+      "scenario": "",
+      "fix": "Measure file sizes and responsibilities; flag files over roughly 500 lines that mix layers; sample function names."
+    },
+    {
+      "id": "WF-02",
+      "severity": "Low",
+      "requirement": "Dead code is removed: no unused exports, imports, components, or abandoned helper modules.",
+      "status": "UNVERIFIED",
+      "evidence": "TypeScript passes; no complete unused-export/dead-code tool run performed across browser globals, Node, Electron and Capacitor build paths.",
+      "scenario": "",
+      "fix": "Run the language's unused-code tooling (for example `knip`, `ts-prune`, `vulture`) and review the output."
+    },
+    {
+      "id": "WF-03",
+      "severity": "Medium",
+      "requirement": "Automated tests exist for core flows and run in CI; new features land with tests.",
+      "status": "UNVERIFIED",
+      "evidence": "Core tests exist and CI workflow now runs them; remote CI execution and feature-PR discipline need independent evidence.",
+      "scenario": "",
+      "fix": "Inspect the test suite and CI config; compare the most recent feature PRs with their test changes."
+    },
+    {
+      "id": "WF-04",
+      "severity": "Medium",
+      "requirement": "Architecture decisions, local setup, and failure modes are documented and current.",
+      "status": "UNVERIFIED",
+      "evidence": "CLAUDE.md, HANDOFF.md, claude_instruction.md and module/pipeline docs reviewed; some statements are stale (planned vs partial). Audit state persisted in work/AUDIT_STATE.md. Source/provenance and review process are not fully verified.",
+      "scenario": "",
+      "fix": "Follow the setup instructions on a clean machine or container; check decision records against the code."
+    },
+    {
+      "id": "WF-05",
+      "severity": "Low",
+      "requirement": "AI-assistant instructions, skills, and agent configs in the repo are current, scoped, and from trusted sources.",
+      "status": "UNVERIFIED",
+      "evidence": "CLAUDE.md, HANDOFF.md, claude_instruction.md and module/pipeline docs reviewed; some statements are stale (planned vs partial). Audit state persisted in work/AUDIT_STATE.md. Source/provenance and review process are not fully verified.",
+      "scenario": "",
+      "fix": "Inventory `CLAUDE.md`, `AGENTS.md`, `.cursorrules`, skill files, and similar; flag stale or third-party content nobody has reviewed."
+    },
+    {
+      "id": "WF-06",
+      "severity": "Medium",
+      "requirement": "Long-running agent work uses a persistent state or handoff document and human checkpoints between chunks of work.",
+      "status": "UNVERIFIED",
+      "evidence": "CLAUDE.md, HANDOFF.md, claude_instruction.md and module/pipeline docs reviewed; some statements are stale (planned vs partial). Audit state persisted in work/AUDIT_STATE.md. Source/provenance and review process are not fully verified.",
+      "scenario": "",
+      "fix": "Check for a state, status, or handoff file and evidence of review gates in the process."
+    },
+    {
+      "id": "AUTH-01",
+      "severity": "High",
+      "requirement": "Authentication uses a vetted provider or framework; there is no custom password storage, token signing, or session crypto.",
+      "status": "FAIL",
+      "evidence": "src/shared/auth.ts:23; custom DB-backed bearer-session implementation using bcryptjs and crypto.randomBytes.",
+      "scenario": "A future custom-session lifecycle bug affects every module without a maintained auth framework providing its guardrails.",
+      "fix": "Adopt a maintained auth/session framework in a compatibility migration; preserve native/installed-node support and test expiry/recovery/revocation end to end."
+    },
+    {
+      "id": "AUTH-02",
+      "severity": "Critical",
+      "requirement": "Every token is verified (signature, `exp`, `iss`/`aud`) with a pinned algorithm; `alg: none` and algorithm confusion are rejected; claims are never read from an unverified token.",
+      "status": "PASS",
+      "evidence": "src/shared/auth.ts:95; translated to opaque random bearer tokens: SQL checks existence, expiry, ended state and active user. JWT claims are never used.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "AUTH-03",
+      "severity": "High",
+      "requirement": "Access tokens are short-lived (\u226430 minutes); refresh tokens are HttpOnly, expire, rotate on every use, and reuse revokes the token family.",
+      "status": "FAIL",
+      "evidence": "public/js/api.js:14; normal tokens in localStorage, borrowed sessions in sessionStorage; src/shared/auth.ts uses 12-hour ordinary sessions and no refresh-token family.",
+      "scenario": "Any script injection can read a bearer token and reuse it until expiry or revocation.",
+      "fix": "Move web sessions to Secure HttpOnly SameSite cookies with CSRF protection and rotation. Use secure platform storage for native clients; explicitly design offline-PC credentials."
+    },
+    {
+      "id": "AUTH-04",
+      "severity": "High",
+      "requirement": "Logout invalidates the session server-side.",
+      "status": "PASS",
+      "evidence": "src/shared/auth.ts:73; tests/sessions-devices.test.ts; tests/e2e/readiness.spec.ts verifies replay after logout returns 401.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "AUTH-05",
+      "severity": "High",
+      "requirement": "Session IDs are regenerated on login and on privilege changes; session cookies set `Secure`, `HttpOnly`, and `SameSite`.",
+      "status": "FAIL",
+      "evidence": "src/shared/auth.ts:48 creates a fresh token on login, but role changes do not rotate an existing session; browser tokens are not HttpOnly cookies.",
+      "scenario": "A stolen pre-promotion token gains the newly granted permissions because the session is retained.",
+      "fix": "Revoke or rotate sessions on privilege changes, reauthenticate for elevation, and complete the web-cookie/native-storage migration."
+    },
+    {
+      "id": "AUTH-06",
+      "severity": "High",
+      "requirement": "Web auth tokens are not stored in `localStorage` or `sessionStorage` or anywhere readable by JavaScript.",
+      "status": "FAIL",
+      "evidence": "public/js/api.js:14; normal tokens in localStorage, borrowed sessions in sessionStorage; src/shared/auth.ts uses 12-hour ordinary sessions and no refresh-token family.",
+      "scenario": "Any script injection can read a bearer token and reuse it until expiry or revocation.",
+      "fix": "Move web sessions to Secure HttpOnly SameSite cookies with CSRF protection and rotation. Use secure platform storage for native clients; explicitly design offline-PC credentials."
+    },
+    {
+      "id": "AUTH-07",
+      "severity": "High",
+      "requirement": "Password change, password reset, and reported compromise revoke all of the user's active sessions and tokens immediately.",
+      "status": "FAIL",
+      "evidence": "src/core/auth.routes.ts:135 keeps the current session during password change; reset ends all sessions and operators now revoke on reset.",
+      "scenario": "A shared or compromised current session remains valid after a password change, contrary to the strict all-session handbook requirement.",
+      "fix": "Revoke all sessions and return the user through a deliberate reauthentication flow; update desktop, mobile and offline UX together."
+    },
+    {
+      "id": "AUTH-08",
+      "severity": "High",
+      "requirement": "Password-reset tokens expire within about 15 minutes, are single-use, and reset requests are rate-limited per email and per IP.",
+      "status": "PASS",
+      "evidence": "src/core/auth.routes.ts:26; tests/auth-reset.test.ts verifies 15-minute lifetime, sibling invalidation, single use and three requests/account/hour; tests/production-security.test.ts verifies IP throttling.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "AUTH-09",
+      "severity": "High",
+      "requirement": "Magic-link tokens expire within about 10 minutes, are single-use, and requests are rate-limited per email and per IP.",
+      "status": "N/A",
+      "evidence": "No passwordless magic-link authentication; password-reset tokens are covered by AUTH-08.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "AUTH-10",
+      "severity": "Critical",
+      "requirement": "Every redirect target taken from user input (login, logout, magic link, OAuth, \"return to\") is validated against an allowlist after URL parsing, rejecting external, protocol-relative, backslash, and encoded variants.",
+      "status": "UNVERIFIED",
+      "evidence": "App view redirects are fixed internal destinations and recovery links use configured origins; local HTTP listener still derives redirect host from Host. Full origin/redirect inventory and runtime settings need verification.",
+      "scenario": "",
+      "fix": "Find redirect parameters; try `//evil.com`, `/\\evil.com`, `https:%2F%2Fevil.com`, and `https://yourdomain.com.evil.com`."
+    },
+    {
+      "id": "AUTH-11",
+      "severity": "High",
+      "requirement": "OAuth/OIDC flows use exact registered redirect URIs, a verified `state` parameter, PKCE, and minimal scopes.",
+      "status": "UNVERIFIED",
+      "evidence": "QuickBooks OAuth validates known tenant/state and consumes state before async exchange; tests/quickbooks.test.ts. Exact provider registration and PKCE support/configuration were not verified with current Intuit documentation or live account.",
+      "scenario": "",
+      "fix": "Inspect provider configuration and callback handler; replay a callback with a wrong `state`; check requested scopes against features."
+    },
+    {
+      "id": "AUTH-12",
+      "severity": "High",
+      "requirement": "Login, registration, and reset endpoints have brute-force protection (per-IP and per-account throttling, preferably at the edge).",
+      "status": "FAIL",
+      "evidence": "src/app.ts:204 adds login account/IP and recovery IP limits; signup has only IP throttling; reset token consumption has only IP throttling.",
+      "scenario": "A distributed attacker can probe signup/reset attempts across many IPs without an account-wide attempt budget.",
+      "fix": "Add persistent account/identifier throttles and abuse controls covering signup and reset consumption, with careful lockout policy and alerts."
+    },
+    {
+      "id": "AUTH-13",
+      "severity": "Medium",
+      "requirement": "Session lifetime, idle timeout, and concurrent-session policy are deliberate and match data sensitivity; users are warned before expiry and their state is preserved on re-auth.",
+      "status": "UNVERIFIED",
+      "evidence": "12-hour ordinary / 4-hour shared / 30-minute shared-idle policies exist; pre-expiry warning, workflow preservation and concurrent-session policy need a complete UX review.",
+      "scenario": "",
+      "fix": "Inspect session configuration; test idle expiry UX."
+    },
+    {
+      "id": "AUTH-14",
+      "severity": "Medium",
+      "requirement": "If selling to enterprises: SAML 2.0/OIDC SSO is available with per-tenant IdP configuration, and the auth provider's compliance documentation is available.",
+      "status": "UNVERIFIED",
+      "evidence": "No SAML/OIDC enterprise identity integration found; whether enterprise SSO is a launch requirement needs the customer profile. Do not claim enterprise readiness.",
+      "scenario": "",
+      "fix": "Check for SSO support and tenant-level IdP settings."
+    },
+    {
+      "id": "AUTHZ-01",
+      "severity": "Critical",
+      "requirement": "Every server entry point (route, RPC procedure, server action, serverless/cloud function, GraphQL resolver) enforces authentication and authorization on the server, from a protected-by-default base.",
+      "status": "UNVERIFIED",
+      "evidence": "Database-per-tenant isolation, route-gate source inventory and broad negative tests were reviewed; critical replay and crypto-scope defects were fixed. Every resource/method/owner combination and every external state has not been exhaustively proven. See tests/access-matrix.test.ts, tenant-path.test.ts, production-security.test.ts and idempotency.test.ts.",
+      "scenario": "",
+      "fix": "Enumerate all entry points; for each, find the auth check; call unauthenticated endpoints directly in staging."
+    },
+    {
+      "id": "AUTHZ-02",
+      "severity": "Critical",
+      "requirement": "Every endpoint that accepts a resource identifier (path, query, body, header) verifies the caller owns or may access that resource.",
+      "status": "UNVERIFIED",
+      "evidence": "Database-per-tenant isolation, route-gate source inventory and broad negative tests were reviewed; critical replay and crypto-scope defects were fixed. Every resource/method/owner combination and every external state has not been exhaustively proven. See tests/access-matrix.test.ts, tenant-path.test.ts, production-security.test.ts and idempotency.test.ts.",
+      "scenario": "",
+      "fix": "List ID-taking endpoints; run the two-account swap test (AUDIT-02); review the handler code for ownership filters."
+    },
+    {
+      "id": "AUTHZ-03",
+      "severity": "Critical",
+      "requirement": "Row-level security (or an equivalent enforced data-access layer) is enabled on every table holding user or tenant data, with select/insert/update/delete policies scoped to the owner or tenant.",
+      "status": "UNVERIFIED",
+      "evidence": "Database-per-tenant isolation, route-gate source inventory and broad negative tests were reviewed; critical replay and crypto-scope defects were fixed. Every resource/method/owner combination and every external state has not been exhaustively proven. See tests/access-matrix.test.ts, tenant-path.test.ts, production-security.test.ts and idempotency.test.ts.",
+      "scenario": "",
+      "fix": "Query the catalog for tables without RLS (`relrowsecurity`) and without policies; test with a second account using the client-side key."
+    },
+    {
+      "id": "AUTHZ-04",
+      "severity": "Critical",
+      "requirement": "Privileged credentials (service-role keys, admin SDKs) are used only server-side, and every query they run is explicitly scoped to the authenticated user or tenant, with validated inputs.",
+      "status": "UNVERIFIED",
+      "evidence": "Database-per-tenant isolation, route-gate source inventory and broad negative tests were reviewed; critical replay and crypto-scope defects were fixed. Every resource/method/owner combination and every external state has not been exhaustively proven. See tests/access-matrix.test.ts, tenant-path.test.ts, production-security.test.ts and idempotency.test.ts.",
+      "scenario": "",
+      "fix": "Find all uses of service-role or admin clients; confirm each query filters by the caller's identity and that inputs cannot select arbitrary collections or documents."
+    },
+    {
+      "id": "AUTHZ-05",
+      "severity": "Critical",
+      "requirement": "Realtime subscriptions, streams, and websockets filter data on the server by the authenticated user or tenant.",
+      "status": "PASS",
+      "evidence": "src/shared/ws.ts:59; tenant/user socket registry; auth rechecked before sends and inbound messages; tests/tenant-path.test.ts and tests/production-security.test.ts.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "AUTHZ-06",
+      "severity": "Critical",
+      "requirement": "Edge or framework middleware is not the only authorization layer: matchers cover API routes, path variations cannot bypass them, and every handler re-validates the session server-side.",
+      "status": "UNVERIFIED",
+      "evidence": "Database-per-tenant isolation, route-gate source inventory and broad negative tests were reviewed; critical replay and crypto-scope defects were fixed. Every resource/method/owner combination and every external state has not been exhaustively proven. See tests/access-matrix.test.ts, tenant-path.test.ts, production-security.test.ts and idempotency.test.ts.",
+      "scenario": "",
+      "fix": "Read the middleware matcher; request protected paths with trailing slashes, double encoding, and case changes; confirm handlers check sessions independently."
+    },
+    {
+      "id": "AUTHZ-07",
+      "severity": "Critical",
+      "requirement": "Admin interfaces require an authenticated session with an explicit admin role on every route, are rate-limited at login, and log every admin action.",
+      "status": "UNVERIFIED",
+      "evidence": "Platform auth, login limiter and provisioning log exist (src/platform/platform.routes.ts); MFA/edge configuration and every admin audit operation were not fully established. Tenant login actor attribution was fixed.",
+      "scenario": "",
+      "fix": "Request admin routes unauthenticated and as a normal user; inspect audit logging."
+    },
+    {
+      "id": "AUTHZ-08",
+      "severity": "High",
+      "requirement": "Elevated operations check the user's current role or permissions from the source of truth, not a possibly stale token claim.",
+      "status": "PASS",
+      "evidence": "src/shared/auth.ts:95 joins current users and role permissions on every authenticated request; tests/permissions.test.ts.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "AUTHZ-09",
+      "severity": "High",
+      "requirement": "The permission model separates permissions from roles and supports scope (own/team/all), enforced at the API layer.",
+      "status": "PASS",
+      "evidence": "src/shared/roles.ts:73; tests/access-matrix.test.ts and tests/permissions.test.ts cover desk/own-record scopes.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "AUTHZ-10",
+      "severity": "Critical",
+      "requirement": "In multi-tenant systems, every tenant-owned row has a tenant ID, the tenant is resolved server-side from verified identity (never from client-supplied input alone), and every query is tenant-scoped.",
+      "status": "UNVERIFIED",
+      "evidence": "Database-per-tenant isolation, route-gate source inventory and broad negative tests were reviewed; critical replay and crypto-scope defects were fixed. Every resource/method/owner combination and every external state has not been exhaustively proven. See tests/access-matrix.test.ts, tenant-path.test.ts, production-security.test.ts and idempotency.test.ts.",
+      "scenario": "",
+      "fix": "Inspect schema and tenant-resolution middleware; send requests with a forged tenant header or body field."
+    },
+    {
+      "id": "AUTHZ-11",
+      "severity": "Critical",
+      "requirement": "Every shared layer is tenant- and user-scoped: cache keys, search indexes, job payloads, file paths, logs, and vector stores.",
+      "status": "UNVERIFIED",
+      "evidence": "Database-per-tenant isolation, route-gate source inventory and broad negative tests were reviewed; critical replay and crypto-scope defects were fixed. Every resource/method/owner combination and every external state has not been exhaustively proven. See tests/access-matrix.test.ts, tenant-path.test.ts, production-security.test.ts and idempotency.test.ts.",
+      "scenario": "",
+      "fix": "Review cache key construction and other shared-layer keys; run the cross-tenant cache test (load as A, then as B)."
+    },
+    {
+      "id": "AUTHZ-12",
+      "severity": "High",
+      "requirement": "An automated cross-tenant and cross-user access test runs in CI.",
+      "status": "PASS",
+      "evidence": ".github/workflows/production-checks.yml:1; tests/tenant-path.test.ts, tests/access-matrix.test.ts, tests/idempotency.test.ts are in npm test. Remote run still needs to finish after push.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "AUTHZ-13",
+      "severity": "Medium",
+      "requirement": "The tenant isolation model (shared + RLS, schema per tenant, database per tenant) is documented and matches customer contracts and regulatory requirements.",
+      "status": "UNVERIFIED",
+      "evidence": "docs/modules/catalog.md documents database-per-tenant; no customer contracts or regulatory obligations were supplied to compare against the model.",
+      "scenario": "",
+      "fix": "Compare the architecture with contracts and BAAs/DPAs for regulated tenants."
+    },
+    {
+      "id": "AUTHZ-14",
+      "severity": "Low",
+      "requirement": "Public identifiers are non-sequential (UUIDs or similar) to reduce enumeration, in addition to ownership checks.",
+      "status": "FAIL",
+      "evidence": "src/shared/db.ts:326; REST resource paths generally use SQLite integer IDs.",
+      "scenario": "An authenticated caller can enumerate identifiers more cheaply, increasing pressure on every object-level permission check.",
+      "fix": "Use opaque public IDs where enumeration matters; keep existing server authorization and add compatibility lookup/migration tests."
+    },
+    {
+      "id": "AUTHZ-15",
+      "severity": "Medium",
+      "requirement": "High-risk actions use step-up authentication or contextual signals (new device, unusual location, impossible travel).",
+      "status": "FAIL",
+      "evidence": "src/core/auth.routes.ts:1 and src/platform/platform-users.ts:1 accept a current bearer session without MFA or fresh-password challenge for privileged operations.",
+      "scenario": "A stolen admin session can change accounts, permissions or exports without a second authentication step.",
+      "fix": "Add step-up authentication and MFA for platform operators and high-value tenant actions."
+    },
+    {
+      "id": "SECRET-01",
+      "severity": "Critical",
+      "requirement": "No secrets exist in the current source tree or anywhere in Git history.",
+      "status": "FAIL",
+      "evidence": "Gitleaks history scan: 268 commits, 11 detections; ten exact fixture/alphabet false positives allowlisted. Real bearer artifact in July commit f7f644b, removed by ec4ecbf, remains in Git history.",
+      "scenario": "Anyone able to read that historical commit could have replayed its bearer token while it was live; current expiration/revocation in the original server was not inspected.",
+      "fix": "Verify the original session is invalid, investigate access during exposure, and decide on coordinated history cleanup. Do not rewrite shared history automatically. Keep this detection visible to CI until resolved."
+    },
+    {
+      "id": "SECRET-02",
+      "severity": "Critical",
+      "requirement": "No secrets are present in client-delivered code: the frontend bundle, public env-prefixed variables, server-component payloads, or mobile binaries.",
+      "status": "PASS",
+      "evidence": "Gitleaks 8.24.3 dir scans of public/ and web-console/ each returned an empty report. Native shell bundles public assets; compiled APK/EXE scans remain outside this source check.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "SECRET-03",
+      "severity": "Critical",
+      "requirement": "Every secret that was ever exposed (committed, shipped to a client, logged, or shared) has been rotated and the old value revoked.",
+      "status": "UNVERIFIED",
+      "evidence": "Known July bearer artifact was removed in ec4ecbf; current source expires ordinary sessions in 12 hours, but original server token revocation, exposure-window access and rotation evidence were not provided.",
+      "scenario": "",
+      "fix": "Cross-reference scan hits with provider dashboards and rotation dates."
+    },
+    {
+      "id": "SECRET-04",
+      "severity": "High",
+      "requirement": "`.env` files are ignored by Git; only a values-free example file is committed.",
+      "status": "PASS",
+      "evidence": ".gitignore:1 ignores .env; git ls-files contains no .env. No credential-bearing example env file was added.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "SECRET-05",
+      "severity": "High",
+      "requirement": "Secret scanning runs before code reaches the remote (pre-commit hook) and at the remote (push protection or CI).",
+      "status": "FAIL",
+      "evidence": ".github/workflows/production-checks.yml adds remote Gitleaks scanning; no repository pre-commit secret hook exists and push-protection settings were not inspected.",
+      "scenario": "A developer can commit a new credential locally; remote scanning catches it only after the push has already disclosed it.",
+      "fix": "Add a documented local staged-file secret hook and enable provider push protection; verify it blocks a synthetic secret."
+    },
+    {
+      "id": "SECRET-06",
+      "severity": "High",
+      "requirement": "Third-party APIs that need secret keys are called from the server (proxy route), never directly from the browser or app.",
+      "status": "PASS",
+      "evidence": "src/modules/ai/ai.routes.ts:195; src/shared/mailer.ts and src/modules/quickbooks/quickbooks.ts hold provider calls server-side.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "SECRET-07",
+      "severity": "Medium",
+      "requirement": "Production secrets are held in a secrets manager or platform secret store with access control and audit logging, not in committed files or shared documents.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Inspect deployment configuration and how secrets reach runtime."
+    },
+    {
+      "id": "SECRET-08",
+      "severity": "Medium",
+      "requirement": "Keys are scoped to least privilege (restricted keys, IP or domain restrictions, per-service database users), and a rotation schedule exists.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Review provider key settings and database roles; ask for the last rotation date of each critical secret."
+    },
+    {
+      "id": "SECRET-09",
+      "severity": "Medium",
+      "requirement": "Server-only code is guarded against client inclusion (for example the `server-only` import in Next.js), and server functions live in separate files from client components.",
+      "status": "PASS",
+      "evidence": "src/ and server.ts are outside express.static(public/); electron packaging explicitly includes backend for the local server, not for browser delivery.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "SECRET-10",
+      "severity": "Medium",
+      "requirement": "Secrets never appear in logs, error responses, or analytics events.",
+      "status": "FAIL",
+      "evidence": "src/modules/ai/ai.routes.ts:226 includes provider response snippets in thrown errors; central handler logs Error details. Startup password logging was removed, but no central log redactor exists.",
+      "scenario": "A provider error echoing request content or a credential can be persisted in deployment logs.",
+      "fix": "Redact structured logs and provider errors at the boundary; retain status/request IDs, not raw response bodies or secrets."
+    },
+    {
+      "id": "API-01",
+      "severity": "Critical",
+      "requirement": "Every endpoint validates body, query, path params, and relevant headers on the server against an explicit schema with types, lengths, and ranges.",
+      "status": "FAIL",
+      "evidence": "src/shared/validation.ts:1 has broad Zod body coverage, but many handlers use Number(req.params.id) or hand-parsed query parameters without a shared explicit schema.",
+      "scenario": "Malformed IDs or unbounded query parameters can reach handlers inconsistently; protections differ across endpoints.",
+      "fix": "Inventory each route and add typed path/query/header schemas with bounded values and negative tests; do not globally coerce arbitrary objects."
+    },
+    {
+      "id": "API-02",
+      "severity": "Critical",
+      "requirement": "Write endpoints accept only an allowlist of fields; unknown fields are rejected; privileged fields (role, plan, permissions, price, tenant, owner) cannot be set by users.",
+      "status": "FAIL",
+      "evidence": "src/shared/validation.ts:1 uses ordinary z.object for most write bodies, which strips unknown fields; only selected schemas are strict.",
+      "scenario": "Forbidden extra fields can be silently ignored rather than explicitly rejected, masking client misuse and creating risk when schemas later expand.",
+      "fix": "Use strict allowlists on security-sensitive writes first; audit current clients for legitimate fields before making all schemas strict."
+    },
+    {
+      "id": "API-03",
+      "severity": "Critical",
+      "requirement": "No query is built by string concatenation or interpolation of user input (SQL, NoSQL operators, raw ORM calls, shell commands).",
+      "status": "UNVERIFIED",
+      "evidence": "Parameterized helpers and server-side permissions/business logic were sampled; callback reflected HTML was fixed. Full dynamic SQL, per-field response/PII, every scheduled/internal entry and all HTML/email sink coverage require additional complete inventories. Existing suite is evidence of tested cases, not universal absence of defects.",
+      "scenario": "",
+      "fix": "Search for raw-query APIs and string-built queries; trace each input to its source."
+    },
+    {
+      "id": "API-04",
+      "severity": "High",
+      "requirement": "Prices, discounts, entitlements, and other business rules are computed on the server from authoritative data, never taken from the client.",
+      "status": "UNVERIFIED",
+      "evidence": "Parameterized helpers and server-side permissions/business logic were sampled; callback reflected HTML was fixed. Full dynamic SQL, per-field response/PII, every scheduled/internal entry and all HTML/email sink coverage require additional complete inventories. Existing suite is evidence of tested cases, not universal absence of defects.",
+      "scenario": "",
+      "fix": "Trace checkout and entitlement flows; tamper with client-sent amounts or flags in staging."
+    },
+    {
+      "id": "API-05",
+      "severity": "High",
+      "requirement": "Responses expose only fields the caller needs; no password hashes, tokens, internal flags, or other users' PII.",
+      "status": "UNVERIFIED",
+      "evidence": "Parameterized helpers and server-side permissions/business logic were sampled; callback reflected HTML was fixed. Full dynamic SQL, per-field response/PII, every scheduled/internal entry and all HTML/email sink coverage require additional complete inventories. Existing suite is evidence of tested cases, not universal absence of defects.",
+      "scenario": "",
+      "fix": "Capture responses for user, account, and list endpoints; compare against what the UI actually renders."
+    },
+    {
+      "id": "API-06",
+      "severity": "High",
+      "requirement": "Production error responses are generic (no stack traces, SQL, file paths, or versions), and full details are logged server-side with a correlation ID.",
+      "status": "FAIL",
+      "evidence": "src/modules/ai/ai.routes.ts:40 directly returns an exception message on reindex failure. Central handler is generic for unexposed 5xx, but no correlation ID exists.",
+      "scenario": "A reindex filesystem/SQL error can reveal paths or schema details to an authorized caller and cannot be correlated with one request ID.",
+      "fix": "Return a stable generic error code; redact server details and add generated request IDs to logs and response headers."
+    },
+    {
+      "id": "API-07",
+      "severity": "Medium",
+      "requirement": "Custom error pages exist for 404, 500, and timeouts, giving users a next step without revealing internals.",
+      "status": "FAIL",
+      "evidence": "src/app.ts:356 returns the shell for unknown non-API paths; unknown API paths can use framework 404 handling.",
+      "scenario": "A typo or missing route appears as a successful shell or generic framework page with no clear recovery action.",
+      "fix": "Define explicit API JSON 404 and useful app not-found/timeout views without breaking legitimate SPA deep links."
+    },
+    {
+      "id": "API-08",
+      "severity": "High",
+      "requirement": "GraphQL endpoints disable introspection and field suggestions in production and enforce depth and complexity limits.",
+      "status": "N/A",
+      "evidence": "No React server components, serialized hydration data, or GraphQL endpoint. App shells are HTML with a base-path setting; REST responses are audited separately.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "API-09",
+      "severity": "Critical",
+      "requirement": "Scheduled-job, webhook-like, and internal endpoints require a secret or signature and reject calls outside the expected cadence.",
+      "status": "UNVERIFIED",
+      "evidence": "Parameterized helpers and server-side permissions/business logic were sampled; callback reflected HTML was fixed. Full dynamic SQL, per-field response/PII, every scheduled/internal entry and all HTML/email sink coverage require additional complete inventories. Existing suite is evidence of tested cases, not universal absence of defects.",
+      "scenario": "",
+      "fix": "Find cron and internal routes; call them without the secret."
+    },
+    {
+      "id": "API-10",
+      "severity": "High",
+      "requirement": "All user-supplied content rendered into HTML pages or email templates is escaped or rendered as plain text.",
+      "status": "UNVERIFIED",
+      "evidence": "Parameterized helpers and server-side permissions/business logic were sampled; callback reflected HTML was fixed. Full dynamic SQL, per-field response/PII, every scheduled/internal entry and all HTML/email sink coverage require additional complete inventories. Existing suite is evidence of tested cases, not universal absence of defects.",
+      "scenario": "",
+      "fix": "Submit HTML and script payloads in every user field that appears in a page or email; inspect the rendered output."
+    },
+    {
+      "id": "WEB-01",
+      "severity": "Critical",
+      "requirement": "CORS uses an explicit origin allowlist; wildcard is never combined with credentials; the `Origin` header is never reflected without validation.",
+      "status": "PASS",
+      "evidence": "src/app.ts:72; exact native-origin allowlist without cookies; tests/native-app-cors.test.ts and Playwright hostile-origin request.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "WEB-02",
+      "severity": "High",
+      "requirement": "State-changing requests authenticated by cookies are protected against CSRF (`SameSite` cookies plus CSRF tokens or equivalent origin checks).",
+      "status": "N/A",
+      "evidence": "Tenant and platform authentication use explicit Bearer headers, not ambient auth cookies. vds_view is a non-auth preference. Reassess if auth moves to cookies.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "WEB-03",
+      "severity": "Medium",
+      "requirement": "Each endpoint allows only the HTTP methods and headers it needs.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Send `OPTIONS` and unexpected methods (PUT/DELETE) to read-only endpoints."
+    },
+    {
+      "id": "WEB-04",
+      "severity": "High",
+      "requirement": "Pages send `X-Frame-Options: DENY` and `CSP frame-ancestors 'self'` (or a deliberate per-route allowlist).",
+      "status": "FAIL",
+      "evidence": "src/app.ts:116; X-Frame-Options DENY and proxy-only HSTS now exist, but enforced CSP/frame-ancestors is missing. ZAP rule 10038 confirms.",
+      "scenario": "An HTML injection has no CSP script boundary; proxy framing protection depends on one header; the complete prescribed header set is absent.",
+      "fix": "Inventory inline handlers, generated print windows and workers; migrate to nonce/hash scripts and deploy an enforced CSP including frame-ancestors, object-src and base-uri. Keep LAN/native compatibility verified."
+    },
+    {
+      "id": "WEB-05",
+      "severity": "High",
+      "requirement": "A Content Security Policy restricts script sources to an approved list and blocks inline scripts; it is enforced (not only report-only) after a reporting period.",
+      "status": "FAIL",
+      "evidence": "src/app.ts:116; X-Frame-Options DENY and proxy-only HSTS now exist, but enforced CSP/frame-ancestors is missing. ZAP rule 10038 confirms.",
+      "scenario": "An HTML injection has no CSP script boundary; proxy framing protection depends on one header; the complete prescribed header set is absent.",
+      "fix": "Inventory inline handlers, generated print windows and workers; migrate to nonce/hash scripts and deploy an enforced CSP including frame-ancestors, object-src and base-uri. Keep LAN/native compatibility verified."
+    },
+    {
+      "id": "WEB-06",
+      "severity": "High",
+      "requirement": "Third-party scripts are inventoried with a purpose for each, and none load on login, checkout, account, or admin pages.",
+      "status": "PASS",
+      "evidence": "public/index.html, public/mobile/index.html and web-console/index.html load local scripts; no third-party tracking/login scripts observed. Client bundle secret scan clean.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "WEB-07",
+      "severity": "Medium",
+      "requirement": "Baseline security headers are present on every response: HSTS, `X-Content-Type-Options`, `Referrer-Policy` (plus CSP and frame protection).",
+      "status": "FAIL",
+      "evidence": "src/app.ts:116; X-Frame-Options DENY and proxy-only HSTS now exist, but enforced CSP/frame-ancestors is missing. ZAP rule 10038 confirms.",
+      "scenario": "An HTML injection has no CSP script boundary; proxy framing protection depends on one header; the complete prescribed header set is absent.",
+      "fix": "Inventory inline handlers, generated print windows and workers; migrate to nonce/hash scripts and deploy an enforced CSP including frame-ancestors, object-src and base-uri. Keep LAN/native compatibility verified."
+    },
+    {
+      "id": "WEB-08",
+      "severity": "High",
+      "requirement": "Server-rendered components and page props serialize only the fields the UI renders; no sensitive fields reach the client payload.",
+      "status": "N/A",
+      "evidence": "No React server components, serialized hydration data, or GraphQL endpoint. App shells are HTML with a base-path setting; REST responses are audited separately.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "EDGE-01",
+      "severity": "Critical",
+      "requirement": "Rate limits protect AI/expensive endpoints, auth endpoints, and public data endpoints, per user and per IP.",
+      "status": "FAIL",
+      "evidence": "src/app.ts:195 plus AI per-user limiter and signup/confidential-report limiters; no universal API/public-read budget or complete per-user+IP limiter coverage.",
+      "scenario": "A bot can hammer expensive read/export or public endpoints without reaching the specific auth/AI limiters.",
+      "fix": "Add endpoint-specific and tenant/user/IP budgets plus edge limits; test expected workload so sync and legitimate office traffic are not throttled."
+    },
+    {
+      "id": "EDGE-02",
+      "severity": "High",
+      "requirement": "A WAF filters traffic before the application (managed rules or ModSecurity + OWASP CRS in blocking mode), with bot management on high-value routes.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Inspect CDN/WAF configuration; send benign test payloads (for example `' OR 1=1--`) to staging and confirm blocking."
+    },
+    {
+      "id": "EDGE-03",
+      "severity": "High",
+      "requirement": "The origin accepts traffic only from the CDN/WAF, the origin IP is not discoverable, and CDN-to-origin TLS is end-to-end (Full/strict).",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Check firewall rules; look up DNS history and email headers for the origin IP; inspect the TLS mode."
+    },
+    {
+      "id": "EDGE-04",
+      "severity": "Medium",
+      "requirement": "A DDoS/abuse response playbook exists, and alerts fire on spikes in WAF blocks or rate-limit hits.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Request the playbook; inspect alert rules."
+    },
+    {
+      "id": "EDGE-05",
+      "severity": "Critical",
+      "requirement": "Object storage is private by default; public assets are separated; private files use expiring pre-signed URLs; no backups, exports, or configs are publicly readable; access logging is on.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "List bucket policies and ACLs; try anonymous access to sample private objects; check logging configuration."
+    },
+    {
+      "id": "EDGE-06",
+      "severity": "High",
+      "requirement": "Self-managed servers enforce SSH key-only auth, no root login, default-deny inbound firewall (no public database ports), and automatic security updates.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Inspect `sshd_config`, firewall rules (`ufw status`/`iptables`), and the unattended-upgrades configuration."
+    },
+    {
+      "id": "EDGE-07",
+      "severity": "Critical",
+      "requirement": "Server and database management panels are not reachable from the public internet (IP/VPN-restricted), require 2FA, and do not sit on default paths and ports.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Scan the public IPs for panel ports (for example 8443, 2083, 5050, 8080) from outside; inspect access rules."
+    },
+    {
+      "id": "EDGE-08",
+      "severity": "High",
+      "requirement": "Internal tools and dev servers bind to localhost or private interfaces, validate the `Host` header, and require authentication.",
+      "status": "FAIL",
+      "evidence": "server.ts:1 serves the standalone app on 0.0.0.0 and uses Host in local HTTP redirects; no general explicit accepted-host allowlist. Ordinary installed PCs bind localhost.",
+      "scenario": "A hostile Host can influence redirects or DNS-rebinding access to an on-site service; credentials remain required but network position alone is insufficient.",
+      "fix": "Configure and validate explicit cloud/LAN hostnames and redirect origins; allow deliberate office IPs and test native/phone setup paths."
+    },
+    {
+      "id": "EDGE-09",
+      "severity": "High",
+      "requirement": "Services are network-segmented, authenticate to each other (tokens or mTLS), and run with least-privilege credentials and egress.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Review network policies, security groups, and service credentials; confirm a compromised low-value service cannot reach the database."
+    },
+    {
+      "id": "EDGE-10",
+      "severity": "High",
+      "requirement": "Cache/Redis instances require authentication with a least-privilege ACL user, restrict commands, accept connections only from known IPs, and use TLS.",
+      "status": "N/A",
+      "evidence": "No PostgreSQL read replicas or Redis/Upstash service. Installed-PC sync is a separate authority/consistency model and is explicitly partial in the catalog.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "EDGE-11",
+      "severity": "Medium",
+      "requirement": "DNS records are audited for dangling targets, and cookie domain scope is no broader than needed.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Enumerate DNS records and resolve CNAME targets; inspect `Set-Cookie` `Domain` attributes."
+    },
+    {
+      "id": "EDGE-12",
+      "severity": "Medium",
+      "requirement": "If the organization uses Microsoft 365/Entra or similar workforce identity, conditional access requires device compliance, uses sign-in risk policies, and tiers policies by application sensitivity.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Review conditional access policies."
+    },
+    {
+      "id": "EDGE-13",
+      "severity": "Medium",
+      "requirement": "Rate limiting has adaptive behavior under load and plan-based tiers where the product is metered.",
+      "status": "FAIL",
+      "evidence": "src/app.ts rate limiters use fixed windows and constants; tenant plan quotas exist separately in src/platform/quota.ts.",
+      "scenario": "A traffic spike is handled only by static limits; all plans share those limits regardless of cost or current overload.",
+      "fix": "Add load-aware concurrency budgets and plan-specific admission policies once target traffic and production metrics are known."
+    },
+    {
+      "id": "SUPPLY-01",
+      "severity": "High",
+      "requirement": "A lockfile is committed, and CI installs from it in frozen mode with integrity verification.",
+      "status": "PASS",
+      "evidence": "Root, launcher and mobile-app lockfiles are committed; production-checks.yml uses npm ci, which checks integrity. No lockfile was deleted.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "SUPPLY-02",
+      "severity": "High",
+      "requirement": "Automated dependency vulnerability scanning and update PRs are enabled, and the backlog is triaged.",
+      "status": "UNVERIFIED",
+      "evidence": "Live npm audit was blocked by automatic approval review pending explicit consent to send dependency metadata to registry.npmjs.org. CI/dependabot configs were added; no zero-vulnerability claim is made.",
+      "scenario": "",
+      "fix": "Check Dependabot/Renovate/Snyk configuration and open alert counts."
+    },
+    {
+      "id": "SUPPLY-03",
+      "severity": "Medium",
+      "requirement": "No deprecated or unmaintained packages are used in core functionality.",
+      "status": "UNVERIFIED",
+      "evidence": "Direct names/lockfile metadata inspected; license inventory includes MPL-2.0 and unknown entries needing distribution review. No live maintainer/download/deprecation lookup or legal license approval. npm advisory query remains pending consent.",
+      "scenario": "",
+      "fix": "List direct dependencies with last-publish dates and deprecation notices; flag those over about 2 years stale."
+    },
+    {
+      "id": "SUPPLY-04",
+      "severity": "High",
+      "requirement": "Dependencies are screened for typosquatting, very low adoption, recent maintainer changes, and install scripts.",
+      "status": "UNVERIFIED",
+      "evidence": "Direct names/lockfile metadata inspected; license inventory includes MPL-2.0 and unknown entries needing distribution review. No live maintainer/download/deprecation lookup or legal license approval. npm advisory query remains pending consent.",
+      "scenario": "",
+      "fix": "Review direct dependency names against well-known packages; list packages with `preinstall`/`postinstall` scripts; use a supply-chain scanner (Socket or similar)."
+    },
+    {
+      "id": "SUPPLY-05",
+      "severity": "Medium",
+      "requirement": "Infrastructure versions (database, cache, base images, runtimes) are pinned and updated on a deliberate schedule, and infrastructure clients sit behind an adapter.",
+      "status": "FAIL",
+      "evidence": ".node-version:1 is a major-only 22 and package.json permits >=22.13; CI pins versions but hosting runtime/installable artifacts are not fully pinned.",
+      "scenario": "A rebuild can silently pick a different major runtime and change SQLite/native behavior.",
+      "fix": "Pin and record supported production runtime versions and maintain a scheduled upgrade policy; verify Node 22, Node 24 and Electron separately."
+    },
+    {
+      "id": "SUPPLY-06",
+      "severity": "Low",
+      "requirement": "Dependency licenses are compatible with the product's distribution model.",
+      "status": "UNVERIFIED",
+      "evidence": "Direct names/lockfile metadata inspected; license inventory includes MPL-2.0 and unknown entries needing distribution review. No live maintainer/download/deprecation lookup or legal license approval. npm advisory query remains pending consent.",
+      "scenario": "",
+      "fix": "Run a license report and flag copyleft or unknown licenses."
+    },
+    {
+      "id": "SUPPLY-07",
+      "severity": "Medium",
+      "requirement": "Each component receives only the secrets and configuration it needs, not the full environment.",
+      "status": "FAIL",
+      "evidence": "electron/main.cjs and scripts launch server/child processes with inherited process.env; provider adapters read shared environment variables.",
+      "scenario": "A compromised subprocess/dependency receives credentials unrelated to the operation it performs.",
+      "fix": "Pass minimum explicit environment/configuration to subprocesses and components; retain required runtime proxy/identity bindings in managed environments."
+    },
+    {
+      "id": "SUPPLY-08",
+      "severity": "Medium",
+      "requirement": "Third-party prompts, skills, MCP servers, agent configs, and copied instructions are reviewed before use and never run with production access unvetted.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Inventory AI-tooling content in the repo and CI; check provenance and review history."
+    },
+    {
+      "id": "AISEC-01",
+      "severity": "Critical",
+      "requirement": "LLM features and tools can access only data the current user is authorized to see; scoping is enforced in code (queries and tool implementations), not in the prompt.",
+      "status": "PASS",
+      "evidence": "src/modules/ai/ai-tools.ts:614 rechecks permission per tool; own notes/tasks and messages scoped in queries; tests/ai.test.ts and ai-analytics.test.ts. Human confirmation is a separate failing check.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "AISEC-02",
+      "severity": "Critical",
+      "requirement": "RAG retrieval filters by the requester's permissions using metadata attached at ingestion, and responses are checked so no chunk from an unauthorized source is used.",
+      "status": "PASS",
+      "evidence": "src/modules/ai/rag.ts:160; per-tenant FTS index and permission/department filter before returning chunks; tests/ai-rag.test.ts. No shared remote vector store.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "AISEC-03",
+      "severity": "High",
+      "requirement": "Untrusted content (user input, uploads, retrieved pages, repository text) cannot trigger privileged actions; injection patterns are screened at ingestion, and system instructions are separated from data.",
+      "status": "FAIL",
+      "evidence": "src/modules/ai/ai-tools.ts:62 and executeTool contain writable inventory/order/user/message tools executed from model tool_calls without a separate action-approval record.",
+      "scenario": "A prompt injection in retrieved text can ask a privileged user's assistant to send a message, change stock or delete records using that user's rights.",
+      "fix": "Disable mutating AI tools for launch or implement server-side proposed actions requiring explicit user confirmation, revalidated permissions and transaction/idempotency support. A prompt-only instruction is insufficient."
+    },
+    {
+      "id": "AISEC-04",
+      "severity": "High",
+      "requirement": "Model outputs are screened before display for system-prompt leakage, other users' data, and internal details.",
+      "status": "FAIL",
+      "evidence": "src/modules/ai/ai.routes.ts:309 returns model prose after schema/length validation, without prompt/PII leakage screening.",
+      "scenario": "A manipulated prompt can cause internal instructions or sensitive authorized context to be echoed into a response or shared report.",
+      "fix": "Add output policy checks and a safe fallback; evaluate extraction, injection and PII cases without treating the filter as authorization."
+    },
+    {
+      "id": "AISEC-05",
+      "severity": "Critical",
+      "requirement": "Any server-side fetch of user-influenced URLs (agents, previews, webhooks-to-URL, importers) blocks private, loopback, link-local, and metadata addresses, pins resolution, re-validates on redirects, and returns generic errors.",
+      "status": "PASS",
+      "evidence": "src/shared/public-fetch.ts:1 resolves once and pins validated public addresses into an undici Agent; every preview redirect calls it again. tests/public-fetch.test.ts covers mapped IPv6, metadata, mixed DNS and bounds. Admin-configured AI/SMTP endpoints are privileged configuration, not anonymous URL fetches.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "AISEC-06",
+      "severity": "High",
+      "requirement": "Each agent or automation uses its own scoped, short-lived credentials rather than a human's credentials or a broad shared key.",
+      "status": "FAIL",
+      "evidence": "src/modules/ai/ai-tools.ts:614 executes with the human AuthUser and shared provider key; no dedicated scoped short-lived agent credential.",
+      "scenario": "Compromise of the assistant path inherits the full effective permission bundle of the requesting human.",
+      "fix": "Give agent execution an explicit reduced capability identity; bind tool calls to approved actions and short-lived grants."
+    },
+    {
+      "id": "AISEC-07",
+      "severity": "High",
+      "requirement": "Agent actions with production impact (writes, deletes, deploys, payments, outbound messages) pass automated policy gates and require human approval; egress is restricted.",
+      "status": "FAIL",
+      "evidence": "src/modules/ai/ai-tools.ts:62 and executeTool contain writable inventory/order/user/message tools executed from model tool_calls without a separate action-approval record.",
+      "scenario": "A prompt injection in retrieved text can ask a privileged user's assistant to send a message, change stock or delete records using that user's rights.",
+      "fix": "Disable mutating AI tools for launch or implement server-side proposed actions requiring explicit user confirmation, revalidated permissions and transaction/idempotency support. A prompt-only instruction is insufficient."
+    },
+    {
+      "id": "AISEC-08",
+      "severity": "High",
+      "requirement": "Every agent tool call is recorded in an append-only audit log with inputs, outputs, actor, and timestamp.",
+      "status": "FAIL",
+      "evidence": "src/modules/ai/ai.routes.ts:91 saves steps in ai_messages, but DELETE /messages clears them and calls are not an independent append-only audit stream.",
+      "scenario": "A destructive tool action can occur and its detailed tool transcript can subsequently be removed with chat history.",
+      "fix": "Write redacted tool audit events before/after execution to an append-only store with actor, tenant, request ID, approval ID and retention controls."
+    },
+    {
+      "id": "AISEC-09",
+      "severity": "Medium",
+      "requirement": "The organization has an AI acceptable-use policy, an inventory of approved AI tools, and controls against pasting sensitive data into unapproved tools.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Request the policy and inventory; check for DLP tooling."
+    },
+    {
+      "id": "AISEC-10",
+      "severity": "Medium",
+      "requirement": "AI coding assistants and CI agents do not auto-execute on untrusted repository content (forks, external PRs, issues) with access to secrets.",
+      "status": "PASS",
+      "evidence": ".github/workflows/production-checks.yml:1 uses pull_request with read-only repository permissions; no pull_request_target checkout or AI agent with secrets.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "MOBILE-01",
+      "severity": "High",
+      "requirement": "Mobile clients store tokens and credentials only in Keychain/Keystore-backed secure storage.",
+      "status": "FAIL",
+      "evidence": "public/js/api.js:17; native Capacitor shell reuses browser storage, with no Keystore/Keychain storage adapter.",
+      "scenario": "A rooted/forensically accessed device can recover a long-lived bearer token from app storage.",
+      "fix": "Add a platform-backed secure-storage adapter and migration/clear-on-signout tests on real Android/iOS devices."
+    },
+    {
+      "id": "MOBILE-02",
+      "severity": "Critical",
+      "requirement": "No secret API keys are embedded in the app bundle; privileged calls go through the backend.",
+      "status": "PASS",
+      "evidence": "Gitleaks 8.24.3 dir scans of public/ and web-console/ each returned an empty report. Native shell bundles public assets; compiled APK/EXE scans remain outside this source check.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "MOBILE-03",
+      "severity": "High",
+      "requirement": "Deep links and auth callbacks are validated (verified universal/app links preferred), and parameters are checked before any action.",
+      "status": "UNVERIFIED",
+      "evidence": "Native app is explicitly partial in catalog. No device builds, store listings, privacy manifests or universal/app-link association validation were performed.",
+      "scenario": "",
+      "fix": "Review link handlers; send crafted links with unexpected parameters on a test device."
+    },
+    {
+      "id": "MOBILE-04",
+      "severity": "Medium",
+      "requirement": "Transport security is hardened (TLS everywhere; certificate or public-key pinning with a rotation plan where the risk justifies it).",
+      "status": "FAIL",
+      "evidence": "mobile-app/android/app/src/main/AndroidManifest.xml and public/mobile/native.js permit configurable local HTTP server addresses; no server pin/rotation policy verified.",
+      "scenario": "An employee configuring an HTTP endpoint can send a bearer session over an unencrypted network.",
+      "fix": "Require TLS for production/native endpoints, retain explicit safe development exceptions, and validate certificate trust/rotation on devices."
+    },
+    {
+      "id": "MOBILE-05",
+      "severity": "Medium",
+      "requirement": "Store-submission requirements are met: privacy manifest, data-use and AI disclosures, and edge-case crash testing.",
+      "status": "UNVERIFIED",
+      "evidence": "Native app is explicitly partial in catalog. No device builds, store listings, privacy manifests or universal/app-link association validation were performed.",
+      "scenario": "",
+      "fix": "Inspect the privacy manifest and store listing disclosures; review crash reports."
+    },
+    {
+      "id": "MOBILE-06",
+      "severity": "Low",
+      "requirement": "Universal/app links are configured with a web fallback so shared links open the app when installed.",
+      "status": "UNVERIFIED",
+      "evidence": "Native app is explicitly partial in catalog. No device builds, store listings, privacy manifests or universal/app-link association validation were performed.",
+      "scenario": "",
+      "fix": "Check the association files on the domain and app entitlements/intent filters."
+    },
+    {
+      "id": "BACK-01",
+      "severity": "High",
+      "requirement": "Clients reach data through a backend that enforces auth, validation, and business rules; any direct client-to-database access is protected by row-level security on every table involved.",
+      "status": "PASS",
+      "evidence": "public/js/api.js calls Express REST; SQLite is server-only. src/app.ts mounts per-module gates and routers; route-permission and access-matrix tests run in full suite.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "BACK-02",
+      "severity": "High",
+      "requirement": "Every outbound call (HTTP, database, payment, AI provider) has a timeout, error handling, and a defined fallback; idempotent calls retry with exponential backoff and jitter.",
+      "status": "FAIL",
+      "evidence": "AI/QBO/SMTP/S3 now have bounded timeouts; src/modules/ai/ai.routes.ts still allows up to 12 sequential model calls, with no shared request budget/circuit breaker or generalized 429 backoff.",
+      "scenario": "An upstream outage occupies request slots for many sequential timeouts and can repeatedly trigger expensive retries by users.",
+      "fix": "Set an overall request deadline, per-provider concurrency/circuit-breaker controls and bounded jittered retries for idempotent calls; queue unsafe retries."
+    },
+    {
+      "id": "BACK-03",
+      "severity": "High",
+      "requirement": "Long-running work (exports, AI pipelines, bulk email, file processing) runs in background jobs with status tracking, retries, and user notification, not in the request cycle.",
+      "status": "FAIL",
+      "evidence": "src/modules/ai/ai.routes.ts:255 runs the tool loop in the request; large exports and reindex are also synchronous/in-request work.",
+      "scenario": "Slow AI or a large export ties up requests or the SQLite event loop, delaying ordinary office actions.",
+      "fix": "Move long work to durable jobs with progress/status, cancellation, bounded retries and per-tenant concurrency."
+    },
+    {
+      "id": "BACK-04",
+      "severity": "High",
+      "requirement": "Create, charge, and job-start operations are idempotent (idempotency keys or natural unique constraints), so retries and double-clicks cannot duplicate effects.",
+      "status": "UNVERIFIED",
+      "evidence": "Idempotency replay is now authenticated and bound to actor/method/path/JSON/access scope, with per-process in-flight exclusion; tests/idempotency.test.ts. Missing keys, multipart payload identity, persistence-failure atomicity and multiple processes still need a complete business-operation proof.",
+      "scenario": "",
+      "fix": "Fire the same request twice concurrently in staging; inspect resulting records."
+    },
+    {
+      "id": "BACK-05",
+      "severity": "Medium",
+      "requirement": "Failure isolation exists for critical dependencies: circuit breakers, per-dependency connection pools (bulkheads), and an overall request timeout budget.",
+      "status": "FAIL",
+      "evidence": "AI/QBO/SMTP/S3 now have bounded timeouts; src/modules/ai/ai.routes.ts still allows up to 12 sequential model calls, with no shared request budget/circuit breaker or generalized 429 backoff.",
+      "scenario": "An upstream outage occupies request slots for many sequential timeouts and can repeatedly trigger expensive retries by users.",
+      "fix": "Set an overall request deadline, per-provider concurrency/circuit-breaker controls and bounded jittered retries for idempotent calls; queue unsafe retries."
+    },
+    {
+      "id": "BACK-06",
+      "severity": "Medium",
+      "requirement": "Background queues have monitoring, failure alerts, and a dead-letter queue with replay.",
+      "status": "FAIL",
+      "evidence": "server.ts:1 timers and src/platform/offsite.ts have logs/status files but no general dead-letter queue or operator alert/replay mechanism.",
+      "scenario": "Repeated backup, reminder or external-job failures can continue silently between manual checks.",
+      "fix": "Persist failed jobs, alert a named operator and provide safe replay with idempotent processing."
+    },
+    {
+      "id": "BACK-07",
+      "severity": "Medium",
+      "requirement": "Each third-party service is accessed through a single adapter module, and business-critical data is also stored in a database you control.",
+      "status": "PASS",
+      "evidence": "src/shared/mailer.ts, src/shared/s3.ts, src/modules/ai/ai-config.ts and src/modules/quickbooks/quickbooks.ts centralize their integrations. Local SQLite owns business records.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "BACK-08",
+      "severity": "Medium",
+      "requirement": "Provider rate limits (429) are handled with backoff, queuing for non-urgent work, and caching.",
+      "status": "FAIL",
+      "evidence": "AI/QBO/SMTP/S3 now have bounded timeouts; src/modules/ai/ai.routes.ts still allows up to 12 sequential model calls, with no shared request budget/circuit breaker or generalized 429 backoff.",
+      "scenario": "An upstream outage occupies request slots for many sequential timeouts and can repeatedly trigger expensive retries by users.",
+      "fix": "Set an overall request deadline, per-provider concurrency/circuit-breaker controls and bounded jittered retries for idempotent calls; queue unsafe retries."
+    },
+    {
+      "id": "BACK-09",
+      "severity": "Medium",
+      "requirement": "The public or partner API has a written contract, a version in the path or header, a changelog, and a deprecation policy with sunset headers.",
+      "status": "FAIL",
+      "evidence": "src/app.ts:1 exposes unversioned /api routes; no OpenAPI contract or formal deprecation/sunset policy is present.",
+      "scenario": "A response or route change breaks installed clients without a parallel compatibility version.",
+      "fix": "Document the existing REST contract, introduce backward-compatible API versioning and a client upgrade/deprecation policy."
+    },
+    {
+      "id": "BACK-10",
+      "severity": "Low",
+      "requirement": "Machine-to-machine mutating endpoints verify request signatures (HMAC with a shared secret) where callers are systems, not browsers.",
+      "status": "PASS",
+      "evidence": "src/sync/transport.ts and tests/sync-transport.test.ts verify enrolled-node token and signed sync protocol. No unauthenticated scheduled HTTP job was found; server timers run in-process.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "BACK-11",
+      "severity": "Medium",
+      "requirement": "Per-client variation is handled with tenant-scoped flags and configuration overrides, not repository forks or per-client branches.",
+      "status": "PASS",
+      "evidence": "src/shared/modules.ts, src/platform/plans.ts, src/platform/subscription.ts; per-tenant DB/settings/entitlements, not one repository fork per tenant.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "BACK-12",
+      "severity": "Medium",
+      "requirement": "Derived stores (search, analytics, caches, notifications) are updated through events or change data capture with failure handling, not ad-hoc polling.",
+      "status": "FAIL",
+      "evidence": "src/modules/ai/rag.ts:16 refreshes search lazily every five minutes; multiple features poll for changes.",
+      "scenario": "A record or ACL/source change may remain stale in the search index until a reindex, and failed derived updates lack durable replay.",
+      "fix": "Define freshness requirements, invalidate affected retrieval chunks on writes/permission changes, and persist retryable derived-update events."
+    },
+    {
+      "id": "DATA-01",
+      "severity": "Medium",
+      "requirement": "The schema is normalized with explicit relationships and constraints (foreign keys, unique, not-null); there are no catch-all wide tables.",
+      "status": "PASS",
+      "evidence": "src/shared/db.ts:314; relational SQLite tables with FK, unique and not-null constraints; foreign_keys=ON in openConnection. Form-record JSON is deliberate extension data.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "DATA-02",
+      "severity": "High",
+      "requirement": "Hot queries use appropriate indexes; no full table scans on tables that grow with usage.",
+      "status": "UNVERIFIED",
+      "evidence": "SQLite indexes exist and 100-item local reads were fast; no production query frequency/dataset or EXPLAIN evidence for every growing hot table was supplied.",
+      "scenario": "",
+      "fix": "Run `EXPLAIN ANALYZE` on the top queries from `pg_stat_statements` or logs against realistic data volumes."
+    },
+    {
+      "id": "DATA-03",
+      "severity": "Medium",
+      "requirement": "Queries select only required columns, and list views do not issue N+1 queries.",
+      "status": "FAIL",
+      "evidence": "src/core/auth.routes.ts:31 and many route lists use full-row queries; no query-count budget is enforced.",
+      "scenario": "Growing records or a newly added sensitive column can increase payload/query cost or exposure unless each response is rechecked.",
+      "fix": "Select explicit response columns on hot paths and add measured query-count budgets for representative list screens."
+    },
+    {
+      "id": "DATA-04",
+      "severity": "High",
+      "requirement": "Database connections are pooled; serverless runtimes use a transaction-mode pooler; per-instance pool size \u00d7 instances stays under the database limit.",
+      "status": "N/A",
+      "evidence": "Persistent node:sqlite connections are cached per tenant; no PostgreSQL/serverless connection pool. Deployment must remain one authoritative process per SQLite store; production topology unverified.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "DATA-05",
+      "severity": "Medium",
+      "requirement": "Slow-query logging or `pg_stat_statements` (or equivalent) is enabled and reviewed.",
+      "status": "FAIL",
+      "evidence": "src/shared/db.ts:1 helpers execute statements without a slow-query recorder; request logs report only whole-request elapsed time.",
+      "scenario": "A slow SQL query under load cannot be identified from SQL-level latency statistics.",
+      "fix": "Add bounded, redacted slow-query timing and review it using production-like data and SQLite EXPLAIN QUERY PLAN."
+    },
+    {
+      "id": "DATA-06",
+      "severity": "High",
+      "requirement": "All schema changes are versioned migration files in source control; the database can be rebuilt from them; production is never altered by hand.",
+      "status": "UNVERIFIED",
+      "evidence": "src/shared/db.ts versioned migrations and pre-migration snapshots; backup and adopt-default tests pass locally. No production schema comparison, full-size migration rehearsal or tested rollback timing supplied.",
+      "scenario": "",
+      "fix": "Compare the live schema with a database built from migrations (schema diff)."
+    },
+    {
+      "id": "DATA-07",
+      "severity": "High",
+      "requirement": "Migrations on live tables follow expand/contract, have a written rollback, and are rehearsed on staging with production-like data.",
+      "status": "UNVERIFIED",
+      "evidence": "src/shared/db.ts versioned migrations and pre-migration snapshots; backup and adopt-default tests pass locally. No production schema comparison, full-size migration rehearsal or tested rollback timing supplied.",
+      "scenario": "",
+      "fix": "Review recent migrations for destructive single-step changes (drop/rename/type change) and the presence of rollback scripts."
+    },
+    {
+      "id": "DATA-08",
+      "severity": "High",
+      "requirement": "Bulk data imports and platform migrations are validated (row counts, field formats, dates, phone/country codes, duplicates), rehearsed at full scale, and reversible.",
+      "status": "UNVERIFIED",
+      "evidence": "src/shared/db.ts versioned migrations and pre-migration snapshots; backup and adopt-default tests pass locally. No production schema comparison, full-size migration rehearsal or tested rollback timing supplied.",
+      "scenario": "",
+      "fix": "Ask for the migration plan and validation reports."
+    },
+    {
+      "id": "DATA-09",
+      "severity": "Medium",
+      "requirement": "Concurrent edits to shared data use an explicit strategy (optimistic locking/version columns, CRDTs, or event sourcing), never silent last-write-wins.",
+      "status": "FAIL",
+      "evidence": "src/core/users.routes.ts:102 and profile/settings edits do not require an expected version or If-Match.",
+      "scenario": "Two administrators editing the same record can silently overwrite the earlier administrator's changes.",
+      "fix": "Add optimistic version checks to collaborative business edits and return a conflict with reload/merge UX; retain atomic stock transitions."
+    },
+    {
+      "id": "DATA-10",
+      "severity": "Medium",
+      "requirement": "If read replicas are used, read-your-writes consistency is handled and replica lag is monitored with a reroute threshold.",
+      "status": "N/A",
+      "evidence": "No PostgreSQL read replicas or Redis/Upstash service. Installed-PC sync is a separate authority/consistency model and is explicitly partial in the catalog.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "DATA-11",
+      "severity": "Medium",
+      "requirement": "Uploaded files live in object storage (served through a CDN), with only keys or URLs in the database.",
+      "status": "FAIL",
+      "evidence": "src/shared/db.ts uploadDir and diskStorage upload handlers use local files; DBs store paths, but serving is authenticated local disk rather than object storage/CDN.",
+      "scenario": "A single application volume is a storage and scaling bottleneck; losing it requires restoring both databases and uploads.",
+      "fix": "For cloud scale, add a private object-storage adapter and authorized expiring downloads; keep deliberate offline/local storage for installed PCs."
+    },
+    {
+      "id": "DATA-12",
+      "severity": "Medium",
+      "requirement": "Per-tenant custom data uses an extension layer rather than core-schema columns, and heavy tenant workloads are isolated.",
+      "status": "UNVERIFIED",
+      "evidence": "Inventory attributes/form JSON and per-tenant databases avoid many shared-schema customizations; heavy tenant workloads still share a process and were not profiled with representative data.",
+      "scenario": "",
+      "fix": "Review the schema for tenant-specific columns and job isolation."
+    },
+    {
+      "id": "DATA-13",
+      "severity": "Low",
+      "requirement": "There is a documented, evidence-driven scaling path (indexes \u2192 partitioning \u2192 sharding / platform change) tied to monitoring thresholds.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Ask for capacity notes and current table sizes and growth rates."
+    },
+    {
+      "id": "CACHE-01",
+      "severity": "High",
+      "requirement": "Every cached data type has a defined maximum staleness, and price, permission, entitlement, inventory, and account-status data is never served stale.",
+      "status": "UNVERIFIED",
+      "evidence": "Stock/permission reads are server-authoritative; API responses now no-store and worker does not cache API. Idempotency cache fixed. Search ACL/source freshness, offline caches and every mutation/cache invalidation path were not fully proven.",
+      "scenario": "",
+      "fix": "Inventory cache usage (keys, TTLs, layers); flag caches over sensitive data without write-time invalidation."
+    },
+    {
+      "id": "CACHE-02",
+      "severity": "High",
+      "requirement": "Writes to cached business or user data invalidate or update the affected keys across all cache layers.",
+      "status": "UNVERIFIED",
+      "evidence": "Stock/permission reads are server-authoritative; API responses now no-store and worker does not cache API. Idempotency cache fixed. Search ACL/source freshness, offline caches and every mutation/cache invalidation path were not fully proven.",
+      "scenario": "",
+      "fix": "Trace write paths for cached entities; change a value and confirm the next read is fresh at every layer."
+    },
+    {
+      "id": "CACHE-03",
+      "severity": "Medium",
+      "requirement": "Hot keys are protected against stampedes (single-flight/locking, stale-while-revalidate, or jittered TTLs).",
+      "status": "UNVERIFIED",
+      "evidence": "Stock/permission reads are server-authoritative; API responses now no-store and worker does not cache API. Idempotency cache fixed. Search ACL/source freshness, offline caches and every mutation/cache invalidation path were not fully proven.",
+      "scenario": "",
+      "fix": "Review cache-fill code for concurrency control."
+    },
+    {
+      "id": "CACHE-04",
+      "severity": "Medium",
+      "requirement": "Static assets are fingerprinted and served with long-lived cache headers through a CDN; safe public responses are edge-cached.",
+      "status": "FAIL",
+      "evidence": "src/app.ts:314 applies no-cache to unversioned assets; service worker uses a manually versioned shell.",
+      "scenario": "Large clients revalidate many assets and depend on manual cache-version bumps after updates.",
+      "fix": "Fingerprint immutable assets and deploy matching HTML/worker manifests; keep private API responses no-store."
+    },
+    {
+      "id": "CACHE-05",
+      "severity": "Medium",
+      "requirement": "Cache effectiveness is measured (hit rate, DB load before and after).",
+      "status": "FAIL",
+      "evidence": "No cache hit/miss instrumentation in src/core/messages.routes.ts or src/modules/ai/rag.ts.",
+      "scenario": "A cache change can add complexity without demonstrating reduced upstream or DB cost.",
+      "fix": "Record hit/miss and refill timing per cache type with tenant-safe aggregation."
+    },
+    {
+      "id": "CACHE-06",
+      "severity": "High",
+      "requirement": "A load test at realistic and peak concurrency has been run against a production-like environment, and the first bottleneck is known and addressed.",
+      "status": "FAIL",
+      "evidence": "scripts/audit-load.mjs performed 450 local read requests at 5/15/30 clients over 100 items with no failures; no target peak or production-like dataset/hardware supplied.",
+      "scenario": "Payroll/export/stock workloads on real office data can saturate the single SQLite process even though a tiny local read probe passes.",
+      "fix": "Agree peak concurrent users and dataset sizes, seed representative staging data, run mixed reads/writes/exports and establish latency/error/resource thresholds."
+    },
+    {
+      "id": "CACHE-07",
+      "severity": "Medium",
+      "requirement": "Scaling changes are made in order, on evidence (connections \u2192 queries \u2192 read/write split), with a written rationale.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Review recent scaling decisions and supporting metrics."
+    },
+    {
+      "id": "CACHE-08",
+      "severity": "Medium",
+      "requirement": "Repeated expensive computations and AI calls are cached with correct user/tenant scoping.",
+      "status": "FAIL",
+      "evidence": "AI chat calls are not response/semantic cached or routed by complexity; a single configured model handles requests.",
+      "scenario": "Repeated questions incur repeated provider spend and consume concurrency during spikes.",
+      "fix": "Measure workload first; cache only safe tenant/user-scoped results, use provider prompt caching and evaluate smaller-model routing without caching stale business facts."
+    },
+    {
+      "id": "CACHE-09",
+      "severity": "Low",
+      "requirement": "If users are global, latency is addressed with edge delivery, regional read replicas, and geo-aware routing.",
+      "status": "UNVERIFIED",
+      "evidence": "Primary audience appears to be a Philippines office operation, but customer geography and regional latency requirements were not confirmed.",
+      "scenario": "",
+      "fix": "Compare p95 latency by region if available."
+    },
+    {
+      "id": "DR-01",
+      "severity": "Critical",
+      "requirement": "Automated backups cover every datastore holding business data (primary database, object storage, other stateful services).",
+      "status": "PASS",
+      "evidence": "src/platform/backups.ts:47 enumerates tenant DBs, control-plane DB and upload mirror; tests/backup.test.ts and tests/offsite-backup.test.ts. PASS covers implemented automated coverage, not live scheduler health.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "DR-02",
+      "severity": "High",
+      "requirement": "Backup frequency or point-in-time recovery meets the defined RPO; PITR is enabled for the primary database where available.",
+      "status": "UNVERIFIED",
+      "evidence": "Daily snapshots and encrypted offsite S3 support exist; live backup destinations, least-privilege/immutability settings, RPO and actual recent successful transfers were not accessible.",
+      "scenario": "",
+      "fix": "Inspect database backup/PITR settings and retention."
+    },
+    {
+      "id": "DR-03",
+      "severity": "High",
+      "requirement": "Backups are stored off the primary host, preferably cross-region, and cannot be deleted with the application's runtime credentials.",
+      "status": "UNVERIFIED",
+      "evidence": "Daily snapshots and encrypted offsite S3 support exist; live backup destinations, least-privilege/immutability settings, RPO and actual recent successful transfers were not accessible.",
+      "scenario": "",
+      "fix": "Check backup destinations, replication, and access policies."
+    },
+    {
+      "id": "DR-04",
+      "severity": "High",
+      "requirement": "Restores are tested on a schedule (monthly to quarterly) into a clean environment, with data verification, an app smoke test, and a recorded duration.",
+      "status": "FAIL",
+      "evidence": "tests/backup.test.ts verifies snapshot integrity and restore mechanics; docs/SAAS-OPERATIONS.md asks operators to test occasionally, but no dated production-size restore drill record/schedule is present.",
+      "scenario": "A real disaster can expose missing upload/config/key recovery despite unit-level restore passing.",
+      "fix": "Run and time a clean staging restore of DBs, uploads, configuration and keys, verify the app, record duration and schedule recurring drills."
+    },
+    {
+      "id": "DR-05",
+      "severity": "Medium",
+      "requirement": "RTO and RPO are defined, documented, and consistent with the backup and failover design.",
+      "status": "FAIL",
+      "evidence": "docs/SAAS-OPERATIONS.md:162 describes daily backups but no business-approved RTO/RPO.",
+      "scenario": "Daily snapshots may lose nearly 24 hours of work even if the business assumes minutes.",
+      "fix": "Obtain explicit acceptable outage/data-loss targets and configure/test backup frequency and failover against those targets."
+    },
+    {
+      "id": "DR-06",
+      "severity": "Medium",
+      "requirement": "An incident runbook exists covering first checks, rollback, data restore, escalation, and customer communication.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Request the runbook; check it references current systems."
+    },
+    {
+      "id": "DEPLOY-01",
+      "severity": "High",
+      "requirement": "The production branch is protected: no direct pushes, required PR review, and required status checks.",
+      "status": "UNVERIFIED",
+      "evidence": "Production-checks.yml adds typecheck, Vitest, Playwright/axe, npm audit and Gitleaks jobs. New remote production branch/protection and required-check enforcement must be verified after push; writing YAML does not establish enforced controls.",
+      "scenario": "",
+      "fix": "Inspect branch protection or ruleset settings and recent commit history for direct pushes."
+    },
+    {
+      "id": "DEPLOY-02",
+      "severity": "High",
+      "requirement": "CI runs build, tests, lint, and security scans on every PR, and failures block merge and deploy.",
+      "status": "UNVERIFIED",
+      "evidence": "Production-checks.yml adds typecheck, Vitest, Playwright/axe, npm audit and Gitleaks jobs. New remote production branch/protection and required-check enforcement must be verified after push; writing YAML does not establish enforced controls.",
+      "scenario": "",
+      "fix": "Inspect CI workflows and required checks; find a recent failing run and confirm it blocked."
+    },
+    {
+      "id": "DEPLOY-03",
+      "severity": "High",
+      "requirement": "A staging environment mirrors production's shape (schema, services, config keys) with separate data and credentials; PRs get preview deployments or staging verification before production.",
+      "status": "UNVERIFIED",
+      "evidence": "Tests use disposable SQLite/data/upload paths. No live development/staging/production configuration or credential separation evidence was supplied.",
+      "scenario": "",
+      "fix": "Compare environment configurations; confirm staging uses a different database and keys."
+    },
+    {
+      "id": "DEPLOY-04",
+      "severity": "High",
+      "requirement": "Deployments are automated and reproducible from version control (infrastructure and configuration as code), with no manual server edits.",
+      "status": "UNVERIFIED",
+      "evidence": "railway.json declares start/healthcheck/restart; no hosting account, automatic-deploy branch, volume attachment or live environment configuration was inspected.",
+      "scenario": "",
+      "fix": "Trace how a merge becomes a production release; look for undocumented manual steps."
+    },
+    {
+      "id": "DEPLOY-05",
+      "severity": "High",
+      "requirement": "Rollback to the previous release is a single documented action, tested, and completes within minutes (including how to handle database migrations).",
+      "status": "UNVERIFIED",
+      "evidence": "Repository backup/restore primitives and deployment documentation exist; no timed release rollback drill with production-compatible migrations was supplied.",
+      "scenario": "",
+      "fix": "Ask for the procedure and the last time it was exercised; review migration compatibility with rollback."
+    },
+    {
+      "id": "DEPLOY-06",
+      "severity": "Medium",
+      "requirement": "Changes ship in small, scoped PRs; large multi-concern commits to production are rare.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Sample recent merges for size and scope."
+    },
+    {
+      "id": "DEPLOY-07",
+      "severity": "Medium",
+      "requirement": "Risky changes use progressive delivery (canary or percentage rollout) and/or feature flags with a kill switch, and rollback is automatic on an error-rate threshold.",
+      "status": "FAIL",
+      "evidence": "railway.json:1 defines ordinary restart/healthcheck; module entitlements can disable modules but no canary/error-rate rollback controller exists.",
+      "scenario": "A bad release reaches all users before a person notices and rolls it back.",
+      "fix": "Define staging promotion and canary/kill-switch policy plus observed automatic rollback thresholds; verify against actual hosting topology."
+    },
+    {
+      "id": "DEPLOY-08",
+      "severity": "Medium",
+      "requirement": "A pre-deploy checklist (secrets, fallbacks, cost caps, validation, error handling, CORS/rate limits, rollback, logging) is used for production releases.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Look for the checklist in PR templates or release docs."
+    },
+    {
+      "id": "DEPLOY-09",
+      "severity": "Low",
+      "requirement": "The pipeline is efficient: parallel stages, dependency caching, path-based triggers, and CI usage alerts.",
+      "status": "UNVERIFIED",
+      "evidence": "CI now splits jobs and caches npm; no hosted run duration, budget alert, branch filter behavior or efficiency history was inspected.",
+      "scenario": "",
+      "fix": "Inspect pipeline duration and configuration."
+    },
+    {
+      "id": "TEST-01",
+      "severity": "High",
+      "requirement": "Automated tests cover the critical journeys: signup, login/logout, wrong password, lockout, password reset, the core value action, and checkout for every enabled payment method including confirmation.",
+      "status": "UNVERIFIED",
+      "evidence": "Broad suite covers auth, tenant provisioning, inventory, orders, purchasing, manufacturing/QC, HR/payroll, accounting, email mocks and sync; Playwright covers login/stock/mobile. No all-feature browser journey coverage or live provider confirmation; payment checkout N/A.",
+      "scenario": "",
+      "fix": "Map critical journeys to tests; flag journeys without coverage."
+    },
+    {
+      "id": "TEST-02",
+      "severity": "Medium",
+      "requirement": "A coverage threshold is enforced in CI; unit tests run on every push and integration/E2E tests on merge.",
+      "status": "FAIL",
+      "evidence": "vitest.config.ts:1 has no coverage provider or enforced coverage threshold; CI runs tests and browser checks but no coverage gate.",
+      "scenario": "A newly untested critical path can merge even while existing tests remain green.",
+      "fix": "Collect measured coverage for critical security/business modules, establish an honest baseline, and ratchet meaningful branch coverage instead of inventing a percentage."
+    },
+    {
+      "id": "TEST-03",
+      "severity": "High",
+      "requirement": "Negative and security tests exist: forbidden-field submission, cross-user/cross-tenant access attempts, and invalid input types on write endpoints.",
+      "status": "PASS",
+      "evidence": "tests/access-matrix.test.ts, permissions.test.ts, tenant-path.test.ts, validation.test.ts, idempotency.test.ts, public-fetch.test.ts and production-security.test.ts exercise negative security paths.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "TEST-04",
+      "severity": "Medium",
+      "requirement": "Edge inputs are tested: empty required fields, maximum lengths, apostrophes, emoji, HTML, and repeated submissions.",
+      "status": "PASS",
+      "evidence": "tests/e2e/readiness.spec.ts exercises SQL-like username, 10,000-character input, apostrophe/emoji stock label, retries; existing validation and upload tests cover malformed fields.",
+      "scenario": "",
+      "fix": "Maintain this control and its tests."
+    },
+    {
+      "id": "TEST-05",
+      "severity": "Medium",
+      "requirement": "The UI is tested on small screens, old devices/browsers, and slow networks; mobile layouts of core flows work.",
+      "status": "UNVERIFIED",
+      "evidence": "Chromium Playwright covers 360px mobile navigation/offline login and desktop; axe login scans pass after contrast/ARIA/zoom fixes. No complete authenticated-view WCAG audit, old-browser/device matrix, screen-reader review or real-device tests.",
+      "scenario": "",
+      "fix": "Check for device-matrix or responsive E2E tests; manually test core flows at phone width with throttled network."
+    },
+    {
+      "id": "TEST-06",
+      "severity": "Medium",
+      "requirement": "Tests are hermetic and pass reliably in CI (no reliance on local env, shared state, test order, or timing).",
+      "status": "UNVERIFIED",
+      "evidence": "Full suite uses isolated temporary DB paths and passed locally; first sandbox-only failures were socket-permission artifacts. Remote CI stability and random-order runs have not been observed.",
+      "scenario": "",
+      "fix": "Review recent CI flake history; run the suite in random order."
+    },
+    {
+      "id": "TEST-07",
+      "severity": "Low",
+      "requirement": "Usability has been tested with target users who did not build the product.",
+      "status": "UNVERIFIED",
+      "evidence": "Automated edge tests were run, but they cannot establish usability by independent target users. No user-session notes supplied.",
+      "scenario": "",
+      "fix": "Ask for usability session notes."
+    },
+    {
+      "id": "OBS-01",
+      "severity": "High",
+      "requirement": "Application logs are structured (JSON), centralized, searchable, and include timestamp, level, request/correlation ID, user or tenant ID, and action.",
+      "status": "FAIL",
+      "evidence": "src/app.ts:228 emits text request logs without generated correlation IDs or a structured trace context.",
+      "scenario": "Operators cannot connect one failed action across requests, provider calls and sync replay quickly.",
+      "fix": "Add generated request IDs, structured redacted JSON logs, tenant/actor context and trace propagation; connect to an approved central sink."
+    },
+    {
+      "id": "OBS-02",
+      "severity": "High",
+      "requirement": "Errors are captured by an error-tracking service with alerting, release tags, and request/user context (without leaking secrets or PII beyond policy).",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Inspect the SDK setup and alert rules; trigger a test error in staging."
+    },
+    {
+      "id": "OBS-03",
+      "severity": "High",
+      "requirement": "External uptime checks from more than one region alert a human (not just a dashboard) within minutes of an outage.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Inspect the uptime monitor configuration and notification routing."
+    },
+    {
+      "id": "OBS-04",
+      "severity": "High",
+      "requirement": "Business metrics (payments, signups, checkout completions, key job outcomes) are monitored against baselines, and drops trigger alerts.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Look for business-metric dashboards and alert rules."
+    },
+    {
+      "id": "OBS-05",
+      "severity": "Medium",
+      "requirement": "Synthetic transactions exercise the critical path on a schedule.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Inspect synthetic monitor definitions."
+    },
+    {
+      "id": "OBS-06",
+      "severity": "Medium",
+      "requirement": "Requests carry a correlation ID across services and logs; distributed tracing (OpenTelemetry or equivalent) is in place for multi-service paths.",
+      "status": "FAIL",
+      "evidence": "src/app.ts:228 emits text request logs without generated correlation IDs or a structured trace context.",
+      "scenario": "Operators cannot connect one failed action across requests, provider calls and sync replay quickly.",
+      "fix": "Add generated request IDs, structured redacted JSON logs, tenant/actor context and trace propagation; connect to an approved central sink."
+    },
+    {
+      "id": "OBS-07",
+      "severity": "Medium",
+      "requirement": "SLOs and error budgets exist for critical endpoints, with burn-rate alerts and a policy for slowing releases when budgets burn.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Request SLO definitions and alert rules."
+    },
+    {
+      "id": "OBS-08",
+      "severity": "Medium",
+      "requirement": "A status page runs on separate infrastructure, and there is a defined incident and maintenance communication workflow.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Check the status page host and the communication runbook."
+    },
+    {
+      "id": "OBS-09",
+      "severity": "Medium",
+      "requirement": "Incidents get blameless post-mortems within about 48 hours using a standard template, stored in a searchable incident library.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Request recent post-mortems."
+    },
+    {
+      "id": "OBS-10",
+      "severity": "Medium",
+      "requirement": "Support tickets are categorized by root cause and reviewed regularly, with repeated causes turned into engineering work.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Ask for the categorization scheme and a recent review."
+    },
+    {
+      "id": "OBS-11",
+      "severity": "Low",
+      "requirement": "Session replay or equivalent UX telemetry is linked to errors, with sensitive fields masked.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Inspect replay configuration and masking rules."
+    },
+    {
+      "id": "OBS-12",
+      "severity": "Low",
+      "requirement": "Operators have an admin view of key metrics, recent errors, logs, and system health.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Check for an operations dashboard."
+    },
+    {
+      "id": "PLAT-01",
+      "severity": "High",
+      "requirement": "The workload fits the platform's documented limits (execution timeout, request/response size, concurrency, memory); long or large operations run on suitable compute.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "List the platform's limits; compare with the longest request durations, largest uploads, and peak concurrency."
+    },
+    {
+      "id": "PLAT-02",
+      "severity": "Medium",
+      "requirement": "Workloads are split by type: request/response on serverless or web instances; long jobs, queue workers, websockets, and cron on persistent compute.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Map workloads to where they run."
+    },
+    {
+      "id": "PLAT-03",
+      "severity": "Medium",
+      "requirement": "Production does not run on hobby or free tiers that lack required limits, SLAs, backups, or support.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Check plan levels for hosting, database, and critical SaaS."
+    },
+    {
+      "id": "PLAT-04",
+      "severity": "Medium",
+      "requirement": "Cloud costs are monitored with budgets and alerts; idle resources are cleaned up; instances are right-sized; egress is understood.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Review billing dashboards, budget alerts, and the resource inventory."
+    },
+    {
+      "id": "PLAT-05",
+      "severity": "Medium",
+      "requirement": "Data platform choice matches the data shape and workload, and lock-in or exit cost is documented.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Review the architecture decision record for the database."
+    },
+    {
+      "id": "PLAT-06",
+      "severity": "Medium",
+      "requirement": "The business knows its \"customer ceiling\": which enterprise requirements (SSO, SOC 2, data residency, VPC deployment, DPAs/BAAs) the current stack can and cannot meet.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Ask for the documented ceiling or compare the stack against a standard security questionnaire."
+    },
+    {
+      "id": "PLAT-07",
+      "severity": "Low",
+      "requirement": "Any self-hosted component has a named owner for patching, monitoring, backups, and uptime.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "List self-hosted components and their operational owners."
+    },
+    {
+      "id": "UX-01",
+      "severity": "High",
+      "requirement": "Every data-driven view has explicit loading, error, empty, and success states, and error boundaries prevent one failing component from blanking the page.",
+      "status": "UNVERIFIED",
+      "evidence": "Playwright wrong-password/offline behavior and core navigation pass; existing frontends have loading/error paths. Every route and every upstream outage state was not rendered and inspected.",
+      "scenario": "",
+      "fix": "Review components that fetch data; simulate slow, failing, and empty responses in staging."
+    },
+    {
+      "id": "UX-02",
+      "severity": "High",
+      "requirement": "Failed payments and other failed external actions show a clear message and a retry path; the UI never freezes or goes blank.",
+      "status": "UNVERIFIED",
+      "evidence": "Playwright wrong-password/offline behavior and core navigation pass; existing frontends have loading/error paths. Every route and every upstream outage state was not rendered and inspected.",
+      "scenario": "",
+      "fix": "Use test cards that decline; block an API in staging and observe the UI."
+    },
+    {
+      "id": "UX-03",
+      "severity": "Medium",
+      "requirement": "Core flows work at phone width, on slow networks, and on older devices/browsers; bundle size is monitored.",
+      "status": "UNVERIFIED",
+      "evidence": "Chromium Playwright covers 360px mobile navigation/offline login and desktop; axe login scans pass after contrast/ARIA/zoom fixes. No complete authenticated-view WCAG audit, old-browser/device matrix, screen-reader review or real-device tests.",
+      "scenario": "",
+      "fix": "Test at 360px width with network throttling; check bundle analysis output."
+    },
+    {
+      "id": "UX-04",
+      "severity": "High",
+      "requirement": "The app meets WCAG 2.x AA basics: full keyboard operability, labelled controls and images, correct ARIA usage, and 4.5:1 text contrast.",
+      "status": "UNVERIFIED",
+      "evidence": "Chromium Playwright covers 360px mobile navigation/offline login and desktop; axe login scans pass after contrast/ARIA/zoom fixes. No complete authenticated-view WCAG audit, old-browser/device matrix, screen-reader review or real-device tests.",
+      "scenario": "",
+      "fix": "Run an automated accessibility checker (axe, Lighthouse) on key pages; tab through core flows without a mouse; spot-check with a screen reader."
+    },
+    {
+      "id": "UX-05",
+      "severity": "Medium",
+      "requirement": "Dates, numbers, and currencies are locale-formatted, and scheduled communications use each user's stored timezone.",
+      "status": "FAIL",
+      "evidence": "server.ts uses a required office TZ behind proxy; attendance is intentionally office-time-based, but user-level communication timezone preferences are absent.",
+      "scenario": "A remote user receives scheduled notifications on office time and may misunderstand date boundaries.",
+      "fix": "Keep payroll in the configured office zone; add explicit user display/notification timezone preferences where remote users are supported."
+    },
+    {
+      "id": "UX-06",
+      "severity": "Low",
+      "requirement": "Essential product pages and flows exist: password reset, terms, privacy policy, helpful error and empty states.",
+      "status": "FAIL",
+      "evidence": "public/index.html and public/mobile/index.html have password recovery/login but no linked terms/privacy pages; no complete B2B contract set was found.",
+      "scenario": "A new customer signs up or submits employee data without accessible product-specific terms and privacy disclosures.",
+      "fix": "Have the owner/counsel approve documents based on actual data flows and link them in signup/login/help; do not fabricate legal guarantees."
+    },
+    {
+      "id": "PAY-01",
+      "severity": "Critical",
+      "requirement": "Checkout sessions are created server-side from server-side or provider-side prices (Price IDs); no client-supplied amount, currency, or discount is trusted.",
+      "status": "N/A",
+      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "PAY-02",
+      "severity": "Critical",
+      "requirement": "Access and entitlements are granted only after a verified payment webhook (with amount and product checked), never from the success redirect.",
+      "status": "N/A",
+      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "PAY-03",
+      "severity": "Critical",
+      "requirement": "Every incoming webhook (payments, auth provider, email provider, source control, others) has its signature verified against the raw body with the provider's SDK before processing.",
+      "status": "N/A",
+      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "PAY-04",
+      "severity": "High",
+      "requirement": "Webhook processing is idempotent: event IDs are persisted before processing, duplicates return 2xx without side effects, and stale events outside a replay window are rejected.",
+      "status": "N/A",
+      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "PAY-05",
+      "severity": "High",
+      "requirement": "A successful payment reliably triggers every downstream step (invoice, subscription, access, receipt, CRM), with retries and alerts when a step fails.",
+      "status": "N/A",
+      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "PAY-06",
+      "severity": "High",
+      "requirement": "Card data never touches application servers (hosted checkout, elements, or billing portal).",
+      "status": "N/A",
+      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "PAY-07",
+      "severity": "Medium",
+      "requirement": "Failed subscription payments trigger smart retries, a customer email sequence, and a grace period before cancellation.",
+      "status": "N/A",
+      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "PAY-08",
+      "severity": "Medium",
+      "requirement": "A product-specific refund policy is published and linked at checkout; dispute-rate alerts and a dispute evidence template exist.",
+      "status": "N/A",
+      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "PAY-09",
+      "severity": "Medium",
+      "requirement": "Sales-tax/VAT obligations are assessed by customer location, and tax is collected and filed where required.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Check tax settings in the payment provider and the existence of a nexus assessment."
+    },
+    {
+      "id": "PAY-10",
+      "severity": "Medium",
+      "requirement": "Metered or credit billing reads from a dedicated usage-event table that billing and analytics share.",
+      "status": "N/A",
+      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "PAY-11",
+      "severity": "Medium",
+      "requirement": "Webhook endpoints use non-guessable paths and, where supported, restrict source IPs to the provider's published ranges.",
+      "status": "N/A",
+      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "MAIL-01",
+      "severity": "High",
+      "requirement": "Transactional email is authenticated (SPF, DKIM, DMARC), sent from a domain or subdomain separate from marketing, and monitored for delivery, bounces, and complaints.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Check DNS records for the sending domains; inspect email provider dashboards and bounce/complaint webhooks."
+    },
+    {
+      "id": "PAY-12",
+      "severity": "Low",
+      "requirement": "International customers see local currency (and optionally purchasing-power-adjusted pricing).",
+      "status": "N/A",
+      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "LEGAL-01",
+      "severity": "High",
+      "requirement": "The privacy policy accurately reflects the data actually collected (including logs, analytics, device data) and every third party it flows to.",
+      "status": "UNVERIFIED",
+      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "scenario": "",
+      "fix": "Build a data inventory from the schema, logs, analytics SDKs, and integrations; compare it with the policy text."
+    },
+    {
+      "id": "LEGAL-02",
+      "severity": "High",
+      "requirement": "Required legal documents exist and are linked in the product: terms of service, privacy policy, refund policy; plus DPA and MSA/SLA for B2B.",
+      "status": "FAIL",
+      "evidence": "public/index.html and public/mobile/index.html have password recovery/login but no linked terms/privacy pages; no complete B2B contract set was found.",
+      "scenario": "A new customer signs up or submits employee data without accessible product-specific terms and privacy disclosures.",
+      "fix": "Have the owner/counsel approve documents based on actual data flows and link them in signup/login/help; do not fabricate legal guarantees."
+    },
+    {
+      "id": "LEGAL-03",
+      "severity": "High",
+      "requirement": "Users can export and delete their data on request, within the legally required deadline, and can opt out where required.",
+      "status": "UNVERIFIED",
+      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "scenario": "",
+      "fix": "Find the deletion/export mechanisms and test them in staging; confirm the documented response deadlines."
+    },
+    {
+      "id": "LEGAL-04",
+      "severity": "High",
+      "requirement": "Account deletion follows a documented cascade across all tables and systems (including analytics, logs, third parties, and backup expiry), with soft delete then scheduled hard delete.",
+      "status": "FAIL",
+      "evidence": "src/core/users.routes.ts deactivates accounts; no complete user-data cascade across employee files, messages, logs, backups and third parties exists.",
+      "scenario": "Deleting or disabling a login leaves personal records and uploads indefinitely without a tracked erasure decision.",
+      "fix": "Design a retention-aware export/erasure workflow with record mapping, legal holds, approval/audit, third-party tasks and backup expiry."
+    },
+    {
+      "id": "LEGAL-05",
+      "severity": "Medium",
+      "requirement": "A retention schedule reconciles legal retention requirements with deletion requests (anonymize versus retain), with an audit trail.",
+      "status": "UNVERIFIED",
+      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "scenario": "",
+      "fix": "Request the retention schedule; inspect how retained records are separated and expired."
+    },
+    {
+      "id": "LEGAL-06",
+      "severity": "Medium",
+      "requirement": "Consent for non-essential tracking is obtained in plain language before data flows to third parties.",
+      "status": "UNVERIFIED",
+      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "scenario": "",
+      "fix": "Load the site in a fresh browser and watch network requests before consent."
+    },
+    {
+      "id": "LEGAL-07",
+      "severity": "Critical",
+      "requirement": "If the product handles health data: PHI is encrypted at rest and in transit (including backups, logs, exports), every PHI access is audit-logged, and BAAs cover every vendor that can access PHI.",
+      "status": "UNVERIFIED",
+      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "scenario": "",
+      "fix": "Search logs and exports for PHI; review the encryption configuration and the BAA inventory against the vendor list."
+    },
+    {
+      "id": "LEGAL-08",
+      "severity": "High",
+      "requirement": "A breach response plan defines notification obligations and timelines by jurisdiction and regulation, owners, and evidence sources.",
+      "status": "UNVERIFIED",
+      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "scenario": "",
+      "fix": "Request the plan; confirm logging can answer scope questions."
+    },
+    {
+      "id": "LEGAL-09",
+      "severity": "Medium",
+      "requirement": "AI-generated content shown to users is disclosed or labeled where regulations (for example the EU AI Act) or app-store rules require.",
+      "status": "UNVERIFIED",
+      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "scenario": "",
+      "fix": "Review AI output surfaces for disclosure."
+    },
+    {
+      "id": "LEGAL-10",
+      "severity": "Medium",
+      "requirement": "If selling to enterprises: SOC 2 readiness evidence is being collected (access reviews, patch SLAs, restore tests, incident procedures, vendor management), ideally automated.",
+      "status": "UNVERIFIED",
+      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "scenario": "",
+      "fix": "Ask for the control inventory and evidence sources."
+    },
+    {
+      "id": "LEGAL-11",
+      "severity": "Low",
+      "requirement": "A recurring compliance review (for example quarterly) tracks regulatory changes for each jurisdiction where users live.",
+      "status": "UNVERIFIED",
+      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "scenario": "",
+      "fix": "Ask for the calendar and the last review notes."
+    },
+    {
+      "id": "LEGAL-12",
+      "severity": "Low",
+      "requirement": "Cyber liability insurance is in place or consciously declined, and platform liability terms are understood.",
+      "status": "UNVERIFIED",
+      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "scenario": "",
+      "fix": "Ask the business owner."
+    },
+    {
+      "id": "AIQ-01",
+      "severity": "High",
+      "requirement": "Every model response passes validation (schema, length, content rules) before it reaches users or downstream systems, with bounded retries and a graceful fallback.",
+      "status": "FAIL",
+      "evidence": "src/modules/ai/ai.routes.ts now validates provider schema, tool counts, argument sizes and reply length; no semantic content policy, bounded repair retry or evaluated fallback.",
+      "scenario": "A schema-valid hallucination or sensitive answer can still reach a user or generate a misleading business report.",
+      "fix": "Add domain/schema/content evaluation and safe fallback; keep policy checks outside the model and prevent unapproved tool writes."
+    },
+    {
+      "id": "AIQ-02",
+      "severity": "High",
+      "requirement": "Model calls have timeouts and a fallback path (alternate model or provider, cached response, or graceful message) when the provider is down or slow.",
+      "status": "UNVERIFIED",
+      "evidence": "AI calls now time out after 30 seconds and central 5xx is generic; actual provider outage UX, model alternatives and full-loop deadline behavior were not verified against a live/synthetic failing provider.",
+      "scenario": "",
+      "fix": "Simulate provider errors and timeouts in staging."
+    },
+    {
+      "id": "AIQ-03",
+      "severity": "Critical",
+      "requirement": "AI endpoints require authentication and enforce per-user rate limits, request-size limits, and token or spend caps by plan.",
+      "status": "FAIL",
+      "evidence": "AI route has auth, message bounds, ten requests/minute per tenant/user, tenant call quotas and an optional tenant token cap; no hard per-user daily/monthly spend allocation or atomic reservation exists.",
+      "scenario": "Concurrent requests can overshoot a shared optional token cap, especially on the unlimited/default tenant.",
+      "fix": "Reserve token/spend budgets atomically per user/tenant/plan before provider calls, settle actual usage, and set provider billing hard caps."
+    },
+    {
+      "id": "AIQ-04",
+      "severity": "High",
+      "requirement": "Provider accounts have billing limits and spend alerts configured.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Check provider dashboard settings (with the owner)."
+    },
+    {
+      "id": "AIQ-05",
+      "severity": "Medium",
+      "requirement": "An evaluation suite scores AI outputs against thresholds in CI, including a regression set built from real failures, and is used to compare prompts and models.",
+      "status": "FAIL",
+      "evidence": "tests/ai*.test.ts verify deterministic tool/API behavior; no scored model-output evaluation dataset or quality/cost canary gate exists.",
+      "scenario": "A prompt/model change can double cost or degrade answers while deterministic API tests still pass.",
+      "fix": "Create versioned synthetic/regression evaluation datasets with quality/safety/cost thresholds and controlled model comparisons before rollout."
+    },
+    {
+      "id": "AIQ-06",
+      "severity": "Medium",
+      "requirement": "Prompt or model changes are checked for cost impact before release, and canary releases are gated on quality metrics.",
+      "status": "FAIL",
+      "evidence": "tests/ai*.test.ts verify deterministic tool/API behavior; no scored model-output evaluation dataset or quality/cost canary gate exists.",
+      "scenario": "A prompt/model change can double cost or degrade answers while deterministic API tests still pass.",
+      "fix": "Create versioned synthetic/regression evaluation datasets with quality/safety/cost thresholds and controlled model comparisons before rollout."
+    },
+    {
+      "id": "AIQ-07",
+      "severity": "Medium",
+      "requirement": "Cost controls are in place where they fit: response or semantic caching, provider prompt caching, complexity-based model routing, batch processing for non-urgent work, and debouncing of interactive calls.",
+      "status": "FAIL",
+      "evidence": "AI chat calls are not response/semantic cached or routed by complexity; a single configured model handles requests.",
+      "scenario": "Repeated questions incur repeated provider spend and consume concurrency during spikes.",
+      "fix": "Measure workload first; cache only safe tenant/user-scoped results, use provider prompt caching and evaluate smaller-model routing without caching stale business facts."
+    },
+    {
+      "id": "AIQ-08",
+      "severity": "Medium",
+      "requirement": "AI token usage and cost are attributed per feature, user or tenant, and workflow, and reviewed against budgets regularly.",
+      "status": "UNVERIFIED",
+      "evidence": "src/modules/ai/ai-config.ts records tenant token totals and platform/quota.ts monthly calls; per-user/feature/workflow financial attribution and recurring budget review not established.",
+      "scenario": "",
+      "fix": "Look for usage logging with these dimensions and a recurring report."
+    },
+    {
+      "id": "AIQ-09",
+      "severity": "Low",
+      "requirement": "Multi-agent and memory designs are deliberate: orchestrator by default, memory limited to behavior-relevant facts, with retrieval tested.",
+      "status": "UNVERIFIED",
+      "evidence": "Assistant uses one bounded orchestrator and per-user saved conversations plus FTS retrieval; no long-term behavior-memory quality evaluation was performed.",
+      "scenario": "",
+      "fix": "Review the agent architecture documentation and memory store contents."
+    },
+    {
+      "id": "OPS-01",
+      "severity": "Medium",
+      "requirement": "Product analytics track core-feature usage events and cohort retention, not only total signups.",
+      "status": "FAIL",
+      "evidence": "src/core/analytics.routes.ts exposes operational business metrics, not product cohort retention/activation analysis.",
+      "scenario": "The team can see stock totals while missing that new customers stop using the app after onboarding.",
+      "fix": "Define privacy-conscious product events and cohort views with clear purpose, retention and access controls."
+    },
+    {
+      "id": "OPS-02",
+      "severity": "Medium",
+      "requirement": "An activation event is defined and measured (completion within the first session or day), with automated nudges for users who do not activate.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Find the activation definition, its tracking, and the nudge triggers."
+    },
+    {
+      "id": "OPS-03",
+      "severity": "Low",
+      "requirement": "Drop-off detection compares users against their own activity baseline and triggers personalized re-engagement.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Inspect lifecycle messaging rules."
+    },
+    {
+      "id": "OPS-04",
+      "severity": "Medium",
+      "requirement": "Support playbooks exist for each core feature, with defined automated, assisted, and incident tiers and human escalation for billing disputes and ambiguous reports.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Request the playbooks and escalation rules."
+    },
+    {
+      "id": "OPS-05",
+      "severity": "Medium",
+      "requirement": "Any AI support agent connected to production uses scoped, read-mostly access, logs every action, and cannot perform refunds, deletions, or account changes without human approval.",
+      "status": "N/A",
+      "evidence": "No autonomous support/refund agent. The interactive AI Assistant has separate risks under AISEC-03/07/08.",
+      "scenario": "",
+      "fix": "Reassess if this capability is introduced."
+    },
+    {
+      "id": "OPS-06",
+      "severity": "Low",
+      "requirement": "Onboarding delivers the core value quickly (templates or defaults) and discloses complexity progressively.",
+      "status": "UNVERIFIED",
+      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "scenario": "",
+      "fix": "Time a new-user run-through to first value."
+    }
+  ]
+}

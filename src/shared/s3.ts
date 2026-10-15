@@ -87,6 +87,8 @@ export class S3Client {
     const { host: _host, ...sendHeaders } = headers; // fetch sets Host itself
     return fetch(url, {
       method,
+      signal: AbortSignal.timeout(60_000),
+      redirect: 'error',
       headers: { ...sendHeaders, authorization, ...(body ? { 'content-type': 'application/octet-stream' } : {}) },
       body: body ? new Uint8Array(body) : undefined,
     });

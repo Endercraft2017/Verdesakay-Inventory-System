@@ -8,14 +8,10 @@
 import crypto from 'node:crypto';
 import { getSetting, setSetting } from './db';
 
-let cached: Buffer | null = null;
-
 function masterKey(): Buffer {
-  if (cached) return cached;
   const env = process.env.MAIL_SECRET_KEY || process.env.APP_SECRET;
   if (env) {
-    cached = crypto.createHash('sha256').update(env).digest();
-    return cached;
+    return crypto.createHash('sha256').update(env).digest();
   }
   let k = getSetting<string>('_secret_key');
   if (!k) {
@@ -25,8 +21,7 @@ function masterKey(): Buffer {
       console.warn('[crypto] No MAIL_SECRET_KEY set — using an auto-generated key stored in the database. Set MAIL_SECRET_KEY for stronger at-rest protection.');
     }
   }
-  cached = crypto.createHash('sha256').update(k).digest();
-  return cached;
+  return crypto.createHash('sha256').update(k).digest();
 }
 
 /** → "v1:<iv>:<tag>:<ciphertext>" (all base64). Empty in → empty out. */

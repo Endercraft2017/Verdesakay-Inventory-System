@@ -97,7 +97,7 @@
     orbit.id = 'v2-quick-orbit';
     orbit.className = 'v2-orbit';
     orbit.innerHTML =
-      '<div class="v2-orbit-menu" role="menu" aria-label="Quick actions"></div>' +
+      '<div class="v2-orbit-menu" role="group" aria-label="Quick actions"></div>' +
       '<button class="v2-orbit-handle" type="button" aria-expanded="false" aria-label="Open or move quick actions">' +
       '<span class="v2-orbit-grip" aria-hidden="true">⋮⋮</span><span class="v2-orbit-plus" aria-hidden="true">+</span></button>';
     document.body.appendChild(orbit);

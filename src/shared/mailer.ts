@@ -55,6 +55,10 @@ function buildTransport(): nodemailer.Transporter {
     host: s.smtp_host,
     port: s.smtp_port,
     secure: s.smtp_secure,
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 30_000,
+    requireTLS: !s.smtp_secure,
     auth: s.smtp_user ? { user: s.smtp_user, pass } : undefined,
   });
 }

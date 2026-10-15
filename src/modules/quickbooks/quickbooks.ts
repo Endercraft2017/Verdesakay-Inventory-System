@@ -98,6 +98,7 @@ async function tokenRequest(body: URLSearchParams): Promise<Tokens> {
     return { access_token: 'test-access', refresh_token: 'test-refresh-' + Date.now(), expires_at: Date.now() + 3_600_000 };
   }
   const res = await fetch(TOKEN_URL, {
+    signal: AbortSignal.timeout(30_000), redirect: 'error',
     method: 'POST',
     headers: {
       Authorization: 'Basic ' + Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64'),
@@ -161,6 +162,7 @@ async function qboRequest(method: 'GET' | 'POST', path: string, body?: unknown):
   const url = `${API_BASE}/v3/company/${realm}/${path}${path.includes('?') ? '&' : '?'}minorversion=73`;
   const send = (tok: string) => fetch(url, {
     method,
+    signal: AbortSignal.timeout(30_000), redirect: 'error',
     headers: { Authorization: `Bearer ${tok}`, Accept: 'application/json', 'Content-Type': 'application/json' },
     body: body != null ? JSON.stringify(body) : undefined,
   });

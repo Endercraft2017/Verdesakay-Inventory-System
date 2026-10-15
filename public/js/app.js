@@ -462,9 +462,7 @@ const App = (() => {
         const id = ov.querySelector('[data-f="id"]').value.trim();
         if (!id) { showErr('Enter your username or email.'); return false; }
         const r = await API.post('/auth/forgot-password', { identifier: id });
-        UI.toast(r.sent ? 'Check your email for the reset link.'
-          : (r.reason ? 'Could not send: ' + r.reason : 'If that account exists, a link is on its way.'),
-          r.sent ? 'success' : 'error');
+        UI.toast(r.message || 'If that account exists, a link is on its way.', 'success');
       },
     });
   }
