@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Email setup — Verdesakay</title>
+<style>body{font:16px/1.65 system-ui,sans-serif;max-width:850px;margin:40px auto;padding:0 20px;color:#18252a}h1,h2{line-height:1.25}table{border-collapse:collapse;width:100%;display:block;overflow:auto}th,td{text-align:left;border:1px solid #ccd5da;padding:10px}code{background:#eef2f4;padding:2px 4px}aside{background:#eef5fa;padding:16px;border-radius:8px}a{color:#075f9e}</style></head>
+<body><main>
+<h1>Set up your company’s email</h1>
+<p>Your company uses its own mailbox or SMTP provider. Email is disabled until an administrator configures it. Our platform’s notification account is separate from your company’s outgoing email.</p>
+<h2>Before you start</h2>
+<ul><li>You need the <strong>Manage users</strong> (<code>users.manage</code>) permission to configure email. Ask your company administrator if Settings is unavailable.</li><li>Your plan must include the Email module. If Email is missing, contact your system provider.</li><li>Have your provider’s SMTP host, port, username, app password or SMTP key, and authorized From address ready. A domain name alone does not provide email service.</li></ul>
+<h2>Configure and test</h2>
+<ol><li>Open <strong>Email</strong> in the right-hand tools rail, then <strong>Settings</strong>.</li>
+<li>Set <strong>Send email via</strong> to <strong>SMTP</strong>.</li>
+<li>Enter your From name and From email. The provider must permit sending from this address. Reply-to is optional.</li>
+<li>Enter the SMTP host, port, username, and SMTP password or key from your provider. For port <strong>587</strong>, leave SSL unchecked (STARTTLS). For port <strong>465</strong>, check SSL (implicit TLS).</li>
+<li>Enter an address you control under <strong>Send a test email to</strong>, then click <strong>Save &amp; test</strong>. This saves your settings and sends a real message.</li>
+<li>Confirm the message arrives; check spam as well. An accepted test means the provider accepted it, not guaranteed inbox delivery. Review <strong>Email → Sent log</strong> if needed.</li></ol>
+<p>Passwords are encrypted when stored and are never displayed again. Leave the password field blank on later edits to keep the existing password. Set transport to Off to disable sending. Sending requires the separate <code>mail.send</code> permission.</p>
+<h2>Provider reference</h2>
+<p>Confirm these settings with your provider; availability and authentication rules depend on your account.</p>
+<table><thead><tr><th>Provider</th><th>Host</th><th>Port / SSL</th><th>Credentials</th></tr></thead><tbody>
+<tr><td>Gmail / Google Workspace</td><td><code>smtp.gmail.com</code></td><td>587 / off</td><td>Full email address + Google app password (requires 2-Step Verification and account eligibility).</td></tr>
+<tr><td>Microsoft 365</td><td><code>smtp.office365.com</code></td><td>587 / off</td><td>Ask your administrator whether SMTP AUTH and a supported authentication method are available. This app uses SMTP username/password; OAuth-only accounts require another compatible relay.</td></tr>
+<tr><td>Brevo</td><td><code>smtp-relay.brevo.com</code></td><td>587 / off</td><td>SMTP login and SMTP key from Brevo, not the dashboard password or API key.</td></tr>
+<tr><td>Resend</td><td><code>smtp.resend.com</code></td><td>465 / on</td><td>Username <code>resend</code> + API key.</td></tr>
+<tr><td>SendGrid</td><td><code>smtp.sendgrid.net</code></td><td>587 / off</td><td>Username <code>apikey</code> + API key.</td></tr>
+<tr><td>Your mailbox host</td><td>Ask your provider</td><td>As instructed</td><td>Mailbox username and password or app password.</td></tr>
+</tbody></table>
+<h2>Sending from your own domain</h2>
+<p>Verify your sender or domain with your provider. Ask the person managing your domain’s DNS to add the provider’s SPF and DKIM records and configure DMARC. Do not create multiple SPF records; merge authorized senders as your provider instructs. Wait for verification before testing. Sending through an unrelated mailbox without domain authorization can lead to spam or rejection.</p>
+<h2>Troubleshooting</h2>
+<ul><li><strong>Email not configured:</strong> select SMTP and fill in the host and From address.</li><li><strong>Login rejected:</strong> check the SMTP username and key, app-password eligibility, and whether SMTP AUTH is allowed. Your usual account password may not work.</li><li><strong>Connection failed:</strong> confirm the host, port, SSL setting, and your provider’s network restrictions.</li><li><strong>Sender rejected:</strong> verify the From address/domain with your provider.</li><li><strong>Accepted but not received:</strong> check spam, provider delivery logs, domain authentication, and provider sending limits.</li></ul>
+<aside><h2>Want us to configure it?</h2><p>Contact your system provider and request <strong>assisted email setup</strong>. We will agree the scope and any one-time service fee before starting. Provider subscriptions and sending charges are separate.</p><p>Keep ownership of your mailbox/provider account. Share your company name, chosen provider, desired From address, and a test recipient. Coordinate domain verification with your DNS administrator. Do not send passwords or SMTP keys in email or chat; arrange secure credential entry with the operator.</p><p>Our operator can configure your company’s SMTP settings and send a test through the owner console. You retain access to your Email settings and can rotate your provider credentials afterward.</p></aside>
+</main></body></html>

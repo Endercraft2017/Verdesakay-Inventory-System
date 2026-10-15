@@ -386,7 +386,7 @@
            <label>Message</label><textarea id="em-body" placeholder="Write your email…" style="min-height:180px"></textarea>
            <div id="em-status" class="muted" style="font-size:12px;margin-top:6px"></div>`
         : `<div class="tool-note">You don't have permission to send email.${canConfig ? ' You can still configure the mailbox below.' : ''}</div>`,
-      footHTML: `${canConfig ? `<button class="btn secondary" id="em-config">${UI.icon('settings', 15)} Settings</button>
+      footHTML: `<a class="btn secondary" href="/guides/email-setup.html" target="_blank" rel="noopener">Setup guide</a> ${canConfig ? `<button class="btn secondary" id="em-config">${UI.icon('settings', 15)} Settings</button>
         <button class="btn secondary" id="em-log">${UI.icon('history', 15)} Sent log</button>` : ''}
         ${canSend ? `<button class="btn" id="em-send">${UI.icon('send', 16)} Send</button>` : ''}`,
       onOpen: (el) => {
@@ -419,7 +419,7 @@
     UI.modal({
       title: 'Email settings',
       size: 'lg',
-      bodyHTML: `<div class="form-grid">
+      bodyHTML: `<p><a href="/guides/email-setup.html" target="_blank" rel="noopener">Read the SMTP setup guide</a>. For assisted setup, contact your system provider for a quote.</p><div class="form-grid">
         <div class="form-field span2"><div class="field-label"><label>Send email via</label></div>
           <select data-f="transport">
             <option value="off" ${s.transport === 'off' ? 'selected' : ''}>Off — email disabled</option>
@@ -448,7 +448,7 @@
             <button type="button" class="btn secondary" id="ms-test">Save &amp; test</button></div>
           <div id="ms-teststatus" class="muted" style="font-size:12px;margin-top:4px"></div></div>
       </div>
-      <p class="muted" style="font-size:12px;margin:10px 0 0">Gmail and Microsoft 365 need a 2-factor <strong>app password</strong>, not your normal login password.</p>`,
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Gmail requires an <strong>app password</strong>. For Microsoft 365, ask your administrator whether SMTP AUTH is permitted; an app password may not be supported.</p>`,
       confirmText: 'Save',
       onOpen: (ov) => {
         ov.querySelector('#ms-test').onclick = async () => {

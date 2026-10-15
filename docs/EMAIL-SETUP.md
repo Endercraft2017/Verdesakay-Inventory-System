@@ -121,3 +121,21 @@ domain registrar's DNS panel. Send a test to a Gmail address and use
 
 The **log** under Email → shows every attempt with its status (`sent` / `failed`)
 and the provider's error text, which is the fastest way to see what a receiver rejected.
+
+## Tenant-visible guide and assisted setup
+
+The in-app guide is served at `/guides/email-setup.html` and linked from the tenant
+Email drawer and Email settings. It is public, contains no credentials, and can
+be shared with a company's email/DNS administrator.
+
+An authenticated operator can open `/_platform`, select a workspace, and use
+**Tenant email / assisted setup** to read/update that tenant's SMTP configuration
+or **Save & send test**. Blank password preserves the saved secret; the explicit
+clear checkbox removes it. Settings changes and test outcomes record the operator
+in the provisioning log, without credentials. Tests also appear in the tenant's
+mail log without attributing them to a tenant user.
+
+Agree any assisted-setup fee separately before service. This feature does not
+invoice or charge customers. Tenant provider costs remain separate. Never ask
+customers to send credentials over email/chat; arrange secure entry. Platform
+Brevo credentials must not be copied into tenant settings.

@@ -152,3 +152,75 @@ describe('logout', () => {
     expect((await ctx.api.get('/_platform/api/me').set({ Authorization: `Bearer ${tok}` })).status).toBe(401);
   });
 });
+
+describe('operator-assisted tenant SMTP', () => {
+  const endpoint = '/_platform/api/tenants/smtpco/mail';
+  const settings = {
+    transport: 'smtp', from_email: 'office@example.com', smtp_host: 'smtp.example.com',
+    smtp_port: 587, smtp_secure: false, smtp_user: 'office@example.com', smtp_pass: 'smtp-secret',
+  };
+  it('isolates settings, masks/encrypts secrets, and audits the operator', async () => {
+    for (const slug of ['smtpco', 'smtpother']) {
+      expect((await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({
+        slug, name: slug, admin_username: 'owner', admin_password: 'ownerpass1', plan: 'complete',
+      })).status).toBe(201);
+    }
+    expect((await ctx.api.put(endpoint).set(opHdr()).send(settings)).status).toBe(200);
+    const saved = await ctx.api.get(endpoint).set(opHdr());
+    expect(saved.body).toMatchObject({ ready: true, has_password: true, smtp_host: settings.smtp_host });
+    expect(saved.body).not.toHaveProperty('smtp_pass');
+    const db = await import('../src/shared/db');
+    const stored = db.withTenant('smtpco', () => db.getSetting<string>('mail_smtp_pass'));
+    expect(stored).toBeTruthy();
+    expect(stored).not.toContain('smtp-secret');
+    const other = await ctx.api.get('/_platform/api/tenants/smtpother/mail').set(opHdr());
+    expect(other.body).toMatchObject({ transport: 'off', has_password: false });
+    expect(db.getSetting('mail_settings')).toBeUndefined();
+    const detail = await ctx.api.get('/_platform/api/tenants/smtpco').set(opHdr());
+    expect(detail.body.log.some((e: { action: string; detail: string }) => e.action === 'email-settings' && e.detail.includes('owner'))).toBe(true);
+    expect(JSON.stringify(detail.body.log)).not.toContain('smtp-secret');
+  });
+
+  it('preserves a blank UI password, supports explicit clearing, and validates updates', async () => {
+    const { smtp_pass, ...withoutPassword } = settings;
+    expect((await ctx.api.put(endpoint).set(opHdr()).send(withoutPassword)).status).toBe(200);
+    expect((await ctx.api.get(endpoint).set(opHdr())).body.has_password).toBe(true);
+    expect((await ctx.api.put(endpoint).set(opHdr()).send({ ...withoutPassword, smtp_port: 70000 })).status).toBe(400);
+    expect((await ctx.api.put(endpoint).set(opHdr()).send({ ...withoutPassword, smtp_host: '' })).status).toBe(400);
+    expect((await ctx.api.put(endpoint).set(opHdr()).send({ ...withoutPassword, smtp_pass: '' })).status).toBe(200);
+    expect((await ctx.api.get(endpoint).set(opHdr())).body.has_password).toBe(false);
+  });
+
+  it('tests inside the selected tenant and does not use the operator as a tenant user', async () => {
+    await ctx.api.put(endpoint).set(opHdr()).send(settings);
+    expect((await ctx.api.post(endpoint + '/test').set(opHdr()).send({ to: 'invalid' })).status).toBe(400);
+    expect((await ctx.api.post(endpoint + '/test').set(opHdr()).send({ to: 'recipient@example.com' })).status).toBe(200);
+    const db = await import('../src/shared/db');
+    const logs = db.withTenant('smtpco', () => db.queryAll<{ sent_by: number | null; status: string }>('SELECT sent_by, status FROM mail_log'));
+    expect(logs).toEqual([expect.objectContaining({ sent_by: null, status: 'sent' })]);
+    expect(db.withTenant('smtpother', () => db.queryAll('SELECT * FROM mail_log'))).toHaveLength(0);
+    await ctx.api.put(endpoint).set(opHdr()).send({ transport: 'off' });
+    expect((await ctx.api.post(endpoint + '/test').set(opHdr()).send({ to: 'recipient@example.com' })).status).toBe(400);
+  });
+
+  it('requires operator auth and refuses unknown, purged and tenant-host requests', async () => {
+    const tenantToken = await login(ctx.api);
+    for (const method of ['get', 'put', 'post'] as const) {
+      const url = method === 'post' ? endpoint + '/test' : endpoint;
+      expect((await ctx.api[method](url)).status).toBe(401);
+      expect((await ctx.api[method](url).set({ Authorization: `Bearer ${tenantToken}` })).status).toBe(401);
+      expect((await ctx.api[method](url).set(opHdr()).set(asTenant('smtpco'))).status).toBe(404);
+    }
+    expect((await ctx.api.get('/_platform/api/tenants/missing/mail').set(opHdr())).status).toBe(404);
+    await ctx.api.post('/_platform/api/tenants/smtpother/purge').set(opHdr()).send({ confirm: 'smtpother' });
+    expect((await ctx.api.get('/_platform/api/tenants/smtpother/mail').set(opHdr())).status).toBe(404);
+  });
+
+  it('serves the setup guide directly to tenants without a GitHub account', async () => {
+    const r = await ctx.api.get('/guides/email-setup.html').set(asTenant('smtpco'));
+    expect(r.status).toBe(200);
+    expect(r.headers['content-type']).toContain('text/html');
+    expect(r.text).toContain('Configure and test');
+    expect(r.text).toContain('assisted email setup');
+  });
+});
