@@ -8,6 +8,7 @@
  * Everything this module stores lives in node-local `sync_*` tables, which never replicate.
  */
 import type { DatabaseSync, Session } from 'node:sqlite';
+import { configureFormHistoryConnection } from '../shared/form-history-context';
 import { installClockOverride } from './clock';
 
 export type SyncRole = 'cloud' | 'node';
@@ -323,6 +324,7 @@ export function syncConfigOf(conn: DatabaseSync): SyncConfig | null {
 /** Give a DB its sync role. Re-running with a new role/number re-identifies it — that is how
  *  a snapshot of the cloud becomes node N at enrolment (unconfirmed commands are dropped). */
 export function enableSync(conn: DatabaseSync, cfg: SyncConfig): SyncConfig {
+  configureFormHistoryConnection(conn);
   if (cfg.role === 'cloud' && cfg.nodeNo !== 0) throw new Error('The cloud is node 0.');
   if (cfg.role === 'node' && !(Number.isInteger(cfg.nodeNo) && cfg.nodeNo >= 1 && cfg.nodeNo <= MAX_NODE_NO)) {
     throw new Error(`A node number must be 1–${MAX_NODE_NO}.`);

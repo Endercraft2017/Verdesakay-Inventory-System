@@ -1787,3 +1787,22 @@ select option, select optgroup { background-color: var(--surface); color: var(--
 .validation-field-error { color: var(--danger); font-size: 12px; margin: 6px 0 0; }
 [aria-invalid="true"] { border-color: var(--danger); }
 .validation-error-link { border: 0; background: transparent; padding: 4px 0; color: inherit; font: inherit; text-align: left; text-decoration: underline; cursor: pointer; }
+.form-card-item { position: relative; min-width: 0; }
+.form-card-item .form-card { padding-right: 42px; height: 100%; }
+.form-favorite { position: absolute; right: 8px; top: 8px; font-size: 24px; background: var(--surface); }
+.form-favorite[aria-pressed="true"] { color: var(--accent); }
+.form-view-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.form-view-tools select { width: min(240px,100%); }
+.form-column-choice { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.form-column-choice input { width: auto; }
+.form-history-entry { padding: 14px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.form-history-entry .tool-row span { overflow-wrap: anywhere; min-width: 0; }
+.form-history-entry table { display: block; overflow-x: auto; max-width: 100%; }
+#pd-save-state { font-weight: 600; }
+#pd-later-cutoffs button { margin: 4px; }
+.modal [data-validation-field] label { overflow-wrap: anywhere; }
+
+.form-history-entry .tool-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 1fr); gap: 12px; }
+@media (max-width: 700px) {
+  .form-history-entry .tool-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+}

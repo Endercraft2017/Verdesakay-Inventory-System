@@ -314,7 +314,7 @@ App.register('form-builder', async (view, filter) => {
       <thead><tr><th>Name</th><th>Slug</th><th>Prefix</th><th>Fields</th><th>Records</th><th></th></tr></thead>
       <tbody>${forms.map((f) => `
         <tr class="clickable" data-open="${f.id}">
-          <td><strong>${UI.esc(f.name)}</strong></td>
+          <td><strong>${UI.esc(f.name)}</strong> <span class="muted">v${f.version || 1}${f.archived_at ? ' · Archived' : ''}</span></td>
           <td><span class="mono muted">${UI.esc(f.slug)}</span></td>
           <td><span class="mono">${UI.esc(f.number_prefix)}-#####</span></td>
           <td>${f.fields.length} field${f.fields.length !== 1 ? 's' : ''}</td>
@@ -323,13 +323,14 @@ App.register('form-builder', async (view, filter) => {
             <button class="btn secondary small" data-records="${f.id}" title="View Records">${UI.icon('forms', 14)} Records</button>
             <button class="btn secondary small" data-tpl="${f.id}" title="Manage print templates">${UI.icon('file', 14)} Templates</button>
             <button class="icon-btn" data-edit="${f.id}" title="Edit">${UI.icon('edit')}</button>
-            <button class="icon-btn danger" data-del="${f.id}" title="Delete">${UI.icon('trash')}</button>
+            <button class="btn secondary small" data-versions="${f.id}">Versions</button><button class="btn secondary small" data-del="${f.id}" title="${f.archived_at ? 'Restore' : 'Archive'} form">${f.archived_at ? 'Restore' : 'Archive'}</button>
           </td>
         </tr>`).join('')}
       </tbody></table>`;
 
     el.querySelectorAll('[data-edit]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); openForm(b.dataset.edit, forms); });
+    el.querySelectorAll('[data-versions]').forEach(button => button.onclick = event => { event.stopPropagation(); DataForms.definitionHistory(forms.find(form => String(form.id) === button.dataset.versions)).catch(error => UI.toast(error.message, 'error')); });
     el.querySelectorAll('[data-del]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); delForm(b.dataset.del, forms); });
     el.querySelectorAll('[data-records]').forEach((b) =>
@@ -351,14 +352,10 @@ App.register('form-builder', async (view, filter) => {
   async function delForm(id, forms) {
     const form = forms.find((f) => String(f.id) === String(id));
     if (!form) return;
-    const hasRecords = form.record_count > 0;
-    const msg = hasRecords
-      ? `Delete "${form.name}"? This will also delete all ${form.record_count} record(s). Cannot be undone.`
-      : `Delete "${form.name}"? Cannot be undone.`;
-    if (!await UI.confirmDialog(msg, 'Delete')) return;
-    await API.del('/form-definitions/' + id);
-    UI.toast('Form deleted');
-    loadForms();
+    UI.modal({title: `${form.archived_at ? 'Restore' : 'Archive'} ${form.name}`,bodyHTML:`<p>${form.archived_at ? 'This form will accept new records again.' : 'New records and imports will stop. Existing records, versions and print layouts stay available. Authorized corrections require a reason.'}</p><label for="fb-archive-reason">Reason (optional)</label><textarea id="fb-archive-reason" maxlength="1000"></textarea>`,confirmText:form.archived_at?'Restore form':'Archive form',onConfirm:async overlay=>{
+      await API.put('/form-definitions/'+form.id+'/archive',{archived:!form.archived_at,reason:overlay.querySelector('textarea').value});
+      UI.toast(form.archived_at?'Form restored':'Form archived'); await loadForms();
+    }});
   }
 
   // ── Print template link (Design/Edit print template) ────────────────────────
@@ -536,6 +533,7 @@ App.register('form-builder', async (view, filter) => {
             <div class="fb-section-title"><h3>Form details</h3><span class="fb-scope">${UI.esc(FORM_SCOPE_LABELS[scope])}</span></div>
             <label for="fb-name">Form name *</label>
             <input id="fb-name" aria-required="true" maxlength="120" data-f="name" value="${UI.esc(seed ? seed.name : '')}" placeholder="e.g. Leave Request" />
+            <label for="fb-version-reason">Reason for this form change${existing?.archived_at ? ' *' : ' (optional)'}</label><textarea ${existing?.archived_at ? 'aria-required="true"' : ''} id="fb-version-reason" data-f="change_reason" maxlength="1000" rows="2"></textarea>
             <details class="fb-advanced"><summary>Advanced settings ${UI.helpIcon('The form ID is generated from its name. Change the ID, numbering prefix, or icon only when needed.')}</summary>
               <div class="fb-settings-grid">
                 <div><label for="fb-slug">Form ID ${UI.helpIcon('A unique ID using lowercase letters, numbers, and underscores. Templates and workflows may refer to this ID, so take care when changing an existing form.')}</label><input id="fb-slug" aria-required="true" maxlength="60" data-f="slug" value="${UI.esc(seed ? seed.slug : '')}" placeholder="leave_request" class="mono" /></div>
@@ -622,6 +620,7 @@ App.register('form-builder', async (view, filter) => {
         const f = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
         const errors = [];
         const addError = (selector, message, isValid) => errors.push({ control: ov.querySelector(selector), message, isValid });
+        if (existing?.archived_at && !f('change_reason')) addError('[data-f=change_reason]', 'A reason is required for changes to this archived form.');
         if (!f('name')) addError('[data-f="name"]', 'Form name is required');
         if (!f('slug') || !/^[a-z0-9_]+$/.test(f('slug'))) addError('[data-f="slug"]', 'Form ID must use lowercase letters, numbers, or underscores', () => /^[a-z0-9_]+$/.test(f('slug')));
         if (!f('number_prefix') || !/^[A-Z0-9]+$/.test(f('number_prefix'))) addError('[data-f="number_prefix"]', 'Prefix must be uppercase letters or numbers (e.g. FM, LR)', () => /^[A-Z0-9]+$/.test(f('number_prefix')));
@@ -634,6 +633,7 @@ App.register('form-builder', async (view, filter) => {
         if (!FormValidation.show(ov, errors, ov.querySelector('[data-modal-error]'))) return false;
 
         const body = {
+          expected_version: existing?.version, change_reason: ov.querySelector('[data-f=change_reason]').value.trim(),
           name: f('name'), slug: f('slug'),
           number_prefix: f('number_prefix'), icon: f('icon') || 'file',
           fields, actions, scope: scope === 'general' ? null : scope,

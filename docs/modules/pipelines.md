@@ -1044,3 +1044,27 @@ and component stock/return rules. Parent built-unit stock is not a component sup
 The remote atomic Products In endpoint preserves legacy receipt-request compatibility.
 
 Mobile build-state integration (2026-10-15): approval review and revision include job-order build state; RTS shows it and groups only matching states; releasing uses fulfillment-specific availability and blocks cross-state serial scans. PWA cache v98. Mobile transfer/adjustment variant selection and shortfall creation remain follow-ups.
+
+## Data Forms lifecycle and payroll corrections
+
+1. Documents → Data Forms is the shared hub. Section shortcuts retain scope permissions.
+   Personal favorites/recents, selected columns and named filters are stored per user.
+2. Definition changes create schema versions; each new record binds to its creation version.
+   Existing entries render and validate against their original version. Record changes,
+   approvals, payment and recalculations append revisions. Expected version/revision guards
+   reject stale editors. Migrated historical schemas have only the migration baseline.
+3. Archive retires a definition without deleting entries or linked printing layouts.
+   New records/imports/generation are blocked; authorized corrections require a reason and
+   keep revisions. Restore permits new entries. Definitions with records cannot be deleted.
+4. HR previews employee deduction overrides without persistence, then explicitly saves.
+   Active-form reasons are optional; archived corrections require one. Before/after amounts
+   and modes, actor/name/date and reason are retained. Paid slips reject editing. Printing
+   uses the final amounts with normal labels; employer contributions remain independent.
+5. Changing an earlier cutoff flags later same-month cutoffs for review. Regenerate unpaid
+   later cutoffs in chronological order: automatic reconciliation uses actual earlier
+   deductions and manual later amounts remain. Paid cutoffs stay locked.
+6. CSV preview returns rejected source lines, explanations and a downloadable recovery CSV.
+   One invalid split-rate row excludes all rows for that employee. Partial imports require
+   explicit consent; correction/reimport preserves the source structure and duplicate guard.
+7. Offline commands capture history with the shared command clock; changeset application
+   suppresses history triggers because the recorded history is already in the effects.

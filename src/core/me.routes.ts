@@ -20,6 +20,7 @@ import { approverDepartmentIds, cutoffIsPaid, notifyApprovers } from '../modules
 import { normalizeRequest, leaveDates, scheduledLeaveDates, overlappingLeave, leaveWarnings, attachLeave, leavePreview, requestEmployeeJoin } from '../modules/hr/request-data';
 import { now, reRunOfRecordedCommand, siteDecisionStands } from '../shared/sync-context';
 
+import { definitionForRecord } from './data-forms/history';
 import { REQUEST_SLUGS } from './data-forms/request-types';
 // Compatibility export for callers of the self-service API.
 export { REQUEST_SLUGS } from './data-forms/request-types';
@@ -252,7 +253,7 @@ router.get('/schedule', (req, res) => {
 router.get('/request-types', (_req, res) => {
   const rows = queryAll<FormDefinition>(
     `SELECT id, name, slug, icon, fields FROM form_definitions
-     WHERE slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
+     WHERE archived_at IS NULL AND slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
      ORDER BY name`,
     ...REQUEST_SLUGS
   );
@@ -423,10 +424,10 @@ router.get('/approvals', (req, res) => {
 router.post('/approvals/requests/:id/decide', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const rec = queryOne<{
-    id: number; status: string; created_by: number | null; data: string; slug: string; form_name: string;
+    id: number; form_def_id: number; definition_version: number; status: string; created_by: number | null; data: string; slug: string; form_name: string;
     department_id: number | null; employee_id: number | null; employee_user_id: number | null; leave_days_per_year: number | null; leave_days_used: number | null;
   }>(
-    `SELECT fr.id, fr.status, fr.created_by, fr.data, fd.slug, fd.name AS form_name,
+    `SELECT fr.id,fr.form_def_id,fr.definition_version, fr.status, fr.created_by, fr.data, fd.slug, fd.name AS form_name,
             e.department_id, e.id AS employee_id, e.user_id AS employee_user_id, e.leave_days_per_year, e.leave_days_used
      FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id
@@ -457,7 +458,7 @@ router.post('/approvals/requests/:id/decide', syncClass('claim'), (req, res) => 
   let warnings: string[] = [];
   if (decision === 'approved') {
     const fields = queryOne<{ fields: string }>('SELECT fd.fields FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?', id)?.fields;
-    data = normalizeRequest(rec.slug, parse(fields || '[]') as any, data, Number(rec.employee_id));
+    data = normalizeRequest(rec.slug, (definitionForRecord(rec)?.fields ?? parse(fields || '[]')) as any, data, Number(rec.employee_id));
     if (rec.slug === 'leave_request') warnings = leaveWarnings(Number(rec.employee_id), data, id);
   }
 

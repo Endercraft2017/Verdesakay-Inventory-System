@@ -12,7 +12,7 @@ import {
   updateFormRecordSchema,
   globalVariableSchema,
 } from '../../shared/validation';
-import { parsePayrollSummaryCsv } from '../../modules/payroll/hr-payroll-import';
+import { parsePayrollSummaryCsv, reviewPayrollSummaryCsv } from '../../modules/payroll/hr-payroll-import';
 import { PAYROLL_FORM_SLUG } from '../../modules/payroll/pay-access';
 import { runFormActions } from '../form-actions';
 import { cutoffIsPaid, notifyApprovers } from '../../modules/hr/workflow';
@@ -24,23 +24,30 @@ import { syncClass } from '../../sync';
 import { syncUpload } from '../../sync/files';
 import { templateRevision, checkTemplateRevision, templateWrite, checkStudioPublish, studioPublished, migrateStudioDocument } from '../doc-template-version';
 
+import { now } from '../../shared/sync-context';
 const router = Router();
 router.use(requireAuth);
 
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
-import { parseFields, parseActions, parseData, nextRecordNumber, canManageScope, canAccessRecords, FORM_SCOPES, ANY_FORMS_MANAGE, validateRequiredCheckboxes } from './policy';
+import { parseFields, parseActions, parseData, nextRecordNumber, canManageScope, canAccessRecords, FORM_SCOPES, ANY_FORMS_MANAGE, validateRequiredCheckboxes, hasFormScopeAccess } from './policy';
+function visibleDefinition(req:Request,row:FormDefinition) {
+  const result={...row} as FormDefinition & {version_reason?:string;updated_by?:number;archived_by?:number};
+  const allowed=row.slug===PAYROLL_FORM_SLUG?req.user!.permissions.includes('payroll.view'):hasFormScopeAccess(req.user!.permissions,row.scope);
+  if(!allowed){delete result.version_reason;delete result.archive_reason;delete result.updated_by;delete result.archived_by;}
+  return result;
+}
 // ─── Form Definitions ────────────────────────────────────────────────────────
 
 // GET /api/form-definitions — list all (any logged-in user)
-router.get('/form-definitions', (_req, res) => {
+router.get('/form-definitions', (req, res) => {
   const rows = queryAll<FormDefinition & { record_count: number }>(
     `SELECT fd.*,
        (SELECT COUNT(*) FROM form_records fr WHERE fr.form_def_id = fd.id) AS record_count
      FROM form_definitions fd
      ORDER BY fd.name`
   );
-  res.json(rows.map((r) => ({ ...r, fields: parseFields(r.fields as string), actions: parseActions(r.actions as string) })));
+  res.json(rows.map((r) => ({ ...visibleDefinition(req,r), fields: parseFields(r.fields as string), actions: parseActions(r.actions as string) })));
 });
 
 // GET /api/form-definitions/:id — detail with parsed fields
@@ -50,7 +57,23 @@ router.get('/form-definitions/:id', (req, res) => {
     Number(req.params.id)
   );
   if (!row) { res.status(404).json({ error: 'Form not found' }); return; }
-  res.json({ ...row, fields: parseFields(row.fields as string), actions: parseActions(row.actions as string) });
+  res.json({ ...visibleDefinition(req,row), fields: parseFields(row.fields as string), actions: parseActions(row.actions as string) });
+});
+
+router.get('/form-definitions/:id/versions', (req, res) => {
+  const form = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id=?', Number(req.params.id));
+  if (!form) { res.status(404).json({error:'Form not found'}); return; }
+  if (!canAccessRecords(req,res,form,false)) return;
+  res.json(queryAll<{definition:string}>('SELECT v.*,u.full_name AS created_by_name FROM form_definition_versions v LEFT JOIN users u ON u.id=v.created_by WHERE v.form_id=? ORDER BY v.version DESC',form.id).map(v=>({...v,definition:JSON.parse(v.definition)})));
+});
+router.put('/form-definitions/:id/archive', syncClass('claim'), (req, res) => {
+  const form=queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id=?',Number(req.params.id));
+  if(!form){res.status(404).json({error:'Form not found'});return;}
+  if(!canManageScope(req,res,form.scope))return;
+  if(form.slug===PAYROLL_FORM_SLUG&&!req.user!.permissions.includes('payroll.manage')){res.status(403).json({error:'Payroll management is required to archive or restore the payroll form.'});return;}
+  const input=parseBody(z.object({archived:z.boolean(),reason:z.string().trim().max(1000).optional()}),req.body);
+  run('UPDATE form_definitions SET archived_at=?,archived_by=?,archive_reason=?,updated_at=? WHERE id=?',input.archived?now().toISOString():null,input.archived?req.user!.id:null,input.archived?input.reason||null:null,now().toISOString(),form.id);
+  res.json({ok:true,archived:input.archived});
 });
 
 // POST /api/form-definitions — create (forms.manage.<scope>)
@@ -59,8 +82,8 @@ router.post('/form-definitions', syncClass('claim'), (req, res) => {
   if (!canManageScope(req, res, input.scope)) return;
   const created=templateWrite(()=>{
   const info = run(
-    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, actions, scope, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO form_definitions (name, slug, number_prefix, icon, fields, actions, scope, created_by, version_reason)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     input.name,
     input.slug,
     input.number_prefix,
@@ -68,7 +91,7 @@ router.post('/form-definitions', syncClass('claim'), (req, res) => {
     JSON.stringify(input.fields),
     JSON.stringify(input.actions),
     input.scope,
-    req.user!.id
+    req.user!.id, input.change_reason || null
   );
   const tpl=run("INSERT INTO doc_templates(name,type,body,created_by) VALUES(?,'generic',?,?)",input.name+' Template',memoTemplateBody(input.name,input.fields),req.user!.id);
   run('UPDATE form_definitions SET template_id=? WHERE id=?',tpl.lastInsertRowid,info.lastInsertRowid);
@@ -81,14 +104,18 @@ router.post('/form-definitions', syncClass('claim'), (req, res) => {
 // the new scope too if the request is moving it into a different section)
 router.put('/form-definitions/:id', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
-  const existing = queryOne<FormDefinition>('SELECT scope FROM form_definitions WHERE id = ?', id);
+  const existing = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', id);
   if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
   const input = parseBody(formDefinitionSchema, req.body);
   if (!canManageScope(req, res, existing.scope)) return;
+  if ((existing.slug === PAYROLL_FORM_SLUG || REQUEST_SLUGS.includes(existing.slug)) && input.slug !== existing.slug) { res.status(400).json({error:'The identity of a payroll or employee-request form cannot be changed.'});return; }
+  if (existing.slug === PAYROLL_FORM_SLUG && input.scope !== existing.scope) {res.status(400).json({error:'The payroll form must remain in its original section.'});return;}
   if (input.scope !== existing.scope && !canManageScope(req, res, input.scope)) return;
+  if (existing.archived_at && !input.change_reason?.trim()) { res.status(400).json({error:'A reason is required when changing an archived form.'});return; }
+  if (input.expected_version != null && input.expected_version !== existing.version) { res.status(409).json({ error: 'This form changed. Reload its latest version before saving.' }); return; }
   run(
     `UPDATE form_definitions
-     SET name = ?, slug = ?, number_prefix = ?, icon = ?, fields = ?, actions = ?, scope = ?, updated_at = datetime('now')
+     SET name = ?, slug = ?, number_prefix = ?, icon = ?, fields = ?, actions = ?, scope = ?, updated_at = ?, updated_by = ?, version_reason = ?
      WHERE id = ?`,
     input.name,
     input.slug,
@@ -96,7 +123,7 @@ router.put('/form-definitions/:id', syncClass('claim'), (req, res) => {
     input.icon,
     JSON.stringify(input.fields),
     JSON.stringify(input.actions),
-    input.scope,
+    input.scope, now().toISOString(), req.user!.id, input.change_reason || null,
     id
   );
   res.json({ ok: true });
@@ -132,7 +159,7 @@ router.delete('/form-definitions/:id/templates/:templateId',syncClass('claim'),(
 // update above since this only needs the id, not a resend of every field.
 router.put('/form-definitions/:id/template', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
-  const existing = queryOne<FormDefinition>('SELECT scope FROM form_definitions WHERE id = ?', id);
+  const existing = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', id);
   if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
   if (!canManageScope(req, res, existing.scope)) return;
   const input = parseBody(linkFormTemplateSchema, req.body);
@@ -190,12 +217,13 @@ router.put('/form-definitions/:id/template-body', syncClass('claim'), (req, res)
   if (result) res.status(result.status).json({ id: result.id, revision: result.revision });
 });
 
-// DELETE /api/form-definitions/:id — delete + cascades records (forms.manage.<scope> for its scope)
+// DELETE /api/form-definitions/:id — permanent deletion only when empty (forms.manage.<scope> for its scope)
 router.delete('/form-definitions/:id', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
-  const existing = queryOne<FormDefinition>('SELECT scope FROM form_definitions WHERE id = ?', id);
+  const existing = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', id);
   if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
   if (!canManageScope(req, res, existing.scope)) return;
+  if (queryOne<{n:number}>('SELECT COUNT(*) AS n FROM form_records WHERE form_def_id=?', id)!.n) { res.status(409).json({error:'Archive this form to preserve its records and layouts.'}); return; }
   run('DELETE FROM form_definitions WHERE id = ?', id);
   res.json({ ok: true });
 });
@@ -205,6 +233,7 @@ router.delete('/form-definitions/:id', syncClass('claim'), (req, res) => {
 router.post('/form-definitions/:id/import', requirePermission('payroll.manage'), syncClass('claim'), syncUpload(csvUpload.single('file')), (req, res) => {
   const form = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', Number(req.params.id));
   if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
+  if (form.archived_at) { res.status(409).json({error:'This form is archived. Restore it before importing records.'}); return; }
   if (form.slug !== 'hr_payroll') {
     res.status(400).json({ error: 'CSV import is only available for the HR Payroll form' });
     return;
@@ -214,8 +243,9 @@ router.post('/form-definitions/:id/import', requirePermission('payroll.manage'),
   const period = typeof req.body?.period === 'string' ? req.body.period.trim() : '';
   if (!period) { res.status(400).json({ error: 'Payroll period label is required' }); return; }
   const payDate = typeof req.body?.pay_date === 'string' ? req.body.pay_date.trim() : '';
-  const slips = parsePayrollSummaryCsv(req.file.buffer.toString('utf8'), { payDate });
-  if (!slips.length) { res.status(400).json({ error: 'No employee rows found in that file' }); return; }
+  const review = reviewPayrollSummaryCsv(req.file.buffer.toString('utf8'), { payDate });
+  const slips = review.slips;
+  if (!slips.length && !review.rejected.length) { res.status(400).json({ error: 'No employee rows found in that file' }); return; }
 
   const matchesFor = () => {
     const existing = queryAll<{ number: string; data: string }>('SELECT number, data FROM form_records WHERE form_def_id = ? AND period = ?', form.id, period);
@@ -229,12 +259,14 @@ router.post('/form-definitions/:id/import', requirePermission('payroll.manage'),
   };
   if (req.body.dry_run === '1') {
     const rows = matchesFor();
-    res.json({ period, rows, count: rows.length, duplicate_count: rows.filter(row => row.matched_numbers.length).length,
+    res.json({ period, rows, count: rows.length, rejected:review.rejected.map(({line,error})=>({line,error})), rejected_count:review.rejected.length, rejected_csv:review.rejected_csv, duplicate_count: rows.filter(row => row.matched_numbers.length).length,
       total_earnings: rows.reduce((sum, row) => sum + row.total_earnings, 0),
       total_deductions: rows.reduce((sum, row) => sum + row.total_deductions, 0),
       net_pay: rows.reduce((sum, row) => sum + row.net_pay, 0) });
     return;
   }
+  if(!slips.length){res.status(400).json({error:'No valid rows to import. Download and correct the rejected rows.'});return;}
+  if(review.rejected.length&&req.body.allow_partial!=='1'){res.status(409).json({error:'Some rows were rejected. Preview, download the errors, and explicitly choose to import valid rows only.'});return;}
   db.exec('BEGIN');
   try {
     // Recheck after opening the transaction: matches may have changed since the preview.
@@ -259,7 +291,7 @@ router.post('/form-definitions/:id/import', requirePermission('payroll.manage'),
       numbers.push(number);
     }
     db.exec('COMMIT');
-    res.status(201).json({ created: numbers.length, numbers, period });
+    res.status(201).json({ created: numbers.length, numbers, period, rejected_count:review.rejected.length, rejected_csv:review.rejected_csv });
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;

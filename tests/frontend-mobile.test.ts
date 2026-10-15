@@ -731,12 +731,11 @@ describe('mobile bootstrap', () => {
       // Photo picker stub: the real one opens the camera.
       win.mPhoto = { pickFile: () => Promise.resolve(new win.File(['x'], 'unit.jpg', { type: 'image/jpeg' })) };
       win.location.hash = '#/job-orders?id=184&step=count';
-      await wait();
       const doc = win.document;
-      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:240');
+      await expect.poll(() => doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:240');
       (doc.querySelector('.rk-stepper input') as HTMLInputElement).value = '2';
       (doc.getElementById('jo-continue') as HTMLButtonElement).click();
-      await wait();
+      await expect.poll(() => doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:294');
       async function fill(id: string) {
         (doc.querySelector('[data-photo]') as HTMLButtonElement).click();
         await wait();

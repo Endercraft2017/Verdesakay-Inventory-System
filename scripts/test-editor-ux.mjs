@@ -250,7 +250,7 @@ try {
     const zoom=await page.locator('.doc-view-tools select').evaluate(el=>({repeat:getComputedStyle(el).backgroundRepeat,image:getComputedStyle(el).backgroundImage}));assert.equal(zoom.repeat,'no-repeat');assert.notEqual(zoom.image,'none');
     await editorButton('data-studio-tab=Print').click();
     const empty=page.locator('.doc-tile-fill');await empty.hover();
-    const arrows=await empty.evaluate(el=>({repeat:getComputedStyle(el).backgroundRepeat,position:getComputedStyle(el).backgroundPosition,size:getComputedStyle(el).backgroundSize,image:getComputedStyle(el).backgroundImage}));assert.equal(arrows.repeat,'no-repeat');assert.equal(arrows.size,'12px 12px');assert.notEqual(arrows.image,'none');assert(arrows.position.includes('8px'));
+    const arrows=await empty.evaluate(el=>({repeat:getComputedStyle(el).backgroundRepeat,position:getComputedStyle(el).backgroundPosition,size:getComputedStyle(el).backgroundSize,image:getComputedStyle(el).backgroundImage}));assert.equal(arrows.repeat,'no-repeat');assert.equal(arrows.size,'12px 12px');assert.notEqual(arrows.image,'none');assert(arrows.position.includes('7px'));
     await page.screenshot({path:path.join(output,'dark-empty-cells-hover.png')});await editorButton('data-inspector-close').click();
     await page.screenshot({path:path.join(output,'dark-select-hover.png')});
   });

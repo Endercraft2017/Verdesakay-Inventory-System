@@ -2,6 +2,7 @@
  * Express application factory. Builds the app with middleware, routes, and error handling
  * but does NOT start listening — so tests can import it via supertest.
  */
+import { formHistoryRequestContext } from './shared/form-history-context';
 import supportRoutes from './platform/support.routes';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -200,6 +201,7 @@ export function createApp() {
     res.status(204).end();
   });
   app.use(express.json({ limit: '10mb' }));
+  app.use(formHistoryRequestContext);
   app.use(express.urlencoded({ extended: true }));
 
   // Dedicated owner-console host (PLATFORM_HOST): that host serves only the console, and

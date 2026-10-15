@@ -425,12 +425,12 @@ describe('form records', () => {
     expect((await ctx.api.get('/api/form-records/' + recordId).set(hdr(empToken))).status).toBe(404);
   });
 
-  it('deleting a form cascades its records', async () => {
+  it('forms with records must be archived rather than deleted', async () => {
     const r = await ctx.api.post('/api/form-records').set(hdr(empToken))
       .send({ form_def_id: formId, data: { amount: 1 } });
     expect(r.status).toBe(201);
-    await ctx.api.delete('/api/form-definitions/' + formId).set(hdr(adminToken));
-    expect((await ctx.api.get('/api/form-records/' + r.body.id).set(hdr(empToken))).status).toBe(404);
+    expect((await ctx.api.delete('/api/form-definitions/' + formId).set(hdr(adminToken))).status).toBe(409);
+    expect((await ctx.api.get('/api/form-records/' + r.body.id).set(hdr(empToken))).status).toBe(200);
   });
 
   it('self-filing a REQUEST_SLUGS form (e.g. leave_request) works for anyone, forced to status=pending, regardless of scope permissions', async () => {

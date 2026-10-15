@@ -323,6 +323,21 @@ kept, flagged; a leave approval past the cloud's balance stands, flagged). The f
 **Offline (sync/, phase 4c):** `POST /api/attachments` is `physical`, and the photo travels with the
 command via `syncUpload`. Deleting one is a company-wide `claim`; an installed PC keeps the file until
 the cloud confirms. The other core routes are not classed yet.
+**Form lifecycle (schema 76):** `shared/form-history-schema.ts` retains definition snapshots
+(`form_definition_versions`) and record revisions (`form_record_revisions`). Records carry
+`definition_version` and `revision`; corrections use the original schema and optional stale
+revision guards. Archived definitions reject new records/imports but permit corrections with
+required reasons, preserving layouts. Existing records are captured as legacy baselines.
+`shared/form-history-context.ts` attributes trigger snapshots to the authenticated actor and
+shared command clock. During changeset application, derived history triggers are suppressed:
+the captured authoritative history is applied exactly once. History foreign keys cascade ID
+renumbering used by offline allocation. `data-forms/preferences.routes.ts` owns per-user
+favorites, recents, columns and saved filters (`form_user_preferences`, merge writes).
+`payroll/deduction-history.ts` retains before/after employee deduction values and modes,
+actor/name/time and optional reason in `payslip_deduction_history`; payroll.view gates reading.
+Actual-app lifecycle/large-form coverage extends `npm run test:forms:ux`; the HR review
+protocol is `docs/guides/data-forms-hr-acceptance.md`.
+
 **Form validation (`public/js/lib/form-validation.js`):** shared by Data Forms, Form Builder,
 desktop HR requests and mobile requests. Inline errors are linked through `aria-describedby`; a
 summary focuses the affected control and reveals hidden setup panels. Required checkboxes mean

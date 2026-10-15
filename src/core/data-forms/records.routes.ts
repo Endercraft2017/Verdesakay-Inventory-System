@@ -1,3 +1,4 @@
+import { recordDeductionChange } from '../../modules/payroll/deduction-history';
 import { z } from 'zod';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -24,6 +25,8 @@ import { syncClass } from '../../sync';
 import { syncUpload } from '../../sync/files';
 import { templateRevision, checkTemplateRevision, templateWrite, checkStudioPublish, studioPublished, migrateStudioDocument } from '../doc-template-version';
 
+import { now } from '../../shared/sync-context';
+import { recordResponse, recordRevisions, definitionForRecord, correctRecord } from './history';
 const router = Router();
 router.use(requireAuth);
 
@@ -64,7 +67,7 @@ router.get('/form-definitions/:id/records', (req, res) => {
      ORDER BY fr.id DESC`,
     ...params
   );
-  res.json(rows.map((r) => ({ ...r, data: parseData(r.data as string) })));
+  res.json(rows.map(record => ({...record,data:parseData(record.data as string)})));
 });
 
 // GET /api/form-records/:id — single record (forms.manage.<scope> for its form's scope — same
@@ -80,7 +83,14 @@ router.get('/form-records/:id', (req, res) => {
   );
   if (!row) { res.status(404).json({ error: 'Record not found' }); return; }
   if (!canAccessRecords(req, res, { scope: row.scope, slug: row.form_slug }, false)) return;
-  res.json({ ...row, data: parseData(row.data as string) });
+  res.json(recordResponse(row));
+});
+
+router.get('/form-records/:id/revisions',(req,res)=>{
+  const row=queryOne<FormRecord & {scope:FormScope|null;slug:string}>('SELECT fr.*,fd.scope,fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id=fr.form_def_id WHERE fr.id=?',Number(req.params.id));
+  if(!row){res.status(404).json({error:'Record not found'});return;}
+  if(!canAccessRecords(req,res,row,false))return;
+  res.json(recordRevisions(row.id,row.form_def_id));
 });
 
 // POST /api/form-records — create a record. Two allowed paths: (a) forms.manage.<scope> staff
@@ -97,6 +107,8 @@ router.post('/form-records', syncClass('merge'), (req, res) => {
     input.form_def_id
   );
   if (!form) { res.status(404).json({ error: 'Form not found' }); return; }
+  if (input.expected_definition_version != null && input.expected_definition_version !== form.version) { res.status(409).json({ error: 'This form changed. Reopen it before creating a record.' }); return; }
+  if (form.archived_at) { res.status(409).json({ error: 'This form is archived and cannot accept new records.' }); return; }
 
   const canManage = form.slug === PAYROLL_FORM_SLUG
     ? req.user!.permissions.includes('payroll.manage')
@@ -220,7 +232,10 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
     res.status(400).json({ error: 'Decide HR requests in Approvals. Decided requests cannot be edited; file a new request instead.' }); return;
   }
   const definition = queryOne<FormDefinition>('SELECT fields FROM form_definitions WHERE id = ?', existing.form_def_id);
-  if (definition) validateRequiredCheckboxes(definition.fields, input.data);
+  const archived = queryOne<{archived_at:string|null}>('SELECT archived_at FROM form_definitions WHERE id=?',existing.form_def_id)?.archived_at;
+  if (archived && !input.change_reason?.trim()) { res.status(400).json({error:'A reason is required when correcting an archived record.'}); return; }
+  if (input.expected_revision != null && input.expected_revision !== existing.revision) { res.status(409).json({error:'This record changed. Reopen it before saving your correction.'}); return; }
+  if (definition) validateRequiredCheckboxes(definitionForRecord(existing)?.fields ?? definition.fields, input.data);
   const newStatus = input.status ?? existing.status;
   const recordData = { ...input.data };
   const previousData = parseData(existing.data as string);
@@ -242,7 +257,7 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
   if (REQUEST_SLUGS.includes(existing.slug)) recordData.employee_id = requestEmployeeId(previousData) || requestEmployeeId(recordData);
   if (REQUEST_SLUGS.includes(existing.slug)) {
     const definition = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', existing.form_def_id)!;
-    Object.assign(recordData, normalizeRequest(existing.slug, parseFields(definition.fields as string) as any, recordData, Number(recordData.employee_id)));
+    Object.assign(recordData, normalizeRequest(existing.slug, (definitionForRecord(existing)?.fields ?? parseFields(definition.fields as string)) as any, recordData, Number(recordData.employee_id)));
     for (const key of ['approved_by', 'decided_by', 'decided_at', 'decision_note', 'charged_dates', 'leave_days_charged', 'leave_warnings']) delete recordData[key];
     if (existing.slug === 'schedule_change') {
       if (String(recordData.work_date) !== String(previousData.work_date) || Number(recordData.employee_id) !== Number(previousData.employee_id)) {
@@ -251,14 +266,15 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
       recordData.current_shift_id = previousData.current_shift_id as number | null;
     }
   }
-  run(
+  correctRecord(existing,req.user!.id,input.change_reason,'correction',()=>{ run(
     `UPDATE form_records
-     SET data = ?, status = ?, updated_at = datetime('now')
+     SET data = ?, status = ?, updated_at = ?
      WHERE id = ?`,
     JSON.stringify(recordData),
     newStatus,
+    now().toISOString(),
     id
-  );
+  ); if(existing.slug==='hr_payroll')recordDeductionChange(id,previousData,recordData,req.user!,input.change_reason); });
 
   // Fire `run_on: 'approved'` actions the first time a record reaches 'approved'.
   let action_warnings: string[] = [];
@@ -275,18 +291,20 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
       }).warnings;
     }
   }
-  res.json({ ok: true, action_warnings });
+  res.json({ ok: true, action_warnings, revision:queryOne<{revision:number}>('SELECT revision FROM form_records WHERE id=?',id)!.revision });
 });
 
 // DELETE /api/form-records/:id (forms.manage.<scope> for the record's form — same gate as PUT)
 router.delete('/form-records/:id', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
-  const existing = queryOne<{ id: number; status: string; slug: string; scope: FormScope | null }>(
-    `SELECT fr.id, fr.status, fd.slug, fd.scope AS scope FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
+  const existing = queryOne<{ id: number; form_def_id: number; status: string; slug: string; scope: FormScope | null }>(
+    `SELECT fr.id, fr.form_def_id, fr.status, fd.slug, fd.scope AS scope FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
     id
   );
   if (!existing) { res.status(404).json({ error: 'Record not found' }); return; }
   if (!canAccessRecords(req, res, existing, true)) return;
+  if(queryOne<{archived_at:string|null}>('SELECT archived_at FROM form_definitions WHERE id=?',existing.form_def_id)?.archived_at){res.status(409).json({error:'Archived records must be preserved. Restore the form before deleting records.'});return;}
+
   // A payslip that was ever marked Paid is part of the payroll record: correct it (unmark, edit,
   // mark paid again), never delete it. payslip_paid_history is written by hr.routes.ts.
   if (existing.slug === 'hr_payroll'
