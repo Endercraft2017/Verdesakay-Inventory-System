@@ -34,17 +34,17 @@ export function consumeSemiBatchUnit(batchId: number, itemId: number, location: 
         throw Object.assign(new Error('This semi-built batch has no free unit at the source location. Rescan its QR and review stock.'), { status: 409 });
     run('UPDATE production_batch_stock SET quantity=quantity-1 WHERE batch_id=? AND location_id=?', batchId, location);
 }
-export function allocateBatch(batchId: number, orderId: number, itemId: number, location: number, quantity: number) {
+export function allocateBatch(batchId: number, orderId: number, itemId: number, location: number, quantity: number, orderItemId?: number) {
     const b = batchBalances(batchId).find(x => x.location_id === location);
     if (!b || quantity > b.available + 1e-9)
         throw Object.assign(new Error('This batch no longer has that quantity free at the ship-from location. Rescan and review.'), { status: 409 });
-    run(`INSERT INTO production_batch_allocations(batch_id,order_id,item_id,location_id,quantity,state) VALUES(?,?,?,?,?,'reserved')`, batchId, orderId, itemId, location, quantity);
+    run(`INSERT INTO production_batch_allocations(batch_id,order_id,order_item_id,item_id,location_id,quantity,state) VALUES(?,?,?,?,?,?,'reserved')`, batchId, orderId, orderItemId ?? null, itemId, location, quantity);
 }
-export function undoBatchAllocations(orderId: number, itemId: number, amount: number) {
+export function undoBatchAllocations(orderId: number, itemId: number, amount: number, orderItemId?: number) {
     for (const a of queryAll<{
         id: number;
         quantity: number;
-    }>(`SELECT id,quantity FROM production_batch_allocations WHERE order_id=? AND item_id=? AND state='reserved' ORDER BY id DESC`, orderId, itemId)) {
+    }>(`SELECT id,quantity FROM production_batch_allocations WHERE order_id=? AND item_id=? AND (? IS NULL OR order_item_id=?) AND state='reserved' ORDER BY id DESC`, orderId, itemId, orderItemId ?? null, orderItemId ?? null)) {
         if (amount <= 1e-9)
             break;
         const take = Math.min(amount, a.quantity);
@@ -56,14 +56,16 @@ export function undoBatchAllocations(orderId: number, itemId: number, amount: nu
     }
 }
 /** Ship exact reserved lots or reverse that same shipment. Caller owns the transaction. */
-export function shipBatches(orderId: number, itemId: number, shipped: boolean): number {
+export function shipBatches(orderId: number, itemId: number, shipped: boolean, mode?: string): number {
     let total = 0;
     for (const a of queryAll<{
         id: number;
         batch_id: number;
         location_id: number;
         quantity: number;
-    }>('SELECT * FROM production_batch_allocations WHERE order_id=? AND item_id=? AND state=?', orderId, itemId, shipped ? 'reserved' : 'shipped')) {
+    }>(`SELECT a.* FROM production_batch_allocations a JOIN production_batches pb ON pb.id=a.batch_id
+      JOIN job_orders j ON j.id=pb.job_order_id WHERE a.order_id=? AND a.item_id=? AND a.state=?
+      AND (? IS NULL OR j.build_mode=?)`, orderId, itemId, shipped ? 'reserved' : 'shipped', mode ?? null, mode ?? null)) {
         const b = batchBalances(a.batch_id).find(x => x.location_id === a.location_id);
         if (shipped && (!b || b.on_hand + 1e-9 < a.quantity))
             throw Object.assign(new Error('Allocated batch stock changed. Reconcile before handoff.'), { status: 409 });

@@ -334,15 +334,22 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncCl
   const input = parseBody(allocateUnitsSchema, req.body);
 
   let order: { id: number; number: string; type: string } | undefined;
+  let saleLineId: number | null = null;
   if (input.order_id != null) {
     order = queryOne<{ id: number; number: string; type: string }>(
       "SELECT id, number, type FROM orders WHERE id = ?", input.order_id
     );
     if (!order) { res.status(400).json({ error: 'Sales order not found' }); return; }
-    if (input.action === 'sell' && order.type === 'sale' && queryOne(`SELECT 1 FROM order_items
-      WHERE order_id = ? AND item_id = ? AND fulfillment_mode != ? LIMIT 1`,
-      input.order_id, id, input.build_mode)) {
-      res.status(409).json({ error: 'The sale line requests a different build state from these units.' }); return;
+    if (input.action === 'sell' && order.type === 'sale') {
+      const lines = queryAll<{ id: number; fulfillment_mode: string }>(`SELECT id,fulfillment_mode FROM order_items
+        WHERE order_id = ? AND item_id = ? AND fulfillment_mode NOT IN ('ckd','ckd_component')`, input.order_id, id);
+      const matching = lines.filter((l) => (l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled') === input.build_mode);
+      const selected = input.order_item_id ? matching.find((l) => l.id === input.order_item_id) : matching.length === 1 ? matching[0] : null;
+      if (!selected && (lines.length || input.order_item_id)) {
+        res.status(409).json({ error: matching.length ? 'Select the exact sale line for these units.' : 'The sale has no line for these units and build state.',
+          code: matching.length ? 'line_required' : 'wrong_build' }); return;
+      }
+      saleLineId = selected?.id ?? null;
     }
   }
   if (input.action === 'move' && input.to_location_id != null
@@ -396,8 +403,8 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncCl
           reason: `Sold${order ? ' — ' + order.number : ''}${input.reason ? ' — ' + input.reason : ''}`,
         });
         run(
-          "UPDATE job_order_units SET status = 'sold', order_id = ?, updated_at = datetime('now') WHERE id = ?",
-          order ? order.id : null, u.id
+          "UPDATE job_order_units SET status = 'sold', order_id = ?, order_item_id = ?, updated_at = datetime('now') WHERE id = ?",
+          order ? order.id : null, saleLineId, u.id
         );
       } else {
         if (from !== input.to_location_id) {

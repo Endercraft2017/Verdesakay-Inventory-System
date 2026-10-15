@@ -120,26 +120,23 @@ function saleStatus(status: string | null | undefined, current?: string): string
   return next;
 }
 
-/** Reject broken stock links before writing an order. Repeated stock items must use
- * one line: release and availability track coverage by item, not by price/name. */
+/** Validate stock links. Separate sale lines may share a SKU but keep their own
+ * commercial price/build state and their own physical allocations. */
 function validateOrderLinks(type: OrderType, input: {
   items: LineInput[]; customer_id?: number | null; location_id?: number | null;
   supplier_id?: number | null; tax_code_id?: number | null;
 }, existingCkd?: Map<number, CkdPart[]>): void {
-  const seen = new Set<number>();
-  const ckdParts = new Set<number>();
+  const ckdProducts = new Set<number>();
   for (const [i, line] of input.items.entries()) {
     if (!Number.isFinite(line.quantity) || line.quantity <= 0) throw new ValidationError(`Line ${i + 1}: quantity must be greater than zero`);
     if (line.item_id != null) {
       if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', line.item_id)) {
         throw new ValidationError(`Line ${i + 1}: inventory item no longer exists. Choose another item or use a non-stock line.`);
       }
-      if (type === 'sale' && seen.has(line.item_id)) {
-        throw new ValidationError(`Line ${i + 1}: this inventory item is already on the order. Combine its quantity into one line.`);
-      }
-      seen.add(line.item_id);
     }
     if (line.fulfillment_mode === 'ckd') {
+      if (ckdProducts.has(line.item_id!)) throw new ValidationError('Use one CKD line per product on a sale; set its whole-unit quantity and price there.');
+      ckdProducts.add(line.item_id!);
       if (type !== 'sale' || !line.item_id || !Number.isSafeInteger(line.quantity))
         throw new ValidationError(`Line ${i + 1}: CKD needs a stocked product and a whole-unit quantity.`);
       const product = queryOne<{ is_finished_product: number }>('SELECT is_finished_product FROM inventory_items WHERE id = ?', line.item_id);
@@ -147,17 +144,14 @@ function validateOrderLinks(type: OrderType, input: {
       const parts = existingCkd?.get(line.item_id) ?? queryAll<{ component_item_id: number }>('SELECT component_item_id FROM bom_components WHERE product_item_id = ?', line.item_id);
       if (!parts.length) throw new ValidationError(`Line ${i + 1}: define the CKD product BOM before ordering it.`);
       for (const part of parts) {
-        if (part.component_item_id === line.item_id || ckdParts.has(part.component_item_id))
-          throw new ValidationError('CKD parts overlap another CKD line on this order. Use separate orders until line-specific picking is available.');
-        ckdParts.add(part.component_item_id);
+        if (part.component_item_id === line.item_id)
+          throw new ValidationError('A CKD product cannot contain itself as a direct part.');
       }
     }
     if (line.tax_code_id != null && !queryOne('SELECT id FROM tax_codes WHERE id = ?', line.tax_code_id)) {
       throw new ValidationError(`Line ${i + 1}: tax code not found`);
     }
   }
-  if ([...ckdParts].some((id) => seen.has(id)))
-    throw new ValidationError('A CKD part also appears as a separate stock line. Use separate orders so warehouse cannot allocate it twice.');
   const links = [
     [type === 'sale' ? input.customer_id : null, 'customers', 'Customer'],
     [type === 'sale' ? input.location_id : null, 'locations', 'Ship-from location'],
@@ -241,7 +235,7 @@ const BACKORDER_SQL = `
     SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode != 'ckd'
       AND oi.quantity > COALESCE(oi.released_qty, 0)
         + (SELECT COUNT(*) FROM job_order_units ju
-            WHERE ju.order_id = o.id AND ju.product_item_id = oi.item_id AND ju.status IN ('reserved', 'sold'))
+            WHERE ju.order_item_id = oi.id AND ju.status IN ('reserved', 'sold'))
   )`;
 
 // GET /api/orders?type=&q=&backorder=1 — sale / job orders need orders.view, purchase orders
@@ -311,12 +305,10 @@ router.get('/:id', (req, res) => {
   order.items = queryAll<OrderItem>(
     `SELECT oi.*,
             (SELECT COUNT(*) FROM job_order_units ju
-              WHERE ju.order_id = ? AND ju.product_item_id = oi.item_id AND ju.status = 'sold') AS allocated_qty,
+              WHERE ju.order_item_id = oi.id AND ju.status = 'sold') AS allocated_qty,
             (SELECT COUNT(*) FROM job_order_units ju
-              WHERE ju.order_id = ? AND ju.product_item_id = oi.item_id AND ju.status = 'reserved') AS reserved_qty
+              WHERE ju.order_item_id = oi.id AND ju.status = 'reserved') AS reserved_qty
      FROM order_items oi WHERE oi.order_id = ? ORDER BY oi.sort, oi.id`,
-    order.id,
-    order.id,
     order.id
   );
   res.json({ ...order, revision: orderRevision(order.id) });
@@ -347,8 +339,8 @@ function lineCoverage(orderId: number, line: Pick<OrderItem, 'id' | 'item_id' | 
   const units = line.item_id
     ? queryOne<{ n: number }>(
         `SELECT COUNT(*) AS n FROM job_order_units
-         WHERE order_id = ? AND product_item_id = ? AND status IN ('reserved', 'sold')`,
-        orderId, line.item_id
+         WHERE order_item_id = ? AND status IN ('reserved', 'sold')`,
+        line.id
       )?.n ?? 0
     : 0;
   const bulk = line.released_qty || 0;
@@ -360,10 +352,10 @@ function orderWithLines(id: number): Order | null {
   if (!order) return null;
   order.items = queryAll<OrderItem>(
     `SELECT oi.*,
-            (SELECT COUNT(*) FROM job_order_units ju WHERE ju.order_id = ? AND ju.product_item_id = oi.item_id AND ju.status = 'sold') AS allocated_qty,
-            (SELECT COUNT(*) FROM job_order_units ju WHERE ju.order_id = ? AND ju.product_item_id = oi.item_id AND ju.status = 'reserved') AS reserved_qty
+            (SELECT COUNT(*) FROM job_order_units ju WHERE ju.order_item_id = oi.id AND ju.status = 'sold') AS allocated_qty,
+            (SELECT COUNT(*) FROM job_order_units ju WHERE ju.order_item_id = oi.id AND ju.status = 'reserved') AS reserved_qty
      FROM order_items oi WHERE oi.order_id = ? ORDER BY oi.sort, oi.id`,
-    id, id, id
+    id
   );
   return order;
 }
@@ -432,7 +424,7 @@ export function createDraftPurchaseOrders(
  *  touch `sold` units — `maybeFulfillSale(…, 'release')` reverses those first. */
 export function releaseTeardown(orderId: number): void {
   run(
-    "UPDATE job_order_units SET status = 'in_stock', order_id = NULL, updated_at = datetime('now') WHERE order_id = ? AND status = 'reserved'",
+    "UPDATE job_order_units SET status = 'in_stock', order_id = NULL, order_item_id = NULL, updated_at = datetime('now') WHERE order_id = ? AND status = 'reserved'",
     orderId
   );
   run("DELETE FROM production_batch_allocations WHERE order_id=? AND state='reserved'",orderId);
@@ -582,8 +574,7 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
       }
       const serials = queryAll<{ identifier: string | null }>(
         `SELECT identifier FROM job_order_units
-         WHERE order_id = ? AND product_item_id = ? AND status IN ('reserved', 'sold') ORDER BY id`,
-        id, l.item_id
+         WHERE order_item_id = ? AND status IN ('reserved', 'sold') ORDER BY id`, l.id
       ).map((u) => u.identifier).filter(Boolean);
       run(
         `INSERT INTO release_slip_items (slip_id, order_item_id, item_id, name, sku, unit, quantity, unit_identifiers, unit_cost)
@@ -650,13 +641,18 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
   const input = parseBody(releaseOrderSchema, req.body);
   const lines = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ?', id);
   const physicalLines = lines.filter((l) => l.item_id != null && l.fulfillment_mode !== 'ckd');
-  const lineByItem = new Map(physicalLines.map((l) => [l.item_id!, l]));
-  // The release payload identifies a product, not a sale line. Updating by item would
-  // otherwise increment every duplicate line and count the same serial against each one.
-  if (lineByItem.size !== physicalLines.length) {
-    res.status(409).json({ error: 'This order has the same stock item on multiple lines. Combine those lines before warehouse release.' });
-    return;
-  }
+  const lineById = new Map(physicalLines.map((l) => [l.id, l]));
+  const modeOf = (l: OrderItem) => l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled';
+  const matching = (itemId: number, mode?: string) => physicalLines.filter((l) =>
+    l.item_id === itemId && (!mode || modeOf(l) === mode));
+  const resolveLine = (itemId: number, lineId?: number, mode?: string): OrderItem | null => {
+    if (lineId) {
+      const l = lineById.get(lineId);
+      return l?.item_id === itemId && (!mode || modeOf(l) === mode) ? l : null;
+    }
+    const candidates = matching(itemId, mode);
+    return candidates.length === 1 ? candidates[0]! : null;
+  };
 
   // Resolve scanned codes → in-stock serialized units by identifier.
   const unitIds = new Set<number>(input.unit_ids ?? []);
@@ -684,7 +680,8 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
   if (units.length !== unitIds.size) { res.status(400).json({ error: 'One or more scanned units were not found.' }); return; }
 
   // Validate each unit is available and belongs to a line on this order; cap per line.
-  const addPerItem = new Map<number, number>();
+  const requestedPerLine = new Map<number, number>();
+  const unitLine = new Map<number, OrderItem>();
   for (const u of units) {
     if (u.status !== 'in_stock') {
       const error = `Unit ${u.identifier || '#' + u.id} is ${u.status}, not available to release.`;
@@ -694,35 +691,43 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
         return;
       }
     }
-    if (u.product_item_id == null || !lineByItem.has(u.product_item_id)) {
+    if (u.product_item_id == null || !matching(u.product_item_id).length) {
       res.status(400).json({ error: `Unit ${u.identifier || '#' + u.id} is not for a product on this order.` });
       return;
     }
-    const expectedMode = lineByItem.get(u.product_item_id)!.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled';
-    if (u.build_mode !== expectedMode) {
-      res.status(409).json({ error: `Unit ${u.identifier || '#' + u.id} is ${u.build_mode === 'semi_built' ? 'semi-built' : 'fully built'}, but this sale line requests ${expectedMode === 'semi_built' ? 'semi-built' : 'fully built'}.` });
+    const candidates = matching(u.product_item_id, u.build_mode);
+    if (!candidates.length) {
+      res.status(409).json({ error: `Unit ${u.identifier || '#' + u.id} is ${u.build_mode === 'semi_built' ? 'semi-built' : 'fully built'}, but this sale has no matching build-state line.` });
       return;
+    }
+    const line = resolveLine(u.product_item_id, input.order_item_id, u.build_mode);
+    if (!line) {
+      res.status(409).json({ error: `Select the exact sale line for ${u.identifier || '#' + u.id}. This product appears on more than one line.`, code: 'line_required' }); return;
     }
     if (!stands && u.location_id !== (order.location_id ?? getDefaultLocationId())) {
       res.status(409).json({ error: `Unit ${u.identifier || '#' + u.id} is at another location. Transfer it to this order's ship-from location first.` });
       return;
     }
-    const line = lineByItem.get(u.product_item_id)!;
     const already = lineCoverage(id, line).units + lineCoverage(id, line).bulk;
-    const pending = addPerItem.get(u.product_item_id) ?? 0;
+    const pending = requestedPerLine.get(line.id) ?? 0;
     if (already + pending + 1 > line.quantity) {
       if (refused(400, `That exceeds the ${line.quantity} ordered of ${line.name}.`)) return;
     }
-    addPerItem.set(u.product_item_id, pending + 1);
+    requestedPerLine.set(line.id, pending + 1);
+    unitLine.set(u.id, line);
   }
 
   // Validate the whole request against the order's location-scoped ATP. Entries for
   // one item are aggregated so repeats cannot bypass a per-entry cap. This also keeps
   // other sales' commitments, serialized reservations, and kit/repair holds intact.
-  const requested = new Map<number, number>(addPerItem);
+  const bulkLine = new Map<number, OrderItem>();
   for (const b of input.bulk ?? []) {
-    const line = lineByItem.get(b.item_id);
-    if (!line) { res.status(400).json({ error: `Item #${b.item_id} is not on this order.` }); return; }
+    const line = resolveLine(b.item_id, b.order_item_id);
+    if (!line) {
+      if (!matching(b.item_id).length) res.status(400).json({ error: `Item #${b.item_id} is not on this sale order.` });
+      else res.status(409).json({ error: `Select the exact sale line for item #${b.item_id}.`, code: 'line_required' });
+      return;
+    }
     if (!b.batch_id && queryOne(`SELECT 1 FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
       WHERE u.product_item_id = ? AND j.build_mode = ? LIMIT 1`, b.item_id,
       line.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled')) {
@@ -740,17 +745,28 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
       const balance=batchBalances(b.batch_id).find(x=>x.location_id===(order.location_id??getDefaultLocationId()));
       if(!balance||wanted>balance.available+1e-9){res.status(409).json({error:'This batch has insufficient free quantity at the ship-from location. Rescan and review.'});return;}
     }
-    requested.set(b.item_id, (requested.get(b.item_id) ?? 0) + b.quantity);
+    requestedPerLine.set(line.id, (requestedPerLine.get(line.id) ?? 0) + b.quantity);
+    bulkLine.set((input.bulk ?? []).indexOf(b), line);
   }
   const availability = orderAvailability(id);
-  for (const [itemId, amount] of requested) {
-    const line = lineByItem.get(itemId)!;
+  const requestedPools = new Map<string, number>();
+  for (const [lineId, amount] of requestedPerLine) {
+    const line = lineById.get(lineId)!;
     const cov = lineCoverage(id, line);
     if (cov.units + cov.bulk + amount > line.quantity + 1e-9) {
       if (refused(400, `That exceeds the ${line.quantity} ordered of ${line.name}.`)) return;
     }
-    const stockLine = availability.lines.find((l) => l.item_id === itemId);
-    const free = Math.max(0, (stockLine?.available ?? 0) - (stockLine?.covered_here ?? 0));
+    const key = `${line.item_id}:${modeOf(line)}`;
+    requestedPools.set(key, (requestedPools.get(key) ?? 0) + amount);
+  }
+  for (const [key, amount] of requestedPools) {
+    const [itemId, mode] = key.split(':');
+    const line = matching(Number(itemId), mode)[0]!;
+    const stockLine = availability.lines.find((l) => l.item_id === Number(itemId) && (l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled') === mode);
+    const ownCovered = matching(Number(itemId), mode).reduce((n, l) => {
+      const c = lineCoverage(id, l); return n + c.units + c.bulk;
+    }, 0);
+    const free = Math.max(0, (stockLine?.on_hand ?? 0) - (stockLine?.committed_elsewhere ?? 0) - ownCovered);
     if (amount > free + 1e-9 && !overdrawAllowed() && refused(409,
       `${line.name} has only ${free} uncommitted at ${availability.location_name || 'the ship-from location'}. Receive or transfer stock before allocating more.`)) return;
   }
@@ -759,24 +775,25 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
   try {
     for (const u of units) {
       run(
-        "UPDATE job_order_units SET status = 'reserved', order_id = ?, updated_at = datetime('now') WHERE id = ?",
-        id, u.id
+        "UPDATE job_order_units SET status = 'reserved', order_id = ?, order_item_id = ?, updated_at = datetime('now') WHERE id = ?",
+        id, unitLine.get(u.id)!.id, u.id
       );
     }
-    for (const b of input.bulk ?? []) {
-      if(b.batch_id) allocateBatch(b.batch_id,id,b.item_id,order.location_id??getDefaultLocationId(),b.quantity);
+    for (const [index, b] of (input.bulk ?? []).entries()) {
+      const line = bulkLine.get(index)!;
+      if(b.batch_id) allocateBatch(b.batch_id,id,b.item_id,order.location_id??getDefaultLocationId(),b.quantity,line.id);
       else {
         // Legacy quantity clients reserve known lots FIFO; QR clients select an exact lot.
         let remaining=b.quantity;
         for(const lot of queryAll<{id:number}>(`SELECT pb.id FROM production_batches pb JOIN job_orders j ON j.id=pb.job_order_id
-          WHERE COALESCE(pb.product_item_id,j.product_item_id)=? AND j.build_mode=? ORDER BY pb.id`,b.item_id,lineByItem.get(b.item_id)!.fulfillment_mode==='semi_built'?'semi_built':'assembled')) {
+          WHERE COALESCE(pb.product_item_id,j.product_item_id)=? AND j.build_mode=? ORDER BY pb.id`,b.item_id,modeOf(line))) {
           const balance=batchBalances(lot.id).find(x=>x.location_id===(order.location_id??getDefaultLocationId()));
-          const take=Math.min(remaining,balance?.available??0);if(take>0){allocateBatch(lot.id,id,b.item_id,order.location_id??getDefaultLocationId(),take);remaining-=take;}if(remaining<=1e-9)break;
+          const take=Math.min(remaining,balance?.available??0);if(take>0){allocateBatch(lot.id,id,b.item_id,order.location_id??getDefaultLocationId(),take,line.id);remaining-=take;}if(remaining<=1e-9)break;
         }
       }
       run(
-        'UPDATE order_items SET released_qty = MIN(quantity, released_qty + ?) WHERE order_id = ? AND item_id = ?',
-        b.quantity, id, b.item_id
+        'UPDATE order_items SET released_qty = MIN(quantity, released_qty + ?) WHERE id = ?',
+        b.quantity, line.id
       );
     }
     if (!order.released_at) {
@@ -834,12 +851,18 @@ router.post('/:id/release/unreserve', releaseGate, syncClass('claim', orderSite)
     }
   }
   const bulkToUndo = new Map<number, number>();
-  for (const b of input.bulk ?? []) bulkToUndo.set(b.item_id, (bulkToUndo.get(b.item_id) ?? 0) + b.quantity);
-  for (const [itemId, amount] of bulkToUndo) {
-    const line = queryOne<{ released_qty: number }>('SELECT released_qty FROM order_items WHERE order_id = ? AND item_id = ?', id, itemId);
+  const physicalLines = queryAll<OrderItem>("SELECT * FROM order_items WHERE order_id = ? AND fulfillment_mode != 'ckd'", id);
+  for (const b of input.bulk ?? []) {
+    const candidates = physicalLines.filter((l) => l.item_id === b.item_id);
+    const line = b.order_item_id ? candidates.find((l) => l.id === b.order_item_id) : candidates.length === 1 ? candidates[0] : null;
+    if (!line) { res.status(409).json({ error: `Select the exact sale line for item #${b.item_id}.`, code: 'line_required' }); return; }
+    bulkToUndo.set(line.id, (bulkToUndo.get(line.id) ?? 0) + b.quantity);
+  }
+  for (const [lineId, amount] of bulkToUndo) {
+    const line = physicalLines.find((l) => l.id === lineId);
     if (!line || amount > line.released_qty + 1e-9) {
       if (!stands) { res.status(409).json({ error: 'That quantity is no longer allocated to this order. Refresh before undoing.' }); return; }
-      clashes.push(`Bulk item #${itemId} had less allocated on the cloud when the site's undo arrived.`);
+      clashes.push(`Sale line #${lineId} had less allocated on the cloud when the site's undo arrived.`);
     }
   }
 
@@ -847,14 +870,15 @@ router.post('/:id/release/unreserve', releaseGate, syncClass('claim', orderSite)
   try {
     if (unitIds.length) {
       run(
-        `UPDATE job_order_units SET status = 'in_stock', order_id = NULL, updated_at = datetime('now')
+        `UPDATE job_order_units SET status = 'in_stock', order_id = NULL, order_item_id = NULL, updated_at = datetime('now')
          WHERE order_id = ? AND status = 'reserved' AND id IN (${unitIds.map(() => '?').join(',')})`,
         id, ...unitIds
       );
     }
-    for (const [itemId, amount] of bulkToUndo) {
-      undoBatchAllocations(id,itemId,amount);
-      run('UPDATE order_items SET released_qty = MAX(0, released_qty - ?) WHERE order_id = ? AND item_id = ?', amount, id, itemId);
+    for (const [lineId, amount] of bulkToUndo) {
+      const line = physicalLines.find((l) => l.id === lineId)!;
+      undoBatchAllocations(id,line.item_id!,amount,lineId);
+      run('UPDATE order_items SET released_qty = MAX(0, released_qty - ?) WHERE id = ?', amount, lineId);
     }
     // If it no longer fully covers, drop 'released' back to 'approved'.
     if (String(order.status).toLowerCase() === 'released') {

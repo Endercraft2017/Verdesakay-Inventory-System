@@ -148,12 +148,14 @@ describe('order intake validation', () => {
     expect((await ctx.api.put('/api/orders/' + res.body.id).set(hdr()).send({ items: [bad] })).status).toBe(400);
     expect((await ctx.api.get('/api/orders/' + res.body.id).set(hdr())).body.items[0].item_id).toBeNull();
   });
-  it('rejects repeated stock items even with different line names', async () => {
+  it('preserves repeated stock items as separate commercial lines', async () => {
     const item = await ctx.api.post('/api/inventory').set(hdr()).send({ name: 'Repeated stock' });
     const stockLine = { ...line, item_id: item.body.id };
     const res = await ctx.api.post('/api/orders').set(hdr()).send({ type: 'sale', items: [stockLine, { ...stockLine, name: 'Other label' }] });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/Combine/);
+    expect(res.status).toBe(201);
+    const saved = (await ctx.api.get('/api/orders/' + res.body.id).set(hdr())).body.items;
+    expect(saved.map((l: { item_id: number; name: string }) => [l.item_id, l.name]))
+      .toEqual([[item.body.id, stockLine.name], [item.body.id, 'Other label']]);
   });
   it('does not auto-link a non-stock line by its name', async () => {
     await ctx.api.post('/api/inventory').set(hdr()).send({ name: 'Installation' });

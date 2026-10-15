@@ -128,11 +128,11 @@ export function missingPackageItems(orderId: number, confirmed: { item_id: numbe
     .map((p) => `${p.item_name}: ${p.label}`);
 }
 
-function covered(orderId: number, l: { item_id: number | null; quantity: number; released_qty: number | null }): number {
+function covered(_orderId: number, l: { id: number; item_id: number | null; quantity: number; released_qty: number | null }): number {
   if (l.item_id == null) return l.quantity;
   const units = queryOne<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM job_order_units WHERE order_id = ? AND product_item_id = ? AND status IN ('reserved', 'sold')`,
-    orderId, l.item_id
+    `SELECT COUNT(*) AS n FROM job_order_units WHERE order_item_id = ? AND status IN ('reserved', 'sold')`,
+    l.id
   )!.n;
   return Math.min(l.quantity, units + (l.released_qty || 0));
 }

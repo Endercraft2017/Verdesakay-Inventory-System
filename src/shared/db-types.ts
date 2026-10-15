@@ -763,6 +763,7 @@ export interface JobOrderUnits {
   stage: Generated<number>;
   location_id: number | null;
   order_id: number | null;
+  order_item_id: number | null;
   batch_id: number | null;
   disposition: string | null;
   remarks: string | null;
@@ -1136,6 +1137,7 @@ export interface ProductionBatchAllocations {
   id: Generated<number>;
   batch_id: number;
   order_id: number;
+  order_item_id: number | null;
   item_id: number;
   location_id: number;
   quantity: number;

@@ -340,6 +340,7 @@ export const allocateUnitsSchema = z
     unit_ids: z.array(z.coerce.number().int().positive()).max(500).optional(),
     quantity: z.coerce.number().int().positive().max(500).optional(),
     order_id: optionalId,
+    order_item_id: optionalId,
     to_location_id: optionalId,
     reason: optionalText,
   })
@@ -945,9 +946,12 @@ export const releaseOrderSchema = z
     // Serialized finished units — by id and/or by scanned QR-label text (identifier).
     unit_ids: z.array(z.coerce.number().int().positive()).max(2000).optional(),
     codes: z.array(trimmed.min(1).max(120)).max(2000).optional(),
+    // Selects the commercial line for serialized scans when item/build state is repeated.
+    order_item_id: z.coerce.number().int().positive().optional(),
     // Non-serialized (bulk) lines — { item_id, quantity } to add to that line's released_qty.
     bulk: z.array(z.object({
       item_id: z.coerce.number().int().positive(),
+      order_item_id: z.coerce.number().int().positive().optional(),
       quantity: numCoerce.positive().max(1_000_000),
       batch_id: z.coerce.number().int().positive().optional(),
     })).max(300).optional(),
@@ -960,6 +964,7 @@ export const unreserveOrderSchema = z.object({
   unit_ids: z.array(z.coerce.number().int().positive()).max(2000).optional(),
   bulk: z.array(z.object({
     item_id: z.coerce.number().int().positive(),
+    order_item_id: z.coerce.number().int().positive().optional(),
     quantity: numCoerce.positive().max(1_000_000),
   })).max(300).optional(),
 }).refine((v) => (v.unit_ids?.length || v.bulk?.length), {

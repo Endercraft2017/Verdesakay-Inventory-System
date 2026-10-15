@@ -59,9 +59,12 @@ it('preserves list prices and discounts while matching the draft order net price
  expect((await ctx.api.post('/api/form-records').set(auth()).send(body('submitted',{items:[row({discount_percent:101})]}))).status).toBe(400);
 });
 
-it('rejects invalid workflow statuses, duplicate stock lines and archived customers after a draft save',async()=>{
+it('rejects invalid workflow statuses and archived customers while preserving duplicate stock lines',async()=>{
  expect((await ctx.api.post('/api/form-records').set(auth()).send(body('approved'))).status).toBe(400);
- expect((await ctx.api.post('/api/form-records').set(auth()).send(body('submitted',{items:[row(),row({row_id:'different'})]}))).status).toBe(400);
+ const repeated=await ctx.api.post('/api/form-records').set(auth()).send(body('submitted',{items:[row(),row({row_id:'different'})]}));
+ expect(repeated.status).toBe(201);
+ const linked=(await ctx.api.get('/api/form-records/'+repeated.body.id).set(auth())).body.sales_order.order_id;
+ expect((await ctx.api.get('/api/orders/'+linked).set(auth())).body.items).toHaveLength(2);
  const disposable=(await ctx.api.post('/api/customers').set(auth()).send({name:'Temporary customer'})).body.id;
  const created=await ctx.api.post('/api/form-records').set(auth()).send(body('draft',{customer:disposable}));expect(created.status).toBe(201);
  const saved=(await ctx.api.get('/api/form-records/'+created.body.id).set(auth())).body;

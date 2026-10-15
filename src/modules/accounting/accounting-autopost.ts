@@ -315,18 +315,30 @@ function changeSaleStockInTransaction(orderId: number, userId: number | null, fo
   const loc = o.location_id ?? getDefaultLocationId();
   const sign = wantFulfilled ? -1 : 1;
   const reason = wantFulfilled ? `Sold — ${o.number}` : `Sale reversed — ${o.number}`;
+  const pools = new Map<string, { itemId: number; mode: 'assembled' | 'semi_built'; quantity: number }>();
   for (const l of lines) {
-    const tracked = queryOne<{n:number}>("SELECT COALESCE(SUM(quantity),0) AS n FROM production_batch_allocations WHERE order_id=? AND item_id=? AND state=?",orderId,l.item_id,wantFulfilled?'reserved':'shipped')?.n??0;
-    if (wantFulfilled && tracked > 0 && l.quantity > tracked + 1e-9) consumeBatchPool(l.item_id!, loc, l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled', l.quantity - tracked);
-    const batchQty = shipBatches(orderId, l.item_id!, wantFulfilled);
-    applyStockChange({ itemId: l.item_id!, locationId: loc, change: sign * l.quantity, userId, reason,
-      buildMode: l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled', batchHandled: batchQty > 0 });
+    const mode = l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled';
+    const key = `${l.item_id}:${mode}`;
+    const pool = pools.get(key) ?? { itemId: l.item_id!, mode, quantity: 0 };
+    pool.quantity += l.quantity;
+    pools.set(key, pool);
+  }
+  for (const pool of pools.values()) {
+    const tracked = queryOne<{n:number}>(`SELECT COALESCE(SUM(a.quantity),0) AS n FROM production_batch_allocations a
+      JOIN production_batches pb ON pb.id=a.batch_id JOIN job_orders j ON j.id=pb.job_order_id
+      WHERE a.order_id=? AND a.item_id=? AND j.build_mode=? AND a.state=?`, orderId, pool.itemId, pool.mode,
+      wantFulfilled ? 'reserved' : 'shipped')?.n ?? 0;
+    if (wantFulfilled && tracked > 0 && pool.quantity > tracked + 1e-9) consumeBatchPool(pool.itemId, loc, pool.mode, pool.quantity - tracked);
+    const batchQty = shipBatches(orderId, pool.itemId, wantFulfilled, pool.mode);
+    applyStockChange({ itemId: pool.itemId, locationId: loc, change: sign * pool.quantity, userId, reason,
+      buildMode: pool.mode, batchHandled: batchQty > 0 });
     // Serialized units already sit inside the line's stock quantity; do not move them twice.
     run(
       `UPDATE job_order_units SET status = ?, updated_at = datetime('now')
-       WHERE order_id = ? AND product_item_id = ? AND status = ?`,
-      wantFulfilled ? 'sold' : 'reserved', orderId, l.item_id,
-      wantFulfilled ? 'reserved' : 'sold'
+       WHERE order_id = ? AND product_item_id = ? AND status = ?
+         AND job_order_id IN (SELECT id FROM job_orders WHERE build_mode = ?)`,
+      wantFulfilled ? 'sold' : 'reserved', orderId, pool.itemId,
+      wantFulfilled ? 'reserved' : 'sold', pool.mode
     );
   }
   run(`UPDATE orders SET fulfilled_at = ${wantFulfilled ? "datetime('now')" : 'NULL'} WHERE id = ?`, orderId);

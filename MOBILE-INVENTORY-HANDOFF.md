@@ -1,5 +1,50 @@
 # Inventory and production: mobile integration gaps
 
+## Repeated SKU sale lines: mobile release handoff (2026-10-15)
+
+The sale order may now contain two physical lines for the same `item_id`, with
+different `fulfillment_mode` (`assembled` or `semi_built`) and/or `unit_price`.
+Show both commercial lines, their build-state tags, quantities, prices and line
+IDs separately. CKD parent lines still expand into their frozen component lines;
+do not allocate or deduct parent SKU stock. The desktop order editor now permits
+repeating an item and the warehouse release screen targets each line separately.
+
+For `POST /orders/:id/release`, send `order_item_id` inside each `bulk` entry
+alongside `item_id`, `quantity` and optional `batch_id`. For a scanned serialized
+unit, send top-level `order_item_id` with `codes` or `unit_ids` when more than one
+matching sale line has that SKU and build state. The server can auto-match a
+unique SKU/build-state line; an ambiguous request returns `409` with
+`code:'line_required'`. Do not retry it without a line choice. For
+`POST /orders/:id/release/unreserve`, send `order_item_id` in each bulk entry;
+unit IDs already identify their reserved line. Display the exact sale-line ID
+and build state in allocation and undo confirmations.
+
+`GET /release-slips/orders/:id/context` exposes each line's `id`, each unit's
+`order_item_id`, each batch allocation's `order_item_id`, and each availability
+row's `order_item_id`. Key phone state by sale-line ID, not `item_id`; summing
+duplicate SKU rows as independent free stock will overpromise. The release slip
+records one row per sale line, and return intake must use its `slip_item_id` to
+match serials/batches from that same sale line. Batch QR preview at
+`GET /release-slips/orders/:id/unit?code=...` now includes `matching_lines`
+with `order_item_id` and `remaining`. It reports the shared pool's availability;
+when two matching lines exist, ask the employee to choose a sale line before
+posting the release. The current phone `so.js` uses the first matching item line
+and posts only `item_id`, so repeated-SKU scanning will receive `line_required`
+until that screen is updated. No mobile source was
+changed here. Backend tests cover repeated-price allocation, ambiguity, undo,
+and stock-out; desktop Playwright checked 1440px and 390px widths.
+
+A plain SKU/barcode QR preview with multiple matching sale lines returns
+`state:'line_required'` and `matching_lines` rather than a misleading
+`not_found`; the phone should present those line choices before quantity entry.
+
+The older `POST /finished-products/:id/units/allocate` direct-unit sale action
+also accepts optional `order_item_id`. It stamps the selected line on a sold
+serial. Supply it when a sale has multiple matching lines; the server returns
+`line_required` when the line is ambiguous. This endpoint already deducted
+stock on direct sale, so phone workflows should use the sale release/slip path
+for normal dispatch.
+
 ## Courier pickup and whole-kit CKD partial release (2026-10-16)
 
 **Delivery choice:** A `deliveries` booking now has `delivery_mode:'own'|'courier'`
@@ -39,12 +84,8 @@ unit or deduct its SKU stock in addition to components. Browser/API regression
 coverage: `tests/ckd-sales.test.ts` and `work/courier-ckd-browser.mjs` (the latter
 is an ignored local verification script).
 
-**Still blocked:** Sale intake rejects two commercial lines for the same stock
-item. Release allocation and serialized-unit ownership are currently keyed by
-item/order rather than sale-line ID; lifting this guard without a line-level
-allocation migration could count the same stock twice. Mixed-build and
-different-price duplicate-product lines need a separate end-to-end model change
-before mobile should offer them.
+**Updated above:** The repeated-SKU sale-line blocker has been resolved in the
+backend and desktop. The phone allocation screens still need the line-ID handoff.
 
 ## Final releasing, delivery and mobile authorization follow-up (2026-10-16)
 

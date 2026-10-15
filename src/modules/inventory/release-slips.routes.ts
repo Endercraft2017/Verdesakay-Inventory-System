@@ -44,7 +44,7 @@ const PROGRESS_SQL = `
   (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode != 'ckd') AS qty_ordered,
   (SELECT COALESCE(SUM(MIN(oi.quantity, COALESCE(oi.released_qty, 0)
       + (SELECT COUNT(*) FROM job_order_units ju
-          WHERE ju.order_id = o.id AND ju.product_item_id = oi.item_id AND ju.status IN ('reserved', 'sold')))), 0)
+          WHERE ju.order_item_id = oi.id AND ju.status IN ('reserved', 'sold')))), 0)
      FROM order_items oi WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode != 'ckd') AS qty_released`;
 
 // GET /api/release-slips/queue — { to_accept, releasing }
@@ -97,14 +97,14 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
   if (!order) { res.status(404).json({ error: 'Sale order not found' }); return; }
   const lines = queryAll(
     `SELECT oi.id, oi.item_id, oi.name, oi.sku, oi.quantity, oi.released_qty, oi.fulfillment_mode, oi.parent_order_item_id,
-            (SELECT COUNT(*) FROM job_order_units u WHERE u.order_id = oi.order_id AND u.product_item_id = oi.item_id
+            (SELECT COUNT(*) FROM job_order_units u WHERE u.order_item_id = oi.id
                AND u.status IN ('reserved', 'sold')) AS units,
             EXISTS (SELECT 1 FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
               WHERE u.product_item_id = oi.item_id AND j.build_mode = CASE WHEN oi.fulfillment_mode = 'semi_built' THEN 'semi_built' ELSE 'assembled' END) AS serialized
      FROM order_items oi WHERE oi.order_id = ? ORDER BY oi.sort, oi.id`, id
   );
   const units = queryAll(
-    `SELECT u.id, u.identifier, u.status, u.product_item_id, j.product_name, l.name AS location_name,
+    `SELECT u.id, u.identifier, u.status, u.product_item_id, u.order_item_id, j.product_name, l.name AS location_name,
             (SELECT r.number FROM production_receipt_items ri JOIN production_receipts r ON r.id = ri.receipt_id
               WHERE ri.unit_id = u.id ORDER BY ri.id DESC LIMIT 1) AS receipt_number
      FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id LEFT JOIN locations l ON l.id = u.location_id
@@ -118,7 +118,7 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
       location_name: availability.location_name },
     lines, units,
     batch_allocations:queryAll(`SELECT a.*,pb.number AS batch_number FROM production_batch_allocations a JOIN production_batches pb ON pb.id=a.batch_id WHERE a.order_id=? ORDER BY a.id`,id),
-    availability: availability.lines.map((l) => ({ item_id: l.item_id, fulfillment_mode: l.fulfillment_mode, free_to_allocate: Math.max(0, l.available - l.covered_here),
+    availability: availability.lines.map((l) => ({ order_item_id: l.order_item_id, item_id: l.item_id, fulfillment_mode: l.fulfillment_mode, free_to_allocate: Math.max(0, l.available - l.covered_here),
       on_hand: l.on_hand, committed_elsewhere: l.committed_elsewhere, kit_held: l.kit_held, repair_held: l.repair_held })),
     authorization: publicAuthorization(id),
     package: packageItemsFor(id),
@@ -153,13 +153,18 @@ router.get('/orders/:id/unit', releaseGate, (req, res) => {
      AND NOT EXISTS(SELECT 1 FROM job_order_units u WHERE u.batch_id=pb.id)`,label?.kind??null,label?.kind??null,label?.id??null,code);
   if(batch){
     const order=queryOne<{location_id:number|null}>('SELECT location_id FROM orders WHERE id=?',id)!;
-    const line=queryOne<{quantity:number;released_qty:number;fulfillment_mode:string}>(
-      `SELECT quantity,released_qty,fulfillment_mode FROM order_items WHERE order_id=? AND item_id=? AND fulfillment_mode!='ckd' AND CASE WHEN fulfillment_mode='semi_built' THEN 'semi_built' ELSE 'assembled' END=?`,id,batch.product_item_id,batch.build_mode);
+    const lines=queryAll<{id:number;quantity:number;released_qty:number;fulfillment_mode:string}>(
+      `SELECT id,quantity,released_qty,fulfillment_mode FROM order_items WHERE order_id=? AND item_id=? AND fulfillment_mode!='ckd' AND CASE WHEN fulfillment_mode='semi_built' THEN 'semi_built' ELSE 'assembled' END=? ORDER BY sort,id`,id,batch.product_item_id,batch.build_mode);
     const context=orderAvailability(id);
     const balances=batchBalances(batch.id),balance=balances.find(x=>x.location_id===context.location_id);
-    const availability=context.lines.find(x=>x.item_id===batch.product_item_id&&x.fulfillment_mode!=='ckd'&&(x.fulfillment_mode==='semi_built'?'semi_built':'assembled')===batch.build_mode);
-    const available=Math.max(0,Math.min(balance?.available??0,availability?(availability.available-availability.covered_here):0,line?(line.quantity-(line.released_qty||0)):0));
-    res.json({state:!line?'wrong_product':available>0?'batch_available':'batch_unavailable',batch:{...batch,balances,available}});return;
+    const open=lines.reduce((n,l)=>n+Math.max(0,l.quantity-l.released_qty),0);
+    const pool=context.lines.find(x=>x.item_id===batch.product_item_id&&(x.fulfillment_mode==='semi_built'?'semi_built':'assembled')===batch.build_mode);
+    const free=pool?Math.max(0,pool.on_hand-pool.committed_elsewhere-
+      context.lines.filter(x=>x.item_id===batch.product_item_id&&(x.fulfillment_mode==='semi_built'?'semi_built':'assembled')===batch.build_mode)
+        .reduce((n,x)=>n+x.covered_here,0)):0;
+    const available=Math.max(0,Math.min(balance?.available??0,free,open));
+    res.json({state:!lines.length?'wrong_product':available>0?'batch_available':'batch_unavailable',batch:{...batch,balances,available},
+      matching_lines:lines.map(l=>({order_item_id:l.id,remaining:Math.max(0,l.quantity-l.released_qty)}))});return;
   }
   const u = queryOne<{ id: number; identifier: string | null; status: string; order_id: number | null; product_item_id: number | null;
     product_name: string; build_mode: string; location_id: number | null; location_name: string | null; order_number: string | null; receipt_number: string | null }>(
@@ -177,6 +182,10 @@ router.get('/orders/:id/unit', releaseGate, (req, res) => {
     const line=lines.length===1?lines[0]:null;
     if(item&&line&&!tracked&&!queryOne('SELECT 1 FROM job_order_units WHERE product_item_id=? LIMIT 1',item.id)) {
       res.json({state:'bulk_available',stock:{...item,code,build_mode:line.fulfillment_mode,available:Math.max(0,line.available-line.covered_here)}});return;
+    }
+    if(item&&lines.length>1&&!tracked&&!queryOne('SELECT 1 FROM job_order_units WHERE product_item_id=? LIMIT 1',item.id)) {
+      res.json({state:'line_required',code,matching_lines:lines.map(l=>({order_item_id:l.order_item_id,
+        fulfillment_mode:l.fulfillment_mode,remaining:Math.max(0,l.ordered-l.covered_here)}))});return;
     }
     res.json({ state: tracked?'batch_label_required':'not_found', code }); return;
   }

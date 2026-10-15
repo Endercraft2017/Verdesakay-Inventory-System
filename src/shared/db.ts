@@ -69,6 +69,8 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 83: bind sale-unit and batch allocations to a specific commercial order line.
+// 82: per-form Inventory entry grants and access revision.
 // 81: courier booking and handoff metadata on existing delivery records.
 // 80: connected forms, sales draft links and sync-safe template history IDs.
 // 79: preserve exact semi-built batch identity when a bulk package enters finishing.
@@ -90,8 +92,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 82; // 82: per-form Inventory entry grants and access revision.
-// 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 83; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -853,6 +854,7 @@ function createSchema(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       batch_id INTEGER NOT NULL REFERENCES production_batches(id),
       order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
       item_id INTEGER NOT NULL REFERENCES inventory_items(id),
       location_id INTEGER NOT NULL REFERENCES locations(id),
       quantity REAL NOT NULL CHECK(quantity > 0),
@@ -891,6 +893,7 @@ function createSchema(): void {
       stage           INTEGER NOT NULL DEFAULT 0,
       location_id     INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       order_id        INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      order_item_id   INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
       batch_id        INTEGER REFERENCES production_batches(id) ON DELETE SET NULL,
       disposition     TEXT,
       remarks         TEXT,
@@ -3293,6 +3296,24 @@ function migrate(): void {
   if (!saleLineCols.some((c) => c.name === 'parent_order_item_id'))
     db.exec('ALTER TABLE order_items ADD COLUMN parent_order_item_id INTEGER REFERENCES order_items(id) ON DELETE CASCADE');
   db.exec('CREATE INDEX IF NOT EXISTS idx_order_items_parent ON order_items(parent_order_item_id)');
+  const saleUnitCols = db.prepare('PRAGMA table_info(job_order_units)').all() as Array<{ name: string }>;
+  if (!saleUnitCols.some((c) => c.name === 'order_item_id')) db.exec('ALTER TABLE job_order_units ADD COLUMN order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sale_unit_line ON job_order_units(order_item_id,status)');
+  db.exec(`UPDATE job_order_units AS u SET order_item_id = (
+    SELECT oi.id FROM order_items oi WHERE oi.order_id = u.order_id AND oi.item_id = u.product_item_id
+      AND oi.fulfillment_mode NOT IN ('ckd', 'ckd_component') LIMIT 1)
+    WHERE u.order_item_id IS NULL AND u.order_id IS NOT NULL AND u.status IN ('reserved', 'sold')
+      AND (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = u.order_id AND oi.item_id = u.product_item_id
+        AND oi.fulfillment_mode NOT IN ('ckd', 'ckd_component')) = 1`);
+  const saleBatchCols = db.prepare('PRAGMA table_info(production_batch_allocations)').all() as Array<{ name: string }>;
+  if (!saleBatchCols.some((c) => c.name === 'order_item_id')) db.exec('ALTER TABLE production_batch_allocations ADD COLUMN order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sale_batch_line ON production_batch_allocations(order_item_id,state)');
+  db.exec(`UPDATE production_batch_allocations AS a SET order_item_id = (
+    SELECT oi.id FROM order_items oi WHERE oi.order_id = a.order_id AND oi.item_id = a.item_id
+      AND oi.fulfillment_mode != 'ckd' LIMIT 1)
+    WHERE a.order_item_id IS NULL
+      AND (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = a.order_id AND oi.item_id = a.item_id
+        AND oi.fulfillment_mode != 'ckd') = 1`);
   const deliveryCols = db.prepare('PRAGMA table_info(deliveries)').all() as Array<{ name: string }>;
   if (!deliveryCols.some((c) => c.name === 'delivery_mode')) db.exec("ALTER TABLE deliveries ADD COLUMN delivery_mode TEXT NOT NULL DEFAULT 'own'");
   if (!deliveryCols.some((c) => c.name === 'courier_name')) db.exec('ALTER TABLE deliveries ADD COLUMN courier_name TEXT');

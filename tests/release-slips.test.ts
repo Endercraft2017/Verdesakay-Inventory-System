@@ -107,6 +107,25 @@ describe('warehouse acceptance', () => {
 });
 
 describe('release slip', () => {
+  it('ships repeated SKU lines once as one stock pool while preserving both slip lines', async () => {
+    const raw = await mkItem({ name: 'Shared SKU, two prices', quantity: 10, unit_cost: 4 });
+    const so = await saleOrder([
+      { name: 'Shared SKU, two prices', item_id: raw, quantity: 1, unit_price: 20 },
+      { name: 'Shared SKU, two prices', item_id: raw, quantity: 2, unit_price: 18 },
+    ]);
+    const lines = (await getOrder(so)).items;
+    expect((await ctx.api.post(`/api/orders/${so}/accept-release`).set(H())).status).toBe(200);
+    expect((await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({ bulk: [
+      { item_id: raw, order_item_id: lines[0].id, quantity: 1 },
+      { item_id: raw, order_item_id: lines[1].id, quantity: 2 },
+    ] })).status).toBe(200);
+    const issued = await ctx.api.post(`/api/orders/${so}/release-slip`).set(H()).send({ collected_by: 'Driver' });
+    expect(issued.status).toBe(201);
+    expect(await onHand(raw)).toBe(7);
+    const slip = (await ctx.api.get(`/api/release-slips/${issued.body.id}`).set(H())).body;
+    expect(slip.items.map((l: { order_item_id: number; quantity: number }) => [l.order_item_id, l.quantity]))
+      .toEqual([[lines[0].id, 1], [lines[1].id, 2]]);
+  });
   it('allows early dispatch but blocks delivered and sale completion until physical goods have a release slip', async () => {
     const raw = await mkItem({ name: 'Delivery release guard', quantity: 2 });
     const so = await saleOrder([{ name: 'Delivery release guard', item_id: raw, quantity: 2, unit_price: 20 }]);

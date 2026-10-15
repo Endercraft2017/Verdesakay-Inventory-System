@@ -145,8 +145,8 @@ App.register('releasing', async (view, filter) => {
 
     function draw() {
       const items = order.items || [];
-      const stock = new Map((rc && rc.availability || []).map((l) => [Number(l.item_id), l]));
-      const serialized = new Set((rc && rc.lines || []).filter((l) => l.serialized).map((l) => Number(l.item_id)));
+      const stock = new Map((rc && rc.availability || []).map((l) => [Number(l.order_item_id), l]));
+      const serialized = new Set((rc && rc.lines || []).filter((l) => l.serialized).map((l) => Number(l.id)));
       const fullyOut = String(order.status).toLowerCase() === 'released';
       // Partial release: only with Sales' authorization that allows it, and once something is out.
       const auth = (rc && rc.authorization) || {};
@@ -169,7 +169,9 @@ App.register('releasing', async (view, filter) => {
         </div>
         ${fullyOut ? '' : `
           <h4 style="${LABEL}">Scan unit labels</h4>
-          <div class="search-box">${UI.icon('search', 16)}<input id="rl-scan" autocomplete="off" placeholder="Scan or type a unit label, then Enter" /></div>`}
+          <div class="search-box">${UI.icon('search', 16)}<input id="rl-scan" autocomplete="off" placeholder="Scan or type a unit label, then Enter" /></div>
+          <label for="rl-serial-line" class="muted">Sale line for duplicate serial items</label>
+          <select id="rl-serial-line"><option value="">Match automatically when unique</option>${items.filter((l) => l.item_id && l.fulfillment_mode !== 'ckd').map((l) => `<option value="${l.id}">${UI.esc(l.name)} · ${l.fulfillment_mode === 'semi_built' ? 'Semi-built' : l.fulfillment_mode === 'ckd_component' ? 'CKD part' : 'Fully built'} · ${UI.esc(l.quantity)} @ ${UI.esc(l.unit_price)}</option>`).join('')}</select>`}
         <h4 style="${LABEL}">Lines</h4>
         <table>
           <thead><tr><th>Item</th><th class="right">Allocated</th><th style="width:210px"></th></tr></thead>
@@ -177,8 +179,8 @@ App.register('releasing', async (view, filter) => {
             if (l.fulfillment_mode === 'ckd') return `<tr><td><strong>${UI.esc(l.name)} (CKD)</strong><div class="muted">${l.quantity} unit${l.quantity === 1 ? '' : 's'} sold · pick the parts listed below</div></td><td colspan="2" class="muted">Component stock leaves on the release slip</td></tr>`;
             if (!l.item_id) return `<tr><td>${UI.esc(l.name)}</td><td class="right muted" colspan="2">service / free-text — nothing to release</td></tr>`;
             const got = covered(l), need = Number(l.quantity) || 0;
-            const free = Math.max(0, Number(stock.get(Number(l.item_id))?.free_to_allocate || 0));
-            const bulk = !serialized.has(Number(l.item_id));
+            const free = Math.max(0, Number(stock.get(Number(l.id))?.free_to_allocate || 0));
+            const bulk = !serialized.has(Number(l.id));
             return `<tr>
               <td><span class="muted">${l.parent_order_item_id ? 'CKD part' : l.fulfillment_mode === 'semi_built' ? 'Semi-built' : 'Fully built / part'} · </span>${UI.esc(l.name)}${l.sku ? `<div class="muted mono">${UI.esc(l.sku)}</div>` : ''}
                 <div class="muted">${bulk ? `${free} uncommitted at ship-from` : 'Scan each serial label'}</div></td>
@@ -218,19 +220,19 @@ App.register('releasing', async (view, filter) => {
           if (!code) return;
           scan.value = '';
           scan.disabled = true;
-          if (await post({ codes: [code] })) UI.toast(code + ' allocated');
+          if (await post({ codes: [code], order_item_id: Number(body.querySelector('#rl-serial-line')?.value) || undefined })) UI.toast(code + ' allocated');
           else scan.disabled = false;
         });
       }
       body.querySelectorAll('[data-bulk]').forEach((b) => b.onclick = async () => {
         const l = items[Number(b.dataset.bulk)];
         const q = Number(body.querySelector(`[data-qty="${b.dataset.bulk}"]`).value);
-        const free = Number(stock.get(Number(l.item_id))?.free_to_allocate || 0);
+        const free = Number(stock.get(Number(l.id))?.free_to_allocate || 0);
         if (!Number.isFinite(q) || q <= 0 || q > free || q > Number(l.quantity) - covered(l)) {
           UI.toast(`Enter a quantity up to ${Math.min(free, Number(l.quantity) - covered(l))}`, 'error'); return;
         }
         b.disabled = true;
-        if (await post({ bulk: [{ item_id: l.item_id, quantity: q }] })) UI.toast(`${l.name} ×${q} allocated`);
+        if (await post({ bulk: [{ item_id: l.item_id, order_item_id: l.id, quantity: q }] })) UI.toast(`${l.name} ×${q} allocated`);
         else b.disabled = false;
       });
       body.querySelectorAll('[data-undo-bulk]').forEach((b) => b.onclick = async () => {
@@ -241,7 +243,7 @@ App.register('releasing', async (view, filter) => {
         }
         if (!(await UI.confirmDialog(`Undo ${q} allocated ${l.name}?`, 'Undo allocation'))) return;
         b.disabled = true;
-        await undo({ bulk: [{ item_id: l.item_id, quantity: q }] });
+        await undo({ bulk: [{ item_id: l.item_id, order_item_id: l.id, quantity: q }] });
         if (b.isConnected) b.disabled = false;
       });
       body.querySelectorAll('[data-undo-unit]').forEach((b) => b.onclick = async () => {

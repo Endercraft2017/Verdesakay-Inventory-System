@@ -635,6 +635,8 @@ export interface JobOrderUnit {
   location_id: number | null;
   /** Sales order that sold or relocated this unit (nullable). */
   order_id: number | null;
+  /** Commercial sale line that reserved/sold this unit. */
+  order_item_id: number | null;
   /** Production batch this unit belongs to (nullable — serialized units may be loose). */
   batch_id: number | null;
   /** Set when the unit was failed (see UnitDisposition). */

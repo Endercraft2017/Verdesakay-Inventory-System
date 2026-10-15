@@ -164,14 +164,51 @@ describe('sale-order release', () => {
     expect((await send().send({ bulk: [{ item_id: raw, quantity: 3 }] })).status).toBe(409); expect((await getOrder(so)).items[0].released_qty).toBe(2.5);
   });
 
-  it('refuses ambiguous duplicate-item sales at intake', async () => {
-    const raw = await mkItem({ name: 'R3 Duplicate Widget', quantity: 10 });
+  it('allocates repeated SKU lines separately and requires the line on ambiguous legacy requests', async () => {
+    const raw = await mkItem({ name: 'R3 Duplicate Widget', sku: 'R3-DUP-WIDGET', quantity: 10 });
     const created = await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'ACME', status: 'approved', items: [
       { name: 'R3 Duplicate Widget', item_id: raw, quantity: 1, unit_price: 8 },
       { name: 'R3 Duplicate Widget', item_id: raw, quantity: 2, unit_price: 9 },
     ] });
-    expect(created.status).toBe(400);
-    expect(created.body.error).toMatch(/one line|same stock item|duplicate/i);
+    expect(created.status).toBe(201);
+    const lines = (await getOrder(created.body.id)).items;
+    expect(lines.map((l: { unit_price: number }) => l.unit_price)).toEqual([8, 9]);
+    const preview = await ctx.api.get(`/api/release-slips/orders/${created.body.id}/unit`).query({ code: 'R3-DUP-WIDGET' }).set(H());
+    expect(preview.body.state).toBe('line_required');
+    expect(preview.body.matching_lines.map((l: { order_item_id: number }) => l.order_item_id))
+      .toEqual(lines.map((l: { id: number }) => l.id));
+    await ctx.api.post(`/api/orders/${created.body.id}/accept-release`).set(H());
+    const ambiguous = await ctx.api.post(`/api/orders/${created.body.id}/release`).set(H())
+      .send({ bulk: [{ item_id: raw, quantity: 1 }] });
+    expect(ambiguous.status).toBe(409);
+    expect(ambiguous.body.code).toBe('line_required');
+    const picked = await ctx.api.post(`/api/orders/${created.body.id}/release`).set(H()).send({ bulk: [
+      { item_id: raw, order_item_id: lines[0].id, quantity: 1 },
+      { item_id: raw, order_item_id: lines[1].id, quantity: 2 },
+    ] });
+    expect(picked.status).toBe(200);
+    expect(picked.body.order.items.map((l: { released_qty: number }) => l.released_qty)).toEqual([1, 2]);
+    expect((await ctx.api.post(`/api/orders/${created.body.id}/release/unreserve`).set(H()).send({ bulk: [
+      { item_id: raw, order_item_id: lines[1].id, quantity: 1 },
+    ] })).status).toBe(200);
+    expect((await getOrder(created.body.id)).items.map((l: { released_qty: number }) => l.released_qty)).toEqual([1, 1]);
+  });
+
+  it('requires an exact sale line for serialized units sharing SKU and build state', async () => {
+    const { product, codes } = await productWithUnits('R3SERLINES', 2);
+    const so = await saleOrder([
+      { name: 'R3SERLINES Product', item_id: product, quantity: 1, unit_price: 80 },
+      { name: 'R3SERLINES Product', item_id: product, quantity: 1, unit_price: 95 },
+    ], 'approved');
+    const lines = (await getOrder(so)).items;
+    const ambiguous = await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({ codes: [codes[0]!] });
+    expect(ambiguous.status).toBe(409);
+    expect(ambiguous.body.code).toBe('line_required');
+    for (let i = 0; i < 2; i++) {
+      expect((await ctx.api.post(`/api/orders/${so}/release`).set(H())
+        .send({ codes: [codes[i]!], order_item_id: lines[i].id })).status).toBe(200);
+    }
+    expect((await getOrder(so)).items.map((l: { reserved_qty: number }) => l.reserved_qty)).toEqual([1, 1]);
   });
 
   it('unreserve returns units to stock-available and drops status back from released', async () => {

@@ -51,6 +51,28 @@ it('identifies the batch, reserves its exact quantity once, and releases the res
     expect((await ctx.api.post(`/api/orders/${so}/release/unreserve`).set(H()).send({ bulk: [{ item_id: product, quantity: 3 }] })).status).toBe(200);
     expect((await lookup()).batch.balances[0]).toMatchObject({ on_hand: 10, reserved: 0, available: 10 });
 });
+it('previews a batch across repeated sale lines and allocates it to the selected line', async () => {
+    const r=await ctx.api.post('/api/orders').set(H()).send({type:'sale',customer_name:'Repeated batch buyer',location_id:loc,status:'approved',items:[
+        {item_id:product,name:'QR batch product',quantity:1,unit_price:10},
+        {item_id:product,name:'QR batch product',quantity:2,unit_price:12},
+    ]});
+    expect(r.status).toBe(201);
+    const so=r.body.id;
+    await ctx.api.post(`/api/orders/${so}/accept-release`).set(H());
+    const lines=(await ctx.api.get(`/api/orders/${so}`).set(H())).body.items;
+    const preview=await ctx.api.get(`/api/release-slips/orders/${so}/unit`).query({code:batch.number}).set(H());
+    expect(preview.body.matching_lines.map((l:{order_item_id:number})=>l.order_item_id)).toEqual(lines.map((l:{id:number})=>l.id));
+    expect((await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({bulk:[{item_id:product,batch_id:batch.id,quantity:1}]})).body.code).toBe('line_required');
+    expect((await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({bulk:[{item_id:product,order_item_id:lines[0].id,batch_id:batch.id,quantity:1}]})).status).toBe(200);
+    expect((await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({bulk:[{item_id:product,order_item_id:lines[1].id,batch_id:batch.id,quantity:2}]})).status).toBe(200);
+    const allocations=(await ctx.api.get(`/api/release-slips/orders/${so}/context`).set(H())).body.batch_allocations;
+    expect(allocations.map((a:{order_item_id:number})=>a.order_item_id)).toEqual([lines[0].id,lines[1].id]);
+    expect((await ctx.api.post(`/api/orders/${so}/release/unreserve`).set(H()).send({bulk:[{item_id:product,order_item_id:lines[1].id,quantity:2}]})).status).toBe(200);
+    expect((await ctx.api.get(`/api/orders/${so}`).set(H())).body.items.map((l:{released_qty:number})=>l.released_qty)).toEqual([1,0]);
+    await ctx.api.post(`/api/orders/${so}/release/unreserve`).set(H()).send({bulk:[{item_id:product,order_item_id:lines[0].id,quantity:1}]});
+    const { run }=await import('../src/shared/db');
+    run("UPDATE orders SET status='cancelled' WHERE id=?",so);
+});
 it('refuses wrong build, wrong location, repeated batch entries and excess quantity without reserving stock', async () => {
     const semi = await sale(1, 'semi_built');
     expect((await ctx.api.post(`/api/orders/${semi}/release`).set(H()).send({ bulk: [{ item_id: product, batch_id: batch.id, quantity: 1 }] })).status).toBe(409);

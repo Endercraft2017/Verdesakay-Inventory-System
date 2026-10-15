@@ -600,9 +600,6 @@ App.register('orders', async (view, filter) => {
             b.onclick = () => { lines.splice(Number(b.dataset.rm), 1); renderLines(); });
           body.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => pickInventory((it) => {
             const i = Number(b.dataset.link);
-            if (type === 'sale' && lines.some((l, j) => j !== i && l.item_id === it.id)) {
-              UI.toast('That item is already on the order. Update its existing quantity.', 'error'); return;
-            }
             Object.assign(lines[i], { item_id: it.id, name: it.name, sku: it.sku || '', unit: it.unit || '' });
             lines[i].fulfillment_mode = 'assembled'; lines[i].ckd_parts = [];
             renderLines();
@@ -635,13 +632,6 @@ App.register('orders', async (view, filter) => {
         };
         const addInventory = ov.querySelector('#ord-add-inv');
         if (addInventory) addInventory.onclick = () => pickInventory((it) => {
-          const existing = type === 'sale' ? lines.findIndex((l) => l.item_id === it.id) : -1;
-          if (existing >= 0) {
-            const input = body.querySelector(`[data-row="${existing}"] [data-k="quantity"]`);
-            input.focus();
-            UI.toast('Already on this order. Update the quantity on the existing line.');
-            return;
-          }
           const sale = it.attributes && it.attributes.sale_price;
           lines.push({
             item_id: it.id, name: it.name, sku: it.sku || '', quantity: 1,

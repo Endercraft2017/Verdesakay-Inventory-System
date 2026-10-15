@@ -39,7 +39,7 @@ export function orderAvailability(orderId: number) {
         AND COALESCE(j.build_mode, 'assembled') = ?
         AND COALESCE(u.location_id, j.output_location_id, ?) IS ?`, itemId, orderId, mode, defaultLocation, at)?.n ?? 0;
     const demand = queryOne<{ n: number }>(`SELECT COALESCE(SUM(x.released_qty + MAX(0, x.quantity - x.released_qty -
-      (SELECT COUNT(*) FROM job_order_units u WHERE u.order_id = o.id AND u.product_item_id = x.item_id
+      (SELECT COUNT(*) FROM job_order_units u WHERE u.order_item_id = x.id
         AND u.status IN ('reserved', 'sold')))), 0) AS n
       FROM order_items x JOIN orders o ON o.id = x.order_id
       WHERE x.item_id = ? AND o.id != ? AND o.type = 'sale' AND o.fulfilled_at IS NULL
@@ -54,9 +54,9 @@ export function orderAvailability(orderId: number) {
     stockCache.set(key, result);
     return result;
   };
-  const materialPool = new Map<number, number>();
+  const materialPool = new Map<string, number>();
+  const componentPool = new Map<number, number>();
   const otherSourcePools = new Map<string, number>();
-  const usedUnitCoverage = new Set<number>();
   const requirements = new Map<number, { name: string; need: number }>();
   const bump = (id: number, name: string, amount: number) => {
     const r = requirements.get(id) ?? { name, need: 0 };
@@ -72,16 +72,15 @@ export function orderAvailability(orderId: number) {
     const s = stock(oi.item_id, locationId, mode);
     const units = queryOne<{ reserved: number; sold: number }>(`SELECT
       COALESCE(SUM(status = 'reserved'), 0) AS reserved, COALESCE(SUM(status = 'sold'), 0) AS sold
-      FROM job_order_units WHERE product_item_id = ? AND order_id = ? AND status IN ('reserved', 'sold')`, oi.item_id, orderId)!;
-    if (usedUnitCoverage.has(oi.item_id)) { units.reserved = 0; units.sold = 0; }
-    usedUnitCoverage.add(oi.item_id);
+      FROM job_order_units WHERE order_item_id = ? AND status IN ('reserved', 'sold')`, oi.id)!;
     const covered = units.reserved + units.sold + (oi.released_qty || 0);
     const ownOnHand = units.reserved + (order.fulfilled_at ? 0 : oi.released_qty || 0);
-    const balance = materialPool.get(oi.item_id) ?? s.free;
+    const poolKey = `${oi.item_id}:${mode}`;
+    const balance = materialPool.get(poolKey) ?? s.free;
     const free = Math.max(0, balance - ownOnHand);
     const available = qty(free + covered);
     const shortfall = qty(Math.max(0, oi.quantity - available));
-    materialPool.set(oi.item_id, qty(Math.max(0, free - Math.max(0, oi.quantity - covered))));
+    materialPool.set(poolKey, qty(Math.max(0, free - Math.max(0, oi.quantity - covered))));
     const hasBom = !!inv.is_finished_product && !!queryOne('SELECT id FROM bom_components WHERE product_item_id = ? LIMIT 1', oi.item_id);
     // QC done isn't stock received. Keep completed jobs with unreceived output in planning
     // cover, excluding scrapped output and jobs targeting a different location.
@@ -122,11 +121,11 @@ export function orderAvailability(orderId: number) {
     }
     for (const [key, m] of materials) {
       const id = m.id;
-      const have = (m.at === locationId ? materialPool.get(id) : otherSourcePools.get(key)) ?? stock(id, m.at).free;
+      const have = (m.at === locationId ? (componentPool.get(id) ?? materialPool.get(`${id}:assembled`)) : otherSourcePools.get(key)) ?? stock(id, m.at).free;
       if (m.need > have) l.component_shortfalls.push({ component_item_id: id, name: m.name, need: m.need, have });
       bump(id, m.name, Math.max(0, m.need - have));
       const left = qty(Math.max(0, have - m.need));
-      if (m.at === locationId) materialPool.set(id, left);
+      if (m.at === locationId) componentPool.set(id, left);
       else otherSourcePools.set(key, left);
     }
     l.buildable = l.component_shortfalls.length === 0;

@@ -46,13 +46,13 @@ router.get('/slips/:slipId/context', requireAnyPermission(['inventory.view', 'in
   const slip = queryOne<{ id: number; number: string; order_id: number }>(
     'SELECT id, number, order_id FROM release_slips WHERE id = ?', slipId);
   if (!slip) { res.status(404).json({ error: 'Release slip not found.' }); return; }
-  const lines = queryAll(`SELECT li.id, li.item_id, li.name, li.sku, li.unit, li.quantity,
+  const lines = queryAll(`SELECT li.id, li.order_item_id, li.item_id, li.name, li.sku, li.unit, li.quantity,
     li.unit_identifiers, COALESCE((SELECT SUM(r.quantity) FROM sales_returns r WHERE r.slip_item_id = li.id), 0) AS returned_qty
     FROM release_slip_items li WHERE li.slip_id = ? AND li.item_id IS NOT NULL ORDER BY li.id`, slipId);
-  const units = queryAll(`SELECT u.id, u.product_item_id AS item_id, u.identifier
+  const units = queryAll(`SELECT u.id, u.order_item_id, u.product_item_id AS item_id, u.identifier
     FROM job_order_units u WHERE u.order_id = ? AND u.status = 'sold'
     AND NOT EXISTS (SELECT 1 FROM sales_returns r WHERE r.unit_id = u.id) ORDER BY u.id`, slip.order_id);
-  const batches=queryAll(`SELECT a.batch_id,pb.number AS batch_number,a.item_id,SUM(a.quantity) AS shipped_quantity FROM production_batch_allocations a JOIN production_batches pb ON pb.id=a.batch_id WHERE a.order_id=? AND a.state='shipped' GROUP BY a.batch_id,a.item_id`,slip.order_id);
+  const batches=queryAll(`SELECT a.batch_id,pb.number AS batch_number,a.order_item_id,a.item_id,SUM(a.quantity) AS shipped_quantity FROM production_batch_allocations a JOIN production_batches pb ON pb.id=a.batch_id WHERE a.order_id=? AND a.state='shipped' GROUP BY a.batch_id,a.order_item_id,a.item_id`,slip.order_id);
   res.json({ slip, lines, units, batches, returns: queryAll<ReturnRow>(`${SELECT} WHERE r.slip_id = ? ORDER BY r.id DESC`, slipId) });
 });
 router.get('/:id', requireAnyPermission(['inventory.view', 'inventory.adjust', 'orders.release', 'orders.view']), (req, res) => {
@@ -68,8 +68,8 @@ router.get('/:id/events', requireAnyPermission(['inventory.view', 'inventory.adj
 
 router.post('/', warehouse, syncClass('physical', returnSite), (req, res) => {
   const b = parseBody(salesReturnReceiveSchema, req.body);
-  const line = queryOne<{ id: number; item_id: number; quantity: number; unit_cost: number | null; order_id: number; fulfillment_mode: string }>(
-    `SELECT li.id, li.item_id, li.quantity, li.unit_cost, s.order_id, COALESCE(oi.fulfillment_mode, 'assembled') AS fulfillment_mode FROM release_slip_items li
+  const line = queryOne<{ id: number; order_item_id: number; item_id: number; quantity: number; unit_cost: number | null; order_id: number; fulfillment_mode: string }>(
+    `SELECT li.id, li.order_item_id, li.item_id, li.quantity, li.unit_cost, s.order_id, COALESCE(oi.fulfillment_mode, 'assembled') AS fulfillment_mode FROM release_slip_items li
      LEFT JOIN order_items oi ON oi.id = li.order_item_id
      JOIN release_slips s ON s.id = li.slip_id WHERE s.id = ? AND li.id = ?`, b.slip_id, b.slip_item_id);
   if (!line || !line.item_id) { res.status(404).json({ error: 'Slip line not found.' }); return; }
@@ -82,15 +82,15 @@ router.post('/', warehouse, syncClass('physical', returnSite), (req, res) => {
   line.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled');
   if (serialized) {
     const unit = b.unit_id && queryOne<{ id: number; status: string }>(
-      'SELECT id, status FROM job_order_units WHERE id = ? AND product_item_id = ? AND order_id = ?',
-      b.unit_id, line.item_id, line.order_id);
+      'SELECT id, status FROM job_order_units WHERE id = ? AND order_item_id = ? AND order_id = ?',
+      b.unit_id, line.order_item_id, line.order_id);
     if (!unit || unit.status !== 'sold' || b.quantity !== 1) {
       res.status(409).json({ error: 'Select one sold serial from this slip for this return.', code: 'return_serial_required' }); return;
     }
   } else if (b.unit_id) {
     res.status(400).json({ error: 'Bulk goods do not take a serial unit ID.' }); return;
   }
-  const shippedBatches=queryAll<{batch_id:number;quantity:number}>(`SELECT batch_id,SUM(quantity) AS quantity FROM production_batch_allocations WHERE order_id=? AND item_id=? AND state='shipped' GROUP BY batch_id`,line.order_id,line.item_id);
+  const shippedBatches=queryAll<{batch_id:number;quantity:number}>(`SELECT batch_id,SUM(quantity) AS quantity FROM production_batch_allocations WHERE order_item_id=? AND state='shipped' GROUP BY batch_id`,line.order_item_id);
   const batchId=b.batch_id??(shippedBatches.length===1?shippedBatches[0]!.batch_id:null);
   if(shippedBatches.length||batchId){
     const source=shippedBatches.find(x=>x.batch_id===batchId);
@@ -138,9 +138,10 @@ router.post('/:id/inspect', requirePermission('inventory.adjust'), syncClass('ph
     if(loc&&row.batch_id)restoreBatchStock(row.batch_id,loc,row.quantity);
     if (row.unit_id) {
       const changed = run(`UPDATE job_order_units SET status = ?, location_id = COALESCE(?, location_id),
-        order_id = CASE WHEN ? = 'restock' THEN NULL ELSE order_id END, updated_at = datetime('now')
+        order_id = CASE WHEN ? = 'restock' THEN NULL ELSE order_id END,
+        order_item_id = CASE WHEN ? = 'restock' THEN NULL ELSE order_item_id END, updated_at = datetime('now')
         WHERE id = ? AND status = 'sold' AND order_id = ?`,
-      loc ? 'in_stock' : 'returned_rejected', loc, b.decision, row.unit_id, row.order_id);
+      loc ? 'in_stock' : 'returned_rejected', loc, b.decision, b.decision, row.unit_id, row.order_id);
       if (changed.changes !== 1) throw new Error('The serialized unit changed since return receipt.');
     }
     run(`UPDATE sales_returns SET status = ?, condition_note = ?, location_id = ?,

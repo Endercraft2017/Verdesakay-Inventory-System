@@ -100,12 +100,12 @@ describe('sales order intake UI', () => {
     expect(api.post).not.toHaveBeenCalled();
     expect(doc.querySelector('[data-k="quantity"]')?.getAttribute('aria-invalid')).toBe('true');
   });
-  it('keeps duplicate inventory selections on one line and focuses quantity', async () => {
+  it('adds separate sale lines for repeated inventory selections and focuses the new quantity', async () => {
     const { doc, click } = await setup();
     click('#ord-new'); click('#ord-add-inv'); await flush(); click('.order-pick-row'); await flush();
     click('#ord-add-inv'); await flush(); click('.order-pick-row'); await flush();
-    expect(doc.querySelectorAll('[data-row]')).toHaveLength(1);
-    expect(doc.activeElement).toBe(doc.querySelector('[data-k="quantity"]'));
+    expect(doc.querySelectorAll('[data-row]')).toHaveLength(2);
+    expect(doc.activeElement).toBe(doc.querySelector('[data-row="1"] [data-k="quantity"]'));
     expect(doc.querySelector('.order-link-hint')?.textContent).toContain('Linked inventory');
   });
   it('shows approved lines and tax as locked while keeping header editable', async () => {
