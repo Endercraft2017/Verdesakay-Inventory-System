@@ -87,7 +87,7 @@ App.register('orders', async (view, filter) => {
         <thead><tr><th>Number</th><th>${partyLabel}</th><th>Date</th><th class="right">Total</th><th>Status</th><th></th></tr></thead>
         <tbody>${list.map((o) => `
           <tr class="clickable" data-open="${o.id}">
-            <td><strong>${UI.esc(o.number)}</strong>${type === 'job' && o.job_order_number ? `<div class="muted" style="font-size:11px">${UI.esc(o.job_order_number)} · ${UI.esc((o.job_order_status || '').replace('_', ' '))}</div>` : ''}</td>
+            <td><strong>${UI.esc(o.number)}</strong>${type === 'job' && o.job_order_number ? `<div class="muted" style="font-size:11px">${UI.esc(o.job_order_number)} · ${UI.esc((o.job_order_status || '').replace('_', ' '))}</div>` : ''}${type === 'sale' && o.fulfillment_modes ? `<div class="muted" style="font-size:11px">${o.fulfillment_modes.split(',').map((m) => UI.esc(({ assembled: 'Fully built', semi_built: 'Semi-built', ckd: 'CKD', part: 'Parts' })[m] || m)).join(' · ')}</div>` : ''}</td>
             <td>${UI.esc(o.customer_name || '—')}</td>
             <td>${UI.esc(o.order_date || UI.fmtDateShort(o.created_at))}</td>
             <td class="right">${UI.esc(o.currency || '')} ${money(o.total)}</td>
@@ -196,9 +196,10 @@ App.register('orders', async (view, filter) => {
         <div class="order-review-summary"><div><strong>${UI.esc(order.number)}</strong> · ${UI.esc(status)}
           <p>Ship from <strong>${UI.esc(av.location_name || 'No stock location')}</strong>${av.uses_default_location ? ' (default)' : ''}</p></div>
           <span class="badge-pill ${av.ok ? 'ok' : 'low'}">${av.ok ? 'Stock covers this order' : av.short_lines + ' stock line(s) short'}</span></div>
-        <p class="muted">${av.lines.some((l) => l.elsewhere_on_hand > 0) ? 'Stock at other locations needs a transfer. ' : ''}Production and purchase drafts are planning only; they become available after receipt. ${av.non_stock_lines || 0} non-stock line(s) have no stock requirement.</p>
+        <p class="muted">${av.lines.some((l) => l.elsewhere_on_hand > 0) ? 'Stock at other locations needs a transfer. ' : ''}Available RTS stock can be picked now; draft production covers only the remaining shortage and becomes stock after QC and Products In. A separate job order can also build RTS buffer stock without a sales order. ${av.non_stock_lines || 0} non-stock line(s) have no stock requirement.</p>
         <div class="order-review-lines">${av.lines.map((l) => `<article class="order-stock-line">
-          <div><strong>${UI.esc(l.name)}</strong><span class="badge-pill ${l.shortfall > 0 ? 'low' : 'ok'}">${l.shortfall > 0 ? 'Short ' + l.shortfall : 'Covered'}</span></div>
+          <div><strong>${UI.esc(l.name)}</strong> <span class="muted">${l.fulfillment_mode === 'semi_built' ? 'Semi-built' : l.fulfillment_mode === 'ckd_component' ? 'CKD part' : l.is_finished_product ? 'Fully built' : 'Part'}</span><span class="badge-pill ${l.shortfall > 0 ? 'low' : 'ok'}">${l.shortfall > 0 ? 'Short ' + l.shortfall : 'Covered'}</span></div>
+          ${l.is_finished_product && l.shortfall > 0 && l.available > l.covered_here ? `<p class="muted">Split fulfillment: pick up to ${Math.max(0, l.available - l.covered_here)} available RTS unit(s); plan ${l.shortfall} remaining unit(s) for production.</p>` : ''}
           <dl><div><dt>Ordered</dt><dd>${l.ordered}</dd></div><div><dt>On hand here</dt><dd>${l.on_hand}</dd></div><div><dt>Other orders</dt><dd>${l.committed_orders ?? l.committed_elsewhere}</dd></div><div><dt>Kit / repair holds</dt><dd>${l.kit_held || 0} / ${l.repair_held || 0}</dd></div><div><dt>Picked / shipped here</dt><dd>${l.covered_here}</dd></div><div><dt>Available to order</dt><dd>${l.available}</dd></div></dl>
           ${l.elsewhere_on_hand > 0 ? `<p class="muted">${l.elsewhere_on_hand} on hand at other locations.</p>` : ''}
           ${l.shortfall > 0 && l.is_finished_product ? `<p>${!l.has_bom ? 'No BOM: define the product recipe before planning production.' : l.buildable ? 'Outstanding production materials are covered; approval and kit release are still required.' : 'Materials short: ' + (l.component_shortfalls || []).map((c) => `${UI.esc(c.name)} (need ${c.need}, free ${c.have})`).join('; ')}</p>` : ''}
@@ -445,7 +446,7 @@ App.register('orders', async (view, filter) => {
               <td data-label="Item"><input data-k="name" value="${UI.esc(l.name || '')}" placeholder="Item name" maxlength="200" /><div class="order-link-hint">${l.item_id ? `${UI.icon('inventory', 12)} Linked inventory item · #${l.item_id}` : 'Non-stock · service or charge'}</div>${!lockLines ? `<button type="button" class="order-link-btn" data-link="${i}">${l.item_id ? 'Change inventory item' : 'Link inventory item'}</button>${l.item_id ? ` <button type="button" class="order-link-btn" data-unlink="${i}">Make non-stock</button>` : ''}` : ''}
                 ${type === 'sale' && l.item_id ? `<label class="muted" style="display:block;margin-top:8px">Fulfillment
                   <select data-mode="${i}" aria-label="Line ${i + 1} fulfillment mode" ${lockLines ? 'disabled' : ''}>
-                    ${[['assembled','Fully built / stock'],['semi_built','Semi-built / production'],['ckd','CKD · ship parts']].map(([value,label]) => `<option value="${value}" ${String(l.fulfillment_mode || 'assembled') === value ? 'selected' : ''}>${label}</option>`).join('')}
+                    ${[['assembled','Fully built · RTS or production'],['semi_built','Semi-built · RTS or production'],['ckd','CKD · ship parts']].map(([value,label]) => `<option value="${value}" ${String(l.fulfillment_mode || 'assembled') === value ? 'selected' : ''}>${label}</option>`).join('')}
                   </select></label><div class="muted" data-ckd-preview="${i}" style="font-size:11px;margin-top:5px"></div>` : ''}${
                 type === 'sale' && (l.allocated_qty || l.reserved_qty || l.released_qty)
                   ? `<div class="muted" style="font-size:11px">${

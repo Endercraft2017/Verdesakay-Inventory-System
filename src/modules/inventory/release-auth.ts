@@ -149,7 +149,8 @@ export function splitUnreleased(orderId: number, userId: number): { id: number; 
     'SELECT * FROM orders WHERE id = ?', orderId
   )!;
   const lines = queryAll<{ id: number; item_id: number | null; name: string; sku: string | null; description: string | null;
-    quantity: number; unit: string | null; unit_price: number; tax_code_id: number | null; released_qty: number | null; sort: number }>(
+    quantity: number; unit: string | null; unit_price: number; tax_code_id: number | null; released_qty: number | null; sort: number;
+    fulfillment_mode: string }>(
     'SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', orderId
   );
   const rest: typeof lines = [];
@@ -188,9 +189,9 @@ export function splitUnreleased(orderId: number, userId: number): { id: number; 
     bo.tax_amount, bo.total, userId
   ).lastInsertRowid);
   rest.forEach((l, i) => run(
-    `INSERT INTO order_items (order_id, item_id, name, sku, description, quantity, unit, unit_price, line_total, tax_code_id, sort)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    boId, l.item_id, l.name, l.sku, l.description, l.quantity, l.unit, l.unit_price, r2(l.quantity * l.unit_price), l.tax_code_id, i
+    `INSERT INTO order_items (order_id, item_id, name, sku, description, quantity, unit, unit_price, line_total, tax_code_id, sort, fulfillment_mode)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    boId, l.item_id, l.name, l.sku, l.description, l.quantity, l.unit, l.unit_price, r2(l.quantity * l.unit_price), l.tax_code_id, i, l.fulfillment_mode
   ));
   return { id: boId, number };
 }

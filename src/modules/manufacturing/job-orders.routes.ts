@@ -534,6 +534,7 @@ router.get('/:id', detailGate, (req, res) => {
  *  Caller owns validation; this just writes (its own transaction). */
 export function createDraftJobOrder(opts: {
   productId: number; productName: string; qty: number;
+  buildMode?: 'assembled' | 'semi_built';
   orderId?: number | null; sourceLocationId: number; outputLocationId: number;
   qcStages?: number; teamId?: number | null; plannedStart?: string | null;
   dueDate?: string | null; priority?: number; workCenter?: string | null;
@@ -551,11 +552,12 @@ export function createDraftJobOrder(opts: {
     const number = nextSequence('mo_seq', 'MO');
     const info = run(
       `INSERT INTO job_orders
-        (number, order_id, product_item_id, product_name, qty_ordered, status,
+        (number, order_id, product_item_id, product_name, qty_ordered, status, build_mode,
          source_location_id, output_location_id, qc_stages,
          team_id, planned_start, due_date, priority, work_center, notes, created_by)
-       VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       number, opts.orderId ?? null, opts.productId, opts.productName, opts.qty,
+      opts.buildMode ?? 'assembled',
       opts.sourceLocationId, opts.outputLocationId, opts.qcStages ?? 0,
       opts.teamId ?? null, opts.plannedStart ?? null, opts.dueDate ?? null,
       opts.priority ?? 0, opts.workCenter ?? null, opts.notes ?? null, opts.userId
@@ -589,9 +591,14 @@ router.post('/', writeGate, syncClass('merge'), (req, res) => {
     res.status(400).json({ error: 'That item is not a finished product. Define its BOM first.' });
     return;
   }
-  if (input.order_id && !queryOne('SELECT id FROM orders WHERE id = ?', input.order_id)) {
-    res.status(400).json({ error: 'Linked order not found' });
-    return;
+  if (input.order_id) {
+    const linked = queryOne<{ type: string }>('SELECT type FROM orders WHERE id = ?', input.order_id);
+    if (!linked) { res.status(400).json({ error: 'Linked order not found' }); return; }
+    if (linked.type === 'sale' && !queryOne(`SELECT 1 FROM order_items WHERE order_id = ? AND item_id = ?
+      AND fulfillment_mode = ? LIMIT 1`, input.order_id, product.id, input.build_mode)) {
+      res.status(409).json({ error: 'The sale has no matching fully built or semi-built line. Match the job order build state to the sale, or create an independent RTS buffer job.' });
+      return;
+    }
   }
   if (input.team_id && !queryOne('SELECT id FROM production_teams WHERE id = ?', input.team_id)) {
     res.status(400).json({ error: 'Production team not found' });
@@ -611,6 +618,7 @@ router.post('/', writeGate, syncClass('merge'), (req, res) => {
   // built; it just reserves/consumes nothing unless components are added on the draft.
   const created = createDraftJobOrder({
     productId: product.id, productName: product.name, qty: input.qty_ordered,
+    buildMode: input.build_mode,
     orderId: input.order_id ?? null, sourceLocationId: sourceLoc, outputLocationId: outputLoc,
     qcStages: input.qc_stages, teamId: input.team_id ?? null, plannedStart: input.planned_start ?? null,
     dueDate: input.due_date ?? null, priority: input.priority ?? 0, workCenter: input.work_center ?? null,
@@ -2029,6 +2037,7 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
       if (jo.product_item_id != null) {
         applyStockChange({
           itemId: jo.product_item_id, locationId: input.location_id, change: 1,
+          buildMode: jo.build_mode,
           // Prefix with the job order number — production.routes.ts GET /record's dossier
           // matches movements with `reason LIKE '${joNumber}%'`.
           reason: `${jo.number}: received (Products In ${number})`, userId: req.user!.id, unitCost,
@@ -2040,6 +2049,7 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
       if (jo.product_item_id != null) {
         applyStockChange({
           itemId: jo.product_item_id, locationId: input.location_id, change: line.quantity,
+          buildMode: jo.build_mode,
           reason: `${jo.number}: received (Products In ${number})`, userId: req.user!.id, unitCost,
         });
       }

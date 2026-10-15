@@ -283,7 +283,7 @@ router.get('/:id/units', catalogRead, (req, res) => {
     queryAll<JobOrderUnit>(
       `SELECT u.id, u.identifier, u.status, u.stage, u.location_id, u.order_id,
               u.created_at, u.updated_at,
-              jo.number AS job_order_number, l.name AS location_name, o.number AS order_number
+              jo.number AS job_order_number, jo.build_mode, l.name AS location_name, o.number AS order_number
        FROM job_order_units u
        LEFT JOIN job_orders jo ON jo.id = u.job_order_id
        LEFT JOIN locations l ON l.id = u.location_id
@@ -303,12 +303,17 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncCl
   if (!item) { res.status(404).json({ error: 'Item not found' }); return; }
   const input = parseBody(allocateUnitsSchema, req.body);
 
-  let order: { id: number; number: string } | undefined;
+  let order: { id: number; number: string; type: string } | undefined;
   if (input.order_id != null) {
     order = queryOne<{ id: number; number: string; type: string }>(
       "SELECT id, number, type FROM orders WHERE id = ?", input.order_id
     );
     if (!order) { res.status(400).json({ error: 'Sales order not found' }); return; }
+    if (input.action === 'sell' && order.type === 'sale' && queryOne(`SELECT 1 FROM order_items
+      WHERE order_id = ? AND item_id = ? AND fulfillment_mode != ? LIMIT 1`,
+      input.order_id, id, input.build_mode)) {
+      res.status(409).json({ error: 'The sale line requests a different build state from these units.' }); return;
+    }
   }
   if (input.action === 'move' && input.to_location_id != null
     && !queryOne('SELECT id FROM locations WHERE id = ?', input.to_location_id)) {
@@ -317,10 +322,11 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncCl
   }
 
   // Resolve the target units — explicit ids, else the first N bulk (no-identifier) in-stock.
-  let units: JobOrderUnit[];
+  let units: Array<JobOrderUnit & { build_mode: 'assembled' | 'semi_built' }>;
   if (input.unit_ids && input.unit_ids.length) {
-    units = queryAll<JobOrderUnit>(
-      `SELECT * FROM job_order_units WHERE product_item_id = ? AND id IN (${input.unit_ids.map(() => '?').join(',')})`,
+    units = queryAll<JobOrderUnit & { build_mode: 'assembled' | 'semi_built' }>(
+      `SELECT u.*, j.build_mode FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
+       WHERE u.product_item_id = ? AND u.id IN (${input.unit_ids.map(() => '?').join(',')})`,
       id, ...input.unit_ids
     );
     if (units.length !== input.unit_ids.length) {
@@ -333,16 +339,19 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncCl
       return;
     }
   } else {
-    units = queryAll<JobOrderUnit>(
-      `SELECT * FROM job_order_units
-       WHERE product_item_id = ? AND status = 'in_stock' AND (identifier IS NULL OR TRIM(identifier) = '')
-       ORDER BY id LIMIT ?`,
-      id, input.quantity
+    units = queryAll<JobOrderUnit & { build_mode: 'assembled' | 'semi_built' }>(
+      `SELECT u.*, j.build_mode FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
+       WHERE u.product_item_id = ? AND j.build_mode = ? AND u.status = 'in_stock' AND (u.identifier IS NULL OR TRIM(u.identifier) = '')
+       ORDER BY u.id LIMIT ?`,
+      id, input.build_mode, input.quantity
     );
     if (units.length < (input.quantity ?? 0)) {
       res.status(400).json({ error: `Only ${units.length} untracked in-stock unit(s) available` });
       return;
     }
+  }
+  if (units.some((u) => u.build_mode !== input.build_mode)) {
+    res.status(409).json({ error: 'Selected units have a different build state. Choose fully built or semi-built units separately.' }); return;
   }
 
   const fallbackLoc = getDefaultLocationId();
@@ -353,6 +362,7 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncCl
       if (input.action === 'sell') {
         applyStockChange({
           itemId: id, locationId: from, change: -1, userId: req.user!.id,
+          buildMode: u.build_mode,
           reason: `Sold${order ? ' — ' + order.number : ''}${input.reason ? ' — ' + input.reason : ''}`,
         });
         run(
@@ -363,6 +373,7 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncCl
         if (from !== input.to_location_id) {
           transferStock({
             itemId: id, fromId: from, toId: input.to_location_id as number, amount: 1,
+            buildMode: u.build_mode,
             userId: req.user!.id, reason: input.reason ?? (order ? order.number : null),
           });
         }

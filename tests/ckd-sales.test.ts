@@ -10,6 +10,24 @@ beforeAll(async () => { ctx = await setupApp(); token = await login(ctx.api); })
 afterAll(() => cleanup(ctx));
 
 describe('same product SKU, CKD fulfillment', () => {
+  it('does not reserve assembled RTS stock for a firm CKD order', async () => {
+    const product = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'CKD ATP Bike', quantity: 1 })).body.id;
+    const part = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'CKD ATP Part', quantity: 1 })).body.id;
+    await ctx.api.put(`/api/finished-products/${product}`).set(H())
+      .send({ components: [{ component_item_id: part, quantity: 1 }] });
+    const ckd = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'CKD Buyer',
+      items: [{ item_id: product, name: 'CKD ATP Bike', quantity: 1, unit_price: 100, fulfillment_mode: 'ckd' }] })).body.id;
+    expect((await ctx.api.post(`/api/orders/${ckd}/status`).set(H()).send({ status: 'approved' })).status).toBe(200);
+    const built = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'Built Buyer',
+      items: [{ item_id: product, name: 'CKD ATP Bike', quantity: 1, unit_price: 100, fulfillment_mode: 'assembled' }] })).body.id;
+    const availability = (await ctx.api.get(`/api/orders/${built}/availability`).set(H())).body;
+    expect(availability.lines[0]).toMatchObject({ on_hand: 1, available: 1, shortfall: 0 });
+    const aftersales = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'Parts Buyer',
+      items: [{ item_id: part, name: 'CKD ATP Part', quantity: 1, unit_price: 10 }] })).body.id;
+    expect((await ctx.api.get(`/api/orders/${aftersales}/availability`).set(H())).body.lines[0])
+      .toMatchObject({ on_hand: 1, available: 0, shortfall: 1 });
+  });
+
   it('does not promise CKD from assembled-unit stock when its parts are missing', async () => {
     const product = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'CKD Short Bike', quantity: 3 })).body.id;
     const part = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'CKD Short Frame', quantity: 0 })).body.id;
@@ -89,6 +107,15 @@ describe('same product SKU, CKD fulfillment', () => {
     expect(await stock(wheel)).toBe(2);
     const context = (await ctx.api.get(`/api/sales-returns/slips/${slip.body.id}/context`).set(H())).body;
     expect(context.lines.map((l: { item_id: number }) => l.item_id)).toEqual([frame, wheel]);
+
+    const semi = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'Semi Customer',
+      items: [{ item_id: product, name: 'CKD Bike', sku: 'BIKE-ONE', quantity: 1, unit_price: 120,
+        fulfillment_mode: 'semi_built' }] })).body.id;
+    expect((await ctx.api.post(`/api/orders/${semi}/status`).set(H()).send({ status: 'approved', force: true })).status).toBe(200);
+    await ctx.api.post(`/api/orders/${semi}/accept-release`).set(H());
+    const wrongBuild = await ctx.api.post(`/api/orders/${semi}/release`).set(H()).send({ unit_ids: [unitId] });
+    expect(wrongBuild.status).toBe(409);
+    expect(wrongBuild.body.error).toMatch(/fully built/i);
 
     // The same product/SKU can also be sold from its built-unit stock on another order.
     const built = await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'Built Customer',

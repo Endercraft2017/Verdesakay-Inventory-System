@@ -221,6 +221,7 @@ router.delete('/:id', requirePermission('inventory.delete'), syncClass('claim', 
   }
   db.exec('BEGIN');
   try {
+    run('DELETE FROM inventory_variant_stock WHERE location_id = ?', id);
     run('DELETE FROM inventory_stock WHERE location_id = ?', id); // only zero-qty rows remain
     run('DELETE FROM locations WHERE id = ?', id);
     db.exec('COMMIT');

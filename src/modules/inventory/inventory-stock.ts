@@ -50,19 +50,37 @@ export function stockAt(itemId: number, locationId: number): number {
   );
 }
 
+export type BuildMode = 'assembled' | 'semi_built';
+export function variantStockAt(itemId: number, locationId: number, mode: BuildMode): number {
+  return queryOne<{ quantity: number }>(
+    'SELECT quantity FROM inventory_variant_stock WHERE item_id = ? AND location_id = ? AND build_mode = ?',
+    itemId, locationId, mode
+  )?.quantity ?? 0;
+}
+export function variantStockTotal(itemId: number, mode: BuildMode): number {
+  return queryOne<{ quantity: number }>(
+    'SELECT COALESCE(SUM(quantity), 0) AS quantity FROM inventory_variant_stock WHERE item_id = ? AND build_mode = ?',
+    itemId, mode
+  )?.quantity ?? 0;
+}
+
 /** Every location with this item's quantity there (0 where there's no row). */
 export function stockBreakdown(itemId: number): Array<{
   location_id: number; location_name: string; location_type: string; is_default: number; quantity: number;
+  assembled_quantity: number; semi_built_quantity: number;
 }> {
   const rows = queryAll<{
     location_id: number; location_name: string; location_type: string; is_default: number; quantity: number;
+    assembled_quantity: number; semi_built_quantity: number;
   }>(
     `SELECT l.id AS location_id, l.name AS location_name, l.type AS location_type, l.is_default,
-            COALESCE(s.quantity, 0) AS quantity
+            COALESCE(s.quantity, 0) AS quantity,
+            COALESCE((SELECT v.quantity FROM inventory_variant_stock v WHERE v.item_id = ? AND v.location_id = l.id AND v.build_mode = 'assembled'), 0) AS assembled_quantity,
+            COALESCE((SELECT v.quantity FROM inventory_variant_stock v WHERE v.item_id = ? AND v.location_id = l.id AND v.build_mode = 'semi_built'), 0) AS semi_built_quantity
        FROM locations l
        LEFT JOIN inventory_stock s ON s.item_id = ? AND s.location_id = l.id
       ORDER BY l.name COLLATE NOCASE`,
-    itemId
+    itemId, itemId, itemId
   );
   return rows.map((row) => ({ ...row, location_name: locationName(row.location_id) }));
 }
@@ -80,6 +98,7 @@ interface ChangeOpts {
       is rolled to the weighted moving average. Omit for cost-less moves (adjustments,
       transfers, returns) — the average is then left untouched. */
   unitCost?: number | null;
+  buildMode?: BuildMode;
 }
 
 /** Whether a stock-out may exceed the recorded stock at its location: only inside a synced
@@ -91,8 +110,12 @@ export function overdrawAllowed(): boolean {
 /** Apply a stock delta at one location + log it. Returns the new figures, plus the
  *  `stock_discrepancies` row when a synced stock-out took the location below zero. */
 export function applyStockChange(opts: ChangeOpts): { locationQty: number; total: number; discrepancyId?: number } {
-  const { itemId, locationId, change, reason, userId, touchTotal = true, unitCost } = opts;
+  const { itemId, locationId, change, reason, userId, touchTotal = true, unitCost, buildMode = 'assembled' } = opts;
   const locationQty = stockAt(itemId, locationId) + change;
+  const variantQty = variantStockAt(itemId, locationId, buildMode) + change;
+  if (variantQty < -1e-9 && !overdrawAllowed()) {
+    throw Object.assign(new Error(`Only ${variantStockAt(itemId, locationId, buildMode)} ${buildMode === 'semi_built' ? 'semi-built' : 'fully built/standard'} units are available at this location.`), { status: 409 });
+  }
 
   // Weighted moving average, computed from the pre-change grand total (a pre-existing
   // negative balance counts as 0 so a backorder doesn't distort the blend).
@@ -117,6 +140,9 @@ export function applyStockChange(opts: ChangeOpts): { locationQty: number; total
     locationQty,
     locationQty
   );
+  run(`INSERT INTO inventory_variant_stock (item_id, location_id, build_mode, quantity) VALUES (?, ?, ?, ?)
+    ON CONFLICT(item_id, location_id, build_mode) DO UPDATE SET quantity = ?`,
+    itemId, locationId, buildMode, variantQty, variantQty);
   if (touchTotal) {
     run(
       "UPDATE inventory_items SET quantity = quantity + ?, updated_at = datetime('now') WHERE id = ?",
@@ -141,12 +167,13 @@ export function applyStockChange(opts: ChangeOpts): { locationQty: number; total
   );
   // D1: the goods left even though the records said they weren't there — flag it for a
   // supervisor to count or correct. On the authority this reflects its own (final) balance.
-  if (change < 0 && locationQty < 0 && inSyncedCommand()) {
+  if (change < 0 && (locationQty < 0 || variantQty < 0) && inSyncedCommand()) {
     const d = run(
       `INSERT INTO stock_discrepancies
          (item_id, location_id, transaction_id, change, location_balance_after, reason, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      itemId, locationId, Number(tx.lastInsertRowid), change, locationQty, reason, userId
+      itemId, locationId, Number(tx.lastInsertRowid), change, variantQty < 0 ? variantQty : locationQty,
+      variantQty < 0 ? `${reason ?? 'Stock out'} (${buildMode} balance)` : reason, userId
     );
     return { locationQty, total, discrepancyId: Number(d.lastInsertRowid) };
   }
@@ -205,16 +232,16 @@ export function findOrCreateDamageTwin(itemId: number): number {
 
 /** Move `amount` (>0) of an item between two locations. Logs a paired out/in. */
 export function transferStock(opts: {
-  itemId: number; fromId: number; toId: number; amount: number; reason: string | null; userId: number | null;
+  itemId: number; fromId: number; toId: number; amount: number; reason: string | null; userId: number | null; buildMode?: BuildMode;
 }): { from: number; to: number } {
-  const { itemId, fromId, toId, amount, reason, userId } = opts;
+  const { itemId, fromId, toId, amount, reason, userId, buildMode = 'assembled' } = opts;
   const tail = reason ? ` — ${reason}` : '';
   const out = applyStockChange({
-    itemId, locationId: fromId, change: -amount, userId, touchTotal: false,
+    itemId, locationId: fromId, change: -amount, userId, touchTotal: false, buildMode,
     reason: `Transfer to ${locationName(toId)}${tail}`,
   });
   const inn = applyStockChange({
-    itemId, locationId: toId, change: amount, userId, touchTotal: false,
+    itemId, locationId: toId, change: amount, userId, touchTotal: false, buildMode,
     reason: `Transfer from ${locationName(fromId)}${tail}`,
   });
   return { from: out.locationQty, to: inn.locationQty };
