@@ -62,6 +62,12 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
    stock review shows the ship-from warehouse, stock elsewhere, other sale commitments,
    draft kit/repair holds, own coverage and shortages. Choosing approved in an open editor
    first saves open details, then opens this review; the approval decision is separate.
+   A sale line marked **CKD** keeps its product SKU, unit price and quantity, but snapshots
+   the product's direct BOM as zero-price child pick lines. Stock review checks those parts
+   at ship-from instead of built-unit stock. The commercial CKD parent never adds a
+   manufactured unit or consumes finished-goods stock. Aftersales parts are ordinary
+   inventory-linked lines entered one by one; semi-built and fully built lines continue
+   through their production/finished-stock path.
    `GET /orders/:id/availability` retains the ATP contract and adds source/planning fields.
    Approval rechecks current stock and accepts an optional review revision; stale interactive
    decisions return 409, while validated owning-site decisions retain D6 on replay.

@@ -44,7 +44,7 @@ router.get('/slips/:slipId/context', requireAnyPermission(['inventory.view', 'in
   if (!slip) { res.status(404).json({ error: 'Release slip not found.' }); return; }
   const lines = queryAll(`SELECT li.id, li.item_id, li.name, li.sku, li.unit, li.quantity,
     li.unit_identifiers, COALESCE((SELECT SUM(r.quantity) FROM sales_returns r WHERE r.slip_item_id = li.id), 0) AS returned_qty
-    FROM release_slip_items li WHERE li.slip_id = ? ORDER BY li.id`, slipId);
+    FROM release_slip_items li WHERE li.slip_id = ? AND li.item_id IS NOT NULL ORDER BY li.id`, slipId);
   const units = queryAll(`SELECT u.id, u.product_item_id AS item_id, u.identifier
     FROM job_order_units u WHERE u.order_id = ? AND u.status = 'sold'
     AND NOT EXISTS (SELECT 1 FROM sales_returns r WHERE r.unit_id = u.id) ORDER BY u.id`, slip.order_id);

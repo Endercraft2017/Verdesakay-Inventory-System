@@ -166,12 +166,13 @@ App.register('releasing', async (view, filter) => {
         <table>
           <thead><tr><th>Item</th><th class="right">Allocated</th><th style="width:210px"></th></tr></thead>
           <tbody>${items.map((l, i) => {
+            if (l.fulfillment_mode === 'ckd') return `<tr><td><strong>${UI.esc(l.name)} (CKD)</strong><div class="muted">${l.quantity} unit${l.quantity === 1 ? '' : 's'} sold · pick the parts listed below</div></td><td colspan="2" class="muted">Component stock leaves on the release slip</td></tr>`;
             if (!l.item_id) return `<tr><td>${UI.esc(l.name)}</td><td class="right muted" colspan="2">service / free-text — nothing to release</td></tr>`;
             const got = covered(l), need = Number(l.quantity) || 0;
             const free = Math.max(0, Number(stock.get(Number(l.item_id))?.free_to_allocate || 0));
             const bulk = !serialized.has(Number(l.item_id));
             return `<tr>
-              <td>${UI.esc(l.name)}${l.sku ? `<div class="muted mono">${UI.esc(l.sku)}</div>` : ''}
+              <td>${l.parent_order_item_id ? '<span class="muted">CKD part · </span>' : ''}${UI.esc(l.name)}${l.sku ? `<div class="muted mono">${UI.esc(l.sku)}</div>` : ''}
                 <div class="muted">${bulk ? `${free} uncommitted at ship-from` : 'Scan each serial label'}</div></td>
               <td class="right">${got} / ${need} ${UI.esc(l.unit || '')}${got >= need ? ' ✓' : ''}</td>
               <td>${got < need && bulk && free > 0 ? `<div style="display:flex;gap:6px;justify-content:flex-end">

@@ -296,7 +296,7 @@ function saleLines(orderId: number): FulfilLine[] {
   return queryAll<FulfilLine>(
     `SELECT oi.item_id, oi.quantity, COALESCE(i.unit_cost, 0) AS cost
      FROM order_items oi LEFT JOIN inventory_items i ON i.id = oi.item_id
-     WHERE oi.order_id = ?`, orderId
+     WHERE oi.order_id = ? AND COALESCE(oi.fulfillment_mode, 'assembled') != 'ckd'`, orderId
   );
 }
 

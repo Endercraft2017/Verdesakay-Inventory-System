@@ -956,6 +956,8 @@ export interface OrderItem {
   id: number;
   order_id: number;
   item_id: number | null;
+  fulfillment_mode: 'assembled' | 'semi_built' | 'ckd' | 'ckd_component';
+  parent_order_item_id: number | null;
   name: string;
   sku: string | null;
   description: string | null;

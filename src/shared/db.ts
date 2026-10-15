@@ -75,7 +75,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 73; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 74; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -3213,6 +3213,13 @@ function migrate(): void {
   }
   const idemCols = db.prepare('PRAGMA table_info(idempotency_keys)').all() as Array<{ name: string }>;
   if (!idemCols.some((c) => c.name === 'request_hash')) db.exec('ALTER TABLE idempotency_keys ADD COLUMN request_hash TEXT');
+  // 74: one sale SKU can ship as a built unit or as its frozen CKD component list.
+  const saleLineCols = db.prepare('PRAGMA table_info(order_items)').all() as Array<{ name: string }>;
+  if (!saleLineCols.some((c) => c.name === 'fulfillment_mode'))
+    db.exec("ALTER TABLE order_items ADD COLUMN fulfillment_mode TEXT NOT NULL DEFAULT 'assembled'");
+  if (!saleLineCols.some((c) => c.name === 'parent_order_item_id'))
+    db.exec('ALTER TABLE order_items ADD COLUMN parent_order_item_id INTEGER REFERENCES order_items(id) ON DELETE CASCADE');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_order_items_parent ON order_items(parent_order_item_id)');
 }
 
 /** One-time permission split: every role and per-account grant holding `from` also gets `to`.

@@ -920,6 +920,8 @@ export interface OrderItems {
   sort: Generated<number>;
   tax_code_id: number | null;
   released_qty: Generated<number>;
+  fulfillment_mode: Generated<string>;
+  parent_order_item_id: number | null;
 }
 
 export interface Orders {

@@ -847,6 +847,7 @@ const numCoerce = z.coerce.number();
 
 const orderItemSchema = z.object({
   item_id: optionalId,
+  fulfillment_mode: z.enum(['assembled', 'semi_built', 'ckd']).default('assembled'),
   name: trimmed.min(1, 'Line item name is required').max(200),
   sku: optionalText,
   description: optionalText,
