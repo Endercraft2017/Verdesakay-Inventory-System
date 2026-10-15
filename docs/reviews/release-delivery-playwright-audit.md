@@ -24,10 +24,12 @@ script is in ignored `work/release-delivery-browser.mjs`.
 2. A desktop slip commits at the backend but its HTTP response is dropped. The screen finds the numbered slip; one record exists and stock is deducted once.
 3. The phone starts after the slip. A Delivered attempt without proof is refused, preserving `out_for_delivery`. A delivery photo and named recipient complete it without another stock movement.
 4. At 390px desktop width, a photo upload commits but its response is dropped. The form preserves the photo's key; retry yields one attached release photo and one stock-out.
+5. A phone delivery-completion response is dropped after the backend commits. The current form has no idempotency key or in-place reconciliation; reloading finds the delivered record and its proof. This is a mobile-owner follow-up, not a duplicate stock movement.
 
 Focused API regressions cover the status gates, proof, role scoping, immutable
 evidence, lost-response replay, and an offline site's delivery proof arriving after
-a conflicting cloud cancellation. The full suite result is recorded in the commit.
+a conflicting cloud cancellation. TypeScript and all 2,780 tests across 271 files
+passed before integrating the concurrent connected-form follow-up.
 
 ## Remaining mobile and physical acceptance
 

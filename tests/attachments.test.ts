@@ -72,10 +72,13 @@ describe('attachments', () => {
     expect((await ctx.api.get('/api/attachments?kind=qc_unit&ref_id=1')
       .set({ Authorization: `Bearer ${hr.token}` })).status).toBe(403);
 
-    // a `delivery` photo needs delivery.run, not inventory.*
+    // A delivery photo needs delivery.run and assignment to the exact delivery.
+    const del = await ctx.api.post('/api/deliveries').set(H())
+      .send({ customer_name: 'Attachment access', assigned_to: wh.id });
+    expect(del.status).toBe(201);
     expect((await ctx.api.post('/api/attachments').set({ Authorization: `Bearer ${wh.token}` })
-      .field('kind', 'delivery').field('ref_id', '1').attach('image', PNG, 'x.png')).status).toBe(201);
+      .field('kind', 'delivery').field('ref_id', String(del.body.id)).attach('image', PNG, 'x.png')).status).toBe(201);
     expect((await ctx.api.post('/api/attachments').set({ Authorization: `Bearer ${hr.token}` })
-      .field('kind', 'delivery').field('ref_id', '1').attach('image', PNG, 'x.png')).status).toBe(403);
+      .field('kind', 'delivery').field('ref_id', String(del.body.id)).attach('image', PNG, 'x.png')).status).toBe(403);
   });
 });
