@@ -1,5 +1,51 @@
 # Inventory and production: mobile integration gaps
 
+## Courier pickup and whole-kit CKD partial release (2026-10-16)
+
+**Delivery choice:** A `deliveries` booking now has `delivery_mode:'own'|'courier'`
+(default `own`). A courier booking requires `courier_name`; it can also carry a
+`tracking_number`. Planning may precede the sale release slip. A courier booking
+must not use `out_for_delivery` or customer `delivered`; after the numbered slip
+and stock-out, the assigned staff member or delivery manager uploads a `delivery`
+photo (or delivery-linked signature) and calls
+`POST /deliveries/:id/complete` with `{outcome:'courier_handoff',
+recipient:'name of courier representative',tracking_number?}`. The server stores
+the existing terminal `status:'delivered'` for compatibility and returns
+`handoff:'courier'`; interpret a courier-mode delivered record as **picked up by
+courier**, never as customer receipt. `pod_recipient`, `delivered_at`,
+`delivered_by`, proof, courier and tracking identify the pickup. Our operational
+delivery task ends at this proof; later carrier tracking is informational.
+`GET /deliveries?order_id=<id>` can find the booking. A courier-mode booking
+rejects driver dispatch and customer delivery with `courier_handoff_required`.
+Only one pending/in-progress shipment booking may exist per sale; creation or
+reassignment returns `409 shipment_already_booked` until the prior booking is
+completed or cancelled. Show the existing choice instead of offering a second.
+The desktop release-slip detail can book and confirm courier pickup; the phone
+delivery module still assumes only our own driver flow and needs a distinct
+courier pickup screen and language. The owner's optional recipient/evidence policy
+for our own-driver deliveries remains in force; courier pickup requires a named
+collector and proof because it closes our custody. Do not edit the mobile source
+in this handoff.
+
+**CKD partials:** With Sales authorization `partial_allowed:true`, the warehouse
+may now issue a slip for one or more **whole** CKD kits from a larger CKD sale.
+For a two-unit kit requiring one frame and two wheels each, pick one frame and
+two wheels to ship one; the new backorder preserves the parent CKD line and
+remaining child-part snapshot. A lone frame cannot leave as a kit; extra picked
+components must be unreserved before the partial slip. Show whole-kit progress
+from `parent_order_item_id` and component quantities, and block the phone slip
+button when a picked kit is incomplete. Never interpret a CKD parent as an RTS
+unit or deduct its SKU stock in addition to components. Browser/API regression
+coverage: `tests/ckd-sales.test.ts` and `work/courier-ckd-browser.mjs` (the latter
+is an ignored local verification script).
+
+**Still blocked:** Sale intake rejects two commercial lines for the same stock
+item. Release allocation and serialized-unit ownership are currently keyed by
+item/order rather than sale-line ID; lifting this guard without a line-level
+allocation migration could count the same stock twice. Mixed-build and
+different-price duplicate-product lines need a separate end-to-end model change
+before mobile should offer them.
+
 ## Final releasing, delivery and mobile authorization follow-up (2026-10-16)
 
 This section supersedes the older final-proof/delivery gap below. Final warehouse-out
@@ -247,7 +293,7 @@ remain in the backend.
 
 CKD parent lines are shown as a kit manifest with physical child quantities. The
 phone excludes the commercial parent from allocation counts/quantity actions,
-blocks an assembled parent serial, and disallows partial CKD handoff. Existing
+blocks an assembled parent serial, and currently disallows partial CKD handoff in its UI. The backend now permits whole-kit partials with Sales authorization. Existing
 component availability and backend stock/return rules remain authoritative. Final
 slip/proof recovery and downstream CKD result-copy review remain open. The newer
 atomic Products In endpoint keeps compatibility with retained receipt payloads.
@@ -279,7 +325,7 @@ backend follow-up before that mixed-line case can be fulfilled.
 
 ## CKD sales using the same product SKU: mobile handoff
 
-**Backend/desktop behavior:** A sales line can use `fulfillment_mode:'ckd'` while retaining the same `item_id`, SKU, unit price and ordered unit count as its built variant. The server snapshots direct BOM parts into `order_items` child lines (`fulfillment_mode:'ckd_component'`, `parent_order_item_id`). Each child has its physical quantity and zero sale price. Stock review, warehouse allocation, release slip, stock-out, cost and returns operate on those parts; the CKD parent is commercial/manifest only and does not consume finished-unit stock. Ordinary aftersales parts remain individual inventory-linked lines; `semi_built` remains on the production-stock path. An open CKD order retains its part snapshot across edits and BOM changes. Every part must be allocated before a CKD slip; partial CKD slips are currently blocked.
+**Backend/desktop behavior:** A sales line can use `fulfillment_mode:'ckd'` while retaining the same `item_id`, SKU, unit price and ordered unit count as its built variant. The server snapshots direct BOM parts into `order_items` child lines (`fulfillment_mode:'ckd_component'`, `parent_order_item_id`). Each child has its physical quantity and zero sale price. Stock review, warehouse allocation, release slip, stock-out, cost and returns operate on those parts; the CKD parent is commercial/manifest only and does not consume finished-unit stock. Ordinary aftersales parts remain individual inventory-linked lines; `semi_built` remains on the production-stock path. An open CKD order retains its part snapshot across edits and BOM changes. Every part must be allocated for a full CKD slip; a partial slip may send whole kits with Sales authorization and backorder the remainder.
 
 **Mobile owner action:** `public/mobile/modules/inventory/so.js` must show the parent as **1 CKD unit** and group its child parts underneath with their required quantities and ship-from availability. Offer scan/quantity allocation only on the child lines, not on the parent product SKU, even if assembled units with that SKU exist. Use `context.lines[].fulfillment_mode` and `parent_order_item_id`; the server rejects an attempt to allocate the CKD parent. Show a missing component as a CKD shortage, not as a need to build the finished unit. At confirmation, show the parent kit and all physical parts on the slip. Returns are recorded against component slip lines; the parent manifest line cannot be restocked as a built product. Do not use legacy Pick or a direct stock adjustment.
 

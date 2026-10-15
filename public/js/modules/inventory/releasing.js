@@ -150,7 +150,15 @@ App.register('releasing', async (view, filter) => {
       const fullyOut = String(order.status).toLowerCase() === 'released';
       // Partial release: only with Sales' authorization that allows it, and once something is out.
       const auth = (rc && rc.authorization) || {};
-      const partialOk = !fullyOut && auth.state === 'valid' && !!auth.partial_allowed && items.some((l) => l.item_id && covered(l) > 0);
+      const ckdParents = items.filter((l) => l.fulfillment_mode === 'ckd');
+      const ckdPick = ckdParents.map((parent) => {
+        const parts = items.filter((l) => l.parent_order_item_id === parent.id);
+        const kits = parts.length ? Math.min(Number(parent.quantity), ...parts.map((p) => Math.floor((covered(p) + 1e-9) / (Number(p.quantity) / Number(parent.quantity))))) : 0;
+        return { kits, clean: parts.every((p) => covered(p) <= kits * Number(p.quantity) / Number(parent.quantity) + 1e-9) };
+      });
+      const partialOk = !fullyOut && auth.state === 'valid' && !!auth.partial_allowed
+        && ckdPick.every((p) => p.clean)
+        && (ckdPick.some((p) => p.kits > 0) || items.some((l) => l.item_id && l.fulfillment_mode !== 'ckd_component' && l.fulfillment_mode !== 'ckd' && covered(l) > 0));
       body.innerHTML = `
         <div class="kv">
           <div><span class="muted">Customer</span><div>${UI.esc(order.customer_name || 'Walk-in')}</div></div>
@@ -194,6 +202,7 @@ App.register('releasing', async (view, filter) => {
             ? 'Every stock line is allocated. Issue the release slip as the goods leave — that is when stock is deducted.'
             : partialOk
               ? 'Sales allowed a partial release: the slip covers what is out now, and the rest moves to a new backorder sale order.'
+              : ckdPick.some((p) => !p.clean) ? 'Only complete CKD kits may leave. Unreserve extra picked parts or complete another kit.'
               : 'Allocate every stock line before issuing the release slip.'}</span>
           <div class="grow"></div>
           <button class="btn" id="rl-slip" ${fullyOut || partialOk ? '' : 'disabled'}>${UI.icon('sheet')} ${partialOk ? 'Issue partial release slip' : 'Issue release slip'}</button>
@@ -417,9 +426,61 @@ App.register('releasing', async (view, filter) => {
     await load();
   }
 
+  async function courierBooking(slip) {
+    const bookingKey = 'courier-book:' + (crypto.randomUUID ? crypto.randomUUID() : Date.now());
+    const m = UI.modal({ title: 'Book courier pickup — ' + slip.order_number, confirmText: 'Book courier',
+      bodyHTML: `<p class="muted">The order stays in our care until the courier collects the released goods. Record pickup separately when it happens.</p>
+        <div><label>Courier company <span class="req">*</span></label><input data-f="courier" maxlength="160" placeholder="Courier name" /></div>
+        <div style="margin-top:10px"><label>Tracking / waybill</label><input data-f="tracking" maxlength="160" placeholder="Optional until pickup" /></div>`,
+      onConfirm: async (ov, showErr) => {
+        const courier = ov.querySelector('[data-f="courier"]').value.trim();
+        if (!courier) { showErr('Enter the courier company'); return false; }
+        try {
+          try { await API.post('/deliveries', { order_id: slip.order_id, delivery_mode: 'courier', courier_name: courier,
+            tracking_number: ov.querySelector('[data-f="tracking"]').value.trim() || null }, { idempotencyKey: bookingKey }); }
+          catch (error) {
+            const existing = await API.get('/deliveries?order_id=' + slip.order_id).catch(() => []);
+            if (!existing.some((d) => d.delivery_mode === 'courier' && d.status !== 'cancelled' && d.courier_name === courier)) throw error;
+          }
+          UI.toast('Courier pickup booked'); m.close(); slipView(slip.id); return true;
+        } catch (e) { showErr(e.message); return false; }
+      },
+    });
+  }
+
+  async function courierPickup(slip, deliveryId) {
+    const pickupKey = 'courier-pickup:' + (crypto.randomUUID ? crypto.randomUUID() : Date.now());
+    const photoKey = 'courier-photo:' + (crypto.randomUUID ? crypto.randomUUID() : Date.now());
+    let uploaded = false;
+    const m = UI.modal({ title: 'Confirm courier pickup — ' + slip.order_number, confirmText: 'Confirm pickup',
+      bodyHTML: `<p class="muted">This closes our delivery task when the courier physically accepts the goods. Photograph the handoff or waybill.</p>
+        <div><label>Courier representative <span class="req">*</span></label><input data-f="collector" maxlength="160" placeholder="Name of person collecting" /></div>
+        <div style="margin-top:10px"><label>Tracking / waybill</label><input data-f="tracking" maxlength="160" /></div>
+        <div style="margin-top:10px"><label>Pickup photo <span class="req">*</span></label><input data-f="photo" type="file" accept="image/*" capture="environment" /></div>`,
+      onConfirm: async (ov, showErr) => {
+        const collector = ov.querySelector('[data-f="collector"]').value.trim();
+        const file = ov.querySelector('[data-f="photo"]').files[0];
+        if (!collector || !file) { showErr('Enter the courier representative and attach a pickup photo'); return false; }
+        try {
+          if (!uploaded) {
+            const fd = new FormData(); fd.append('kind', 'delivery'); fd.append('ref_id', String(deliveryId)); fd.append('image', file);
+            await API.upload('/attachments', fd, { idempotencyKey: photoKey }); uploaded = true;
+          }
+          try { await API.post('/deliveries/' + deliveryId + '/complete', { outcome: 'courier_handoff', recipient: collector,
+            tracking_number: ov.querySelector('[data-f="tracking"]').value.trim() || null }, { idempotencyKey: pickupKey }); }
+          catch (error) {
+            const current = await API.get('/deliveries/' + deliveryId).catch(() => null);
+            if (!(current?.status === 'delivered' && current?.delivery_mode === 'courier' && current?.pod_recipient === collector)) throw error;
+          }
+          UI.toast('Courier pickup recorded'); m.close(); slipView(slip.id); return true;
+        } catch (e) { showErr(e.message); return false; }
+      },
+    });
+  }
+
   /* ------------------------------------------------------- 5. one slip: view / print --- */
   async function slipView(id) {
-    let slip, photos, company, returnsContext;
+    let slip, photos, company, returnsContext, deliveries;
     try {
       [slip, photos, company, returnsContext] = await Promise.all([
         API.get('/release-slips/' + id),
@@ -427,9 +488,12 @@ App.register('releasing', async (view, filter) => {
         API.get('/templates/company').catch(() => ({})),
         API.get('/sales-returns/slips/' + id + '/context'),
       ]);
+      deliveries = (App.hasPermission('delivery.run') || App.hasPermission('delivery.manage'))
+        ? await API.get('/deliveries?order_id=' + slip.order_id).catch(() => []) : [];
     } catch (e) { UI.toast(e.message, 'error'); return; }
     // Attachment images need the auth header, so load them as blob URLs.
     const urls = await Promise.all(photos.map((p) => API.blobUrl(p.url.replace(/^\/api/, '')).catch(() => '')));
+    const activeShipment = deliveries.find((d) => ['pending', 'out_for_delivery'].includes(d.status));
 
     const itemsTable = `
       <table class="doc-table">
@@ -477,6 +541,17 @@ App.register('releasing', async (view, filter) => {
           ${slip.override_reason ? `<div><span class="muted">Token</span><div>Supervisor override by ${UI.esc(slip.override_by_name || '—')}: ${UI.esc(slip.override_reason)}</div></div>` : ''}
         </div>
         ${slip.notes ? `<p style="margin:12px 0 0"><span class="muted">Notes:</span> ${UI.esc(slip.notes)}</p>` : ''}
+        <div style="display:flex;align-items:center;gap:8px;margin:16px 0 6px;flex-wrap:wrap">
+          <h4 style="${LABEL};margin:0">Courier pickup</h4><div class="grow"></div>
+          ${App.hasPermission('delivery.manage') && !activeShipment && !deliveries.some((d) => d.delivery_mode === 'courier' && d.status === 'delivered') ? '<button type="button" class="btn secondary small" id="rs-book-courier">Book courier</button>' : ''}
+        </div>
+        ${activeShipment?.delivery_mode === 'own' ? '<p class="muted">Our delivery team has an active booking for this sale. Complete or cancel that booking before choosing a courier.</p>' : ''}
+        ${deliveries.filter((d) => d.delivery_mode === 'courier').map((d) => `<div class="panel" style="padding:10px 12px;margin-bottom:8px">
+          <b>${UI.esc(d.courier_name || 'Courier')}</b> · ${d.status === 'delivered' ? 'Picked up' : UI.esc(d.status)}
+          ${d.tracking_number ? ` · Tracking ${UI.esc(d.tracking_number)}` : ''}
+          ${d.pod_recipient ? `<div class="muted">Collected by ${UI.esc(d.pod_recipient)} · ${UI.esc(UI.fmtDate(d.delivered_at))}</div>` : ''}
+          ${d.status === 'pending' && App.hasPermission('delivery.manage') ? `<button type="button" class="btn secondary small" data-courier-pickup="${d.id}" style="margin-top:8px">Confirm courier pickup</button>` : ''}
+        </div>`).join('') || '<p class="muted">No courier booking for this release.</p>'}
         <h4 style="${LABEL}">Goods released</h4>
         <table>
           <thead><tr><th>Item</th><th>Unit serials</th><th class="right">Qty</th></tr></thead>
@@ -506,6 +581,8 @@ App.register('releasing', async (view, filter) => {
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px">${urls.some(Boolean) ? photoGrid('') : '<span class="muted">No photos.</span>'}</div>`,
       onOpen: (ov) => {
+        ov.querySelector('#rs-book-courier')?.addEventListener('click', () => { m.close(); courierBooking(slip); });
+        ov.querySelectorAll('[data-courier-pickup]').forEach((b) => b.onclick = () => { m.close(); courierPickup(slip, Number(b.dataset.courierPickup)); });
         ov.querySelector('#rs-return')?.addEventListener('click', () => { m.close(); receiveReturn(slip, returnsContext); });
         ov.querySelectorAll('[data-inspect]').forEach((b) => b.onclick = () => { m.close(); inspectReturn(id, Number(b.dataset.inspect)); });
         ov.querySelectorAll('[data-dispose]').forEach((b) => b.onclick = () => { m.close(); decideReturn(id, Number(b.dataset.dispose)); });

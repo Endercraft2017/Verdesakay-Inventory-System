@@ -138,6 +138,7 @@ function covered(orderId: number, l: { item_id: number | null; quantity: number;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+const quantity = (n: number) => Number(n.toPrecision(15));
 
 /** Partial release: keep what is allocated on the order, move the rest to a new approved
  *  backorder sale order, re-total both, and mark the order released. Runs inside the caller's
@@ -150,17 +151,32 @@ export function splitUnreleased(orderId: number, userId: number): { id: number; 
   )!;
   const lines = queryAll<{ id: number; item_id: number | null; name: string; sku: string | null; description: string | null;
     quantity: number; unit: string | null; unit_price: number; tax_code_id: number | null; released_qty: number | null; sort: number;
-    fulfillment_mode: string }>(
+    fulfillment_mode: string; parent_order_item_id: number | null }>(
     'SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', orderId
   );
   const rest: typeof lines = [];
+  const ckdKits = new Map<number, number>();
+  for (const parent of lines.filter((l) => l.fulfillment_mode === 'ckd')) {
+    const parts = lines.filter((l) => l.parent_order_item_id === parent.id);
+    if (!parts.length) throw new Error(`CKD kit ${parent.name} has no snapshotted parts.`);
+    const kits = Math.min(parent.quantity, ...parts.map((p) => Math.floor((covered(orderId, p) + 1e-9) / (p.quantity / parent.quantity))));
+    // A partial handoff must not strand already picked components on the shipped order.
+    for (const p of parts) {
+      const picked = covered(orderId, p);
+      const shipped = kits * p.quantity / parent.quantity;
+      if (picked > shipped + 1e-9) throw new Error(`Unreserve extra ${p.name} before shipping complete CKD kits.`);
+    }
+    ckdKits.set(parent.id, kits);
+  }
   let kept = 0;
   for (const l of lines) {
     if (l.item_id == null) continue;
-    const c = covered(orderId, l);
+    const c = l.fulfillment_mode === 'ckd' ? ckdKits.get(l.id) ?? 0
+      : l.parent_order_item_id ? (ckdKits.get(l.parent_order_item_id) ?? 0) * l.quantity /
+        lines.find((p) => p.id === l.parent_order_item_id)!.quantity : covered(orderId, l);
     if (c > 0) kept++;
     if (c >= l.quantity) continue;
-    rest.push({ ...l, quantity: r2(l.quantity - c) });
+    rest.push({ ...l, quantity: quantity(l.quantity - c) });
     if (c > 0) {
       run('UPDATE order_items SET quantity = ?, line_total = ?, released_qty = MIN(COALESCE(released_qty, 0), ?) WHERE id = ?',
         c, r2(c * l.unit_price), c, l.id);
@@ -188,11 +204,15 @@ export function splitUnreleased(orderId: number, userId: number): { id: number; 
     `Backorder of ${order.number} (partial release)`, order.currency ?? 'PHP', bo.subtotal, order.tax_percent ?? 0,
     bo.tax_amount, bo.total, userId
   ).lastInsertRowid);
-  rest.forEach((l, i) => run(
-    `INSERT INTO order_items (order_id, item_id, name, sku, description, quantity, unit, unit_price, line_total, tax_code_id, sort, fulfillment_mode)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  const newParentIds = new Map<number, number>();
+  rest.forEach((l, i) => {
+    const newId = Number(run(
+    `INSERT INTO order_items (order_id, item_id, name, sku, description, quantity, unit, unit_price, line_total, tax_code_id, sort, fulfillment_mode, parent_order_item_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     boId, l.item_id, l.name, l.sku, l.description, l.quantity, l.unit, l.unit_price, r2(l.quantity * l.unit_price), l.tax_code_id, i, l.fulfillment_mode
-  ));
+    , l.parent_order_item_id ? newParentIds.get(l.parent_order_item_id) ?? null : null).lastInsertRowid);
+    if (l.fulfillment_mode === 'ckd') newParentIds.set(l.id, newId);
+  });
   return { id: boId, number };
 }
 

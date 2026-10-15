@@ -1867,6 +1867,9 @@ const geo = z.coerce.number().min(-180).max(180).optional().nullable();
 
 export const createDeliverySchema = z.object({
   order_id: optionalId,
+  delivery_mode: z.enum(['own', 'courier']).default('own'),
+  courier_name: trimmed.max(160).optional().nullable(),
+  tracking_number: trimmed.max(160).optional().nullable(),
   customer_name: trimmed.max(200).optional().nullable(),
   address: trimmed.max(500).optional().nullable(),
   contact_phone: trimmed.max(40).optional().nullable(),
@@ -1882,8 +1885,9 @@ export const deliveryStatusSchema = z.object({
 });
 
 export const deliveryCompleteSchema = z.object({
-  outcome: z.enum(['delivered', 'failed']),
+  outcome: z.enum(['delivered', 'failed', 'courier_handoff']),
   recipient: trimmed.max(160).optional().nullable(),
+  tracking_number: trimmed.max(160).optional().nullable(),
   note: trimmed.max(1000).optional().nullable(),
   lat: geo,
   lng: geo,

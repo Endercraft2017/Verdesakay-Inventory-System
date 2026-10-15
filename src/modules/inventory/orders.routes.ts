@@ -492,9 +492,6 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
   const { auth, state: authState } = currentAuthorization(id);
   let partial = false;
   if (String(order.status || '').toLowerCase() !== 'released') {
-    if (queryOne("SELECT 1 FROM order_items WHERE order_id = ? AND fulfillment_mode = 'ckd' LIMIT 1", id)) {
-      res.status(409).json({ error: 'Complete every CKD component before issuing a slip. CKD kits cannot be split mid-kit.', blocked: 'incomplete' }); return;
-    }
     if (!stands) {
       if (!(auth && authState === 'valid' && auth.partial_allowed)) {
         res.status(409).json({ error: 'Release every line of the order before issuing the release slip.', blocked: 'incomplete' });
@@ -529,6 +526,17 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
   )!.n) {
     res.status(409).json({ error: 'Nothing on this order has been allocated yet — scan or enter what is leaving first.', blocked: 'incomplete' });
     return;
+  }
+  if (partial) {
+    const ckdLines = queryAll<OrderItem>("SELECT * FROM order_items WHERE order_id = ? AND fulfillment_mode = 'ckd'", id);
+    for (const parent of ckdLines) {
+      const parts = queryAll<OrderItem>('SELECT * FROM order_items WHERE parent_order_item_id = ?', parent.id);
+      if (!parts.length) { res.status(409).json({ error: `CKD kit ${parent.name} has no parts snapshot.`, blocked: 'incomplete' }); return; }
+      const kits = Math.min(parent.quantity, ...parts.map((p) => Math.floor((lineCoverage(id, p).units + lineCoverage(id, p).bulk + 1e-9) / (p.quantity / parent.quantity))));
+      if (parts.some((p) => lineCoverage(id, p).units + lineCoverage(id, p).bulk > kits * p.quantity / parent.quantity + 1e-9)) {
+        res.status(409).json({ error: `Unreserve extra CKD components before releasing ${parent.name}. Only whole kits may leave.`, blocked: 'incomplete' }); return;
+      }
+    }
   }
 
   // A staged allocation is not physical stock. An adjustment or another warehouse

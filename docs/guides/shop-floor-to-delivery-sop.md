@@ -644,8 +644,7 @@ on the hold are prefilled; the exact reviewed answers accompany original-key
 recovery. Rectify and Fail keep their existing paths.
 
 A CKD sale shows the parent kit as a manifest and allocates its physical component
-lines. Assembled parent stock does not satisfy the kit. Every component is required
-before handoff; partial CKD release is unavailable. Component returns restore
+lines. Assembled parent stock does not satisfy the kit. Every component is required for each kit leaving. With Sales authorization, whole kits may leave on a partial slip while the rest stay on a backorder. Component returns restore
 components rather than a built unit. Final mobile slip/proof recovery remains open.
 
 ### Attached QR stickers at RTS and releasing

@@ -272,6 +272,9 @@ export interface Deliveries {
   contact_phone: string | null;
   scheduled_date: string | null;
   assigned_to: number | null;
+  delivery_mode: Generated<string>;
+  courier_name: string | null;
+  tracking_number: string | null;
   status: Generated<string>;
   notes: string | null;
   pod_recipient: string | null;

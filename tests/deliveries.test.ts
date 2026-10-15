@@ -32,6 +32,46 @@ describe('delivery permissions', () => {
 });
 
 describe('deliveries', () => {
+  it('closes a courier booking at pickup with proof, without recording customer delivery', async () => {
+    const warehouse = await driver();
+    const item = (await ctx.api.post('/api/inventory').set(A()).send({ name: 'Courier part', quantity: 1 })).body.id;
+    const sale = (await ctx.api.post('/api/orders').set(A()).send({ type: 'sale', customer_name: 'Courier buyer',
+      items: [{ item_id: item, name: 'Courier part', quantity: 1, unit_price: 10 }] })).body.id;
+    const booking = await ctx.api.post('/api/deliveries').set(A()).send({ order_id: sale, assigned_to: warehouse.id,
+      delivery_mode: 'courier', courier_name: 'Swift Cargo', tracking_number: 'SW-123' });
+    expect(booking.status).toBe(201);
+    const id = booking.body.id;
+    expect((await ctx.api.post('/api/deliveries').set(A()).send({ order_id: sale, delivery_mode: 'own' })).body.code)
+      .toBe('shipment_already_booked');
+    expect((await ctx.api.post(`/api/deliveries/${id}/status`).set(bearer(warehouse.token))
+      .send({ status: 'out_for_delivery' })).body.code).toBe('courier_handoff_required');
+    expect((await ctx.api.post(`/api/deliveries/${id}/complete`).set(bearer(warehouse.token))
+      .send({ outcome: 'courier_handoff', recipient: 'Courier driver' })).body.code).toBe('release_required');
+    await ctx.api.post(`/api/orders/${sale}/status`).set(A()).send({ status: 'approved' });
+    await ctx.api.post(`/api/orders/${sale}/accept-release`).set(A());
+    await ctx.api.post(`/api/orders/${sale}/release`).set(A()).send({ bulk: [{ item_id: item, quantity: 1 }] });
+    await ctx.api.put('/api/release-slips/policy').set(A()).send({ authorization_required: false });
+    expect((await ctx.api.post(`/api/orders/${sale}/release-slip`).set(A()).send({ collected_by: 'Swift Cargo' })).status).toBe(201);
+    expect((await ctx.api.post(`/api/deliveries/${id}/status`).set(bearer(warehouse.token))
+      .send({ status: 'out_for_delivery' })).body.code).toBe('courier_handoff_required');
+    expect((await ctx.api.post(`/api/deliveries/${id}/complete`).set(bearer(warehouse.token))
+      .send({ outcome: 'delivered', recipient: 'Buyer' })).body.code).toBe('courier_handoff_required');
+    expect((await ctx.api.post(`/api/deliveries/${id}/complete`).set(bearer(warehouse.token))
+      .send({ outcome: 'courier_handoff', recipient: 'Courier driver' })).body.code).toBe('proof_required');
+    const photo = await ctx.api.post('/api/attachments').set(bearer(warehouse.token))
+      .field('kind', 'delivery').field('ref_id', String(id))
+      .attach('image', Buffer.from('courier-collection-photo'), 'collection.png');
+    expect(photo.status).toBe(201);
+    const done = await ctx.api.post(`/api/deliveries/${id}/complete`).set(bearer(warehouse.token))
+      .send({ outcome: 'courier_handoff', recipient: 'Courier driver' });
+    expect(done.status).toBe(200);
+    expect(done.body).toMatchObject({ status: 'delivered', handoff: 'courier' });
+    expect((await ctx.api.get(`/api/deliveries/${id}`).set(A())).body).toMatchObject({
+      delivery_mode: 'courier', courier_name: 'Swift Cargo', tracking_number: 'SW-123',
+      status: 'delivered', pod_recipient: 'Courier driver', photo_count: 1,
+    });
+    expect((await ctx.api.delete(`/api/attachments/${photo.body.id}`).set(A())).status).toBe(409);
+  });
   it('manager creates + assigns; the driver sees only their own', async () => {
     const d1 = await driver();
     const d2 = await driver();

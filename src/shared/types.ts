@@ -551,6 +551,9 @@ export interface Delivery {
   contact_phone: string | null;
   scheduled_date: string | null;
   assigned_to: number | null;
+  delivery_mode: 'own' | 'courier';
+  courier_name: string | null;
+  tracking_number: string | null;
   status: DeliveryStatus;
   notes: string | null;
   pod_recipient: string | null;

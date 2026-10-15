@@ -29,8 +29,7 @@ Open **Sale Orders**. View access allows stock review; **Edit orders** allows ap
 - **Awaiting release** lists firm orders with stock lines still unpicked. It includes stocked orders awaiting warehouse work, so it is not a shortage-only filter. Use the stock review for the actual shortage.
 - Non-stock service/charge lines have no stock gate. Source-less stock orders use the default warehouse.
 - CKD checks and ships the frozen component quantities, not assembled-unit stock. A later
-  BOM edit does not change an existing CKD order. Warehouse must allocate every part
-  before its release slip; partial CKD slips are blocked. The slip lists the CKD product
+  BOM edit does not change an existing CKD order. Warehouse must allocate every part for a full slip. With Sales authorization for a partial release, a complete number of kits can leave while the remaining kit and parts move to a backorder; extra picked parts must be unreserved first. The slip lists the CKD product
   as a manifest heading and the parts as the physical goods. Returns inspect the parts,
   never restock a built unit from the CKD heading.
 - A result saved on a site PC shows sync confirmation pending. Follow the current site's authority and sync status before treating it as cloud-confirmed.

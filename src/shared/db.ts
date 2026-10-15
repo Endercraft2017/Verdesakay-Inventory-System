@@ -67,6 +67,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 81: courier booking and handoff metadata on existing delivery records.
 // 80: connected forms, sales draft links and sync-safe template history IDs.
 // 79: preserve exact semi-built batch identity when a bulk package enters finishing.
 // 78: trace semi-built packages finished into fully built stock without BOM reissue,
@@ -87,7 +88,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 80; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 81; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -1722,6 +1723,9 @@ function createSchema(): void {
       contact_phone  TEXT,
       scheduled_date TEXT,
       assigned_to    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      delivery_mode  TEXT NOT NULL DEFAULT 'own' CHECK (delivery_mode IN ('own','courier')),
+      courier_name   TEXT,
+      tracking_number TEXT,
       status         TEXT NOT NULL DEFAULT 'pending'
                        CHECK (status IN ('pending','out_for_delivery','delivered','failed','cancelled')),
       notes          TEXT,
@@ -3286,6 +3290,10 @@ function migrate(): void {
   if (!saleLineCols.some((c) => c.name === 'parent_order_item_id'))
     db.exec('ALTER TABLE order_items ADD COLUMN parent_order_item_id INTEGER REFERENCES order_items(id) ON DELETE CASCADE');
   db.exec('CREATE INDEX IF NOT EXISTS idx_order_items_parent ON order_items(parent_order_item_id)');
+  const deliveryCols = db.prepare('PRAGMA table_info(deliveries)').all() as Array<{ name: string }>;
+  if (!deliveryCols.some((c) => c.name === 'delivery_mode')) db.exec("ALTER TABLE deliveries ADD COLUMN delivery_mode TEXT NOT NULL DEFAULT 'own'");
+  if (!deliveryCols.some((c) => c.name === 'courier_name')) db.exec('ALTER TABLE deliveries ADD COLUMN courier_name TEXT');
+  if (!deliveryCols.some((c) => c.name === 'tracking_number')) db.exec('ALTER TABLE deliveries ADD COLUMN tracking_number TEXT');
   // 75: keep fully and semi-built stock distinct while retaining one commercial SKU.
   const buildCols = db.prepare('PRAGMA table_info(job_orders)').all() as Array<{ name: string }>;
   if (!buildCols.some((c) => c.name === 'build_mode'))

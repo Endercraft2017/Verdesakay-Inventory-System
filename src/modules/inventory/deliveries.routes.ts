@@ -69,6 +69,7 @@ router.get('/', requireAnyPermission(['delivery.run', 'delivery.manage']), (req,
   if (!canManage(req) || req.query.mine === '1') { where.push('d.assigned_to = ?'); params.push(req.user!.id); }
   if (typeof req.query.status === 'string' && req.query.status) { where.push('d.status = ?'); params.push(req.query.status); }
   if (typeof req.query.date === 'string' && req.query.date) { where.push('d.scheduled_date = ?'); params.push(req.query.date); }
+  if (typeof req.query.order_id === 'string' && /^\d+$/.test(req.query.order_id)) { where.push('d.order_id = ?'); params.push(Number(req.query.order_id)); }
   if (typeof req.query.assigned_to === 'string' && req.query.assigned_to && canManage(req)) {
     where.push('d.assigned_to = ?'); params.push(Number(req.query.assigned_to));
   }
@@ -102,6 +103,13 @@ router.get('/:id', requireAnyPermission(['delivery.run', 'delivery.manage']), (r
 // POST /api/deliveries — create (delivery.manage)
 router.post('/', requirePermission('delivery.manage'), syncClass('merge'), (req, res) => {
   const input = parseBody(createDeliverySchema, req.body);
+  if (input.delivery_mode === 'courier' && !input.courier_name?.trim()) {
+    res.status(400).json({ error: 'Name the courier before booking pickup.' }); return;
+  }
+  if (input.order_id && queryOne(
+    "SELECT 1 FROM deliveries WHERE order_id = ? AND status IN ('pending', 'out_for_delivery') LIMIT 1", input.order_id)) {
+    res.status(409).json({ error: 'This sale already has an active shipment booking. Complete or cancel it before choosing another delivery method.', code: 'shipment_already_booked' }); return;
+  }
   let customer = input.customer_name ?? null;
   const address = input.address ?? null;
   if (input.order_id != null) {
@@ -117,10 +125,11 @@ router.post('/', requirePermission('delivery.manage'), syncClass('merge'), (req,
   const number = nextSequence('delivery_seq', 'DEL');
   const info = run(
     `INSERT INTO deliveries
-      (number, order_id, customer_name, address, contact_phone, scheduled_date, assigned_to, notes, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (number, order_id, customer_name, address, contact_phone, scheduled_date, assigned_to, notes, created_by, delivery_mode, courier_name, tracking_number)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     number, input.order_id, customer, address, input.contact_phone ?? null,
-    input.scheduled_date ?? null, input.assigned_to, input.notes ?? null, req.user!.id
+    input.scheduled_date ?? null, input.assigned_to, input.notes ?? null, req.user!.id,
+    input.delivery_mode, input.courier_name ?? null, input.tracking_number ?? null
   );
   const id = Number(info.lastInsertRowid);
   if (input.assigned_to && input.assigned_to !== req.user!.id) {
@@ -137,6 +146,9 @@ router.put('/:id', requirePermission('delivery.manage'), syncClass('claim', deli
   const d = load(Number(req.params.id));
   if (!d) { res.status(404).json({ error: 'Delivery not found' }); return; }
   const input = parseBody(updateDeliverySchema, req.body);
+  if (d.status !== 'pending' && (input.delivery_mode !== undefined || input.courier_name !== undefined || input.tracking_number !== undefined)) {
+    res.status(409).json({ error: 'Delivery method and courier details are locked after handoff starts.' }); return;
+  }
   if (input.assigned_to != null && !queryOne('SELECT id FROM users WHERE id = ? AND active = 1', input.assigned_to)) {
     res.status(400).json({ error: 'Assigned user not found' }); return;
   }
@@ -148,13 +160,23 @@ router.put('/:id', requirePermission('delivery.manage'), syncClass('claim', deli
     scheduled_date: input.scheduled_date !== undefined ? input.scheduled_date : d.scheduled_date,
     assigned_to: input.assigned_to !== undefined ? input.assigned_to : d.assigned_to,
     notes: input.notes !== undefined ? input.notes : d.notes,
+    delivery_mode: input.delivery_mode !== undefined ? input.delivery_mode : d.delivery_mode,
+    courier_name: input.courier_name !== undefined ? input.courier_name : d.courier_name,
+    tracking_number: input.tracking_number !== undefined ? input.tracking_number : d.tracking_number,
   };
+  if (merged.delivery_mode === 'courier' && !merged.courier_name?.trim()) {
+    res.status(400).json({ error: 'Name the courier before booking pickup.' }); return;
+  }
+  if (merged.order_id && queryOne(
+    "SELECT 1 FROM deliveries WHERE order_id = ? AND status IN ('pending', 'out_for_delivery') AND id != ? LIMIT 1", merged.order_id, d.id)) {
+    res.status(409).json({ error: 'This sale already has an active shipment booking. Complete or cancel it before choosing another delivery method.', code: 'shipment_already_booked' }); return;
+  }
   run(
     `UPDATE deliveries SET order_id = ?, customer_name = ?, address = ?, contact_phone = ?,
-       scheduled_date = ?, assigned_to = ?, notes = ?, updated_at = datetime('now')
+       scheduled_date = ?, assigned_to = ?, notes = ?, delivery_mode = ?, courier_name = ?, tracking_number = ?, updated_at = datetime('now')
      WHERE id = ?`,
     merged.order_id, merged.customer_name, merged.address, merged.contact_phone,
-    merged.scheduled_date, merged.assigned_to, merged.notes, d.id
+    merged.scheduled_date, merged.assigned_to, merged.notes, merged.delivery_mode, merged.courier_name, merged.tracking_number, d.id
   );
   if (merged.assigned_to && merged.assigned_to !== d.assigned_to && merged.assigned_to !== req.user!.id) {
     void notifyUser(merged.assigned_to, {
@@ -173,6 +195,9 @@ router.post('/:id/status', requireAnyPermission(['delivery.run', 'delivery.manag
   const { status } = parseBody(deliveryStatusSchema, req.body);
   if (status === 'cancelled' && !canManage(req)) {
     res.status(403).json({ error: 'Only a delivery manager can cancel' }); return;
+  }
+  if (status === 'out_for_delivery' && d.delivery_mode === 'courier') {
+    res.status(409).json({ error: 'Courier bookings close when the courier picks up; record courier handoff instead.', code: 'courier_handoff_required' }); return;
   }
   if (d.status === 'delivered' || d.status === 'cancelled') {
     // Clash-check (D6): finished on the cloud meanwhile — the cloud's outcome is kept, flagged.
@@ -203,28 +228,40 @@ router.post('/:id/complete', requireAnyPermission(['delivery.run', 'delivery.man
     if (d.status === 'delivered') { res.json({ ok: true, clash: true, status: d.status, order: null }); return; }
   }
   const input = parseBody(deliveryCompleteSchema, req.body);
-  if (input.outcome === 'delivered' && missingSaleSlip(d)) {
-    res.status(409).json({ error: 'This sale has no warehouse release slip. Complete the stock handoff before recording delivery.', code: 'release_required' }); return;
+  if ((input.outcome === 'delivered' || input.outcome === 'courier_handoff') && missingSaleSlip(d)) {
+    res.status(409).json({ error: 'This sale has no warehouse release slip. Complete the stock handoff before closing delivery or courier pickup.', code: 'release_required' }); return;
   }
-  // Owner policy: recipient name, photos, signature and GPS remain optional.
-  // Any supplied signature must still belong to this delivery.
+  // Own-driver recipient, photos, signature and GPS remain optional by owner policy.
+  if (d.delivery_mode === 'courier' && input.outcome !== 'courier_handoff') {
+    res.status(409).json({ error: 'Record courier pickup for this booking, not customer delivery.', code: 'courier_handoff_required' }); return;
+  }
+  if (d.delivery_mode !== 'courier' && input.outcome === 'courier_handoff') {
+    res.status(409).json({ error: 'This booking uses our own delivery team.', code: 'wrong_delivery_mode' }); return;
+  }
+  if (input.outcome === 'courier_handoff' && (!input.recipient?.trim() || !d.courier_name?.trim())) {
+    res.status(409).json({ error: 'Record the courier and the person who picked up the goods.', code: 'courier_recipient_required' }); return;
+  }
   if (input.signature_attachment_id != null
     && !queryOne("SELECT id FROM attachments WHERE id = ? AND kind = 'signature' AND ref_id = ?",
       input.signature_attachment_id, d.id)) {
     res.status(400).json({ error: 'Signature attachment not found for this delivery' }); return;
   }
+  if (input.outcome === 'courier_handoff' && input.signature_attachment_id == null && !queryOne(
+    "SELECT 1 FROM attachments WHERE kind = 'delivery' AND ref_id = ? LIMIT 1", d.id)) {
+    res.status(409).json({ error: 'Capture a courier pickup photo or signature before closing the handoff.', code: 'proof_required' }); return;
+  }
   run(
     `UPDATE deliveries SET
        status = ?, pod_recipient = ?, pod_note = ?, pod_lat = ?, pod_lng = ?,
-       pod_signature_attachment_id = ?, delivered_at = datetime('now'),
+       pod_signature_attachment_id = ?, tracking_number = ?, delivered_at = datetime('now'),
        delivered_by = ?, updated_at = datetime('now')
      WHERE id = ?`,
-    input.outcome, input.recipient ?? null, input.note ?? null, input.lat ?? null, input.lng ?? null,
-    input.signature_attachment_id ?? null, req.user!.id, d.id
+    input.outcome === 'courier_handoff' ? 'delivered' : input.outcome, input.recipient ?? null, input.note ?? null, input.lat ?? null, input.lng ?? null,
+    input.signature_attachment_id ?? null, input.tracking_number ?? d.tracking_number, req.user!.id, d.id
   );
   if (d.created_by && d.created_by !== req.user!.id) {
     void notifyUser(d.created_by, {
-      title: input.outcome === 'delivered' ? 'Delivered' : 'Delivery failed',
+      title: input.outcome === 'courier_handoff' ? 'Courier picked up' : input.outcome === 'delivered' ? 'Delivered' : 'Delivery failed',
       body: `${d.number}${d.customer_name ? ' — ' + d.customer_name : ''}` + (input.note ? ' · ' + input.note : ''),
       url: '#/deliveries', tag: 'del-' + d.id,
     });
@@ -243,7 +280,7 @@ router.post('/:id/complete', requireAnyPermission(['delivery.run', 'delivery.man
     }
   }
 
-  res.json({ ok: true, status: input.outcome, order });
+  res.json({ ok: true, status: input.outcome === 'courier_handoff' ? 'delivered' : input.outcome, handoff: input.outcome === 'courier_handoff' ? 'courier' : null, order });
 });
 
 // DELETE /api/deliveries/:id — remove a not-yet-started delivery (delivery.manage)
