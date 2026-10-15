@@ -235,7 +235,8 @@ App.register('orders', async (view, filter) => {
       let options;
       try { options = await API.get(`/job-orders/convert-semi/options?product_item_id=${line.item_id}&location_id=${snapshot.location_id}`); }
       catch (e) { await refresh(e.message); return; }
-      const choices = (options.units || []).map((u) => `<option value="${u.id}">${UI.esc(u.identifier || 'Tracked unit #' + u.id)}</option>`).join('');
+      const choices = (options.units || []).map((u) => `<option value="unit:${u.id}">${UI.esc(u.identifier || 'Tracked unit #' + u.id)}</option>`).join('')
+        + (options.batches || []).map((b) => `<option value="batch:${b.id}">QR batch ${UI.esc(b.number)} · ${b.available} free</option>`).join('');
       const bulk = options.bulk_available >= 1;
       if (!choices && !bulk) { await refresh('No eligible semi-built package remains. Refresh stock before planning.'); return; }
       let saveAttempt;
@@ -251,7 +252,7 @@ App.register('orders', async (view, filter) => {
         onOpen: (modal) => {
           const pick = modal.querySelector('[data-f="source-unit"]');
           const identifier = modal.querySelector('[data-f="identifier"]');
-          const fill = () => { const unit = (options.units || []).find((u) => String(u.id) === pick.value); identifier.value = unit?.identifier || ''; identifier.readOnly = !!unit?.identifier; };
+          const fill = () => { const unit = (options.units || []).find((u) => `unit:${u.id}` === pick.value); identifier.value = unit?.identifier || ''; identifier.readOnly = !!unit?.identifier; };
           pick.onchange = fill; fill();
         },
         onConfirm: async (modal, showErr) => {
@@ -265,7 +266,9 @@ App.register('orders', async (view, filter) => {
           try {
             const payload = new FormData();
             Object.entries({ product_item_id: line.item_id, order_id: id, source_location_id: snapshot.location_id,
-              output_location_id: snapshot.location_id, source_unit_id: field('source-unit') || '',
+              output_location_id: snapshot.location_id,
+              source_unit_id: field('source-unit').startsWith('unit:') ? field('source-unit').slice(5) : '',
+              source_batch_id: field('source-unit').startsWith('batch:') ? field('source-unit').slice(6) : '',
               identifier: field('identifier'), finishing_cost: finishingCost, notes: field('notes') || '',
               confirmed_complete_kit: 'true' })
               .forEach(([key, value]) => payload.append(key, String(value)));

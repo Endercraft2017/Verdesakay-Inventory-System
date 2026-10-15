@@ -1496,6 +1496,7 @@ export interface SalesReturns {
 export interface SemiBuildConversions {
   job_order_id: Generated<number>;
   source_unit_id: number | null;
+  source_batch_id: number | null;
   source_cost: Generated<number>;
   finishing_cost: Generated<number>;
   cancel_reason: string | null;

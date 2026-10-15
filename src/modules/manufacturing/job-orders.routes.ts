@@ -1,4 +1,4 @@
-import { receiveBatch } from '../inventory/batch-stock';
+import { batchBalances, consumeSemiBatchUnit, receiveBatch, restoreBatchStock } from '../inventory/batch-stock';
 /** Manufacturing job orders (Phase B). Build N units of a finished product by
     consuming its BOM. Lifecycle: draft (→ approved, a sign-off stamp, not a status) →
     released → in_progress → completed,
@@ -188,7 +188,9 @@ function settleJobOrderGl(joId: number, userId: number | null): void {
 
 function loadJobOrder(id: number): JobOrder | null {
   const jo = queryOne<JobOrder>(
-    `SELECT j.*, sc.job_order_id AS conversion_job_order_id, sc.source_unit_id AS conversion_source_unit_id, sc.source_cost AS conversion_source_cost,
+    `SELECT j.*, sc.job_order_id AS conversion_job_order_id, sc.source_unit_id AS conversion_source_unit_id,
+            sc.source_batch_id AS conversion_source_batch_id, cb.number AS conversion_source_batch_number,
+            sc.source_cost AS conversion_source_cost,
             sc.finishing_cost AS conversion_finishing_cost, sc.cancel_reason AS conversion_cancel_reason,
             u.full_name AS created_by_name, rb.full_name AS released_by_name,
             ab.full_name AS accepted_by_name, apb.full_name AS approved_by_name,
@@ -207,6 +209,7 @@ function loadJobOrder(id: number): JobOrder | null {
      LEFT JOIN users prb ON prb.id = j.prepared_by
      LEFT JOIN users pab ON pab.id = j.paused_by
      LEFT JOIN semi_build_conversions sc ON sc.job_order_id = j.id
+     LEFT JOIN production_batches cb ON cb.id = sc.source_batch_id
      LEFT JOIN parts_release_slips prs ON prs.job_order_id = j.id
      LEFT JOIN orders o ON o.id = j.order_id
      LEFT JOIN production_teams t ON t.id = j.team_id
@@ -262,7 +265,15 @@ router.get('/convert-semi/options', conversionGate, (req, res) => {
     WHERE u.product_item_id = ? AND j.build_mode = 'semi_built' AND u.status IN ('in_stock', 'reserved')
       AND COALESCE(u.location_id, j.output_location_id) = ?`, productId, locationId)?.n ?? 0;
   const onHand = variantStockAt(productId, locationId, 'semi_built');
-  res.json({ units, bulk_available: Math.max(0, onHand - tracked), on_hand: onHand });
+  const batches = queryAll<{ id: number; number: string }>(`SELECT b.id, b.number FROM production_batches b
+    JOIN job_orders j ON j.id=b.job_order_id WHERE COALESCE(b.product_item_id,j.product_item_id)=?
+    AND j.build_mode='semi_built' ORDER BY b.id`, productId)
+    .map((batch) => ({ ...batch, available: batchBalances(batch.id).find((row) => row.location_id === locationId)?.available ?? 0 }))
+    .filter((batch) => batch.available >= 1);
+  const lotOnHand = queryOne<{ n: number }>(`SELECT COALESCE(SUM(s.quantity),0) AS n FROM production_batch_stock s
+    JOIN production_batches b ON b.id=s.batch_id JOIN job_orders j ON j.id=b.job_order_id
+    WHERE COALESCE(b.product_item_id,j.product_item_id)=? AND j.build_mode='semi_built' AND s.location_id=?`, productId, locationId)?.n ?? 0;
+  res.json({ units, batches, bulk_available: Math.max(0, onHand - tracked - lotOnHand), on_hand: onHand });
 });
 
 // Minimal production-facing demand list: managers can choose a supply path without
@@ -681,11 +692,22 @@ router.post('/convert-semi', conversionGate, syncClass('physical'), syncUpload(i
   const tracked = queryOne<{ n: number }>(`SELECT COUNT(*) AS n FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
     WHERE u.product_item_id = ? AND j.build_mode = 'semi_built' AND u.status IN ('in_stock', 'reserved')
       AND COALESCE(u.location_id, j.output_location_id) = ?`, product.id, input.source_location_id)?.n ?? 0;
+  const lotOnHand = queryOne<{ n: number }>(`SELECT COALESCE(SUM(s.quantity),0) AS n FROM production_batch_stock s
+    JOIN production_batches b ON b.id=s.batch_id JOIN job_orders j ON j.id=b.job_order_id
+    WHERE COALESCE(b.product_item_id,j.product_item_id)=? AND j.build_mode='semi_built' AND s.location_id=?`,
+    product.id, input.source_location_id)?.n ?? 0;
+  const selectedBatch = input.source_batch_id == null ? null : queryOne<{ id: number }>(`SELECT b.id FROM production_batches b
+    JOIN job_orders j ON j.id=b.job_order_id WHERE b.id=? AND COALESCE(b.product_item_id,j.product_item_id)=?
+    AND j.build_mode='semi_built'`, input.source_batch_id, product.id);
+  if (input.source_batch_id != null && (!selectedBatch ||
+    (batchBalances(input.source_batch_id).find((row) => row.location_id === input.source_location_id)?.available ?? 0) < 1)) {
+    fail(409, 'This semi-built batch has no free unit at the source location. Rescan its QR and review stock.'); return;
+  }
   const firmDemand = queryOne<{ n: number }>(`SELECT COALESCE(SUM(MAX(0, oi.quantity - oi.released_qty)), 0) AS n
     FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.item_id = ? AND oi.fulfillment_mode = 'semi_built'
       AND o.type = 'sale' AND o.fulfilled_at IS NULL AND LOWER(o.status) IN ('approved', 'released')
       AND COALESCE(o.location_id, ?) = ?`, product.id, getDefaultLocationId(), input.source_location_id)?.n ?? 0;
-  if (onHand < 1 || (!serial && onHand - tracked < 1) || onHand - firmDemand < 1) {
+  if (onHand < 1 || (!serial && !selectedBatch && onHand - tracked - lotOnHand < 1) || onHand - firmDemand < 1) {
     fail(409, 'No uncommitted semi-built RTS unit is available at this location.'); return;
   }
   if (input.order_id) {
@@ -710,10 +732,12 @@ router.post('/convert-semi', conversionGate, syncClass('physical'), syncUpload(i
       number, input.order_id ?? null, product.id, product.name, input.source_location_id, input.output_location_id,
       input.notes ?? 'Finish complete semi-built package', req.user!.id, req.user!.id, req.user!.id, req.user!.id,
       JSON.stringify(checklistForProduct(product.id, 1)), JSON.stringify(checklistForProduct(product.id, 2))).lastInsertRowid);
-    run('INSERT INTO semi_build_conversions (job_order_id, source_unit_id, source_cost, finishing_cost) VALUES (?, ?, ?, ?)',
-      jobId, serial?.id ?? null, cost, input.finishing_cost);
+    run('INSERT INTO semi_build_conversions (job_order_id, source_unit_id, source_batch_id, source_cost, finishing_cost) VALUES (?, ?, ?, ?, ?)',
+      jobId, serial?.id ?? null, selectedBatch?.id ?? null, cost, input.finishing_cost);
+    if (selectedBatch) consumeSemiBatchUnit(selectedBatch.id, product.id, input.source_location_id);
     applyStockChange({ itemId: product.id, locationId: input.source_location_id, change: -1,
-      buildMode: 'semi_built', reason: `${number}: semi-built package released for finishing`, userId: req.user!.id });
+      buildMode: 'semi_built', batchHandled: !!selectedBatch,
+      reason: `${number}: semi-built package released for finishing`, userId: req.user!.id });
     if (serial) run("UPDATE job_order_units SET status = 'converted', updated_at = datetime('now') WHERE id = ?", serial.id);
     const outputId = Number(run(`INSERT INTO job_order_units (job_order_id, product_item_id, identifier, status, stage, location_id, conversion_source_unit_id)
       VALUES (?, ?, ?, 'pending', 0, ?, ?)`, jobId, product.id, input.identifier.trim(), input.output_location_id, serial?.id ?? null).lastInsertRowid);
@@ -1645,8 +1669,8 @@ router.post('/:id/cancel', requireAnyPermission(['inventory.adjust', 'production
     res.status(409).json({ error: `Job order is already ${jo.status}` });
     return;
   }
-  const conversion = queryOne<{ source_unit_id: number | null; source_cost: number }>(
-    'SELECT source_unit_id, source_cost FROM semi_build_conversions WHERE job_order_id = ?', id);
+  const conversion = queryOne<{ source_unit_id: number | null; source_batch_id: number | null; source_cost: number }>(
+    'SELECT source_unit_id, source_batch_id, source_cost FROM semi_build_conversions WHERE job_order_id = ?', id);
   if (conversion) {
     const cancellation = parseBody(cancelSemiConversionSchema, req.body ?? {});
     const output = queryOne<{ id: number; status: string }>('SELECT id, status FROM job_order_units WHERE job_order_id = ?', id);
@@ -1660,6 +1684,7 @@ router.post('/:id/cancel', requireAnyPermission(['inventory.adjust', 'production
       applyStockChange({ itemId: jo.product_item_id!, locationId: jo.source_location_id!, change: 1,
         buildMode: 'semi_built', reason: `${jo.number}: finishing cancelled; complete package returned`,
         userId: req.user!.id, unitCost: conversion.source_cost });
+      if (conversion.source_batch_id) restoreBatchStock(conversion.source_batch_id, jo.source_location_id!, 1);
       run("UPDATE semi_build_conversions SET cancel_reason = ?, cancelled_by = ?, cancelled_at = datetime('now') WHERE job_order_id = ?",
         cancellation.reason, req.user!.id, id);
       run("UPDATE job_orders SET status = 'cancelled', closed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?", id);

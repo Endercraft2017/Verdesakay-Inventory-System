@@ -99,17 +99,28 @@ describe('finish the same complete semi-built package', () => {
     expect((await ctx.api.post(`/api/job-orders/${mo}/products-in`).set(H()).send({ location_id: location,
       batches: [{ batch_id: batch.id, quantity: 1 }] })).status).toBe(201);
     const options = (await ctx.api.get(`/api/job-orders/convert-semi/options?product_item_id=${product}&location_id=${location}`).set(H())).body;
-    expect(options.bulk_available).toBe(1);
-    const start = await ctx.api.post('/api/job-orders/convert-semi').set(H())
+    expect(options.bulk_available).toBe(0);
+    expect(options.batches).toMatchObject([{ id: batch.id, available: 1 }]);
+    const startPackage = () => ctx.api.post('/api/job-orders/convert-semi').set(H())
       .field('product_item_id', String(product)).field('source_location_id', String(location))
-      .field('output_location_id', String(location)).field('identifier', 'BULK-001')
+      .field('output_location_id', String(location)).field('source_batch_id', String(batch.id))
+      .field('identifier', 'BULK-001')
       .field('confirmed_complete_kit', 'true')
       .attach('image', Buffer.from('bulk-package'), 'package.png');
+    const start = await startPackage();
     expect(start.status).toBe(201);
-    const output = (await ctx.api.get(`/api/job-orders/${start.body.id}/units`).set(H())).body[0];
+    expect(start.body.job_order.conversion_source_batch_id).toBe(batch.id);
+    expect((await ctx.api.get(`/api/job-orders/convert-semi/options?product_item_id=${product}&location_id=${location}`).set(H())).body.batches).toEqual([]);
+    expect((await ctx.api.post(`/api/job-orders/${start.body.id}/cancel`).set(H())
+      .send({ confirmed_repacked: true, reason: 'Repacked original batch package' })).status).toBe(200);
+    expect((await ctx.api.get(`/api/job-orders/convert-semi/options?product_item_id=${product}&location_id=${location}`).set(H())).body.batches)
+      .toMatchObject([{ id: batch.id, available: 1 }]);
+    const restart = await startPackage();
+    expect(restart.status).toBe(201);
+    const output = (await ctx.api.get(`/api/job-orders/${restart.body.id}/units`).set(H())).body[0];
     expect(output.identifier).toBe('BULK-001');
-    expect((await ctx.api.post(`/api/job-orders/${start.body.id}/units/inspect`).set(H()).send({ unit_ids: [output.id], result: 'pass' })).status).toBe(200);
-    expect((await ctx.api.post(`/api/job-orders/${start.body.id}/products-in`).set(H()).send({ location_id: location, unit_ids: [output.id] })).status).toBe(201);
+    expect((await ctx.api.post(`/api/job-orders/${restart.body.id}/units/inspect`).set(H()).send({ unit_ids: [output.id], result: 'pass' })).status).toBe(200);
+    expect((await ctx.api.post(`/api/job-orders/${restart.body.id}/products-in`).set(H()).send({ location_id: location, unit_ids: [output.id] })).status).toBe(201);
     const stock = (await ctx.api.get(`/api/inventory/${product}/stock`).set(H())).body.find((row: { location_id: number }) => row.location_id === location);
     expect(stock).toMatchObject({ assembled_quantity: 1, semi_built_quantity: 0 });
     expect((await ctx.api.get(`/api/inventory/${part}`).set(H())).body.quantity).toBe(0);

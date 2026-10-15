@@ -353,6 +353,8 @@ export interface JobOrder {
   build_mode: 'assembled' | 'semi_built';
   conversion_job_order_id?: number | null;
   conversion_source_unit_id?: number | null;
+  conversion_source_batch_id?: number | null;
+  conversion_source_batch_number?: string | null;
   conversion_source_cost?: number | null;
   conversion_finishing_cost?: number | null;
   conversion_cancel_reason?: string | null;

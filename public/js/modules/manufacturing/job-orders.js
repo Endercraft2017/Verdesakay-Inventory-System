@@ -128,7 +128,7 @@ App.register('job-orders', async (view, filter) => {
         const selected = () => demand[Number(ov.querySelector('[data-f="demand"]').value)];
         const pick = ov.querySelector('[data-f="source"]');
         const idField = ov.querySelector('[data-f="identifier"]');
-        const fillId = () => { const unit = (candidates?.units || []).find((u) => String(u.id) === pick.value);
+        const fillId = () => { const unit = (candidates?.units || []).find((u) => `unit:${u.id}` === pick.value);
           idField.value = unit?.identifier || ''; idField.readOnly = !!unit?.identifier; };
         const loadCandidates = async () => {
           const d = selected(); candidates = null; pick.innerHTML = '<option value="">Loading packages…</option>';
@@ -136,7 +136,8 @@ App.register('job-orders', async (view, filter) => {
             const result = await API.get(`/job-orders/convert-semi/options?product_item_id=${d.product_item_id}&location_id=${d.location_id}`);
             if (!ov.isConnected || selected() !== d) return;
             candidates = result;
-            pick.innerHTML = (result.units || []).map((u) => `<option value="${u.id}">${UI.esc(u.identifier || 'Tracked unit #' + u.id)}</option>`).join('')
+            pick.innerHTML = (result.units || []).map((u) => `<option value="unit:${u.id}">${UI.esc(u.identifier || 'Tracked unit #' + u.id)}</option>`).join('')
+              + (result.batches || []).map((b) => `<option value="batch:${b.id}">QR batch ${UI.esc(b.number)} · ${b.available} free</option>`).join('')
               + (result.bulk_available >= 1 ? '<option value="">Untracked semi-built unit</option>' : '');
             if (!pick.options.length) pick.innerHTML = '<option value="">No available packages — refresh</option>';
             fillId();
@@ -159,7 +160,9 @@ App.register('job-orders', async (view, filter) => {
         const payload = new FormData();
         Object.entries({ product_item_id: d.product_item_id, order_id: d.order_id,
           source_location_id: d.location_id, output_location_id: d.location_id,
-          source_unit_id: get('source'), identifier: get('identifier'), finishing_cost: cost,
+          source_unit_id: get('source').startsWith('unit:') ? get('source').slice(5) : '',
+          source_batch_id: get('source').startsWith('batch:') ? get('source').slice(6) : '',
+          identifier: get('identifier'), finishing_cost: cost,
           notes: get('notes'), confirmed_complete_kit: 'true' }).forEach(([key, value]) => payload.append(key, String(value)));
         payload.append('image', image);
         const signature = JSON.stringify([...payload.entries()].map(([key, value]) =>
@@ -445,6 +448,7 @@ App.register('job-orders', async (view, filter) => {
           </div>
           ${jo.accept_notes ? `<p class="muted" style="white-space:pre-wrap;margin:10px 0 0"><b>Handover note:</b> ${UI.esc(jo.accept_notes)}</p>` : ''}
           ${jo.conversion_job_order_id ? '<p class="order-notice">This is the same complete package taken from semi-built RTS. Its loose parts were already included; no BOM components were picked again. Inspect the linked unit, then record Products In to make it fully built RTS.</p>' : ''}
+          ${jo.conversion_source_batch_id ? `<p class="muted">Source QR batch: ${UI.esc(jo.conversion_source_batch_number || '#' + jo.conversion_source_batch_id)}</p>` : ''}
           ${jo.conversion_cancel_reason ? `<p class="order-notice">Complete package returned to semi-built RTS: ${UI.esc(jo.conversion_cancel_reason)}</p>` : ''}
           ${jo.notes ? `<p class="muted" style="white-space:pre-wrap;margin:10px 0 0">${UI.esc(jo.notes)}</p>` : ''}`)}
         ${held.length ? box(`${boxTitle('Held by QA for review')}

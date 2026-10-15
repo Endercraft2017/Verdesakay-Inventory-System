@@ -67,6 +67,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 79: preserve exact semi-built batch identity when a bulk package enters finishing.
 // 78: trace semi-built packages finished into fully built stock without BOM reissue,
 //     and preserve each serialized unit's received cost for that conversion.
 // 77: exact batch/location stock, sales allocations, verified counts and return provenance.
@@ -85,7 +86,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 78; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 79; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -3304,6 +3305,7 @@ function migrate(): void {
   db.exec(`CREATE TABLE IF NOT EXISTS semi_build_conversions (
     job_order_id INTEGER PRIMARY KEY REFERENCES job_orders(id) ON DELETE CASCADE,
     source_unit_id INTEGER REFERENCES job_order_units(id) ON DELETE RESTRICT,
+    source_batch_id INTEGER REFERENCES production_batches(id) ON DELETE RESTRICT,
     source_cost REAL NOT NULL DEFAULT 0,
     finishing_cost REAL NOT NULL DEFAULT 0,
     cancel_reason TEXT,
@@ -3312,6 +3314,7 @@ function migrate(): void {
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
   const conversionCols = db.prepare('PRAGMA table_info(semi_build_conversions)').all() as Array<{ name: string }>;
+  if (!conversionCols.some((c) => c.name === 'source_batch_id')) db.exec('ALTER TABLE semi_build_conversions ADD COLUMN source_batch_id INTEGER REFERENCES production_batches(id) ON DELETE RESTRICT');
   if (!conversionCols.some((c) => c.name === 'cancel_reason')) db.exec('ALTER TABLE semi_build_conversions ADD COLUMN cancel_reason TEXT');
   if (!conversionCols.some((c) => c.name === 'cancelled_by')) db.exec('ALTER TABLE semi_build_conversions ADD COLUMN cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
   if (!conversionCols.some((c) => c.name === 'cancelled_at')) db.exec('ALTER TABLE semi_build_conversions ADD COLUMN cancelled_at TEXT');

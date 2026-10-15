@@ -71,7 +71,8 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
    package with its loose parts included. For a fully built shortage, a manager
    may explicitly finish one semi-built RTS unit even when CKD parts are available;
    the complete kit is counted and photographed at finishing intake; the unit keeps
-   its identity, costs and QC/Products In gate, and no BOM parts are
+   its identity (including exact QR batch when lot tracked), costs and QC/Products In
+   gate, and no BOM parts are
    deducted a second time. When CKD components are short, stock review highlights
    eligible semi-built packages. Sales may change an order's unit selling price
    independently of BOM production cost and add shipping/admin/other non-stock fees
