@@ -32,7 +32,7 @@ export interface SyncCommand {
   allocation_plan: string;
   app_version: string;
   unattributed: number;
-  /** Request facts a replay must reproduce (§20): `{ headers?: { 'x-kiosk-token' }, session?: { shared } }`. */
+  /** Request facts a replay must reproduce (§20): `{ headers?: { 'x-kiosk-token' }, session?: { shared }, validatedSnapshots?: server-owned canonical facts }`. */
   context?: string | null;
 }
 
