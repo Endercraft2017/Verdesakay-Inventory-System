@@ -136,6 +136,20 @@ describe('mobile bootstrap', () => {
     return win;
   }
 
+  it('retires old Pick bookmarks without loading orders or submitting stock changes', async () => {
+    const calls: string[] = [];
+    const win = await bootAs({ id: 41, role: 'employee', employee: true, modules: null,
+      permissions: ['mobile.access', 'messages.view', 'messages.send'] }, (url) => { calls.push(url); });
+    calls.length = 0;
+    win.location.hash = '#/pick?id=123&step=pick';
+    win.MApp.render();
+    await new Promise(resolve => setTimeout(resolve, 40));
+    expect(win.location.hash).toBe('#/work');
+    expect(win.document.getElementById('m-view').textContent).not.toContain('Pick all lines');
+    expect(calls.some(url => /\/orders|\/inventory|\/job-orders/.test(url))).toBe(false);
+    win.close();
+  });
+
   it('a qc_inspector-only account gets the Production tab with just its own row', async () => {
     const win = await bootAs({
       id: 1, username: 'qc1', full_name: 'QC One', role: 'qc_inspector', employee: true, modules: null,
@@ -259,7 +273,7 @@ describe('mobile bootstrap', () => {
   });
 
   it('a screen the role does not permit says so up front, whatever link or address opened it', async () => {
-    const WAREHOUSE = ['allocate', 'batch', 'cycle-count', 'damage', 'receive', 'pick', 'stock-move', 'transfer',
+    const WAREHOUSE = ['allocate', 'batch', 'cycle-count', 'damage', 'receive', 'stock-move', 'transfer',
       'assign-qr', 'new-item', 'item', 'location', 'low-stock'];
     // The shell's background reads (inbox badge, Home summary) answered so neither rejects unhandled;
     // anything else a permitted screen asks for fails like a missing record, which screens handle.

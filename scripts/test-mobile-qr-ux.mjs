@@ -156,6 +156,24 @@ try {
     base = 'http://127.0.0.1:' + await new Promise((resolve, reject) => { let text = ''; server.stdout.on('data', d => { text += d; const m = text.match(/EDITOR_UX_PORT=(\d+)/); if (m)
         resolve(m[1]); }); server.on('exit', c => reject(Error('server exit ' + c))); });
     admin = (await api('POST', '/auth/login', { username: 'admin', password: 'admin123' }, null)).token;
+    await check('Legacy Pick bookmarks open permissioned Work without stock writes', async () => {
+        await launch(admin);
+        const writes = [];
+        page.on('request', req => { if (req.method() !== 'GET' && /\/api\/(inventory|orders|job-orders)/.test(req.url())) writes.push(req.url()); });
+        await page.goto(base + '/m#/pick?id=123&step=pick');
+        await page.locator('.v2-work').waitFor();
+        assert.equal(new URL(page.url()).hash, '#/work');
+        assert.equal(await page.getByText('Pick order', { exact: true }).count(), 0);
+        await page.getByText('Release orders', { exact: true }).waitFor();
+        await page.getByText('Kit releases', { exact: true }).waitFor();
+        await page.screenshot({ path: path.join(output, 'legacy-pick-work-46-548.png'), fullPage: true });
+        await page.getByText('Release orders', { exact: true }).click();
+        await page.waitForURL(url => url.hash === '#/so');
+        await page.goto(base + '/m#/pick'); await page.locator('.v2-work').waitFor();
+        await page.getByText('Kit releases', { exact: true }).click();
+        await page.waitForURL(url => url.hash === '#/kit-release');
+        assert.deepEqual(writes, []);
+    });
     const rts = await loginRole('receiving_clerk'), release = await loginRole('releasing_clerk');
     const batchProduct = await product('AUDIT-BATCH', 5, 0);
     await api('POST', `/job-orders/${batchProduct.jo}/progress`, { done_delta: 5 });

@@ -21,7 +21,8 @@ offers a force-backorder stock action.
 
 | Priority | Item | Current source evidence and next step |
 | --- | --- | --- |
-| High | Retire legacy Pick | `public/mobile/modules/inventory/orders-fulfil.js` still registers `pick`, lists sales/jobs and contains per-line negative adjustments with memory-only progress. Redirect sales to V2 releasing; choose the proper production-kit entry for job demand. Preserve legitimate adjustment tools. Backend already refuses the dangerous legacy sales reason. |
+| High | Courier pickup and whole-kit CKD partials | New backend handoff `6f45ebd`: courier bookings need distinct collection language/action. Owner subsequently chose optional courier evidence too; current backend required collector/proof guards still need alignment in that step; terminal courier status means picked up, not customer delivered. Own-driver evidence stays optional. Audit mobile CKD parent/child grouping and whole-kit partial confirmation against the new contract. |
+| Done | Retire legacy Pick | `#/pick` now returns to permission-filtered Work. Removed obsolete stock-adjustment picking; users select canonical Release orders or Kit releases. Commercial and manufacturing IDs are not conflated. Purchase receiving and intentional adjustments are preserved. |
 | High | Semi-built finishing intake | No `convert-semi` calls under `public/mobile/`. Add explicit source selection (serial, exact scanned batch or untracked), complete-package confirmation, photo and durable multipart attempt. Label conversion jobs in production/QC and suppress Add unit/bulk/component pick for them. Backend already handles costs, source lineage and pre-QC cancellation. |
 | High | Customer returns and repair disposition | No `sales-returns` calls under `public/mobile/`. Add slip-bound photographed receipt, permissioned inspection/restock/reject, then serialized repair/salvage/dispose and reinspection. No stock addition at receipt and no warehouse refund. Backend one-lifetime-return-per-serial remains a separate limitation. |
 | Medium | Allocation correction | `so.js` has no `/release/unreserve` action. Add explicit pre-slip undo with exact unit/quantity review and durable request identity; never imply reversal after physical shipment. |
@@ -73,3 +74,10 @@ phone were aligned to that policy. Delivered physical goods still need warehouse
 failed trips require a reason. Assigned-driver/manager evidence access, completed
 evidence locks, desktop slip/photo response-loss fixes and physical sales completion
 guards are retained. Earlier strict dispatch/proof assertions are superseded.
+
+Legacy Pick retirement validation: TypeScript passed; 125 focused mobile tests
+passed; all 2,800 tests across 274 files passed; 25 real-backend Playwright checks
+passed at 390×844 with zero page errors. Work `46:548` screenshot checked against
+the Figma reference. Legacy bookmarks perform no stock writes and both canonical
+release queues remain reachable. PWA cache v105. Physical-device acceptance remains
+separate. Courier evidence policy alignment remains the next step.

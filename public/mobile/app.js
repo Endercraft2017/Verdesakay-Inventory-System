@@ -148,7 +148,7 @@ window.MApp = (function () {
       receiving, so, job-orders, kit-release, scan …). tests/frontend-mobile.test.ts walks every route. */
   var ROUTE_NEEDS = {
     allocate: ['inventory.adjust'], batch: ['inventory.adjust'], 'cycle-count': ['inventory.adjust'],
-    damage: ['inventory.adjust'], receive: ['inventory.adjust'], pick: ['inventory.adjust'],
+    damage: ['inventory.adjust'], receive: ['inventory.adjust'],
     'stock-move': ['inventory.adjust'], transfer: ['inventory.adjust'], 'assign-qr': ['inventory.adjust'],
     'new-item': ['inventory.create'],
     'my-log': ['inventory.view'], item: ['inventory.view'], location: ['inventory.view'], 'low-stock': ['inventory.view'],
@@ -161,7 +161,7 @@ window.MApp = (function () {
   var ROUTE_MODULES = {
     allocate: ['manufacturing'], production: ['manufacturing'], 'job-orders': ['manufacturing'], 'kit-release': ['manufacturing'],
     'unit-issues': ['manufacturing'], qc: ['manufacturing'], repairs: ['manufacturing'], record: ['manufacturing'], receiving: ['manufacturing'],
-    batch: ['inventory'], 'cycle-count': ['inventory'], damage: ['inventory'], receive: ['inventory', 'purchasing'], pick: ['inventory'],
+    batch: ['inventory'], 'cycle-count': ['inventory'], damage: ['inventory'], receive: ['inventory', 'purchasing'],
     'stock-move': ['inventory'], transfer: ['inventory'], 'assign-qr': ['inventory'], 'new-item': ['inventory'],
     'my-log': ['inventory'], item: ['inventory'], location: ['inventory'], 'low-stock': ['inventory'], scan: ['inventory'], so: ['inventory'], deliveries: ['inventory']
   };

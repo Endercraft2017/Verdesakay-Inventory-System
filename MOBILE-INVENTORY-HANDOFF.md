@@ -72,8 +72,7 @@ own repair-revision decisions. PWA cache v104.
 
 The handoff at commit `6185481` was reconciled with current code in
 `docs/reviews/mobile-handoff-6185481-review.md`; it lists remaining work and separates
-already-completed historical audit rows. Highest follow-ups include legacy Pick
-retirement, semi-built finishing intake, returns/disposition, allocation undo,
+already-completed historical audit rows. Highest follow-ups include courier pickup, whole-kit CKD partial-release parity, semi-built finishing intake, returns/disposition, allocation undo,
 build-state stock movements and shortage/procurement context. Mobile sales pricing
 suggestions are conditional on adding a Sales editor.
 
@@ -738,3 +737,25 @@ New sale-generated POs have durable `sale_shortfall_purchases` links, surviving 
 10. Delivery after an issued release slip: verify zero second deduction; unresolved release/shortage goes to Sales/supervisor.
 
 Update the mobile role handoff, route inventory tests and service-worker cache when implementing these changes. This audit does not alter the mobile role permissions or decide the design of new mobile Sales screens.
+
+### Mobile legacy Pick retirement (2026-10-16)
+
+The obsolete `#/pick` route now returns to permission-filtered Work (`46:548`).
+Sales use Release orders (`#/so`); production uses Kit releases (`#/kit-release`).
+The old order list, per-line negative adjustments and false batch-success result
+are removed. Commercial order IDs are never reused as manufacturing job IDs.
+Purchase-order receiving and intentional stock-adjustment tools remain available.
+Old bookmarks perform no stock action; canonical queues retain their own gates.
+
+**Next-step owner decision (2026-10-16):** courier evidence should also stay
+optional, matching own-driver delivery. This overrides the required collector/proof
+policy described in the courier handoff above. Backend courier validation and the
+new mobile collection screen still need alignment; legacy Pick retirement does not
+implement that next step. Warehouse-out remains required before closing custody.
+
+Legacy Pick retirement validation: TypeScript passed; 125 focused mobile tests
+passed; all 2,800 tests across 274 files passed; 25 real-backend Playwright checks
+passed at 390×844 with zero page errors. Work `46:548` screenshot checked against
+the Figma reference. Legacy bookmarks perform no stock writes and both canonical
+release queues remain reachable. PWA cache v105. Physical-device acceptance remains
+separate. Courier evidence policy alignment remains the next step.

@@ -1353,3 +1353,12 @@ permissions refresh on focus, foreground and reconnect, guarded against account/
 changes. Personal employee tools stay available without operational permissions.
 Backend delivery guards accept `delivery.run` or `delivery.manage`, retaining
 assignment checks. See `docs/reviews/mobile-handoff-6185481-review.md` for remaining work.
+
+### Mobile legacy Pick retirement (2026-10-16)
+
+The obsolete `#/pick` route now returns to permission-filtered Work (`46:548`).
+Sales use Release orders (`#/so`); production uses Kit releases (`#/kit-release`).
+The old order list, per-line negative adjustments and false batch-success result
+are removed. Commercial order IDs are never reused as manufacturing job IDs.
+Purchase-order receiving and intentional stock-adjustment tools remain available.
+Old bookmarks perform no stock action; canonical queues retain their own gates.

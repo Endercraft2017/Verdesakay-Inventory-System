@@ -1175,3 +1175,12 @@ submission never runs in the background and its result cannot force a sale/stock
 completion. Server permissions and assignment checks remain authoritative. Basic
 employee accounts see personal tools; operational mobile routes and entry points
 follow effective permissions and enabled workspace modules.
+
+### Mobile legacy Pick retirement (2026-10-16)
+
+The obsolete `#/pick` route now returns to permission-filtered Work (`46:548`).
+Sales use Release orders (`#/so`); production uses Kit releases (`#/kit-release`).
+The old order list, per-line negative adjustments and false batch-success result
+are removed. Commercial order IDs are never reused as manufacturing job IDs.
+Purchase-order receiving and intentional stock-adjustment tools remain available.
+Old bookmarks perform no stock action; canonical queues retain their own gates.
