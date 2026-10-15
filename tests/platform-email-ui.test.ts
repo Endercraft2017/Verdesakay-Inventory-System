@@ -21,6 +21,7 @@ it('console saves secrets only when supplied, clears them explicitly, and tests 
     else if (route === '/bootstrap') data = { plans: ['complete'], statuses: ['active'], modules: ['email'], module_deps: {} };
     else if (route === '/tenants') data = [tenant];
     else if (route === '/tenants/acme') data = tenant;
+    else if (route === '/tenants/acme/setup-invoices') data = [];
     else if (route === '/tenants/acme/mail' && init.method === 'GET') data = { transport: 'smtp', from_email: 'office@example.com', smtp_host: 'smtp.example.com', smtp_port: 587, has_password: true, ready: true };
     return new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
   };

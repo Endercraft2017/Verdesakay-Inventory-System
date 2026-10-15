@@ -262,6 +262,7 @@
       el('div', { class: 'field' }, [el('label', { text: 'Current usage' }), usageBox]),
       photoField,
       emailPanel(st.slug),
+      setupInvoicePanel(st.slug),
       logBox,
       el('div', { class: 'danger-zone' }, [
         el('h3', { text: 'Danger zone' }),
@@ -357,6 +358,94 @@
       testBtn.addEventListener('click', function () { submit(true); });
       panel.appendChild(el('div', {}, [saveBtn, testBtn]));
     }).catch(function (ex) { status.textContent = ex.message; });
+    return panel;
+  }
+
+  function setupInvoicePanel(slug) {
+    var endpoint = '/tenants/' + encodeURIComponent(slug) + '/setup-invoices';
+    var panel = el('section', { class: 'field', id: 'setup-invoices' }, [
+      el('h3', { text: 'Assisted SMTP setup — manual invoices' }),
+      el('p', { class: 'muted', text: 'Issue and deliver the invoice through your normal invoicing process, then record it here. This tracker does not issue tax invoices, send email, collect payment, or change the tenant’s subscription.' }),
+    ]);
+    var status = el('p', { role: 'status', id: 'invoice-status' });
+    var list = el('div', { id: 'invoice-list' });
+    var form = el('form', { id: 'invoice-form' });
+    function field(parent, id, label, type) {
+      var input = el('input', { id: id, type: type || 'text', required: 'required' });
+      parent.appendChild(el('div', { class: 'field' }, [el('label', { for: id, text: label }), input]));
+      return input;
+    }
+    var number = field(form, 'invoice-number', 'Manually issued invoice number'); number.maxLength = 80;
+    var amount = field(form, 'invoice-amount', 'Total setup fee (as shown on invoice)', 'number');
+    amount.min = '0.01'; amount.max = '999999999.99'; amount.step = '0.01';
+    var currency = el('select', { id: 'invoice-currency', required: 'required' }, [el('option', { value: '', text: 'Choose currency' })].concat(
+      (ref.setup_currencies || []).map(function (c) { return el('option', { value: c, text: c }); })
+    ));
+    form.appendChild(el('div', { class: 'field' }, [el('label', { for: 'invoice-currency', text: 'Currency' }), currency]));
+    var issued = field(form, 'invoice-issued', 'Issue date', 'date');
+    var due = field(form, 'invoice-due', 'Due date', 'date');
+    var record = el('button', { type: 'submit', class: 'btn', text: 'Record issued invoice' });
+    form.appendChild(record);
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      if (!form.reportValidity()) return;
+      record.disabled = true;
+      try {
+        await api('POST', endpoint, { invoice_number: number.value.trim(), amount: amount.value, currency: currency.value, issued_on: issued.value, due_on: due.value });
+        form.reset();
+        status.textContent = 'Invoice recorded. No payment collected.';
+        await refresh();
+      } catch (ex) { status.textContent = ex.message; }
+      finally { record.disabled = false; }
+    });
+    async function action(row, type, payment, button) {
+      button.disabled = true;
+      try {
+        await api('PATCH', endpoint + '/' + row.id, Object.assign({ version: row.version, action: type }, payment || {}));
+        status.textContent = type === 'paid' ? 'Payment recorded manually.' : type === 'void' ? 'Invoice voided.' : 'Setup service marked completed.';
+        await refresh();
+      } catch (ex) {
+        status.textContent = ex.message;
+        // Reload stale versions while leaving the reported failure visible.
+        await refresh().catch(function () {});
+      } finally { button.disabled = false; }
+    }
+    async function refresh() {
+      var rows = await api('GET', endpoint);
+      list.replaceChildren();
+      if (!rows.length) { list.appendChild(el('p', { class: 'muted', text: 'No setup invoices recorded.' })); return; }
+      rows.forEach(function (row) {
+        var total = row.currency + ' ' + (row.amount_minor / 100).toFixed(2);
+        var card = el('article', { class: 'field', 'data-invoice-id': String(row.id) }, [
+          el('h4', { text: row.invoice_number + ' — ' + total }),
+          el('p', { text: 'Issued: ' + row.issued_on + ' · Due: ' + row.due_on + ' · Payment: ' + row.status + ' · Service: ' + row.service_status }),
+        ]);
+        if (row.status === 'paid') card.appendChild(el('p', { text: 'Paid: ' + row.paid_on + ' · Reference: ' + row.payment_reference }));
+        if (row.status === 'issued') {
+          var paymentForm = el('form');
+          var paidOn = field(paymentForm, 'paid-on-' + row.id, 'Payment date', 'date'); paidOn.min = row.issued_on;
+          var reference = field(paymentForm, 'paid-ref-' + row.id, 'Payment reference / receipt number'); reference.maxLength = 200;
+          var paid = el('button', { type: 'submit', class: 'btn', text: 'Record payment' });
+          paymentForm.appendChild(paid);
+          paymentForm.addEventListener('submit', function (e) {
+            e.preventDefault(); if (!paymentForm.reportValidity()) return;
+            action(row, 'paid', { paid_on: paidOn.value, payment_reference: reference.value.trim() }, paid);
+          });
+          card.appendChild(paymentForm);
+          var voidBtn = el('button', { type: 'button', class: 'btn ghost', text: 'Void unpaid invoice', onclick: function () {
+            if (confirm('Void invoice ' + row.invoice_number + '? This cannot be undone.')) action(row, 'void', null, voidBtn);
+          } });
+          card.appendChild(voidBtn);
+        }
+        if (row.status !== 'void' && row.service_status === 'pending') {
+          var complete = el('button', { type: 'button', class: 'btn ghost', text: 'Mark setup completed', onclick: function () { action(row, 'complete', null, complete); } });
+          card.appendChild(complete);
+        }
+        list.appendChild(card);
+      });
+    }
+    panel.appendChild(status); panel.appendChild(form); panel.appendChild(list);
+    refresh().catch(function (ex) { status.textContent = ex.message; });
     return panel;
   }
 

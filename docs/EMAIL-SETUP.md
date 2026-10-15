@@ -139,3 +139,32 @@ Agree any assisted-setup fee separately before service. This feature does not
 invoice or charge customers. Tenant provider costs remain separate. Never ask
 customers to send credentials over email/chat; arrange secure entry. Platform
 Brevo credentials must not be copied into tenant settings.
+
+## Manual billing for assisted SMTP setup
+
+In `/_platform`, select a workspace and find **Assisted SMTP setup — manual
+invoices** below its email settings. Agree the fee first, then issue and deliver
+an invoice through your normal invoicing process. Enter that invoice's number,
+total amount, currency, issue date, and due date, and click **Record issued
+invoice**. There is no assumed fee or default currency. Supported currencies are
+PHP, USD, EUR, GBP, AUD, CAD, and SGD (two decimal places).
+
+The console tracks the external invoice; it does not generate tax invoices,
+calculate taxes, send invoices, collect payments, or write into tenant accounting.
+The recorded amount is the final total on the manually issued invoice. Invoice
+numbers must be unique across the platform. No SMTP credentials belong in an
+invoice number or payment reference.
+
+After confirming receipt of payment outside the app, enter the payment date and
+receipt/bank reference, then **Record payment**. Payment date must not precede the
+issue date. **Mark setup completed** separately, after checking the customer's
+SMTP test arrived and any agreed domain setup is complete. Neither action performs
+the other or changes the tenant's subscription, modules, or SMTP settings.
+
+Recorded invoice amounts and dates cannot be edited. For corrections, void an
+unpaid invoice, correct/reissue it through your invoicing process, and record the
+replacement with a different number. Paid invoices cannot be voided here; refunds
+must be handled through your normal accounting process. Records are retained in
+`platform.db` and operator actions are audited. Stale edits are rejected and the
+console reloads the latest state. These records are operator-only; customers
+receive the actual invoice through your manual process.

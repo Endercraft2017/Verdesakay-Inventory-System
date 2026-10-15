@@ -18,6 +18,8 @@ import {
   type TenantRow, type TenantStatus,
 } from './platform';
 import { createTenant, importTenant, purgeTenant } from './provisioning';
+import setupInvoiceRoutes from './setup-invoices.routes';
+import { SETUP_CURRENCIES } from './setup-invoices';
 import { parseBody, mailSettingsSchema } from '../shared/validation';
 import { getMailSettings, saveMailSettings, mailReady, verifyMailSettings, sendMail } from '../shared/mailer';
 import { tenantUsage } from './quota';
@@ -72,6 +74,7 @@ router.post('/login', loginLimiter, (req, res) => {
 
 // Everything below needs a valid operator session.
 router.use(requirePlatformAuth);
+router.use('/tenants/:slug/setup-invoices', setupInvoiceRoutes);
 
 router.post('/logout', (req, res) => {
   const t = (req as PlatformAuthedRequest).platformToken;
@@ -137,6 +140,7 @@ router.post('/tenants/:slug/mail/test', async (req, res, next) => {
 // GET /_platform/api/bootstrap — static reference the UI needs to render its controls.
 router.get('/bootstrap', (_req, res) => {
   res.json({
+    setup_currencies: SETUP_CURRENCIES,
     modules: MODULES,
     module_deps: MODULE_DEPS,
     plans: Object.keys(PLANS),

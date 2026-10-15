@@ -93,6 +93,24 @@ function pdb(): DatabaseSync {
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       last_login_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS setup_invoices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_slug TEXT NOT NULL REFERENCES tenants(slug),
+      invoice_number TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      amount_minor INTEGER NOT NULL CHECK(amount_minor > 0),
+      currency TEXT NOT NULL,
+      issued_on TEXT NOT NULL,
+      due_on TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'issued' CHECK(status IN ('issued','paid','void')),
+      service_status TEXT NOT NULL DEFAULT 'pending' CHECK(service_status IN ('pending','completed')),
+      paid_on TEXT,
+      payment_reference TEXT,
+      version INTEGER NOT NULL DEFAULT 1,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_setup_invoices_tenant ON setup_invoices(tenant_slug, id);
     CREATE TABLE IF NOT EXISTS platform_sessions (
       token      TEXT PRIMARY KEY,
       user_id    INTEGER NOT NULL REFERENCES platform_users(id) ON DELETE CASCADE,
