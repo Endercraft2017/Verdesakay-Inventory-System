@@ -136,6 +136,28 @@ describe('mobile bootstrap', () => {
     return win;
   }
 
+  it('shows courier collection separately and submits optional evidence with saved tracking', async () => {
+    const posts: any[] = [];
+    const d = { id: 71, number: 'DEL-71', status: 'pending', delivery_mode: 'courier', courier_name: 'Swift Cargo', tracking_number: 'OLD-TRACK', items: [] };
+    const win = await bootAs({ id: 51, role: 'warehouse', employee: true, modules: null,
+      permissions: ['mobile.access', 'delivery.run'] }, (url, init) => {
+      if (url.endsWith('/deliveries/71/complete')) { posts.push(JSON.parse(init.body)); d.status = 'delivered'; return { ok: true, status: 'delivered', handoff: 'courier' }; }
+      if (url.endsWith('/deliveries/71')) return d;
+    });
+    win.mPhoto.picker = () => Object.assign(win.document.createElement('div'), { files: () => [] });
+    win.location.hash = '#/deliveries?id=71'; win.MApp.render();
+    async function waitFor(selector: string) { for (let i=0;i<100;i++) { const e=win.document.querySelector(selector); if (e) return e; await new Promise(r=>setTimeout(r,10)); } throw Error(selector); }
+    const pickup = await waitFor('#m-view .m-actions button');
+    expect(pickup.textContent).toBe('Record courier pickup');
+    expect(win.document.getElementById('m-view').textContent).not.toContain('Start delivery');
+    pickup.click(); const track = await waitFor('[data-tracking]');
+    expect(track.value).toBe('OLD-TRACK'); track.value = 'NEW-TRACK'; track.dispatchEvent(new win.Event('input'));
+    (await waitFor('[data-ok]')).click(); await waitFor('#delivery-review');
+    expect(posts).toHaveLength(1); expect(posts[0]).toMatchObject({ outcome: 'courier_handoff', recipient: null, tracking_number: 'NEW-TRACK', lat: null, lng: null });
+    expect(win.document.getElementById('m-view').textContent).toContain('Picked up by courier');
+    win.close();
+  });
+
   it('retires old Pick bookmarks without loading orders or submitting stock changes', async () => {
     const calls: string[] = [];
     const win = await bootAs({ id: 41, role: 'employee', employee: true, modules: null,
@@ -700,7 +722,8 @@ describe('mobile bootstrap', () => {
 
     it.each([null, { ...STOCK, approval_revision: 'b'.repeat(64) }])('blocks approval when availability is unknown or the plan changed while loading', async (stock) => {
       const win = await bootAs(APPROVER, (url) => url === '/api/job-orders/184' ? DRAFT : url === '/api/job-orders/184/availability' ? stock ?? undefined : undefined);
-      win.location.hash = '#/job-orders?id=184'; await wait(80);
+      win.location.hash = '#/job-orders?id=184';
+      for (let i=0;i<100 && !win.document.getElementById('jo-refresh-draft');i++) await wait(10);
       expect(win.document.getElementById('jo-approve')).toBeNull();
       expect(win.document.getElementById('jo-refresh-draft')).toBeTruthy();
     });

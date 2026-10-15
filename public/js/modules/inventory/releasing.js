@@ -456,23 +456,22 @@ App.register('releasing', async (view, filter) => {
     let uploaded = false;
     const m = UI.modal({ title: 'Confirm courier pickup — ' + slip.order_number, confirmText: 'Confirm pickup',
       bodyHTML: `<p class="muted">This closes our delivery task when the courier physically accepts the goods. Photograph the handoff or waybill.</p>
-        <div><label>Courier representative <span class="req">*</span></label><input data-f="collector" maxlength="160" placeholder="Name of person collecting" /></div>
+        <div><label>Courier representative (optional)</label><input data-f="collector" maxlength="160" placeholder="Name of person collecting" /></div>
         <div style="margin-top:10px"><label>Tracking / waybill</label><input data-f="tracking" maxlength="160" /></div>
-        <div style="margin-top:10px"><label>Pickup photo <span class="req">*</span></label><input data-f="photo" type="file" accept="image/*" capture="environment" /></div>`,
+        <div style="margin-top:10px"><label>Pickup photo (optional)</label><input data-f="photo" type="file" accept="image/*" capture="environment" /></div>`,
       onConfirm: async (ov, showErr) => {
         const collector = ov.querySelector('[data-f="collector"]').value.trim();
         const file = ov.querySelector('[data-f="photo"]').files[0];
-        if (!collector || !file) { showErr('Enter the courier representative and attach a pickup photo'); return false; }
         try {
-          if (!uploaded) {
+          if (file && !uploaded) {
             const fd = new FormData(); fd.append('kind', 'delivery'); fd.append('ref_id', String(deliveryId)); fd.append('image', file);
             await API.upload('/attachments', fd, { idempotencyKey: photoKey }); uploaded = true;
           }
-          try { await API.post('/deliveries/' + deliveryId + '/complete', { outcome: 'courier_handoff', recipient: collector,
+          try { await API.post('/deliveries/' + deliveryId + '/complete', { outcome: 'courier_handoff', recipient: collector || null,
             tracking_number: ov.querySelector('[data-f="tracking"]').value.trim() || null }, { idempotencyKey: pickupKey }); }
           catch (error) {
             const current = await API.get('/deliveries/' + deliveryId).catch(() => null);
-            if (!(current?.status === 'delivered' && current?.delivery_mode === 'courier' && current?.pod_recipient === collector)) throw error;
+            if (!(current?.status === 'delivered' && current?.delivery_mode === 'courier' && current?.pod_recipient === (collector || null))) throw error;
           }
           UI.toast('Courier pickup recorded'); m.close(); slipView(slip.id); return true;
         } catch (e) { showErr(e.message); return false; }

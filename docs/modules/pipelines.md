@@ -1203,3 +1203,16 @@ Record numbering uses a global series per prefix, including across different for
 Automated cloud/site/LAN tests simulate separate nodes; physical-device acceptance is still manual.
 
 Inventory form entry uses forms.fill.inventory plus per-form role/account grants (form_definitions.entry_access, access_revision; schema 82). Entry users read all assigned-form records and create/edit/submit active drafts; design, delete and approvals retain their existing manager gates. Current grants are rechecked during sync replay. See tests/form-entry-access.test.ts and the invoice Playwright gate.
+
+### Courier pickup on mobile (2026-10-16)
+
+Assigned staff or a delivery manager opens Work → Deliveries → a courier booking
+→ Record courier pickup. Check carrier/tracking, optionally enter collector, note,
+photos, signature and location, then Confirm courier pickup after physical
+collection. Tracking and evidence drafts survive restart; unresolved submissions
+reuse the exact request and upload keys. Warehouse-out is required before closing
+courier custody; pickup does not deduct stock again. The server stores compatible
+`status:delivered`, while the phone explicitly says Picked up by courier. This
+records collection rather than customer receipt. Evidence stays optional by owner
+policy for both own-driver and courier flows. Supplied signatures must belong to
+the booking; assignment checks and terminal evidence locks remain. PWA cache v106.

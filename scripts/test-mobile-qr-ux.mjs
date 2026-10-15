@@ -344,6 +344,50 @@ try {
         assert.equal(result.status,'delivered'); assert.equal(result.pod_recipient,null); assert.equal(result.signature_url,null); assert.equal(result.photos.length,0);
         assert.equal((await api('GET','/inventory/'+batchProduct.id)).quantity,shipped);
     });
+    await check('Courier pickup requires warehouse-out but permits empty evidence and never claims customer delivery', async () => {
+        const stock = await api('POST','/inventory',{name:'Courier physical stock',quantity:2});
+        const so = await order(stock,1);
+        const d = await api('POST','/deliveries',{order_id:so.id,assigned_to:assigned.id,delivery_mode:'courier',courier_name:'Swift Cargo',tracking_number:'BOOKED-1'});
+        await launch(driver); await page.goto(base+'/m#/deliveries?id='+d.id);
+        await page.getByRole('button',{name:'Record courier pickup',exact:true}).click();
+        assert.equal(await page.getByRole('button',{name:'Start delivery',exact:true}).count(),0);
+        await page.locator('[data-ok]').click(); await page.locator('#delivery-release').waitFor();
+        assert.equal((await api('GET','/deliveries/'+d.id)).status,'pending');
+        assert.equal((await api('GET','/inventory/'+stock.id)).quantity,2);
+        await api('POST','/orders/'+so.id+'/accept-release');
+        await api('POST','/orders/'+so.id+'/release',{bulk:[{item_id:stock.id,quantity:1}]});
+        await api('POST','/orders/'+so.id+'/release-slip',{collected_by:'QR recipient',authorization_token:so.auth});
+        await page.locator('#delivery-review').click(); await page.getByRole('button',{name:'Record courier pickup',exact:true}).click();
+        await page.locator('[data-ok]').click(); await page.locator('#delivery-review').waitFor();
+        assert.match(await page.locator('#m-view').innerText(),/Picked up by courier/);
+        const result=await api('GET','/deliveries/'+d.id);
+        assert.equal(result.pod_recipient,null); assert.equal(result.signature_url,null); assert.equal(result.photos.length,0);
+        assert.equal((await api('GET','/inventory/'+stock.id)).quantity,1);
+        await page.locator('#delivery-review').click(); await page.getByText('Picked up by courier',{exact:true}).first().waitFor();
+        await page.screenshot({path:path.join(output,'courier-empty-evidence-confirmed.png'),fullPage:true});
+    });
+    await check('Courier tracking and photo draft recover across restart and a lost committed response', async () => {
+        const d = await api('POST','/deliveries',{assigned_to:assigned.id,delivery_mode:'courier',courier_name:'Restart Carrier'});
+        async function open(step='') { await launch(driver); await page.goto(base+'/m#/deliveries?id='+d.id+(step?'&step='+step:'')); }
+        await open('proof'); await page.locator('[data-tracking]').fill('WAYBILL-RESTART');
+        await page.locator('[data-recip]').fill('Optional collector');
+        const chooser=page.waitForEvent('filechooser'); await page.locator('.m-thumb-add').click();
+        await (await chooser).setFiles({name:'pickup.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6gAAAAABJRU5ErkJggg==','base64')});
+        await page.locator('.m-photo-picker img').waitFor();
+        let saved=false; for(let i=0;i<100;i++) { saved=await page.evaluate(async id=>{const s=await mProductionDrafts.load('delivery:'+id+':action');return s?.batch?.tracking==='WAYBILL-RESTART'&&s.batch.photos.length===1;},d.id); if(saved)break; await page.waitForTimeout(20); } assert(saved);
+        await open('proof'); assert.equal(await page.locator('[data-tracking]').inputValue(),'WAYBILL-RESTART');
+        assert.equal(await page.locator('.m-photo-picker img').count(),1);
+        await page.screenshot({path:path.join(output,'courier-restored-draft.png'),fullPage:true});
+        const attempts=[]; await page.route('**/api/deliveries/'+d.id+'/complete',async route=>{attempts.push({body:route.request().postData(),key:route.request().headers()['idempotency-key']});await route.fetch();await route.abort('connectionreset');});
+        await page.locator('[data-ok]').click(); await page.locator('#delivery-retry').waitFor();
+        assert.equal((await api('GET','/deliveries/'+d.id)).status,'delivered');
+        await open(); page.on('request',req=>{if(req.method()==='POST'&&req.url().endsWith('/deliveries/'+d.id+'/complete'))attempts.push({body:req.postData(),key:req.headers()['idempotency-key']});});
+        await page.locator('#delivery-retry').click(); await page.locator('#delivery-review').waitFor();
+        assert.deepEqual(attempts[0],attempts[1]); assert.match(attempts[0].body,/courier_handoff/);
+        const result=await api('GET','/deliveries/'+d.id); assert.equal(result.tracking_number,'WAYBILL-RESTART');assert.equal(result.photos.length,1);
+        assert.match(await page.locator('#m-view').innerText(),/Picked up by courier/);
+        assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    });
     await check('Basic account sees only personal mobile tools; operational URLs and APIs stay blocked', async () => {
         await api('POST','/roles',{key:'audit_basic',label:'Audit basic employee',permissions:['mobile.access','messages.view','messages.send']});
         const basic=await loginRole('audit_basic'); await launch(basic);

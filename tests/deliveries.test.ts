@@ -56,8 +56,6 @@ describe('deliveries', () => {
       .send({ status: 'out_for_delivery' })).body.code).toBe('courier_handoff_required');
     expect((await ctx.api.post(`/api/deliveries/${id}/complete`).set(bearer(warehouse.token))
       .send({ outcome: 'delivered', recipient: 'Buyer' })).body.code).toBe('courier_handoff_required');
-    expect((await ctx.api.post(`/api/deliveries/${id}/complete`).set(bearer(warehouse.token))
-      .send({ outcome: 'courier_handoff', recipient: 'Courier driver' })).body.code).toBe('proof_required');
     const photo = await ctx.api.post('/api/attachments').set(bearer(warehouse.token))
       .field('kind', 'delivery').field('ref_id', String(id))
       .attach('image', Buffer.from('courier-collection-photo'), 'collection.png');
@@ -71,6 +69,19 @@ describe('deliveries', () => {
       status: 'delivered', pod_recipient: 'Courier driver', photo_count: 1,
     });
     expect((await ctx.api.delete(`/api/attachments/${photo.body.id}`).set(A())).status).toBe(409);
+  });
+  it('allows courier pickup without recipient or evidence, preserves assignment and validates supplied signature', async () => {
+    const assigned = await driver(), other = await driver();
+    const booking = await ctx.api.post('/api/deliveries').set(A()).send({ assigned_to: assigned.id,
+      delivery_mode: 'courier', courier_name: 'Optional Evidence Carrier' });
+    const url = `/api/deliveries/${booking.body.id}/complete`;
+    expect((await ctx.api.post(url).set(bearer(other.token)).send({ outcome: 'courier_handoff' })).status).toBe(403);
+    expect((await ctx.api.post(url).set(bearer(assigned.token)).send({ outcome: 'courier_handoff', signature_attachment_id: 99999 })).status).toBe(400);
+    const done = await ctx.api.post(url).set(bearer(assigned.token)).send({ outcome: 'courier_handoff', tracking_number: 'OPTIONAL-123' });
+    expect(done.status).toBe(200);
+    expect(done.body).toMatchObject({ status: 'delivered', handoff: 'courier' });
+    expect((await ctx.api.get(`/api/deliveries/${booking.body.id}`).set(A())).body).toMatchObject({
+      status: 'delivered', pod_recipient: null, signature_url: null, photos: [], tracking_number: 'OPTIONAL-123' });
   });
   it('manager creates + assigns; the driver sees only their own', async () => {
     const d1 = await driver();

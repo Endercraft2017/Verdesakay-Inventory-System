@@ -21,7 +21,7 @@ offers a force-backorder stock action.
 
 | Priority | Item | Current source evidence and next step |
 | --- | --- | --- |
-| High | Courier pickup and whole-kit CKD partials | New backend handoff `6f45ebd`: courier bookings need distinct collection language/action. Owner subsequently chose optional courier evidence too; current backend required collector/proof guards still need alignment in that step; terminal courier status means picked up, not customer delivered. Own-driver evidence stays optional. Audit mobile CKD parent/child grouping and whole-kit partial confirmation against the new contract. |
+| Partial | Courier pickup and whole-kit CKD partials | New backend handoff `6f45ebd`: courier bookings need distinct collection language/action. Owner subsequently chose optional courier evidence too; backend and desktop collector/proof guards are now aligned; mobile tracking and optional evidence use durable recovery; terminal courier status means picked up, not customer delivered. Own-driver evidence stays optional. Audit mobile CKD parent/child grouping and whole-kit partial confirmation against the new contract. |
 | Done | Retire legacy Pick | `#/pick` now returns to permission-filtered Work. Removed obsolete stock-adjustment picking; users select canonical Release orders or Kit releases. Commercial and manufacturing IDs are not conflated. Purchase receiving and intentional adjustments are preserved. |
 | High | Semi-built finishing intake | No `convert-semi` calls under `public/mobile/`. Add explicit source selection (serial, exact scanned batch or untracked), complete-package confirmation, photo and durable multipart attempt. Label conversion jobs in production/QC and suppress Add unit/bulk/component pick for them. Backend already handles costs, source lineage and pre-QC cancellation. |
 | High | Customer returns and repair disposition | No `sales-returns` calls under `public/mobile/`. Add slip-bound photographed receipt, permissioned inspection/restock/reject, then serialized repair/salvage/dispose and reinspection. No stock addition at receipt and no warehouse refund. Backend one-lifetime-return-per-serial remains a separate limitation. |
@@ -33,7 +33,7 @@ offers a force-backorder stock action.
 | Medium | Whole-job issue management | Unit-linked QC/QA issue management exists; whole-job kit/line issue editing/resolution still needs its operator path. Reports stay informational; Pause stops work. |
 | Medium | Legacy queued result audit | V2 recovery paths track sync commands, but legacy purchasing receipt/transfer/adjustment results still need an audit of queued, PC-local and authority-final copy and partial failures. |
 | Conditional | Mobile Sales entry, prices and fees | Mobile currently focuses on approval/releasing. If adding Sales entry/edit, use catalog starting price, explicit price-suggestion apply, negotiated prices, separate non-stock fee lines and approval locking. No need to add pricing controls to clerk releasing screens. |
-| Backend dependency | Same-SKU mixed physical sale lines | Release allocation rejects ambiguous duplicate physical `item_id` lines. Supporting fully built and semi-built lines of the same SKU together needs line-specific allocation API before mobile can offer it. |
+| High | Same-SKU sale-line selection | Backend dependency is resolved by `d27979c`: release/context/QR now carry line identities and accept `order_item_id`. Mobile `so.js` still chooses by item; add explicit sale-line choice and line-keyed state before supporting repeated-SKU phone allocation. Ambiguous requests return `line_required`; do not retry without a choice. |
 
 ## Already covered by earlier steps
 
@@ -81,3 +81,8 @@ passed at 390×844 with zero page errors. Work `46:548` screenshot checked again
 the Figma reference. Legacy bookmarks perform no stock writes and both canonical
 release queues remain reachable. PWA cache v105. Physical-device acceptance remains
 separate. Courier evidence policy alignment remains the next step.
+
+Courier pickup is implemented with optional evidence on backend/mobile/desktop,
+carrier/tracking context, explicit collection terminology and durable recovery.
+Whole-kit CKD partial UI parity remains open. No dedicated courier design frame
+exists; existing delivery UI primitives are extended.

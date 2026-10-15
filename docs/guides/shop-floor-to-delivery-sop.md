@@ -682,3 +682,16 @@ receipt quantities must not be treated as current remaining batch quantities.
 - Basic employees keep personal tools; inventory/production/releasing/delivery and
   confidential case handling require the account's assigned permissions and the
   corresponding enabled workspace module, including when opened through a link.
+
+### Courier pickup on mobile (2026-10-16)
+
+Assigned staff or a delivery manager opens Work → Deliveries → a courier booking
+→ Record courier pickup. Check carrier/tracking, optionally enter collector, note,
+photos, signature and location, then Confirm courier pickup after physical
+collection. Tracking and evidence drafts survive restart; unresolved submissions
+reuse the exact request and upload keys. Warehouse-out is required before closing
+courier custody; pickup does not deduct stock again. The server stores compatible
+`status:delivered`, while the phone explicitly says Picked up by courier. This
+records collection rather than customer receipt. Evidence stays optional by owner
+policy for both own-driver and courier flows. Supplied signatures must belong to
+the booking; assignment checks and terminal evidence locks remain. PWA cache v106.

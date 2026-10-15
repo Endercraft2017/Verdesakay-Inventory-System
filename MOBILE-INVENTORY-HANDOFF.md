@@ -45,7 +45,27 @@ serial. Supply it when a sale has multiple matching lines; the server returns
 stock on direct sale, so phone workflows should use the sale release/slip path
 for normal dispatch.
 
-## Courier pickup and whole-kit CKD partial release (2026-10-16)
+## Courier pickup mobile integration (2026-10-16)
+
+Owner policy: collector name, photos, signature and GPS are optional for courier
+pickup as well as own-driver delivery. Backend required collector/proof guards
+are removed; supplied signature ownership validation and warehouse-out guards
+remain. Desktop collection also permits empty evidence.
+
+`#/deliveries` now identifies courier bookings, displays carrier/tracking, opens
+**Record courier pickup** directly from a pending booking, and submits
+`outcome:'courier_handoff'`. Terminal courier status is **Picked up by courier**,
+not customer delivery. Tracking and optional evidence persist across restart;
+unknown outcomes retain the original payload/key and upload identities. No extra
+stock is deducted. Assignment and delivery permissions remain unchanged.
+
+No dedicated courier Figma frame exists in the current role spec (delivery is
+explicitly outside its frames). This step extends the existing vanilla delivery
+components and recovery primitives; Work reference `46:548` was retrieved. It does
+not claim a new courier screen was approved in Figma. CKD whole-kit partial UI
+parity remains separate work.
+
+## Courier pickup and whole-kit CKD partial release (2026-10-16) — historical backend handoff
 
 **Delivery choice:** A `deliveries` booking now has `delivery_mode:'own'|'courier'`
 (default `own`). A courier booking requires `courier_name`; it can also carry a
@@ -790,9 +810,8 @@ Old bookmarks perform no stock action; canonical queues retain their own gates.
 
 **Next-step owner decision (2026-10-16):** courier evidence should also stay
 optional, matching own-driver delivery. This overrides the required collector/proof
-policy described in the courier handoff above. Backend courier validation and the
-new mobile collection screen still need alignment; legacy Pick retirement does not
-implement that next step. Warehouse-out remains required before closing custody.
+policy described in the courier handoff above. That alignment is now implemented in the courier step described at the top;
+legacy Pick retirement itself did not implement it. Warehouse-out remains required before closing custody.
 
 Legacy Pick retirement validation: TypeScript passed; 125 focused mobile tests
 passed; all 2,800 tests across 274 files passed; 25 real-backend Playwright checks
@@ -800,3 +819,7 @@ passed at 390×844 with zero page errors. Work `46:548` screenshot checked again
 the Figma reference. Legacy bookmarks perform no stock writes and both canonical
 release queues remain reachable. PWA cache v105. Physical-device acceptance remains
 separate. Courier evidence policy alignment remains the next step.
+
+Courier step validation: TypeScript, 182 focused tests, all 2,819 full-suite tests
+and 27 real-backend Playwright checks passed. See
+`docs/reviews/mobile-courier-pickup-validation.md` for scenarios and scope.

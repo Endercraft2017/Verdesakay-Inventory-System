@@ -21,7 +21,7 @@
   async function start(d, s, action, payload) {
     guard(s);
     if (s.operation.state !== 'draft') throw new Error('Recover the original delivery attempt first.');
-    s.operation = { kind: 'delivery', id: d.id, orderId: d.order_id || null, number: d.number, action: action, state: 'new', key: 'delivery-' + crypto.randomUUID(), created: Date.now(), payload: JSON.parse(JSON.stringify(payload)) };
+    s.operation = { kind: 'delivery', id: d.id, orderId: d.order_id || null, number: d.number, deliveryMode: d.delivery_mode || 'own', action: action, state: 'new', key: 'delivery-' + crypto.randomUUID(), created: Date.now(), payload: JSON.parse(JSON.stringify(payload)) };
     s.rows = action === 'complete' ? s.batch.photos.map(function (file, i) { return { identifier: 'delivery-' + (i + 1) + '.jpg', file: file }; }) : [];
     if (action === 'complete' && s.batch.sign) s.rows.push({ identifier: 'signature.png', file: s.batch.sign });
     await save(s);
@@ -59,8 +59,8 @@
     MApp.setTitle('Delivery · ' + a.number);
     function visible() { return view.isConnected && location.hash === hash && owns(s); }
     var final = a.state === 'confirmed' && !a.local;
-    view.innerHTML = '<h2>' + mEsc(a.number) + '</h2>' + RoleUI.result(final ? a.action === 'status' ? 'Delivery started' : a.payload.outcome === 'delivered' ? 'Delivered' : 'Marked not delivered' : a.local ? 'Saved on site PC — confirmation pending' : a.state === 'rejected' ? 'Delivery action refused' : 'Delivery confirmation unresolved', 'Saved evidence and the original request are retained on this device.', final ? '' : 'queued', final ? '✓' : '⏳') +
-      (a.code === 'release_required' ? RoleUI.note('warn', 'Ask releasing staff to record the warehouse handoff first. Starting the trip does not move stock.') : '') +
+    view.innerHTML = '<h2>' + mEsc(a.number) + '</h2>' + RoleUI.result(final ? a.action === 'status' ? 'Delivery started' : a.payload.outcome === 'courier_handoff' ? 'Picked up by courier' : a.payload.outcome === 'delivered' ? 'Delivered' : 'Marked not delivered' : a.local ? 'Saved on site PC — confirmation pending' : a.state === 'rejected' ? 'Delivery action refused' : 'Delivery confirmation unresolved', 'Saved evidence and the original request are retained on this device.', final ? '' : 'queued', final ? '✓' : '⏳') +
+      (a.code === 'release_required' ? RoleUI.note('warn', 'Ask releasing staff to record the warehouse handoff first. Delivery and courier pickup do not move stock again.') : '') +
       (a.error ? RoleUI.note('warn', mEsc(a.error)) : '') + RoleUI.note(final ? 'info' : 'warn', final ? 'The server confirmed this delivery action.' : 'Retry reuses the original evidence and request. Do not submit a different outcome until this attempt is resolved.') +
       RoleUI.actions((!a.local && ['new','sending','unknown'].indexOf(a.state) !== -1 ? [{ id: 'delivery-retry', label: 'Retry original delivery', kind: 'primary' }] : [])
         .concat(final || a.state === 'rejected' ? [{ id: 'delivery-review', label: 'Review current delivery', kind: 'primary' }] : [])

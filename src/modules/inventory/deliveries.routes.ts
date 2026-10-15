@@ -231,24 +231,17 @@ router.post('/:id/complete', requireAnyPermission(['delivery.run', 'delivery.man
   if ((input.outcome === 'delivered' || input.outcome === 'courier_handoff') && missingSaleSlip(d)) {
     res.status(409).json({ error: 'This sale has no warehouse release slip. Complete the stock handoff before closing delivery or courier pickup.', code: 'release_required' }); return;
   }
-  // Own-driver recipient, photos, signature and GPS remain optional by owner policy.
+  // Owner policy: recipient, photos, signature and GPS are optional for both delivery modes.
   if (d.delivery_mode === 'courier' && input.outcome !== 'courier_handoff') {
     res.status(409).json({ error: 'Record courier pickup for this booking, not customer delivery.', code: 'courier_handoff_required' }); return;
   }
   if (d.delivery_mode !== 'courier' && input.outcome === 'courier_handoff') {
     res.status(409).json({ error: 'This booking uses our own delivery team.', code: 'wrong_delivery_mode' }); return;
   }
-  if (input.outcome === 'courier_handoff' && (!input.recipient?.trim() || !d.courier_name?.trim())) {
-    res.status(409).json({ error: 'Record the courier and the person who picked up the goods.', code: 'courier_recipient_required' }); return;
-  }
   if (input.signature_attachment_id != null
     && !queryOne("SELECT id FROM attachments WHERE id = ? AND kind = 'signature' AND ref_id = ?",
       input.signature_attachment_id, d.id)) {
     res.status(400).json({ error: 'Signature attachment not found for this delivery' }); return;
-  }
-  if (input.outcome === 'courier_handoff' && input.signature_attachment_id == null && !queryOne(
-    "SELECT 1 FROM attachments WHERE kind = 'delivery' AND ref_id = ? LIMIT 1", d.id)) {
-    res.status(409).json({ error: 'Capture a courier pickup photo or signature before closing the handoff.', code: 'proof_required' }); return;
   }
   run(
     `UPDATE deliveries SET

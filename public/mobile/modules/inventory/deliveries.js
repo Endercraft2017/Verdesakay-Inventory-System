@@ -9,6 +9,13 @@
     cancelled: { label: 'Cancelled', cls: '' },
   };
 
+  function courier(d) { return d.delivery_mode === 'courier'; }
+  function state(d) {
+    if (courier(d) && d.status === 'delivered') return { label: 'Picked up by courier', cls: 'ok' };
+    if (courier(d) && d.status === 'pending') return { label: 'Awaiting courier pickup', cls: '' };
+    return STATUS[d.status] || { label: d.status, cls: '' };
+  }
+
   function list(view) {
     MApp.setTitle('Deliveries');
     var canAll = MApp.can('delivery.manage');
@@ -48,10 +55,10 @@
       host.appendChild(mEl('<div class="m-sectitle">' + g[0] + '</div>'));
       var ul = mEl('<ul class="m-list"></ul>');
       g[1].forEach(function (d) {
-        var st = STATUS[d.status] || { label: d.status, cls: '' };
+        var st = state(d);
         var li = mEl(
           '<li class="m-list-row"><div><b>' + mEsc(d.customer_name || d.number) + '</b>' +
-          '<span>' + mEsc(d.number) + (d.address ? ' · ' + mEsc(d.address.slice(0, 40)) : '') +
+          '<span>' + mEsc(d.number) + (courier(d) ? ' · Courier: ' + mEsc(d.courier_name || 'Courier') : '') + (d.address ? ' · ' + mEsc(d.address.slice(0, 40)) : '') +
           (d.item_count ? ' · ' + d.item_count + ' line(s)' : '') + '</span></div>' +
           '<div class="m-list-qty"><span class="m-jo-status ' + st.cls + '">' + mEsc(st.label) + '</span></div></li>'
         );
@@ -72,7 +79,7 @@
       if (saved && saved.operation.state !== 'draft') { mDeliveryRecovery.paint(view,saved); return; }
       var d = await API.get('/deliveries/' + id);
       if (!visible()) return;
-      if (step === 'proof' && d.status === 'out_for_delivery') await podSheet(view,d);
+      if (step === 'proof' && (d.status === 'out_for_delivery' || courier(d) && d.status === 'pending')) await podSheet(view,d);
       else drawDetail(view,d);
     } catch (err) { if (visible()) { view.innerHTML = ''; view.appendChild(RoleUI.error(err,function () { detail(view,id,step); })); } }
   }
@@ -80,7 +87,7 @@
   function drawDetail(view, d) {
     MApp.setTitle(d.number);
     view.innerHTML = '';
-    var st = STATUS[d.status] || { label: d.status, cls: '' };
+    var st = state(d);
     view.appendChild(mEl(
       '<div class="m-panel"><div style="display:flex;justify-content:space-between;align-items:center">' +
       '<b style="font-size:16px">' + mEsc(d.customer_name || d.number) + '</b>' +
@@ -89,6 +96,7 @@
         encodeURIComponent(d.address) + '">📍 ' + mEsc(d.address) + '</a></div>' : '') +
       (d.contact_phone ? '<div style="margin-top:4px"><a class="m-link" href="tel:' + mEsc(d.contact_phone) + '">📞 ' + mEsc(d.contact_phone) + '</a></div>' : '') +
       (d.order_number ? '<div class="m-hint">Order ' + mEsc(d.order_number) + '</div>' : '') +
+      (courier(d) ? '<div class="m-hint">Courier: ' + mEsc(d.courier_name || 'Courier') + (d.tracking_number ? ' · Tracking: ' + mEsc(d.tracking_number) : '') + '</div>' : '') +
       (d.notes ? '<div class="m-hint">' + mEsc(d.notes) + '</div>' : '') +
       '</div>'
     ));
@@ -100,7 +108,10 @@
       }).join('') + '</ul>'));
     }
 
-    if (d.status === 'pending') {
+    if (courier(d) && d.status === 'pending') {
+      view.appendChild(mEl(RoleUI.note('info', 'Record pickup only after the courier physically collects the released goods. This is not customer delivery.')));
+      view.appendChild(actions([{ label: 'Record courier pickup', fn: function () { MApp.go('deliveries', { id: d.id, step: 'proof' }); } }]));
+    } else if (d.status === 'pending') {
       var start = mEl('<div class="m-actions"><button class="m-btn">Start delivery</button></div>');
       start.querySelector('button').onclick = function () {
         start.querySelector('button').disabled = true;
@@ -115,9 +126,9 @@
       view.appendChild(go);
     } else {
       // POD summary
-      view.appendChild(mEl('<div class="m-sectitle">Proof of delivery</div>'));
+      view.appendChild(mEl('<div class="m-sectitle">' + (courier(d) ? 'Courier pickup record' : 'Proof of delivery') + '</div>'));
       var kv = '<li><span>Outcome</span><b>' + mEsc(st.label) + '</b></li>' +
-        (d.pod_recipient ? '<li><span>Received by</span><b>' + mEsc(d.pod_recipient) + '</b></li>' : '') +
+        (d.pod_recipient ? '<li><span>' + (courier(d) ? 'Collected by' : 'Received by') + '</span><b>' + mEsc(d.pod_recipient) + '</b></li>' : '') +
         (d.delivered_at ? '<li><span>When</span><b>' + mEsc(d.delivered_at.slice(0, 16).replace('T', ' ')) + '</b></li>' : '') +
         (d.delivered_by_name ? '<li><span>By</span><b>' + mEsc(d.delivered_by_name) + '</b></li>' : '') +
         (d.pod_note ? '<li><span>Note</span><b>' + mEsc(d.pod_note) + '</b></li>' : '');
@@ -147,17 +158,19 @@
       var status = view.querySelector('[data-draft-status]'); if (status) status.textContent = 'Saving on this phone…';
       return mDeliveryRecovery.save(saved).then(function () { if (status && status.isConnected) status.textContent = 'Saved on this phone'; }).catch(function (err) { if (status && status.isConnected) status.textContent = 'Not saved — ' + err.message; mToast(err.message,'err'); throw err; });
     }
-    MApp.setTitle('Complete · ' + d.number);
+    MApp.setTitle((courier(d) ? 'Courier pickup · ' : 'Complete · ') + d.number);
     view.innerHTML = '';
     var geo = data.geo;
 
     var box = mEl(
       '<div class="m-panel">' +
       '<p class="m-hint" data-draft-status role="status">Changes are saved on this phone</p>' +
-      '<label class="m-field"><span class="m-label">Received by</span>' +
+      '<p class="m-hint">' + (courier(d) ? 'Courier: ' + mEsc(d.courier_name || 'Courier') + '. This records collection, not customer delivery. ' : '') + 'Name, signature, photos and location are optional.</p>' +
+      (courier(d) ? '<label class="m-field"><span class="m-label">Tracking / waybill (optional)</span><input class="m-input" data-tracking maxlength="160" /></label>' : '') +
+      '<label class="m-field"><span class="m-label">' + (courier(d) ? 'Courier collector (optional)' : 'Received by') + '</span>' +
       '<input class="m-input" data-recip maxlength="160" placeholder="name of who accepted" /></label>' +
       '<div class="m-label" style="margin-top:6px">Signature</div><div data-sig></div>' +
-      '<div class="m-label" style="margin-top:10px">Photos of the delivery</div><div data-photos></div>' +
+      '<div class="m-label" style="margin-top:10px">' + (courier(d) ? 'Photos of courier pickup (optional)' : 'Photos of the delivery') + '</div><div data-photos></div>' +
       '<div class="m-actions" style="margin-top:8px"><button class="m-btn m-btn-secondary" data-geo>📍 Capture location</button></div>' +
       '<label class="m-field"><span class="m-label">Note</span><textarea class="m-input" data-note rows="2"></textarea></label>' +
       '</div>'
@@ -173,7 +186,9 @@
     box.querySelector('[data-photos]').appendChild(picker);
     box.querySelector('[data-recip]').value = data.recipient || '';
     box.querySelector('[data-note]').value = data.note || '';
-    box.querySelectorAll('[data-recip], [data-note]').forEach(function (input) { input.oninput = function () { data.recipient = box.querySelector('[data-recip]').value; data.note = box.querySelector('[data-note]').value; persist().catch(function () {}); }; });
+    var tracking = box.querySelector('[data-tracking]');
+    if (tracking) tracking.value = data.tracking != null ? data.tracking : d.tracking_number || '';
+    box.querySelectorAll('[data-recip], [data-note], [data-tracking]').forEach(function (input) { input.oninput = function () { data.recipient = box.querySelector('[data-recip]').value; data.note = box.querySelector('[data-note]').value; if (tracking) data.tracking = tracking.value; persist().catch(function () {}); }; });
     var geoBtn = box.querySelector('[data-geo]');
     if (geo.lat != null) geoBtn.textContent = '📍 Saved location captured';
     geoBtn.onclick = function () {
@@ -191,8 +206,8 @@
     view.appendChild(box);
 
     var acts = mEl('<div class="m-actions">' +
-      '<button class="m-btn" data-ok>Delivered</button>' +
-      '<button class="m-btn m-btn-warn" data-fail>Couldn’t deliver</button></div>');
+      '<button class="m-btn" data-ok>' + (courier(d) ? 'Confirm courier pickup' : 'Delivered') + '</button>' +
+      (courier(d) ? '' : '<button class="m-btn m-btn-warn" data-fail>Couldn’t deliver</button>') + '</div>');
     var back = mEl('<div class="m-actions"><button class="m-btn m-btn-secondary" data-back>Cancel</button></div>');
     back.querySelector('[data-back]').onclick = function () { MApp.go('deliveries', { id: d.id }); };
     view.appendChild(acts);
@@ -209,6 +224,7 @@
         note: note || null,
         lat: geo.lat, lng: geo.lng,
       };
+      if (tracking) { payload.tracking_number = tracking.value.trim() || null; data.tracking = tracking.value; }
       try {
         data.recipient = payload.recipient; data.note = payload.note; data.photos = picker.files();
         if (!sig.isEmpty()) data.sign = await new Promise(function (resolve) { sig.toBlob(resolve); });
@@ -220,8 +236,8 @@
         btns.forEach(function (b) { b.disabled = false; });
       }
     }
-    acts.querySelector('[data-ok]').onclick = function () { submit('delivered'); };
-    acts.querySelector('[data-fail]').onclick = function () { submit('failed'); };
+    acts.querySelector('[data-ok]').onclick = function () { submit(courier(d) ? 'courier_handoff' : 'delivered'); };
+    var fail = acts.querySelector('[data-fail]'); if (fail) fail.onclick = function () { submit('failed'); };
   }
 
   function actions(items) {
