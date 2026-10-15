@@ -154,10 +154,10 @@ router.get('/orders/:id/unit', releaseGate, (req, res) => {
   if(batch){
     const order=queryOne<{location_id:number|null}>('SELECT location_id FROM orders WHERE id=?',id)!;
     const line=queryOne<{quantity:number;released_qty:number;fulfillment_mode:string}>(
-      `SELECT quantity,released_qty,fulfillment_mode FROM order_items WHERE order_id=? AND item_id=? AND fulfillment_mode=?`,id,batch.product_item_id,batch.build_mode);
+      `SELECT quantity,released_qty,fulfillment_mode FROM order_items WHERE order_id=? AND item_id=? AND fulfillment_mode!='ckd' AND CASE WHEN fulfillment_mode='semi_built' THEN 'semi_built' ELSE 'assembled' END=?`,id,batch.product_item_id,batch.build_mode);
     const context=orderAvailability(id);
     const balances=batchBalances(batch.id),balance=balances.find(x=>x.location_id===context.location_id);
-    const availability=context.lines.find(x=>x.item_id===batch.product_item_id&&x.fulfillment_mode===batch.build_mode);
+    const availability=context.lines.find(x=>x.item_id===batch.product_item_id&&x.fulfillment_mode!=='ckd'&&(x.fulfillment_mode==='semi_built'?'semi_built':'assembled')===batch.build_mode);
     const available=Math.max(0,Math.min(balance?.available??0,availability?(availability.available-availability.covered_here):0,line?(line.quantity-(line.released_qty||0)):0));
     res.json({state:!line?'wrong_product':available>0?'batch_available':'batch_unavailable',batch:{...batch,balances,available}});return;
   }
@@ -181,7 +181,7 @@ router.get('/orders/:id/unit', releaseGate, (req, res) => {
     res.json({ state: tracked?'batch_label_required':'not_found', code }); return;
   }
   const onOrder = queryOne(`SELECT 1 FROM order_items WHERE order_id = ? AND item_id = ?
-    AND COALESCE(fulfillment_mode, 'assembled') = ?`, id, u.product_item_id, u.build_mode);
+    AND fulfillment_mode!='ckd' AND CASE WHEN fulfillment_mode='semi_built' THEN 'semi_built' ELSE 'assembled' END = ?`, id, u.product_item_id, u.build_mode);
   const state = u.order_id === id && (u.status === 'reserved' || u.status === 'sold') ? 'allocated'
     : u.order_id && u.order_id !== id && u.status === 'reserved' ? 'other_order'
     : !onOrder && queryOne("SELECT 1 FROM order_items WHERE order_id = ? AND item_id = ? AND fulfillment_mode != 'ckd'", id, u.product_item_id) ? 'wrong_build'

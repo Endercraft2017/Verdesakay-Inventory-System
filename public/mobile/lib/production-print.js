@@ -73,8 +73,9 @@
       using the same editable template as desktop. Returns a Promise<boolean>. */
   function printUnitRecords(dossiers) {
     if (!window.renderTemplate) { mToast('Label renderer failed to load', 'err'); return Promise.resolve(false); }
-    return API.get('/production/label-templates').catch(function () { return {}; }).then(function (tpl) {
-      var body = tpl.unit || '';
+    return API.get('/production/label-templates').then(function (tpl) {
+      if (!tpl.unit || !tpl.unit.trim()) throw new Error('Unit label template unavailable');
+      var body = tpl.unit;
       var cells = dossiers.map(function (d) {
         return '<div class="lbl">' + window.renderTemplate(body, unitLabelContext(d)) + '</div>';
       });

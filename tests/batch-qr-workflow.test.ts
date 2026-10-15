@@ -120,3 +120,29 @@ it('requires a current verified count within warehouse stock for legacy reconcil
         n: number;
     }>('SELECT COUNT(*) AS n FROM production_batch_counts WHERE batch_id=?', batch.id)?.n).toBe(1);
 });
+
+it('permits an exact non-serialized batch when the product also has serialized history', async()=>{
+  const {run}=await import('../src/shared/db');
+  // A unit from another run must not change the identity of this non-serialized lot.
+  const serializedJob=(await ctx.api.post('/api/job-orders').set(H()).send({product_item_id:product,qty_ordered:1,qc_stages:1})).body.id;
+  run("INSERT INTO job_order_units(job_order_id,product_item_id,identifier,status) VALUES(?,?,?,'passed')",serializedJob,product,'OTHER-SERIAL-HISTORY');
+  const so=await sale(1);
+  expect((await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({bulk:[{item_id:product,quantity:1}]})).status).toBe(409);
+  const exact=await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({bulk:[{item_id:product,batch_id:batch.id,quantity:1}]});
+  expect(exact.status,JSON.stringify(exact.body)).toBe(200);
+  expect((await ctx.api.get(`/api/release-slips/orders/${so}/context`).set(H())).body.batch_allocations).toEqual([expect.objectContaining({batch_id:batch.id,quantity:1})]);
+});
+
+it('resolves a batch QR against the physical CKD component line',async()=>{
+  const parent=(await ctx.api.post('/api/inventory').set(H()).send({name:'QR CKD parent'})).body.id;
+  await ctx.api.put(`/api/finished-products/${parent}`).set(H()).send({components:[{component_item_id:product,quantity:1}]});
+  const sale=await ctx.api.post('/api/orders').set(H()).send({type:'sale',customer_name:'CKD batch buyer',location_id:loc,items:[{item_id:parent,name:'QR kit',quantity:1,unit_price:20,fulfillment_mode:'ckd'}]});
+  expect(sale.status).toBe(201);
+  const {run}=await import('../src/shared/db');run("UPDATE orders SET status='approved' WHERE id=?",sale.body.id);
+  await ctx.api.post(`/api/orders/${sale.body.id}/accept-release`).set(H());
+  const preview=await ctx.api.get(`/api/release-slips/orders/${sale.body.id}/unit`).query({code:'VDS:BATCH:'+batch.id}).set(H());
+  expect(preview.body.state,JSON.stringify(preview.body)).toBe('batch_available');
+  const {queryOne}=await import('../src/shared/db');const serial=queryOne<{id:number}>("SELECT id FROM job_order_units WHERE product_item_id=? AND identifier='OTHER-SERIAL-HISTORY'",product)!;
+  expect((await ctx.api.get(`/api/release-slips/orders/${sale.body.id}/unit`).query({code:'VDS:UNIT:'+serial.id}).set(H())).body.state).toBe('unavailable');
+  expect((await ctx.api.post(`/api/orders/${sale.body.id}/release`).set(H()).send({bulk:[{item_id:product,batch_id:batch.id,quantity:1}]})).status).toBe(200);
+});

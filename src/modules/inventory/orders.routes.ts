@@ -718,7 +718,7 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
   for (const b of input.bulk ?? []) {
     const line = lineByItem.get(b.item_id);
     if (!line) { res.status(400).json({ error: `Item #${b.item_id} is not on this order.` }); return; }
-    if (queryOne(`SELECT 1 FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
+    if (!b.batch_id && queryOne(`SELECT 1 FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
       WHERE u.product_item_id = ? AND j.build_mode = ? LIMIT 1`, b.item_id,
       line.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled')) {
       res.status(409).json({ error: `${line.name} has serialized units. Scan its unit labels instead of entering a bulk quantity.` });
