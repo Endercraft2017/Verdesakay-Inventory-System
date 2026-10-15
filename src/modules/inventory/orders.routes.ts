@@ -12,7 +12,7 @@ import {
 } from '../../shared/validation';
 import { getQboStatus, pushOrder } from '../quickbooks/quickbooks';
 import { fulfillSaleStockInTransaction, maybeAutoPostSale, maybeFulfillSale, postFulfilledSaleCogs, unpostSource } from '../accounting/accounting-autopost';
-import { getDefaultLocationId, locationName, overdrawAllowed, stockAt } from './inventory-stock';
+import { getDefaultLocationId, locationName, overdrawAllowed, variantStockAt } from './inventory-stock';
 import { createDraftJobOrder } from '../manufacturing/job-orders.routes';
 import { orderAvailability } from './order-availability';
 import type { Order, OrderItem, OrderType } from '../../shared/types';
@@ -265,6 +265,10 @@ router.get('/', (req, res) => {
   const rows = queryAll<Order>(
     `SELECT o.*, u.full_name AS created_by_name, s.name AS supplier_name,
             jo.id AS job_order_id, jo.number AS job_order_number, jo.status AS job_order_status,
+            (SELECT GROUP_CONCAT(DISTINCT CASE WHEN oi.fulfillment_mode = 'assembled' AND COALESCE(ii.is_finished_product, 0) = 0
+              THEN 'part' ELSE oi.fulfillment_mode END) FROM order_items oi
+             LEFT JOIN inventory_items ii ON ii.id = oi.item_id
+             WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode != 'ckd_component') AS fulfillment_modes,
             rs.number AS release_slip_number, (${BACKORDER_SQL}) AS backordered
      FROM orders o
      LEFT JOIN users u ON u.id = o.created_by
@@ -532,14 +536,17 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
   // creating its numbered slip when the location can no longer cover the goods.
   if (!stands && !overdrawAllowed()) {
     const locationId = order.location_id ?? getDefaultLocationId();
-    const leaving = new Map<number, number>();
+    const leaving = new Map<string, number>();
     for (const line of queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ?', id)) {
       if (line.item_id == null || line.fulfillment_mode === 'ckd') continue;
       const amount = partial ? Math.min(line.quantity, lineCoverage(id, line).units + lineCoverage(id, line).bulk) : line.quantity;
-      leaving.set(line.item_id, (leaving.get(line.item_id) ?? 0) + amount);
+      const mode = line.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled';
+      const key = `${line.item_id}:${mode}`;
+      leaving.set(key, (leaving.get(key) ?? 0) + amount);
     }
-    for (const [itemId, amount] of leaving) {
-      if (stockAt(itemId, locationId) + 1e-9 < amount) {
+    for (const [key, amount] of leaving) {
+      const [itemId, mode] = key.split(':');
+      if (variantStockAt(Number(itemId), locationId, mode as 'assembled' | 'semi_built') + 1e-9 < amount) {
         res.status(409).json({ error: `Stock at ${locationName(locationId)} changed after allocation. Reconcile the stock before issuing the release slip.`, blocked: 'stock_changed' });
         return;
       }
@@ -656,8 +663,8 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
   }
 
   const units = unitIds.size
-    ? queryAll<{ id: number; status: string; product_item_id: number | null; identifier: string | null; location_id: number | null }>(
-        `SELECT u.id, u.status, u.product_item_id, u.identifier, COALESCE(u.location_id, j.output_location_id) AS location_id
+    ? queryAll<{ id: number; status: string; product_item_id: number | null; identifier: string | null; location_id: number | null; build_mode: string }>(
+        `SELECT u.id, u.status, u.product_item_id, u.identifier, COALESCE(j.build_mode, 'assembled') AS build_mode, COALESCE(u.location_id, j.output_location_id) AS location_id
          FROM job_order_units u LEFT JOIN job_orders j ON j.id = u.job_order_id
          WHERE u.id IN (${[...unitIds].map(() => '?').join(',')})`,
         ...unitIds
@@ -680,6 +687,11 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
       res.status(400).json({ error: `Unit ${u.identifier || '#' + u.id} is not for a product on this order.` });
       return;
     }
+    const expectedMode = lineByItem.get(u.product_item_id)!.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled';
+    if (u.build_mode !== expectedMode) {
+      res.status(409).json({ error: `Unit ${u.identifier || '#' + u.id} is ${u.build_mode === 'semi_built' ? 'semi-built' : 'fully built'}, but this sale line requests ${expectedMode === 'semi_built' ? 'semi-built' : 'fully built'}.` });
+      return;
+    }
     if (!stands && u.location_id !== (order.location_id ?? getDefaultLocationId())) {
       res.status(409).json({ error: `Unit ${u.identifier || '#' + u.id} is at another location. Transfer it to this order's ship-from location first.` });
       return;
@@ -700,7 +712,9 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
   for (const b of input.bulk ?? []) {
     const line = lineByItem.get(b.item_id);
     if (!line) { res.status(400).json({ error: `Item #${b.item_id} is not on this order.` }); return; }
-    if (queryOne('SELECT 1 FROM job_order_units WHERE product_item_id = ? LIMIT 1', b.item_id)) {
+    if (queryOne(`SELECT 1 FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
+      WHERE u.product_item_id = ? AND j.build_mode = ? LIMIT 1`, b.item_id,
+      line.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled')) {
       res.status(409).json({ error: `${line.name} has serialized units. Scan its unit labels instead of entering a bulk quantity.` });
       return;
     }
@@ -887,6 +901,7 @@ router.post('/:id/produce-shortfall', requireModule('manufacturing'), requirePer
       if (!l.has_bom) { skipped.push({ line: l.name, reason: 'no bill of materials — define its BOM first' }); continue; }
       const jo = createDraftJobOrder({
         productId: l.item_id!, productName: l.name, qty: need, orderId: id,
+        buildMode: l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled',
         sourceLocationId: order.location_id ?? defLoc, outputLocationId: order.location_id ?? defLoc,
         notes: `Backorder for ${order.number}`, userId: req.user!.id,
       });

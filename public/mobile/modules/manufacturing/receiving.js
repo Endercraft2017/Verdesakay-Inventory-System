@@ -54,6 +54,7 @@
   }
   /** Storage locations that can hold ready-to-sell stock (trucks are transit, refused server-side too). */
   function storage() { return mLocations.list().filter(function (l) { return l.type !== 'truck'; }); }
+  function buildTag(u) { return u.build_mode === 'semi_built' ? 'Semi-built' : 'Fully built'; }
   function locName(id) { var l = mLocations.list().filter(function (x) { return x.id === id; })[0]; return l ? l.name : '—'; }
   function defaultLoc(u) {
     var s = storage();
@@ -129,7 +130,7 @@
             var meta = u.order_number ? 'Allocated order ' + u.order_number
               : models[u.product_item_id] > 1 ? 'Same model · eligible to group'
               : !u.output_location_id ? 'Awaiting finished-goods location' : 'Waiting ' + ago(u.updated_at);
-            return card('data-unit="' + u.id + '"', label(u), u.product_name + (u.final_pass ? ' · QA passed ' + time(u.final_pass.created_at) : ''), (u.priority > 0 ? 'Priority · ' : '') + meta);
+            return card('data-unit="' + u.id + '"', label(u), u.product_name + ' · ' + buildTag(u) + (u.final_pass ? ' · QA passed ' + time(u.final_pass.created_at) : ''), (u.priority > 0 ? 'Priority · ' : '') + meta);
           }).join('') + batches.map(function (b) {
             return card('data-batch="' + b.id + '"', b.number, b.product_name + ' · ' + b.remaining_qty + ' to record', 'Non-serialized batch · ' + b.job_order_number);
           }).join('') : '<div class="rk-empty">Nothing waiting for stock entry. Units appear here once they pass final inspection.</div>';
@@ -261,7 +262,7 @@
   /* ── Add more units, same SKU + location (74:186) ──────────────────────── */
   function group(view, u) {
     var body = page(view, '74:186', 'Add more QA-passed units', 'Optional · same SKU and destination only');
-    var eligible = last.units.filter(function (x) { return !x.hold && x.product_item_id === u.product_item_id; });
+    var eligible = last.units.filter(function (x) { return !x.hold && x.product_item_id === u.product_item_id && (x.build_mode || 'assembled') === (u.build_mode || 'assembled'); });
     function paint() {
       var chosen = unitsOf(draft.ids);
       var others = eligible.filter(function (x) { return draft.ids.indexOf(x.id) === -1; });
@@ -360,7 +361,7 @@
       '<div class="rk-block ok"><span class="t">✓ ' + chosen.length + ' unit' + (chosen.length === 1 ? '' : 's') + ' cleared</span>' +
         '<b class="lg">' + mEsc(label(chosen[0] || u) + (chosen.length > 1 ? ' + ' + (chosen.length - 1) + ' more' : '')) + '</b>' +
         '<span style="color:var(--rk-title);font-weight:500">' + mEsc(locName(draft.location_id)) + '</span><span>Status after posting: Ready to sell</span></div>' +
-      R.field('Source', 'QA pass · ' + cap(clock((chosen[0] || u).final_pass && (chosen[0] || u).final_pass.created_at) || 'final inspection')) +
+      R.field('Build state', buildTag(u)) + R.field('Source', 'QA pass · ' + cap(clock((chosen[0] || u).final_pass && (chosen[0] || u).final_pass.created_at) || 'final inspection')) +
       R.check('rts-ok', 'I verified the physical unit and location') +
       R.note('info', '<h3>After confirmation</h3>Sales availability and finished-goods on-hand update from the same transaction.') +
       R.actions([{ id: 'rts-post', label: 'Record as ready to sell', kind: 'navy' }, { id: 'rts-back', label: 'Back', kind: 'secondary' }]);
@@ -500,7 +501,7 @@
         '<label class="rk-card rk-field"><small>Finished-goods location</small><select data-loc>' + storage().map(function (l) {
           return '<option value="' + l.id + '"' + (l.id === locId ? ' selected' : '') + '>' + mEsc(l.name) + '</option>'; }).join('') + '</select></label>' +
         '<label class="rk-card rk-field"><small>Note (optional)</small><input class="rk-input" data-note maxlength="500" placeholder="Count discrepancy, condition…"></label>' +
-        R.check('rts-ok', 'I counted the quantity and checked the location') +
+        R.field('Build state', buildTag(b)) + R.check('rts-ok', 'I counted the quantity and checked the location') +
         R.actions([{ id: 'rts-post', label: 'Record as ready to sell', kind: 'navy' }, { id: 'rts-back', label: 'Back', kind: 'secondary' }]);
       var input = body.querySelector('.rk-stepper input');
       var clamp = function (v) { return Math.max(1, Math.min(b.remaining_qty, v || 1)); };

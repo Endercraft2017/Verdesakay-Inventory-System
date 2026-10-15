@@ -63,7 +63,7 @@ describe('decision D1 — an offline stock-out beyond recorded stock', () => {
     expect(r.body.location_quantity).toBe(-2);
     expect(r.body.discrepancy_id).toBeGreaterThan(0);
     expect(openDiscrepancies(P.nodeDb(), id)).toEqual([
-      { id: r.body.discrepancy_id, change: -5, location_balance_after: -2, reason: 'Loaded on truck' },
+      { id: r.body.discrepancy_id, change: -5, location_balance_after: -2, reason: 'Loaded on truck (assembled balance)' },
     ]);
 
     // After sync the cloud agrees — same balance, same discrepancy row (same id).
@@ -84,7 +84,7 @@ describe('decision D1 — an offline stock-out beyond recorded stock', () => {
     const { pushed } = await P.round();
     expect(pushed[0]!.state).toBe('confirmed'); // never rejected for a state reason
     const cloudFlags = openDiscrepancies(P.cloudDb(), id);
-    expect(cloudFlags).toMatchObject([{ change: -8, location_balance_after: -3, reason: 'Offline pick' }]);
+    expect(cloudFlags).toMatchObject([{ change: -8, location_balance_after: -3, reason: 'Offline pick (assembled balance)' }]);
     expect(openDiscrepancies(P.nodeDb(), id)).toEqual(cloudFlags); // the flag reaches the node
     expect(qtyAt(P.nodeDb(), id, defaultLoc(P.nodeDb()))).toBe(-3);
   });

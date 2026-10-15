@@ -172,7 +172,7 @@ App.register('releasing', async (view, filter) => {
             const free = Math.max(0, Number(stock.get(Number(l.item_id))?.free_to_allocate || 0));
             const bulk = !serialized.has(Number(l.item_id));
             return `<tr>
-              <td>${l.parent_order_item_id ? '<span class="muted">CKD part · </span>' : ''}${UI.esc(l.name)}${l.sku ? `<div class="muted mono">${UI.esc(l.sku)}</div>` : ''}
+              <td><span class="muted">${l.parent_order_item_id ? 'CKD part' : l.fulfillment_mode === 'semi_built' ? 'Semi-built' : 'Fully built / part'} · </span>${UI.esc(l.name)}${l.sku ? `<div class="muted mono">${UI.esc(l.sku)}</div>` : ''}
                 <div class="muted">${bulk ? `${free} uncommitted at ship-from` : 'Scan each serial label'}</div></td>
               <td class="right">${got} / ${need} ${UI.esc(l.unit || '')}${got >= need ? ' ✓' : ''}</td>
               <td>${got < need && bulk && free > 0 ? `<div style="display:flex;gap:6px;justify-content:flex-end">

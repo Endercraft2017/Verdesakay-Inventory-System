@@ -1264,3 +1264,5 @@ show parent manifests/child demand, allocate only physical child lines and preve
 assembled-parent substitution or partial kit handoff. Retained RTS payloads remain
 compatible with the remote atomic Products In endpoint. Both histories' PWA assets
 are included under v97. Tests cover hold-check retry, CKD guards and backend contracts.
+
+Mobile build-state integration (2026-10-15): approval review and revision include job-order build state; RTS shows it and groups only matching states; releasing uses fulfillment-specific availability and blocks cross-state serial scans. PWA cache v98. Mobile transfer/adjustment variant selection and shortfall creation remain follow-ups.

@@ -29,6 +29,7 @@ import {
   applyStockChange,
   transferStock,
   stockAt,
+  variantStockAt,
   stockBreakdown,
   locationName,
   getDefaultLocationId,
@@ -776,7 +777,7 @@ router.post('/:id/adjust', requirePermission('inventory.adjust'), syncClass('phy
     res.status(404).json({ error: 'Item not found' });
     return;
   }
-  const { change, reason, location_id } = parseBody(adjustStockSchema, req.body);
+  const { change, reason, location_id, build_mode } = parseBody(adjustStockSchema, req.body);
   // The legacy phone Pick screen uses this exact adjustment reason for sale/job
   // fulfilment. A generic adjustment has no order allocation or slip, so accepting
   // it can deduct the same goods twice. Existing offline commands already recorded
@@ -796,7 +797,7 @@ router.post('/:id/adjust', requirePermission('inventory.adjust'), syncClass('phy
     res.status(400).json({ error: 'Location not found' });
     return;
   }
-  const atLoc = stockAt(id, locId);
+  const atLoc = variantStockAt(id, locId, build_mode);
   // Offline (D1): the goods left even if the records say they weren't there — accepted and
   // flagged as a stock discrepancy by applyStockChange instead of refused.
   if (atLoc + change < 0 && !overdrawAllowed()) {
@@ -808,7 +809,7 @@ router.post('/:id/adjust', requirePermission('inventory.adjust'), syncClass('phy
   let result;
   try {
     result = applyStockChange({
-      itemId: id, locationId: locId, change, reason: reason ?? null, userId: req.user!.id,
+      itemId: id, locationId: locId, change, reason: reason ?? null, userId: req.user!.id, buildMode: build_mode,
     });
     db.exec('COMMIT');
   } catch (e) {
@@ -837,14 +838,14 @@ router.post('/:id/damage', requirePermission('inventory.adjust'), syncClass('phy
     res.status(400).json({ error: 'That is already a damage record' });
     return;
   }
-  const { quantity, reason, location_id } = parseBody(damageStockSchema, req.body);
+  const { quantity, reason, location_id, build_mode } = parseBody(damageStockSchema, req.body);
   const locId = location_id ?? getDefaultLocationId();
   const loc = queryOne<{ name: string }>('SELECT name FROM locations WHERE id = ?', locId);
   if (!loc) {
     res.status(400).json({ error: 'Location not found' });
     return;
   }
-  const atLoc = stockAt(id, locId);
+  const atLoc = variantStockAt(id, locId, build_mode);
   if (quantity > atLoc && !overdrawAllowed()) { // offline: accepted + flagged (D1)
     res.status(400).json({ error: `Not enough stock at ${loc.name}. Only ${atLoc} available.` });
     return;
@@ -860,7 +861,7 @@ router.post('/:id/damage', requirePermission('inventory.adjust'), syncClass('phy
 
     out = applyStockChange({
       itemId: id, locationId: locId, change: -quantity, userId: req.user!.id,
-      reason: `Damaged${tail}`,
+      reason: `Damaged${tail}`, buildMode: build_mode,
     });
     inn = applyStockChange({
       itemId: twinId, locationId: locId, change: quantity, userId: req.user!.id,
@@ -888,7 +889,7 @@ router.post('/:id/transfer', requirePermission('inventory.adjust'), syncClass('p
     res.status(404).json({ error: 'Item not found' });
     return;
   }
-  const { from_location_id, to_location_id, amount, reason } = parseBody(transferStockSchema, req.body);
+  const { from_location_id, to_location_id, amount, reason, build_mode } = parseBody(transferStockSchema, req.body);
   if (from_location_id === to_location_id) {
     res.status(400).json({ error: 'Pick two different locations' });
     return;
@@ -899,9 +900,16 @@ router.post('/:id/transfer', requirePermission('inventory.adjust'), syncClass('p
     res.status(400).json({ error: 'Location not found' });
     return;
   }
-  const available = stockAt(id, from_location_id);
+  const available = variantStockAt(id, from_location_id, build_mode);
   if (amount > available && !overdrawAllowed()) { // offline: accepted + flagged (D1)
     res.status(400).json({ error: `Only ${available} available at ${from.name} to transfer.` });
+    return;
+  }
+  if (queryOne(`SELECT 1 FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
+    WHERE u.product_item_id = ? AND j.build_mode = ? AND u.status IN ('in_stock', 'reserved')
+      AND COALESCE(u.location_id, j.output_location_id, ?) = ? LIMIT 1`,
+    id, build_mode, getDefaultLocationId(), from_location_id)) {
+    res.status(409).json({ error: 'This build state has tracked units here. Move their unit records from Production → Finished Products so stock and serial locations stay together.', code: 'use_unit_move' });
     return;
   }
 
@@ -910,7 +918,7 @@ router.post('/:id/transfer', requirePermission('inventory.adjust'), syncClass('p
   try {
     result = transferStock({
       itemId: id, fromId: from_location_id, toId: to_location_id, amount,
-      reason: reason ?? null, userId: req.user!.id,
+      reason: reason ?? null, userId: req.user!.id, buildMode: build_mode,
     });
     db.exec('COMMIT');
   } catch (e) {

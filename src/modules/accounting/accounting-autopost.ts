@@ -290,11 +290,11 @@ export function maybeAutoPostGoodsReceipt(
 
 /* ----------------------------------------------- sale fulfilment (perpetual inventory) --- */
 
-interface FulfilLine { item_id: number | null; quantity: number; cost: number }
+interface FulfilLine { item_id: number | null; quantity: number; cost: number; fulfillment_mode: string }
 
 function saleLines(orderId: number): FulfilLine[] {
   return queryAll<FulfilLine>(
-    `SELECT oi.item_id, oi.quantity, COALESCE(i.unit_cost, 0) AS cost
+    `SELECT oi.item_id, oi.quantity, oi.fulfillment_mode, COALESCE(i.unit_cost, 0) AS cost
      FROM order_items oi LEFT JOIN inventory_items i ON i.id = oi.item_id
      WHERE oi.order_id = ? AND COALESCE(oi.fulfillment_mode, 'assembled') != 'ckd'`, orderId
   );
@@ -315,7 +315,8 @@ function changeSaleStockInTransaction(orderId: number, userId: number | null, fo
   const sign = wantFulfilled ? -1 : 1;
   const reason = wantFulfilled ? `Sold — ${o.number}` : `Sale reversed — ${o.number}`;
   for (const l of lines) {
-    applyStockChange({ itemId: l.item_id!, locationId: loc, change: sign * l.quantity, userId, reason });
+    applyStockChange({ itemId: l.item_id!, locationId: loc, change: sign * l.quantity, userId, reason,
+      buildMode: l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled' });
     // Serialized units already sit inside the line's stock quantity; do not move them twice.
     run(
       `UPDATE job_order_units SET status = ?, updated_at = datetime('now')

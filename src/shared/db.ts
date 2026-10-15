@@ -63,6 +63,8 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 75: track fully built and semi-built stock separately per item/location and tag job orders.
+// 74: keep a commercial CKD line with a frozen physical-component manifest.
 // 73: remember an item's preferred storage location even when it has no stock.
 // 72: optional five-level inventory location hierarchy.
 // 71: link job-order component-shortage purchase drafts so retries and partial receipts
@@ -75,7 +77,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 74; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 75; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -932,6 +934,13 @@ function createSchema(): void {
       location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
       quantity    INTEGER NOT NULL DEFAULT 0,
       UNIQUE(item_id, location_id)
+    );
+    CREATE TABLE IF NOT EXISTS inventory_variant_stock (
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+      build_mode TEXT NOT NULL CHECK (build_mode IN ('assembled', 'semi_built')),
+      quantity REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (item_id, location_id, build_mode)
     );
 
     -- A location's stock went below zero because an offline stock-out (a sync command,
@@ -3220,6 +3229,21 @@ function migrate(): void {
   if (!saleLineCols.some((c) => c.name === 'parent_order_item_id'))
     db.exec('ALTER TABLE order_items ADD COLUMN parent_order_item_id INTEGER REFERENCES order_items(id) ON DELETE CASCADE');
   db.exec('CREATE INDEX IF NOT EXISTS idx_order_items_parent ON order_items(parent_order_item_id)');
+  // 75: keep fully and semi-built stock distinct while retaining one commercial SKU.
+  const buildCols = db.prepare('PRAGMA table_info(job_orders)').all() as Array<{ name: string }>;
+  if (!buildCols.some((c) => c.name === 'build_mode'))
+    db.exec("ALTER TABLE job_orders ADD COLUMN build_mode TEXT NOT NULL DEFAULT 'assembled'");
+  db.exec(`CREATE TABLE IF NOT EXISTS inventory_variant_stock (
+    item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+    location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+    build_mode TEXT NOT NULL CHECK (build_mode IN ('assembled', 'semi_built')),
+    quantity REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (item_id, location_id, build_mode))`);
+  if (!getSetting<boolean>('variant_stock_seeded')) {
+    db.exec(`INSERT OR IGNORE INTO inventory_variant_stock (item_id, location_id, build_mode, quantity)
+      SELECT item_id, location_id, 'assembled', quantity FROM inventory_stock`);
+    setSetting('variant_stock_seeded', true);
+  }
 }
 
 /** One-time permission split: every role and per-account grant holding `from` also gets `to`.

@@ -37,6 +37,15 @@ const company = { name: 'Verdesakay', address: 'Cebu' };
 const user = { full_name: 'Admin User' };
 
 describe('buildDocContext', () => {
+  it('prints the CKD and semi-built descriptors on commercial sale lines', () => {
+    const ctx = buildDocContext({ order: { type: 'sale', items: [
+      { name: 'Bike', fulfillment_mode: 'semi_built', quantity: 1, unit_price: 1, line_total: 1 },
+      { name: 'Bike', fulfillment_mode: 'ckd', quantity: 1, unit_price: 1, line_total: 1 },
+    ] }, company, user, variables: [] }) as { items: Array<{ name: string; fulfillment_label: string }> };
+    expect(ctx.items.map((item) => item.name)).toEqual(['Bike (Semi-built)', 'Bike (CKD)']);
+    expect(ctx.items.map((item) => item.fulfillment_label)).toEqual(['Semi-built', 'CKD']);
+  });
+
   it('builds base context with formatted money + items', () => {
     const ctx = buildDocContext({ order, company, user, variables: [] }) as never;
     expect((ctx as never as { order: { no: string; total: string } }).order.no).toBe('SO-00001');

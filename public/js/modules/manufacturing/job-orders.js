@@ -84,8 +84,8 @@ App.register('job-orders', async (view, filter) => {
           const step = ProductionSteps.jobOrderStep(j);
           return `
           <tr class="clickable" data-open="${j.id}">
-            <td><strong>${UI.esc(j.number)}</strong>${j.order_number ? `<div class="muted" style="font-size:11px">${UI.esc(j.order_number)}</div>` : ''}</td>
-            <td>${UI.esc(j.product_name)}</td>
+            <td><strong>${UI.esc(j.number)}</strong><div class="muted" style="font-size:11px">${j.order_number ? `For ${UI.esc(j.order_number)}` : 'RTS buffer stock'}</div></td>
+            <td>${UI.esc(j.product_name)}<div class="muted" style="font-size:11px">${j.build_mode === 'semi_built' ? 'Semi-built' : 'Fully built'}</div></td>
             <td class="muted">${UI.esc(j.team_name || '—')}</td>
             <td class="${j.overdue ? 'danger' : 'muted'}">${j.due_date ? UI.esc(j.due_date) + (j.overdue ? ' ⚠' : '') : '—'}</td>
             <td class="right">${j.qty_ordered}</td>
@@ -111,6 +111,7 @@ App.register('job-orders', async (view, filter) => {
       title: 'New job order',
       helpTopic: 'job-orders',
       bodyHTML: `<div class="form-grid">
+        <p class="muted span2">This independent job order builds RTS buffer stock. No sales order is required; units become available to sales after production, inspection and Products In.</p>
         <div class="form-field span2"><div class="field-label"><label>Product to build <span class="req">*</span></label></div>
           <select data-f="product">${products.map((p) => {
             const spec = p.attributes && typeof p.attributes === 'object' ? p.attributes.spec : null;
@@ -120,6 +121,8 @@ App.register('job-orders', async (view, filter) => {
           }).join('')}</select></div>
         <div class="form-field"><div class="field-label"><label>Quantity to build <span class="req">*</span></label></div>
           <input data-f="qty" type="number" min="1" value="1" /></div>
+        <div class="form-field"><div class="field-label"><label>Build state</label></div>
+          <select data-f="mode"><option value="assembled">Fully built</option><option value="semi_built">Semi-built</option></select></div>
         <div class="form-field"><div class="field-label"><label>Pull components from</label></div>
           <select data-f="source">${locOptions()}</select></div>
         <div class="form-field"><div class="field-label"><label>Put finished units in</label></div>
@@ -152,6 +155,7 @@ App.register('job-orders', async (view, filter) => {
         if (!Number.isInteger(qty) || qty < 1) { showErr('Quantity must be a whole number of at least 1'); return false; }
         await API.post('/job-orders', {
           product_item_id: Number(g('product')), qty_ordered: qty,
+          build_mode: g('mode'),
           source_location_id: Number(g('source')) || null,
           output_location_id: Number(g('output')) || null,
           qc_stages: Number(g('qc')) || 0,
@@ -349,7 +353,8 @@ App.register('job-orders', async (view, filter) => {
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
             ${badge(jo.status)}
             <strong>${UI.esc(jo.product_name)}</strong>
-            ${jo.order_number ? `<span class="muted">from ${UI.esc(jo.order_number)}</span>` : ''}
+            <span class="badge-pill">${jo.build_mode === 'semi_built' ? 'Semi-built' : 'Fully built'}</span>
+            ${jo.order_number ? `<span class="muted">from ${UI.esc(jo.order_number)}</span>` : '<span class="muted">RTS buffer stock</span>'}
           </div>
           <div class="kv" style="margin:10px 0 0">
             <div><span class="muted">Ordered</span><div>${jo.qty_ordered}</div></div>

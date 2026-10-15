@@ -676,6 +676,13 @@ export interface InventoryTransactions {
   created_at: Generated<string>;
 }
 
+export interface InventoryVariantStock {
+  item_id: Generated<number>;
+  location_id: number;
+  build_mode: string;
+  quantity: Generated<number>;
+}
+
 export interface JobOrderComponents {
   id: Generated<number>;
   job_order_id: number;
@@ -752,6 +759,7 @@ export interface JobOrders {
   paused_by: number | null;
   paused_at: string | null;
   pause_reason: string | null;
+  build_mode: Generated<string>;
 }
 
 export interface JobShortfallPurchases {
@@ -1674,6 +1682,7 @@ export interface DB {
   inventory_items: InventoryItems;
   inventory_stock: InventoryStock;
   inventory_transactions: InventoryTransactions;
+  inventory_variant_stock: InventoryVariantStock;
   job_order_components: JobOrderComponents;
   job_order_events: JobOrderEvents;
   job_order_units: JobOrderUnits;

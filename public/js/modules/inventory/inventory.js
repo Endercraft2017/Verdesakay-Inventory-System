@@ -924,7 +924,7 @@ App.register('inventory', async (view, filter) => {
     const it = items.find((x) => x.id == id);
     const breakdown = await API.get(`/inventory/${id}/stock`).catch(() => []);
     const rows = breakdown.map((b) => ({ id: b.location_id, name: b.location_name, is_default: b.is_default }));
-    const qtyAt = (locId) => (breakdown.find((b) => String(b.location_id) === String(locId)) || {}).quantity || 0;
+    const qtyAt = (locId, mode = 'assembled') => (breakdown.find((b) => String(b.location_id) === String(locId)) || {})[mode === 'semi_built' ? 'semi_built_quantity' : 'assembled_quantity'] || 0;
     const top = [...breakdown].filter((b) => b.quantity > 0).sort((a, b) => b.quantity - a.quantity)[0];
     const initial = (top || breakdown.find((b) => b.is_default) || breakdown[0] || {}).location_id;
 
@@ -937,6 +937,7 @@ App.register('inventory', async (view, filter) => {
           <div><label>Action</label><select data-f="dir">
             <option value="in">Stock IN (＋)</option><option value="out">Stock OUT (−)</option></select></div>
         </div>
+        <div><label>Build state</label><select data-f="mode"><option value="assembled">Fully built / standard</option><option value="semi_built">Semi-built</option></select></div>
         <div class="field-row">
           <div><label>Amount</label><input data-f="amount" type="number" min="1" value="1" /></div>
           <div><label>Reason / reference</label><input data-f="reason" placeholder="e.g. Purchase, Released to Dept" /></div>
@@ -945,18 +946,21 @@ App.register('inventory', async (view, filter) => {
       confirmText: 'Apply',
       onOpen: (overlay) => {
         const sel = overlay.querySelector('[data-f="loc"]');
+        const mode = overlay.querySelector('[data-f="mode"]');
         const at = overlay.querySelector('[data-at] strong');
-        sel.addEventListener('change', () => { at.textContent = qtyAt(sel.value); });
+        const refreshQty = () => { at.textContent = qtyAt(sel.value, mode.value); };
+        sel.addEventListener('change', refreshQty); mode.addEventListener('change', refreshQty);
       },
       onConfirm: async (overlay, showErr) => {
         const location_id = overlay.querySelector('[data-f="loc"]').value;
         const dir = overlay.querySelector('[data-f="dir"]').value;
         const amount = parseInt(overlay.querySelector('[data-f="amount"]').value, 10);
         const reason = overlay.querySelector('[data-f="reason"]').value;
+        const build_mode = overlay.querySelector('[data-f="mode"]').value;
         if (!location_id) { showErr('Pick a location'); return false; }
         if (!amount || amount <= 0) { showErr('Enter a positive amount'); return false; }
         const change = dir === 'out' ? -amount : amount;
-        const r = await API.post(`/inventory/${id}/adjust`, { change, reason, location_id });
+        const r = await API.post(`/inventory/${id}/adjust`, { change, reason, location_id, build_mode });
         UI.toast(`Stock updated — ${r.location_quantity} here, ${r.quantity} total`);
         load();
       },
@@ -968,7 +972,7 @@ App.register('inventory', async (view, filter) => {
     const breakdown = await API.get(`/inventory/${id}/stock`).catch(() => []);
     if (breakdown.length < 2) { UI.toast('Add a second location first (Inventory → Locations)', 'error'); return; }
     const rows = breakdown.map((b) => ({ id: b.location_id, name: b.location_name, is_default: b.is_default }));
-    const qtyAt = (locId) => (breakdown.find((b) => String(b.location_id) === String(locId)) || {}).quantity || 0;
+    const qtyAt = (locId, mode = 'assembled') => (breakdown.find((b) => String(b.location_id) === String(locId)) || {})[mode === 'semi_built' ? 'semi_built_quantity' : 'assembled_quantity'] || 0;
     const top = [...breakdown].filter((b) => b.quantity > 0).sort((a, b) => b.quantity - a.quantity)[0];
     const fromInit = (top || breakdown[0]).location_id;
     const toInit = (breakdown.find((b) => b.location_id !== fromInit) || {}).location_id;
@@ -982,6 +986,7 @@ App.register('inventory', async (view, filter) => {
           <div><label>To</label><select data-f="to">${locationOptions(toInit, rows)}</select>
             <p class="muted" data-toat style="margin:4px 0 0;font-size:12px">Currently: <strong>${qtyAt(toInit)}</strong></p></div>
         </div>
+        <div><label>Build state</label><select data-f="mode"><option value="assembled">Fully built / standard</option><option value="semi_built">Semi-built</option></select></div>
         <div class="field-row">
           <div><label>Amount</label><input data-f="amount" type="number" min="1" value="1" /></div>
           <div><label>Reason / reference</label><input data-f="reason" placeholder="e.g. Restock branch" /></div>
@@ -990,17 +995,19 @@ App.register('inventory', async (view, filter) => {
       onOpen: (overlay) => {
         const from = overlay.querySelector('[data-f="from"]');
         const to = overlay.querySelector('[data-f="to"]');
-        from.addEventListener('change', () => { overlay.querySelector('[data-fromat] strong').textContent = qtyAt(from.value); });
-        to.addEventListener('change', () => { overlay.querySelector('[data-toat] strong').textContent = qtyAt(to.value); });
+        const mode = overlay.querySelector('[data-f="mode"]');
+        const refreshQty = () => { overlay.querySelector('[data-fromat] strong').textContent = qtyAt(from.value, mode.value); overlay.querySelector('[data-toat] strong').textContent = qtyAt(to.value, mode.value); };
+        from.addEventListener('change', refreshQty); to.addEventListener('change', refreshQty); mode.addEventListener('change', refreshQty);
       },
       onConfirm: async (overlay, showErr) => {
         const from_location_id = overlay.querySelector('[data-f="from"]').value;
         const to_location_id = overlay.querySelector('[data-f="to"]').value;
         const amount = parseInt(overlay.querySelector('[data-f="amount"]').value, 10);
         const reason = overlay.querySelector('[data-f="reason"]').value;
+        const build_mode = overlay.querySelector('[data-f="mode"]').value;
         if (from_location_id === to_location_id) { showErr('Pick two different locations'); return false; }
         if (!amount || amount <= 0) { showErr('Enter a positive amount'); return false; }
-        const r = await API.post(`/inventory/${id}/transfer`, { from_location_id, to_location_id, amount, reason });
+        const r = await API.post(`/inventory/${id}/transfer`, { from_location_id, to_location_id, amount, reason, build_mode });
         UI.toast(`Transferred — ${r.from} left at source, ${r.to} now at destination`);
         load();
       },

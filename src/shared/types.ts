@@ -350,6 +350,7 @@ export interface JobOrder {
   qty_done: number;
   qty_scrapped: number;
   status: JobOrderStatus;
+  build_mode: 'assembled' | 'semi_built';
   source_location_id: number | null;
   output_location_id: number | null;
   qc_stages: number;
@@ -948,6 +949,7 @@ export interface Order {
   job_order_id?: number | null;
   job_order_number?: string | null;
   job_order_status?: string | null;
+  fulfillment_modes?: string | null;
   warehouse_accepted_by_name?: string | null;
   release_slip_id?: number | null;
   release_slip_number?: string | null;

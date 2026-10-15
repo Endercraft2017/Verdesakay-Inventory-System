@@ -97,7 +97,8 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
     `SELECT oi.id, oi.item_id, oi.name, oi.sku, oi.quantity, oi.released_qty, oi.fulfillment_mode, oi.parent_order_item_id,
             (SELECT COUNT(*) FROM job_order_units u WHERE u.order_id = oi.order_id AND u.product_item_id = oi.item_id
                AND u.status IN ('reserved', 'sold')) AS units,
-            EXISTS (SELECT 1 FROM job_order_units u WHERE u.product_item_id = oi.item_id) AS serialized
+            EXISTS (SELECT 1 FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
+              WHERE u.product_item_id = oi.item_id AND j.build_mode = CASE WHEN oi.fulfillment_mode = 'semi_built' THEN 'semi_built' ELSE 'assembled' END) AS serialized
      FROM order_items oi WHERE oi.order_id = ? ORDER BY oi.sort, oi.id`, id
   );
   const units = queryAll(
@@ -114,7 +115,7 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
       warehouse_accepted_at: accepted?.warehouse_accepted_at ?? null, location_id: availability.location_id,
       location_name: availability.location_name },
     lines, units,
-    availability: availability.lines.map((l) => ({ item_id: l.item_id, free_to_allocate: Math.max(0, l.available - l.covered_here),
+    availability: availability.lines.map((l) => ({ item_id: l.item_id, fulfillment_mode: l.fulfillment_mode, free_to_allocate: Math.max(0, l.available - l.covered_here),
       on_hand: l.on_hand, committed_elsewhere: l.committed_elsewhere, kit_held: l.kit_held, repair_held: l.repair_held })),
     authorization: publicAuthorization(id),
     package: packageItemsFor(id),
@@ -136,8 +137,8 @@ router.get('/orders/:id/unit', releaseGate, (req, res) => {
   const code = String(req.query.code ?? '').trim();
   if (!saleOrder(id)) { res.status(404).json({ error: 'Sale order not found' }); return; }
   const u = queryOne<{ id: number; identifier: string | null; status: string; order_id: number | null; product_item_id: number | null;
-    product_name: string; location_id: number | null; location_name: string | null; order_number: string | null; receipt_number: string | null }>(
-    `SELECT u.id, u.identifier, u.status, u.order_id, u.product_item_id, u.location_id, j.product_name, l.name AS location_name, o.number AS order_number,
+    product_name: string; build_mode: string; location_id: number | null; location_name: string | null; order_number: string | null; receipt_number: string | null }>(
+    `SELECT u.id, u.identifier, u.status, u.order_id, u.product_item_id, u.location_id, j.product_name, j.build_mode, l.name AS location_name, o.number AS order_number,
             (SELECT r.number FROM production_receipt_items ri JOIN production_receipts r ON r.id = ri.receipt_id
               WHERE ri.unit_id = u.id ORDER BY ri.id DESC LIMIT 1) AS receipt_number
      FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id LEFT JOIN locations l ON l.id = u.location_id
@@ -145,9 +146,11 @@ router.get('/orders/:id/unit', releaseGate, (req, res) => {
      WHERE LOWER(TRIM(u.identifier)) = LOWER(?) ORDER BY u.id DESC LIMIT 1`, code
   );
   if (!u) { res.json({ state: 'not_found', code }); return; }
-  const onOrder = queryOne('SELECT 1 FROM order_items WHERE order_id = ? AND item_id = ?', id, u.product_item_id);
+  const onOrder = queryOne(`SELECT 1 FROM order_items WHERE order_id = ? AND item_id = ?
+    AND COALESCE(fulfillment_mode, 'assembled') = ?`, id, u.product_item_id, u.build_mode);
   const state = u.order_id === id && (u.status === 'reserved' || u.status === 'sold') ? 'allocated'
     : u.order_id && u.order_id !== id && u.status === 'reserved' ? 'other_order'
+    : !onOrder && queryOne("SELECT 1 FROM order_items WHERE order_id = ? AND item_id = ? AND fulfillment_mode != 'ckd'", id, u.product_item_id) ? 'wrong_build'
     : !onOrder ? 'wrong_product'
     : u.status === 'in_stock' ? 'available' : 'unavailable';
   res.json({ state, unit: u });

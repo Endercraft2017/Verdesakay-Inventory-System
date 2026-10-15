@@ -1495,6 +1495,18 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       expect((await win.mProductionDrafts.loadAction('release:302')).operation.key).toBe('original-expired-key');
     });
 
+    it('blocks cross-build serials and uses only semi-built availability', async () => {
+      const calls: any[] = [];
+      const base = fake(calls, { lines: [{ item_id: 7, name: 'K4', fulfillment_mode: 'semi_built', quantity: 5, released_qty: 0, serialized: 0 }], units: [], availability: [{ item_id: 7, fulfillment_mode: 'assembled', free_to_allocate: 9 }, { item_id: 7, fulfillment_mode: 'semi_built', free_to_allocate: 1.25 }] });
+      const win = await bootAs(REL, (url: string, init: any) => url.includes('/orders/302/unit?') ? { state: 'available', unit: { ...UNIT, location_id: 2, build_mode: 'assembled' } } : base(url, init));
+      win.location.hash = '#/so?id=302&step=scan';
+      const input = await relElement(win, '[data-qty="7"]'); expect(input.value).toBe('1.25');
+      expect(win.document.getElementById('m-view').textContent).toContain('Semi-built');
+      win.location.hash = '#/so?id=302&step=unit&code=K4-01'; await wait(80);
+      expect(win.document.getElementById('m-view').textContent).toContain('Wrong build state');
+      expect(win.document.getElementById('rel-ok')).toBeNull(); expect(calls).toEqual([]);
+    });
+
     it('allocates CKD component lines instead of parent stock and refuses partial CKD handoff', async () => {
       const calls: any[] = [];
       const lines = [{ id: 1, item_id: 7, name: 'K4 kit', fulfillment_mode: 'ckd', quantity: 1, units: 0, released_qty: 0, serialized: 1 }, { id: 2, item_id: 10, name: 'Chassis component', fulfillment_mode: 'ckd_component', parent_order_item_id: 1, quantity: 2, released_qty: 1, serialized: 0 }];

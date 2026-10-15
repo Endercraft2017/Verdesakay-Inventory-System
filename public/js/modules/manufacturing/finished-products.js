@@ -591,7 +591,8 @@ App.register('finished-products', async (view, filter) => {
         </div>
         <p class="muted">${pickedUnits.length
           ? `${pickedUnits.length} unit${pickedUnits.length === 1 ? '' : 's'} selected.`
-          : `No units ticked — enter a quantity of bulk/untracked units (${bulkAvail} available).`}</p>
+          : 'No units ticked — enter a quantity of bulk/untracked units in the selected build state.'}</p>
+        <div><label>Build state</label><select data-f="mode"><option value="assembled" ${pickedUnits[0]?.build_mode === 'semi_built' ? '' : 'selected'}>Fully built</option><option value="semi_built" ${pickedUnits[0]?.build_mode === 'semi_built' ? 'selected' : ''}>Semi-built</option></select></div>
         ${pickedUnits.length ? '' : `<div><label>Quantity</label><input data-f="qty" type="number" min="1" value="1" /></div>`}
         <div data-f="orderwrap"><label>Sales order</label>
           <select data-f="order"><option value="">— select —</option>
@@ -614,7 +615,7 @@ App.register('finished-products', async (view, filter) => {
       },
       onConfirm: async (ov, showErr) => {
         const action = ov.querySelector('input[name="act"]:checked').value;
-        const body = { action, reason: ov.querySelector('[data-f="note"]').value.trim() || null };
+        const body = { action, build_mode: ov.querySelector('[data-f="mode"]').value, reason: ov.querySelector('[data-f="note"]').value.trim() || null };
         if (pickedUnits.length) body.unit_ids = pickedUnits.map((u) => u.id);
         else {
           const q = parseInt(ov.querySelector('[data-f="qty"]').value, 10);

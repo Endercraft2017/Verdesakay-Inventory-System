@@ -1042,3 +1042,5 @@ immutable reviewed checklist and hold episode → original-key recovery. CKD par
 manifest → physical child allocation → complete kit only → existing release slip
 and component stock/return rules. Parent built-unit stock is not a component supply.
 The remote atomic Products In endpoint preserves legacy receipt-request compatibility.
+
+Mobile build-state integration (2026-10-15): approval review and revision include job-order build state; RTS shows it and groups only matching states; releasing uses fulfillment-specific availability and blocks cross-state serial scans. PWA cache v98. Mobile transfer/adjustment variant selection and shortfall creation remain follow-ups.

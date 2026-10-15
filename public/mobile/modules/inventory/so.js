@@ -36,6 +36,7 @@
   function fail(btn, text) { return function (err) { mToast((err && err.message) || 'Failed', 'err'); if (btn) { btn.disabled = false; if (text) btn.textContent = text; } }; }
   function key() { return 'rel-' + (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)); }
 
+  function buildTag(mode) { return mode === 'semi_built' ? 'Semi-built' : mode === 'ckd_component' ? 'CKD component' : 'Fully built / standard'; }
   function physical(l) { return l.item_id && l.fulfillment_mode !== 'ckd'; }
   function manifest(c) { return c.lines.filter(function (l) { return l.fulfillment_mode === 'ckd'; }).map(function (l) { return R.field('CKD kit — components must be allocated', l.quantity + ' × ' + l.name) + R.lines(c.lines.filter(function (part) { return part.parent_order_item_id === l.id; }).map(function (part) { return { name: part.name, qty: part.quantity, ok: (part.released_qty || 0) >= part.quantity }; })); }).join(''); }
   /** Units needed / allocated across the order's stock lines. */
@@ -168,7 +169,7 @@
   function scan(view, c) {
     var p = progress(c);
     var body = page(view, '78:109', 'Scan physical units', 'Every serial must match this release order');
-    function free(l) { var a = (c.availability || []).find(function (a) { return a.item_id === l.item_id; }); return a ? Math.max(0, Math.min(l.quantity - (l.released_qty || 0), a.free_to_allocate)) : 0; }
+    function free(l) { var a = (c.availability || []).find(function (a) { return a.item_id === l.item_id && (!a.fulfillment_mode || a.fulfillment_mode === (l.fulfillment_mode || 'assembled')); }); return a ? Math.max(0, Math.min(l.quantity - (l.released_qty || 0), a.free_to_allocate)) : 0; }
     var bulk = c.lines.filter(function (l) { return physical(l) && !l.serialized && (l.released_qty || 0) < l.quantity; });
     body.innerHTML =
       manifest(c) + '<button type="button" class="rk-identify"><span class="frame" aria-hidden="true"></span><b>Scan the unit serial label</b><small>' + p.got + ' of ' + p.need + ' allocated units ready</small></button>' +
@@ -178,7 +179,7 @@
           '<small>Allocated · Ready to sell' + (u.location_name ? ' · ' + mEsc(u.location_name) : '') + '</small></button></div>';
       }).join('') + '</div>' : '') +
       bulk.map(function (l) {
-        return '<div class="rk-card rk-field"><small>' + mEsc(l.name) + ' · non-serialized</small><div class="rk-qtyrow" style="margin-top:8px"><span>' + (l.released_qty || 0) + ' of ' + l.quantity + ' allocated · ' + free(l) + ' free here</span>' +
+        return '<div class="rk-card rk-field"><small>' + mEsc(l.name) + ' · ' + buildTag(l.fulfillment_mode) + ' · non-serialized</small><div class="rk-qtyrow" style="margin-top:8px"><span>' + (l.released_qty || 0) + ' of ' + l.quantity + ' allocated · ' + free(l) + ' free here</span>' +
           '<span class="rk-search"><input class="rk-input" style="margin:0;width:70px" type="number" min="0" step="any" max="' + free(l) + '" inputmode="decimal" data-qty="' + l.item_id + '" value="' + free(l) + '">' +
           '<button type="button" class="rk-back" data-bulk="' + l.item_id + '"' + (free(l) <= 0 ? ' disabled' : '') + ' style="padding:0">Add</button></span></div></div>';
       }).join('') +
@@ -219,13 +220,14 @@
       if (location.hash.split('?')[0] !== '#/so' || Number(new URLSearchParams(location.hash.split('?')[1]).get('id')) !== c.order.id) return;
       var u = r.unit, p = progress(c);
       if (!c.lines.some(function (l) { return physical(l) && l.item_id === u.product_item_id; })) { blockedView(view,c,code,{ state: 'wrong_product', error: 'Allocate the CKD component lines, not the assembled parent product.', unit: u }); return; }
+      if (!c.lines.some(function (l) { return physical(l) && l.item_id === u.product_item_id && (l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled') === (u.build_mode || 'assembled'); })) { blockedView(view,c,code,{ state: 'wrong_build', unit: u }); return; }
       if (u.location_id != null && c.order.location_id != null && u.location_id !== c.order.location_id) { blockedView(view,c,code,{ state: 'refused', error: 'Unit is at a different warehouse. Transfer it before allocating.', unit: u }); return; }
       var body = page(view, '78:147', 'Verify allocated unit', 'Match the physical unit and stock record');
       var idx = c.units.map(function (x) { return x.id; }).indexOf(u.id);
       body.innerHTML =
         R.jobHead({ tone: 'ok', number: u.identifier, pill: { text: r.state === 'allocated' ? 'Allocated' : 'Ready to sell', tone: 'ok' }, name: u.product_name,
           meta: u.location_name || '' }) +
-        R.field('Ship from', c.order.location_name || 'Warehouse #' + c.order.location_id) + R.field('Stock transaction', u.receipt_number || '—') +
+        R.field('Build state', buildTag(u.build_mode)) + R.field('Ship from', c.order.location_name || 'Warehouse #' + c.order.location_id) + R.field('Stock transaction', u.receipt_number || '—') +
         R.field('Allocated to', c.order.number + ' · ' + (r.state === 'allocated' ? (idx + 1) + ' of ' + p.need : 'will be ' + (p.got + 1) + ' of ' + p.need)) +
         R.note('info', '<h3>Physical check</h3>Confirm model, color, serial label and visible condition before removing the unit.') +
         R.actions([{ id: 'rel-ok', label: 'Confirm unit', kind: 'primary' }, { id: 'rel-mis', label: 'Mismatch', kind: 'secondary' }]);
@@ -244,6 +246,7 @@
     var body = page(view, '78:365', 'Release blocked', 'Resolve the mismatch before warehouse-out');
     var TEXT = {
       other_order: ['Serial is not allocated', 'Allocated to ' + ((r.unit && r.unit.order_number) || 'another order') + ', not this order.'],
+      wrong_build: ['Wrong build state', 'This serial is ' + buildTag(r.unit && r.unit.build_mode) + '; select a unit matching the sale line.'],
       wrong_product: ['Wrong product', (r.unit ? r.unit.product_name : 'This unit') + ' is not on ' + c.order.number + '.'],
       not_found: ['Serial not found', 'No finished unit carries this label.'],
       unavailable: ['Unit not available', 'This unit is ' + (r.unit ? r.unit.status : 'not in stock') + ' — it can’t leave as ready-to-sell stock.'],

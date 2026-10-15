@@ -3,11 +3,12 @@
  * existing jobs' unpicked requirements, so the same material isn't promised twice. */
 import { queryAll, queryOne } from '../../shared/db';
 import type { Order, OrderItem } from '../../shared/types';
-import { getDefaultLocationId, stockAt, locationName } from './inventory-stock';
+import { getDefaultLocationId, variantStockAt, variantStockTotal, locationName, type BuildMode } from './inventory-stock';
 import { kitPickedAt, repairHeld } from '../manufacturing/stock-holds';
 
 export interface LineAvailability {
   order_item_id: number; item_id: number; name: string; ordered: number;
+  fulfillment_mode: string;
   on_hand: number; elsewhere_on_hand: number; committed_elsewhere: number; committed_orders: number;
   kit_held: number; repair_held: number; covered_here: number; available: number; shortfall: number;
   is_finished_product: boolean; has_bom: boolean; buildable: boolean;
@@ -26,22 +27,25 @@ export function orderAvailability(orderId: number) {
   const lines: LineAvailability[] = [];
   const items = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', orderId);
   const stockCache = new Map<string, { onHand: number; commitments: number; kit: number; repair: number; free: number }>();
-  const stock = (itemId: number, at = locationId) => {
-    const key = `${itemId}:${at}`;
+  const stock = (itemId: number, at = locationId, mode: BuildMode = 'assembled') => {
+    const key = `${itemId}:${at}:${mode}`;
     let result = stockCache.get(key);
     if (result) return result;
     // Reservations are still in on-hand. Other firms' unpicked remainders also claim it.
     const reserved = queryOne<{ n: number }>(`SELECT COUNT(*) AS n FROM job_order_units u
       LEFT JOIN job_orders j ON j.id = u.job_order_id
       WHERE u.product_item_id = ? AND u.status = 'reserved' AND COALESCE(u.order_id, 0) != ?
-        AND COALESCE(u.location_id, j.output_location_id, ?) IS ?`, itemId, orderId, defaultLocation, at)?.n ?? 0;
+        AND COALESCE(j.build_mode, 'assembled') = ?
+        AND COALESCE(u.location_id, j.output_location_id, ?) IS ?`, itemId, orderId, mode, defaultLocation, at)?.n ?? 0;
     const demand = queryOne<{ n: number }>(`SELECT COALESCE(SUM(x.released_qty + MAX(0, x.quantity - x.released_qty -
       (SELECT COUNT(*) FROM job_order_units u WHERE u.order_id = o.id AND u.product_item_id = x.item_id
         AND u.status IN ('reserved', 'sold')))), 0) AS n
       FROM order_items x JOIN orders o ON o.id = x.order_id
       WHERE x.item_id = ? AND o.id != ? AND o.type = 'sale' AND o.fulfilled_at IS NULL
-        AND LOWER(o.status) IN (${firmStates}) AND COALESCE(o.location_id, ?) IS ?`, itemId, orderId, defaultLocation, at)?.n ?? 0;
-    const onHand = at == null ? 0 : stockAt(itemId, at);
+        AND CASE WHEN x.fulfillment_mode IN ('ckd_component', 'assembled') THEN 'assembled'
+                 ELSE COALESCE(x.fulfillment_mode, 'assembled') END = ?
+        AND LOWER(o.status) IN (${firmStates}) AND COALESCE(o.location_id, ?) IS ?`, itemId, orderId, mode, defaultLocation, at)?.n ?? 0;
+    const onHand = at == null ? 0 : variantStockAt(itemId, at, mode);
     const kit = at == null ? 0 : kitPickedAt(itemId, at);
     const repair = at == null ? 0 : repairHeld(itemId, at);
     const commitments = reserved + demand;
@@ -63,7 +67,8 @@ export function orderAvailability(orderId: number) {
     if (oi.item_id == null || oi.fulfillment_mode === 'ckd') continue;
     const inv = queryOne<{ quantity: number; is_finished_product: number }>('SELECT quantity, is_finished_product FROM inventory_items WHERE id = ?', oi.item_id);
     if (!inv) continue;
-    const s = stock(oi.item_id);
+    const mode: BuildMode = oi.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled';
+    const s = stock(oi.item_id, locationId, mode);
     const units = queryOne<{ reserved: number; sold: number }>(`SELECT
       COALESCE(SUM(status = 'reserved'), 0) AS reserved, COALESCE(SUM(status = 'sold'), 0) AS sold
       FROM job_order_units WHERE product_item_id = ? AND order_id = ? AND status IN ('reserved', 'sold')`, oi.item_id, orderId)!;
@@ -84,11 +89,11 @@ export function orderAvailability(orderId: number) {
         FROM production_receipt_items ri JOIN production_receipts r ON r.id = ri.receipt_id
         WHERE r.job_order_id = j.id), 0)) AS remaining
       FROM job_orders j WHERE j.order_id = ? AND j.product_item_id = ? AND j.status != 'cancelled'
-        AND COALESCE(j.output_location_id, ?) IS ? ORDER BY j.id`, orderId, oi.item_id, defaultLocation, locationId)
+        AND j.build_mode = ? AND COALESCE(j.output_location_id, ?) IS ? ORDER BY j.id`, orderId, oi.item_id, mode, defaultLocation, locationId)
       .filter((j) => j.remaining > 0);
     const madeHere = !!inv.is_finished_product || jobs.length > 0;
-    lines.push({ order_item_id: oi.id, item_id: oi.item_id, name: oi.name, ordered: oi.quantity,
-      on_hand: s.onHand, elsewhere_on_hand: qty(inv.quantity - s.onHand), committed_elsewhere: qty(s.commitments + s.kit + s.repair), committed_orders: s.commitments,
+    lines.push({ order_item_id: oi.id, item_id: oi.item_id, name: oi.name, ordered: oi.quantity, fulfillment_mode: oi.fulfillment_mode,
+      on_hand: s.onHand, elsewhere_on_hand: qty(variantStockTotal(oi.item_id, mode) - s.onHand), committed_elsewhere: qty(s.commitments + s.kit + s.repair), committed_orders: s.commitments,
       kit_held: s.kit, repair_held: s.repair, covered_here: covered, available, shortfall,
       is_finished_product: madeHere, has_bom: hasBom, buildable: false,
       component_shortfalls: [], linked_job_orders: jobs });

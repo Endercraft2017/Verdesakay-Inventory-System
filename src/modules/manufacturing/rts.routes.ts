@@ -18,11 +18,11 @@ const receiveGate = requireAnyPermission(['inventory.adjust', 'production.receiv
 router.get('/queue', receiveGate, (req, res) => {
   const units = queryAll<{
     id: number; identifier: string | null; updated_at: string; job_order_id: number; job_order_number: string;
-    product_name: string; product_item_id: number | null; sku: string | null; priority: number;
+    product_name: string; build_mode: string; product_item_id: number | null; sku: string | null; priority: number;
     output_location_id: number | null; output_location_name: string | null; order_number: string | null;
     batch_identifier: string | null;
   }>(
-    `SELECT u.id, u.identifier, u.updated_at, j.id AS job_order_id, j.number AS job_order_number, j.product_name,
+    `SELECT u.id, u.identifier, u.updated_at, j.id AS job_order_id, j.number AS job_order_number, j.product_name, j.build_mode,
             COALESCE(u.product_item_id, j.product_item_id) AS product_item_id, i.sku, j.priority,
             j.output_location_id, ol.name AS output_location_name, o.number AS order_number, b.identifier AS batch_identifier
      FROM job_order_units u
@@ -43,9 +43,9 @@ router.get('/queue', receiveGate, (req, res) => {
     );
     return { ...u, final_pass: pass ?? null, hold: holds.get(u.id) ?? null };
   });
-  const batches = queryAll<{ id: number; number: string; job_order_id: number; job_order_number: string; product_name: string;
+  const batches = queryAll<{ id: number; number: string; job_order_id: number; job_order_number: string; product_name: string; build_mode: string;
     sku: string | null; output_location_id: number | null; remaining_qty: number }>(
-    `SELECT pb.id, pb.number, j.id AS job_order_id, j.number AS job_order_number, j.product_name, i.sku, j.output_location_id,
+    `SELECT pb.id, pb.number, j.id AS job_order_id, j.number AS job_order_number, j.product_name, j.build_mode, i.sku, j.output_location_id,
             pb.qty - COALESCE((SELECT SUM(quantity) FROM production_receipt_items WHERE batch_id = pb.id), 0) AS remaining_qty
      FROM production_batches pb
      JOIN job_orders j ON j.id = pb.job_order_id
@@ -54,9 +54,9 @@ router.get('/queue', receiveGate, (req, res) => {
      ORDER BY pb.id`
   ).filter((b) => b.remaining_qty > 0);
   const recorded = queryAll<{ receipt_number: string; created_at: string; unit_id: number | null; identifier: string | null;
-    batch_number: string | null; quantity: number; product_name: string; location_name: string | null }>(
+    batch_number: string | null; quantity: number; product_name: string; build_mode: string; location_name: string | null }>(
     `SELECT r.number AS receipt_number, r.created_at, ri.unit_id, un.identifier, pb.number AS batch_number, ri.quantity,
-            j.product_name, l.name AS location_name
+            j.product_name, j.build_mode, l.name AS location_name
      FROM production_receipt_items ri
      JOIN production_receipts r ON r.id = ri.receipt_id
      JOIN job_orders j ON j.id = r.job_order_id
@@ -93,7 +93,7 @@ router.get('/lookup', requireAnyPermission(['inventory.view', 'production.view',
   const rows = queryAll<{ id: number; identifier: string | null; status: string; sku: string | null; product_name: string;
     location_name: string | null; order_number: string | null; receipt_number: string | null; received_at: string | null;
     job_order_id: number; held: number }>(
-    `SELECT u.id, u.identifier, u.status, i.sku, j.product_name, l.name AS location_name, o.number AS order_number,
+    `SELECT u.id, u.identifier, u.status, i.sku, j.product_name, j.build_mode, l.name AS location_name, o.number AS order_number,
             (SELECT r.number FROM production_receipt_items ri JOIN production_receipts r ON r.id = ri.receipt_id
               WHERE ri.unit_id = u.id ORDER BY ri.id DESC LIMIT 1) AS receipt_number,
             (SELECT r.created_at FROM production_receipt_items ri JOIN production_receipts r ON r.id = ri.receipt_id

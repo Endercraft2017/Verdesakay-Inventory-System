@@ -290,6 +290,7 @@ export const transferStockSchema = z.object({
   to_location_id: z.coerce.number().int().positive(),
   amount: z.coerce.number().int().positive('Amount must be a positive whole number'),
   reason: optionalText,
+  build_mode: z.enum(['assembled', 'semi_built']).default('assembled'),
 });
 
 // ---- Bill of materials (finished products) ----
@@ -328,6 +329,7 @@ export const assignChecklistSchema = z.object({
 export const allocateUnitsSchema = z
   .object({
     action: z.enum(['sell', 'move']),
+    build_mode: z.enum(['assembled', 'semi_built']).default('assembled'),
     unit_ids: z.array(z.coerce.number().int().positive()).max(500).optional(),
     quantity: z.coerce.number().int().positive().max(500).optional(),
     order_id: optionalId,
@@ -353,6 +355,7 @@ const jobOrderDate = trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-
 export const createJobOrderSchema = z.object({
   product_item_id: z.coerce.number().int().positive(),
   qty_ordered: z.coerce.number().int().positive('Quantity to build must be at least 1'),
+  build_mode: z.enum(['assembled', 'semi_built']).default('assembled'),
   order_id: optionalId,
   source_location_id: optionalId,
   output_location_id: optionalId,
@@ -686,6 +689,7 @@ export const adjustStockSchema = z.object({
   change: intCoerce.refine((n) => n !== 0, 'Change must be a non-zero whole number'),
   reason: optionalText,
   location_id: optionalId, // defaults server-side to the default location
+  build_mode: z.enum(['assembled', 'semi_built']).default('assembled'),
 });
 
 /** Report damaged stock: moves `quantity` units out of the item into its "damage twin"
@@ -694,6 +698,7 @@ export const damageStockSchema = z.object({
   quantity: z.coerce.number().int().positive('Quantity must be a positive whole number'),
   reason: optionalText,
   location_id: optionalId, // defaults server-side to the default location
+  build_mode: z.enum(['assembled', 'semi_built']).default('assembled'),
 });
 
 /** Close a stock discrepancy (an offline stock-out accepted beyond recorded stock, D1 in

@@ -2,7 +2,7 @@
 
 ## Integration with newer branch work (2026-10-15)
 
-Mobile commit `5342728` is integrated with remote head `e1c0439`, preserving both
+Mobile commit `5342728` is integrated with remote heads `e1c0439` and `f13e72a`, preserving both
 histories. Earlier test totals below are historical; the remote baseline fix now
 makes the HR payslip ownership test pass. Final merged validation: TypeScript passed,
 174 focused tests passed, and all 2,699 tests across 257 files passed. Chromium at
@@ -24,8 +24,30 @@ component availability and backend stock/return rules remain authoritative. Fina
 slip/proof recovery and downstream CKD result-copy review remain open. The newer
 atomic Products In endpoint keeps compatibility with retained receipt payloads.
 Optional storage hierarchy paths and procurement handoff additions remain separate
-mobile follow-ups. PWA cache v97 includes both branches' shell additions.
+mobile follow-ups. PWA cache v98 includes both branches' shell additions.
 
+Build-state integration validation: TypeScript and 178 focused tests passed;
+all 11 Chromium recovery scenarios passed at 390×844. The full suite ran 2,704
+tests: 2,702 passed, with two outdated discrepancy-reason assertions failing.
+Those assertions were updated for the intentional variant audit suffix; all 11
+sync-inventory tests then passed. No runtime code changed after the full run.
+
+The subsequent build-state integration labels fully built/semi-built stock in approval,
+RTS and releasing; excludes different build states from RTS groups; matches release
+availability by fulfillment mode; and blocks cross-state serial scans. Approval
+revisions include the build state. Stock transfer/adjustment build selectors, mobile
+shortfall production creation and delivery/proof recovery remain open follow-ups.
+The existing release API rejects duplicate physical item IDs on one sale, including
+fully built and semi-built lines sharing a SKU; line-specific allocation remains a
+backend follow-up before that mixed-line case can be fulfilled.
+
+## Fully built / semi-built RTS variants and mixed sales supply
+
+**Backend/desktop behavior:** Both build states retain the same product SKU. Sale lines send `fulfillment_mode:'assembled'` (fully built) or `'semi_built'`; job orders carry `build_mode:'assembled'|'semi_built'`. `POST /orders/:id/produce-shortfall` creates only the missing quantity, with the sale line's build state. Production QC and Products In still happen before either state becomes RTS stock. Products In posts to that state's location balance; sales availability, serialized scanning, bulk allocation and release select the matching balance. Existing pre-upgrade stock is treated as fully built/standard. A stand-alone `POST /job-orders` with no `order_id` builds RTS buffer stock; its `build_mode` selects the state. `GET /inventory/:id/stock` now returns `assembled_quantity` and `semi_built_quantity` alongside total `quantity`; transfer and adjust requests accept optional `build_mode` (default fully built/standard). CKD parts remain standard part stock and never reserve assembled units.
+
+**Mobile owner action:** Show fully built, semi-built and CKD tags on sale/release lines and job orders. For semi-built scans, display a wrong-build-state result when a fully built serial with the same SKU is scanned (and vice versa). Show variant-specific stock at the ship-from location, not the item's combined total, and permit a partial RTS pick followed by production for only the remainder. Keep finished units pending until Products In confirms them. On mobile stock transfer/adjustment, expose the build state and send `build_mode`; without it, the server defaults to fully built and will refuse a semi-built-only stock-out. For tracked units, use `/finished-products/:id/units/allocate` with `action:'move'`, explicit `unit_ids` and matching `build_mode`; generic `/inventory/:id/transfer` returns `use_unit_move` so serial locations and stock cannot diverge. Distinguish stand-alone buffer jobs from sale-linked jobs. That backend handoff initially made no mobile edits; the integration above now covers approval, RTS and releasing.
+
+**Mobile acceptance cases:** a semi-built order sees zero available when only fully built units exist; a fully built order does not consume semi-built stock; serialized cross-state scans are refused; bulk semi-built Products In increments only semi-built availability; a mixed order ships its ready quantity while a linked MO builds only the shortage; buffer MO has no sales link; transfer and return preserve the build state; CKD demand does not claim finished-unit stock.
 
 ## CKD sales using the same product SKU: mobile handoff
 
@@ -37,7 +59,7 @@ mobile follow-ups. PWA cache v97 includes both branches' shell additions.
 
 ## Products In → finished stock → sales: 2026-10-14 handoff
 
-**Owner:** mobile developer. **Backend/desktop status:** one `POST /api/job-orders/:id/products-in` now accepts `unit_ids` and `batches: [{batch_id, quantity}]` together, creating one atomic receipt and checking total location capacity before any line posts. The existing singular `batch_id` + `quantity` request remains supported. Batch quantities must be positive whole numbers; duplicate unit or batch IDs in one receipt are rejected. `Idempotency-Key` on this endpoint replays the same result for a lost response. Desktop uses one key per unchanged receipt attempt and shows the full location path and direct remaining capacity. No `public/mobile/` source was edited.
+**Owner:** mobile developer. **Backend/desktop status:** one `POST /api/job-orders/:id/products-in` now accepts `unit_ids` and `batches: [{batch_id, quantity}]` together, creating one atomic receipt and checking total location capacity before any line posts. The existing singular `batch_id` + `quantity` request remains supported. Batch quantities must be positive whole numbers; duplicate unit or batch IDs in one receipt are rejected. `Idempotency-Key` on this endpoint replays the same result for a lost response. Desktop uses one key per unchanged receipt attempt and shows the full location path and direct remaining capacity. That backend handoff initially made no mobile edits; the integration above now covers approval, RTS and releasing.
 
 | Priority | Mobile evidence | Follow-up for mobile owner |
 |---|---|---|

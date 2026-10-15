@@ -137,7 +137,7 @@
     var record = { key: mProductionDrafts.key(jo.id + ':action'), rows: [], operation: {
       kind: kind, path: '/job-orders/' + jo.id + (kind === 'approve' ? '/approve' : kind === 'accept' ? '/accept' : '/progress'),
       key: retryKey(), payload: JSON.parse(JSON.stringify(payload)), created: Date.now(), state: 'new',
-      review: kind === 'approve' ? { number: jo.number, product_name: jo.product_name, qty_ordered: jo.qty_ordered, source_location_name: jo.source_location_name || 'Default location',
+      review: kind === 'approve' ? { number: jo.number, product_name: jo.product_name, qty_ordered: jo.qty_ordered, build_mode: jo.build_mode, source_location_name: jo.source_location_name || 'Default location',
         components: (jo.components || []).map(function (c) { return { component_name: c.component_name, qty_planned: c.qty_planned }; }) } : null } };
     actions[jo.id] = record;
     bodyLock(button.closest('.rk-body'));
@@ -162,7 +162,7 @@
     var body = a.kind === 'approve' ? managerPage(view, '66:580', titles[a.kind], state) : leadPage(view, a.kind === 'accept' ? '66:79' : a.kind === 'output' ? '66:408' : '66:462', titles[a.kind], state);
     body.innerHTML = R.field('Job order', jo.number) + R.field('Attempt status', state) +
       (a.kind === 'approve' ? R.field('Reviewed plan', 'Quantity ' + a.review.qty_ordered + ' · ' + a.review.source_location_name) +
-        R.field('Original note', a.payload.notes || '—') +
+        R.field('Reviewed build state', a.review.build_mode === 'semi_built' ? 'Semi-built' : 'Fully built') + R.field('Original note', a.payload.notes || '—') +
         R.lines(a.review.components.map(function (c) { return { name: c.component_name, qty: c.qty_planned, ok: true }; })) : a.kind === 'accept' ? R.field('Original note', a.payload.notes || '—') : R.field('Original quantities', (a.payload.done_delta || 0) + ' finished · ' + (a.payload.scrapped_delta || 0) + ' scrapped') + R.field('Original batch / reason', a.payload.batch_label || a.payload.reason || '—')) +
       (a.error ? R.note('warn', mEsc(a.error)) : '') +
       (retryable ? R.note('warn', 'A missing response does not prove failure. This attempt is stored on this device; its original quantities, note and key will be retried unchanged.') : '') +
@@ -319,7 +319,7 @@
       var short = av && av.shortfalls || [];
       body.innerHTML = R.jobHead({ number: jo.number, name: jo.product_name, pill: { text: jo.approved_at ? 'Approved' : 'Awaiting approval' },
           meta: ['Qty ' + jo.qty_ordered, jo.team_name, dueText(jo.due_date)].filter(Boolean).join(' · ') }) +
-        R.field('Parts source', av && av.source_location_name || jo.source_location_name || 'Default location') +
+        R.field('Build state', jo.build_mode === 'semi_built' ? 'Semi-built' : 'Fully built') + R.field('Stock purpose', jo.order_id ? 'Linked sale ' + (jo.order_number || jo.order_id) : 'Independent RTS buffer') + R.field('Parts source', av && av.source_location_name || jo.source_location_name || 'Default location') +
         R.field('Finished goods location', jo.output_location_name || 'Default location') +
         R.field('Schedule / linked order', [jo.planned_start, jo.due_date, jo.work_center, jo.order_number].filter(Boolean).join(' · ') || '—') +
         R.field('Inspection stages', jo.qc_stages === 0 ? 'Bulk output · no serialized inspection' : jo.qc_stages + ' stage(s) · ' +

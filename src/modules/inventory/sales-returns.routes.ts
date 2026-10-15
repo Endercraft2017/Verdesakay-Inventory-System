@@ -19,15 +19,18 @@ const returnSite = { home: (req: Request) => ({ location: queryOne<{ location_id
 )?.location_id ?? null }) };
 
 type ReturnRow = { id: number; number: string; slip_id: number; slip_item_id: number; item_id: number;
+  fulfillment_mode: string;
   quantity: number; unit_id: number | null; unit_cost: number | null; status: string; credit_note_id: number | null;
   order_id: number; order_number: string; customer_id: number | null; customer_name: string | null;
   item_name: string; slip_number: string; location_id: number | null; credit_note_status: string | null;
   disposition_state: string | null; decision_note: string | null; repair_note: string | null; };
 const SELECT = `SELECT r.*, s.number AS slip_number, s.order_id, o.number AS order_number,
-  o.customer_id, o.customer_name, i.name AS item_name, cn.status AS credit_note_status,
+  o.customer_id, o.customer_name, i.name AS item_name, COALESCE(oi.fulfillment_mode, 'assembled') AS fulfillment_mode, cn.status AS credit_note_status,
   d.state AS disposition_state, d.decision_note, d.repair_note
   FROM sales_returns r JOIN release_slips s ON s.id = r.slip_id
   JOIN orders o ON o.id = s.order_id JOIN inventory_items i ON i.id = r.item_id
+  LEFT JOIN release_slip_items li ON li.id = r.slip_item_id
+  LEFT JOIN order_items oi ON oi.id = li.order_item_id
   LEFT JOIN credit_notes cn ON cn.id = r.credit_note_id
   LEFT JOIN sales_return_dispositions d ON d.return_id = r.id`;
 const getReturn = (id: number) => queryOne<ReturnRow>(`${SELECT} WHERE r.id = ?`, id);
@@ -63,15 +66,18 @@ router.get('/:id/events', requireAnyPermission(['inventory.view', 'inventory.adj
 
 router.post('/', warehouse, syncClass('physical', returnSite), (req, res) => {
   const b = parseBody(salesReturnReceiveSchema, req.body);
-  const line = queryOne<{ id: number; item_id: number; quantity: number; unit_cost: number | null; order_id: number }>(
-    `SELECT li.id, li.item_id, li.quantity, li.unit_cost, s.order_id FROM release_slip_items li
+  const line = queryOne<{ id: number; item_id: number; quantity: number; unit_cost: number | null; order_id: number; fulfillment_mode: string }>(
+    `SELECT li.id, li.item_id, li.quantity, li.unit_cost, s.order_id, COALESCE(oi.fulfillment_mode, 'assembled') AS fulfillment_mode FROM release_slip_items li
+     LEFT JOIN order_items oi ON oi.id = li.order_item_id
      JOIN release_slips s ON s.id = li.slip_id WHERE s.id = ? AND li.id = ?`, b.slip_id, b.slip_item_id);
   if (!line || !line.item_id) { res.status(404).json({ error: 'Slip line not found.' }); return; }
   const already = queryOne<{ n: number }>('SELECT COALESCE(SUM(quantity), 0) AS n FROM sales_returns WHERE slip_item_id = ?', line.id)!.n;
   if (already + b.quantity > line.quantity + 1e-9) {
     res.status(409).json({ error: 'This would exceed the quantity shipped on the slip.', code: 'return_exceeds_shipped' }); return;
   }
-  const serialized = !!queryOne('SELECT 1 FROM job_order_units WHERE product_item_id = ? LIMIT 1', line.item_id);
+  const serialized = !!queryOne(`SELECT 1 FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
+    WHERE u.product_item_id = ? AND j.build_mode = ? LIMIT 1`, line.item_id,
+  line.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled');
   if (serialized) {
     const unit = b.unit_id && queryOne<{ id: number; status: string }>(
       'SELECT id, status FROM job_order_units WHERE id = ? AND product_item_id = ? AND order_id = ?',
@@ -116,7 +122,8 @@ router.post('/:id/inspect', requirePermission('inventory.adjust'), syncClass('ph
   try {
     // The return is a distinct receiving event: never change the issued slip or the sale.
     if (loc) applyStockChange({ itemId: row.item_id, locationId: loc, change: row.quantity,
-      userId: req.user!.id, reason: `Customer return ${row.number} for ${row.slip_number}` });
+      userId: req.user!.id, reason: `Customer return ${row.number} for ${row.slip_number}`,
+      buildMode: row.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled' });
     if (row.unit_id) {
       const changed = run(`UPDATE job_order_units SET status = ?, location_id = COALESCE(?, location_id),
         order_id = CASE WHEN ? = 'restock' THEN NULL ELSE order_id END, updated_at = datetime('now')
@@ -207,7 +214,8 @@ router.post('/:id/reinspect', requirePermission('inventory.adjust'), syncClass('
   db.exec('BEGIN');
   try {
     if (loc) applyStockChange({ itemId: row.item_id, locationId: loc, change: row.quantity,
-      userId: req.user!.id, reason: `Customer return ${row.number}: repaired and reinspected` });
+      userId: req.user!.id, reason: `Customer return ${row.number}: repaired and reinspected`,
+      buildMode: row.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled' });
     const changed = run(`UPDATE job_order_units SET status = ?, location_id = COALESCE(?, location_id),
       order_id = CASE WHEN ? IS NOT NULL THEN NULL ELSE order_id END, updated_at = datetime('now')
       WHERE id = ? AND status = 'returned_rework' AND order_id = ?`,
