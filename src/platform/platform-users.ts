@@ -84,6 +84,20 @@ export function changePlatformPassword(userId: number, current: string, next: st
   return null;
 }
 
+/** Rename only the authenticated console operator; keep their calling session. */
+export function changePlatformUsername(userId: number, current: string, next: string, keepToken: string): string | null {
+  const d = platformDb();
+  const row = d.prepare('SELECT username, password_hash FROM platform_users WHERE id = ?').get(userId) as { username: string; password_hash: string } | undefined;
+  if (!row || !bcrypt.compareSync(current, row.password_hash)) return 'Current password is incorrect.';
+  const username = next.trim().toLowerCase();
+  if (!/^[a-z0-9._-]{3,30}$/.test(username)) return 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen.';
+  if (username === row.username.toLowerCase()) return 'Choose a different username.';
+  if (d.prepare('SELECT id FROM platform_users WHERE lower(username) = ? AND id <> ?').get(username, userId)) return 'That username is already in use.';
+  d.prepare('UPDATE platform_users SET username = ? WHERE id = ?').run(username, userId);
+  d.prepare('DELETE FROM platform_sessions WHERE user_id = ? AND token <> ?').run(userId, tokenDigest(keepToken));
+  return null;
+}
+
 export function platformLogout(token: string): void {
   platformDb().prepare('DELETE FROM platform_sessions WHERE token = ?').run(tokenDigest(token));
 }

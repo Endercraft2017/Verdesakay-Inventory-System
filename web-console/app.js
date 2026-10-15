@@ -800,8 +800,17 @@
 
   /* ---------- change own password ---------- */
   $('password-btn').addEventListener('click', function () {
-    var card = el('div', { class: 'card' }, [
-      el('h2', { text: 'Change password' }),
+    var card = el('div', { class: 'card account-security-card' }, [
+      el('h2', { text: 'Account & security' }),
+      el('h3', { text: 'Change username' }),
+      el('p', { class: 'muted', id: 'un-current-label', text: 'Current username: ' + me.username }),
+      el('div', { class: 'field' }, [el('label', { for: 'un-new', text: 'New username' }), el('input', { id: 'un-new', autocomplete: 'username', minlength: '3', maxlength: '30' })]),
+      el('small', { class: 'muted', text: '3–30 letters, numbers, dots, underscores or hyphens. Other sessions will be signed out.' }),
+      el('div', { class: 'field' }, [el('label', { for: 'un-cur', text: 'Current password' }), el('input', { id: 'un-cur', type: 'password', autocomplete: 'current-password' })]),
+      el('div', { class: 'err', id: 'un-err', role: 'alert' }),
+      el('button', { class: 'btn', id: 'un-go' }, ['Update username']),
+      el('hr'),
+      el('h3', { text: 'Change password' }),
       el('div', { class: 'field' }, [el('label', { for: 'pw-cur', text: 'Current password' }), el('input', { id: 'pw-cur', type: 'password', autocomplete: 'current-password' })]),
       el('div', { class: 'field' }, [el('label', { for: 'pw-new', text: 'New password' }), el('input', { id: 'pw-new', type: 'password', autocomplete: 'new-password' }),
         el('small', { class: 'muted', text: 'At least 8 characters, not a common password. Other signed-in browsers are signed out.' })]),
@@ -814,7 +823,22 @@
     ]);
     var modal = el('div', { class: 'modal', id: 'modal' }, [card]);
     document.body.appendChild(modal);
-    $('pw-cur').focus();
+    $('un-go').onclick = async function () {
+      if (this.disabled) return;
+      var button = this;
+      button.disabled = true;
+      $('un-err').textContent = '';
+      try {
+        var result = await api('POST', '/username', { current_password: $('un-cur').value, new_username: $('un-new').value.trim() });
+        me.username = result.username;
+        $('un-current-label').textContent = 'Current username: ' + result.username;
+        $('who').textContent = me.full_name || me.username;
+        $('un-cur').value = ''; $('un-new').value = '';
+        toast('Username updated. Use ' + result.username + ' next time you log in.');
+      } catch (error) { $('un-err').textContent = error.message; }
+      finally { button.disabled = false; }
+    };
+    $('un-new').focus();
     $('pw-cancel').addEventListener('click', function () { modal.remove(); });
     $('pw-go').addEventListener('click', async function () {
       $('pw-err').textContent = '';

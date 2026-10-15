@@ -10,6 +10,10 @@ window.MApp = (function () {
   var viewEl = function () { return document.getElementById('m-view'); };
 
   function getMe() { return me; }
+  function setMe(patch) {
+    Object.assign(me, patch);
+    try { (API.isSharedSession() ? sessionStorage : localStorage).setItem(ME_KEY, JSON.stringify(me)); } catch (e) { /* storage blocked */ }
+  }
   function can(perm) { return me && Array.isArray(me.permissions) && me.permissions.indexOf(perm) !== -1; }
   /** SaaS feature-module entitlement for this workspace (see src/modules.ts). Absent list
       (self-hosted, or pre-login) → treat every module as on. */
@@ -541,7 +545,7 @@ window.MApp = (function () {
 
   return {
     route: route, go: go, back: back, nav: hashFor,
-    getMe: getMe, can: can, hasModule: hasModule, isEmployee: isEmployee, isWarehouse: isWarehouse,
+    getMe: getMe, setMe: setMe, can: can, hasModule: hasModule, isEmployee: isEmployee, isWarehouse: isWarehouse,
     hasProductionAccess: hasProductionAccess, canApprove: canApprove,
     seg: seg, setTitle: setTitle, render: render, currentLocation: parseHash, refreshInboxBadge: refreshInboxBadge,
     signOut: signOut, isSharedSession: function () { return API.isSharedSession(); },

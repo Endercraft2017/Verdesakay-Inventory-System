@@ -55,6 +55,11 @@ export const loginSchema = z.object({
   shared: z.boolean().optional(),
 });
 
+export const changeUsernameSchema = z.object({
+  current_password: z.string().min(1, 'Current password is required'),
+  new_username: z.string().trim().toLowerCase().regex(/^[a-z0-9._-]{3,30}$/, 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen'),
+});
+
 export const changePasswordSchema = z.object({
   current_password: z.string().min(1, 'Current password is required'),
   new_password: newPasswordSchema('New password'),

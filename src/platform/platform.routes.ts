@@ -32,11 +32,11 @@ import { enabledModules, isModuleName, withDeps, MODULES, MODULE_DEPS } from '..
 import bcrypt from 'bcryptjs';
 import { endUserSessions } from '../shared/auth';
 import { getMailSettings, saveMailSettings, mailReady, verifyMailSettings, sendMail } from '../shared/mailer';
-import { parseBody, mailSettingsSchema, resetPasswordSchema, platformCreateTenantSchema } from '../shared/validation';
+import { parseBody, changeUsernameSchema, mailSettingsSchema, resetPasswordSchema, platformCreateTenantSchema } from '../shared/validation';
 import { PLANS, PLAN_MODULES, planModules } from './plans';
 import { rateLimitKey } from '../shared/device';
 import {
-  requirePlatformAuth, platformLogin, platformLogout, listPlatformUsers, changePlatformPassword,
+  requirePlatformAuth, platformLogin, platformLogout, listPlatformUsers, changePlatformPassword, changePlatformUsername,
   type PlatformAuthedRequest,
 } from './platform-users';
 
@@ -102,6 +102,16 @@ router.post('/password', loginLimiter, (req, res) => {
   if (error) { res.status(400).json({ error }); return; }
   logProvisioning('_console', 'operator.password', `${r.platformUser!.username} changed their console password`);
   res.json({ ok: true });
+});
+
+// POST /_platform/api/username — self-service operator username change.
+router.post('/username', loginLimiter, (req, res) => {
+  const r = req as PlatformAuthedRequest;
+  const { current_password, new_username } = parseBody(changeUsernameSchema, req.body);
+  const error = changePlatformUsername(r.platformUser!.id, current_password, new_username, r.platformToken!);
+  if (error) { res.status(error.includes('already in use') ? 409 : 400).json({ error }); return; }
+  logProvisioning('_console', 'operator.username', `${r.platformUser!.username} changed their console username to ${new_username}`);
+  res.json({ ok: true, username: new_username });
 });
 
 // These endpoints always select the catalog tenant, never the operator's default DB.

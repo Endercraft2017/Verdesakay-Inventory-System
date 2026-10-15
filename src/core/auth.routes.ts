@@ -12,7 +12,7 @@ import { deviceIdOf } from '../shared/device';
 import { userPermissions, getRole } from '../shared/roles';
 import { enabledModules } from '../shared/modules';
 import {
-  parseBody, loginSchema, changePasswordSchema, updateProfileSchema,
+  parseBody, loginSchema, changePasswordSchema, changeUsernameSchema, updateProfileSchema,
   forgotPasswordSchema, selfResetPasswordSchema,
 } from '../shared/validation';
 import { sendMail, mailReady } from '../shared/mailer';
@@ -219,6 +219,20 @@ router.get('/me', requireAuth, (req, res) => {
     },
     session: { shared: !!req.authSession?.shared },
   });
+});
+
+// POST /api/auth/change-username — all roles may change only their own login name.
+router.post('/change-username', requireAuth, syncClass('online'), (req, res) => {
+  const { current_password, new_username } = parseBody(changeUsernameSchema, req.body);
+  const user = queryOne<UserRow>('SELECT * FROM users WHERE id = ?', req.user!.id)!;
+  if (!bcrypt.compareSync(current_password, user.password_hash)) { res.status(400).json({ error: 'Current password is incorrect' }); return; }
+  if (new_username === user.username.toLowerCase()) { res.status(400).json({ error: 'Choose a different username' }); return; }
+  if (queryOne('SELECT id FROM users WHERE lower(username) = ? AND id <> ?', new_username, user.id)) {
+    res.status(409).json({ error: 'That username is already in use in your company' }); return;
+  }
+  run('UPDATE users SET username = ? WHERE id = ?', new_username, user.id);
+  endUserSessions(user.id, 'revoked', req.token);
+  res.json({ ok: true, username: new_username });
 });
 
 // POST /api/auth/change-password

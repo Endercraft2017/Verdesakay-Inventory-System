@@ -1126,3 +1126,14 @@ CKD physical component previews map to standard build stock; failed unit-templat
 reads cannot open blank sheets. See `docs/reviews/mobile-qr-playwright-audit.md`.
 Handoff photos/signature/token state still require recapture after page restart;
 physical phone/printer acceptance and final-slip/delivery recovery remain open.
+
+## Self-service login credentials
+
+Every tenant role uses `POST /api/auth/change-username` with the current password
+and a unique new username (3–30 letters, digits, dots, underscores or hyphens).
+Desktop My Account and mobile Profile → Account & security expose the same action.
+Passwords continue through `/api/auth/change-password`; all three clients confirm
+the new password. Owner operators use separate `/username` and `/password` console
+endpoints. Renames keep account identity and Company ID, retain the calling session,
+and revoke other sessions. Homepage login saves its session in the selected tenant's
+storage namespace before redirecting.

@@ -111,6 +111,7 @@
   .modal { position: fixed; inset: 0; display: grid; place-items: center; z-index: 30; padding: 20px; }
   .modal .card { background: var(--panel); border-radius: 14px; box-shadow: var(--shadow);
     width: 100%; max-width: 400px; padding: 22px; }
+  .modal .card.account-security-card { max-height:90dvh; overflow-y:auto; }
   .modal h2 { margin: 0 0 12px; font-size: 16px; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
     background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 8px; z-index: 40; font-size: 13px; }
@@ -192,7 +193,7 @@
     <button class="btn ghost" id="mail-btn">Email alerts</button>
     <button class="btn ghost" id="inquiries-btn">Inquiries<span class="count-pill hidden" id="inquiry-count"></span></button>
     <button class="btn ghost" id="billing-btn">Billing<span class="count-pill hidden" id="review-count"></span></button>
-    <button class="btn ghost" id="password-btn">Change password</button>
+    <button class="btn ghost" id="password-btn">Account &amp; security</button>
     <button class="btn ghost" id="logout">Log out</button>
   </header>
   <main class="console-shell">

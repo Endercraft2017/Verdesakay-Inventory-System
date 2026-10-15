@@ -111,7 +111,7 @@ verified adoption of the original company, preserving source DB/uploads; CLI
 `scripts/adopt-default-tenant.ts`), `tenant-path.ts` (optional host-bound path routing), `platform.ts` (tenant
 catalog in `platform.db`; permanent company login IDs with pair-scoped counters,
 backfilled for existing tenants), `platform-users.ts` (operator accounts, separate auth from
-`shared/auth.ts`; self-service password change `POST /_platform/api/password`), `backups.ts` (daily + hourly backup jobs over every tenant DB + `platform.db` +
+`shared/auth.ts`; self-service password and username changes `POST /_platform/api/password` / `POST /_platform/api/username`), `backups.ts` (daily + hourly backup jobs over every tenant DB + `platform.db` +
 uploads, run from `server.ts`; manual backup/list/restore behind `npm run backup*` /
 `scripts/backup.ts`. Also runs for single-tenant installs, covering only `default` + `platform.db`;
 skips the local uploads mirror when a file bucket and an off-site target are both set), `offsite.ts` (encrypted copies of daily snapshots + uploads to S3-compatible buckets, e.g. Backblaze B2 / Railway Buckets, via `shared/s3.ts`; CLI `scripts/offsite.ts`), `backup-health.ts` (hourly after the backup run:

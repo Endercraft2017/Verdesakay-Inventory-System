@@ -211,18 +211,40 @@ MApp.route('settings', function (view) {
   }
   function renderSecurity() {
     var page = mount(
-      titleBlock('Account & security', 'Password and session controls', true) +
+      titleBlock('Account & security', 'Username, password and session controls', true) +
+      '<section class="profile-section"><h2>Change username</h2><p data-current-username>Current username: ' + mEsc(MApp.getMe().username) + '</p><form data-username>' +
+      '<label class="m-field"><span class="m-label">New username</span><input class="m-input" data-next-username autocomplete="username" minlength="3" maxlength="30" pattern="(?:[A-Za-z0-9._]|-){3,30}" required /></label>' +
+      '<p class="profile-note">3–30 letters, numbers, dots, underscores or hyphens. Your Company ID stays the same. Other sessions will be signed out.</p>' +
+      '<label class="m-field"><span class="m-label">Current password</span><input type="password" class="m-input" data-username-password autocomplete="current-password" required /></label>' +
+      '<button class="m-btn" type="submit">Update username</button></form></section>' +
       '<section class="profile-section"><h2>Change password</h2><form data-pw>' +
       '<label class="m-field"><span class="m-label">Current password</span><input type="password" class="m-input" data-cur autocomplete="current-password" /></label>' +
       '<label class="m-field"><span class="m-label">New password</span><input type="password" class="m-input" data-new autocomplete="new-password" /></label>' +
+      '<label class="m-field"><span class="m-label">Confirm new password</span><input type="password" class="m-input" data-confirm autocomplete="new-password" required /></label>' +
       '<button class="m-btn" type="submit">Update password</button></form></section>' +
       '<section class="profile-section"><h2>Where you’re signed in</h2><div data-sessions><div class="m-hint">Loading…</div></div></section>' +
       '<section class="profile-section"><h2>Other access</h2><a class="m-btn m-btn-secondary profile-full-button" href="' + (window.VDS_BASE_PATH || '') + '/?view=desktop">Switch to the desktop system</a>' +
       '<button class="m-btn m-btn-danger profile-full-button" type="button" data-out>Sign out</button></section>');
+    page.querySelector('[data-username]').onsubmit = function (event) {
+      event.preventDefault();
+      var button = event.target.querySelector('button');
+      if (button.disabled) return;
+      button.disabled = true;
+      API.post('/auth/change-username', { new_username: page.querySelector('[data-next-username]').value.trim(), current_password: page.querySelector('[data-username-password]').value })
+        .then(function (result) {
+          MApp.setMe({ username: result.username });
+          page.querySelector('[data-current-username]').textContent = 'Current username: ' + result.username;
+          event.target.reset();
+          mToast('Username updated. Use ' + result.username + ' next time you log in.');
+        }).catch(function (error) { mToast(error.message || 'Could not update username', 'err'); })
+        .finally(function () { button.disabled = false; });
+    };
     page.querySelector('[data-pw]').onsubmit = function (event) {
       event.preventDefault();
+      if (event.target.querySelector('button').disabled) return;
       var cur = page.querySelector('[data-cur]').value;
       var next = page.querySelector('[data-new]').value;
+      if (next !== page.querySelector('[data-confirm]').value) { mToast('New passwords do not match', 'err'); return; }
       if (next.length < 8) { mToast('New password must be at least 8 characters', 'err'); return; }
       var button = event.target.querySelector('button');
       button.disabled = true;

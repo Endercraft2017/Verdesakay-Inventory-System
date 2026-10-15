@@ -61,7 +61,11 @@
       if (!result.token || !/^\/[a-z][a-z0-9-]{1,30}$/.test(result.workspace_path || '')) throw new Error('Unable to open your workspace. Please try again.');
       // Match the app's session storage convention; credentials and tokens never enter the URL.
       localStorage.removeItem('vds_token'); sessionStorage.removeItem('vds_token');
-      (result.session && result.session.shared ? sessionStorage : localStorage).setItem('vds_token', result.token);
+      var scope = 'tenant:' + result.workspace_path + ':';
+      localStorage.removeItem(scope + 'vds_token'); sessionStorage.removeItem(scope + 'vds_token');
+      (result.session && result.session.shared ? sessionStorage : localStorage).setItem(scope + 'vds_token', result.token);
+      // Keep the same device identity when the tenant's scoped API client takes over.
+      if (headers['X-Device-Id']) localStorage.setItem(scope + 'vds_device_id', headers['X-Device-Id']);
       window.location.assign(result.workspace_path + '/');
     } catch (error) { errorBox.textContent = error.message || 'Unable to connect. Please try again.'; }
     finally { button.disabled = false; button.textContent = loginChallenge ? 'Verify and log in →' : 'Log in →'; }
