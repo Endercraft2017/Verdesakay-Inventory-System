@@ -38,17 +38,39 @@ test('desktop: wrong password, keyboard login, stock journey and server logout',
   }, item);
   expect(result.before).toBe(10);
   expect(result.after).toBe(8);
+  const session = (await page.context().cookies()).find(c => c.name.startsWith('vds_session_'))!;
+  expect(session.httpOnly).toBe(true);
+  expect(session.sameSite).toBe('Strict');
+  expect(result.token).toBeNull();
+  expect(await page.evaluate(() => localStorage.getItem('vds_token'))).toBeNull();
   await page.screenshot({ path: testInfo.outputPath('desktop-inventory.png'), fullPage: true });
   page.on('dialog', dialog => dialog.accept());
   await page.locator('#logout-btn').click();
   await expect(page.locator('#login-screen')).toBeVisible();
-  expect((await page.request.get('/api/auth/me', { headers: { Authorization: `Bearer ${result.token}` } })).status()).toBe(401);
+  expect((await page.request.get('/api/auth/me', { headers: { Cookie: `${session.name}=${session.value}` } })).status()).toBe(401);
   expect(errors).toEqual([]);
 });
 
 test('mobile: 360px layout, core navigation, offline failure and sign out', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 360, height: 800 });
   await signIn(page, true);
+  const meta = await page.evaluate(() => new Promise<any>((resolve, reject) => {
+    const opening = indexedDB.open('vds_mobile', 2);
+    opening.onerror = () => reject(opening.error);
+    opening.onsuccess = () => {
+      const db = opening.result;
+      const read = db.transaction('meta').objectStore('meta').get('token');
+      read.onsuccess = () => { resolve(read.result); db.close(); };
+      read.onerror = () => { reject(read.error); db.close(); };
+    };
+  }));
+  expect(meta.cookie_auth).toBe(true);
+  expect(meta.v).toBeNull();
+  expect(await page.evaluate(() => new Promise<boolean>(resolve => {
+    const socket = new WebSocket(location.origin.replace(/^http/, 'ws') + '/ws');
+    socket.onopen = () => { socket.close(); resolve(true); };
+    socket.onerror = () => resolve(false);
+  }))).toBe(true);
   for (const route of ['home', 'work', 'clock', 'inbox', 'settings']) {
     await page.goto('/m#/' + route);
     await expect(page.locator('#m-app')).toBeVisible();

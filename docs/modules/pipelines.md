@@ -408,7 +408,7 @@ or with "I'm using someone else's phone" / "shared or borrowed computer" ticked.
 1. **Sign in** (`core/auth.routes` → `shared/auth.createSession`) — password check; the session
    records device ID (`X-Device-Id`, `shared/device.ts`), IP and user agent; the activity log
    gets a `login` row with the same device. Borrowed ⇒ `shared` session (4 h max, 30 min idle),
-   token kept in sessionStorage. Mobile: if the phone's local data belongs to someone else
+   browser credential in an HttpOnly tenant cookie with a nonsecret sessionStorage marker; installed clients retain sessionStorage bearer behavior. Mobile: if the phone's local data belongs to someone else
    (`vds_m_owner`), it is cleared before anything renders.
 2. **Use** (`shared/auth.requireAuth`) — every request refreshes last-seen/last-IP (≤ 1/min);
    mutations are logged with IP + device; offline mobile writes queue under this account only
@@ -418,7 +418,7 @@ or with "I'm using someone else's phone" / "shared or borrowed computer" ticked.
    about this person's queued actions and releases their push subscription on this device;
    borrowed ⇒ their local data is cleared), revoked from another of their devices
    (`/auth/sessions/...`) or by an admin (`/users/:id/sessions/...`), password change/reset
-   (others end), account disabled, idle timeout (borrowed only), or expiry (12 h / 4 h).
+   (all sessions end), access/role/department change (fresh login required), account disabled, idle timeout (borrowed only), or expiry (12 h / 4 h).
 
 **Branches:** borrowed vs own device (session length, push refused, data cleanup);
 unsent queued actions at sign-out (send now if online, else confirm — they stay on the phone and
@@ -692,3 +692,9 @@ checks the original record before deciding on a new submission. Server-confirmed
 stock changes remain distinct from mobile queued drafts. Chat sockets revalidate
 session/tenant state before delivery, so ending a session stops later messages.
 These extend existing session/retry branches; they create no new business stage.
+
+## Public policies and production AI boundary
+
+Login shell → tenant-aware `/policies` link → allowlisted escaped public draft → owner/legal approval and version record before launch. Privacy request → named private channel → manual identity/authority verification → legal retention/hold review → scoped export/correction/erasure plan → reviewed execution across processors/devices/backups → case closure; owner contact/deadlines remain required inputs. No automatic destructive cascade is implemented.
+
+AI chat → current user permissions → production tool allowlist → authorized read/report/proposal → structured start/completion audit hashes → bounded provider turn → human review. A model-requested business mutation is refused by the execution guard; users confirm changes in normal application screens. Production enforcement depends on NODE_ENV=production.

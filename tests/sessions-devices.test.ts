@@ -122,7 +122,7 @@ describe('sessions', () => {
     expect(res.status).toBe(200);
     expect((await ctx.api.get('/api/auth/me').set(B(other))).status).toBe(401);
     expect(queryOne<{ end_reason: string }>('SELECT end_reason FROM sessions WHERE token = ?', other)!.end_reason).toBe('password');
-    expect((await ctx.api.get('/api/auth/me').set(B(acc.token))).status).toBe(200);
+    expect((await ctx.api.get('/api/auth/me').set(B(acc.token))).status).toBe(401);
   });
 
   it('cleanup stamps expired sessions and sweeps old history', () => {

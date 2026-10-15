@@ -1,0 +1,19 @@
+# Privacy notice
+
+DRAFT — NOT APPROVED. Effective date: [OWNER]. Service provider/legal entity/address/privacy contact: [OWNER]. The business using a workspace determines the purposes of its employee and customer records; confirm controller/processor roles in its contract.
+
+## Data used by this application
+
+Accounts contain names, usernames, password hashes, roles and permissions. Sessions record device identifiers, IP addresses, user agents and timestamps. Workspace records can contain employee contact and government identifiers, attendance, payroll, leave, photos, signatures and clock/location evidence; customers, suppliers, sales, inventory, production and accounting records; messages, files and forms. Anonymous-report workflows have separate confidentiality controls: administrators must not infer an author from identity exports or access logs.
+
+We use these records to authenticate users, enforce access, run the workspace's business workflows, prevent abuse and recover from failures. Hosting/server logs, disk uploads, databases, backups, device caches and optional integrations are separate data locations. No card-payment processing or advertising analytics was identified in this audit. Confirm any external website, SDK or infrastructure collection before publication.
+
+## Sharing and international processing
+
+Depending on workspace configuration, information can be sent to the hosting provider, SMTP provider, Web Push service, QuickBooks, an OpenAI-compatible AI provider, and S3-compatible offsite storage. AI requests may include the conversation and authorized retrieved workspace records. Name the providers, processing regions, contractual safeguards and transfer basis here: [OWNER]. Disabled integrations receive no intentional application requests, but infrastructure logs and browser push delivery require separate review.
+
+## Retention, rights and security
+
+Retention follows the approved schedule [OWNER: publish periods and legal basis]. Backups and offline copies may retain records after primary deletion until their approved expiry. Rights requests follow `/policies/data-rights`; applicable rights, verification, deadlines and appeal/regulator contacts depend on jurisdiction [OWNER]. We use permission checks, tenant separation, password hashing and session controls. No claim of perfect security, HIPAA eligibility or SOC 2 certification is made. See `/policies/security`.
+
+Cookie/storage use: browser authentication uses tenant-scoped HttpOnly SameSite cookies, with Secure behind the configured HTTPS proxy. A nonsecret session marker and preferences may be stored locally. The PWA can cache business data and pending operations for offline use; installed/native clients currently use bearer credentials in application storage. Shared-device mode reduces session duration and clears supported local data at sign-out. Device owners must secure their devices.

@@ -907,3 +907,11 @@ suite does not change existing `partial` native/desktop/sync status.
 Dependency follow-up: patched root HTTP/upload/mail dependencies, upgraded launcher
 Electron/build tooling, and scoped mobile xcode UUID override. Reachability and
 native-platform validation limits: `docs/audits/dependency-audit.md`.
+
+## Production security and public policies (working; operational approval pending)
+
+`shared/browser-session.ts` owns tenant-scoped HttpOnly browser cookies, CSRF request headers and native bearer compatibility. `shared/http-hardening.ts` owns generated request IDs/nonces and structured security logs; `shared/request-validation.ts` rejects malformed numeric resource path segments (not a substitute for per-route schemas). `app.ts` enforces nonce script CSP and JSON API fallback. Browser shells opt in to cookies; native clients retain bearer storage, a recorded release gap. WebSocket cookie handshakes require the same origin. Permission/role/department changes and password changes revoke sessions; queue replay checks the intended actor.
+
+`core/policies.routes.ts` serves only six allowlisted, HTML-escaped policy documents from `docs/policies/`; both login shells link to them. Draft status remains visible until owner/legal approval. `docs/governance/` and `docs/operations/` hold contract, retention/rights, security ownership, recovery, incident and support procedures; `docs/OWNER-ACTIONS.md` is the release handoff. These are documents and a manual rights procedure, not an automated erasure service or certification.
+
+Production AI tools are limited by `modules/ai/ai-tools.productionToolAllowed` to permission-checked reads, report generation and form proposals. Business mutations/communications are refused at discovery and execution. The route adds a total turn deadline, suppresses raw provider errors, and emits start/completion tool audit events containing hashes rather than raw arguments/results. External log retention/immutability, hard user spend reservations and broader output DLP remain unverified/missing.

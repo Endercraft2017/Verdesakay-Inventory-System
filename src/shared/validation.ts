@@ -49,12 +49,12 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required').max(200),
   /** Borrowed-phone sign-in: a short, idle-limited session with no push (src/shared/auth.ts). */
   shared: z.boolean().optional(),
-});
+}).strict();
 
 export const changePasswordSchema = z.object({
   current_password: z.string().min(1, 'Current password is required'),
   new_password: z.string().min(6, 'New password must be at least 6 characters'),
-});
+}).strict();
 
 // ---- Users / departments ----
 // A key from the tenant's roles table — routes check it exists (src/shared/roles.ts getRole).
@@ -68,14 +68,14 @@ export const createRoleSchema = z.object({
     .optional(),
   description: trimmed.max(200).optional().default(''),
   permissions: z.array(z.string()).max(200).default([]),
-});
+}).strict();
 
 /** PUT /api/roles/:key — any subset; the key itself never changes (accounts hold it). */
 export const updateRoleSchema = z.object({
   label: trimmed.min(1, 'Role name is required').max(60).optional(),
   description: trimmed.max(200).optional(),
   permissions: z.array(z.string()).max(200).optional(),
-});
+}).strict();
 
 const emailOpt = z.union([z.literal(''), z.string().trim().toLowerCase().email('Enter a valid email')])
   .optional().nullable();
@@ -89,30 +89,30 @@ export const createUserSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
   role: roleEnum.default('admin_staff'),
   department_id: optionalId,
-});
+}).strict();
 
 export const updateUserSchema = z.object({
   full_name: trimmed.min(1).max(120).optional(),
   email: emailOpt,
   role: roleEnum.optional(),
-  department_id: optionalId,
+  department_id: optionalId.optional(),
   active: boolish.optional(),
-});
+}).strict();
 
 export const resetPasswordSchema = z.object({
   new_password: z.string().min(6, 'New password must be at least 6 characters'),
-});
+}).strict();
 
 /** POST /api/auth/forgot-password — username or email. Always answered with 200. */
 export const forgotPasswordSchema = z.object({
   identifier: trimmed.min(1, 'Enter your username or email').max(200),
-});
+}).strict();
 
 /** POST /api/auth/reset-password — the emailed token + a new password. */
 export const selfResetPasswordSchema = z.object({
   token: trimmed.min(10).max(200),
   new_password: z.string().min(6, 'New password must be at least 6 characters'),
-});
+}).strict();
 
 export const createDepartmentSchema = z.object({
   name: trimmed.min(1, 'Department name is required').max(80),
@@ -125,7 +125,7 @@ export const updateDepartmentSchema = createDepartmentSchema.extend({
 
 export const updateProfileSchema = z.object({
   full_name: trimmed.min(1, 'Full name is required').max(120),
-});
+}).strict();
 
 // ---- Inventory ----
 /** Extended item fields (the ECOUNT-style catalog) stored as one JSON column.

@@ -31,7 +31,7 @@ router.get('/callback', async (req, res, next) => {
          <body style="font:15px system-ui;padding:40px;text-align:center">
          <h2>${ok ? '✅ Connected to QuickBooks' : '⚠️ QuickBooks connection failed'}</h2>
          <p>${htmlText(msg)}</p><p>You can close this tab.</p>
-         <script>try{window.opener&&window.opener.postMessage('qbo:${ok ? 'ok' : 'fail'}','*')}catch(e){}</script>`);
+         <script nonce="${res.locals.cspNonce}">try{window.opener&&window.opener.postMessage('qbo:${ok ? 'ok' : 'fail'}','*')}catch(e){}</script>`);
 
     if (error) { done('Intuit declined the connection. Start again from Settings.', false); return; }
     const [slug, nonce] = String(state || '').split('.', 2);

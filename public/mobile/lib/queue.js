@@ -77,7 +77,7 @@
       if (navigator.onLine) setTimeout(function () { mQueue.flush().catch(function () {}); }, 0);
       return tx('readwrite', function (s) {
         s.put({
-          k: 'token', v: t, user_id: currentUser ? currentUser.id : null,
+          k: 'token', v: t, cookie_auth: !!(window.API && API.cookieAuth && API.cookieAuth()), user_id: currentUser ? currentUser.id : null,
           device_id: window.API && API.deviceId ? API.deviceId() : null, // sw.js has no localStorage
         });
       }, META).catch(function () {});
@@ -147,7 +147,7 @@
   /** @returns true if we should stop the flush (still offline). */
   function sendOne(op) {
     if (!mine(op)) return Promise.resolve(false); // someone else's — wait for them
-    return API.post(op.path, op.body, { idempotencyKey: op.key })
+    return API.post(op.path, op.body, { idempotencyKey: op.key, expectedUserId: op.user_id })
       .then(function () { return mQueue._remove(op.key).then(function () { return false; }); })
       .catch(function (err) {
         if (err && err.offline) return true; // still no connection — stop, keep the queue

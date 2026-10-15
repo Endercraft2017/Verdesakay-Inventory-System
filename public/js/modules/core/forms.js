@@ -106,7 +106,7 @@ App.register('forms', async (view) => {
   async function printFile(f) {
     try {
       const res = await fetch(API.base() + '/api/forms/' + f.id + '/download', {
-        headers: { Authorization: 'Bearer ' + API.getToken() },
+        headers: API.getToken() ? { Authorization: 'Bearer ' + API.getToken() } : {},
       });
       if (!res.ok) throw new Error('Could not open file');
       const url = URL.createObjectURL(await res.blob());
@@ -140,7 +140,7 @@ App.register('forms', async (view) => {
     // Authenticated download: fetch as blob with token, then save.
     try {
       const res = await fetch(API.base() + '/api/forms/' + id + '/download', {
-        headers: { Authorization: 'Bearer ' + API.getToken() },
+        headers: API.getToken() ? { Authorization: 'Bearer ' + API.getToken() } : {},
       });
       if (!res.ok) throw new Error('Download failed');
       const blob = await res.blob();

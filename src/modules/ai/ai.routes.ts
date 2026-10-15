@@ -14,6 +14,8 @@
  * it via DELETE. Each user has exactly one running conversation, no multi-thread history.
  */
 import fs from 'node:fs';
+import crypto from 'node:crypto';
+import { securityLog } from '../../shared/http-hardening';
 import path from 'node:path';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
@@ -37,7 +39,7 @@ router.post('/reindex', requirePermission('audit.view'), (_req, res) => {
   try {
     res.json({ ok: true, chunks: reindex() });
   } catch (e) {
-    res.status(500).json({ error: e instanceof Error ? e.message : 'Reindex failed' });
+    res.status(500).json({ error: 'Reindex failed. Contact your administrator.' });
   }
 });
 
@@ -198,6 +200,7 @@ async function callLlm(
   apiKey: string,
   baseUrl: string,
   model: string,
+  deadline?: AbortSignal,
 ): Promise<CerebrasResponse> {
   const body: Record<string, unknown> = {
     model,
@@ -217,13 +220,13 @@ async function callLlm(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(deadline ? [deadline] : [])]),
     redirect: 'error',
   });
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`LLM API error ${res.status}: ${text.slice(0, 400)}`);
+    throw new Error(`LLM provider request failed (${res.status})`);
   }
   const data = await res.json();
   const parsed = z.object({
@@ -286,6 +289,7 @@ router.post('/chat', chatLimiter, syncClass('online'), async (req, res, next) =>
       ...messages.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
     ];
 
+    const deadline = AbortSignal.timeout(120_000);
     const steps: Array<{ tool: string; args: unknown; result: unknown }> = [];
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
@@ -297,7 +301,8 @@ router.post('/chat', chatLimiter, syncClass('online'), async (req, res, next) =>
         res.status(402).json({ error: 'The AI Assistant\'s token usage cap was reached mid-conversation. An admin can raise it or reset usage under AI Assistant settings.' });
         return;
       }
-      const response = await callLlm(cebrasMsgs, tools, apiKey, baseUrl, model);
+      deadline.throwIfAborted();
+      const response = await callLlm(cebrasMsgs, tools, apiKey, baseUrl, model, deadline);
       addTokenUsage(response.usage?.total_tokens ?? 0);
       const choice = response.choices[0];
       if (!choice) break;
@@ -306,7 +311,9 @@ router.post('/chat', chatLimiter, syncClass('online'), async (req, res, next) =>
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
         // Model gave a final answer
-        const reply = msg.content ?? '';
+        const candidate = msg.content ?? '';
+        const reply = candidate.includes(apiKey) || /-----BEGIN (?:RSA |EC )?PRIVATE KEY-----/.test(candidate)
+          ? 'The generated response could not be safely displayed. Please rephrase your request.' : candidate;
         if (newUserMessage) saveTurn(user.id, newUserMessage.content, reply, steps);
         res.json({ reply, steps });
         return;
@@ -317,7 +324,11 @@ router.post('/chat', chatLimiter, syncClass('online'), async (req, res, next) =>
         let args: unknown = {};
         try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
 
+        const audit = { event: 'ai_tool', request_id: res.locals.requestId, tenant: currentSlug(), actor: user.id, tool: tc.function.name, args_sha256: crypto.createHash('sha256').update(JSON.stringify(args)).digest('hex') };
+        securityLog({ ...audit, phase: 'start' });
+        const started = Date.now();
         const result = await executeTool(tc.function.name, args, user);
+        securityLog({ ...audit, phase: 'complete', success: result.success, duration_ms: Date.now() - started, result_sha256: crypto.createHash('sha256').update(JSON.stringify(result)).digest('hex') });
         steps.push({ tool: tc.function.name, args, result });
 
         cebrasMsgs.push({

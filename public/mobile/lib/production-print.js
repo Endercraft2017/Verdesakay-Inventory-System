@@ -53,7 +53,7 @@
     var w = window.open('', '_blank');
     if (!w) { mToast('Allow pop-ups to open the print sheet', 'err'); return false; }
     w.document.write('<!doctype html><html><head><title>' + mEsc(title) + '</title><style>' + SHEET_CSS + '</style></head>' +
-      '<body><div class="sheet">' + cells.join('') + '</div><script>window.onload=function(){window.print()}<\/script></body></html>');
+      '<body><div class="sheet">' + cells.join('') + '</div><script nonce="' + (window.VDS_CSP_NONCE || '') + '">window.onload=function(){window.print()}<\/script></body></html>');
     w.document.close();
     return true;
   }

@@ -36,8 +36,8 @@
     }
     return { name: name, slug: slug };
   }
-  function token() { try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; } }
-  function setToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch (e) {} }
+  function token() { return null; }
+  function setToken(t) { try { localStorage.removeItem(TOKEN_KEY); } catch (e) {} }
 
   function toast(msg) {
     var t = el('div', { class: 'toast', text: msg });
@@ -46,7 +46,7 @@
   }
 
   async function api(method, path, body) {
-    var headers = {};
+    var headers = { 'X-Requested-With': 'VDS', 'X-Session-Mode': 'cookie' };
     var tk = token();
     if (tk) headers['Authorization'] = 'Bearer ' + tk;
     var isForm = typeof FormData !== 'undefined' && body instanceof FormData;
@@ -501,6 +501,6 @@
   });
 
   /* ---------- go ---------- */
-  if (token()) boot().catch(function () { showLogin(); });
-  else showLogin();
+  setToken(null);
+  boot().catch(function () { showLogin(); });
 })();

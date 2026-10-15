@@ -7,6 +7,7 @@
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
+import { cookieValue } from '../shared/browser-session';
 import { platformDb } from './platform';
 
 const SESSION_HOURS = 12;
@@ -96,7 +97,7 @@ export function requirePlatformAuth(req: Request, res: Response, next: NextFunct
     return;
   }
   const header = req.headers['authorization'] || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : null;
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : cookieValue(req.headers.cookie, 'vds_platform_session');
   const user = platformUserFromToken(token);
   if (!user) {
     res.status(401).json({ error: 'Not authenticated' });

@@ -18,6 +18,7 @@ import { sendMail, mailReady } from '../shared/mailer';
 import type { UserRow } from '../shared/types';
 import { syncClass } from '../sync';
 import { tenantPublicUrl } from '../platform/platform';
+import { browserMode, setBrowserSession, clearBrowserSession } from '../shared/browser-session';
 import { tenantStore } from '../shared/db';
 
 const router = Router();
@@ -48,8 +49,9 @@ router.post('/login', (req, res) => {
   let overrides: Record<string, boolean> = {};
   try { overrides = JSON.parse(user.permission_overrides) as Record<string, boolean>; } catch { /* use empty */ }
 
+  if (browserMode(req)) setBrowserSession(req, res, token, !!shared);
   res.json({
-    token,
+    ...(browserMode(req) ? { browser_session: true } : { token }),
     user: {
       id: user.id,
       username: user.username,
@@ -70,6 +72,7 @@ router.post('/login', (req, res) => {
 // notifications stop arriving on a phone they've signed out of (e.g. a coworker's).
 router.post('/logout', requireAuth, (req, res) => {
   if (req.token) destroySession(req.token);
+  clearBrowserSession(res);
   const deviceId = deviceIdOf(req);
   if (deviceId) run('DELETE FROM push_subscriptions WHERE user_id = ? AND device_id = ?', req.user!.id, deviceId);
   res.json({ ok: true });
@@ -131,8 +134,8 @@ router.post('/change-password', requireAuth, syncClass('online'), (req, res) => 
   }
   const hash = bcrypt.hashSync(new_password, 10);
   run('UPDATE users SET password_hash = ? WHERE id = ?', hash, req.user!.id);
-  // Keep the current session, end the rest.
-  endUserSessions(req.user!.id, 'password', req.token);
+  endUserSessions(req.user!.id, 'password');
+  clearBrowserSession(res);
   run('UPDATE password_resets SET used = 1 WHERE user_id = ?', req.user!.id);
   res.json({ ok: true });
 });

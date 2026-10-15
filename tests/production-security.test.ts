@@ -90,7 +90,8 @@ it('classifies ZAP metadata alert as the SPA fallback, not a metadata proxy', as
   const probe = await ctx.api.get('/metadata/instance?password=ZAP&username=ZAP').set('Host', '169.254.169.254');
   expect(probe.status).toBe(200);
   expect(probe.type).toBe('text/html');
-  expect(probe.text).toBe(root.text);
+  const normalize = (html: string) => html.replace(/nonce="[^"]+"/g, 'nonce="NONCE"').replace(/window.VDS_CSP_NONCE="[^"]+"/g, 'window.VDS_CSP_NONCE="NONCE"');
+  expect(normalize(probe.text)).toBe(normalize(root.text));
   expect(probe.text).not.toMatch(/AccessKeyId|SecretAccessKey|instanceId|compute.*subscriptionId/);
 });
 

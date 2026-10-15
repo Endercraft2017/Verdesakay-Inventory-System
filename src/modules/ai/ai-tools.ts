@@ -587,6 +587,15 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Production assistants can read and prepare drafts/reports, but cannot execute
+// business mutations. A model prompt or JSON argument cannot bypass this boundary.
+export function productionToolAllowed(name: string): boolean {
+  if (process.env.NODE_ENV !== 'production') return true;
+  return name === 'create_report_document' || name === 'propose_form_record'
+    || isAnalyticsTool(name) || isRagTool(name)
+    || /^(get_|search_|list_)/.test(name);
+}
+
 /** Return the subset of tools the authenticated user is permitted to call. */
 export function getToolsForUser(user: AuthUser): CerebrasTool[] {
   const core = (Object.keys(TOOL_SPECS) as ToolName[])
@@ -602,7 +611,7 @@ export function getToolsForUser(user: AuthUser): CerebrasTool[] {
     ...ragToolsForUser(user),
     ...mailToolsForUser(user),
     ...hrFormToolsForUser(user),
-  ];
+  ].filter(tool => productionToolAllowed(tool.function.name));
 }
 
 type LineItem = {
@@ -612,6 +621,7 @@ type LineItem = {
 
 /** Execute one tool call. Always returns a ToolResult — never throws. */
 export async function executeTool(name: string, args: unknown, user: AuthUser): Promise<ToolResult> {
+  if (!productionToolAllowed(name)) return { success: false, error: 'Production AI is read-only. Review and confirm this action in the normal application screen.' };
   const a = (args ?? {}) as Record<string, unknown>;
 
   // Permission guard (defence-in-depth — the LLM only receives allowed tools)
@@ -985,7 +995,8 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       case 'update_user': {
         const existing = queryOne<{ role: string; active: number }>('SELECT role, active FROM users WHERE id = ?', a.id);
         if (!existing) return { success: false, error: 'User not found.' };
-        const input = parseBody(updateUserSchema, a);
+        const { id: _resourceId, ...fields } = a;
+        const input = parseBody(updateUserSchema, fields);
         if (input.role !== undefined && !getRole(input.role)) return { success: false, error: `Unknown role "${input.role}".` };
         const role = input.role ?? existing.role;
         const active = input.active !== undefined ? (input.active ? 1 : 0) : existing.active;

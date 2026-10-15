@@ -9,22 +9,34 @@
    ends when the app/tab is closed; setToken(t, { shared: true }). */
 const API = (() => {
   const TOKEN_KEY = 'vds_token';
+  const cookies = () => !!window.VDS_COOKIE_AUTH && !window.VDS_NATIVE;
+  const SESSION_KEY = 'vds_browser_session';
   const DEVICE_KEY = 'vds_device_id';
 
   function getToken() {
+    if (cookies()) return null;
     try { return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
   }
   function setToken(t, opts) {
     clearToken();
+    if (cookies()) {
+      try { ((opts && opts.shared) ? sessionStorage : localStorage).setItem(SESSION_KEY, '1'); } catch (e) {}
+      return;
+    }
     try { ((opts && opts.shared) ? sessionStorage : localStorage).setItem(TOKEN_KEY, t); } catch (e) { /* storage blocked */ }
   }
+  function hasSession() {
+    if (!cookies()) return !!getToken();
+    try { return !!(sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY)); } catch (e) { return true; }
+  }
   function clearToken() {
+    try { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
     try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
     try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
   }
   /** True when the current token is a borrowed-phone (sessionStorage) one. */
   function isSharedSession() {
-    try { return !!sessionStorage.getItem(TOKEN_KEY); } catch (e) { return false; }
+    try { return !!sessionStorage.getItem(cookies() ? SESSION_KEY : TOKEN_KEY); } catch (e) { return false; }
   }
 
   let memDeviceId = null;
@@ -54,7 +66,7 @@ const API = (() => {
   }
 
   async function request(method, path, body, isForm, opts) {
-    const headers = {};
+    const headers = cookies() ? { 'X-Session-Mode': 'cookie', 'X-Requested-With': 'VDS' } : {};
     const token = getToken();
     if (token) headers['Authorization'] = 'Bearer ' + token;
     if (!/^\/anonymous-reports/.test(path)) headers['X-Device-Id'] = deviceId();
@@ -62,6 +74,7 @@ const API = (() => {
     headers['X-Client'] = window.VDS_NATIVE || /^\/m(\/|$)/.test(location.pathname.slice((window.VDS_BASE_PATH || '').length)) ? 'mobile' : 'desktop';
     // Opt-in idempotency: a caller (e.g. the mobile offline queue) passes a stable
     // key so a retried request is de-duplicated server-side instead of re-applied.
+    if (opts && opts.expectedUserId != null) headers['X-Queue-Actor'] = String(opts.expectedUserId);
     if (opts && opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
     // Set on an office PC an HR manager approved as a time-in kiosk (hr-kiosk.js); the kiosk
     // endpoints refuse other browsers when the kiosk lock is on (src/modules/hr/kiosk-devices.ts).
@@ -79,7 +92,7 @@ const API = (() => {
 
     let res;
     try {
-      res = await fetch(base() + '/api' + path, { method, headers, body: payload });
+      res = await fetch(base() + '/api' + path, { method, headers, body: payload, credentials: cookies() ? 'same-origin' : 'omit' });
     } catch (e) {
       // fetch only throws on a genuine network failure (offline, DNS, connection reset).
       const err = new Error('Network unavailable');
@@ -147,7 +160,7 @@ const API = (() => {
   }
 
   return {
-    getToken, setToken, clearToken, isSharedSession, deviceId, base,
+    getToken, setToken, clearToken, isSharedSession, hasSession, cookieAuth: cookies, deviceId, base,
     get: (p) => request('GET', p),
     post: (p, b, opts) => request('POST', p, b, false, opts),
     put: (p, b, opts) => request('PUT', p, b, false, opts),
@@ -159,5 +172,9 @@ const API = (() => {
     blobUrl, download,
   };
 })();
+// Never retain a legacy bearer credential in a web browser after migration.
+if (window.VDS_COOKIE_AUTH && !window.VDS_NATIVE) {
+  try { localStorage.removeItem('vds_token'); sessionStorage.removeItem('vds_token'); } catch (e) {}
+}
 // Shared mobile helpers and chat test for window.API before using the client.
 window.API = API;

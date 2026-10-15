@@ -83,7 +83,7 @@ it('never replays a protected response to an anonymous or different caller', asy
   const { createEmployee } = await import('./helpers');
   const other = await createEmployee(ctx.api, token, { username: 'idem-other', role: 'admin_staff' });
   await ctx.api.put(`/api/users/${other.id}/permissions`).set(hdr()).send({ overrides: { 'inventory.adjust': false } });
-  const foreign = await ctx.api.post(path).set('Authorization', `Bearer ${other.token}`).set('Idempotency-Key', key).send({ change: -1 });
+  const foreign = await ctx.api.post(path).set('Authorization', `Bearer ${await login(ctx.api, other.username, other.password)}`).set('Idempotency-Key', key).send({ change: -1 });
   expect(foreign.status).toBe(403);
   expect(foreign.headers['idempotency-replayed']).toBeUndefined();
 });
@@ -113,11 +113,16 @@ it('does not cache sign-in tokens or bypass logout revocation', async () => {
 
 it('rejects a concurrent retry while the first asynchronous mutation is in flight', async () => {
   let writes = 0;
-  ctx.app.post('/api/audit-delayed', (_req, res) => {
+  const express = (await import('express')).default;
+  const request = (await import('supertest')).default;
+  const { idempotency } = await import('../src/shared/idempotency');
+  const fixture = express();
+  fixture.use(express.json(), idempotency);
+  fixture.post('/api/audit-delayed', (_req, res) => {
     writes++;
     setTimeout(() => res.json({ ok: true }), 30);
   });
-  const results = await Promise.all([0, 1].map(() => ctx.api.post('/api/audit-delayed').set(hdr()).set('Idempotency-Key', 'concurrent-retry-key').send({ value: 1 })));
+  const results = await Promise.all([0, 1].map(() => request(fixture).post('/api/audit-delayed').set(hdr()).set('Idempotency-Key', 'concurrent-retry-key').send({ value: 1 })));
   expect(results.map(r => r.status).sort()).toEqual([200, 409]);
   expect(writes).toBe(1);
 });

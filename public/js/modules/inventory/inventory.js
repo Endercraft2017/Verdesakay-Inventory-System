@@ -448,7 +448,7 @@ App.register('inventory', async (view, filter) => {
       .lbl-bc svg{max-width:100%;max-height:100%}
       @media print{.lbl{border-color:#999}}
     </style></head><body><div class="sheet">${cells.join('')}</div>
-    <script>window.onload=function(){window.print()}<\/script></body></html>`);
+    <script nonce="${window.VDS_CSP_NONCE || ''}">window.onload=function(){window.print()}<\/script></body></html>`);
     w.document.close();
     UI.toast(`${cells.length} label${cells.length === 1 ? '' : 's'} ready`);
     return true;

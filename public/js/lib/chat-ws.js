@@ -47,12 +47,12 @@
 
   function open() {
     var token = window.API && API.getToken();
-    if (!token) return; // not logged in yet
+    if (!token && !(API.cookieAuth && API.cookieAuth() && API.hasSession())) return; // not logged in yet
     // The installed phone app talks to the server it was pointed at, not its own bundled pages.
     var apiBase = window.API && API.base ? API.base() : '';
     var origin = /^https?:/.test(apiBase) ? apiBase.replace(/^http/, 'ws') : (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + apiBase;
     try {
-      socket = new WebSocket(origin + '/ws?token=' + encodeURIComponent(token));
+      socket = new WebSocket(origin + '/ws' + (token ? '?token=' + encodeURIComponent(token) : ''));
     } catch (e) {
       scheduleReconnect();
       return;

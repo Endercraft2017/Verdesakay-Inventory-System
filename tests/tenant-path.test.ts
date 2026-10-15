@@ -110,3 +110,16 @@ describe('tenants on one configured domain', () => {
     } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
   });
 });
+
+it('scopes HttpOnly browser cookies to a tenant path and rejects another tenant cookie', async () => {
+  const headers = { Host: host, 'X-Session-Mode': 'cookie', 'X-Requested-With': 'VDS' };
+  const signed = await ctx.api.post('/verdesakay/api/auth/login').set(headers).send({ username: 'existing-admin', password: 'existing-password' });
+  expect(signed.status).toBe(200); expect(signed.body.token).toBeUndefined();
+  const raw = signed.headers['set-cookie']![0] as string;
+  expect(raw).toContain('Path=/verdesakay'); expect(raw).toContain('HttpOnly');
+  const cookie = raw.split(';')[0]!;
+  expect((await ctx.api.get('/verdesakay/api/auth/me').set('Host', host).set('Cookie', cookie)).status).toBe(200);
+  expect((await ctx.api.get('/otherco/api/auth/me').set('Host', host).set('Cookie', cookie)).status).toBe(401);
+  expect((await ctx.api.get('/verdesakay/mobile/index.html').set('Host', host)).text).toContain('href="/verdesakay/policies"');
+  expect((await ctx.api.get('/policies/privacy').set('Host', host)).status).toBe(200);
+});

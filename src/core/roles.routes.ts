@@ -13,8 +13,8 @@
  * (account access is credentials — OFFLINE-FIRST D8), same as the users routes.
  */
 import { Router } from 'express';
-import { queryOne, run } from '../shared/db';
-import { requireAuth, requirePermission, requireAnyPermission } from '../shared/auth';
+import { queryOne, queryAll, run } from '../shared/db';
+import { requireAuth, requirePermission, requireAnyPermission, endUserSessions } from '../shared/auth';
 import { parseBody, createRoleSchema, updateRoleSchema } from '../shared/validation';
 import { ADMIN_ROLE, cleanPermissionList } from '../shared/permissions';
 import { listRoles, getRole } from '../shared/roles';
@@ -74,6 +74,7 @@ router.put('/:key', requirePermission('users.manage'), syncClass('online'), (req
     input.description ?? role.description,
     JSON.stringify(input.permissions !== undefined ? cleanPermissionList(input.permissions) : role.permissions),
     role.key);
+  if (input.permissions !== undefined) for (const holder of queryAll<{ id: number }>('SELECT id FROM users WHERE role = ?', role.key)) endUserSessions(holder.id, 'revoked');
   res.json(getRole(role.key));
 });
 

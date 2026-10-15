@@ -232,3 +232,16 @@ describe('module subscriptions and employee allowances', () => {
     expect((await ctx.api.post('/api/hr/employees').set(tenantHeaders()).send({ employee_no: 'E6', name: 'Sixth' })).status).toBe(201);
   });
 });
+
+it('uses HttpOnly console cookies and CSRF checks without returning a browser bearer token', async () => {
+  const headers = { 'X-Session-Mode': 'cookie', 'X-Requested-With': 'VDS' };
+  const result = await ctx.api.post('/_platform/api/login').set(headers).send({ username: 'owner', password: 'ownerpass1' });
+  expect(result.status).toBe(200); expect(result.body.token).toBeUndefined();
+  const raw = result.headers['set-cookie']![0] as string;
+  expect(raw).toContain('HttpOnly'); expect(raw).toContain('Path=/_platform');
+  const cookie = raw.split(';')[0]!;
+  expect((await ctx.api.get('/_platform/api/me').set('Cookie', cookie)).status).toBe(200);
+  expect((await ctx.api.post('/_platform/api/logout').set('Cookie', cookie)).status).toBe(403);
+  expect((await ctx.api.post('/_platform/api/logout').set(headers).set('Cookie', cookie)).status).toBe(200);
+  expect((await ctx.api.get('/_platform/api/me').set('Cookie', cookie)).status).toBe(401);
+});

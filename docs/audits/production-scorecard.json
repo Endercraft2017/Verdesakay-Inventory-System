@@ -2,10 +2,10 @@
   "date": "2026-10-16",
   "source_commit": "ab1b682aa372dce1fae3c6af904116edded34c4a",
   "counts": {
-    "UNVERIFIED": 125,
-    "PASS": 28,
-    "FAIL": 61,
-    "N/A": 19
+    "UNVERIFIED": 127,
+    "PASS": 33,
+    "FAIL": 55,
+    "N/A": 18
   },
   "checks": [
     {
@@ -193,7 +193,7 @@
       "severity": "High",
       "requirement": "Access tokens are short-lived (\u226430 minutes); refresh tokens are HttpOnly, expire, rotate on every use, and reuse revokes the token family.",
       "status": "FAIL",
-      "evidence": "public/js/api.js:14; normal tokens in localStorage, borrowed sessions in sessionStorage; src/shared/auth.ts uses 12-hour ordinary sessions and no refresh-token family.",
+      "evidence": "Browser tokens moved to tenant-scoped HttpOnly cookies; native bearer compatibility remains. Ordinary sessions still last 12 hours without rotating short-lived access/refresh families.",
       "scenario": "Any script injection can read a bearer token and reuse it until expiry or revocation.",
       "fix": "Move web sessions to Secure HttpOnly SameSite cookies with CSRF protection and rotation. Use secure platform storage for native clients; explicitly design offline-PC credentials."
     },
@@ -210,8 +210,8 @@
       "id": "AUTH-05",
       "severity": "High",
       "requirement": "Session IDs are regenerated on login and on privilege changes; session cookies set `Secure`, `HttpOnly`, and `SameSite`.",
-      "status": "FAIL",
-      "evidence": "src/shared/auth.ts:48 creates a fresh token on login, but role changes do not rotate an existing session; browser tokens are not HttpOnly cookies.",
+      "status": "PASS",
+      "evidence": "Browser/console cookies are HttpOnly/SameSite Strict and Secure on HTTPS or configured TLS proxy; fresh random login sessions, with revocation on role/department/override/role-bundle changes. tests/browser-session-security.test.ts, platform-console.test.ts, roles.test.ts and tenant-path.test.ts. Real proxy/TLS settings require owner verification.",
       "scenario": "A stolen pre-promotion token gains the newly granted permissions because the session is retained.",
       "fix": "Revoke or rotate sessions on privilege changes, reauthenticate for elevation, and complete the web-cookie/native-storage migration."
     },
@@ -219,8 +219,8 @@
       "id": "AUTH-06",
       "severity": "High",
       "requirement": "Web auth tokens are not stored in `localStorage` or `sessionStorage` or anywhere readable by JavaScript.",
-      "status": "FAIL",
-      "evidence": "public/js/api.js:14; normal tokens in localStorage, borrowed sessions in sessionStorage; src/shared/auth.ts uses 12-hour ordinary sessions and no refresh-token family.",
+      "status": "PASS",
+      "evidence": "Served web shells use cookie auth; no browser bearer token in login JSON, localStorage/sessionStorage or new PWA queue metadata. Old storage tokens are purged, including legacy PWA metadata on worker activation. Playwright verifies HttpOnly cookies, no stored token and null IndexedDB credential. Native installed clients retain bearer storage: separate unresolved gap.",
       "scenario": "Any script injection can read a bearer token and reuse it until expiry or revocation.",
       "fix": "Move web sessions to Secure HttpOnly SameSite cookies with CSRF protection and rotation. Use secure platform storage for native clients; explicitly design offline-PC credentials."
     },
@@ -228,8 +228,8 @@
       "id": "AUTH-07",
       "severity": "High",
       "requirement": "Password change, password reset, and reported compromise revoke all of the user's active sessions and tokens immediately.",
-      "status": "FAIL",
-      "evidence": "src/core/auth.routes.ts:135 keeps the current session during password change; reset ends all sessions and operators now revoke on reset.",
+      "status": "PASS",
+      "evidence": "Tenant password changes now end every session and clear browser cookies; resets revoke sessions/sibling reset links; operator password reset revokes sessions. Existing device/session revocation endpoints support compromise response. tests/sessions-devices.test.ts and production-security.test.ts.",
       "scenario": "A shared or compromised current session remains valid after a password change, contrary to the strict all-session handbook requirement.",
       "fix": "Revoke all sessions and return the user through a deliberate reauthentication flow; update desktop, mobile and offline UX together."
     },
@@ -517,7 +517,7 @@
       "severity": "Medium",
       "requirement": "Secrets never appear in logs, error responses, or analytics events.",
       "status": "FAIL",
-      "evidence": "src/modules/ai/ai.routes.ts:226 includes provider response snippets in thrown errors; central handler logs Error details. Startup password logging was removed, but no central log redactor exists.",
+      "evidence": "Raw AI provider error responses and central stack/error text were removed from server error logs; request/error logs omit query/body, return request IDs, and bootstrap passwords are not printed. No complete log redactor or proof across all integrations/legacy diagnostics exists.",
       "scenario": "A provider error echoing request content or a credential can be persisted in deployment logs.",
       "fix": "Redact structured logs and provider errors at the boundary; retain status/request IDs, not raw response bodies or secrets."
     },
@@ -526,7 +526,7 @@
       "severity": "Critical",
       "requirement": "Every endpoint validates body, query, path params, and relevant headers on the server against an explicit schema with types, lengths, and ranges.",
       "status": "FAIL",
-      "evidence": "src/shared/validation.ts:1 has broad Zod body coverage, but many handlers use Number(req.params.id) or hand-parsed query parameters without a shared explicit schema.",
+      "evidence": "Added global malformed numeric path rejection and strict selected account/auth/role schemas. Many body/query/path/header cases still lack complete explicit schemas; broad coverage is not claimed.",
       "scenario": "Malformed IDs or unbounded query parameters can reach handlers inconsistently; protections differ across endpoints.",
       "fix": "Inventory each route and add typed path/query/header schemas with bounded values and negative tests; do not globally coerce arbitrary objects."
     },
@@ -535,7 +535,7 @@
       "severity": "Critical",
       "requirement": "Write endpoints accept only an allowlist of fields; unknown fields are rejected; privileged fields (role, plan, permissions, price, tenant, owner) cannot be set by users.",
       "status": "FAIL",
-      "evidence": "src/shared/validation.ts:1 uses ordinary z.object for most write bodies, which strips unknown fields; only selected schemas are strict.",
+      "evidence": "Selected auth/account/role bodies now reject unknown fields; AI update_user explicitly removes the route ID before strict parsing. Most other write schemas still strip unknown fields instead of rejecting them.",
       "scenario": "Forbidden extra fields can be silently ignored rather than explicitly rejected, masking client misuse and creating risk when schemas later expand.",
       "fix": "Use strict allowlists on security-sensitive writes first; audit current clients for legitimate fields before making all schemas strict."
     },
@@ -624,8 +624,8 @@
       "id": "WEB-02",
       "severity": "High",
       "requirement": "State-changing requests authenticated by cookies are protected against CSRF (`SameSite` cookies plus CSRF tokens or equivalent origin checks).",
-      "status": "N/A",
-      "evidence": "Tenant and platform authentication use explicit Bearer headers, not ambient auth cookies. vds_view is a non-auth preference. Reassess if auth moves to cookies.",
+      "status": "PASS",
+      "evidence": "SameSite Strict HttpOnly cookies plus mandatory non-simple X-Requested-With: VDS for browser-mode login and cookie mutations; hostile cross-origin requests have no credentialed CORS allowance. WebSocket cookies require same-host Origin. tests/browser-session-security.test.ts and platform-console.test.ts.",
       "scenario": "",
       "fix": "Reassess if this capability is introduced."
     },
@@ -642,8 +642,8 @@
       "id": "WEB-04",
       "severity": "High",
       "requirement": "Pages send `X-Frame-Options: DENY` and `CSP frame-ancestors 'self'` (or a deliberate per-route allowlist).",
-      "status": "FAIL",
-      "evidence": "src/app.ts:116; X-Frame-Options DENY and proxy-only HSTS now exist, but enforced CSP/frame-ancestors is missing. ZAP rule 10038 confirms.",
+      "status": "PASS",
+      "evidence": "Helmet emits X-Frame-Options DENY and CSP frame-ancestors none (deliberately stricter than self); tests/production-security.test.ts and browser-session-security.test.ts.",
       "scenario": "An HTML injection has no CSP script boundary; proxy framing protection depends on one header; the complete prescribed header set is absent.",
       "fix": "Inventory inline handlers, generated print windows and workers; migrate to nonce/hash scripts and deploy an enforced CSP including frame-ancestors, object-src and base-uri. Keep LAN/native compatibility verified."
     },
@@ -651,8 +651,8 @@
       "id": "WEB-05",
       "severity": "High",
       "requirement": "A Content Security Policy restricts script sources to an approved list and blocks inline scripts; it is enforced (not only report-only) after a reporting period.",
-      "status": "FAIL",
-      "evidence": "src/app.ts:116; X-Frame-Options DENY and proxy-only HSTS now exist, but enforced CSP/frame-ancestors is missing. ZAP rule 10038 confirms.",
+      "status": "UNVERIFIED",
+      "evidence": "Enforced script-src self plus fresh nonce, script-src-attr none, object-src none; print templates and OAuth callback carry nonce. Playwright passes. No live report-only rollout/reporting period or complete print/PDF device matrix was established. ZAP residual Medium: unsafe-inline styles and broad HTTPS image sources.",
       "scenario": "An HTML injection has no CSP script boundary; proxy framing protection depends on one header; the complete prescribed header set is absent.",
       "fix": "Inventory inline handlers, generated print windows and workers; migrate to nonce/hash scripts and deploy an enforced CSP including frame-ancestors, object-src and base-uri. Keep LAN/native compatibility verified."
     },
@@ -669,8 +669,8 @@
       "id": "WEB-07",
       "severity": "Medium",
       "requirement": "Baseline security headers are present on every response: HSTS, `X-Content-Type-Options`, `Referrer-Policy` (plus CSP and frame protection).",
-      "status": "FAIL",
-      "evidence": "src/app.ts:116; X-Frame-Options DENY and proxy-only HSTS now exist, but enforced CSP/frame-ancestors is missing. ZAP rule 10038 confirms.",
+      "status": "UNVERIFIED",
+      "evidence": "Helmet baseline headers/CSP/frame protection enabled; HSTS and Secure cookies depend on HTTPS/proxy configuration. Local header tests pass; real external TLS/proxy/origin behavior was not supplied.",
       "scenario": "An HTML injection has no CSP script boundary; proxy framing protection depends on one header; the complete prescribed header set is absent.",
       "fix": "Inventory inline handlers, generated print windows and workers; migrate to nonce/hash scripts and deploy an enforced CSP including frame-ancestors, object-src and base-uri. Keep LAN/native compatibility verified."
     },
@@ -895,7 +895,7 @@
       "severity": "High",
       "requirement": "Untrusted content (user input, uploads, retrieved pages, repository text) cannot trigger privileged actions; injection patterns are screened at ingestion, and system instructions are separated from data.",
       "status": "FAIL",
-      "evidence": "src/modules/ai/ai-tools.ts:62 and executeTool contain writable inventory/order/user/message tools executed from model tool_calls without a separate action-approval record.",
+      "evidence": "Production discovery and execution block business mutations/outbound communication even for admins; authorized read/report/proposal tools remain. No comprehensive ingest prompt-injection screening or disclosure evaluation exists.",
       "scenario": "A prompt injection in retrieved text can ask a privileged user's assistant to send a message, change stock or delete records using that user's rights.",
       "fix": "Disable mutating AI tools for launch or implement server-side proposed actions requiring explicit user confirmation, revalidated permissions and transaction/idempotency support. A prompt-only instruction is insufficient."
     },
@@ -904,7 +904,7 @@
       "severity": "High",
       "requirement": "Model outputs are screened before display for system-prompt leakage, other users' data, and internal details.",
       "status": "FAIL",
-      "evidence": "src/modules/ai/ai.routes.ts:309 returns model prose after schema/length validation, without prompt/PII leakage screening.",
+      "evidence": "Added narrow API-key/private-key-marker suppression for normal final replies; full output/PII/system-prompt screening and adversarial evaluation remain missing.",
       "scenario": "A manipulated prompt can cause internal instructions or sensitive authorized context to be echoed into a response or shared report.",
       "fix": "Add output policy checks and a safe fallback; evaluate extraction, injection and PII cases without treating the filter as authorization."
     },
@@ -931,7 +931,7 @@
       "severity": "High",
       "requirement": "Agent actions with production impact (writes, deletes, deploys, payments, outbound messages) pass automated policy gates and require human approval; egress is restricted.",
       "status": "FAIL",
-      "evidence": "src/modules/ai/ai-tools.ts:62 and executeTool contain writable inventory/order/user/message tools executed from model tool_calls without a separate action-approval record.",
+      "evidence": "Production AI business mutations and outbound communications are blocked at tool discovery and execution; changes require normal human-operated app screens. No general proposed-action approval engine or deployment-level egress restriction is evidenced.",
       "scenario": "A prompt injection in retrieved text can ask a privileged user's assistant to send a message, change stock or delete records using that user's rights.",
       "fix": "Disable mutating AI tools for launch or implement server-side proposed actions requiring explicit user confirmation, revalidated permissions and transaction/idempotency support. A prompt-only instruction is insufficient."
     },
@@ -940,7 +940,7 @@
       "severity": "High",
       "requirement": "Every agent tool call is recorded in an append-only audit log with inputs, outputs, actor, and timestamp.",
       "status": "FAIL",
-      "evidence": "src/modules/ai/ai.routes.ts:91 saves steps in ai_messages, but DELETE /messages clears them and calls are not an independent append-only audit stream.",
+      "evidence": "Independent structured start/completion events now record tenant, actor, tool, request ID, time and hashes of arguments/results without raw sensitive content. Durable centralized append-only retention and complete outcomes for interrupted calls still need implementation/verification.",
       "scenario": "A destructive tool action can occur and its detailed tool transcript can subsequently be removed with chat history.",
       "fix": "Write redacted tool audit events before/after execution to an append-only store with actor, tenant, request ID, approval ID and retention controls."
     },
@@ -949,7 +949,7 @@
       "severity": "Medium",
       "requirement": "The organization has an AI acceptable-use policy, an inventory of approved AI tools, and controls against pasting sensitive data into unapproved tools.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Draft AI acceptable-use/data notice and security-program policy added; approved tools/providers, training controls and workforce adoption require owner evidence.",
       "scenario": "",
       "fix": "Request the policy and inventory; check for DLP tooling."
     },
@@ -1372,7 +1372,7 @@
       "severity": "Medium",
       "requirement": "An incident runbook exists covering first checks, rollback, data restore, escalation, and customer communication.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Written incident, restore, rollback, escalation, DDoS and support runbooks now exist in docs/operations. Named owners, external channels, measured targets and exercises require owner completion.",
       "scenario": "",
       "fix": "Request the runbook; check it references current systems."
     },
@@ -1525,7 +1525,7 @@
       "severity": "High",
       "requirement": "Application logs are structured (JSON), centralized, searchable, and include timestamp, level, request/correlation ID, user or tenant ID, and action.",
       "status": "FAIL",
-      "evidence": "src/app.ts:228 emits text request logs without generated correlation IDs or a structured trace context.",
+      "evidence": "HTTP/error and AI tool logs now use JSON with generated request IDs/timestamps/tenant context where applicable. Live centralized searchable retention and uniform coverage remain missing.",
       "scenario": "Operators cannot connect one failed action across requests, provider calls and sync replay quickly.",
       "fix": "Add generated request IDs, structured redacted JSON logs, tenant/actor context and trace propagation; connect to an approved central sink."
     },
@@ -1570,7 +1570,7 @@
       "severity": "Medium",
       "requirement": "Requests carry a correlation ID across services and logs; distributed tracing (OpenTelemetry or equivalent) is in place for multi-service paths.",
       "status": "FAIL",
-      "evidence": "src/app.ts:228 emits text request logs without generated correlation IDs or a structured trace context.",
+      "evidence": "Generated X-Request-ID correlates local HTTP/error/AI tool logs; no full cross-service propagation or distributed tracing implementation exists.",
       "scenario": "Operators cannot connect one failed action across requests, provider calls and sync replay quickly.",
       "fix": "Add generated request IDs, structured redacted JSON logs, tenant/actor context and trace propagation; connect to an approved central sink."
     },
@@ -1741,7 +1741,7 @@
       "severity": "Low",
       "requirement": "Essential product pages and flows exist: password reset, terms, privacy policy, helpful error and empty states.",
       "status": "FAIL",
-      "evidence": "public/index.html and public/mobile/index.html have password recovery/login but no linked terms/privacy pages; no complete B2B contract set was found.",
+      "evidence": "Password recovery and public linked policy drafts exist. Legal approval and all-screen error/empty-state coverage remain incomplete.",
       "scenario": "A new customer signs up or submits employee data without accessible product-specific terms and privacy disclosures.",
       "fix": "Have the owner/counsel approve documents based on actual data flows and link them in signup/login/help; do not fabricate legal guarantees."
     },
@@ -1867,7 +1867,7 @@
       "severity": "High",
       "requirement": "The privacy policy accurately reflects the data actually collected (including logs, analytics, device data) and every third party it flows to.",
       "status": "UNVERIFIED",
-      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "evidence": "Application-specific draft privacy notice inventories accounts/device/IP, HR/payroll/location/uploads, offline caches, backups and optional AI/mail/push/QuickBooks/S3. Exact vendors/regions/legal entity/contacts and legal approval remain missing.",
       "scenario": "",
       "fix": "Build a data inventory from the schema, logs, analytics SDKs, and integrations; compare it with the policy text."
     },
@@ -1876,7 +1876,7 @@
       "severity": "High",
       "requirement": "Required legal documents exist and are linked in the product: terms of service, privacy policy, refund policy; plus DPA and MSA/SLA for B2B.",
       "status": "FAIL",
-      "evidence": "public/index.html and public/mobile/index.html have password recovery/login but no linked terms/privacy pages; no complete B2B contract set was found.",
+      "evidence": "Public privacy/terms/refund/security/rights/AI drafts are linked in both login shells and served by an escaped allowlisted route. DPA/MSA/SLA templates exist. Owner placeholders and counsel approval prevent treating these as completed launch contracts.",
       "scenario": "A new customer signs up or submits employee data without accessible product-specific terms and privacy disclosures.",
       "fix": "Have the owner/counsel approve documents based on actual data flows and link them in signup/login/help; do not fabricate legal guarantees."
     },
@@ -1885,7 +1885,7 @@
       "severity": "High",
       "requirement": "Users can export and delete their data on request, within the legally required deadline, and can opt out where required.",
       "status": "UNVERIFIED",
-      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "evidence": "Manual identity/authority verification, redacted export, retention review and processor/backup follow-up procedure documented. Owner contacts/deadlines, real case evidence and automated workflows remain missing.",
       "scenario": "",
       "fix": "Find the deletion/export mechanisms and test them in staging; confirm the documented response deadlines."
     },
@@ -1903,7 +1903,7 @@
       "severity": "Medium",
       "requirement": "A retention schedule reconciles legal retention requirements with deletion requests (anonymize versus retain), with an audit trail.",
       "status": "UNVERIFIED",
-      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "evidence": "Data-category inventory and proposed retention/rights case process documented in docs/governance/data-governance.md. Actual periods/legal bases/holds and approvals remain owner inputs.",
       "scenario": "",
       "fix": "Request the retention schedule; inspect how retained records are separated and expired."
     },
@@ -1930,7 +1930,7 @@
       "severity": "High",
       "requirement": "A breach response plan defines notification obligations and timelines by jurisdiction and regulation, owners, and evidence sources.",
       "status": "UNVERIFIED",
-      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "evidence": "Incident/breach runbook includes preservation, containment, awareness time, jurisdiction-specific notification assessment and approval records. Contacts, applicable deadlines and exercise results remain unverified.",
       "scenario": "",
       "fix": "Request the plan; confirm logging can answer scope questions."
     },
@@ -1948,7 +1948,7 @@
       "severity": "Medium",
       "requirement": "If selling to enterprises: SOC 2 readiness evidence is being collected (access reviews, patch SLAs, restore tests, incident procedures, vendor management), ideally automated.",
       "status": "UNVERIFIED",
-      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "evidence": "Security evidence register, quarterly access/vendor/restore reviews, patch targets and contract questionnaire template added. No operational evidence history or SOC 2 attestation is established.",
       "scenario": "",
       "fix": "Ask for the control inventory and evidence sources."
     },
@@ -1957,7 +1957,7 @@
       "severity": "Low",
       "requirement": "A recurring compliance review (for example quarterly) tracks regulatory changes for each jurisdiction where users live.",
       "status": "UNVERIFIED",
-      "evidence": "No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted.",
+      "evidence": "Quarterly legal/retention/vendor review and annual exercise calendar proposed in security-program.md. Owner assignment and performed reviews remain unverified.",
       "scenario": "",
       "fix": "Ask for the calendar and the last review notes."
     },
@@ -1984,7 +1984,7 @@
       "severity": "High",
       "requirement": "Model calls have timeouts and a fallback path (alternate model or provider, cached response, or graceful message) when the provider is down or slow.",
       "status": "UNVERIFIED",
-      "evidence": "AI calls now time out after 30 seconds and central 5xx is generic; actual provider outage UX, model alternatives and full-loop deadline behavior were not verified against a live/synthetic failing provider.",
+      "evidence": "Provider calls have 30-second timeouts and a 120-second total turn AbortSignal; generic provider failures. A complete evaluated provider outage/fallback UX and real provider behavior remain unverified.",
       "scenario": "",
       "fix": "Simulate provider errors and timeouts in staging."
     },
@@ -2105,5 +2105,6 @@
       "scenario": "",
       "fix": "Time a new-user run-through to first value."
     }
-  ]
+  ],
+  "remediation_date": "2026-10-16"
 }

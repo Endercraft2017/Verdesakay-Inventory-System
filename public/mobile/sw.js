@@ -7,7 +7,7 @@
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
 var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
 var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
-var CACHE_VERSION = CACHE_PREFIX + 'v69';
+var CACHE_VERSION = CACHE_PREFIX + 'v70';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -121,7 +121,15 @@ self.addEventListener('activate', function (e) {
           .map(function (k) { return caches.delete(k); }));
       })
       .catch(function () { /* CacheStorage unavailable — still take control */ })
-      .then(function () { return self.clients.claim(); })
+      .then(async function () {
+        // Remove pre-cookie web credentials on upgrade; preserve every queued operation.
+        try {
+          var database = await idb();
+          var legacy = await idbGet(database, 'meta', 'token');
+          if (legacy && legacy.v && !legacy.cookie_auth) await idbDel(database, 'meta', 'token');
+        } catch (err) { /* IDB unavailable; the page will require a fresh sign-in */ }
+        return self.clients.claim();
+      })
   );
 });
 
@@ -251,9 +259,12 @@ async function replayQueue() {
   var token = tokenRow && tokenRow.v;
   var tokenUser = tokenRow ? tokenRow.user_id : null;
   var stillPending = false;
-  if (!token) return; // signed out — nothing replays until someone signs in (queue.js)
+  if (!token && !(tokenRow && tokenRow.cookie_auth)) return; // signed out — nothing replays until someone signs in (queue.js)
 
-  var headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
+  var headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = 'Bearer ' + token;
+  if (tokenRow.cookie_auth) { headers['X-Requested-With'] = 'VDS'; headers['X-Session-Mode'] = 'cookie'; }
+  if (tokenUser != null) headers['X-Queue-Actor'] = String(tokenUser);
   if (tokenRow.device_id) headers['X-Device-Id'] = tokenRow.device_id;
 
   for (var i = 0; i < ops.length; i++) {

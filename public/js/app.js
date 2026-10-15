@@ -544,7 +544,7 @@ const App = (() => {
     });
 
     // Resume session if token present.
-    if (API.getToken()) {
+    if (API.hasSession()) {
       try {
         const { user } = await API.get('/auth/me');
         me = user;

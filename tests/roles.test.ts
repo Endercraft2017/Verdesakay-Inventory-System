@@ -62,6 +62,8 @@ describe('custom roles', () => {
     const upd = await ctx.api.put('/api/roles/line_supervisor').set(auth(adminToken))
       .send({ permissions: ['mobile.access', 'inventory.view', 'production.record', 'production.receive'] });
     expect(upd.status).toBe(200);
+    expect((await ctx.api.get('/api/auth/me').set(auth(acct.token))).status).toBe(401);
+    acct.token = await login(ctx.api, acct.username, acct.password);
     const after = (await me(acct.token)).permissions;
     expect(after).toContain('production.receive');
     expect(after).not.toContain('production.pause');
@@ -70,6 +72,7 @@ describe('custom roles', () => {
     const ov = await ctx.api.put(`/api/users/${acct.id}/permissions`).set(auth(adminToken))
       .send({ overrides: { 'production.receive': false, 'orders.view': true } });
     expect(ov.status).toBe(200);
+    acct.token = await login(ctx.api, acct.username, acct.password);
     const mine = (await me(acct.token)).permissions;
     expect(mine).not.toContain('production.receive');
     expect(mine).toContain('orders.view');

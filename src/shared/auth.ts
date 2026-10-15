@@ -18,6 +18,7 @@ import { db, newToken } from './db';
 import type { AuthUser, AuthSession, Role } from './types';
 import { userPermissions } from './roles';
 import { deviceIdOf, clientIpOf, userAgentOf, deviceLabel } from './device';
+import { browserToken } from './browser-session';
 import { syncHooks } from './sync-context';
 
 const SESSION_HOURS = 12;
@@ -155,7 +156,7 @@ function touchSession(token: string, session: AuthSession, ip: string | null): v
 export function getToken(req: Request): string | null {
   const header = req.headers['authorization'] || '';
   if (header.startsWith('Bearer ')) return header.slice(7).trim();
-  return null;
+  return browserToken(req);
 }
 
 /** Require a logged-in user; attaches req.user, req.token and req.authSession. */
@@ -172,6 +173,10 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   if (!resolved || !token) {
     res.status(401).json({ error: 'Not authenticated' });
     return;
+  }
+  const expectedActor = req.get('X-Queue-Actor');
+  if (expectedActor && expectedActor !== String(resolved.user.id)) {
+    res.status(409).json({ error: 'Queued action belongs to another account. Sign in as its owner.' }); return;
   }
   touchSession(token, resolved.session, clientIpOf(req));
   req.user = resolved.user;

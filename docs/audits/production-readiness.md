@@ -10,13 +10,15 @@ The supplied Production Readiness Audit Handbook was used as a checklist, with s
 
 All 233 checks are individually recorded in [the scorecard](production-scorecard.md), with machine-readable [JSON](production-scorecard.json). Broad controls stay UNVERIFIED when only part is tested. FAIL entries include severity, evidence/location, a concrete scenario and a recommended fix. Enterprise/product recommendations are distinguished from directly exploitable defects; they do not all imply the same launch risk.
 
+Current remediation details and owner handoff: [remediation-followup.md](remediation-followup.md) and [OWNER-ACTIONS.md](../OWNER-ACTIONS.md). The scorecard is updated conservatively; partial controls remain open.
+
 ## Application map
 
 | Area | Observed implementation |
 |---|---|
 | Backend | Node.js, TypeScript/tsx, Express 4, Zod, Kysely helpers and synchronous node:sqlite |
 | Data/tenancy | One SQLite database per tenant; separate platform catalog/operator DB; AsyncLocalStorage request scope; disk uploads; WAL and foreign keys |
-| Authentication | bcryptjs passwords; opaque random DB-backed bearer sessions; 12h ordinary sessions, 4h shared sessions with 30-minute idle limit; roles + permission overrides |
+| Authentication | bcryptjs passwords; opaque random DB-backed sessions; HttpOnly web cookies and native bearer compatibility; 12h ordinary sessions, 4h shared sessions with 30-minute idle limit; roles + permission overrides |
 | Clients | Vanilla JS desktop web app, mobile PWA, partial Electron Windows server/client and partial Capacitor Android shell |
 | Business modules | Inventory, orders/delivery, manufacturing/QC/repairs, purchasing, HR/timekeeping, payroll/PH statutory calculations, accounting, files/forms/templates, messaging/tasks/announcements |
 | Integrations | Configurable OpenAI-compatible AI endpoint, tenant-scoped SQLite FTS retrieval, BYO SMTP, Web Push, QuickBooks OAuth/export, encrypted S3-compatible offsite backups |
@@ -25,12 +27,12 @@ All 233 checks are individually recorded in [the scorecard](production-scorecard
 | Roles | Platform operator separately authenticated; tenant administrator and configurable staff/manager/warehouse/production/QC/QA/HR/payroll/delivery permission bundles |
 | Tested runtime | Node 24.19.0 on Linux and installed Chromium. CI config also targets Node 22; Windows/Electron/Android/iOS binaries were not built or exercised here |
 
-## Highest-priority remaining release work
+## Highest-priority remaining release work (updated after remediation)
 
-1. **Protect money and business actions.** AI model tool calls can modify stock/orders/accounts and send messages with the caller's rights, without an independent user-confirmation gate. Disable mutating AI tools for launch or add server-side proposed-action approvals with current authorization, transactions and audit. Shared optional AI token caps are not hard per-user spend reservations; confirm provider billing caps. No real provider spend settings were available.
-2. **Protect employee/customer data.** Browser/native bearer tokens remain in JS-readable storage, ordinary tokens live 12 hours, there is no MFA/step-up, and enforced CSP is absent. These are material risks for an internet-facing app containing payroll, personal records, photos and locations. Complete a coordinated web-cookie/CSRF and native secure-storage migration, session elevation policy, and tested CSP/print-worker compatibility. The historical token artifact needs an owner-verified invalidation/exposure assessment.
+1. **Protect money and business actions.** Production AI tool discovery and execution now block business mutations and outbound communications; authorized reads, generated reports and form proposals remain. Verify NODE_ENV=production on the real host. Shared optional AI token caps are not hard per-user spend reservations; confirm provider billing caps. No real provider spend settings were available.
+2. **Protect employee/customer data.** Browser and console authentication now use HttpOnly cookies with CSRF checks; script CSP uses fresh nonces, and access/password changes revoke sessions. Native bearer credentials still need OS secure storage; ordinary sessions live 12 hours and MFA/step-up remains missing. Real-device/print/PDF coverage is incomplete. The historical token artifact needs an owner-verified invalidation/exposure assessment.
 3. **Prove recovery and operations.** Establish separate staging, live encrypted offsite/immutable backups, named operators, acceptable RPO/RTO, a dated full restore/rollback drill, external uptime/error alerts, required CI checks/branch protection and target-volume load results. Repository features/configuration cannot prove these are actually enabled.
-4. **Approve personal-data handling.** The owner must confirm jurisdictions, data inventory, legal retention/erasure, terms/privacy/DPA needs, breach contacts and timelines. Do not infer HIPAA/GDPR/SOC 2 compliance from code or draft documents.
+4. **Approve personal-data handling.** Public draft policies are now linked in both login shells; B2B contract templates, data inventory/rights/retention procedures, security ownership, recovery and incident runbooks are in docs/policies, docs/governance and docs/operations. The owner must fill jurisdictions, contacts, vendors, retention periods and commercial terms and obtain legal approval. Rights handling remains manual. Do not infer HIPAA/GDPR/SOC 2 compliance from code or draft documents.
 
 These items prevent an unconditional production-ready statement. Other checklist gaps, including framework preference, opaque public IDs, CDN strategy, cohort analytics and API versioning, should be prioritized according to actual customer/release requirements rather than treated as equal-severity blockers.
 
@@ -61,9 +63,9 @@ Reproducible tests cover desktop wrong-password + keyboard sign-in, inventory cr
 
 ZAP 2.17.0 standalone Java active scan completed against the isolated HTTP fixture and discovered 82 endpoints. The Docker image download first failed on daemon storage; using the standalone distribution completed the scan without changing runtime network policy.
 
-Raw results: one High `90034 Cloud Metadata Potentially Exposed`, one Medium `10038 CSP Header Not Set`, no Low and three Informational alert types. The High was a **confirmed false positive in this fixture**: `GET /metadata/instance?password=ZAP&username=ZAP` with `Host: 169.254.169.254` returns exactly the same local HTML SPA shell as `/`, not cloud metadata. A regression test compares the bodies and checks known metadata fields. There is no nginx metadata proxy in this fixture. This does not prove a real deployment's proxy/origin configuration is safe.
+Original pre-remediation results: one High `90034 Cloud Metadata Potentially Exposed`, one Medium `10038 CSP Header Not Set`, no Low and three Informational alert types. The High was a **confirmed false positive in this fixture**: `GET /metadata/instance?password=ZAP&username=ZAP` with `Host: 169.254.169.254` returns the same local HTML SPA shell as `/` after normalizing fresh script nonces, not cloud metadata. A regression test compares nonce-normalized bodies and checks known metadata fields. There is no nginx metadata proxy in this fixture. This does not prove a real deployment's proxy/origin configuration is safe.
 
-The CSP Medium is a verified open gap; the informational API comment is not a secret, mobile user-agent differences are intended, and the SPA notice correctly warns that a traditional spider does not cover authenticated JS business flows. Authenticated local APIs were tested separately by Supertest/Playwright. No external staging/production scan was authorized or run.
+The original missing-CSP gap is now resolved. The repeat scan flags two residual CSP Medium findings (broad HTTPS image sources and inline styles); the informational API comment is not a secret, mobile user-agent differences are intended, and the SPA notice correctly warns that a traditional spider does not cover authenticated JS business flows. Authenticated local APIs were tested separately by Supertest/Playwright. No external staging/production scan was authorized or run.
 
 ### Secret and dependency scans
 

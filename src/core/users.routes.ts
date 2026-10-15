@@ -142,6 +142,7 @@ router.put('/:id', requirePermission('users.manage'), syncClass('online'), (req,
   );
 
   if (active === 0) endUserSessions(id, 'deactivated');
+  else if (role !== user.role || department_id !== user.department_id) endUserSessions(id, 'revoked');
   res.json({ ok: true });
 });
 
@@ -157,6 +158,7 @@ router.post('/:id/reset-password', requirePermission('users.manage'), syncClass(
   const hash = bcrypt.hashSync(new_password, 10);
   run('UPDATE users SET password_hash = ? WHERE id = ?', hash, id);
   endUserSessions(id, 'password');
+  run('UPDATE password_resets SET used = 1 WHERE user_id = ?', id);
   res.json({ ok: true });
 });
 
@@ -253,6 +255,7 @@ router.put('/:id/permissions', requireAnyPermission(['users.manage', 'hr.manage'
     }
   }
   run('UPDATE users SET permission_overrides = ? WHERE id = ?', JSON.stringify(clean), id);
+  if (JSON.stringify(clean) !== user.permission_overrides) endUserSessions(id, 'revoked');
   res.json({ ok: true });
 });
 

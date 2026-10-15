@@ -9,6 +9,9 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 
+import { validateResourcePath } from './shared/request-validation';
+import { requestContext, securityLog } from './shared/http-hardening';
+import { browserCsrf } from './shared/browser-session';
 import authRoutes from './core/auth.routes';
 import usersRoutes from './core/users.routes';
 import rolesRoutes from './core/roles.routes';
@@ -61,6 +64,7 @@ import { requireModule, moduleEnabled } from './shared/modules';
 import { BEHIND_PROXY } from './shared/hosting';
 import { installSync, replayTenantOf, syncRequestMiddleware, syncRoutes } from './sync';
 import desktopRoutes from './desktop/desktop.routes';
+import policyRoutes from './core/policies.routes';
 
 const ROOT = path.join(import.meta.dirname, '..');
 
@@ -73,6 +77,7 @@ const NATIVE_APP_ORIGINS = new Set(['https://localhost', 'capacitor://localhost'
 
 export function createApp() {
   const app = express();
+  app.use(requestContext);
   // Strip a configured tenant prefix before the existing API, audit and sync machinery.
   // Keep the normalized originalUrl so anonymous reports remain anonymous and sync
   // commands stay portable to an installed PC's unprefixed local API.
@@ -109,14 +114,28 @@ export function createApp() {
   // limiter would bucket every user under the proxy's single IP.
   if (BEHIND_PROXY) app.set('trust proxy', 1);
 
-  // Security headers. Disable CSP defaults that would block our inline view scripts;
-  // a tailored policy can be added later if the app is exposed beyond the LAN.
-  // HSTS is off so a device can be pointed back at plain HTTP without getting stuck.
+  // Per-response nonces protect scripts; HTTPS deployments also enable HSTS.
   app.use(helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        'script-src': ["'self'", (_req, res) => "'nonce-" + (res as Response).locals.cspNonce + "'"],
+        'script-src-attr': ["'none'"],
+        'style-src': ["'self'", "'unsafe-inline'"],
+        'img-src': ["'self'", 'data:', 'blob:', 'https:'],
+        'font-src': ["'self'", 'data:'],
+        'connect-src': ["'self'"],
+        'worker-src': ["'self'", 'blob:'],
+        'frame-src': ["'self'", 'blob:', 'data:'],
+        'frame-ancestors': ["'none'"],
+        'object-src': ["'none'"],
+        'upgrade-insecure-requests': BEHIND_PROXY ? [] : null,
+      },
+    },
     hsts: BEHIND_PROXY ? { maxAge: 31536000, includeSubDomains: false } : false,
     frameguard: { action: 'deny' },
   }));
+  app.use('/policies', policyRoutes);
   app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   // The installed phone app (docs/OFFLINE-FIRST.md §29) serves its own pages from inside the app
   // (https://localhost on Android, capacitor://localhost on iPhone) and calls this server's API
@@ -131,7 +150,7 @@ export function createApp() {
     if (req.method !== 'OPTIONS') { next(); return; }
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE');
     res.setHeader('Access-Control-Allow-Headers',
-      'Authorization, Content-Type, X-Device-Id, X-Client, Idempotency-Key, X-Kiosk-Token, X-Tenant');
+      'Authorization, Content-Type, X-Device-Id, X-Client, Idempotency-Key, X-Kiosk-Token, X-Tenant, X-Queue-Actor');
     res.setHeader('Access-Control-Max-Age', '600');
     res.status(204).end();
   });
@@ -188,6 +207,8 @@ export function createApp() {
     tenantStore.run({ db: getDb(slug === DEFAULT_TENANT ? retiredDefaultTenant() ?? slug : slug), slug }, () => next());
   });
 
+  app.use('/api', browserCsrf, validateResourcePath);
+
   // Sync: replay context, the node write guard, and the cloud's effect stream (src/sync/capture.ts).
   app.use(syncRequestMiddleware);
 
@@ -225,7 +246,7 @@ export function createApp() {
     };
     res.on('finish', () => {
       if (req.path.startsWith('/api')) {
-        console.log(`${req.method} ${req.path} -> ${res.statusCode} (${Date.now() - start}ms)`);
+        if (!isAnonymousReportPath(req.path)) securityLog({ level: 'info', event: 'http_request', request_id: res.locals.requestId, tenant: tenantStore.getStore()?.slug, method: req.method, path: req.path, status: res.statusCode, duration_ms: Date.now() - start });
       }
       // Anonymous-report requests leave no identity trail (user, IP, body) — see confidential-reports.ts.
       if (!isAnonymousReportPath((req.originalUrl || req.url).split('?')[0] ?? '')) recordActivity(req, res);
@@ -336,8 +357,10 @@ export function createApp() {
     const base = String(res.locals.tenantBase || '');
     const file = path.join(ROOT, 'public', mobile ? 'mobile/index.html' : 'index.html');
     const html = fs.readFileSync(file, 'utf8').replace(/<head>/i,
-      `<head><script>window.VDS_BASE_PATH=${JSON.stringify(base)};</script>`)
-      .replace(/\b(src|href)="\/(?!\/)/g, `$1="${base}/`);
+      `<head><script>window.VDS_BASE_PATH=${JSON.stringify(base)};window.VDS_CSP_NONCE=${JSON.stringify(res.locals.cspNonce)};window.VDS_COOKIE_AUTH=true;</script>`)
+      .replace(/<script\b/g, `<script nonce="${res.locals.cspNonce}"`)
+      .replace(/\b(src|href)="\/(?!\/)/g, `$1="${base}/`)
+      .replace(/href="policies"/g, `href="${base}/policies"`);
     res.set('Cache-Control', 'no-cache').type('html').send(html);
   }
   app.get('/index.html', (_req, res) => sendAppShell(res, false));
@@ -365,6 +388,8 @@ export function createApp() {
     index: false,
     setHeaders: (res) => res.set('Cache-Control', 'no-cache'),
   }));
+
+  app.use('/api', (_req, res) => { res.status(404).json({ error: 'Endpoint not found.', request_id: res.locals.requestId }); });
 
   // SPA fallback + mobile routing.
   //
@@ -448,9 +473,9 @@ export function createApp() {
         ? err.status
         : 500;
     const expose = err instanceof Error && (status < 500 || (err as { expose?: boolean }).expose === true);
-    if (status >= 500 && !expose) console.error('Unhandled error:', err);
+    if (status >= 500) securityLog({ level: 'error', event: 'request_failed', request_id: res.locals.requestId, status, error_type: err instanceof Error ? err.name : 'UnknownError' });
     const message = expose ? (err as Error).message : 'Internal server error';
-    res.status(status).json({ error: message });
+    res.status(status >= 400 && status <= 599 ? status : 500).json({ error: message, request_id: res.locals.requestId });
   });
 
   return app;

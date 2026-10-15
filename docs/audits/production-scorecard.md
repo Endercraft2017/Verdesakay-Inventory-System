@@ -1,10 +1,10 @@
 # Production audit scorecard
 
-Date: 16 October 2026 (Asia/Manila). Source: `restructure/module-architecture` at `ab1b682`. All 233 handbook checks are accounted for. Status applies to the complete stated check: a partial test or a new configuration is not a PASS for a broader operational claim.
+Date: 16 October 2026 (Asia/Manila). Source branch: `restructure/module-architecture` at `ab1b682`; updated for production remediation. All 233 handbook checks are accounted for. Partial implementation or draft documentation does not establish a full operational PASS.
 
-Counts: {'UNVERIFIED': 125, 'PASS': 28, 'FAIL': 61, 'N/A': 19}
+Counts: FAIL: 55, N/A: 18, PASS: 33, UNVERIFIED: 127
 
-PASS means verified within the stated adapted scope; FAIL is an evidenced remaining gap; N/A means the feature is absent; UNVERIFIED identifies missing evidence or incomplete coverage. The detailed narrative is in production-readiness.md.
+PASS = verified in the stated adapted scope; FAIL = evidenced remaining gap; UNVERIFIED = incomplete coverage/missing operational evidence; N/A = absent feature. See production-readiness.md, remediation-followup.md and ../OWNER-ACTIONS.md.
 
 | ID | Severity | Result | Requirement | Evidence / blocker |
 |---|---|---|---|---|
@@ -28,11 +28,11 @@ PASS means verified within the stated adapted scope; FAIL is an evidenced remain
 | WF-06 | Medium | UNVERIFIED | Long-running agent work uses a persistent state or handoff document and human checkpoints between chunks of work. | CLAUDE.md, HANDOFF.md, claude_instruction.md and module/pipeline docs reviewed; some statements are stale (planned vs partial). Audit state persisted in work/AUDIT_STATE.md. Source/provenance and review process are not fully verified. |
 | AUTH-01 | High | FAIL | Authentication uses a vetted provider or framework; there is no custom password storage, token signing, or session crypto. | src/shared/auth.ts:23; custom DB-backed bearer-session implementation using bcryptjs and crypto.randomBytes. |
 | AUTH-02 | Critical | PASS | Every token is verified (signature, `exp`, `iss`/`aud`) with a pinned algorithm; `alg: none` and algorithm confusion are rejected; claims are never read from an unverified token. | src/shared/auth.ts:95; translated to opaque random bearer tokens: SQL checks existence, expiry, ended state and active user. JWT claims are never used. |
-| AUTH-03 | High | FAIL | Access tokens are short-lived (≤30 minutes); refresh tokens are HttpOnly, expire, rotate on every use, and reuse revokes the token family. | public/js/api.js:14; normal tokens in localStorage, borrowed sessions in sessionStorage; src/shared/auth.ts uses 12-hour ordinary sessions and no refresh-token family. |
+| AUTH-03 | High | FAIL | Access tokens are short-lived (≤30 minutes); refresh tokens are HttpOnly, expire, rotate on every use, and reuse revokes the token family. | Browser tokens moved to tenant-scoped HttpOnly cookies; native bearer compatibility remains. Ordinary sessions still last 12 hours without rotating short-lived access/refresh families. |
 | AUTH-04 | High | PASS | Logout invalidates the session server-side. | src/shared/auth.ts:73; tests/sessions-devices.test.ts; tests/e2e/readiness.spec.ts verifies replay after logout returns 401. |
-| AUTH-05 | High | FAIL | Session IDs are regenerated on login and on privilege changes; session cookies set `Secure`, `HttpOnly`, and `SameSite`. | src/shared/auth.ts:48 creates a fresh token on login, but role changes do not rotate an existing session; browser tokens are not HttpOnly cookies. |
-| AUTH-06 | High | FAIL | Web auth tokens are not stored in `localStorage` or `sessionStorage` or anywhere readable by JavaScript. | public/js/api.js:14; normal tokens in localStorage, borrowed sessions in sessionStorage; src/shared/auth.ts uses 12-hour ordinary sessions and no refresh-token family. |
-| AUTH-07 | High | FAIL | Password change, password reset, and reported compromise revoke all of the user's active sessions and tokens immediately. | src/core/auth.routes.ts:135 keeps the current session during password change; reset ends all sessions and operators now revoke on reset. |
+| AUTH-05 | High | PASS | Session IDs are regenerated on login and on privilege changes; session cookies set `Secure`, `HttpOnly`, and `SameSite`. | Browser/console cookies are HttpOnly/SameSite Strict and Secure on HTTPS or configured TLS proxy; fresh random login sessions, with revocation on role/department/override/role-bundle changes. tests/browser-session-security.test.ts, platform-console.test.ts, roles.test.ts and tenant-path.test.ts. Real proxy/TLS settings require owner verification. |
+| AUTH-06 | High | PASS | Web auth tokens are not stored in `localStorage` or `sessionStorage` or anywhere readable by JavaScript. | Served web shells use cookie auth; no browser bearer token in login JSON, localStorage/sessionStorage or new PWA queue metadata. Old storage tokens are purged, including legacy PWA metadata on worker activation. Playwright verifies HttpOnly cookies, no stored token and null IndexedDB credential. Native installed clients retain bearer storage: separate unresolved gap. |
+| AUTH-07 | High | PASS | Password change, password reset, and reported compromise revoke all of the user's active sessions and tokens immediately. | Tenant password changes now end every session and clear browser cookies; resets revoke sessions/sibling reset links; operator password reset revokes sessions. Existing device/session revocation endpoints support compromise response. tests/sessions-devices.test.ts and production-security.test.ts. |
 | AUTH-08 | High | PASS | Password-reset tokens expire within about 15 minutes, are single-use, and reset requests are rate-limited per email and per IP. | src/core/auth.routes.ts:26; tests/auth-reset.test.ts verifies 15-minute lifetime, sibling invalidation, single use and three requests/account/hour; tests/production-security.test.ts verifies IP throttling. |
 | AUTH-09 | High | N/A | Magic-link tokens expire within about 10 minutes, are single-use, and requests are rate-limited per email and per IP. | No passwordless magic-link authentication; password-reset tokens are covered by AUTH-08. |
 | AUTH-10 | Critical | UNVERIFIED | Every redirect target taken from user input (login, logout, magic link, OAuth, "return to") is validated against an allowlist after URL parsing, rejecting external, protocol-relative, backslash, and encoded variants. | App view redirects are fixed internal destinations and recovery links use configured origins; local HTTP listener still derives redirect host from Host. Full origin/redirect inventory and runtime settings need verification. |
@@ -64,9 +64,9 @@ PASS means verified within the stated adapted scope; FAIL is an evidenced remain
 | SECRET-07 | Medium | UNVERIFIED | Production secrets are held in a secrets manager or platform secret store with access control and audit logging, not in committed files or shared documents. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
 | SECRET-08 | Medium | UNVERIFIED | Keys are scoped to least privilege (restricted keys, IP or domain restrictions, per-service database users), and a rotation schedule exists. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
 | SECRET-09 | Medium | PASS | Server-only code is guarded against client inclusion (for example the `server-only` import in Next.js), and server functions live in separate files from client components. | src/ and server.ts are outside express.static(public/); electron packaging explicitly includes backend for the local server, not for browser delivery. |
-| SECRET-10 | Medium | FAIL | Secrets never appear in logs, error responses, or analytics events. | src/modules/ai/ai.routes.ts:226 includes provider response snippets in thrown errors; central handler logs Error details. Startup password logging was removed, but no central log redactor exists. |
-| API-01 | Critical | FAIL | Every endpoint validates body, query, path params, and relevant headers on the server against an explicit schema with types, lengths, and ranges. | src/shared/validation.ts:1 has broad Zod body coverage, but many handlers use Number(req.params.id) or hand-parsed query parameters without a shared explicit schema. |
-| API-02 | Critical | FAIL | Write endpoints accept only an allowlist of fields; unknown fields are rejected; privileged fields (role, plan, permissions, price, tenant, owner) cannot be set by users. | src/shared/validation.ts:1 uses ordinary z.object for most write bodies, which strips unknown fields; only selected schemas are strict. |
+| SECRET-10 | Medium | FAIL | Secrets never appear in logs, error responses, or analytics events. | Raw AI provider error responses and central stack/error text were removed from server error logs; request/error logs omit query/body, return request IDs, and bootstrap passwords are not printed. No complete log redactor or proof across all integrations/legacy diagnostics exists. |
+| API-01 | Critical | FAIL | Every endpoint validates body, query, path params, and relevant headers on the server against an explicit schema with types, lengths, and ranges. | Added global malformed numeric path rejection and strict selected account/auth/role schemas. Many body/query/path/header cases still lack complete explicit schemas; broad coverage is not claimed. |
+| API-02 | Critical | FAIL | Write endpoints accept only an allowlist of fields; unknown fields are rejected; privileged fields (role, plan, permissions, price, tenant, owner) cannot be set by users. | Selected auth/account/role bodies now reject unknown fields; AI update_user explicitly removes the route ID before strict parsing. Most other write schemas still strip unknown fields instead of rejecting them. |
 | API-03 | Critical | UNVERIFIED | No query is built by string concatenation or interpolation of user input (SQL, NoSQL operators, raw ORM calls, shell commands). | Parameterized helpers and server-side permissions/business logic were sampled; callback reflected HTML was fixed. Full dynamic SQL, per-field response/PII, every scheduled/internal entry and all HTML/email sink coverage require additional complete inventories. Existing suite is evidence of tested cases, not universal absence of defects. |
 | API-04 | High | UNVERIFIED | Prices, discounts, entitlements, and other business rules are computed on the server from authoritative data, never taken from the client. | Parameterized helpers and server-side permissions/business logic were sampled; callback reflected HTML was fixed. Full dynamic SQL, per-field response/PII, every scheduled/internal entry and all HTML/email sink coverage require additional complete inventories. Existing suite is evidence of tested cases, not universal absence of defects. |
 | API-05 | High | UNVERIFIED | Responses expose only fields the caller needs; no password hashes, tokens, internal flags, or other users' PII. | Parameterized helpers and server-side permissions/business logic were sampled; callback reflected HTML was fixed. Full dynamic SQL, per-field response/PII, every scheduled/internal entry and all HTML/email sink coverage require additional complete inventories. Existing suite is evidence of tested cases, not universal absence of defects. |
@@ -76,12 +76,12 @@ PASS means verified within the stated adapted scope; FAIL is an evidenced remain
 | API-09 | Critical | UNVERIFIED | Scheduled-job, webhook-like, and internal endpoints require a secret or signature and reject calls outside the expected cadence. | Parameterized helpers and server-side permissions/business logic were sampled; callback reflected HTML was fixed. Full dynamic SQL, per-field response/PII, every scheduled/internal entry and all HTML/email sink coverage require additional complete inventories. Existing suite is evidence of tested cases, not universal absence of defects. |
 | API-10 | High | UNVERIFIED | All user-supplied content rendered into HTML pages or email templates is escaped or rendered as plain text. | Parameterized helpers and server-side permissions/business logic were sampled; callback reflected HTML was fixed. Full dynamic SQL, per-field response/PII, every scheduled/internal entry and all HTML/email sink coverage require additional complete inventories. Existing suite is evidence of tested cases, not universal absence of defects. |
 | WEB-01 | Critical | PASS | CORS uses an explicit origin allowlist; wildcard is never combined with credentials; the `Origin` header is never reflected without validation. | src/app.ts:72; exact native-origin allowlist without cookies; tests/native-app-cors.test.ts and Playwright hostile-origin request. |
-| WEB-02 | High | N/A | State-changing requests authenticated by cookies are protected against CSRF (`SameSite` cookies plus CSRF tokens or equivalent origin checks). | Tenant and platform authentication use explicit Bearer headers, not ambient auth cookies. vds_view is a non-auth preference. Reassess if auth moves to cookies. |
+| WEB-02 | High | PASS | State-changing requests authenticated by cookies are protected against CSRF (`SameSite` cookies plus CSRF tokens or equivalent origin checks). | SameSite Strict HttpOnly cookies plus mandatory non-simple X-Requested-With: VDS for browser-mode login and cookie mutations; hostile cross-origin requests have no credentialed CORS allowance. WebSocket cookies require same-host Origin. tests/browser-session-security.test.ts and platform-console.test.ts. |
 | WEB-03 | Medium | UNVERIFIED | Each endpoint allows only the HTTP methods and headers it needs. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
-| WEB-04 | High | FAIL | Pages send `X-Frame-Options: DENY` and `CSP frame-ancestors 'self'` (or a deliberate per-route allowlist). | src/app.ts:116; X-Frame-Options DENY and proxy-only HSTS now exist, but enforced CSP/frame-ancestors is missing. ZAP rule 10038 confirms. |
-| WEB-05 | High | FAIL | A Content Security Policy restricts script sources to an approved list and blocks inline scripts; it is enforced (not only report-only) after a reporting period. | src/app.ts:116; X-Frame-Options DENY and proxy-only HSTS now exist, but enforced CSP/frame-ancestors is missing. ZAP rule 10038 confirms. |
+| WEB-04 | High | PASS | Pages send `X-Frame-Options: DENY` and `CSP frame-ancestors 'self'` (or a deliberate per-route allowlist). | Helmet emits X-Frame-Options DENY and CSP frame-ancestors none (deliberately stricter than self); tests/production-security.test.ts and browser-session-security.test.ts. |
+| WEB-05 | High | UNVERIFIED | A Content Security Policy restricts script sources to an approved list and blocks inline scripts; it is enforced (not only report-only) after a reporting period. | Enforced script-src self plus fresh nonce, script-src-attr none, object-src none; print templates and OAuth callback carry nonce. Playwright passes. No live report-only rollout/reporting period or complete print/PDF device matrix was established. ZAP residual Medium: unsafe-inline styles and broad HTTPS image sources. |
 | WEB-06 | High | PASS | Third-party scripts are inventoried with a purpose for each, and none load on login, checkout, account, or admin pages. | public/index.html, public/mobile/index.html and web-console/index.html load local scripts; no third-party tracking/login scripts observed. Client bundle secret scan clean. |
-| WEB-07 | Medium | FAIL | Baseline security headers are present on every response: HSTS, `X-Content-Type-Options`, `Referrer-Policy` (plus CSP and frame protection). | src/app.ts:116; X-Frame-Options DENY and proxy-only HSTS now exist, but enforced CSP/frame-ancestors is missing. ZAP rule 10038 confirms. |
+| WEB-07 | Medium | UNVERIFIED | Baseline security headers are present on every response: HSTS, `X-Content-Type-Options`, `Referrer-Policy` (plus CSP and frame protection). | Helmet baseline headers/CSP/frame protection enabled; HSTS and Secure cookies depend on HTTPS/proxy configuration. Local header tests pass; real external TLS/proxy/origin behavior was not supplied. |
 | WEB-08 | High | N/A | Server-rendered components and page props serialize only the fields the UI renders; no sensitive fields reach the client payload. | No React server components, serialized hydration data, or GraphQL endpoint. App shells are HTML with a base-path setting; REST responses are audited separately. |
 | EDGE-01 | Critical | FAIL | Rate limits protect AI/expensive endpoints, auth endpoints, and public data endpoints, per user and per IP. | src/app.ts:195 plus AI per-user limiter and signup/confidential-report limiters; no universal API/public-read budget or complete per-user+IP limiter coverage. |
 | EDGE-02 | High | UNVERIFIED | A WAF filters traffic before the application (managed rules or ModSecurity + OWASP CRS in blocking mode), with bot management on high-value routes. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
@@ -106,13 +106,13 @@ PASS means verified within the stated adapted scope; FAIL is an evidenced remain
 | SUPPLY-08 | Medium | UNVERIFIED | Third-party prompts, skills, MCP servers, agent configs, and copied instructions are reviewed before use and never run with production access unvetted. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
 | AISEC-01 | Critical | PASS | LLM features and tools can access only data the current user is authorized to see; scoping is enforced in code (queries and tool implementations), not in the prompt. | src/modules/ai/ai-tools.ts:614 rechecks permission per tool; own notes/tasks and messages scoped in queries; tests/ai.test.ts and ai-analytics.test.ts. Human confirmation is a separate failing check. |
 | AISEC-02 | Critical | PASS | RAG retrieval filters by the requester's permissions using metadata attached at ingestion, and responses are checked so no chunk from an unauthorized source is used. | src/modules/ai/rag.ts:160; per-tenant FTS index and permission/department filter before returning chunks; tests/ai-rag.test.ts. No shared remote vector store. |
-| AISEC-03 | High | FAIL | Untrusted content (user input, uploads, retrieved pages, repository text) cannot trigger privileged actions; injection patterns are screened at ingestion, and system instructions are separated from data. | src/modules/ai/ai-tools.ts:62 and executeTool contain writable inventory/order/user/message tools executed from model tool_calls without a separate action-approval record. |
-| AISEC-04 | High | FAIL | Model outputs are screened before display for system-prompt leakage, other users' data, and internal details. | src/modules/ai/ai.routes.ts:309 returns model prose after schema/length validation, without prompt/PII leakage screening. |
+| AISEC-03 | High | FAIL | Untrusted content (user input, uploads, retrieved pages, repository text) cannot trigger privileged actions; injection patterns are screened at ingestion, and system instructions are separated from data. | Production discovery and execution block business mutations/outbound communication even for admins; authorized read/report/proposal tools remain. No comprehensive ingest prompt-injection screening or disclosure evaluation exists. |
+| AISEC-04 | High | FAIL | Model outputs are screened before display for system-prompt leakage, other users' data, and internal details. | Added narrow API-key/private-key-marker suppression for normal final replies; full output/PII/system-prompt screening and adversarial evaluation remain missing. |
 | AISEC-05 | Critical | PASS | Any server-side fetch of user-influenced URLs (agents, previews, webhooks-to-URL, importers) blocks private, loopback, link-local, and metadata addresses, pins resolution, re-validates on redirects, and returns generic errors. | src/shared/public-fetch.ts:1 resolves once and pins validated public addresses into an undici Agent; every preview redirect calls it again. tests/public-fetch.test.ts covers mapped IPv6, metadata, mixed DNS and bounds. Admin-configured AI/SMTP endpoints are privileged configuration, not anonymous URL fetches. |
 | AISEC-06 | High | FAIL | Each agent or automation uses its own scoped, short-lived credentials rather than a human's credentials or a broad shared key. | src/modules/ai/ai-tools.ts:614 executes with the human AuthUser and shared provider key; no dedicated scoped short-lived agent credential. |
-| AISEC-07 | High | FAIL | Agent actions with production impact (writes, deletes, deploys, payments, outbound messages) pass automated policy gates and require human approval; egress is restricted. | src/modules/ai/ai-tools.ts:62 and executeTool contain writable inventory/order/user/message tools executed from model tool_calls without a separate action-approval record. |
-| AISEC-08 | High | FAIL | Every agent tool call is recorded in an append-only audit log with inputs, outputs, actor, and timestamp. | src/modules/ai/ai.routes.ts:91 saves steps in ai_messages, but DELETE /messages clears them and calls are not an independent append-only audit stream. |
-| AISEC-09 | Medium | UNVERIFIED | The organization has an AI acceptable-use policy, an inventory of approved AI tools, and controls against pasting sensitive data into unapproved tools. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
+| AISEC-07 | High | FAIL | Agent actions with production impact (writes, deletes, deploys, payments, outbound messages) pass automated policy gates and require human approval; egress is restricted. | Production AI business mutations and outbound communications are blocked at tool discovery and execution; changes require normal human-operated app screens. No general proposed-action approval engine or deployment-level egress restriction is evidenced. |
+| AISEC-08 | High | FAIL | Every agent tool call is recorded in an append-only audit log with inputs, outputs, actor, and timestamp. | Independent structured start/completion events now record tenant, actor, tool, request ID, time and hashes of arguments/results without raw sensitive content. Durable centralized append-only retention and complete outcomes for interrupted calls still need implementation/verification. |
+| AISEC-09 | Medium | UNVERIFIED | The organization has an AI acceptable-use policy, an inventory of approved AI tools, and controls against pasting sensitive data into unapproved tools. | Draft AI acceptable-use/data notice and security-program policy added; approved tools/providers, training controls and workforce adoption require owner evidence. |
 | AISEC-10 | Medium | PASS | AI coding assistants and CI agents do not auto-execute on untrusted repository content (forks, external PRs, issues) with access to secrets. | .github/workflows/production-checks.yml:1 uses pull_request with read-only repository permissions; no pull_request_target checkout or AI agent with secrets. |
 | MOBILE-01 | High | FAIL | Mobile clients store tokens and credentials only in Keychain/Keystore-backed secure storage. | public/js/api.js:17; native Capacitor shell reuses browser storage, with no Keystore/Keychain storage adapter. |
 | MOBILE-02 | Critical | PASS | No secret API keys are embedded in the app bundle; privileged calls go through the backend. | Gitleaks 8.24.3 dir scans of public/ and web-console/ each returned an empty report. Native shell bundles public assets; compiled APK/EXE scans remain outside this source check. |
@@ -159,7 +159,7 @@ PASS means verified within the stated adapted scope; FAIL is an evidenced remain
 | DR-03 | High | UNVERIFIED | Backups are stored off the primary host, preferably cross-region, and cannot be deleted with the application's runtime credentials. | Daily snapshots and encrypted offsite S3 support exist; live backup destinations, least-privilege/immutability settings, RPO and actual recent successful transfers were not accessible. |
 | DR-04 | High | FAIL | Restores are tested on a schedule (monthly to quarterly) into a clean environment, with data verification, an app smoke test, and a recorded duration. | tests/backup.test.ts verifies snapshot integrity and restore mechanics; docs/SAAS-OPERATIONS.md asks operators to test occasionally, but no dated production-size restore drill record/schedule is present. |
 | DR-05 | Medium | FAIL | RTO and RPO are defined, documented, and consistent with the backup and failover design. | docs/SAAS-OPERATIONS.md:162 describes daily backups but no business-approved RTO/RPO. |
-| DR-06 | Medium | UNVERIFIED | An incident runbook exists covering first checks, rollback, data restore, escalation, and customer communication. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
+| DR-06 | Medium | UNVERIFIED | An incident runbook exists covering first checks, rollback, data restore, escalation, and customer communication. | Written incident, restore, rollback, escalation, DDoS and support runbooks now exist in docs/operations. Named owners, external channels, measured targets and exercises require owner completion. |
 | DEPLOY-01 | High | UNVERIFIED | The production branch is protected: no direct pushes, required PR review, and required status checks. | Production-checks.yml adds typecheck, Vitest, Playwright/axe, npm audit and Gitleaks jobs. New remote production branch/protection and required-check enforcement must be verified after push; writing YAML does not establish enforced controls. |
 | DEPLOY-02 | High | UNVERIFIED | CI runs build, tests, lint, and security scans on every PR, and failures block merge and deploy. | Production-checks.yml adds typecheck, Vitest, Playwright/axe, npm audit and Gitleaks jobs. New remote production branch/protection and required-check enforcement must be verified after push; writing YAML does not establish enforced controls. |
 | DEPLOY-03 | High | UNVERIFIED | A staging environment mirrors production's shape (schema, services, config keys) with separate data and credentials; PRs get preview deployments or staging verification before production. | Tests use disposable SQLite/data/upload paths. No live development/staging/production configuration or credential separation evidence was supplied. |
@@ -176,12 +176,12 @@ PASS means verified within the stated adapted scope; FAIL is an evidenced remain
 | TEST-05 | Medium | UNVERIFIED | The UI is tested on small screens, old devices/browsers, and slow networks; mobile layouts of core flows work. | Chromium Playwright covers 360px mobile navigation/offline login and desktop; axe login scans pass after contrast/ARIA/zoom fixes. No complete authenticated-view WCAG audit, old-browser/device matrix, screen-reader review or real-device tests. |
 | TEST-06 | Medium | UNVERIFIED | Tests are hermetic and pass reliably in CI (no reliance on local env, shared state, test order, or timing). | Full suite uses isolated temporary DB paths and passed locally; first sandbox-only failures were socket-permission artifacts. Remote CI stability and random-order runs have not been observed. |
 | TEST-07 | Low | UNVERIFIED | Usability has been tested with target users who did not build the product. | Automated edge tests were run, but they cannot establish usability by independent target users. No user-session notes supplied. |
-| OBS-01 | High | FAIL | Application logs are structured (JSON), centralized, searchable, and include timestamp, level, request/correlation ID, user or tenant ID, and action. | src/app.ts:228 emits text request logs without generated correlation IDs or a structured trace context. |
+| OBS-01 | High | FAIL | Application logs are structured (JSON), centralized, searchable, and include timestamp, level, request/correlation ID, user or tenant ID, and action. | HTTP/error and AI tool logs now use JSON with generated request IDs/timestamps/tenant context where applicable. Live centralized searchable retention and uniform coverage remain missing. |
 | OBS-02 | High | UNVERIFIED | Errors are captured by an error-tracking service with alerting, release tags, and request/user context (without leaking secrets or PII beyond policy). | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
 | OBS-03 | High | UNVERIFIED | External uptime checks from more than one region alert a human (not just a dashboard) within minutes of an outage. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
 | OBS-04 | High | UNVERIFIED | Business metrics (payments, signups, checkout completions, key job outcomes) are monitored against baselines, and drops trigger alerts. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
 | OBS-05 | Medium | UNVERIFIED | Synthetic transactions exercise the critical path on a schedule. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
-| OBS-06 | Medium | FAIL | Requests carry a correlation ID across services and logs; distributed tracing (OpenTelemetry or equivalent) is in place for multi-service paths. | src/app.ts:228 emits text request logs without generated correlation IDs or a structured trace context. |
+| OBS-06 | Medium | FAIL | Requests carry a correlation ID across services and logs; distributed tracing (OpenTelemetry or equivalent) is in place for multi-service paths. | Generated X-Request-ID correlates local HTTP/error/AI tool logs; no full cross-service propagation or distributed tracing implementation exists. |
 | OBS-07 | Medium | UNVERIFIED | SLOs and error budgets exist for critical endpoints, with burn-rate alerts and a policy for slowing releases when budgets burn. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
 | OBS-08 | Medium | UNVERIFIED | A status page runs on separate infrastructure, and there is a defined incident and maintenance communication workflow. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
 | OBS-09 | Medium | UNVERIFIED | Incidents get blameless post-mortems within about 48 hours using a standard template, stored in a searchable incident library. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
@@ -200,7 +200,7 @@ PASS means verified within the stated adapted scope; FAIL is an evidenced remain
 | UX-03 | Medium | UNVERIFIED | Core flows work at phone width, on slow networks, and on older devices/browsers; bundle size is monitored. | Chromium Playwright covers 360px mobile navigation/offline login and desktop; axe login scans pass after contrast/ARIA/zoom fixes. No complete authenticated-view WCAG audit, old-browser/device matrix, screen-reader review or real-device tests. |
 | UX-04 | High | UNVERIFIED | The app meets WCAG 2.x AA basics: full keyboard operability, labelled controls and images, correct ARIA usage, and 4.5:1 text contrast. | Chromium Playwright covers 360px mobile navigation/offline login and desktop; axe login scans pass after contrast/ARIA/zoom fixes. No complete authenticated-view WCAG audit, old-browser/device matrix, screen-reader review or real-device tests. |
 | UX-05 | Medium | FAIL | Dates, numbers, and currencies are locale-formatted, and scheduled communications use each user's stored timezone. | server.ts uses a required office TZ behind proxy; attendance is intentionally office-time-based, but user-level communication timezone preferences are absent. |
-| UX-06 | Low | FAIL | Essential product pages and flows exist: password reset, terms, privacy policy, helpful error and empty states. | public/index.html and public/mobile/index.html have password recovery/login but no linked terms/privacy pages; no complete B2B contract set was found. |
+| UX-06 | Low | FAIL | Essential product pages and flows exist: password reset, terms, privacy policy, helpful error and empty states. | Password recovery and public linked policy drafts exist. Legal approval and all-screen error/empty-state coverage remain incomplete. |
 | PAY-01 | Critical | N/A | Checkout sessions are created server-side from server-side or provider-side prices (Price IDs); no client-supplied amount, currency, or discount is trusted. | src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing. |
 | PAY-02 | Critical | N/A | Access and entitlements are granted only after a verified payment webhook (with amount and product checked), never from the success redirect. | src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing. |
 | PAY-03 | Critical | N/A | Every incoming webhook (payments, auth provider, email provider, source control, others) has its signature verified against the raw body with the provider's SDK before processing. | src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing. |
@@ -214,20 +214,20 @@ PASS means verified within the stated adapted scope; FAIL is an evidenced remain
 | PAY-11 | Medium | N/A | Webhook endpoints use non-guessable paths and, where supported, restrict source IPs to the provider's published ranges. | src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing. |
 | MAIL-01 | High | UNVERIFIED | Transactional email is authenticated (SPF, DKIM, DMARC), sent from a domain or subdomain separate from marketing, and monitored for delivery, bounces, and complaints. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
 | PAY-12 | Low | N/A | International customers see local currency (and optionally purchasing-power-adjusted pricing). | src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing. |
-| LEGAL-01 | High | UNVERIFIED | The privacy policy accurately reflects the data actually collected (including logs, analytics, device data) and every third party it flows to. | No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted. |
-| LEGAL-02 | High | FAIL | Required legal documents exist and are linked in the product: terms of service, privacy policy, refund policy; plus DPA and MSA/SLA for B2B. | public/index.html and public/mobile/index.html have password recovery/login but no linked terms/privacy pages; no complete B2B contract set was found. |
-| LEGAL-03 | High | UNVERIFIED | Users can export and delete their data on request, within the legally required deadline, and can opt out where required. | No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted. |
+| LEGAL-01 | High | UNVERIFIED | The privacy policy accurately reflects the data actually collected (including logs, analytics, device data) and every third party it flows to. | Application-specific draft privacy notice inventories accounts/device/IP, HR/payroll/location/uploads, offline caches, backups and optional AI/mail/push/QuickBooks/S3. Exact vendors/regions/legal entity/contacts and legal approval remain missing. |
+| LEGAL-02 | High | FAIL | Required legal documents exist and are linked in the product: terms of service, privacy policy, refund policy; plus DPA and MSA/SLA for B2B. | Public privacy/terms/refund/security/rights/AI drafts are linked in both login shells and served by an escaped allowlisted route. DPA/MSA/SLA templates exist. Owner placeholders and counsel approval prevent treating these as completed launch contracts. |
+| LEGAL-03 | High | UNVERIFIED | Users can export and delete their data on request, within the legally required deadline, and can opt out where required. | Manual identity/authority verification, redacted export, retention review and processor/backup follow-up procedure documented. Owner contacts/deadlines, real case evidence and automated workflows remain missing. |
 | LEGAL-04 | High | FAIL | Account deletion follows a documented cascade across all tables and systems (including analytics, logs, third parties, and backup expiry), with soft delete then scheduled hard delete. | src/core/users.routes.ts deactivates accounts; no complete user-data cascade across employee files, messages, logs, backups and third parties exists. |
-| LEGAL-05 | Medium | UNVERIFIED | A retention schedule reconciles legal retention requirements with deletion requests (anonymize versus retain), with an audit trail. | No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted. |
+| LEGAL-05 | Medium | UNVERIFIED | A retention schedule reconciles legal retention requirements with deletion requests (anonymize versus retain), with an audit trail. | Data-category inventory and proposed retention/rights case process documented in docs/governance/data-governance.md. Actual periods/legal bases/holds and approvals remain owner inputs. |
 | LEGAL-06 | Medium | UNVERIFIED | Consent for non-essential tracking is obtained in plain language before data flows to third parties. | No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted. |
 | LEGAL-07 | Critical | UNVERIFIED | If the product handles health data: PHI is encrypted at rest and in transit (including backups, logs, exports), every PHI access is audit-logged, and BAAs cover every vendor that can access PHI. | No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted. |
-| LEGAL-08 | High | UNVERIFIED | A breach response plan defines notification obligations and timelines by jurisdiction and regulation, owners, and evidence sources. | No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted. |
+| LEGAL-08 | High | UNVERIFIED | A breach response plan defines notification obligations and timelines by jurisdiction and regulation, owners, and evidence sources. | Incident/breach runbook includes preservation, containment, awareness time, jurisdiction-specific notification assessment and approval records. Contacts, applicable deadlines and exercise results remain unverified. |
 | LEGAL-09 | Medium | UNVERIFIED | AI-generated content shown to users is disclosed or labeled where regulations (for example the EU AI Act) or app-store rules require. | No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted. |
-| LEGAL-10 | Medium | UNVERIFIED | If selling to enterprises: SOC 2 readiness evidence is being collected (access reviews, patch SLAs, restore tests, incident procedures, vendor management), ideally automated. | No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted. |
-| LEGAL-11 | Low | UNVERIFIED | A recurring compliance review (for example quarterly) tracks regulatory changes for each jurisdiction where users live. | No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted. |
+| LEGAL-10 | Medium | UNVERIFIED | If selling to enterprises: SOC 2 readiness evidence is being collected (access reviews, patch SLAs, restore tests, incident procedures, vendor management), ideally automated. | Security evidence register, quarterly access/vendor/restore reviews, patch targets and contract questionnaire template added. No operational evidence history or SOC 2 attestation is established. |
+| LEGAL-11 | Low | UNVERIFIED | A recurring compliance review (for example quarterly) tracks regulatory changes for each jurisdiction where users live. | Quarterly legal/retention/vendor review and annual exercise calendar proposed in security-program.md. Owner assignment and performed reviews remain unverified. |
 | LEGAL-12 | Low | UNVERIFIED | Cyber liability insurance is in place or consciously declined, and platform liability terms are understood. | No owner/counsel jurisdiction, approved policies, data-subject request process, medical-data applicability, legal retention, consent, insurance or compliance records were supplied. App handles employee/payroll/contact/location/photo data. No HIPAA/GDPR/SOC 2 certification is asserted. |
 | AIQ-01 | High | FAIL | Every model response passes validation (schema, length, content rules) before it reaches users or downstream systems, with bounded retries and a graceful fallback. | src/modules/ai/ai.routes.ts now validates provider schema, tool counts, argument sizes and reply length; no semantic content policy, bounded repair retry or evaluated fallback. |
-| AIQ-02 | High | UNVERIFIED | Model calls have timeouts and a fallback path (alternate model or provider, cached response, or graceful message) when the provider is down or slow. | AI calls now time out after 30 seconds and central 5xx is generic; actual provider outage UX, model alternatives and full-loop deadline behavior were not verified against a live/synthetic failing provider. |
+| AIQ-02 | High | UNVERIFIED | Model calls have timeouts and a fallback path (alternate model or provider, cached response, or graceful message) when the provider is down or slow. | Provider calls have 30-second timeouts and a 120-second total turn AbortSignal; generic provider failures. A complete evaluated provider outage/fallback UX and real provider behavior remain unverified. |
 | AIQ-03 | Critical | FAIL | AI endpoints require authentication and enforce per-user rate limits, request-size limits, and token or spend caps by plan. | AI route has auth, message bounds, ten requests/minute per tenant/user, tenant call quotas and an optional tenant token cap; no hard per-user daily/monthly spend allocation or atomic reservation exists. |
 | AIQ-04 | High | UNVERIFIED | Provider accounts have billing limits and spend alerts configured. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
 | AIQ-05 | Medium | FAIL | An evaluation suite scores AI outputs against thresholds in CI, including a regression set built from real failures, and is used to compare prompts and models. | tests/ai*.test.ts verify deterministic tool/API behavior; no scored model-output evaluation dataset or quality/cost canary gate exists. |
@@ -241,509 +241,3 @@ PASS means verified within the stated adapted scope; FAIL is an evidenced remain
 | OPS-04 | Medium | UNVERIFIED | Support playbooks exist for each core feature, with defined automated, assisted, and incident tiers and human escalation for billing disputes and ambiguous reports. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
 | OPS-05 | Medium | N/A | Any AI support agent connected to production uses scoped, read-mostly access, logs every action, and cannot perform refunds, deletions, or account changes without human approval. | No autonomous support/refund agent. The interactive AI Assistant has separate risks under AISEC-03/07/08. |
 | OPS-06 | Low | UNVERIFIED | Onboarding delivers the core value quickly (templates or defaults) and discloses complexity progressively. | No live operational evidence was provided; repository/local tests cannot establish this complete control. |
-
-## Remaining verified gaps
-
-### AIQ-03 — Critical
-
-Location/evidence: AI route has auth, message bounds, ten requests/minute per tenant/user, tenant call quotas and an optional tenant token cap; no hard per-user daily/monthly spend allocation or atomic reservation exists.
-
-Failure scenario: Concurrent requests can overshoot a shared optional token cap, especially on the unlimited/default tenant.
-
-Recommended fix: Reserve token/spend budgets atomically per user/tenant/plan before provider calls, settle actual usage, and set provider billing hard caps.
-
-### API-01 — Critical
-
-Location/evidence: src/shared/validation.ts:1 has broad Zod body coverage, but many handlers use Number(req.params.id) or hand-parsed query parameters without a shared explicit schema.
-
-Failure scenario: Malformed IDs or unbounded query parameters can reach handlers inconsistently; protections differ across endpoints.
-
-Recommended fix: Inventory each route and add typed path/query/header schemas with bounded values and negative tests; do not globally coerce arbitrary objects.
-
-### API-02 — Critical
-
-Location/evidence: src/shared/validation.ts:1 uses ordinary z.object for most write bodies, which strips unknown fields; only selected schemas are strict.
-
-Failure scenario: Forbidden extra fields can be silently ignored rather than explicitly rejected, masking client misuse and creating risk when schemas later expand.
-
-Recommended fix: Use strict allowlists on security-sensitive writes first; audit current clients for legitimate fields before making all schemas strict.
-
-### EDGE-01 — Critical
-
-Location/evidence: src/app.ts:195 plus AI per-user limiter and signup/confidential-report limiters; no universal API/public-read budget or complete per-user+IP limiter coverage.
-
-Failure scenario: A bot can hammer expensive read/export or public endpoints without reaching the specific auth/AI limiters.
-
-Recommended fix: Add endpoint-specific and tenant/user/IP budgets plus edge limits; test expected workload so sync and legitimate office traffic are not throttled.
-
-### SECRET-01 — Critical
-
-Location/evidence: Gitleaks history scan: 268 commits, 11 detections; ten exact fixture/alphabet false positives allowlisted. Real bearer artifact in July commit f7f644b, removed by ec4ecbf, remains in Git history.
-
-Failure scenario: Anyone able to read that historical commit could have replayed its bearer token while it was live; current expiration/revocation in the original server was not inspected.
-
-Recommended fix: Verify the original session is invalid, investigate access during exposure, and decide on coordinated history cleanup. Do not rewrite shared history automatically. Keep this detection visible to CI until resolved.
-
-### AIQ-01 — High
-
-Location/evidence: src/modules/ai/ai.routes.ts now validates provider schema, tool counts, argument sizes and reply length; no semantic content policy, bounded repair retry or evaluated fallback.
-
-Failure scenario: A schema-valid hallucination or sensitive answer can still reach a user or generate a misleading business report.
-
-Recommended fix: Add domain/schema/content evaluation and safe fallback; keep policy checks outside the model and prevent unapproved tool writes.
-
-### AISEC-03 — High
-
-Location/evidence: src/modules/ai/ai-tools.ts:62 and executeTool contain writable inventory/order/user/message tools executed from model tool_calls without a separate action-approval record.
-
-Failure scenario: A prompt injection in retrieved text can ask a privileged user's assistant to send a message, change stock or delete records using that user's rights.
-
-Recommended fix: Disable mutating AI tools for launch or implement server-side proposed actions requiring explicit user confirmation, revalidated permissions and transaction/idempotency support. A prompt-only instruction is insufficient.
-
-### AISEC-04 — High
-
-Location/evidence: src/modules/ai/ai.routes.ts:309 returns model prose after schema/length validation, without prompt/PII leakage screening.
-
-Failure scenario: A manipulated prompt can cause internal instructions or sensitive authorized context to be echoed into a response or shared report.
-
-Recommended fix: Add output policy checks and a safe fallback; evaluate extraction, injection and PII cases without treating the filter as authorization.
-
-### AISEC-06 — High
-
-Location/evidence: src/modules/ai/ai-tools.ts:614 executes with the human AuthUser and shared provider key; no dedicated scoped short-lived agent credential.
-
-Failure scenario: Compromise of the assistant path inherits the full effective permission bundle of the requesting human.
-
-Recommended fix: Give agent execution an explicit reduced capability identity; bind tool calls to approved actions and short-lived grants.
-
-### AISEC-07 — High
-
-Location/evidence: src/modules/ai/ai-tools.ts:62 and executeTool contain writable inventory/order/user/message tools executed from model tool_calls without a separate action-approval record.
-
-Failure scenario: A prompt injection in retrieved text can ask a privileged user's assistant to send a message, change stock or delete records using that user's rights.
-
-Recommended fix: Disable mutating AI tools for launch or implement server-side proposed actions requiring explicit user confirmation, revalidated permissions and transaction/idempotency support. A prompt-only instruction is insufficient.
-
-### AISEC-08 — High
-
-Location/evidence: src/modules/ai/ai.routes.ts:91 saves steps in ai_messages, but DELETE /messages clears them and calls are not an independent append-only audit stream.
-
-Failure scenario: A destructive tool action can occur and its detailed tool transcript can subsequently be removed with chat history.
-
-Recommended fix: Write redacted tool audit events before/after execution to an append-only store with actor, tenant, request ID, approval ID and retention controls.
-
-### API-06 — High
-
-Location/evidence: src/modules/ai/ai.routes.ts:40 directly returns an exception message on reindex failure. Central handler is generic for unexposed 5xx, but no correlation ID exists.
-
-Failure scenario: A reindex filesystem/SQL error can reveal paths or schema details to an authorized caller and cannot be correlated with one request ID.
-
-Recommended fix: Return a stable generic error code; redact server details and add generated request IDs to logs and response headers.
-
-### AUTH-01 — High
-
-Location/evidence: src/shared/auth.ts:23; custom DB-backed bearer-session implementation using bcryptjs and crypto.randomBytes.
-
-Failure scenario: A future custom-session lifecycle bug affects every module without a maintained auth framework providing its guardrails.
-
-Recommended fix: Adopt a maintained auth/session framework in a compatibility migration; preserve native/installed-node support and test expiry/recovery/revocation end to end.
-
-### AUTH-03 — High
-
-Location/evidence: public/js/api.js:14; normal tokens in localStorage, borrowed sessions in sessionStorage; src/shared/auth.ts uses 12-hour ordinary sessions and no refresh-token family.
-
-Failure scenario: Any script injection can read a bearer token and reuse it until expiry or revocation.
-
-Recommended fix: Move web sessions to Secure HttpOnly SameSite cookies with CSRF protection and rotation. Use secure platform storage for native clients; explicitly design offline-PC credentials.
-
-### AUTH-05 — High
-
-Location/evidence: src/shared/auth.ts:48 creates a fresh token on login, but role changes do not rotate an existing session; browser tokens are not HttpOnly cookies.
-
-Failure scenario: A stolen pre-promotion token gains the newly granted permissions because the session is retained.
-
-Recommended fix: Revoke or rotate sessions on privilege changes, reauthenticate for elevation, and complete the web-cookie/native-storage migration.
-
-### AUTH-06 — High
-
-Location/evidence: public/js/api.js:14; normal tokens in localStorage, borrowed sessions in sessionStorage; src/shared/auth.ts uses 12-hour ordinary sessions and no refresh-token family.
-
-Failure scenario: Any script injection can read a bearer token and reuse it until expiry or revocation.
-
-Recommended fix: Move web sessions to Secure HttpOnly SameSite cookies with CSRF protection and rotation. Use secure platform storage for native clients; explicitly design offline-PC credentials.
-
-### AUTH-07 — High
-
-Location/evidence: src/core/auth.routes.ts:135 keeps the current session during password change; reset ends all sessions and operators now revoke on reset.
-
-Failure scenario: A shared or compromised current session remains valid after a password change, contrary to the strict all-session handbook requirement.
-
-Recommended fix: Revoke all sessions and return the user through a deliberate reauthentication flow; update desktop, mobile and offline UX together.
-
-### AUTH-12 — High
-
-Location/evidence: src/app.ts:204 adds login account/IP and recovery IP limits; signup has only IP throttling; reset token consumption has only IP throttling.
-
-Failure scenario: A distributed attacker can probe signup/reset attempts across many IPs without an account-wide attempt budget.
-
-Recommended fix: Add persistent account/identifier throttles and abuse controls covering signup and reset consumption, with careful lockout policy and alerts.
-
-### BACK-02 — High
-
-Location/evidence: AI/QBO/SMTP/S3 now have bounded timeouts; src/modules/ai/ai.routes.ts still allows up to 12 sequential model calls, with no shared request budget/circuit breaker or generalized 429 backoff.
-
-Failure scenario: An upstream outage occupies request slots for many sequential timeouts and can repeatedly trigger expensive retries by users.
-
-Recommended fix: Set an overall request deadline, per-provider concurrency/circuit-breaker controls and bounded jittered retries for idempotent calls; queue unsafe retries.
-
-### BACK-03 — High
-
-Location/evidence: src/modules/ai/ai.routes.ts:255 runs the tool loop in the request; large exports and reindex are also synchronous/in-request work.
-
-Failure scenario: Slow AI or a large export ties up requests or the SQLite event loop, delaying ordinary office actions.
-
-Recommended fix: Move long work to durable jobs with progress/status, cancellation, bounded retries and per-tenant concurrency.
-
-### CACHE-06 — High
-
-Location/evidence: scripts/audit-load.mjs performed 450 local read requests at 5/15/30 clients over 100 items with no failures; no target peak or production-like dataset/hardware supplied.
-
-Failure scenario: Payroll/export/stock workloads on real office data can saturate the single SQLite process even though a tiny local read probe passes.
-
-Recommended fix: Agree peak concurrent users and dataset sizes, seed representative staging data, run mixed reads/writes/exports and establish latency/error/resource thresholds.
-
-### DR-04 — High
-
-Location/evidence: tests/backup.test.ts verifies snapshot integrity and restore mechanics; docs/SAAS-OPERATIONS.md asks operators to test occasionally, but no dated production-size restore drill record/schedule is present.
-
-Failure scenario: A real disaster can expose missing upload/config/key recovery despite unit-level restore passing.
-
-Recommended fix: Run and time a clean staging restore of DBs, uploads, configuration and keys, verify the app, record duration and schedule recurring drills.
-
-### EDGE-08 — High
-
-Location/evidence: server.ts:1 serves the standalone app on 0.0.0.0 and uses Host in local HTTP redirects; no general explicit accepted-host allowlist. Ordinary installed PCs bind localhost.
-
-Failure scenario: A hostile Host can influence redirects or DNS-rebinding access to an on-site service; credentials remain required but network position alone is insufficient.
-
-Recommended fix: Configure and validate explicit cloud/LAN hostnames and redirect origins; allow deliberate office IPs and test native/phone setup paths.
-
-### LEGAL-02 — High
-
-Location/evidence: public/index.html and public/mobile/index.html have password recovery/login but no linked terms/privacy pages; no complete B2B contract set was found.
-
-Failure scenario: A new customer signs up or submits employee data without accessible product-specific terms and privacy disclosures.
-
-Recommended fix: Have the owner/counsel approve documents based on actual data flows and link them in signup/login/help; do not fabricate legal guarantees.
-
-### LEGAL-04 — High
-
-Location/evidence: src/core/users.routes.ts deactivates accounts; no complete user-data cascade across employee files, messages, logs, backups and third parties exists.
-
-Failure scenario: Deleting or disabling a login leaves personal records and uploads indefinitely without a tracked erasure decision.
-
-Recommended fix: Design a retention-aware export/erasure workflow with record mapping, legal holds, approval/audit, third-party tasks and backup expiry.
-
-### MOBILE-01 — High
-
-Location/evidence: public/js/api.js:17; native Capacitor shell reuses browser storage, with no Keystore/Keychain storage adapter.
-
-Failure scenario: A rooted/forensically accessed device can recover a long-lived bearer token from app storage.
-
-Recommended fix: Add a platform-backed secure-storage adapter and migration/clear-on-signout tests on real Android/iOS devices.
-
-### OBS-01 — High
-
-Location/evidence: src/app.ts:228 emits text request logs without generated correlation IDs or a structured trace context.
-
-Failure scenario: Operators cannot connect one failed action across requests, provider calls and sync replay quickly.
-
-Recommended fix: Add generated request IDs, structured redacted JSON logs, tenant/actor context and trace propagation; connect to an approved central sink.
-
-### SECRET-05 — High
-
-Location/evidence: .github/workflows/production-checks.yml adds remote Gitleaks scanning; no repository pre-commit secret hook exists and push-protection settings were not inspected.
-
-Failure scenario: A developer can commit a new credential locally; remote scanning catches it only after the push has already disclosed it.
-
-Recommended fix: Add a documented local staged-file secret hook and enable provider push protection; verify it blocks a synthetic secret.
-
-### WEB-04 — High
-
-Location/evidence: src/app.ts:116; X-Frame-Options DENY and proxy-only HSTS now exist, but enforced CSP/frame-ancestors is missing. ZAP rule 10038 confirms.
-
-Failure scenario: An HTML injection has no CSP script boundary; proxy framing protection depends on one header; the complete prescribed header set is absent.
-
-Recommended fix: Inventory inline handlers, generated print windows and workers; migrate to nonce/hash scripts and deploy an enforced CSP including frame-ancestors, object-src and base-uri. Keep LAN/native compatibility verified.
-
-### WEB-05 — High
-
-Location/evidence: src/app.ts:116; X-Frame-Options DENY and proxy-only HSTS now exist, but enforced CSP/frame-ancestors is missing. ZAP rule 10038 confirms.
-
-Failure scenario: An HTML injection has no CSP script boundary; proxy framing protection depends on one header; the complete prescribed header set is absent.
-
-Recommended fix: Inventory inline handlers, generated print windows and workers; migrate to nonce/hash scripts and deploy an enforced CSP including frame-ancestors, object-src and base-uri. Keep LAN/native compatibility verified.
-
-### AIQ-05 — Medium
-
-Location/evidence: tests/ai*.test.ts verify deterministic tool/API behavior; no scored model-output evaluation dataset or quality/cost canary gate exists.
-
-Failure scenario: A prompt/model change can double cost or degrade answers while deterministic API tests still pass.
-
-Recommended fix: Create versioned synthetic/regression evaluation datasets with quality/safety/cost thresholds and controlled model comparisons before rollout.
-
-### AIQ-06 — Medium
-
-Location/evidence: tests/ai*.test.ts verify deterministic tool/API behavior; no scored model-output evaluation dataset or quality/cost canary gate exists.
-
-Failure scenario: A prompt/model change can double cost or degrade answers while deterministic API tests still pass.
-
-Recommended fix: Create versioned synthetic/regression evaluation datasets with quality/safety/cost thresholds and controlled model comparisons before rollout.
-
-### AIQ-07 — Medium
-
-Location/evidence: AI chat calls are not response/semantic cached or routed by complexity; a single configured model handles requests.
-
-Failure scenario: Repeated questions incur repeated provider spend and consume concurrency during spikes.
-
-Recommended fix: Measure workload first; cache only safe tenant/user-scoped results, use provider prompt caching and evaluate smaller-model routing without caching stale business facts.
-
-### API-07 — Medium
-
-Location/evidence: src/app.ts:356 returns the shell for unknown non-API paths; unknown API paths can use framework 404 handling.
-
-Failure scenario: A typo or missing route appears as a successful shell or generic framework page with no clear recovery action.
-
-Recommended fix: Define explicit API JSON 404 and useful app not-found/timeout views without breaking legitimate SPA deep links.
-
-### AUTHZ-15 — Medium
-
-Location/evidence: src/core/auth.routes.ts:1 and src/platform/platform-users.ts:1 accept a current bearer session without MFA or fresh-password challenge for privileged operations.
-
-Failure scenario: A stolen admin session can change accounts, permissions or exports without a second authentication step.
-
-Recommended fix: Add step-up authentication and MFA for platform operators and high-value tenant actions.
-
-### BACK-05 — Medium
-
-Location/evidence: AI/QBO/SMTP/S3 now have bounded timeouts; src/modules/ai/ai.routes.ts still allows up to 12 sequential model calls, with no shared request budget/circuit breaker or generalized 429 backoff.
-
-Failure scenario: An upstream outage occupies request slots for many sequential timeouts and can repeatedly trigger expensive retries by users.
-
-Recommended fix: Set an overall request deadline, per-provider concurrency/circuit-breaker controls and bounded jittered retries for idempotent calls; queue unsafe retries.
-
-### BACK-06 — Medium
-
-Location/evidence: server.ts:1 timers and src/platform/offsite.ts have logs/status files but no general dead-letter queue or operator alert/replay mechanism.
-
-Failure scenario: Repeated backup, reminder or external-job failures can continue silently between manual checks.
-
-Recommended fix: Persist failed jobs, alert a named operator and provide safe replay with idempotent processing.
-
-### BACK-08 — Medium
-
-Location/evidence: AI/QBO/SMTP/S3 now have bounded timeouts; src/modules/ai/ai.routes.ts still allows up to 12 sequential model calls, with no shared request budget/circuit breaker or generalized 429 backoff.
-
-Failure scenario: An upstream outage occupies request slots for many sequential timeouts and can repeatedly trigger expensive retries by users.
-
-Recommended fix: Set an overall request deadline, per-provider concurrency/circuit-breaker controls and bounded jittered retries for idempotent calls; queue unsafe retries.
-
-### BACK-09 — Medium
-
-Location/evidence: src/app.ts:1 exposes unversioned /api routes; no OpenAPI contract or formal deprecation/sunset policy is present.
-
-Failure scenario: A response or route change breaks installed clients without a parallel compatibility version.
-
-Recommended fix: Document the existing REST contract, introduce backward-compatible API versioning and a client upgrade/deprecation policy.
-
-### BACK-12 — Medium
-
-Location/evidence: src/modules/ai/rag.ts:16 refreshes search lazily every five minutes; multiple features poll for changes.
-
-Failure scenario: A record or ACL/source change may remain stale in the search index until a reindex, and failed derived updates lack durable replay.
-
-Recommended fix: Define freshness requirements, invalidate affected retrieval chunks on writes/permission changes, and persist retryable derived-update events.
-
-### CACHE-04 — Medium
-
-Location/evidence: src/app.ts:314 applies no-cache to unversioned assets; service worker uses a manually versioned shell.
-
-Failure scenario: Large clients revalidate many assets and depend on manual cache-version bumps after updates.
-
-Recommended fix: Fingerprint immutable assets and deploy matching HTML/worker manifests; keep private API responses no-store.
-
-### CACHE-05 — Medium
-
-Location/evidence: No cache hit/miss instrumentation in src/core/messages.routes.ts or src/modules/ai/rag.ts.
-
-Failure scenario: A cache change can add complexity without demonstrating reduced upstream or DB cost.
-
-Recommended fix: Record hit/miss and refill timing per cache type with tenant-safe aggregation.
-
-### CACHE-08 — Medium
-
-Location/evidence: AI chat calls are not response/semantic cached or routed by complexity; a single configured model handles requests.
-
-Failure scenario: Repeated questions incur repeated provider spend and consume concurrency during spikes.
-
-Recommended fix: Measure workload first; cache only safe tenant/user-scoped results, use provider prompt caching and evaluate smaller-model routing without caching stale business facts.
-
-### DATA-03 — Medium
-
-Location/evidence: src/core/auth.routes.ts:31 and many route lists use full-row queries; no query-count budget is enforced.
-
-Failure scenario: Growing records or a newly added sensitive column can increase payload/query cost or exposure unless each response is rechecked.
-
-Recommended fix: Select explicit response columns on hot paths and add measured query-count budgets for representative list screens.
-
-### DATA-05 — Medium
-
-Location/evidence: src/shared/db.ts:1 helpers execute statements without a slow-query recorder; request logs report only whole-request elapsed time.
-
-Failure scenario: A slow SQL query under load cannot be identified from SQL-level latency statistics.
-
-Recommended fix: Add bounded, redacted slow-query timing and review it using production-like data and SQLite EXPLAIN QUERY PLAN.
-
-### DATA-09 — Medium
-
-Location/evidence: src/core/users.routes.ts:102 and profile/settings edits do not require an expected version or If-Match.
-
-Failure scenario: Two administrators editing the same record can silently overwrite the earlier administrator's changes.
-
-Recommended fix: Add optimistic version checks to collaborative business edits and return a conflict with reload/merge UX; retain atomic stock transitions.
-
-### DATA-11 — Medium
-
-Location/evidence: src/shared/db.ts uploadDir and diskStorage upload handlers use local files; DBs store paths, but serving is authenticated local disk rather than object storage/CDN.
-
-Failure scenario: A single application volume is a storage and scaling bottleneck; losing it requires restoring both databases and uploads.
-
-Recommended fix: For cloud scale, add a private object-storage adapter and authorized expiring downloads; keep deliberate offline/local storage for installed PCs.
-
-### DEPLOY-07 — Medium
-
-Location/evidence: railway.json:1 defines ordinary restart/healthcheck; module entitlements can disable modules but no canary/error-rate rollback controller exists.
-
-Failure scenario: A bad release reaches all users before a person notices and rolls it back.
-
-Recommended fix: Define staging promotion and canary/kill-switch policy plus observed automatic rollback thresholds; verify against actual hosting topology.
-
-### DR-05 — Medium
-
-Location/evidence: docs/SAAS-OPERATIONS.md:162 describes daily backups but no business-approved RTO/RPO.
-
-Failure scenario: Daily snapshots may lose nearly 24 hours of work even if the business assumes minutes.
-
-Recommended fix: Obtain explicit acceptable outage/data-loss targets and configure/test backup frequency and failover against those targets.
-
-### EDGE-13 — Medium
-
-Location/evidence: src/app.ts rate limiters use fixed windows and constants; tenant plan quotas exist separately in src/platform/quota.ts.
-
-Failure scenario: A traffic spike is handled only by static limits; all plans share those limits regardless of cost or current overload.
-
-Recommended fix: Add load-aware concurrency budgets and plan-specific admission policies once target traffic and production metrics are known.
-
-### MOBILE-04 — Medium
-
-Location/evidence: mobile-app/android/app/src/main/AndroidManifest.xml and public/mobile/native.js permit configurable local HTTP server addresses; no server pin/rotation policy verified.
-
-Failure scenario: An employee configuring an HTTP endpoint can send a bearer session over an unencrypted network.
-
-Recommended fix: Require TLS for production/native endpoints, retain explicit safe development exceptions, and validate certificate trust/rotation on devices.
-
-### OBS-06 — Medium
-
-Location/evidence: src/app.ts:228 emits text request logs without generated correlation IDs or a structured trace context.
-
-Failure scenario: Operators cannot connect one failed action across requests, provider calls and sync replay quickly.
-
-Recommended fix: Add generated request IDs, structured redacted JSON logs, tenant/actor context and trace propagation; connect to an approved central sink.
-
-### OPS-01 — Medium
-
-Location/evidence: src/core/analytics.routes.ts exposes operational business metrics, not product cohort retention/activation analysis.
-
-Failure scenario: The team can see stock totals while missing that new customers stop using the app after onboarding.
-
-Recommended fix: Define privacy-conscious product events and cohort views with clear purpose, retention and access controls.
-
-### SECRET-10 — Medium
-
-Location/evidence: src/modules/ai/ai.routes.ts:226 includes provider response snippets in thrown errors; central handler logs Error details. Startup password logging was removed, but no central log redactor exists.
-
-Failure scenario: A provider error echoing request content or a credential can be persisted in deployment logs.
-
-Recommended fix: Redact structured logs and provider errors at the boundary; retain status/request IDs, not raw response bodies or secrets.
-
-### SUPPLY-05 — Medium
-
-Location/evidence: .node-version:1 is a major-only 22 and package.json permits >=22.13; CI pins versions but hosting runtime/installable artifacts are not fully pinned.
-
-Failure scenario: A rebuild can silently pick a different major runtime and change SQLite/native behavior.
-
-Recommended fix: Pin and record supported production runtime versions and maintain a scheduled upgrade policy; verify Node 22, Node 24 and Electron separately.
-
-### SUPPLY-07 — Medium
-
-Location/evidence: electron/main.cjs and scripts launch server/child processes with inherited process.env; provider adapters read shared environment variables.
-
-Failure scenario: A compromised subprocess/dependency receives credentials unrelated to the operation it performs.
-
-Recommended fix: Pass minimum explicit environment/configuration to subprocesses and components; retain required runtime proxy/identity bindings in managed environments.
-
-### TEST-02 — Medium
-
-Location/evidence: vitest.config.ts:1 has no coverage provider or enforced coverage threshold; CI runs tests and browser checks but no coverage gate.
-
-Failure scenario: A newly untested critical path can merge even while existing tests remain green.
-
-Recommended fix: Collect measured coverage for critical security/business modules, establish an honest baseline, and ratchet meaningful branch coverage instead of inventing a percentage.
-
-### UX-05 — Medium
-
-Location/evidence: server.ts uses a required office TZ behind proxy; attendance is intentionally office-time-based, but user-level communication timezone preferences are absent.
-
-Failure scenario: A remote user receives scheduled notifications on office time and may misunderstand date boundaries.
-
-Recommended fix: Keep payroll in the configured office zone; add explicit user display/notification timezone preferences where remote users are supported.
-
-### WEB-07 — Medium
-
-Location/evidence: src/app.ts:116; X-Frame-Options DENY and proxy-only HSTS now exist, but enforced CSP/frame-ancestors is missing. ZAP rule 10038 confirms.
-
-Failure scenario: An HTML injection has no CSP script boundary; proxy framing protection depends on one header; the complete prescribed header set is absent.
-
-Recommended fix: Inventory inline handlers, generated print windows and workers; migrate to nonce/hash scripts and deploy an enforced CSP including frame-ancestors, object-src and base-uri. Keep LAN/native compatibility verified.
-
-### AUTHZ-14 — Low
-
-Location/evidence: src/shared/db.ts:326; REST resource paths generally use SQLite integer IDs.
-
-Failure scenario: An authenticated caller can enumerate identifiers more cheaply, increasing pressure on every object-level permission check.
-
-Recommended fix: Use opaque public IDs where enumeration matters; keep existing server authorization and add compatibility lookup/migration tests.
-
-### UX-06 — Low
-
-Location/evidence: public/index.html and public/mobile/index.html have password recovery/login but no linked terms/privacy pages; no complete B2B contract set was found.
-
-Failure scenario: A new customer signs up or submits employee data without accessible product-specific terms and privacy disclosures.
-
-Recommended fix: Have the owner/counsel approve documents based on actual data flows and link them in signup/login/help; do not fabricate legal guarantees.
-
-## PASS check IDs
-
-AUDIT-01, AUTH-02, AUTH-04, AUTH-08, AUTHZ-05, AUTHZ-08, AUTHZ-09, AUTHZ-12, SECRET-02, SECRET-04, SECRET-06, SECRET-09, WEB-01, WEB-06, SUPPLY-01, AISEC-01, AISEC-02, AISEC-05, AISEC-10, MOBILE-02, BACK-01, BACK-07, BACK-10, BACK-11, DATA-01, DR-01, TEST-03, TEST-04
-
-## FAIL check IDs
-
-AUTH-01, AUTH-03, AUTH-05, AUTH-06, AUTH-07, AUTH-12, AUTHZ-14, AUTHZ-15, SECRET-01, SECRET-05, SECRET-10, API-01, API-02, API-06, API-07, WEB-04, WEB-05, WEB-07, EDGE-01, EDGE-08, EDGE-13, SUPPLY-05, SUPPLY-07, AISEC-03, AISEC-04, AISEC-06, AISEC-07, AISEC-08, MOBILE-01, MOBILE-04, BACK-02, BACK-03, BACK-05, BACK-06, BACK-08, BACK-09, BACK-12, DATA-03, DATA-05, DATA-09, DATA-11, CACHE-04, CACHE-05, CACHE-06, CACHE-08, DR-04, DR-05, DEPLOY-07, TEST-02, OBS-01, OBS-06, UX-05, UX-06, LEGAL-02, LEGAL-04, AIQ-01, AIQ-03, AIQ-05, AIQ-06, AIQ-07, OPS-01
-
-## N/A check IDs
-
-AUTH-09, API-08, WEB-02, WEB-08, EDGE-10, DATA-04, DATA-10, PAY-01, PAY-02, PAY-03, PAY-04, PAY-05, PAY-06, PAY-07, PAY-08, PAY-10, PAY-11, PAY-12, OPS-05
-
-## UNVERIFIED check IDs
-
-FRAME-01, FRAME-02, FRAME-03, FRAME-04, FRAME-05, AUDIT-02, AUDIT-03, AUDIT-04, AUDIT-05, AUDIT-06, AUDIT-07, WF-01, WF-02, WF-03, WF-04, WF-05, WF-06, AUTH-10, AUTH-11, AUTH-13, AUTH-14, AUTHZ-01, AUTHZ-02, AUTHZ-03, AUTHZ-04, AUTHZ-06, AUTHZ-07, AUTHZ-10, AUTHZ-11, AUTHZ-13, SECRET-03, SECRET-07, SECRET-08, API-03, API-04, API-05, API-09, API-10, WEB-03, EDGE-02, EDGE-03, EDGE-04, EDGE-05, EDGE-06, EDGE-07, EDGE-09, EDGE-11, EDGE-12, SUPPLY-02, SUPPLY-03, SUPPLY-04, SUPPLY-06, SUPPLY-08, AISEC-09, MOBILE-03, MOBILE-05, MOBILE-06, BACK-04, DATA-02, DATA-06, DATA-07, DATA-08, DATA-12, DATA-13, CACHE-01, CACHE-02, CACHE-03, CACHE-07, CACHE-09, DR-02, DR-03, DR-06, DEPLOY-01, DEPLOY-02, DEPLOY-03, DEPLOY-04, DEPLOY-05, DEPLOY-06, DEPLOY-08, DEPLOY-09, TEST-01, TEST-05, TEST-06, TEST-07, OBS-02, OBS-03, OBS-04, OBS-05, OBS-07, OBS-08, OBS-09, OBS-10, OBS-11, OBS-12, PLAT-01, PLAT-02, PLAT-03, PLAT-04, PLAT-05, PLAT-06, PLAT-07, UX-01, UX-02, UX-03, UX-04, PAY-09, MAIL-01, LEGAL-01, LEGAL-03, LEGAL-05, LEGAL-06, LEGAL-07, LEGAL-08, LEGAL-09, LEGAL-10, LEGAL-11, LEGAL-12, AIQ-02, AIQ-04, AIQ-08, AIQ-09, OPS-02, OPS-03, OPS-04, OPS-06

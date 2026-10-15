@@ -401,7 +401,7 @@ window.MApp = (function () {
 
     window.addEventListener('hashchange', render);
 
-    if (API.getToken()) {
+    if (API.hasSession()) {
       API.get('/auth/me').then(function (res) { enterApp(res.user); }).catch(function (ex) {
         var m = cachedMe();
         if (ex && ex.offline && m) { enterApp(m); mToast && mToast('Offline — working from cache'); }

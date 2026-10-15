@@ -8,12 +8,13 @@
  * DB, this module never writes to it.
  *
  * A browser's WebSocket API can't set custom headers on the handshake, so the session
- * token travels as `?token=` in the connection URL instead of an Authorization header
- * (safe here since the app is served over TLS — see server.ts's cert handling).
+ * browser uses its HttpOnly cookie and an origin-checked handshake. Installed clients
+ * keep legacy `?token=` authentication; proxies must redact query strings from logs.
  */
 import type { Server as HttpServer, IncomingMessage } from 'node:http';
 import type { Server as HttpsServer } from 'node:https';
 import { WebSocketServer, WebSocket } from 'ws';
+import { browserToken } from './browser-session';
 import { userFromToken } from './auth';
 import { resolveTenantSlug, getTenant, retiredDefaultTenant } from '../platform/platform';
 import { tenantPath, onTenantPathHost } from '../platform/tenant-path';
@@ -100,7 +101,14 @@ export function attachWebSocket(server: HttpServer | HttpsServer): void {
     // userFromToken() resolves the tenant DB off tenantStore (see db.ts's `db` proxy) —
     // without this it would silently fall back to the default tenant's DB and accept
     // (or reject) tokens that belong to a completely different workspace.
-    const token = url.searchParams.get('token');
+    const bearer = url.searchParams.get('token');
+    if (!bearer) {
+      try {
+        const origin = new URL(String(req.headers.origin || ''));
+        if (!['http:', 'https:'].includes(origin.protocol) || origin.host !== req.headers.host) { socket.destroy(); return; }
+      } catch { socket.destroy(); return; }
+    }
+    const token = bearer || browserToken(req as import('express').Request, slug);
     const user = tenantStore.run({ db: getDb(slug), slug }, () => userFromToken(token));
     if (!user) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
