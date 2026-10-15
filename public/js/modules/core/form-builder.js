@@ -561,7 +561,7 @@ App.register('form-builder', async (view, filter) => {
             <label for="fb-name">Form name *</label>
             <input id="fb-name" aria-required="true" maxlength="120" data-f="name" value="${UI.esc(seed ? seed.name : '')}" placeholder="e.g. Leave Request" />
             <label for="fb-version-reason">Reason for this form change${existing?.archived_at ? ' *' : ' (optional)'}</label><textarea ${existing?.archived_at ? 'aria-required="true"' : ''} id="fb-version-reason" data-f="change_reason" maxlength="1000" rows="2"></textarea>
-            <details class="fb-advanced"><summary>Advanced settings ${UI.helpIcon('The form ID is generated from its name. Change the ID, numbering prefix, or icon only when needed.')}</summary>
+            <details class="fb-advanced"><summary>Advanced settings</summary><p class="muted">The form ID is generated from its name. Change the ID, numbering prefix, or icon only when needed.</p>
               <div class="fb-settings-grid">
                 <div><label for="fb-slug">Form ID ${UI.helpIcon('A unique ID using lowercase letters, numbers, and underscores. Templates and workflows may refer to this ID, so take care when changing an existing form.')}</label><input id="fb-slug" aria-required="true" maxlength="60" data-f="slug" value="${UI.esc(seed ? seed.slug : '')}" placeholder="leave_request" class="mono" /></div>
                 <div><label for="fb-prefix">Number prefix ${UI.helpIcon('The letters at the start of issued record numbers, such as LV in LV-00001. Use uppercase letters or numbers.')}</label><input id="fb-prefix" aria-required="true" maxlength="10" data-f="number_prefix" value="${UI.esc(seed ? seed.number_prefix : 'FM')}" placeholder="FM" class="mono" /></div>
