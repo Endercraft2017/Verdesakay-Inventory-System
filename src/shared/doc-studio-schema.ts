@@ -5,7 +5,7 @@ export function createStudioSchema(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS doc_studio_versions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      template_id INTEGER NOT NULL REFERENCES doc_templates(id) ON DELETE CASCADE,
+      template_id INTEGER NOT NULL REFERENCES doc_templates(id) ON UPDATE CASCADE ON DELETE CASCADE,
       snapshot TEXT NOT NULL,
       label TEXT NOT NULL DEFAULT 'Saved template',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -42,8 +42,27 @@ export function createStudioSchema(db: DatabaseSync): void {
       touched_at INTEGER NOT NULL, PRIMARY KEY(document_key,client_id)
     );
   `);
+  // Template INSERT triggers create history before offline ID allocation finishes.
+  // Its foreign key must follow that final ID, including on existing workspaces.
+  const versionKey=db.prepare('PRAGMA foreign_key_list(doc_studio_versions)').all() as Array<{table:string;on_update:string}>;
+  if(versionKey.some(key=>key.table==='doc_templates'&&key.on_update!=='CASCADE')) {
+    db.exec(`SAVEPOINT studio_history_key;
+      DROP TRIGGER IF EXISTS doc_studio_version_before;
+      DROP TRIGGER IF EXISTS doc_studio_version_after;
+      DROP TRIGGER IF EXISTS doc_studio_version_insert;
+      CREATE TABLE doc_studio_versions_rekey (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        template_id INTEGER NOT NULL REFERENCES doc_templates(id) ON UPDATE CASCADE ON DELETE CASCADE,
+        snapshot TEXT NOT NULL,label TEXT NOT NULL DEFAULT 'Saved template',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')));
+      INSERT INTO doc_studio_versions_rekey SELECT * FROM doc_studio_versions;
+      DROP TABLE doc_studio_versions;
+      ALTER TABLE doc_studio_versions_rekey RENAME TO doc_studio_versions;
+      CREATE INDEX idx_doc_versions ON doc_studio_versions(template_id,id);
+      RELEASE studio_history_key;`);
+  }
   for(const [table,prefix] of [['doc_templates','template'],['form_definitions','form']]) {
-    db.exec(`CREATE TRIGGER IF NOT EXISTS doc_studio_cleanup_${prefix} AFTER DELETE ON ${table} BEGIN
+    db.exec(`DROP TRIGGER IF EXISTS doc_studio_cleanup_${prefix}; CREATE TRIGGER doc_studio_cleanup_${prefix} AFTER DELETE ON ${table} WHEN form_history_enabled() BEGIN
       DELETE FROM doc_studio_drafts WHERE document_key='${prefix}:'||OLD.id;
       DELETE FROM doc_studio_rooms WHERE document_key='${prefix}:'||OLD.id;
       DELETE FROM doc_studio_comments WHERE document_key='${prefix}:'||OLD.id;
@@ -55,7 +74,7 @@ export function createStudioSchema(db: DatabaseSync): void {
     'tileFill',${row}.tile_fill,'continuous',${row}.tile_continuous,'repeatCount',${row}.repeat_count,'gapXmm',${row}.grid_gap_x_mm,'gapYmm',${row}.grid_gap_y_mm)`;
   for (const [event, row, name] of [['BEFORE UPDATE','OLD','before'],['AFTER UPDATE','NEW','after'],['AFTER INSERT','NEW','insert']]) {
     db.exec(`DROP TRIGGER IF EXISTS doc_studio_version_${name}`);
-    db.exec(`CREATE TRIGGER IF NOT EXISTS doc_studio_version_${name} ${event} ON doc_templates BEGIN
+    db.exec(`CREATE TRIGGER IF NOT EXISTS doc_studio_version_${name} ${event} ON doc_templates WHEN form_history_enabled() BEGIN
       INSERT INTO doc_studio_versions(template_id,snapshot)
         SELECT ${row}.id,${snapshot(row!)}
         WHERE COALESCE((SELECT snapshot FROM doc_studio_versions WHERE template_id=${row}.id ORDER BY id DESC LIMIT 1),'') != ${snapshot(row!)};

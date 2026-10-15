@@ -1137,3 +1137,19 @@ the new password. Owner operators use separate `/username` and `/password` conso
 endpoints. Renames keep account identity and Company ID, retain the calling session,
 and revoke other sessions. Homepage login saves its session in the selected tenant's
 storage namespace before redirecting.
+## Connected form submission to sales review
+
+Builder selects typed fields and permissioned sources → field bindings select a source property
+and editable/locked behavior → product rows capture ID/name/unit/list price, quantity and discount
+→ shared arithmetic previews subtotal/tax/total → server rebuilds allowed snapshots and amounts →
+draft save retains these values → explicit submission checks sales permissions and active links →
+one transaction saves the submitted record, an open sales order, its net-priced lines and the
+`form_sales_links` row → review through existing Sales Orders → existing approval/release/accounting.
+
+Validation/permission failure rolls the submission back. Lost create responses retry the same
+idempotency key and body. Linked record data/status remain immutable; later sales corrections
+happen on the sales order. Source records never silently refresh saved names/prices. Company and
+current-user fields are captured on creation. Offline form records use the existing merge class;
+form-definition changes retain the existing main-site claim rules. Captured template/link/history
+effects are applied once without rerunning their derived triggers. See the connected forms guide
+for field types, calculation limits, print tokens and acceptance tasks.

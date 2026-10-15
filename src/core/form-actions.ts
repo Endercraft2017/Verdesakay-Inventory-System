@@ -22,7 +22,7 @@ import { userPermissions } from '../shared/roles';
 import type { FormAction, FormDefinition, FieldDef, Role } from '../shared/types';
 import { commandFileName, now } from '../shared/sync-context';
 
-export type ActionTrigger = 'create' | 'approved';
+export type ActionTrigger = 'create' | 'approved' | 'submitted';
 
 interface RunArgs {
   recordId: number;
@@ -49,6 +49,12 @@ function parseJson<T>(raw: unknown, fallback: T): T {
 /** The employee this record is about — from a field of type `employee` (value is the name),
  *  else a plain `employee_name` / `employee_id` in the data. Null if none / no match. */
 function resolveEmployee(fields: FieldDef[], data: Record<string, unknown>): ResolvedEmployee | null {
+  const reference=fields.find(field=>field.type==='reference'&&field.source==='employee');
+  const selected=reference?data[reference.key] as {id?:number}|undefined:undefined;
+  if(selected?.id){
+    const employee=queryOne<ResolvedEmployee>('SELECT e.id,e.name,e.user_id,u.email,e.department_id FROM employees e LEFT JOIN users u ON u.id=e.user_id WHERE e.id=?',selected.id);
+    if(employee)return employee;
+  }
   const empField = fields.find((f) => f.type === 'employee');
   const name = empField ? data[empField.key] : (data.employee_name ?? data.employee);
   const id = data.employee_id;
@@ -102,13 +108,14 @@ export function runFormActions(args: RunArgs): { warnings: string[] } {
   const actions = parseJson<FormAction[]>(args.formDef.actions, []);
   if (!actions.length) return { warnings };
   const fields = parseJson<FieldDef[]>(args.formDef.fields, []);
-  const due = actions.filter((a) => (a.run_on ?? 'create') === args.trigger);
+  const due = actions.filter((a) => a.type!=='create_sales_draft' && (a.run_on ?? 'create') === args.trigger);
   if (!due.length) return { warnings };
 
   const employee = resolveEmployee(fields, args.data);
   const link = `#/form-records?form_id=${args.formDef.id}`;
   const tplCtx: Record<string, unknown> = {
     ...args.data,
+    fields: args.data,
     number: args.recordNumber,
     record:{number:args.recordNumber,status:args.trigger==='approved'?'approved':(queryOne<{status:string}>('SELECT status FROM form_records WHERE id=?',args.recordId)?.status||''),created_at:queryOne<{created_at:string}>('SELECT created_at FROM form_records WHERE id=?',args.recordId)?.created_at||''},
     today: now().toISOString().slice(0, 10),

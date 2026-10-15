@@ -5,7 +5,7 @@ import type { FormRecord, FieldDef } from '../../shared/types';
 
 export function definitionForRecord(record: Pick<FormRecord, 'form_def_id' | 'definition_version'>) {
   const row = queryOne<{ definition: string }>('SELECT definition FROM form_definition_versions WHERE form_id=? AND version=?', record.form_def_id, record.definition_version ?? 1);
-  return row ? JSON.parse(row.definition) as { name: string; fields: FieldDef[]; slug: string } : null;
+  return row ? JSON.parse(row.definition) as { name: string; fields: FieldDef[]; slug: string; actions?: import('../../shared/types').FormAction[] } : null;
 }
 export function recordResponse(record: FormRecord) {
   return { ...record, data: typeof record.data === 'string' ? parseData(record.data) : record.data, schema: definitionForRecord(record) };

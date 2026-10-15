@@ -1308,3 +1308,25 @@ CKD physical component previews map to standard build stock; failed unit-templat
 reads cannot open blank sheets. See `docs/reviews/mobile-qr-playwright-audit.md`.
 Handoff photos/signature/token state still require recapture after page restart;
 physical phone/printer acceptance and final-slip/delivery recovery remain open.
+### Connected staff Data Forms
+
+`core/data-forms/sources.ts` owns the explicit source registry, module/read gates,
+whitelisted snapshots and field binding validation. `sources.routes.ts` exposes the
+catalog and bounded searches under `/api/data-forms/sources`. Product sale prices use
+`attributes.sale_price`, matching Sales Orders; cost is not offered by that source.
+`calculations.ts` normalizes product rows and uses the same `public/js/lib/form-math.js`
+arithmetic as browser previews. `form-connections.js` and `form-items.js` render the shared
+lookup/retry, binding and repeating-row controls. Definitions retain this configuration in
+the existing versioned fields JSON. Saved references use stable IDs and historical values.
+
+`sales-workflow.ts` validates configured submission mappings and atomically creates one open
+sales order using `orders.routes.ts#createDraftSaleForForm` and the existing sales validators,
+item writer and totals. `form_sales_links` is the durable per-record idempotency/link boundary;
+linked record values and status are immutable and deletion is refused. Existing create-key
+middleware protects response-loss retries. Schema 80 repairs the template-history foreign key
+to cascade offline ID allocation without losing snapshots. Template and layout derived triggers
+are suppressed during changeset application because their authoritative effects are captured.
+Employee self-service request schemas reject unsupported connected types; staff forms support
+all new types. Print catalogs expose nested references and repeating product rows.
+
+Guide: `docs/guides/connected-data-forms.md`. Browser gate: `npm run test:forms:connected:ux`.

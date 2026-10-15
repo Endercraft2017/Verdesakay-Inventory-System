@@ -432,7 +432,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   function batchPlan(targets, operation, nextStatus) {
     return targets.map((record) => {
       let reason = '';
-      if (formDef.archived_at && operation === 'delete') reason = 'Archived records must be retained';
+      if(record.sales_order_id && ['delete','status'].includes(operation)) reason='Linked to a sales order; review it there';
+      else if (formDef.archived_at && operation === 'delete') reason = 'Archived records must be retained';
       else if (operation === 'paid' && record.status === 'paid') reason = 'Already paid';
       else if (operation === 'unpaid' && record.status !== 'paid') reason = 'Not marked paid';
       else if (isPayroll && record.status === 'paid' && operation !== 'unpaid') reason = 'Paid payslip is locked';
@@ -448,7 +449,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     return new Promise((resolve) => {
       const modal = UI.modal({
         title: `${verb} — review ${targets.length} record${targets.length === 1 ? '' : 's'}`,
-        bodyHTML: `${operation === 'status' ? `<label for="fr-batch-status">New status</label><select id="fr-batch-status"><option value="">Choose a status…</option>${['draft', 'pending', 'submitted', 'approved', 'rejected', 'completed'].map(status => `<option value="${status}">${status}</option>`).join('')}</select>` : ''}
+        bodyHTML: `${operation === 'status' ? `<label for="fr-batch-status">New status</label><select id="fr-batch-status"><option value="">Choose a status…</option>${((formDef.actions||[]).some(action=>action.type==='create_sales_draft')?['draft','submitted']:['draft', 'pending', 'submitted', 'approved', 'rejected', 'completed']).map(status => `<option value="${status}">${status}</option>`).join('')}</select>` : ''}
           <p class="muted">${UI.esc(formDef.name)}${state.period ? ' · Period: ' + UI.esc(state.period) : ''}${state.status ? ' · Status: ' + UI.esc(state.status) : ''}${state.q ? ' · Search: ' + UI.esc(state.q) : ''}</p>
           <p>${deleting ? 'Deletion cannot be undone.' : 'Only the eligible records below will change.'}</p>
           <p id="fr-batch-count" aria-live="polite"></p>
@@ -961,7 +962,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     try { tpl = await API.get('/templates/' + templateId); }
     catch { UI.toast('The linked template could not be loaded', 'error'); return; }
     const context=await loadPrintContext(templateId);
-    const renderRecord = r => renderTemplate(tpl.body,applyVariables({...r.data,number:r.number,today:new Date().toLocaleDateString(),record:{number:r.number,status:r.status,created_at:r.created_at},company:context.company,global:context.global},context.variables));
+    const renderRecord = r => renderTemplate(tpl.body,applyVariables({...r.data,fields:r.data,number:r.number,today:new Date().toLocaleDateString(),record:{number:r.number,status:r.status,created_at:r.created_at},company:context.company,global:context.global},context.variables));
     const tiled = (typeof buildTiledPagesHtml === 'function')
       ? buildTiledPagesHtml(records, renderRecord, {
         copiesPerRecord: tpl.copies_per_record, recordsPerPage: tpl.records_per_page, tileFill: tpl.tile_fill,
@@ -1211,7 +1212,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
             // A real button, so Tab + Enter opens the payslip detail; its click bubbles to the row.
             ? `<button type="button" class="hr-row-open" title="View payslip details">${UI.esc(r.number)}</button>`
             : `<strong>${UI.esc(r.number)}</strong>`}<small class="muted"> · v${r.definition_version || 1} / r${r.revision || 1}</small></td>
-          ${visibleFields.map((f) => `<td>${UI.esc(String(r.data[f.key] ?? ''))}</td>`).join('')}
+          ${visibleFields.map((f) => `<td>${UI.esc(DataForms.displayValue(r.data[f.key]))}</td>`).join('')}
           <td><span class="badge-pill status-${UI.esc(r.status)}">${UI.esc(r.status)}</span></td>
           <td>${UI.esc(UI.fmtDateShort(r.created_at))}</td>
           <td class="actions"><button type="button" class="icon-btn" data-history="${r.id}" title="Change history" aria-label="Change history for ${UI.esc(r.number)}">${UI.icon('clock')}</button>
@@ -1492,6 +1493,9 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     }
     if (!existing && formDef.archived_at) { UI.toast('Restore this form before creating records.', 'error'); return; }
     const editing = !!existing;
+    const linkedOrder=existing?.sales_order_id||existing?.sales_order?.order_id;
+    if(linkedOrder){UI.modal({title:'Submitted '+existing.number,cancelText:'Close',bodyHTML:`<p>This record created sales order ${UI.esc(existing.sales_order_number||existing.sales_order?.order_number||'')}. Its submitted values are retained. Review and correct the draft through Sales Orders.</p>${App.hasPermission('orders.view')?'<button type="button" class="btn" data-open-linked-order>Review sales order</button>':''}`,onOpen:overlay=>{overlay.querySelector('[data-open-linked-order]')?.addEventListener('click',()=>App.navigate('orders',{type:'sale',id:linkedOrder}));}});return;}
+    let saveKey=FormConnections.key(),pendingSave=null;
     const recordDefinition = existing?.schema || formDef;
     const request = HR_REQUEST_SLUGS.includes(formDef.slug);
     if (request && existing && (existing.status !== 'pending' || formDef.slug === 'information_change')) {
@@ -1499,7 +1503,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       return;
     }
     const data = editing ? { ...existing.data } : { ...(prefill || {}) };
-    const statusOpts = (request ? ['pending'] : ['draft', 'submitted', 'approved', 'rejected', 'completed'])
+    const statusOpts = (request ? ['pending'] : (recordDefinition.actions||[]).some(action=>action.type==='create_sales_draft')?['draft','submitted']:['draft', 'submitted', 'approved', 'rejected', 'completed'])
       .map((s) => `<option value="${s}" ${(existing ? existing.status : 'draft') === s ? 'selected' : ''}>${s}</option>`)
       .join('');
     const employees = recordDefinition.fields.some((f) => f.type === 'employee') ? await getEmployees() : [];
@@ -1518,6 +1522,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       title: editing ? `Edit ${existing.number}` : `New ${formDef.name}`,
       size: recordDefinition.fields.length > 6 ? 'lg' : undefined,
       bodyHTML: `
+        ${(recordDefinition.actions||[]).some(action=>action.type==='create_sales_draft')?'<p class="panel">Save as Draft to continue editing. Submitting creates an open sales order for review and preserves these submitted values. Stock and accounting follow the sales order workflow.</p>':''}
         <div style="margin-bottom:14px">
           ${editing
             ? `<span class="muted">Status: ${UI.esc(existing.status)}. To change it, select the record and choose Change status.</span>`
@@ -1533,6 +1538,15 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           ? '<div class="muted" style="text-align:center;padding:20px">This form has no fields yet. Edit it in Form Builder to add fields.</div>'
           : ''}`,
       onOpen: (ov) => {
+        FormConnections.mount(ov,recordDefinition.fields,data);
+        function recalculate(){try{
+          const values={...data};
+          for(const field of recordDefinition.fields)if(field.type==='line_items')values[field.key]=FormItems.collect(ov,field);else if(field.type==='number')values[field.key]=ov.querySelector(`[data-field="${field.key}"]`)?.value;
+          const calculated=FormMath.calculate(recordDefinition.fields,values);
+          for(const field of recordDefinition.fields.filter(field=>field.type==='calculated'))ov.querySelector(`[data-field="${field.key}"]`).value=calculated[field.key];
+        }catch{/* Invalid rows show their local errors; saving validates them again. */}}
+        if(recordDefinition.fields.some(field=>field.type==='line_items'))FormItems.mount(ov,recordDefinition.fields,data,recalculate);
+        ov.addEventListener('input',recalculate);ov.addEventListener('change',recalculate);recalculate();
         ov.querySelectorAll('select[data-field]').forEach((sel) => {
           const field = recordDefinition.fields.find((f) => f.key === sel.dataset.field);
           if (!field || field.type !== 'employee') return;
@@ -1548,11 +1562,13 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       },
       confirmText: editing ? 'Save' : 'Create',
       onConfirm: async (ov, showErr) => {
+        await FormConnections.ready(ov);
         // Collect field values from the modal.
         // Keep generated values and metadata that are not represented by editable fields.
         const collected = { ...data };
         const errors = [];
         for (const field of recordDefinition.fields) {
+          if(field.type==='line_items'){try{collected[field.key]=FormItems.collect(ov,field);}catch(error){showErr(error.message);return false;}continue;}
           const inp = ov.querySelector(`[data-field="${field.key}"]`);
           if (!inp) continue;
           if (field.type === 'checkbox') {
@@ -1562,10 +1578,11 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           }
           if (field.required && (field.type === 'checkbox' ? !inp.checked : !String(collected[field.key] ?? '').trim())) {
             errors.push({ control: inp, message: `${field.label} is required` });
-          } else if (!inp.validity.valid) {
+          } else if (inp.willValidate && !inp.validity.valid) {
             errors.push({ control: inp, message: `${field.label}: ${inp.validationMessage}` });
           }
         }
+        try{Object.assign(collected,FormMath.calculate(recordDefinition.fields,collected));}catch(error){showErr(error.message);return false;}
         const reason = ov.querySelector('#fr-change-reason')?.value.trim();
         if (editing && formDef.archived_at && !reason) errors.push({control:ov.querySelector('#fr-change-reason'),message:'A reason is required for this archived record correction.'});
         if (!FormValidation.show(ov, errors, ov.querySelector('[data-modal-error]'))) return false;
@@ -1576,10 +1593,17 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         }
         const status = editing ? existing.status : ov.querySelector('[data-f="status"]').value;
 
-        const res = editing
-          ? await API.put('/form-records/' + existing.id, { data: collected, expected_revision:existing.revision || 1, change_reason:reason })
-          : await API.post('/form-records', { form_def_id: formId, expected_definition_version:formDef.version || 1, data: collected, status });
-        UI.toast(editing ? 'Record saved' : 'Record created');
+        let res;
+        const payload={form_def_id:formId,expected_definition_version:formDef.version||1,data:collected,status};
+        try{
+          if(!editing&&!pendingSave)pendingSave=payload;
+          res=editing?await API.put('/form-records/'+existing.id,{data:collected,expected_revision:existing.revision||1,change_reason:reason}):await API.post('/form-records',pendingSave,{idempotencyKey:saveKey});
+        }catch(error){
+          if(!editing&&error.status&&error.status<500){pendingSave=null;saveKey=FormConnections.key();ov.querySelectorAll('input,select,textarea,[data-add-item],[data-remove-item],[data-lookup-retry]').forEach(input=>input.disabled=request&&input.dataset.f==='status');}
+          else if(!editing){ov.querySelectorAll('input,select,textarea,[data-add-item],[data-remove-item],[data-lookup-retry]').forEach(input=>input.disabled=true);error.message+=' — Retry Save to check the original request. Your values are kept; avoid creating another record.';}
+          throw error;
+        }
+        UI.toast(API.syncLocal?.(res)?'Saved on this PC — awaiting synchronization':res.sales_order?'Record submitted — draft sales order '+res.sales_order.order_number+' is ready for review':editing ? 'Record saved' : 'Record created');
         const warns = (res && res.action_warnings) || [];
         if (warns.length) UI.toast('Some actions were skipped: ' + warns.join('; '), 'error');
         load();
@@ -1589,6 +1613,9 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
 
   function renderFieldInput(field, data, employees) {
     const val = data[field.key] ?? field.default ?? '';
+    if(field.type==='line_items')return FormItems.render(field);
+    if(field.type==='calculated')return `<div data-validation-field><label for="fr-field-${field.key}">${UI.esc(field.label)}</label><input id="fr-field-${field.key}" data-field="${field.key}" type="number" step="any" readonly value="${UI.esc(String(val||0))}"><small class="muted">Calculated automatically</small></div>`;
+    if(['reference','system'].includes(field.type))return FormConnections.render(field,val);
     const id = `fr-field-${field.key}`;
     const req = field.required ? '<span class="req">*</span>' : '';
     let input = '';

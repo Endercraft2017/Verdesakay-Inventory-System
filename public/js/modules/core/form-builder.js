@@ -362,8 +362,8 @@ App.register('form-builder', async (view, filter) => {
   // Opens (creating on first use) the doc_template linked to this form, with its own fields
   // exposed as {{variables}} — the same DocEditor used for Sale/Job/Purchase order templates.
 
-  function formTemplateVariables(form) {
-    const vars = form.fields.map((f) => ({ category: 'Form Fields', label: f.label, token: `{{${f.key}}}` }));
+  function formTemplateVariables(form,catalog=[]) {
+    const vars = FormConnections.variables(form,catalog);
     vars.push(
       { category: 'Record', label: 'Record Number', token: '{{record.number}}' },
       { category: 'Record', label: 'Status', token: '{{record.status}}' },
@@ -378,6 +378,9 @@ App.register('form-builder', async (view, filter) => {
   function sampleFieldValue(field) {
     if (field.default) return field.default;
     switch (field.type) {
+      case 'reference': return {id:1,name:'Sample '+field.label,number:'SO-00001'};
+      case 'line_items': return [{name:'Sample product',quantity:2,unit:'unit',unit_price:100,line_total:200}];
+      case 'calculated': return 200;
       case 'number': return 1;
       case 'date': return new Date().toLocaleDateString();
       case 'time': return '09:00';
@@ -390,6 +393,7 @@ App.register('form-builder', async (view, filter) => {
   function sampleContextFor(form) {
     const ctx = {};
     form.fields.forEach((f) => { ctx[f.key] = sampleFieldValue(f); });
+    ctx.fields={...ctx};
     ctx.record = { number: form.number_prefix + '-00001', status: 'submitted', created_at: new Date().toLocaleDateString() };
     ctx.company = { name: 'Example Company', address: '123 Main St, Cebu City', phone: '(032) 555-1234' };
     return ctx;
@@ -402,8 +406,7 @@ App.register('form-builder', async (view, filter) => {
   // point when someone clicks "Design print template" on a hand-built form, and stamped
   // automatically onto every Quick Add form the moment it's created.
   function defaultFormTemplateBody(form) {
-    const rows = form.fields.map((f) => `
-      <div class="ff-row"><span class="ff-label">${UI.esc(f.label)}</span><span class="ff-value">{{${f.key}}}</span></div>`).join('');
+    const rows = form.fields.map(FormConnections.printField).join('');
     return `<style>
   .ff-card { border: 1px solid #222; padding: 14px 18px; font-size: 12.5px; }
   .ff-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 10px; margin-bottom: 12px; }
@@ -464,8 +467,8 @@ App.register('form-builder', async (view, filter) => {
     const isNew = !existingTpl;
     const tpl = existingTpl || (source ? {...source,name:source.name+' (copy)'} : { name: `${form.name} Template`, type: 'generic', body: defaultFormTemplateBody(form) });
     let savedId=existingTpl?.id||null;
-    const draftKey='new-template:form-'+form.id+'-'+crypto.randomUUID();
-    const custom=await API.get('/templates/variables'+(tpl.id?'?template_id='+tpl.id:''));
+    const draftKey='new-template:form-'+form.id+'-'+FormConnections.key();
+    const [custom,sourceCatalog]=await Promise.all([API.get('/templates/variables'+(tpl.id?'?template_id='+tpl.id:'')),API.get('/data-forms/sources').catch(()=>[])]);
     const sample = applyVariables(sampleContextFor(form),custom);
     window.DocEditor.open({
       getTemplateId: () => savedId,
@@ -485,12 +488,12 @@ App.register('form-builder', async (view, filter) => {
       tileFill: tpl.tile_fill || 'blank',
       continuous: !!tpl.tile_continuous,
       repeatCount: tpl.repeat_count || 1,
-      getVariables: () => [...formTemplateVariables(form),...custom.map(v=>({category:v.category||'Custom variables',label:v.label,token:'{{'+v.key+'}}'}))],
+      getVariables: () => [...formTemplateVariables(form,sourceCatalog),...custom.map(v=>({category:v.category||'Custom variables',label:v.label,token:'{{'+v.key+'}}'}))],
       sampleContext: sample,
       loadPreviewRecord: async (id) => {
         const [record, company] = await Promise.all([API.get('/form-records/' + id), API.get('/templates/company')]);
         if (Number(record.form_def_id) !== Number(form.id)) throw new Error('Choose a record from this form');
-        return { ...record.data, record: { number: record.number, status: record.status, created_at: record.created_at }, company };
+        return { ...record.data, fields:record.data, record: { number: record.number, status: record.status, created_at: record.created_at }, company };
       },
       renderPreview: (body) => UI.printableHtml(renderTemplate(body, sample), 'Preview'),
       onSave: async ({ name, type, body, copiesPerRecord, recordsPerPage, tileFill, continuous, repeatCount, gapXmm, gapYmm, studioVersion }) => {
@@ -547,7 +550,7 @@ App.register('form-builder', async (view, filter) => {
             <div id="fb-fields-list"></div>
           </section>
           <details class="fb-section fb-actions" ${actions.length ? 'open' : ''}>
-            <summary>Automated actions <span class="fb-optional">${actions.length ? actions.length + ' configured' : 'Optional'}</span> ${UI.helpIcon('Actions run when a record is saved or approved. Notify, File to 201, and Email use an employee field to identify the recipient. Messages can use {number}, {form}, {employee}, and {field:key}.')}</summary>
+            <summary>Automated actions <span class="fb-optional">${actions.length ? actions.length + ' configured' : 'Optional'}</span></summary><p class="muted">Actions run on creation, submission or approval. Employee actions use an employee field. Sales draft actions use the selected customer and product rows.</p>
             <div class="fb-actions-content"><div class="fb-section-title"><span class="muted">What happens after submission</span><button type="button" class="btn secondary small" id="fb-add-action">${UI.icon('plus', 14)} Add action</button></div><div id="fb-actions-list"></div></div>
           </details>
         </div>`,
@@ -605,12 +608,12 @@ App.register('form-builder', async (view, filter) => {
         function preview() {
           const previewFields = fields.map(field => {
             let control;
-            if (field.type === 'select' || field.type === 'employee') control = `<select disabled><option>${field.type === 'employee' ? 'Choose employee' : 'Choose an option'}</option>${(field.options || []).map(option => `<option>${UI.esc(option)}</option>`).join('')}</select>`;
+            if (['select','employee','reference'].includes(field.type)) control = `<select disabled><option>${field.type === 'employee' ? 'Choose employee' : 'Choose an option'}</option>${(field.options || []).map(option => `<option>${UI.esc(option)}</option>`).join('')}</select>`;
             else if (field.type === 'textarea') control = '<textarea disabled rows="2"></textarea>';
             else control = `<input disabled type="${['number','date','time','checkbox'].includes(field.type) ? field.type : 'text'}" value="${UI.esc(field.default || '')}">`;
             return `<label class="fb-preview-field"><span>${UI.esc(field.label || 'Untitled field')}${field.required ? ' *' : ''}</span>${control}</label>`;
           }).join('');
-          const missingEmployee = actions.some(action => ['notify_employee','email_employee','save_to_201'].includes(action.type)) && !fields.some(field => field.type === 'employee' || field.key === 'employee_name');
+          const missingEmployee = actions.some(action => ['notify_employee','email_employee','save_to_201'].includes(action.type)) && !fields.some(field => field.type === 'employee' || (field.type==='reference'&&field.source==='employee') || field.key === 'employee_name');
           editor.querySelector('#fb-live-preview').innerHTML = `<h4>${UI.esc(nameEl.value || 'New form')}</h4>${previewFields || '<p class="muted">Add fields to preview the form.</p>'}<p class="muted">${actions.length} automated action(s)</p>${missingEmployee ? '<p class="form-error">Employee actions need an Employee field or employee_name field.</p>' : ''}`;
         }
         ov.addEventListener('input', preview); ov.addEventListener('change', preview);
@@ -630,6 +633,7 @@ App.register('form-builder', async (view, filter) => {
           else if (fields.filter(candidate => candidate.key === field.key).length > 1) addError(`[data-fi="${index}"] [data-k=key]`, `Field key "${field.key}" must be unique`, () => fields.filter(candidate => candidate.key === field.key).length === 1);
           if (!field.label) addError(`[data-fi="${index}"] [data-k=label]`, `Field ${index + 1} needs a label`);
         });
+        try{FormMath.validate(fields);}catch(error){showErr(error.message);return false;}
         if (!FormValidation.show(ov, errors, ov.querySelector('[data-modal-error]'))) return false;
 
         const body = {
@@ -664,8 +668,8 @@ App.register('form-builder', async (view, filter) => {
       el.innerHTML = `<div class="fb-empty muted">No fields yet — add one above.</div>`;
       return;
     }
-    const typeOptions = ['text', 'number', 'date', 'time', 'select', 'textarea', 'checkbox', 'employee']
-      .map((t) => `<option value="${t}">${t === 'employee' ? 'employee (dropdown)' : t}</option>`).join('');
+    const typeOptions = ['text', 'number', 'date', 'time', 'select', 'textarea', 'checkbox', 'employee','reference:product','reference:customer','reference:employee','reference:sales_order','reference:supplier','reference:location','reference:account','reference:tax_code','system:company','system:user','line_items','calculated']
+      .map((t) => `<option value="${t}">${t === 'employee' ? 'employee (dropdown)' : t.startsWith('reference:') ? FormConnections.names[t.split(':')[1]]+' (connected)' : t.startsWith('system:')?FormConnections.names[t.split(':')[1]]+' value':t==='line_items'?'Product line items':t==='calculated'?'Calculated number':t}</option>`).join('');
 
     el.innerHTML = `<table class="line-table"><thead><tr>
       <th>Key <span class="muted">(variable name)</span></th>
@@ -674,13 +678,13 @@ App.register('form-builder', async (view, filter) => {
       <tr data-fi="${i}">
         <td><input class="mono" data-k="key" aria-required="true" maxlength="64" value="${UI.esc(f.key)}" placeholder="field_key" style="width:120px" /></td>
         <td><input data-k="label" aria-required="true" maxlength="120" value="${UI.esc(f.label)}" placeholder="Field Label" /></td>
-        <td><select data-k="type">${typeOptions.replace(`"${f.type}"`, `"${f.type}" selected`)}</select></td>
+        <td><select data-k="type">${typeOptions.replace(`"${['reference','system'].includes(f.type)?f.type+':'+f.source:f.type}"`, `"${['reference','system'].includes(f.type)?f.type+':'+f.source:f.type}" selected`)}</select></td>
         <td style="text-align:center"><input type="checkbox" data-k="required" ${f.required ? 'checked' : ''} /></td>
-        <td>${f.type === 'select'
+        <td>${['line_items','calculated'].includes(f.type)?`<button type="button" class="btn secondary small" data-configure-math="${i}">${f.type==='line_items'?'Configure items':'Configure calculation'}</button><small>${UI.esc(f.calculation?.operands?.join(', ')||'')}</small>`:['reference','system'].includes(f.type) ? `<button type="button" class="btn secondary small" data-connect="${i}">${f.type==='system'?'Choose property':'Connected source'}</button><small>${UI.esc(f.property||f.source||'')}</small>` : f.type === 'select'
           ? `<input data-k="options" value="${UI.esc((f.options || []).join(', '))}" placeholder="Option 1, Option 2, …" />`
           : f.type === 'employee'
             ? `<span class="muted" style="font-size:12px">Live employee list — no options needed</span>`
-            : `<input data-k="default" maxlength="500" value="${UI.esc(f.default || '')}" placeholder="default value" />`}
+            : `<input data-k="default" maxlength="500" value="${UI.esc(f.default || '')}" placeholder="default value" />${['text','number'].includes(f.type)?`<button type="button" class="btn secondary small" data-connect="${i}">${f.binding?'Connected: '+UI.esc(f.binding.field)+'.'+UI.esc(f.binding.property):'Connect value'}</button>`:''}`}
         </td>
         <td><button type="button" class="icon-btn" data-move-field="${i}" data-direction="-1" title="Move field up" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="icon-btn" data-move-field="${i}" data-direction="1" title="Move field down" ${i === fields.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="icon-btn danger" data-rm="${i}" title="Remove">${UI.icon('trash', 14)}</button></td>
       </tr>`).join('')}
@@ -688,8 +692,10 @@ App.register('form-builder', async (view, filter) => {
 
     el.querySelectorAll('input[data-k], select[data-k]').forEach((inp) => {
       inp.addEventListener('change', () => syncField(inp, fields));
-      if (inp.type !== 'checkbox') inp.addEventListener('input', () => syncField(inp, fields));
+      if (inp.type !== 'checkbox' && inp.tagName !== 'SELECT') inp.addEventListener('input', () => syncField(inp, fields));
     });
+    el.querySelectorAll('[data-configure-math]').forEach(button=>button.onclick=()=>configureMath(fields,Number(button.dataset.configureMath),ov));
+    el.querySelectorAll('[data-connect]').forEach(button=>button.onclick=()=>connectField(fields,Number(button.dataset.connect),ov));
     el.querySelectorAll('[data-move-field]').forEach(button => button.onclick = () => {
       const index = Number(button.dataset.moveField), next = index + Number(button.dataset.direction);
       if (next < 0 || next >= fields.length) return;
@@ -697,6 +703,40 @@ App.register('form-builder', async (view, filter) => {
     });
     el.querySelectorAll('[data-rm]').forEach((b) =>
       b.onclick = () => { fields.splice(Number(b.dataset.rm), 1); renderFields(ov, fields); });
+  }
+
+  function applyFieldSettings(owner,fields,index,control){
+    owner.closest('.modal-overlay')?.__markDirty?.();renderFields(owner,fields);
+    setTimeout(()=>owner.querySelector(`[${control}="${index}"]`)?.focus(),0);
+  }
+  function configureMath(fields,index,owner){
+    const field=fields[index];
+    if(field.type==='line_items'){UI.modal({title:'Configure '+field.label,bodyHTML:`<p>Rows contain a connected product, quantity, unit, unit price, discount percentage and calculated line total.</p><label><input type="checkbox" id="fc-price-editable" ${field.price_editable!==false?'checked':''}> Allow editing the product sale price</label>`,confirmText:'Apply',onConfirm:overlay=>{field.price_editable=overlay.querySelector('input').checked;applyFieldSettings(owner,fields,index,'data-configure-math');}});return;}
+    const choices=fields.filter(other=>other.key!==field.key).flatMap(other=>other.type==='line_items'?[{key:other.key+'.line_total',label:other.label+' → Line totals'},{key:other.key+'.quantity',label:other.label+' → Quantities'},{key:other.key+'.discount_amount',label:other.label+' → Discount amounts'}]:['number','calculated'].includes(other.type)?[{key:other.key,label:other.label}]:[]);
+    UI.modal({title:'Calculate '+field.label,bodyHTML:`<label for="fc-operation">Calculation</label><select id="fc-operation">${['sum','multiply','subtract','percent'].map(op=>`<option ${op===field.calculation?.operator?'selected':''}>${op}</option>`).join('')}</select><p class="muted">Percentage uses an amount followed by a rate. Subtraction and percentage use the field order shown below. Item columns support sum.</p><div id="fc-operands">${choices.map(choice=>`<label class="form-column-choice"><input type="checkbox" value="${choice.key}" ${field.calculation?.operands.includes(choice.key)?'checked':''}> ${UI.esc(choice.label)}</label>`).join('')}</div>`,confirmText:'Apply calculation',onConfirm:(overlay,error)=>{
+      const previous=field.calculation;field.calculation={operator:overlay.querySelector('#fc-operation').value,operands:[...overlay.querySelectorAll('#fc-operands input:checked')].map(input=>input.value)};
+      try{FormMath.validate(fields.map(candidate=>candidate.type==='calculated'&&!candidate.calculation?{...candidate,type:'number'}:candidate));}catch(problem){field.calculation=previous;error(problem.message);return false;}applyFieldSettings(owner,fields,index,'data-configure-math');
+    }});
+  }
+
+  async function connectField(fields,index,owner) {
+    const field=fields[index];
+    try {
+      const catalog=await API.get('/data-forms/sources');
+      const selectors=field.type==='system'?[field]:fields.filter(other=>other.type==='reference');
+      if(field.type==='reference'){const source=catalog.find(s=>s.key===field.source);UI.modal({title:'Connected '+field.label,cancelText:'Close',bodyHTML:`<p>Source: ${UI.esc(source?.label||field.source)}. The selected record ID and its values are saved with this form.</p><p>${source?.available?'You have access to this source.':'You need the source module and its read permission to select records.'}</p><p>Available properties: ${UI.esc(source?.fields.join(', ')||'')}</p>`});return;}
+      UI.modal({title:'Connect '+field.label,bodyHTML:`<label for="fc-source">Get value from</label><select id="fc-source"><option value="">Manual input</option>${selectors.map(selector=>`<option value="${selector.key}">${UI.esc(selector.label)}</option>`).join('')}</select><label for="fc-property">Property</label><select id="fc-property"></select>${field.type!=='system'?'<label><input type="checkbox" id="fc-editable"> Allow editing the filled value</label>':''}<p class="muted">Saved values remain unchanged when the source record changes later.</p>`,confirmText:'Apply connection',onOpen:overlay=>{
+        const select=overlay.querySelector('#fc-source'),property=overlay.querySelector('#fc-property');
+        function properties(){const selector=selectors.find(s=>s.key===select.value),source=catalog.find(s=>s.key===selector?.source);property.innerHTML=(field.type==='number'?source?.numeric_fields||[]:source?.fields||[]).map(key=>`<option>${UI.esc(key)}</option>`).join('');property.disabled=!selector;}
+        select.value=field.type==='system'?field.key:field.binding?.field||'';select.onchange=properties;properties();property.value=field.property||field.binding?.property||property.value;
+        if(overlay.querySelector('#fc-editable'))overlay.querySelector('#fc-editable').checked=field.binding?!!field.binding.editable:field.type==='number';
+      },onConfirm:(overlay,error)=>{
+        const source=overlay.querySelector('#fc-source').value,property=overlay.querySelector('#fc-property').value;
+        if(field.type==='system'){if(!source||!property){error('Choose a property.');return false;}field.property=property;}
+        else if(source)field.binding={field:source,property,editable:overlay.querySelector('#fc-editable').checked};else delete field.binding;
+        applyFieldSettings(owner,fields,index,'data-connect');
+      }});
+    }catch(error){UI.toast(error.message,'error');}
   }
 
   function syncField(inp, fields) {
@@ -708,7 +748,10 @@ App.register('form-builder', async (view, filter) => {
     if (k === 'options') {
       fields[i].options = inp.value.split(',').map((s) => s.trim()).filter(Boolean);
     } else if (k === 'type') {
-      fields[i].type = inp.value;
+      const [type,source]=inp.value.split(':');fields[i].type=type;
+      delete fields[i].binding;delete fields[i].property;
+      if(source)fields[i].source=source;else delete fields[i].source;
+      if(type==='system')fields[i].property='name';
       // Re-render so the last cell switches between options/default input.
       const ov = inp.closest('.modal-body');
       renderFields(ov, fields);
@@ -718,6 +761,7 @@ App.register('form-builder', async (view, filter) => {
   }
 
   const ACTION_TYPES = [
+    ['create_sales_draft','Create a draft sales order on submission'],
     ['notify_employee', 'Send notice to employee (login account)'],
     ['save_to_201', 'File rendered form into employee 201'],
     ['email_employee', 'Email the employee (company SMTP)'],
@@ -734,14 +778,18 @@ App.register('form-builder', async (view, filter) => {
     }
     const typeOpts = (sel) => ACTION_TYPES
       .map(([v, label]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${UI.esc(label)}</option>`).join('');
-    const runOpts = (sel) => ['create', 'approved']
+    const runOpts = (sel) => ['create', 'approved', 'submitted']
       .map((v) => `<option value="${v}" ${v === (sel || 'create') ? 'selected' : ''}>on ${v}</option>`).join('');
 
     el.innerHTML = `<table class="line-table"><thead><tr>
       <th>Action</th><th>When</th><th>Details</th><th></th>
     </tr></thead><tbody>${actions.map((a, i) => {
       let details = '';
-      if (a.type === 'notify_employee') {
+      if(a.type==='create_sales_draft'){
+        const available=[...ov.querySelectorAll('[data-fi]')].map(row=>({key:row.querySelector('[data-k=key]').value,label:row.querySelector('[data-k=label]').value,type:row.querySelector('[data-k=type]').value}));
+        const picker=(key,type)=>`<select data-ak="${key}"><option value="">Choose a field…</option>${available.filter(field=>field.type===type).map(field=>`<option value="${field.key}" ${a[key]===field.key?'selected':''}>${UI.esc(field.label)}</option>`).join('')}</select>`;
+        details=`<label>Customer field${picker('customer_field','reference:customer')}</label><label>Product items field${picker('items_field','line_items')}</label><label>Tax percentage field (optional)${picker('tax_field','number')}</label><label>Calculated final total field (optional)${picker('total_field','calculated')}</label><p class="muted">Runs when submitted. Creates an open sales order for review; approval and stock release remain separate.</p>`;
+      } else if (a.type === 'notify_employee') {
         details = `<input data-ak="subject" value="${UI.esc(a.subject || '')}" placeholder="Subject (optional)" style="margin-bottom:4px" />
           <textarea data-ak="body" rows="2" placeholder="Message body (optional)">${UI.esc(a.body || '')}</textarea>`;
       } else if (a.type === 'email_employee') {
@@ -753,8 +801,8 @@ App.register('form-builder', async (view, filter) => {
         details = `<span class="muted" style="font-size:12px">No extra settings</span>`;
       }
       return `<tr data-ai="${i}">
-        <td><select data-ak="type">${typeOpts(a.type)}</select></td>
-        <td><select data-ak="run_on">${runOpts(a.run_on)}</select></td>
+        <td><select aria-label="Action ${i+1}" data-ak="type">${typeOpts(a.type)}</select></td>
+        <td><select aria-label="When action ${i+1} runs" ${a.type==='create_sales_draft'?'disabled':''} data-ak="run_on">${runOpts(a.type==='create_sales_draft'?'submitted':a.run_on)}</select></td>
         <td>${details}</td>
         <td><button type="button" class="icon-btn danger" data-arm="${i}" title="Remove">${UI.icon('trash', 14)}</button></td>
       </tr>`;
@@ -774,11 +822,12 @@ App.register('form-builder', async (view, filter) => {
     const i = Number(row.dataset.ai);
     const k = inp.dataset.ak;
     if (k === 'type') {
-      actions[i] = { type: inp.value, run_on: actions[i].run_on || 'create' };
+      actions[i] = { type: inp.value, run_on: inp.value==='create_sales_draft'?'submitted':actions[i].run_on || 'create' };
+      if(inp.value==='create_sales_draft'){const fields=inp.closest('.modal-overlay').querySelectorAll('[data-fi]');for(const row of fields){const type=row.querySelector('[data-k=type]').value,key=row.querySelector('[data-k=key]').value;if(type==='reference:customer')actions[i].customer_field=key;if(type==='line_items')actions[i].items_field=key;}}
       renderActions(inp.closest('.modal-body'), actions);
       return;
     }
-    actions[i][k] = inp.value;
+    if(['customer_field','items_field','tax_field','total_field'].includes(k)&&!inp.value.trim())delete actions[i][k];else actions[i][k] = inp.value;
   }
 
   // ── Global Variables tab ───────────────────────────────────────────────────

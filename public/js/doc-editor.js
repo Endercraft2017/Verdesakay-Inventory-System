@@ -581,7 +581,7 @@ function ensureStyles() {
     .doc-find button{border:1px solid var(--border,#dce6f2);background:var(--surface-2,#eef4fb);border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--text,#16243d);font-family:inherit;transition:background .1s,color .1s}
     .doc-find button:hover{background:var(--accent-weak,#e7f1ff);color:var(--accent,#2b7fff)}
     .doc-page img{max-width:100%}
-    .doc-chip{display:inline-block;background:#f0f5fb;color:#45678e;border:1px solid #d2dfed;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:500;font-family:Consolas,ui-monospace,monospace;white-space:nowrap;line-height:1.5}
+    .doc-chip{display:inline-block;box-sizing:border-box;min-height:24px;background:#f0f5fb;color:#45678e;border:1px solid #d2dfed;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:500;font-family:Consolas,ui-monospace,monospace;white-space:nowrap;line-height:1.5}
     [data-doc-run="inline"]>.doc-chip{font-size:inherit;font-weight:inherit;font-style:inherit;font-family:inherit;color:inherit}
     .doc-chip[role="button"]{cursor:pointer}.doc-chip:focus-visible{outline:2px solid var(--accent,#2b7fff);outline-offset:2px}
     .doc-chip-ctrl{background:#f0e6ff;color:#7a3cff;border-color:#cbb3ff}
@@ -1343,7 +1343,7 @@ function docEditorHelpDialog() {
 /** Variable picker (search + category tabs). insertFn receives the chosen token. */
 function variableDialog(saveSel, getVariables, insertFn, opts = {}) {
   saveSel();
-  const vars = getVariables ? getVariables() : [];
+  const vars = (getVariables ? getVariables() : []).filter(variable=>opts.title!=='Change field'||!variable.snippet);
   const cats = [...new Set(vars.map((v) => v.category || 'Other'))];
   const rowHtml = (v) => `<button type="button" class="var-pick" data-token="${escAttr(v.token || v.key)}">${UI.esc(v.label || v.key)} <span class="muted mono">${escAttr(v.token || ('{{' + v.key + '}}'))}</span></button>`;
   const m = (opts.modal || UI.modal)({
@@ -1354,7 +1354,7 @@ function variableDialog(saveSel, getVariables, insertFn, opts = {}) {
     cancelText: 'Close',
     onOpen: (ov) => {
       const listEl = ov.querySelector('#var-list'); const search = ov.querySelector('#var-search'); let activeCat = cats[0];
-      const wire = () => listEl.querySelectorAll('.var-pick').forEach((b) => b.onclick = () => { insertFn(b.dataset.token); if (!opts.keepOpen) m.close(); });
+      const wire = () => listEl.querySelectorAll('.var-pick').forEach((b) => b.onclick = () => { insertFn(b.dataset.token,vars.find(variable=>(variable.token||variable.key)===b.dataset.token)?.snippet); if (!opts.keepOpen) m.close(); });
       const render = () => {
         const q = search.value.trim().toLowerCase();
         const shown = q ? vars.filter((v) => ((v.label || '') + ' ' + (v.token || v.key || '')).toLowerCase().includes(q)) : vars.filter((v) => (v.category || 'Other') === activeCat);
@@ -1657,7 +1657,7 @@ function wireToolbar(panelsRoot, surface, getVariables, onChange, sampleContext,
   panelsRoot.querySelector('[data-ins="image"]').addEventListener('click', () => imageDialog(insertHtml, saveSel, editorModal));
   panelsRoot.querySelector('[data-ins="checkbox"]').addEventListener('click', () => insertHtml('<span class="doc-checkbox" data-checked="0">&#9744;</span>&nbsp;'));
   panelsRoot.querySelector('[data-variable-shortcut]').addEventListener('mousedown',e=>{saveSel();e.preventDefault();});
-  panelsRoot.querySelectorAll('[data-ins="variable"],[data-variable-shortcut]').forEach(button=>button.addEventListener('click', () => variableDialog(saveSel, getVariables, (tok) => insertHtml(tokenChip(tok.replace(/^\{\{|\}\}$/g, '')) + '&nbsp;'), {modal:editorModal})));
+  panelsRoot.querySelectorAll('[data-ins="variable"],[data-variable-shortcut]').forEach(button=>button.addEventListener('click', () => variableDialog(saveSel, getVariables, (tok,snippet) => insertHtml(snippet?bodyToEditorHtml(snippet):tokenChip(tok.replace(/^\{\{|\}\}$/g, '')) + '&nbsp;'), {modal:editorModal})));
   panelsRoot.querySelector('[data-ins="formula"]').addEventListener('click', () => formulaDialog(insertHtml, saveSel, getVariables, '', sampleContext, editorModal));
   panelsRoot.querySelector('[data-ins="symbol"]').addEventListener('click', () => symbolDialog(insertHtml, saveSel, editorModal));
   panelsRoot.querySelector('[data-ins="textbox"]').addEventListener('click', () => insertFloat('textbox'));
@@ -3088,8 +3088,8 @@ function mountStudio(fs, surface, opts, api) {
   });
   panel.addEventListener('click', async e=>{
     const b=e.target.closest('button');if(!b)return;if(b.dataset.adv){await advanced.action(b);render();return;}const el=target();
-    if(b.hasAttribute('data-variable-insert')){insert(tokenChip(b.dataset.variableInsert));return;}
-    if(b.hasAttribute('data-variable-copy')){const token='{{'+b.dataset.variableCopy+'}}';try{if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');await navigator.clipboard.writeText(token);note.textContent='Copied '+token;}catch{UI.modal({guide:false,title:'Copy variable',bodyHTML:`<label>Variable token<input data-copy-variable readonly value="${esc(token)}"></label><p>Select and copy this token with Ctrl / ⌘ C.</p>`,cancelText:'Close',onOpen:ov=>ov.querySelector('[data-copy-variable]').select()});}return;}
+    if(b.hasAttribute('data-variable-insert')){const variable=bankVariables().find(item=>item.ref===b.dataset.variableInsert);insert(variable?.snippet||tokenChip(b.dataset.variableInsert));return;}
+    if(b.hasAttribute('data-variable-copy')){const token=bankVariables().find(item=>item.ref===b.dataset.variableCopy)?.snippet||'{{'+b.dataset.variableCopy+'}}';try{if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');await navigator.clipboard.writeText(token);note.textContent='Copied '+token;}catch{UI.modal({guide:false,title:'Copy variable',bodyHTML:`<label>Variable token<input data-copy-variable readonly value="${esc(token)}"></label><p>Select and copy this token with Ctrl / ⌘ C.</p>`,cancelText:'Close',onOpen:ov=>ov.querySelector('[data-copy-variable]').select()});}return;}
     if(b.hasAttribute('data-header-divider-remove')){const input=panel.querySelector('[data-header-border=style]');if(input){input.value='none';input.dispatchEvent(new Event('change',{bubbles:true}));}return;}
     if(b.hasAttribute('data-clear-fill')){if(el&&!elLocked(el)){el.style.backgroundColor='transparent';changed();render();}return;}
     if(b.dataset.outline!==undefined){const h=surface.querySelectorAll('h1,h2,h3,h4,h5,h6')[Number(b.dataset.outline)];if(h){h.scrollIntoView?.({block:'center',behavior:'smooth'});surface.focus();const r=document.createRange();r.selectNodeContents(h);r.collapse(true);const sel=getSelection();sel.removeAllRanges();sel.addRange(r);}return;}
@@ -3334,10 +3334,11 @@ function open(opts = {}) {
     const available=(await API.get('/form-definitions')).filter(canManageForm);
     const forms=await Promise.all(available.map(async form=>({...form,layouts:await API.get('/form-definitions/'+form.id+'/templates')})));
     const linked=forms.filter(form=>form.layouts.some(t=>Number(t.id)===Number(templateId)));
-    linkedFormVariables=linked.flatMap(form=>(form.fields||[]).map(field=>({category:'Form: '+form.name,label:field.label||field.key,token:'{{'+field.key+'}}'})));
+    const sourceCatalog=typeof FormConnections!=='undefined'?await API.get('/data-forms/sources').catch(()=>[]):[];
+    linkedFormVariables=linked.flatMap(form=>typeof FormConnections!=='undefined'?FormConnections.variables(form,sourceCatalog):(form.fields||[]).map(field=>({category:'Form: '+form.name,label:field.label||field.key,token:'{{'+field.key+'}}'})));
     return forms;
   }
-  function refreshLinkedFormCatalog(){return loadLinkedFormCatalog().catch(error=>{if(fs.isConnected)UI.toast('Could not load linked form fields: '+error.message,'error');});}
+  function refreshLinkedFormCatalog(){return loadLinkedFormCatalog().then(result=>{if(fs.isConnected)fs.querySelector('[data-variable-search]')?.dispatchEvent(new Event('input',{bubbles:true}));return result;}).catch(error=>{if(fs.isConnected)UI.toast('Could not load linked form fields: '+error.message,'error');});}
   async function openLinkedForms() {
     const templateId = opts.getTemplateId?.();
     if (!templateId) {
@@ -3352,7 +3353,6 @@ function open(opts = {}) {
       forms=await loadLinkedFormCatalog();
       if(!dialog.overlay.isConnected)return;
       const linked=forms.filter(form=>form.layouts.some(t=>Number(t.id)===Number(templateId)));
-      linkedFormVariables=linked.flatMap(form=>(form.fields||[]).map(field=>({category:'Form: '+form.name,label:field.label||field.key,token:'{{'+field.key+'}}'})));
       const unlinked=forms.filter(form=>!linked.includes(form));
       container.innerHTML=`<p>Link this template to forms you manage. Each form can have several print layouts and one default.</p><p class="muted">Links apply immediately. Save template edits to update the printed content for every linked form. Use the Variables sidebar to insert fields from linked forms. Match field keys before printing; linking does not rewrite existing fields.</p>${unlinked.length?`<label>Find a form<input type="search" data-link-search placeholder="Search name or section…"></label><label>Form<select data-link-form><option value="">Choose a form…</option>${unlinked.map(f=>`<option value="${f.id}">${escAttr(f.name)} (${escAttr(f.scope||'General')})</option>`).join('')}</select></label><label class="doc-check"><input type="checkbox" data-link-default> Use as this form's default print layout</label><button type="button" class="btn" data-link-form-action>Link form</button>`:''}<h3>Currently linked</h3>${linked.length?`<table><thead><tr><th>Form</th><th>Print layout</th><th>Actions</th></tr></thead><tbody>${linked.map(f=>{const current=f.layouts.find(t=>Number(t.id)===Number(templateId));return `<tr><td>${escAttr(f.name)}<div class="muted">${escAttr(f.scope||'General')}</div></td><td>${current.is_default?'Default':'Alternative'}</td><td>${current.is_default?'':`<button type="button" class="btn secondary small" data-link-make-default="${f.id}">Make default</button>`}<button type="button" class="btn secondary small" data-link-unlink="${f.id}">Unlink</button></td></tr>`;}).join('')}</tbody></table>`:'<p>This template is not linked to any forms you manage.</p>'}${!forms.length?'<p>No forms are available with your current form-management permissions.</p>':''}<div data-links-error role="alert" class="form-error hidden"></div>`;
     }

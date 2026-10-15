@@ -1806,3 +1806,11 @@ select option, select optgroup { background-color: var(--surface); color: var(--
 @media (max-width: 700px) {
   .form-history-entry .tool-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
 }
+.fc-lookup { display:grid; gap:6px; margin-bottom:14px; }
+.fc-lookup [type=search] { min-width:0; }
+.fc-lookup small, [data-system-status] { overflow-wrap:anywhere; }
+.form-items { border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px; margin:14px 0; min-width:0; }
+.form-item-row { border-bottom:1px solid var(--border); padding:12px 0; }
+.form-item-values { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; align-items:end; margin-bottom:10px; }
+.form-item-values label { min-width:0; }
+@media(max-width:700px) { .form-item-values { grid-template-columns: minmax(0,1fr); } }

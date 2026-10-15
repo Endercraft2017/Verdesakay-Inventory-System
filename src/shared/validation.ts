@@ -1307,12 +1307,17 @@ export const templateSchema = z.object({
 // 'employee' renders as a live dropdown of current employees (never a stale, form-design-time
 // options list) — its stored value is still just the employee's name, the same plain string
 // convention every other form already relies on (e.g. matching attendance to a form record).
-const fieldTypeEnum = z.enum(['text', 'number', 'date', 'time', 'select', 'textarea', 'checkbox', 'employee']);
+const fieldTypeEnum = z.enum(['text', 'number', 'date', 'time', 'select', 'textarea', 'checkbox', 'employee', 'reference', 'system', 'line_items', 'calculated']);
 
 export const fieldDefSchema = z.object({
   key: trimmed.min(1).max(64).regex(/^[a-z0-9_]+$/, 'Key must be lowercase letters, numbers, or underscores'),
   label: trimmed.min(1).max(120),
   type: fieldTypeEnum,
+  price_editable: z.boolean().optional(),
+  calculation:z.object({operator:z.enum(['sum','multiply','subtract','percent']),operands:z.array(trimmed.regex(/^[a-z0-9_]+(?:\.(?:quantity|unit_price|discount_amount|line_total))?$/)).min(1).max(20)}).optional(),
+  source: z.enum(['product','customer','employee','sales_order','supplier','location','account','tax_code','company','user']).optional(),
+  property: trimmed.regex(/^[a-z_]+$/).optional(),
+  binding: z.object({field:trimmed.regex(/^[a-z0-9_]+$/),property:trimmed.regex(/^[a-z_]+$/),editable:z.boolean().default(false)}).optional(),
   required: boolish.default(false),
   options: z.array(trimmed.max(200)).max(100).default([]),
   default: trimmed.max(500).default(''),
@@ -1321,9 +1326,13 @@ export const fieldDefSchema = z.object({
 export const formActionSchema = z.object({
   type: z.enum([
     'notify_employee', 'save_to_201', 'email_employee',
-    'notify_hr', 'create_followup_task', 'apply_no_work',
+    'notify_hr', 'create_followup_task', 'apply_no_work', 'create_sales_draft',
   ]),
-  run_on: z.enum(['create', 'approved']).default('create'),
+  run_on: z.enum(['create', 'approved', 'submitted']).default('create'),
+  customer_field:trimmed.regex(/^[a-z0-9_]+$/).optional(),
+  items_field:trimmed.regex(/^[a-z0-9_]+$/).optional(),
+  tax_field:trimmed.regex(/^[a-z0-9_]+$/).optional(),
+  total_field:trimmed.regex(/^[a-z0-9_]+$/).optional(),
   subject: trimmed.max(200).optional(),
   body: trimmed.max(4000).optional(),
   due_field: trimmed.max(64).optional(),

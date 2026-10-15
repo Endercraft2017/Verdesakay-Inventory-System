@@ -1522,7 +1522,12 @@ export interface AttendanceRecord {
 export interface FieldDef {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'date' | 'time' | 'select' | 'textarea' | 'checkbox' | 'employee';
+  type: 'text' | 'number' | 'date' | 'time' | 'select' | 'textarea' | 'checkbox' | 'employee' | 'reference' | 'system' | 'line_items' | 'calculated';
+  calculation?: {operator:'sum'|'multiply'|'subtract'|'percent';operands:string[]};
+  price_editable?:boolean;
+  source?: 'product' | 'customer' | 'employee' | 'sales_order' | 'supplier' | 'location' | 'account' | 'tax_code' | 'company' | 'user';
+  property?: string;
+  binding?: { field: string; property: string; editable: boolean };
   required: boolean;
   options: string[];  // only for type = 'select'
   default: string;
@@ -1537,8 +1542,13 @@ export interface FormAction {
     | 'email_employee'       // email the rendered notice via the company SMTP mailbox
     | 'notify_hr'            // message the employee's dept head, else hr.manage holders
     | 'create_followup_task' // add a task due on `due_field`
-    | 'apply_no_work';       // date_from/date_to/paid range feeds paid/unpaid no-work into payroll
-  run_on?: 'create' | 'approved';
+    | 'apply_no_work'
+    | 'create_sales_draft';       // date_from/date_to/paid range feeds paid/unpaid no-work into payroll
+  run_on?: 'create' | 'approved' | 'submitted';
+  customer_field?:string;
+  items_field?:string;
+  tax_field?:string;
+  total_field?:string;
   subject?: string;          // notify_employee / email_employee — templated
   body?: string;             // notify_employee — templated
   due_field?: string;        // create_followup_task — a date field key on the form

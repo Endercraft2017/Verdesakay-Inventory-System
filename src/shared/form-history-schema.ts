@@ -41,6 +41,12 @@ export function createFormHistorySchema(conn: DatabaseSync): void {
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_deduction_history_record ON payslip_deduction_history(record_id,id);
+    CREATE TABLE IF NOT EXISTS form_sales_links (
+      record_id INTEGER PRIMARY KEY REFERENCES form_records(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+      order_number TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS form_user_preferences (
       user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       favorites TEXT NOT NULL DEFAULT '[]',

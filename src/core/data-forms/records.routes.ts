@@ -1,3 +1,7 @@
+import { runSalesWorkflow, salesLink } from './sales-workflow';
+import { idempotency } from '../../shared/idempotency';
+import { calculateRecord } from './calculations';
+import { resolveConnections } from './sources';
 import { recordDeductionChange } from '../../modules/payroll/deduction-history';
 import { z } from 'zod';
 import { Router, type Request, type Response, type NextFunction } from 'express';
@@ -20,7 +24,7 @@ import { cutoffIsPaid, notifyApprovers } from '../../modules/hr/workflow';
 import { normalizeRequest, attachLeave, leaveWarnings, requestEmployeeId, scheduledLeaveDates } from '../../modules/hr/request-data';
 import { REQUEST_SLUGS } from './request-types';
 import { INFO_CHANGE_SLUG, prepareInfoChange } from '../../modules/hr/info-change';
-import type { DocTemplate, FormDefinition, FormRecord, GlobalVariable, FormScope, Permission } from '../../shared/types';
+import type { DocTemplate, FormDefinition, FormRecord, GlobalVariable, FormScope, Permission, FieldDef } from '../../shared/types';
 import { syncClass } from '../../sync';
 import { syncUpload } from '../../sync/files';
 import { templateRevision, checkTemplateRevision, templateWrite, checkStudioPublish, studioPublished, migrateStudioDocument } from '../doc-template-version';
@@ -61,8 +65,8 @@ router.get('/form-definitions/:id/records', (req, res) => {
     params.push(`%${q.trim()}%`, `%${q.trim()}%`);
   }
   const rows = queryAll<FormRecord>(
-    `SELECT fr.*, u.full_name AS created_by_name
-     FROM form_records fr LEFT JOIN users u ON u.id = fr.created_by
+    `SELECT fr.*, u.full_name AS created_by_name,l.order_id AS sales_order_id,l.order_number AS sales_order_number
+     FROM form_records fr LEFT JOIN users u ON u.id = fr.created_by LEFT JOIN form_sales_links l ON l.record_id=fr.id
      WHERE ${where.join(' AND ')}
      ORDER BY fr.id DESC`,
     ...params
@@ -83,7 +87,7 @@ router.get('/form-records/:id', (req, res) => {
   );
   if (!row) { res.status(404).json({ error: 'Record not found' }); return; }
   if (!canAccessRecords(req, res, { scope: row.scope, slug: row.form_slug }, false)) return;
-  res.json(recordResponse(row));
+  res.json({...recordResponse(row),sales_order:salesLink(row.id)||null});
 });
 
 router.get('/form-records/:id/revisions',(req,res)=>{
@@ -99,7 +103,14 @@ router.get('/form-records/:id/revisions',(req,res)=>{
 // list GET /me/request-types exposes) — the mobile self-service flow. Path (b) always forces
 // status to 'pending' server-side, ignoring whatever the client sent, so a self-filer can't
 // create an already-'approved'/'completed' record and skip the real approval workflow.
-router.post('/form-records', syncClass('merge'), (req, res) => {
+function createRecordAccess(req:Request,res:Response,next:NextFunction){
+  const form=queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id=?',Number(req.body?.form_def_id)||0);
+  if(form && !REQUEST_SLUGS.includes(form.slug)){
+    if(!canAccessRecords(req,res,form,true))return;
+  }
+  next();
+}
+router.post('/form-records', createRecordAccess, idempotency, syncClass('merge'), (req, res) => {
   const input = parseBody(createFormRecordSchema, req.body);
   delete input.data._calculation_snapshot;
   const form = queryOne<FormDefinition>(
@@ -159,6 +170,7 @@ router.post('/form-records', syncClass('merge'), (req, res) => {
     }
   }
 
+  input.data=calculateRecord(parseFields(form.fields as string) as FieldDef[],resolveConnections(parseFields(form.fields as string) as FieldDef[],input.data,req.user!),req.user!) as typeof input.data;
   validateRequiredCheckboxes(form.fields, input.data);
   let recordId: number;
   let number: string;
@@ -175,6 +187,7 @@ router.post('/form-records', syncClass('merge'), (req, res) => {
       req.user!.id
     );
     recordId = Number(info.lastInsertRowid);
+    runSalesWorkflow(recordId,parseFields(form.fields as string) as FieldDef[],parseActions(form.actions as string) as import('../../shared/types').FormAction[],input.data,status,req.user!);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
@@ -190,6 +203,7 @@ router.post('/form-records', syncClass('merge'), (req, res) => {
     if (action_warnings.length) { input.data.leave_warnings = action_warnings.join('\n'); run('UPDATE form_records SET data = ? WHERE id = ?', JSON.stringify(input.data), recordId); }
   }
   if (!selfFile) {
+    if(status==='submitted')action_warnings.push(...runFormActions({recordId,recordNumber:number,formDef:form,data:input.data,trigger:'submitted',actingUserId:req.user!.id}).warnings);
     action_warnings.push(...runFormActions({
       recordId, recordNumber: number, formDef: form, data: input.data as Record<string, unknown>,
       trigger: 'create', actingUserId: req.user!.id,
@@ -199,7 +213,7 @@ router.post('/form-records', syncClass('merge'), (req, res) => {
     const employee = Number(input.data.employee_id) ? queryOne<{ name: string; department_id: number | null }>('SELECT name, department_id FROM employees WHERE id = ?', Number(input.data.employee_id)) : queryOne<{ name: string; department_id: number | null }>('SELECT name, department_id FROM employees WHERE user_id = ?', req.user!.id);
     notifyApprovers(employee?.department_id ?? null, { title: 'New HR request', body: `${employee?.name || req.user!.full_name} — ${form.name}`, url: '#/approvals', link: { route: 'hr-approvals', params:{id:recordId,kind:'request'} }, tag: 'hr-request-' + recordId }, req.user!.id);
   }
-  res.status(201).json({ id: recordId, number, action_warnings });
+  res.status(201).json({ id: recordId, number, action_warnings, sales_order:salesLink(recordId)||null });
 });
 
 // PUT /api/form-records/:id — update data / status (forms.manage.<scope> for the record's
@@ -237,8 +251,10 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
   if (input.expected_revision != null && input.expected_revision !== existing.revision) { res.status(409).json({error:'This record changed. Reopen it before saving your correction.'}); return; }
   if (definition) validateRequiredCheckboxes(definitionForRecord(existing)?.fields ?? definition.fields, input.data);
   const newStatus = input.status ?? existing.status;
-  const recordData = { ...input.data };
   const previousData = parseData(existing.data as string);
+  const originalFields=definitionForRecord(existing)?.fields ?? parseFields(definition?.fields as string) as FieldDef[];
+  const recordData = calculateRecord(originalFields,resolveConnections(originalFields,input.data,req.user!,previousData),req.user!,previousData);
+  if(salesLink(id)&&(newStatus!==existing.status||JSON.stringify(recordData)!==JSON.stringify(previousData))){res.status(409).json({error:'This submitted record is linked to a sales order. Correct the sales order or create a replacement form; its original submitted values are retained.'});return;}
   if (existing.slug === 'hr_payroll') {
     delete recordData._calculation_snapshot;
     if (previousData._calculation_snapshot) recordData._calculation_snapshot = String(previousData._calculation_snapshot);
@@ -274,7 +290,7 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
     newStatus,
     now().toISOString(),
     id
-  ); if(existing.slug==='hr_payroll')recordDeductionChange(id,previousData,recordData,req.user!,input.change_reason); });
+  ); const actions=definitionForRecord(existing)?.actions ?? parseActions(queryOne<FormDefinition>('SELECT actions FROM form_definitions WHERE id=?',existing.form_def_id)?.actions as string);runSalesWorkflow(id,originalFields,actions as import('../../shared/types').FormAction[],recordData,newStatus,req.user!); if(existing.slug==='hr_payroll')recordDeductionChange(id,previousData,recordData,req.user!,input.change_reason); });
 
   // Fire `run_on: 'approved'` actions the first time a record reaches 'approved'.
   let action_warnings: string[] = [];
@@ -282,12 +298,12 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
     action_warnings.push(...leaveWarnings(Number(recordData.employee_id), recordData, id), ...attachLeave(id).warnings);
     if (action_warnings.length) { recordData.leave_warnings = action_warnings.join('\n'); run('UPDATE form_records SET data = ? WHERE id = ?', JSON.stringify(recordData), id); }
   }
-  if (newStatus === 'approved' && existing.status !== 'approved') {
+  if (['approved','submitted'].includes(newStatus) && existing.status !== newStatus) {
     const form = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', existing.form_def_id);
     if (form) {
       action_warnings = runFormActions({
         recordId: id, recordNumber: existing.number, formDef: form,
-        data: input.data as Record<string, unknown>, trigger: 'approved', actingUserId: req.user!.id,
+        data: input.data as Record<string, unknown>, trigger: newStatus as 'approved'|'submitted', actingUserId: req.user!.id,
       }).warnings;
     }
   }
@@ -305,6 +321,7 @@ router.delete('/form-records/:id', syncClass('claim'), (req, res) => {
   if (!canAccessRecords(req, res, existing, true)) return;
   if(queryOne<{archived_at:string|null}>('SELECT archived_at FROM form_definitions WHERE id=?',existing.form_def_id)?.archived_at){res.status(409).json({error:'Archived records must be preserved. Restore the form before deleting records.'});return;}
 
+  if(salesLink(id)){res.status(409).json({error:'This form record created a sales order and must be retained.'});return;}
   // A payslip that was ever marked Paid is part of the payroll record: correct it (unmark, edit,
   // mark paid again), never delete it. payslip_paid_history is written by hr.routes.ts.
   if (existing.slug === 'hr_payroll'

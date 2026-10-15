@@ -67,6 +67,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 80: connected forms, sales draft links and sync-safe template history IDs.
 // 79: preserve exact semi-built batch identity when a bulk package enters finishing.
 // 78: trace semi-built packages finished into fully built stock without BOM reissue,
 //     and preserve each serialized unit's received cost for that conversion.
@@ -86,7 +87,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 79; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 80; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -3954,10 +3955,11 @@ function seedMemoForms(): void {
     then one labelled line per form field ({{key}} placeholders the form-record print flow
     and src/form-actions.ts both substitute). Deliberately minimal; HR edits it in the doc
     editor from Form Builder. */
-export function memoTemplateBody(title: string, fields: Array<{ key: string; label: string }>): string {
+export function memoTemplateBody(title: string, fields: Array<{ key: string; label: string; type?:string;source?:string }>): string {
   const escape=(value:string)=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+  const fieldPath=(key:string)=>['company','global','record','number','today','user','order','fields'].includes(key)?'fields.'+key:key;
   const rows = fields
-    .map((f) => `  <div class="mm-row"><span class="mm-l">${escape(f.label)}</span><span class="mm-v">{{${f.key}}}</span></div>`)
+    .map((f) => f.type==='line_items'?`<h3>${escape(f.label)}</h3><table><thead><tr><th>Product</th><th>Quantity</th><th>Unit</th><th>Unit price</th><th>Discount %</th><th>Line total</th></tr></thead><tbody>{{#${fieldPath(f.key)}}}<tr><td>{{name}}</td><td>{{quantity}}</td><td>{{unit}}</td><td>{{unit_price}}</td><td>{{discount_percent}}</td><td>{{line_total}}</td></tr>{{/${fieldPath(f.key)}}}</tbody></table>`:`  <div class="mm-row"><span class="mm-l">${escape(f.label)}</span><span class="mm-v">{{${fieldPath(f.key)}${f.type==='reference'?(f.source==='sales_order'?'.number':'.name'):''}}}</span></div>`)
     .join('\n');
   return `<style>
   .memo { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; max-width: 720px; margin: 0 auto; }

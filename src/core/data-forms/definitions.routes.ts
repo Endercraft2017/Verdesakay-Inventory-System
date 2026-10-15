@@ -1,10 +1,13 @@
+import { validateSalesWorkflow } from './sales-workflow';
+import { validateCalculations } from './calculations';
+import { validateConnections } from './sources';
 import { z } from 'zod';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { db, queryOne, queryAll, run, nextSequence, memoTemplateBody } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import {
-  parseBody,
+  parseBody, ValidationError,
   formDefinitionSchema,
   linkFormTemplateSchema,
   templateSchema,
@@ -31,6 +34,10 @@ router.use(requireAuth);
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 import { parseFields, parseActions, parseData, nextRecordNumber, canManageScope, canAccessRecords, FORM_SCOPES, ANY_FORMS_MANAGE, validateRequiredCheckboxes, hasFormScopeAccess } from './policy';
+function validateRequestSurface(slug:string,fields:import('../../shared/types').FieldDef[],actions:import('../../shared/types').FormAction[]) {
+  if(REQUEST_SLUGS.includes(slug)&&(fields.some(field=>['reference','system','line_items','calculated'].includes(field.type)||field.binding)||actions.some(action=>action.run_on==='submitted')))
+    throw new ValidationError('Employee self-service requests use their supported request fields and create/approved actions. Use a separate staff Data Form for connected fields and sales workflows.');
+}
 function visibleDefinition(req:Request,row:FormDefinition) {
   const result={...row} as FormDefinition & {version_reason?:string;updated_by?:number;archived_by?:number};
   const allowed=row.slug===PAYROLL_FORM_SLUG?req.user!.permissions.includes('payroll.view'):hasFormScopeAccess(req.user!.permissions,row.scope);
@@ -79,6 +86,10 @@ router.put('/form-definitions/:id/archive', syncClass('claim'), (req, res) => {
 // POST /api/form-definitions — create (forms.manage.<scope>)
 router.post('/form-definitions', syncClass('claim'), (req, res) => {
   const input = parseBody(formDefinitionSchema, req.body);
+  validateConnections(input.fields);
+  validateCalculations(input.fields);
+  validateSalesWorkflow(input.fields,input.actions);
+  validateRequestSurface(input.slug,input.fields,input.actions);
   if (!canManageScope(req, res, input.scope)) return;
   const created=templateWrite(()=>{
   const info = run(
@@ -107,6 +118,10 @@ router.put('/form-definitions/:id', syncClass('claim'), (req, res) => {
   const existing = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', id);
   if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
   const input = parseBody(formDefinitionSchema, req.body);
+  validateConnections(input.fields);
+  validateCalculations(input.fields);
+  validateSalesWorkflow(input.fields,input.actions);
+  validateRequestSurface(input.slug,input.fields,input.actions);
   if (!canManageScope(req, res, existing.scope)) return;
   if ((existing.slug === PAYROLL_FORM_SLUG || REQUEST_SLUGS.includes(existing.slug)) && input.slug !== existing.slug) { res.status(400).json({error:'The identity of a payroll or employee-request form cannot be changed.'});return; }
   if (existing.slug === PAYROLL_FORM_SLUG && input.scope !== existing.scope) {res.status(400).json({error:'The payroll form must remain in its original section.'});return;}

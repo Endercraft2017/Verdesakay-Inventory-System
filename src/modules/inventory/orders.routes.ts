@@ -1229,6 +1229,7 @@ router.delete('/:id', requireAnyPermission(['orders.delete', 'purchasing.manage'
     res.status(403).json({ error: 'Forbidden: insufficient permissions' });
     return;
   }
+  if(queryOne('SELECT record_id FROM form_sales_links WHERE order_id=?',id)){res.status(409).json({error:'This sales order was created from a submitted form. Cancel or correct it instead of deleting its audit link.'});return;}
   if (kind?.type === 'sale' && queryOne('SELECT 1 FROM release_slips WHERE order_id = ? LIMIT 1', id)) {
     res.status(409).json({ error: 'This sale has a release slip. Record a return or correction instead of deleting its physical handoff.', code: 'already_shipped' });
     return;
@@ -1247,3 +1248,15 @@ router.delete('/:id', requireAnyPermission(['orders.delete', 'purchasing.manage'
 });
 
 export default router;
+
+/** Form submissions reuse the order validator, totals and item writer. Caller owns the transaction. */
+export function createDraftSaleForForm(raw:Record<string,unknown>,actor:number) {
+  const input=parseBody(createOrderSchema,{...raw,type:'sale',status:'open'});
+  validateOrderLinks('sale',input);
+  const {lines,subtotal,tax_amount,total}=computeTotals(input.items,input.tax_percent);
+  const customer=resolveCustomer('sale',input),number=nextOrderNumber('sale');
+  const info=run(`INSERT INTO orders(type,number,customer_id,customer_name,customer_contact,order_date,status,notes,currency,subtotal,tax_percent,tax_amount,total,created_by)
+    VALUES('sale',?,?,?,?,?,'open',?,?,?,?,?,?,?)`,number,customer.customer_id,customer.customer_name,customer.customer_contact,input.order_date??null,input.notes??null,input.currency||'PHP',subtotal,input.tax_percent,tax_amount,total,actor);
+  const id=Number(info.lastInsertRowid);insertItems(id,lines);
+  return {id,number,total};
+}

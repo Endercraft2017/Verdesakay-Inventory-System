@@ -567,6 +567,13 @@ export interface FormRecords {
   period: string | null;
 }
 
+export interface FormSalesLinks {
+  record_id: Generated<number>;
+  order_id: number;
+  order_number: string;
+  created_at: string;
+}
+
 export interface FormTemplateLinks {
   form_id: Generated<number>;
   template_id: number;
@@ -1772,6 +1779,7 @@ export interface DB {
   form_record_action_runs: FormRecordActionRuns;
   form_record_revisions: FormRecordRevisions;
   form_records: FormRecords;
+  form_sales_links: FormSalesLinks;
   form_template_links: FormTemplateLinks;
   form_user_preferences: FormUserPreferences;
   forms: Forms;
