@@ -336,7 +336,7 @@
       var t = String(code || '').trim().toLowerCase();
       if (!t) { mToast('Enter or scan a serial', 'err'); return; }
       loadQueue(desk, true).then(function (q) {
-        var hit = q.units.filter(function (u) { return String(u.identifier || '').toLowerCase() === t || String(u.id) === t.replace(/^#/, ''); })[0]
+        var hit = q.units.filter(function (u) { return ('vds:unit:'+u.id) === t || String(u.identifier || '').toLowerCase() === t || String(u.id) === t.replace(/^#/, ''); })[0]
           || q.units.filter(function (u) { return u.identifier && String(u.identifier).toLowerCase().indexOf(t) !== -1; })[0];
         if (hit) go(desk, { unit: hit.id });
         else mToast('No unit in your ' + desk.role.toUpperCase() + ' queue matches ' + code, 'err');

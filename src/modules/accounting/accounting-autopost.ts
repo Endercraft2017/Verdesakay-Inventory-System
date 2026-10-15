@@ -1,3 +1,4 @@
+import { shipBatches, consumeBatchPool } from '../inventory/batch-stock';
 /**
  * Auto-posting hooks — ACCOUNTING-SYSTEM-PLAN.md Phase 1.
  *
@@ -315,8 +316,11 @@ function changeSaleStockInTransaction(orderId: number, userId: number | null, fo
   const sign = wantFulfilled ? -1 : 1;
   const reason = wantFulfilled ? `Sold — ${o.number}` : `Sale reversed — ${o.number}`;
   for (const l of lines) {
+    const tracked = queryOne<{n:number}>("SELECT COALESCE(SUM(quantity),0) AS n FROM production_batch_allocations WHERE order_id=? AND item_id=? AND state=?",orderId,l.item_id,wantFulfilled?'reserved':'shipped')?.n??0;
+    if (wantFulfilled && tracked > 0 && l.quantity > tracked + 1e-9) consumeBatchPool(l.item_id!, loc, l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled', l.quantity - tracked);
+    const batchQty = shipBatches(orderId, l.item_id!, wantFulfilled);
     applyStockChange({ itemId: l.item_id!, locationId: loc, change: sign * l.quantity, userId, reason,
-      buildMode: l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled' });
+      buildMode: l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled', batchHandled: batchQty > 0 });
     // Serialized units already sit inside the line's stock quantity; do not move them twice.
     run(
       `UPDATE job_order_units SET status = ?, updated_at = datetime('now')

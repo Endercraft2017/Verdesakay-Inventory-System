@@ -77,7 +77,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 75; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 77; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -824,6 +824,42 @@ function createSchema(): void {
       batch_id   INTEGER REFERENCES production_batches(id) ON DELETE SET NULL,  -- non-serialized
       quantity   REAL NOT NULL DEFAULT 1
     );
+
+    CREATE TABLE IF NOT EXISTS production_batch_stock (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL REFERENCES production_batches(id),
+      location_id INTEGER NOT NULL REFERENCES locations(id),
+      quantity REAL NOT NULL DEFAULT 0,
+      received REAL NOT NULL DEFAULT 0,
+      UNIQUE(batch_id,location_id)
+    );
+    CREATE TABLE IF NOT EXISTS production_batch_allocations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL REFERENCES production_batches(id),
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id),
+      location_id INTEGER NOT NULL REFERENCES locations(id),
+      quantity REAL NOT NULL CHECK(quantity > 0),
+      state TEXT NOT NULL CHECK(state IN ('reserved','shipped')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS production_batch_counts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL REFERENCES production_batches(id),
+      location_id INTEGER NOT NULL REFERENCES locations(id),
+      before_quantity REAL NOT NULL,
+      counted_quantity REAL NOT NULL,
+      reason TEXT NOT NULL,
+      counted_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS production_batch_return_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_id INTEGER NOT NULL UNIQUE REFERENCES sales_returns(id),
+      batch_id INTEGER NOT NULL REFERENCES production_batches(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_batch_allocations_stock ON production_batch_allocations(batch_id,location_id,state);
+    CREATE INDEX IF NOT EXISTS idx_batch_allocations_order ON production_batch_allocations(order_id,item_id,state);
 
     -- Phase C: one row per physical unit produced by a job order, plus its QA/QC log.
     -- status: pending | in_stock | failed | scrapped | sold | rework. order_id ties a

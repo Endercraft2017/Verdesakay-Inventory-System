@@ -263,3 +263,18 @@ describe('releasing_clerk role', () => {
     expect(adjust.status).toBe(403);
   });
 });
+
+it('uses immutable unit QR IDs when human-readable serials are duplicated',async()=>{
+ const {product,codes}=await productWithUnits('QR-ID',2);const {queryAll,run}=await import('../src/shared/db');
+ const units=queryAll<{id:number}>('SELECT id FROM job_order_units WHERE product_item_id=? ORDER BY id',product);
+ run('UPDATE job_order_units SET identifier=? WHERE id=?',codes[0],units[1]!.id);
+ const so=await saleOrder([{item_id:product,name:'QR identity product',quantity:1,unit_price:10}],'approved');
+ expect((await ctx.api.get(`/api/release-slips/orders/${so}/unit`).query({code:codes[0]}).set(H())).status).toBe(409);
+ expect((await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({codes:[codes[0]]})).status).toBe(409);
+ const code='VDS:UNIT:'+units[0]!.id;
+ expect((await ctx.api.get('/api/inventory/lookup').query({code}).set(H())).body.unit.id).toBe(units[0]!.id);
+ expect((await ctx.api.get(`/api/release-slips/orders/${so}/unit`).query({code}).set(H())).body.unit.id).toBe(units[0]!.id);
+ expect((await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({codes:[code]})).status).toBe(200);
+ const state=queryAll<{id:number;status:string}>('SELECT id,status FROM job_order_units WHERE product_item_id=? ORDER BY id',product);
+ expect(state).toEqual([{id:units[0]!.id,status:'reserved'},{id:units[1]!.id,status:'in_stock'}]);
+});

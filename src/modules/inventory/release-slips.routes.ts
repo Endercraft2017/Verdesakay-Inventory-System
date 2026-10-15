@@ -1,3 +1,5 @@
+import { parseProductionLabel } from '../manufacturing/label-code';
+import { batchBalances } from './batch-stock';
 /** Sale-order releasing — the warehouse side of the SO pipeline. Mounted at /api/release-slips.
  *  - GET /queue: approved SOs waiting for the warehouse to accept, and accepted ones being picked.
  *  - GET / and /:id: issued release slips (the record of what physically left).
@@ -115,6 +117,7 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
       warehouse_accepted_at: accepted?.warehouse_accepted_at ?? null, location_id: availability.location_id,
       location_name: availability.location_name },
     lines, units,
+    batch_allocations:queryAll(`SELECT a.*,pb.number AS batch_number FROM production_batch_allocations a JOIN production_batches pb ON pb.id=a.batch_id WHERE a.order_id=? ORDER BY a.id`,id),
     availability: availability.lines.map((l) => ({ item_id: l.item_id, fulfillment_mode: l.fulfillment_mode, free_to_allocate: Math.max(0, l.available - l.covered_here),
       on_hand: l.on_hand, committed_elsewhere: l.committed_elsewhere, kit_held: l.kit_held, repair_held: l.repair_held })),
     authorization: publicAuthorization(id),
@@ -136,6 +139,28 @@ router.get('/orders/:id/unit', releaseGate, (req, res) => {
   const id = Number(req.params.id);
   const code = String(req.query.code ?? '').trim();
   if (!saleOrder(id)) { res.status(404).json({ error: 'Sale order not found' }); return; }
+  const label=parseProductionLabel(code);
+  if(!label){
+    const identities=queryOne<{n:number}>(`SELECT (SELECT COUNT(*) FROM job_order_units WHERE LOWER(COALESCE(NULLIF(TRIM(identifier),''),'UNIT-' || id))=LOWER(?))
+      +(SELECT COUNT(*) FROM production_batches WHERE LOWER(number)=LOWER(?))
+      +(SELECT COUNT(*) FROM inventory_items WHERE LOWER(sku)=LOWER(?) OR LOWER(json_extract(attributes,'$.barcode'))=LOWER(?)) AS n`,code,code,code,code)!.n;
+    if(identities>1){res.status(409).json({error:'Ambiguous older label. Open the exact record and reprint its QR sticker.',code:'ambiguous_label'});return;}
+  }
+  if(!label&&queryOne<{n:number}>("SELECT COUNT(*) AS n FROM job_order_units WHERE LOWER(COALESCE(NULLIF(TRIM(identifier),''),'UNIT-' || id))=LOWER(?)",code)!.n>1){res.json({state:'ambiguous_label',code});return;}
+  const batch=queryOne<{id:number;number:string;product_item_id:number;product_name:string;build_mode:string}>(
+    `SELECT pb.id,pb.number,COALESCE(pb.product_item_id,j.product_item_id) AS product_item_id,j.product_name,j.build_mode
+     FROM production_batches pb JOIN job_orders j ON j.id=pb.job_order_id WHERE (CASE WHEN ? IS NOT NULL THEN (?='batch' AND pb.id=?) ELSE LOWER(pb.number)=LOWER(?) END)
+     AND NOT EXISTS(SELECT 1 FROM job_order_units u WHERE u.batch_id=pb.id)`,label?.kind??null,label?.kind??null,label?.id??null,code);
+  if(batch){
+    const order=queryOne<{location_id:number|null}>('SELECT location_id FROM orders WHERE id=?',id)!;
+    const line=queryOne<{quantity:number;released_qty:number;fulfillment_mode:string}>(
+      `SELECT quantity,released_qty,fulfillment_mode FROM order_items WHERE order_id=? AND item_id=? AND fulfillment_mode=?`,id,batch.product_item_id,batch.build_mode);
+    const context=orderAvailability(id);
+    const balances=batchBalances(batch.id),balance=balances.find(x=>x.location_id===context.location_id);
+    const availability=context.lines.find(x=>x.item_id===batch.product_item_id&&x.fulfillment_mode===batch.build_mode);
+    const available=Math.max(0,Math.min(balance?.available??0,availability?(availability.available-availability.covered_here):0,line?(line.quantity-(line.released_qty||0)):0));
+    res.json({state:!line?'wrong_product':available>0?'batch_available':'batch_unavailable',batch:{...batch,balances,available}});return;
+  }
   const u = queryOne<{ id: number; identifier: string | null; status: string; order_id: number | null; product_item_id: number | null;
     product_name: string; build_mode: string; location_id: number | null; location_name: string | null; order_number: string | null; receipt_number: string | null }>(
     `SELECT u.id, u.identifier, u.status, u.order_id, u.product_item_id, u.location_id, j.product_name, j.build_mode, l.name AS location_name, o.number AS order_number,
@@ -143,9 +168,18 @@ router.get('/orders/:id/unit', releaseGate, (req, res) => {
               WHERE ri.unit_id = u.id ORDER BY ri.id DESC LIMIT 1) AS receipt_number
      FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id LEFT JOIN locations l ON l.id = u.location_id
      LEFT JOIN orders o ON o.id = u.order_id
-     WHERE LOWER(TRIM(u.identifier)) = LOWER(?) ORDER BY u.id DESC LIMIT 1`, code
+     WHERE (CASE WHEN ? IS NOT NULL THEN (?='unit' AND u.id=?) ELSE LOWER(COALESCE(NULLIF(TRIM(u.identifier), ''), 'UNIT-' || u.id)) = LOWER(?) END) ORDER BY u.id DESC LIMIT 1`, label?.kind??null,label?.kind??null,label?.id??null,code
   );
-  if (!u) { res.json({ state: 'not_found', code }); return; }
+  if (!u) {
+    const item=queryOne<{id:number;name:string}>(`SELECT id,name FROM inventory_items WHERE LOWER(sku)=LOWER(?) OR LOWER(json_extract(attributes,'$.barcode'))=LOWER(?)`,code,code);
+    const lines=item?orderAvailability(id).lines.filter(l=>l.item_id===item.id&&l.fulfillment_mode!=='ckd'):[];
+    const tracked=item&&queryOne(`SELECT 1 FROM production_batch_stock s JOIN production_batches pb ON pb.id=s.batch_id JOIN job_orders j ON j.id=pb.job_order_id WHERE COALESCE(pb.product_item_id,j.product_item_id)=? AND s.quantity>0 LIMIT 1`,item.id) || item&&queryOne(`SELECT 1 FROM production_receipt_items ri JOIN production_batches pb ON pb.id=ri.batch_id JOIN job_orders j ON j.id=pb.job_order_id WHERE COALESCE(pb.product_item_id,j.product_item_id)=? LIMIT 1`,item.id);
+    const line=lines.length===1?lines[0]:null;
+    if(item&&line&&!tracked&&!queryOne('SELECT 1 FROM job_order_units WHERE product_item_id=? LIMIT 1',item.id)) {
+      res.json({state:'bulk_available',stock:{...item,code,build_mode:line.fulfillment_mode,available:Math.max(0,line.available-line.covered_here)}});return;
+    }
+    res.json({ state: tracked?'batch_label_required':'not_found', code }); return;
+  }
   const onOrder = queryOne(`SELECT 1 FROM order_items WHERE order_id = ? AND item_id = ?
     AND COALESCE(fulfillment_mode, 'assembled') = ?`, id, u.product_item_id, u.build_mode);
   const state = u.order_id === id && (u.status === 'reserved' || u.status === 'sold') ? 'allocated'

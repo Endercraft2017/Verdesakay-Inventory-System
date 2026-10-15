@@ -1,3 +1,4 @@
+import { batchBalances } from '../inventory/batch-stock';
 /** Production — repair / rework parts requests.
  *
  *  When a QA/QC inspector fails a unit with disposition = 'repair', the unit goes to
@@ -846,6 +847,9 @@ router.get('/record', recordRead, (req, res) => {
     const b = loadBatch(batchId!);
     if (!b) { res.status(404).json({ error: 'Batch not found' }); return; }
     out.batch = b;
+    out.batch_stock = batchBalances(b.id);
+    out.batch_allocations = queryAll(`SELECT a.quantity,a.state,o.number AS order_number FROM production_batch_allocations a JOIN orders o ON o.id=a.order_id WHERE a.batch_id=?`,b.id);
+    out.batch_counts = queryAll('SELECT location_id,before_quantity,counted_quantity,reason,created_at FROM production_batch_counts WHERE batch_id=? ORDER BY id DESC',b.id);
     productId = b.product_item_id;
     joId = b.job_order_id;
     out.units = queryAll<JobOrderUnit>('SELECT * FROM job_order_units WHERE batch_id = ? ORDER BY id', batchId);
@@ -857,6 +861,7 @@ router.get('/record', recordRead, (req, res) => {
       'SELECT id, name, sku, unit, product_group, attributes FROM inventory_items WHERE id = ?', productId
     );
     if (p) {
+      out.stock = queryAll(`SELECT s.build_mode,SUM(s.quantity) AS quantity FROM inventory_variant_stock s WHERE s.item_id=? GROUP BY s.build_mode`,p.id);
       let spec: unknown = null;
       try { spec = p.attributes ? (JSON.parse(p.attributes) as Record<string, unknown>).spec : null; } catch { spec = null; }
       out.product = { id: p.id, name: p.name, sku: p.sku, unit: p.unit, model: p.product_group, variant: spec ?? null };
@@ -864,7 +869,7 @@ router.get('/record', recordRead, (req, res) => {
   }
   if (joId) {
     out.job_order = queryOne(
-      `SELECT j.id, j.number, j.product_name, j.status, j.planned_start, j.due_date, j.accepted_at,
+      `SELECT j.id, j.number, j.product_name, j.build_mode, j.status, j.planned_start, j.due_date, j.accepted_at,
               t.name AS team_name, cb.full_name AS created_by_name, rb.full_name AS released_by_name, ab.full_name AS accepted_by_name,
               sl.name AS source_location_name, ol.name AS output_location_name
        FROM job_orders j

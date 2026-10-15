@@ -480,7 +480,7 @@ App.register('finished-products', async (view, filter) => {
     return {
       product: { name: product.name, sku: product.sku || '', model: product.product_group || '', variant: attrs.spec || '' },
       code, sub: opts.sub || '', batch: opts.batch || {},
-      qr_src: qrDataUrl(code || product.sku || product.name),
+      qr_src: qrDataUrl(opts.qrCode || code || product.sku || product.name),
       date: new Date().toISOString().slice(0, 10),
     };
   }
@@ -530,7 +530,7 @@ App.register('finished-products', async (view, filter) => {
         const cells = [];
         const push = (ctx) => { for (let i = 0; i < copies; i++) cells.push(`<div class="lbl">${window.renderTemplate(tpl, ctx)}</div>`); };
         if (pickedUnits.length) {
-          pickedUnits.forEach((u) => push(labelContext(product, { code: u.ident, sub: 'Unit #' + u.id })));
+          pickedUnits.forEach((u) => push(labelContext(product, { code: u.ident, qrCode: 'VDS:UNIT:' + u.id, sub: 'Unit #' + u.id })));
         } else {
           const n = Math.max(1, parseInt(ov.querySelector('[data-f="batch"]').value, 10) || 1);
           for (let i = 0; i < n; i++) push(labelContext(product, { code: product.sku, sub: '' }));

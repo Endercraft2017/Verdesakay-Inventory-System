@@ -1,8 +1,10 @@
+import { batchBalances } from '../inventory/batch-stock';
+import { variantStockAt } from '../inventory/inventory-stock';
 /** /api/rts — the mobile RTS (ready-to-sell) desk (Figma 74:*). Reads only: the posting itself
  *  stays POST /api/job-orders/:id/products-in, which applies the same rules (rts.ts). */
 import { Router } from 'express';
 import { z } from 'zod';
-import { queryAll, queryOne } from '../../shared/db';
+import { db, run, queryAll, queryOne } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { parseBody } from '../../shared/validation';
 import { locationError, unitBlockers, openHolds } from './rts';
@@ -68,6 +70,24 @@ router.get('/queue', receiveGate, (req, res) => {
     req.user!.id
   );
   res.json({ units: out, batches, recorded });
+});
+
+/** Establish a counted lot balance for older stock whose lot provenance was never tracked.
+ * This partitions existing stock; it never adds warehouse stock or guesses old sales. */
+router.post('/batches/:id/count', requirePermission('inventory.adjust'), syncClass('claim', {home:(req)=>({location:Number(req.body?.location_id)||null})}), (req,res)=>{
+ const input=parseBody(z.object({location_id:z.coerce.number().int().positive(),quantity:z.coerce.number().nonnegative(),expected_quantity:z.coerce.number().nonnegative(),reason:z.string().trim().min(5).max(500)}),req.body);
+ const id=Number(req.params.id),batch=queryOne<{item_id:number;build_mode:'assembled'|'semi_built'}>(`SELECT COALESCE(pb.product_item_id,j.product_item_id) AS item_id,j.build_mode FROM production_batches pb JOIN job_orders j ON j.id=pb.job_order_id WHERE pb.id=? AND NOT EXISTS(SELECT 1 FROM job_order_units WHERE batch_id=pb.id)`,id);
+ if(!batch){res.status(404).json({error:'Non-serialized batch not found.'});return;}
+ const balance=batchBalances(id).find(x=>x.location_id===input.location_id);
+ if(input.expected_quantity!==(balance?.on_hand??0)){res.status(409).json({error:'This batch balance changed. Reload and recount before saving.'});return;}
+ const other=queryOne<{n:number}>(`SELECT COALESCE(SUM(s.quantity),0) AS n FROM production_batch_stock s JOIN production_batches pb ON pb.id=s.batch_id JOIN job_orders j ON j.id=pb.job_order_id WHERE s.location_id=? AND s.batch_id!=? AND COALESCE(pb.product_item_id,j.product_item_id)=? AND j.build_mode=?`,input.location_id,id,batch.item_id,batch.build_mode)?.n??0;
+ if(input.quantity<(balance?.reserved??0)||input.quantity+other>variantStockAt(batch.item_id,input.location_id,batch.build_mode)+1e-9){res.status(409).json({error:'Count must cover existing reservations and fit within the warehouse build-state stock after other batches.'});return;}
+ if(!queryOne('SELECT 1 FROM locations WHERE id=?',input.location_id)){res.status(400).json({error:'Location not found.'});return;}
+ db.exec('BEGIN');try{
+ run(`INSERT INTO production_batch_stock(batch_id,location_id,quantity,received) VALUES(?,?,?,0) ON CONFLICT(batch_id,location_id) DO UPDATE SET quantity=excluded.quantity`,id,input.location_id,input.quantity);
+ run('INSERT INTO production_batch_counts(batch_id,location_id,before_quantity,counted_quantity,reason,counted_by) VALUES(?,?,?,?,?,?)',id,input.location_id,balance?.on_hand??0,input.quantity,input.reason,req.user!.id);
+ db.exec('COMMIT');res.json({balances:batchBalances(id)});
+ }catch(err){db.exec('ROLLBACK');throw err;}
 });
 
 const checkSchema = z.object({

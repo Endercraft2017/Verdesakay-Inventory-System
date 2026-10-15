@@ -27,7 +27,7 @@
   var go = function (extra) { MApp.go('receiving', extra || {}); };
   var page = function (view, node, title, sub) { return R.page(view, { role: 'rts', node: node, title: title, subtitle: sub }); };
   var key = function () { return 'rts-' + (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)); };
-  var label = function (u) { return u.identifier || ('Unit #' + u.id); };
+  var label = function (u) { return u.identifier || ('UNIT-' + u.id); };
 
   function when(ts) {
     if (!ts) return null;
@@ -107,7 +107,7 @@
           '<button type="button" data-tab="done"' + (tab === 'done' ? ' class="on"' : '') + '>Recorded</button></div>' +
         '<div class="rk-list" data-list></div>' +
         (joFilter ? R.note('info', 'Showing one job order only. <button type="button" class="rk-back" data-all style="padding:0">Show all</button>') : '') +
-        R.actions([{ id: 'rts-scan', label: 'Scan or select unit', kind: 'primary' }, { id: 'rts-look', label: 'Stock lookup', kind: 'secondary' }]);
+        R.actions([{ id: 'rts-scan', label: 'Scan unit or batch', kind: 'primary' }, { id: 'rts-look', label: 'Stock lookup', kind: 'secondary' }]);
       function card(attr, title, line, meta, tone) {
         return '<button type="button" class="rk-card rk-unitcard" ' + attr + '><b>' + mEsc(title) + '</b><span>' + mEsc(line) + '</span>' +
           '<small' + (tone ? ' class="' + tone + '"' : '') + '>' + mEsc(meta) + '</small><i aria-hidden="true">›</i></button>';
@@ -151,10 +151,10 @@
 
   /* ── Identify (74:68) ──────────────────────────────────────────────────── */
   function identify(view) {
-    var body = page(view, '74:68', 'Identify finished unit', 'Scan the serial label or search manually');
+    var body = page(view, '74:68', 'Identify finished stock', 'Find a unit or batch; scan its attached sticker before recording');
     body.innerHTML =
-      '<button type="button" class="rk-identify"><span class="frame" aria-hidden="true"></span><b>Scan the permanent serial label</b><small>Only QA-passed units can be recorded.</small></button>' +
-      '<label class="rk-card rk-field"><small>Manual serial search</small><input class="rk-input" data-q placeholder="Enter serial or scan code" autocomplete="off"></label>' +
+      '<button type="button" class="rk-identify"><span class="frame" aria-hidden="true"></span><b>Scan the unit or batch QR label</b><small>Only QA-passed units can be recorded.</small></button>' +
+      '<label class="rk-card rk-field"><small>Find a unit or batch</small><input class="rk-input" data-q placeholder="Enter serial or batch number" autocomplete="off"></label>' +
       R.actions([{ id: 'rts-find', label: 'Find unit', kind: 'primary' }, { id: 'rts-cancel', label: 'Cancel', kind: 'secondary' }]) +
       R.note('info', '<h3>Duplicate protection</h3>The app checks both workflow stage and finished-goods inventory before allowing a record.');
     Array.prototype.forEach.call(body.querySelectorAll('.rk-btn'), function (b) { b.classList.add('center'); });
@@ -162,11 +162,16 @@
       var t = String(code || '').trim().toLowerCase();
       if (!t) { mToast('Enter or scan a serial', 'err'); return; }
       loadQueue().then(function (q) {
-        var hit = q.units.filter(function (u) { return String(u.identifier || '').trim().toLowerCase() === t; })[0];
+        var hits = q.units.filter(function (u) { return ('vds:unit:'+u.id) === t || label(u).trim().toLowerCase() === t; });
+        if(hits.length>1)throw new Error('Ambiguous older label. Reprint the specific unit QR from its record.');
+        var hit = hits[0];
+        var batchHit = q.batches.filter(function (b) { return ('vds:batch:'+b.id) === t || String(b.number).trim().toLowerCase() === t; })[0];
+        if (hit && batchHit) throw new Error('Ambiguous label. Open the intended record and verify its sticker.');
         if (hit) { go({ unit: hit.id }); return; }
+        if (batchHit) { go({ batch: batchHit.id }); return; }
         // Not waiting for RTS — is it already in finished goods? Then show why it can't post again.
         return API.get('/rts/lookup?q=' + encodeURIComponent(code)).then(function (r) {
-          var rec = r.units.filter(function (u) { return String(u.identifier || '').trim().toLowerCase() === t; })[0];
+          var rec = r.units.filter(function (u) { return label(u).trim().toLowerCase() === t; })[0];
           if (rec && rec.state !== 'hold') { go({ step: 'dup', found: rec.id }); return; }
           mToast('No QA-passed unit matches ' + code + ' — it may still be in inspection', 'err');
         });
@@ -284,7 +289,7 @@
         if (!window.mScanner) { mToast('Scanner unavailable on this device', 'err'); return; }
         mScanner.open({ title: 'Scan another unit', onResult: function (code) {
           var t = String(code || '').trim().toLowerCase();
-          var hit = eligible.filter(function (x) { return String(x.identifier || '').trim().toLowerCase() === t; })[0];
+          var hit = eligible.filter(function (x) { return ('vds:unit:'+x.id)===t || String(x.identifier || '').trim().toLowerCase() === t; })[0];
           if (!hit) { mToast(code + ': not a QA-passed unit of this SKU', 'err'); return; }
           if (draft.ids.indexOf(hit.id) === -1) draft.ids.push(hit.id);
           paint();
@@ -362,14 +367,18 @@
         '<b class="lg">' + mEsc(label(chosen[0] || u) + (chosen.length > 1 ? ' + ' + (chosen.length - 1) + ' more' : '')) + '</b>' +
         '<span style="color:var(--rk-title);font-weight:500">' + mEsc(locName(draft.location_id)) + '</span><span>Status after posting: Ready to sell</span></div>' +
       R.field('Build state', buildTag(u)) + R.field('Source', 'QA pass · ' + cap(clock((chosen[0] || u).final_pass && (chosen[0] || u).final_pass.created_at) || 'final inspection')) +
+      '<div data-label-verification></div>' + R.actions([{ id: 'rts-print-labels', label: 'Print QR stickers', kind: 'secondary' }]) +
       R.check('rts-ok', 'I verified the physical unit and location') +
       R.note('info', '<h3>After confirmation</h3>Sales availability and finished-goods on-hand update from the same transaction.') +
       R.actions([{ id: 'rts-post', label: 'Record as ready to sell', kind: 'navy' }, { id: 'rts-back', label: 'Back', kind: 'secondary' }]);
     body.querySelector('#rts-back').onclick = function () { history.back(); };
     var btn = body.querySelector('#rts-post'), chk = body.querySelector('#rts-ok');
     btn.disabled = true;
-    chk.onchange = function () { btn.disabled = !chk.checked; };
+    var stickers = mScanner.verification(body.querySelector('[data-label-verification]'), chosen.map(function(x){return {code:'VDS:UNIT:'+x.id,aliases:last.units.filter(function(v){return label(v).toLowerCase()===label(x).toLowerCase();}).length===1?[label(x)]:[]};}), function (ok) { btn.disabled = !chk.checked || !ok; });
+    body.querySelector('#rts-print-labels').onclick = function () { Promise.all(chosen.map(function (x) { return API.get('/production/record?unit=' + x.id); })).then(mProductionPrint.printUnitRecords).catch(fail()); };
+    chk.onchange = function () { btn.disabled = !chk.checked || !stickers.complete(); };
     btn.onclick = function () {
+      if (!chk.checked || !stickers.complete()) { mToast('Scan every attached QR sticker first.', 'err'); return; }
       if (offline()) { mToast('You’re offline — recording stock needs a connection. Nothing was saved.', 'err'); return; }
       btn.disabled = true; btn.textContent = 'Recording…';
       body.querySelectorAll('button,input').forEach(function (el) { el.disabled = true; });
@@ -501,7 +510,7 @@
         '<label class="rk-card rk-field"><small>Finished-goods location</small><select data-loc>' + storage().map(function (l) {
           return '<option value="' + l.id + '"' + (l.id === locId ? ' selected' : '') + '>' + mEsc(l.name) + '</option>'; }).join('') + '</select></label>' +
         '<label class="rk-card rk-field"><small>Note (optional)</small><input class="rk-input" data-note maxlength="500" placeholder="Count discrepancy, condition…"></label>' +
-        R.field('Build state', buildTag(b)) + R.check('rts-ok', 'I counted the quantity and checked the location') +
+        R.field('Build state', buildTag(b)) + '<div data-label-verification></div>' + R.actions([{ id: 'rts-print-labels', label: 'Print batch QR sticker', kind: 'secondary' }]) + R.check('rts-ok', 'I counted the quantity and checked the location') +
         R.actions([{ id: 'rts-post', label: 'Record as ready to sell', kind: 'navy' }, { id: 'rts-back', label: 'Back', kind: 'secondary' }]);
       var input = body.querySelector('.rk-stepper input');
       var clamp = function (v) { return Math.max(1, Math.min(b.remaining_qty, v || 1)); };
@@ -510,8 +519,11 @@
       body.querySelector('#rts-back').onclick = function () { history.back(); };
       var btn = body.querySelector('#rts-post'), chk = body.querySelector('#rts-ok');
       btn.disabled = true;
-      chk.onchange = function () { btn.disabled = !chk.checked; };
+      var stickers = mScanner.verification(body.querySelector('[data-label-verification]'), [{code:'VDS:BATCH:'+b.id,aliases:[b.number]}], function (ok) { btn.disabled = !chk.checked || !ok; });
+      body.querySelector('#rts-print-labels').onclick = function () { API.get('/production/record?batch=' + b.id).then(mProductionPrint.printBatchRecord).catch(fail()); };
+      chk.onchange = function () { btn.disabled = !chk.checked || !stickers.complete(); };
       btn.onclick = function () {
+        if (!chk.checked || !stickers.complete()) { mToast('Scan the attached batch QR sticker first.', 'err'); return; }
         if (offline()) { mToast('You’re offline — recording stock needs a connection. Nothing was saved.', 'err'); return; }
         var qty = Number(input.value), loc = Number(body.querySelector('[data-loc]').value);
         if (!Number.isSafeInteger(qty) || qty <= 0 || qty > b.remaining_qty) { mToast('Enter a whole quantity from 1 to ' + b.remaining_qty + '.', 'err'); return; }

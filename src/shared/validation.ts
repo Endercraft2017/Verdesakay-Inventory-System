@@ -923,6 +923,7 @@ export const releaseOrderSchema = z
     bulk: z.array(z.object({
       item_id: z.coerce.number().int().positive(),
       quantity: numCoerce.positive().max(1_000_000),
+      batch_id: z.coerce.number().int().positive().optional(),
     })).max(300).optional(),
   })
   .refine((v) => (v.unit_ids?.length || v.codes?.length || v.bulk?.length), {
@@ -1170,6 +1171,7 @@ export const creditNoteSchema = z.object({
 // A physical customer return is one slip line per receipt. Serialised receipts
 // identify the exact shipped unit; inspection alone can put it back on hand.
 export const salesReturnReceiveSchema = z.object({
+  batch_id: optionalId,
   slip_id: z.coerce.number().int().positive(),
   slip_item_id: z.coerce.number().int().positive(),
   quantity: numCoerce.positive(),

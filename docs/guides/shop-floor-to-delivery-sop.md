@@ -647,3 +647,22 @@ A CKD sale shows the parent kit as a manifest and allocates its physical compone
 lines. Assembled parent stock does not satisfy the kit. Every component is required
 before handoff; partial CKD release is unavailable. Component returns restore
 components rather than a built unit. Final mobile slip/proof recovery remains open.
+
+### Attached QR stickers at RTS and releasing
+
+Print and attach each unit's QR, or the QR for a non-serialized batch. New QR payloads
+identify the immutable unit/batch record; the sticker also shows its readable serial
+or lot number. The RTS clerk scans every selected attached sticker, verifies the
+physical stock and destination, then confirms the receipt. Printing or finding a
+record manually does not verify the sticker.
+
+Releasing opens the sales order and scans the stock label. A unit must match the
+product, build state and ship-from warehouse. A batch pick also counts a quantity
+from that exact batch: reservation reduces its free quantity, and the final slip
+consumes that batch's stock. The phone retains uncertain requests for exact retry;
+site-PC pending results are not final. Authorized scan lookup is read-only and shows
+stock/dossier information without making a stock movement.
+
+For batches received before lot tracking existed, a supervisor physically counts
+remaining stock and uses the dossier's Reconcile batch stock action. Historical
+receipt quantities must not be treated as current remaining batch quantities.

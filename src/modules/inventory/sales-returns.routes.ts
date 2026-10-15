@@ -1,3 +1,4 @@
+import { restoreBatchStock } from './batch-stock';
 /** Physical customer returns against an issued release slip. Receipt is evidence of goods
  * arriving, inspection decides whether they re-enter sellable stock. A credit note is a
  * separate Finance decision and never moves inventory. */
@@ -19,12 +20,12 @@ const returnSite = { home: (req: Request) => ({ location: queryOne<{ location_id
 )?.location_id ?? null }) };
 
 type ReturnRow = { id: number; number: string; slip_id: number; slip_item_id: number; item_id: number;
-  fulfillment_mode: string;
+  fulfillment_mode: string; batch_id:number|null;
   quantity: number; unit_id: number | null; unit_cost: number | null; status: string; credit_note_id: number | null;
   order_id: number; order_number: string; customer_id: number | null; customer_name: string | null;
   item_name: string; slip_number: string; location_id: number | null; credit_note_status: string | null;
   disposition_state: string | null; decision_note: string | null; repair_note: string | null; };
-const SELECT = `SELECT r.*, s.number AS slip_number, s.order_id, o.number AS order_number,
+const SELECT = `SELECT r.*, (SELECT batch_id FROM production_batch_return_links WHERE return_id=r.id) AS batch_id, s.number AS slip_number, s.order_id, o.number AS order_number,
   o.customer_id, o.customer_name, i.name AS item_name, COALESCE(oi.fulfillment_mode, 'assembled') AS fulfillment_mode, cn.status AS credit_note_status,
   d.state AS disposition_state, d.decision_note, d.repair_note
   FROM sales_returns r JOIN release_slips s ON s.id = r.slip_id
@@ -51,7 +52,8 @@ router.get('/slips/:slipId/context', requireAnyPermission(['inventory.view', 'in
   const units = queryAll(`SELECT u.id, u.product_item_id AS item_id, u.identifier
     FROM job_order_units u WHERE u.order_id = ? AND u.status = 'sold'
     AND NOT EXISTS (SELECT 1 FROM sales_returns r WHERE r.unit_id = u.id) ORDER BY u.id`, slip.order_id);
-  res.json({ slip, lines, units, returns: queryAll<ReturnRow>(`${SELECT} WHERE r.slip_id = ? ORDER BY r.id DESC`, slipId) });
+  const batches=queryAll(`SELECT a.batch_id,pb.number AS batch_number,a.item_id,SUM(a.quantity) AS shipped_quantity FROM production_batch_allocations a JOIN production_batches pb ON pb.id=a.batch_id WHERE a.order_id=? AND a.state='shipped' GROUP BY a.batch_id,a.item_id`,slip.order_id);
+  res.json({ slip, lines, units, batches, returns: queryAll<ReturnRow>(`${SELECT} WHERE r.slip_id = ? ORDER BY r.id DESC`, slipId) });
 });
 router.get('/:id', requireAnyPermission(['inventory.view', 'inventory.adjust', 'orders.release', 'orders.view']), (req, res) => {
   const row = getReturn(Number(req.params.id));
@@ -88,6 +90,14 @@ router.post('/', warehouse, syncClass('physical', returnSite), (req, res) => {
   } else if (b.unit_id) {
     res.status(400).json({ error: 'Bulk goods do not take a serial unit ID.' }); return;
   }
+  const shippedBatches=queryAll<{batch_id:number;quantity:number}>(`SELECT batch_id,SUM(quantity) AS quantity FROM production_batch_allocations WHERE order_id=? AND item_id=? AND state='shipped' GROUP BY batch_id`,line.order_id,line.item_id);
+  const batchId=b.batch_id??(shippedBatches.length===1?shippedBatches[0]!.batch_id:null);
+  if(shippedBatches.length||batchId){
+    const source=shippedBatches.find(x=>x.batch_id===batchId);
+    if(!source){res.status(409).json({error:'Select the exact shipped batch for this return.',code:'return_batch_required'});return;}
+    const returned=queryOne<{n:number}>(`SELECT COALESCE(SUM(r.quantity),0) AS n FROM production_batch_return_links l JOIN sales_returns r ON r.id=l.return_id WHERE r.slip_item_id=? AND l.batch_id=?`,line.id,batchId)?.n??0;
+    if(returned+b.quantity>source.quantity+1e-9){res.status(409).json({error:'This exceeds the quantity shipped from this batch.',code:'return_exceeds_batch'});return;}
+  }
   const evidence = queryAll<{ id: number }>(
     `SELECT id FROM attachments WHERE kind = 'sales_return_proof' AND ref_id = ?
      AND id IN (${b.evidence_ids.map(() => '?').join(',')})`, b.slip_id, ...b.evidence_ids);
@@ -101,6 +111,7 @@ router.post('/', warehouse, syncClass('physical', returnSite), (req, res) => {
       (number, slip_id, slip_item_id, item_id, quantity, unit_id, unit_cost, reason, received_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, number, b.slip_id, b.slip_item_id, line.item_id,
       b.quantity, b.unit_id ?? null, line.unit_cost, b.reason, req.user!.id).lastInsertRowid);
+    if(batchId)run('INSERT INTO production_batch_return_links(return_id,batch_id) VALUES(?,?)',id,batchId);
     run(`UPDATE attachments SET kind = 'sales_return', ref_id = ?
       WHERE kind = 'sales_return_proof' AND ref_id = ? AND id IN (${b.evidence_ids.map(() => '?').join(',')})`,
       id, b.slip_id, ...b.evidence_ids);
@@ -124,6 +135,7 @@ router.post('/:id/inspect', requirePermission('inventory.adjust'), syncClass('ph
     if (loc) applyStockChange({ itemId: row.item_id, locationId: loc, change: row.quantity,
       userId: req.user!.id, reason: `Customer return ${row.number} for ${row.slip_number}`,
       buildMode: row.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled' });
+    if(loc&&row.batch_id)restoreBatchStock(row.batch_id,loc,row.quantity);
     if (row.unit_id) {
       const changed = run(`UPDATE job_order_units SET status = ?, location_id = COALESCE(?, location_id),
         order_id = CASE WHEN ? = 'restock' THEN NULL ELSE order_id END, updated_at = datetime('now')
@@ -161,6 +173,7 @@ router.post('/:id/disposition', requirePermission('inventory.adjust'), syncClass
   db.exec('BEGIN');
   try {
     const state = b.decision === 'repair' ? 'repair' : b.decision === 'salvage' ? 'salvaged' : 'disposed';
+    if(loc&&row.batch_id)restoreBatchStock(row.batch_id,loc,row.quantity);
     if (row.unit_id) {
       const changed = run("UPDATE job_order_units SET status = ?, updated_at = datetime('now') WHERE id = ? AND status = 'returned_rejected' AND order_id = ?",
         state === 'repair' ? 'returned_rework' : state === 'salvaged' ? 'returned_salvaged' : 'returned_disposed', row.unit_id, row.order_id);

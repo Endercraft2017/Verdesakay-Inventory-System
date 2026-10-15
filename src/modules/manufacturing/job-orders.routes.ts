@@ -1,3 +1,4 @@
+import { receiveBatch } from '../inventory/batch-stock';
 /** Manufacturing job orders (Phase B). Build N units of a finished product by
     consuming its BOM. Lifecycle: draft (→ approved, a sign-off stamp, not a status) →
     released → in_progress → completed,
@@ -2077,6 +2078,7 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
           reason: `${jo.number}: received (Products In ${number})`, userId: req.user!.id, unitCost,
         });
       }
+      receiveBatch(line.batch_id, input.location_id, line.quantity);
       // Nothing to flip on the batch itself — its `status` is the separate, optional QA
       // sign-off flag (production.routes.ts); "received" is derived from qty vs. this table.
     }

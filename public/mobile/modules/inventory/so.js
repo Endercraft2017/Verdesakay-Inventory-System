@@ -180,10 +180,10 @@
       }).join('') + '</div>' : '') +
       bulk.map(function (l) {
         return '<div class="rk-card rk-field"><small>' + mEsc(l.name) + ' · ' + buildTag(l.fulfillment_mode) + ' · non-serialized</small><div class="rk-qtyrow" style="margin-top:8px"><span>' + (l.released_qty || 0) + ' of ' + l.quantity + ' allocated · ' + free(l) + ' free here</span>' +
-          '<span class="rk-search"><input class="rk-input" style="margin:0;width:70px" type="number" min="0" step="any" max="' + free(l) + '" inputmode="decimal" data-qty="' + l.item_id + '" value="' + free(l) + '">' +
+          '<span class="rk-search"><input class="rk-input" style="margin:0;width:70px" readonly aria-label="Free quantity; scan a label to choose allocation" type="number" min="0" step="any" max="' + free(l) + '" inputmode="decimal" data-qty="' + l.item_id + '" value="' + free(l) + '">' +
           '<button type="button" class="rk-back" data-bulk="' + l.item_id + '"' + (free(l) <= 0 ? ' disabled' : '') + ' style="padding:0">Add</button></span></div></div>';
       }).join('') +
-      R.field('Ship from', c.order.location_name || 'Warehouse #' + c.order.location_id) + R.note('info', '<h3>Allocation check</h3>A ready-to-sell unit assigned to another order cannot be substituted without approval.') +
+      (c.batch_allocations || []).map(function(a){return R.field(a.batch_number+' · '+a.state,a.quantity+' allocated');}).join('') + R.field('Ship from', c.order.location_name || 'Warehouse #' + c.order.location_id) + R.note('info', '<h3>Allocation check</h3>A ready-to-sell unit assigned to another order cannot be substituted without approval.') +
       R.actions([{ id: 'rel-go', label: 'Continue', kind: 'primary' }, { id: 'rel-man', label: 'Scan manually', kind: 'secondary' }]);
     var check = function (code) {
       code = String(code || '').trim();
@@ -192,19 +192,15 @@
     };
     body.querySelector('.rk-identify').onclick = function () {
       if (!window.mScanner) { mToast('Scanner unavailable on this device', 'err'); return; }
-      mScanner.open({ title: 'Scan the unit serial label', onResult: check });
+      mScanner.open({ title: 'Scan the unit or batch QR label', allowManual: false, onResult: check });
     };
     body.querySelector('#rel-man').onclick = function () { var m = body.querySelector('[data-manual]'); m.hidden = false; m.querySelector('input').focus(); };
     body.querySelector('[data-find]').onclick = function () { check(body.querySelector('[data-code]').value); };
     Array.prototype.forEach.call(body.querySelectorAll('[data-unit]'), function (b) { b.onclick = function () { if (b.dataset.unit) check(b.dataset.unit); }; });
     Array.prototype.forEach.call(body.querySelectorAll('[data-bulk]'), function (b) {
+      b.textContent = 'Scan label';
       b.onclick = function () {
-        var qty = Number(body.querySelector('[data-qty="' + b.dataset.bulk + '"]').value), line = bulk.find(function (l) { return l.item_id === Number(b.dataset.bulk); });
-        if (!Number.isFinite(qty) || qty <= 0 || qty > free(line)) { mToast('Enter a positive quantity within ' + free(line) + ' free to allocate at this warehouse.', 'err'); return; }
-        if (offline()) { mToast('You’re offline — allocation needs a connection.', 'err'); return; }
-        b.disabled = true;
-        body.querySelectorAll('button,input').forEach(function (el) { el.disabled = true; });
-        mReleaseActions.start(c, 'allocate', '/orders/' + c.order.id + '/release', { bulk: [{ item_id: Number(b.dataset.bulk), quantity: qty }] }, 'Allocate ' + qty + ' ' + line.name).catch(fail(b));
+        mScanner.open({ title: 'Scan the attached batch or item QR sticker', allowManual: false, onResult: check });
       };
     });
     body.querySelector('#rel-go').onclick = function () {
@@ -212,10 +208,37 @@
     };
   }
 
+  function bulkLabel(view,c,stock,isBatch) {
+    var itemId=isBatch?stock.product_item_id:stock.id;
+    var line=c.lines.find(function(l){return physical(l)&&l.item_id===itemId&&(l.fulfillment_mode==='semi_built'?'semi_built':'assembled')===(stock.build_mode==='semi_built'?'semi_built':'assembled');});
+    if(!line){blockedView(view,c,'',{state:'wrong_product'});return;}
+    var available=Math.max(0,Math.min(stock.available,line.quantity-(line.released_qty||0)));
+    var body=page(view,'78:147',isBatch?'Verify batch allocation':'Verify item allocation','Scan the attached sticker and count the stock for this sale');
+    body.innerHTML=R.jobHead({number:isBatch?stock.number:stock.code,name:isBatch?stock.product_name:stock.name,meta:c.order.number})+
+      R.field('Build state',buildTag(stock.build_mode))+R.field('Ship from',c.order.location_name||'Warehouse #'+c.order.location_id)+
+      R.field(isBatch?'Free in this batch for this sale':'Free for this sale',String(available))+
+      '<label class="rk-card rk-field"><small>Quantity for '+mEsc(c.order.number)+'</small><input class="rk-input" data-label-qty type="number" min="0" step="any" max="'+available+'" value="'+available+'" inputmode="decimal"></label><div data-label-verification></div>'+
+      R.actions([{id:'rel-label-ok',label:'Allocate to sales order',kind:'primary'},{id:'rel-label-back',label:'Back',kind:'secondary'}]);
+    var btn=body.querySelector('#rel-label-ok');btn.disabled=true;
+    var gate=mScanner.verification(body.querySelector('[data-label-verification]'),[isBatch?{code:'VDS:BATCH:'+stock.id,aliases:[stock.number]}:stock.code],function(ok){btn.disabled=!ok||available<=0;});
+    body.querySelector('#rel-label-back').onclick=function(){go({id:c.order.id,step:'scan'});};
+    btn.onclick=function(){
+      if(!gate.complete())return;
+      var qty=Number(body.querySelector('[data-label-qty]').value);
+      if(!Number.isFinite(qty)||qty<=0||qty>available){mToast('Enter a positive quantity within the displayed free stock.','err');return;}
+      if(offline()){mToast('Allocation needs a connection.','err');return;}
+      var allocation={item_id:itemId,quantity:qty};if(isBatch)allocation.batch_id=stock.id;
+      btn.disabled=true;body.querySelectorAll('button,input').forEach(function(el){el.disabled=true;});
+      mReleaseActions.start(c,'allocate','/orders/'+c.order.id+'/release',{bulk:[allocation]},'Allocate '+qty+' from '+(isBatch?stock.number:stock.code)).catch(fail(btn));
+    };
+  }
+
   /* ── Verify allocated unit (78:147) / release blocked (78:365) ─────────── */
   function unit(view, c, code) {
     view.innerHTML = '<section class="rk-page">' + R.skeleton(2) + '</section>';
     API.get('/release-slips/orders/' + c.order.id + '/unit?code=' + encodeURIComponent(code)).then(function (r) {
+      if (r.state === 'batch_available') { bulkLabel(view,c,r.batch,true); return; }
+      if (r.state === 'bulk_available') { bulkLabel(view,c,r.stock,false); return; }
       if (r.state !== 'allocated' && r.state !== 'available') { blockedView(view, c, code, r); return; }
       if (location.hash.split('?')[0] !== '#/so' || Number(new URLSearchParams(location.hash.split('?')[1]).get('id')) !== c.order.id) return;
       var u = r.unit, p = progress(c);
@@ -229,16 +252,19 @@
           meta: u.location_name || '' }) +
         R.field('Build state', buildTag(u.build_mode)) + R.field('Ship from', c.order.location_name || 'Warehouse #' + c.order.location_id) + R.field('Stock transaction', u.receipt_number || '—') +
         R.field('Allocated to', c.order.number + ' · ' + (r.state === 'allocated' ? (idx + 1) + ' of ' + p.need : 'will be ' + (p.got + 1) + ' of ' + p.need)) +
-        R.note('info', '<h3>Physical check</h3>Confirm model, color, serial label and visible condition before removing the unit.') +
+        '<div data-label-verification></div>' + R.note('info', '<h3>Physical check</h3>Confirm model, color, serial label and visible condition before removing the unit.') +
         R.actions([{ id: 'rel-ok', label: 'Confirm unit', kind: 'primary' }, { id: 'rel-mis', label: 'Mismatch', kind: 'secondary' }]);
       body.querySelector('#rel-mis').onclick = function () { go({ id: c.order.id, step: 'report', kind: 'unit_mismatch', code: code }); };
       var btn = body.querySelector('#rel-ok');
+      btn.disabled = true;
+      var sticker = mScanner.verification(body.querySelector('[data-label-verification]'), [{code:'VDS:UNIT:'+u.id,aliases:[u.identifier || ('UNIT-' + u.id)]}], function (ok) { btn.disabled = !ok; });
       btn.onclick = function () {
+        if (!sticker.complete()) { mToast('Scan the attached QR sticker first.', 'err'); return; }
         if (r.state === 'allocated') { go({ id: c.order.id, step: 'scan' }); return; }
         if (offline()) { mToast('You’re offline — allocation needs a connection.', 'err'); return; }
         btn.disabled = true; btn.textContent = 'Allocating…';
         body.querySelectorAll('button').forEach(function (el) { el.disabled = true; });
-        mReleaseActions.start(c, 'allocate', '/orders/' + c.order.id + '/release', { codes: [u.identifier] }, 'Allocate ' + u.identifier).catch(fail(btn,'Confirm unit'));
+        mReleaseActions.start(c, 'allocate', '/orders/' + c.order.id + '/release', { codes: ['VDS:UNIT:' + u.id] }, 'Allocate ' + (u.identifier || ('UNIT-' + u.id))).catch(fail(btn,'Confirm unit'));
       };
     }).catch(function (err) { view.innerHTML = ''; view.appendChild(R.error(err, function () { unit(view, c, code); })); });
   }
@@ -246,6 +272,8 @@
     var body = page(view, '78:365', 'Release blocked', 'Resolve the mismatch before warehouse-out');
     var TEXT = {
       other_order: ['Serial is not allocated', 'Allocated to ' + ((r.unit && r.unit.order_number) || 'another order') + ', not this order.'],
+      batch_unavailable: ['Batch unavailable', 'No free tracked quantity from this batch is available at this sale’s ship-from location.'],
+      batch_label_required: ['Scan the batch sticker', 'This product has batch stock. Scan the specific batch QR, rather than its general product code.'],
       wrong_build: ['Wrong build state', 'This serial is ' + buildTag(r.unit && r.unit.build_mode) + '; select a unit matching the sale line.'],
       wrong_product: ['Wrong product', (r.unit ? r.unit.product_name : 'This unit') + ' is not on ' + c.order.number + '.'],
       not_found: ['Serial not found', 'No finished unit carries this label.'],

@@ -1,5 +1,49 @@
 # Inventory and production: mobile integration gaps
 
+## QR stickers → RTS → exact sales allocation (2026-10-15)
+
+User-confirmed workflow: attach the printed unit/batch QR sticker, scan it before RTS
+stock entry, then scan the same stock label when allocating it to a sales order.
+Authorized staff can also scan for a read-only dossier and quantities; lookup never
+receives or allocates stock automatically.
+
+New printed labels encode immutable `VDS:UNIT:<id>` / `VDS:BATCH:<id>` payloads while
+retaining the human-readable serial/batch number on the sticker. Mobile dossiers,
+mobile print sheets, desktop unit labels and desktop batch labels use the same
+convention. Lookup, RTS, QC/QA identification and releasing accept these identities.
+Unambiguous older label text remains compatible; ambiguous legacy labels must be
+reprinted from the exact record.
+
+Mobile confirmation uses shared `mScanner.verification`: every selected unit, or the
+selected batch, must be scanned from the attached sticker. Manual search/selection
+can discover a record but cannot satisfy verification; the verification scanner has
+no manual-entry form. Printing is separate and cannot mark a sticker verified.
+Batch receiving can be found by its QR and has a print action before posting.
+Releasing resolves a batch against the sale product, build state and ship-from
+location, shows its free quantity, then persists the exact `{item_id,batch_id,quantity}`
+request before allocation. Existing immutable request/restart recovery is retained.
+
+Schema v77 adds per-location `production_batch_stock`, exact `production_batch_allocations`,
+count audit records and batch-return links. Products In establishes lot balances;
+reservation does not move stock; warehouse-out consumes the same reserved lot.
+Undo/cancellation frees reservations. Transfers preserve lot identity, ordinary
+stock-outs consume free tracked lots after untracked stock, and held lots cannot be
+silently taken by a generic movement. Legacy quantity API clients reserve known lots
+FIFO; mobile batch allocation explicitly names the scanned lot. Inspected restocks
+restore the linked shipped lot; multiple shipped batches require an explicit batch
+on the return. Final delivery/proof recovery remains separate work.
+
+Historical receipt totals are not remaining stock. Existing batches are not given
+invented balances: a supervisor uses **Reconcile batch stock** in the dossier to
+record a physical count and reason. This partitions existing build-state/location
+stock, cannot add warehouse stock, cannot consume another lot's balance or undercut
+reservations, requires the currently reviewed balance and records an audit row.
+Older stock needs this reconciliation before exact-batch release.
+
+PWA cache v99. Validation details are recorded after the final checks below. Figma
+node context was retrieved for 74:68 and 78:109; the screenshot service returned
+asset URLs whose download was refused (HTTP 403), so no pixel comparison is claimed.
+
 ## Integration with newer branch work (2026-10-15)
 
 Mobile commit `5342728` is integrated with remote heads `e1c0439` and `f13e72a`, preserving both

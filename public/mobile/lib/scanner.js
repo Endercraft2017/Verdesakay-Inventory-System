@@ -48,7 +48,10 @@
     var done = false;
 
     function say(text) { msg.hidden = false; msg.textContent = text; }
+    if (opts.allowManual === false) overlay.querySelector('.m-scan-manual').remove();
+
     function manualOnly(text) {
+      if (opts.allowManual === false) { say('Camera scanning is required. Enable camera access and use HTTPS, then try again.'); overlay.querySelector('.m-scan-stage').hidden = true; return; }
       say(text);
       overlay.querySelector('.m-scan-stage').hidden = true;
       overlay.querySelector('input').focus();
@@ -97,8 +100,9 @@
       };
     }
 
-    overlay.querySelector('.m-scan-manual').onsubmit = function (e) {
+    if (opts.allowManual !== false) overlay.querySelector('.m-scan-manual').onsubmit = function (e) {
       e.preventDefault();
+      if (opts.allowManual === false) return;
       var inp = e.target.querySelector('input');
       var v = inp.value.trim();
       if (!v) return;
@@ -169,5 +173,33 @@
     return { close: stop };
   }
 
-  window.mScanner = { open: open, supported: secureCamera };
+  /** Physical sticker verification is separate from finding/selecting a record.
+      New selections start unverified. Recovery retries the already-reviewed request. */
+  function verification(host, codes, onChange) {
+    var entries = codes.map(function (entry) { return typeof entry === 'string' ? {code:entry,aliases:[]} : entry; });
+    var expected = entries.map(function (entry) { return String(entry.code).trim(); });
+    var seen = {}, active = null;
+    function complete() { return expected.length > 0 && expected.every(function (code) { return seen[code.toLowerCase()]; }); }
+    function paint() {
+      host.innerHTML = '<div class="rk-card rk-field"><small>Attached QR sticker verification</small><p data-scan-status></p><button type="button" class="rk-btn secondary" data-verify-label>Scan attached sticker' + (expected.length > 1 ? 's' : '') + '</button></div>';
+      host.querySelector('[data-scan-status]').textContent = expected.filter(function (code) { return seen[code.toLowerCase()]; }).length + ' of ' + expected.length + ' labels scanned';
+      host.querySelector('[data-verify-label]').onclick = function () {
+        if (active) active.close();
+        active = window.mScanner.open({ title: 'Scan the attached QR sticker', continuous: true, allowManual: false, onResult: function (value) {
+          if (!host.isConnected) { active.close(); return; }
+          var code = String(value || '').trim().toLowerCase();
+          var matches = entries.filter(function (entry) { return [entry.code].concat(entry.aliases || []).some(function(v){return String(v).trim().toLowerCase()===code;}); });
+          if (matches.length !== 1) { mToast('Wrong or ambiguous label. Scan a sticker for the selected stock.', 'err'); return; }
+          seen[String(matches[0].code).toLowerCase()] = true;
+          if (complete()) active.close();
+          paint();
+        } });
+      };
+      if (onChange) onChange(complete());
+    }
+    paint();
+    return { complete: complete };
+  }
+
+  window.mScanner = { open: open, supported: secureCamera, verification: verification };
 })();

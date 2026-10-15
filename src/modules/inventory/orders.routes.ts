@@ -1,3 +1,5 @@
+import { parseProductionLabel } from '../manufacturing/label-code';
+import { allocateBatch, batchBalances, undoBatchAllocations } from './batch-stock';
 /** Job & Sale Orders: stored records with line items, auto numbers, server-computed
     totals. One router serves both types (?type=sale|job). */
 import { moduleEnabled, requireModule } from '../../shared/modules';
@@ -436,6 +438,7 @@ export function releaseTeardown(orderId: number): void {
     "UPDATE job_order_units SET status = 'in_stock', order_id = NULL, updated_at = datetime('now') WHERE order_id = ? AND status = 'reserved'",
     orderId
   );
+  run("DELETE FROM production_batch_allocations WHERE order_id=? AND state='reserved'",orderId);
   run('UPDATE order_items SET released_qty = 0 WHERE order_id = ?', orderId);
   // Re-opened/cancelled: a re-approved order goes back through warehouse acceptance.
   run('UPDATE orders SET warehouse_accepted_at = NULL, warehouse_accepted_by = NULL WHERE id = ?', orderId);
@@ -653,10 +656,13 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
   // Resolve scanned codes → in-stock serialized units by identifier.
   const unitIds = new Set<number>(input.unit_ids ?? []);
   for (const code of input.codes ?? []) {
+    const label=parseProductionLabel(code);
+    if(label?.kind==='batch'){res.status(400).json({error:'Allocate a batch with its batch ID and counted quantity.'});return;}
+    if(!label&&queryOne<{n:number}>("SELECT COUNT(*) AS n FROM job_order_units WHERE LOWER(COALESCE(NULLIF(TRIM(identifier),''),'UNIT-' || id))=LOWER(?)",code.trim())!.n>1){res.status(409).json({error:'Ambiguous older label. Reprint the unit QR from its record.'});return;}
     const u = queryOne<{ id: number }>(
-      `SELECT id FROM job_order_units WHERE LOWER(TRIM(identifier)) = LOWER(?) AND status IN (${stands ? "'in_stock', 'reserved'" : "'in_stock'"})
+      `SELECT id FROM job_order_units WHERE (CASE WHEN ? IS NOT NULL THEN id=? ELSE LOWER(COALESCE(NULLIF(TRIM(identifier), ''), 'UNIT-' || id)) = LOWER(?) END) AND status IN (${stands ? "'in_stock', 'reserved'" : "'in_stock'"})
        ORDER BY status = 'in_stock' DESC, id DESC LIMIT 1`,
-      code.trim()
+      label?.id??null,label?.id??null,code.trim()
     );
     if (!u) { res.status(400).json({ error: `No in-stock unit with label "${code.trim()}".` }); return; }
     unitIds.add(u.id);
@@ -718,6 +724,17 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
       res.status(409).json({ error: `${line.name} has serialized units. Scan its unit labels instead of entering a bulk quantity.` });
       return;
     }
+    if (b.batch_id) {
+      const batch = queryOne<{ item_id:number; build_mode:string }>(`SELECT COALESCE(pb.product_item_id,j.product_item_id) AS item_id,j.build_mode
+        FROM production_batches pb JOIN job_orders j ON j.id=pb.job_order_id WHERE pb.id=?
+        AND NOT EXISTS(SELECT 1 FROM job_order_units u WHERE u.batch_id=pb.id)`,b.batch_id);
+      if (!batch || batch.item_id!==b.item_id || batch.build_mode!==(line.fulfillment_mode==='semi_built'?'semi_built':'assembled')) {
+        res.status(409).json({error:'The scanned batch does not match this sale product and build state.'});return;
+      }
+      const wanted=(input.bulk??[]).filter(x=>x.batch_id===b.batch_id).reduce((n,x)=>n+x.quantity,0);
+      const balance=batchBalances(b.batch_id).find(x=>x.location_id===(order.location_id??getDefaultLocationId()));
+      if(!balance||wanted>balance.available+1e-9){res.status(409).json({error:'This batch has insufficient free quantity at the ship-from location. Rescan and review.'});return;}
+    }
     requested.set(b.item_id, (requested.get(b.item_id) ?? 0) + b.quantity);
   }
   const availability = orderAvailability(id);
@@ -742,6 +759,16 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
       );
     }
     for (const b of input.bulk ?? []) {
+      if(b.batch_id) allocateBatch(b.batch_id,id,b.item_id,order.location_id??getDefaultLocationId(),b.quantity);
+      else {
+        // Legacy quantity clients reserve known lots FIFO; QR clients select an exact lot.
+        let remaining=b.quantity;
+        for(const lot of queryAll<{id:number}>(`SELECT pb.id FROM production_batches pb JOIN job_orders j ON j.id=pb.job_order_id
+          WHERE COALESCE(pb.product_item_id,j.product_item_id)=? AND j.build_mode=? ORDER BY pb.id`,b.item_id,lineByItem.get(b.item_id)!.fulfillment_mode==='semi_built'?'semi_built':'assembled')) {
+          const balance=batchBalances(lot.id).find(x=>x.location_id===(order.location_id??getDefaultLocationId()));
+          const take=Math.min(remaining,balance?.available??0);if(take>0){allocateBatch(lot.id,id,b.item_id,order.location_id??getDefaultLocationId(),take);remaining-=take;}if(remaining<=1e-9)break;
+        }
+      }
       run(
         'UPDATE order_items SET released_qty = MIN(quantity, released_qty + ?) WHERE order_id = ? AND item_id = ?',
         b.quantity, id, b.item_id
@@ -821,6 +848,7 @@ router.post('/:id/release/unreserve', releaseGate, syncClass('claim', orderSite)
       );
     }
     for (const [itemId, amount] of bulkToUndo) {
+      undoBatchAllocations(id,itemId,amount);
       run('UPDATE order_items SET released_qty = MAX(0, released_qty - ?) WHERE order_id = ? AND item_id = ?', amount, id, itemId);
     }
     // If it no longer fully covers, drop 'released' back to 'approved'.

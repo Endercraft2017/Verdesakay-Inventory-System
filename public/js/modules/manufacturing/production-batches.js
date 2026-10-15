@@ -203,7 +203,7 @@ App.register('production-batches', async (view, filter) => {
       confirmText: 'Open print sheet',
       onConfirm: (ov, showErr) => {
         const n = Math.max(1, parseInt(ov.querySelector('[data-f="n"]').value, 10) || 1);
-        const qr = window.qrcode(0, 'M'); qr.addData(batch.number); qr.make();
+        const qr = window.qrcode(0, 'M'); qr.addData('VDS:BATCH:' + batch.id); qr.make();
         const ctx = {
           product: { name: batch.product_name || '—', variant: '' },
           batch: { number: batch.number, identifier: batch.identifier || '', qty: batch.qty },

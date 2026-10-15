@@ -1266,3 +1266,15 @@ compatible with the remote atomic Products In endpoint. Both histories' PWA asse
 are included under v97. Tests cover hold-check retry, CKD guards and backend contracts.
 
 Mobile build-state integration (2026-10-15): approval review and revision include job-order build state; RTS shows it and groups only matching states; releasing uses fulfillment-specific availability and blocks cross-state serial scans. PWA cache v98. Mobile transfer/adjustment variant selection and shortfall creation remain follow-ups.
+
+QR receiving/releasing integration (2026-10-15): immutable `VDS:UNIT:<id>` and
+`VDS:BATCH:<id>` printed identities resolve to read-only dossiers or role-specific
+workflows. Mobile RTS and allocation confirmations require attached-label scans;
+manual lookup and printing do not verify labels. Exact batch/location balances and
+sale reservations (`batch-stock.ts`, schema v77) persist through receipt, allocation,
+undo, handoff, transfer and inspected return. Batch count reconciliation partitions
+existing stock with a reason/current-balance check and audit, without creating stock.
+Legacy batch balances need a physical count; old ambiguous labels need reprinting.
+Quantity-only API clients reserve tracked lots FIFO; scanned mobile picks name the
+exact batch. Shared recovery retains original batch IDs, quantities and request keys.
+PWA cache v99; final proof/delivery recovery remains open.

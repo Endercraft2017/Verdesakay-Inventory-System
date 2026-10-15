@@ -89,6 +89,18 @@ describe('mobile bootstrap', () => {
       exercised under a specific account's actual permissions, not just route registration. */
   /** `respond(url, init)` may return a JSON body for a URL; anything it doesn't answer (returns
    *  undefined) rejects like a dead network, which is the default for every call. */
+  async function scanStickers(win: any, codes: string[]) {
+    const original = win.mScanner.open;
+    win.mScanner.open = (opts: any) => {
+      expect(opts.allowManual).toBe(false);
+      Promise.resolve().then(() => codes.forEach(code => opts.onResult(code)));
+      return { close() {} };
+    };
+    win.document.querySelector('[data-verify-label]').click();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    win.mScanner.open = original;
+  }
+
   async function bootAs(me: Record<string, unknown>, respond?: (url: string, init: any) => unknown, factory = new IDBFactory()) {
     const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://localhost/m' });
     const win = dom.window as unknown as Record<string, any>;
@@ -1419,6 +1431,10 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
           { id: 308, number: 'SO-00308', qty_ordered: 1, qty_released: 0, warehouse_accepted_at: 'x', authorization: { ...AUTH, state: 'revoked', revoke_reason: 'Customer hold' }, summary: { first_name: 'K1 Bike', lines: 1 }, delivery: null, open_reports: 0 },
         ], completed: [], authorization_required: false };
         if (url === '/api/release-slips/orders/302/context') return { ...CTX, ...ctxOver };
+        if(url.includes('/orders/302/unit?code=STOCK-7')) {
+          const context:any={...CTX,...ctxOver},a=(context.availability||[]).find((x:any)=>x.item_id===7);
+          return {state:'bulk_available',stock:{id:7,name:'Measured goods',code:'STOCK-7',available:a?.free_to_allocate||0}};
+        }
         if (url.startsWith('/api/release-slips/orders/302/unit?code=K4-99')) return { state: 'other_order', unit: { ...UNIT, identifier: 'K4-99', order_number: 'SO-00310' } };
         if (url.startsWith('/api/release-slips/orders/302/verify-token?token=PICKUP-7F3Q')) return { ok: true };
         if (url.startsWith('/api/release-slips/orders/302/verify-token')) return { ok: false, error: 'The release token does not match this order.' };
@@ -1430,6 +1446,11 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       for (let i = 0; i < 100; i++) { const e = win.document.querySelector(selector); if (e) return e; await wait(20); }
       throw new Error('Missing releasing element: ' + selector + ' ' + win.document.getElementById('m-view').textContent);
     }
+    async function allocateLabel(win:any,quantity?:number) {
+      win.location.hash='#/so?id=302&step=unit&code=STOCK-7';
+      const input=await relElement(win,'[data-label-qty]');if(quantity!==undefined)input.value=String(quantity);
+      await scanStickers(win,['STOCK-7']);win.document.getElementById('rel-label-ok').click();
+    }
     it('separates unaccepted and partially allocated orders from ready handoff', async () => {
       const win = await bootAs(REL, (url: string) => url === '/api/release-slips/queue' ? { to_accept: [{ id: 301, number: 'SO-NEW', qty_ordered: 2, qty_released: 0, authorization: AUTH, location_name: 'Warehouse A' }], releasing: [{ id: 302, number: 'SO-PARTIAL', qty_ordered: 2, qty_released: 1, warehouse_accepted_at: 'x', authorization: AUTH, location_name: 'Warehouse B' }, { id: 303, number: 'SO-READY', qty_ordered: 2, qty_released: 2, warehouse_accepted_at: 'x', authorization: AUTH, location_name: 'Warehouse B' }], completed: [] } : undefined);
       win.location.hash = '#/so'; await relElement(win, '[data-order="303"]');
@@ -1437,31 +1458,33 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       win.document.querySelector('[data-tab="accept"]').click(); expect(win.document.querySelector('[data-order="301"]').textContent).toContain('Warehouse A');
       win.document.querySelector('[data-tab="allocating"]').click(); expect(win.document.querySelector('[data-order="302"]').textContent).toContain('1 of 2 allocated');
     });
-    it.each(['accept', 'bulk', 'serial'])('recovers interrupted %s with the exact original key and request after restart', async (kind) => {
+    it.each(['accept', 'bulk', 'serial', 'batch'])('recovers interrupted %s with the exact original key and request after restart', async (kind) => {
       const factory = new IDBFactory(), applied = new Map(), calls: any[] = []; let lose = true;
       const context = { ...CTX, order: { ...CTX.order, warehouse_accepted_at: kind === 'accept' ? null : 'x', location_name: 'FG-A03' }, units: [],
         lines: [{ item_id: 7, name: 'Measured goods', quantity: 5.5, released_qty: 0, units: 0, serialized: kind === 'serial' ? 1 : 0 }], availability: [{ item_id: 7, free_to_allocate: 3.25 }] };
       const respond = (url: string, init: any) => {
         if (url === '/api/release-slips/orders/302/context') return context;
-        if (url.includes('/orders/302/unit?')) return { state: 'available', unit: { ...UNIT, location_id: 2, status: 'in_stock' } };
+        if (url.includes('/orders/302/unit?')) return kind==='batch'?{state:'batch_available',batch:{id:81,number:'BATCH-81',product_item_id:7,product_name:'Measured goods',build_mode:'assembled',available:3.25}}:kind==='bulk'?{state:'bulk_available',stock:{id:7,name:'Measured goods',code:'STOCK-7',available:3.25}}:{ state: 'available', unit: { ...UNIT, location_id: 2, status: 'in_stock' } };
         if (url === '/api/orders/302/accept-release' || url === '/api/orders/302/release') { const key = init.headers['Idempotency-Key']; calls.push({ url, key, body: init.body }); if (!applied.has(key)) applied.set(key,{ ok: true }); if (lose) { lose = false; return undefined; } return applied.get(key); }
         return undefined;
       };
       let win = await bootAs({ ...REL, permissions: ['mobile.access', 'orders.release'] }, respond, factory);
-      win.location.hash = '#/so?id=302' + (kind === 'accept' ? '' : kind === 'bulk' ? '&step=scan' : '&step=unit&code=K4-01');
-      if (kind === 'bulk') { const input = await relElement(win, '[data-qty="7"]'); expect(input.value).toBe('3.25'); input.value = '2.5'; win.document.querySelector('[data-bulk="7"]').click(); }
-      else (await relElement(win, kind === 'accept' ? '#rel-go' : '#rel-ok')).click();
+      win.location.hash = '#/so?id=302' + (kind === 'accept' ? '' : kind === 'bulk' ? '&step=scan' : kind==='batch'?'&step=unit&code=BATCH-81':'&step=unit&code=K4-01');
+      if (kind === 'bulk') { const input = await relElement(win, '[data-qty="7"]'); expect(input.value).toBe('3.25'); await allocateLabel(win,2.5); }
+      else if(kind==='batch'){const input=await relElement(win,'[data-label-qty]');input.value='2.5';expect(win.document.getElementById('rel-label-ok').disabled).toBe(true);await scanStickers(win,['WRONG']);expect(win.document.getElementById('rel-label-ok').disabled).toBe(true);await scanStickers(win,['BATCH-81']);win.document.getElementById('rel-label-ok').click();}
+      else { const button = await relElement(win, kind === 'accept' ? '#rel-go' : '#rel-ok'); if (kind === 'serial') await scanStickers(win, ['K4-01']); button.click(); }
       await relElement(win, '#rel-retry'); expect(win.document.querySelector('[data-qty]')).toBeNull(); win.close();
       win = await bootAs(REL, respond, factory); win.location.hash = '#/so'; (await relElement(win, '[data-recovery] [data-id]')).click();
       (await relElement(win, '#rel-retry')).click(); await relElement(win, '#rel-review-current');
       expect(calls).toHaveLength(2); expect(calls[1]).toEqual(calls[0]); expect(applied.size).toBe(1);
-      if (kind === 'bulk') expect(JSON.parse(calls[0].body).bulk[0].quantity).toBe(2.5);
+      if (kind === 'bulk'||kind==='batch') expect(JSON.parse(calls[0].body).bulk[0].quantity).toBe(2.5);
+      if(kind==='batch')expect(JSON.parse(calls[0].body).bulk[0].batch_id).toBe(81);
     });
     it('blocks excessive bulk counts and units at a different ship-from location', async () => {
       const calls: any[] = [], base = fake(calls, { lines: [{ item_id: 7, name: 'Measured goods', quantity: 5, released_qty: 0, serialized: 0 }], availability: [{ item_id: 7, free_to_allocate: 1.5 }] });
-      const win = await bootAs(REL, (url: string, init: any) => url.includes('/orders/302/unit?') ? { state: 'available', unit: { ...UNIT, location_id: 9 } } : base(url,init));
+      const win = await bootAs(REL, (url: string, init: any) => url.includes('/orders/302/unit?code=K4-') ? { state: 'available', unit: { ...UNIT, location_id: 9 } } : base(url,init));
       win.location.hash = '#/so?id=302&step=scan'; const input = await relElement(win, '[data-qty="7"]');
-      for (const value of ['', '0', '-1', '2']) { input.value = value; win.document.querySelector('[data-bulk="7"]').click(); await wait(20); }
+      for (const value of [0,-1,2]) { await allocateLabel(win,value); await wait(20); }
       expect(calls).toEqual([]); win.location.hash = '#/so?id=302&step=unit&code=K4-01'; await wait(80);
       expect(win.document.getElementById('m-view').textContent).toContain('different warehouse'); expect(win.document.getElementById('rel-ok')).toBeNull(); expect(calls).toEqual([]);
     });
@@ -1469,7 +1492,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const factory = new IDBFactory(); let state = 'pending', calls = 0;
       const base = fake([],{ units: [], lines: [{ item_id: 7, name: 'Measured goods', quantity: 5, released_qty: 0, serialized: 0 }], availability: [{ item_id: 7, free_to_allocate: 3 }] });
       const respond = (url: string, init: any) => { if (url === '/api/orders/302/release') { calls++; return { __headers: { 'X-Sync-State': 'local', 'X-Sync-Command': 'release-local' }, body: { ok: true } }; } if (url === '/api/sync/command/release-local') return { state }; return base(url,init); };
-      let win = await bootAs(REL,respond,factory); win.location.hash = '#/so?id=302&step=scan'; (await relElement(win,'[data-bulk="7"]')).click(); await wait(100);
+      let win = await bootAs(REL,respond,factory); win.location.hash = '#/so?id=302&step=scan'; await relElement(win,'[data-bulk="7"]'); await allocateLabel(win); await wait(100);
       expect(win.document.getElementById('m-view').textContent).toContain('confirmation pending'); expect(win.document.getElementById('rel-review-current')).toBeNull(); win.close();
       state = 'confirmed'; win = await bootAs(REL,respond,factory); win.location.hash = '#/so?id=302'; await relElement(win,'#rel-review-current'); expect(calls).toBe(1);
     });
@@ -1479,12 +1502,13 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const base = fake([],{ units: [], lines: [{ item_id: 7, name: 'Measured goods', quantity: 5, released_qty: 0, serialized: 0 }], availability: [{ item_id: 7, free_to_allocate: 3 }] });
       const win = await bootAs(REL,(url: string, init: any) => {
         if (url === '/api/orders/302/release') { calls.push({ key: init.headers['Idempotency-Key'], body: JSON.parse(init.body) }); if (refused) { refused = false; return { __status: 409, body: { error: 'Stock changed; review allocation' } }; } return { ok: true }; }
+        if (!refused && url.includes('/orders/302/unit?code=STOCK-7')) return {state:'bulk_available',stock:{id:7,name:'Measured goods',code:'STOCK-7',available:1.25}};
         if (!refused && url === '/api/release-slips/orders/302/context') return { ...CTX, units: [], lines: [{ item_id: 7, name: 'Measured goods', quantity: 5, released_qty: 0, serialized: 0 }], availability: [{ item_id: 7, free_to_allocate: 1.25 }] };
         return base(url,init);
       });
-      win.location.hash = '#/so?id=302&step=scan'; (await relElement(win,'[data-bulk="7"]')).click();
+      win.location.hash = '#/so?id=302&step=scan'; await relElement(win,'[data-bulk="7"]'); await allocateLabel(win);
       (await relElement(win,'#rel-review-current')).click(); (await relElement(win,'#rel-go')).click();
-      const input = await relElement(win,'[data-qty="7"]'); expect(input.value).toBe('1.25'); win.document.querySelector('[data-bulk="7"]').click(); await relElement(win,'#rel-review-current');
+      const input = await relElement(win,'[data-qty="7"]'); expect(input.value).toBe('1.25'); await allocateLabel(win,1.25); await relElement(win,'#rel-review-current');
       expect(calls).toHaveLength(2); expect(calls[0].key).not.toBe(calls[1].key); expect(calls[1].body.bulk[0].quantity).toBe(1.25);
     });
     it('retains an expired uncertain allocation for reconciliation without reposting', async () => {
@@ -1854,6 +1878,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
     }
     async function confirmStock(win: any) {
       const tick = await element(win, '#rts-ok'); tick.checked = true; tick.dispatchEvent(new win.Event('change'));
+      await scanStickers(win, win.location.hash.includes('batch=') ? ['LOT-81'] : ['K4-01', 'K4-03']);
       win.document.getElementById('rts-post').click();
     }
     it.each(['unit', 'batch'])('recovers a committed %s receipt after restart with its exact key and payload', async (kind) => {
@@ -1934,6 +1959,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const win = await bootAs(RTS, (url: string, init: any) => url === '/api/rts/queue' ? { units: [], batches: [{ ...U, id: 81, number: 'LOT-81', remaining_qty: 5 }], recorded: [] } : base(url,init));
       win.location.hash = '#/receiving?batch=81'; await element(win, '#rts-post');
       const tick = win.document.getElementById('rts-ok'); tick.checked = true; tick.dispatchEvent(new win.Event('change'));
+      await scanStickers(win, ['LOT-81']);
       for (const value of ['', '1.5', '-1', '6']) { win.document.querySelector('.rk-stepper input').value = value; win.document.getElementById('rts-post').click(); await wait(20); }
       expect(posts).toEqual([]); expect(win.document.querySelector('.rk-stepper input')).toBeTruthy();
     });
@@ -1981,6 +2007,23 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       expect(win.document.getElementById('rts-post')).toBeNull();
     });
 
+    it('finds a batch QR and exposes a printable batch dossier with stock details',async()=>{
+      const posts:any[]=[];const base=fake(posts);
+      const win=await bootAs(RTS,(url:string,init:any)=>{
+        if(url==='/api/rts/queue')return {units:[U],batches:[{id:81,number:'LOT-81',job_order_id:184,remaining_qty:5}],recorded:[]};
+        if(url==='/api/production/record?batch=81')return {batch:{id:81,number:'LOT-81',qty:5},product:{id:7,name:'K4'},job_order:{number:'JO-184'},batch_stock:[{location_id:2,location_name:'FG-A03',on_hand:5,reserved:2,available:3}],stock:[{build_mode:'assembled',quantity:20}]};
+        return base(url,init);
+      });
+      win.location.hash='#/receiving?step=identify';await element(win,'#rts-find');
+      win.document.querySelector('[data-q]').value='LOT-81';win.document.getElementById('rts-find').click();
+      await element(win,'#rts-post');expect(win.document.getElementById('rts-post').disabled).toBe(true);expect(posts).toEqual([]);
+      win.location.hash='#/record?batch=81';await wait(80);
+      expect(win.document.getElementById('m-view').textContent).toContain('5 on hand · 2 reserved · 3 free');
+      let printed:any;win.mProductionPrint.printBatchRecord=(d:any)=>{printed=d;return Promise.resolve(true);};
+      const print=Array.from(win.document.querySelectorAll('button')).find((b:any)=>b.textContent==='Print label') as any;
+      expect(print).toBeTruthy();print.click();expect(printed.batch.id).toBe(81);
+    });
+
     it('checks, needs the physical-verification tick, and posts once with an idempotency key', async () => {
       const posts: { url: string; body: any; key: string | undefined }[] = [];
       const win = await bootAs(RTS, fake(posts));
@@ -2000,6 +2043,9 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       expect(post.disabled).toBe(true);
       const ok = doc.getElementById('rts-ok') as HTMLInputElement;
       ok.checked = true; ok.dispatchEvent(new win.Event('change'));
+      expect(post.disabled).toBe(true);
+      await scanStickers(win, ['WRONG-LABEL']); expect(post.disabled).toBe(true);
+      await scanStickers(win, ['K4-01']);
       post.click();
       await wait(80);
       const stock = posts.filter((p) => p.url.endsWith('/products-in'));
@@ -2021,6 +2067,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       await wait();
       const ok = doc.getElementById('rts-ok') as HTMLInputElement;
       ok.checked = true; ok.dispatchEvent(new win.Event('change'));
+      await scanStickers(win, ['K4-01']);
       Object.defineProperty(win.navigator, 'onLine', { value: false, configurable: true });
       (doc.getElementById('rts-post') as HTMLButtonElement).click();
       await wait();

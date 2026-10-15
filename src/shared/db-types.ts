@@ -1068,6 +1068,42 @@ export interface ProductPackageItems {
   sort: Generated<number>;
 }
 
+export interface ProductionBatchAllocations {
+  id: Generated<number>;
+  batch_id: number;
+  order_id: number;
+  item_id: number;
+  location_id: number;
+  quantity: number;
+  state: string;
+  created_at: Generated<string>;
+}
+
+export interface ProductionBatchCounts {
+  id: Generated<number>;
+  batch_id: number;
+  location_id: number;
+  before_quantity: number;
+  counted_quantity: number;
+  reason: string;
+  counted_by: number | null;
+  created_at: Generated<string>;
+}
+
+export interface ProductionBatchReturnLinks {
+  id: Generated<number>;
+  return_id: number;
+  batch_id: number;
+}
+
+export interface ProductionBatchStock {
+  id: Generated<number>;
+  batch_id: number;
+  location_id: number;
+  quantity: Generated<number>;
+  received: Generated<number>;
+}
+
 export interface ProductionBatches {
   id: Generated<number>;
   number: string;
@@ -1714,6 +1750,10 @@ export interface DB {
   petty_cash_entries: PettyCashEntries;
   petty_cash_funds: PettyCashFunds;
   product_package_items: ProductPackageItems;
+  production_batch_allocations: ProductionBatchAllocations;
+  production_batch_counts: ProductionBatchCounts;
+  production_batch_return_links: ProductionBatchReturnLinks;
+  production_batch_stock: ProductionBatchStock;
   production_batches: ProductionBatches;
   production_issues: ProductionIssues;
   production_receipt_items: ProductionReceiptItems;

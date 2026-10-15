@@ -1,3 +1,4 @@
+import { consumeBatchPool } from './batch-stock';
 /**
  * Per-location stock helpers. `inventory_items.quantity` stays the cached grand
  * total; `inventory_stock (item_id, location_id, quantity)` is the breakdown.
@@ -99,6 +100,7 @@ interface ChangeOpts {
       transfers, returns) — the average is then left untouched. */
   unitCost?: number | null;
   buildMode?: BuildMode;
+  batchHandled?: boolean;
 }
 
 /** Whether a stock-out may exceed the recorded stock at its location: only inside a synced
@@ -116,6 +118,8 @@ export function applyStockChange(opts: ChangeOpts): { locationQty: number; total
   if (variantQty < -1e-9 && !overdrawAllowed()) {
     throw Object.assign(new Error(`Only ${variantStockAt(itemId, locationId, buildMode)} ${buildMode === 'semi_built' ? 'semi-built' : 'fully built/standard'} units are available at this location.`), { status: 409 });
   }
+
+  if (change < 0 && !opts.batchHandled) consumeBatchPool(itemId, locationId, buildMode, -change);
 
   // Weighted moving average, computed from the pre-change grand total (a pre-existing
   // negative balance counts as 0 so a backorder doesn't distort the blend).
@@ -236,8 +240,9 @@ export function transferStock(opts: {
 }): { from: number; to: number } {
   const { itemId, fromId, toId, amount, reason, userId, buildMode = 'assembled' } = opts;
   const tail = reason ? ` — ${reason}` : '';
+  consumeBatchPool(itemId, fromId, buildMode, amount, toId);
   const out = applyStockChange({
-    itemId, locationId: fromId, change: -amount, userId, touchTotal: false, buildMode,
+    itemId, locationId: fromId, change: -amount, userId, touchTotal: false, buildMode, batchHandled: true,
     reason: `Transfer to ${locationName(toId)}${tail}`,
   });
   const inn = applyStockChange({

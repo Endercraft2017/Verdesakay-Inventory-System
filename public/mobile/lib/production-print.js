@@ -6,7 +6,7 @@
    index.html) and the same qr_src/{{code}}/{{sub}} convention as
    public/js/modules/manufacturing/finished-products.js's labelContext(), so a unit printed
    from a phone looks identical to one printed from the desktop. The QR encodes the unit's
-   plain identifier (never a URL) — scanning it anywhere in the app (mobile/lib/scanner.js +
+   immutable VDS:UNIT:<id> or VDS:BATCH:<id> identity (never a URL) — scanning it anywhere in the app (mobile/lib/scanner.js +
    inventory/lookup) already resolves back to this unit and offers "Open production record",
    same as every other QR/barcode in this app. */
 (function () {
@@ -31,7 +31,7 @@
     return {
       product: { name: p.name || '', sku: p.sku || '', model: p.model || '', variant: p.variant || '' },
       code: code, sub: subParts.join(' · '), batch: {},
-      qr_src: qrDataUrl(code),
+      qr_src: qrDataUrl('VDS:UNIT:' + u.id),
       date: u.created_at ? String(u.created_at).slice(0, 10) : new Date().toISOString().slice(0, 10),
     };
   }
@@ -84,5 +84,21 @@
     });
   }
 
-  window.mProductionPrint = { qrDataUrl: qrDataUrl, unitLabelContext: unitLabelContext, printUnitRecords: printUnitRecords };
+  function batchLabelContext(d) {
+    var b = d.batch, p = d.product || {}, jo = d.job_order || {};
+    return {
+      product: { name: p.name || jo.product_name || '', sku: p.sku || '', variant: p.variant || '' },
+      batch: b, code: b.number, sub: b.identifier || '', qr_src: qrDataUrl('VDS:BATCH:' + b.id),
+      date: String(b.created_at || '').slice(0, 10),
+    };
+  }
+  function printBatchRecord(d) {
+    if (!window.renderTemplate) return Promise.reject(new Error('Label renderer failed to load'));
+    return API.get('/production/label-templates').then(function (tpl) {
+      if (!tpl.batch) throw new Error('Batch label template unavailable');
+      return openSheet('Batch label', ['<div class="lbl">' + window.renderTemplate(tpl.batch, batchLabelContext(d)) + '</div>']);
+    });
+  }
+
+  window.mProductionPrint = { qrDataUrl: qrDataUrl, unitLabelContext: unitLabelContext, batchLabelContext: batchLabelContext, printUnitRecords: printUnitRecords, printBatchRecord: printBatchRecord };
 })();

@@ -1,3 +1,5 @@
+import { parseProductionLabel } from '../manufacturing/label-code';
+import { batchBalances } from './batch-stock';
 /** Inventory: items, search/filter, stock adjustments with history, dashboard stats. */
 import path from 'node:path';
 import fs from 'node:fs';
@@ -300,7 +302,14 @@ router.get('/lookup', lookupGate, (req, res) => {
     res.status(400).json({ error: 'A code is required' });
     return;
   }
-  const item = queryOne<InventoryItem>(
+  const label=parseProductionLabel(code);
+  if(!label){
+    const identities=queryOne<{n:number}>(`SELECT (SELECT COUNT(*) FROM job_order_units WHERE LOWER(COALESCE(NULLIF(TRIM(identifier),''),'UNIT-' || id))=LOWER(?))
+      +(SELECT COUNT(*) FROM production_batches WHERE LOWER(number)=LOWER(?))
+      +(SELECT COUNT(*) FROM inventory_items WHERE LOWER(sku)=LOWER(?) OR LOWER(json_extract(attributes,'$.barcode'))=LOWER(?)) AS n`,code,code,code,code)!.n;
+    if(identities>1){res.status(409).json({error:'Ambiguous older label. Open the exact record and reprint its QR sticker.',code:'ambiguous_label'});return;}
+  }
+  const item = !label && queryOne<InventoryItem>(
     ITEM_SELECT + " WHERE i.sku = ? OR json_extract(i.attributes, '$.barcode') = ? LIMIT 1",
     code,
     code
@@ -315,16 +324,16 @@ router.get('/lookup', lookupGate, (req, res) => {
   const unit = queryOne<{ id: number; identifier: string; status: string; product_item_id: number; job_order_number: string | null }>(
     `SELECT u.id, u.identifier, u.status, u.product_item_id, jo.number AS job_order_number
      FROM job_order_units u LEFT JOIN job_orders jo ON jo.id = u.job_order_id
-     WHERE u.identifier = ? AND u.product_item_id IS NOT NULL
+     WHERE (CASE WHEN ? IS NOT NULL THEN (?='unit' AND u.id=?) ELSE LOWER(COALESCE(NULLIF(TRIM(u.identifier), ''),'UNIT-' || u.id))=LOWER(?) END) AND u.product_item_id IS NOT NULL
      ORDER BY u.id DESC LIMIT 1`,
-    code
+    label?.kind??null,label?.kind??null,label?.id??null,code
   );
   if (unit) {
     const prod = queryOne<InventoryItem>(ITEM_SELECT + ' WHERE i.id = ? LIMIT 1', unit.product_item_id);
     if (prod) {
       res.json({
         ...pickerView(req, prod),
-        unit: { id: unit.id, identifier: unit.identifier, status: unit.status, job_order_number: unit.job_order_number },
+        unit: { id: unit.id, identifier: unit.identifier || ('UNIT-' + unit.id), status: unit.status, job_order_number: unit.job_order_number },
       });
       return;
     }
@@ -334,10 +343,9 @@ router.get('/lookup', lookupGate, (req, res) => {
   const batch = queryOne<{ id: number; number: string; identifier: string | null; status: string; qty: number; product_item_id: number | null; job_order_number: string | null }>(
     `SELECT b.id, b.number, b.identifier, b.status, b.qty, b.product_item_id, jo.number AS job_order_number
      FROM production_batches b LEFT JOIN job_orders jo ON jo.id = b.job_order_id
-     WHERE b.number = ? OR b.identifier = ?
+     WHERE (CASE WHEN ? IS NOT NULL THEN (?='batch' AND b.id=?) ELSE (b.number = ? OR b.identifier = ?) END)
      ORDER BY b.id DESC LIMIT 1`,
-    code,
-    code
+    label?.kind??null,label?.kind??null,label?.id??null,code,code
   );
   if (batch) {
     const prod = batch.product_item_id
@@ -348,6 +356,9 @@ router.get('/lookup', lookupGate, (req, res) => {
       batch: {
         id: batch.id, number: batch.number, identifier: batch.identifier,
         status: batch.status, qty: batch.qty, job_order_number: batch.job_order_number,
+        balances:batchBalances(batch.id),
+        received_quantity:queryOne<{n:number}>('SELECT COALESCE(SUM(quantity),0) AS n FROM production_receipt_items WHERE batch_id=?',batch.id)?.n??0,
+        allocations:queryAll(`SELECT a.quantity,a.state,o.number AS order_number FROM production_batch_allocations a JOIN orders o ON o.id=a.order_id WHERE a.batch_id=?`,batch.id),
       },
     });
     return;
