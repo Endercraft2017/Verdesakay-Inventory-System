@@ -903,3 +903,7 @@ suite does not change existing `partial` native/desktop/sync status.
   worker v69. `tests/e2e/`, `playwright.config.ts`, security regressions and
   `scripts/audit-load.mjs` provide disposable local validation. No role, stock,
   payroll calculation or manufacturing stage is added or reordered.
+
+Dependency follow-up: patched root HTTP/upload/mail dependencies, upgraded launcher
+Electron/build tooling, and scoped mobile xcode UUID override. Reachability and
+native-platform validation limits: `docs/audits/dependency-audit.md`.

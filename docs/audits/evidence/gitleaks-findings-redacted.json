@@ -1,0 +1,79 @@
+[
+  {
+    "RuleID": "generic-api-key",
+    "File": "tests/notifications.test.ts",
+    "StartLine": 23,
+    "Commit": "563beb029a1131018df58906e85b2535c9f7379b",
+    "Fingerprint": "563beb029a1131018df58906e85b2535c9f7379b:tests/notifications.test.ts:generic-api-key:23"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "File": "tests/qa-hold.test.ts",
+    "StartLine": 31,
+    "Commit": "f0f71b272ec007c55a33b55e6422c5ef99db0a3f",
+    "Fingerprint": "f0f71b272ec007c55a33b55e6422c5ef99db0a3f:tests/qa-hold.test.ts:generic-api-key:31"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "File": "tests/qa-hold.test.ts",
+    "StartLine": 33,
+    "Commit": "f0f71b272ec007c55a33b55e6422c5ef99db0a3f",
+    "Fingerprint": "f0f71b272ec007c55a33b55e6422c5ef99db0a3f:tests/qa-hold.test.ts:generic-api-key:33"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "File": "tests/repair-parts-v2.test.ts",
+    "StartLine": 46,
+    "Commit": "c458a5120ec8b6948bb67fd5f9e67a3386e26c26",
+    "Fingerprint": "c458a5120ec8b6948bb67fd5f9e67a3386e26c26:tests/repair-parts-v2.test.ts:generic-api-key:46"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "File": "tests/release-auth.test.ts",
+    "StartLine": 23,
+    "Commit": "3d56681ecf6d6ad60bd9753b3734c7255c7bc46f",
+    "Fingerprint": "3d56681ecf6d6ad60bd9753b3734c7255c7bc46f:tests/release-auth.test.ts:generic-api-key:23"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "File": "tests/sync-hr.test.ts",
+    "StartLine": 21,
+    "Commit": "8f0064f764d289b7775ede57ed18e504dd5b9f82",
+    "Fingerprint": "8f0064f764d289b7775ede57ed18e504dd5b9f82:tests/sync-hr.test.ts:generic-api-key:21"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "File": "src/modules/inventory/release-auth.ts",
+    "StartLine": 39,
+    "Commit": "ed687401623539c1242d112585debb146f07dfd9",
+    "Fingerprint": "ed687401623539c1242d112585debb146f07dfd9:src/modules/inventory/release-auth.ts:generic-api-key:39"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "File": "tests/me.test.ts",
+    "StartLine": 216,
+    "Commit": "1f484510b311fc5877f9504e97d5325f4b1b694d",
+    "Fingerprint": "1f484510b311fc5877f9504e97d5325f4b1b694d:tests/me.test.ts:generic-api-key:216"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "File": "tests/me.test.ts",
+    "StartLine": 236,
+    "Commit": "1f484510b311fc5877f9504e97d5325f4b1b694d",
+    "Fingerprint": "1f484510b311fc5877f9504e97d5325f4b1b694d:tests/me.test.ts:generic-api-key:236"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "File": "tests/push.test.ts",
+    "StartLine": 14,
+    "Commit": "ec5779114ad665164b2300c619bd15777d16446c",
+    "Fingerprint": "ec5779114ad665164b2300c619bd15777d16446c:tests/push.test.ts:generic-api-key:14"
+  },
+  {
+    "RuleID": "generic-api-key",
+    "File": "C\uf03aUsersADMINI~1AppDataLocalTempauth.json",
+    "StartLine": 1,
+    "Commit": "f7f644b26c84248c59d5938588a3dc16604d381c",
+    "Fingerprint": "f7f644b26c84248c59d5938588a3dc16604d381c:C\uf03aUsersADMINI~1AppDataLocalTempauth.json:generic-api-key:1"
+  }
+]

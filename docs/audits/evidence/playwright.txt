@@ -1,0 +1,21 @@
+
+> verdesakay-office-system@1.0.0 test:e2e
+> playwright test
+
+[WebServer] (node:15215) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:15228) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:15239) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 4 tests using 1 worker
+
+(node:15247) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e/readiness.spec.ts:15:1 › desktop: wrong password, keyboard login, stock journey and server logout (1.4s)
+  ✓  2 tests/e2e/readiness.spec.ts:49:1 › mobile: 360px layout, core navigation, offline failure and sign out (1.5s)
+  ✓  3 tests/e2e/readiness.spec.ts:65:1 › login forms: labelled controls, keyboard access and axe scan (1.7s)
+  ✓  4 tests/e2e/readiness.spec.ts:74:1 › API attack surface: injection, oversized inputs, CORS and private caching (21ms)
+
+  4 passed (7.4s)

@@ -1,0 +1,12 @@
+
+> verdesakay-office-system@1.0.0 test
+> vitest run
+
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+
+ Test Files  190 passed (190)
+      Tests  1966 passed (1966)
+   Start at  22:43:20
+   Duration  269.60s (transform 3.11s, setup 1.42s, import 12.47s, tests 234.39s, environment 1.01s)

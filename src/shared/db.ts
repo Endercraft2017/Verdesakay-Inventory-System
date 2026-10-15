@@ -3946,7 +3946,9 @@ export function cleanupSessions(): void {
       // Idempotency keys are only useful for as long as a client might still be retrying;
       // a week is far more than enough for a flaky-LAN offline queue.
       db.prepare("DELETE FROM idempotency_keys WHERE created_at < datetime('now', '-7 days')").run();
-      db.prepare("DELETE FROM password_resets WHERE used = 1 OR expires_at < datetime('now')").run();
+      // Retain hashed recovery attempts through the throttle window, even after
+      // consumption/expiry; otherwise housekeeping resets the per-account budget.
+      db.prepare("DELETE FROM password_resets WHERE created_at < datetime('now', '-1 day')").run();
       // Cap the audit trail at roughly a month so it can't grow without bound.
       db.prepare(
         `DELETE FROM activity_log WHERE created_at < datetime('now', '-${ACTIVITY_LOG_RETENTION_DAYS} days')`

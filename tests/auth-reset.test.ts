@@ -105,4 +105,7 @@ it('limits recovery per account, expires within 15 minutes, and invalidates prio
   expect(rows).toHaveLength(3);
   expect(rows.filter(row => row.used === 0)).toHaveLength(1);
   expect(rows.every(row => Math.abs(row.lifetime - 15) < 0.001)).toBe(true);
+  dbmod.cleanupSessions();
+  await ctx.api.post('/api/auth/forgot-password').send({ identifier: 'reset-limited' });
+  expect(dbmod.queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM password_resets WHERE user_id = ?', account.body.id)!.c).toBe(3);
 });

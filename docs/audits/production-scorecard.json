@@ -2,9 +2,9 @@
   "date": "2026-10-16",
   "source_commit": "ab1b682aa372dce1fae3c6af904116edded34c4a",
   "counts": {
-    "UNVERIFIED": 126,
+    "UNVERIFIED": 125,
+    "PASS": 28,
     "FAIL": 61,
-    "PASS": 27,
     "N/A": 19
   },
   "checks": [
@@ -57,10 +57,10 @@
       "id": "AUDIT-01",
       "severity": "High",
       "requirement": "A dependency vulnerability scan has been run recently, and no critical or high vulnerabilities in reachable code remain unaddressed.",
-      "status": "UNVERIFIED",
-      "evidence": "Live npm audit was blocked by automatic approval review pending explicit consent to send dependency metadata to registry.npmjs.org. CI/dependabot configs were added; no zero-vulnerability claim is made.",
+      "status": "PASS",
+      "evidence": "User-approved npm scans and fixes: root 0 Critical/1 High/8 Moderate, launcher 0 Critical/0 High/8 Moderate, mobile 0 advisories. Root runtime has only the unpatched node-forge verification advisory, assessed unreachable: desktop/lan-tls.ts only creates/signs local certificates; no forge verification call. See docs/audits/dependency-audit.md for evidence, remaining build-tool findings and the nonzero raw CI scan.",
       "scenario": "",
-      "fix": "Run the ecosystem audit tool on the lockfile; record counts by severity and whether each is reachable."
+      "fix": "Maintain this control and its tests."
     },
     {
       "id": "AUDIT-02",
@@ -814,7 +814,7 @@
       "severity": "High",
       "requirement": "Automated dependency vulnerability scanning and update PRs are enabled, and the backlog is triaged.",
       "status": "UNVERIFIED",
-      "evidence": "Live npm audit was blocked by automatic approval review pending explicit consent to send dependency metadata to registry.npmjs.org. CI/dependabot configs were added; no zero-vulnerability claim is made.",
+      "evidence": "Dependency backlog was scanned and triaged and weekly Dependabot/CI added. Remote automated update/required-check enforcement and successful job history still need verification. See dependency-audit.md.",
       "scenario": "",
       "fix": "Check Dependabot/Renovate/Snyk configuration and open alert counts."
     },
@@ -823,7 +823,7 @@
       "severity": "Medium",
       "requirement": "No deprecated or unmaintained packages are used in core functionality.",
       "status": "UNVERIFIED",
-      "evidence": "Direct names/lockfile metadata inspected; license inventory includes MPL-2.0 and unknown entries needing distribution review. No live maintainer/download/deprecation lookup or legal license approval. npm advisory query remains pending consent.",
+      "evidence": "Direct names/lockfile metadata inspected; license inventory includes MPL-2.0 and unknown entries needing distribution review. No live maintainer/download/deprecation lookup or legal license approval. Advisory queries were approved and completed; see dependency-audit.md.",
       "scenario": "",
       "fix": "List direct dependencies with last-publish dates and deprecation notices; flag those over about 2 years stale."
     },
@@ -832,7 +832,7 @@
       "severity": "High",
       "requirement": "Dependencies are screened for typosquatting, very low adoption, recent maintainer changes, and install scripts.",
       "status": "UNVERIFIED",
-      "evidence": "Direct names/lockfile metadata inspected; license inventory includes MPL-2.0 and unknown entries needing distribution review. No live maintainer/download/deprecation lookup or legal license approval. npm advisory query remains pending consent.",
+      "evidence": "Direct names/lockfile metadata inspected; license inventory includes MPL-2.0 and unknown entries needing distribution review. No live maintainer/download/deprecation lookup or legal license approval. Advisory queries were approved and completed; see dependency-audit.md.",
       "scenario": "",
       "fix": "Review direct dependency names against well-known packages; list packages with `preinstall`/`postinstall` scripts; use a supply-chain scanner (Socket or similar)."
     },
@@ -850,7 +850,7 @@
       "severity": "Low",
       "requirement": "Dependency licenses are compatible with the product's distribution model.",
       "status": "UNVERIFIED",
-      "evidence": "Direct names/lockfile metadata inspected; license inventory includes MPL-2.0 and unknown entries needing distribution review. No live maintainer/download/deprecation lookup or legal license approval. npm advisory query remains pending consent.",
+      "evidence": "Direct names/lockfile metadata inspected; license inventory includes MPL-2.0 and unknown entries needing distribution review. No live maintainer/download/deprecation lookup or legal license approval. Advisory queries were approved and completed; see dependency-audit.md.",
       "scenario": "",
       "fix": "Run a license report and flag copyleft or unknown licenses."
     },

@@ -1,0 +1,36 @@
+
+> verdesakay-office-system@1.0.0 test:load
+> node scripts/audit-load.mjs
+
+{
+  "environment": "local synthetic, 100 inventory items; read-only mixed API traffic; test-mode rate limits disabled",
+  "results": [
+    {
+      "concurrency": 5,
+      "requests": 150,
+      "failures": 0,
+      "p50_ms": 4.073303000000124,
+      "p95_ms": 9.07551599999988,
+      "p99_ms": 10.250048000000106,
+      "requests_per_second": 1043.5419695605217
+    },
+    {
+      "concurrency": 15,
+      "requests": 150,
+      "failures": 0,
+      "p50_ms": 11.444038000000091,
+      "p95_ms": 27.512748999999985,
+      "p99_ms": 33.513308999999936,
+      "requests_per_second": 1018.4139908953649
+    },
+    {
+      "concurrency": 30,
+      "requests": 150,
+      "failures": 0,
+      "p50_ms": 15.723605000000134,
+      "p95_ms": 65.41406500000016,
+      "p99_ms": 112.45246099999986,
+      "requests_per_second": 1086.3857677206838
+    }
+  ]
+}
