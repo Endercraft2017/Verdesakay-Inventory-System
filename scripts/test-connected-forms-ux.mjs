@@ -1,4 +1,4 @@
-// Actual-app payroll checks against the shared disposable browser-audit server.
+// Connected form checks against the shared disposable browser-audit server.
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -85,7 +85,7 @@ try {
     await page.locator('[data-item-discount]').fill('0');
     await page.waitForFunction(()=>document.querySelector('[data-field=total]').value==='221.76');
     await page.locator('[data-add-item]').click();assert.equal(await page.locator('[data-item-price]').first().inputValue(),'99');await page.locator('[data-remove-item]').last().click();assert.equal(await page.locator('[data-item-price]').inputValue(),'99');
-    await scan('connected-record');
+    assert.equal(await page.locator('[data-lookup-retry]:visible').count(),0);await scan('connected-record');
   });
   await check('Invalid quantities are blocked and corrections retain the rest of the draft',async()=>{
     await page.locator('[data-item-quantity]').fill('0');await confirm();
@@ -143,7 +143,7 @@ try {
     let failed=false;await page.route('**/api/data-forms/sources/user',route=>{if(!failed){failed=true;return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Temporary user lookup outage'})});}return route.continue();});
     await page.evaluate(id=>App.navigate('form-records',{form_id:id}),aux.id);await page.locator('#fr-new').click();await page.locator('[data-field=product] option').filter({hasText:'Renamed UX Product'}).waitFor({state:'attached'});await page.locator('[data-field=product]').selectOption(String(product.id));
     assert.equal(await page.locator('[data-field=unit]').inputValue(),'piece');assert.equal(await page.locator('[data-field=unit]').getAttribute('readonly'),'');await page.locator('[data-field=amount]').fill('250');
-    await page.locator('[data-system-retry]:not([hidden])').click();await page.waitForFunction(()=>document.querySelector('[data-field=prepared_by]').value.length>0);assert.equal(await page.locator('[data-field=amount]').inputValue(),'250');await scan('connected-system-recovery');
+    await page.locator('[data-system-retry]:not([hidden])').click();await page.waitForFunction(()=>document.querySelector('[data-field=prepared_by]').value.length>0);assert.equal(await page.locator('[data-field=amount]').inputValue(),'250');assert.equal(await page.locator('[data-system-retry]').isVisible(),false);await scan('connected-system-recovery');
     await confirm();await page.waitForSelector('.modal-overlay',{state:'detached'});await page.unroute('**/api/data-forms/sources/user');
     const saved=(await api('GET',`/form-definitions/${aux.id}/records`))[0];assert.equal(saved.data.unit,'piece');assert.equal(saved.data.amount,250);
   });
