@@ -368,6 +368,24 @@ export const createJobOrderSchema = z.object({
   notes: optionalText,
 });
 
+// Finishing a semi-built RTS package consumes its already-included parts. One
+// physical unit is selected per request so its identity stays auditable.
+export const convertSemiBuiltSchema = z.object({
+  product_item_id: z.coerce.number().int().positive(),
+  order_id: optionalId,
+  source_location_id: z.coerce.number().int().positive(),
+  output_location_id: z.coerce.number().int().positive(),
+  source_unit_id: optionalId,
+  identifier: trimmed.min(1).max(120),
+  confirmed_complete_kit: z.preprocess((v) => v === true || v === 'true' || v === '1', z.literal(true)),
+  finishing_cost: z.coerce.number().min(0).max(1_000_000_000).default(0),
+  notes: optionalText,
+});
+export const cancelSemiConversionSchema = z.object({
+  confirmed_repacked: z.preprocess((v) => v === true || v === 'true' || v === '1', z.literal(true)),
+  reason: trimmed.min(1).max(500),
+});
+
 export const updateJobOrderSchema = z.object({
   qty_ordered: z.coerce.number().int().positive().optional(),
   source_location_id: optionalId,

@@ -10,7 +10,8 @@
        subtab  { id, label, requiredPermission?, requiredModule?, tree[] }
          leaf    { label, icon, route, filter? }
 
-   `requiredPermission` hides it from accounts without that permission (match the permission the
+   `requiredPermission` hides it from accounts without that permission; `requiredAnyPermission`
+   accepts one of several desk permissions (match the permission the
    screen's own GET endpoint checks — UI hiding never replaces the server check); a primary whose
    subtabs are all hidden is hidden too. The Access editor lists these as the screens each
    permission opens (public/js/lib/access-editor.js).
@@ -115,7 +116,9 @@ const NAV = [
     ],
   },
   {
-    id: 'production', label: 'Production', icon: 'factory', requiredPermission: 'production.view', requiredModule: 'manufacturing',
+    id: 'production', label: 'Production', icon: 'factory',
+    requiredAnyPermission: ['production.view', 'production.record', 'production.pause', 'production.manage', 'production.approve'],
+    requiredModule: 'manufacturing',
     /* Subtabs are ordered to match the real build pipeline, not alphabetically or by
        feature-add order: overview (home/summary) -> setup (prerequisite) -> schedule/start ->
        scheduling (supporting, monitoring-only) -> QC -> repair branch -> receive ("Products
@@ -123,13 +126,13 @@ const NAV = [
        See docs/guides/production-sop.md. */
     subtabs: [
       {
-        id: 'overview', label: 'Overview',
+        id: 'overview', label: 'Overview', requiredPermission: 'production.view',
         tree: [
           { label: 'Overview', icon: 'dashboard', route: 'production-overview' },
         ],
       },
       {
-        id: 'products', label: 'Product Setup',
+        id: 'products', label: 'Product Setup', requiredPermission: 'production.view',
         tree: [
           { label: 'Products & BOM', icon: 'sparkles', route: 'finished-products' },
         ],
@@ -141,14 +144,14 @@ const NAV = [
         ],
       },
       {
-        id: 'scheduling', label: 'Scheduling',
+        id: 'scheduling', label: 'Scheduling', requiredPermission: 'production.view',
         tree: [
           { label: 'Schedule', icon: 'calendar', route: 'production-schedule' },
           { label: 'Teams', icon: 'users', route: 'production-teams' },
         ],
       },
       {
-        id: 'qc', label: 'QC / QA',
+        id: 'qc', label: 'QC / QA', requiredPermission: 'production.view',
         tree: [
           { label: 'Inspection Queue', icon: 'check', route: 'production-qc', filter: { tab: 'queue' } },
           { label: 'On Hold', icon: 'alert', route: 'production-qc', filter: { tab: 'holds' } },
@@ -156,26 +159,26 @@ const NAV = [
         ],
       },
       {
-        id: 'repairs', label: 'Repairs & Parts Requests',
+        id: 'repairs', label: 'Repairs & Parts Requests', requiredPermission: 'production.view',
         tree: [
           { label: 'Repairs & Parts Requests', icon: 'inbox', route: 'repairs' },
         ],
       },
       {
-        id: 'products-in', label: 'Products In',
+        id: 'products-in', label: 'Products In', requiredPermission: 'production.view',
         tree: [
           { label: 'Ready to Receive', icon: 'inbox', route: 'production-receiving', filter: { tab: 'queue' } },
           { label: 'Receipt History', icon: 'sheet', route: 'production-receiving', filter: { tab: 'history' } },
         ],
       },
       {
-        id: 'batches', label: 'Batches / Lots',
+        id: 'batches', label: 'Batches / Lots', requiredPermission: 'production.view',
         tree: [
           { label: 'Batches / Lots', icon: 'archive', route: 'production-batches' },
         ],
       },
       {
-        id: 'finished-goods', label: 'Finished Goods',
+        id: 'finished-goods', label: 'Finished Goods', requiredPermission: 'production.view',
         tree: [
           { label: 'Finished Goods', icon: 'sparkles', route: 'finished-goods' },
         ],

@@ -67,7 +67,15 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
    at ship-from instead of built-unit stock. The commercial CKD parent never adds a
    manufactured unit or consumes finished-goods stock. Aftersales parts are ordinary
    inventory-linked lines entered one by one; semi-built and fully built lines continue
-   through their production/finished-stock path.
+   through their production/finished-stock path. A semi-built unit is a complete
+   package with its loose parts included. For a fully built shortage, a manager
+   may explicitly finish one semi-built RTS unit even when CKD parts are available;
+   the complete kit is counted and photographed at finishing intake; the unit keeps
+   its identity, costs and QC/Products In gate, and no BOM parts are
+   deducted a second time. When CKD components are short, stock review highlights
+   eligible semi-built packages. Sales may change an order's unit selling price
+   independently of BOM production cost and add shipping/admin/other non-stock fees
+   before approval.
    `GET /orders/:id/availability` retains the ATP contract and adds source/planning fields.
    Approval rechecks current stock and accepts an optional review revision; stale interactive
    decisions return 409, while validated owning-site decisions retain D6 on replay.

@@ -53,6 +53,69 @@ changes to the mobile QR workflow or batch schema. Post-merge TypeScript and all
 161 targeted tests across seven files passed. The 2,721-test full run above precedes
 this SMTP-only merge; the final targeted run covers its affected tests and the
 mobile/lot workflow again.
+## Semi-built is a complete package; finish the same unit (2026-10-15)
+
+**Backend/desktop contract:** A semi-built unit is one complete product with the unassembled
+parts packed alongside the assembled portion. It can ship as semi-built RTS. For a fully
+built sale shortage, stock review now shows free semi-built stock at the ship-from
+location, including a reminder when CKD components are short. A user with
+`production.approve` or `production.manage` can explicitly choose a package to finish rather than draft a
+new CKD-parts job. `GET /api/job-orders/convert-semi/options?product_item_id=&location_id=`
+returns eligible `units` and `bulk_available`. `GET /api/job-orders/convert-semi/demand`
+gives production managers a narrow list of uncovered fully built sale demand without
+customer or price data. `POST /api/job-orders/convert-semi`
+is multipart with `product_item_id`, optional `order_id`, `source_location_id`,
+`output_location_id`, optional `source_unit_id`, physical `identifier`, optional
+`finishing_cost` and `notes`, required `confirmed_complete_kit:true` after counting
+the loose parts, and required `image`. Use an `Idempotency-Key` and keep
+the exact request for a retry. Each request converts **one** package. It immediately
+removes one semi-built RTS unit and creates an approved, released fully built job
+order with one linked unit pending QC. The conversion job has zero BOM components:
+the packed parts are not picked or deducted again. The source serial and received
+cost carry into the new unit; for untracked stock the operator assigns a physical
+identifier at intake. A final QC pass still leaves the unit non-sellable until
+`POST /api/job-orders/:id/products-in` posts it into fully built RTS. The job detail
+exposes `conversion_job_order_id` and `conversion_source_unit_id`; `GET /orders/:id/availability`
+adds `lines[].semi_built_available`. A conversion can be cancelled before inspection
+to return the same package to semi-built RTS; `POST /job-orders/:id/cancel` then
+requires `confirmed_repacked:true` and a nonblank `reason`, with the actor, reason
+and time saved on the conversion record.
+Once inspection begins, use the normal
+QC/rework path. Ordinary `POST /job-orders/:id/progress` and `/:id/units` cannot add
+output to a conversion job.
+
+**Mobile owner action:** The phone sales stock review needs an explicit choice for
+fully built shortages: draft a CKD-parts build or select an eligible semi-built
+package for finishing, even when CKD parts are available. Emphasize the semi option
+when CKD parts are short. The source picker must distinguish tracked serials from
+untracked stock; retain a serial, require a new physical identifier for untracked
+stock, photograph the package, and show an unknown result after a timeout until the
+same keyed request is reconciled. In the production and QC worklists, label the
+conversion as **finishing an existing complete package** and present its linked
+pending unit directly; do not offer component pick, another Add unit, or bulk
+progress. Products In and sale release must continue to respect the current build
+state, location and unit identity. The mobile source in `public/mobile/` was
+inspected for this handoff but was not edited.
+
+**Sales price and fee handoff:** On the desktop order editor the catalog
+`attributes.sale_price` is only the starting price. Sales can replace the unit
+price on that order, higher or lower, before approval. BOM material plus standard
+labor and overhead calculate **production cost**, not an enforced selling price.
+Shipping, admin and other fees are non-stock order lines with `description:'Order fee'`,
+quantity 1 and an editable name/price. They appear in the order subtotal/tax/total
+and commercial documents, but never reserve or deduct stock. The mobile sales-order
+surface currently focuses on approval/releasing and has no equivalent price/fee
+editor; if mobile order entry is added, preserve these separate cost and price
+concepts, show fee totals, and lock price changes after approval as the API does.
+
+**Acceptance cases:** Semi-built RTS remains shippable as-is; a fully built order
+with no CKD parts but an eligible semi package offers conversion; explicit serial
+selection starts one conversion without a second parts issue; an untracked package
+gets a new identifier and intake photo; a duplicate or reserved serial is refused;
+QC pass alone does not make it RTS; Products In switches the same physical unit to
+fully built; cancellation before QC restores semi RTS; retry with the original key
+does not convert twice; a sale may override its unit price and add shipping/admin
+fees without affecting stock.
 
 ## Integration with newer branch work (2026-10-15)
 

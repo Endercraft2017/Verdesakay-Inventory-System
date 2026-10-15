@@ -272,6 +272,7 @@ const App = (() => {
     return NAV.filter((p) => {
       if (p.adminOnly && !isAdmin()) return false;
       if (p.requiredPermission && !hasPermission(p.requiredPermission)) return false;
+      if (p.requiredAnyPermission && !p.requiredAnyPermission.some(hasPermission)) return false;
       if (p.requiredModule && !hasModule(p.requiredModule)) return false;
       return visibleSubtabs(p).length > 0;
     });
@@ -281,6 +282,7 @@ const App = (() => {
   function visibleSubtabs(primary) {
     return (primary.subtabs || []).filter((s) =>
       (!s.requiredPermission || hasPermission(s.requiredPermission)) &&
+      (!s.requiredAnyPermission || s.requiredAnyPermission.some(hasPermission)) &&
       (!s.requiredModule || hasModule(s.requiredModule)));
   }
 

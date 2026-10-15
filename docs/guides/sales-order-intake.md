@@ -18,11 +18,16 @@ mobile warehouse app handles release, rather than sales intake.
 3. Use **Add inventory item** for physical goods. Search by name or SKU and choose
    the item. The picker shows on-hand stock across locations; this is not a promise
    that stock is available for this order. Items with no stock can still be ordered.
-4. Enter a positive quantity and a non-negative price. Free items may have a price
-   of zero. If the same stock item is needed again, update its existing quantity.
+4. Enter a positive quantity and a non-negative price. The catalog selling price
+   pre-fills the line when one is set; sales may raise or lower it for this order.
+   BOM material, standard labor, and overhead are production costs, not a locked
+   selling price. Free items may have a price of zero. If the same stock item is
+   needed again, update its existing quantity.
    Each stock item must use one line so warehouse release and availability can
    track its full quantity together.
-5. Use **Add non-stock line** for delivery fees, installation, or other services.
+5. Use **Add fee** for shipping, admin, or another charge; name and amount remain
+   editable. Fees are included in the subtotal and order tax calculation. Use
+   **Add non-stock line** for installation or other services.
    These lines do not reserve, deduct, or trigger production of inventory. Typing
    an inventory item's name does not link it automatically. Use **Link inventory
    item** if that line should represent stock instead. **Make non-stock** removes a

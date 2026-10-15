@@ -756,6 +756,8 @@ export interface JobOrderUnits {
   remarks: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+  conversion_source_unit_id: number | null;
+  received_unit_cost: number | null;
 }
 
 export interface JobOrders {
@@ -1491,6 +1493,17 @@ export interface SalesReturns {
   inspected_at: string | null;
 }
 
+export interface SemiBuildConversions {
+  job_order_id: Generated<number>;
+  source_unit_id: number | null;
+  source_cost: Generated<number>;
+  finishing_cost: Generated<number>;
+  cancel_reason: string | null;
+  cancelled_by: number | null;
+  cancelled_at: string | null;
+  created_at: Generated<string>;
+}
+
 export interface Sessions {
   token: string;
   user_id: number;
@@ -1837,6 +1850,7 @@ export interface DB {
   sales_return_disposition_events: SalesReturnDispositionEvents;
   sales_return_dispositions: SalesReturnDispositions;
   sales_returns: SalesReturns;
+  semi_build_conversions: SemiBuildConversions;
   sessions: Sessions;
   settings: Settings;
   shifts: Shifts;

@@ -15,6 +15,7 @@ App.register('job-orders', async (view, filter) => {
   const canRecord = canWrite || App.hasPermission('production.record');
   // Approval is its own permission (production.approve), not implied by inventory.adjust.
   const canApprove = App.hasPermission('production.approve');
+  const canConvert = canApprove || App.hasPermission('production.manage');
   const canReportIssue = canRecord || canApprove || App.hasPermission('production.manage')
     || App.hasPermission('production.inspect_qc') || App.hasPermission('production.inspect_qa')
     || App.hasPermission('production.receive');
@@ -42,6 +43,7 @@ App.register('job-orders', async (view, filter) => {
         ${STATUS.map((s) => `<option value="${s}">${s ? s.replace('_', ' ') : 'All statuses'}</option>`).join('')}
       </select>
       ${canWrite ? `<button class="btn" id="jo-new">${UI.icon('plus')} New job order</button>` : ''}
+      ${canConvert ? `<button class="btn secondary" id="jo-convert">Finish semi-built RTS</button>` : ''}
     </div>
     <div class="panel"><div id="jo-table"></div></div>`;
 
@@ -54,8 +56,8 @@ App.register('job-orders', async (view, filter) => {
     if (state.status) p.set('status', state.status);
     [rows, products, locations, items, teams] = await Promise.all([
       API.get('/job-orders?' + p.toString()),
-      API.get('/finished-products'),
-      API.get('/locations'),
+      API.get('/finished-products').catch(() => []),
+      API.get('/locations').catch(() => []),
       API.get('/inventory').catch(() => []),
       API.get('/production/teams?active=1').catch(() => []),
     ]);
@@ -103,6 +105,73 @@ App.register('job-orders', async (view, filter) => {
 
   function locOptions(sel) {
     return locations.map((l) => `<option value="${l.id}" ${String(l.id) === String(sel) ? 'selected' : ''}>${UI.esc(l.path || l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('');
+  }
+
+  async function conversionModal() {
+    let demand;
+    try { demand = await API.get('/job-orders/convert-semi/demand'); }
+    catch (e) { UI.toast(e.message, 'error'); return; }
+    if (!demand.length) { UI.toast('No fully built sale shortage has a free semi-built package at its ship-from location.'); return; }
+    let candidates = null;
+    let attempt;
+    UI.modal({ title: 'Finish an existing semi-built package', size: 'md',
+      bodyHTML: `<p class="order-notice">A semi-built unit already contains every part. Select its sale shortage and physical package. The package leaves semi-built RTS now, passes QC, then enters fully built RTS at Products In. No CKD parts are picked again.</p>
+        <div class="form-grid"><div class="form-field span2"><label>Fully built sale shortage</label><select data-f="demand">${demand.map((d, i) => `<option value="${i}">${UI.esc(d.order_number)} · ${UI.esc(d.product_name)} · ${d.uncovered} short · ${d.semi_built_available} semi available</option>`).join('')}</select></div>
+        <div class="form-field span2"><label>Source package</label><select data-f="source"><option value="">Loading packages…</option></select></div>
+        <div class="form-field span2"><label>Physical identifier</label><input data-f="identifier" maxlength="120" placeholder="Keep serial or label untracked package" /></div>
+        <div class="form-field"><label>Additional finishing cost</label><input data-f="cost" type="number" min="0" step="0.01" value="0" /></div>
+        <div class="form-field span2"><label>Package photo</label><input data-f="image" type="file" accept="image/jpeg,image/png,image/gif,image/webp" /></div>
+        <div class="form-field span2"><label><input data-f="complete-kit" type="checkbox" /> I checked that every loose part remains with this complete package.</label></div>
+        <div class="form-field span2"><label>Work note</label><input data-f="notes" maxlength="500" /></div></div>`,
+      confirmText: 'Start finishing this unit',
+      onOpen: (ov) => {
+        const selected = () => demand[Number(ov.querySelector('[data-f="demand"]').value)];
+        const pick = ov.querySelector('[data-f="source"]');
+        const idField = ov.querySelector('[data-f="identifier"]');
+        const fillId = () => { const unit = (candidates?.units || []).find((u) => String(u.id) === pick.value);
+          idField.value = unit?.identifier || ''; idField.readOnly = !!unit?.identifier; };
+        const loadCandidates = async () => {
+          const d = selected(); candidates = null; pick.innerHTML = '<option value="">Loading packages…</option>';
+          try {
+            const result = await API.get(`/job-orders/convert-semi/options?product_item_id=${d.product_item_id}&location_id=${d.location_id}`);
+            if (!ov.isConnected || selected() !== d) return;
+            candidates = result;
+            pick.innerHTML = (result.units || []).map((u) => `<option value="${u.id}">${UI.esc(u.identifier || 'Tracked unit #' + u.id)}</option>`).join('')
+              + (result.bulk_available >= 1 ? '<option value="">Untracked semi-built unit</option>' : '');
+            if (!pick.options.length) pick.innerHTML = '<option value="">No available packages — refresh</option>';
+            fillId();
+          } catch (e) { pick.innerHTML = `<option value="">${UI.esc(e.message)}</option>`; }
+        };
+        ov.querySelector('[data-f="demand"]').onchange = loadCandidates;
+        pick.onchange = fillId;
+        loadCandidates();
+      },
+      onConfirm: async (ov, showErr) => {
+        const get = (key) => ov.querySelector(`[data-f="${key}"]`).value.trim();
+        const d = demand[Number(get('demand'))];
+        if (!candidates || (!get('source') && candidates.bulk_available < 1)) { showErr('Select an available package.'); return false; }
+        if (!get('identifier')) { showErr('Enter or retain this package’s physical identifier.'); return false; }
+        const image = ov.querySelector('[data-f="image"]').files[0];
+        if (!image) { showErr('Take or choose a photo of the package.'); return false; }
+        if (!ov.querySelector('[data-f="complete-kit"]').checked) { showErr('Check that the complete kit is present before finishing it.'); return false; }
+        const cost = Number(get('cost'));
+        if (!Number.isFinite(cost) || cost < 0) { showErr('Finishing cost must be zero or more.'); return false; }
+        const payload = new FormData();
+        Object.entries({ product_item_id: d.product_item_id, order_id: d.order_id,
+          source_location_id: d.location_id, output_location_id: d.location_id,
+          source_unit_id: get('source'), identifier: get('identifier'), finishing_cost: cost,
+          notes: get('notes'), confirmed_complete_kit: 'true' }).forEach(([key, value]) => payload.append(key, String(value)));
+        payload.append('image', image);
+        const signature = JSON.stringify([...payload.entries()].map(([key, value]) =>
+          value instanceof File ? [key, value.name, value.size, value.lastModified] : [key, value]));
+        if (!attempt || attempt.signature !== signature) attempt = { signature,
+          key: 'semi-finish:' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)) };
+        try { const result = await API.upload('/job-orders/convert-semi', payload, { idempotencyKey: attempt.key });
+          UI.toast(`${result.job_order.number} started; inspect its linked unit before Products In.`);
+          await load();
+        } catch (e) { showErr(e.message); return false; }
+      },
+    });
   }
 
   function newModal() {
@@ -354,13 +423,14 @@ App.register('job-orders', async (view, filter) => {
             ${badge(jo.status)}
             <strong>${UI.esc(jo.product_name)}</strong>
             <span class="badge-pill">${jo.build_mode === 'semi_built' ? 'Semi-built' : 'Fully built'}</span>
+            ${jo.conversion_job_order_id ? '<span class="badge-pill">Finishing existing semi-built unit</span>' : ''}
             ${jo.order_number ? `<span class="muted">from ${UI.esc(jo.order_number)}</span>` : '<span class="muted">RTS buffer stock</span>'}
           </div>
           <div class="kv" style="margin:10px 0 0">
             <div><span class="muted">Ordered</span><div>${jo.qty_ordered}</div></div>
             <div><span class="muted">Done</span><div>${jo.qty_done}</div></div>
             <div><span class="muted">Scrapped</span><div>${jo.qty_scrapped}</div></div>
-            <div><span class="muted">Still to record</span><div>${availableToRecord}</div></div>
+            <div><span class="muted">${jo.conversion_job_order_id ? 'Linked unit awaiting QC / receipt' : 'Still to record'}</span><div>${jo.conversion_job_order_id ? (sum.pending || 0) + (sum.rework || 0) + (sum.hold || 0) + (sum.passed || 0) : availableToRecord}</div></div>
             <div><span class="muted">Inspection</span><div>${qc ? `${jo.qc_stages}-step` : 'none'}</div></div>
             ${qc ? `<div><span class="muted">Under inspection</span><div>${sum.pending}</div></div>` : ''}
             ${qc && sum.rework ? `<div><span class="muted">In repair</span><div>${sum.rework}</div></div>` : ''}
@@ -374,6 +444,8 @@ App.register('job-orders', async (view, filter) => {
             ${jo.accepted_by_name ? `<div><span class="muted">Accepted by</span><div>${UI.esc(jo.accepted_by_name)}${jo.accepted_at ? ` <span class="muted">${UI.esc(jo.accepted_at.slice(0, 16).replace('T', ' '))}</span>` : ''}</div></div>` : ''}
           </div>
           ${jo.accept_notes ? `<p class="muted" style="white-space:pre-wrap;margin:10px 0 0"><b>Handover note:</b> ${UI.esc(jo.accept_notes)}</p>` : ''}
+          ${jo.conversion_job_order_id ? '<p class="order-notice">This is the same complete package taken from semi-built RTS. Its loose parts were already included; no BOM components were picked again. Inspect the linked unit, then record Products In to make it fully built RTS.</p>' : ''}
+          ${jo.conversion_cancel_reason ? `<p class="order-notice">Complete package returned to semi-built RTS: ${UI.esc(jo.conversion_cancel_reason)}</p>` : ''}
           ${jo.notes ? `<p class="muted" style="white-space:pre-wrap;margin:10px 0 0">${UI.esc(jo.notes)}</p>` : ''}`)}
         ${held.length ? box(`${boxTitle('Held by QA for review')}
           <table><thead><tr><th>Unit</th><th>Reason</th><th></th></tr></thead><tbody>${held.map((u) => `
@@ -382,7 +454,7 @@ App.register('job-orders', async (view, filter) => {
           </tbody></table>`) : ''}
 
         ${box(`
-          ${boxTitle('Components')}
+          ${boxTitle(jo.conversion_job_order_id ? 'Packaged parts' : 'Components')}
           <table>
             <thead><tr><th>Component</th><th class="right">Per unit</th><th class="right">Planned</th><th class="right">Consumed</th><th class="right">On hand</th></tr></thead>
             <tbody id="jo-comp-body">${comps.length ? comps.map((c) => `<tr>
@@ -393,7 +465,7 @@ App.register('job-orders', async (view, filter) => {
                 : c.qty_planned}</td>
               <td class="right">${c.qty_consumed}</td>
               <td class="right">${c.component_on_hand ?? '—'}</td>
-            </tr>`).join('') : `<tr><td colspan="5" class="muted">No components — this product has no BOM. ${isDraft && canWrite ? 'Add parts below, or build it as-is.' : 'Nothing is reserved or consumed.'}</td></tr>`}</tbody>
+            </tr>`).join('') : `<tr><td colspan="5" class="muted">${jo.conversion_job_order_id ? 'All kit parts came with the semi-built package; no new parts are issued.' : `No components — this product has no BOM. ${isDraft && canWrite ? 'Add parts below, or build it as-is.' : 'Nothing is reserved or consumed.'}`}</td></tr>`}</tbody>
           </table>
           ${isDraft && canWrite ? `
             <div class="field-row" style="align-items:flex-end;gap:8px;margin-top:8px">
@@ -538,10 +610,11 @@ App.register('job-orders', async (view, filter) => {
           ${jo.approved_at ? `<button type="button" class="btn secondary" data-do="unapprove">Withdraw approval</button>`
                            : `<button type="button" class="btn" data-do="approve">Approve</button>`}
         </div>` : ''}
-        ${!canWrite && (canPauseLine || canCloseEarly) && (running || jo.status === 'paused') ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+        ${!canWrite && (canPauseLine || canCloseEarly || canConvert) && (running || jo.status === 'paused') ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
           ${running && canPauseLine ? `<button type="button" class="btn secondary" data-do="pause">Pause</button>` : ''}
           ${jo.status === 'paused' && canPauseLine ? `<button type="button" class="btn secondary" data-do="resume">Resume</button>` : ''}
-          ${canCloseEarly ? `<button type="button" class="btn secondary" data-do="close">Close (finish early)</button>` : ''}
+          ${canCloseEarly && !jo.conversion_job_order_id ? `<button type="button" class="btn secondary" data-do="close">Close (finish early)</button>` : ''}
+          ${canConvert && jo.conversion_job_order_id && sum.pending === 1 ? '<button type="button" class="btn secondary danger" data-do="cancel">Return package to semi-built RTS</button>' : ''}
         </div>` : ''}
         ${events.length ? `<details style="margin-top:12px"><summary class="muted" style="cursor:pointer">Line decisions (${events.length})</summary>
           <table style="margin-top:6px"><tbody>${events.map((e) => `<tr><td class="muted" style="white-space:nowrap">${UI.esc(UI.fmtDate ? UI.fmtDate(e.created_at) : e.created_at)}</td>
@@ -556,7 +629,7 @@ App.register('job-orders', async (view, filter) => {
                        <button type="button" class="btn secondary danger" data-do="_delete">Delete</button>` : ''}
           ${running ? `<button type="button" class="btn secondary" data-do="pause">Pause</button>` : ''}
           ${jo.status === 'paused' ? `<button type="button" class="btn secondary" data-do="resume">Resume</button>` : ''}
-          ${(running || jo.status === 'paused') ? `<button type="button" class="btn secondary" data-do="close">Close (finish early)</button>
+          ${(running || jo.status === 'paused') ? `${jo.conversion_job_order_id ? '' : `<button type="button" class="btn secondary" data-do="close">Close (finish early)</button>`}
                        <button type="button" class="btn secondary danger" data-do="cancel">Cancel</button>` : ''}
         </div>` : ''}`;
 
@@ -919,8 +992,16 @@ App.register('job-orders', async (view, filter) => {
             API.del('/job-orders/' + id).then(() => { UI.toast('Deleted'); m.close && m.close(); load(); }).catch((e) => UI.toast(e.message, 'error'));
           });
         } else if (d === 'cancel') {
-          UI.confirmDialog(`Cancel ${jo.number}? Unconsumed components are returned to ${UI.esc(jo.source_location_name || 'the source location')}.`, 'Cancel job order')
-            .then((ok) => ok && act('/cancel'));
+          if (jo.conversion_job_order_id) {
+            const reason = window.prompt('Why return this package to semi-built RTS? (required)', '');
+            if (reason === null) return;
+            if (!reason.trim()) { UI.toast('Give a reason for returning the package.', 'error'); return; }
+            UI.confirmDialog(`Confirm that you counted and repacked every loose part with this same unit before returning ${jo.number} to semi-built RTS at ${UI.esc(jo.source_location_name || 'its source location')}.`, 'Return complete package')
+              .then((ok) => ok && act('/cancel', { confirmed_repacked: true, reason: reason.trim() }));
+          } else {
+            UI.confirmDialog(`Cancel ${jo.number}? Unconsumed components are returned to ${UI.esc(jo.source_location_name || 'the source location')}.`, 'Cancel job order')
+              .then((ok) => ok && act('/cancel'));
+          }
         } else {
           act('/' + d);
         }
@@ -934,6 +1015,8 @@ App.register('job-orders', async (view, filter) => {
   view.querySelector('#jo-status').addEventListener('change', (e) => { state.status = e.target.value; load(); });
   const nb = view.querySelector('#jo-new');
   if (nb) nb.onclick = () => newModal();
+  const cb = view.querySelector('#jo-convert');
+  if (cb) cb.onclick = () => conversionModal();
 
   await load();
   if (filter && filter.id) trackModal(filter.id);
