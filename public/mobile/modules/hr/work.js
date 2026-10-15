@@ -16,17 +16,21 @@
       count: function () { return API.get('/production/repairs?status=requested').then(function (r) { return (r || []).length; }); } },
     { label: 'RTS recording', sub: 'Record QA-passed finished goods', route: 'receiving', permission: 'production.receive',
       count: function () { return readyToReceive(); } },
+    { label: 'Awaiting production approval', sub: 'Review draft quantities, components and stock', route: 'job-orders', params: { view: 'approval' }, permission: 'production.approve',
+      count: function () { return API.get('/job-orders?stage=awaiting_approval').then(function (rows) { return mProductionDrafts.approvalCount(rows || []); }); } },
     { label: 'Production job orders', sub: 'Accept kits and record active work', route: 'job-orders', permission: 'production.record',
       count: function () { return API.get('/job-orders').then(function (rows) {
         return (rows || []).filter(function (x) { return x.status === 'released' || x.status === 'in_progress'; }).length;
       }); } },
+    { label: 'Saved unit issue reports', sub: 'Resume reports and their photos', route: 'unit-issues', any: ['production.inspect_qc', 'production.inspect_qa', 'production.record', 'production.manage'],
+      count: function () { return mProductionDrafts.listActions('unit-issue', 'issue').then(function (saved) { return saved.length; }); } },
     { label: 'QC technical inspection', sub: 'Inspect units waiting for QC', route: 'qc', params: { role: 'qc' }, permission: 'production.inspect_qc',
       count: function () { return actionableInspection('qc'); } },
     { label: 'QA appearance inspection', sub: 'Inspect units waiting for QA', route: 'qc', params: { role: 'qa' }, permission: 'production.inspect_qa',
       count: function () { return actionableInspection('qa'); } },
     // Someone who decides QA holds without inspecting (production.qa_review, e.g. the Production Manager).
     { label: 'QA holds', sub: 'Decide units QA held for review', route: 'qc', params: { role: 'qa', tab: 'hold' }, permission: 'production.qa_review',
-      count: function () { return API.get('/qc/holds').then(function (rows) { return (rows || []).length; }); } },
+      count: function () { return Promise.all([API.get('/qc/holds'), mProductionDrafts.listActions('hold-decision', 'hold')]).then(function (both) { return new Set(both[0].map(function (h) { return h.id; }).concat(both[1].map(function (a) { return a.id; }))).size; }); } },
     { label: 'Deliveries', sub: 'Field drops and proof of delivery', route: 'deliveries', any: ['delivery.run', 'delivery.manage'],
       count: function () { return API.get('/deliveries?mine=1').then(function (rows) {
         return (rows || []).filter(function (x) { return x.status === 'pending' || x.status === 'out_for_delivery'; }).length;
@@ -46,11 +50,11 @@
   }
   function readyToReceive() {
     return API.get('/rts/queue').then(function (q) {
-      return ((q && q.units) || []).filter(function (u) { return !u.hold; }).length + ((q && q.batches) || []).length;
+      return mRtsRecovery.count(q);
     });
   }
   function allowed(op) {
-    if (MApp.can('inventory.adjust') && op.permission !== 'orders.release') return true;
+    if (MApp.can('inventory.adjust') && op.permission !== 'orders.release' && op.permission !== 'production.approve') return true;
     if (op.permission && MApp.can(op.permission)) return true;
     return op.any && op.any.some(function (p) { return MApp.can(p); });
   }

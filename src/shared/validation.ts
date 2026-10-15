@@ -410,6 +410,10 @@ export const jobOrderComponentsSchema = z.object({
 export const acceptJobOrderSchema = z.object({
   notes: trimmed.max(500).optional().nullable(),
 });
+/** Approval signs the reviewed draft; live stock can still change independently. */
+export const approveJobOrderSchema = acceptJobOrderSchema.extend({
+  expected_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+});
 
 export const jobOrderProgressSchema = z
   .object({
@@ -529,6 +533,7 @@ export const inspectUnitsSchema = z
 
 /** POST /job-orders/:id/units/:unitId/hold-decision — release a unit QA held for review. */
 export const holdDecisionSchema = z.object({
+  expected_hold_record_id: z.coerce.number().int().positive().optional(),
   outcome: z.enum(['pass', 'rectify', 'fail']),
   disposition: z.enum(['scrap', 'dispose', 'recycle']).optional(),
   remarks: trimmed.min(3, 'Give the reason for the decision').max(2000),

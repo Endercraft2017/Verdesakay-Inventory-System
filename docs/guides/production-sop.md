@@ -99,9 +99,10 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
 9. **Completion & returns** — production completion tracks the *build*, not receiving: once
    every ordered unit is accounted for (built + scrapped) and nothing is pending or in
    rework, the job order **completes** and unused reserved components return to the source
-   location — even if some output is still awaiting Products In. **Close (finish early)** /
-   **Cancel** do the return manually; either way, whatever was already built still needs to
-   be received.
+   location — even if some output is still awaiting Products In. **Close (finish early)**
+   stops unbuilt output and returns unused parts, keeping built units for QC/QA, rework,
+   hold review and Products In. Open repair-parts requests remain active. **Cancel** is a
+   separate write-off action for unresolved units. Output already passed still needs receipt.
 
 10. **Labels & QR** — print QR labels per unit (identifier) or per batch (`BATCH-#####`).
     Edit the layout under **Label design** (model, variant, code, batch fields, QR). Scanning

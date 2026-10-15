@@ -18,6 +18,7 @@
    proof|review|confirm|done|incomplete|report|receipt][&code=][&kind=] */
 (function () {
   var R = window.RoleUI;
+  var owner = null, renderSerial = 0;
   var S = {};   // per order: { token, tokenOk, pkg:{key:true}, seal, area, recipient, plate, photos:[], sign, key, result }
   var can = function (p) { return MApp.can(p); };
   var offline = function () { return navigator.onLine === false; };
@@ -56,7 +57,9 @@
 
   function withOrder(view, id, fn) {
     view.innerHTML = '<section class="rk-page">' + R.skeleton(2) + '</section>';
-    API.get('/release-slips/orders/' + id + '/context').then(fn).catch(function (err) {
+    var hash = location.hash, account = mProductionDrafts.key('release-owner');
+    API.get('/release-slips/orders/' + id + '/context').then(function (c) { if (hash === location.hash && account === mProductionDrafts.key('release-owner')) fn(c); }).catch(function (err) {
+      if (hash !== location.hash || account !== mProductionDrafts.key('release-owner')) return;
       view.innerHTML = ''; view.appendChild(R.error(err, function () { withOrder(view, id, fn); }));
     });
   }
@@ -64,16 +67,23 @@
   /* ── Queue (78:16) ─────────────────────────────────────────────────────── */
   function queue(view, tab) {
     var body = page(view, '78:16', 'Release orders', 'Allocated units ready for handoff');
-    body.innerHTML = R.skeleton(3);
+    body.innerHTML = '<div data-recovery></div>' + R.skeleton(3);
+    mReleaseActions.cards(body.querySelector('[data-recovery]'));
     API.get('/release-slips/queue').then(function (q) {
+      if (!body.isConnected) return;
       var rows = q.to_accept.concat(q.releasing);
       var blocked = rows.filter(function (r) { return authProblem(r.authorization) || r.open_reports > 0; });
-      var ready = rows.filter(function (r) { return blocked.indexOf(r) === -1; });
+      var available = rows.filter(function (r) { return blocked.indexOf(r) === -1; });
+      var accept = available.filter(function (r) { return !r.warehouse_accepted_at; });
+      var allocating = available.filter(function (r) { return r.warehouse_accepted_at && r.qty_released < r.qty_ordered; });
+      var ready = available.filter(function (r) { return r.warehouse_accepted_at && r.qty_ordered > 0 && r.qty_released >= r.qty_ordered; });
       var count = function (m) { return ready.filter(function (r) { return r.authorization && r.authorization.mode === m; }).length; };
       tab = tab || 'ready';
       body.innerHTML =
-        R.hero('Ready for handoff', ready.length + ' release' + (ready.length === 1 ? '' : 's'), count('delivery') + ' delivery · ' + count('pickup') + ' pickup') +
+        '<div data-recovery></div>' + R.hero('Ready for handoff', ready.length + ' release' + (ready.length === 1 ? '' : 's'), count('delivery') + ' delivery · ' + count('pickup') + ' pickup') +
         '<div class="rk-segs" role="tablist">' +
+          '<button type="button" data-tab="accept"' + (tab === 'accept' ? ' class="on"' : '') + '>To accept<b>' + accept.length + '</b></button>' +
+          '<button type="button" data-tab="allocating"' + (tab === 'allocating' ? ' class="on"' : '') + '>Allocating<b>' + allocating.length + '</b></button>' +
           '<button type="button" data-tab="ready" class="blue' + (tab === 'ready' ? ' on' : '') + '">Ready<b>' + ready.length + '</b></button>' +
           '<button type="button" data-tab="blocked" class="warn' + (tab === 'blocked' ? ' on' : '') + '">Blocked<b>' + blocked.length + '</b></button>' +
           '<button type="button" data-tab="done"' + (tab === 'done' ? ' class="on"' : '') + '>Completed</button></div>' +
@@ -90,7 +100,7 @@
           : (r.qty_released >= r.qty_ordered ? 'Ready now' : r.qty_released + ' of ' + r.qty_ordered + ' allocated') +
             (a.override && a.override.status === 'requested' ? ' · override requested' : overrideOk(a) ? ' · override approved' : a.state === 'valid' ? ' · token issued' : '');
         return '<button type="button" class="rk-card rk-unitcard" data-order="' + r.id + '"><b>' + mEsc(r.number) + '</b><span>' + mEsc(what) + '</span>' +
-          '<small' + (problem ? ' class="warn"' : '') + '>' + mEsc(meta) + '</small><i aria-hidden="true">›</i></button>';
+          '<small' + (problem ? ' class="warn"' : '') + '>' + mEsc(meta + ' · Ship from ' + (r.location_name || 'assigned warehouse')) + '</small><i aria-hidden="true">›</i></button>';
       }
       function paint(which) {
         var host = body.querySelector('[data-list]');
@@ -102,7 +112,7 @@
           Array.prototype.forEach.call(host.querySelectorAll('[data-slip]'), function (b) { b.onclick = function () { go({ id: b.dataset.order, step: 'receipt' }); }; });
           return;
         }
-        var list = which === 'blocked' ? blocked : ready;
+        var list = which === 'blocked' ? blocked : which === 'accept' ? accept : which === 'allocating' ? allocating : ready;
         host.innerHTML = list.length ? list.map(card).join('') : '<div class="rk-empty">' + (which === 'blocked' ? 'No blocked releases.' : 'No sale orders waiting for release.') + '</div>';
         Array.prototype.forEach.call(host.querySelectorAll('[data-order]'), function (b) { b.onclick = function () { go({ id: b.dataset.order }); }; });
       }
@@ -110,6 +120,7 @@
         b.onclick = function () { Array.prototype.forEach.call(body.querySelectorAll('.rk-segs button'), function (x) { x.classList.toggle('on', x === b); }); paint(b.dataset.tab); };
       });
       paint(tab);
+      mReleaseActions.cards(body.querySelector('[data-recovery]'));
       body.querySelector('#rel-open').onclick = function () {
         var find = function (code) {
           var t = String(code || '').trim().toLowerCase();
@@ -119,7 +130,7 @@
         if (window.mScanner) mScanner.open({ title: 'Scan the release order number', onResult: find });
         else if (ready[0]) go({ id: ready[0].id });
       };
-    }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { queue(view, tab); })); });
+    }).catch(function (err) { if (!body.isConnected) return; body.innerHTML = '<div data-recovery></div>' + R.note('warn','Release queue unavailable — count unknown.'); mReleaseActions.cards(body.querySelector('[data-recovery]')); body.appendChild(R.error(err, function () { queue(view, tab); })); });
   }
 
   /* ── Verify release authority (78:68) ──────────────────────────────────── */
@@ -147,7 +158,7 @@
       if (c.order.warehouse_accepted_at) { go({ id: c.order.id, step: 'scan' }); return; }
       if (offline()) { mToast('You’re offline — accepting the order needs a connection.', 'err'); return; }
       btn.disabled = true; btn.textContent = 'Accepting…';
-      API.post('/orders/' + c.order.id + '/accept-release', {}).then(function () { go({ id: c.order.id, step: 'scan' }); }).catch(fail(btn, 'Begin unit verification'));
+      mReleaseActions.start(c, 'accept', '/orders/' + c.order.id + '/accept-release', {}, 'Accept warehouse release order').catch(fail(btn, 'Begin unit verification'));
     };
   }
 
@@ -155,6 +166,7 @@
   function scan(view, c) {
     var p = progress(c);
     var body = page(view, '78:109', 'Scan physical units', 'Every serial must match this release order');
+    function free(l) { var a = (c.availability || []).find(function (a) { return a.item_id === l.item_id; }); return a ? Math.max(0, Math.min(l.quantity - (l.released_qty || 0), a.free_to_allocate)) : 0; }
     var bulk = c.lines.filter(function (l) { return l.item_id && !l.serialized && (l.released_qty || 0) < l.quantity; });
     body.innerHTML =
       '<button type="button" class="rk-identify"><span class="frame" aria-hidden="true"></span><b>Scan the unit serial label</b><small>' + p.got + ' of ' + p.need + ' allocated units ready</small></button>' +
@@ -164,11 +176,11 @@
           '<small>Allocated · Ready to sell' + (u.location_name ? ' · ' + mEsc(u.location_name) : '') + '</small></button></div>';
       }).join('') + '</div>' : '') +
       bulk.map(function (l) {
-        return '<div class="rk-card rk-field"><small>' + mEsc(l.name) + ' · non-serialized</small><div class="rk-qtyrow" style="margin-top:8px"><span>' + (l.released_qty || 0) + ' of ' + l.quantity + ' counted out</span>' +
-          '<span class="rk-search"><input class="rk-input" style="margin:0;width:70px" type="number" min="1" max="' + (l.quantity - (l.released_qty || 0)) + '" inputmode="numeric" data-qty="' + l.item_id + '" value="' + (l.quantity - (l.released_qty || 0)) + '">' +
-          '<button type="button" class="rk-back" data-bulk="' + l.item_id + '" style="padding:0">Add</button></span></div></div>';
+        return '<div class="rk-card rk-field"><small>' + mEsc(l.name) + ' · non-serialized</small><div class="rk-qtyrow" style="margin-top:8px"><span>' + (l.released_qty || 0) + ' of ' + l.quantity + ' allocated · ' + free(l) + ' free here</span>' +
+          '<span class="rk-search"><input class="rk-input" style="margin:0;width:70px" type="number" min="0" step="any" max="' + free(l) + '" inputmode="decimal" data-qty="' + l.item_id + '" value="' + free(l) + '">' +
+          '<button type="button" class="rk-back" data-bulk="' + l.item_id + '"' + (free(l) <= 0 ? ' disabled' : '') + ' style="padding:0">Add</button></span></div></div>';
       }).join('') +
-      R.note('info', '<h3>Allocation check</h3>A ready-to-sell unit assigned to another order cannot be substituted without approval.') +
+      R.field('Ship from', c.order.location_name || 'Warehouse #' + c.order.location_id) + R.note('info', '<h3>Allocation check</h3>A ready-to-sell unit assigned to another order cannot be substituted without approval.') +
       R.actions([{ id: 'rel-go', label: 'Continue', kind: 'primary' }, { id: 'rel-man', label: 'Scan manually', kind: 'secondary' }]);
     var check = function (code) {
       code = String(code || '').trim();
@@ -184,12 +196,12 @@
     Array.prototype.forEach.call(body.querySelectorAll('[data-unit]'), function (b) { b.onclick = function () { if (b.dataset.unit) check(b.dataset.unit); }; });
     Array.prototype.forEach.call(body.querySelectorAll('[data-bulk]'), function (b) {
       b.onclick = function () {
-        var qty = parseInt(body.querySelector('[data-qty="' + b.dataset.bulk + '"]').value, 10) || 0;
-        if (qty < 1) { mToast('Enter a quantity', 'err'); return; }
+        var qty = Number(body.querySelector('[data-qty="' + b.dataset.bulk + '"]').value), line = bulk.find(function (l) { return l.item_id === Number(b.dataset.bulk); });
+        if (!Number.isFinite(qty) || qty <= 0 || qty > free(line)) { mToast('Enter a positive quantity within ' + free(line) + ' free to allocate at this warehouse.', 'err'); return; }
         if (offline()) { mToast('You’re offline — allocation needs a connection.', 'err'); return; }
         b.disabled = true;
-        API.post('/orders/' + c.order.id + '/release', { bulk: [{ item_id: Number(b.dataset.bulk), quantity: qty }] }, { idempotencyKey: key() })
-          .then(function () { mToast('Counted out'); go({ id: c.order.id, step: 'scan', t: Date.now() }); }).catch(fail(b));
+        body.querySelectorAll('button,input').forEach(function (el) { el.disabled = true; });
+        mReleaseActions.start(c, 'allocate', '/orders/' + c.order.id + '/release', { bulk: [{ item_id: Number(b.dataset.bulk), quantity: qty }] }, 'Allocate ' + qty + ' ' + line.name).catch(fail(b));
       };
     });
     body.querySelector('#rel-go').onclick = function () {
@@ -202,13 +214,15 @@
     view.innerHTML = '<section class="rk-page">' + R.skeleton(2) + '</section>';
     API.get('/release-slips/orders/' + c.order.id + '/unit?code=' + encodeURIComponent(code)).then(function (r) {
       if (r.state !== 'allocated' && r.state !== 'available') { blockedView(view, c, code, r); return; }
+      if (location.hash.split('?')[0] !== '#/so' || Number(new URLSearchParams(location.hash.split('?')[1]).get('id')) !== c.order.id) return;
       var u = r.unit, p = progress(c);
+      if (u.location_id != null && c.order.location_id != null && u.location_id !== c.order.location_id) { blockedView(view,c,code,{ state: 'refused', error: 'Unit is at a different warehouse. Transfer it before allocating.', unit: u }); return; }
       var body = page(view, '78:147', 'Verify allocated unit', 'Match the physical unit and stock record');
       var idx = c.units.map(function (x) { return x.id; }).indexOf(u.id);
       body.innerHTML =
         R.jobHead({ tone: 'ok', number: u.identifier, pill: { text: r.state === 'allocated' ? 'Allocated' : 'Ready to sell', tone: 'ok' }, name: u.product_name,
           meta: u.location_name || '' }) +
-        R.field('Stock transaction', u.receipt_number || '—') +
+        R.field('Ship from', c.order.location_name || 'Warehouse #' + c.order.location_id) + R.field('Stock transaction', u.receipt_number || '—') +
         R.field('Allocated to', c.order.number + ' · ' + (r.state === 'allocated' ? (idx + 1) + ' of ' + p.need : 'will be ' + (p.got + 1) + ' of ' + p.need)) +
         R.note('info', '<h3>Physical check</h3>Confirm model, color, serial label and visible condition before removing the unit.') +
         R.actions([{ id: 'rel-ok', label: 'Confirm unit', kind: 'primary' }, { id: 'rel-mis', label: 'Mismatch', kind: 'secondary' }]);
@@ -218,9 +232,8 @@
         if (r.state === 'allocated') { go({ id: c.order.id, step: 'scan' }); return; }
         if (offline()) { mToast('You’re offline — allocation needs a connection.', 'err'); return; }
         btn.disabled = true; btn.textContent = 'Allocating…';
-        API.post('/orders/' + c.order.id + '/release', { codes: [u.identifier] }, { idempotencyKey: key() })
-          .then(function () { mToast(u.identifier + ' allocated'); go({ id: c.order.id, step: 'scan' }); })
-          .catch(function (err) { if (err && err.status >= 400 && err.status < 500) blockedView(view, c, code, { state: 'refused', error: err.message, unit: u }); else fail(btn, 'Confirm unit')(err); });
+        body.querySelectorAll('button').forEach(function (el) { el.disabled = true; });
+        mReleaseActions.start(c, 'allocate', '/orders/' + c.order.id + '/release', { codes: [u.identifier] }, 'Allocate ' + u.identifier).catch(fail(btn,'Confirm unit'));
       };
     }).catch(function (err) { view.innerHTML = ''; view.appendChild(R.error(err, function () { unit(view, c, code); })); });
   }
@@ -554,19 +567,31 @@
     };
   }
 
-  MApp.route('so', function (view, params) {
+  MApp.route('so', async function (view, params) {
+    var render = ++renderSerial, hash = location.hash;
     params = params || {};
     if (!can('inventory.adjust') && !can('orders.release')) {
       view.innerHTML = '<div class="m-error">You don’t have permission to release sale orders.</div>';
       return;
     }
+    var account = mProductionDrafts.key('release-owner');
+    if (owner !== account) { S = {}; owner = account; }
     if (!params.id) return queue(view, params.tab);
+    try {
+      var saved = await mReleaseActions.load(Number(params.id));
+      if (render !== renderSerial || hash !== location.hash || account !== mProductionDrafts.key('release-owner')) return;
+      if (saved) {
+        if (params.step !== 'recovery') { go({ id: params.id, step: 'recovery' }); return; }
+        mReleaseActions.paint(view,saved); return;
+      }
+    } catch (err) { view.innerHTML = ''; view.appendChild(R.error(err, function () { MApp.render(); })); return; }
     withOrder(view, Number(params.id), function (c) {
       var step = params.step;
       // Released: only the result / receipt (its authorization now reads "used").
       if (c.slip) return step === 'done' ? done(view, c) : receipt(view, c);
       if (!step) return authority(view, c);
       if (authProblem(c.authorization) && step !== 'report') return authority(view, c);
+      if (!c.order.warehouse_accepted_at && step !== 'report' && step !== 'receipt') return authority(view,c);
       if (step === 'scan') scan(view, c);
       else if (step === 'unit') unit(view, c, params.code || '');
       else if (step === 'blocked') blockedView(view, c, params.code || '', { state: 'not_found' });

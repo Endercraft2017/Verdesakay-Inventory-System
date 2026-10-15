@@ -9,6 +9,8 @@
   // qc_inspector-only account still sees "QC / QA" (its own inspect_qc permission covers it)
   // but not the other three.
   var ROWS = [
+    { icon: '🏭', label: 'Awaiting approval', sub: 'review draft production plans', route: 'job-orders', params: { view: 'approval' }, color: '#6d4a91', perm: 'production.approve', strict: true,
+      count: function () { return API.get('/job-orders?stage=awaiting_approval').then(function (rows) { return mProductionDrafts.approvalCount(rows || []); }); } },
     { icon: '🏭', label: 'Job Orders', sub: 'shop floor', route: 'job-orders', color: '#7c3aed', perm: 'production.record',
       count: function () {
         return API.get('/job-orders').then(function (j) {
@@ -40,7 +42,7 @@
     var wrap = mEl('<div class="m-wq"></div>');
     ROWS.filter(function (r) {
       var perms = r.perms || (r.perm ? [r.perm] : []);
-      return MApp.can('inventory.adjust') || perms.some(function (p) { return MApp.can(p); });
+      return (!r.strict && MApp.can('inventory.adjust')) || perms.some(function (p) { return MApp.can(p); });
     }).forEach(function (r) {
       var row = mEl(
         '<div class="m-wq-row" style="--wq:' + r.color + '">' +
@@ -50,7 +52,7 @@
         '<span class="m-wq-ch"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>' +
         '</div>'
       );
-      row.onclick = function () { MApp.go(r.route); };
+      row.onclick = function () { MApp.go(r.route, r.params); };
       wrap.appendChild(row);
       r.count().then(function (n) {
         var e = row.querySelector('[data-eta]');

@@ -36,6 +36,25 @@ beforeAll(async () => {
 afterAll(() => cleanup(P.ctx));
 
 describe('decision D1 — an offline stock-out beyond recorded stock', () => {
+  it('replays an interrupted local acknowledgement with its original sync command', async () => {
+    const id = await cloudItem(10);
+    await P.round();
+    const key = 'local-ack-retry-001';
+    const first = await api().post(`/api/inventory/${id}/adjust`).set(P.nodeHdr()).set('Idempotency-Key', key).send({ change: -2 });
+    expect(first.status).toBe(200);
+    expect(first.headers['x-sync-state']).toBe('local');
+    expect(first.headers['x-sync-command']).toBeTruthy();
+    const retry = await api().post(`/api/inventory/${id}/adjust`).set(P.nodeHdr()).set('Idempotency-Key', key).send({ change: -2 });
+    expect(retry.body).toEqual(first.body);
+    expect(retry.headers['idempotency-replayed']).toBe('true');
+    expect(retry.headers['x-sync-state']).toBe('local');
+    expect(retry.headers['x-sync-command']).toBe(first.headers['x-sync-command']);
+    expect(qtyAt(P.nodeDb(), id, defaultLoc(P.nodeDb()))).toBe(8);
+    const { pushed } = await P.round();
+    expect(pushed).toHaveLength(1);
+    expect(pushed[0]!.state).toBe('confirmed');
+  });
+
   it('is accepted on the node, takes the location below zero, and opens a discrepancy', async () => {
     const id = await cloudItem(3);
     await P.round();

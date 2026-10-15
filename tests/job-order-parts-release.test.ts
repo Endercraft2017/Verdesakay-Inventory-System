@@ -35,6 +35,21 @@ async function productWithPart(prefix: string, partStock: number) {
 }
 
 describe('warehouse accept → prepare → release slip', () => {
+  it('replays one physical release without a second slip or stock deduction', async () => {
+    const { product, part } = await productWithPart('PRS retry', 50);
+    const mo = await approvedMO(product, 5);
+    await ctx.api.post('/api/job-orders/warehouse-accept').set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id: mo }] });
+    const send = () => ctx.api.post(`/api/job-orders/${mo}/release`).set(H()).set('Idempotency-Key', 'kit-release-retry-001').send({});
+    const first = await send(), retry = await send();
+    expect(first.status).toBe(200);
+    expect(retry.status).toBe(200);
+    expect(retry.body).toEqual(first.body);
+    expect(retry.headers['idempotency-replayed']).toBe('true');
+    expect(await qtyOf(part)).toBe(40);
+    expect((await ctx.api.get(`/api/parts-slips?job_order_id=${mo}`).set(H())).body).toHaveLength(1);
+  });
+
   it('walks one job order through and issues a slip that deducts stock', async () => {
     const { product, part } = await productWithPart('PRS1', 50);
     const mo = await approvedMO(product, 5); // needs 10 parts

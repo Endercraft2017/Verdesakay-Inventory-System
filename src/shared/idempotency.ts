@@ -16,6 +16,9 @@ import { createHash } from 'node:crypto';
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const KEY_RE = /^[A-Za-z0-9._:-]{8,200}$/;
 const DONT_STORE = new Set([401, 403, 429]); // retryable without changing the request
+// A local acknowledgement must stay local on retry. The prefix cannot collide
+// with a JSON response; older plain JSON rows remain readable without migration.
+const LOCAL_RESPONSE_PREFIX = 'vds-local-response-v1:';
 
 interface StoredRow {
   status_code: number;
@@ -58,7 +61,14 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
       return;
     }
     res.set('Idempotency-Replayed', 'true');
-    res.status(existing.status_code).type('application/json').send(existing.response);
+    let response = existing.response;
+    if (response.startsWith(LOCAL_RESPONSE_PREFIX)) {
+      const stored = JSON.parse(response.slice(LOCAL_RESPONSE_PREFIX.length)) as { response: string; command: string };
+      res.set('X-Sync-State', 'local');
+      res.set('X-Sync-Command', stored.command);
+      response = stored.response;
+    }
+    res.status(existing.status_code).type('application/json').send(response);
     return;
   }
 
@@ -67,10 +77,14 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
   res.json = (body: unknown) => {
     if (res.statusCode < 500 && !DONT_STORE.has(res.statusCode)) {
       try {
+        let response = JSON.stringify(body);
+        if (res.getHeader('X-Sync-State') === 'local') {
+          response = LOCAL_RESPONSE_PREFIX + JSON.stringify({ response, command: String(res.getHeader('X-Sync-Command') || 'local') });
+        }
         db.prepare(
           `INSERT OR IGNORE INTO idempotency_keys (key, user_id, method, path, status_code, response, request_hash)
            VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).run(key, user.id, req.method, path, res.statusCode, JSON.stringify(body), requestHash);
+        ).run(key, user.id, req.method, path, res.statusCode, response, requestHash);
       } catch {
         /* never let bookkeeping break the response */
       }

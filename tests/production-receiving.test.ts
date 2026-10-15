@@ -155,6 +155,20 @@ describe('non-serialized (0 QC stages) job orders', () => {
     expect(rec.batches).toHaveLength(0);
   });
 
+  it('replays a partial bulk receipt exactly once and refuses a changed payload on its key', async () => {
+    const { mo, product } = await releasedMO('PR-RETRY', 5, 0);
+    await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 5 });
+    const rec = (await ctx.api.get(`/api/job-orders/${mo}/receivable`).set(H())).body;
+    const payload = { location_id: rec.output_location_id, batch_id: rec.batches[0].id, quantity: 2, notes: 'Original count' };
+    const post = () => ctx.api.post(`/api/job-orders/${mo}/products-in`).set(H()).set('Idempotency-Key', 'rts-bulk-replay-0001');
+    const first = await post().send(payload); expect(first.status).toBe(201);
+    expect((await post().send(payload)).body).toEqual(first.body); expect(await onHand(product)).toBe(2);
+    expect((await post().send({ ...payload, quantity: 3 })).status).toBe(409); expect(await onHand(product)).toBe(2);
+    const remaining = (await ctx.api.get(`/api/job-orders/${mo}/receivable`).set(H())).body;
+    expect(remaining.batches[0].remaining_qty).toBe(3);
+    expect((await ctx.api.get('/api/job-orders/production-receipts?job_order_id=' + mo).set(H())).body).toHaveLength(1);
+  });
+
   it("the batch's own QA sign-off status is untouched by receiving (separate concern)", async () => {
     const { mo } = await releasedMO('PR6', 2, 0);
     await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 2 });

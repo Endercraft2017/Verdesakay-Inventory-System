@@ -136,8 +136,8 @@ router.get('/orders/:id/unit', releaseGate, (req, res) => {
   const code = String(req.query.code ?? '').trim();
   if (!saleOrder(id)) { res.status(404).json({ error: 'Sale order not found' }); return; }
   const u = queryOne<{ id: number; identifier: string | null; status: string; order_id: number | null; product_item_id: number | null;
-    product_name: string; location_name: string | null; order_number: string | null; receipt_number: string | null }>(
-    `SELECT u.id, u.identifier, u.status, u.order_id, u.product_item_id, j.product_name, l.name AS location_name, o.number AS order_number,
+    product_name: string; location_id: number | null; location_name: string | null; order_number: string | null; receipt_number: string | null }>(
+    `SELECT u.id, u.identifier, u.status, u.order_id, u.product_item_id, u.location_id, j.product_name, l.name AS location_name, o.number AS order_number,
             (SELECT r.number FROM production_receipt_items ri JOIN production_receipts r ON r.id = ri.receipt_id
               WHERE ri.unit_id = u.id ORDER BY ri.id DESC LIMIT 1) AS receipt_number
      FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id LEFT JOIN locations l ON l.id = u.location_id

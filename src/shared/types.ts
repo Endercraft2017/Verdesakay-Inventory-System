@@ -383,6 +383,8 @@ export interface JobOrder {
   created_by_name?: string | null;
   released_by_name?: string | null;
   approved_by_name?: string | null;
+  /** Content revision of the reviewed plan, excluding changing live stock. */
+  approval_revision?: string;
   warehouse_accepted_by_name?: string | null;
   prepared_by_name?: string | null;
   paused_by_name?: string | null;

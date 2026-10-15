@@ -154,6 +154,16 @@ describe('sale-order release', () => {
     expect((await ctx.api.post(`/api/orders/${so}/release`).set(H()).send({ codes })).status).toBe(200);
   });
 
+  it('replays decimal allocation once without deducting stock and refuses a changed body on its key', async () => {
+    const raw = await mkItem({ name: 'Measured replay goods', quantity: 10 });
+    const so = await saleOrder([{ name: 'Measured replay goods', item_id: raw, quantity: 5, unit_price: 10 }], 'approved');
+    const send = () => ctx.api.post(`/api/orders/${so}/release`).set(H()).set('Idempotency-Key','mobile-bulk-allocation-0001');
+    const payload = { bulk: [{ item_id: raw, quantity: 2.5 }] };
+    expect((await send().send(payload)).status).toBe(200); expect((await send().send(payload)).status).toBe(200);
+    expect((await getOrder(so)).items[0].released_qty).toBe(2.5); expect(await onHand(raw)).toBe(10);
+    expect((await send().send({ bulk: [{ item_id: raw, quantity: 3 }] })).status).toBe(409); expect((await getOrder(so)).items[0].released_qty).toBe(2.5);
+  });
+
   it('refuses ambiguous duplicate-item sales at intake', async () => {
     const raw = await mkItem({ name: 'R3 Duplicate Widget', quantity: 10 });
     const created = await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'ACME', status: 'approved', items: [

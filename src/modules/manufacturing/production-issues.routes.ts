@@ -14,11 +14,12 @@ import {
 } from '../../shared/validation';
 import type { ProductionIssue } from '../../shared/types';
 import { syncClass } from '../../sync';
+import { LINE, INSPECT, RTS } from '../../shared/desk-access';
 
 const router = Router();
 router.use(requireAuth);
 
-const readGate = requireAnyPermission(['production.view']);
+const readGate = requireAnyPermission(['production.view', ...LINE, ...INSPECT, ...RTS, 'inventory.adjust']);
 // Anyone working the job order can report: line lead, QC/QA inspectors, the RTS clerk (a
 // product-data mismatch, which holds the unit out of stock — see rts.ts), the warehouse, managers.
 const reportGate = requireAnyPermission([
@@ -55,6 +56,10 @@ function unitError(jobOrderId: number, unitId: number | null | undefined): strin
 
 // GET /api/production-issues?job_order_id=&unit_id=&status=open|resolved
 router.get('/', readGate, (req, res) => {
+  // Narrow floor desks read reports for a particular unit, not the company-wide feed.
+  if (!req.user!.permissions.includes('production.view') && !(Number.isSafeInteger(Number(req.query.unit_id)) && Number(req.query.unit_id) > 0)) {
+    res.status(403).json({ error: 'Open a unit to view its issue reports.' }); return;
+  }
   const where: string[] = [];
   const params: unknown[] = [];
   if (req.query.job_order_id) { where.push('pi.job_order_id = ?'); params.push(Number(req.query.job_order_id)); }
@@ -69,6 +74,7 @@ router.get('/', readGate, (req, res) => {
 router.get('/:id', readGate, (req, res) => {
   const issue = loadIssue(Number(req.params.id));
   if (!issue) { res.status(404).json({ error: 'Issue not found' }); return; }
+  if (!req.user!.permissions.includes('production.view') && issue.unit_id == null && !canManage(req, issue)) { res.status(403).json({ error: 'This desk reads unit-linked reports only.' }); return; }
   res.json(issue);
 });
 

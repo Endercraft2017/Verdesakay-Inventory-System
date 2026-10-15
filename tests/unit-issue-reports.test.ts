@@ -1,0 +1,62 @@
+import { beforeAll, afterAll, describe, it, expect } from 'vitest';
+import { setupApp, cleanup, login, createEmployee, addSerializedUnits, type TestContext } from './helpers';
+let ctx: TestContext, admin: string, qc: { token: string }, qa: { token: string }, manager: { token: string }, jo: number, units: number[], product: number;
+const H = (token = admin) => ({ Authorization: `Bearer ${token}` });
+const image = Buffer.from('separate-issue-photo');
+beforeAll(async () => {
+  ctx = await setupApp(); admin = await login(ctx.api);
+  qc = await createEmployee(ctx.api, admin, { role: 'qc_inspector' }); qa = await createEmployee(ctx.api, admin, { role: 'qa_inspector' }); manager = await createEmployee(ctx.api, admin, { role: 'production_manager' });
+  product = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'Issue-report bike', quantity: 0 })).body.id;
+  const part = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'Issue-report part', quantity: 10 })).body.id;
+  await ctx.api.put('/api/finished-products/' + product).set(H()).send({ components: [{ component_item_id: part, quantity: 1 }] });
+  const created = await ctx.api.post('/api/job-orders').set(H()).send({ product_item_id: product, qty_ordered: 2, qc_stages: 2 });
+  expect(created.status, JSON.stringify(created.body)).toBe(201); jo = created.body.id;
+  await ctx.api.post(`/api/job-orders/${jo}/approve`).set(H());
+  await ctx.api.post('/api/job-orders/warehouse-accept').set(H()).send({ job_order_ids: [jo] });
+  await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id: jo }] });
+  await ctx.api.post(`/api/job-orders/${jo}/release`).set(H()); await ctx.api.post(`/api/job-orders/${jo}/accept`).set(H()).send({});
+  units = await addSerializedUnits(ctx.api, admin, jo, 2, 'ISSUE');
+});
+afterAll(() => cleanup(ctx));
+const create = (token: string, unit: number, area: string, key: string) => ctx.api.post('/api/production-issues').set(H(token)).set('Idempotency-Key', key).send({ job_order_id: jo, unit_id: unit, category: area, severity: 'high', description: area + ' finding' });
+const photo = (token: string, issue: number, key: string) => ctx.api.post('/api/attachments').set(H(token)).set('Idempotency-Key', key).field('kind', 'production_issue').field('ref_id', String(issue)).attach('image', image, 'finding.jpg');
+let chassis: number, fairings: number, chassisPhoto: number;
+describe('separate unit findings and photos', () => {
+  it('keeps chassis and fairings reports/photos separate and safely replays both stages', async () => {
+    const a = await create(qc.token, units[0]!, 'Chassis', 'report-chassis-0001');
+    const replay = await create(qc.token, units[0]!, 'Chassis', 'report-chassis-0001');
+    const b = await create(qc.token, units[0]!, 'Fairings', 'report-fairings-0001');
+    expect(a.status).toBe(201); expect(replay.body.id).toBe(a.body.id); expect(b.body.id).not.toBe(a.body.id); chassis = a.body.id; fairings = b.body.id;
+    const pa = await photo(qc.token, chassis, 'photo-chassis-0001'); chassisPhoto = pa.body.id;
+    expect(pa.status).toBe(201); expect((await photo(qc.token, chassis, 'photo-chassis-0001')).body.id).toBe(chassisPhoto);
+    expect((await photo(qc.token, fairings, 'photo-fairings-0001')).status).toBe(201);
+    const photos = await ctx.api.get('/api/attachments?kind=production_issue&ref_id=' + chassis).set(H(qc.token));
+    expect(photos.body).toHaveLength(1); expect(photos.body[0]).toMatchObject({ id: chassisPhoto, inspection_available: true });
+    expect((await ctx.api.get(photos.body[0].url).set(H(qa.token))).status).toBe(200);
+    const reports = await ctx.api.get('/api/production-issues?unit_id=' + units[0]).set(H(qa.token));
+    expect(reports.status).toBe(200); expect(reports.body).toHaveLength(2); expect(reports.body.every((i: any) => i.photo_count === 1)).toBe(true);
+    expect((await ctx.api.get('/api/production-issues').set(H(qc.token))).status).toBe(403);
+    const unit = (await ctx.api.get(`/api/job-orders/${jo}/units`).set(H())).body.find((u: any) => u.id === units[0]);
+    expect(unit.status).toBe('pending'); expect((await ctx.api.get('/api/inventory/' + product).set(H())).body.quantity).toBe(0);
+  });
+  it('enforces reporter/manager control of edits, photos, resolve and reopen', async () => {
+    expect((await photo(qa.token, chassis, 'foreign-photo-0001')).status).toBe(403);
+    expect((await ctx.api.delete('/api/attachments/' + chassisPhoto).set(H(qa.token))).status).toBe(403);
+    expect((await ctx.api.put('/api/production-issues/' + chassis).set(H(qa.token)).send({ description: 'Someone else' })).status).toBe(403);
+    expect((await ctx.api.post('/api/production-issues/' + chassis + '/resolve').set(H(qc.token)).send({ resolution: 'Chassis repaired' })).status).toBe(200);
+    expect((await photo(qc.token, chassis, 'resolved-photo-0001')).status).toBe(409);
+    expect((await ctx.api.post('/api/production-issues/' + chassis + '/reopen').set(H(manager.token)).send({})).status).toBe(200);
+    expect((await photo(manager.token, chassis, 'manager-photo-0001')).status).toBe(201);
+    expect((await photo(qc.token, 99999999, 'missing-photo-0001')).status).toBe(404);
+  });
+  it('uses own unused report photos as inspection evidence only for their unit', async () => {
+    const path = `/api/job-orders/${jo}/units/inspect`;
+    const failure = { result: 'fail', disposition: 'repair', remarks: 'Repair chassis', evidence_ids: [chassisPhoto] };
+    expect((await ctx.api.post(path).set(H(qc.token)).send({ ...failure, unit_ids: [units[1]] })).body.blocked).toBe('evidence');
+    expect((await ctx.api.post(path).set(H(qc.token)).send({ ...failure, unit_ids: [units[0]] })).status).toBe(200);
+    expect((await ctx.api.post(path).set(H(qc.token)).send({ ...failure, unit_ids: [units[0]] })).body.blocked).toBe('evidence');
+    const rows = (await ctx.api.get('/api/attachments?kind=production_issue&ref_id=' + chassis).set(H(qc.token))).body;
+    expect(rows.find((a: any) => a.id === chassisPhoto).inspection_available).toBe(false);
+    expect((await ctx.api.delete('/api/attachments/' + chassisPhoto).set(H(qc.token))).status).toBe(409);
+  });
+});

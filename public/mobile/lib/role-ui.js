@@ -68,18 +68,19 @@
       return '<div class="rk-card rk-field' + (tint ? ' tint' : '') + '"><small>' + e(label) + '</small><b>' + e(value) + '</b></div>';
     },
     section: function (text) { return '<h2 class="rk-section">' + e(text) + '</h2>'; },
-    /** rows: [{ name, qty, ok }] — ok false marks a short line. */
+    /** rows: [{ name, qty, ok, detail? }] — ok false marks a short line. */
     lines: function (rows, foot) {
       return '<div class="rk-card rk-lines">' + rows.map(function (r) {
         return '<div class="rk-line' + (r.ok === false ? ' short' : '') + '"><span>' + e(r.name) + '</span><em>' + e(r.qty) + '</em>' +
-          '<img src="/mobile/icons/v2/' + (r.ok === false ? 'short' : 'check-ok') + '.svg" alt="' + (r.ok === false ? 'Short' : 'OK') + '"></div>';
+          '<img src="/mobile/icons/v2/' + (r.ok === false ? 'short' : 'check-ok') + '.svg" alt="' + (r.ok === false ? 'Short' : 'OK') + '">' +
+          (r.detail ? '<small class="rk-line-detail">' + e(r.detail) + '</small>' : '') + '</div>';
       }).join('') + (foot ? '<div class="rk-foot">' + e(foot) + '</div>' : '') + '</div>';
     },
     note: function (tone, html) { return '<div class="rk-note ' + tone + '">' + html + '</div>'; },
     /** For a result an installed PC saved but the cloud hasn't confirmed (API.syncLocal): a
      *  "not final yet" block that follows the action (GET /sync/command/:id) to Confirmed or
      *  Needs attention while it is on screen. Returns an element; nothing when `command` is null. */
-    syncWatch: function (command) {
+    syncWatch: function (command, onState) {
       var box = document.createElement('div');
       if (!command) return box;
       box.className = 'rk-note warn';
@@ -99,6 +100,7 @@
         if (!box.isConnected && tries > 0) return; // screen left
         tries++;
         API.get('/sync/command/' + encodeURIComponent(command)).then(function (r) {
+          if (onState) onState(r);
           if (!paint(r.state, r.error) && tries < 120) setTimeout(poll, 10000);
         }).catch(function () { if (tries < 120) setTimeout(poll, 15000); });
       })();
@@ -112,6 +114,9 @@
     },
     success: function (title, lines) {
       return '<div class="rk-success"><i></i><b>' + e(title) + '</b>' + lines.map(function (l) { return '<span>' + e(l) + '</span>'; }).join('') + '</div>';
+    },
+    result: function (title, label, tone, glyph) {
+      return '<div class="rk-result ' + e(tone || '') + '"><i aria-hidden="true">' + e(glyph) + '</i><b>' + e(title) + '</b><span>' + e(label) + '</span></div>';
     },
     /** buttons: [{ id, label, kind: 'primary'|'secondary', icon? }] */
     actions: function (buttons) {

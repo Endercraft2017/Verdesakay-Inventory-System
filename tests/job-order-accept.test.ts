@@ -34,6 +34,21 @@ async function draftMO(prefix: string, qty: number, qc_stages: number) {
 }
 
 describe('POST /api/job-orders/:id/accept', () => {
+  it('replays the original kit acceptance and rejects a changed note under its key', async () => {
+    const mo = await draftMO('AccRetry', 3, 0);
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post('/api/job-orders/warehouse-accept').set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id: mo }] });
+    await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
+    const headers = { ...H(), 'Idempotency-Key': 'kit-accept-retry-original' };
+    const first = await ctx.api.post(`/api/job-orders/${mo}/accept`).set(headers).send({ notes: 'Original counted kit' });
+    const retry = await ctx.api.post(`/api/job-orders/${mo}/accept`).set(headers).send({ notes: 'Original counted kit' });
+    expect(first.status).toBe(200); expect(retry.status).toBe(200);
+    expect(retry.headers['idempotency-replayed']).toBe('true');
+    expect(retry.body.job_order.accepted_at).toBe(first.body.job_order.accepted_at);
+    expect((await ctx.api.post(`/api/job-orders/${mo}/accept`).set(headers).send({ notes: 'Different kit note' })).status).toBe(409);
+    expect((await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body.accept_notes).toBe('Original counted kit');
+  });
   it('blocks recording output until production accepts the kit', async () => {
     const mo = await draftMO('AccGate', 3, 0);
     await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());

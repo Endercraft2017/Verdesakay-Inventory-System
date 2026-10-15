@@ -5,6 +5,7 @@
     QA/QC gating (qc_stages > 0) and serialized units come in Phase C. */
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
+import { createHash } from 'node:crypto';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { JOB_ORDER_DETAIL, JOB_ORDER_LIST, LINE } from '../../shared/desk-access';
@@ -15,6 +16,7 @@ import {
   jobOrderComponentsSchema,
   jobOrderProgressSchema,
   acceptJobOrderSchema,
+  approveJobOrderSchema,
   addUnitSchema,
   inspectUnitsSchema,
   setUnitIdentifierSchema,
@@ -164,7 +166,9 @@ function hasReceivable(joId: number): boolean {
 function settleJobOrderGl(joId: number, userId: number | null): void {
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', joId);
   if (!jo || (jo.status !== 'completed' && jo.status !== 'cancelled')) return;
-  if (hasReceivable(joId)) return;
+  // Early close stops new output, but built units still need inspection/rework
+  // before receiving. Their material value must remain in WIP until resolved.
+  if (unresolvedCount(joId) > 0 || hasReceivable(joId)) return;
   const bal = jobOrderWipBalance(joId);
   if (Math.abs(bal) < 0.005) return;
   const scrap = r2((jo.qty_scrapped || 0) * componentCostFor(joId).perUnit);
@@ -218,6 +222,13 @@ function loadJobOrder(id: number): JobOrder | null {
   };
   jo.qc_checklist_qc = jo.qc_stages > 0 ? (jo.qc_checklist_qc_snapshot ? snapshot(jo.qc_checklist_qc_snapshot) : checklistForProduct(jo.product_item_id, 1)) : null;
   jo.qc_checklist_qa = jo.qc_stages > 0 ? (jo.qc_checklist_qa_snapshot ? snapshot(jo.qc_checklist_qa_snapshot) : checklistForProduct(jo.product_item_id, 2)) : null;
+  jo.approval_revision = createHash('sha256').update(JSON.stringify({
+    product: [jo.product_item_id, jo.product_name], quantity: jo.qty_ordered,
+    source: jo.source_location_id ?? getDefaultLocationId(), output: jo.output_location_id ?? getDefaultLocationId(),
+    team: jo.team_id, order: jo.order_id, schedule: [jo.planned_start, jo.due_date, jo.priority, jo.work_center], notes: jo.notes,
+    stages: jo.qc_stages, qc: jo.qc_checklist_qc, qa: jo.qc_checklist_qa,
+    components: jo.components.map(c => [c.component_item_id, c.component_name, c.qty_per_unit, c.qty_planned]),
+  })).digest('hex');
   return jo;
 }
 
@@ -952,7 +963,7 @@ router.post('/prepare', writeGate, syncClass('claim'), (req, res) => {
 
 // GET /api/job-orders/:id/availability — stock check before release: each planned component's
 // need vs. on-hand at the source location, plus whether the job order can be released now.
-router.get('/:id/availability', readGate, (req, res) => {
+router.get('/:id/availability', requireAnyPermission(['production.view', 'production.approve']), (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -963,6 +974,7 @@ router.get('/:id/availability', readGate, (req, res) => {
   const prepared = !!jo.prepared_at;
   res.json({
     job_order_id: id,
+    approval_revision: jo.approval_revision,
     status: jo.status,
     source_location_id: jo.source_location_id ?? getDefaultLocationId(),
     source_location_name: jo.source_location_name ?? null,
@@ -988,6 +1000,11 @@ router.post('/:id/approve', approveGate, syncClass('claim', joSite), (req, res) 
     res.status(409).json({ error: `Only a draft job order can be approved (this one is ${jo.status})` });
     return;
   }
+  const { notes, expected_revision } = parseBody(approveJobOrderSchema, req.body ?? {});
+  if (expected_revision && expected_revision !== jo.approval_revision) {
+    res.status(409).json({ code: 'stale_job_order', error: 'The draft plan changed. Refresh and review it before approving.', job_order: jo });
+    return;
+  }
   if (jo.approved_at) {
     // Clash-check (D6): approved elsewhere meanwhile — the site's approval stands (the first
     // approval is kept), flagged for an admin.
@@ -999,7 +1016,6 @@ router.post('/:id/approve', approveGate, syncClass('claim', joSite), (req, res) 
     res.status(409).json({ error: `Already approved by ${jo.approved_by_name ?? 'a manager'}` });
     return;
   }
-  const { notes } = parseBody(acceptJobOrderSchema, req.body);
   run(
     "UPDATE job_orders SET approved_by = ?, approved_at = datetime('now'), approve_notes = ?, updated_at = datetime('now') WHERE id = ?",
     req.user!.id, notes ?? null, id
@@ -1342,7 +1358,7 @@ function returnUnused(joId: number, number: string, sourceLocId: number | null, 
   }
 }
 
-/** When a job order is force-closed or cancelled, tidy its loose ends: cancel any parts
+/** When a job order is cancelled, tidy its loose ends: cancel any parts
  *  requests the warehouse never acted on, and treat units still awaiting inspection or
  *  out for repair as scrapped (their components were already consumed → they settle to
  *  Manufacturing Variance). Returns the number of units scrapped. Caller is in a txn. */
@@ -1463,7 +1479,8 @@ router.post('/:id/close', closeEarlyGate, syncClass('claim', joSite), (req, res)
   db.exec('BEGIN');
   try {
     logLineEvent(id, 'close_early', why.reason, req.user!.id);
-    resolveDanglingUnits(id, `${jo.number} closed early`);
+    // Preserve all built units and their open repair requests. Only cancellation
+    // explicitly writes off unresolved output; closing early stops further builds.
     returnUnused(id, jo.number, jo.source_location_id, req.user!.id);
     maybeCloseBatches(id);
     run(
@@ -1663,10 +1680,13 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
   // this inspector and not already behind an earlier result.
   const evidence = new Map<number, number[]>();
   if (result === 'fail' && (evidence_ids ?? []).length) {
-    for (const a of queryAll<{ id: number; ref_id: number }>(
-      `SELECT id, ref_id FROM attachments WHERE kind = 'qc_unit' AND uploaded_by = ? AND id IN (${evidence_ids!.map(() => '?').join(',')})
-         AND id NOT IN (SELECT attachment_id FROM qc_evidence)`, req.user!.id, ...evidence_ids!
-    )) evidence.set(a.ref_id, [...(evidence.get(a.ref_id) ?? []), a.id]);
+    for (const a of queryAll<{ id: number; unit_id: number }>(
+      `SELECT a.id, CASE WHEN a.kind = 'qc_unit' THEN a.ref_id ELSE pi.unit_id END AS unit_id
+       FROM attachments a LEFT JOIN production_issues pi ON a.kind = 'production_issue' AND pi.id = a.ref_id
+       WHERE (a.kind = 'qc_unit' OR (a.kind = 'production_issue' AND pi.job_order_id = ? AND pi.unit_id IS NOT NULL))
+         AND a.uploaded_by = ? AND a.id IN (${evidence_ids!.map(() => '?').join(',')})
+         AND a.id NOT IN (SELECT attachment_id FROM qc_evidence)`, id, req.user!.id, ...evidence_ids!
+    )) evidence.set(a.unit_id, [...(evidence.get(a.unit_id) ?? []), a.id]);
   }
   // Inspectors always need evidence, even when a direct API caller omits X-Client.
   // An inventory.adjust integration without an app header retains the existing
@@ -1789,10 +1809,14 @@ router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'),
   const u = queryOne<JobOrderUnit>('SELECT * FROM job_order_units WHERE id = ? AND job_order_id = ?', Number(req.params.unitId), id);
   if (!u) { res.status(404).json({ error: 'Unit not found on this job order' }); return; }
   if (u.status !== 'hold') { res.status(409).json({ error: `This unit isn't on hold (it is ${u.status}).` }); return; }
-  const { outcome, disposition, remarks, repair } = parseBody(holdDecisionSchema, req.body);
+  const { outcome, disposition, remarks, repair, expected_hold_record_id } = parseBody(holdDecisionSchema, req.body);
   const held = queryOne<{ id: number; inspector_id: number | null; checklist: string | null }>(
     "SELECT id, inspector_id, checklist FROM qc_records WHERE unit_id = ? AND result = 'hold' ORDER BY id DESC LIMIT 1", u.id
   );
+  if (expected_hold_record_id && held?.id !== expected_hold_record_id) {
+    res.status(409).json({ code: 'stale_hold', error: 'This unit has a different hold record. Refresh and review the current hold before deciding.' });
+    return;
+  }
   const stage = u.stage + 1;
   const note = `Hold decision: ${remarks}`;
   db.exec('BEGIN');

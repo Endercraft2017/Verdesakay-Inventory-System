@@ -112,6 +112,10 @@
     }
 
     var acts = mEl('<div class="m-actions"></div>');
+    if (u && ['production.inspect_qc', 'production.inspect_qa', 'production.manage', 'production.record'].some(MApp.can)) {
+      var issues = mEl('<button class="m-btn m-btn-secondary">Issues and photos</button>');
+      issues.onclick = function () { MApp.go('unit-issues', { unit: u.id, role: MApp.can('production.inspect_qa') ? 'qa' : 'qc' }); }; acts.appendChild(issues);
+    }
     if (u) {
       var printBtn = mEl('<button class="m-btn">Print label</button>');
       printBtn.onclick = function () { mProductionPrint.printUnitRecords([d]); };

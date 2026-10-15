@@ -118,6 +118,26 @@ describe('QA hold for review', () => {
     expect((await decide(pm.token, u, { outcome: 'pass', remarks: 'again' })).status).toBe(409);
   });
 
+  it('binds a decision to the reviewed hold episode and exactly replays one outcome', async () => {
+    const u = units[4]!;
+    const ev = await photo(qa.token, u);
+    expect((await inspect(phone(qa.token), { unit_ids: [u], result: 'fail', disposition: 'hold', remarks: 'First held finding', evidence_ids: [ev] })).status).toBe(200);
+    const first = (await ctx.api.get('/api/qc/holds').set(bearer(pm.token))).body.find((h: { id: number }) => h.id === u);
+    expect((await decide(pm.token, u, { outcome: 'rectify', remarks: 'Correct first finding', expected_hold_record_id: first.record_id })).status).toBe(200);
+    const recheckPhoto = await photo(qa.token, u);
+    const heldAgain = await inspect(phone(qa.token), { unit_ids: [u], result: 'fail', disposition: 'hold', remarks: 'New hold after correction', evidence_ids: [recheckPhoto] });
+    expect(heldAgain.status, JSON.stringify(heldAgain.body)).toBe(200);
+    const current = (await ctx.api.get('/api/qc/holds').set(bearer(pm.token))).body.find((h: { id: number }) => h.id === u);
+    const stale = await decide(pm.token, u, { outcome: 'pass', remarks: 'Old held finding accepted', expected_hold_record_id: first.record_id });
+    expect(stale.status).toBe(409); expect(stale.body.code).toBe('stale_hold'); expect((await unit(u)).status).toBe('hold');
+    const before = (await ctx.api.get(`/api/job-orders/${jo}`).set(H())).body.qty_done;
+    const send = () => ctx.api.post(`/api/job-orders/${jo}/units/${u}/hold-decision`).set(bearer(pm.token)).set('Idempotency-Key', 'hold-episode-retry-001').send({ outcome: 'pass', remarks: 'Current finding accepted', expected_hold_record_id: current.record_id });
+    const accepted = await send(), retry = await send();
+    expect(accepted.status).toBe(200); expect(retry.body).toEqual(accepted.body); expect(retry.headers['idempotency-replayed']).toBe('true');
+    expect((await ctx.api.get(`/api/job-orders/${jo}`).set(H())).body.qty_done).toBe(before + 1);
+    expect((await unit(u)).status).toBe('passed');
+  });
+
   it('another QA inspector can send a held unit to rectification or fail it', async () => {
     const photos = await Promise.all([photo(qa.token, units[2]!), photo(qa.token, units[3]!)]);
     await inspect(bearer(qa.token), { unit_ids: [units[2], units[3]], result: 'fail', disposition: 'hold', remarks: 'Scratch on the fender', evidence_ids: photos });

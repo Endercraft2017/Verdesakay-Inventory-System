@@ -185,7 +185,16 @@ raised by the sales-order shortfall flow.
      `/release` 409s (`needs_approval: true`) until approved. Editing the draft
      (`PUT /:id`, `PUT /:id/components`) clears the approval. `inventory.adjust` does
      *not* grant it, so the warehouse can't approve its own release. Short stock doesn't
-     block approval — the response lists `shortfalls` as a warning.
+     block approval — the response lists `shortfalls` as a warning. Detail and availability
+     expose `approval_revision`; approval's optional `expected_revision` rejects a
+     changed reviewed plan with `409 code: stale_job_order`. The content hash includes
+     draft/components/checklists, excluding live stock. Narrow approvers can read
+     this job's availability without broad inventory access. Mobile Work, Production
+     hub and manager control expose Awaiting approval. Review includes locations,
+     quantity, schedule, inspection stages, notes, component snapshot and stock holds;
+     short demand requires an explicit warehouse-follow-up acknowledgement. Persisted
+     approval attempts retain the original plan/note/revision/key through restart and
+     remain discoverable after the server queue clears; local results stay pending.
    - **Stock check** — `GET /:id/availability` returns each planned component's
      need / have / short at the source location plus `in_stock`, `approved`, `releasable`.
    - Queues: `GET /job-orders?stage=awaiting_approval` (manager); for the warehouse,
@@ -206,7 +215,7 @@ raised by the sales-order shortfall flow.
       `prepared_by/_at`; a partial pick is saved but stays in `preparing`. Picks are
       checked against on-hand stock minus what other unreleased kits already picked
       and open repair-part holds (`pickedElsewhere()`), so two kits can't claim the same parts.
-      Desktop can save a partial pick or correct a prepared kit before slip issuance. The
+      Desktop and mobile can save a partial pick or correct a prepared kit before slip issuance. The
       pick list and availability response show stock held elsewhere and the free amount.
       **Branch — short:**
       the pick returns 400 with `shortfalls`, and
@@ -221,13 +230,21 @@ raised by the sales-order shortfall flow.
       are attachments of kind `parts_release` on the slip. The final release rechecks
       free stock after other kit picks and repair holds; a changed commitment blocks the
       slip before any stock movement.
-   - **Mobile (warehouse, Figma 62:*)** — `#/kit-release` walks the same three server steps as
-     one guided flow: queue (Ready / Blocked by availability / Released awaiting acceptance) →
-     verify kit (`GET /:id/availability`) → confirm with a "picked and counted" acknowledgement
-     (runs accept → prepare → release in order) → released handoff. **Branch — short stock:**
-     a shortfall (from availability or `prepare`) shows Release blocked with nothing deducted;
-     "Report shortage" files a tracked `production_issues` row (category `Parts shortage`),
-     not a loose message. Online-only; Quick Orbit "Scan job order" opens it by JO number.
+   - **Mobile (warehouse, Figma 62:*)** — `#/kit-release` separates acceptance,
+     partial/full picked counts (and corrections), and final release. Ready requires
+     current `releasable`; unknown stock checks and saved attempts go to Review.
+     Verification shows source location, needed/picked, on-hand/held/free quantities.
+     Picking reserves stock; only the final numbered slip deducts it. Confirmation
+     rechecks availability, and unsaved count edits block release. Every action saves
+     its immutable payload/key to account/server-scoped IndexedDB before POST.
+     Interrupted responses reload current stages/slip and offer explicit original-key
+     replay; each stage can save independently. Site-PC acknowledgements stay pending
+     through their sync command, including cached-response replay. A deterministic
+     refusal requires review before a fresh corrected attempt; expired or conflicting
+     keys require reconciliation. Both prepare and release shortage shapes are shown.
+     Shortage reports include source/on-hand/held/free stock and suggest commitment
+     review where appropriate. Cancelled deep links cannot show handoff success.
+     Online-only; Quick Orbit "Scan job order" opens it by JO number.
    - **Mobile (production, Figma 66:*)** — `#/job-orders`: the Production Lead board (To accept /
      Active / Paused) → Accept parts kit (count acknowledgement) → Active production → Record
      production (how many) → Unit details, saved **one unit at a time** (identifier + photo per
@@ -259,6 +276,18 @@ raised by the sales-order shortfall flow.
    `needs_photo` if the photo is missing. `/progress`'s bulk `done_delta` refuses to run
    on a serialized job order for this reason. Either path consumes components by BOM
    ratio and moves the job order to `in_progress`.
+   - **Mobile serialized recovery** — before upload, persist the identifier, photo,
+     batch and stable request key in account/server-scoped IndexedDB. A missing
+     response is **confirmation unknown**, not proof of failure. After a browser
+     restart, explicit recovery retries the immutable attempt with its original
+     key and retains the returned unit ID. Confirmed rows are not resent; site-PC
+     local results show confirmation pending. Storage failure blocks a new upload,
+     and stale tabs must reload rather than overwrite newer draft state.
+   - **Mobile acceptance/bulk/scrap recovery** — persist an immutable JSON request
+     and key before sending. Unknown results restore after restart for explicit
+     same-key retry. Refused requests need review before a fresh corrected attempt;
+     local site-PC saves remain pending. Pending, rework and held units reduce the
+     still-to-record count, and invalid/fractional quantities are rejected on the phone.
    - **Pause / resume / close early** — `POST /:id/pause|resume|close {reason}`. Pause and
      resume: `inventory.adjust`, `production.pause` (a lead trusted to stop the line) or
      `production.manage` (Production Manager). Close early (returns unused components):
@@ -266,6 +295,10 @@ raised by the sales-order shortfall flow.
      the broad `inventory.adjust` override (400 otherwise). `paused_by/_at` + `pause_reason`
      hold the current hold; every action is appended to `job_order_events` (actor, reason,
      time) — `GET /:id/events`. A manager still cannot release, cancel or delete.
+     Early close stops new output and returns unused components, preserving built
+     pending/rework/held units and their repair requests for QC/QA and receiving.
+     WIP settlement waits for unresolved or unreceived output. Cancellation retains
+     its separate write-off behavior; closing early does not scrap built units.
    - **Issue reports** (`/api/production-issues`, `production-issues.routes.ts`) — anyone
      on the floor (`production.record`, `inspect_qc`/`inspect_qa`, `inventory.adjust`,
      `production.approve`) files an issue against the whole job order or one unit
@@ -299,11 +332,29 @@ raised by the sales-order shortfall flow.
      A returned unit shows the original issue and failed items for reinspection; waiting parts
      requests block the start. A failing / held result from the phone or desktop needs an evidence photo of
      that unit (uploaded first, sent as `evidence_ids`), else 409 and nothing is recorded.
+   - **Separate unit issue reports:** QC/QA verify/recheck/review and the unit record
+     open **Issues and photos** (`#/unit-issues`). Each chassis/fairings/etc. finding
+     gets its own report and photo set. Multiple independent drafts retain compressed
+     bytes across restart; Work exposes saved reports. Immutable report/photo keys
+     recover uncertain submissions without duplicates; site-PC results remain pending.
+     Reporters/managers edit open reports, add photos, resolve or reopen. Reporting
+     remains informational; inspection disposition advances the unit. Own unused
+     unit-linked report photos may be reused as inspection evidence without another
+     upload; backend inspector/unit/one-record checks remain in force, and evidence
+     photos cannot be deleted.
    - **Branch — QA hold for review** (final pass only): the unit goes to `hold` — out of RTS, and
      the job order can't complete. Every QA inspector and `production.qa_review` holder is
      pushed; one of them decides it on the Hold tab (or the desktop job order) with a reason:
      **pass** (on to stage 6), **rectify** (rework, back to the Recheck list) or **fail**
      (scrap / dispose / recycle). The inspector who held it hears the outcome.
+     Mobile saves the exact decision/reason/disposition/station and original key to
+     scoped IndexedDB before posting; unknown outcomes replay unchanged after restart.
+     Saved decisions remain in the hold queue after the live hold clears. Optional
+     `expected_hold_record_id` prevents an old reviewed decision applying to a later
+     hold (`409 stale_hold`). Refused attempts require current-hold review and a fresh
+     corrected key; expired/key-conflict attempts require reconciliation. Local site-PC
+     results stay pending, and lookup failure/timeout means unknown count, never empty.
+     A passed hold decision only advances to Products In; it does not add stock.
 5. **Repair parts handoff** (`manufacturing` → `inventory`) — a side branch off
    stage 4: the warehouse parts clerk (`parts_clerk` role, or `production.repairs`)
    accepts or rejects the request (`POST /production/repairs/:id/accept|reject`);
@@ -342,7 +393,15 @@ raised by the sales-order shortfall flow.
      across job orders): identify → verify (final-pass record, SKU) → stock details (storage
      location) → optional group of same-SKU units → review → final duplicate check (`POST
      /api/rts/check`) → confirm with a physical-verification tick → `products-in`, one call per
-     job order, online-only with an idempotency key. **Branch — duplicate:** a unit already in
+     job order, online-only with an idempotency key. Exact group/batch requests and
+     per-job receipt/command statuses persist before posting in account/server-scoped
+     IndexedDB. Saved receipts remain discoverable after queue removal/failure;
+     explicit original-key retries survive restart, skip confirmed entries and retain
+     unresolved/not-started entries. Site-PC saves remain pending until command
+     confirmation; failed/conflicting commands and expired keys require reconciliation.
+     Definitive refusals return to live review for a corrected key. Overlapping
+     candidates recover their existing receipt, and batch revisions prevent competing
+     tab attempts. No background offline stock posting is added. **Branch — duplicate:** a unit already in
      finished goods or a serial already in stock is refused (409, existing receipt shown), zero
      stock change; the clerk removes it from the group. **Branch — location:** a truck/transit or
      missing location, or one without room under its capacity (location_capacities), is refused
@@ -925,3 +984,15 @@ running element without replacing the selected body → existing history/save/pr
 Editor select theme → fixed single-arrow image, no-repeat, right placement and size longhands → survive mounted sidebar background shorthand. Wide desktop media rule → horizontal command wrappers → unchanged command listeners and selection/history. Smaller screens retain bounded wrapping and keyboard access.
 
 Descriptive text-type options retain p/h1–h6 command values → existing formatBlock command/history/outline pipeline. Style preview cards retain style-apply/style-edit keys → existing named-style apply/update pipeline; display role descriptions and px-to-pt font metadata without editing content when opened.
+
+### Mobile warehouse acceptance/allocation recovery (2026-10-15)
+
+Release queue → To accept / Allocating / Ready / Blocked → ship-from review → exact
+acceptance/allocation request retained before POST → authority confirmation or
+saved recovery. Uncertain outcomes explicitly reuse the original key and payload;
+site-PC acknowledgements remain pending until their original command confirms.
+Refusals require fresh stock/order review and corrected keys; expired/conflicting
+attempts require reconciliation. Decimal bulk allocation is capped by free stock
+at the ship-from warehouse. Allocation remains a reservation; the release slip is
+the physical stock-out stage. Final slip/proof recovery and delivery are subsequent
+steps, alongside the remaining legacy Pick/Delivery integration audit.

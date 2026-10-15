@@ -7,13 +7,14 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
+import { IDBFactory } from 'fake-indexeddb';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const PUBLIC = path.join(ROOT, 'public');
 const EXPECTED_ROUTES = [
   'home', 'work', 'production', 'stock-move', 'damage', 'transfer', 'new-item', 'assign-qr', 'scan',
   'item', 'low-stock', 'location', 'my-log', 'cycle-count', 'receive', 'pick',
-  'batch', 'job-orders', 'kit-release', 'qc', 'repairs', 'record', 'receiving', 'so', 'report-problem', 'anonymous-report', 'settings', 'queue', 'clock',
+  'batch', 'job-orders', 'kit-release', 'unit-issues', 'qc', 'repairs', 'record', 'receiving', 'so', 'report-problem', 'anonymous-report', 'settings', 'queue', 'clock',
   'inbox', 'directory', 'payslips', 'schedule', 'requests', 'tasks', 'notes', 'guides',
   'announcements', 'notifications', 'confidential-reports', 'time-fix', 'approvals', 'allocate', 'deliveries',
 ];
@@ -88,9 +89,10 @@ describe('mobile bootstrap', () => {
       exercised under a specific account's actual permissions, not just route registration. */
   /** `respond(url, init)` may return a JSON body for a URL; anything it doesn't answer (returns
    *  undefined) rejects like a dead network, which is the default for every call. */
-  async function bootAs(me: Record<string, unknown>, respond?: (url: string, init: any) => unknown) {
+  async function bootAs(me: Record<string, unknown>, respond?: (url: string, init: any) => unknown, factory = new IDBFactory()) {
     const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://localhost/m' });
     const win = dom.window as unknown as Record<string, any>;
+    win.indexedDB = factory;
     win.matchMedia = win.matchMedia || (() => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
     win.fetch = (url: string, init: unknown) => {
       const out = respond ? respond(String(url), init) : undefined;
@@ -412,93 +414,159 @@ describe('mobile bootstrap', () => {
 
   describe('warehouse kit release (Figma 62:*)', () => {
     const WH = { id: 9, username: 'wh', full_name: 'Ana Alvarez', role: 'warehouse', employee: true, modules: null,
-      permissions: ['inventory.view', 'inventory.adjust', 'inventory.mobile', 'messages.view', 'messages.send'] };
-    const JO = { id: 184, number: 'JO-2026-184', product_name: 'K4 Electric Bike', qty_ordered: 12, status: 'draft',
-      approved_at: '2026-09-28 08:00:00', warehouse_accepted_at: null, prepared_at: null, team_name: 'Line 2',
-      source_location_name: 'Main Parts', due_date: null };
-    const LINES = [{ component_item_id: 1, component_name: 'Controller 60 V', need: 12, have: 30, short: 0, picked: 0 }];
+      permissions: ['inventory.view', 'inventory.adjust', 'inventory.mobile'] };
+    const BASE = { id: 184, number: 'JO-2026-184', product_name: 'K4 Electric Bike', qty_ordered: 12, status: 'draft',
+      approved_at: 'approved', warehouse_accepted_at: null, prepared_at: null, source_location_name: 'Main Parts' };
+    const line = { component_item_id: 1, component_name: 'Controller 60 V', need: 12, have: 30, held_elsewhere: 8, available: 22, short: 0, picked: 0 };
+    const wait = () => new Promise((r) => setTimeout(r, 80));
+    const click = (win: any, id: string) => (win.document.getElementById(id) as HTMLButtonElement).click();
+    const ack = (win: any) => { const el = win.document.getElementById('kr-ack'); el.checked = true; el.dispatchEvent(new win.Event('change')); };
+    function fixture(start: Record<string, any> = {}, options: { lost?: string; local?: string; refusal?: any } = {}) {
+      const jo: Record<string, any> = { ...BASE, ...start };
+      const lines = [{ ...line, picked: jo.prepared_at ? 12 : 0 }];
+      const requests: { path: string; key: string; payload: any }[] = [];
+      const applied = new Map<string, any>();
+      let lose = !!options.lost;
+      const respond = (url: string, init: any) => {
+        if (init?.method === 'POST') {
+          const key = init.headers['Idempotency-Key'], payload = JSON.parse(init.body);
+          requests.push({ path: url, key, payload });
+          if (options.refusal) return options.refusal;
+          if (!applied.has(key)) {
+            if (url.endsWith('/warehouse-accept')) jo.warehouse_accepted_at = 'accepted';
+            else if (url.endsWith('/prepare')) { lines[0]!.picked = payload.job_orders[0].lines[0]!.qty_picked; jo.prepared_at = lines[0]!.picked === 12 ? 'prepared' : null; }
+            else if (url.endsWith('/release')) { jo.status = 'released'; jo.released_at = '2026-10-14 01:00:00'; jo.parts_slip_number = 'PRS-00007'; }
+            applied.set(key, { ok: true, job_order: { ...jo }, slip: url.endsWith('/release') ? { number: 'PRS-00007' } : null });
+          }
+          if (lose && url.endsWith(options.lost!)) { lose = false; return undefined; }
+          const body = applied.get(key);
+          return options.local ? { __headers: { 'X-Sync-State': 'local', 'X-Sync-Command': options.local }, body } : body;
+        }
+        if (url === '/api/job-orders/184') return { ...jo };
+        if (url === '/api/job-orders/184/availability') return { lines: lines.map(l => ({ ...l })), shortfalls: lines.filter(l => l.short > 0), releasable: !!jo.prepared_at && !!jo.warehouse_accepted_at && jo.status === 'draft' && !lines.some(l => l.short > 0) };
+        if (url === '/api/sync/command/local-kit') return { state: 'local' };
+        return undefined;
+      };
+      return { jo, lines, requests, applied, respond };
+    }
+    async function open(win: any, step = '') { win.location.hash = '#/kit-release?id=184' + (step ? '&step=' + step : ''); await wait(); }
+    async function review(win: any) { click(win, 'kr-review'); await wait(); }
 
-    it('queues approved kits as Ready or Blocked from availability', async () => {
-      const win = await bootAs(WH, (url: string) => {
-        if (url === '/api/job-orders?stage=awaiting_release') return [JO, { ...JO, id: 179, number: 'JO-2026-179', product_name: 'Z10 Electric Bike' }];
+    it('separates ready, picking, shortage and failed availability checks', async () => {
+      const win = await bootAs(WH, (url) => {
+        if (url === '/api/job-orders?stage=awaiting_release') return [BASE, { ...BASE, id: 185 }, { ...BASE, id: 186 }, { ...BASE, id: 187 }];
         if (url === '/api/job-orders?status=released') return [];
-        if (url === '/api/job-orders/184/availability') return { lines: LINES, shortfalls: [] };
-        if (url === '/api/job-orders/179/availability') return { lines: [], shortfalls: [{ component_name: 'Bolt M8', need: 40, have: 25, short: 15 }] };
+        if (url === '/api/job-orders/184/availability') return { lines: [line], shortfalls: [], releasable: true };
+        if (url === '/api/job-orders/185/availability') return { lines: [line], shortfalls: [], releasable: false };
+        if (url === '/api/job-orders/186/availability') return { lines: [line], shortfalls: [{ ...line, short: 3 }], releasable: false };
         return undefined;
       });
-      win.location.hash = '#/kit-release';
-      await new Promise((r) => setTimeout(r, 40));
+      win.location.hash = '#/kit-release'; await wait();
       const view = win.document.getElementById('m-view');
-      expect(view.getAttribute('data-figma-node')).toBe('62:14');
       expect(view.textContent).toContain('1 kit ready');
-      expect(view.textContent).toContain('1 blocked by shortage');
-      expect(view.textContent).toContain('JO-2026-184');
-      expect(view.textContent).not.toContain('JO-2026-179'); // on the Blocked tab, not Ready
-      (view.querySelector('[data-tab="blocked"]') as HTMLButtonElement).click();
-      expect(view.textContent).toContain('JO-2026-179');
+      expect(view.querySelectorAll('[data-id]')).toHaveLength(1);
+      view.querySelector('[data-tab="unknown"]').click();
+      expect(view.textContent).toContain('Availability unknown');
+      expect(view.querySelector('[data-id]').dataset.id).toBe('187');
+      view.querySelector('[data-tab="preparing"]').click();
+      expect(view.textContent).toContain('Awaiting warehouse');
+      view.querySelector('[data-tab="blocked"]').click();
       expect(view.textContent).toContain('1 part short');
     });
 
-    it('needs the kit acknowledgement, then accepts → picks → releases in order', async () => {
-      const posts: string[] = [];
-      let released = false;
-      const RELEASED = { ...JO, status: 'released', released_at: '2026-09-28 01:42:00', released_by_name: 'Ana Alvarez', parts_slip_number: 'PRS-00007' };
-      const win = await bootAs(WH, (url: string, init: { method?: string }) => {
-        if (init && init.method === 'POST') {
-          posts.push(url);
-          if (url.endsWith('/release')) { released = true; return { ok: true, job_order: RELEASED, slip: { id: 1, number: 'PRS-00007' } }; }
-          return { ok: true };
-        }
-        if (url === '/api/job-orders/184') return released ? RELEASED : JO;
-        if (url === '/api/job-orders/184/availability') return { lines: LINES, shortfalls: [], source_location_name: 'Main Parts' };
-        return undefined;
-      });
-      win.location.hash = '#/kit-release?id=184';
-      await new Promise((r) => setTimeout(r, 40));
-      const doc = win.document;
-      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('62:79');
-      (doc.getElementById('kr-go') as HTMLButtonElement).click();
-      await new Promise((r) => setTimeout(r, 40)); // each step is its own URL (?step=confirm) and reloads the job order
-      const confirm = doc.getElementById('kr-confirm') as HTMLButtonElement;
-      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('62:150');
-      expect(confirm.disabled).toBe(true);
-      const ack = doc.getElementById('kr-ack') as HTMLInputElement;
-      ack.checked = true;
-      ack.dispatchEvent(new win.Event('change'));
-      expect(confirm.disabled).toBe(false);
-      confirm.click();
-      await new Promise((r) => setTimeout(r, 250)); // POSTs → new step URL → reload
-      expect(posts).toEqual(['/api/job-orders/warehouse-accept', '/api/job-orders/prepare', '/api/job-orders/184/release']);
-      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('62:317');
-      expect(doc.getElementById('m-view').textContent).toContain('PRS-00007');
+    it('accepts separately, saves and corrects partial picks, then issues one slip', async () => {
+      const f = fixture(), win = await bootAs(WH, f.respond); await open(win);
+      click(win, 'kr-accept'); await wait(); await review(win);
+      const input = () => win.document.querySelector('[data-pick]');
+      expect(win.document.getElementById('kr-go')).toBeNull();
+      input().value = '5'; input().dispatchEvent(new win.Event('input')); click(win, 'kr-save-pick'); await wait(); await review(win);
+      expect(win.document.getElementById('m-view').textContent).toContain('Partially picked');
+      expect(input().value).toBe('5');
+      input().value = '3'; input().dispatchEvent(new win.Event('input')); click(win, 'kr-save-pick'); await wait(); await review(win);
+      expect(input().value).toBe('3');
+      input().value = '12'; input().dispatchEvent(new win.Event('input')); click(win, 'kr-save-pick'); await wait(); await review(win);
+      expect(win.document.getElementById('kr-save-pick').disabled).toBe(true);
+      input().value = '11'; input().dispatchEvent(new win.Event('input'));
+      expect(win.document.getElementById('kr-go').disabled).toBe(true);
+      input().value = '12'; input().dispatchEvent(new win.Event('input'));
+      expect(win.document.getElementById('kr-go').disabled).toBe(false);
+      click(win, 'kr-go'); await wait();
+      expect(win.document.getElementById('kr-confirm').disabled).toBe(true);
+      ack(win); click(win, 'kr-confirm'); await wait(); await review(win);
+      expect(win.document.getElementById('m-view').textContent).toContain('Parts released successfully');
+      expect(win.document.getElementById('m-view').textContent).toContain('PRS-00007');
+      expect(f.requests.map(r => r.path)).toEqual(['/api/job-orders/warehouse-accept', '/api/job-orders/prepare', '/api/job-orders/prepare', '/api/job-orders/prepare', '/api/job-orders/184/release']);
+      expect(new Set(f.requests.map(r => r.key)).size).toBe(5);
+      expect(f.requests.every(r => !!r.key)).toBe(true);
     });
 
-    it('lands on Release blocked when the server finds a shortfall, and never calls release', async () => {
-      const posts: string[] = [];
-      const win = await bootAs(WH, (url: string, init: { method?: string }) => {
-        if (init && init.method === 'POST') {
-          posts.push(url);
-          if (url.endsWith('/prepare')) return { __status: 400, body: { error: 'Not enough stock to pick', shortfalls: [{ component_name: 'Bolt M8', picking: 40, available: 25 }] } };
-          return { ok: true };
-        }
-        if (url === '/api/job-orders/184') return { ...JO, warehouse_accepted_at: '2026-09-28 08:10:00' };
-        if (url === '/api/job-orders/184/availability') return { lines: LINES, shortfalls: [] };
-        return undefined;
-      });
-      win.location.hash = '#/kit-release?id=184';
-      await new Promise((r) => setTimeout(r, 40));
-      const doc = win.document;
-      (doc.getElementById('kr-go') as HTMLButtonElement).click();
-      await new Promise((r) => setTimeout(r, 40));
-      const ack = doc.getElementById('kr-ack') as HTMLInputElement;
-      ack.checked = true; ack.dispatchEvent(new win.Event('change'));
-      (doc.getElementById('kr-confirm') as HTMLButtonElement).click();
-      await new Promise((r) => setTimeout(r, 250)); // POSTs → new step URL → reload
-      expect(posts).toEqual(['/api/job-orders/prepare']); // already accepted; no release attempted
-      const view = doc.getElementById('m-view');
-      expect(view.getAttribute('data-figma-node')).toBe('62:205');
-      expect(view.textContent).toContain('Need 40 · Have 25');
-      expect(view.textContent).toContain('No stock was deducted.');
+    it.each(['warehouse-accept', 'prepare', 'release'])('recovers a lost %s response across restart with the identical key and payload', async (stage) => {
+      const f = fixture(stage === 'warehouse-accept' ? {} : { warehouse_accepted_at: 'accepted', prepared_at: stage === 'release' ? 'prepared' : null }, { lost: stage });
+      const factory = new IDBFactory();
+      let win = await bootAs(WH, f.respond, factory); await open(win, stage === 'release' ? 'confirm' : '');
+      if (stage === 'warehouse-accept') click(win, 'kr-accept');
+      else if (stage === 'prepare') { win.document.querySelector('[data-pick]').value = '6'; win.document.querySelector('[data-pick]').dispatchEvent(new win.Event('input')); click(win, 'kr-save-pick'); }
+      else { ack(win); click(win, 'kr-confirm'); }
+      await wait();
+      expect(win.document.getElementById('kr-retry-action')).toBeTruthy();
+      win.close(); win = await bootAs(WH, f.respond, factory); await open(win);
+      expect(win.document.getElementById('kr-retry-action')).toBeTruthy();
+      click(win, 'kr-retry-action'); await wait();
+      expect(f.requests).toHaveLength(2); expect(f.requests[1]).toEqual(f.requests[0]); expect(f.applied.size).toBe(1);
+      expect(win.document.getElementById('m-view').textContent).toContain('Confirmed by site authority');
+      await review(win);
+      if (stage === 'release') expect(win.document.getElementById('m-view').textContent).toContain('Parts released successfully');
+    });
+
+    it('blocks direct confirmation when stock is held and reports the breakdown', async () => {
+      const f = fixture({ warehouse_accepted_at: 'accepted', prepared_at: 'prepared' });
+      Object.assign(f.lines[0]!, { have: 12, held_elsewhere: 5, available: 7, short: 5 });
+      const win = await bootAs(WH, f.respond); await open(win, 'confirm');
+      expect(win.document.getElementById('kr-confirm')).toBeNull();
+      const view = win.document.getElementById('m-view');
+      expect(view.textContent).toContain('On hand 12 · Held 5'); expect(view.textContent).toContain('Free 7');
+      click(win, 'kr-report'); await wait();
+      expect(win.document.querySelector('[data-msg]').value).toContain('Main Parts');
+      expect(view.textContent).toContain('Held 5'); expect(f.requests).toHaveLength(0);
+    });
+
+    it('disables release after a fresh stock change and refuses invalid picked counts', async () => {
+      const f = fixture({ warehouse_accepted_at: 'accepted', prepared_at: 'prepared' });
+      const win = await bootAs(WH, f.respond); await open(win);
+      for (const value of ['', '-1', '1.5', '13']) { win.document.querySelector('[data-pick]').value = value; win.document.querySelector('[data-pick]').dispatchEvent(new win.Event('input')); click(win, 'kr-save-pick'); }
+      expect(f.requests).toHaveLength(0);
+      await open(win, 'confirm'); ack(win);
+      Object.assign(f.lines[0]!, { available: 2, short: 10 });
+      click(win, 'kr-confirm'); await wait();
+      expect(win.document.getElementById('kr-confirm')).toBeNull(); expect(f.requests).toHaveLength(0);
+    });
+
+    it.each([
+      { component_name: 'Controller', picking: 12, available: 4 },
+      { component_name: 'Controller', need: 12, have: 20, held_elsewhere: 16, available: 4, short: 8 },
+    ])('renders the refusal quantity shape without inventing a successful release', async (shortfall) => {
+      const f = fixture({ warehouse_accepted_at: 'accepted', prepared_at: 'prepared' }, { refusal: { __status: 400, body: { error: 'Stock changed', shortfalls: [shortfall] } } });
+      const win = await bootAs(WH, f.respond); await open(win, 'confirm'); ack(win); click(win, 'kr-confirm'); await wait();
+      const text = win.document.getElementById('m-view').textContent;
+      expect(text).toContain('Free 4'); expect(text).toContain('action was refused'); expect(text).not.toContain('undefined'); expect(text).not.toContain('Parts released successfully');
+      await review(win); expect(win.document.getElementById('kr-save-pick')).toBeTruthy();
+    });
+
+    it('retains a local release and never shows handoff success before confirmation', async () => {
+      const f = fixture({ warehouse_accepted_at: 'accepted', prepared_at: 'prepared' }, { local: 'local-kit' });
+      const factory = new IDBFactory(); let win = await bootAs(WH, f.respond, factory); await open(win, 'confirm'); ack(win); click(win, 'kr-confirm'); await wait();
+      expect(win.document.getElementById('m-view').textContent).toContain('awaiting confirmation');
+      expect(win.document.getElementById('m-view').textContent).not.toContain('Parts released successfully');
+      win.close(); win = await bootAs(WH, f.respond, factory); await open(win, 'done');
+      expect(win.document.getElementById('m-view').textContent).toContain('awaiting confirmation'); expect(win.document.getElementById('kr-retry-action')).toBeNull();
+      expect(f.requests).toHaveLength(1);
+    });
+
+    it('shows unknown availability and a cancelled deep link without success', async () => {
+      const win = await bootAs(WH, (url) => url === '/api/job-orders/184' ? BASE : undefined); await open(win, 'confirm');
+      expect(win.document.getElementById('m-view').textContent).toContain('Availability unknown'); expect(win.document.getElementById('kr-confirm')).toBeNull();
+      const cancelled = await bootAs(WH, (url) => url === '/api/job-orders/184' ? { ...BASE, status: 'cancelled', released_at: '2026-10-14 01:00:00', parts_slip_number: 'PRS-HISTORICAL' } : undefined); await open(cancelled, 'done');
+      expect(cancelled.document.getElementById('m-view').textContent).toContain('cancelled'); expect(cancelled.document.getElementById('m-view').textContent).not.toContain('Parts released successfully');
     });
   });
 
@@ -511,6 +579,119 @@ describe('mobile bootstrap', () => {
       qc_stages: 2, status: 'released', released_at: '2026-09-28 01:42:00', released_by_name: 'Ana Alvarez', accepted_at: null,
       units_summary: {}, components: [{ component_name: 'Controller 60 V', qty_planned: 12 }] };
     const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+
+    const APPROVER = { ...MGR, permissions: [...MGR.permissions, 'production.approve', 'production.view'] };
+    const DRAFT = { ...BASE, status: 'draft', approved_at: null, released_at: null, approval_revision: 'a'.repeat(64), source_location_name: 'Parts A', output_location_name: 'Finished B', notes: 'Build for depot', team_name: 'Line 2',
+      components: [{ component_item_id: 1, component_name: 'Controller', qty_per_unit: 1, qty_planned: 12 }] };
+    const STOCK = { approval_revision: DRAFT.approval_revision, source_location_name: 'Parts A', lines: [{ component_name: 'Controller', component_item_id: 1, need: 12, have: 15, held_elsewhere: 9, available: 6, picked: 0, short: 6 }], shortfalls: [{ component_name: 'Controller', short: 6 }] };
+    const tick = (win: any, id: string) => { const el = win.document.getElementById(id); el.checked = true; el.dispatchEvent(new win.Event('change')); };
+
+    it('makes awaiting approval discoverable to approvers in Work, the production hub and manager control', async () => {
+      const respond = (url: string) => url === '/api/job-orders?stage=awaiting_approval' ? [DRAFT] : url === '/api/job-orders' ? [] : undefined;
+      const win = await bootAs(APPROVER, respond);
+      win.location.hash = '#/work'; await wait();
+      expect(win.document.getElementById('m-view').textContent).toContain('Awaiting production approval');
+      win.location.hash = '#/production'; await wait();
+      expect(win.document.getElementById('m-view').textContent).toContain('Awaiting approval');
+      win.location.hash = '#/job-orders'; await wait();
+      (win.document.getElementById('pm-approvals') as HTMLButtonElement).click(); await wait();
+      const view = win.document.getElementById('m-view');
+      expect(view.textContent).toContain('1 draft'); expect(view.textContent).toContain('JO-2026-184');
+      const warehouse = await bootAs({ ...APPROVER, role: 'warehouse', permissions: ['inventory.adjust', 'inventory.view'] }, respond);
+      warehouse.location.hash = '#/work'; await wait();
+      expect(warehouse.document.getElementById('m-view').textContent).not.toContain('Awaiting production approval');
+      warehouse.location.hash = '#/job-orders?view=approval'; await wait();
+      expect(warehouse.document.getElementById('m-view').textContent).toContain('requires production approval permission');
+    });
+
+    it('reviews the component snapshot, locations and held stock before approving short demand', async () => {
+      const posts: any[] = []; let approved = false;
+      const win = await bootAs(APPROVER, (url: string, init: any) => {
+        if (url === '/api/job-orders/184/approve' && init.method === 'POST') { posts.push({ body: JSON.parse(init.body), key: init.headers['Idempotency-Key'] }); approved = true; return { ok: true }; }
+        if (url === '/api/job-orders/184') return { ...DRAFT, approved_at: approved ? 'approved' : null };
+        if (url === '/api/job-orders/184/availability') return STOCK;
+        return undefined;
+      });
+      win.location.hash = '#/job-orders?id=184'; await wait(80);
+      const view = win.document.getElementById('m-view'), btn = win.document.getElementById('jo-approve');
+      expect(view.textContent).toContain('Parts A'); expect(view.textContent).toContain('Finished B'); expect(view.textContent).toContain('Build for depot');
+      expect(view.textContent).toContain('Need 12'); expect(view.textContent).toContain('Held 9'); expect(view.textContent).toContain('Free 6 / 12');
+      expect(btn.disabled).toBe(true); tick(win, 'jo-plan-reviewed'); expect(btn.disabled).toBe(true);
+      tick(win, 'jo-shortage-reviewed'); expect(btn.disabled).toBe(false);
+      win.document.querySelector('[data-approval-note]').value = 'Plan shortage follow-up'; btn.click(); await wait(120);
+      expect(posts).toHaveLength(1); expect(posts[0].body).toEqual({ notes: 'Plan shortage follow-up', expected_revision: DRAFT.approval_revision }); expect(posts[0].key).toBeTruthy();
+      expect(view.textContent).toContain('Approved — the warehouse'); expect(win.document.getElementById('jo-approve')).toBeNull();
+    });
+
+    it.each([null, { ...STOCK, approval_revision: 'b'.repeat(64) }])('blocks approval when availability is unknown or the plan changed while loading', async (stock) => {
+      const win = await bootAs(APPROVER, (url) => url === '/api/job-orders/184' ? DRAFT : url === '/api/job-orders/184/availability' ? stock ?? undefined : undefined);
+      win.location.hash = '#/job-orders?id=184'; await wait(80);
+      expect(win.document.getElementById('jo-approve')).toBeNull();
+      expect(win.document.getElementById('jo-refresh-draft')).toBeTruthy();
+    });
+
+    it('recovers interrupted approval across restart using the original reviewed plan and note', async () => {
+      const factory = new IDBFactory(), requests: any[] = [], applied = new Map(); let lost = true, approved = false;
+      const respond = (url: string, init: any) => {
+        if (url === '/api/job-orders?stage=awaiting_approval') return approved ? [] : [DRAFT];
+        if (url === '/api/job-orders/184') return { ...DRAFT, approved_at: approved ? 'approved' : null };
+        if (url === '/api/job-orders/184/availability') return STOCK;
+        if (url === '/api/job-orders/184/approve' && init.method === 'POST') {
+          const request = { key: init.headers['Idempotency-Key'], payload: init.body }; requests.push(request);
+          if (!applied.has(request.key)) { approved = true; applied.set(request.key, { ok: true }); }
+          if (lost) { lost = false; return undefined; } return applied.get(request.key);
+        }
+        return undefined;
+      };
+      let win = await bootAs(APPROVER, respond, factory); win.location.hash = '#/job-orders?id=184'; await wait(80);
+      tick(win, 'jo-plan-reviewed'); tick(win, 'jo-shortage-reviewed'); win.document.querySelector('[data-approval-note]').value = 'Original reviewed note'; win.document.getElementById('jo-approve').click(); await wait(100);
+      expect(win.document.getElementById('jo-action-retry')).toBeTruthy(); win.close();
+      win = await bootAs(APPROVER, respond, factory); win.location.hash = '#/job-orders?id=184'; await wait(80);
+      win.location.hash = '#/job-orders?view=approval'; await wait(80);
+      // The authority has already approved it; recovery remains discoverable locally.
+      expect(win.document.querySelector('[data-id="184"]')).toBeTruthy();
+      win.document.querySelector('[data-id="184"]').click(); await wait(80);
+      expect(win.document.getElementById('m-view').textContent).toContain('Original reviewed note');
+      expect(win.document.getElementById('m-view').textContent).toContain('Controller');
+      win.document.getElementById('jo-action-retry').click(); await wait(80);
+      expect(requests).toHaveLength(2); expect(requests[1]).toEqual(requests[0]); expect(applied.size).toBe(1);
+      expect(win.document.getElementById('m-view').textContent).toContain('Confirmed by site authority');
+    });
+
+    it('requires a fresh review and key after a stale-plan refusal', async () => {
+      let revision = DRAFT.approval_revision; const requests: any[] = [];
+      const win = await bootAs(APPROVER, (url: string, init: any) => {
+        if (url === '/api/job-orders/184') return { ...DRAFT, approval_revision: revision, qty_ordered: revision === DRAFT.approval_revision ? 12 : 14 };
+        if (url === '/api/job-orders/184/availability') return { ...STOCK, approval_revision: revision };
+        if (url === '/api/job-orders/184/approve' && init.method === 'POST') {
+          requests.push({ key: init.headers['Idempotency-Key'], body: JSON.parse(init.body) }); revision = 'b'.repeat(64);
+          return { __status: 409, body: { code: 'stale_job_order', error: 'The draft plan changed. Refresh and review it before approving.' } };
+        } return undefined;
+      });
+      win.location.hash = '#/job-orders?id=184'; await wait(80);
+      tick(win, 'jo-plan-reviewed'); tick(win, 'jo-shortage-reviewed'); win.document.getElementById('jo-approve').click(); await wait(100);
+      expect(win.document.getElementById('jo-action-retry')).toBeNull(); expect(win.document.getElementById('m-view').textContent).toContain('draft plan changed');
+      win.document.getElementById('jo-action-back').click(); await wait(100);
+      expect(win.document.getElementById('m-view').textContent).toContain('Qty 14'); expect(win.document.getElementById('jo-approve').disabled).toBe(true);
+      tick(win, 'jo-plan-reviewed'); tick(win, 'jo-shortage-reviewed'); win.document.getElementById('jo-approve').click(); await wait(80);
+      expect(requests[1].key).not.toBe(requests[0].key); expect(requests[1].body.expected_revision).toBe(revision);
+    });
+
+    it('keeps a locally saved approval pending across restart', async () => {
+      const factory = new IDBFactory(); let posted = false;
+      const respond = (url: string, init: any) => {
+        if (url === '/api/job-orders/184') return { ...DRAFT, approved_at: posted ? 'approved' : null };
+        if (url === '/api/job-orders/184/availability') return STOCK;
+        if (url === '/api/sync/command/approval-local') return { state: 'local' };
+        if (url === '/api/job-orders/184/approve' && init.method === 'POST') { posted = true; return { __headers: { 'X-Sync-State': 'local', 'X-Sync-Command': 'approval-local' }, body: { ok: true } }; }
+        return undefined;
+      };
+      let win = await bootAs(APPROVER, respond, factory); win.location.hash = '#/job-orders?id=184'; await wait(80);
+      tick(win, 'jo-plan-reviewed'); tick(win, 'jo-shortage-reviewed'); win.document.getElementById('jo-approve').click(); await wait(100);
+      expect(win.document.getElementById('m-view').textContent).toContain('confirmation pending');
+      win.close(); win = await bootAs(APPROVER, respond, factory); win.location.hash = '#/job-orders?id=184'; await wait(80);
+      expect(win.document.getElementById('m-view').textContent).toContain('confirmation pending'); expect(win.document.getElementById('jo-approve')).toBeNull();
+    });
 
     it('gates Accept job order on the kit count, then accepts', async () => {
       const posts: Array<{ url: string; body: string }> = [];
@@ -573,11 +754,157 @@ describe('mobile bootstrap', () => {
       await wait(80);
       const view = doc.getElementById('m-view');
       expect(view.getAttribute('data-figma-node')).toBe('66:356');
-      expect(view.textContent).toContain('Recorded 1 of 2');
+      expect(view.textContent).toContain('Confirmed 1 of 2');
       expect(view.textContent).toContain('K4-01');
       (doc.getElementById('jo-retry') as HTMLButtonElement).click();
       await wait(120);
       expect(uploads).toEqual(['K4-01', 'K4-02']); // unit 1 not sent twice
+    });
+
+    it.each(['accept', 'output', 'scrap'])('recovers %s after commit/response loss and restart with the original payload and key', async (kind) => {
+      const factory = new IDBFactory();
+      const calls: Array<{ key: string; body: string }> = [];
+      const applied = new Map<string, unknown>();
+      let lose = true;
+      const jo = { ...BASE, qc_stages: kind === 'output' ? 0 : 2, accepted_at: kind === 'accept' ? null : 'accepted' };
+      const path = '/api/job-orders/184/' + (kind === 'accept' ? 'accept' : 'progress');
+      const respond = (url: string, init: any) => {
+        if (url === '/api/job-orders/184') return { ...jo };
+        if (url === path && init.method === 'POST') {
+          const key = init.headers['Idempotency-Key']; calls.push({ key, body: init.body });
+          if (!applied.has(key)) {
+            applied.set(key, JSON.parse(init.body));
+            if (kind === 'accept') jo.accepted_at = 'accepted';
+            else { jo.qty_done += JSON.parse(init.body).done_delta || 0; jo.qty_scrapped += JSON.parse(init.body).scrapped_delta || 0; }
+          }
+          if (lose) { lose = false; return undefined; }
+          return { ok: true, job_order: jo };
+        }
+        return undefined;
+      };
+      const win = await bootAs(LEAD, respond, factory);
+      win.location.hash = '#/job-orders?id=184' + (kind === 'accept' ? '' : '&step=' + kind); await wait();
+      if (kind === 'accept') {
+        const chk = win.document.getElementById('jo-counted'); chk.checked = true; chk.dispatchEvent(new win.Event('change'));
+        win.document.querySelector('[data-note]').value = 'Original handover note';
+        win.document.getElementById('jo-accept').click();
+      } else {
+        if (kind === 'output') { win.document.querySelector('[data-done]').value = '3'; win.document.querySelector('[data-scrap]').value = '1'; win.document.querySelector('[data-batch]').value = 'ORIGINAL-LOT'; }
+        else { win.document.querySelector('[data-n]').value = '2'; win.document.querySelector('[data-reason]').value = 'Original scrap reason'; }
+        win.document.getElementById('jo-save').click();
+      }
+      await wait(100);
+      expect(win.document.getElementById('m-view').textContent).toContain('Confirmation unknown');
+      const restarted = await bootAs(LEAD, respond, factory);
+      restarted.location.hash = '#/job-orders?id=184'; await wait();
+      expect(restarted.document.getElementById('jo-action-retry')).not.toBeNull();
+      restarted.document.getElementById('jo-action-retry').click(); await wait(120);
+      expect(calls).toHaveLength(2); expect(calls[1]).toEqual(calls[0]); expect(applied.size).toBe(1);
+      expect(restarted.document.getElementById('m-view').textContent).toContain('Confirmed by site authority');
+      restarted.document.getElementById('jo-action-back').click(); await wait();
+      expect(await restarted.mProductionDrafts.loadAction(184)).toBeNull();
+    });
+
+    it('rejects fractional, empty, negative and over-remaining production quantities', async () => {
+      let posts = 0;
+      const win = await bootAs(LEAD, (url: string, init: any) => {
+        if (init.method === 'POST') { posts++; return { ok: true }; }
+        if (url === '/api/job-orders/184') return { ...BASE, accepted_at: 'accepted', qc_stages: 0 };
+        return undefined;
+      });
+      win.location.hash = '#/job-orders?id=184&step=output'; await wait();
+      for (const value of ['1.5', '', '-1', '13']) {
+        win.document.querySelector('[data-done]').value = value;
+        win.document.getElementById('jo-save').click(); await wait(10);
+      }
+      expect(posts).toBe(0);
+    });
+
+    it('starts a fresh reviewed key after a definitive refusal and keeps a site-PC result pending', async () => {
+      const calls: any[] = [];
+      let outcome = 'refused';
+      const win = await bootAs(LEAD, (url: string, init: any) => {
+        if (url === '/api/job-orders/184') return { ...BASE, accepted_at: 'accepted', qc_stages: 0 };
+        if (url === '/api/job-orders/184/progress' && init.method === 'POST') {
+          calls.push({ key: init.headers['Idempotency-Key'], body: JSON.parse(init.body) });
+          if (outcome === 'refused') return { __status: 409, body: { error: 'Output changed; review the remaining quantity' } };
+          return { __headers: { 'X-Sync-State': 'local', 'X-Sync-Command': 'progress-local-1' }, body: { ok: true } };
+        }
+        if (url === '/api/sync/command/progress-local-1') return { state: 'local' };
+        return undefined;
+      });
+      win.location.hash = '#/job-orders?id=184&step=output'; await wait();
+      win.document.querySelector('[data-done]').value = '3'; win.document.getElementById('jo-save').click(); await wait(100);
+      expect(win.document.getElementById('m-view').textContent).toContain('Request refused');
+      expect(win.document.getElementById('jo-action-retry')).toBeNull();
+      win.document.getElementById('jo-action-back').click(); await wait();
+      outcome = 'local';
+      win.location.hash = '#/job-orders?id=184&step=output'; await wait();
+      win.document.querySelector('[data-done]').value = '2'; win.document.getElementById('jo-save').click(); await wait(100);
+      expect(calls[1].key).not.toBe(calls[0].key);
+      expect(calls[1].body.done_delta).toBe(2);
+      expect(win.document.getElementById('m-view').textContent).toContain('Saved on site PC');
+      expect(win.document.getElementById('m-view').textContent).not.toContain('Confirmed by site authority');
+      expect((await win.mProductionDrafts.loadAction(184)).operation.local).toBe('progress-local-1');
+    });
+
+    it('replays a committed upload after restart with the same key and photo, locking uncertain inputs', async () => {
+      const factory = new IDBFactory();
+      const requests: { key: string; identifier: string; photo: Blob }[] = [];
+      const committed = new Map<string, number>();
+      let loseResponse = true;
+      const ACCEPTED = { ...BASE, status: 'in_progress', accepted_at: '2026-10-14 00:00:00' };
+      const respond = (url: string, init: any) => {
+        if (url === '/api/job-orders/184/units' && init.method === 'POST') {
+          const key = init.headers['Idempotency-Key'];
+          requests.push({ key, identifier: init.body.get('identifier'), photo: init.body.get('image') });
+          if (!committed.has(key)) committed.set(key, 91);
+          if (loseResponse) { loseResponse = false; return undefined; }
+          return { id: committed.get(key) };
+        }
+        if (url === '/api/job-orders/184') return ACCEPTED;
+        return undefined;
+      };
+      const win = await bootAs(LEAD, respond, factory);
+      // Node Blob/FormData preserve photo bytes through the IndexedDB emulator.
+      win.FormData = FormData;
+      win.mPhoto = { pickFile: () => Promise.resolve(new File(['kept-photo'], 'unit.jpg', { type: 'image/jpeg' })) };
+      win.location.hash = '#/job-orders?id=184&step=count'; await wait();
+      win.document.querySelector('.rk-stepper input').value = '1';
+      win.document.getElementById('jo-continue').click(); await wait();
+      win.document.querySelector('[data-photo]').click(); await wait();
+      const input = win.document.getElementById('jo-ident'); input.value = 'Repeated serial'; input.dispatchEvent(new win.Event('input'));
+      win.document.getElementById('jo-save').click(); await wait(100);
+      expect(win.document.getElementById('m-view').textContent).toContain('confirmation unknown');
+      win.location.hash = '#/job-orders?id=184&step=units'; await wait();
+      expect(win.document.getElementById('jo-ident').disabled).toBe(true);
+      expect(win.document.querySelector('[data-photo]').disabled).toBe(true);
+      const restarted = await bootAs(LEAD, respond, factory); restarted.FormData = FormData;
+      restarted.location.hash = '#/job-orders?id=184&step=interrupted'; await wait();
+      expect(restarted.document.getElementById('m-view').textContent).toContain('Repeated serial');
+      restarted.document.getElementById('jo-retry').click(); await wait(120);
+      expect(requests).toHaveLength(2);
+      expect(requests[1]!.key).toBe(requests[0]!.key);
+      expect(requests[1]!.identifier).toBe('Repeated serial');
+      expect(await requests[1]!.photo.text()).toBe('kept-photo');
+      expect(committed.size).toBe(1);
+      expect(restarted.document.getElementById('m-view').textContent).toContain('Confirmed 1 of 1');
+      expect(restarted.document.getElementById('m-view').textContent).toContain('#91');
+    });
+
+    it('blocks uploading when the production attempt cannot be persisted', async () => {
+      let uploads = 0;
+      const win = await bootAs(LEAD, (url: string, init: any) => {
+        if (url === '/api/job-orders/184') return { ...BASE, accepted_at: 'x' };
+        if (url === '/api/job-orders/184/units' && init.method === 'POST') { uploads++; return { id: 91 }; }
+        return undefined;
+      });
+      win.mProductionDrafts.save = () => Promise.reject(new Error('Device storage full'));
+      win.location.hash = '#/job-orders?id=184&step=count'; await wait();
+      win.document.getElementById('jo-continue').click(); await wait();
+      expect(uploads).toBe(0);
+      expect(win.document.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:240');
+      expect(win.document.getElementById('jo-continue').disabled).toBe(false);
     });
 
     it('lands a Production Manager on exceptions and needs the review tick + reason to close early', async () => {
@@ -772,6 +1099,244 @@ describe('mobile bootstrap', () => {
       expect(posts[0]!.body.repair).toBeUndefined();
     });
 
+    it.each(['qc', 'qa'])('creates separate chassis and fairings reports with their own photos (%s)', async (role) => {
+      const who = role === 'qa' ? QA : QC, reports: any[] = [], photos: any[] = [];
+      const win = await bootAs(who, (url: string, init: any) => {
+        if (url === '/api/production/record?unit=501') return { unit: UNIT, job_order: { ...JO, number: 'JO-2026-184' } };
+        if (url.startsWith('/api/production-issues?')) return reports;
+        if (url === '/api/production-issues' && init.method === 'POST') { const i = { ...JSON.parse(init.body), id: reports.length + 1, status: 'open', photo_count: 0, reported_by_name: 'Inspector' }; reports.push(i); return i; }
+        if (url === '/api/attachments' && init.method === 'POST') { const ref = Number(init.body.get('ref_id')); photos.push({ ref, key: init.headers['Idempotency-Key'] }); reports.find(i => i.id === ref).photo_count++; return { id: photos.length }; }
+        return undefined;
+      });
+      win.FormData = globalThis.FormData;
+      win.mPhoto.picker = (opts: any) => { win.issuePicker = opts; return win.document.createElement('div'); };
+      win.location.hash = '#/unit-issues?unit=501&role=' + role; await wait(80);
+      for (const area of ['Chassis', 'Fairings']) {
+        if (area === 'Chassis') win.document.getElementById('ui-new').click();
+        else win.document.getElementById('ui-another').click();
+        await wait(80);
+        const input = win.document.querySelector('[data-area]'); input.value = area; input.dispatchEvent(new win.Event('input'));
+        const description = win.document.querySelector('[data-description]'); description.value = area + ' issue description'; description.dispatchEvent(new win.Event('input'));
+        win.issuePicker.onChange([new Blob([area + '-image-bytes'], { type: 'image/jpeg' })]); await wait(80);
+        win.document.getElementById('ui-send').click(); await wait(120);
+        expect(win.document.getElementById('m-view').textContent).toContain('Issue report confirmed');
+      }
+      expect(reports.map(i => i.category)).toEqual(['Chassis', 'Fairings']); expect(photos.map(p => p.ref)).toEqual([1, 2]); expect(photos[0].key).not.toBe(photos[1].key);
+      win.document.getElementById('ui-back').click(); await wait(80);
+      expect(win.document.getElementById('m-view').textContent).toContain('Chassis'); expect(win.document.getElementById('m-view').textContent).toContain('Fairings');
+    });
+
+    async function waitForIssueElement(win: any, selector: string) {
+      for (let n = 0; n < 100; n++) {
+        const element = win.document.querySelector(selector); if (element) return element;
+        await wait(20);
+      }
+      throw new Error('Missing issue element ' + selector + ': ' + win.document.getElementById('m-view').textContent);
+    }
+
+    it.each(['report', 'photo'])('recovers a lost %s response with original keys, bytes and links after restart', async (phase) => {
+      const factory = new IDBFactory(), created = new Map(), uploaded = new Map(), calls: any[] = []; let lost = true;
+      const respond = (url: string, init: any) => {
+        if (url === '/api/production/record?unit=501') return { unit: UNIT, job_order: { ...JO, number: 'JO-2026-184' } };
+        if (url.startsWith('/api/production-issues?')) return [...created.values()];
+        if (url === '/api/production-issues' && init.method === 'POST') {
+          const key = init.headers['Idempotency-Key']; calls.push({ phase: 'report', key, body: init.body });
+          if (!created.has(key)) created.set(key, { ...JSON.parse(init.body), id: 81, status: 'open', photo_count: uploaded.size });
+          if (phase === 'report' && lost) { lost = false; return undefined; } return created.get(key);
+        }
+        if (url === '/api/attachments' && init.method === 'POST') {
+          const key = init.headers['Idempotency-Key']; calls.push({ phase: 'photo', key, ref: init.body.get('ref_id'), image: init.body.get('image') });
+          if (!uploaded.has(key)) uploaded.set(key, { id: 91 });
+          if (phase === 'photo' && lost) { lost = false; return undefined; } return uploaded.get(key);
+        } return undefined;
+      };
+      function picker(win: any) { win.FormData = globalThis.FormData; win.mPhoto.picker = (opts: any) => { win.issuePicker = opts; return win.document.createElement('div'); }; }
+      let win = await bootAs(QC, respond, factory); picker(win); win.location.hash = '#/unit-issues?unit=501&step=new'; await wait(80);
+      win.document.querySelector('[data-description]').value = 'Original chassis finding'; win.document.querySelector('[data-description]').dispatchEvent(new win.Event('input'));
+      win.issuePicker.onChange([new Blob(['original-chassis-bytes'], { type: 'image/jpeg' })]); await wait(80); win.document.getElementById('ui-send').click(); await wait(100);
+      expect(win.document.getElementById('ui-retry')).toBeTruthy(); expect(win.document.querySelector('[data-description]')).toBeNull(); win.close();
+      win = await bootAs(QC, respond, factory); picker(win); win.location.hash = '#/unit-issues?unit=501'; await wait(80); (await waitForIssueElement(win, '[data-saved] [data-id]')).click();
+      (await waitForIssueElement(win, '#ui-retry')).click(); await wait(120);
+      expect(created.size).toBe(1); expect(uploaded.size).toBe(1);
+      const retries = calls.filter(c => c.phase === phase); expect(retries).toHaveLength(2); expect(retries[0].key).toBe(retries[1].key);
+      if (phase === 'photo') { expect(retries[0].ref).toBe('81'); expect(await retries[1].image.text()).toBe('original-chassis-bytes'); }
+      else expect(retries[0].body).toBe(retries[1].body);
+    });
+
+    it('retains unsent description and photo bytes as a draft across restart', async () => {
+      const factory = new IDBFactory(); const respond = (url: string) => url === '/api/production/record?unit=501' ? { unit: UNIT, job_order: { ...JO, number: 'JO-2026-184' } } : url.startsWith('/api/production-issues?') ? [] : undefined;
+      let win = await bootAs(QA, respond, factory); win.mPhoto.picker = (opts: any) => { win.issuePicker = opts; return win.document.createElement('div'); };
+      win.location.hash = '#/unit-issues?unit=501&role=qa&step=new'; await wait(80);
+      win.document.querySelector('[data-description]').value = 'Fairing scratch draft'; win.document.querySelector('[data-description]').dispatchEvent(new win.Event('input'));
+      win.issuePicker.onChange([new Blob(['unsent-fairing-photo'], { type: 'image/jpeg' })]); await wait(80); const savedRoute = win.location.hash; win.close();
+      win = await bootAs(QA, respond, factory); let photos: Blob[] = [];
+      win.mPhoto.picker = (opts: any) => { photos = opts.initial; return win.document.createElement('div'); };
+      win.location.hash = savedRoute; await wait(80);
+      expect(win.document.querySelector('[data-description]').value).toBe('Fairing scratch draft'); expect(await photos[0]!.text()).toBe('unsent-fairing-photo');
+    });
+
+    it('requires visible-defect photos and gives a corrected refused report a fresh key', async () => {
+      const calls: any[] = []; let refused = true;
+      const win = await bootAs(QC, (url: string, init: any) => {
+        if (url === '/api/production/record?unit=501') return { unit: UNIT, job_order: { ...JO, number: 'JO-2026-184' } };
+        if (url.startsWith('/api/production-issues?')) return [];
+        if (url === '/api/production-issues' && init.method === 'POST') {
+          calls.push({ key: init.headers['Idempotency-Key'], body: JSON.parse(init.body) });
+          if (refused) { refused = false; return { __status: 400, body: { error: 'Review description' } }; }
+          return { id: 81 };
+        } return undefined;
+      });
+      win.mPhoto.picker = () => win.document.createElement('div');
+      win.location.hash = '#/unit-issues?unit=501&step=new';
+      const description = await waitForIssueElement(win, '[data-description]'); description.value = 'Noise heard during test'; description.dispatchEvent(new win.Event('input'));
+      win.document.getElementById('ui-send').click(); await wait(30); expect(calls).toHaveLength(0);
+      const visible = win.document.getElementById('ui-visible'); visible.checked = false; visible.dispatchEvent(new win.Event('change'));
+      win.document.getElementById('ui-send').click(); (await waitForIssueElement(win, '#ui-correct')).click();
+      const corrected = await waitForIssueElement(win, '[data-description]'); corrected.value = 'Intermittent noise at left bearing'; corrected.dispatchEvent(new win.Event('input'));
+      win.document.getElementById('ui-send').click(); await waitForIssueElement(win, '#ui-another');
+      expect(calls).toHaveLength(2); expect(calls[0].key).not.toBe(calls[1].key); expect(calls[1].body.description).toBe('Intermittent noise at left bearing');
+    });
+
+    it('keeps two independent offline issue drafts and their own photos after restart', async () => {
+      const factory = new IDBFactory();
+      let disconnected = false;
+      const respond = (url: string) => disconnected ? undefined : url === '/api/production/record?unit=501' ? { unit: UNIT, job_order: { ...JO, number: 'JO-2026-184' } } : url.startsWith('/api/production-issues?') ? [] : undefined;
+      let win = await bootAs(QC, respond, factory);
+      Object.defineProperty(win.navigator, 'onLine', { value: false, configurable: true });
+      win.mPhoto.picker = (opts: any) => { win.issuePicker = opts; return win.document.createElement('div'); };
+      win.location.hash = '#/unit-issues?unit=501'; await wait(80);
+      for (const area of ['Chassis', 'Fairings']) {
+        win.document.getElementById('ui-new').click(); await wait(80);
+        const input = win.document.querySelector('[data-area]'); input.value = area; input.dispatchEvent(new win.Event('input'));
+        const description = win.document.querySelector('[data-description]'); description.value = area + ' offline finding'; description.dispatchEvent(new win.Event('input'));
+        win.issuePicker.onChange([new Blob([area + '-offline-photo'], { type: 'image/jpeg' })]); await wait(80); disconnected = true;
+        win.document.getElementById('ui-send').click(); await wait(30);
+        expect(win.document.querySelector('[data-description]')).toBeTruthy();
+        win.document.getElementById('ui-list').click(); await wait(80);
+      }
+      expect(win.document.querySelectorAll('[data-saved] [data-id]')).toHaveLength(2); win.close();
+      win = await bootAs(QC, respond, factory); let photos: Blob[] = [];
+      win.mPhoto.picker = (opts: any) => { photos = opts.initial; return win.document.createElement('div'); };
+      win.location.hash = '#/unit-issues?unit=501'; await wait(80);
+      const cards = [...win.document.querySelectorAll('[data-saved] [data-id]')]; expect(cards).toHaveLength(2); expect(win.document.getElementById('m-view').textContent).toContain('Reported issues unknown');
+      const routes = cards.map((c: any) => '#/unit-issues?unit=501&draft=' + c.dataset.id);
+      const restored = [];
+      for (const hash of routes) {
+        win.location.hash = hash; await wait(80);
+        expect(win.document.getElementById('m-view').textContent).toContain('Using the saved unit details');
+        const area = win.document.querySelector('[data-area]').value;
+        restored.push(area); expect(win.document.querySelector('[data-description]').value).toBe(area + ' offline finding');
+        expect(await photos[0]!.text()).toBe(area + '-offline-photo');
+      }
+      expect(restored.sort()).toEqual(['Chassis', 'Fairings']);
+    });
+
+    it('offers eligible own issue photos as inspection evidence without another upload', async () => {
+      const win = await bootAs(QC, (url: string) => {
+        if (url.startsWith('/api/qc/queue')) return { units: [UNIT], completed: [] };
+        if (url === '/api/job-orders/184') return JO;
+        if (url === '/api/production-issues?unit_id=501') return [{ id: 81 }, { id: 82 }];
+        if (url === '/api/attachments?kind=production_issue&ref_id=81') return [{ id: 91, inspection_available: true }, { id: 92, inspection_available: false }];
+        if (url === '/api/attachments?kind=production_issue&ref_id=82') return [{ id: 93, inspection_available: true }];
+        return undefined;
+      });
+      win.location.hash = '#/qc?role=qc&unit=501&step=evidence&then=fail'; await wait(80);
+      win.document.getElementById('qc-report-evidence').click(); await wait(80);
+      expect(win.location.hash).toContain('step=fail'); expect(win.document.getElementById('m-view').textContent).toContain('2 close-up photos');
+    });
+
+    it('times out a stuck hold lookup and ignores its later response', async () => {
+      const win = await bootAs(QA, (url) => url.startsWith('/api/qc/queue') ? { units: [], completed: [] } : undefined);
+      const fetch = win.fetch, timeout = win.setTimeout.bind(win);
+      let finish: (response: any) => void = () => {};
+      win.fetch = (url: string, init: any) => url === '/api/qc/holds' ? new Promise(resolve => { finish = resolve; }) : fetch(url, init);
+      win.setTimeout = (fn: any, ms: number, ...args: any[]) => timeout(fn, ms === 20000 ? 1 : ms, ...args);
+      win.location.hash = '#/qc?role=qa&tab=hold'; await wait(80);
+      const view = win.document.getElementById('m-view');
+      expect(view.textContent).toContain('Count unknown'); expect(view.textContent).not.toContain('No units on hold');
+      finish({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: () => Promise.resolve(HOLDS) }); await wait(40);
+      expect(view.textContent).toContain('Count unknown'); expect(view.querySelector('[data-hold]')).toBeNull();
+    });
+
+    it.each([403, 500, 0])('shows unknown holds and a retry when lookup fails (%s)', async (status) => {
+      let failed = true;
+      const win = await bootAs(QA, (url) => {
+        if (url.startsWith('/api/qc/queue')) return { units: [], completed: [] };
+        if (url === '/api/qc/holds') return failed ? status ? { __status: status, body: { error: 'Hold lookup unavailable' } } : undefined : [];
+        return undefined;
+      });
+      win.location.hash = '#/qc?role=qa&tab=hold'; await wait(80);
+      const view = win.document.getElementById('m-view');
+      expect(view.textContent).toContain('On hold?'); expect(view.textContent).toContain('Unable to load holds'); expect(view.textContent).not.toContain('No units on hold');
+      failed = false; win.document.getElementById('qc-holds-refresh').click(); await wait(80);
+      expect(view.textContent).toContain('No units on hold'); expect(view.textContent).toContain('On hold0');
+    });
+
+    it.each(['pass', 'rectify', 'fail'])('recovers a lost %s hold decision after restart with one immutable operation', async (outcome) => {
+      const factory = new IDBFactory(), requests: any[] = [], applied = new Map(); let lost = true, held = true;
+      const respond = (url: string, init: any) => {
+        if (url.startsWith('/api/qc/queue')) return { units: [], completed: [] };
+        if (url === '/api/qc/holds') return held ? HOLDS : [];
+        if (url.endsWith('/hold-decision') && init.method === 'POST') {
+          const request = { key: init.headers['Idempotency-Key'], payload: init.body }; requests.push(request);
+          if (!applied.has(request.key)) { held = false; applied.set(request.key, { ok: true }); }
+          if (lost) { lost = false; return undefined; } return applied.get(request.key);
+        } return undefined;
+      };
+      let win = await bootAs(QA, respond, factory); win.location.hash = '#/qc?role=qa&unit=503&step=hold'; await wait(80);
+      win.document.querySelector('[data-o="' + outcome + '"]').click(); win.document.querySelector('[data-why]').value = 'Original hold decision reason';
+      if (outcome === 'fail') win.document.querySelector('[data-disp]').value = 'recycle';
+      if (outcome === 'rectify') win.document.querySelector('[data-station]').value = 'Paint';
+      win.document.getElementById('qc-decide').click(); await wait(80);
+      expect(win.document.querySelector('[data-o]')).toBeNull(); expect(win.document.getElementById('qc-hold-retry')).toBeTruthy(); win.close();
+      win = await bootAs(QA, respond, factory); win.location.hash = '#/qc?role=qa&tab=hold'; await wait(80);
+      expect(win.document.getElementById('m-view').textContent).toContain('Review saved decision');
+      win.document.querySelector('[data-hold="503"]').click(); await wait(80); expect(win.document.getElementById('m-view').textContent).toContain('Original hold decision reason');
+      win.document.getElementById('qc-hold-retry').click(); await wait(80);
+      expect(requests).toHaveLength(2); expect(requests[1]).toEqual(requests[0]); expect(applied.size).toBe(1);
+      expect(JSON.parse(requests[0].payload)).toMatchObject({ outcome, expected_hold_record_id: 77 });
+      expect(win.document.getElementById('m-view').textContent).toContain('Confirmed by site authority');
+      if (outcome === 'pass') expect(win.document.getElementById('m-view').textContent).toContain('Stock is added only when receiving');
+    });
+
+    it('uses a fresh key for a corrected decision after a definitive refusal and reload', async () => {
+      const requests: any[] = []; let recordId = 77;
+      const win = await bootAs(QA, (url: string, init: any) => {
+        if (url === '/api/qc/holds') return [{ ...HOLDS[0], record_id: recordId }];
+        if (url.endsWith('/hold-decision') && init.method === 'POST') {
+          requests.push({ key: init.headers['Idempotency-Key'], body: JSON.parse(init.body) }); recordId = 78;
+          return requests.length === 1 ? { __status: 409, body: { code: 'stale_hold', error: 'Different hold record. Review again.' } } : { ok: true };
+        } return undefined;
+      });
+      win.location.hash = '#/qc?role=qa&unit=503&step=hold'; await wait(80);
+      win.document.querySelector('[data-why]').value = 'Original pass reason'; win.document.getElementById('qc-decide').click(); await wait(80);
+      expect(win.document.getElementById('qc-hold-retry')).toBeNull(); win.document.getElementById('qc-hold-back').click(); await wait(80);
+      win.document.querySelector('[data-o="rectify"]').click(); win.document.querySelector('[data-why]').value = 'Corrected rectification decision'; win.document.getElementById('qc-decide').click(); await wait(80);
+      expect(requests[1].key).not.toBe(requests[0].key); expect(requests[1].body).toMatchObject({ outcome: 'rectify', expected_hold_record_id: 78 });
+    });
+
+    it('retains a site-PC decision as pending after restart without offering another decision', async () => {
+      const factory = new IDBFactory(); let posted = false;
+      const respond = (url: string, init: any) => {
+        if (url.startsWith('/api/qc/queue')) return { units: [], completed: [] };
+        if (url === '/api/qc/holds') return posted ? [] : HOLDS;
+        if (url === '/api/sync/command/hold-local') return { state: 'local' };
+        if (url.endsWith('/hold-decision') && init.method === 'POST') { posted = true; return { __headers: { 'X-Sync-State': 'local', 'X-Sync-Command': 'hold-local' }, body: { ok: true } }; }
+        return undefined;
+      };
+      let win = await bootAs(QA, respond, factory); win.location.hash = '#/qc?role=qa&unit=503&step=hold'; await wait(80);
+      win.document.querySelector('[data-why]').value = 'Reviewed colour tolerance'; win.document.getElementById('qc-decide').click(); await wait(80); win.close();
+      win = await bootAs(QA, respond, factory); win.location.hash = '#/qc?role=qa&unit=503&step=hold'; await wait(80);
+      expect(win.document.getElementById('m-view').textContent).toContain('confirmation pending'); expect(win.document.getElementById('qc-decide')).toBeNull(); expect(win.document.getElementById('qc-hold-retry')).toBeNull();
+    });
+
+    it('does not start a hold mutation when durable storage is unavailable', async () => {
+      const requests: string[] = [];
+      const win = await bootAs(QA, (url: string, init: any) => { if (init?.method === 'POST') requests.push(url); return url === '/api/qc/holds' ? HOLDS : undefined; });
+      win.indexedDB = undefined; win.location.hash = '#/qc?role=qa&unit=503&step=hold'; await wait(80);
+      expect(win.document.getElementById('m-view').textContent).toContain('Draft storage is unavailable'); expect(requests).toEqual([]);
+    });
+
     it('lists held units for QA and records the decision with a reason', async () => {
       const posts: { url: string; body: any }[] = [];
       const win = await bootAs(QA, fake(posts, { role: 'qa', units: [], completed: [] }));
@@ -840,6 +1405,75 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
         return undefined;
       };
     }
+
+    async function relElement(win: any, selector: string) {
+      for (let i = 0; i < 100; i++) { const e = win.document.querySelector(selector); if (e) return e; await wait(20); }
+      throw new Error('Missing releasing element: ' + selector + ' ' + win.document.getElementById('m-view').textContent);
+    }
+    it('separates unaccepted and partially allocated orders from ready handoff', async () => {
+      const win = await bootAs(REL, (url: string) => url === '/api/release-slips/queue' ? { to_accept: [{ id: 301, number: 'SO-NEW', qty_ordered: 2, qty_released: 0, authorization: AUTH, location_name: 'Warehouse A' }], releasing: [{ id: 302, number: 'SO-PARTIAL', qty_ordered: 2, qty_released: 1, warehouse_accepted_at: 'x', authorization: AUTH, location_name: 'Warehouse B' }, { id: 303, number: 'SO-READY', qty_ordered: 2, qty_released: 2, warehouse_accepted_at: 'x', authorization: AUTH, location_name: 'Warehouse B' }], completed: [] } : undefined);
+      win.location.hash = '#/so'; await relElement(win, '[data-order="303"]');
+      expect(win.document.querySelector('[data-order="301"]')).toBeNull(); expect(win.document.querySelector('[data-order="302"]')).toBeNull();
+      win.document.querySelector('[data-tab="accept"]').click(); expect(win.document.querySelector('[data-order="301"]').textContent).toContain('Warehouse A');
+      win.document.querySelector('[data-tab="allocating"]').click(); expect(win.document.querySelector('[data-order="302"]').textContent).toContain('1 of 2 allocated');
+    });
+    it.each(['accept', 'bulk', 'serial'])('recovers interrupted %s with the exact original key and request after restart', async (kind) => {
+      const factory = new IDBFactory(), applied = new Map(), calls: any[] = []; let lose = true;
+      const context = { ...CTX, order: { ...CTX.order, warehouse_accepted_at: kind === 'accept' ? null : 'x', location_name: 'FG-A03' }, units: [],
+        lines: [{ item_id: 7, name: 'Measured goods', quantity: 5.5, released_qty: 0, units: 0, serialized: kind === 'serial' ? 1 : 0 }], availability: [{ item_id: 7, free_to_allocate: 3.25 }] };
+      const respond = (url: string, init: any) => {
+        if (url === '/api/release-slips/orders/302/context') return context;
+        if (url.includes('/orders/302/unit?')) return { state: 'available', unit: { ...UNIT, location_id: 2, status: 'in_stock' } };
+        if (url === '/api/orders/302/accept-release' || url === '/api/orders/302/release') { const key = init.headers['Idempotency-Key']; calls.push({ url, key, body: init.body }); if (!applied.has(key)) applied.set(key,{ ok: true }); if (lose) { lose = false; return undefined; } return applied.get(key); }
+        return undefined;
+      };
+      let win = await bootAs({ ...REL, permissions: ['mobile.access', 'orders.release'] }, respond, factory);
+      win.location.hash = '#/so?id=302' + (kind === 'accept' ? '' : kind === 'bulk' ? '&step=scan' : '&step=unit&code=K4-01');
+      if (kind === 'bulk') { const input = await relElement(win, '[data-qty="7"]'); expect(input.value).toBe('3.25'); input.value = '2.5'; win.document.querySelector('[data-bulk="7"]').click(); }
+      else (await relElement(win, kind === 'accept' ? '#rel-go' : '#rel-ok')).click();
+      await relElement(win, '#rel-retry'); expect(win.document.querySelector('[data-qty]')).toBeNull(); win.close();
+      win = await bootAs(REL, respond, factory); win.location.hash = '#/so'; (await relElement(win, '[data-recovery] [data-id]')).click();
+      (await relElement(win, '#rel-retry')).click(); await relElement(win, '#rel-review-current');
+      expect(calls).toHaveLength(2); expect(calls[1]).toEqual(calls[0]); expect(applied.size).toBe(1);
+      if (kind === 'bulk') expect(JSON.parse(calls[0].body).bulk[0].quantity).toBe(2.5);
+    });
+    it('blocks excessive bulk counts and units at a different ship-from location', async () => {
+      const calls: any[] = [], base = fake(calls, { lines: [{ item_id: 7, name: 'Measured goods', quantity: 5, released_qty: 0, serialized: 0 }], availability: [{ item_id: 7, free_to_allocate: 1.5 }] });
+      const win = await bootAs(REL, (url: string, init: any) => url.includes('/orders/302/unit?') ? { state: 'available', unit: { ...UNIT, location_id: 9 } } : base(url,init));
+      win.location.hash = '#/so?id=302&step=scan'; const input = await relElement(win, '[data-qty="7"]');
+      for (const value of ['', '0', '-1', '2']) { input.value = value; win.document.querySelector('[data-bulk="7"]').click(); await wait(20); }
+      expect(calls).toEqual([]); win.location.hash = '#/so?id=302&step=unit&code=K4-01'; await wait(80);
+      expect(win.document.getElementById('m-view').textContent).toContain('different warehouse'); expect(win.document.getElementById('rel-ok')).toBeNull(); expect(calls).toEqual([]);
+    });
+    it('does not show a site-PC allocation as confirmed before its original command confirms', async () => {
+      const factory = new IDBFactory(); let state = 'pending', calls = 0;
+      const base = fake([],{ units: [], lines: [{ item_id: 7, name: 'Measured goods', quantity: 5, released_qty: 0, serialized: 0 }], availability: [{ item_id: 7, free_to_allocate: 3 }] });
+      const respond = (url: string, init: any) => { if (url === '/api/orders/302/release') { calls++; return { __headers: { 'X-Sync-State': 'local', 'X-Sync-Command': 'release-local' }, body: { ok: true } }; } if (url === '/api/sync/command/release-local') return { state }; return base(url,init); };
+      let win = await bootAs(REL,respond,factory); win.location.hash = '#/so?id=302&step=scan'; (await relElement(win,'[data-bulk="7"]')).click(); await wait(100);
+      expect(win.document.getElementById('m-view').textContent).toContain('confirmation pending'); expect(win.document.getElementById('rel-review-current')).toBeNull(); win.close();
+      state = 'confirmed'; win = await bootAs(REL,respond,factory); win.location.hash = '#/so?id=302'; await relElement(win,'#rel-review-current'); expect(calls).toBe(1);
+    });
+
+    it('reloads stock after refusal and creates a new key only after review', async () => {
+      const calls: any[] = []; let refused = true;
+      const base = fake([],{ units: [], lines: [{ item_id: 7, name: 'Measured goods', quantity: 5, released_qty: 0, serialized: 0 }], availability: [{ item_id: 7, free_to_allocate: 3 }] });
+      const win = await bootAs(REL,(url: string, init: any) => {
+        if (url === '/api/orders/302/release') { calls.push({ key: init.headers['Idempotency-Key'], body: JSON.parse(init.body) }); if (refused) { refused = false; return { __status: 409, body: { error: 'Stock changed; review allocation' } }; } return { ok: true }; }
+        if (!refused && url === '/api/release-slips/orders/302/context') return { ...CTX, units: [], lines: [{ item_id: 7, name: 'Measured goods', quantity: 5, released_qty: 0, serialized: 0 }], availability: [{ item_id: 7, free_to_allocate: 1.25 }] };
+        return base(url,init);
+      });
+      win.location.hash = '#/so?id=302&step=scan'; (await relElement(win,'[data-bulk="7"]')).click();
+      (await relElement(win,'#rel-review-current')).click(); (await relElement(win,'#rel-go')).click();
+      const input = await relElement(win,'[data-qty="7"]'); expect(input.value).toBe('1.25'); win.document.querySelector('[data-bulk="7"]').click(); await relElement(win,'#rel-review-current');
+      expect(calls).toHaveLength(2); expect(calls[0].key).not.toBe(calls[1].key); expect(calls[1].body.bulk[0].quantity).toBe(1.25);
+    });
+    it('retains an expired uncertain allocation for reconciliation without reposting', async () => {
+      const calls: any[] = []; const win = await bootAs(REL,fake(calls));
+      await win.mProductionDrafts.save({ key: win.mProductionDrafts.key('release:302:action'), rows: [], operation: { kind: 'release-action', action: 'allocate', orderId: 302, number: 'SO-00302', location: 'FG-A03', label: 'Original allocation', path: '/orders/302/release', payload: { bulk: [{ item_id: 7, quantity: 2.5 }] }, key: 'original-expired-key', created: Date.now()-8*86400000, state: 'unknown' } });
+      win.location.hash = '#/so?id=302&step=recovery'; (await relElement(win,'#rel-retry')).click(); await wait(80);
+      expect(calls).toEqual([]); expect(win.document.getElementById('m-view').textContent).toContain('Supervisor reconciliation required'); expect(win.document.getElementById('rel-review-current')).toBeNull();
+      expect((await win.mProductionDrafts.loadAction('release:302')).operation.key).toBe('original-expired-key');
+    });
 
     it('splits the queue into Ready and Blocked by authorization state', async () => {
       const win = await bootAs(REL, fake([]));
@@ -1171,6 +1805,107 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       };
     }
 
+    async function element(win: any, selector: string) {
+      for (let n = 0; n < 100; n++) { const el = win.document.querySelector(selector); if (el) return el; await wait(20); }
+      throw new Error('Missing RTS element ' + selector + ': ' + win.document.getElementById('m-view').textContent);
+    }
+    async function confirmStock(win: any) {
+      const tick = await element(win, '#rts-ok'); tick.checked = true; tick.dispatchEvent(new win.Event('change'));
+      win.document.getElementById('rts-post').click();
+    }
+    it.each(['unit', 'batch'])('recovers a committed %s receipt after restart with its exact key and payload', async (kind) => {
+      const factory = new IDBFactory(), applied = new Map(), calls: any[] = []; let lose = true;
+      const batch = { ...U, id: 81, number: 'LOT-81', remaining_qty: 10 };
+      const respond = (url: string, init: any) => {
+        if (url === '/api/locations') return LOCS;
+        if (url === '/api/rts/queue') return { units: kind === 'unit' && !applied.size ? [U] : [], batches: kind === 'batch' ? [{ ...batch, remaining_qty: 10 - applied.size * 2 }] : [], recorded: [] };
+        if (url === '/api/job-orders/184/products-in' && init.method === 'POST') {
+          const key = init.headers['Idempotency-Key']; calls.push({ key, payload: init.body });
+          if (!applied.has(key)) applied.set(key, { id: 42, number: 'PI-00042' });
+          if (lose) { lose = false; return undefined; } return applied.get(key);
+        } return undefined;
+      };
+      let win = await bootAs({ ...RTS, permissions: ['mobile.access', 'production.receive'] }, respond, factory);
+      win.location.hash = kind === 'batch' ? '#/receiving?batch=81' : '#/receiving?unit=601&step=confirm';
+      await element(win, '#rts-post');
+      if (kind === 'batch') { win.document.querySelector('.rk-stepper input').value = '2'; win.document.querySelector('[data-note]').value = 'Original physical count'; }
+      await confirmStock(win); await element(win, '#rts-retry'); expect(win.document.querySelector('[data-loc]')).toBeNull(); win.close();
+      win = await bootAs(RTS, respond, factory); win.location.hash = '#/receiving';
+      (await element(win, '[data-recovery] [data-id]')).click(); (await element(win, '#rts-retry')).click(); await element(win, '#rts-next');
+      expect(calls).toHaveLength(2); expect(calls[1]).toEqual(calls[0]); expect(applied.size).toBe(1);
+      if (kind === 'batch') expect(JSON.parse(calls[0].payload)).toEqual({ location_id: 2, batch_id: 81, quantity: 2, notes: 'Original physical count' });
+      expect(win.document.getElementById('m-view').textContent).toContain('PI-00042');
+    });
+    it('retains a partial group and retries only its unresolved job order after restart', async () => {
+      const factory = new IDBFactory(), applied = new Map(), calls: any[] = []; let lose = true;
+      const other = { ...U, id: 603, identifier: 'K4-03', job_order_id: 185, job_order_number: 'JO-2026-185' };
+      const respond = (url: string, init: any) => {
+        if (url === '/api/locations') return LOCS;
+        if (url === '/api/rts/queue') return { units: [U,other].filter(u => ![...applied.values()].some(a => a.unit === u.id)), batches: [], recorded: [] };
+        if (url.endsWith('/products-in') && init.method === 'POST') {
+          const key = init.headers['Idempotency-Key']; calls.push({ url, key, body: init.body });
+          if (!applied.has(key)) applied.set(key, { id: applied.size + 1, number: 'PI-' + (applied.size + 1), unit: JSON.parse(init.body).unit_ids[0] });
+          if (url.includes('/185/') && lose) { lose = false; return undefined; } return applied.get(key);
+        } return undefined;
+      };
+      let win = await bootAs(RTS, respond, factory); win.location.hash = '#/receiving?unit=601&step=group';
+      (await element(win, '[data-add="603"]')).click(); win.location.hash = '#/receiving?unit=601&step=confirm';
+      await confirmStock(win); await element(win, '#rts-retry');
+      expect(win.document.getElementById('m-view').textContent).toContain('1 of 2 confirmed'); win.close();
+      win = await bootAs(RTS, respond, factory); win.location.hash = '#/receiving'; (await element(win, '[data-recovery] [data-id]')).click();
+      (await element(win, '#rts-retry')).click(); await element(win, '#rts-next');
+      expect(calls.map(c => c.url)).toEqual(['/api/job-orders/184/products-in','/api/job-orders/185/products-in','/api/job-orders/185/products-in']);
+      expect(calls[1]).toEqual(calls[2]); expect(applied.size).toBe(2); expect(win.document.getElementById('m-view').textContent).toContain('2 of 2 confirmed');
+    });
+    it('keeps a site-PC receipt pending across restart until its original command confirms', async () => {
+      const factory = new IDBFactory(); let state = 'pending', count = 0;
+      const respond = (url: string, init: any) => {
+        if (url === '/api/locations') return LOCS;
+        if (url === '/api/rts/queue') return { units: count ? [] : [U], batches: [], recorded: [] };
+        if (url === '/api/sync/command/rts-local') return { state };
+        if (url.endsWith('/products-in') && init.method === 'POST') { count++; return { __headers: { 'X-Sync-State': 'local', 'X-Sync-Command': 'rts-local' }, body: { id: 42, number: 'PI-PC' } }; }
+        return undefined;
+      };
+      let win = await bootAs(RTS, respond, factory); win.location.hash = '#/receiving?unit=601&step=confirm'; await confirmStock(win); await wait(100);
+      expect(win.document.getElementById('m-view').textContent).toContain('confirmation pending'); expect(win.document.getElementById('rts-next')).toBeNull(); expect(win.document.getElementById('rts-retry')).toBeNull(); win.close();
+      win = await bootAs(RTS, respond, factory); win.location.hash = '#/receiving?unit=601&step=confirm'; await wait(100);
+      expect(win.document.getElementById('m-view').textContent).toContain('confirmation pending'); expect(count).toBe(1);
+      state = 'confirmed'; win.MApp.render(); await element(win, '#rts-next'); expect(count).toBe(1);
+    });
+    it('requires review after refusal and uses a fresh key for a corrected location', async () => {
+      const calls: any[] = []; let refused = true;
+      const base = fake([]);
+      const win = await bootAs(RTS, (url: string, init: any) => {
+        if (url === '/api/locations') return [...LOCS, { id: 4, name: 'FG-B01', type: 'warehouse' }];
+        if (url.endsWith('/products-in') && init.method === 'POST') { calls.push({ body: JSON.parse(init.body), key: init.headers['Idempotency-Key'] }); if (refused) { refused = false; return { __status: 400, body: { error: 'FG-A03 is full', location_error: true } }; } return { id: 42, number: 'PI-00042' }; }
+        return base(url,init);
+      });
+      win.location.hash = '#/receiving?unit=601&step=confirm'; await confirmStock(win);
+      (await element(win, '#rts-correct')).click(); await element(win, '#rts-go');
+      win.location.hash = '#/receiving?unit=601&step=location'; (await element(win, '[data-l="4"]')).click(); win.document.getElementById('rts-use').click(); await element(win, '#rts-go');
+      win.location.hash = '#/receiving?unit=601&step=confirm'; await confirmStock(win); await element(win, '#rts-next');
+      expect(calls).toHaveLength(2); expect(calls[0].key).not.toBe(calls[1].key); expect(calls[1].body.location_id).toBe(4);
+    });
+    it('blocks blank, fractional, negative and excessive batch quantities instead of truncating them', async () => {
+      const posts: any[] = [], base = fake(posts);
+      const win = await bootAs(RTS, (url: string, init: any) => url === '/api/rts/queue' ? { units: [], batches: [{ ...U, id: 81, number: 'LOT-81', remaining_qty: 5 }], recorded: [] } : base(url,init));
+      win.location.hash = '#/receiving?batch=81'; await element(win, '#rts-post');
+      const tick = win.document.getElementById('rts-ok'); tick.checked = true; tick.dispatchEvent(new win.Event('change'));
+      for (const value of ['', '1.5', '-1', '6']) { win.document.querySelector('.rk-stepper input').value = value; win.document.getElementById('rts-post').click(); await wait(20); }
+      expect(posts).toEqual([]); expect(win.document.querySelector('.rk-stepper input')).toBeTruthy();
+    });
+    it('shows retained receipts while a live queue request is stuck, then shows an unknown count on timeout', async () => {
+      const win = await bootAs(RTS, fake([]));
+      await win.mRtsRecovery.begin('rts-unit:601', [{ jobId: 184, path: '/job-orders/184/products-in', payload: { location_id: 2, unit_ids: [601] }, labels: ['K4-01'] }], 'FG-A03');
+      const fetch = win.fetch, timeout = win.setTimeout.bind(win); let finish: any;
+      win.fetch = (url: string, init: any) => url === '/api/rts/queue' ? new Promise(r => { finish = r; }) : fetch(url,init);
+      win.setTimeout = (fn: any, ms: number, ...args: any[]) => timeout(fn, ms === 20000 ? 30 : ms, ...args);
+      win.location.hash = '#/receiving'; await element(win, '[data-recovery] [data-id]'); await wait(80);
+      expect(win.document.getElementById('m-view').textContent).toContain('count unknown');
+      finish({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ units: [], batches: [], recorded: [] }) }); await wait(40);
+      expect(win.document.getElementById('m-view').textContent).toContain('count unknown'); expect(win.document.getElementById('m-view').textContent).not.toContain('Nothing waiting for stock entry');
+    });
+
     it('shows each location\'s room and won\'t let a full one be picked', async () => {
       const base = fake([]);
       const win = await bootAs(RTS, (url: string, init: any) => url === '/api/locations'
@@ -1357,7 +2092,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       production: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/job-orders.js'), 'utf8'),
       hub: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/production.js'), 'utf8'),
       quality: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/qc.js'), 'utf8'),
-      rts: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/receiving.js'), 'utf8'),
+      rts: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/receiving.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'public/mobile/modules/manufacturing/rts-recovery.js'), 'utf8'),
       releasing: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/inventory/so.js'), 'utf8'),
     };
     expect(files.warehouse).toContain("role: 'parts'");

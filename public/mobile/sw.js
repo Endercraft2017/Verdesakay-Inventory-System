@@ -7,7 +7,7 @@
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
 var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
 var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
-var CACHE_VERSION = CACHE_PREFIX + 'v87';
+var CACHE_VERSION = CACHE_PREFIX + 'v96';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -61,6 +61,7 @@ var SHELL = [
   '/mobile/lib/photo.js',
   '/mobile/lib/signature.js',
   '/mobile/lib/queue.js',
+  '/mobile/lib/production-drafts.js',
   '/mobile/lib/push.js',
   '/mobile/lib/scanner.js',
   '/mobile/lib/selfie.js',
@@ -83,11 +84,14 @@ var SHELL = [
   '/mobile/modules/inventory/batch-move.js',
   '/mobile/modules/manufacturing/job-orders.js',
   '/mobile/modules/manufacturing/kit-release.js',
+  '/mobile/modules/manufacturing/unit-issues.js',
   '/mobile/modules/manufacturing/qc.js',
   '/mobile/modules/manufacturing/repairs.js',
   '/mobile/modules/manufacturing/record.js',
+  '/mobile/modules/manufacturing/rts-recovery.js',
   '/mobile/modules/manufacturing/receiving.js',
   '/mobile/modules/inventory/allocate.js',
+  '/mobile/modules/inventory/release-actions.js',
   '/mobile/modules/inventory/so.js',
   '/mobile/modules/inventory/deliveries.js',
   '/mobile/modules/core/report-problem.js',

@@ -2,9 +2,9 @@
      62:14 Release Queue · 62:79 Verify Kit · 62:150 Confirm Release · 62:205 Short Stock
      62:264 Escalate Shortage · 62:317 Released Handoff · 62:372 Scan Shortcut
    Backend (job-orders.routes.ts, all inventory.adjust): approved drafts come from
-   GET /job-orders?stage=awaiting_release, each checked with GET /:id/availability. Confirm
-   runs the server's own steps in order — warehouse-accept → prepare (full pick) → release —
-   each all-or-nothing, so a short kit never moves stock. A shortage escalation is a tracked
+   GET /job-orders?stage=awaiting_release, each checked with GET /:id/availability. The phone
+   exposes warehouse-accept → prepare (partial or full counts) → release separately —
+   each independent: acceptance and picks can save before release fails. A shortage escalation is a tracked
    production issue (POST /production-issues), not a loose message. Online-only: nothing here
    goes through the offline queue.
    Each step is its own URL so the header back arrow / phone back gesture walk the flow:
@@ -13,7 +13,101 @@
   var R = window.RoleUI;
   var RELEASE_ICON = '/mobile/icons/v2/release-box.svg';
   var DRAFT_KEY = 'vds_kit_shortage_draft_';
-  var pickShortfalls = {};
+  var rendering = 0;
+  // All three stages use account/tenant-scoped, revision-checked durable attempts.
+  function actionId(id) { return 'kit:' + id; }
+  function live(view, record) {
+    return !!MApp.getMe() && view.isConnected && /^#\/kit-release(?:\?|$)/.test(location.hash) && mProductionDrafts.key(actionId(record.jobId)) === record.key &&
+      Number(new URLSearchParams(location.hash.split('?')[1] || '').get('id')) === record.jobId;
+  }
+  function stageLabel(jo, av) {
+    if (jo.status !== 'draft') return jo.status;
+    if (!jo.approved_at) return 'Awaiting approval';
+    if (!jo.warehouse_accepted_at) return 'Awaiting warehouse';
+    if (jo.prepared_at) return av && av.releasable ? 'Ready to release' : 'Fully picked';
+    return av && av.lines.some(function (l) { return l.picked > 0; }) ? 'Partially picked' : 'Accepted · not picked';
+  }
+  function released(jo) {
+    return !!(jo.released_at && jo.parts_slip_number && ['released', 'in_progress', 'paused', 'completed'].indexOf(jo.status) !== -1);
+  }
+  function stockText(l) {
+    return 'Need ' + l.need + ' · Picked ' + (l.picked || 0) + ' · On hand ' + l.have +
+      ' · Held ' + l.held_elsewhere + ' · Free ' + l.available;
+  }
+  function stockLines(lines) {
+    return R.lines(lines.map(function (l) { return { name: l.component_name, qty: 'Picked ' + (l.picked || 0) + ' / ' + l.need, detail: 'On hand ' + l.have + ' · Held ' + l.held_elsewhere + ' · Free ' + l.available, ok: l.short <= 0 }; }));
+  }
+  function status(view, jo) {
+    var body = R.page(view, { role: 'warehouse', node: '62:317', title: 'Job-order status', subtitle: 'Review the current record' });
+    body.innerHTML = R.jobHead({ number: jo.number, name: jo.product_name, pill: { text: jo.status } }) +
+      R.field('Parts slip', jo.parts_slip_number || 'None') +
+      R.note('info', 'The current job-order status is ' + mEsc(jo.status) + '.') +
+      R.actions([{ id: 'kr-queue', label: 'Back to release queue', kind: 'secondary' }]);
+    body.querySelector('#kr-queue').onclick = function () { MApp.go('kit-release'); };
+  }
+  function guarded(view, record, fn) { if (live(view, record)) fn(); }
+  function send(record) {
+    var op = record.operation;
+    if (record.key !== mProductionDrafts.key(actionId(record.jobId))) return Promise.reject(new Error('Sign in to the original account to recover this action.'));
+    if (Date.now() - op.created >= 7 * 86400000 || op.state === 'conflict') {
+      op.state = 'conflict'; op.error = 'This attempt needs reconciliation with the supervisor. Do not repeat the action with a new key.';
+      return mProductionDrafts.save(record);
+    }
+    var started = false, previous = op.state;
+    op.state = 'sending'; op.error = '';
+    return mProductionDrafts.save(record).then(function () {
+      started = true;
+      return API.post(op.path, op.payload, { idempotencyKey: op.key });
+    }).then(function (result) {
+      op.state = 'confirmed'; op.local = API.syncLocal(result); op.result = result;
+      return mProductionDrafts.save(record);
+    }).catch(function (err) {
+      // Once sent, loss of response means unknown, including a failed acknowledgement save.
+      op.state = !started ? previous : (!err.status || err.status >= 500 || err.status === 429 ? 'unknown' : 'rejected');
+      if (err.status === 409 && /save key|different request|idempotency/i.test(err.message)) op.state = 'conflict';
+      op.error = err.message;
+      op.shortfalls = err.data && err.data.shortfalls || null;
+      return mProductionDrafts.save(record).catch(function () { throw err; });
+    });
+  }
+  function recovery(view, d, record) {
+    var op = record.operation;
+    var body = R.page(view, { role: 'warehouse', node: '62:150', title: 'Review warehouse action', subtitle: 'Recover the original ' + op.kind + ' attempt' });
+    body.innerHTML = R.jobHead({ number: d.jo.number, name: d.jo.product_name, pill: { text: stageLabel(d.jo, d.av) } }) +
+      R.field('Current record', [d.jo.warehouse_accepted_at ? 'Warehouse accepted' : 'Not accepted', d.jo.prepared_at ? 'Fully picked' : 'Not fully picked', d.jo.parts_slip_number || 'No release slip'].join(' · ')) +
+      (d.av ? stockLines(d.av.lines) : R.note('warn', 'Availability unknown. Refresh before making any new stock decision.')) +
+      (op.kind === 'pick' ? R.field('Original picked counts', op.payload.job_orders[0].lines.map(function (l) { return '#' + l.component_item_id + ': ' + l.qty_picked; }).join(' · ')) : '') +
+      R.note(op.state === 'confirmed' && !op.local ? 'info' : 'warn', op.local ? 'Saved on the site PC; awaiting confirmation. Do not hand over the kit yet.' :
+        op.state === 'confirmed' ? 'Confirmed by site authority.' : op.state === 'rejected' ? 'The action was refused. Review the current stages and stock before correcting it.' :
+        op.state === 'conflict' ? 'Needs supervisor reconciliation. The original attempt is retained.' : 'The response was interrupted. Earlier stages may have saved. Retry checks the original action with its original key.') +
+      (op.shortfalls ? R.lines(op.shortfalls.map(function (l) { return { name: l.component_name, qty: l.picking != null ? 'Picking ' + l.picking + ' · Free ' + l.available : stockText(l), ok: false }; })) : '') +
+      (op.error ? R.note('warn', mEsc(op.error)) : '') +
+      R.actions((!op.local && (op.state === 'unknown' || op.state === 'new') ? [{ id: 'kr-retry-action', label: 'Retry original', kind: 'primary' }] : [])
+        .concat([{ id: 'kr-review', label: op.state === 'rejected' || op.state === 'confirmed' && !op.local ? 'Review kit' : 'Back to queue', kind: 'secondary' }]));
+    var retry = body.querySelector('#kr-retry-action');
+    if (retry) retry.onclick = function () {
+      retry.disabled = true;
+      send(record).then(function () { guarded(view, record, function () { withJob(view, record.jobId); }); })
+        .catch(function (err) { guarded(view, record, function () { mToast(err.message, 'err'); recovery(view, d, record); }); });
+    };
+    body.querySelector('#kr-review').onclick = function () {
+      if (op.state === 'rejected' || op.state === 'confirmed' && !op.local) {
+        mProductionDrafts.remove(record).then(function () { guarded(view, record, function () { MApp.go('kit-release', { id: record.jobId }); if (!new URLSearchParams(location.hash.split('?')[1] || '').get('step')) withJob(view, record.jobId); }); })
+          .catch(function (err) { mToast(err.message, 'err'); });
+      } else MApp.go('kit-release');
+    };
+    if (op.local) body.appendChild(R.syncWatch(op.local, function (r) {
+      if (!live(view, record)) return;
+      if (r.state === 'confirmed') { op.local = null; op.state = 'confirmed'; mProductionDrafts.save(record).then(function () { guarded(view, record, function () { withJob(view, record.jobId); }); }).catch(function (err) { mToast(err.message, 'err'); }); }
+    }));
+  }
+  function submit(view, jo, kind, path, payload) {
+    var record = { key: mProductionDrafts.key(actionId(jo.id)), jobId: jo.id, rows: [], operation: {
+      kind: kind, path: path, payload: JSON.parse(JSON.stringify(payload)), key: 'kit-' + crypto.randomUUID(), created: Date.now(), state: 'new' } };
+    Array.prototype.forEach.call(view.querySelectorAll('input,button'), function (el) { el.disabled = true; });
+    send(record).then(function () { guarded(view, record, function () { withJob(view, jo.id); }); })
+      .catch(function (err) { guarded(view, record, function () { mToast(err.message, 'err'); withJob(view, jo.id); }); });
+  }
   function step(id, name) { MApp.go('kit-release', { id: id, step: name }); }
 
   function dueText(d) {
@@ -30,6 +124,7 @@
 
   /* ── 62:14 Release queue ─────────────────────────────────────────────────── */
   function queue(view, tab) {
+    var render = ++rendering;
     tab = tab || 'ready';
     var body = R.page(view, { role: 'warehouse', node: '62:14', title: 'Kit releases', subtitle: 'Pick and release complete job-order kits' });
     body.innerHTML = R.skeleton(3);
@@ -39,32 +134,42 @@
     ]).then(function (res) {
       var drafts = res[0] || [];
       var released = (res[1] || []).filter(function (j) { return !j.accepted_at; });
-      return Promise.all(drafts.map(function (j) {
-        return API.get('/job-orders/' + j.id + '/availability')
-          .then(function (a) { j._short = a.shortfalls || []; return j; })
-          .catch(function () { j._short = null; return j; }); // unknown → treated as ready, re-checked on open
-      })).then(function (withAvail) { return { drafts: withAvail, released: released }; });
+      return Promise.all(drafts.concat(released).map(function (j) {
+        return Promise.all([
+          j.status === 'draft' ? API.get('/job-orders/' + j.id + '/availability').catch(function () { return null; }) : Promise.resolve(null),
+          mProductionDrafts.load(actionId(j.id)),
+        ]).then(function (r) { j._av = r[0]; j._short = r[0] ? r[0].shortfalls || [] : null; j._pending = r[1]; return j; });
+      })).then(function () { return { drafts: drafts, released: released }; });
     }).then(function (d) {
-      var ready = d.drafts.filter(function (j) { return !j._short || !j._short.length; });
-      var blocked = d.drafts.filter(function (j) { return j._short && j._short.length; });
-      var lists = { ready: ready, blocked: blocked, released: d.released };
+      if (render !== rendering || !body.isConnected) return;
+      var ready = d.drafts.filter(function (j) { return !j._pending && j._av && j._av.releasable; });
+      var preparing = d.drafts.filter(function (j) { return !j._pending && j._av && !j._av.releasable && !j._short.length; });
+      var unknown = d.drafts.concat(d.released).filter(function (j) { return j._pending || (j.status === 'draft' && !j._av); });
+      var blocked = d.drafts.filter(function (j) { return !j._pending && j._short && j._short.length; });
+      var lists = { ready: ready, preparing: preparing, unknown: unknown, blocked: blocked, released: d.released.filter(function (j) { return !j._pending; }) };
       body.innerHTML =
-        R.hero('Action needed', ready.length ? ready.length + ' kit' + (ready.length === 1 ? '' : 's') + ' ready' : 'No kits waiting',
+        R.hero('Action needed', ready.length ? ready.length + ' kit' + (ready.length === 1 ? '' : 's') + ' ready' : 'No kits ready',
           blocked.length ? blocked.length + ' blocked by shortage' : '') +
         R.tabs([
           { id: 'ready', label: 'Ready', count: ready.length },
+          { id: 'preparing', label: 'Picking', count: preparing.length },
           { id: 'blocked', label: 'Blocked', count: blocked.length },
+          { id: 'unknown', label: 'Review', count: unknown.length },
           { id: 'released', label: 'Released' },
         ], tab) + '<div class="rk-list" data-list></div>';
       function paint(which) {
         var host = body.querySelector('[data-list]');
-        var rows = lists[which];
+        var rows = lists[which] || [];
         if (!rows.length) {
           host.innerHTML = '<div class="rk-empty">' + (which === 'ready' ? 'No approved kits are waiting to be released.'
-            : which === 'blocked' ? 'Nothing is blocked by a shortage.' : 'No released kits are waiting for production to accept them.') + '</div>';
+            : which === 'blocked' ? 'Nothing is blocked by a shortage.' : which === 'preparing' ? 'No kits are waiting for picking.' : which === 'unknown' ? 'All stock checks completed.' : 'No released kits are waiting for production to accept them.') + '</div>';
           return;
         }
         host.innerHTML = rows.map(function (j) {
+          if (which === 'unknown' || which === 'preparing') {
+            return R.jobCard({ id: j.id, number: j.number, name: j.product_name, pill: { text: which === 'unknown' ? (j._pending ? 'Review saved action' : 'Availability unknown') : stageLabel(j, j._av), tone: 'warn' },
+              meta: which === 'unknown' ? (j._pending ? 'Open to recover or review the original action' : 'Open to retry the stock check') : meta(j) });
+          }
           if (which === 'blocked') {
             return R.jobCard({ id: j.id, number: j.number, name: j.product_name, warn: true, pill: { text: 'Blocked', tone: 'warn' },
               meta: [j.team_name, j._short.length + ' part' + (j._short.length === 1 ? '' : 's') + ' short'].filter(Boolean).join(' · ') });
@@ -78,7 +183,7 @@
         Array.prototype.forEach.call(host.querySelectorAll('[data-id]'), function (b) {
           b.onclick = function () {
             var id = Number(b.dataset.id);
-            if (which === 'released') MApp.go('job-orders', { id: id });
+            if (which === 'released') MApp.go('kit-release', { id: id, step: 'done' });
             else MApp.go('kit-release', { id: id });
           };
         });
@@ -99,45 +204,61 @@
   }
 
   /* ── 62:79 Verify kit ────────────────────────────────────────────────────── */
-  function verify(view, id) {
+  function verify(view, d) {
+    var jo = d.jo, av = d.av;
     var body = R.page(view, { role: 'warehouse', node: '62:79', title: 'Verify job-order kit', subtitle: 'Count the physical kit before release' });
-    body.innerHTML = R.skeleton(2);
-    load(id).then(function (d) {
-      var jo = d.jo, av = d.av;
-      if (jo.status !== 'draft') { step(jo.id, 'done'); return; }
-      if (!jo.approved_at) {
-        body.innerHTML = R.jobHead({ number: jo.number, name: jo.product_name, meta: meta(jo), pill: { text: 'Draft' } }) +
-          R.note('warn', 'This job order has not been approved yet — it can’t be released until a production manager approves it.');
-        return;
-      }
-      var short = av.shortfalls || [];
-      body.innerHTML =
-        R.jobHead({ number: jo.number, name: jo.product_name, pill: { text: 'Draft' },
-          meta: [jo.team_name, 'Qty ' + jo.qty_ordered, dueText(jo.due_date)].filter(Boolean).join(' · ') }) +
-        R.field('Pick from', av.source_location_name || jo.source_location_name || 'Default location') +
-        R.section('Components · ' + av.lines.length + ' line' + (av.lines.length === 1 ? '' : 's')) +
-        (av.lines.length
-          ? R.lines(av.lines.map(function (l) {
-              return { name: l.component_name, qty: Math.min(l.have, l.need) + ' / ' + l.need, ok: l.short <= 0 };
-            }))
-          : R.note('info', 'This job order has no components to release.')) +
-        R.note('warn', 'Release is all-or-nothing. Do not hand over a partial kit.') +
-        (short.length
-          ? R.actions([{ id: 'kr-short', label: 'See shortage', kind: 'primary' }])
-          : R.actions([{ id: 'kr-go', label: 'Release to production', kind: 'primary', icon: RELEASE_ICON }]));
-      var go = body.querySelector('#kr-go');
-      if (go) go.onclick = function () { step(jo.id, 'confirm'); };
-      var sh = body.querySelector('#kr-short');
-      if (sh) sh.onclick = function () { step(jo.id, 'blocked'); };
-    }).catch(function (err) {
-      body.innerHTML = '';
-      body.appendChild(R.error(err, function () { verify(view, id); }));
+    body.innerHTML = R.jobHead({ number: jo.number, name: jo.product_name, pill: { text: stageLabel(jo, av) }, meta: meta(jo) }) +
+      R.field('Pick from', jo.source_location_name || 'Default location');
+    if (!jo.approved_at) { body.innerHTML += R.note('warn', 'A production manager must approve this job order first.'); return; }
+    if (!av) {
+      body.innerHTML += R.note('warn', 'Availability unknown. No release decision can be made until stock is checked.') + R.actions([{ id: 'kr-refresh', label: 'Retry stock check', kind: 'primary' }]);
+      body.querySelector('#kr-refresh').onclick = function () { withJob(view, jo.id); }; return;
+    }
+    body.innerHTML += R.section('Components · ' + av.lines.length + ' lines') + stockLines(av.lines) +
+      R.note('warn', 'Picking reserves parts; it does not deduct stock. Release is all-or-nothing. Do not hand over a partial kit.');
+    if (!jo.warehouse_accepted_at) {
+      body.innerHTML += R.actions([{ id: 'kr-accept', label: 'Accept for picking', kind: 'primary' }]);
+      body.querySelector('#kr-accept').onclick = function () { submit(view, jo, 'acceptance', '/job-orders/warehouse-accept', { job_order_ids: [jo.id] }); };
+      return;
+    }
+    body.innerHTML += av.lines.map(function (l) {
+      return '<label class="rk-card rk-field"><small>' + mEsc(l.component_name + ' · need ' + l.need + ' · free ' + l.available) + '</small>' +
+        '<input type="number" inputmode="numeric" min="0" max="' + l.need + '" step="1" data-pick="' + l.component_item_id + '" aria-label="Picked ' + mEsc(l.component_name) + '" value="' + (l.picked || 0) + '"></label>';
+    }).join('') + R.actions([{ id: 'kr-save-pick', label: 'Save picked counts', kind: 'secondary' }]) +
+      (av.shortfalls.length ? R.actions([{ id: 'kr-short', label: 'See shortage', kind: 'secondary' }]) : '') +
+      (av.releasable ? R.actions([{ id: 'kr-go', label: 'Release to production', kind: 'primary', icon: RELEASE_ICON }]) : R.note('info', 'Save the complete picked counts to enable release.'));
+    body.querySelector('#kr-save-pick').onclick = function () {
+      var lines = [], invalid = false;
+      Array.prototype.forEach.call(body.querySelectorAll('[data-pick]'), function (el) {
+        var line = av.lines.find(function (l) { return l.component_item_id === Number(el.dataset.pick); });
+        var n = el.value.trim() === '' ? NaN : Number(el.value);
+        if (!Number.isSafeInteger(n) || n < 0 || n > line.need || n > line.available) invalid = true;
+        lines.push({ component_item_id: line.component_item_id, qty_picked: n });
+      });
+      if (invalid) { mToast('Use whole picked counts between zero and the needed/free quantity.', 'err'); return; }
+      submit(view, jo, 'pick', '/job-orders/prepare', { job_orders: [{ id: jo.id, lines: lines }] });
+    };
+    var go = body.querySelector('#kr-go');
+    if (go) go.onclick = function () { step(jo.id, 'confirm'); };
+    var savePick = body.querySelector('#kr-save-pick');
+    function updatePickActions() {
+      var changed = Array.prototype.some.call(body.querySelectorAll('[data-pick]'), function (input) {
+        var line = av.lines.find(function (l) { return l.component_item_id === Number(input.dataset.pick); });
+        return input.value.trim() === '' || Number(input.value) !== (line.picked || 0);
+      });
+      savePick.disabled = !changed && !(av.lines.length === 0 && !jo.prepared_at);
+      if (go) go.disabled = changed;
+    }
+    Array.prototype.forEach.call(body.querySelectorAll('[data-pick]'), function (el) {
+      el.oninput = updatePickActions;
     });
+    updatePickActions();
+    var sh = body.querySelector('#kr-short');
+    if (sh) sh.onclick = function () { step(jo.id, 'blocked'); };
   }
-
   function load(id) {
-    return Promise.all([API.get('/job-orders/' + id), API.get('/job-orders/' + id + '/availability')])
-      .then(function (r) { return { jo: r[0], av: r[1] }; });
+    return Promise.all([API.get('/job-orders/' + id), API.get('/job-orders/' + id + '/availability').catch(function () { return null; }), mProductionDrafts.load(actionId(id))])
+      .then(function (r) { return { jo: r[0], av: r[1], record: r[2] }; });
   }
 
   /* ── 62:150 Confirm release ──────────────────────────────────────────────── */
@@ -158,26 +279,18 @@
     ack.onchange = function () { btn.disabled = !ack.checked; };
     body.querySelector('#kr-back').onclick = function () { history.back(); };
     btn.onclick = function () {
-      if (offline()) { mToast('You’re offline — releasing a kit needs a connection. Nothing was deducted.', 'err'); return; }
+      if (offline()) { mToast('You’re offline — releasing a kit needs a connection.', 'err'); return; }
+      if (!ack.checked) return;
       btn.disabled = true;
-      btn.textContent = 'Releasing…';
-      // The server's own steps, in order; each is all-or-nothing and safe to repeat.
-      var chain = Promise.resolve();
-      if (!jo.warehouse_accepted_at) chain = chain.then(function () { return API.post('/job-orders/warehouse-accept', { job_order_ids: [jo.id] }); });
-      if (!jo.prepared_at) chain = chain.then(function () { return API.post('/job-orders/prepare', { job_orders: [{ id: jo.id }] }); });
-      chain.then(function () { return API.post('/job-orders/' + jo.id + '/release', {}); })
-        .then(function () { step(jo.id, 'done'); })
-        .catch(function (err) {
-          var sf = err && err.data && err.data.shortfalls;
-          if (sf && sf.length) {
-            pickShortfalls[jo.id] = sf.map(function (s) { return { component_name: s.component_name, need: s.picking, have: s.available, short: s.picking - s.available }; });
-            step(jo.id, 'blocked');
-            return;
-          }
-          mToast(err.message || 'Release failed — nothing was deducted', 'err');
-          btn.disabled = !ack.checked;
-          btn.textContent = 'Confirm release';
-        });
+      ack.disabled = true;
+      body.querySelector('#kr-back').disabled = true;
+      var owner = mProductionDrafts.key(actionId(jo.id)), routeHash = location.hash;
+      // One physical action, after separately confirmed acceptance and picked counts.
+      load(jo.id).then(function (d) {
+        if (!MApp.getMe() || owner !== mProductionDrafts.key(actionId(jo.id)) || location.hash !== routeHash) return;
+        if (d.record || !d.av || !d.av.releasable || !ack.checked) { withJob(view, jo.id, 'confirm'); return; }
+        submit(view, d.jo, 'release', '/job-orders/' + jo.id + '/release', {});
+      }).catch(function (err) { mToast(err.message, 'err'); btn.disabled = !ack.checked; ack.disabled = false; body.querySelector('#kr-back').disabled = false; });
     };
   }
 
@@ -185,23 +298,23 @@
   function blocked(view, jo, short) {
     var body = R.page(view, { role: 'warehouse', node: '62:205', title: 'Release blocked', subtitle: 'The kit cannot be partially released' });
     body.innerHTML =
-      R.alert(short.length + ' component' + (short.length === 1 ? ' is' : 's are') + ' short', 'Stock must be corrected before retrying.') +
-      R.lines(short.map(function (s) { return { name: s.component_name, qty: 'Need ' + s.need + ' · Have ' + s.have, ok: false }; }), 'No stock was deducted.') +
-      R.note('info', '<h3>What to do next</h3><ol><li>Return the picked kit to its staging area.</li>' +
-        '<li>Notify the planner or supervisor.</li><li>Retry only after stock is corrected.</li></ol>') +
+      R.alert(short.length + ' component' + (short.length === 1 ? ' is' : 's are') + ' short', 'Check missing stock and commitments before retrying.') +
+      R.lines(short.map(function (s) { return { name: s.component_name, qty: 'Need ' + s.need + ' · Free ' + s.available, detail: 'On hand ' + s.have + ' · Held ' + s.held_elsewhere + ' · Picked ' + (s.picked || 0), ok: false }; }), 'No release slip has been confirmed. Acceptance and picked counts may already be saved.') +
+      R.note('info', '<h3>What to do next</h3><ol><li>Keep the picked kit in its staging area.</li>' +
+        '<li>Notify the planner or supervisor.</li><li>If on-hand is adequate but free stock is short, ask for a commitment review. Replenish physically missing stock.</li></ol>') +
       R.actions([{ id: 'kr-report', label: 'Report shortage', kind: 'primary' }, { id: 'kr-retry', label: 'Retry check', kind: 'secondary' }]);
     body.querySelector('#kr-report').onclick = function () { step(jo.id, 'report'); };
-    body.querySelector('#kr-retry').onclick = function () { delete pickShortfalls[jo.id]; MApp.go('kit-release', { id: jo.id }); };
+    body.querySelector('#kr-retry').onclick = function () { MApp.go('kit-release', { id: jo.id }); };
   }
 
   /* ── 62:264 Report kit shortage (tracked production issue) ───────────────── */
   function report(view, jo, short) {
     var body = R.page(view, { role: 'warehouse', node: '62:264', title: 'Report kit shortage', subtitle: 'Prefilled handoff to planning or supervision' });
-    var key = DRAFT_KEY + jo.id;
-    var shortText = short.map(function (s) { return s.component_name + ' — need ' + s.need + ', have ' + s.have; }).join('\n');
+    var key = DRAFT_KEY + mProductionDrafts.key(actionId(jo.id));
+    var shortText = short.map(function (s) { return s.component_name + ' — ' + stockText(s); }).join('\n');
     var draft = null;
     try { draft = JSON.parse(localStorage.getItem(key) || 'null'); } catch (ignore) {}
-    var msg = (draft && draft.message) || 'Release blocked. Please replenish or approve the required stock correction before this kit can be released.';
+    var msg = (draft && draft.message) || 'Release blocked at ' + (jo.source_location_name || 'default location') + '. Please review stock and existing commitments before this kit can be released.';
     var sev = (draft && draft.severity) || 'high';
     body.innerHTML =
       R.field('Send to', 'Production planner · Supervisors') +
@@ -283,15 +396,20 @@
 
   /** Steps after verify reload the job order (and availability) from the server. */
   function withJob(view, id, name) {
+    var render = ++rendering, owner = mProductionDrafts.key(actionId(id)), routeHash = location.hash;
     view.innerHTML = '<section class="rk-page">' + R.skeleton(2) + '</section>';
     load(id).then(function (d) {
+      if (render !== rendering || location.hash !== routeHash || !MApp.getMe() || owner !== mProductionDrafts.key(actionId(id))) return;
       var jo = d.jo;
-      var short = pickShortfalls[id] || d.av.shortfalls || [];
-      if (name === 'done' || jo.status !== 'draft') done(view, jo);
-      else if (name === 'confirm') confirm(view, jo);
-      else if (name === 'blocked') blocked(view, jo, short);
+      if (d.record) { d.record.jobId = jo.id; recovery(view, d, d.record); return; }
+      if (released(jo)) { done(view, jo); return; }
+      if (jo.status !== 'draft') { status(view, jo); return; }
+      if (!d.av || !jo.approved_at) { verify(view, d); return; }
+      var short = d.av.shortfalls || [];
+      if (name === 'confirm' && d.av.releasable) confirm(view, jo);
+      else if ((name === 'confirm' && short.length) || name === 'blocked') blocked(view, jo, short);
       else if (name === 'report') report(view, jo, short);
-      else verify(view, id);
+      else verify(view, d);
     }).catch(function (err) {
       view.innerHTML = '';
       view.appendChild(R.error(err, function () { withJob(view, id, name); }));
@@ -299,6 +417,7 @@
   }
 
   MApp.route('kit-release', function (view, params) {
+    rendering++;
     if (!MApp.can('inventory.adjust')) {
       view.innerHTML = '<div class="m-error">Releasing kits is for warehouse accounts.</div>';
       return;
@@ -306,7 +425,7 @@
     var id = params && Number(params.id);
     if (params && params.scan) scan(view);
     else if (id && params.step) withJob(view, id, params.step);
-    else if (id) verify(view, id);
+    else if (id) withJob(view, id);
     else queue(view, params && params.tab);
   });
 })();

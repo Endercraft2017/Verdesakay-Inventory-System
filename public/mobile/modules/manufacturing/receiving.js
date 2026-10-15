@@ -7,7 +7,8 @@
    Backend: GET /rts/queue, POST /rts/check (dry run), GET /rts/lookup; the posting is still
    POST /job-orders/:id/products-in, which re-runs the same duplicate / hold / location rules
    atomically (src/modules/manufacturing/rts.ts). Posting is online-only with an idempotency
-   key — never queued, so nothing is ever shown as recorded that the server hasn't confirmed.
+   key — never queued. Exact receipt attempts survive restart, and site-PC saves remain
+   pending until their original sync command confirms.
    A mismatch report is a production issue (category "Product-data mismatch") that holds the
    unit out of stock until it is resolved. Non-serialized batches keep a quantity screen.
    URLs: #/receiving[?tab=issues|done][&id=<jobOrderId>] · ?step=identify · ?step=lookup[&q=]
@@ -17,8 +18,9 @@
   var R = window.RoleUI;
   var MISMATCH = 'Product-data mismatch';
   var DRAFT_KEY = 'vds_rts_mismatch_';
-  var draft = null;   // { anchor, ids:[], location_id, blockers, locErr, keys:{joId:key}, result }
+  var draft = null;   // unsubmitted selection; immutable receipt attempts live in mRtsRecovery
   var last = null;    // last /rts/queue response
+  var draftOwner = null, routeSerial = 0;
 
   var can = function (p) { return MApp.can(p); };
   var offline = function () { return navigator.onLine === false; };
@@ -39,7 +41,17 @@
   function ago(ts) { var d = when(ts); if (!d) return ''; var m = Math.max(0, Math.round((Date.now() - d) / 60000)); return m < 60 ? m + ' min' : m < 1440 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + ' d'; }
   var cap = function (s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; };
 
-  function loadQueue() { return API.get('/rts/queue').then(function (q) { last = q; return q; }); }
+  function loadQueue() {
+    var owner = mProductionDrafts.key('rts-owner');
+    return new Promise(function (resolve, reject) {
+      var settled = false, timer = setTimeout(function () { settled = true; reject(new Error('RTS queue timed out. Count unknown; retry the live check.')); }, 20000);
+      API.get('/rts/queue').then(function (q) {
+        if (settled) return; settled = true; clearTimeout(timer);
+        if (owner !== mProductionDrafts.key('rts-owner')) { reject(new Error('Account or server changed. Reopen RTS.')); return; }
+        last = q; resolve(q);
+      }, function (err) { if (settled) return; settled = true; clearTimeout(timer); reject(err); });
+    });
+  }
   /** Storage locations that can hold ready-to-sell stock (trucks are transit, refused server-side too). */
   function storage() { return mLocations.list().filter(function (l) { return l.type !== 'truck'; }); }
   function locName(id) { var l = mLocations.list().filter(function (x) { return x.id === id; })[0]; return l ? l.name : '—'; }
@@ -55,7 +67,9 @@
   /** Load the queue + locations, then hand the named unit (must be waiting for RTS) to fn. */
   function withUnit(view, unitId, fn) {
     view.innerHTML = '<section class="rk-page">' + R.skeleton(2) + '</section>';
+    var hash = location.hash, owner = mProductionDrafts.key('rts-owner');
     Promise.all([loadQueue(), mLocations.load()]).then(function () {
+      if (location.hash !== hash || owner !== mProductionDrafts.key('rts-owner')) return;
       var u = last.units.filter(function (x) { return x.id === unitId; })[0];
       if (!u) {
         var body = page(view, '74:68', 'Identify finished unit', '');
@@ -65,7 +79,7 @@
         body.querySelector('#rts-back').onclick = function () { go(); };
         return;
       }
-      if (!draft || draft.anchor !== u.id) draft = { anchor: u.id, ids: [u.id], location_id: defaultLoc(u), keys: {} };
+      if (!draft || draft.anchor !== u.id) draft = { anchor: u.id, ids: [u.id], location_id: defaultLoc(u) };
       fn(u);
     }).catch(function (err) { view.innerHTML = ''; view.appendChild(R.error(err, function () { withUnit(view, unitId, fn); })); });
   }
@@ -73,8 +87,10 @@
   /* ── Queue (74:16) ─────────────────────────────────────────────────────── */
   function queue(view, tab, joFilter) {
     var body = page(view, '74:16', 'Ready-to-sell intake', 'QA-passed units waiting for stock entry');
-    body.innerHTML = R.skeleton(3);
+    body.innerHTML = '<div data-recovery></div>' + R.skeleton(3);
+    mRtsRecovery.cards(body.querySelector('[data-recovery]'));
     loadQueue().then(function (q) {
+      if (!body.isConnected) return;
       var mine = function (x) { return !joFilter || x.job_order_id === Number(joFilter); };
       var units = q.units.filter(mine), batches = q.batches.filter(mine);
       var ready = units.filter(function (u) { return !u.hold; }), held = units.filter(function (u) { return u.hold; });
@@ -83,7 +99,7 @@
       var n = ready.length + batches.length;
       tab = tab || 'ready';
       body.innerHTML =
-        R.hero('Awaiting RTS record', n + ' ' + (n === 1 ? 'unit' : 'units'), Object.keys(models).length + ' model' + (Object.keys(models).length === 1 ? '' : 's') + ' · ' + prio + ' priority') +
+        '<div data-recovery></div>' + R.hero('Awaiting RTS record', n + ' ' + (n === 1 ? 'unit' : 'units'), Object.keys(models).length + ' model' + (Object.keys(models).length === 1 ? '' : 's') + ' · ' + prio + ' priority') +
         '<div class="rk-segs" role="tablist">' +
           '<button type="button" data-tab="ready"' + (tab === 'ready' ? ' class="on"' : '') + '>Ready<b>' + n + '</b></button>' +
           '<button type="button" data-tab="issues" class="warn' + (tab === 'issues' ? ' on' : '') + '">Issues<b>' + held.length + '</b></button>' +
@@ -125,10 +141,11 @@
         b.onclick = function () { Array.prototype.forEach.call(body.querySelectorAll('.rk-segs button'), function (x) { x.classList.toggle('on', x === b); }); paint(b.dataset.tab); };
       });
       paint(tab);
+      mRtsRecovery.cards(body.querySelector('[data-recovery]'));
       body.querySelector('#rts-scan').onclick = function () { go({ step: 'identify' }); };
       body.querySelector('#rts-look').onclick = function () { go({ step: 'lookup' }); };
       var all = body.querySelector('[data-all]'); if (all) all.onclick = function () { go(); };
-    }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { queue(view, tab, joFilter); })); });
+    }).catch(function (err) { if (!body.isConnected) return; body.innerHTML = R.note('warn', 'Live RTS queue unavailable — count unknown. Saved stock entries remain available.'); body.appendChild(R.error(err, function () { queue(view, tab, joFilter); })); var recovery = document.createElement('div'); recovery.setAttribute('data-recovery', ''); body.appendChild(recovery); mRtsRecovery.cards(recovery); });
   }
 
   /* ── Identify (74:68) ──────────────────────────────────────────────────── */
@@ -354,73 +371,46 @@
     btn.onclick = function () {
       if (offline()) { mToast('You’re offline — recording stock needs a connection. Nothing was saved.', 'err'); return; }
       btn.disabled = true; btn.textContent = 'Recording…';
+      body.querySelectorAll('button,input').forEach(function (el) { el.disabled = true; });
       post(chosen, btn);
     };
   }
 
-  /** One products-in call per job order (the endpoint is per job order); each keeps its own
-      idempotency key across retries so a timed-out request can't post twice. */
+  /** Grouping remains one exact Products In call per job order. Persist the whole
+      group before the first POST so confirmations and unfinished entries survive restart. */
   function post(chosen, btn) {
-    var byJo = {};
+    var byJo = {}, hash = location.hash, owner = mProductionDrafts.key('rts-owner');
     chosen.forEach(function (x) { (byJo[x.job_order_id] = byJo[x.job_order_id] || []).push(x); });
-    var done = [], receipts = [], local = null;
-    var chain = Promise.resolve();
-    Object.keys(byJo).forEach(function (jo) {
-      chain = chain.then(function () {
-        draft.keys[jo] = draft.keys[jo] || key();
-        var ids = byJo[jo].map(function (x) { return x.id; });
-        return API.post('/job-orders/' + jo + '/products-in', { location_id: draft.location_id, unit_ids: ids }, { idempotencyKey: draft.keys[jo] })
-          .then(function (r) { receipts.push(r.number); done = done.concat(byJo[jo]); local = local || API.syncLocal(r); });
-      });
+    var entries = Object.keys(byJo).map(function (jo) { return { jobId: Number(jo), jobNumber: byJo[jo][0].job_order_number,
+      path: '/job-orders/' + jo + '/products-in', payload: { location_id: draft.location_id, unit_ids: byJo[jo].map(function (x) { return x.id; }) }, labels: byJo[jo].map(label) }; });
+    if (!entries.length) { fail(btn, 'Record as ready to sell')(new Error('Select at least one unit.')); return; }
+    submit('rts-unit:' + draft.anchor, entries, locName(draft.location_id), hash, owner, btn);
+  }
+  function submit(slot, entries, locationName, hash, owner, btn) {
+    var record;
+    mRtsRecovery.begin(slot, entries, locationName).then(function (created) {
+      record = created.record;
+      if (created.existing) return;
+      return mRtsRecovery.send(record);
+    }).then(function () {
+      if (location.hash !== hash || owner !== mProductionDrafts.key('rts-owner')) return;
+      draft = draft || {}; draft.recovery = record;
+      var refused = record.operation.entries.length === 1 && record.operation.entries[0].state === 'rejected' && record.operation.entries[0].errorData;
+      if (refused && refused.blockers && refused.blockers.length) {
+        dupView(document.getElementById('m-view'), refused.blockers[0], true);
+        var body = document.getElementById('m-view').querySelector('.rk-body');
+        body.appendChild(mEl(R.actions([{ id: 'rts-review-saved', label: 'Review saved receipt', kind: 'secondary' }])));
+        body.querySelector('#rts-review-saved').onclick = function () { mRtsRecovery.go(record); };
+        return;
+      }
+      mRtsRecovery.go(record);
+    }).catch(function (err) {
+      if (location.hash !== hash || owner !== mProductionDrafts.key('rts-owner')) return;
+      if (record) { mToast(err.message, 'err'); mRtsRecovery.go(record); }
+      else { mToast(err.message || 'Unable to retain stock entry; nothing submitted.', 'err'); go(); }
     });
-    chain.then(function () { finish(done, receipts, null, local); }).catch(function (err) {
-      if (done.length) { finish(done, receipts, err, local); return; }
-      var data = err && err.data;
-      if (data && data.blockers && data.blockers.length) { draft.blockers = data.blockers; go({ unit: draft.anchor, step: 'dup' }); return; }
-      if (data && data.location_error) { draft.locErr = data.error; go({ unit: draft.anchor, step: 'location', err: 1 }); return; }
-      fail(btn, 'Record as ready to sell')(err);
-    });
   }
-  function finish(done, receipts, err, local) {
-    draft.result = { local: local || null, units: done.map(function (x) { return { id: x.id, identifier: label(x) }; }), receipts: receipts,
-      location: locName(draft.location_id), at: new Date().toISOString(), error: err ? (err.message || 'Failed') : null,
-      left: draft.ids.length - done.length };
-    go({ step: 'done' });
-  }
-
-  /* ── Recorded (74:356) ─────────────────────────────────────────────────── */
-  function doneView(view) {
-    var r = draft && draft.result;
-    if (!r) { go(); return; }
-    var body = page(view, '74:356', 'Ready-to-sell recorded', 'Finished-goods inventory is updated');
-    var me = (MApp.getMe() || {}).full_name || 'You';
-    body.innerHTML =
-      '<div class="rk-result' + (r.local ? ' queued' : '') + '"><i aria-hidden="true">' + (r.local ? '⏳' : '✓') + '</i><b>' + (r.local ? 'Ready to sell — on the site PC' : 'Ready to sell') + '</b><span>' + mEsc(r.units.length > 1 ? r.units.length + ' units · ' + r.units[0].identifier + ' …' : r.units[0].identifier) + '</span>' +
-        '<span style="font-weight:400;color:var(--rk-meta)">' + mEsc(r.location) + '</span></div><div data-syncw></div>' +
-      (r.error ? R.note('warn', '<b>Recorded ' + r.units.length + ' of ' + (r.units.length + r.left) + '.</b> The rest were not posted: ' + mEsc(r.error)) : '') +
-      R.field('Inventory transaction', r.receipts.join(', ')) +
-      R.field('Recorded by', me + ' · ' + cap(clock(r.at))) +
-      R.actions([{ id: 'rts-next', label: 'Record next unit', kind: 'primary' }, { id: 'rts-look', label: 'View stock record', kind: 'secondary' }]) +
-      (window.mProductionPrint ? R.actions([{ id: 'rts-print', label: 'Print unit record' + (r.units.length > 1 ? 's' : ''), kind: 'secondary' }]) : '') +
-      R.note('info', '<h3>Available downstream</h3>The unit can now appear in sales allocation and releasing workflows.');
-    body.querySelector('[data-syncw]').appendChild(R.syncWatch(r.local));
-    body.querySelector('#rts-look').onclick = function () { go({ step: 'lookup', q: r.units[0].identifier }); };
-    body.querySelector('#rts-next').onclick = function () {
-      draft = null;
-      loadQueue().then(function (q) {
-        var next = q.units.filter(function (x) { return !x.hold; })[0];
-        if (next) go({ unit: next.id }); else go();
-      }).catch(function () { go(); });
-    };
-    var pr = body.querySelector('#rts-print');
-    if (pr) pr.onclick = function () {
-      pr.disabled = true;
-      Promise.all(r.units.map(function (x) { return API.get('/production/record?unit=' + x.id); }))
-        .then(function (records) { return mProductionPrint.printUnitRecords(records); })
-        .catch(function (err) { mToast((err && err.message) || 'Failed', 'err'); })
-        .then(function () { pr.disabled = false; });
-    };
-  }
+  function doneView() { if (draft && draft.recovery) mRtsRecovery.go(draft.recovery); else go(); }
 
   /* ── Product-data mismatch (74:442) ────────────────────────────────────── */
   function mismatch(view, u) {
@@ -498,9 +488,10 @@
     var body = page(view, '74:145', 'Record batch', 'Non-serialized output · one quantity');
     body.innerHTML = R.skeleton(2);
     Promise.all([loadQueue(), mLocations.load()]).then(function () {
+      if (!body.isConnected) return;
       var b = last.batches.filter(function (x) { return x.id === batchId; })[0];
       if (!b) { body.innerHTML = '<div class="rk-empty">Nothing left to record on this batch.</div>'; return; }
-      var locId = defaultLoc(b), k = key();
+      var locId = defaultLoc(b);
       body.innerHTML =
         R.jobHead({ tone: 'ok', number: b.number, pill: { text: b.remaining_qty + ' left', tone: 'ok' }, name: b.product_name, meta: b.job_order_number + (b.sku ? ' · ' + b.sku : '') }) +
         '<div class="rk-stepper"><small>Quantity to record</small><div class="row"><button type="button" data-dec aria-label="Fewer">−</button>' +
@@ -521,25 +512,37 @@
       chk.onchange = function () { btn.disabled = !chk.checked; };
       btn.onclick = function () {
         if (offline()) { mToast('You’re offline — recording stock needs a connection. Nothing was saved.', 'err'); return; }
-        var qty = clamp(parseInt(input.value, 10)), loc = Number(body.querySelector('[data-loc]').value);
+        var qty = Number(input.value), loc = Number(body.querySelector('[data-loc]').value);
+        if (!Number.isSafeInteger(qty) || qty <= 0 || qty > b.remaining_qty) { mToast('Enter a whole quantity from 1 to ' + b.remaining_qty + '.', 'err'); return; }
+        if (!storage().some(function (l) { return l.id === loc; })) { mToast('Choose a finished-goods storage location.', 'err'); return; }
         btn.disabled = true; btn.textContent = 'Recording…';
-        API.post('/job-orders/' + b.job_order_id + '/products-in', { location_id: loc, batch_id: b.id, quantity: qty,
-          notes: body.querySelector('[data-note]').value.trim() || null }, { idempotencyKey: k }).then(function (r) {
-          draft = { result: { local: API.syncLocal(r), units: [{ id: null, identifier: b.number + ' · ' + qty + ' pcs' }], receipts: [r.number], location: locName(loc),
-            at: new Date().toISOString(), error: null, left: 0 } };
-          go({ step: 'done' });
-        }).catch(fail(btn, 'Record as ready to sell'));
+        body.querySelectorAll('button,input,select').forEach(function (el) { el.disabled = true; });
+        submit('rts-batch:' + b.id, [{ jobId: b.job_order_id, jobNumber: b.job_order_number,
+          path: '/job-orders/' + b.job_order_id + '/products-in', payload: { location_id: loc, batch_id: b.id, quantity: qty,
+          notes: body.querySelector('[data-note]').value.trim() || null }, labels: [b.number + ' · ' + qty + ' pcs'] }], locName(loc), location.hash, mProductionDrafts.key('rts-owner'), btn);
       };
     }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { batch(view, batchId); })); });
   }
 
-  MApp.route('receiving', function (view, params) {
+  MApp.route('receiving', async function (view, params) {
+    var render = ++routeSerial, hash = location.hash;
     params = params || {};
     if (!can('inventory.adjust') && !can('production.receive')) {
       view.innerHTML = '<div class="m-error">You don’t have permission to record ready-to-sell stock.</div>';
       return;
     }
+    var owner = mProductionDrafts.key('rts-owner');
+    if (draftOwner !== owner) { draft = null; last = null; draftOwner = owner; }
     var unitId = params.unit && Number(params.unit), step = params.step;
+    if (step === 'recovery') return mRtsRecovery.open(view, params.record);
+    if (unitId || params.batch) {
+      try {
+        var saved = await mRtsRecovery.saved();
+        if (render !== routeSerial || location.hash !== hash || owner !== mProductionDrafts.key('rts-owner')) return;
+        var existing = saved.find(function (s) { return mRtsRecovery.matches(s, [unitId], Number(params.batch) || null); });
+        if (existing) { mRtsRecovery.go(existing); return; }
+      } catch (err) { view.innerHTML = ''; view.appendChild(R.error(err, function () { MApp.render(); })); return; }
+    }
     if (step === 'identify') return identify(view);
     if (step === 'lookup') return lookup(view, params.q);
     if (step === 'done') return doneView(view);

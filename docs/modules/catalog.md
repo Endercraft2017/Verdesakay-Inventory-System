@@ -524,7 +524,7 @@ Audit additions: `orders.view` read gates, preserved partial headers/line IDs,
 content revision checks, warehouse-only released transitions, financial/location
 locks, inactive reference preservation, unsaved-change protection, and retry-safe
 editor saves. `src/app.ts` mounts order-save idempotency after mutation permissions;
-`shared/idempotency.ts` scopes cached responses to authenticated users and endpoints.
+`shared/idempotency.ts` scopes cached responses to authenticated users and endpoints. Local cached acknowledgements retain `X-Sync-State` and `X-Sync-Command` on replay so a retry cannot turn a pending site-PC action into final success.
 **Status:** working.
 
 **Sales stock approval refinement:** `order-availability.ts` is the shared warehouse ATP
@@ -552,8 +552,16 @@ batches/teams/scheduling.
 `modules/accounting` (`accounting-autopost.ts`, to post job-order costs).
 **Pre-release interface (job orders):** `POST /job-orders/:id/approve|unapprove`
 (`production.approve`, not implied by `inventory.adjust`), `GET /job-orders/:id/availability`
-(component need vs. on-hand at the source location + `releasable`), and
+(component need vs. on-hand/held/free at the source + `releasable`; also readable
+by narrow approvers), and
 `GET /job-orders?stage=awaiting_approval|awaiting_release|awaiting_warehouse|preparing|ready_to_release`.
+Draft detail and availability expose `approval_revision`. Approval accepts optional
+`expected_revision`; a changed plan returns `409 code: stale_job_order` before signing.
+The hash covers draft/component/checklist contents, not live stock or timestamps.
+Mobile approval is discoverable from Work, the Production hub and manager control,
+with a full draft/stock review and explicit acknowledgement for shortage follow-up.
+Persisted approval keys, notes and plan summaries survive restart; scoped saved
+attempts stay in the queue even after an approved draft leaves the authority queue.
 **Warehouse release interface:** `POST /job-orders/warehouse-accept`, `POST /job-orders/prepare`
 (bulk), `GET /job-orders/pick-list?ids=[&format=html]`, `POST /job-orders/:id/release`
 (issues the `PRS-#####` parts release slip, deducts stock). **Floor:** `POST /job-orders/:id/units`
@@ -569,13 +577,37 @@ take `status` (`pass|issue|na`; only `pass` satisfies a required check) and `val
 result takes `repair {category, station, priority}`, stored in `qc_repair_details` (createSchema,
 no version bump). Checklist items take `group`, `measure`, `hint`.
 Tests: `tests/qc-inspection-v2.test.ts`.
+**Separate mobile unit findings:** `manufacturing/unit-issues.js` registers
+`#/unit-issues?unit=&role=qc|qa`, opened from QC/QA verify/recheck/review, the unit
+record and Work's saved-report tile. Each issue owns its category/severity/description
+and compressed photos. Independent UUID drafts permit multiple unsent findings on
+one unit and persist photo bytes with account/server scope. During an authority
+outage, saved context allows draft editing/new findings while live issues stay
+unknown; reconnect/reopen is required before sending a draft. Report creation and each
+photo upload use immutable persisted retry keys, explicit unknown recovery, reviewed
+refusal corrections and local-command pending states. Reporter/manager edits,
+add-photos, resolve and reopen retain backend enforcement. Narrow floor readers
+must specify a unit for the issue list and can read unit-linked reports/photos;
+they do not receive the global feed. Reports are informational.
+Own unused `production_issue` photos of the inspected unit can also satisfy
+`evidence_ids`, without reuploading. Used evidence photos cannot be deleted.
+Tests: `tests/unit-issue-reports.test.ts`, mobile frontend and draft storage tests.
 **QA hold + evidence:** a final-pass `fail` with disposition `hold` puts the unit in status `hold`
-(`qc_records.result = 'hold'`; counts as unresolved — the job order can't complete, its batch can't
-close, cancel scraps it). `GET /api/qc/holds` lists held units; `POST /job-orders/:id/units/:unitId/
-hold-decision {outcome: pass|rectify|fail, remarks, disposition?, repair?}` decides one — any QA
+(`qc_records.result = 'hold'`; counts as unresolved — the job order can't auto-complete, its batch can't
+close, cancellation scraps it; early close preserves it for review and receiving).
+`GET /api/qc/holds` lists held units; `POST /job-orders/:id/units/:unitId/
+hold-decision {outcome: pass|rectify|fail, remarks, disposition?, repair?, expected_hold_record_id?}` decides one — any QA
 inspector or a new grantable `production.qa_review` (Production Manager by default), or
-`inventory.adjust`. Holding pushes every QA inspector / `qa_review` holder; the decision pushes the
-inspector who held it. Evidence: a failing / held result carries `evidence_ids` (`qc_unit` photos
+`inventory.adjust`. The optional reviewed-hold ID rejects a newer hold episode with `409 code: stale_hold`.
+Mobile hold decisions persist their immutable payload/key and reviewed context in
+account/server-scoped IndexedDB; original-key retries survive restart. Saved decisions
+remain discoverable after a unit leaves the live list. Definitive refusals require
+fresh review/key; expired/key-conflict attempts require reconciliation. Holds lookup
+errors/timeouts show unknown counts and retry instead of zero. Hold-only reviewers
+get decision controls without inspection actions; local sync results remain pending.
+A confirmed pass still waits for Products In before stock entry.
+Holding pushes every QA inspector / `qa_review` holder; the decision pushes the
+inspector who held it. Evidence: a failing / held result carries `evidence_ids` (`qc_unit` or unit-linked `production_issue` photos
 of that unit by that inspector, each backing one record — `qc_evidence`, createSchema); from the
 phone or desktop app (`isAppClient`) one per unit is required (409 `blocked: 'evidence'`); the desktop
 QC form uploads the chosen photo(s) to each failed unit first (`production-qc.js`). Desktop job
@@ -592,6 +624,20 @@ room = capacity − the sum of stock there). `rts.routes.ts` at `/api/rts`: `GET
 with final-pass record and hold, receivable batches, the caller's postings today),
 `POST /check` (same rules, no writes), `GET /lookup?q=&status=ready|allocated|hold`
 (`inventory.view` or `production.view`). `production.receive` may file production issues (the mismatch report).
+Mobile `manufacturing/rts-recovery.js` persists immutable receipt groups in scoped
+IndexedDB (`rts-unit`/`rts-batch`), with one payload/key/status/receipt/sync command
+per job order. Explicit original-key retry survives restart and skips confirmed
+job orders; saved entries remain discoverable after live queue removal or failure.
+Overlapping unit/batch routes recover existing attempts, and same-batch tab races
+are refused by draft revisions. Refusals require live review and a fresh corrected
+key; unknown/expired/conflicting and site-PC pending attempts cannot be replaced.
+Local command confirmation gates continuation/final Ready-to-sell copy; failed
+commands require reconciliation. Queue timeout/failure shows unknown counts and
+preserves recovery access. Work merges unresolved saved candidates with the live
+queue. Batch form rejects invalid/fractional counts. Receipt mutations remain
+online-only; there is no background resubmission or schema change.
+Tests: `tests/rts-recovery.test.ts`, mobile frontend, and bulk idempotency coverage
+in `tests/production-receiving.test.ts`.
 Tests: `tests/rts.test.ts`.
 **Repair-parts interface (mobile Parts clerk, Figma 83:*):** `production.routes.ts` adds
 `GET /repairs/:id/context` (unit, source inspection with station/priority, duplicate open
@@ -955,7 +1001,24 @@ pages, light + dark) and `public/mobile/lib/role-ui.js` (chip/title, hero, tabs,
 line lists, notices, acknowledgement check, success, actions). First role on it: warehouse
 kit release, `modules/manufacturing/kit-release.js` (Figma 62:14–62:372). Every step is its own
 URL so the header back arrow walks the flow; `app.js` clears `#m-view` data-* tags per route.
+Warehouse acceptance, partial/full picked counts and release are separate operations.
+Availability failures and saved attempts go to Review; Ready requires `releasable`.
+Pick corrections stay available before the slip. Needed/picked and on-hand/held/free
+stock are displayed; edited unsaved counts block release, and confirmation rechecks
+availability. Each warehouse action persists an immutable retry key/payload using
+`production-drafts.js` under its own kit namespace; interrupted attempts reload stages
+and replay explicitly after restart. Local sync commands stay pending, including cached
+backend replay; refusal shapes and cancelled deep links retain their actual state.
 Second: Production Lead + Manager, `modules/manufacturing/job-orders.js` (Figma 66:14–66:650) —
+serialized recording uses `lib/production-drafts.js`: IndexedDB retains photo bytes,
+unit IDs and immutable retry attempts scoped to server/tenant and account. Unknown
+uploads stay locked and replay their original key; completed rows are skipped. Stale
+tabs cannot overwrite or delete a newer draft. Operator recovery is explicit, never
+background submission; local site-PC results remain confirmation-pending.
+Approval, kit acceptance, bulk output and scrap use a separate persisted JSON-action record
+per job. Uncertain attempts lock input and reuse their original key after restart;
+definitive refusals require review before a new corrected attempt. Recording quantities
+must be whole and within remaining output, including unresolved units in that count.
 role accents (`.rk-accent-lead` blue, `.rk-accent-manager` purple) also tint the Quick Orbit and
 active dock tab via `html[data-role-accent]`, cleared per route. `lib/queue.js` background
 flushes now swallow storage errors (no IndexedDB / blocked site data) instead of throwing.
@@ -1161,3 +1224,16 @@ Header/footer creation preserves selected body text, reuses existing elements an
 Wide desktop Home now uses one command row with stroke icons for Clipboard and Editing, keeping labeled group dividers. The paragraph selector is labeled Paragraph type; Text styles explains body text, heading levels and shared formatting. Editor select arrow image/repeat/position/size are protected from later background shorthands, including sidebar Empty cells.
 
 Heading controls now say Body text, Main heading (H1), Subheading (H2), with deeper levels grouped separately. Headings & styles opens a Style gallery: preview cards explain paragraph roles and show font/size metadata; separate named pencil controls edit reusable formatting. Existing command/style keys and saved markup are unchanged.
+
+### Mobile release acceptance/allocation recovery (2026-10-15)
+
+`inventory/release-actions.js` uses scoped IndexedDB action records for exact
+warehouse acceptance and serialized/bulk allocation payloads and keys. Explicit
+restart retries, refusal review, expired/conflict retention, local-command pending
+states and saved-action discovery are integrated into `so.js`. Queue stages split
+unaccepted/incomplete/fully allocated/blocked orders; ship-from context and preview
+unit location IDs prevent misleading readiness. Bulk inputs preserve decimals and
+use `free_to_allocate`. Existing backend permissions, reservation and release-slip
+stock semantics remain in force; no schema changes. Tests: mobile frontend,
+`order-release.test.ts`, `release-slips.test.ts`, `release-auth.test.ts` and draft/PWA
+checks. Final slip/proof recovery, mobile allocation undo and delivery remain open.

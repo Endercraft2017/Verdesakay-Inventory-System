@@ -12,7 +12,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import multer from 'multer';
 import { queryOne, queryAll, run, uploadDir } from '../shared/db';
 import { requireAuth } from '../shared/auth';
-import { LINE, UNIT_PHOTOS } from '../shared/desk-access';
+import { LINE, INSPECT, RTS, UNIT_PHOTOS } from '../shared/desk-access';
 import { enforceQuota } from '../platform/quota';
 import type { Permission } from '../shared/types';
 import { syncClass } from '../sync';
@@ -42,7 +42,7 @@ const READ_PERMS: Record<string, Permission[]> = {
   // Photos of the parts kit on a job order's parts release slip (ref_id = parts_release_slips.id).
   parts_release: ['inventory.view', 'production.view', ...LINE],
   // Photos on a production issue report (ref_id = production_issues.id).
-  production_issue: ['inventory.view', 'production.view'],
+  production_issue: ['inventory.view', 'production.view', ...LINE, ...INSPECT, ...RTS],
 };
 // Everyone on the production floor: the line lead photographs each unit off the line, and the
 // QC/QA inspectors photograph defects — none of them hold inventory.adjust.
@@ -60,10 +60,16 @@ const WRITE_PERMS: Record<string, Permission[]> = {
   sales_return_proof: ['inventory.adjust', 'orders.release'],
   sales_return: ['inventory.adjust', 'orders.release'],
   parts_release: ['inventory.adjust'],
-  production_issue: [...FLOOR_PERMS, 'production.approve'],
+  production_issue: [...FLOOR_PERMS, 'production.approve', 'production.manage', 'production.receive'],
 };
 function allows(req: Request, perms: Permission[]): boolean {
   return perms.length === 0 || perms.some((p) => req.user!.permissions.includes(p));
+}
+function issuePhotoReadable(req: Request, refId: number): boolean {
+  const p = req.user!.permissions;
+  if (p.includes('inventory.view') || p.includes('production.view')) return true;
+  const issue = queryOne<{ unit_id: number | null; reported_by: number | null }>('SELECT unit_id, reported_by FROM production_issues WHERE id = ?', refId);
+  return !!issue && (issue.unit_id != null || issue.reported_by === req.user!.id || p.some(x => ['inventory.adjust', 'production.approve', 'production.manage'].includes(x)));
 }
 
 export const imageUpload = multer({
@@ -97,20 +103,23 @@ router.get('/', (req, res) => {
     return;
   }
   if (!allows(req, READ_PERMS[kind] ?? ['inventory.view'])) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (kind === 'production_issue' && !issuePhotoReadable(req, refId)) { res.status(403).json({ error: 'Open a unit-linked report to view its photos.' }); return; }
   const rows = queryAll<Row>(
-    `SELECT a.id, a.kind, a.ref_id, a.caption, a.created_at, u.full_name AS uploaded_by_name
+    `SELECT a.id, a.kind, a.ref_id, a.caption, a.created_at, a.uploaded_by, u.full_name AS uploaded_by_name
      FROM attachments a LEFT JOIN users u ON u.id = a.uploaded_by
      WHERE a.kind = ? AND a.ref_id = ? ORDER BY a.id`,
     kind, refId
   );
-  res.json(rows.map((r) => ({ ...r, url: `/api/attachments/${r.id}/image` })));
+  res.json(rows.map((r) => ({ ...r, url: `/api/attachments/${r.id}/image`,
+    ...(kind === 'production_issue' ? { inspection_available: r.uploaded_by === req.user!.id && !queryOne('SELECT 1 FROM qc_evidence WHERE attachment_id = ?', r.id) } : {}) })));
 });
 
 // GET /api/attachments/:id/image — stream the file
 router.get('/:id/image', async (req, res) => {
-  const row = queryOne<Row>('SELECT kind, image_path FROM attachments WHERE id = ?', Number(req.params.id));
+  const row = queryOne<Row>('SELECT kind, ref_id, image_path FROM attachments WHERE id = ?', Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Attachment not found' }); return; }
   if (!allows(req, READ_PERMS[row.kind] ?? ['inventory.view'])) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (row.kind === 'production_issue' && !issuePhotoReadable(req, row.ref_id)) { res.status(403).json({ error: 'This desk reads unit-linked report photos only.' }); return; }
   const file = await resolveDurableUploadAsync(row.image_path);
   if (!file) { res.status(410).json({ error: 'File is no longer available' }); return; }
   res.sendFile(file);
@@ -131,6 +140,14 @@ router.post('/', syncClass('physical'), syncUpload(imageUpload.single('image')),
     if (req.file) unlink(req.file.filename);
     res.status(403).json({ error: 'Forbidden' });
     return;
+  }
+  if (kind === 'production_issue') {
+    const issue = queryOne<{ reported_by: number | null; status: string }>('SELECT reported_by, status FROM production_issues WHERE id = ?', refId);
+    const p = req.user!.permissions;
+    if (!issue || (issue.reported_by !== req.user!.id && !p.some(x => ['inventory.adjust', 'production.approve', 'production.manage'].includes(x))) || issue.status !== 'open') {
+      if (req.file) unlink(req.file.filename);
+      res.status(!issue ? 404 : issue.status !== 'open' ? 409 : 403).json({ error: !issue ? 'Issue report not found' : issue.status !== 'open' ? 'Reopen the report before adding photos.' : 'Only the reporter or a manager can add photos to this report.' }); return;
+    }
   }
   if (!req.file) {
     res.status(400).json({ error: 'An image file is required (JPG, PNG, GIF or WebP)' });
@@ -160,9 +177,16 @@ export function saveAttachment(kind: string, refId: number, filename: string, ca
 
 // DELETE /api/attachments/:id
 router.delete('/:id', syncClass('claim'), (req, res) => {
-  const row = queryOne<Row>('SELECT kind, image_path FROM attachments WHERE id = ?', Number(req.params.id));
+  const row = queryOne<Row>('SELECT kind, ref_id, image_path FROM attachments WHERE id = ?', Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Attachment not found' }); return; }
   if (!allows(req, WRITE_PERMS[row.kind] ?? ['inventory.adjust'])) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (row.kind === 'production_issue') {
+    const issue = queryOne<{ reported_by: number | null; status: string }>('SELECT reported_by, status FROM production_issues WHERE id = ?', row.ref_id);
+    const p = req.user!.permissions;
+    if (!issue || (issue.reported_by !== req.user!.id && !p.some(x => ['inventory.adjust', 'production.approve', 'production.manage'].includes(x)))) { res.status(403).json({ error: 'Only the reporter or a manager can remove report photos.' }); return; }
+    if (issue.status !== 'open') { res.status(409).json({ error: 'Reopen this report before changing its photos.' }); return; }
+  }
+  if (queryOne('SELECT 1 FROM qc_evidence WHERE attachment_id = ?', Number(req.params.id))) { res.status(409).json({ error: 'This photo is retained as inspection evidence and cannot be deleted.' }); return; }
   run('DELETE FROM attachments WHERE id = ?', Number(req.params.id));
   // An installed PC keeps the file until the cloud confirms: a refused delete brings the row back.
   if (!sideEffectsSuppressed('unlink')) {
