@@ -48,6 +48,12 @@ and batch QR images, exact-key retry after restart and no horizontal overflow. F
 node context was retrieved for 74:68 and 78:109; the screenshot service returned
 asset URLs whose download was refused (HTTP 403), so no pixel comparison is claimed.
 
+Subsequent upstream SMTP/platform-billing commit `8e53710` was merged without
+changes to the mobile QR workflow or batch schema. Post-merge TypeScript and all
+161 targeted tests across seven files passed. The 2,721-test full run above precedes
+this SMTP-only merge; the final targeted run covers its affected tests and the
+mobile/lot workflow again.
+
 ## Integration with newer branch work (2026-10-15)
 
 Mobile commit `5342728` is integrated with remote heads `e1c0439` and `f13e72a`, preserving both

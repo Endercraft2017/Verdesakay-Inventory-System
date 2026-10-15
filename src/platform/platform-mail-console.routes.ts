@@ -4,6 +4,8 @@
  * learns only whether one is saved.
  */
 import { Router } from 'express';
+import { logProvisioning } from './platform';
+import type { PlatformAuthedRequest } from './platform-users';
 import { getPlatformMail, savePlatformMail, sendPlatformMail, platformMailLog, type PlatformMailSettings } from './platform-mail';
 
 const router = Router();
@@ -43,7 +45,15 @@ router.put('/mail', (req, res) => {
   if (typeof b.smtp_user === 'string') patch.smtp_user = b.smtp_user.trim();
   for (const k of ['alert_inquiry', 'alert_payment', 'alert_signup'] as const) if (typeof b[k] === 'boolean') patch[k] = b[k];
   const secret = typeof b.secret === 'string' ? b.secret.trim() : undefined;
-  res.json({ settings: savePlatformMail(patch, secret || undefined), log: platformMailLog(20) });
+  if (b.clear_secret !== undefined && typeof b.clear_secret !== 'boolean') {
+    res.status(400).json({ error: 'clear_secret must be a boolean.' }); return;
+  }
+  if (b.clear_secret && secret) {
+    res.status(400).json({ error: 'Choose either a new secret or clear the saved secret.' }); return;
+  }
+  const settings = savePlatformMail(patch, b.clear_secret ? '' : secret || undefined);
+  logProvisioning('_console', 'platform-mail-settings', `${(req as PlatformAuthedRequest).platformUser!.username}: saved email settings`);
+  res.json({ settings, log: platformMailLog(20) });
 });
 
 // POST /_platform/api/mail/test — { to? } (defaults to the alert recipients)

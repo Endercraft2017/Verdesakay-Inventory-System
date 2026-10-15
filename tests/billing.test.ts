@@ -257,3 +257,21 @@ describe('console listing', () => {
     expect((await ctx.api.put('/_platform/api/billing/settings').set(opHdr()).send({ default_ewt_rate: 40 })).status).toBe(400);
   });
 });
+
+describe('one-time service invoices', () => {
+  it('settles SMTP setup fees without activating a subscription or opening a signup lock', async () => {
+    const platform = await import('../src/platform/platform');
+    platform.setTenantStatus('otherco', 'past_due');
+    platform.setAwaitingPayment('otherco', true);
+    const fee = await issue('otherco', { kind: 'implementation', description: 'One-time assisted SMTP setup', amount: 1000, ewt_rate: 0 });
+    const paid = await ctx.api.post(`/_platform/api/billing/invoices/${fee.id}/record-payment`).set(opHdr())
+      .send({ amount: 1000, paid_on: today(), reference_no: 'SMTP-FEE-1', bir_invoice_no: 'MANUAL-001' });
+    expect(paid.status).toBe(200);
+    expect(paid.body).toMatchObject({ status: 'paid', bir_invoice_no: 'MANUAL-001', kind: 'implementation' });
+    expect(platform.getTenant('otherco')).toMatchObject({ status: 'past_due', awaiting_payment: 1 });
+    const subscription = await issue('otherco', { amount: 1000, ewt_rate: 0 });
+    await ctx.api.post(`/_platform/api/billing/invoices/${subscription.id}/record-payment`).set(opHdr())
+      .send({ amount: 1000, paid_on: today(), reference_no: 'SUBSCRIPTION-1' });
+    expect(platform.getTenant('otherco')).toMatchObject({ status: 'active', awaiting_payment: 0 });
+  });
+});

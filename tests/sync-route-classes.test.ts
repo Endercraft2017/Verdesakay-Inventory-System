@@ -30,6 +30,8 @@ const NO_CLASS_NEEDED: Record<string, string> = {
   // The platform console and sign-up run only on the cloud, outside any workspace.
   'src/platform/platform.routes.ts:post /login': 'cloud console',
   'src/platform/platform.routes.ts:post /logout': 'cloud console',
+  'src/platform/platform.routes.ts:put /tenants/:slug/mail': 'cloud-only owner-console SMTP settings; never replicated to installed tenant nodes',
+  'src/platform/platform.routes.ts:post /tenants/:slug/mail/test': 'cloud-only owner-console SMTP side effect; never replayed by workspace sync',
   'src/platform/platform.routes.ts:post /password': 'cloud-only owner-console password in platform.db, outside workspace sync',
   'src/platform/platform.routes.ts:post /tenants': 'cloud console',
   'src/platform/platform.routes.ts:post /tenants/import': 'cloud console',

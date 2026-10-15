@@ -251,12 +251,12 @@
   }
 
   /* ---------- new invoice ---------- */
-  async function newInvoice(slug, quote) {
+  async function newInvoice(slug, quote, assistedSetup) {
     var tenants = C.tenants();
     if (!tenants.length) { toast('Create a tenant first.'); return; }
     if (!settings) { try { await loadSettings(); } catch (ex) { toast(ex.message); return; } }
     var card = el('div', { class: 'card', style: 'max-width:480px' }, [
-      el('h2', { text: 'New invoice' }),
+      el('h2', { text: assistedSetup ? 'Invoice assisted SMTP setup' : 'New invoice' }),
       el('div', { class: 'field' }, [el('label', { text: 'Workspace' }), el('select', { id: 'ni-slug' }, tenants.map(function (t) {
         return el('option', { value: t.slug, text: (t.name || t.slug) + ' (' + t.slug + ')', selected: t.slug === slug ? 'selected' : null });
       }))]),
@@ -281,6 +281,13 @@
     ]);
     var modal = el('div', { class: 'modal', id: 'modal' }, [card]);
     document.body.appendChild(modal);
+    if (assistedSetup) {
+      $('ni-kind').value = 'implementation';
+      $('ni-desc').value = 'One-time assisted SMTP setup';
+      $('ni-amount').value = '';
+      // Separate service fee: do not populate a subscription period or recurring quote.
+      $('ni-ps').value = ''; $('ni-pe').value = '';
+    }
     $('ni-cancel').addEventListener('click', function () { modal.remove(); });
     $('ni-go').addEventListener('click', async function () {
       $('ni-err').textContent = '';
@@ -293,7 +300,12 @@
         modal.remove();
         toast('Issued ' + inv.reference);
         await refreshAfter(inv);
-      } catch (ex) { $('ni-err').textContent = ex.message; $('ni-go').disabled = false; }
+      } catch (ex) {
+        // The invoice may already have been issued and the modal removed. A refresh
+        // failure must not throw again or invite the operator to issue it twice.
+        if (modal.isConnected) { $('ni-err').textContent = ex.message; $('ni-go').disabled = false; }
+        else toast('Invoice issued; refresh failed: ' + ex.message);
+      }
     });
   }
 
@@ -365,5 +377,5 @@
     });
   }
 
-  window.ConsoleBilling = { refreshCount: refreshCount, renderTenant: renderTenant, close: function () { if (open) toggleView(false); } };
+  window.ConsoleBilling = { newSetupInvoice: function (slug) { return newInvoice(slug, null, true); }, refreshCount: refreshCount, renderTenant: renderTenant, close: function () { if (open) toggleView(false); } };
 })();

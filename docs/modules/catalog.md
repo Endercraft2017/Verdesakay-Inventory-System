@@ -142,7 +142,12 @@ honeypot), `inquiries-console.routes.ts` (operator list / status / notes / conta
 Tests: `tests/inquiries.test.ts`. Owner email alerts (2026-10-12): `platform-mail.ts` (Brevo API or
 SMTP, encrypted secret, `platform_mail` + `platform_mail_log` in `platform.db`, `notifyOwner()` called
 by inquiries / billing / signup routes), `platform-mail-console.routes.ts`, console `web-console/mail.js`.
-Tests: `tests/platform-mail.test.ts`. **Interface:** `tenantBillingSummary()`, `priceListQuote()`,
+Tenant-assisted SMTP: operator GET/PUT `/tenants/:slug/mail` and POST `/tenants/:slug/mail/test`
+use the target tenant's existing mailer; console Settings links a locally served guide and
+prefills the existing Billing form for a one-time implementation fee. No parallel invoice store.
+Platform email keys have an explicit clear action; settings saves are operator-audited.
+Tests: `tests/platform-mail.test.ts`, `tests/platform-tenant-mail.test.ts`,
+`tests/platform-tenant-mail-ui.test.ts`. **Interface:** `tenantBillingSummary()`, `priceListQuote()`,
 `setAwaitingPayment()` (platform.ts). **Not built:** PayMongo, overdue automation, notifications,
 recurring invoices. Tests: `tests/billing.test.ts`, `tests/billing-signup.test.ts`, `tests/frontend-billing.test.ts`.
 
@@ -999,7 +1004,7 @@ installed PC says it needs the internet. The search-index rebuild is per copy (n
 
 ## modules/email
 
-**Responsibility:** the BYO-SMTP outbound mail tool and its route surface.
+**Responsibility:** the BYO-SMTP outbound mail tool and its route surface; tenant-visible setup guide at `/email-setup.html` linked from Email and settings.
 **Owned files:** routes: `mail.routes.ts` (the transport itself, `mailer.ts`, lives in
 `shared/` since `modules/ai` and `modules/quickbooks` also send mail through it).
 **Offline (phase 4i):** `online`: the mail server and its password are cloud-only (D8).

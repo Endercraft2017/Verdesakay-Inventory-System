@@ -829,7 +829,7 @@ website, or the owner issues an invoice (monthly plan, implementation fee).
    Status `payment_submitted`. *Planned:* PayMongo checkout as a third, automatic branch.
 4. **Confirm** (operator, console Billing) — checks GCash history / bank app; confirm or reject with
    a note the customer sees; or records a payment seen directly (check, bank app).
-5. **Open / activate** (`platform/billing.ts`) — confirmed ≥ net − ₱1 → `paid`; the workspace's
+5. **Open / activate** (`platform/billing.ts`) — confirmed ≥ net − ₱1 → `paid`; for subscription invoices the workspace's
    `awaiting_payment` lock lifts; a `trial`/`past_due` workspace becomes `active`.
 
 **Branches:** proof doesn't match → rejected, back to `open`; short payment → stays `open` with a
@@ -837,6 +837,19 @@ balance; owner opens a waiting workspace without payment; sign-up with an unpric
 automatic invoice, owner issues it; a `suspended` workspace is not reopened by a payment.
 **Terminal states:** paid (workspace open/active); voided; overdue → flagged only (moving to
 `past_due` / `suspended` is manual; automatic step planned). Customer routes are sync class `online`.
+
+## Assisted SMTP setup — working
+
+Tenant self-service: Email → Setup guide → Settings → Save & test → confirm receipt.
+Operator service: console tenant Settings → Tenant email / assisted setup → configure the tenant's
+own provider → save and test → confirm delivery. Secret stays in that tenant's encrypted settings;
+operator changes/tests are audited, and operator tests use no tenant user ID. Our platform Brevo
+HTTPS mailbox remains separate. Guide URLs work for path tenants and dedicated console hosts.
+
+Agree the one-time fee manually → **Invoice assisted SMTP setup** → existing implementation
+invoice (PHP; no default price/period) → customer Billing / manual BIR invoice → record or confirm
+payment → resolve the Support entry after delivery verification. Service fees do not reactivate
+subscriptions or open signup payment locks. No separate invoice table is introduced.
 
 ## Sales inquiry (website → follow-up → workspace) — working
 
