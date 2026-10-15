@@ -415,7 +415,8 @@ function settle(invoiceId: number, by: string): InvoiceRow {
   if (status === 'paid') {
     db().prepare(`UPDATE billing_invoices SET status = 'paid', paid_at = datetime('now') WHERE id = ?`).run(invoiceId);
     logProvisioning(inv.tenant_slug, 'billing', `${by}: ${inv.reference} paid`);
-    reactivate(inv.tenant_slug, by);
+    // One-time service fees must never clear subscription arrears or signup locks.
+    if (inv.kind === 'subscription') reactivate(inv.tenant_slug, by);
   } else if (status !== inv.status) {
     db().prepare('UPDATE billing_invoices SET status = ? WHERE id = ?').run(status, invoiceId);
   }

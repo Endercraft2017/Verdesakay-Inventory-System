@@ -52,6 +52,7 @@
       smtpBox,
       el('div', { class: 'field' }, [secretLabel, el('input', { id: 'm-secret', type: 'password', autocomplete: 'off',
         placeholder: s.has_secret ? 'Saved — leave empty to keep it' : '' })]),
+      el('label', { for: 'm-clear-secret' }, [el('input', { id: 'm-clear-secret', type: 'checkbox' }), ' Clear saved key / password']),
       el('div', { class: 'field' }, [el('label', { text: 'Send alerts to (comma-separated)' }), el('input', { id: 'm-to', value: s.alert_to, placeholder: 'you@example.com' })]),
       el('div', { class: 'field' }, [el('label', { text: 'Email me when' }),
         check('m-a-inq', 'a website inquiry arrives', s.alert_inquiry),
@@ -82,13 +83,14 @@
         transport: transport.value, from_name: $('m-fromname').value, from_email: $('m-from').value,
         smtp_host: $('m-host').value, smtp_port: $('m-port').value, smtp_user: $('m-user').value, smtp_secure: $('m-secure').checked,
         alert_to: $('m-to').value, alert_inquiry: $('m-a-inq').checked, alert_payment: $('m-a-pay').checked, alert_signup: $('m-a-sign').checked,
-        secret: $('m-secret').value || undefined,
+        secret: $('m-secret').value || undefined, clear_secret: $('m-clear-secret').checked,
       };
     }
     async function save() {
       $('m-err').textContent = '';
       var r = await api('PUT', '/mail', body());
       $('m-secret').value = '';
+      $('m-clear-secret').checked = false;
       $('m-secret').placeholder = r.settings.has_secret ? 'Saved — leave empty to keep it' : '';
       logBox.replaceChildren(logRows(r.log));
       return r;

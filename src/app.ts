@@ -436,6 +436,9 @@ export function createApp() {
   // API's own middleware also 404s any request that resolved to a tenant sub-domain.
   if (PLATFORM_CONSOLE) {
     app.use('/_platform/api', platformConsoleRoutes);
+    app.get('/_platform/email-setup.html', (_req, res) => {
+      res.sendFile(path.join(ROOT, 'public', 'guides', 'email-setup.html'));
+    });
     app.use('/_platform', express.static(path.join(ROOT, 'web-console'), {
       setHeaders: (res) => res.set('Cache-Control', 'no-cache'),
     }));
@@ -488,6 +491,10 @@ export function createApp() {
   // changes its URL. Anything else is no-cache (NOT no-store) — the browser keeps the response
   // but revalidates first (a fast 304 via the ETag/Last-Modified express.static sends), so
   // with no build step an edit is still live on the next request. See src/shared/asset-version.ts.
+  // A root filename (rather than /guides/) avoids being mistaken for a path-tenant slug.
+  app.get('/email-setup.html', (_req, res) => {
+    res.sendFile(path.join(ROOT, 'public', 'guides', 'email-setup.html'));
+  });
   app.use(express.static(path.join(ROOT, 'public'), {
     index: false,
     setHeaders: (res, filePath) => {

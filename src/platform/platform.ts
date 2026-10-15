@@ -286,6 +286,9 @@ export function resolveTenantSlug(
   const h = String(host || '').toLowerCase().split(':')[0]!.trim();
   if (!h || h === 'localhost' || h === '[::1]' || IPV4.test(h)) return DEFAULT_TENANT;
 
+  // A dedicated console hostname is control-plane traffic, even when its first
+  // label is a valid (but unregistered) tenant slug such as 'console'.
+  if (PLATFORM_CONSOLE && h === platformHost()) return DEFAULT_TENANT;
   const label = h.split('.')[0]!;
   if (APP_DOMAIN) {
     if (h === APP_DOMAIN || h === `www.${APP_DOMAIN}`) return DEFAULT_TENANT;

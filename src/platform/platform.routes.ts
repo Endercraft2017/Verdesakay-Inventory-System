@@ -31,8 +31,8 @@ import { punchPhotoUsageBytes } from '../modules/hr/punch-photos';
 import { enabledModules, isModuleName, withDeps, MODULES, MODULE_DEPS } from '../shared/modules';
 import bcrypt from 'bcryptjs';
 import { endUserSessions } from '../shared/auth';
-import { sendMail } from '../shared/mailer';
-import { parseBody, resetPasswordSchema, platformCreateTenantSchema } from '../shared/validation';
+import { getMailSettings, saveMailSettings, mailReady, verifyMailSettings, sendMail } from '../shared/mailer';
+import { parseBody, mailSettingsSchema, resetPasswordSchema, platformCreateTenantSchema } from '../shared/validation';
 import { PLANS, PLAN_MODULES, planModules } from './plans';
 import { rateLimitKey } from '../shared/device';
 import {
@@ -102,6 +102,57 @@ router.post('/password', loginLimiter, (req, res) => {
   if (error) { res.status(400).json({ error }); return; }
   logProvisioning('_console', 'operator.password', `${r.platformUser!.username} changed their console password`);
   res.json({ ok: true });
+});
+
+// These endpoints always select the catalog tenant, never the operator's default DB.
+router.use('/tenants/:slug/mail', (req, res, next) => {
+  const t = getTenant(req.params.slug);
+  if (!t || t.status === 'purged') {
+    res.status(404).json({ error: 'Unknown workspace.' });
+    return;
+  }
+  next();
+});
+
+router.get('/tenants/:slug/mail', (req, res) => {
+  res.json(withTenant(req.params.slug, () => ({ ...getMailSettings(), ready: mailReady() })));
+});
+
+router.put('/tenants/:slug/mail', (req, res, next) => {
+  try {
+    const input = parseBody(mailSettingsSchema, req.body);
+    if (input.transport === 'smtp' && (!input.smtp_host || !input.from_email)) {
+      res.status(400).json({ error: 'SMTP host and a From address are required for SMTP.' });
+      return;
+    }
+    const ready = withTenant(req.params.slug, () => {
+      saveMailSettings(input);
+      return mailReady();
+    });
+    const by = (req as PlatformAuthedRequest).platformUser!.username;
+    // No credentials or user-supplied SMTP values in the operator audit log.
+    logProvisioning(req.params.slug, 'email-settings', `${by}: saved email settings (${input.transport})`);
+    res.json({ ok: true, ready });
+  } catch (e) { next(e); }
+});
+
+router.post('/tenants/:slug/mail/test', async (req, res, next) => {
+  try {
+    const to = typeof req.body?.to === 'string' ? req.body.to.trim() : '';
+    if (to.length > 200 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
+      res.status(400).json({ error: 'A valid recipient email is required.' });
+      return;
+    }
+    const result = await withTenant(req.params.slug, async () => {
+      const verified = await verifyMailSettings();
+      if (!verified.ok) return { ok: false, error: `Connection failed: ${verified.error}` };
+      // Operators are not tenant users: don't attach their ID to a tenant foreign key.
+      return sendMail({ to, subject: 'Otom — test email', text: 'This is a test message from your Otom system. Email is working.' });
+    });
+    const by = (req as PlatformAuthedRequest).platformUser!.username;
+    logProvisioning(req.params.slug, 'email-test', `${by}: ${result.ok ? 'sent' : 'failed'}`);
+    res.status(result.ok ? 200 : 400).json(result);
+  } catch (e) { next(e); }
 });
 
 // GET /_platform/api/bootstrap — static reference the UI needs to render its controls.

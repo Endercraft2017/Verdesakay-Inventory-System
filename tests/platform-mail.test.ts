@@ -107,3 +107,17 @@ describe('owner alerts', () => {
     expect(mail._testOutbox.length).toBe(before);
   });
 });
+
+describe('clearing platform credentials', () => {
+  it('preserves blank input and supports an explicit audited removal', async () => {
+    await ctx.api.put('/_platform/api/mail').set(opHdr()).send({ secret: 'temporary-api-key' });
+    expect((await ctx.api.put('/_platform/api/mail').set(opHdr()).send({ secret: '' })).body.settings.has_secret).toBe(true);
+    expect((await ctx.api.put('/_platform/api/mail').set(opHdr()).send({ clear_secret: 'yes' })).status).toBe(400);
+    expect((await ctx.api.put('/_platform/api/mail').set(opHdr()).send({ clear_secret: true, secret: 'conflicting' })).status).toBe(400);
+    const cleared = await ctx.api.put('/_platform/api/mail').set(opHdr()).send({ clear_secret: true });
+    expect(cleared.body.settings.has_secret).toBe(false);
+    const { listProvisioningLog } = await import('../src/platform/platform');
+    expect(listProvisioningLog('_console')[0]).toMatchObject({ action: 'platform-mail-settings' });
+    expect(JSON.stringify(listProvisioningLog('_console'))).not.toContain('temporary-api-key');
+  });
+});

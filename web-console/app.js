@@ -354,6 +354,7 @@
       el('div', { class: 'muted', text: 'Login seat allowance: ' + (st.subscription && st.subscription.seat_limit != null ? st.subscription.seat_limit : 'Bundle default') }),
       el('div', { class: 'field' }, [el('label', { text: 'Current usage' }), usageBox, el('button', { class: 'btn ghost', style: 'margin-top:12px', onclick: function () { selectTab('overview').catch(function (e) { toast(e.message); }); } }, ['Analytics & support'])]),
       photoField,
+      emailPanel(st.slug),
       recovery,
       logBox,
       el('div', { class: 'danger-zone' }, [
@@ -377,6 +378,82 @@
     }
     statusSel.addEventListener('change', syncTrialVisibility);
     syncTrialVisibility();
+  }
+
+  function emailPanel(slug) {
+    var panel = el('section', { class: 'field' }, [
+      el('h3', { text: 'Tenant email / assisted setup' }),
+      el('p', { class: 'muted', text: 'Configure the tenant’s own provider account. Agree any setup fee separately; saving here does not charge the tenant.' }),
+      el('a', { href: '/_platform/email-setup.html', target: '_blank', rel: 'noopener', text: 'SMTP setup guide' }),
+      el('button', { type: 'button', class: 'btn ghost', id: 'smtp-invoice', text: 'Invoice assisted SMTP setup', onclick: function () {
+        if (window.ConsoleBilling) window.ConsoleBilling.newSetupInvoice(slug);
+      } }),
+      el('p', { class: 'muted', text: 'Use Billing to issue a one-time PHP implementation invoice and record payment. Track service completion separately in Support history.' }),
+    ]);
+    var status = el('p', { role: 'status', text: 'Loading email settings…' });
+    panel.appendChild(status);
+    var endpoint = '/tenants/' + encodeURIComponent(slug) + '/mail';
+    api('GET', endpoint).then(function (s) {
+      var controls = {};
+      function field(key, label, type) {
+        var input = el('input', { type: type || 'text', autocomplete: key === 'smtp_pass' ? 'new-password' : 'off' });
+        if (type === 'checkbox') input.checked = !!s[key];
+        else input.value = s[key] == null ? '' : String(s[key]);
+        controls[key] = input;
+        var id = 'smtp-' + key;
+        input.id = id;
+        panel.appendChild(el('div', { class: 'field' }, [el('label', { for: id, text: label }), input]));
+      }
+      var transport = el('select', { id: 'smtp-transport' }, [
+        el('option', { value: 'off', text: 'Off' }), el('option', { value: 'smtp', text: 'SMTP' }),
+      ]);
+      transport.value = s.transport;
+      panel.appendChild(el('div', { class: 'field' }, [el('label', { for: 'smtp-transport', text: 'Transport' }), transport]));
+      field('from_name', 'From name');
+      field('from_email', 'From email', 'email');
+      field('reply_to', 'Reply-to', 'email');
+      field('smtp_host', 'SMTP host');
+      field('smtp_port', 'SMTP port (587 for STARTTLS; 465 for implicit TLS)', 'number');
+      controls.smtp_port.min = '1'; controls.smtp_port.max = '65535';
+      field('smtp_secure', 'Use implicit TLS (port 465 only)', 'checkbox');
+      field('smtp_user', 'SMTP username');
+      field('smtp_pass', s.has_password ? 'SMTP password / key (saved; leave blank to keep)' : 'SMTP password / key', 'password');
+      var clear = el('input', { type: 'checkbox', id: 'smtp-clear' });
+      panel.appendChild(el('label', { for: 'smtp-clear' }, [clear, ' Clear saved SMTP password']));
+      field('test_to', 'Test recipient', 'email');
+      status.textContent = s.ready ? 'Configured (delivery has not been verified in this session).' : 'Email is off or incomplete.';
+      var saveBtn = el('button', { class: 'btn', type: 'button', text: 'Save email settings' });
+      var testBtn = el('button', { class: 'btn ghost', type: 'button', text: 'Save & send test' });
+      async function submit(test) {
+        if (test && !controls.test_to.value.trim()) { status.textContent = 'Enter a test recipient.'; return; }
+        if (test && !controls.test_to.reportValidity()) return;
+        saveBtn.disabled = testBtn.disabled = true;
+        status.textContent = test ? 'Saving and testing…' : 'Saving…';
+        try {
+          var body = { transport: transport.value };
+          ['from_name', 'from_email', 'reply_to', 'smtp_host', 'smtp_user'].forEach(function (k) { body[k] = controls[k].value.trim(); });
+          body.smtp_port = Number(controls.smtp_port.value);
+          body.smtp_secure = controls.smtp_secure.checked;
+          if (clear.checked) body.smtp_pass = '';
+          else if (controls.smtp_pass.value) body.smtp_pass = controls.smtp_pass.value;
+          await api('PUT', endpoint, body);
+          if (body.smtp_pass !== undefined) s.has_password = !!body.smtp_pass;
+          controls.smtp_pass.value = ''; clear.checked = false;
+          controls.smtp_pass.placeholder = s.has_password ? 'Saved; leave blank to keep' : 'No password saved';
+          panel.querySelector('label[for="smtp-smtp_pass"]').textContent = s.has_password ? 'SMTP password / key (saved; leave blank to keep)' : 'SMTP password / key';
+          status.textContent = 'Email settings saved.';
+          if (test) {
+            await api('POST', endpoint + '/test', { to: controls.test_to.value.trim() });
+            status.textContent = 'Test accepted by SMTP provider. Confirm it arrives in the recipient’s inbox or spam folder.';
+          }
+        } catch (ex) { status.textContent = ex.message; }
+        finally { saveBtn.disabled = testBtn.disabled = false; }
+      }
+      saveBtn.addEventListener('click', function () { submit(false); });
+      testBtn.addEventListener('click', function () { submit(true); });
+      panel.appendChild(el('div', {}, [saveBtn, testBtn]));
+    }).catch(function (ex) { status.textContent = ex.message; });
+    return panel;
   }
 
   /* ---------- charts: local SVG, no external requests ---------- */
