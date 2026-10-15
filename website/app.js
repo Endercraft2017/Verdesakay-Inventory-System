@@ -9,11 +9,62 @@
     document.getElementById(which + '-dialog').showModal();
   }); });
   document.querySelectorAll('.close').forEach(function (b) { b.addEventListener('click', function () { b.closest('dialog').close(); }); });
-  document.getElementById('login-form').addEventListener('submit', function (e) {
-    e.preventDefault();
-    var name = slug(document.getElementById('login-company').value);
-    if (!/^[a-z][a-z0-9-]{1,30}$/.test(name)) { this.querySelector('.error').textContent = 'Enter a valid company URL name.'; return; }
-    window.location.assign('/' + encodeURIComponent(name));
+  var loginForm = document.getElementById('login-form');
+  var loginChallenge = null;
+  var loginCompany = '';
+  function resetLoginStep() {
+    loginChallenge = null;
+    document.getElementById('login-credentials').hidden = false;
+    document.querySelectorAll('#login-credentials input').forEach(function (input) { input.disabled = false; });
+    document.getElementById('login-mfa').hidden = true;
+    document.getElementById('login-code').required = false;
+    document.getElementById('login-code').value = '';
+    document.getElementById('login-submit').textContent = 'Log in →';
+    loginForm.querySelector('.error').textContent = '';
+  }
+  document.getElementById('login-back').onclick = resetLoginStep;
+  document.getElementById('login-dialog').addEventListener('close', function () {
+    resetLoginStep(); document.getElementById('login-password').value = '';
+  });
+  loginForm.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    var button = document.getElementById('login-submit');
+    if (button.disabled) return;
+    var shared = document.getElementById('login-shared').checked;
+    var errorBox = this.querySelector('.error');
+    errorBox.textContent = '';
+    button.disabled = true; button.textContent = 'Logging in…';
+    try {
+      if (!loginChallenge) loginCompany = document.getElementById('login-company').value.trim().toUpperCase();
+      var payload = loginChallenge
+        ? { company_id: loginCompany, mfa_token: loginChallenge, code: document.getElementById('login-code').value.trim() }
+        : { company_id: loginCompany, username: document.getElementById('login-username').value.trim(), password: document.getElementById('login-password').value, shared: shared };
+      var headers = { 'Content-Type': 'application/json', 'X-Client': /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? 'mobile' : 'desktop' };
+      try {
+        var device = localStorage.getItem('vds_device_id');
+        if (!device) { device = crypto.randomUUID(); localStorage.setItem('vds_device_id', device); }
+        headers['X-Device-Id'] = device;
+      } catch (ignored) {}
+      var response = await fetch(loginChallenge ? '/site/login/mfa' : '/site/login', { method: 'POST', headers: headers, body: JSON.stringify(payload) });
+      var result = await response.json();
+      if (!response.ok) throw new Error(response.status === 401 ? (loginChallenge ? 'Invalid or expired verification code. Try again or go back to log in.' : 'Company ID, username, or password is incorrect.') : result.error || 'Unable to log in. Please try again.');
+      if (result.mfa_required) {
+        loginChallenge = result.mfa_token;
+        document.getElementById('login-credentials').hidden = true;
+        document.querySelectorAll('#login-credentials input').forEach(function (input) { input.disabled = true; });
+        document.getElementById('login-mfa').hidden = false;
+        document.getElementById('login-code').required = true;
+        document.getElementById('login-password').value = '';
+        document.getElementById('login-code').focus();
+        return;
+      }
+      if (!result.token || !/^\/[a-z][a-z0-9-]{1,30}$/.test(result.workspace_path || '')) throw new Error('Unable to open your workspace. Please try again.');
+      // Match the app's session storage convention; credentials and tokens never enter the URL.
+      localStorage.removeItem('vds_token'); sessionStorage.removeItem('vds_token');
+      (result.session && result.session.shared ? sessionStorage : localStorage).setItem('vds_token', result.token);
+      window.location.assign(result.workspace_path + '/');
+    } catch (error) { errorBox.textContent = error.message || 'Unable to connect. Please try again.'; }
+    finally { button.disabled = false; button.textContent = loginChallenge ? 'Verify and log in →' : 'Log in →'; }
   });
   document.getElementById('company').addEventListener('input', function () { document.getElementById('slug-preview').textContent = 'Your workspace: /' + slug(this.value); });
   document.getElementById('seats').addEventListener('input', function () { showEstimate(); });

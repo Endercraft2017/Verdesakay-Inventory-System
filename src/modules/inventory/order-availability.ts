@@ -12,6 +12,7 @@ export interface LineAvailability {
   on_hand: number; elsewhere_on_hand: number; committed_elsewhere: number; committed_orders: number;
   kit_held: number; repair_held: number; covered_here: number; available: number; shortfall: number;
   is_finished_product: boolean; has_bom: boolean; buildable: boolean;
+  semi_built_available: number;
   component_shortfalls: { component_item_id: number; name: string; need: number; have: number }[];
   linked_job_orders: { id: number; number: string; status: string; remaining: number; output_location_id: number | null; source_location_id: number | null }[];
 }
@@ -96,6 +97,7 @@ export function orderAvailability(orderId: number) {
       on_hand: s.onHand, elsewhere_on_hand: qty(variantStockTotal(oi.item_id, mode) - s.onHand), committed_elsewhere: qty(s.commitments + s.kit + s.repair), committed_orders: s.commitments,
       kit_held: s.kit, repair_held: s.repair, covered_here: covered, available, shortfall,
       is_finished_product: madeHere, has_bom: hasBom, buildable: false,
+      semi_built_available: mode === 'assembled' && !!inv.is_finished_product ? stock(oi.item_id, locationId, 'semi_built').free : 0,
       component_shortfalls: [], linked_job_orders: jobs });
     if (shortfall > 0 && !madeHere) bump(oi.item_id, oi.name, shortfall);
   }

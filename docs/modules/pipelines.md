@@ -67,7 +67,16 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
    at ship-from instead of built-unit stock. The commercial CKD parent never adds a
    manufactured unit or consumes finished-goods stock. Aftersales parts are ordinary
    inventory-linked lines entered one by one; semi-built and fully built lines continue
-   through their production/finished-stock path.
+   through their production/finished-stock path. A semi-built unit is a complete
+   package with its loose parts included. For a fully built shortage, a manager
+   may explicitly finish one semi-built RTS unit even when CKD parts are available;
+   the complete kit is counted and photographed at finishing intake; the unit keeps
+   its identity (including exact QR batch when lot tracked), costs and QC/Products In
+   gate, and no BOM parts are
+   deducted a second time. When CKD components are short, stock review highlights
+   eligible semi-built packages. Sales may change an order's unit selling price
+   independently of BOM production cost and add shipping/admin/other non-stock fees
+   before approval.
    `GET /orders/:id/availability` retains the ATP contract and adds source/planning fields.
    Approval rechecks current stock and accepts an optional review revision; stale interactive
    decisions return 409, while validated owning-site decisions retain D6 on replay.
@@ -1093,3 +1102,27 @@ PWA cache v99; final proof/delivery recovery remains open.
    explicit consent; correction/reimport preserves the source structure and duplicate guard.
 7. Offline commands capture history with the shared command clock; changeset application
    suppresses history triggers because the recorded history is already in the effects.
+
+## Company-ID login from the public website
+
+`otom.afkcube.com` → Company ID + username + password → `/site/login` resolves
+the catalog ID → existing tenant lifecycle checks and login limits → tenant-scoped
+authentication → optional `/site/login/mfa` → existing `/<slug>/` workspace. Tokens
+use the existing browser/session storage convention and never enter URLs.
+
+IDs use the first and last ASCII letters of the normalized company name and a
+four-digit counter per letter pair (H0000R, H0001R; J0000S). The slug is the fallback
+for names without ASCII letters. IDs remain unchanged after renames, suspension,
+or purge, and are not recycled. Pair capacity is 10,000 IDs; exhaustion rejects
+provisioning rather than generating an ambiguous ID. Company IDs are visible in
+the owner console, desktop My Account, and mobile Profile. Existing tenant URLs
+and direct login forms continue to work.
+
+Mobile QR acceptance audit: `npm run test:mobile:qr` uses a disposable real backend,
+actual print-sheet QR images through Chromium's virtual camera, narrow floor roles,
+proof/signature uploads and exact allocation retry after a lost committed response.
+Explicit non-serialized batches can coexist with serialized runs of the same SKU;
+CKD physical component previews map to standard build stock; failed unit-template
+reads cannot open blank sheets. See `docs/reviews/mobile-qr-playwright-audit.md`.
+Handoff photos/signature/token state still require recapture after page restart;
+physical phone/printer acceptance and final-slip/delivery recovery remain open.

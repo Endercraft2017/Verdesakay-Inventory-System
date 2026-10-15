@@ -202,7 +202,8 @@ App.register('orders', async (view, filter) => {
           ${l.is_finished_product && l.shortfall > 0 && l.available > l.covered_here ? `<p class="muted">Split fulfillment: pick up to ${Math.max(0, l.available - l.covered_here)} available RTS unit(s); plan ${l.shortfall} remaining unit(s) for production.</p>` : ''}
           <dl><div><dt>Ordered</dt><dd>${l.ordered}</dd></div><div><dt>On hand here</dt><dd>${l.on_hand}</dd></div><div><dt>Other orders</dt><dd>${l.committed_orders ?? l.committed_elsewhere}</dd></div><div><dt>Kit / repair holds</dt><dd>${l.kit_held || 0} / ${l.repair_held || 0}</dd></div><div><dt>Picked / shipped here</dt><dd>${l.covered_here}</dd></div><div><dt>Available to order</dt><dd>${l.available}</dd></div></dl>
           ${l.elsewhere_on_hand > 0 ? `<p class="muted">${l.elsewhere_on_hand} on hand at other locations.</p>` : ''}
-          ${l.shortfall > 0 && l.is_finished_product ? `<p>${!l.has_bom ? 'No BOM: define the product recipe before planning production.' : l.buildable ? 'Outstanding production materials are covered; approval and kit release are still required.' : 'Materials short: ' + (l.component_shortfalls || []).map((c) => `${UI.esc(c.name)} (need ${c.need}, free ${c.have})`).join('; ')}</p>` : ''}
+          ${l.shortfall > 0 && l.is_finished_product ? `<p>${!l.has_bom ? 'No BOM for a new CKD-parts build. Define the recipe first; an existing complete semi-built package may still be finished.' : l.buildable ? 'Outstanding CKD production materials are covered; approval and kit release are still required.' : 'CKD materials short: ' + (l.component_shortfalls || []).map((c) => `${UI.esc(c.name)} (need ${c.need}, free ${c.have})`).join('; ')}</p>` : ''}
+          ${l.shortfall > 0 && l.fulfillment_mode === 'assembled' && l.semi_built_available > 0 ? `<p class="order-notice" role="status">${l.semi_built_available} complete semi-built package(s) available here. A production manager can choose to finish one of these for this fully built order${l.component_shortfalls?.length ? ' even though CKD parts are short' : ' instead of starting from CKD parts'}. Its loose parts are already included; no BOM components are issued again.</p>${plannable && (App.hasPermission('production.approve') || App.hasPermission('production.manage')) ? `<button type="button" class="btn secondary small" data-convert="${l.item_id}">Finish a semi-built RTS unit</button>` : ''}` : ''}
           ${(l.linked_job_orders || []).reduce((n, j) => n + j.remaining, 0) > l.shortfall ? '<p class="order-notice">Planned production exceeds this shortage. Review existing job quantities before buying more materials.</p>' : ''}
           ${(l.linked_job_orders || []).length ? `<p class="muted">Production planned: ${l.linked_job_orders.map((j) => `${UI.esc(j.number)} · ${UI.esc(j.status)} · ${j.remaining} not yet received`).join('; ')}</p>` : ''}
         </article>`).join('') || '<p class="muted">This order has only non-stock lines.</p>'}</div>
@@ -212,7 +213,7 @@ App.register('orders', async (view, filter) => {
         <div class="order-review-actions">
           <button type="button" class="btn secondary" data-refresh>Refresh stock</button>
           ${open && canEdit ? '<button type="button" class="btn secondary" data-edit-order>Edit quantities or ship-from</button>' : ''}
-          ${make && short.some((l) => l.is_finished_product && l.has_bom) ? '<button type="button" class="btn secondary" data-make>Draft missing production</button>' : ''}
+          ${make && short.some((l) => l.is_finished_product && l.has_bom) ? '<button type="button" class="btn secondary" data-make>Draft CKD-parts production</button>' : ''}
           ${buy && toBuy.length ? '<button type="button" class="btn secondary" data-buy>Draft missing purchases</button>' : ''}
           ${open && canEdit && (av.location_id != null || !av.lines.length) ? `<button type="button" class="btn${av.ok ? '' : ' secondary danger'}" data-approve>${av.ok ? 'Approve for warehouse' : 'Review backorder approval'}</button>` : ''}
         </div>
@@ -225,8 +226,64 @@ App.register('orders', async (view, filter) => {
         finally { busy = false; controls(false); }
       });
       panel.querySelector('[data-make]')?.addEventListener('click', () => action('produce-shortfall'));
+      panel.querySelectorAll('[data-convert]').forEach((button) => button.addEventListener('click', () => convertSemi(av.lines.find((l) => String(l.item_id) === button.dataset.convert))));
       panel.querySelector('[data-buy]')?.addEventListener('click', () => action('purchase-shortfall'));
       panel.querySelector('[data-approve]')?.addEventListener('click', approve);
+    }
+    async function convertSemi(line) {
+      if (busy || !line) return;
+      let options;
+      try { options = await API.get(`/job-orders/convert-semi/options?product_item_id=${line.item_id}&location_id=${snapshot.location_id}`); }
+      catch (e) { await refresh(e.message); return; }
+      const choices = (options.units || []).map((u) => `<option value="unit:${u.id}">${UI.esc(u.identifier || 'Tracked unit #' + u.id)}</option>`).join('')
+        + (options.batches || []).map((b) => `<option value="batch:${b.id}">QR batch ${UI.esc(b.number)} · ${b.available} free</option>`).join('');
+      const bulk = options.bulk_available >= 1;
+      if (!choices && !bulk) { await refresh('No eligible semi-built package remains. Refresh stock before planning.'); return; }
+      let saveAttempt;
+      UI.modal({ title: `Finish semi-built ${line.name}`, size: 'md',
+        bodyHTML: `<p class="order-notice">This is one complete physical unit. Its unassembled parts are already packed with it. Starting removes one semi-built RTS unit and sends the same package through production inspection; only Products In makes it fully built RTS.</p>
+          <div class="form-grid"><div class="form-field span2"><label>Source package</label><select data-f="source-unit">${choices}${bulk ? '<option value="">Untracked semi-built unit</option>' : ''}</select></div>
+          <div class="form-field span2"><label>Unit identifier</label><input data-f="identifier" maxlength="120" placeholder="Keep the current serial, or label the untracked package" /></div>
+          <div class="form-field"><label>Additional finishing cost per unit</label><input data-f="finishing-cost" type="number" min="0" step="0.01" value="0" /></div>
+          <div class="form-field span2"><label>Package photo</label><input data-f="image" type="file" accept="image/jpeg,image/png,image/gif,image/webp" /></div>
+          <div class="form-field span2"><label><input data-f="complete-kit" type="checkbox" /> I checked that all loose parts are included with this same unit.</label></div>
+          <div class="form-field span2"><label>Work note</label><input data-f="notes" maxlength="500" placeholder="Finishing instructions" /></div></div>`,
+        confirmText: 'Start finishing this unit',
+        onOpen: (modal) => {
+          const pick = modal.querySelector('[data-f="source-unit"]');
+          const identifier = modal.querySelector('[data-f="identifier"]');
+          const fill = () => { const unit = (options.units || []).find((u) => `unit:${u.id}` === pick.value); identifier.value = unit?.identifier || ''; identifier.readOnly = !!unit?.identifier; };
+          pick.onchange = fill; fill();
+        },
+        onConfirm: async (modal, showErr) => {
+          const field = (key) => modal.querySelector(`[data-f="${key}"]`).value.trim();
+          if (!field('identifier')) { showErr('Enter or retain this unit’s physical identifier.'); return false; }
+          const finishingCost = Number(field('finishing-cost'));
+          if (!Number.isFinite(finishingCost) || finishingCost < 0) { showErr('Finishing cost must be zero or more.'); return false; }
+          const photo = modal.querySelector('[data-f="image"]').files[0];
+          if (!photo) { showErr('Take or choose a photo of this semi-built package.'); return false; }
+          if (!modal.querySelector('[data-f="complete-kit"]').checked) { showErr('Check that the complete kit is still with this physical unit.'); return false; }
+          try {
+            const payload = new FormData();
+            Object.entries({ product_item_id: line.item_id, order_id: id, source_location_id: snapshot.location_id,
+              output_location_id: snapshot.location_id,
+              source_unit_id: field('source-unit').startsWith('unit:') ? field('source-unit').slice(5) : '',
+              source_batch_id: field('source-unit').startsWith('batch:') ? field('source-unit').slice(6) : '',
+              identifier: field('identifier'), finishing_cost: finishingCost, notes: field('notes') || '',
+              confirmed_complete_kit: 'true' })
+              .forEach(([key, value]) => payload.append(key, String(value)));
+            payload.append('image', photo);
+            const signature = JSON.stringify([...payload.entries()].map(([key, value]) =>
+              value instanceof File ? [key, value.name, value.size, value.lastModified] : [key, value]));
+            if (!saveAttempt || saveAttempt.signature !== signature) saveAttempt = {
+              signature, key: 'semi-finish:' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)),
+            };
+            const result = await API.upload('/job-orders/convert-semi', payload, { idempotencyKey: saveAttempt.key });
+            review.close(); UI.toast(`${result.job_order.number} started. Inspect its linked unit, then record Products In.`);
+            App.navigate('job-orders');
+          } catch (e) { showErr(e.message); return false; }
+        },
+      });
     }
     async function action(path) {
       if (busy) return;
@@ -358,19 +415,21 @@ App.register('orders', async (view, filter) => {
           <div><label>Currency</label><input data-f="currency" maxlength="3" placeholder="PHP" value="${UI.esc(get('currency', 'PHP'))}" /></div>
         </div>
         </section><section class="order-section"><h4>Items to supply</h4>
-        ${lockLines ? `<p class="order-notice">${readOnly ? 'Line items are read-only.' : shipped ? 'Line items and tax are locked after shipment. Use a separate return or correction for goods already handed off.' : 'Line items and tax are locked after approval. Reopen the order before changing them; reopening clears warehouse reservations.'}</p>` : '<p class="muted">Choose inventory for goods to supply. Use a non-stock line for services or charges; it does not reserve, produce, or deduct stock.</p>'}
+        ${lockLines ? `<p class="order-notice">${readOnly ? 'Line items are read-only.' : shipped ? 'Line items and tax are locked after shipment. Use a separate return or correction for goods already handed off.' : 'Line items and tax are locked after approval. Reopen the order before changing them; reopening clears warehouse reservations.'}</p>` : `<p class="muted">Choose inventory for goods to supply. ${type === 'sale' ? 'The catalog selling price is a starting value; sales can set this order’s unit price higher or lower. BOM material, labor and overhead are production costs, not a locked selling price. Add shipping, admin or other fees as non-stock charges.' : 'Use a non-stock line for services or charges.'} Non-stock lines do not reserve, produce or deduct stock.</p>`}
         <div class="line-items"><table class="line-table"><thead><tr>
           <th>Item</th><th>SKU</th><th class="right">Qty</th><th>Unit</th><th class="right">Unit Price</th>${taxCodes.length ? '<th>Tax code</th>' : ''}<th class="right">Total</th><th></th>
         </tr></thead><tbody id="ord-lines"></tbody></table></div>
         <div class="line-actions">
           ${!lockLines ? `<button type="button" class="btn secondary small" id="ord-add-inv">${UI.icon('inventory', 15)} Add inventory item</button>
           <button type="button" class="btn secondary small" id="ord-add-blank">${UI.icon('plus', 15)} Add non-stock line</button>` : ''}
+          ${type === 'sale' && !lockLines ? `<label class="muted" for="ord-fee-kind">Fee type</label><select id="ord-fee-kind" style="width:auto"><option value="Shipping fee">Shipping fee</option><option value="Admin fee">Admin fee</option><option value="Other fee">Other fee</option></select><button type="button" class="btn secondary small" id="ord-add-fee">${UI.icon('plus', 15)} Add fee</button>` : ''}
 
         </div>
         <div id="ord-line-summary" class="muted" aria-live="polite"></div></section>
         <section class="order-section"><h4>Charges &amp; notes</h4>
         <div class="order-totals">
-          <div class="row"><span>Subtotal</span><strong id="ord-subtotal">0.00</strong></div>
+          <div class="row"><span>Subtotal (including fees)</span><strong id="ord-subtotal">0.00</strong></div>
+          ${type === 'sale' ? '<div class="row"><span>Additional fees within subtotal</span><span id="ord-fees">0.00</span></div>' : ''}
           <div class="row"><label for="ord-tax-percent">Tax %</label><input id="ord-tax-percent" data-f="tax_percent" type="number" min="0" max="100" step="0.01" value="${UI.esc(String(get('tax_percent', 0)))}" style="width:90px" /></div>
           <div class="row"><span>Tax amount</span><span id="ord-tax">0.00</span></div>
           <div class="row grand"><span>Total</span><strong id="ord-total">0.00</strong></div>
@@ -419,6 +478,10 @@ App.register('orders', async (view, filter) => {
           subtotal = Math.round((subtotal + Number.EPSILON) * 100) / 100;
           const tax = Math.round((subtotal * taxPct / 100 + Number.EPSILON) * 100) / 100;
           ov.querySelector('#ord-subtotal').textContent = money(subtotal);
+          const fees = lines.filter((l) => !l.item_id && l.description === 'Order fee')
+            .reduce((sum, l) => sum + (Number(l.line_total) || 0), 0);
+          const feesEl = ov.querySelector('#ord-fees');
+          if (feesEl) feesEl.textContent = money(fees);
           ov.querySelector('#ord-tax').textContent = money(tax);
           ov.querySelector('#ord-total').textContent = money(subtotal + tax);
           const stockLines = lines.filter((l) => l.item_id).length;
@@ -530,6 +593,13 @@ App.register('orders', async (view, filter) => {
           lines.push({ name: '', sku: '', quantity: 1, unit: '', unit_price: 0 });
           renderLines();
           body.querySelector(`[data-row="${lines.length - 1}"] [data-k="name"]`).focus();
+        };
+        const addFee = ov.querySelector('#ord-add-fee');
+        if (addFee) addFee.onclick = () => {
+          lines.push({ item_id: null, name: ov.querySelector('#ord-fee-kind').value, description: 'Order fee',
+            quantity: 1, unit: '', unit_price: 0 });
+          renderLines();
+          body.querySelector(`[data-row="${lines.length - 1}"] [data-k="unit_price"]`).focus();
         };
         const addInventory = ov.querySelector('#ord-add-inv');
         if (addInventory) addInventory.onclick = () => pickInventory((it) => {

@@ -109,7 +109,8 @@ installs never touch this.
 **Owned files:** `plans.ts`, `quota.ts`, `provisioning.ts`, `adopt-default.ts` (offline,
 verified adoption of the original company, preserving source DB/uploads; CLI
 `scripts/adopt-default-tenant.ts`), `tenant-path.ts` (optional host-bound path routing), `platform.ts` (tenant
-catalog in `platform.db`), `platform-users.ts` (operator accounts, separate auth from
+catalog in `platform.db`; permanent company login IDs with pair-scoped counters,
+backfilled for existing tenants), `platform-users.ts` (operator accounts, separate auth from
 `shared/auth.ts`; self-service password change `POST /_platform/api/password`), `backups.ts` (daily + hourly backup jobs over every tenant DB + `platform.db` +
 uploads, run from `server.ts`; manual backup/list/restore behind `npm run backup*` /
 `scripts/backup.ts`. Also runs for single-tenant installs, covering only `default` + `platform.db`;
@@ -1298,3 +1299,12 @@ Legacy batch balances need a physical count; old ambiguous labels need reprintin
 Quantity-only API clients reserve tracked lots FIFO; scanned mobile picks name the
 exact batch. Shared recovery retains original batch IDs, quantities and request keys.
 PWA cache v99; final proof/delivery recovery remains open.
+
+Mobile QR acceptance audit: `npm run test:mobile:qr` uses a disposable real backend,
+actual print-sheet QR images through Chromium's virtual camera, narrow floor roles,
+proof/signature uploads and exact allocation retry after a lost committed response.
+Explicit non-serialized batches can coexist with serialized runs of the same SKU;
+CKD physical component previews map to standard build stock; failed unit-template
+reads cannot open blank sheets. See `docs/reviews/mobile-qr-playwright-audit.md`.
+Handoff photos/signature/token state still require recapture after page restart;
+physical phone/printer acceptance and final-slip/delivery recovery remain open.

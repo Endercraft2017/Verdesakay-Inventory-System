@@ -66,7 +66,7 @@ import { tenantStore, getDb, DEFAULT_TENANT } from './shared/db';
 import { MODULES, MODULE_DEPS } from './shared/modules';
 import { recordTenantRequest, requestModule } from './platform/owner-analytics';
 import { SIGNUPS_OPEN } from './platform/platform';
-import { resolveTenantSlug, getTenant, PLATFORM_CONSOLE, platformHost, retiredDefaultTenant } from './platform/platform';
+import { resolveTenantSlug, getTenant, getTenantByCompanyId, PLATFORM_CONSOLE, platformHost, retiredDefaultTenant } from './platform/platform';
 import { tenantPath, onTenantPathHost } from './platform/tenant-path';
 import { requireModule, moduleEnabled } from './shared/modules';
 import { BEHIND_PROXY } from './shared/hosting';
@@ -201,6 +201,27 @@ export function createApp() {
     res.status(204).end();
   });
   app.use(express.json({ limit: '10mb' }));
+  // Apex login resolves the company before entering the normal tenant/auth pipeline.
+  // The site path also stays outside the retired default company's routing.
+  app.post(['/site/login', '/site/login/mfa'], rateLimit({
+    windowMs: 15 * 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false,
+    keyGenerator: rateLimitKey, skip: () => process.env.NODE_ENV === 'test',
+    message: { error: 'Too many login attempts. Please wait a few minutes and try again.' },
+  }), (req, res, next) => {
+    if (!onTenantPathHost(req.headers.host) || res.locals.tenantSlug) { res.status(404).json({ error: 'Not found' }); return; }
+    res.set('Cache-Control', 'no-store');
+    const tenant = getTenantByCompanyId(req.body?.company_id);
+    if (!tenant || tenant.status === 'purged' || tenant.status === 'suspended') {
+      res.status(401).json({ error: 'Company ID, username, or password is incorrect.' }); return;
+    }
+    res.locals.tenantSlug = tenant.slug;
+    res.locals.tenantBase = `/${tenant.slug}`;
+    res.locals.companyLogin = true;
+    req.url = req.path.endsWith('/mfa') ? '/api/auth/login/mfa' : '/api/auth/login';
+    req.originalUrl = req.url;
+    next();
+  });
+
   app.use(formHistoryRequestContext);
   app.use(express.urlencoded({ extended: true }));
 

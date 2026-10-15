@@ -73,6 +73,13 @@ MApp.route('settings', function (view) {
       row('⌁', 'Account & security', 'Password, desktop access and sign out', 'security') +
       '</div>', '46:953');
     bindActions(page);
+    API.get('/tenant').then(function (tenant) {
+      if (!page.isConnected || !tenant.company_id) return;
+      var label = document.createElement('p');
+      label.className = 'm-hint';
+      label.textContent = 'Company ID: ' + tenant.company_id + ' · Log in at otom.afkcube.com';
+      page.querySelector('.profile-identity').after(label);
+    }).catch(function () {});
   }
   function record(label, value) {
     return '<div class="profile-record"><span>' + mEsc(label) + '</span><b>' + esc(value) + '</b></div>';

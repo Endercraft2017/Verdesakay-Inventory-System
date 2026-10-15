@@ -24,6 +24,16 @@ export function restoreBatchStock(batchId: number, location: number, quantity: n
     run(`INSERT INTO production_batch_stock(batch_id,location_id,quantity,received) VALUES(?,?,?,0)
     ON CONFLICT(batch_id,location_id) DO UPDATE SET quantity=quantity+excluded.quantity`, batchId, location, quantity);
 }
+/** Remove the exact semi-built package lot selected for finishing. */
+export function consumeSemiBatchUnit(batchId: number, itemId: number, location: number) {
+    const source = queryOne<{ id: number }>(`SELECT b.id FROM production_batches b
+      JOIN job_orders j ON j.id=b.job_order_id
+      WHERE b.id=? AND COALESCE(b.product_item_id,j.product_item_id)=? AND j.build_mode='semi_built'`, batchId, itemId);
+    const balance = batchBalances(batchId).find(x => x.location_id === location);
+    if (!source || !balance || balance.available < 1)
+        throw Object.assign(new Error('This semi-built batch has no free unit at the source location. Rescan its QR and review stock.'), { status: 409 });
+    run('UPDATE production_batch_stock SET quantity=quantity-1 WHERE batch_id=? AND location_id=?', batchId, location);
+}
 export function allocateBatch(batchId: number, orderId: number, itemId: number, location: number, quantity: number) {
     const b = batchBalances(batchId).find(x => x.location_id === location);
     if (!b || quantity > b.available + 1e-9)

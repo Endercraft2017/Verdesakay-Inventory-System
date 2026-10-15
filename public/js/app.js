@@ -121,6 +121,7 @@ const App = (() => {
     if (ws) {
       document.getElementById('tenant-name').textContent = ws.name || 'Workspace';
       document.title = `${ws.name || 'Workspace'} · Otom`;
+      document.getElementById('tenant-name').title = ws.company_id ? 'Company ID: ' + ws.company_id : '';
     }
     appScreen().classList.toggle('awaiting-payment', !!(ws && ws.awaiting_payment));
     if (ws && ws.awaiting_payment) { showAwaitingPayment(ws); return; }
@@ -272,6 +273,7 @@ const App = (() => {
     return NAV.filter((p) => {
       if (p.adminOnly && !isAdmin()) return false;
       if (p.requiredPermission && !hasPermission(p.requiredPermission)) return false;
+      if (p.requiredAnyPermission && !p.requiredAnyPermission.some(hasPermission)) return false;
       if (p.requiredModule && !hasModule(p.requiredModule)) return false;
       return visibleSubtabs(p).length > 0;
     });
@@ -281,6 +283,7 @@ const App = (() => {
   function visibleSubtabs(primary) {
     return (primary.subtabs || []).filter((s) =>
       (!s.requiredPermission || hasPermission(s.requiredPermission)) &&
+      (!s.requiredAnyPermission || s.requiredAnyPermission.some(hasPermission)) &&
       (!s.requiredModule || hasModule(s.requiredModule)));
   }
 

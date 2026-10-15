@@ -49,6 +49,7 @@ export type TenantStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'purg
 export interface TenantRow {
   id: number;
   slug: string;
+  company_id: string;
   name: string;
   status: TenantStatus;
   plan: string;
@@ -124,10 +125,41 @@ function pdb(): DatabaseSync {
   ensureColumn(d, 'tenants', 'photo_retention_days', 'INTEGER');
   ensureColumn(d, 'tenants', 'photo_max_mb', 'INTEGER');
   ensureColumn(d, 'tenants', 'awaiting_payment', 'INTEGER NOT NULL DEFAULT 0');
+  ensureCompanyIds(d);
   _db = d;
   hashLegacySessionTokens(d, 'platform_sessions'); // stored as digests, like tenant sessions
   seedPlatformUserFromEnv();
   return d;
+}
+
+/** Human-facing login ID. Allocation is permanent, including after rename or purge. */
+function allocateCompanyId(d: DatabaseSync, name: string, slug: string): string {
+  const letters = name.normalize('NFKD').toUpperCase().replace(/[^A-Z]/g, '')
+    || slug.toUpperCase().replace(/[^A-Z]/g, '') || 'XX';
+  const pair = letters[0]! + letters.at(-1)!;
+  d.prepare('INSERT OR IGNORE INTO company_id_sequences (pair, next_number) VALUES (?, 0)').run(pair);
+  const { next_number: number } = d.prepare('SELECT next_number FROM company_id_sequences WHERE pair = ?').get(pair) as { next_number: number };
+  if (number > 9999) throw new Error(`Company ID range exhausted for ${pair}. Contact the platform administrator.`);
+  d.prepare('UPDATE company_id_sequences SET next_number = next_number + 1 WHERE pair = ?').run(pair);
+  return `${pair[0]}${String(number).padStart(4, '0')}${pair[1]}`;
+}
+
+function ensureCompanyIds(d: DatabaseSync): void {
+  d.exec('BEGIN IMMEDIATE');
+  try {
+    ensureColumn(d, 'tenants', 'company_id', 'TEXT');
+    d.exec(`CREATE UNIQUE INDEX IF NOT EXISTS tenants_company_id ON tenants(company_id COLLATE NOCASE);
+      CREATE TABLE IF NOT EXISTS company_id_sequences (pair TEXT PRIMARY KEY, next_number INTEGER NOT NULL);`);
+    // Oldest catalog entry gets the first number; existing IDs are never reassigned.
+    const rows = d.prepare('SELECT id, name, slug FROM tenants WHERE company_id IS NULL ORDER BY id').all() as unknown as Array<{ id: number; name: string; slug: string }>;
+    for (const row of rows) d.prepare('UPDATE tenants SET company_id = ? WHERE id = ?').run(allocateCompanyId(d, row.name, row.slug), row.id);
+    d.exec('COMMIT');
+  } catch (error) { d.exec('ROLLBACK'); throw error; }
+}
+
+export function getTenantByCompanyId(value: unknown): TenantRow | null {
+  if (typeof value !== 'string' || !/^[A-Z][0-9]{4}[A-Z]$/i.test(value.trim())) return null;
+  return (pdb().prepare('SELECT * FROM tenants WHERE company_id = ? COLLATE NOCASE').get(value.trim()) as unknown as TenantRow | undefined) ?? null;
 }
 
 /** The control-plane connection — for src/platform-users.ts. Never a tenant DB. */
@@ -194,12 +226,17 @@ export function retiredDefaultTenant(): string | null {
 export function createTenantRow(input: {
   slug: string; name: string; plan?: string; status?: TenantStatus; trial_ends_at?: string | null; is_sandbox?: boolean;
 }): TenantRow {
-  const info = pdb().prepare(
-    `INSERT INTO tenants (slug, name, plan, status, trial_ends_at, is_sandbox) VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(
-    input.slug, input.name, input.plan ?? 'starter', input.status ?? 'active', input.trial_ends_at ?? null, input.is_sandbox ? 1 : 0
-  );
-  return pdb().prepare('SELECT * FROM tenants WHERE id = ?').get(info.lastInsertRowid) as unknown as TenantRow;
+  const d = pdb();
+  d.exec('SAVEPOINT create_tenant_row');
+  try {
+    const companyId = allocateCompanyId(d, input.name, input.slug);
+    const info = d.prepare(
+      `INSERT INTO tenants (slug, name, company_id, plan, status, trial_ends_at, is_sandbox) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(input.slug, input.name, companyId, input.plan ?? 'starter', input.status ?? 'active', input.trial_ends_at ?? null, input.is_sandbox ? 1 : 0);
+    const tenant = d.prepare('SELECT * FROM tenants WHERE id = ?').get(info.lastInsertRowid) as unknown as TenantRow;
+    d.exec('RELEASE create_tenant_row');
+    return tenant;
+  } catch (error) { d.exec('ROLLBACK TO create_tenant_row'); d.exec('RELEASE create_tenant_row'); throw error; }
 }
 
 export function setTenantStatus(slug: string, status: TenantStatus): boolean {

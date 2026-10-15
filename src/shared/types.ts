@@ -351,6 +351,13 @@ export interface JobOrder {
   qty_scrapped: number;
   status: JobOrderStatus;
   build_mode: 'assembled' | 'semi_built';
+  conversion_job_order_id?: number | null;
+  conversion_source_unit_id?: number | null;
+  conversion_source_batch_id?: number | null;
+  conversion_source_batch_number?: string | null;
+  conversion_source_cost?: number | null;
+  conversion_finishing_cost?: number | null;
+  conversion_cancel_reason?: string | null;
   source_location_id: number | null;
   output_location_id: number | null;
   qc_stages: number;
@@ -603,7 +610,9 @@ export type JobOrderUnitStatus =
   | 'hold'
   /** Earmarked for a sale order by a warehouse release; still physical on-hand stock
    *  until the order reaches a confirmed status and `maybeFulfillSale` draws it down. */
-  | 'reserved';
+  | 'reserved'
+  /** Semi-built source after finishing intake; uninspected output cancelled and returned. */
+  | 'converted' | 'cancelled';
 
 /** What the inspector decided for a failed unit. `repair` sends it to rework; the
  *  others are terminal (the unit is counted as scrapped). */
@@ -615,6 +624,8 @@ export interface JobOrderUnit {
   product_item_id: number | null;
   identifier: string | null;
   status: JobOrderUnitStatus;
+  conversion_source_unit_id?: number | null;
+  received_unit_cost?: number | null;
   /** Number of inspection stages this unit has passed so far. */
   stage: number;
   location_id: number | null;

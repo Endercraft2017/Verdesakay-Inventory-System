@@ -58,7 +58,7 @@ router.post('/login', (req, res) => {
     res.json({ mfa_required: true, mfa_token: createMfaChallenge(user.id, !!shared) });
     return;
   }
-  res.json(signIn(user, req, !!shared));
+  res.json({ ...signIn(user, req, !!shared), ...(res.locals.companyLogin ? { workspace_path: res.locals.tenantBase } : {}) });
 });
 
 // POST /api/auth/login/mfa — { mfa_token, code }: the second step (authenticator code or a
@@ -69,7 +69,7 @@ router.post('/login/mfa', syncClass('online'), (req, res) => {
   if ('error' in out) { res.status(401).json({ error: out.error }); return; }
   const user = queryOne<UserRow>('SELECT * FROM users WHERE id = ?', out.userId);
   if (!user || user.active !== 1) { res.status(401).json({ error: 'Invalid username or password' }); return; }
-  res.json(signIn(user, req, out.shared));
+  res.json({ ...signIn(user, req, out.shared), ...(res.locals.companyLogin ? { workspace_path: res.locals.tenantBase } : {}) });
 });
 
 /** Open a session and build the sign-in answer (token + the user as the app needs it). */
