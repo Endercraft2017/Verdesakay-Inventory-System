@@ -181,6 +181,7 @@ function tenantView(t: TenantRow) {
   try { photoUsageMb = Math.round(withTenant(t.slug, () => punchPhotoUsageBytes()) / (1024 * 1024) * 10) / 10; } catch { photoUsageMb = null; }
   return {
     slug: t.slug,
+    company_id: t.company_id,
     url: tenantPublicUrl(t.slug),
     name: t.name,
     status: t.status,

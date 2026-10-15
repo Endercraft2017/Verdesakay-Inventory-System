@@ -12,7 +12,7 @@ import { saveSubscription } from './subscription';
 import { saveOwnerDetails } from './owner-analytics';
 import { planModules } from './plans';
 import { createTenant } from './provisioning';
-import { SIGNUPS_OPEN, tenantPublicUrl, setAwaitingPayment } from './platform';
+import { SIGNUPS_OPEN, tenantPublicUrl, getTenant, setAwaitingPayment } from './platform';
 import { getBillingSettings, priceListQuote, createInvoice, invoiceView } from './billing';
 import { rateLimitKey } from '../shared/device';
 import { notifyOwner } from './platform-mail';
@@ -76,6 +76,7 @@ router.post('/', signupLimiter, (req, res, next) => {
     res.status(201).json({
       slug,
       url: tenantPublicUrl(slug),
+      company_id: getTenant(slug)?.company_id,
       awaiting_payment: true,
       invoice: invoice && { reference: invoice.reference, amount: invoice.amount, net_if_withheld: invoice.net_if_withheld, due_on: invoice.due_on },
     });

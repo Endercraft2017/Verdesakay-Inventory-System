@@ -1102,3 +1102,18 @@ PWA cache v99; final proof/delivery recovery remains open.
    explicit consent; correction/reimport preserves the source structure and duplicate guard.
 7. Offline commands capture history with the shared command clock; changeset application
    suppresses history triggers because the recorded history is already in the effects.
+
+## Company-ID login from the public website
+
+`otom.afkcube.com` → Company ID + username + password → `/site/login` resolves
+the catalog ID → existing tenant lifecycle checks and login limits → tenant-scoped
+authentication → optional `/site/login/mfa` → existing `/<slug>/` workspace. Tokens
+use the existing browser/session storage convention and never enter URLs.
+
+IDs use the first and last ASCII letters of the normalized company name and a
+four-digit counter per letter pair (H0000R, H0001R; J0000S). The slug is the fallback
+for names without ASCII letters. IDs remain unchanged after renames, suspension,
+or purge, and are not recycled. Pair capacity is 10,000 IDs; exhaustion rejects
+provisioning rather than generating an ambiguous ID. Company IDs are visible in
+the owner console, desktop My Account, and mobile Profile. Existing tenant URLs
+and direct login forms continue to work.

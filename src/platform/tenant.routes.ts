@@ -25,6 +25,7 @@ router.get('/', (req, res) => {
 
   const body: Record<string, unknown> = {
     slug,
+    company_id: t?.company_id ?? null,
     name: t?.name ?? (getSetting<{ name?: string }>('company_profile')?.name || 'Workspace'),
     plan,
     status: lapsedTrial ? 'past_due' : (t?.status ?? 'active'),

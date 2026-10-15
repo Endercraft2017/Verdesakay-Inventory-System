@@ -121,6 +121,7 @@ const App = (() => {
     if (ws) {
       document.getElementById('tenant-name').textContent = ws.name || 'Workspace';
       document.title = `${ws.name || 'Workspace'} · Otom`;
+      document.getElementById('tenant-name').title = ws.company_id ? 'Company ID: ' + ws.company_id : '';
     }
     appScreen().classList.toggle('awaiting-payment', !!(ws && ws.awaiting_payment));
     if (ws && ws.awaiting_payment) { showAwaitingPayment(ws); return; }

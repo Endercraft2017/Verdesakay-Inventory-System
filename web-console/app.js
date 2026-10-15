@@ -121,7 +121,7 @@
   function render() {
     var q = $('filter').value.trim().toLowerCase();
     var list = tenants.filter(function (t) {
-      return !q || t.slug.toLowerCase().indexOf(q) !== -1 || (t.name || '').toLowerCase().indexOf(q) !== -1;
+      return !q || t.slug.toLowerCase().indexOf(q) !== -1 || (t.company_id || '').toLowerCase().indexOf(q) !== -1 || (t.name || '').toLowerCase().indexOf(q) !== -1;
     });
     $('count').textContent = list.length + ' of ' + tenants.length;
     var tb = $('rows'); tb.innerHTML = '';
@@ -130,7 +130,7 @@
         'aria-pressed': drawerState && drawerState.slug === t.slug ? 'true' : 'false',
         onclick: function () { openDrawer(t.slug).catch(function (e) { toast(e.message); }); } }, [
         el('strong', { text: (t.name || t.slug) + (t.is_sandbox ? ' (Sandbox)' : '') }),
-        el('span', { class: 'tenant-meta' }, [el('span', { text: t.slug }), statusBadges(t)]),
+        el('span', { class: 'tenant-meta' }, [el('span', { text: (t.company_id ? t.company_id + ' · ' : '') + t.slug }), statusBadges(t)]),
       ]));
     });
     if (!list.length) tb.appendChild(el('p', { class: 'muted', text: q ? 'No matching tenants.' : 'No tenants yet.' }));
@@ -174,6 +174,7 @@
       slug: slug,
       url: full.url,
       name: full.name,
+      companyId: full.company_id,
       plan: full.plan,
       subscription: full.subscription,
       status: full.status,
@@ -205,7 +206,7 @@
     var st = drawerState;
     $('tenant-workspace').replaceChildren(
       el('div', { class: 'tenant-page-heading' }, [
-        el('div', {}, [el('div', { class: 'tenant-title-line' }, [el('h2', { text: st.name || st.slug }), statusBadges(st)]), el('p', { class: 'muted', text: 'Tenant overview / ' + st.slug })]),
+        el('div', {}, [el('div', { class: 'tenant-title-line' }, [el('h2', { text: st.name || st.slug }), statusBadges(st)]), el('p', { class: 'muted', text: 'Tenant overview / ' + st.slug + (st.companyId ? ' · Company ID: ' + st.companyId : '') })]),
         el('a', { class: 'btn ghost', href: st.url, target: '_blank', rel: 'noopener', text: 'Open workspace' }),
       ]),
       el('nav', { class: 'tenant-tabs', 'aria-label': 'Tenant sections' }, ['overview', 'usage', 'health', 'subscription', 'billing', 'support', 'settings'].map(function (tab) {

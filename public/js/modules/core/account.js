@@ -3,6 +3,7 @@ App.register('account', async (view) => {
   const me = App.getMe();
   view.innerHTML = `
     <div class="topbar"><h2>My Account</h2></div>
+    <p id="acc-company-id" class="muted" hidden></p>
 
     <div class="panel" style="max-width:760px;margin-bottom:18px">
       <div class="panel-body" style="display:flex;align-items:center;gap:16px">
@@ -56,6 +57,10 @@ App.register('account', async (view) => {
         <div class="muted">Loading…</div>
       </div>
     </div>` : ''}`;
+  API.get('/tenant').then((tenant) => {
+    const label = view.querySelector('#acc-company-id');
+    if (label && tenant.company_id) { label.textContent = `Company ID: ${tenant.company_id} · Use this ID to log in at otom.afkcube.com`; label.hidden = false; }
+  }).catch(() => {});
 
   // Update display name.
   const pfErr = view.querySelector('#pf-err');
