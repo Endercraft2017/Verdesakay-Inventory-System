@@ -1,5 +1,11 @@
 # Release slip to delivery: browser and API audit
 
+> Subsequent owner decision (2026-10-16): departure before a slip and optional delivery
+> evidence are retained in both backend and mobile. The stricter dispatch/recipient/proof
+> rules audited below are historical and superseded. Delivered physical sales still need
+> warehouse-out; failed attempts need a reason. Assignment access and evidence locks remain.
+> Mobile durable recovery is now implemented; see `mobile-recovery-and-access-validation.md`.
+
 Date: 2026-10-16 (Asia/Manila). Branch: `restructure/module-architecture`.
 
 The audit used a disposable local database and real Express APIs. Chromium exercised

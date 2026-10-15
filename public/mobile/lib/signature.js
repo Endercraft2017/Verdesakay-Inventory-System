@@ -1,6 +1,7 @@
 /* On-screen signature pad. mSignature() -> { el, isEmpty(), clear(), toBlob(cb) }. */
 (function () {
-  function signature() {
+  function signature(options) {
+    options = options || {};
     var wrap = mEl(
       '<div class="m-sign">' +
       '  <canvas class="m-sign-cv"></canvas>' +
@@ -51,7 +52,7 @@
       last = p;
       dirty = true;
     }
-    function end() { drawing = false; }
+    function end() { var changed = drawing && dirty; drawing = false; if (changed && options.onChange) options.onChange(); }
 
     cv.addEventListener('touchstart', start, { passive: false });
     cv.addEventListener('touchmove', move, { passive: false });
@@ -63,6 +64,7 @@
     function clear() {
       ctx.clearRect(0, 0, cv.width, cv.height);
       dirty = false;
+      if (options.onChange) options.onChange();
     }
     wrap.querySelector('.m-sign-clear').onclick = clear;
 

@@ -138,12 +138,14 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
      problem or partial request (`release_reports`); Sales is pushed and resolves it. Records only.
    - **Mobile (Releasing, Figma 78:*)** — `#/so`: authority → scan/verify units → package →
      handoff token (or supervisor override) → photo + signature proof → review → confirm
-     warehouse-out (online-only, idempotent); photos upload first on the order and the slip takes
-     them over; the signature attaches to the slip (`release`). Desktop Releasing can issue a
+     warehouse-out (online-only, idempotent); photos and signature upload first on the order and the slip takes
+     them over atomically as `release` evidence. Desktop Releasing can issue a
      partial slip under the same authority.
-6. **Delivery / fulfil** (`inventory`) — `POST /orders/:id/status` transitions
-   delivery → fulfilled (mobile-triggered prompt supported); the delivery's proof of
-   delivery (signature/GPS/photos) is captured at the customer.
+6. **Delivery / fulfil** (`inventory`) — `/deliveries/:id/status` may start a trip before
+   warehouse-out; `/deliveries/:id/complete` records its optional recipient/signature/GPS/photos.
+   Delivered physical sales require a release slip. Failed attempts require a reason and move no stock.
+   Commercial completion remains a separate Sales action with the same physical-slip guard;
+   the phone does not offer a forced stock completion.
 7. **Posting** (`accounting`) — `accounting-autopost.ts` posts the sale to the
    ledger.
 
@@ -1156,3 +1158,20 @@ for field types, calculation limits, print tokens and acceptance tasks. Before s
 all ordinary and product-row validation errors into the linked summary; calculate only after
 those fields pass. Printing keeps boolean values in context and formats their direct output
 as Yes/No, retaining conditional and formula behavior.
+
+### Final warehouse-out → delivery recovery (2026-10-16)
+
+The phone persists handoff photos/signature before slip submission, with a stable
+key per attachment and an immutable JSON key/body for the slip. Both evidence types
+transfer with the slip before stock leaves. Lost responses and browser restarts
+return to explicit original-attempt recovery, not recapture or a fresh stock request.
+Site-PC acknowledgements remain pending until their sync command confirms. Definitive
+refusals require current-context review; conflicts/expired attempts retain their record.
+
+Delivery separately persists start and POD attempts plus optional recipient, note,
+GPS, photos and signature. The owner permits starting a linked delivery before its
+slip and keeps POD evidence optional in-app; staff still follow the SOP. Delivery
+submission never runs in the background and its result cannot force a sale/stock
+completion. Server permissions and assignment checks remain authoritative. Basic
+employee accounts see personal tools; operational mobile routes and entry points
+follow effective permissions and enabled workspace modules.

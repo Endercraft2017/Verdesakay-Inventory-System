@@ -49,13 +49,13 @@
   }
 
   /** Upload an already-obtained Blob/File (e.g. a signature canvas) as an attachment. */
-  function attachBlob(kind, refId, blob, filename, caption) {
+  function attachBlob(kind, refId, blob, filename, caption, opts) {
     var fd = new FormData();
     fd.append('image', blob, filename || 'upload.png');
     fd.append('kind', kind);
     fd.append('ref_id', String(refId));
     if (caption) fd.append('caption', caption);
-    return API.upload('/attachments', fd)
+    return API.upload('/attachments', fd, opts)
       .catch(function (e) { mToast(e.message || 'Upload failed', 'err'); throw e; });
   }
 

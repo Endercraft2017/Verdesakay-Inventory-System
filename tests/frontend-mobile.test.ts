@@ -173,6 +173,54 @@ describe('mobile bootstrap', () => {
     expect(win.document.querySelector('#m-view [data-no-permission]')).not.toBeNull();
   });
 
+  it('a basic employee keeps personal tools and cannot open any operational desk by URL', async () => {
+    const asked: string[] = [];
+    const win = await bootAs({ id: 52, username: 'basic', full_name: 'Basic Employee', role: 'employee', employee: true, modules: null,
+      permissions: ['mobile.access', 'messages.view', 'messages.send'] }, (url: string) => { asked.push(url); return url === '/api/auth/me' ? undefined : url === '/api/messages/unread-count' ? { count: 0 } : {}; });
+    win.location.hash = '#/work'; win.MApp.render();
+    const text = win.document.getElementById('m-view').textContent;
+    expect(text).toContain('Personal tasks and employee services'); expect(text).toContain('Report a blocker');
+    expect(text).not.toContain('Release orders'); expect(text).not.toContain('Deliveries'); expect(text).not.toContain('QC technical inspection');
+    win.mQuickOrbit.refresh();
+    expect([...win.document.querySelectorAll('.v2-orbit-action')].map((b: any) => b.dataset.route)).toEqual(['requests','report-problem','inbox']);
+    for (const route of ['production','job-orders','kit-release','unit-issues','qc','repairs','receiving','so','deliveries','record','scan','my-log','stock-move','allocate','confidential-reports']) {
+      win.location.hash = '#/' + route; win.MApp.render();
+      expect(win.document.querySelector('[data-no-permission]'), route).not.toBeNull();
+    }
+    expect(asked.some(u => /\/api\/(deliveries|inventory|qc|job-orders|release-slips)/.test(u))).toBe(false);
+    for (const route of ['home','work','clock','inbox','report-problem','settings']) expect(win.MApp.canOpen(route)).toBe(true);
+  });
+
+  it('workspace modules and explicit desktop permissions both filter mobile features', async () => {
+    const win = await bootAs({ id: 53, username: 'no-modules', full_name: 'Restricted', role: 'warehouse', employee: true, modules: ['mobile','hr'],
+      permissions: ['mobile.access','messages.view','messages.send','inventory.adjust','orders.release','production.inspect_qc','delivery.run'] });
+    win.location.hash = '#/work'; win.MApp.render();
+    expect(win.document.getElementById('m-view').textContent).not.toContain('Release orders');
+    expect(win.document.getElementById('m-view').textContent).not.toContain('Deliveries');
+    expect(win.document.getElementById('m-view').textContent).not.toContain('QC technical inspection');
+    for (const route of ['so','qc','stock-move','deliveries']) {
+      win.location.hash = '#/' + route; win.MApp.render(); expect(win.document.querySelector('[data-no-permission]')).not.toBeNull();
+    }
+    win.mQuickOrbit.refresh(); expect(win.document.querySelector('.v2-orbit-action[data-route="qc"]')).toBeNull();
+    win.MApp.setMe({ modules: null, permissions: ['mobile.access','inventory.adjust'] });
+    win.location.hash = '#/work'; win.MApp.render();
+    expect(win.document.getElementById('m-view').textContent).not.toContain('Deliveries'); // adjust never grants delivery.run
+    expect(win.MApp.canOpen('deliveries')).toBe(false);
+  });
+
+  it('saved handoff and delivery cards keep site-PC results pending', async () => {
+    const win = await bootAs({ id: 54, username: 'pending', full_name: 'Pending operator', role: 'warehouse', employee: true, modules: null,
+      permissions: ['mobile.access','messages.view','messages.send','orders.release','delivery.run'] });
+    await win.mProductionDrafts.save({ key: win.mProductionDrafts.key('handoff:302:action'), rows: [], operation: { kind: 'release-handoff', orderId: 302, number: 'SO-302', state: 'confirmed', local: 'site-command-release' } });
+    await win.mProductionDrafts.save({ key: win.mProductionDrafts.key('delivery:31:action'), rows: [], operation: { kind: 'delivery', id: 31, number: 'DEL-31', state: 'confirmed', local: 'site-command-delivery' } });
+    const releaseHost = win.document.createElement('div'), deliveryHost = win.document.createElement('div');
+    win.document.body.append(releaseHost,deliveryHost);
+    win.mReleaseHandoff.cards(releaseHost); win.mDeliveryRecovery.cards(deliveryHost);
+    for (let i=0;i<100 && (!releaseHost.textContent.includes('Confirmation pending') || !deliveryHost.textContent.includes('Confirmation pending'));i++) await new Promise(r=>setTimeout(r,20));
+    expect(releaseHost.textContent).toContain('Confirmation pending'); expect(deliveryHost.textContent).toContain('Confirmation pending');
+    expect(releaseHost.textContent).not.toContain('confirmed'); expect(deliveryHost.textContent).not.toContain('confirmed');
+  });
+
   it('a new account with the default mobile.access gets in without an employee link, showing its role name', async () => {
     const win = await bootAs({
       id: 7, username: 'acct1', full_name: 'Office One', role: 'line_supervisor', role_label: 'Line Supervisor',
@@ -461,7 +509,8 @@ describe('mobile bootstrap', () => {
       };
       return { jo, lines, requests, applied, respond };
     }
-    async function open(win: any, step = '') { win.location.hash = '#/kit-release?id=184' + (step ? '&step=' + step : ''); await wait(); }
+    async function kitReady(win: any, selector: string) { for (let i=0;i<100;i++) { if (win.document.querySelector(selector)) return; await new Promise(r=>setTimeout(r,20)); } throw new Error('Missing kit screen: '+selector); }
+    async function open(win: any, step = '') { win.location.hash = '#/kit-release?id=184' + (step ? '&step=' + step : ''); await wait(); await kitReady(win, '.rk-page button'); }
     async function review(win: any) { click(win, 'kr-review'); await wait(); }
 
     it('separates ready, picking, shortage and failed availability checks', async () => {
@@ -473,7 +522,7 @@ describe('mobile bootstrap', () => {
         if (url === '/api/job-orders/186/availability') return { lines: [line], shortfalls: [{ ...line, short: 3 }], releasable: false };
         return undefined;
       });
-      win.location.hash = '#/kit-release'; await wait();
+      win.location.hash = '#/kit-release'; await kitReady(win, '[data-tab="unknown"]');
       const view = win.document.getElementById('m-view');
       expect(view.textContent).toContain('1 kit ready');
       expect(view.querySelectorAll('[data-id]')).toHaveLength(1);
@@ -1615,10 +1664,12 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       // Proof: a photo is required before review / confirm.
       win.mPhoto.pickFile = () => Promise.resolve(new win.Blob(['x'], { type: 'image/jpeg' }));
       win.mPhoto.attachBlob = () => Promise.resolve({ id: 1 });
+      win.mSignature = () => ({ el: win.document.createElement('div'), isEmpty: () => false, clear() {}, toBlob: (cb: any) => cb(new win.Blob(['signature'], { type: 'image/png' })) });
       win.location.hash = '#/so?id=302&step=proof';
       await wait();
       (doc.querySelector('[data-cap]') as HTMLButtonElement).click();
       await wait();
+      (doc.getElementById('rel-go') as HTMLButtonElement).click(); await wait();
       win.location.hash = '#/so?id=302&step=confirm';
       await wait();
       expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('78:401');
@@ -1633,9 +1684,9 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       await wait(80);
       expect(posts).toHaveLength(1);
       expect(posts[0]!.url).toBe('/api/orders/302/release-slip');
-      expect(posts[0]!.key).toMatch(/^rel-/);
+      expect(posts[0]!.key).toMatch(/^handoff-/);
       expect(posts[0]!.body).toMatchObject({ collected_by: 'Jordan D.', authorization_token: 'PICKUP-7F3Q', handoff_area: 'Release Bay 1',
-        package: [{ item_id: 7, label: 'Charger and cable', ok: true }], evidence_ids: [1] }); // photos uploaded first, on the order
+        package: [{ item_id: 7, label: 'Charger and cable', ok: true }], evidence_ids: [1, 1], acknowledged: true }); // photo and signature upload before warehouse-out
     });
 
     it('asks a supervisor to release without the token, with a reason', async () => {
@@ -2028,15 +2079,15 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const win = await bootAs(RTS, fake(posts));
       const doc = win.document;
       win.location.hash = '#/receiving?unit=601&step=stock';
-      await wait();
+      await element(win, '#rts-go');
       expect(doc.getElementById('m-view').textContent).toContain('FG-A03');
       (doc.getElementById('rts-go') as HTMLButtonElement).click();
-      await wait();
+      await element(win, '#rts-one');
       expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('74:186');
       (doc.getElementById('rts-one') as HTMLButtonElement).click();
-      await wait();
+      await element(win, '#rts-check');
       (doc.getElementById('rts-check') as HTMLButtonElement).click();
-      await wait();
+      await element(win, '#rts-post');
       expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('74:316');
       const post = doc.getElementById('rts-post') as HTMLButtonElement;
       expect(post.disabled).toBe(true);
@@ -2215,10 +2266,11 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
     }
     expect(files.rts).toContain("'/job-orders/' + jo + '/products-in'");
     expect(files.releasing).toContain("role: 'releasing'");
+    expect(fs.readFileSync(path.join(ROOT, 'public/mobile/modules/inventory/release-handoff.js'), 'utf8')).toContain("'/orders/' + a.orderId + '/release-slip'");
     for (const node of ['78:16', '78:68', '78:109', '78:147', '78:188', '78:240', '78:281', '78:317', '78:365', '78:401', '78:438', '78:481']) {
       expect(files.releasing).toContain("'" + node + "'");
     }
-    for (const call of ["'/orders/' + c.order.id + '/release'", "'/orders/' + c.order.id + '/release-slip'", "'/orders/' + c.order.id + '/accept-release'", "'/release-slips/orders/' + c.order.id + '/reports'"]) {
+    for (const call of ["'/orders/' + c.order.id + '/release'", "'/orders/' + c.order.id + '/accept-release'", "'/release-slips/orders/' + c.order.id + '/reports'"]) {
       expect(files.releasing).toContain(call);
     }
   });

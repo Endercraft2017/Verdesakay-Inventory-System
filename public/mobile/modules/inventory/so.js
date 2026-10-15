@@ -24,7 +24,9 @@
   var offline = function () { return navigator.onLine === false; };
   var go = function (extra) { MApp.go('so', extra || {}); };
   var page = function (view, node, title, sub) { return R.page(view, { role: 'releasing', node: node, title: title, subtitle: sub }); };
-  var st = function (id) { return S[id] || (S[id] = { pkg: {}, photos: [] }); };
+  var st = function (id) { return S[id] || (S[id] = { pkg: {}, photos: [], _scope: mProductionDrafts.key('release-owner') }); };
+  function persist(id, state) { return mReleaseHandoff.saveDraft(id, state || st(id)); }
+  function saveError(err) { mToast(err.message || 'Could not save handoff on this device.', 'err'); }
   var MODES = { pickup: 'Customer pickup', delivery: 'Delivery' };
 
   function when(ts) { return ts ? new Date(String(ts).replace(' ', 'T') + (String(ts).indexOf('Z') === -1 ? 'Z' : '')) : null; }
@@ -72,6 +74,7 @@
     var body = page(view, '78:16', 'Release orders', 'Allocated units ready for handoff');
     body.innerHTML = '<div data-recovery></div>' + R.skeleton(3);
     mReleaseActions.cards(body.querySelector('[data-recovery]'));
+    mReleaseHandoff.cards(body);
     API.get('/release-slips/queue').then(function (q) {
       if (!body.isConnected) return;
       var rows = q.to_accept.concat(q.releasing);
@@ -124,6 +127,7 @@
       });
       paint(tab);
       mReleaseActions.cards(body.querySelector('[data-recovery]'));
+    mReleaseHandoff.cards(body);
       body.querySelector('#rel-open').onclick = function () {
         var find = function (code) {
           var t = String(code || '').trim().toLowerCase();
@@ -133,7 +137,8 @@
         if (window.mScanner) mScanner.open({ title: 'Scan the release order number', onResult: find });
         else if (ready[0]) go({ id: ready[0].id });
       };
-    }).catch(function (err) { if (!body.isConnected) return; body.innerHTML = '<div data-recovery></div>' + R.note('warn','Release queue unavailable — count unknown.'); mReleaseActions.cards(body.querySelector('[data-recovery]')); body.appendChild(R.error(err, function () { queue(view, tab); })); });
+    }).catch(function (err) { if (!body.isConnected) return; body.innerHTML = '<div data-recovery></div>' + R.note('warn','Release queue unavailable — count unknown.'); mReleaseActions.cards(body.querySelector('[data-recovery]'));
+    mReleaseHandoff.cards(body); body.appendChild(R.error(err, function () { queue(view, tab); })); });
   }
 
   /* ── Verify release authority (78:68) ──────────────────────────────────── */
@@ -307,10 +312,10 @@
         R.note('info', '<h3>Nothing is implied</h3>Every required item is confirmed explicitly before handoff.') +
         R.actions([{ id: 'rel-go', label: 'Continue to handoff', kind: 'primary' }, { id: 'rel-miss', label: 'Report missing', kind: 'secondary' }]);
       Array.prototype.forEach.call(body.querySelectorAll('[data-p]'), function (b) {
-        b.onclick = function () { var p = c.package[Number(b.dataset.p)]; s.pkg[k(p)] = !s.pkg[k(p)]; s.seal = body.querySelector('[data-seal]').value; paint(); };
+        b.onclick = function () { var p = c.package[Number(b.dataset.p)]; s.pkg[k(p)] = !s.pkg[k(p)]; s.seal = body.querySelector('[data-seal]').value; persist(c.order.id, s).catch(saveError); paint(); };
       });
       body.querySelector('#rel-go').disabled = missing.length > 0;
-      body.querySelector('#rel-go').onclick = function () { s.seal = body.querySelector('[data-seal]').value.trim(); go({ id: c.order.id, step: 'handoff' }); };
+      body.querySelector('#rel-go').onclick = function () { s.seal = body.querySelector('[data-seal]').value.trim(); persist(c.order.id, s).then(function () { go({ id: c.order.id, step: 'handoff' }); }).catch(saveError); };
       body.querySelector('#rel-miss').onclick = function () { go({ id: c.order.id, step: 'report', kind: 'package_missing' }); };
     }
     paint();
@@ -343,6 +348,7 @@
       var rc = body.querySelector('[data-recipient]'); if (rc) s.recipient = rc.value.trim();
       var pl = body.querySelector('[data-plate]'); if (pl) s.plate = pl.value.trim();
     };
+    body.querySelectorAll('[data-area], [data-recipient], [data-plate]').forEach(function (input) { input.oninput = function () { keep(); persist(c.order.id, s).catch(saveError); }; });
     var vb = body.querySelector('[data-verify]');
     if (vb) vb.onclick = function () {
       var t = body.querySelector('[data-token]').value.trim().toUpperCase();
@@ -350,7 +356,7 @@
       vb.disabled = true; keep();
       API.get('/release-slips/orders/' + c.order.id + '/verify-token?token=' + encodeURIComponent(t)).then(function (r) {
         if (!r.ok) { mToast(r.error, 'err'); vb.disabled = false; return; }
-        s.token = t; s.tokenOk = true; handoff(view, c);
+        s.token = t; s.tokenOk = true; persist(c.order.id, s).then(function () { handoff(view, c); }).catch(saveError);
       }).catch(fail(vb));
     };
     var nt = body.querySelector('[data-notoken]');
@@ -360,7 +366,7 @@
       keep();
       if (hasAuth && !s.tokenOk && !overrideOk(a)) { mToast('Verify the recipient’s token first', 'err'); return; }
       if (!hasAuth && !s.recipient) { mToast('Enter who receives the goods', 'err'); return; }
-      go({ id: c.order.id, step: 'proof' });
+      persist(c.order.id, s).then(function () { go({ id: c.order.id, step: 'proof' }); }).catch(saveError);
     };
   }
 
@@ -419,30 +425,34 @@
   function proof(view, c) {
     var s = st(c.order.id);
     var body = page(view, '78:281', 'Capture handoff proof', 'Record only evidence required by policy');
-    var sig = window.mSignature ? mSignature() : null;
+    var sig = window.mSignature ? mSignature({ onChange: function () {
+      if (sig.isEmpty()) { s.sign = null; persist(c.order.id, s).catch(saveError); }
+      else sig.toBlob(function (b) { s.sign = b; persist(c.order.id, s).catch(saveError); });
+    } }) : null;
     body.innerHTML =
       '<button type="button" class="rk-camera rel" data-cap><span class="target" aria-hidden="true"></span><b>Unit and release-bay proof</b><small>Avoid capturing unrelated people or documents.</small></button>' +
       '<div class="rk-thumbs" data-thumbs></div>' +
       '<div class="rk-sign"><small>Recipient acknowledgement</small><div data-sign></div></div>' +
       R.note('info', '<h3>Privacy-minimized evidence</h3>Capture the unit, serial context and handoff — not phone screens, full IDs or bystanders.') +
       R.actions([{ id: 'rel-go', label: 'Capture and continue', kind: 'primary' }, { id: 'rel-retake', label: 'Retake', kind: 'secondary' }]);
+    if (s.sign) body.querySelector('[data-sign]').appendChild(mEl('<p class="m-hint">Saved recipient signature retained. Draw again to replace it, or Retake to clear.</p>'));
     if (sig) body.querySelector('[data-sign]').appendChild(sig.el);
     function thumbs() {
       body.querySelector('[data-thumbs]').innerHTML = s.photos.map(function (f, i) {
         return '<span><img alt="" src="' + URL.createObjectURL(f) + '"><button type="button" data-x="' + i + '" aria-label="Remove">×</button></span>';
       }).join('');
-      Array.prototype.forEach.call(body.querySelectorAll('[data-x]'), function (b) { b.onclick = function () { s.photos.splice(Number(b.dataset.x), 1); thumbs(); }; });
+      Array.prototype.forEach.call(body.querySelectorAll('[data-x]'), function (b) { b.onclick = function () { s.photos.splice(Number(b.dataset.x), 1); persist(c.order.id, s).catch(saveError); thumbs(); }; });
     }
     thumbs();
     body.querySelector('[data-cap]').onclick = function () {
-      mPhoto.pickFile().then(function (f) { s.photos.push(f); thumbs(); }).catch(function () {});
+      mPhoto.pickFile().then(function (f) { if (s.photos.length >= 19) { mToast('Keep at most 19 handoff photos.', 'err'); return; } s.photos.push(f); persist(c.order.id, s).then(thumbs).catch(saveError); }).catch(function () {});
     };
-    body.querySelector('#rel-retake').onclick = function () { s.photos = []; s.sign = null; if (sig) sig.clear(); thumbs(); };
+    body.querySelector('#rel-retake').onclick = function () { s.photos = []; s.sign = null; if (sig) sig.clear(); persist(c.order.id, s).catch(saveError); thumbs(); };
     body.querySelector('#rel-go').onclick = function () {
       if (!s.photos.length) { mToast('Add at least one photo of the unit at handoff', 'err'); return; }
       if (sig && sig.isEmpty() && !s.sign) { mToast('Ask the recipient to sign', 'err'); return; }
-      if (sig && !sig.isEmpty()) sig.toBlob(function (b) { s.sign = b; go({ id: c.order.id, step: 'review' }); });
-      else go({ id: c.order.id, step: 'review' });
+      if (sig && !sig.isEmpty()) sig.toBlob(function (b) { s.sign = b; persist(c.order.id, s).then(function () { go({ id: c.order.id, step: 'review' }); }).catch(saveError); });
+      else persist(c.order.id, s).then(function () { go({ id: c.order.id, step: 'review' }); }).catch(saveError);
     };
   }
 
@@ -468,7 +478,7 @@
   /* ── Confirm physical release (78:401) — online-only, idempotent ───────── */
   function confirm(view, c, partial) {
     var s = st(c.order.id), a = c.authorization;
-    if (!s.photos.length || (a.state === 'valid' && !s.tokenOk && !overrideOk(a))) { go({ id: c.order.id, step: !s.photos.length ? 'proof' : 'handoff' }); return; }
+    if (!s.photos.length || !s.sign || (a.state === 'valid' && !s.tokenOk && !overrideOk(a))) { go({ id: c.order.id, step: !s.photos.length || !s.sign ? 'proof' : 'handoff' }); return; }
     var body = page(view, '78:401', 'Confirm physical release', 'Final irreversible inventory action');
     var first = c.units[0];
     body.innerHTML =
@@ -485,61 +495,19 @@
     btn.onclick = function () {
       if (offline()) { mToast('You’re offline — warehouse-out needs a connection. Nothing was released.', 'err'); return; }
       btn.disabled = true; btn.textContent = 'Recording…';
-      s.key = s.key || key();
       var payload = {
         collected_by: a.state === 'valid' ? a.recipient_name : s.recipient, vehicle_plate: s.plate || null,
         authorization_token: s.tokenOk ? s.token : null, seal_tag: s.seal || null, handoff_area: s.area || null, acknowledged: !!s.sign,
         package: c.package.map(function (p) { return { item_id: p.item_id, label: p.label, ok: !!s.pkg[p.item_id + '|' + p.label] }; }),
       };
-      // Photos first, on the order (each once, even across retries): the slip takes them over
-      // and the server refuses a phone warehouse-out without one. Nothing has moved if one fails.
-      var evidence = s.photos.reduce(function (pr, f, i) {
-        return pr.then(function () {
-          if (f._attId) return;
-          return mPhoto.attachBlob('release_proof', c.order.id, f, f.name || 'handoff-' + (i + 1) + '.jpg', 'Handoff proof').then(function (r) { f._attId = r.id; });
-        });
-      }, Promise.resolve());
-      evidence.then(function () {
-        payload.evidence_ids = s.photos.map(function (f) { return f._attId; });
-        return API.post('/orders/' + c.order.id + '/release-slip', payload, { idempotencyKey: s.key });
-      }).then(function (r) {
-        var failed = 0;
-        return (s.sign ? mPhoto.attachBlob('release', r.id, s.sign, 'acknowledgement.png', 'Recipient acknowledgement').catch(function () { failed++; }) : Promise.resolve()).then(function () {
-          S[c.order.id] = { pkg: {}, photos: [], result: { slipId: r.id, failed: failed, backorder: r.backorder || null, local: API.syncLocal(r), at: new Date().toISOString() } };
-          go({ id: c.order.id, step: 'done' });
-        });
-      }).catch(function (err) {
-        var d = err && err.data;
-        if (d && d.blocked === 'authorization') { s.tokenOk = false; mToast(d.error, 'err'); go({ id: c.order.id }); return; }
-        if (d && d.blocked === 'package') { mToast(d.error, 'err'); go({ id: c.order.id, step: 'package' }); return; }
-        if (d && d.blocked === 'evidence') { mToast(d.error, 'err'); go({ id: c.order.id, step: 'proof' }); return; }
-        if (d && d.blocked === 'incomplete') { go({ id: c.order.id, step: 'incomplete' }); return; }
-        fail(btn, 'Confirm warehouse-out')(err);
-      });
+      mReleaseHandoff.start(c, s, payload).then(function () {
+        go({ id: c.order.id, step: 'handoff-recovery' });
+      }).catch(fail(btn, 'Confirm warehouse-out'));
     };
   }
 
   /* ── Release recorded (78:438) ─────────────────────────────────────────── */
-  function done(view, c) {
-    var r = S[c.order.id] && S[c.order.id].result;
-    if (!r || !c.slip) { go({ id: c.order.id, step: 'receipt' }); return; }
-    var body = page(view, '78:438', 'Release recorded', 'Warehouse-out and handoff are complete');
-    var me = (MApp.getMe() || {}).full_name || 'You';
-    body.innerHTML =
-      '<div class="rk-result' + (r.local ? ' queued' : '') + '"><i aria-hidden="true">' + (r.local ? '⏳' : '✓') + '</i><b>' + (c.units.length > 1 ? c.units.length + ' units released' : 'Unit released') + (r.local ? ' — on the site PC' : '') + '</b>' +
-        '<span>' + mEsc(c.units[0] ? c.units[0].identifier + (c.units.length > 1 ? ' …' : '') : c.lines.map(function (l) { return l.name; }).join(', ')) + '</span>' +
-        '<span style="font-weight:400;color:var(--rk-meta)">' + mEsc(c.order.number + ' · ' + modeOf(c)) + '</span></div>' +
-      '<div data-syncw></div>' +
-      (r.backorder ? R.note('warn', '<b>Backorder ' + mEsc(r.backorder.number) + '</b> was created for what didn’t leave.') : '') +
-      (r.failed ? R.note('warn', 'The recipient’s acknowledgement failed to upload — add it from the slip on the desktop.') : '') +
-      R.field('Warehouse-out transaction', c.slip.number) +
-      R.field('Released by', me + ' · ' + clock(r.at)) +
-      R.actions([{ id: 'rel-next', label: 'Open next release', kind: 'primary' }, { id: 'rel-rcpt', label: 'View receipt', kind: 'secondary' }]) +
-      R.note('info', '<h3>Inventory updated</h3>The unit is no longer available for allocation or another release.');
-    body.querySelector('[data-syncw]').appendChild(R.syncWatch(r.local));
-    body.querySelector('#rel-next').onclick = function () { go(); };
-    body.querySelector('#rel-rcpt').onclick = function () { go({ id: c.order.id, step: 'receipt' }); };
-  }
+  function done(view, c) { receipt(view, c); }
   function receipt(view, c) {
     if (!c.slip) { go({ id: c.order.id }); return; }
     var body = page(view, '78:438', 'Release receipt', c.order.number);
@@ -552,7 +520,7 @@
         R.lines((sl.items || []).map(function (i) { return { name: i.name + (i.unit_identifiers ? ' — ' + i.unit_identifiers : ''), qty: i.quantity + (i.unit ? ' ' + i.unit : ''), ok: true }; })) +
         '<div data-photos></div>' +
         R.actions([{ id: 'rel-back', label: 'Back to queue', kind: 'secondary' }]);
-      if (mPhoto.thumbs) body.querySelector('[data-photos]').appendChild(mPhoto.thumbs('release', sl.id, { editable: true }));
+      if (mPhoto.thumbs) body.querySelector('[data-photos]').appendChild(mPhoto.thumbs('release', sl.id, { editable: false }));
       body.querySelector('#rel-back').onclick = function () { go({ tab: 'done' }); };
     }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { receipt(view, c); })); });
   }
@@ -612,6 +580,12 @@
     if (owner !== account) { S = {}; owner = account; }
     if (!params.id) return queue(view, params.tab);
     try {
+      var handoffSaved = await mReleaseHandoff.load(Number(params.id));
+      if (render !== renderSerial || hash !== location.hash || account !== mProductionDrafts.key('release-owner')) return;
+      if (handoffSaved && handoffSaved.operation.state !== 'draft') {
+        mReleaseHandoff.paint(view, handoffSaved); return;
+      }
+      if (handoffSaved && !S[params.id]) S[params.id] = handoffSaved.batch;
       var saved = await mReleaseActions.load(Number(params.id));
       if (render !== renderSerial || hash !== location.hash || account !== mProductionDrafts.key('release-owner')) return;
       if (saved) {

@@ -1,36 +1,61 @@
 # Inventory and production: mobile integration gaps
 
-## Release slip → delivery proof follow-up (2026-10-16)
+## Final releasing, delivery and mobile authorization follow-up (2026-10-16)
 
-See `docs/reviews/release-delivery-playwright-audit.md` for the real-backend
-desktop and phone browser audit. A physical sale now needs its warehouse release
-slip before it can reach a completed commercial status, leave as
-`out_for_delivery`, or be marked delivered. Delivery planning may happen before
-the slip. `POST /api/deliveries/:id/status` and `/:id/complete` return
-`409 code:'release_required'` when the physical handoff is missing. A successful
-delivery of physical sale goods requires a named recipient and an uploaded
-`delivery` photo or linked `signature`; the server returns `proof_required` or
-`recipient_required` without changing the delivery status. Delivery evidence is
-restricted to the assigned driver or delivery manager, and completed evidence is
-locked. Failed delivery still requires a reason.
+This section supersedes the older final-proof/delivery gap below. Final warehouse-out
+now persists photos, recipient signature and handoff context, then retains an immutable
+attempt across restart/lost responses. Both photos and signature upload under stable
+keys before slip issuance and attach atomically to the slip. Unknown results require
+explicit original-attempt recovery; stock is not posted again. Saved attempts are
+account/server scoped, discoverable independently of live queues and protected by
+revision checks. Site-PC saves remain pending until authority confirmation.
 
-**Mobile owner action:** In `public/mobile/modules/inventory/deliveries.js`, guide a
-driver who receives `release_required` back to the canonical release slip. Persist
-the pending delivery-completion payload and idempotency key across restart. Keep
-proof/signature upload identity stable, then reconcile `GET /deliveries/:id`
-after a timeout before offering a retry. Distinguish saved locally, authority
-confirmed and confirmation unknown. Keep the recipient, photos and signature
-recoverable where practical; if a draft is unavailable after restart, say that
-recapture is required. Avoid treating a `proof_required` refusal as delivered.
-No `public/mobile/` files were edited in this step.
+Delivery start/POD now have durable drafts and immutable submissions, including
+optional photo/signature/GPS/recipient/note state. Owner decisions: evidence stays
+optional in-app, and a linked delivery may start before warehouse-out. The driver
+screen no longer offers force-backorder sales completion. Delivery does not deduct
+stock again. Server delivery permissions accept runners or managers and retain
+assignment restrictions.
 
-**Acceptance cases:** A booked delivery cannot depart before its sale's release
-slip; a committed slip lost in transit does not deduct twice; the assigned driver
-can upload proof while another driver cannot view it; delivery without proof or
-recipient remains open; a lost completion response resolves to the existing
-delivered record; completed proof cannot be deleted; failed delivery records a
-reason without stock movement; an offline owning-site proof reconciles with a
-conflicting cloud cancellation.
+Mobile operational features now follow both effective desktop account permissions
+and workspace modules, including direct URLs. Work/production tiles and Quick Orbit
+use the same policy. A baseline employee keeps personal tools without operational
+inventory/production/releasing/delivery/confidential-case access. Foreground, focus
+and reconnect refresh permissions from the server. Inspectors can still open their
+own repair-revision decisions. PWA cache v104.
+
+The handoff at commit `6185481` was reconciled with current code in
+`docs/reviews/mobile-handoff-6185481-review.md`; it lists remaining work and separates
+already-completed historical audit rows. Highest follow-ups include legacy Pick
+retirement, semi-built finishing intake, returns/disposition, allocation undo,
+build-state stock movements and shortage/procurement context. Mobile sales pricing
+suggestions are conditional on adding a Sales editor.
+
+Validation: all 24 real-backend Playwright checks passed at 390×844, using actual
+printed QR images through a virtual camera and a persistent Chromium profile for
+Blob recovery. TypeScript, all 235 focused tests and the final integrated full suite
+passed: **2,796 tests across 273 files**. This run includes upstream `0a53a32` and the
+owner-confirmed backend policy alignment. See `docs/reviews/mobile-recovery-and-access-validation.md`.
+Physical phone/printer acceptance is still required; this does not certify hardware
+readiness or close the separate remaining integration list.
+
+
+## Updated backend audit integration (2026-10-16)
+
+Integrated upstream `0a53a32`, including the desktop slip/photo response-loss fixes,
+physical-sale completion guards, assigned-driver/manager evidence access checks and
+completed-evidence locks. The historical audit is in
+`docs/reviews/release-delivery-playwright-audit.md`.
+
+The owner explicitly reconfirmed the earlier delivery choice after reviewing that
+handoff: **start before a slip is allowed; recipient, photos, signature and GPS are
+optional**. Backend and mobile both follow this choice. Marking physical sale goods
+Delivered and commercially completing the sale still require warehouse-out. A failed
+attempt can record its required reason before a slip without moving stock. The
+stricter dispatch/proof requirements in the earlier backend audit are superseded.
+Mobile recovery retains exact keys/evidence and handles release-required results
+without a forced stock action. Security and stock protections remain in place.
+
 
 ## Follow-up QR acceptance audit
 

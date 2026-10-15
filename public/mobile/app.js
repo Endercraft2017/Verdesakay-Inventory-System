@@ -151,12 +151,36 @@ window.MApp = (function () {
     damage: ['inventory.adjust'], receive: ['inventory.adjust'], pick: ['inventory.adjust'],
     'stock-move': ['inventory.adjust'], transfer: ['inventory.adjust'], 'assign-qr': ['inventory.adjust'],
     'new-item': ['inventory.create'],
-    item: ['inventory.view'], location: ['inventory.view'], 'low-stock': ['inventory.view'],
+    'my-log': ['inventory.view'], item: ['inventory.view'], location: ['inventory.view'], 'low-stock': ['inventory.view'],
     // A unit's production record: the broad views, or any desk that handles the unit (src/shared/desk-access.ts).
     record: ['inventory.view', 'production.view', 'production.record', 'production.pause', 'production.manage',
       'production.approve', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review',
       'production.repairs', 'production.receive', 'orders.release'],
   };
+
+  var ROUTE_MODULES = {
+    allocate: ['manufacturing'], production: ['manufacturing'], 'job-orders': ['manufacturing'], 'kit-release': ['manufacturing'],
+    'unit-issues': ['manufacturing'], qc: ['manufacturing'], repairs: ['manufacturing'], record: ['manufacturing'], receiving: ['manufacturing'],
+    batch: ['inventory'], 'cycle-count': ['inventory'], damage: ['inventory'], receive: ['inventory', 'purchasing'], pick: ['inventory'],
+    'stock-move': ['inventory'], transfer: ['inventory'], 'assign-qr': ['inventory'], 'new-item': ['inventory'],
+    'my-log': ['inventory'], item: ['inventory'], location: ['inventory'], 'low-stock': ['inventory'], scan: ['inventory'], so: ['inventory'], deliveries: ['inventory']
+  };
+  var DESK_NEEDS = {
+    production: ['inventory.adjust', 'production.record', 'production.pause', 'production.manage', 'production.approve', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.repairs', 'production.receive'],
+    'job-orders': ['inventory.adjust', 'production.view', 'production.record', 'production.pause', 'production.manage', 'production.approve'],
+    'kit-release': ['inventory.adjust'],
+    'unit-issues': ['inventory.adjust', 'production.view', 'production.record', 'production.manage', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.receive', 'production.repairs', 'orders.release'],
+    qc: ['inventory.adjust', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review'],
+    repairs: ['inventory.adjust', 'production.repairs', 'production.inspect_qc', 'production.inspect_qa', 'production.approve'], receiving: ['inventory.adjust', 'production.receive'],
+    so: ['inventory.adjust', 'orders.release'], deliveries: ['delivery.run', 'delivery.manage'],
+    scan: ['inventory.mobile', 'inventory.view', 'inventory.adjust', 'production.view', 'production.record', 'production.manage', 'production.approve', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.repairs', 'production.receive', 'orders.release'],
+    'confidential-reports': ['reports.confidential']
+  };
+  function routeEnabled(name) { return (ROUTE_MODULES[name] || []).every(hasModule); }
+  function canOpen(name) {
+    var needs = ROUTE_NEEDS[name] || DESK_NEEDS[name];
+    return routeEnabled(name) && (!needs || needs.some(can));
+  }
 
   function render() {
     if(window.mPersonalDraft && !mPersonalDraft.allow()) return;
@@ -178,8 +202,7 @@ window.MApp = (function () {
     });
     v.dataset.route=parsed.name;
     document.documentElement.removeAttribute('data-role-accent'); // set again by role screens (role-ui.js)
-    var needs = routes[parsed.name] && ROUTE_NEEDS[parsed.name];
-    if (needs && !needs.some(function (p) { return can(p); })) {
+    if (!canOpen(parsed.name)) {
       v.innerHTML = '<div class="m-error" data-no-permission>You don’t have permission for this screen. Ask an administrator if you need it.</div>';
       return;
     }
@@ -383,6 +406,22 @@ window.MApp = (function () {
     };
   }
 
+  var refreshingAccess = false;
+  async function refreshAccess() {
+    if (refreshingAccess || !me || !API.getToken() || navigator.onLine === false || document.visibilityState === 'hidden') return;
+    var token = API.getToken(), server = API.base(), userId = me.id;
+    refreshingAccess = true;
+    try {
+      var profile = await API.get('/auth/me');
+      if (token !== API.getToken() || server !== API.base() || !me || me.id !== userId) return;
+      var current = profile.user;
+      if (!current || current.id !== userId) return;
+      if (JSON.stringify([me.permissions, me.modules, me.can_approve, me.employee, me.password_change_required, me.mfa_setup_required]) !==
+          JSON.stringify([current.permissions, current.modules, current.can_approve, current.employee, current.password_change_required, current.mfa_setup_required])) enterApp(current);
+    } catch (err) { /* Network failure retains the scoped offline profile; APIs still enforce current rights. */ }
+    finally { refreshingAccess = false; }
+  }
+
   function enterApp(user) {
     me = user;
     if (user.password_change_required) {
@@ -480,7 +519,9 @@ window.MApp = (function () {
       }).catch(function () {});
     }
     if (window.mQueue) mQueue.onChange(refreshQueueBadge);
-    window.addEventListener('online', function () { setOnline(true); refreshQueueBadge(); });
+    window.addEventListener('online', function () { setOnline(true); refreshQueueBadge(); refreshAccess(); });
+    window.addEventListener('focus', refreshAccess);
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState !== 'hidden') refreshAccess(); });
     window.addEventListener('offline', function () { setOnline(false); refreshQueueBadge(); });
     refreshQueueBadge();
 
@@ -546,7 +587,7 @@ window.MApp = (function () {
   return {
     route: route, go: go, back: back, nav: hashFor,
     getMe: getMe, setMe: setMe, can: can, hasModule: hasModule, isEmployee: isEmployee, isWarehouse: isWarehouse,
-    hasProductionAccess: hasProductionAccess, canApprove: canApprove,
+    hasProductionAccess: hasProductionAccess, canApprove: canApprove, canOpen: canOpen, routeEnabled: routeEnabled,
     seg: seg, setTitle: setTitle, render: render, currentLocation: parseHash, refreshInboxBadge: refreshInboxBadge,
     signOut: signOut, isSharedSession: function () { return API.isSharedSession(); },
     routes: function () { return Object.keys(routes); },

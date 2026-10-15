@@ -456,3 +456,22 @@ For each phase, require:
 - Remaining gaps, explicitly marked as planned rather than implemented.
 
 Do not accept “looks close” as verification for the shell, role queue, primary task screen, confirmation boundary, blocked state, and completion state of each role.
+
+## Follow-up: final release, delivery and mobile access (2026-10-16)
+
+Final release now uses `inventory/release-handoff.js`: scoped persistent evidence,
+keyed uploads before slip issuance, immutable final request and explicit unknown-result
+recovery. Delivery uses `inventory/delivery-recovery.js` for the same persistence and
+authority-state rules on start and POD. Its evidence remains optional and a linked
+delivery may start before the slip, per owner decisions. The driver screen does not
+offer a force-backorder completion action. PWA cache v104 includes both modules.
+
+Operational route access is centralized through `MApp.canOpen`, combining effective
+account permissions and module entitlements. Work/production tiles and Quick Orbit
+use this policy; a basic employee retains personal tools and cannot open operational
+screens by URL. Foreground/focus/reconnect refresh account permissions from the server.
+
+The exact handoff at `6185481` was reconciled against code; see
+`docs/reviews/mobile-handoff-6185481-review.md`. Legacy Pick retirement, semi-built
+finishing intake, returns/disposition, allocation undo, build-state stock movement,
+procurement context and other follow-ups there are separate unfinished work.

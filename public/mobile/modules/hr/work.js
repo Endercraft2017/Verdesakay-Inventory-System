@@ -54,6 +54,7 @@
     });
   }
   function allowed(op) {
+    if (!MApp.canOpen(op.route)) return false;
     if (MApp.can('inventory.adjust') && op.permission !== 'orders.release' && op.permission !== 'production.approve') return true;
     if (op.permission && MApp.can(op.permission)) return true;
     return op.any && op.any.some(function (p) { return MApp.can(p); });

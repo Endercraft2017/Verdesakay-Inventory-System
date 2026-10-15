@@ -52,6 +52,18 @@ describe('deliveries', () => {
     expect((await ctx.api.get('/api/deliveries/' + made.body.id).set(bearer(d2.token))).status).toBe(403);
   });
 
+  it('a manage-only account can operate delivery while a baseline account is denied', async () => {
+    const manager = await driver();
+    await ctx.api.put('/api/users/' + manager.id + '/permissions').set(A()).send({ overrides: { 'delivery.run': false, 'delivery.manage': true } });
+    const del = (await ctx.api.post('/api/deliveries').set(A()).send({ customer_name: 'Managed drop' })).body.id;
+    expect((await ctx.api.get('/api/deliveries').set(bearer(manager.token))).status).toBe(200);
+    expect((await ctx.api.post(`/api/deliveries/${del}/status`).set(bearer(manager.token)).send({ status: 'out_for_delivery' })).status).toBe(200);
+    expect((await ctx.api.post(`/api/deliveries/${del}/complete`).set(bearer(manager.token)).send({ outcome: 'delivered' })).status).toBe(200);
+    await ctx.api.put('/api/users/' + manager.id + '/permissions').set(A()).send({ overrides: { 'delivery.run': false, 'delivery.manage': false } });
+    expect((await ctx.api.get('/api/deliveries').set(bearer(manager.token))).status).toBe(403);
+    expect((await ctx.api.post(`/api/deliveries/${del}/complete`).set(bearer(manager.token)).send({ outcome: 'delivered' })).status).toBe(403);
+  });
+
   it('start → complete captures the POD', async () => {
     const d1 = await driver();
     const d2 = await driver();

@@ -41,6 +41,7 @@
   function mProductionQueue() {
     var wrap = mEl('<div class="m-wq"></div>');
     ROWS.filter(function (r) {
+      if (!MApp.canOpen(r.route)) return false;
       var perms = r.perms || (r.perm ? [r.perm] : []);
       return (!r.strict && MApp.can('inventory.adjust')) || perms.some(function (p) { return MApp.can(p); });
     }).forEach(function (r) {

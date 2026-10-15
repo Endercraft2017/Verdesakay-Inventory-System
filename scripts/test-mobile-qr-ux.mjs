@@ -7,12 +7,14 @@ import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 const output = path.resolve('work/mobile-qr-audit');
 fs.mkdirSync(output, { recursive: true });
+const profile = path.join(output, 'browser-profile');
+fs.rmSync(profile, { recursive: true, force: true });
 const requests = [];
 const report = { backend: 'Disposable real Express/SQLite backend', camera: 'Chromium virtual-camera Y4M frames generated from actual printed QR images; scanner callbacks unchanged', viewport: '390x844', checks: [], errors: [], limits: ['Virtual camera, not physical paper/printer or phone optics.'] };
 const server = spawn(process.execPath, ['--import', 'tsx', 'scripts/browser/editor-ux-server.ts'], { stdio: ['ignore', 'pipe', 'pipe'] });
 server.stderr.on('data', d => fs.appendFileSync(path.join(output, 'server.log'), d));
 let base, admin, browser, context, page;
-const watchdog = setTimeout(() => { server.kill(); process.exit(1); }, 300000);
+const watchdog = setTimeout(() => { server.kill(); process.exit(1); }, 600000);
 async function api(method, route, body, token = admin, expected) {
     const res = await fetch(base + '/api' + route, { method, headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(body instanceof FormData ? {} : { 'Content-Type': 'application/json' }) }, ...(body !== undefined ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {}) });
     const value = await res.json();
@@ -21,13 +23,14 @@ async function api(method, route, body, token = admin, expected) {
 }
 async function check(name, fn) { await fn(); report.checks.push({ name, passed: true }); console.log('PASS ' + name); }
 async function loginRole(role) { const username = 'audit_' + role; await api('POST', '/users', { username, full_name: role, password: 'test-secret123', role }); return (await api('POST', '/auth/login', { username, password: 'test-secret123' }, null)).token; }
-async function launch(token, camera, storageState) {
-    await browser?.close();
-    browser = await chromium.launch({ ...((process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/bin/chromium', '/usr/lib/chromium/chromium'].find(fs.existsSync)) ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/bin/chromium', '/usr/lib/chromium/chromium'].find(fs.existsSync) } : {}), headless: true, args: camera ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--use-file-for-fake-video-capture=' + camera] : [] });
-    context = await browser.newContext({ viewport: { width: 390, height: 844 }, permissions: ['camera'], timezoneId: 'Asia/Manila', serviceWorkers: 'block', ...(storageState ? { storageState } : {}) });
+async function launch(token, camera) {
+    await context?.close();
+    context = await chromium.launchPersistentContext(profile, { viewport: { width: 390, height: 844 }, permissions: ['camera'], timezoneId: 'Asia/Manila', serviceWorkers: 'block', ...((process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/bin/chromium', '/usr/lib/chromium/chromium'].find(fs.existsSync)) ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/bin/chromium', '/usr/lib/chromium/chromium'].find(fs.existsSync) } : {}), headless: true, args: camera ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--use-file-for-fake-video-capture=' + camera] : [] });
+    browser = context.browser();
     await context.addInitScript(t => localStorage.setItem('vds_token', t), token);
     page = await context.newPage();
-    page.on('request', req => { if (req.method() === 'POST' && /\/api\/orders\/\d+\/release$/.test(new URL(req.url()).pathname))
+    for (const old of context.pages()) if (old !== page) await old.close();
+    page.on('request', req => { if (req.method() === 'POST' && /\/api\/orders\/\d+\/(?:release|release-slip)$/.test(new URL(req.url()).pathname))
         requests.push({ url: req.url(), body: req.postData(), key: req.headers()['idempotency-key'] }); });
     page.on('pageerror', e => report.errors.push(e.message));
 }
@@ -76,7 +79,9 @@ async function captureToReview(so) {
     const chooser = page.waitForEvent('filechooser');
     await page.locator('[data-cap]').click();
     await (await chooser).setFiles({ name: 'handoff.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6gAAAAABJRU5ErkJggg==', 'base64') });
+    await page.locator('[data-thumbs] img').waitFor();
     const canvas = page.locator('[data-sign] canvas');
+    await canvas.scrollIntoViewIfNeeded();
     const box = await canvas.boundingBox();
     assert(box);
     await page.mouse.move(box.x + 20, box.y + 20);
@@ -90,25 +95,57 @@ async function warehouseOut(so) {
     await page.locator('#rel-review-current').click();
     await page.locator('#rel-go').click();
     await captureToReview(so);
-    if (so.id === 1) {
-        await check('Reload during handoff cannot silently release stock', async () => {
-            await page.reload();
-            await page.locator('#rel-go').click();
-            await page.locator('[data-cap], #rel-post').first().waitFor();
-            assert.equal((await api('GET', '/inventory/' + so.productId)).quantity, so.quantity);
-            if (!await page.locator('#rel-post').count()) {
-                report.limits.push('Handoff proof/signature drafts are memory-only: reload safely blocks release but requires recapture. Durable proof recovery remains open.');
-                await captureToReview(so);
-                await page.locator('#rel-go').click();
-            }
-        });
-    }
-    else
+    await check('Handoff photos and signature survive a browser restart', async () => {
+        const url = page.url(), token = await page.evaluate(() => localStorage.getItem('vds_token'));
+        await launch(token);
+        await page.goto(url);
+        await page.locator('#rel-go').waitFor();
+        assert.match(await page.locator('#m-view').innerText(), /1 photo and acknowledgement attached/);
         await page.locator('#rel-go').click();
-    await page.locator('#rel-post').waitFor();
+        await page.locator('#rel-post').waitFor();
+        assert.equal((await api('GET', '/inventory/' + so.productId)).quantity, so.quantity);
+    });
+    const attempts = [], uploadAttempts = [];
+    const finalPath = '**/api/orders/' + so.id + '/release-slip';
+    let loseFinal = true, loseUpload = true;
+    await page.route('**/api/attachments', async route => {
+        if (route.request().method() !== 'POST') return route.continue();
+        uploadAttempts.push(route.request().headers()['idempotency-key']);
+        if (loseUpload) { loseUpload = false; await route.fetch(); await route.abort('connectionreset'); }
+        else await route.continue();
+    });
+    await page.route(finalPath, async route => {
+        attempts.push({ body: route.request().postData(), key: route.request().headers()['idempotency-key'] });
+        if (loseFinal) { loseFinal = false; await route.fetch(); await route.abort('connectionreset'); }
+        else await route.continue();
+    });
     await page.locator('#rel-ok').check();
     await page.locator('#rel-post').click();
-    await page.waitForURL(/step=done/);
+    await page.locator('#handoff-retry').waitFor();
+    await check('Committed attachment with lost response retries the original upload key', async () => {
+        assert.equal((await api('GET', '/inventory/' + so.productId)).quantity, so.quantity);
+        const staged = await api('GET', '/attachments?kind=release_proof&ref_id=' + so.id);
+        assert.equal(staged.length, 1);
+        await page.locator('#handoff-retry').click();
+        await page.waitForFunction(() => document.querySelector('#handoff-retry') && !document.querySelector('#handoff-retry').disabled);
+        assert.equal(uploadAttempts[0], uploadAttempts[1]);
+    });
+    await check('Committed warehouse-out with lost response recovers after browser restart', async () => {
+        const c = await api('GET', `/release-slips/orders/${so.id}/context`, undefined, admin);
+        assert(c.slip);
+        assert.equal((await api('GET', '/inventory/' + so.productId)).quantity, 0);
+        const token = await page.evaluate(() => localStorage.getItem('vds_token'));
+        const url = page.url();
+        await launch(token);
+        await page.goto(url);
+        await page.locator('#handoff-retry').click();
+        await page.locator('#handoff-review').waitFor();
+        const after = await api('GET', `/release-slips/orders/${so.id}/context`, undefined, admin);
+        assert.equal(after.slip.id, c.slip.id);
+        const finalRequests = requests.filter(r => new URL(r.url).pathname.endsWith('/orders/' + so.id + '/release-slip'));
+        assert.equal(finalRequests.length, 2); assert.equal(finalRequests[0].key, finalRequests[1].key); assert.equal(finalRequests[0].body, finalRequests[1].body);
+        assert.equal((await api('GET', '/inventory/' + so.productId)).quantity, 0);
+    });
     const c = await api('GET', `/release-slips/orders/${so.id}/context`, undefined, admin);
     const photos = await api('GET', '/attachments?kind=release&ref_id=' + c.slip.id);
     assert(photos.some(p => p.caption === 'Handoff proof'));
@@ -151,8 +188,7 @@ try {
             await page.locator(confirm).click();
             if (item.kind === 'batch') {
                 await page.locator('#rel-retry').waitFor();
-                const saved = await context.storageState({ indexedDB: true });
-                await launch(release, item.video, saved);
+                await launch(release, item.video);
                 await go('so?id=' + so.id);
                 await page.locator('#rel-retry').click();
             }
@@ -191,6 +227,7 @@ try {
     await check('Unavailable camera blocks confirmation and exposes no manual verification', async () => {
         await launch(rts);
         await go('receiving?batch=' + batch.id);
+        if (await page.locator('#rts-next').count()) { await page.locator('#rts-next').click(); await go('receiving?batch=' + batch.id); }
         await page.locator('#rts-ok').check();
         await page.locator('[data-verify-label]').click();
         await page.getByText('Camera scanning is required.', { exact: false }).waitFor({ timeout: 20000 });
@@ -208,6 +245,110 @@ try {
         await page.getByText(/failed|unavailable|network|connect|fetch/i).last().waitFor({ timeout: 10000 });
         assert.equal(opened, 0);
     });
+    const driver = await loginRole('warehouse');
+    const driverMe = await api('GET','/auth/me',undefined,driver);
+    const assigned = driverMe.user || driverMe;
+    const delivery = await api('POST','/deliveries',{ order_id: 1, assigned_to: assigned.id, address: 'Acceptance test drop' });
+    const deliveryPosts = [];
+    async function deliveryRoute(action) {
+        await page.route('**/api/deliveries/' + delivery.id + '/' + action, async route => {
+            deliveryPosts.push({ action, body: route.request().postData(), key: route.request().headers()['idempotency-key'] });
+            await route.fetch(); await route.abort('connectionreset');
+        });
+    }
+    async function restartDelivery(step) {
+        await launch(driver);
+        page.on('request', req => { if (req.method() === 'POST' && req.url().includes('/api/deliveries/' + delivery.id + '/')) deliveryPosts.push({ action: new URL(req.url()).pathname.split('/').pop(), body: req.postData(), key: req.headers()['idempotency-key'] }); });
+        await page.goto(base + '/m#/deliveries?id=' + delivery.id + (step ? '&step=' + step : ''));
+    }
+    await check('Delivery start recovers a committed response loss after browser restart', async () => {
+        await restartDelivery(); await deliveryRoute('status');
+        await page.getByRole('button',{name:'Start delivery',exact:true}).click();
+        await page.locator('#delivery-retry').waitFor();
+        assert.equal((await api('GET','/deliveries/' + delivery.id)).status,'out_for_delivery');
+        await restartDelivery();
+        await page.locator('#delivery-retry').click(); await page.locator('#delivery-review').waitFor();
+        const attempts = deliveryPosts.filter(r => r.action === 'status');
+        assert.equal(attempts[0].key, attempts.at(-1).key); assert.equal(attempts[0].body, attempts.at(-1).body);
+        await page.locator('#delivery-review').click();
+        await page.getByRole('button',{name:'Complete delivery',exact:true}).waitFor();
+    });
+    await check('Delivery proof, signature, recipient and note survive a real browser restart', async () => {
+        await page.getByRole('button',{name:'Complete delivery',exact:true}).click();
+        await page.locator('[data-recip]').fill('Delivery recipient'); await page.locator('[data-note]').fill('Original delivery note');
+        const chooser = page.waitForEvent('filechooser'); await page.locator('.m-thumb-add').click();
+        await (await chooser).setFiles({ name:'drop.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6gAAAAABJRU5ErkJggg==','base64') });
+        await page.locator('.m-photo-picker img').waitFor();
+        const canvas = page.locator('[data-sig] canvas'); await canvas.scrollIntoViewIfNeeded(); const b=await canvas.boundingBox();
+        await page.mouse.move(b.x+20,b.y+20); await page.mouse.down(); await page.mouse.move(b.x+100,b.y+50,{steps:10}); await page.mouse.up();
+        let savedSignature = false;
+        for (let i=0;i<100;i++) {
+            savedSignature = await page.evaluate(async id => { const s=await mProductionDrafts.load('delivery:' + id + ':action'); return !!s?.batch?.sign; }, delivery.id);
+            if (savedSignature) break; await page.waitForTimeout(20);
+        }
+        assert(savedSignature, 'Signature bytes must commit to IndexedDB before closing the browser');
+        await restartDelivery('proof');
+        await page.locator('[data-recip]').waitFor();
+        assert.equal(await page.locator('[data-recip]').inputValue(),'Delivery recipient');
+        assert.equal(await page.locator('[data-note]').inputValue(),'Original delivery note');
+        assert.equal(await page.locator('.m-photo-picker img').count(),1);
+        assert.match(await page.locator('#m-view').innerText(),/Saved signature retained/);
+    });
+    await check('Delivered response loss recovers one POD with no second stock deduction', async () => {
+        const quantity = (await api('GET','/inventory/' + batchProduct.id)).quantity;
+        await deliveryRoute('complete'); await page.locator('[data-ok]').click(); await page.locator('#delivery-retry').waitFor();
+        const committed=await api('GET','/deliveries/' + delivery.id); assert.equal(committed.status,'delivered'); assert(committed.signature_url); assert.equal(committed.photos.length,1);
+        await restartDelivery(); await page.locator('#delivery-retry').click(); await page.locator('#delivery-review').waitFor();
+        const attempts=deliveryPosts.filter(r=>r.action==='complete'); assert.equal(attempts[0].key,attempts.at(-1).key); assert.equal(attempts[0].body,attempts.at(-1).body);
+        assert.equal((await api('GET','/inventory/' + batchProduct.id)).quantity,quantity);
+        assert.equal(await page.locator('#m-view').getByText('Delivered',{exact:true}).count(),1);
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+        await page.locator('#m-tabbar').waitFor({state:'visible'});
+        await page.screenshot({path:path.join(output,'delivery-confirmed.png'),fullPage:true});
+    });
+    await check('Physical delivery may start before slip; delivery evidence stays optional after warehouse-out', async () => {
+        const pendingOrder = await order(batchProduct, 1);
+        const d=await api('POST','/deliveries',{order_id:pendingOrder.id,assigned_to:assigned.id});
+        const before=(await api('GET','/inventory/'+batchProduct.id)).quantity;
+        await launch(driver); await page.goto(base+'/m#/deliveries?id='+d.id);
+        await page.getByRole('button',{name:'Start delivery',exact:true}).click(); await page.locator('#delivery-review').click();
+        await page.getByRole('button',{name:'Complete delivery',exact:true}).click(); await page.locator('[data-ok]').click();
+        await page.locator('#delivery-release').waitFor();
+        assert.equal((await api('GET','/deliveries/'+d.id)).status,'out_for_delivery');
+        assert.equal((await api('GET','/inventory/'+batchProduct.id)).quantity,before);
+        await api('POST','/orders/'+pendingOrder.id+'/accept-release');
+        await api('POST','/orders/'+pendingOrder.id+'/release',{bulk:[{item_id:batchProduct.id,batch_id:batch.id,quantity:1}]});
+        await api('POST','/orders/'+pendingOrder.id+'/release-slip',{collected_by:'QR recipient',authorization_token:pendingOrder.auth});
+        const shipped=(await api('GET','/inventory/'+batchProduct.id)).quantity;
+        await page.locator('#delivery-review').click(); await page.getByRole('button',{name:'Complete delivery',exact:true}).click(); await page.locator('[data-ok]').click();
+        await page.locator('#delivery-review').waitFor();
+        const result=await api('GET','/deliveries/'+d.id);
+        assert.equal(result.status,'delivered'); assert.equal(result.pod_recipient,null); assert.equal(result.signature_url,null); assert.equal(result.photos.length,0);
+        assert.equal((await api('GET','/inventory/'+batchProduct.id)).quantity,shipped);
+    });
+    await check('Basic account sees only personal mobile tools; operational URLs and APIs stay blocked', async () => {
+        await api('POST','/roles',{key:'audit_basic',label:'Audit basic employee',permissions:['mobile.access','messages.view','messages.send']});
+        const basic=await loginRole('audit_basic'); await launch(basic);
+        await page.goto(base+'/m#/work'); await page.locator('.v2-work').waitFor();
+        const work=await page.locator('#m-view').innerText(); assert.match(work,/Personal tasks and employee services/); assert(!/Release orders|Deliveries|QC technical inspection|Pick order/.test(work));
+        const actions=await page.locator('.v2-orbit-action').evaluateAll(nodes=>nodes.map(b=>b.dataset.route)); assert.deepEqual(actions,['requests','report-problem','inbox']);
+        for (const route of ['so','deliveries','qc','receiving','kit-release','job-orders','production','stock-move','scan','record','my-log','allocate','confidential-reports']) {
+            await page.goto(base+'/m#/'+route); await page.locator('[data-no-permission]').waitFor();
+        }
+        for (const route of ['/release-slips/queue','/deliveries','/rts/queue','/job-orders','/qc/queue','/inventory']) await api('GET',route,undefined,basic,403);
+        await page.goto(base+'/m#/work'); await page.locator('.v2-work').waitFor();
+        await page.screenshot({path:path.join(output,'basic-employee-work.png'),fullPage:true});
+    });
+    await check('Desktop permission removal refreshes phone visibility when focus returns', async () => {
+        const releaseMe=(await api('GET','/auth/me',undefined,release)).user;
+        await launch(release); await page.goto(base+'/m#/work'); await page.getByText('Release orders',{exact:true}).waitFor();
+        await api('PUT','/users/'+releaseMe.id+'/permissions',{overrides:{'orders.release':false,'orders.view':false}});
+        await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+        await page.waitForFunction(()=>!MApp.can('orders.release'));
+        assert.equal(await page.getByText('Release orders',{exact:true}).count(),0);
+        await page.goto(base+'/m#/so'); await page.locator('[data-no-permission]').waitFor();
+        await api('GET','/release-slips/queue',undefined,release,403);
+    });
     assert.deepEqual(report.errors, []);
 }
 catch (e) {
@@ -223,6 +364,6 @@ catch (e) {
 finally {
     clearTimeout(watchdog);
     fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(report, null, 2));
-    await browser?.close();
+    await context?.close();
     server.kill('SIGTERM');
 }

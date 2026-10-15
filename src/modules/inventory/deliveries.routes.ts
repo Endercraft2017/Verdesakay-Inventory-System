@@ -5,7 +5,7 @@
  *  the signature + photos are `attachments` rows (kind 'signature' / 'delivery'). */
 import { Router, type Request } from 'express';
 import { queryOne, queryAll, run, nextSequence } from '../../shared/db';
-import { requireAuth, requirePermission } from '../../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import {
   parseBody, createDeliverySchema, updateDeliverySchema,
   deliveryStatusSchema, deliveryCompleteSchema,
@@ -50,8 +50,8 @@ function mayTouch(req: Request, d: Delivery): boolean {
   return canManage(req) || d.assigned_to === req.user!.id;
 }
 
-/** A driver cannot take or deliver stock that has no warehouse-out record. Planning
- * the trip is allowed earlier, but the numbered slip is the physical handoff. */
+/** Starting a trip is allowed before warehouse-out (owner decision). A delivered
+ * physical sale still needs its numbered warehouse handoff; failures move no stock. */
 function missingSaleSlip(d: Delivery): boolean {
   if (!d.order_id) return false;
   const row = queryOne<{ required: number; issued: number }>(
@@ -62,15 +62,8 @@ function missingSaleSlip(d: Delivery): boolean {
   return !!row?.required && !row.issued;
 }
 
-function isPhysicalSale(d: Delivery): boolean {
-  return !!d.order_id && !!queryOne(
-    `SELECT 1 FROM orders o JOIN order_items oi ON oi.order_id = o.id
-     WHERE o.id = ? AND o.type = 'sale' AND oi.item_id IS NOT NULL
-       AND oi.fulfillment_mode != 'ckd' LIMIT 1`, d.order_id);
-}
-
 // GET /api/deliveries — manage: all (filters); run-only: mine
-router.get('/', requirePermission('delivery.run'), (req, res) => {
+router.get('/', requireAnyPermission(['delivery.run', 'delivery.manage']), (req, res) => {
   const where: string[] = [];
   const params: unknown[] = [];
   if (!canManage(req) || req.query.mine === '1') { where.push('d.assigned_to = ?'); params.push(req.user!.id); }
@@ -88,7 +81,7 @@ router.get('/', requirePermission('delivery.run'), (req, res) => {
 });
 
 // GET /api/deliveries/:id — one delivery + its order lines + POD attachments
-router.get('/:id', requirePermission('delivery.run'), (req, res) => {
+router.get('/:id', requireAnyPermission(['delivery.run', 'delivery.manage']), (req, res) => {
   const d = load(Number(req.params.id));
   if (!d) { res.status(404).json({ error: 'Delivery not found' }); return; }
   if (!mayTouch(req, d)) { res.status(403).json({ error: 'Not your delivery' }); return; }
@@ -173,16 +166,13 @@ router.put('/:id', requirePermission('delivery.manage'), syncClass('claim', deli
 });
 
 // POST /api/deliveries/:id/status — { status: 'out_for_delivery' | 'cancelled' }
-router.post('/:id/status', requirePermission('delivery.run'), syncClass('physical', deliverySite), (req, res) => {
+router.post('/:id/status', requireAnyPermission(['delivery.run', 'delivery.manage']), syncClass('physical', deliverySite), (req, res) => {
   const d = load(Number(req.params.id));
   if (!d) { res.status(404).json({ error: 'Delivery not found' }); return; }
   if (!mayTouch(req, d)) { res.status(403).json({ error: 'Not your delivery' }); return; }
   const { status } = parseBody(deliveryStatusSchema, req.body);
   if (status === 'cancelled' && !canManage(req)) {
     res.status(403).json({ error: 'Only a delivery manager can cancel' }); return;
-  }
-  if (status === 'out_for_delivery' && missingSaleSlip(d)) {
-    res.status(409).json({ error: 'Issue the warehouse release slip before taking this sale out for delivery.', code: 'release_required' }); return;
   }
   if (d.status === 'delivered' || d.status === 'cancelled') {
     // Clash-check (D6): finished on the cloud meanwhile — the cloud's outcome is kept, flagged.
@@ -198,13 +188,10 @@ router.post('/:id/status', requirePermission('delivery.run'), syncClass('physica
 });
 
 // POST /api/deliveries/:id/complete — the proof of delivery
-router.post('/:id/complete', requirePermission('delivery.run'), syncClass('physical', deliverySite), (req, res) => {
+router.post('/:id/complete', requireAnyPermission(['delivery.run', 'delivery.manage']), syncClass('physical', deliverySite), (req, res) => {
   const d = load(Number(req.params.id));
   if (!d) { res.status(404).json({ error: 'Delivery not found' }); return; }
   if (!mayTouch(req, d)) { res.status(403).json({ error: 'Not your delivery' }); return; }
-  if (missingSaleSlip(d)) {
-    res.status(409).json({ error: 'This sale has no warehouse release slip. Complete the stock handoff before recording delivery.', code: 'release_required' }); return;
-  }
   if (d.status === 'delivered' || d.status === 'cancelled') {
     // Clash-check (D6): the driver's proof of delivery stands over a cancellation made on the
     // cloud meanwhile; delivered on both sides keeps the first proof. Both are flagged.
@@ -216,19 +203,15 @@ router.post('/:id/complete', requirePermission('delivery.run'), syncClass('physi
     if (d.status === 'delivered') { res.json({ ok: true, clash: true, status: d.status, order: null }); return; }
   }
   const input = parseBody(deliveryCompleteSchema, req.body);
+  if (input.outcome === 'delivered' && missingSaleSlip(d)) {
+    res.status(409).json({ error: 'This sale has no warehouse release slip. Complete the stock handoff before recording delivery.', code: 'release_required' }); return;
+  }
+  // Owner policy: recipient name, photos, signature and GPS remain optional.
+  // Any supplied signature must still belong to this delivery.
   if (input.signature_attachment_id != null
     && !queryOne("SELECT id FROM attachments WHERE id = ? AND kind = 'signature' AND ref_id = ?",
       input.signature_attachment_id, d.id)) {
     res.status(400).json({ error: 'Signature attachment not found for this delivery' }); return;
-  }
-  if (input.outcome === 'delivered' && isPhysicalSale(d)) {
-    if (!input.recipient?.trim()) {
-      res.status(409).json({ error: 'Name the person who received the goods.', code: 'recipient_required' }); return;
-    }
-    if (input.signature_attachment_id == null && !queryOne(
-      "SELECT 1 FROM attachments WHERE kind = 'delivery' AND ref_id = ? LIMIT 1", d.id)) {
-      res.status(409).json({ error: 'Capture a delivery photo or recipient signature before confirming delivery.', code: 'proof_required' }); return;
-    }
   }
   run(
     `UPDATE deliveries SET

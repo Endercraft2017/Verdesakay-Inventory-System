@@ -666,3 +666,20 @@ stock/dossier information without making a stock movement.
 For batches received before lot tracking existed, a supervisor physically counts
 remaining stock and uses the dossier's Reconcile batch stock action. Historical
 receipt quantities must not be treated as current remaining batch quantities.
+
+## Mobile recovery and owner decisions — 2026-10-16
+
+- Final releasing photos and recipient signature are saved on the phone under the
+  original account/company. Both upload before warehouse-out. If confirmation is
+  lost, reopen the saved handoff and retry the original release; do not hand over
+  another set of goods. Confirmed goods leave stock only once.
+- Delivery start/POD drafts and submissions survive restart. Recover saved delivery
+  actions explicitly after reconnect. A site-PC pending result is not final.
+- Owner decision: delivery recipient, signature, photos and GPS remain optional in
+  the app; the evidence standard above remains a manual staff procedure.
+- Owner decision: Start delivery may happen before the sale's warehouse-out slip.
+  This does not authorize another stock deduction or bypass the release-slip rule
+  for completing the sale. Unresolved warehouse work goes to Sales/releasing staff.
+- Basic employees keep personal tools; inventory/production/releasing/delivery and
+  confidential case handling require the account's assigned permissions and the
+  corresponding enabled workspace module, including when opened through a link.

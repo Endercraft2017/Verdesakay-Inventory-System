@@ -80,3 +80,16 @@ Use a test/staging company with the audited code, not the disposable fixture PDF
 - Check the recipient token, capture a real proof photo and signature, then confirm warehouse-out. Verify the slip, attached evidence, exact unit/batch assignment and resulting stock.
 - Scan again using an authorized read-only account and verify current stock plus the specific unit/batch details.
 - Test camera permission denial and interrupted allocation/retry. Until durable handoff recovery is implemented, expect a page restart during proof capture to require recapture.
+
+## Follow-up, 2026-10-16
+
+The original limits above describe the earlier snapshot. The follow-up extends the
+same real-backend audit with a persistent Chromium profile, preserving actual
+IndexedDB Blob files through browser process restarts. Exported Playwright storage
+state is insufficient for photo/signature Blob bytes and is no longer used for that
+claim. It injects committed response loss for attachment, final slip, delivery start
+and POD, checks original keys/JSON and one stock transition, and exercises baseline
+account visibility/API denial and desktop permission revocation on focus.
+
+Final releasing and delivery now have durable drafts/attempts. Hardware acceptance
+remains open. The current handoff records the final validation results.

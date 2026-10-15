@@ -1336,3 +1336,20 @@ New generated layouts use neutral Issued by / Received by signatures; saved layo
 versioned and are not overwritten automatically.
 
 Guide: `docs/guides/connected-data-forms.md`. Browser gate: `npm run test:forms:connected:ux`.
+
+### Mobile final handoff and delivery recovery (2026-10-16)
+
+`inventory/release-handoff.js` and `inventory/delivery-recovery.js` reuse scoped
+`lib/production-drafts.js`, `mPhoto`, `mSignature`, API idempotency and `RoleUI.syncWatch`.
+They retain Blob bytes and immutable submissions, block replacement of uncertain
+attempts and expose saved records independently of live queues. Release photos and
+signature upload as order evidence before the atomic slip. Delivery start and POD
+have explicit recovery; evidence stays optional and pre-slip starts stay allowed.
+Driver results do not offer force-backorder stock completion.
+
+`MApp.canOpen` combines effective account permissions with workspace modules for
+operational routes; Work/production queues and Quick Orbit filter using it. Account
+permissions refresh on focus, foreground and reconnect, guarded against account/server
+changes. Personal employee tools stay available without operational permissions.
+Backend delivery guards accept `delivery.run` or `delivery.manage`, retaining
+assignment checks. See `docs/reviews/mobile-handoff-6185481-review.md` for remaining work.

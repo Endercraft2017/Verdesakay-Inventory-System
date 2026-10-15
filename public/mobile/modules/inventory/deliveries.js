@@ -14,7 +14,8 @@
     var canAll = MApp.can('delivery.manage');
     view.innerHTML =
       (canAll ? '<div class="m-seg" id="d-scope"><button data-s="mine" class="on">Mine</button><button data-s="all">All</button></div>' : '') +
-      '<div id="d-list"><div class="m-hint">Loading…</div></div>';
+      '<div data-delivery-saved></div><div id="d-list"><div class="m-hint">Loading…</div></div>';
+    mDeliveryRecovery.cards(view.querySelector('[data-delivery-saved]'));
     var scope = 'mine';
     var host = view.querySelector('#d-list');
     if (canAll) {
@@ -54,18 +55,26 @@
           (d.item_count ? ' · ' + d.item_count + ' line(s)' : '') + '</span></div>' +
           '<div class="m-list-qty"><span class="m-jo-status ' + st.cls + '">' + mEsc(st.label) + '</span></div></li>'
         );
-        li.onclick = function () { detail(view, d.id); };
+        li.onclick = function () { MApp.go('deliveries', { id: d.id }); };
         ul.appendChild(li);
       });
       host.appendChild(ul);
     });
   }
 
-  function detail(view, id) {
+  async function detail(view, id, step) {
     view.innerHTML = '<div class="m-hint">Loading…</div>';
-    API.get('/deliveries/' + id)
-      .then(function (d) { drawDetail(view, d); })
-      .catch(function (ex) { view.innerHTML = '<div class="m-error">' + mEsc(ex.message) + '</div>'; });
+    var hash = location.hash, owner = mProductionDrafts.key('delivery-owner');
+    function visible() { return view.isConnected && hash === location.hash && owner === mProductionDrafts.key('delivery-owner'); }
+    try {
+      var saved = await mDeliveryRecovery.load(Number(id));
+      if (!visible()) return;
+      if (saved && saved.operation.state !== 'draft') { mDeliveryRecovery.paint(view,saved); return; }
+      var d = await API.get('/deliveries/' + id);
+      if (!visible()) return;
+      if (step === 'proof' && d.status === 'out_for_delivery') await podSheet(view,d);
+      else drawDetail(view,d);
+    } catch (err) { if (visible()) { view.innerHTML = ''; view.appendChild(RoleUI.error(err,function () { detail(view,id,step); })); } }
   }
 
   function drawDetail(view, d) {
@@ -95,14 +104,14 @@
       var start = mEl('<div class="m-actions"><button class="m-btn">Start delivery</button></div>');
       start.querySelector('button').onclick = function () {
         start.querySelector('button').disabled = true;
-        API.post('/deliveries/' + d.id + '/status', { status: 'out_for_delivery' })
-          .then(function () { detail(view, d.id); })
+        mDeliveryRecovery.draft(d).then(function (s) { return mDeliveryRecovery.start(d,s,'status',{ status: 'out_for_delivery' }); })
+          .then(function (s) { mDeliveryRecovery.paint(view,s); })
           .catch(function (ex) { mToast(ex.message || 'Failed', 'err'); start.querySelector('button').disabled = false; });
       };
       view.appendChild(start);
     } else if (d.status === 'out_for_delivery') {
       var go = mEl('<div class="m-actions"><button class="m-btn">Complete delivery</button></div>');
-      go.querySelector('button').onclick = function () { podSheet(view, d); };
+      go.querySelector('button').onclick = function () { MApp.go('deliveries', { id: d.id, step: 'proof' }); };
       view.appendChild(go);
     } else {
       // POD summary
@@ -128,13 +137,23 @@
     view.appendChild(actions([{ label: 'Back to list', fn: function () { list(view); }, secondary: true }]));
   }
 
-  function podSheet(view, d) {
+  async function podSheet(view, d) {
+    var owner = mProductionDrafts.key('delivery-owner'), hash = location.hash;
+    var saved = await mDeliveryRecovery.draft(d);
+    if (owner !== mProductionDrafts.key('delivery-owner') || hash !== location.hash) return;
+    if (saved.operation.state !== 'draft') { mDeliveryRecovery.paint(view,saved); return; }
+    var data = saved.batch;
+    function persist() {
+      var status = view.querySelector('[data-draft-status]'); if (status) status.textContent = 'Saving on this phone…';
+      return mDeliveryRecovery.save(saved).then(function () { if (status && status.isConnected) status.textContent = 'Saved on this phone'; }).catch(function (err) { if (status && status.isConnected) status.textContent = 'Not saved — ' + err.message; mToast(err.message,'err'); throw err; });
+    }
     MApp.setTitle('Complete · ' + d.number);
     view.innerHTML = '';
-    var geo = { lat: null, lng: null };
+    var geo = data.geo;
 
     var box = mEl(
       '<div class="m-panel">' +
+      '<p class="m-hint" data-draft-status role="status">Changes are saved on this phone</p>' +
       '<label class="m-field"><span class="m-label">Received by</span>' +
       '<input class="m-input" data-recip maxlength="160" placeholder="name of who accepted" /></label>' +
       '<div class="m-label" style="margin-top:6px">Signature</div><div data-sig></div>' +
@@ -143,15 +162,25 @@
       '<label class="m-field"><span class="m-label">Note</span><textarea class="m-input" data-note rows="2"></textarea></label>' +
       '</div>'
     );
-    var sig = mSignature();
+    var sig = mSignature({ onChange: function () {
+      if (sig.isEmpty()) { data.sign = null; persist().catch(function () {}); }
+      else sig.toBlob(function (blob) { data.sign = blob; persist().catch(function () {}); });
+    } });
+    if (data.sign) box.querySelector('[data-sig]').appendChild(mEl('<p class="m-hint">Saved signature retained. Draw again to replace or Clear to remove.</p>'));
     box.querySelector('[data-sig]').appendChild(sig.el);
-    box.querySelector('[data-photos]').appendChild(mPhoto.thumbs('delivery', d.id, { editable: true }));
+    var preparing = false;
+    var picker = mPhoto.picker({ max: 10, initial: data.photos, onBusy: function (busy) { preparing = busy; }, onChange: function (files) { data.photos = files.slice(); persist().catch(function () {}); } });
+    box.querySelector('[data-photos]').appendChild(picker);
+    box.querySelector('[data-recip]').value = data.recipient || '';
+    box.querySelector('[data-note]').value = data.note || '';
+    box.querySelectorAll('[data-recip], [data-note]').forEach(function (input) { input.oninput = function () { data.recipient = box.querySelector('[data-recip]').value; data.note = box.querySelector('[data-note]').value; persist().catch(function () {}); }; });
     var geoBtn = box.querySelector('[data-geo]');
+    if (geo.lat != null) geoBtn.textContent = '📍 Saved location captured';
     geoBtn.onclick = function () {
       if (!navigator.geolocation) { mToast('No location on this device', 'err'); return; }
       geoBtn.disabled = true; geoBtn.textContent = 'Getting location…';
       navigator.geolocation.getCurrentPosition(function (p) {
-        geo.lat = p.coords.latitude; geo.lng = p.coords.longitude;
+        geo.lat = p.coords.latitude; geo.lng = p.coords.longitude; persist().catch(function () {});
         geoBtn.textContent = '📍 Location captured (±' + Math.round(p.coords.accuracy) + 'm)';
         geoBtn.disabled = false;
       }, function () {
@@ -165,11 +194,12 @@
       '<button class="m-btn" data-ok>Delivered</button>' +
       '<button class="m-btn m-btn-warn" data-fail>Couldn’t deliver</button></div>');
     var back = mEl('<div class="m-actions"><button class="m-btn m-btn-secondary" data-back>Cancel</button></div>');
-    back.querySelector('[data-back]').onclick = function () { detail(view, d.id); };
+    back.querySelector('[data-back]').onclick = function () { MApp.go('deliveries', { id: d.id }); };
     view.appendChild(acts);
     view.appendChild(back);
 
-    function submit(outcome) {
+    async function submit(outcome) {
+      if (preparing) { mToast('Wait for photos to finish preparing.', 'err'); return; }
       var note = box.querySelector('[data-note]').value.trim();
       if (outcome === 'failed' && note.length < 3) { mToast('Say why it couldn’t be delivered', 'err'); return; }
       var btns = acts.querySelectorAll('button'); btns.forEach(function (b) { b.disabled = true; });
@@ -179,75 +209,19 @@
         note: note || null,
         lat: geo.lat, lng: geo.lng,
       };
-      var chain = Promise.resolve(null);
-      if (!sig.isEmpty()) {
-        chain = new Promise(function (resolve) { sig.toBlob(resolve); })
-          .then(function (blob) { return mPhoto.attachBlob('signature', d.id, blob, 'signature.png'); })
-          .then(function (r) { payload.signature_attachment_id = r.id; });
+      try {
+        data.recipient = payload.recipient; data.note = payload.note; data.photos = picker.files();
+        if (!sig.isEmpty()) data.sign = await new Promise(function (resolve) { sig.toBlob(resolve); });
+        await persist();
+        await mDeliveryRecovery.start(d,saved,'complete',payload);
+        if (hash === location.hash && owner === mProductionDrafts.key('delivery-owner')) mDeliveryRecovery.paint(view,saved);
+      } catch (ex) {
+        mToast(ex.message || 'Could not save delivery.', 'err');
+        btns.forEach(function (b) { b.disabled = false; });
       }
-      chain
-        .then(function () { return API.post('/deliveries/' + d.id + '/complete', payload); })
-        .then(function (r) {
-          var lines = [d.number + (d.customer_name ? ' · ' + d.customer_name : '')];
-          var acts = [
-            { label: 'Back to list', onClick: function () { list(view); } },
-            { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },
-          ];
-          var ord = r && r.order;
-          if (ord) {
-            lines.push('Sale order ' + ord.number + ' is still ' + ord.status + '.');
-            acts.unshift({
-              label: 'Mark ' + ord.number + ' completed',
-              onClick: function () { completeOrder(view, ord, d); },
-            });
-          }
-          mSuccess(view, {
-            title: outcome === 'delivered' ? 'Delivered' : 'Marked not delivered',
-            lines: lines,
-            actions: acts,
-          });
-        })
-        .catch(function (ex) {
-          mToast(ex && ex.offline ? 'Connect to record the delivery' : (ex.message || 'Failed'), 'err');
-          btns.forEach(function (b) { b.disabled = false; });
-        });
     }
     acts.querySelector('[data-ok]').onclick = function () { submit('delivered'); };
     acts.querySelector('[data-fail]').onclick = function () { submit('failed'); };
-  }
-
-  // Post-delivery: mark the dropped sale order completed (ships remaining stock via the
-  // server's fulfil hook). A stock shortfall comes back 409 — offer to force a backorder.
-  function completeOrder(view, ord, d, force) {
-    view.innerHTML = '<div class="m-hint">Completing ' + mEsc(ord.number) + '…</div>';
-    API.post('/orders/' + ord.id + '/status', force ? { status: 'completed', force: true } : { status: 'completed' })
-      .then(function () {
-        mSuccess(view, {
-          title: ord.number + ' completed',
-          lines: [(d.customer_name || '') + ' · delivery ' + d.number + ' done'],
-          actions: [
-            { label: 'Back to list', onClick: function () { list(view); } },
-            { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },
-          ],
-        });
-      })
-      .catch(function (ex) {
-        if (ex && ex.status === 409 && ex.data && ex.data.availability) {
-          var n = ex.data.availability.short_lines || 0;
-          mSuccess(view, {
-            title: 'Stock is short',
-            lines: [n + ' line(s) on ' + ord.number + " aren't covered by stock.",
-              'Complete anyway to ship as a backorder (stock may go negative).'],
-            actions: [
-              { label: 'Complete as backorder', onClick: function () { completeOrder(view, ord, d, true); } },
-              { label: 'Leave it for now', secondary: true, onClick: function () { list(view); } },
-            ],
-          });
-          return;
-        }
-        mToast((ex && ex.message) || 'Could not complete the order', 'err');
-        list(view);
-      });
   }
 
   function actions(items) {
@@ -261,7 +235,8 @@
   }
 
   MApp.route('deliveries', function (view, params) {
-    if (params && params.id) detail(view, params.id);
+    if (!MApp.can('delivery.run') && !MApp.can('delivery.manage')) { view.innerHTML = '<div class="m-error">You do not have delivery permission.</div>'; return; }
+    if (params && params.id) detail(view, params.id, params.step);
     else list(view);
   });
 })();
