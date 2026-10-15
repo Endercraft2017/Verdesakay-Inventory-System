@@ -49,6 +49,9 @@ export interface SyncContext {
   effective?: PlanEntry[];
   /** Files a route wrote itself during this command (commandFileName). */
   fileSeq?: number;
+  /** Canonical facts the originating server validated, retained in command context.
+   * These are populated by handlers, never copied from client request bodies. */
+  validatedSnapshots?: Record<string,unknown>;
 }
 
 export const syncStore = new AsyncLocalStorage<SyncContext>();

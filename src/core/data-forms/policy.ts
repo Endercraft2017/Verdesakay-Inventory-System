@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { nextSequence } from '../../shared/db';
+import { nextFormRecordNumber } from '../../shared/db';
 import type { FieldDef, FormScope, Permission } from '../../shared/types';
 import { PAYROLL_FORM_SLUG } from '../../modules/payroll/pay-access';
 import { ValidationError } from '../../shared/validation';
@@ -16,8 +16,8 @@ export function parseData(raw: string | null): Record<string, unknown> {
 }
 
 /** Next record number for a form definition, e.g. FM-00001 (counter in settings). */
-export function nextRecordNumber(prefix: string, formId: number): string {
-  return nextSequence(`form_seq_${formId}`, prefix);
+export function nextRecordNumber(prefix: string, _formId: number): string {
+  return nextFormRecordNumber(prefix);
 }
 
 export const FORM_SCOPES: FormScope[] = ['hr', 'inventory', 'admin', 'accounting'];

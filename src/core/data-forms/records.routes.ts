@@ -1,3 +1,4 @@
+import {recordedReferences,captureReferences} from './sync-snapshots';
 import { runSalesWorkflow, salesLink } from './sales-workflow';
 import { idempotency } from '../../shared/idempotency';
 import { calculateRecord } from './calculations';
@@ -170,7 +171,10 @@ router.post('/form-records', createRecordAccess, idempotency, syncClass('merge')
     }
   }
 
-  input.data=calculateRecord(parseFields(form.fields as string) as FieldDef[],resolveConnections(parseFields(form.fields as string) as FieldDef[],input.data,req.user!),req.user!) as typeof input.data;
+  const fields=parseFields(form.fields as string) as FieldDef[];
+  const referenceData=recordedReferences(form.id,form.version||1,fields,req.user!);
+  input.data=calculateRecord(fields,resolveConnections(fields,input.data,req.user!,referenceData),req.user!,referenceData) as typeof input.data;
+  captureReferences(form.id,form.version||1,fields,input.data);
   validateRequiredCheckboxes(form.fields, input.data);
   let recordId: number;
   let number: string;
@@ -253,7 +257,9 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
   const newStatus = input.status ?? existing.status;
   const previousData = parseData(existing.data as string);
   const originalFields=definitionForRecord(existing)?.fields ?? parseFields(definition?.fields as string) as FieldDef[];
-  const recordData = calculateRecord(originalFields,resolveConnections(originalFields,input.data,req.user!,previousData),req.user!,previousData);
+  const sourceData={...previousData,...recordedReferences(existing.form_def_id,existing.definition_version||1,originalFields,req.user!)};
+  const recordData = calculateRecord(originalFields,resolveConnections(originalFields,input.data,req.user!,sourceData),req.user!,sourceData);
+  captureReferences(existing.form_def_id,existing.definition_version||1,originalFields,recordData);
   if(salesLink(id)&&(newStatus!==existing.status||JSON.stringify(recordData)!==JSON.stringify(previousData))){res.status(409).json({error:'This submitted record is linked to a sales order. Correct the sales order or create a replacement form; its original submitted values are retained.'});return;}
   if (existing.slug === 'hr_payroll') {
     delete recordData._calculation_snapshot;

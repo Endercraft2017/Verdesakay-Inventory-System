@@ -6,7 +6,7 @@ async function setup(scope = 'hr') {
   const dom = new JSDOM('<main></main><div id="modal-root"></div><div id="toasts"></div>', { runScripts: 'outside-only', url: 'http://localhost' });
   const w = dom.window;
   w.eval(`window.calls=[];window.routes={};window.App={hasPermission:()=>true,register:(name,handler)=>routes[name]=handler,navigate:()=>{}};window.API={get:async()=>[],post:async(url,body)=>{calls.push({url,body});return {id:77}},put:async(url,body)=>{calls.push({url,body});return {id:88}}};`);
-  const files = ['ui.js', 'lib/data-forms.js', 'lib/form-connections.js', 'lib/form-math.js', 'lib/form-items.js', 'lib/form-validation.js', 'modules/core/form-builder.js'];
+  const files = ['ui.js', 'lib/data-forms.js', 'lib/form-print.js', 'lib/form-connections.js', 'lib/form-math.js', 'lib/form-items.js', 'lib/form-validation.js', 'modules/core/form-builder.js'];
   w.eval(files.map(file => fs.readFileSync(path.join(import.meta.dirname, '../public/js', file), 'utf8')).join('\n') + '\nwindow.testUI=UI;');
   await (w as any).routes['form-builder'](w.document.querySelector('main'), { scope });
   await vi.waitFor(() => expect(w.document.querySelector('#fb-new-form')).not.toBeNull());

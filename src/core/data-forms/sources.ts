@@ -5,7 +5,7 @@ import { moduleEnabled, type ModuleName } from '../../shared/modules';
 import { ValidationError } from '../../shared/validation';
 
 export const FORM_SOURCES = {
-  product: { label:'Inventory products', module:'inventory', permission:'inventory.view', fields:['id','name','sku','unit','description','sale_price'] },
+  product: { label:'Inventory products', module:'inventory', permission:'inventory.view', fields:['id','name','sku','unit','description','sale_price','currency'] },
   customer: { label:'Customers', module:'inventory', permission:'orders.view', fields:['id','name','contact_person','address','tin'] },
   employee: { label:'Employees', module:'hr', permission:'hr.view', fields:['id','name','employee_no','position','department'] },
   sales_order: { label:'Sales orders', module:'inventory', permission:'orders.view', fields:['id','number','customer_name','order_date','status','total','currency'] },
@@ -49,6 +49,7 @@ export function sourceRows(source:Source,user:AuthUser,q='',id?:number):Snapshot
   return rows.map(row=>{
     if(source==='product') {
       let attrs:Record<string,unknown>={};try{attrs=JSON.parse(String(row.attributes||'{}'));}catch{}
+      row.currency=String(attrs.currency||'PHP').toUpperCase();
       const value=attrs.sale_price;
       row.sale_price=value!=null && String(value).trim()!=='' && Number.isFinite(Number(value)) && Number(value)>=0?Number(value):null;
     }
@@ -64,7 +65,7 @@ export function validateConnections(fields:FieldDef[]):void {
     if(field.type==='system' && (!field.source || !['company','user'].includes(field.source) || !(FORM_SOURCES[field.source].fields as readonly string[]).includes(field.property||'')))throw new ValidationError(field.label+': choose a company or user property');
     if(field.binding) {
       const selector=fields.find(other=>other.key===field.binding!.field);
-      if(!['text','number'].includes(field.type) || selector?.type!=='reference' || !selector.source || !(FORM_SOURCES[selector.source].fields as readonly string[]).includes(field.binding.property))throw new ValidationError(field.label+': choose a valid connected field and property');
+      if(!['text','textarea','number'].includes(field.type) || selector?.type!=='reference' || !selector.source || !(FORM_SOURCES[selector.source].fields as readonly string[]).includes(field.binding.property))throw new ValidationError(field.label+': choose a valid connected field and property');
       if(field.type==='number' && selector?.source && !NUMERIC_SOURCE_FIELDS[selector.source].includes(field.binding.property))throw new ValidationError(field.label+': choose a numeric source property');
     }
   }
@@ -91,6 +92,7 @@ export function resolveConnections(fields:FieldDef[],input:Record<string,unknown
   for(const field of fields)if(field.binding) {
     const ref=result[field.binding.field] as Snapshot|null;
     const value=ref?.[field.binding.property]??'';
+    if(field.format==='currency'&&field.binding.property==='sale_price'&&ref&&(ref.currency||'PHP')!==(field.currency||'PHP'))throw new ValidationError(field.label+': catalog currency differs; no currency conversion is performed');
     if(!field.binding.editable || input[field.key]==null || input[field.key]==='')result[field.key]=value;
     if(field.type==='number' && result[field.key]!=='' && !Number.isFinite(Number(result[field.key])))throw new ValidationError(field.label+': enter a finite number');
     if(field.required && (result[field.key]==null || String(result[field.key]).trim()===''))throw new ValidationError(field.label+' is required; the selected record may not have this value');

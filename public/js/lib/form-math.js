@@ -8,6 +8,10 @@
   function round(value){if(!Number.isFinite(value)||Math.abs(value)>limit)throw new Error('Amount is too large to calculate accurately');return Math.round((value+Math.sign(value)*Number.EPSILON)*100)/100;}
   function line(quantity,price,discount=0){const q=number(quantity,'Quantity'),p=number(price,'Unit price'),d=number(discount,'Discount percentage');if(d<0||d>100)throw new Error('Discount must be between 0 and 100 percent');if(q<=0)throw new Error('Quantity must be greater than zero');if(p<0)throw new Error('Unit price cannot be negative');return round(q*(p*(1-d/100)));}
   function validate(fields) {
+    for(const field of fields){
+      if(field.format && (field.format!=='currency'||!['number','calculated'].includes(field.type)))throw new Error(field.label+': currency formatting needs a numeric field');
+      if(field.currency && (!/^[A-Z]{3}$/.test(field.currency)||!['number','calculated','line_items'].includes(field.type)))throw new Error(field.label+': choose a three-letter currency code for a monetary field');
+    }
     const byKey=new Map(fields.map(field=>[field.key,field])),visiting=new Set(),done=new Set();
     function visit(field){if(done.has(field.key))return;if(visiting.has(field.key))throw new Error('Calculation cycle includes '+field.label);visiting.add(field.key);
       if(field.type==='calculated'){

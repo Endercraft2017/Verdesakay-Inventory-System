@@ -17,7 +17,7 @@ import { templateVariables } from '../../shared/doc-render';
 import { createRequire } from 'node:module';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
-import { db, queryOne, queryAll, run, nextSequence, uploadDir, getSetting, setSetting } from '../../shared/db';
+import { db, queryOne, queryAll, run, nextSequence, nextFormRecordNumber, uploadDir, getSetting, setSetting } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
 import {
   parseBody,
@@ -2572,7 +2572,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
           JSON.stringify(data), payrollPeriod, existing.id);
         updated++;
       } else {
-        const number = nextSequence(`form_seq_${form.id}`, form.number_prefix);
+        const number = nextFormRecordNumber(form.number_prefix);
         run(
           `INSERT INTO form_records (form_def_id, number, data, status, period, created_by)
            VALUES (?, ?, ?, 'draft', ?, ?)`,

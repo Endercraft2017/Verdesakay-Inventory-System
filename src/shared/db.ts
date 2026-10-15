@@ -10,6 +10,8 @@
  * With a single tenant (the default), everything behaves exactly as before.
  */
 import path from 'node:path';
+import { createRequire } from 'node:module';
+const {field:printFormField}=createRequire(import.meta.url)('../../public/js/lib/form-print.js') as {field:(field:{key:string;label:string;type?:string;source?:string;format?:string;currency?:string},classes:{row:string;label:string;value:string})=>string};
 import { createDocumentDefaultsSchema, initializeDocumentDefaults } from './document-defaults';
 import { createFormTemplateSchema } from './form-template-schema';
 import { createFormHistorySchema } from './form-history-schema';
@@ -3390,6 +3392,14 @@ export function nextSequence(key: string, prefix: string, pad = 5): string {
   return `${prefix}-${String(next).padStart(pad, '0')}`;
 }
 
+/** Record numbers are unique across forms, even when administrators reuse a prefix.
+ * Start with the shared prefix series and skip legacy numbers without renumbering history. */
+export function nextFormRecordNumber(prefix:string):string {
+  let number:string;
+  do {number=nextSequence('form_record_seq_'+prefix,prefix);}while(queryOne('SELECT 1 FROM form_records WHERE number=?',number));
+  return number;
+}
+
 /** Roles: the built-in bundles the first time (empty table), so a tenant can then edit or delete
     them freely without seeing them come back. Always ensures the fixed 'admin' row, and a row for
     any role key an existing account holds (so no account is left on a role nobody can see). */
@@ -3963,12 +3973,9 @@ function seedMemoForms(): void {
     then one labelled line per form field ({{key}} placeholders the form-record print flow
     and src/form-actions.ts both substitute). Deliberately minimal; HR edits it in the doc
     editor from Form Builder. */
-export function memoTemplateBody(title: string, fields: Array<{ key: string; label: string; type?:string;source?:string }>): string {
+export function memoTemplateBody(title: string, fields: Array<{ key: string; label: string; type?:string;source?:string;format?:string;currency?:string }>): string {
   const escape=(value:string)=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-  const fieldPath=(key:string)=>['company','global','record','number','today','user','order','fields'].includes(key)?'fields.'+key:key;
-  const rows = fields
-    .map((f) => f.type==='line_items'?`<h3>${escape(f.label)}</h3><table><thead><tr><th>Product</th><th>Quantity</th><th>Unit</th><th>Unit price</th><th>Discount %</th><th>Line total</th></tr></thead><tbody>{{#${fieldPath(f.key)}}}<tr><td>{{name}}</td><td>{{quantity}}</td><td>{{unit}}</td><td>{{unit_price}}</td><td>{{discount_percent}}</td><td>{{line_total}}</td></tr>{{/${fieldPath(f.key)}}}</tbody></table>`:`  <div class="mm-row"><span class="mm-l">${escape(f.label)}</span><span class="mm-v">{{${fieldPath(f.key)}${f.type==='reference'?(f.source==='sales_order'?'.number':'.name'):''}}}</span></div>`)
-    .join('\n');
+  const rows=fields.map(field=>printFormField(field,{row:'mm-row',label:'mm-l',value:'mm-v'})).join('\n');
   return `<style>
   .memo { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; max-width: 720px; margin: 0 auto; }
   .memo h1 { font-size: 15px; text-align: center; letter-spacing: .04em; margin: 0 0 2px; }
@@ -4046,7 +4053,7 @@ function seedCompanyHolidaysForm(): void {
     `INSERT INTO form_records (form_def_id, number, data, status) VALUES (?, ?, ?, 'approved')`
   );
   for (const [date, name, type] of seedRows) {
-    const number = nextSequence(`form_seq_${formId}`, 'HOL');
+    const number = nextFormRecordNumber('HOL');
     insertRecord.run(formId, number, JSON.stringify({ date, name, type }));
   }
 }

@@ -16,11 +16,15 @@ window.DataForms = (() => {
     catch { return { ...emptyPreferences(), unavailable: true }; }
   }
   async function savePreference(change) { return API.put('/data-forms/preferences', change); }
-  function displayValue(value){return Array.isArray(value)?value.map(row=>typeof row==='object'&&row?`${row.name||'Item'} × ${row.quantity??''} · ${row.line_total??''}`:String(row)).join('; '):value&&typeof value==='object'?String(value.name||value.number||value.id||''):String(value??'');}
+  function displayValue(value,field){
+    const money=amount=>new Intl.NumberFormat('en-US',{style:'currency',currency:field?.currency||'PHP',currencyDisplay:'code',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(amount));
+    if(field?.format==='currency'&&value!=null&&value!==''&&Number.isFinite(Number(value)))return money(value);
+    return Array.isArray(value)?value.map(row=>typeof row==='object'&&row?`${row.name||'Item'} × ${row.quantity??''} · ${field?.type==='line_items'&&Number.isFinite(Number(row.line_total))?money(row.line_total):row.line_total??''}`:String(row)).join('; '):value&&typeof value==='object'?String(value.name||value.number||value.id||''):String(value??'');
+  }
   function displayTime(value) { const text=String(value||'');const date=new Date(text.includes('T')?text:text.replace(' ','T')+'Z');return Number.isNaN(date.getTime())?text:date.toLocaleString(); }
   async function recordHistory(record) {
     const revisions = await API.get('/form-records/' + record.id + '/revisions');
-    UI.modal({ title: 'Change history — ' + record.number, size: 'lg', cancelText: 'Close', bodyHTML: revisions.map(row => `<section class="form-history-entry"><h4>Revision ${row.revision} · Form version ${row.definition_version}</h4><p class="muted">${UI.esc(displayTime(row.created_at))} · ${UI.esc(row.changed_by_name || (row.source === 'captured' ? 'Earlier update; author unavailable' : 'System / legacy record'))}</p><p>${UI.esc(row.reason || 'No reason provided')}</p><p>Status: ${UI.esc(row.status)}</p>${(row.schema?.fields || []).map(field => `<div class="tool-row"><strong>${UI.esc(field.label)}</strong><span>${UI.esc(displayValue(row.data[field.key]))}</span></div>`).join('')}</section>`).join('') || '<p>No history available.</p>' });
+    UI.modal({ title: 'Change history — ' + record.number, size: 'lg', cancelText: 'Close', bodyHTML: revisions.map(row => `<section class="form-history-entry"><h4>Revision ${row.revision} · Form version ${row.definition_version}</h4><p class="muted">${UI.esc(displayTime(row.created_at))} · ${UI.esc(row.changed_by_name || (row.source === 'captured' ? 'Earlier update; author unavailable' : 'System / legacy record'))}</p><p>${UI.esc(row.reason || 'No reason provided')}</p><p>Status: ${UI.esc(row.status)}</p>${(row.schema?.fields || []).map(field => `<div class="tool-row"><strong>${UI.esc(field.label)}</strong><span>${UI.esc(displayValue(row.data[field.key],field))}</span></div>`).join('')}</section>`).join('') || '<p>No history available.</p>' });
   }
   async function definitionHistory(form) {
     const versions = await API.get('/form-definitions/' + form.id + '/versions');

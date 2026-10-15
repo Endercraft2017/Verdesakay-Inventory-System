@@ -13,7 +13,7 @@ async function setup(permissions: string[], forms: unknown[], filter = {}) {
     navigate: (route, filter) => window.destination = { route, filter }
   }; window.API = { get: async () => (${JSON.stringify(forms)}) };
   window.UI = { esc: s => String(s), icon: () => '', emptyState: s => s.title + ' ' + s.hint + (s.action || '') };`);
-  for (const file of ['lib/data-forms.js', 'lib/form-connections.js', 'lib/form-math.js', 'lib/form-items.js', 'modules/core/form-records.js']) {
+  for (const file of ['lib/data-forms.js', 'lib/form-print.js', 'lib/form-connections.js', 'lib/form-math.js', 'lib/form-items.js', 'modules/core/form-records.js']) {
     w.eval(fs.readFileSync(path.join(import.meta.dirname, '../public/js', file), 'utf8'));
   }
   await (w as any).routes['form-records'](w.document.querySelector('main'), filter);

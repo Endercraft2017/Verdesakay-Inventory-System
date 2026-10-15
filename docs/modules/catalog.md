@@ -1335,7 +1335,25 @@ boolean values as Yes/No without changing stored data, conditions or numeric for
 New generated layouts use neutral Issued by / Received by signatures; saved layouts remain
 versioned and are not overwritten automatically.
 
-Guide: `docs/guides/connected-data-forms.md`. Browser gate: `npm run test:forms:connected:ux`.
+`form-print.js` shares generated field/table markup between the server and browser. Numeric
+fields can declare `format: currency` and a three-letter currency code; calculated fields use
+the same metadata. `money(value, "PHP")` renders two decimals and the code without changing
+numeric values. Catalog products expose their currency; mixed-currency bindings/rows and
+workflow mappings are rejected rather than converted. Invoice date, optional due date and
+payment terms map into the draft order date/notes. The opt-in Inventory invoice starter uses
+PHP and zero tax for review, with company/customer snapshots and a dedicated printable layout.
+Starter template saves include the revision of the automatically created layout.
+
+`nextFormRecordNumber` owns the shared per-prefix record series, skipping existing legacy
+numbers without renumbering them. Form routes, payroll and holiday seed writers use it.
+`sync-snapshots.ts` captures canonical connected values in server-owned command context and
+uses them on authenticated replay/rebase, with current source permissions and form-version
+checks. Ordinary request bodies cannot provide these snapshots. Older recorded commands
+without this context retain their previous replay behavior; update installed nodes before
+relying on the new snapshot guarantee.
+
+Guide: `docs/guides/connected-data-forms.md`. Browser gates: `npm run test:forms:connected:ux`
+and `npm run test:invoice:ux`. Permission/fulfillment gates remain the existing sales routes.
 
 ### Mobile final handoff and delivery recovery (2026-10-16)
 

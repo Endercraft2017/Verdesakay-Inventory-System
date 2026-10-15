@@ -52,9 +52,10 @@ window.FormConnections = (() => {
       const category='Form: '+form.name,path=fieldPath(field);
       if(field.type==='reference')return (catalog.find(source=>source.key===field.source)?.fields||['id',field.source==='sales_order'?'number':'name']).map(property=>({category,label:field.label+' → '+property,token:'{{'+path+'.'+property+'}}'}));
       if(field.type==='line_items')return [{category,label:field.label+' → Repeating table',token:'{{'+path+'}}',snippet:printField(field)},...['name','sku','quantity','unit','unit_price','discount_percent','discount_amount','line_total'].map(property=>({category:'Product rows: '+field.label,label:property.replace(/_/g,' '),token:'{{'+property+'}}'}))];
-      return [{category,label:field.label,token:'{{'+path+'}}'}];
+      return [{category,label:field.label+(field.format==='currency'?' ('+FormPrint.currency(field)+')':''),token:field.format==='currency'?FormPrint.money(path,FormPrint.currency(field)):'{{'+path+'}}'}];
     });
   }
-  function printField(field){const path=fieldPath(field);return field.type==='line_items'?`<h3>${UI.esc(field.label)}</h3><table><thead><tr><th>Product</th><th>Quantity</th><th>Unit</th><th>Unit price</th><th>Discount %</th><th>Line total</th></tr></thead><tbody>{{#${path}}}<tr><td>{{name}}</td><td>{{quantity}}</td><td>{{unit}}</td><td>{{unit_price}}</td><td>{{discount_percent}}</td><td>{{line_total}}</td></tr>{{/${path}}}</tbody></table>`:`<div class="ff-row"><span class="ff-label">${UI.esc(field.label)}</span><span class="ff-value">{{${path}${field.type==='reference'?(field.source==='sales_order'?'.number':'.name'):''}}}</span></div>`;}
+  function printField(field){return FormPrint.field(field);}
+
   return {render,mount,ready,names,variables,printField,key};
 })();

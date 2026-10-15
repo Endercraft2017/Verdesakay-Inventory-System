@@ -46,7 +46,9 @@ function requestContext(req: Request): string | null {
     const v = req.get(h);
     if (v) headers[h] = v;
   }
-  const ctx: { headers?: Record<string, string>; session?: { shared: boolean } } = {};
+  const ctx: { headers?: Record<string, string>; session?: { shared: boolean }; validatedSnapshots?:Record<string,unknown> } = {};
+  const snapshots=syncContext()?.validatedSnapshots;
+  if(snapshots)ctx.validatedSnapshots=snapshots;
   if (Object.keys(headers).length) ctx.headers = headers;
   // A borrowed-phone sign-in marks a phone punch "borrowed"; the replay must know it too.
   if (req.authSession) ctx.session = { shared: !!req.authSession.shared };
@@ -92,6 +94,8 @@ export function syncRequestMiddleware(req: Request, res: Response, next: NextFun
     setReplayActor(req, cmd.actor_user_id != null ? authUserById(cmd.actor_user_id) ?? undefined : undefined);
     // The original sign-in's nature (a borrowed phone) as the route saw it (§20).
     const session = (() => { try { return (JSON.parse(cmd.context ?? 'null') ?? {}).session; } catch { return null; } })();
+    const snapshots=(()=>{try{return JSON.parse(cmd.context??'null')?.validatedSnapshots;}catch{return undefined;}})();
+    if(snapshots&&typeof snapshots==='object'&&!Array.isArray(snapshots))ctx.validatedSnapshots=snapshots;
     if (session) req.authSession = { sid: 'sync-replay', shared: !!session.shared, device_id: cmd.device_id, last_seen_at: null, last_ip: null };
     rememberReplayContext(replay.mode, cmd.id, ctx);
     syncStore.run(ctx, next);

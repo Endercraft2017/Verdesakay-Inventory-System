@@ -108,3 +108,33 @@ Have a sales/HR reviewer create their own form and verify product selection, a m
 price, an edited price, zero price, fractional quantity, discount, tax, draft reopen,
 printing, submission and order review. Check keyboard-only use and actual browser zoom.
 Automated checks supplement that acceptance review.
+
+
+## Currency amounts and the invoice starter
+
+Inventory → Form Builder → Sales invoice starter opens an editable starting point with company
+and customer details, billing address, invoice/due dates, payment terms, product rows and totals.
+It defaults to PHP and 0% tax for review. Review the fields and automation, then save; its dedicated
+print layout is created with the form. This still creates a draft sales order for review.
+
+Choose Currency amount for a numeric input, or enable Print as a currency amount in a calculated
+field. Set the three-letter currency code in its settings; product tables also have a currency.
+Prices and totals print with two decimals and the code, while quantities keep their precision.
+The variable picker inserts formatted tokens for currency fields. A custom template can use
+`{{= money(total, "PHP")}}`. Values remain numeric; this is formatting, not currency conversion.
+Catalog products must match the table currency, and the sales workflow must match its item table
+and mapped total. Missing prices stay blank; explicit zero is valid. Due dates cannot precede
+invoice dates when submitting. Payment terms and due dates are retained in sales-order notes.
+
+Forms sharing a prefix now share a record-number sequence. Existing record numbers are retained.
+Installed nodes running this version capture validated source values for offline replay, so
+later catalog changes cannot replace a pending invoice's captured names, units or catalog price.
+Current permissions still apply when synchronizing, and changed definitions require review.
+Commands recorded by older app versions do not gain snapshots retroactively.
+
+`npm run test:invoice:ux` covers the real starter, non-admin/restricted roles, disconnected browser
+save/retry, currency mismatches, printing and submission. Backend tests cover cloud/site/LAN
+reconnection with concurrent work, permission revocation, order correction/cancellation/approval,
+partial picking and once-only final stock release. Actual installed-device acceptance remains a
+separate manual check. Form entry currently retains the existing section-management permission;
+no account receives broader access automatically.

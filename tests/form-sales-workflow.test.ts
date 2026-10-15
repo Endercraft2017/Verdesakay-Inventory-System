@@ -40,6 +40,7 @@ it('rejects invalid quantities, prices, forged products and duplicate row IDs wi
 });
 it('rolls the submission back when sales permissions or customer availability fail',async()=>{
  const person=await createEmployee(ctx.api,token,{role:'admin_staff',permission_overrides:{'orders.create':false}});
+ await ctx.api.put('/api/users/'+person.id+'/permissions').set(auth()).send({overrides:{'forms.manage.inventory':true,'orders.create':false}});
  const denied=await ctx.api.post('/api/form-records').set(auth(person.token)).send(body('submitted'));expect(denied.status).toBe(403);
  const archived=(await ctx.api.post('/api/customers').set(auth()).send({name:'Archived customer',archived:true})).body.id;
  expect((await ctx.api.post('/api/form-records').set(auth()).send(body('submitted',{customer:archived}))).status).toBe(400);
@@ -67,4 +68,26 @@ it('rejects invalid workflow statuses, duplicate stock lines and archived custom
  await ctx.api.put('/api/customers/'+disposable).set(auth()).send({archived:true});
  expect((await ctx.api.put('/api/form-records/'+created.body.id).set(auth()).send({data:saved.data,status:'submitted',expected_revision:saved.revision})).status).toBe(400);
  const unchanged=(await ctx.api.get('/api/form-records/'+created.body.id).set(auth())).body;expect(unchanged.status).toBe('draft');expect(unchanged.revision).toBe(saved.revision);expect(unchanged.sales_order).toBeNull();
+});
+
+it('keeps source history intact through order corrections, cancellation, approval and partial fulfillment',async()=>{
+ const make=async()=>{const made=await ctx.api.post('/api/form-records').set(auth()).send(body('submitted'));expect(made.status).toBe(201);return {recordId:made.body.id,orderId:made.body.sales_order.order_id};};
+ const cancelled=await make();let order=(await ctx.api.get('/api/orders/'+cancelled.orderId).set(auth())).body;
+ expect((await ctx.api.put('/api/orders/'+order.id).set(auth()).send({notes:'Reviewed correction',expected_revision:order.revision})).status).toBe(200);
+ expect((await ctx.api.post('/api/orders/'+order.id+'/status').set(auth()).send({status:'cancelled'})).status).toBe(200);
+ expect((await ctx.api.get('/api/form-records/'+cancelled.recordId).set(auth())).body).toMatchObject({status:'submitted',data:{total:112},sales_order:{order_id:order.id}});
+ const shipped=await make();order=(await ctx.api.get('/api/orders/'+shipped.orderId).set(auth())).body;
+ expect((await ctx.api.post('/api/orders/'+order.id+'/status').set(auth()).send({status:'approved'})).status).toBe(200);
+ expect((await ctx.api.put('/api/orders/'+order.id).set(auth()).send({items:[{item_id:product,name:'Invoice product',quantity:2,unit_price:1}]})).status).toBe(200);
+ expect((await ctx.api.get('/api/orders/'+order.id).set(auth())).body.items[0].unit_price).toBe(50);
+ expect((await ctx.api.post('/api/orders/'+order.id+'/accept-release').set(auth())).status).toBe(200);
+ for(let step=0;step<2;step++)expect((await ctx.api.post('/api/orders/'+order.id+'/release').set(auth()).send({bulk:[{item_id:product,quantity:1}]})).status).toBe(200);
+ const complete=(await ctx.api.get('/api/orders/'+order.id).set(auth())).body;expect(complete.status).toBe('released');expect(complete.items[0].released_qty).toBe(2);
+ expect((await ctx.api.post('/api/orders/'+order.id+'/release').set(auth()).send({bulk:[{item_id:product,quantity:1}]})).status).toBe(400);
+ expect((await ctx.api.put('/api/release-slips/policy').set(auth()).send({authorization_required:false})).status).toBe(200);
+ const release=()=>ctx.api.post('/api/orders/'+order.id+'/release-slip').set(auth()).set('Idempotency-Key','invoice-final-release').send({collected_by:'Audit driver',vehicle_plate:'TEST'});
+ const first=await release();expect(first.status).toBe(201);const again=await release();expect(again.status).toBe(201);expect(again.body.id).toBe(first.body.id);
+ const db=await import('../src/shared/db');expect(db.queryOne<{quantity:number}>('SELECT quantity FROM inventory_items WHERE id=?',product)!.quantity).toBe(18);
+ expect((await ctx.api.get('/api/orders/'+order.id).set(auth())).body.status).toBe('confirmed');
+ const original=(await ctx.api.get('/api/form-records/'+shipped.recordId).set(auth())).body;expect(original.data.total).toBe(112);expect(original.data.items[0].unit_price).toBe(50);expect(original.status).toBe('submitted');
 });

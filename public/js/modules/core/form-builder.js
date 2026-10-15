@@ -285,11 +285,13 @@ App.register('form-builder', async (view, filter) => {
     content.innerHTML = `
       <div class="topbar" style="padding:12px 20px">
         <span class="grow"></span>
+        ${scope === 'inventory' ? `<button type="button" class="btn secondary" id="fb-invoice-starter">${UI.icon('file',14)} Sales invoice starter</button>`:''}
         ${scope === 'hr' ? `<button class="btn secondary" id="fb-quick-add">${UI.icon('calendar', 14)} Quick Add (Common HR Forms)</button>` : ''}
         <button class="btn" id="fb-new-form">${UI.icon('plus')} New Form</button>
       </div>
       <div class="panel"><div id="fb-forms-table"></div></div>`;
     content.querySelector('#fb-new-form').onclick = () => formModal(null);
+    content.querySelector('#fb-invoice-starter')?.addEventListener('click',()=>formModal(null,invoiceStarter()));
     if (content.querySelector('#fb-quick-add')) content.querySelector('#fb-quick-add').onclick = () => quickAddModal();
     await loadForms();
   }
@@ -406,6 +408,7 @@ App.register('form-builder', async (view, filter) => {
   // point when someone clicks "Design print template" on a hand-built form, and stamped
   // automatically onto every Quick Add form the moment it's created.
   function defaultFormTemplateBody(form) {
+    if(form.invoice_layout)return FormPrint.invoice(form);
     const rows = form.fields.map(FormConnections.printField).join('');
     return `<style>
   .ff-card { border: 1px solid #222; padding: 14px 18px; font-size: 12.5px; }
@@ -519,6 +522,18 @@ App.register('form-builder', async (view, filter) => {
   // `prefill` (no .id) seeds a brand-new form from a Quick Add template — still POSTs on save
   // like any new form, just pre-populated for review instead of blank. `existing` (has .id) is
   // a real edit and always wins if somehow both were passed.
+  function invoiceStarter(){
+    const field=(key,label,type,extra={})=>({key,label,type,required:false,options:[],default:'',...extra});
+    const amount=(key,label,operator,operands)=>field(key,label,'calculated',{format:'currency',currency:'PHP',calculation:{operator,operands}});
+    return {name:'Sales Invoice',slug:'sales_invoice',number_prefix:'INV',icon:'file',invoice_layout:true,fields:[
+      field('company_name','Company','system',{source:'company',property:'name'}),field('company_address','Company address','system',{source:'company',property:'address'}),field('company_tin','Company TIN','system',{source:'company',property:'tin'}),
+      field('customer','Customer','reference',{source:'customer',required:true}),field('billing_address','Billing address','textarea',{binding:{field:'customer',property:'address',editable:true}}),field('customer_tin','Customer TIN','text',{binding:{field:'customer',property:'tin',editable:false}}),
+      field('invoice_date','Invoice date','date',{required:true}),field('due_date','Due date','date'),field('items','Products','line_items',{required:true,currency:'PHP',price_editable:true}),
+      amount('subtotal','Subtotal','sum',['items.line_total']),field('tax_rate','Tax percentage','number',{default:'0'}),amount('tax','Tax amount','percent',['subtotal','tax_rate']),amount('total','Total due','sum',['subtotal','tax']),
+      field('payment_terms','Payment terms','textarea',{default:'Due on receipt'}),field('prepared_by','Prepared by','system',{source:'user',property:'name'})
+    ],actions:[{type:'create_sales_draft',run_on:'submitted',customer_field:'customer',items_field:'items',tax_field:'tax_rate',total_field:'total',date_field:'invoice_date',due_field:'due_date',notes_field:'payment_terms',currency:'PHP'}]};
+  }
+
   function formModal(existing, prefill) {
     const editing = !!existing;
     const seed = existing || prefill || null;
@@ -652,7 +667,10 @@ App.register('form-builder', async (view, filter) => {
           // defaults — no separate "Design template" click required before it's printable.
         }
         if (ov.querySelector('[data-f="create_template"]').checked && !existing?.template_id) {
-          try { await API.put(`/form-definitions/${savedId}/template-body`, { name: `${body.name} Template`, type: 'generic', body: defaultFormTemplateBody(body) }); }
+          try {
+            const saved=await API.get('/form-definitions/'+savedId),template=saved.template_id?await API.get('/templates/'+saved.template_id):null;
+            await API.put(`/form-definitions/${savedId}/template-body`, {name:`${body.name} Template`,type:'generic',body:defaultFormTemplateBody({...body,invoice_layout:!!seed?.invoice_layout}),expected_revision:template?.revision});
+          }
           catch (error) { UI.toast('Form saved, but print template setup failed: ' + error.message, 'error'); }
         }
         UI.toast(editing ? 'Form saved' : 'Form created');
@@ -668,8 +686,8 @@ App.register('form-builder', async (view, filter) => {
       el.innerHTML = `<div class="fb-empty muted">No fields yet — add one above.</div>`;
       return;
     }
-    const typeOptions = ['text', 'number', 'date', 'time', 'select', 'textarea', 'checkbox', 'employee','reference:product','reference:customer','reference:employee','reference:sales_order','reference:supplier','reference:location','reference:account','reference:tax_code','system:company','system:user','line_items','calculated']
-      .map((t) => `<option value="${t}">${t === 'employee' ? 'employee (dropdown)' : t.startsWith('reference:') ? FormConnections.names[t.split(':')[1]]+' (connected)' : t.startsWith('system:')?FormConnections.names[t.split(':')[1]]+' value':t==='line_items'?'Product line items':t==='calculated'?'Calculated number':t}</option>`).join('');
+    const typeOptions = ['text', 'number', 'currency', 'date', 'time', 'select', 'textarea', 'checkbox', 'employee','reference:product','reference:customer','reference:employee','reference:sales_order','reference:supplier','reference:location','reference:account','reference:tax_code','system:company','system:user','line_items','calculated']
+      .map((t) => `<option value="${t}">${t === 'currency' ? 'Currency amount' : t === 'employee' ? 'employee (dropdown)' : t.startsWith('reference:') ? FormConnections.names[t.split(':')[1]]+' (connected)' : t.startsWith('system:')?FormConnections.names[t.split(':')[1]]+' value':t==='line_items'?'Product line items':t==='calculated'?'Calculated number':t}</option>`).join('');
 
     el.innerHTML = `<table class="line-table"><thead><tr>
       <th>Key <span class="muted">(variable name)</span></th>
@@ -678,13 +696,13 @@ App.register('form-builder', async (view, filter) => {
       <tr data-fi="${i}">
         <td><input class="mono" data-k="key" aria-required="true" maxlength="64" value="${UI.esc(f.key)}" placeholder="field_key" style="width:120px" /></td>
         <td><input data-k="label" aria-required="true" maxlength="120" value="${UI.esc(f.label)}" placeholder="Field Label" /></td>
-        <td><select data-k="type">${typeOptions.replace(`"${['reference','system'].includes(f.type)?f.type+':'+f.source:f.type}"`, `"${['reference','system'].includes(f.type)?f.type+':'+f.source:f.type}" selected`)}</select></td>
+        <td><select data-k="type">${typeOptions.replace(`"${f.type==='number'&&f.format==='currency'?'currency':['reference','system'].includes(f.type)?f.type+':'+f.source:f.type}"`, `"${f.type==='number'&&f.format==='currency'?'currency':['reference','system'].includes(f.type)?f.type+':'+f.source:f.type}" selected`)}</select></td>
         <td style="text-align:center"><input type="checkbox" data-k="required" ${f.required ? 'checked' : ''} /></td>
         <td>${['line_items','calculated'].includes(f.type)?`<button type="button" class="btn secondary small" data-configure-math="${i}">${f.type==='line_items'?'Configure items':'Configure calculation'}</button><small>${UI.esc(f.calculation?.operands?.join(', ')||'')}</small>`:['reference','system'].includes(f.type) ? `<button type="button" class="btn secondary small" data-connect="${i}">${f.type==='system'?'Choose property':'Connected source'}</button><small>${UI.esc(f.property||f.source||'')}</small>` : f.type === 'select'
           ? `<input data-k="options" value="${UI.esc((f.options || []).join(', '))}" placeholder="Option 1, Option 2, …" />`
           : f.type === 'employee'
             ? `<span class="muted" style="font-size:12px">Live employee list — no options needed</span>`
-            : `<input data-k="default" maxlength="500" value="${UI.esc(f.default || '')}" placeholder="default value" />${['text','number'].includes(f.type)?`<button type="button" class="btn secondary small" data-connect="${i}">${f.binding?'Connected: '+UI.esc(f.binding.field)+'.'+UI.esc(f.binding.property):'Connect value'}</button>`:''}`}
+            : `<input data-k="default" maxlength="500" value="${UI.esc(f.default || '')}" placeholder="default value" />${f.format==='currency'?`<button type="button" class="btn secondary small" data-money="${i}">Currency: ${UI.esc(f.currency||'PHP')}</button>`:''}${['text','textarea','number'].includes(f.type)?`<button type="button" class="btn secondary small" data-connect="${i}">${f.binding?'Connected: '+UI.esc(f.binding.field)+'.'+UI.esc(f.binding.property):'Connect value'}</button>`:''}`}
         </td>
         <td><button type="button" class="icon-btn" data-move-field="${i}" data-direction="-1" title="Move field up" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="icon-btn" data-move-field="${i}" data-direction="1" title="Move field down" ${i === fields.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="icon-btn danger" data-rm="${i}" title="Remove">${UI.icon('trash', 14)}</button></td>
       </tr>`).join('')}
@@ -694,6 +712,7 @@ App.register('form-builder', async (view, filter) => {
       inp.addEventListener('change', () => syncField(inp, fields));
       if (inp.type !== 'checkbox' && inp.tagName !== 'SELECT') inp.addEventListener('input', () => syncField(inp, fields));
     });
+    el.querySelectorAll('[data-money]').forEach(button=>button.onclick=()=>configureCurrency(fields,Number(button.dataset.money),ov));
     el.querySelectorAll('[data-configure-math]').forEach(button=>button.onclick=()=>configureMath(fields,Number(button.dataset.configureMath),ov));
     el.querySelectorAll('[data-connect]').forEach(button=>button.onclick=()=>connectField(fields,Number(button.dataset.connect),ov));
     el.querySelectorAll('[data-move-field]').forEach(button => button.onclick = () => {
@@ -709,13 +728,17 @@ App.register('form-builder', async (view, filter) => {
     owner.closest('.modal-overlay')?.__markDirty?.();renderFields(owner,fields);
     setTimeout(()=>owner.querySelector(`[${control}="${index}"]`)?.focus(),0);
   }
+  function configureCurrency(fields,index,owner){
+    const field=fields[index];UI.modal({title:'Currency for '+field.label,bodyHTML:`<label for="fc-currency">Currency code</label><input id="fc-currency" maxlength="3" value="${UI.esc(field.currency||'PHP')}"><p class="muted">Three-letter code, for example PHP or USD. Values remain numeric; this does not convert currencies.</p>`,confirmText:'Apply',onConfirm:(overlay,error)=>{const code=overlay.querySelector('#fc-currency').value.trim().toUpperCase();if(!/^[A-Z]{3}$/.test(code)){error('Use a three-letter currency code');return false;}field.currency=code;applyFieldSettings(owner,fields,index,'data-money');}});
+  }
   function configureMath(fields,index,owner){
     const field=fields[index];
-    if(field.type==='line_items'){UI.modal({title:'Configure '+field.label,bodyHTML:`<p>Rows contain a connected product, quantity, unit, unit price, discount percentage and calculated line total.</p><label><input type="checkbox" id="fc-price-editable" ${field.price_editable!==false?'checked':''}> Allow editing the product sale price</label>`,confirmText:'Apply',onConfirm:overlay=>{field.price_editable=overlay.querySelector('input').checked;applyFieldSettings(owner,fields,index,'data-configure-math');}});return;}
+    if(field.type==='line_items'){UI.modal({title:'Configure '+field.label,bodyHTML:`<p>Rows contain a connected product, quantity, unit, unit price, discount percentage and calculated line total.</p><label for="fc-currency">Currency code</label><input id="fc-currency" maxlength="3" value="${UI.esc(field.currency||'PHP')}"><label><input type="checkbox" id="fc-price-editable" ${field.price_editable!==false?'checked':''}> Allow editing the product sale price</label>`,confirmText:'Apply',onConfirm:(overlay,error)=>{const code=overlay.querySelector('#fc-currency').value.trim().toUpperCase();if(!/^[A-Z]{3}$/.test(code)){error('Use a three-letter currency code');return false;}field.currency=code;field.price_editable=overlay.querySelector('#fc-price-editable').checked;applyFieldSettings(owner,fields,index,'data-configure-math');}});return;}
     const choices=fields.filter(other=>other.key!==field.key).flatMap(other=>other.type==='line_items'?[{key:other.key+'.line_total',label:other.label+' → Line totals'},{key:other.key+'.quantity',label:other.label+' → Quantities'},{key:other.key+'.discount_amount',label:other.label+' → Discount amounts'}]:['number','calculated'].includes(other.type)?[{key:other.key,label:other.label}]:[]);
-    UI.modal({title:'Calculate '+field.label,bodyHTML:`<label for="fc-operation">Calculation</label><select id="fc-operation">${['sum','multiply','subtract','percent'].map(op=>`<option ${op===field.calculation?.operator?'selected':''}>${op}</option>`).join('')}</select><p class="muted">Percentage uses an amount followed by a rate. Subtraction and percentage use the field order shown below. Item columns support sum.</p><div id="fc-operands">${choices.map(choice=>`<label class="form-column-choice"><input type="checkbox" value="${choice.key}" ${field.calculation?.operands.includes(choice.key)?'checked':''}> ${UI.esc(choice.label)}</label>`).join('')}</div>`,confirmText:'Apply calculation',onConfirm:(overlay,error)=>{
+    UI.modal({title:'Calculate '+field.label,bodyHTML:`<label for="fc-operation">Calculation</label><select id="fc-operation">${['sum','multiply','subtract','percent'].map(op=>`<option ${op===field.calculation?.operator?'selected':''}>${op}</option>`).join('')}</select><p class="muted">Percentage uses an amount followed by a rate. Subtraction and percentage use the field order shown below. Item columns support sum.</p><label><input id="fc-money" type="checkbox" ${field.format==='currency'?'checked':''}> Print as a currency amount</label><label for="fc-currency">Currency code</label><input id="fc-currency" maxlength="3" value="${UI.esc(field.currency||'PHP')}"><div id="fc-operands">${choices.map(choice=>`<label class="form-column-choice"><input type="checkbox" value="${choice.key}" ${field.calculation?.operands.includes(choice.key)?'checked':''}> ${UI.esc(choice.label)}</label>`).join('')}</div>`,confirmText:'Apply calculation',onConfirm:(overlay,error)=>{
+      const code=overlay.querySelector('#fc-currency').value.trim().toUpperCase();if(overlay.querySelector('#fc-money').checked&&!/^[A-Z]{3}$/.test(code)){error('Use a three-letter currency code');return false;}
       const previous=field.calculation;field.calculation={operator:overlay.querySelector('#fc-operation').value,operands:[...overlay.querySelectorAll('#fc-operands input:checked')].map(input=>input.value)};
-      try{FormMath.validate(fields.map(candidate=>candidate.type==='calculated'&&!candidate.calculation?{...candidate,type:'number'}:candidate));}catch(problem){field.calculation=previous;error(problem.message);return false;}applyFieldSettings(owner,fields,index,'data-configure-math');
+      try{FormMath.validate(fields.map(candidate=>candidate.type==='calculated'&&!candidate.calculation?{...candidate,type:'number'}:candidate));}catch(problem){field.calculation=previous;error(problem.message);return false;}if(overlay.querySelector('#fc-money').checked){field.format='currency';field.currency=code;}else{delete field.format;delete field.currency;}applyFieldSettings(owner,fields,index,'data-configure-math');
     }});
   }
 
@@ -748,7 +771,9 @@ App.register('form-builder', async (view, filter) => {
     if (k === 'options') {
       fields[i].options = inp.value.split(',').map((s) => s.trim()).filter(Boolean);
     } else if (k === 'type') {
-      const [type,source]=inp.value.split(':');fields[i].type=type;
+      const [type,source]=inp.value.split(':');fields[i].type=type==='currency'?'number':type;
+      delete fields[i].format;delete fields[i].currency;
+      if(type==='currency'){fields[i].format='currency';fields[i].currency='PHP';}
       delete fields[i].binding;delete fields[i].property;
       if(source)fields[i].source=source;else delete fields[i].source;
       if(type==='system')fields[i].property='name';
@@ -787,8 +812,8 @@ App.register('form-builder', async (view, filter) => {
       let details = '';
       if(a.type==='create_sales_draft'){
         const available=[...ov.querySelectorAll('[data-fi]')].map(row=>({key:row.querySelector('[data-k=key]').value,label:row.querySelector('[data-k=label]').value,type:row.querySelector('[data-k=type]').value}));
-        const picker=(key,type)=>`<select data-ak="${key}"><option value="">Choose a field…</option>${available.filter(field=>field.type===type).map(field=>`<option value="${field.key}" ${a[key]===field.key?'selected':''}>${UI.esc(field.label)}</option>`).join('')}</select>`;
-        details=`<label>Customer field${picker('customer_field','reference:customer')}</label><label>Product items field${picker('items_field','line_items')}</label><label>Tax percentage field (optional)${picker('tax_field','number')}</label><label>Calculated final total field (optional)${picker('total_field','calculated')}</label><p class="muted">Runs when submitted. Creates an open sales order for review; approval and stock release remain separate.</p>`;
+        const picker=(key,type)=>`<select data-ak="${key}"><option value="">Choose a field…</option>${available.filter(field=>[].concat(type).includes(field.type)).map(field=>`<option value="${field.key}" ${a[key]===field.key?'selected':''}>${UI.esc(field.label)}</option>`).join('')}</select>`;
+        details=`<label>Customer field${picker('customer_field','reference:customer')}</label><label>Product items field${picker('items_field','line_items')}</label><label>Currency code<input data-ak="currency" maxlength="3" value="${UI.esc(a.currency||'PHP')}"></label><label>Invoice date field (optional)${picker('date_field','date')}</label><label>Due date field (optional)${picker('due_field','date')}</label><label>Payment terms field (optional)${picker('notes_field',['textarea','text'])}</label><label>Tax percentage field (optional)${picker('tax_field','number')}</label><label>Calculated final total field (optional)${picker('total_field','calculated')}</label><p class="muted">Runs when submitted. Creates an open sales order for review; approval and stock release remain separate.</p>`;
       } else if (a.type === 'notify_employee') {
         details = `<input data-ak="subject" value="${UI.esc(a.subject || '')}" placeholder="Subject (optional)" style="margin-bottom:4px" />
           <textarea data-ak="body" rows="2" placeholder="Message body (optional)">${UI.esc(a.body || '')}</textarea>`;
@@ -827,7 +852,7 @@ App.register('form-builder', async (view, filter) => {
       renderActions(inp.closest('.modal-body'), actions);
       return;
     }
-    if(['customer_field','items_field','tax_field','total_field'].includes(k)&&!inp.value.trim())delete actions[i][k];else actions[i][k] = inp.value;
+    if(['customer_field','items_field','tax_field','total_field','date_field','due_field','notes_field'].includes(k)&&!inp.value.trim())delete actions[i][k];else actions[i][k] = k==='currency'?inp.value.toUpperCase():inp.value;
   }
 
   // ── Global Variables tab ───────────────────────────────────────────────────

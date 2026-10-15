@@ -1212,7 +1212,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
             // A real button, so Tab + Enter opens the payslip detail; its click bubbles to the row.
             ? `<button type="button" class="hr-row-open" title="View payslip details">${UI.esc(r.number)}</button>`
             : `<strong>${UI.esc(r.number)}</strong>`}<small class="muted"> · v${r.definition_version || 1} / r${r.revision || 1}</small></td>
-          ${visibleFields.map((f) => `<td>${UI.esc(DataForms.displayValue(r.data[f.key]))}</td>`).join('')}
+          ${visibleFields.map((f) => `<td>${UI.esc(DataForms.displayValue(r.data[f.key],f))}</td>`).join('')}
           <td><span class="badge-pill status-${UI.esc(r.status)}">${UI.esc(r.status)}</span></td>
           <td>${UI.esc(UI.fmtDateShort(r.created_at))}</td>
           <td class="actions"><button type="button" class="icon-btn" data-history="${r.id}" title="Change history" aria-label="Change history for ${UI.esc(r.number)}">${UI.icon('clock')}</button>
@@ -1619,7 +1619,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   function renderFieldInput(field, data, employees) {
     const val = data[field.key] ?? field.default ?? '';
     if(field.type==='line_items')return FormItems.render(field);
-    if(field.type==='calculated')return `<div data-validation-field><label for="fr-field-${field.key}">${UI.esc(field.label)}</label><input id="fr-field-${field.key}" data-field="${field.key}" type="number" step="any" readonly value="${UI.esc(String(val||0))}"><small class="muted">Calculated automatically</small></div>`;
+    if(field.type==='calculated')return `<div data-validation-field><label for="fr-field-${field.key}">${UI.esc(field.label)}${field.format==='currency'?' ('+UI.esc(field.currency||'PHP')+')':''}</label><input id="fr-field-${field.key}" data-field="${field.key}" type="number" step="any" readonly value="${UI.esc(String(val||0))}"><small class="muted">Calculated automatically</small></div>`;
     if(['reference','system'].includes(field.type))return FormConnections.render(field,val);
     const id = `fr-field-${field.key}`;
     const req = field.required ? '<span class="req">*</span>' : '';
@@ -1653,7 +1653,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         value="${UI.esc(String(val))}" />`;
     }
     return `<div data-validation-field style="margin-bottom:12px">
-      <label for="${id}">${UI.esc(field.label)}${req}</label>
+      <label for="${id}">${UI.esc(field.label)}${field.format==='currency'?' ('+UI.esc(field.currency||'PHP')+')':''}${req}</label>
       ${input}
     </div>`;
   }

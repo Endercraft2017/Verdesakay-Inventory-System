@@ -1184,3 +1184,20 @@ The old order list, per-line negative adjustments and false batch-success result
 are removed. Commercial order IDs are never reused as manufacturing job IDs.
 Purchase-order receiving and intentional stock-adjustment tools remain available.
 Old bookmarks perform no stock action; canonical queues retain their own gates.
+
+### Invoice starter and disconnected recovery
+
+Inventory → Sales invoice starter → review PHP, zero tax, billing/date/payment fields → save
+with a revision-checked invoice layout → choose matching-currency catalog rows → retain
+negotiated numeric prices → format monetary tokens with two decimals → save draft or review
+submission → linked draft sales order receives invoice date, currency, terms and due-date notes.
+Approval, partial picking and final release stay in the existing order lifecycle; the original
+submitted form remains unchanged, and repeated final release does not deduct stock twice.
+
+A browser connection failure retains the original idempotent request for retry. Installed
+nodes additionally capture server-validated source snapshots in command context → disconnected
+local acceptance stays pending → reconnect/replay checks current permissions and definition
+version → retained product/customer/system values survive concurrent master-data changes → one
+record/order/link synchronizes. Permission revocation is rejected, not silently bypassed.
+Record numbering uses a global series per prefix, including across different form definitions.
+Automated cloud/site/LAN tests simulate separate nodes; physical-device acceptance is still manual.

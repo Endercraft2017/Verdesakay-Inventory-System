@@ -1528,6 +1528,8 @@ export interface FieldDef {
   type: 'text' | 'number' | 'date' | 'time' | 'select' | 'textarea' | 'checkbox' | 'employee' | 'reference' | 'system' | 'line_items' | 'calculated';
   calculation?: {operator:'sum'|'multiply'|'subtract'|'percent';operands:string[]};
   price_editable?:boolean;
+  format?: 'currency';
+  currency?: string;
   source?: 'product' | 'customer' | 'employee' | 'sales_order' | 'supplier' | 'location' | 'account' | 'tax_code' | 'company' | 'user';
   property?: string;
   binding?: { field: string; property: string; editable: boolean };
@@ -1552,6 +1554,9 @@ export interface FormAction {
   items_field?:string;
   tax_field?:string;
   total_field?:string;
+  date_field?:string;
+  currency?:string;
+  notes_field?:string;
   subject?: string;          // notify_employee / email_employee — templated
   body?: string;             // notify_employee — templated
   due_field?: string;        // create_followup_task — a date field key on the form

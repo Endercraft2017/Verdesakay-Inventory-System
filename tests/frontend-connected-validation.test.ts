@@ -5,7 +5,7 @@ import path from 'node:path';
 function setup(){
  const dom=new JSDOM('<main></main>',{runScripts:'outside-only',url:'https://localhost'}),w=dom.window as any;
  w.UI={esc:(v:unknown)=>String(v??''),money:(v:number)=>v.toFixed(2)};w.API={get:async()=>[]};
- for(const file of ['form-validation','form-math','form-connections','form-items'])w.eval(fs.readFileSync(path.join(import.meta.dirname,'../public/js/lib/'+file+'.js'),'utf8'));
+ for(const file of ['form-validation','form-math','form-print','form-connections','form-items'])w.eval(fs.readFileSync(path.join(import.meta.dirname,'../public/js/lib/'+file+'.js'),'utf8'));
  const field={key:'items',label:'Products',type:'line_items',required:true},root=w.document.querySelector('main');root.innerHTML='<div data-summary></div>'+w.FormItems.render(field);w.FormItems.mount(root,[field],{});
  return {dom,w,root,field};
 }
