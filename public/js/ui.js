@@ -67,6 +67,27 @@ const UI = (() => {
 
   /* Modal: opts = { title, bodyHTML, confirmText, onConfirm(modalEl)->bool|Promise,
        size ('lg'|'xl'), helpTopic? (explicit Help topic for this dialog), headActionHTML (raw HTML placed left of the close button) } */
+  let dialogSequence = 0;
+  function nameControls(container) {
+    container.querySelectorAll('input:not([type="hidden"]), select, textarea, button').forEach((control) => {
+      if (control.getAttribute('aria-label') || control.getAttribute('aria-labelledby') || control.labels?.length) return;
+      if (control.tagName === 'BUTTON') {
+        if (!control.textContent.trim() && control.title) control.setAttribute('aria-label', control.title);
+        return;
+      }
+      const previous = control.previousElementSibling;
+      if (previous?.tagName === 'LABEL' && !previous.htmlFor) {
+        control.id ||= `ui-control-${++dialogSequence}`;
+        previous.htmlFor = control.id;
+        return;
+      }
+      const cell = control.closest('td');
+      const heading = cell?.closest('table')?.querySelectorAll('thead th')[cell.cellIndex]?.textContent.trim();
+      const label = control.title || heading || control.placeholder;
+      if (label) control.setAttribute('aria-label', label);
+    });
+  }
+
   function modal(opts) {
     const root = document.getElementById('modal-root');
     const previousFocus = document.activeElement;
@@ -103,21 +124,22 @@ const UI = (() => {
 
     const helpButton = overlay.querySelector('[data-modal-help]');
     if (helpButton) helpButton.addEventListener('click', () => Help.open(opts.helpTopic));
-    const beforeUnload = (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } };
-    const close = () => {
+    const beforeUnload = (e) => { if (dirty || opts.isDirty?.()) { e.preventDefault(); e.returnValue = ''; } };
+    const close = (cancelled = false) => {
       window.removeEventListener('beforeunload', beforeUnload);
-      overlay.remove();
+      overlay.remove(); observer?.disconnect();
+      if (cancelled) { opts.onCancel?.(); overlay.dispatchEvent(new CustomEvent('modalcancel')); }
       if (previousFocus && previousFocus.isConnected) previousFocus.focus();
       if (opts.onClose) opts.onClose();
     };
-    const canDismiss = () => !saving && (!dirty || window.confirm('Discard your unsaved changes?'));
+    const canDismiss = () => !saving && (!(dirty || opts.isDirty?.()) || window.confirm('Discard your unsaved changes?'));
     overlay.__canDismiss = canDismiss;
     // Dialog actions outside the primary confirm button share the dismissal guard.
     overlay.__setSaving = (value) => { saving = !!value; };
     overlay.__markDirty = () => { dirty = true; };
     overlay.__close = close;
-    const dismiss = () => { if (canDismiss()) close(); };
-    if (opts.confirmText && opts.protectChanges !== false) {
+    const dismiss = () => { if (canDismiss()) { close(true); return true; } return false; };
+    if ((opts.confirmText || opts.protectChanges) && opts.protectChanges !== false) {
       overlay.addEventListener('input', () => { dirty = true; });
       overlay.addEventListener('change', () => { dirty = true; });
       window.addEventListener('beforeunload', beforeUnload);
@@ -135,7 +157,8 @@ const UI = (() => {
     overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) dismiss(); });
 
     const errBox = overlay.querySelector('[data-modal-error]');
-    const showErr = (msg) => { errBox.textContent = msg; errBox.classList.remove('hidden'); };
+    errBox.setAttribute('role', 'alert'); errBox.tabIndex = -1;
+    const showErr = (msg) => { errBox.hidden = false; errBox.textContent = msg; errBox.classList.remove('hidden'); if (!overlay.contains(document.activeElement) || document.activeElement?.getAttribute('aria-invalid') !== 'true') errBox.focus(); };
 
     const confirmBtn = overlay.querySelector('[data-confirm]');
     if (confirmBtn && opts.onConfirm) {
@@ -162,11 +185,13 @@ const UI = (() => {
     overlay.querySelectorAll('input').forEach((inp) => {
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && confirmBtn && !inp.hasAttribute('data-no-submit')) { e.preventDefault(); confirmBtn.click(); } });
     });
+    nameControls(overlay);
+    const observer = new MutationObserver(() => nameControls(overlay)); observer.observe(overlay, { childList: true, subtree: true });
     if (opts.onOpen) Promise.resolve(opts.onOpen(overlay)).catch(e => showErr(e.message || 'Could not load dialog details'));
     const firstInput = [...overlay.querySelectorAll('input,select,textarea')].find(el => !el.disabled && !['hidden', 'file'].includes(el.type) && !el.closest('.hidden,[hidden]'));
     if (firstInput) firstInput.focus();
     else overlay.querySelector('.modal').focus();
-    return { overlay, close, showErr };
+    return { overlay, close: dismiss, showErr, markSaved: () => { dirty = false; } };
   }
 
   function confirmDialog(message, confirmText = 'Confirm') {
@@ -732,7 +757,7 @@ const UI = (() => {
   }
 
   return {
-    esc, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, confirmDialog, PLACEHOLDER_PHOTO,
+    nameControls, esc, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, confirmDialog, PLACEHOLDER_PHOTO,
     drawer, contextMenu, closeContextMenu, printableHtml, printWhenLoaded, documentCss, loadPrintFrame, printFrame, combo,
     icon, helpIcon, emptyState, fileIconName, downloadCsv, csvImportModal,
   };

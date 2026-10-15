@@ -62,6 +62,12 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
    stock review shows the ship-from warehouse, stock elsewhere, other sale commitments,
    draft kit/repair holds, own coverage and shortages. Choosing approved in an open editor
    first saves open details, then opens this review; the approval decision is separate.
+   A sale line marked **CKD** keeps its product SKU, unit price and quantity, but snapshots
+   the product's direct BOM as zero-price child pick lines. Stock review checks those parts
+   at ship-from instead of built-unit stock. The commercial CKD parent never adds a
+   manufactured unit or consumes finished-goods stock. Aftersales parts are ordinary
+   inventory-linked lines entered one by one; semi-built and fully built lines continue
+   through their production/finished-stock path.
    `GET /orders/:id/availability` retains the ATP contract and adds source/planning fields.
    Approval rechecks current stock and accepts an optional review revision; stale interactive
    decisions return 409, while validated owning-site decisions retain D6 on replay.
@@ -218,9 +224,26 @@ raised by the sales-order shortfall flow.
       Desktop and mobile can save a partial pick or correct a prepared kit before slip issuance. The
       pick list and availability response show stock held elsewhere and the free amount.
       **Branch — short:**
-      the pick returns 400 with `shortfalls`, and
-      `POST /:id/purchase-shortfall` drafts POs for the missing parts. No stock moves at
-      this step.
+      the pick returns 400 with `shortfalls`. `GET /:id/availability` shows free stock,
+      holds, linked PO outstanding quantities and only the remaining quantity to
+      purchase. `POST /:id/purchase-shortfall` drafts POs only for that uncovered demand,
+      links them durably to the draft job order, and is safe to repeat after PO edits,
+      cancellation or partial receipts. Desktop opens this supply review from the
+      blocked pick or job detail. A PO is planning only: receive it at the job's source
+      location, finish the pick and then issue the parts slip. No stock moves when the
+      PO is drafted.
+      For a sale-linked job, the sale's stock review owns aggregate component purchasing;
+      the job supply review links there and job-level PO drafting returns
+      `409 sale_supply_owner` to prevent two purchase plans for the same parts.
+      Stock locations can be nested up to five levels. Each level after the first is
+      optional, and stock remains attached to the exact selected location ID; a parent
+      does not automatically own its children's stock. The location registry reports
+      both direct units and a read-only roll-up of descendant units. The desktop New
+      Item form reveals child selectors one at a time with **+ Add level**, allows inline
+      creation of missing children, and atomically posts starting stock at the last
+      selected location. The item retains that preferred location even with zero stock;
+      changing it later does not move physical stock. Mobile picker updates are tracked
+      in the handoff.
    3. **Release = parts release slip** — `POST /:id/release {received_by?, notes?}`
       needs approved + accepted + prepared. It issues the numbered slip `PRS-#####`
       (`parts_release_slips` / `_items` store a copy of the lines), deducts the components
@@ -389,6 +412,13 @@ raised by the sales-order shortfall flow.
    /:id/products-in` desktop uses, plus a continuous QR-scan-to-receive mode and a
    unit dossier (`record.js`: photo, QR, printable label) reachable from either
    platform.
+   - **Desktop receipt:** the clerk can combine selected passed units and whole-number
+     quantities from multiple open batches into one receipt at one exact storage
+     location. The API validates all lines and the *total* location capacity before
+     writing, then posts all lines and stock changes in one transaction. A stable
+     `Idempotency-Key` safely replays a lost response. Legacy single-batch phone
+     requests remain accepted. A receipt at a different warehouse does not fill a
+     sale's ship-from location; transfer stock before warehouse release.
    - **Mobile (RTS clerk, Figma 74:*)** — `#/receiving`, fed by `GET /api/rts/queue` (units
      across job orders): identify → verify (final-pass record, SKU) → stock details (storage
      location) → optional group of same-SKU units → review → final duplicate check (`POST
@@ -985,6 +1015,14 @@ Editor select theme → fixed single-arrow image, no-repeat, right placement and
 
 Descriptive text-type options retain p/h1–h6 command values → existing formatBlock command/history/outline pipeline. Style preview cards retain style-apply/style-edit keys → existing named-style apply/update pipeline; display role descriptions and px-to-pt font metadata without editing content when opened.
 
+Symbol picker → named native button (pointer or keyboard Enter) → existing insertHtml command at remembered selection → close modal → existing Undo/save pipeline. Presentation uses scoped grid centering instead of shared generic button alignment.
+
+Company-header edge click → select header → Inspect divider controls. Divider change/removal → validate choices and ancestor lock → beforeEdit history boundary → update inline border-bottom width/style/color only → existing change/save/shared/print pipeline. Removing the divider changes style to none; its fields and geometry remain, and Undo restores the previous border.
+
+Insert → Variable and sidebar Insert variable → shared variableDialog → existing catalog/token chip insertion at the remembered selection → existing undo/save/lock pipeline. Sidebar search/copy/formula/field management stays in its persistent panel.
+
+Single chip plus whitespace → direct range insertion of the complete fragment → caret after the trailing text node → existing command history/change. Other HTML retains its existing adapter; no catalog/permission/state duplication is introduced.
+
 ### Mobile warehouse acceptance/allocation recovery (2026-10-15)
 
 Release queue → To accept / Allocating / Ready / Blocked → ship-from review → exact
@@ -996,3 +1034,11 @@ attempts require reconciliation. Decimal bulk allocation is capped by free stock
 at the ship-from warehouse. Allocation remains a reservation; the release slip is
 the physical stock-out stage. Final slip/proof recovery and delivery are subsequent
 steps, alongside the remaining legacy Pick/Delivery integration audit.
+
+### Branch integration compatibility (2026-10-15)
+
+Held unit → frozen final-pass checks and prior answers → required Pass/readings →
+immutable reviewed checklist and hold episode → original-key recovery. CKD parent
+manifest → physical child allocation → complete kit only → existing release slip
+and component stock/return rules. Parent built-unit stock is not a component supply.
+The remote atomic Products In endpoint preserves legacy receipt-request compatibility.

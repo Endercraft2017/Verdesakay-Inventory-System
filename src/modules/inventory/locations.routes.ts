@@ -12,12 +12,75 @@ const router = Router();
 router.use(requireAuth);
 
 const LIST_SQL = `
+  WITH RECURSIVE descendants(root_id, id) AS (
+    SELECT id, id FROM locations
+    UNION ALL
+    SELECT d.root_id, child.id FROM descendants d JOIN locations child ON child.parent_id = d.id
+  ), direct AS (
+    SELECT location_id, SUM(quantity) AS units, SUM(quantity <> 0) AS items
+    FROM inventory_stock GROUP BY location_id
+  ), rollup AS (
+    SELECT d.root_id, SUM(s.quantity) AS units,
+           COUNT(DISTINCT CASE WHEN s.quantity <> 0 THEN s.item_id END) AS items
+    FROM descendants d JOIN inventory_stock s ON s.location_id = d.id
+    GROUP BY d.root_id
+  )
   SELECT l.*,
-         (SELECT COALESCE(SUM(s.quantity), 0) FROM inventory_stock s WHERE s.location_id = l.id) AS total_units,
-         (SELECT COUNT(*) FROM inventory_stock s WHERE s.location_id = l.id AND s.quantity <> 0) AS item_count,
+         COALESCE(direct.units, 0) AS total_units,
+         COALESCE(direct.items, 0) AS item_count,
+         COALESCE(rollup.units, 0) AS subtree_units,
+         COALESCE(rollup.items, 0) AS subtree_item_count,
+         (SELECT COUNT(*) FROM locations child WHERE child.parent_id = l.id) AS child_count,
          (SELECT c.max_units FROM location_capacities c WHERE c.location_id = l.id) AS capacity
   FROM locations l
+  LEFT JOIN direct ON direct.location_id = l.id
+  LEFT JOIN rollup ON rollup.root_id = l.id
 `;
+
+/** Names are local to each node; paths give operators an unambiguous pick target. */
+function withPaths(rows: LocationRow[]): LocationRow[] {
+  const byId = new Map(queryAll<LocationRow>('SELECT id, name, parent_id FROM locations').map((row) => [row.id, row]));
+  return rows.map((row) => {
+    const names = [row.name];
+    const seen = new Set([row.id]);
+    let parent = row.parent_id;
+    while (parent && byId.has(parent) && !seen.has(parent)) {
+      const node = byId.get(parent)!;
+      names.unshift(node.name);
+      seen.add(parent);
+      parent = node.parent_id;
+    }
+    return { ...row, path: names.join(' / '), depth: names.length };
+  });
+}
+
+function parentDepth(parentId: number | null | undefined, movingId?: number): number | null {
+  let depth = 0;
+  let current = parentId;
+  const seen = new Set<number>();
+  while (current != null) {
+    if (current === movingId || seen.has(current)) return null;
+    seen.add(current);
+    const parent = queryOne<{ parent_id: number | null }>('SELECT parent_id FROM locations WHERE id = ?', current);
+    if (!parent) return null;
+    depth++;
+    current = parent.parent_id;
+  }
+  return depth;
+}
+
+function subtreeHeight(id: number): number {
+  const rows = queryAll<{ depth: number }>(`WITH RECURSIVE descendants(id, depth) AS (
+    SELECT id, 1 FROM locations WHERE id = ?
+    UNION ALL SELECT l.id, d.depth + 1 FROM locations l JOIN descendants d ON l.parent_id = d.id
+  ) SELECT MAX(depth) AS depth FROM descendants`, id);
+  return rows[0]?.depth ?? 1;
+}
+
+function siblingNameTaken(name: string, parentId: number | null | undefined, exceptId?: number): boolean {
+  return !!queryOne('SELECT 1 FROM locations WHERE name = ? COLLATE NOCASE AND parent_id IS ? AND id != ? LIMIT 1',
+    name, parentId ?? null, exceptId ?? -1);
+}
 
 /** Set (a positive number) or clear (null) a location's capacity; undefined leaves it. */
 function setCapacity(id: number, capacity: number | null | undefined): void {
@@ -44,15 +107,9 @@ function setSoleDefault(id: number): void {
 // The list also opens to the RTS desk, which picks where ready-to-sell stock goes (shared/desk-access.ts).
 router.get('/', requireAnyPermission(['inventory.view', ...LOCATION_PICKER]), (req, res) => {
   const { q } = req.query;
-  let sql = LIST_SQL;
-  const params: unknown[] = [];
-  if (typeof q === 'string' && q.trim()) {
-    sql += ' WHERE (l.name LIKE ? OR l.address LIKE ? OR l.type LIKE ?)';
-    const like = `%${q.trim()}%`;
-    params.push(like, like, like);
-  }
-  sql += ' ORDER BY l.is_default DESC, l.name COLLATE NOCASE';
-  res.json(queryAll<LocationRow>(sql, ...params));
+  const rows = withPaths(queryAll<LocationRow>(LIST_SQL + ' ORDER BY l.is_default DESC, l.name COLLATE NOCASE'));
+  const term = typeof q === 'string' ? q.trim().toLocaleLowerCase() : '';
+  res.json(term ? rows.filter((l) => [l.path, l.address, l.type].some((value) => value?.toLocaleLowerCase().includes(term))) : rows);
 });
 
 // GET /api/locations/:id — one location + the items it currently holds
@@ -69,16 +126,21 @@ router.get('/:id', requirePermission('inventory.view'), (req, res) => {
       ORDER BY s.quantity DESC, i.name COLLATE NOCASE`,
     loc.id
   );
-  res.json({ ...loc, items });
+  res.json({ ...withPaths([loc])[0], items });
 });
 
 // POST /api/locations
 router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req, res) => {
   const input = parseBody(createLocationSchema, req.body);
+  const depth = parentDepth(input.parent_id);
+  if (depth === null) { res.status(400).json({ error: 'Parent location not found' }); return; }
+  if (depth >= 5) { res.status(400).json({ error: 'A location can have at most five levels' }); return; }
+  if (siblingNameTaken(input.name, input.parent_id)) { res.status(409).json({ error: 'That location name already exists under this parent.' }); return; }
   const isFirst = (queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM locations')?.n ?? 0) === 0;
   const info = run(
-    'INSERT INTO locations (name, type, address, notes, is_default) VALUES (?, ?, ?, ?, ?)',
+    'INSERT INTO locations (name, parent_id, type, address, notes, is_default) VALUES (?, ?, ?, ?, ?, ?)',
     input.name,
+    input.parent_id ?? null,
     input.type,
     input.address ?? null,
     input.notes ?? null,
@@ -102,9 +164,15 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim', ownSi
     return;
   }
   const input = parseBody(updateLocationSchema, req.body);
+  const parentId = input.parent_id === undefined ? existing.parent_id : input.parent_id;
+  const depth = parentDepth(parentId, id);
+  if (depth === null) { res.status(400).json({ error: 'Parent location not found or would create a cycle' }); return; }
+  if (depth + subtreeHeight(id) > 5) { res.status(400).json({ error: 'A location can have at most five levels' }); return; }
+  if (siblingNameTaken(input.name ?? existing.name, parentId, id)) { res.status(409).json({ error: 'That location name already exists under this parent.' }); return; }
   run(
-    `UPDATE locations SET name = ?, type = ?, address = ?, notes = ?, updated_at = datetime('now') WHERE id = ?`,
+    `UPDATE locations SET name = ?, parent_id = ?, type = ?, address = ?, notes = ?, updated_at = datetime('now') WHERE id = ?`,
     input.name ?? existing.name,
+    parentId ?? null,
     input.type ?? existing.type,
     input.address !== undefined ? input.address : existing.address,
     input.notes !== undefined ? input.notes : existing.notes,
@@ -140,6 +208,10 @@ router.delete('/:id', requirePermission('inventory.delete'), syncClass('claim', 
   )?.n ?? 0;
   if (held > 0) {
     res.status(409).json({ error: `This location still holds stock for ${held} item(s). Move it out first.` });
+    return;
+  }
+  if (queryOne('SELECT 1 FROM locations WHERE parent_id = ? LIMIT 1', id)) {
+    res.status(409).json({ error: 'Move or delete sublocations before deleting this location.' });
     return;
   }
   const others = queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM locations WHERE id != ?', id)?.n ?? 0;

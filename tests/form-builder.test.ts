@@ -559,6 +559,32 @@ describe('hr payroll csv import', () => {
     payrollFormId = forms.body.find((f: { slug: string }) => f.slug === 'hr_payroll').id;
   });
 
+  it('previews imports without saving and requires confirmation for existing matches', async () => {
+    const period = 'Preview duplicate audit';
+    const before = await ctx.api.get(`/api/form-definitions/${payrollFormId}/records`).set(hdr(adminToken)).query({ period });
+    const preview = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`).set(hdr(adminToken))
+      .field('period', period).field('dry_run', '1').attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(preview.status).toBe(200);
+    expect(preview.body.count).toBe(1);
+    expect(preview.body.duplicate_count).toBe(0);
+    expect((await ctx.api.get(`/api/form-definitions/${payrollFormId}/records`).set(hdr(adminToken)).query({ period })).body.length).toBe(before.body.length);
+    const imported = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`).set(hdr(adminToken))
+      .field('period', period).attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(imported.status).toBe(201);
+    const blocked = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`).set(hdr(adminToken))
+      .field('period', period).attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(blocked.status).toBe(409);
+    const matched = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`).set(hdr(adminToken))
+      .field('period', period).field('dry_run', '1').attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(matched.body.duplicate_count).toBe(1);
+    expect(matched.body.rows[0].matched_numbers).toEqual(imported.body.numbers);
+    const confirmed = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`).set(hdr(adminToken))
+      .field('period', period).field('allow_duplicates', '1').attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(confirmed.status).toBe(201);
+    const records = await ctx.api.get(`/api/form-definitions/${payrollFormId}/records`).set(hdr(adminToken)).query({ period });
+    for (const record of records.body) await ctx.api.delete(`/api/form-records/${record.id}`).set(hdr(adminToken));
+  });
+
   it('rejects import for a non-payroll form', async () => {
     const other = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send(sampleForm2());
     const res = await ctx.api.post(`/api/form-definitions/${other.body.id}/import`)

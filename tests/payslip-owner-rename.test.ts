@@ -72,7 +72,13 @@ describe('payslip ownership across renames', () => {
     expect(detail.body.error ?? '').not.toMatch(/No employee record/);
     const mine = await ctx.api.get('/api/me/payslips').set({ Authorization: `Bearer ${acct.token}` });
     expect(mine.body.map((p: { number: string }) => p.number).sort()).toContain('PAY-LEG-1');
-    expect(mine.body).toHaveLength(1); // the regenerated cutoff is still draft
+    expect(mine.body).toHaveLength(2); // paid history and the regenerated draft remain visible
+    expect(mine.body.find((p: { id: number }) => p.id === legacy.id)).toMatchObject({
+      status: 'paid', finalized: true, download_url: `/me/payslips/${legacy.id}/pdf`,
+    });
+    expect(mine.body.find((p: { period: string }) => p.period === 'Feb 1-2, 2026')).toMatchObject({
+      status: 'draft', finalized: false, finalized_at: null, download_url: null,
+    });
   });
 
   it("never attributes a former name to a different employee who currently holds it", async () => {

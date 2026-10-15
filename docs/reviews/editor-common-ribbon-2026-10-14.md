@@ -39,3 +39,14 @@ wide desktop ribbon height limit of 76px in the full Playwright gate.
 
 ## Heading/style clarity follow-up
 Body text, Main heading (H1) and Subheading (H2) replace bare role labels in the ribbon; deeper levels are grouped separately. Style gallery previews show the role and font/size metadata, with separate named pencil actions. A preview applies formatting and a pencil edits the reusable style. All existing style/paragraph keys and markup remain. Visual review covers gallery in both themes; the full editor Playwright gate and focused command/studio regressions verify continued behavior.
+
+## Symbol picker alignment correction
+A scoped symbol grid centers glyphs and preserves theme hover/focus states, with consistent 48px button heights and five columns on phones. Buttons have descriptive names. Playwright checks every glyph position/target at 1440 and 390px in both themes and verifies keyboard insertion plus Undo through the existing command path.
+
+## Company header divider controls
+The starter .doc-head border can be edited from Inspect and directly selected along its bottom edge. Width/style/color pickers and Remove divider modify the border without removing company fields. History boundaries precede mutations, locked ancestors are checked, and inline styles use the existing save/print pipeline. Unit checks cover field preservation, removal/Undo and locks. Playwright uses a real letterhead fixture to verify pointer selection, picker changes, removal/Undo, both themes and saved/reopened border properties.
+
+## Quick Insert variable
+A Fields group in Insert exposes Variable beside Table, sharing the sidebar picker. New-template help points to both entry points. Keyboard browser checks verify body-caret insertion and Undo. This caught a native insertHTML edge case that placed a chip plus trailing space outside a paragraph at its end; the atomic chip adapter now inserts that fragment directly. Focused command/reliability tests cover placement, preserved header content and Undo.
+
+The shortcut check requires the chip to remain inside the body paragraph. Broader ribbon/save checks select writing in paragraph, heading or inline-run containers, all supported by the current HTML adapter after native paste. They continue to require preserved text, field tokens, Undo and persisted content.

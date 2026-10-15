@@ -62,6 +62,24 @@ const API = (() => {
     try { return (localStorage.getItem('vds_api_base') || '').replace(/\/+$/, ''); } catch (e) { return ''; }
   }
 
+  // fetch has no upload progress events; keep the same response handling for XHR uploads.
+  function uploadResponse(url, method, headers, payload, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, url);
+      Object.entries(headers).forEach(([key, value]) => xhr.setRequestHeader(key, value));
+      xhr.upload.onprogress = (event) => onProgress({ loaded: event.loaded, total: event.lengthComputable ? event.total : null });
+      xhr.onerror = () => reject(new Error('Network unavailable'));
+      xhr.onabort = () => reject(new Error('Upload cancelled'));
+      xhr.onload = () => resolve({
+        status: xhr.status, ok: xhr.status >= 200 && xhr.status < 300,
+        headers: { get: (key) => xhr.getResponseHeader(key) },
+        json: async () => JSON.parse(xhr.responseText),
+      });
+      xhr.send(payload);
+    });
+  }
+
   async function request(method, path, body, isForm, opts) {
     if (method !== 'GET') remembered.clear();
     const headers = {};
@@ -89,7 +107,10 @@ const API = (() => {
 
     let res;
     try {
-      res = await fetch(base() + (path.startsWith('/api/') ? path : '/api' + path), { method, headers, body: payload });
+      const url = base() + (path.startsWith('/api/') ? path : '/api' + path);
+      res = isForm && opts && opts.onProgress
+        ? await uploadResponse(url, method, headers, payload, opts.onProgress)
+        : await fetch(url, { method, headers, body: payload });
     } catch (e) {
       // fetch only throws on a genuine network failure (offline, DNS, connection reset).
       const err = new Error('Network unavailable');

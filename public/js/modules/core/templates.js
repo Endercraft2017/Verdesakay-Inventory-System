@@ -158,7 +158,7 @@ App.register('templates', async (view) => {
       <div class="doc-company"><h1>{{company.name}}</h1><div>{{company.address}}</div><div class="muted">{{company.phone}} · {{company.email}}</div></div>
       <div class="doc-meta"><div>{{today}}</div></div>
     </header>
-    <p>Start writing your document here. Use the <strong>{ } Variable</strong> button in the Variables sidebar to drop in live data.</p></div>`;
+    <p>Start writing your document here. Use <strong>Insert → Variable</strong> or the Variables sidebar to drop in live data.</p></div>`;
 
   // Ready-made starting points offered when "New template" is pressed. Each is plain
   // HTML + {{tokens}} the renderer understands; the user edits everything afterwards.

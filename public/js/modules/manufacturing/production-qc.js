@@ -164,7 +164,7 @@ async function inspectModal(jobOrderId, onDone) {
     searchEl.focus();
   }
 
-  function inspectFormHTML(qcCl, qcClNames, allowed, passLabel) {
+  function inspectFormHTML(qcCl, qcClNames, allowed, passLabel, finalPass) {
     const labels = qcCl.map((it) => it.label.trim().toLowerCase());
     if (new Set(labels).size !== labels.length) {
       return UI.emptyState({ icon: 'alert', title: 'Checklist configuration needs attention',
@@ -192,7 +192,7 @@ async function inspectModal(jobOrderId, onDone) {
         <div style="margin-bottom:8px"><label>Identifier (optional, applies to passed units)</label><input id="qi-ident" ${allowed ? '' : 'disabled'} placeholder="e.g. chassis / serial no." /></div>
         <div style="margin-bottom:8px"><label>Remarks</label><input id="qi-remarks" ${allowed ? '' : 'disabled'} placeholder="Notes / reason if failing" /></div>
         <div><label>On fail</label>
-          <select id="qi-disp" ${allowed ? '' : 'disabled'}>${DISPOSITIONS.map((d) => `<option value="${d}">${d[0].toUpperCase() + d.slice(1)}</option>`).join('')}</select></div>
+          <select id="qi-disp" ${allowed ? '' : 'disabled'}>${[...DISPOSITIONS, ...(finalPass ? ['hold'] : [])].map((d) => `<option value="${d}">${d === 'hold' ? 'Hold for QA review' : d[0].toUpperCase() + d.slice(1)}</option>`).join('')}</select></div>
         <div style="margin-top:8px"><label>Evidence photo(s) — required to fail</label>
           <input type="file" id="qi-photos" accept="image/*" multiple ${allowed ? '' : 'disabled'} /></div>
       </div>
@@ -219,14 +219,15 @@ async function inspectModal(jobOrderId, onDone) {
       if (rows.length) {
         checklist = rows.map((row, i) => {
           const status = row.querySelector('.qi-check-status').value;
+          if (!status) return null;
           return { label: qcCl[i].label, ok: status === 'pass', status: status || undefined,
             value: row.querySelector('.qi-check-value')?.value.trim() || undefined,
             note: row.querySelector('.qi-check-note').value.trim() || undefined };
-        });
+        }).filter(Boolean);
         if (result === 'pass') {
-          const missing = checklist.filter((answer, i) => qcCl[i].required && answer.status !== 'pass').map((answer) => answer.label);
+          const missing = qcCl.filter((item) => item.required && !checklist.some((answer) => answer.label === item.label && answer.status === 'pass')).map((item) => item.label);
           if (missing.length) { UI.toast('Pass the required checks first: ' + missing.join(', '), 'error'); return; }
-          const readings = checklist.filter((answer, i) => qcCl[i].measure && answer.status === 'pass' && !answer.value).map((answer) => answer.label);
+          const readings = qcCl.filter((item) => item.measure && checklist.some((answer) => answer.label === item.label && answer.status === 'pass' && !answer.value)).map((item) => item.label);
           if (readings.length) { UI.toast('Record readings for: ' + readings.join(', '), 'error'); return; }
         }
       }
@@ -243,7 +244,7 @@ async function inspectModal(jobOrderId, onDone) {
         .then(async (r) => {
           jo = r.job_order; await refresh();
           activeUnitId = null; checkedIds.clear();
-          UI.toast(result === 'pass' ? 'Unit(s) passed' : disposition === 'repair' ? 'Sent to repair' : 'Unit(s) failed');
+          UI.toast(result === 'pass' ? 'Unit(s) passed' : disposition === 'hold' ? 'Sent to QA hold review' : disposition === 'repair' ? 'Sent to repair' : 'Unit(s) failed');
           draw();
           if (onDone) onDone();
         })
@@ -272,7 +273,7 @@ async function inspectModal(jobOrderId, onDone) {
             <div class="muted" style="font-size:12px">${selected.map((u) => '#' + u.id).join(', ')}</div></div>
           ${pickers ? `<div style="display:flex;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;gap:4px">${pickers}</div>` : ''}
         </div>
-        ${inspectFormHTML(items, names, passAllowed(firstP, finalP), passLabelFor(firstP, finalP))}`;
+        ${inspectFormHTML(items, names, passAllowed(firstP, finalP), passLabelFor(firstP, finalP), finalP)}`;
     }
     if (activeUnitId != null) {
       const unit = queue.find((u) => u.id === activeUnitId);
@@ -293,7 +294,7 @@ async function inspectModal(jobOrderId, onDone) {
             ${unit.identifier ? `<div class="muted mono" style="font-size:12px;margin-top:4px">${UI.esc(unit.identifier)}</div>` : ''}</div>
           ${pickers ? `<div style="display:flex;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;gap:4px">${pickers}</div>` : ''}
         </div>
-        ${inspectFormHTML(items, names, passAllowed(firstP, finalP), passLabelFor(firstP, finalP))}`;
+        ${inspectFormHTML(items, names, passAllowed(firstP, finalP), passLabelFor(firstP, finalP), finalP)}`;
     }
     return placeholderHTML();
   }
@@ -441,19 +442,47 @@ App.register('production-qc', async (view, filter) => {
         <td>${UI.esc(h.product_name)}</td><td>${UI.esc(h.remarks || '—')}${h.issues?.length ? `<div class="muted">${h.issues.map((i) => UI.esc(i.label)).join(', ')}</div>` : ''}</td>
         <td>${h.evidence || 0} photo(s)</td><td><button class="btn secondary" data-open-job="${h.job_order_id}">Open job</button> <button class="btn secondary" data-decide="${h.id}">Decide</button></td></tr>`).join('')}</tbody></table>`;
     table.querySelectorAll('[data-open-job]').forEach((button) => button.onclick = () => App.navigate('job-orders', { id: Number(button.dataset.openJob) }));
-    table.querySelectorAll('[data-decide]').forEach((button) => button.onclick = () => {
+    table.querySelectorAll('[data-decide]').forEach((button) => button.onclick = async () => {
       const h = holds.find((row) => String(row.id) === button.dataset.decide);
+      let job;
+      try { job = await API.get('/job-orders/' + h.job_order_id); }
+      catch (e) { UI.toast(e.message || 'Unable to load the job checklist', 'error'); return; }
+      const checks = [
+        ...((job.qc_stages || 1) <= 1 ? job.qc_checklist_qc?.items || [] : []),
+        ...(job.qc_checklist_qa?.items || []),
+      ];
+      const previous = new Map((h.checklist || []).map((item) => [item.label.toLocaleLowerCase(), item]));
       UI.modal({ title: 'Decide held unit — ' + (h.identifier || '#' + h.id),
         bodyHTML: `<p class="muted">${UI.esc(h.remarks || 'Held for review')}</p><p class="muted">${h.evidence || 0} evidence photo(s). Open the job order for full history.</p>
           <div><label>Decision</label><select data-f="outcome"><option value="pass">Pass — send to Products In</option><option value="rectify">Rectify — return for recheck</option><option value="fail">Fail — reject</option></select></div>
+          ${checks.length ? `<div data-hold-checks><p class="muted">Confirm the applicable checklist before passing this unit.</p>${checks.map((item, i) => {
+            const answer = previous.get(item.label.toLocaleLowerCase()) || {};
+            return `<div data-hold-check="${i}" style="margin:8px 0"><label>${UI.esc(item.label)}${item.required ? ' *' : ''}</label>
+              <select data-check-status aria-label="${UI.esc(item.label)} result"><option value="">Choose result</option><option value="pass" ${answer.status === 'pass' ? 'selected' : ''}>Pass</option><option value="issue" ${answer.status === 'issue' ? 'selected' : ''}>Issue</option><option value="na" ${answer.status === 'na' ? 'selected' : ''}>N/A</option></select>
+              ${item.measure ? `<input data-check-value aria-label="${UI.esc(item.label)} reading (${UI.esc(item.measure)})" placeholder="Reading (${UI.esc(item.measure)})" value="${UI.esc(answer.value || '')}" maxlength="60" />` : ''}
+              <input data-check-note aria-label="${UI.esc(item.label)} note" placeholder="Note (optional)" value="${UI.esc(answer.note || '')}" maxlength="500" /></div>`;
+          }).join('')}</div>` : ''}
           <div data-fail hidden><label>Disposition</label><select data-f="disposition"><option value="scrap">Scrap</option><option value="dispose">Dispose</option><option value="recycle">Recycle</option></select></div>
           <div><label>Reason <span class="req">*</span></label><textarea data-f="remarks" rows="3" maxlength="2000"></textarea></div>`,
         confirmText: 'Record decision',
-        onOpen: (overlay) => { const outcome = overlay.querySelector('[data-f="outcome"]'); outcome.onchange = () => { overlay.querySelector('[data-fail]').hidden = outcome.value !== 'fail'; }; },
+        onOpen: (overlay) => { const outcome = overlay.querySelector('[data-f="outcome"]'); outcome.onchange = () => { overlay.querySelector('[data-fail]').hidden = outcome.value !== 'fail'; if (overlay.querySelector('[data-hold-checks]')) overlay.querySelector('[data-hold-checks]').hidden = outcome.value !== 'pass'; }; },
         onConfirm: async (overlay, showErr) => {
           const value = (name) => overlay.querySelector(`[data-f="${name}"]`).value.trim();
           if (value('remarks').length < 3) { showErr('Give the reason for this decision'); return false; }
-          await API.post(`/job-orders/${h.job_order_id}/units/${h.id}/hold-decision`, { outcome: value('outcome'), remarks: value('remarks'), disposition: value('outcome') === 'fail' ? value('disposition') : undefined });
+          let checklist;
+          if (value('outcome') === 'pass') {
+            checklist = [...overlay.querySelectorAll('[data-hold-check]')].map((row, i) => {
+              const status = row.querySelector('[data-check-status]').value;
+              return status ? { label: checks[i].label, ok: status === 'pass', status,
+                value: row.querySelector('[data-check-value]')?.value.trim() || undefined,
+                note: row.querySelector('[data-check-note]').value.trim() || undefined } : null;
+            }).filter(Boolean);
+            const missing = checks.filter((item) => item.required && !checklist.some((answer) => answer.label === item.label && answer.status === 'pass'));
+            if (missing.length) { showErr('Pass the required checks first: ' + missing.map((item) => item.label).join(', ')); return false; }
+            const noReading = checks.filter((item) => item.measure && checklist.some((answer) => answer.label === item.label && answer.status === 'pass' && !answer.value));
+            if (noReading.length) { showErr('Record readings for: ' + noReading.map((item) => item.label).join(', ')); return false; }
+          }
+          await API.post(`/job-orders/${h.job_order_id}/units/${h.id}/hold-decision`, { outcome: value('outcome'), remarks: value('remarks'), disposition: value('outcome') === 'fail' ? value('disposition') : undefined, checklist });
           UI.toast('Hold decision recorded'); await renderHolds();
         },
       });

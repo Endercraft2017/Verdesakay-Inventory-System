@@ -75,7 +75,7 @@ function maybeAutoPush(orderId: number): void {
   } catch { return; }
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', orderId);
   if (!order) return;
-  const items = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', orderId);
+  const items = queryAll<OrderItem>("SELECT * FROM order_items WHERE order_id = ? AND fulfillment_mode != 'ckd_component' ORDER BY sort, id", orderId);
   Promise.resolve(pushOrder(order, items)).catch((e) =>
     console.warn(`[qbo] auto-push order ${orderId} failed: ${(e as Error).message}`));
 }
@@ -83,6 +83,7 @@ function maybeAutoPush(orderId: number): void {
 type LineInput = {
   item_id?: number | null; name: string; sku?: string | null; description?: string | null;
   quantity: number; unit?: string | null; unit_price: number; tax_code_id?: number | null;
+  fulfillment_mode?: 'assembled' | 'semi_built' | 'ckd' | 'ckd_component';
 };
 
 /** Compute line totals + subtotal/tax/total from raw line inputs (never trust the client). */
@@ -122,8 +123,9 @@ function saleStatus(status: string | null | undefined, current?: string): string
 function validateOrderLinks(type: OrderType, input: {
   items: LineInput[]; customer_id?: number | null; location_id?: number | null;
   supplier_id?: number | null; tax_code_id?: number | null;
-}): void {
+}, existingCkd?: Map<number, CkdPart[]>): void {
   const seen = new Set<number>();
+  const ckdParts = new Set<number>();
   for (const [i, line] of input.items.entries()) {
     if (!Number.isFinite(line.quantity) || line.quantity <= 0) throw new ValidationError(`Line ${i + 1}: quantity must be greater than zero`);
     if (line.item_id != null) {
@@ -135,10 +137,25 @@ function validateOrderLinks(type: OrderType, input: {
       }
       seen.add(line.item_id);
     }
+    if (line.fulfillment_mode === 'ckd') {
+      if (type !== 'sale' || !line.item_id || !Number.isSafeInteger(line.quantity))
+        throw new ValidationError(`Line ${i + 1}: CKD needs a stocked product and a whole-unit quantity.`);
+      const product = queryOne<{ is_finished_product: number }>('SELECT is_finished_product FROM inventory_items WHERE id = ?', line.item_id);
+      if (!product?.is_finished_product) throw new ValidationError(`Line ${i + 1}: CKD requires a finished product with a parts BOM.`);
+      const parts = existingCkd?.get(line.item_id) ?? queryAll<{ component_item_id: number }>('SELECT component_item_id FROM bom_components WHERE product_item_id = ?', line.item_id);
+      if (!parts.length) throw new ValidationError(`Line ${i + 1}: define the CKD product BOM before ordering it.`);
+      for (const part of parts) {
+        if (part.component_item_id === line.item_id || ckdParts.has(part.component_item_id))
+          throw new ValidationError('CKD parts overlap another CKD line on this order. Use separate orders until line-specific picking is available.');
+        ckdParts.add(part.component_item_id);
+      }
+    }
     if (line.tax_code_id != null && !queryOne('SELECT id FROM tax_codes WHERE id = ?', line.tax_code_id)) {
       throw new ValidationError(`Line ${i + 1}: tax code not found`);
     }
   }
+  if ([...ckdParts].some((id) => seen.has(id)))
+    throw new ValidationError('A CKD part also appears as a separate stock line. Use separate orders so warehouse cannot allocate it twice.');
   const links = [
     [type === 'sale' ? input.customer_id : null, 'customers', 'Customer'],
     [type === 'sale' ? input.location_id : null, 'locations', 'Ship-from location'],
@@ -182,12 +199,13 @@ function nextOrderNumber(type: OrderType): string {
   return nextSequence(`order_seq_${type}`, prefix);
 }
 
-function insertItems(orderId: number, lines: ReturnType<typeof computeTotals>['lines']): void {
+type CkdPart = { component_item_id: number; name: string; sku: string | null; unit: string | null; quantity: number };
+function insertItems(orderId: number, lines: ReturnType<typeof computeTotals>['lines'], existingCkd?: Map<number, CkdPart[]>): void {
   lines.forEach((l, i) => {
-    run(
+    const parent = run(
       `INSERT INTO order_items
-        (order_id, item_id, name, sku, description, quantity, unit, unit_price, line_total, tax_code_id, sort)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (order_id, item_id, name, sku, description, quantity, unit, unit_price, line_total, tax_code_id, sort, fulfillment_mode)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       orderId,
       l.item_id ?? null,
       l.name,
@@ -198,8 +216,18 @@ function insertItems(orderId: number, lines: ReturnType<typeof computeTotals>['l
       l.unit_price,
       l.line_total,
       l.tax_code_id ?? null,
-      i
+      i, l.fulfillment_mode ?? 'assembled'
     );
+    if (l.fulfillment_mode === 'ckd') {
+      const parts = existingCkd?.get(l.item_id!) ?? queryAll<CkdPart>(
+        `SELECT b.component_item_id, c.name, c.sku, c.unit, b.quantity FROM bom_components b
+         JOIN inventory_items c ON c.id = b.component_item_id WHERE b.product_item_id = ? ORDER BY b.sort, b.id`, l.item_id);
+      for (const part of parts) {
+        run(`INSERT INTO order_items (order_id, item_id, name, sku, quantity, unit, unit_price, line_total, sort, fulfillment_mode, parent_order_item_id)
+          VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, 'ckd_component', ?)`,
+        orderId, part.component_item_id, part.name, part.sku, part.quantity * l.quantity, part.unit, i, Number(parent.lastInsertRowid));
+      }
+    }
   });
 }
 
@@ -208,7 +236,7 @@ function insertItems(orderId: number, lines: ReturnType<typeof computeTotals>['l
 const BACKORDER_SQL = `
   o.type = 'sale' AND o.fulfilled_at IS NULL AND LOWER(o.status) IN ('approved', 'released')
   AND EXISTS (
-    SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL
+    SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode != 'ckd'
       AND oi.quantity > COALESCE(oi.released_qty, 0)
         + (SELECT COUNT(*) FROM job_order_units ju
             WHERE ju.order_id = o.id AND ju.product_item_id = oi.item_id AND ju.status IN ('reserved', 'sold'))
@@ -297,7 +325,8 @@ const RELEASE_STATES = new Set(['approved', 'released']);
 function physicalSaleNeedsSlip(orderId: number, next: string): boolean {
   if (!['confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'].includes(next)) return false;
   return !!queryOne('SELECT 1 FROM order_items WHERE order_id = ? AND item_id IS NOT NULL LIMIT 1', orderId)
-    && (!!queryOne('SELECT 1 FROM orders WHERE id = ? AND warehouse_accepted_at IS NOT NULL', orderId)
+    && (!!queryOne("SELECT 1 FROM order_items WHERE order_id = ? AND fulfillment_mode = 'ckd' LIMIT 1", orderId)
+      || !!queryOne('SELECT 1 FROM orders WHERE id = ? AND warehouse_accepted_at IS NOT NULL', orderId)
       || !!queryOne("SELECT 1 FROM deliveries WHERE order_id = ? AND status = 'delivered' LIMIT 1", orderId))
     && !queryOne('SELECT 1 FROM release_slips WHERE order_id = ? LIMIT 1', orderId);
 }
@@ -459,6 +488,9 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
   const { auth, state: authState } = currentAuthorization(id);
   let partial = false;
   if (String(order.status || '').toLowerCase() !== 'released') {
+    if (queryOne("SELECT 1 FROM order_items WHERE order_id = ? AND fulfillment_mode = 'ckd' LIMIT 1", id)) {
+      res.status(409).json({ error: 'Complete every CKD component before issuing a slip. CKD kits cannot be split mid-kit.', blocked: 'incomplete' }); return;
+    }
     if (!stands) {
       if (!(auth && authState === 'valid' && auth.partial_allowed)) {
         res.status(409).json({ error: 'Release every line of the order before issuing the release slip.', blocked: 'incomplete' });
@@ -502,7 +534,7 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
     const locationId = order.location_id ?? getDefaultLocationId();
     const leaving = new Map<number, number>();
     for (const line of queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ?', id)) {
-      if (line.item_id == null) continue;
+      if (line.item_id == null || line.fulfillment_mode === 'ckd') continue;
       const amount = partial ? Math.min(line.quantity, lineCoverage(id, line).units + lineCoverage(id, line).bulk) : line.quantity;
       leaving.set(line.item_id, (leaving.get(line.item_id) ?? 0) + amount);
     }
@@ -528,6 +560,11 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
     ).lastInsertRowid);
     for (const l of lines) {
       if (l.item_id == null) continue; // free-text / service lines — nothing physical leaves
+      if (l.fulfillment_mode === 'ckd') {
+        run(`INSERT INTO release_slip_items (slip_id, order_item_id, item_id, name, sku, unit, quantity)
+          VALUES (?, ?, NULL, ?, ?, ?, ?)`, slipId, l.id, `${l.name} (CKD)`, l.sku ?? null, l.unit ?? null, l.quantity);
+        continue;
+      }
       const serials = queryAll<{ identifier: string | null }>(
         `SELECT identifier FROM job_order_units
          WHERE order_id = ? AND product_item_id = ? AND status IN ('reserved', 'sold') ORDER BY id`,
@@ -597,10 +634,11 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
   }
   const input = parseBody(releaseOrderSchema, req.body);
   const lines = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ?', id);
-  const lineByItem = new Map(lines.filter((l) => l.item_id != null).map((l) => [l.item_id!, l]));
+  const physicalLines = lines.filter((l) => l.item_id != null && l.fulfillment_mode !== 'ckd');
+  const lineByItem = new Map(physicalLines.map((l) => [l.item_id!, l]));
   // The release payload identifies a product, not a sale line. Updating by item would
   // otherwise increment every duplicate line and count the same serial against each one.
-  if (lineByItem.size !== lines.filter((l) => l.item_id != null).length) {
+  if (lineByItem.size !== physicalLines.length) {
     res.status(409).json({ error: 'This order has the same stock item on multiple lines. Combine those lines before warehouse release.' });
     return;
   }
@@ -700,7 +738,7 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
     }
     // Auto-advance to 'released' once every line is fully covered.
     const fresh = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ?', id);
-    const allCovered = fresh.length > 0 && fresh.every((l) => !l.item_id || lineCoverage(id, l).covered
+    const allCovered = fresh.length > 0 && fresh.every((l) => !l.item_id || l.fulfillment_mode === 'ckd' || lineCoverage(id, l).covered
       || l.quantity <= (l.released_qty || 0));
     if (allCovered && String(order.status).toLowerCase() === 'approved') {
       run("UPDATE orders SET status = 'released', updated_at = datetime('now') WHERE id = ?", id);
@@ -889,6 +927,10 @@ router.post('/:id/purchase-shortfall', requireModule('purchasing'), requirePermi
 // POST /api/orders — create with auto number + computed totals
 router.post('/', requireAnyPermission(['orders.create', 'purchasing.manage']), createAccess, idempotency, syncClass('merge'), (req, res) => {
   const input = parseBody(createOrderSchema, req.body);
+  if (input.type === 'sale' && input.items.some((line) => line.fulfillment_mode === 'ckd')
+      && !['open', 'approved'].includes(String(input.status || 'open').toLowerCase())) {
+    res.status(409).json({ error: 'CKD goods must go through warehouse allocation and a release slip.', code: 'release_required' }); return;
+  }
   if (!canOnOrder(req.user!, input.type, 'create')) {
     res.status(403).json({ error: 'Forbidden: insufficient permissions' });
     return;
@@ -1050,10 +1092,22 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
   if (order.type === 'sale' && (order.released_at || order.fulfilled_at)) input.location_id = order.location_id;
   const cust = resolveCustomer(order.type, input);
   const storedItems = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', id);
+  const existingCkd = new Map<number, CkdPart[]>();
+  for (const parent of storedItems.filter((line) => line.fulfillment_mode === 'ckd')) {
+    const parts = storedItems.filter((line) => line.parent_order_item_id === parent.id).map((line) => ({
+      component_item_id: line.item_id!, name: line.name, sku: line.sku, unit: line.unit,
+      quantity: line.quantity / parent.quantity,
+    }));
+    if (parent.item_id && parts.length) existingCkd.set(parent.item_id, parts);
+  }
   const sourceItems = lockLines ? storedItems : input.items ?? storedItems;
+  if (order.type === 'sale' && ['confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'].includes(String(input.status || '').toLowerCase())
+      && sourceItems.some((line) => line.fulfillment_mode === 'ckd') && !queryOne('SELECT 1 FROM release_slips WHERE order_id = ?', id)) {
+    res.status(409).json({ error: 'CKD goods must go through warehouse allocation and a release slip.', code: 'release_required' }); return;
+  }
   // Validate effective lines: a locked order retains its original stock links.
   // Legacy repeated lines can still have their header saved without rewriting them.
-  validateOrderLinks(order.type, { ...input, items: lockLines ? [] : sourceItems });
+  validateOrderLinks(order.type, { ...input, items: lockLines ? [] : sourceItems }, existingCkd);
   const taxPct = lockLines ? order.tax_percent : input.tax_percent;
   const { lines, subtotal, tax_amount, total } = computeTotals(sourceItems, taxPct);
 
@@ -1083,7 +1137,7 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
     );
     if (!lockLines && input.items) {
       run('DELETE FROM order_items WHERE order_id = ?', id);
-      insertItems(id, lines);
+      insertItems(id, lines, existingCkd);
     }
 
     // Stock-availability gate: moving a sale order to a firm status (approve / confirm /

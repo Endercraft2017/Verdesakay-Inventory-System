@@ -258,6 +258,9 @@ export interface CreditNote {
 export interface LocationRow {
   id: number;
   name: string;
+  parent_id: number | null;
+  path?: string;
+  depth?: number;
   type: string;
   address: string | null;
   notes: string | null;
@@ -267,6 +270,9 @@ export interface LocationRow {
   /** Joined in by GET /api/locations. */
   total_units?: number;
   item_count?: number;
+  subtree_units?: number;
+  subtree_item_count?: number;
+  child_count?: number;
   /** Room in units of stock (location_capacities), null = no limit. */
   capacity?: number | null;
 }
@@ -292,6 +298,7 @@ export interface InventoryItem {
    *  when a job order posts to the GL (ACCOUNTING-SYSTEM-PLAN Phase 3b). 0 until set. */
   unit_cost: number;
   location: string | null;
+  preferred_location_id: number | null;
   notes: string | null;
   /** Raw JSON string in the DB row; parsed to an object in API responses. */
   attributes: string | Record<string, unknown> | null;
@@ -951,6 +958,8 @@ export interface OrderItem {
   id: number;
   order_id: number;
   item_id: number | null;
+  fulfillment_mode: 'assembled' | 'semi_built' | 'ckd' | 'ckd_component';
+  parent_order_item_id: number | null;
   name: string;
   sku: string | null;
   description: string | null;

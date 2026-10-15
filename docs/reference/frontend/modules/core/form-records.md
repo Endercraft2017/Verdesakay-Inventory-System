@@ -1,5 +1,17 @@
 # `public/js/views/form-records.js`
 
+Payslip review now separates deliberate adjustments from viewing: open Adjust payslip deductions to set exact per-payslip SSS, PhilHealth, Pag-IBIG or withholding-tax overrides. Blank restores automatic calculation, zero explicitly overrides to zero, and Save Deductions persists changes. Previews do not save; overrides survive regeneration. Paid slips remain locked. Saving deductions blocks dismissal and defers navigation until the request finishes. Printing waits for the latest valid preview, uses the normal deduction labels and final amounts, and does not save draft adjustments. Employer contributions stay computed separately. Imported slips without matching attendance context still show their stored review and provide an explicit imported-value adjustment action.
+
+Payroll CSV upload first previews rows, totals and existing employee/period matches. Duplicate imports require explicit confirmation; the API rechecks matches at commit time. It never replaces existing payslips. Form setup uses Details, Fields, Printing and Automation tabs with live form preview and field ordering. HR starters appear only under HR; shared template values are labelled as workspace-wide.
+
+
+Current workflow: Documents → Data Forms is the canonical hub. Section shortcuts open the same hub with a section filter; Form Builder remains section-owned. Index search/section and record search/status/period filters are kept in the URL. Returning from a record restores the index filter. Payroll readers can browse the HR section without receiving Form Builder access; failed index loads offer Retry with the same section and query.
+
+Data Forms, Form Builder, and desktop/mobile HR requests share `public/js/lib/form-validation.js`: errors appear beside each affected field and in a linked summary at the top. Error links focus the control and reveal its setup tab when necessary; correcting one field clears its error without losing other input. Required checkboxes must be checked. `npm run test:forms:ux` verifies actual-app payroll and forms workflows plus desktop/mobile accessibility using a disposable database.
+
+Bulk deletion, status changes, and payroll paid/unpaid operations use one review listing affected records, eligible counts and exclusions. Locked paid payslips are excluded from deletion/status changes. Results report individual failures and action warnings; failed records remain selected when still visible. Delete visible and Print visible operate on the currently loaded filter, while selected actions operate on checked rows. Edits preserve existing status; use Change status separately.
+
+
 ## Purpose
 Displays submitted records for admin-defined custom forms (`form_definitions` /
 `form_records`). Without a specific form selected it's an index card grid to pick a form;
@@ -54,7 +66,7 @@ returning to the index), form name, search box (debounced 250ms, matches record 
 server-side), status `<select>` (`draft/submitted/approved/rejected/completed`), and — only
 if `isPayroll` — a period `<select>` (populated from `GET
 /form-definitions/:id/periods`, refreshed every `load()`), an "Upload CSV" button, and a
-"Print All" button. A "Delete Period" button and "New Record" button are always present.
+"Print visible" button. A "Delete visible" button and "New Record" button are always present.
 
 **Bulk-action bar** (`#fr-bulk-bar`, hidden unless `selectedIds.size > 0`): selection
 count, "Print selected" (payroll only), "Delete selected", "Clear".

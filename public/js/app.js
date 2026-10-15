@@ -299,6 +299,13 @@ const App = (() => {
 
   /** Find the first {primary, subtab, leaf} matching a route (+ optional filter). */
   function findLeaf(route, filter) {
+    // Section links are shortcuts into the same Documents hub, including deep links.
+    if (route === 'form-records') {
+      const primary = NAV.find((item) => item.id === 'docs');
+      const subtab = primary?.subtabs.find((item) => item.id === 'custom-forms');
+      const leaf = subtab?.tree.find((item) => item.route === route);
+      if (leaf) return { primary, subtab, leaf };
+    }
     let routeFallback = null;
     for (const primary of NAV) {
       for (const subtab of primary.subtabs) {
@@ -435,6 +442,7 @@ const App = (() => {
     // Reflect in the URL without triggering a re-navigation.
     suppressHash = true;
     location.hash = hashFor(name, filter);
+    renderedLocation = { name, route: name, filter };
     suppressHash = false;
 
     // Repaint chrome.
@@ -454,6 +462,11 @@ const App = (() => {
     Promise.resolve(routes[name](view, filter)).catch((e) => {
       view.innerHTML = `<div class="empty">Failed to load: ${UI.esc(e.message)}</div>`;
     });
+  }
+
+  function replaceFilters(name, filter) {
+    history.replaceState(null, '', '#' + hashFor(name, filter));
+    renderedLocation = { name, route: name, filter };
   }
 
   /* ---------- Menu search + site map ---------- */
@@ -678,7 +691,7 @@ const App = (() => {
   }
 
   return {
-    register, navigate, canAccessRoute, getMe, getDepartments, isAdmin, hasPermission, hasModule, showLogin, refreshUnread,
+    register, navigate, replaceFilters, canAccessRoute, getMe, getDepartments, isAdmin, hasPermission, hasModule, showLogin, refreshUnread,
     logout, boot, reloadDepartments, setMe, currentLocation,
     _routeNames: () => Object.keys(routes), // test/debug seam
   };

@@ -33,7 +33,7 @@ function boot(module?: string, get: (p: string) => unknown = () => [], permissio
     },
     del: async () => ({}),
   };
-  w.eval(read('js/ui.js') + '\nwindow.auditUI=UI;\n' + (module ? read(module) : ''));
+  w.eval(read('js/ui.js') + '\n' + read('js/lib/data-forms.js') + '\n' + read('js/lib/form-validation.js') + '\nwindow.auditUI=UI;\n' + (module ? read(module) : ''));
   const ui = w.auditUI;
   ui.toast = () => {};
   return { w, ui, routes, posts, navigations, view: w.document.getElementById('view') };

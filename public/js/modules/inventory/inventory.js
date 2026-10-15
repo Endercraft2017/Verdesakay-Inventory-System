@@ -58,7 +58,71 @@ async function loadLocations(force) {
 }
 function locationOptions(selected, list) {
   return (list || _locations).map((l) =>
-    `<option value="${l.id}" ${String(l.id) === String(selected) ? 'selected' : ''}>${UI.esc(l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('');
+    `<option value="${l.id}" ${String(l.id) === String(selected) ? 'selected' : ''}>${UI.esc(l.path || l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('');
+}
+
+/** New items start at a root. Each extra level is revealed only when requested.
+ * New child names are sent with the item so the server can save everything atomically. */
+function wireStartingLocationPicker(overlay) {
+  const host = overlay.querySelector('[data-start-location]');
+  if (!host) return () => null;
+  const roots = _locations.filter((l) => !l.parent_id);
+  const root = host.querySelector('[data-root-location]');
+  root.innerHTML = roots.map((l) => `<option value="${l.id}">${UI.esc(l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('');
+  const defaultLoc = _locations.find((l) => l.is_default);
+  let defaultRoot = defaultLoc;
+  while (defaultRoot?.parent_id) defaultRoot = _locations.find((l) => l.id === defaultRoot.parent_id);
+  if (defaultRoot) root.value = String(defaultRoot.id);
+  const levels = host.querySelector('[data-location-levels]');
+  const add = host.querySelector('[data-add-location-level]');
+  const selection = () => {
+    let locationId = Number(root.value) || null;
+    const newLevels = [];
+    let incomplete = false;
+    for (const row of levels.querySelectorAll('[data-location-row]')) {
+      const value = row.querySelector('select').value;
+      if (!value) break;
+      if (value === '__new__') {
+        const name = row.querySelector('input').value.trim();
+        if (!name) { incomplete = true; break; }
+        newLevels.push(name);
+      } else if (!newLevels.length) locationId = Number(value);
+    }
+    return { locationId, newLevels, incomplete };
+  };
+  const refresh = () => {
+    const depth = 1 + levels.querySelectorAll('select').length;
+    const last = [...levels.querySelectorAll('select')].at(-1);
+    add.style.display = depth >= 5 ? 'none' : '';
+    add.disabled = !root.value || !!(last && (!last.value || selection().incomplete));
+  };
+  root.onchange = () => { levels.innerHTML = ''; refresh(); };
+  add.onclick = () => {
+    const current = selection();
+    const children = current.newLevels.length ? [] : _locations.filter((l) => l.parent_id === current.locationId);
+    const level = 2 + levels.querySelectorAll('select').length;
+    const wrap = document.createElement('div');
+    wrap.className = 'form-field';
+    wrap.dataset.locationRow = '';
+    wrap.innerHTML = `<label>Level ${level} (optional)</label><select data-child-location>
+      <option value="">Use level ${level - 1}</option>
+      ${children.map((l) => `<option value="${l.id}">${UI.esc(l.name)}</option>`).join('')}
+      <option value="__new__">+ Create new sublocation…</option></select>
+      <input data-new-location maxlength="120" placeholder="Name for level ${level}" style="display:none;margin-top:8px" />`;
+    levels.appendChild(wrap);
+    const select = wrap.querySelector('select');
+    const name = wrap.querySelector('input');
+    select.onchange = () => {
+      while (wrap.nextElementSibling) wrap.nextElementSibling.remove();
+      name.style.display = select.value === '__new__' ? '' : 'none';
+      if (select.value === '__new__') name.focus();
+      refresh();
+    };
+    name.oninput = refresh;
+    refresh();
+  };
+  refresh();
+  return selection;
 }
 
 /** Current value of a field for an item (or its default for a new item). */
@@ -304,7 +368,7 @@ App.register('inventory', async (view, filter) => {
     const sel = view.querySelector('#inv-location');
     if (!sel) return;
     sel.innerHTML = '<option value="">— Location —</option>' +
-      _locations.map((l) => `<option value="${l.id}" ${String(l.id) === String(state.location_id) ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('');
+      _locations.map((l) => `<option value="${l.id}" ${String(l.id) === String(state.location_id) ? 'selected' : ''}>${UI.esc(l.path || l.name)}</option>`).join('');
   }
 
   async function loadCategories() {
@@ -603,7 +667,8 @@ App.register('inventory', async (view, filter) => {
     push('Department', it.department_name);
     push('Supplier', it.supplier_name);
     push('Unit', it.unit);
-    push('Location', it.location);
+    push('Preferred storage location', it.preferred_location_name);
+    push('Legacy location note', it.location);
     push('Currency', attrs.currency);
     push('Purchase price', attrs.purchase_price);
     push('Sale price', attrs.sale_price);
@@ -688,20 +753,33 @@ App.register('inventory', async (view, filter) => {
   async function itemModal(it, onCreated) {
     const cfg = await loadItemFormConfig();
     await loadSuppliers(true); // pick list must be current when the form renders
+    await loadLocations(true);
     const canCustomize = App.hasPermission('inventory.configure');
     const editing = !!(it && it.id);
     let imageState = null;
+    let startingLocation = () => null;
     const m = UI.modal({
       title: editing ? 'Edit item' : 'New item',
       helpTopic: 'new-item',
       size: 'lg',
       headActionHTML: canCustomize ? `<button class="btn secondary small" id="item-option-btn">Option</button>` : '',
-      bodyHTML: `<div id="item-form-host">${renderItemFormBody(_itemFormConfig, it)}</div>`,
+      bodyHTML: `<div id="item-form-host">${renderItemFormBody(_itemFormConfig, it)}</div>${editing ? `
+        <div class="form-field" style="margin-top:14px"><label>Preferred storage location</label>
+          <select data-preferred-location><option value="">No preference</option>${locationOptions(it.preferred_location_id, _locations)}</select>
+          <p class="muted" style="font-size:12px">Changing the preference does not move existing stock. Use Transfer stock for that.</p></div>` : `
+        <div class="form-field" data-start-location style="margin-top:14px">
+          <label>Preferred / starting-stock location <span class="req">*</span></label>
+          <select data-root-location></select>
+          <div data-location-levels></div>
+          <button type="button" class="btn secondary small" data-add-location-level style="margin-top:8px">+ Add level</button>
+          <p class="muted" style="font-size:12px">Extra levels are optional. Choose an existing sublocation or create one here. Starting stock goes to the last selected level.</p>
+        </div>`}`,
       confirmText: editing ? 'Save changes' : 'Create item',
       onOpen: (overlay) => {
         wireItemFormTabs(overlay);
         wireItemComboboxes(overlay);
         imageState = wireItemImageField(overlay, it);
+        startingLocation = wireStartingLocationPicker(overlay);
         const opt = overlay.querySelector('#item-option-btn');
         if (opt) opt.addEventListener('click', () => openItemOptions(overlay, it));
       },
@@ -719,6 +797,13 @@ App.register('inventory', async (view, filter) => {
         }
         const { core, attributes } = collectItemForm(overlay, _itemFormConfig, it);
         const body = { ...core, attributes };
+        if (!editing) {
+          const choice = startingLocation();
+          if (!choice?.locationId) { showErr('Create a stock location before adding an item'); return false; }
+          if (choice.incomplete) { showErr('Enter a name for each new sublocation'); return false; }
+          body.location_id = choice.locationId;
+          body.new_location_levels = choice.newLevels;
+        } else body.preferred_location_id = Number(overlay.querySelector('[data-preferred-location]').value) || null;
         let id;
         if (editing) {
           delete body.quantity; // stock changes go through the adjust modal

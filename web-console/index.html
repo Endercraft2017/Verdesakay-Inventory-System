@@ -12,6 +12,7 @@
     --chip: #eef1f6; --shadow: 0 1px 2px rgba(20,30,45,.06), 0 8px 24px rgba(20,30,45,.08);
   }
   @media (prefers-color-scheme: dark) {
+    :root { color-scheme: dark; }
     :root {
       --bg: #12151a; --panel: #1b1f26; --ink: #e7eaef; --muted: #97a0ac; --line: #2b313b;
       --accent: #5b8cf5; --chip: #262b34; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
@@ -167,6 +168,7 @@
   .price-grid label { font-weight: 400; font-size: 12px; }
   .awaiting-note { border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
 </style>
+  <link rel="stylesheet" href="/css/select-controls.css" />
 </head>
 <body>
 

@@ -12,7 +12,7 @@ import { getRole } from '../../shared/roles';
 import { canOnOrder, visibleOrderTypes } from '../inventory/order-access';
 import { applyStockChange, stockAt, getDefaultLocationId } from '../inventory/inventory-stock';
 import { parseBody, createUserSchema, updateUserSchema, createItemSchema, updateItemSchema } from '../../shared/validation';
-import { visibilityClause } from '../../core/forms.routes';
+import { visibilityClause } from '../../core/file-visibility';
 import { analyticsToolsForUser, isAnalyticsTool, executeAnalyticsTool } from './ai-analytics';
 import { reportingToolsForUser, isReportingTool, executeReportingTool } from './ai-reporting';
 import { ragToolsForUser, isRagTool, executeRagTool } from './ai-rag';

@@ -106,8 +106,9 @@ const NAV = [
         ],
       },
       {
-        id: 'form-setup', label: 'Form Builder', requiredPermission: 'forms.manage.inventory',
+        id: 'form-setup', label: 'Forms', requiredPermission: 'forms.manage.inventory',
         tree: [
+          { label: 'Data Forms', icon: 'forms', route: 'form-records', filter: { scope: 'inventory' } },
           { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'inventory' } },
         ],
       },
@@ -228,12 +229,6 @@ const NAV = [
         ],
       },
       {
-        id: 'memos', label: 'HR Forms', requiredPermission: 'forms.manage.hr',
-        tree: [
-          { label: 'HR Forms', icon: 'alert', route: 'form-records', filter: { scope: 'hr' } },
-        ],
-      },
-      {
         id: 'timekeeping', label: 'Time Keeping',
         tree: [
           { label: 'Time Keeping', icon: 'calendar', route: 'hr-timekeeping' },
@@ -253,8 +248,9 @@ const NAV = [
         tree: [{ label: 'Identified Reports', icon: 'alert', route: 'identified-reports' }],
       },
       {
-        id: 'form-setup', label: 'Form Builder', requiredPermission: 'forms.manage.hr',
+        id: 'form-setup', label: 'HR Forms', requiredPermission: 'forms.manage.hr',
         tree: [
+          { label: 'Data Forms', icon: 'forms', route: 'form-records', filter: { scope: 'hr' } },
           { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'hr' } },
         ],
       },
@@ -290,8 +286,9 @@ const NAV = [
         ],
       },
       {
-        id: 'form-setup', label: 'Form Builder', requiredPermission: 'forms.manage.accounting',
+        id: 'form-setup', label: 'Forms', requiredPermission: 'forms.manage.accounting',
         tree: [
+          { label: 'Data Forms', icon: 'forms', route: 'form-records', filter: { scope: 'accounting' } },
           { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'accounting' } },
         ],
       },
@@ -329,8 +326,9 @@ const NAV = [
         ],
       },
       {
-        id: 'form-setup', label: 'Form Builder', requiredPermission: 'forms.manage.admin',
+        id: 'form-setup', label: 'Forms', requiredPermission: 'forms.manage.admin',
         tree: [
+          { label: 'Data Forms', icon: 'forms', route: 'form-records', filter: { scope: 'admin' } },
           { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'admin' } },
         ],
       },

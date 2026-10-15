@@ -76,7 +76,9 @@ already holds into the bucket after each minute sweep — deletes under `without
 (`sync/authority.ts`) so PCs keep their copies — then VACUUMs once. Never in the bucket:
 `.sync-blobs/` (keep DB copies), and kept on disk: `kiosk-punches/`, plain-text files
 (`TEXT_EXT`, the AI index reads them synchronously). Quota counts each file once wherever it is.
-Tests: `tests/file-store.test.ts`, `tests/upload-offload.test.ts` (fake S3).
+Chat attachments retain their database bytes until the bucket confirms storage; a failed upload
+keeps the recoverable database copy. Tests: `tests/file-store.test.ts`,
+`tests/upload-offload.test.ts` (fake S3), `tests/message-upload-durability.test.ts`.
 **Desk-scoped reads (`shared/desk-access.ts`):** the one list of which shop-floor desks (LINE,
 INSPECT, PARTS, RTS, RELEASE) may read which shared data — user decision 2026-10-06, "a floor role
 sees only its own desk". The broad `inventory.view` / `production.view` still open everything; a
@@ -300,7 +302,9 @@ login, user/department admin, documents & templates, forms engine, real-time 1:1
 messaging (conversations, reply, edit, reactions, sender-only soft delete, link/file
 previews — see `messages.routes.ts` below and `shared/ws.ts`), attachments, bug reports,
 personal notes/tasks, announcements, activity log, analytics, push-reminder routes.
-**Owned files:** `doc-catalog.ts`, `form-actions.ts`, routes: `auth.routes.ts`,
+**Owned files:** `doc-catalog.ts`, `form-actions.ts`, `file-visibility.ts`,
+`data-forms/` (definition, record, and global-variable routers plus shared scope policy
+and self-service request types; composed by `form-builder.routes.ts`), routes: `auth.routes.ts`,
 `users.routes.ts`, `attachments.routes.ts`, `bug-reports.routes.ts`, `forms.routes.ts`,
 `form-builder.routes.ts`, `messages.routes.ts`, `personal.routes.ts`,
 `templates.routes.ts`, `doc-studio.routes.ts`, `doc-template-version.ts`,
@@ -319,6 +323,11 @@ kept, flagged; a leave approval past the cloud's balance stands, flagged). The f
 **Offline (sync/, phase 4c):** `POST /api/attachments` is `physical`, and the photo travels with the
 command via `syncUpload`. Deleting one is a company-wide `claim`; an installed PC keeps the file until
 the cloud confirms. The other core routes are not classed yet.
+**Form validation (`public/js/lib/form-validation.js`):** shared by Data Forms, Form Builder,
+desktop HR requests and mobile requests. Inline errors are linked through `aria-describedby`; a
+summary focuses the affected control and reveals hidden setup panels. Required checkboxes mean
+checked, not merely present. The mobile shell precaches the helper. Actual-app browser coverage:
+`npm run test:forms:ux` (disposable database, reports/screenshots under `work/forms-ux`).
 **Public interface:** standard REST routes mounted with no `requireModule()` gate.
 `messages.routes.ts` also calls `shared/ws.ts`'s `broadcast()` after each mutation for
 live chat updates — VOIP/calling is explicitly out of scope for this feature (deferred as
@@ -965,7 +974,7 @@ report/docx generation, FTS5 RAG over documents, HR-form proposals, sending mail
 `ai-rag.ts`, `ai-reporting.ts`, `ai-tools.ts`, `rag.ts`, `reporting.ts` (generic
 markdown/docx rendering, used only by `ai-reporting.ts` today), routes: `ai.routes.ts`.
 **Dependencies:** `shared/`, `modules/inventory` (`ai-tools.ts` calls stock-mutation
-functions directly), `core/` (the `visibilityClause` wart noted above).
+functions directly), `core/` (`file-visibility.ts`).
 **Confirm before run:** data-changing / sending tools (`CONFIRM_TOOLS` in `ai.routes.ts`) become
 `ai_pending_actions` rows shown as Confirm / Cancel cards; `POST /ai/actions/:id/confirm` runs one once,
 as the person, with their current permissions (prompt-injection guard).
@@ -1225,6 +1234,14 @@ Wide desktop Home now uses one command row with stroke icons for Clipboard and E
 
 Heading controls now say Body text, Main heading (H1), Subheading (H2), with deeper levels grouped separately. Headings & styles opens a Style gallery: preview cards explain paragraph roles and show font/size metadata; separate named pencil controls edit reusable formatting. Existing command/style keys and saved markup are unchanged.
 
+Insert symbol uses a scoped responsive grid with centered glyphs, consistent 48px-high buttons, descriptive names/tooltips and themed hover/focus. Narrow screens use five columns. Symbol insertion keeps the existing selection/history path.
+
+Company header divider controls appear in Inspect for the header or text inside it. Clicking the bottom 12px of a .doc-head opens Inspect without moving the caret. Users can remove the border or change thickness, style and color while preserving company fields. Locked header controls are disabled and handlers reject edits.
+
+Insert includes a quick Variable button in a Fields group. It and the persistent Variables sidebar action share the same picker/insert command; the shortcut remembers the caret and does not clone sidebar controls.
+
+Variable chips with trailing whitespace now insert as a DOM fragment through the existing atomic command adapter, keeping them inside the selected paragraph at its end. The shared fix applies to both picker launchers and preserves Undo.
+
 ### Mobile release acceptance/allocation recovery (2026-10-15)
 
 `inventory/release-actions.js` uses scoped IndexedDB action records for exact
@@ -1237,3 +1254,13 @@ use `free_to_allocate`. Existing backend permissions, reservation and release-sl
 stock semantics remain in force; no schema changes. Tests: mobile frontend,
 `order-release.test.ts`, `release-slips.test.ts`, `release-auth.test.ts` and draft/PWA
 checks. Final slip/proof recovery, mobile allocation undo and delivery remain open.
+
+### Mobile compatibility after branch integration (2026-10-15)
+
+QA holds expose frozen final-pass checks alongside prior answers for narrow hold
+reviewers. Mobile prefills status/readings, blocks incomplete Pass decisions and
+persists reviewed answers with the original hold episode/key. CKD release screens
+show parent manifests/child demand, allocate only physical child lines and prevent
+assembled-parent substitution or partial kit handoff. Retained RTS payloads remain
+compatible with the remote atomic Products In endpoint. Both histories' PWA assets
+are included under v97. Tests cover hold-check retry, CKD guards and backend contracts.

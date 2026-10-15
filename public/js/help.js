@@ -64,7 +64,7 @@
     },
     {
       id: 'hr-forms', title: 'HR request forms and notices', group: 'HR', routes: [],
-      html: `<p><b>HR → Memos &amp; Notices</b> opens HR Data Forms, including leave, overtime, offset, undertime and notices.</p><ol><li>Choose the form and create or review its records (needs <i>forms.manage.hr</i>).</li><li>Complete the employee, date and request details, then use the available approval actions.</li><li>In <b>Time Keeping</b>, link the approved request to the appropriate attendance day. Saving a form alone does not attach it to attendance.</li></ol>`,
+      html: `<p><b>HR → HR Forms</b> opens HR Data Forms, including leave, overtime, offset, undertime and notices.</p><ol><li>Choose the form and create or review its records (needs <i>forms.manage.hr</i>).</li><li>Complete the employee, date and request details, then use the available approval actions.</li><li>In <b>Time Keeping</b>, link the approved request to the appropriate attendance day. Saving a form alone does not attach it to attendance.</li></ol>`,
     },
     {
       id: 'stock-movements', title: 'Stock Movements', group: 'Inventory', routes: ['inventory-movements'],
@@ -117,7 +117,7 @@
     },
     {
       id: 'hr-overview', title: 'Human Resources overview', group: 'HR', routes: ['hr'],
-      html: `<p>HR → Overview summarises employees, attendance and HR work.</p><ol><li>Open an attendance summary to view the matching Daily Report.</li><li>Use Employees for staff records and Time Keeping for cutoff attendance and payroll.</li><li>Payroll and Memos & Notices open their respective Data Forms.</li></ol>`,
+      html: `<p>HR → Overview summarises employees, attendance and HR work.</p><ol><li>Open an attendance summary to view the matching Daily Report.</li><li>Use Employees for staff records and Time Keeping for cutoff attendance and payroll.</li><li>Payroll and HR Forms open their respective Data Forms.</li></ol>`,
     },
     {
       id: 'kiosk', title: 'Time-in Kiosk', group: 'HR', routes: ['hr-kiosk'],

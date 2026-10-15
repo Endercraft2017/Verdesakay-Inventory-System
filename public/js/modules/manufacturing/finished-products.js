@@ -599,7 +599,7 @@ App.register('finished-products', async (view, filter) => {
           </select></div>
         <div data-f="locwrap" style="display:none"><label>Destination location</label>
           <select data-f="loc"><option value="">— select —</option>
-            ${locs.map((l) => `<option value="${l.id}">${UI.esc(l.name)}</option>`).join('')}
+            ${locs.map((l) => `<option value="${l.id}">${UI.esc(l.path || l.name)}</option>`).join('')}
           </select></div>
         <div><label>Note (optional)</label><input data-f="note" /></div>`,
       confirmText: 'Apply',

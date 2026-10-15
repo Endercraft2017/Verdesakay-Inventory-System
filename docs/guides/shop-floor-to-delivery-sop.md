@@ -635,3 +635,15 @@ company has no proof if the customer disputes the delivery.
 - `mobile-warehouse-app.md`: the phone app in general (install, scanner, offline queue).
 - `docs/modules/pipelines.md`: the system's pipeline map (Production run, Sales order
   fulfillment).
+
+### Merged QA and CKD contracts (2026-10-15)
+
+Before passing a held unit, review its frozen final-pass checks. Every required
+check must be Pass, and passed measured checks require a reading. Answers retained
+on the hold are prefilled; the exact reviewed answers accompany original-key
+recovery. Rectify and Fail keep their existing paths.
+
+A CKD sale shows the parent kit as a manifest and allocates its physical component
+lines. Assembled parent stock does not satisfy the kit. Every component is required
+before handoff; partial CKD release is unavailable. Component returns restore
+components rather than a built unit. Final mobile slip/proof recovery remains open.

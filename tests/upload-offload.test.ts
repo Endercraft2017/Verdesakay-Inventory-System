@@ -59,7 +59,7 @@ afterAll(() => {
 });
 
 describe('uploads with a file bucket', () => {
-  it('sends a new upload to the bucket straight away and keeps no bytes in the database', async () => {
+  it('sends uploads to the bucket and clears chat database bytes only after storage confirms', async () => {
     const id = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'Bucket item', quantity: 1 })).body.id as number;
     const res = await ctx.api.post(`/api/inventory/${id}/image`).set(H()).attach('image', Buffer.from('item-photo'), 'p.png');
     expect(res.status).toBe(200);
@@ -73,8 +73,11 @@ describe('uploads with a file bucket', () => {
     expect(send.status).toBe(201);
     const att = conn().prepare('SELECT id, stored_name, data FROM message_attachments WHERE message_id = ?').get(send.body.id) as
       { id: number; stored_name: string; data: Uint8Array | null };
-    expect(att.data).toBeNull();
     expect(await waitFor(() => fake.objects.has(`files/${att.stored_name}`))).toBe(true);
+    expect(await waitFor(() => {
+      const saved = conn().prepare('SELECT data FROM message_attachments WHERE id = ?').get(att.id) as { data: Uint8Array | null };
+      return saved.data === null;
+    })).toBe(true);
 
     // Lost from disk outside the app: still served, from the bucket.
     fs.unlinkSync(path.join(up, att.stored_name));

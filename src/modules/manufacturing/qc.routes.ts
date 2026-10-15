@@ -203,7 +203,14 @@ router.get('/holds', requireAnyPermission(['inventory.adjust', 'production.inspe
   res.json(rows.map((r) => {
     let items: Array<{ label: string; status?: string; note?: string | null }> = [];
     try { items = r.checklist ? JSON.parse(r.checklist) : []; } catch { items = []; }
-    return { ...r, checklist: undefined, issues: items.filter((i) => i.status === 'issue').map((i) => ({ label: i.label, note: i.note ?? null })) };
+    const job = queryOne<{ product_item_id: number | null; qc_checklist_qc_snapshot: string | null; qc_checklist_qa_snapshot: string | null }>('SELECT product_item_id, qc_checklist_qc_snapshot, qc_checklist_qa_snapshot FROM job_orders WHERE id = ?', r.job_order_id);
+    const frozen = (stage: 1 | 2): QcChecklistItem[] => {
+      const raw = stage === 1 ? job?.qc_checklist_qc_snapshot : job?.qc_checklist_qa_snapshot;
+      if (raw) { try { return (JSON.parse(raw) as { items?: QcChecklistItem[] }).items ?? []; } catch { return []; } }
+      return checklistForProduct(job?.product_item_id, stage)?.items ?? [];
+    };
+    const checks = [...(r.qc_stages <= 1 ? frozen(1) : []), ...frozen(2)];
+    return { ...r, checks, checklist: items, issues: items.filter((i) => i.status === 'issue').map((i) => ({ label: i.label, note: i.note ?? null })) };
   }));
 });
 

@@ -36,10 +36,12 @@
   function fail(btn, text) { return function (err) { mToast((err && err.message) || 'Failed', 'err'); if (btn) { btn.disabled = false; if (text) btn.textContent = text; } }; }
   function key() { return 'rel-' + (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)); }
 
+  function physical(l) { return l.item_id && l.fulfillment_mode !== 'ckd'; }
+  function manifest(c) { return c.lines.filter(function (l) { return l.fulfillment_mode === 'ckd'; }).map(function (l) { return R.field('CKD kit — components must be allocated', l.quantity + ' × ' + l.name) + R.lines(c.lines.filter(function (part) { return part.parent_order_item_id === l.id; }).map(function (part) { return { name: part.name, qty: part.quantity, ok: (part.released_qty || 0) >= part.quantity }; })); }).join(''); }
   /** Units needed / allocated across the order's stock lines. */
   function progress(c) {
     var need = 0, got = 0;
-    c.lines.forEach(function (l) { if (!l.item_id) return; need += Number(l.quantity) || 0; got += Math.min(Number(l.quantity) || 0, (l.units || 0) + (l.released_qty || 0)); });
+    c.lines.forEach(function (l) { if (!physical(l)) return; need += Number(l.quantity) || 0; got += Math.min(Number(l.quantity) || 0, (l.units || 0) + (l.released_qty || 0)); });
     return { need: need, got: got, complete: need > 0 && got >= need };
   }
   /** Why this order can't be released right now (authorization), or null. */
@@ -167,9 +169,9 @@
     var p = progress(c);
     var body = page(view, '78:109', 'Scan physical units', 'Every serial must match this release order');
     function free(l) { var a = (c.availability || []).find(function (a) { return a.item_id === l.item_id; }); return a ? Math.max(0, Math.min(l.quantity - (l.released_qty || 0), a.free_to_allocate)) : 0; }
-    var bulk = c.lines.filter(function (l) { return l.item_id && !l.serialized && (l.released_qty || 0) < l.quantity; });
+    var bulk = c.lines.filter(function (l) { return physical(l) && !l.serialized && (l.released_qty || 0) < l.quantity; });
     body.innerHTML =
-      '<button type="button" class="rk-identify"><span class="frame" aria-hidden="true"></span><b>Scan the unit serial label</b><small>' + p.got + ' of ' + p.need + ' allocated units ready</small></button>' +
+      manifest(c) + '<button type="button" class="rk-identify"><span class="frame" aria-hidden="true"></span><b>Scan the unit serial label</b><small>' + p.got + ' of ' + p.need + ' allocated units ready</small></button>' +
       '<label class="rk-card rk-field" data-manual hidden><small>Serial (manual)</small><div class="rk-search"><input class="rk-input" style="margin:0" data-code placeholder="Type the serial"><button type="button" class="rk-back" data-find style="padding:0">Check</button></div></label>' +
       (c.units.length ? '<div class="rk-checks">' + c.units.map(function (u) {
         return '<div class="rk-check-row"><button type="button" data-unit="' + mEsc(u.identifier || '') + '"><span class="rk-state pass" aria-hidden="true">✓</span><b>' + mEsc(u.identifier || 'Unit #' + u.id) + '</b>' +
@@ -216,6 +218,7 @@
       if (r.state !== 'allocated' && r.state !== 'available') { blockedView(view, c, code, r); return; }
       if (location.hash.split('?')[0] !== '#/so' || Number(new URLSearchParams(location.hash.split('?')[1]).get('id')) !== c.order.id) return;
       var u = r.unit, p = progress(c);
+      if (!c.lines.some(function (l) { return physical(l) && l.item_id === u.product_item_id; })) { blockedView(view,c,code,{ state: 'wrong_product', error: 'Allocate the CKD component lines, not the assembled parent product.', unit: u }); return; }
       if (u.location_id != null && c.order.location_id != null && u.location_id !== c.order.location_id) { blockedView(view,c,code,{ state: 'refused', error: 'Unit is at a different warehouse. Transfer it before allocating.', unit: u }); return; }
       var body = page(view, '78:147', 'Verify allocated unit', 'Match the physical unit and stock record');
       var idx = c.units.map(function (x) { return x.id; }).indexOf(u.id);
@@ -246,7 +249,7 @@
       unavailable: ['Unit not available', 'This unit is ' + (r.unit ? r.unit.status : 'not in stock') + ' — it can’t leave as ready-to-sell stock.'],
       refused: ['Allocation refused', r.error || 'The server refused this unit.'],
     }[r.state] || ['Blocked', ''];
-    var expected = c.lines.filter(function (l) { return l.item_id && (l.units || 0) + (l.released_qty || 0) < l.quantity; });
+    var expected = c.lines.filter(function (l) { return physical(l) && (l.units || 0) + (l.released_qty || 0) < l.quantity; });
     body.innerHTML =
       '<div class="rk-block"><span class="t">! ' + mEsc(TEXT[0]) + '</span><b class="lg">' + mEsc(code) + '</b><span>' + mEsc(TEXT[1]) + '</span></div>' +
       '<div class="rk-note warn"><h3>No inventory movement occurred</h3>Return the unit to its location. Allocation changes require Sales or authorized management.</div>' +
@@ -525,14 +528,14 @@
 
   /* ── Incomplete allocation (78:481) ────────────────────────────────────── */
   function incomplete(view, c) {
-    var p = progress(c), a = c.authorization, allowed = a.state === 'valid' && a.partial_allowed;
+    var p = progress(c), a = c.authorization, ckd = c.lines.some(function (l) { return l.fulfillment_mode === 'ckd'; }), allowed = !ckd && a.state === 'valid' && a.partial_allowed;
     var body = page(view, '78:481', 'Incomplete allocation', 'A partial release needs separate approval');
     body.innerHTML =
       '<div class="rk-block warn"><span class="t">! ' + p.got + ' of ' + p.need + ' units ready</span><b class="lg">' + mEsc(c.order.number + ' · ' + modeOf(c)) + '</b>' +
         '<span>' + (p.need - p.got) + ' still to scan or count out.</span></div>' +
       '<div class="rk-card rk-field"><small>Partial-release authority</small><b style="color:' + (allowed ? '#14803d' : '#c72e1a') + '">' + (allowed ? 'Approved by Sales' : 'Not approved') + '</b></div>' +
       '<div class="rk-note warn"><h3>Default action: do not release</h3>Keep all units staged until complete, unless Sales issues a traceable partial-release authorization.</div>' +
-      R.actions(allowed && p.got > 0
+      (ckd ? R.note('warn','CKD kits require every physical component. Partial CKD handoff is unavailable.') : '') + R.actions(ckd ? [{ id: 'rel-back', label: 'Return to queue', kind: 'secondary' }] : allowed && p.got > 0
         ? [{ id: 'rel-part', label: 'Continue with partial release', kind: 'primary' }, { id: 'rel-back', label: 'Return to queue', kind: 'secondary' }]
         : [{ id: 'rel-req', label: 'Request authorization', kind: 'primary' }, { id: 'rel-back', label: 'Return to queue', kind: 'secondary' }]);
     body.querySelector('#rel-back').onclick = function () { go(); };

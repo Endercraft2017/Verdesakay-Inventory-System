@@ -39,7 +39,7 @@ function boot(src: string, perms: string[], get: GetHandler) {
     download: () => Promise.resolve(),
   };
   // One script, as in frontend-mobile.test.ts: top-level `const UI` isn't shared across evals.
-  win.eval(`${UI_SRC}\nwindow.__UI = UI;\n${fs.readFileSync(path.join(PUBLIC, "js/leave-dates.js"), "utf8")}\n${src}`);
+  win.eval(`${UI_SRC}\n${fs.readFileSync(path.join(PUBLIC, "js/lib/form-validation.js"), "utf8")}\n${fs.readFileSync(path.join(PUBLIC, "js/lib/data-forms.js"), "utf8")}\nwindow.__UI = UI;\n${fs.readFileSync(path.join(PUBLIC, "js/leave-dates.js"), "utf8")}\n${src}`);
   const UI = win.__UI;
   UI.toast = (msg: string) => { toasts.push(msg); };
   UI.confirmDialog = () => Promise.resolve(false);
@@ -431,9 +431,9 @@ describe('Payroll records list', () => {
     }));
     await routes['form-records']!(view, { form_id: 40, period: 'March 1-15' });
     await flush();
-    expect(q(view, '#fr-table .empty-title')!.textContent).toBe('Couldn’t load payslips');
+    expect(q(view, '#fr-load-error')!.textContent).toContain('Could not load records. Network down');
     mode = 'empty';
-    q(view, '#fr-retry')!.click();
+    q(view, '#fr-load-error button')!.click();
     await flush();
     expect(q(view, '#fr-table .empty-title')!.textContent).toBe('No payslips match these filters');
     expect(q(view, '#fr-empty-new')).toBeNull();
@@ -534,6 +534,59 @@ it('Timekeeping previews saved reason and dates before confirming a multi-day li
   expect(posts).toContain('/hr/requests/50/link-attendance');
   const linkButtons = qa(modals[0].overlay, '[data-unlink]');
   expect(linkButtons.map(b => b.dataset.unlink)).toEqual(['0','2']);
+  win.close();
+});
+
+it('opens linked form details without unlinking; x confirms unless Shift is held', async () => {
+  const form = { id: 40, slug: 'overtime_request', name: 'Overtime Request', fields: [{ key: 'reason', label: 'Reason' }] };
+  const record = { id: 50, form_name: form.name, form_slug: form.slug, number: 'OT-00095', status: 'pending', data: { employee_id: 11, reason: 'Urgent shipment', work_date: '2026-03-02' } };
+  const { win, view, routes } = boot(TK_SRC, ['hr.view', 'hr.manage'], p => {
+    if (p.includes('/attendance?')) return [{ work_date: '2026-03-02', form_record_ids: '[50,51]', notes: '' }];
+    if (p === '/form-records/50' || p === '/form-records/51') return { ...record, id: Number(p.split('/').at(-1)), number: p.endsWith('51') ? 'OT-00096' : record.number };
+    if (p === '/form-definitions') return [form];
+    if (p === '/hr/payroll-policy') return { default_rest_days: [0, 6] };
+    return periodGet(p);
+  });
+  const modals: any[] = [];
+  win.__UI.modal = (options: any) => {
+    const overlay = win.document.createElement('div'); overlay.innerHTML = options.bodyHTML;
+    win.document.body.appendChild(overlay); modals.push({ options, overlay });
+    options.onOpen?.(overlay); return { overlay, close() { overlay.remove(); } };
+  };
+  let approve = false, prompts = 0;
+  win.__UI.confirmDialog = async () => { prompts++; return approve; };
+  await routes['hr-timekeeping']!(view, { period_id: 7 });
+  q(view, '.hr-row-open')!.click(); await flush();
+  const grid = modals[0].overlay;
+  const linked = () => q(grid, '[data-view-form]');
+  expect(linked()).not.toBeNull();
+  linked()!.click(); await flush();
+  expect(modals[1].overlay.textContent).toContain('Urgent shipment');
+  expect(linked()).not.toBeNull(); expect(prompts).toBe(0);
+  q(grid, '[data-unlink]')!.click(); await flush();
+  expect(prompts).toBe(1); expect(linked()).not.toBeNull();
+  approve = true;
+  q(grid, '[data-unlink]')!.click(); await flush();
+  expect(prompts).toBe(2); expect(qa(grid, '[data-view-form]')).toHaveLength(1);
+  q(grid, '[data-unlink]')!.dispatchEvent(new win.MouseEvent('click', { bubbles: true, shiftKey: true })); await flush();
+  expect(prompts).toBe(2); expect(linked()).toBeNull();
+  win.close();
+});
+
+it('lets read-only HR inspect a linked form without an unlink control', async () => {
+  const { win, view, routes } = boot(TK_SRC, ['hr.view'], p => {
+    if (p.includes('/attendance?')) return [{ work_date: '2026-03-02', form_record_ids: '[50]', notes: '' }];
+    if (p === '/form-records/50') return { form_name: 'Overtime Request', form_slug: 'overtime_request', number: 'OT-00095', status: 'pending', data: { reason: 'Urgent shipment' } };
+    return periodGet(p);
+  });
+  const modals: any[] = [];
+  win.__UI.modal = (options: any) => { const overlay = win.document.createElement('div'); overlay.innerHTML = options.bodyHTML;
+    win.document.body.appendChild(overlay); modals.push(overlay); options.onOpen?.(overlay); return { overlay, close() {} }; };
+  await routes['hr-timekeeping']!(view, { period_id: 7 });
+  q(view, '.hr-row-open')!.click(); await flush();
+  expect(q(modals[0], '[data-unlink]')).toBeNull();
+  q(modals[0], '[data-view-form]')!.click(); await flush();
+  expect(modals[1].textContent).toContain('Urgent shipment');
   win.close();
 });
 

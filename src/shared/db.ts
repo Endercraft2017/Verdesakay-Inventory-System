@@ -63,6 +63,10 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 73: remember an item's preferred storage location even when it has no stock.
+// 72: optional five-level inventory location hierarchy.
+// 71: link job-order component-shortage purchase drafts so retries and partial receipts
+//     create only remaining procurement demand.
 // 70: bind JSON idempotency keys to the original request payload.
 // 69: freeze job-order QC/QA checklists when the parts kit is released.
 // 68: rejected-return disposition and reinspection.
@@ -71,7 +75,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 70; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 74; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -522,6 +526,7 @@ function createSchema(): void {
     CREATE TABLE IF NOT EXISTS locations (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       name        TEXT NOT NULL,
+      parent_id   INTEGER REFERENCES locations(id) ON DELETE RESTRICT,
       type        TEXT NOT NULL DEFAULT 'warehouse',
       address     TEXT,
       notes       TEXT,
@@ -541,6 +546,7 @@ function createSchema(): void {
       unit          TEXT DEFAULT 'pcs',
       min_quantity  INTEGER NOT NULL DEFAULT 0,
       location      TEXT,
+      preferred_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       notes         TEXT,
       attributes    TEXT,
       image_path    TEXT,
@@ -728,6 +734,15 @@ function createSchema(): void {
       created_at         TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- Durable manufacturing → procurement planning links. A draft PO is pending supply,
+    -- never component stock; receipts at the job's source location close the shortage.
+    CREATE TABLE IF NOT EXISTS job_shortfall_purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_order_id INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+      purchase_order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_shortfall_purchase_job ON job_shortfall_purchases(job_order_id);
 
     CREATE TABLE IF NOT EXISTS job_order_components (
       id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1940,6 +1955,13 @@ function createSchema(): void {
 
 /** Idempotent schema upgrades for databases created before a column existed. */
 function migrate(): void {
+  // 73: item placement preference is separate from stock held at any one location.
+  const preferredLocCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
+  if (!preferredLocCols.some((c) => c.name === 'preferred_location_id')) db.exec('ALTER TABLE inventory_items ADD COLUMN preferred_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL');
+  // 72: optional location hierarchy; existing locations remain top-level.
+  const hierarchyCols = db.prepare('PRAGMA table_info(locations)').all() as { name: string }[];
+  if (!hierarchyCols.some((c) => c.name === 'parent_id')) db.exec('ALTER TABLE locations ADD COLUMN parent_id INTEGER REFERENCES locations(id) ON DELETE RESTRICT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_locations_parent ON locations(parent_id)');
   const itemCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
   if (!itemCols.some((c) => c.name === 'attributes')) {
     db.exec('ALTER TABLE inventory_items ADD COLUMN attributes TEXT');
@@ -3191,6 +3213,13 @@ function migrate(): void {
   }
   const idemCols = db.prepare('PRAGMA table_info(idempotency_keys)').all() as Array<{ name: string }>;
   if (!idemCols.some((c) => c.name === 'request_hash')) db.exec('ALTER TABLE idempotency_keys ADD COLUMN request_hash TEXT');
+  // 74: one sale SKU can ship as a built unit or as its frozen CKD component list.
+  const saleLineCols = db.prepare('PRAGMA table_info(order_items)').all() as Array<{ name: string }>;
+  if (!saleLineCols.some((c) => c.name === 'fulfillment_mode'))
+    db.exec("ALTER TABLE order_items ADD COLUMN fulfillment_mode TEXT NOT NULL DEFAULT 'assembled'");
+  if (!saleLineCols.some((c) => c.name === 'parent_order_item_id'))
+    db.exec('ALTER TABLE order_items ADD COLUMN parent_order_item_id INTEGER REFERENCES order_items(id) ON DELETE CASCADE');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_order_items_parent ON order_items(parent_order_item_id)');
 }
 
 /** One-time permission split: every role and per-account grant holding `from` also gets `to`.

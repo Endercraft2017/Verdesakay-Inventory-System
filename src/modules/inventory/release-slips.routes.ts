@@ -39,11 +39,11 @@ const saleOrder = (id: number) => queryOne<{ id: number; number: string; status:
 
 // Per-order line progress: units reserved/sold + bulk released_qty against the ordered qty.
 const PROGRESS_SQL = `
-  (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL) AS qty_ordered,
+  (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode != 'ckd') AS qty_ordered,
   (SELECT COALESCE(SUM(MIN(oi.quantity, COALESCE(oi.released_qty, 0)
       + (SELECT COUNT(*) FROM job_order_units ju
           WHERE ju.order_id = o.id AND ju.product_item_id = oi.item_id AND ju.status IN ('reserved', 'sold')))), 0)
-     FROM order_items oi WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL) AS qty_released`;
+     FROM order_items oi WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode != 'ckd') AS qty_released`;
 
 // GET /api/release-slips/queue — { to_accept, releasing }
 router.get('/queue', viewGate, (req, res) => {
@@ -94,7 +94,7 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
   const order = saleOrder(id);
   if (!order) { res.status(404).json({ error: 'Sale order not found' }); return; }
   const lines = queryAll(
-    `SELECT oi.id, oi.item_id, oi.name, oi.sku, oi.quantity, oi.released_qty,
+    `SELECT oi.id, oi.item_id, oi.name, oi.sku, oi.quantity, oi.released_qty, oi.fulfillment_mode, oi.parent_order_item_id,
             (SELECT COUNT(*) FROM job_order_units u WHERE u.order_id = oi.order_id AND u.product_item_id = oi.item_id
                AND u.status IN ('reserved', 'sold')) AS units,
             EXISTS (SELECT 1 FROM job_order_units u WHERE u.product_item_id = oi.item_id) AS serialized

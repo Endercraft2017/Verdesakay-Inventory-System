@@ -827,7 +827,10 @@
       if (!body.isConnected || !MApp.getMe() || owner !== mProductionDrafts.key(holdId(unitId) + ':action') || location.hash !== routeHash) return;
       var h = rows.filter(function (x) { return x.id === unitId; })[0];
       if (!h) { body.innerHTML = R.note('info', 'This unit is no longer on hold.') + R.actions([{ id: 'qc-back', label: 'Back to queue', kind: 'secondary' }]); body.querySelector('#qc-back').onclick = function () { go(desk, { tab: 'hold' }); }; return; }
-      var out = 'pass';
+      var out = 'pass', checks = h.checks || [], answers = checks.map(function (it) {
+        var old = (h.checklist || []).find(function (a) { return a.label.trim().toLocaleLowerCase() === it.label.trim().toLocaleLowerCase(); }) || {};
+        return { label: it.label, status: old.status || (old.ok === true ? 'pass' : old.ok === false ? 'issue' : ''), value: old.value || '', note: old.note || null };
+      });
       function paint() {
         body.innerHTML =
           R.jobHead({ tone: 'warn', number: label(h), pill: { text: 'On hold', tone: 'warn' }, name: h.product_name, meta: h.job_order_number }) +
@@ -841,19 +844,28 @@
           }).join('') + '</div>' +
           (out === 'fail' ? '<label class="rk-card rk-field"><small>Disposition</small><select data-disp><option value="scrap">Scrap</option><option value="dispose">Dispose</option><option value="recycle">Recycle</option></select></label>' : '') +
           (out === 'rectify' ? '<label class="rk-card rk-field"><small>Route to</small><select data-station>' + desk.stations.map(function (x) { return '<option>' + mEsc(x) + '</option>'; }).join('') + '</select></label>' : '') +
+          (out === 'pass' && checks.length ? R.section('Review final-pass checklist') + checks.map(function (it,i) {
+            return '<label class="rk-card rk-field"><small>' + mEsc(it.label) + (it.required ? ' *' : '') + '</small><select data-hold-check="' + i + '">' + ['','pass','issue','na'].map(function (v) { return '<option value="' + v + '"' + (answers[i].status === v ? ' selected' : '') + '>' + (v || 'Review check') + '</option>'; }).join('') + '</select>' + (it.measure ? '<input data-hold-reading="' + i + '" maxlength="200" placeholder="' + mEsc(it.measure) + '" value="' + mEsc(answers[i].value) + '">' : '') + '</label>';
+          }).join('') : '') +
           '<label class="rk-card rk-field"><small>Decision reason *</small><textarea rows="3" maxlength="2000" data-why></textarea></label>' +
           R.actions([{ id: 'qc-decide', label: out === 'pass' ? 'Pass unit' : out === 'rectify' ? 'Send to rectification' : 'Fail unit', kind: out === 'fail' ? 'danger' : 'primary' },
             { id: 'qc-back', label: 'Back', kind: 'secondary' }]);
         if (window.mPhoto && mPhoto.thumbs) body.querySelector('[data-photos]').appendChild(mPhoto.thumbs('qc_unit', h.id, {}));
         Array.prototype.forEach.call(body.querySelectorAll('[data-o]'), function (b) { b.onclick = function () { var w = body.querySelector('[data-why]').value; out = b.dataset.o; paint(); body.querySelector('[data-why]').value = w; }; });
         body.querySelector('#qc-back').onclick = function () { go(desk, { tab: 'hold' }); };
+        body.querySelectorAll('[data-hold-check]').forEach(function (el) { el.onchange = function () { answers[Number(el.dataset.holdCheck)].status = el.value; checkReady(); }; });
+        body.querySelectorAll('[data-hold-reading]').forEach(function (el) { el.oninput = function () { answers[Number(el.dataset.holdReading)].value = el.value.trim(); checkReady(); }; });
         var btn = body.querySelector('#qc-decide');
+        function checkReady() { btn.disabled = out === 'pass' && (new Set(checks.map(function (it) { return it.label.trim().toLocaleLowerCase(); })).size !== checks.length || checks.some(function (it,i) { return it.required && answers[i].status !== 'pass' || it.measure && answers[i].status === 'pass' && !answers[i].value; })); }
+        checkReady();
         btn.onclick = function () {
           var why = body.querySelector('[data-why]').value.trim();
           if (why.length < 3) { mToast('Give the reason for the decision', 'err'); return; }
           if (offline()) { mToast('You’re offline — the decision needs a connection. Nothing was recorded.', 'err'); return; }
           var d = body.querySelector('[data-disp]'), st = body.querySelector('[data-station]');
+          if (out === 'pass' && (new Set(checks.map(function (it) { return it.label.trim().toLocaleLowerCase(); })).size !== checks.length || checks.some(function (it,i) { return it.required && answers[i].status !== 'pass' || it.measure && answers[i].status === 'pass' && !answers[i].value; }))) { mToast('Complete the required checks and readings before passing. Duplicate labels need a manager to correct the checklist.', 'err'); return; }
           var payload = { outcome: out, remarks: why, expected_hold_record_id: h.record_id };
+          if (out === 'pass' && Array.isArray(h.checks)) payload.checklist = answers.map(function (a) { return { label: a.label, status: a.status || undefined, ok: a.status === 'pass' || a.status === 'na', value: a.value || null, note: a.note }; });
           if (d) payload.disposition = d.value;
           if (st) payload.repair = { category: 'QA hold', station: st.value, priority: 'Before release' };
           var record = { key: owner, rows: [], operation: { kind: 'hold-decision', context: JSON.parse(JSON.stringify(h)), payload: payload,

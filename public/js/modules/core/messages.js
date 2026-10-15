@@ -463,6 +463,7 @@ App.register('messages', async (view, filter) => {
     const fileInput = threadEl.querySelector('#chat-file-input');
     const filePreview = threadEl.querySelector('#chat-file-preview');
     let selectedFiles = [];
+    const uploadStatus = MessageUpload.create(filePreview);
     function renderFiles() {
       filePreview.classList.toggle('hidden', !selectedFiles.length);
       filePreview.innerHTML = selectedFiles.map((file, index) => `<span class="chat-file-chip">${UI.esc(file.name)}<button type="button" data-remove="${index}" aria-label="Remove ${UI.esc(file.name)}">×</button></span>`).join('');
@@ -493,6 +494,8 @@ App.register('messages', async (view, filter) => {
     });
 
     async function sendOrSave() {
+      if (sendBtn.disabled) return;
+      const recipientId = activeOtherId;
       const body = input.value.trim();
       const files = selectedFiles.slice();
       if (editingId) {
@@ -513,6 +516,9 @@ App.register('messages', async (view, filter) => {
       if (!body && !(files && files.length)) return;
       sendBtn.disabled = true;
       attachBtn.disabled = true;
+      input.disabled = true;
+      filePreview.querySelectorAll('button').forEach((button) => { button.disabled = true; });
+      if (files.length) uploadStatus.start();
       try {
         if (files && files.length) {
           let outFiles = files;
@@ -520,11 +526,11 @@ App.register('messages', async (view, filter) => {
             outFiles = await Promise.all(outFiles.map((f) => window.ImageCompress.maybeCompress(f, { thresholdBytes: 0, maxDim: 1600, quality: 0.8 })));
           }
           const fd = new FormData();
-          fd.append('recipient_id', activeOtherId);
+          fd.append('recipient_id', recipientId);
           fd.append('body', body);
           if (replyTo) fd.append('reply_to_id', replyTo.id);
           outFiles.forEach((f) => fd.append('files', f));
-          await API.upload('/messages', fd);
+          await API.upload('/messages', fd, { onProgress: uploadStatus.progress });
         } else {
           await API.post('/messages', { recipient_id: activeOtherId, body, reply_to_id: replyTo ? replyTo.id : undefined });
         }
@@ -542,6 +548,9 @@ App.register('messages', async (view, filter) => {
       } catch (e) {
         UI.toast(e.message, 'error');
       } finally {
+        uploadStatus.stop();
+        input.disabled = false;
+        filePreview.querySelectorAll('button').forEach((button) => { button.disabled = false; });
         sendBtn.disabled = false;
         attachBtn.disabled = false;
       }

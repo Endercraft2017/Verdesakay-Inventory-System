@@ -87,6 +87,27 @@ describe('POST /api/orders/:id/purchase-shortfall', () => {
 });
 
 describe('POST /api/job-orders/:id/purchase-shortfall', () => {
+  it('keeps sale-linked jobs on the sale supply plan even after the sale drafts a PO', async () => {
+    const product = await mkItem({ name: 'Sale Plan Product', quantity: 0 });
+    const part = await mkItem({ name: 'Sale Plan Part', quantity: 0 });
+    await ctx.api.put(`/api/finished-products/${product}`).set(H())
+      .send({ components: [{ component_item_id: part, quantity: 1 }] });
+    const sale = await so([{ name: 'Sale Plan Product', item_id: product, quantity: 2, unit_price: 20 }]);
+    const jobDraft = await ctx.api.post(`/api/orders/${sale}/produce-shortfall`).set(H()).send({});
+    expect(jobDraft.status).toBe(200);
+    const job = jobDraft.body.created[0].job_order_id as number;
+    const jobAvailability = (await ctx.api.get(`/api/job-orders/${job}/availability`).set(H())).body;
+    const owner = jobAvailability.supply_planning_order;
+    expect(owner).toMatchObject({ id: sale });
+    expect(jobAvailability.purchase_requirements).toEqual([]);
+    const salePurchase = await ctx.api.post(`/api/orders/${sale}/purchase-shortfall`).set(H()).send({});
+    expect(salePurchase.body.created).toHaveLength(1);
+    const jobPurchase = await ctx.api.post(`/api/job-orders/${job}/purchase-shortfall`).set(H()).send({});
+    expect(jobPurchase.status).toBe(409);
+    expect(jobPurchase.body).toMatchObject({ code: 'sale_supply_owner', supply_planning_order: { id: sale } });
+    expect((await ctx.api.get('/api/orders?type=purchase').set(H())).body
+      .filter((po: { id: number }) => po.id === salePurchase.body.created[0].id)).toHaveLength(1);
+  });
   it('drafts POs for the components a draft MO can\'t cover, and /release reports them', async () => {
     const sup = await mkSupplier('MO Parts Co');
     const product = await mkItem({ name: 'MO Widget', unit_cost: 30 });
@@ -112,6 +133,90 @@ describe('POST /api/job-orders/:id/purchase-shortfall', () => {
     const pos = (await ctx.api.get('/api/orders?type=purchase').set(H())).body as Array<{ id: number; number: string }>;
     const full = (await ctx.api.get(`/api/orders/${pos.find((o) => o.number === r.body.created[0].number)!.id}`).set(H())).body;
     expect(full.items[0]).toMatchObject({ item_id: frame, quantity: 4 });
+    const poId = r.body.created[0].id as number;
+    expect((await ctx.api.post(`/api/job-orders/${mo}/purchase-shortfall`).set(H()).send({})).body.created).toEqual([]);
+    expect((await ctx.api.get(`/api/job-orders/${mo}/availability`).set(H())).body.purchase_requirements[0])
+      .toMatchObject({ short: 4, pending_purchase: 4, to_purchase: 0 });
+
+    const picked = await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id: mo,
+      lines: [{ component_item_id: frame, qty_picked: 1 }] }] });
+    expect(picked.status).toBe(200);
+    expect(picked.body.job_orders[0].prepared_at).toBeNull();
+    const home = av.source_location_id;
+    const receipt = await ctx.api.post(`/api/purchasing/orders/${poId}/receipts`).set(H()).send({ location_id: home,
+      lines: [{ order_item_id: full.items[0].id, item_id: frame, name: 'MO Frame', quantity: 2 }] });
+    expect(receipt.status).toBe(201);
+    expect((await ctx.api.get(`/api/job-orders/${mo}/availability`).set(H())).body.purchase_requirements[0])
+      .toMatchObject({ short: 2, pending_purchase: 2, to_purchase: 0 });
+    expect((await ctx.api.post(`/api/job-orders/${mo}/purchase-shortfall`).set(H()).send({})).body.created).toEqual([]);
+    expect((await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id: mo,
+      lines: [{ component_item_id: frame, qty_picked: 3 }] }] })).status).toBe(200);
+
+    expect((await ctx.api.post(`/api/purchasing/orders/${poId}/receipts`).set(H()).send({ location_id: home,
+      lines: [{ order_item_id: full.items[0].id, item_id: frame, name: 'MO Frame', quantity: 2 }] })).status).toBe(201);
+    expect((await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id: mo,
+      lines: [{ component_item_id: frame, qty_picked: 5 }] }] })).status).toBe(200);
+    expect((await ctx.api.post(`/api/job-orders/${mo}/release`).set(H()).send({})).status).toBe(200);
+    expect((await ctx.api.get(`/api/inventory/${frame}`).set(H())).body.quantity).toBe(0);
+    expect((await ctx.api.post(`/api/job-orders/${mo}/purchase-shortfall`).set(H()).send({})).status).toBe(409);
+  });
+
+  it('replans only lost PO coverage after an edit or cancellation', async () => {
+    const product = await mkItem({ name: 'MO Replan Product' });
+    const part = await mkItem({ name: 'MO Replan Part', quantity: 0 });
+    await ctx.api.put(`/api/finished-products/${product}`).set(H())
+      .send({ components: [{ component_item_id: part, quantity: 1 }] });
+    const mo = (await ctx.api.post('/api/job-orders').set(H())
+      .send({ product_item_id: product, qty_ordered: 5 })).body.id as number;
+    const first = await ctx.api.post(`/api/job-orders/${mo}/purchase-shortfall`).set(H()).send({});
+    const poId = first.body.created[0].id as number;
+    expect((await ctx.api.put(`/api/orders/${poId}`).set(H()).send({ items: [{ item_id: part, name: 'MO Replan Part', quantity: 3 }] })).status).toBe(200);
+    const second = await ctx.api.post(`/api/job-orders/${mo}/purchase-shortfall`).set(H()).send({});
+    expect(second.body.created).toHaveLength(1);
+    const supplement = (await ctx.api.get(`/api/orders/${second.body.created[0].id}`).set(H())).body;
+    expect(supplement.items[0].quantity).toBe(2);
+    expect((await ctx.api.post(`/api/job-orders/${mo}/purchase-shortfall`).set(H()).send({})).body.created).toEqual([]);
+    expect((await ctx.api.put(`/api/orders/${poId}`).set(H()).send({ status: 'cancelled' })).status).toBe(200);
+    const replacement = await ctx.api.post(`/api/job-orders/${mo}/purchase-shortfall`).set(H()).send({});
+    expect(replacement.body.created).toHaveLength(1);
+    expect((await ctx.api.get(`/api/orders/${replacement.body.created[0].id}`).set(H())).body.items[0].quantity).toBe(3);
+  });
+
+  it('plans the second kit when the only on-hand part is picked for another job', async () => {
+    const product = await mkItem({ name: 'MO Shared Product' });
+    const part = await mkItem({ name: 'MO Shared Part', quantity: 1 });
+    await ctx.api.put(`/api/finished-products/${product}`).set(H())
+      .send({ components: [{ component_item_id: part, quantity: 1 }] });
+    const first = (await ctx.api.post('/api/job-orders').set(H()).send({ product_item_id: product, qty_ordered: 1 })).body.id;
+    const second = (await ctx.api.post('/api/job-orders').set(H()).send({ product_item_id: product, qty_ordered: 1 })).body.id;
+    await ctx.api.post(`/api/job-orders/${first}/approve`).set(H());
+    await ctx.api.post('/api/job-orders/warehouse-accept').set(H()).send({ job_order_ids: [first] });
+    expect((await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id: first }] })).status).toBe(200);
+    const availability = (await ctx.api.get(`/api/job-orders/${second}/availability`).set(H())).body;
+    expect(availability.shortfalls[0]).toMatchObject({ have: 1, held_elsewhere: 1, available: 0, short: 1 });
+    expect(availability.purchase_requirements[0]).toMatchObject({ pending_purchase: 0, to_purchase: 1 });
+    const drafted = await ctx.api.post(`/api/job-orders/${second}/purchase-shortfall`).set(H()).send({});
+    expect(drafted.body.created).toHaveLength(1);
+    expect((await ctx.api.get(`/api/orders/${drafted.body.created[0].id}`).set(H())).body.items[0].quantity).toBe(1);
+  });
+
+  it('keeps another location receipt outside the source kit stock check', async () => {
+    const product = await mkItem({ name: 'MO Location Product' });
+    const part = await mkItem({ name: 'MO Location Part', quantity: 0 });
+    await ctx.api.put(`/api/finished-products/${product}`).set(H())
+      .send({ components: [{ component_item_id: part, quantity: 1 }] });
+    const mo = (await ctx.api.post('/api/job-orders').set(H()).send({ product_item_id: product, qty_ordered: 2 })).body.id;
+    const first = await ctx.api.post(`/api/job-orders/${mo}/purchase-shortfall`).set(H()).send({});
+    const poId = first.body.created[0].id;
+    const po = (await ctx.api.get(`/api/orders/${poId}`).set(H())).body;
+    const other = (await ctx.api.post('/api/locations').set(H()).send({ name: 'MO Remote Receipt', type: 'warehouse' })).body.id;
+    expect((await ctx.api.post(`/api/purchasing/orders/${poId}/receipts`).set(H()).send({ location_id: other,
+      lines: [{ order_item_id: po.items[0].id, item_id: part, name: 'MO Location Part', quantity: 1 }] })).status).toBe(201);
+    const av = (await ctx.api.get(`/api/job-orders/${mo}/availability`).set(H())).body;
+    expect(av.shortfalls[0]).toMatchObject({ have: 0, short: 2 });
+    expect(av.purchase_requirements[0]).toMatchObject({ pending_purchase: 1, to_purchase: 1 });
+    const supplement = await ctx.api.post(`/api/job-orders/${mo}/purchase-shortfall`).set(H()).send({});
+    expect((await ctx.api.get(`/api/orders/${supplement.body.created[0].id}`).set(H())).body.items[0].quantity).toBe(1);
   });
 });
 

@@ -32,7 +32,7 @@ import { notifyAnyPermission, notifyUser } from '../../shared/push';
 import { imageUpload, saveAttachment, unlink } from '../../core/attachments.routes';
 import { enforceQuota } from '../../platform/quota';
 import { pickListHtml } from './parts-slip-print';
-import { applyStockChange, stockAt, getDefaultLocationId, overdrawAllowed } from '../inventory/inventory-stock';
+import { applyStockChange, stockAt, getDefaultLocationId, locationName, overdrawAllowed } from '../inventory/inventory-stock';
 import { postJobOrderMovement, jobOrderWipBalance } from '../accounting/accounting-autopost';
 import { createDraftPurchaseOrders } from '../inventory/orders.routes';
 import { checklistForProduct } from './qc.routes';
@@ -202,6 +202,8 @@ function loadJobOrder(id: number): JobOrder | null {
     id
   );
   if (!jo) return null;
+  if (jo.source_location_id) jo.source_location_name = locationName(jo.source_location_id);
+  if (jo.output_location_id) jo.output_location_name = locationName(jo.output_location_id);
   jo.components = queryAll<JobOrderComponent>(
     `SELECT c.*, i.quantity AS component_on_hand
      FROM job_order_components c
@@ -834,6 +836,33 @@ function jobOrderComponentAvailability(joId: number): Array<{
   return out;
 }
 
+/** Outstanding linked procurement covers only planning demand; receipts must still put
+ * physical stock at the job's source before its kit can be picked. */
+function jobOrderPurchaseCoverage(joId: number, joNumber: string, shortfalls: ReturnType<typeof jobOrderComponentAvailability>) {
+  const linked = queryAll<{ id: number; number: string; status: string; item_id: number; outstanding: number }>(
+    `SELECT o.id, o.number, o.status, oi.item_id,
+       MAX(0, SUM(oi.quantity) - COALESCE((SELECT SUM(gi.quantity) FROM goods_receipt_items gi
+         JOIN goods_receipts gr ON gr.id = gi.receipt_id WHERE gr.order_id = o.id AND gi.item_id = oi.item_id), 0)) AS outstanding
+     FROM orders o JOIN order_items oi ON oi.order_id = o.id
+     WHERE o.type = 'purchase' AND LOWER(o.status) NOT IN ('cancelled', 'closed') AND oi.item_id IS NOT NULL
+       AND (EXISTS (SELECT 1 FROM job_shortfall_purchases jp WHERE jp.job_order_id = ? AND jp.purchase_order_id = o.id)
+         OR (o.notes = ? AND NOT EXISTS (SELECT 1 FROM job_shortfall_purchases jp WHERE jp.purchase_order_id = o.id)))
+     GROUP BY o.id, oi.item_id ORDER BY o.id`,
+    joId, `Components for ${joNumber}`
+  ).filter((p) => p.outstanding > 0);
+  const requirements = shortfalls.map((s) => {
+    const pending = linked.filter((p) => p.item_id === s.component_item_id).reduce((n, p) => n + p.outstanding, 0);
+    return { ...s, pending_purchase: pending, to_purchase: Math.max(0, Number((s.short - pending).toPrecision(15))) };
+  });
+  return { linked_purchase_orders: linked, purchase_requirements: requirements };
+}
+
+/** Sale-linked jobs share component demand with the sale's aggregate supply plan. */
+function saleSupplyOwner(orderId: number | null | undefined) {
+  if (!orderId) return null;
+  return queryOne<{ id: number; number: string }>("SELECT id, number FROM orders WHERE id = ? AND type = 'sale'", orderId) ?? null;
+}
+
 /** Quantity of `itemId` already set aside at `locationId`: picked for other not-yet-released job
  *  orders' kits, or held for open repair-parts requests (stock-holds.ts) — so they can't both claim it. */
 function pickedElsewhere(itemId: number, locationId: number, excludeJoIds: number[]): number {
@@ -969,6 +998,10 @@ router.get('/:id/availability', requireAnyPermission(['production.view', 'produc
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
   const lines = jobOrderComponentAvailability(id);
   const shortfalls = lines.filter((l) => l.short > 0);
+  const supply_planning_order = saleSupplyOwner(jo.order_id);
+  const purchasing = supply_planning_order
+    ? { linked_purchase_orders: [], purchase_requirements: [] }
+    : jobOrderPurchaseCoverage(id, jo.number, shortfalls);
   const approved = !!jo.approved_at;
   const warehouseAccepted = !!jo.warehouse_accepted_at;
   const prepared = !!jo.prepared_at;
@@ -980,6 +1013,8 @@ router.get('/:id/availability', requireAnyPermission(['production.view', 'produc
     source_location_name: jo.source_location_name ?? null,
     lines,
     shortfalls,
+    ...purchasing,
+    supply_planning_order,
     in_stock: shortfalls.length === 0,
     approved,
     warehouse_accepted: warehouseAccepted,
@@ -1042,16 +1077,27 @@ router.post('/:id/unapprove', approveGate, syncClass('claim', joSite), (req, res
 // this job order can't cover from its source location, grouped by supplier.
 router.post('/:id/purchase-shortfall', writeGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
-  const jo = queryOne<JobOrder>('SELECT number FROM job_orders WHERE id = ?', id);
+  const jo = queryOne<JobOrder>('SELECT number, status, order_id FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
-  const short = jobOrderComponentShortfalls(id);
-  if (!short.length) { res.json({ created: [], note: 'All components are in stock.' }); return; }
-  const created = createDraftPurchaseOrders(
-    short.map((s) => ({ item_id: s.component_item_id, quantity: s.short })),
-    `Components for ${jo.number}`,
-    req.user!.id
-  );
-  res.json({ created, shortfalls: short });
+  if (jo.status !== 'draft') { res.status(409).json({ error: 'Only a draft job order can plan component purchases.' }); return; }
+  const supplyOrder = saleSupplyOwner(jo.order_id);
+  if (supplyOrder) {
+    res.status(409).json({ error: `Plan components from sale ${supplyOrder.number}'s stock review so its jobs share one purchase plan.`,
+      code: 'sale_supply_owner', supply_planning_order: supplyOrder });
+    return;
+  }
+  db.exec('BEGIN');
+  try {
+    const short = jobOrderComponentAvailability(id).filter((line) => line.short > 0);
+    const coverage = jobOrderPurchaseCoverage(id, jo.number, short);
+    const wants = coverage.purchase_requirements.filter((s) => s.to_purchase > 0)
+      .map((s) => ({ item_id: s.component_item_id, quantity: s.to_purchase }));
+    const created = createDraftPurchaseOrders(wants, `Components for ${jo.number}`, req.user!.id);
+    for (const po of created) run('INSERT INTO job_shortfall_purchases (job_order_id, purchase_order_id) VALUES (?, ?)', id, po.id);
+    db.exec('COMMIT');
+    res.json({ created, shortfalls: short, ...jobOrderPurchaseCoverage(id, jo.number, short),
+      note: !short.length ? 'All components are available for this kit.' : wants.length ? undefined : 'Existing purchase orders cover this shortage; receive them into the job source location.' });
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
 });
 
 // POST /api/job-orders/:id/release — issue the parts release slip for a prepared kit: the
@@ -1809,13 +1855,44 @@ router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'),
   const u = queryOne<JobOrderUnit>('SELECT * FROM job_order_units WHERE id = ? AND job_order_id = ?', Number(req.params.unitId), id);
   if (!u) { res.status(404).json({ error: 'Unit not found on this job order' }); return; }
   if (u.status !== 'hold') { res.status(409).json({ error: `This unit isn't on hold (it is ${u.status}).` }); return; }
-  const { outcome, disposition, remarks, repair, expected_hold_record_id } = parseBody(holdDecisionSchema, req.body);
+  const { outcome, disposition, remarks, repair, checklist, expected_hold_record_id } = parseBody(holdDecisionSchema, req.body);
   const held = queryOne<{ id: number; inspector_id: number | null; checklist: string | null }>(
     "SELECT id, inspector_id, checklist FROM qc_records WHERE unit_id = ? AND result = 'hold' ORDER BY id DESC LIMIT 1", u.id
   );
   if (expected_hold_record_id && held?.id !== expected_hold_record_id) {
     res.status(409).json({ code: 'stale_hold', error: 'This unit has a different hold record. Refresh and review the current hold before deciding.' });
     return;
+  }
+  let heldChecklist: NonNullable<typeof checklist> = [];
+  try { const parsed = held?.checklist ? JSON.parse(held.checklist) : []; heldChecklist = Array.isArray(parsed) ? parsed : []; }
+  catch { /* corrupt historical answer cannot satisfy a pass */ }
+  const decisionChecklist = checklist ?? heldChecklist;
+  if (outcome === 'pass') {
+    const required = [
+      ...(jo.qc_stages <= 1 ? jo.qc_checklist_qc?.items ?? [] : []),
+      ...(jo.qc_checklist_qa?.items ?? []),
+    ];
+    const labels = new Set<string>();
+    for (const item of required) {
+      const key = item.label.trim().toLocaleLowerCase();
+      if (labels.has(key)) { res.status(409).json({ error: `Checklist label "${item.label}" appears more than once on this pass.`, blocked: 'checklist' }); return; }
+      labels.add(key);
+    }
+    const answers = new Map<string, (typeof decisionChecklist)[number]>();
+    for (const answer of decisionChecklist) {
+      const key = answer.label.trim().toLocaleLowerCase();
+      if (answers.has(key)) { res.status(400).json({ error: `Checklist answer "${answer.label}" was submitted twice.` }); return; }
+      answers.set(key, answer);
+    }
+    const missing = required.filter((item) => item.required && !(answers.get(item.label.trim().toLocaleLowerCase())?.status
+      ? answers.get(item.label.trim().toLocaleLowerCase())?.status === 'pass'
+      : answers.get(item.label.trim().toLocaleLowerCase())?.ok === true)).map((item) => item.label);
+    if (missing.length) { res.status(400).json({ error: `Complete the required QA checks before passing: ${missing.join(', ')}`, blocked: 'checklist' }); return; }
+    const noReading = required.filter((item) => {
+      const answer = answers.get(item.label.trim().toLocaleLowerCase());
+      return item.measure && answer && (answer.status ? answer.status === 'pass' : answer.ok === true) && !answer.value?.trim();
+    }).map((item) => item.label);
+    if (noReading.length) { res.status(400).json({ error: `Record a reading for: ${noReading.join(', ')}`, blocked: 'checklist' }); return; }
   }
   const stage = u.stage + 1;
   const note = `Hold decision: ${remarks}`;
@@ -1826,7 +1903,7 @@ router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'),
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       id, u.id, stage, outcome === 'pass' ? 'pass' : 'fail',
       outcome === 'pass' ? null : outcome === 'rectify' ? 'repair' : (disposition ?? 'scrap'),
-      note, held?.checklist ?? null, req.user!.id
+      note, outcome === 'pass' && checklist ? JSON.stringify(decisionChecklist) : held?.checklist ?? null, req.user!.id
     ).lastInsertRowid);
     if (outcome === 'pass') {
       run(
@@ -1898,7 +1975,9 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
   const input = parseBody(productsInSchema, req.body);
   // Ready-to-sell storage only (rts.ts): a missing or transit (truck) location, or one without
   // room for what is coming in, is refused.
-  const locErr = locationError(input.location_id, (input.unit_ids ?? []).length || input.quantity || 0);
+  const batchLines = input.batches ?? (input.batch_id == null ? [] : [{ batch_id: input.batch_id, quantity: input.quantity! }]);
+  const receivedQty = (input.unit_ids ?? []).length + batchLines.reduce((sum, line) => sum + line.quantity, 0);
+  const locErr = locationError(input.location_id, receivedQty);
   if (locErr) {
     res.status(400).json({ error: locErr, location_error: true });
     return;
@@ -1929,10 +2008,9 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
     }
   }
 
-  let batch: { id: number; qty: number; remaining_qty: number } | null = null;
-  if (input.batch_id != null) {
+  for (const line of batchLines) {
     const b = queryOne<{ id: number; qty: number; job_order_id: number | null }>(
-      'SELECT * FROM production_batches WHERE id = ?', input.batch_id
+      'SELECT * FROM production_batches WHERE id = ?', line.batch_id
     );
     if (!b || b.job_order_id !== id) { res.status(400).json({ error: 'Batch not found on this job order' }); return; }
     const hasUnits = (queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM job_order_units WHERE batch_id = ?', b.id)?.n ?? 0) > 0;
@@ -1946,17 +2024,12 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
       'SELECT COALESCE(SUM(quantity), 0) AS n FROM production_receipt_items WHERE batch_id = ?', b.id
     )?.n ?? 0;
     const remaining = b.qty - receivedSoFar;
-    const qty = input.quantity ?? 0;
     if (remaining <= 0) { res.status(409).json({ error: 'This batch has already been fully received' }); return; }
-    if (qty > remaining) {
+    if (line.quantity > remaining) {
       res.status(400).json({ error: `Only ${remaining} of this batch remains to receive` });
       return;
     }
-    batch = { id: b.id, qty: b.qty, remaining_qty: remaining };
   }
-
-  const receivedQty = unitIds.length + (input.batch_id != null ? (input.quantity ?? 0) : 0);
-  if (receivedQty <= 0) { res.status(400).json({ error: 'Nothing to receive' }); return; }
 
   db.exec('BEGIN');
   let receiptId: number;
@@ -1986,11 +2059,11 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
         });
       }
     }
-    if (batch && input.quantity) {
-      run('INSERT INTO production_receipt_items (receipt_id, batch_id, quantity) VALUES (?, ?, ?)', receiptId, batch.id, input.quantity);
+    for (const line of batchLines) {
+      run('INSERT INTO production_receipt_items (receipt_id, batch_id, quantity) VALUES (?, ?, ?)', receiptId, line.batch_id, line.quantity);
       if (jo.product_item_id != null) {
         applyStockChange({
-          itemId: jo.product_item_id, locationId: input.location_id, change: input.quantity,
+          itemId: jo.product_item_id, locationId: input.location_id, change: line.quantity,
           reason: `${jo.number}: received (Products In ${number})`, userId: req.user!.id, unitCost,
         });
       }

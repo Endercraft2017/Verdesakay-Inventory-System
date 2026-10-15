@@ -382,6 +382,8 @@ body { background: var(--v2-bg); color: var(--v2-text); }
 .m-requests-v2{padding-bottom:10.5rem}
 .m-request-heading{display:flex;align-items:flex-start;gap:.55rem;margin-bottom:1rem}
 .m-request-heading>div{min-width:0}
+#m-view[data-figma-node="46:663"] .m-request-heading h1{font-size:24px;line-height:1.25;margin:0;color:var(--v2-text)}
+#m-view[data-figma-node="46:663"] .m-request-heading p{font-size:12px;line-height:1.45;margin:8px 0 0;color:var(--v2-muted)}
 .m-request-back{appearance:none;border:0;background:transparent;color:var(--v2-green);width:2rem;height:2rem;margin:.05rem 0 0 -.35rem;padding:0;border-radius:50%;font:400 2rem/1 sans-serif}
 .m-request-actions{display:flex;justify-content:flex-end;margin:.1rem 0 1rem}
 .m-request-new{width:auto;min-width:8.9rem;padding-inline:1.1rem}
@@ -423,6 +425,11 @@ body { background: var(--v2-bg); color: var(--v2-text); }
 .m-request-check input{accent-color:#1b6b46;width:1.15rem;height:1.15rem}
 .m-request-guidance{padding:1rem .85rem;border-radius:1.35rem;border:1px solid var(--v2-warn-line);background:var(--v2-warn-soft);color:var(--v2-warn-text);font-size:.7rem;line-height:1.45}
 .m-request-form .m-v2-primary{width:100%}
+.m-request-form .validation-field-error{font-size:.75rem;color:var(--v2-danger);margin:.2rem 0 0}
+.m-request-form [data-validation-summary]{padding:.75rem 1rem;border:1px solid var(--v2-danger);border-radius:1.4rem;color:var(--v2-danger);background:var(--v2-surface)}
+.m-request-form [data-validation-summary][hidden]{display:none}
+.m-request-form [aria-invalid="true"]{outline:1px solid var(--v2-danger);outline-offset:4px}
+.m-request-form .validation-error-link{border:0;background:transparent;color:inherit;font:inherit;text-align:left;text-decoration:underline;padding:.35rem 0}
 .m-request-status{display:flex;flex-direction:column;gap:.45rem;padding:1.05rem;border:1px solid var(--v2-line);border-radius:1.4rem;background:var(--v2-surface-soft);margin-bottom:1rem}
 .m-request-status b{font-size:.92rem}.m-request-status span{font-size:.69rem;color:var(--v2-muted)}
 .m-request-status.warn{background:var(--v2-warn-soft);color:var(--v2-warn-text)}.m-request-status.ok{background:var(--v2-surface-soft);color:var(--v2-green)}.m-request-status.bad{background:var(--v2-warn-soft);color:var(--v2-danger)}

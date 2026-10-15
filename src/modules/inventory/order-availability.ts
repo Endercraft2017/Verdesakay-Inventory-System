@@ -60,7 +60,7 @@ export function orderAvailability(orderId: number) {
   // Sale demand takes priority over using its stock in a production kit. A legacy duplicate
   // sale line consumes the same pool instead of independently seeing the original balance.
   for (const oi of items) {
-    if (oi.item_id == null) continue;
+    if (oi.item_id == null || oi.fulfillment_mode === 'ckd') continue;
     const inv = queryOne<{ quantity: number; is_finished_product: number }>('SELECT quantity, is_finished_product FROM inventory_items WHERE id = ?', oi.item_id);
     if (!inv) continue;
     const s = stock(oi.item_id);

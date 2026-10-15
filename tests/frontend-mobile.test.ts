@@ -1272,6 +1272,26 @@ describe('mobile bootstrap', () => {
       expect(view.textContent).toContain('No units on hold'); expect(view.textContent).toContain('On hold0');
     });
 
+    it('reviews frozen hold checks and retains completed answers on an exact restart retry', async () => {
+      const factory = new IDBFactory(), calls: any[] = []; let held = true, lost = true;
+      const hold = { ...HOLDS[0], checks: [{ label: 'Finish clean', required: true }, { label: 'Voltage', required: true, measure: 'V' }], checklist: [{ label: 'Finish clean', status: 'issue' }, { label: 'Voltage', status: 'pass', value: '' }] };
+      const respond = (url: string, init: any) => {
+        if (url === '/api/qc/holds') return held ? [hold] : [];
+        if (url.endsWith('/hold-decision') && init.method === 'POST') { calls.push({ key: init.headers['Idempotency-Key'], payload: init.body }); held = false; if (lost) { lost = false; return undefined; } return { ok: true }; }
+        return undefined;
+      };
+      let win = await bootAs(QA,respond,factory); win.location.hash = '#/qc?role=qa&unit=503&step=hold'; await wait(80);
+      expect(win.document.getElementById('qc-decide').disabled).toBe(true);
+      const select = win.document.querySelector('[data-hold-check="0"]'); select.value = 'pass'; select.dispatchEvent(new win.Event('change'));
+      expect(win.document.getElementById('qc-decide').disabled).toBe(true);
+      const reading = win.document.querySelector('[data-hold-reading="1"]'); reading.value = '24.2'; reading.dispatchEvent(new win.Event('input'));
+      win.document.querySelector('[data-why]').value = 'Reviewed final checks'; expect(win.document.getElementById('qc-decide').disabled).toBe(false);
+      win.document.getElementById('qc-decide').click(); await wait(100); expect(win.document.getElementById('qc-hold-retry')).toBeTruthy(); win.close();
+      win = await bootAs(QA,respond,factory); win.location.hash = '#/qc?role=qa&unit=503&step=hold'; await wait(80);
+      win.document.getElementById('qc-hold-retry').click(); await wait(100); expect(calls).toHaveLength(2); expect(calls[1]).toEqual(calls[0]);
+      expect(JSON.parse(calls[0].payload).checklist).toMatchObject([{ label: 'Finish clean', status: 'pass' }, { label: 'Voltage', value: '24.2' }]);
+    });
+
     it.each(['pass', 'rectify', 'fail'])('recovers a lost %s hold decision after restart with one immutable operation', async (outcome) => {
       const factory = new IDBFactory(), requests: any[] = [], applied = new Map(); let lost = true, held = true;
       const respond = (url: string, init: any) => {
@@ -1473,6 +1493,17 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       win.location.hash = '#/so?id=302&step=recovery'; (await relElement(win,'#rel-retry')).click(); await wait(80);
       expect(calls).toEqual([]); expect(win.document.getElementById('m-view').textContent).toContain('Supervisor reconciliation required'); expect(win.document.getElementById('rel-review-current')).toBeNull();
       expect((await win.mProductionDrafts.loadAction('release:302')).operation.key).toBe('original-expired-key');
+    });
+
+    it('allocates CKD component lines instead of parent stock and refuses partial CKD handoff', async () => {
+      const calls: any[] = [];
+      const lines = [{ id: 1, item_id: 7, name: 'K4 kit', fulfillment_mode: 'ckd', quantity: 1, units: 0, released_qty: 0, serialized: 1 }, { id: 2, item_id: 10, name: 'Chassis component', fulfillment_mode: 'ckd_component', parent_order_item_id: 1, quantity: 2, released_qty: 1, serialized: 0 }];
+      const base = fake(calls,{ lines, units: [], authorization: { ...AUTH, partial_allowed: true }, availability: [{ item_id: 10, free_to_allocate: 1 }] });
+      const win = await bootAs(REL,(url: string,init: any) => url.includes('/orders/302/unit?') ? { state: 'available', unit: { ...UNIT, location_id: 2 } } : base(url,init));
+      win.location.hash = '#/so?id=302&step=scan'; await relElement(win,'[data-bulk="10"]');
+      expect(win.document.getElementById('m-view').textContent).toContain('CKD kit'); expect(win.document.querySelector('[data-bulk="7"]')).toBeNull(); expect(win.document.getElementById('m-view').textContent).toContain('1 of 2 allocated');
+      win.location.hash = '#/so?id=302&step=unit&code=K4-01'; await wait(80); expect(win.document.getElementById('rel-ok')).toBeNull(); expect(calls).toEqual([]);
+      win.location.hash = '#/so?id=302&step=incomplete'; await wait(80); expect(win.document.getElementById('rel-part')).toBeNull(); expect(win.document.getElementById('m-view').textContent).toContain('Partial CKD handoff is unavailable');
     });
 
     it('splits the queue into Ready and Blocked by authorization state', async () => {

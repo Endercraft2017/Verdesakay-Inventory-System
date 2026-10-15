@@ -196,7 +196,7 @@ App.register('orders', async (view, filter) => {
         <div class="order-review-summary"><div><strong>${UI.esc(order.number)}</strong> · ${UI.esc(status)}
           <p>Ship from <strong>${UI.esc(av.location_name || 'No stock location')}</strong>${av.uses_default_location ? ' (default)' : ''}</p></div>
           <span class="badge-pill ${av.ok ? 'ok' : 'low'}">${av.ok ? 'Stock covers this order' : av.short_lines + ' stock line(s) short'}</span></div>
-        <p class="muted">Stock at other locations needs a transfer. Production and purchase drafts are planning only; they become available after receipt. ${av.non_stock_lines || 0} non-stock line(s) have no stock requirement.</p>
+        <p class="muted">${av.lines.some((l) => l.elsewhere_on_hand > 0) ? 'Stock at other locations needs a transfer. ' : ''}Production and purchase drafts are planning only; they become available after receipt. ${av.non_stock_lines || 0} non-stock line(s) have no stock requirement.</p>
         <div class="order-review-lines">${av.lines.map((l) => `<article class="order-stock-line">
           <div><strong>${UI.esc(l.name)}</strong><span class="badge-pill ${l.shortfall > 0 ? 'low' : 'ok'}">${l.shortfall > 0 ? 'Short ' + l.shortfall : 'Covered'}</span></div>
           <dl><div><dt>Ordered</dt><dd>${l.ordered}</dd></div><div><dt>On hand here</dt><dd>${l.on_hand}</dd></div><div><dt>Other orders</dt><dd>${l.committed_orders ?? l.committed_elsewhere}</dd></div><div><dt>Kit / repair holds</dt><dd>${l.kit_held || 0} / ${l.repair_held || 0}</dd></div><div><dt>Picked / shipped here</dt><dd>${l.covered_here}</dd></div><div><dt>Available to order</dt><dd>${l.available}</dd></div></dl>
@@ -264,7 +264,7 @@ App.register('orders', async (view, filter) => {
     if (!products.length) { UI.toast('Define a finished product with a BOM first (Production → Finished Products)', 'error'); return; }
     // Prefill from a line item that maps to a finished product, if any.
     const match = (order.items || []).find((li) => products.some((p) => p.id === li.item_id));
-    const locOpts = locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('');
+    const locOpts = locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.path || l.name)}</option>`).join('');
     UI.modal({
       title: `Start production — ${order.number}`,
       bodyHTML: `<div class="form-grid">
@@ -301,7 +301,13 @@ App.register('orders', async (view, filter) => {
     const readOnly = editing && !canEdit;
     const shipped = editing && type === 'sale' && !!order.release_slip_number;
     const lockLines = readOnly || (editing && type === 'sale' && !['open', 'cancelled'].includes(String(order.status).toLowerCase()));
-    const lines = editing ? (order.items || []).map((it) => ({ ...it })) : [];
+    const partsByParent = new Map();
+    if (editing) (order.items || []).filter((it) => it.parent_order_item_id).forEach((it) => {
+      const list = partsByParent.get(it.parent_order_item_id) || [];
+      list.push(it); partsByParent.set(it.parent_order_item_id, list);
+    });
+    const lines = editing ? (order.items || []).filter((it) => !it.parent_order_item_id)
+      .map((it) => ({ ...it, ckd_parts: partsByParent.get(it.id) || [] })) : [];
     const get = (k, d) => (editing && order[k] != null ? order[k] : d);
     let initialized = false;
     let saveAttempt;
@@ -333,7 +339,7 @@ App.register('orders', async (view, filter) => {
             ${preservedOption(get('tax_code_id', null), taxCodes, 'Existing tax code')}
             ${taxCodes.map((t) => `<option value="${t.id}" ${String(get('tax_code_id', '')) === String(t.id) ? 'selected' : ''}>${UI.esc(t.code)} — ${UI.esc(t.name)}</option>`).join('')}</select></div>` : ''}
           ${locations.length ? `<div><label>Ship from</label><select data-f="location_id"><option value="">— default —</option>
-            ${locations.map((l) => `<option value="${l.id}" ${String(get('location_id', '')) === String(l.id) ? 'selected' : ''}>${UI.esc(l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('')}</select></div>` : ''}
+            ${locations.map((l) => `<option value="${l.id}" ${String(get('location_id', '')) === String(l.id) ? 'selected' : ''}>${UI.esc(l.path || l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('')}</select></div>` : ''}
         </div>` : ''}
         <div class="field-row">
           <div><label>${partyLabel} name</label><input data-f="customer_name" value="${UI.esc(get('customer_name', ''))}" placeholder="${type === 'sale' ? 'auto-filled from the customer if left blank' : ''}" /></div>
@@ -436,7 +442,11 @@ App.register('orders', async (view, filter) => {
           }
           body.innerHTML = lines.map((l, i) => `
             <tr data-row="${i}">
-              <td data-label="Item"><input data-k="name" value="${UI.esc(l.name || '')}" placeholder="Item name" maxlength="200" /><div class="order-link-hint">${l.item_id ? `${UI.icon('inventory', 12)} Linked inventory item · #${l.item_id}` : 'Non-stock · service or charge'}</div>${!lockLines ? `<button type="button" class="order-link-btn" data-link="${i}">${l.item_id ? 'Change inventory item' : 'Link inventory item'}</button>${l.item_id ? ` <button type="button" class="order-link-btn" data-unlink="${i}">Make non-stock</button>` : ''}` : ''}${
+              <td data-label="Item"><input data-k="name" value="${UI.esc(l.name || '')}" placeholder="Item name" maxlength="200" /><div class="order-link-hint">${l.item_id ? `${UI.icon('inventory', 12)} Linked inventory item · #${l.item_id}` : 'Non-stock · service or charge'}</div>${!lockLines ? `<button type="button" class="order-link-btn" data-link="${i}">${l.item_id ? 'Change inventory item' : 'Link inventory item'}</button>${l.item_id ? ` <button type="button" class="order-link-btn" data-unlink="${i}">Make non-stock</button>` : ''}` : ''}
+                ${type === 'sale' && l.item_id ? `<label class="muted" style="display:block;margin-top:8px">Fulfillment
+                  <select data-mode="${i}" aria-label="Line ${i + 1} fulfillment mode" ${lockLines ? 'disabled' : ''}>
+                    ${[['assembled','Fully built / stock'],['semi_built','Semi-built / production'],['ckd','CKD · ship parts']].map(([value,label]) => `<option value="${value}" ${String(l.fulfillment_mode || 'assembled') === value ? 'selected' : ''}>${label}</option>`).join('')}
+                  </select></label><div class="muted" data-ckd-preview="${i}" style="font-size:11px;margin-top:5px"></div>` : ''}${
                 type === 'sale' && (l.allocated_qty || l.reserved_qty || l.released_qty)
                   ? `<div class="muted" style="font-size:11px">${
                       Math.max(Number(l.allocated_qty || 0) + Number(l.reserved_qty || 0), Number(l.released_qty || 0))
@@ -449,6 +459,29 @@ App.register('orders', async (view, filter) => {
               <td data-label="Line total" class="right" data-total="${i}">0.00</td>
               <td>${!lockLines ? `<button type="button" class="icon-btn danger" data-rm="${i}" title="Remove line ${i + 1}" aria-label="Remove line ${i + 1}">${UI.icon('trash', 15)}</button>` : ''}</td>
             </tr>`).join('');
+          function showCkdParts(i) {
+            const target = body.querySelector(`[data-ckd-preview="${i}"]`);
+            if (!target) return;
+            const l = lines[i];
+            target.textContent = l.fulfillment_mode === 'ckd'
+              ? (l.ckd_parts?.length ? 'Ships: ' + l.ckd_parts.map((p) => `${p.name} ×${p.quantity}`).join(' · ') : 'Loading the product BOM…')
+              : '';
+          }
+          lines.forEach((_, i) => showCkdParts(i));
+          body.querySelectorAll('[data-mode]').forEach((select) => select.onchange = async () => {
+            const i = Number(select.dataset.mode);
+            lines[i].fulfillment_mode = select.value;
+            if (select.value === 'ckd') {
+              try {
+                if (!lines[i].ckd_parts?.length) {
+                  const product = await API.get('/finished-products/' + lines[i].item_id);
+                  lines[i].ckd_parts = (product.bom || []).map((p) => ({ name: p.component_name, per_unit: p.quantity, quantity: p.quantity * Number(lines[i].quantity || 1) }));
+                }
+                if (!lines[i].ckd_parts.length) UI.toast('This product has no BOM for CKD; define its parts first.', 'error');
+              } catch (e) { lines[i].ckd_parts = []; UI.toast(e.message || 'Unable to load CKD parts', 'error'); }
+            }
+            showCkdParts(i);
+          });
           body.querySelectorAll('[data-k]').forEach((inp) => {
             const row = Number(inp.closest('[data-row]').dataset.row);
             inp.setAttribute('aria-label', `Line ${row + 1} ${inp.dataset.k.replace(/_/g, ' ')}`);
@@ -457,6 +490,11 @@ App.register('orders', async (view, filter) => {
             inp.addEventListener(ev, () => {
               const row = Number(inp.closest('[data-row]').dataset.row);
               lines[row][inp.dataset.k] = inp.value;
+              if (inp.dataset.k === 'quantity' && lines[row].fulfillment_mode === 'ckd' && lines[row].ckd_parts?.length) {
+                const base = lines[row].ckd_parts.map((p) => ({ ...p, per_unit: p.per_unit ?? p.quantity / Number(inp.defaultValue || 1) }));
+                lines[row].ckd_parts = base.map((p) => ({ ...p, quantity: p.per_unit * Number(inp.value || 0) }));
+                showCkdParts(row);
+              }
               inp.removeAttribute('aria-invalid');
               inp.removeAttribute('aria-describedby');
               inp.parentElement.querySelector('.order-field-error')?.remove();
@@ -471,12 +509,14 @@ App.register('orders', async (view, filter) => {
               UI.toast('That item is already on the order. Update its existing quantity.', 'error'); return;
             }
             Object.assign(lines[i], { item_id: it.id, name: it.name, sku: it.sku || '', unit: it.unit || '' });
+            lines[i].fulfillment_mode = 'assembled'; lines[i].ckd_parts = [];
             renderLines();
             body.querySelector(`[data-row="${i}"] [data-k="quantity"]`).focus();
           }));
           body.querySelectorAll('[data-unlink]').forEach((b) => b.onclick = () => {
             const i = Number(b.dataset.unlink);
             lines[i].item_id = null;
+            lines[i].fulfillment_mode = 'assembled'; lines[i].ckd_parts = [];
             renderLines();
             body.querySelector(`[data-row="${i}"] [data-k="name"]`).focus();
           });
@@ -502,7 +542,7 @@ App.register('orders', async (view, filter) => {
           const sale = it.attributes && it.attributes.sale_price;
           lines.push({
             item_id: it.id, name: it.name, sku: it.sku || '', quantity: 1,
-            unit: it.unit || '', unit_price: Number(sale) || 0,
+            unit: it.unit || '', unit_price: Number(sale) || 0, fulfillment_mode: 'assembled',
           });
           renderLines();
           body.querySelector(`[data-row="${lines.length - 1}"] [data-k="quantity"]`).focus();
@@ -541,6 +581,7 @@ App.register('orders', async (view, filter) => {
         const cleaned = lines
           .map((l) => ({
             item_id: l.item_id || null, name: (l.name || '').trim(), sku: l.sku || null,
+            fulfillment_mode: l.fulfillment_mode || 'assembled',
             description: l.description || null, quantity: Number(l.quantity) || 0,
             unit: l.unit || null, unit_price: Number(l.unit_price) || 0,
             tax_code_id: l.tax_code_id ? Number(l.tax_code_id) : null,
@@ -769,6 +810,7 @@ App.register('orders', async (view, filter) => {
   view.querySelector('#ord-new')?.addEventListener('click', () => orderModal(null));
 
   await load();
+  if (filter && filter.review && type === 'sale') reviewStock(filter.review);
   // filter.id deep-links straight into one order's edit modal (used by the AI assistant's
   // created-record links) — openOrder() only needs the id, it fetches the rest itself.
   if (filter && filter.id) openOrder(filter.id);

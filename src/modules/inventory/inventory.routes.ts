@@ -13,6 +13,7 @@ import { syncUpload } from '../../sync/files';
 import { siteDecisionStands, syncContext } from '../../shared/sync-context';
 import {
   parseBody,
+  ValidationError,
   createItemSchema,
   updateItemSchema,
   adjustStockSchema,
@@ -29,6 +30,7 @@ import {
   transferStock,
   stockAt,
   stockBreakdown,
+  locationName,
   getDefaultLocationId,
   findOrCreateDamageTwin,
   overdrawAllowed,
@@ -623,14 +625,17 @@ router.get('/:id', viewGate, (req, res) => {
      ORDER BY t.id DESC LIMIT 50`,
     item.id
   );
-  const stock = queryAll(
+  const stock = queryAll<{ location_id: number; location_name: string; location_type: string; quantity: number }>(
     `SELECT s.location_id, l.name AS location_name, l.type AS location_type, s.quantity
      FROM inventory_stock s JOIN locations l ON l.id = s.location_id
      WHERE s.item_id = ? AND s.quantity <> 0
      ORDER BY s.quantity DESC, l.name COLLATE NOCASE`,
     item.id
   );
-  res.json({ ...withParsedAttributes(item), history, stock });
+  res.json({ ...withParsedAttributes(item),
+    preferred_location_name: item.preferred_location_id ? locationName(item.preferred_location_id) : null,
+    history: history.map((h) => ({ ...h, location_name: h.location_id ? locationName(h.location_id) : null })),
+    stock: stock.map((s) => ({ ...s, location_name: locationName(s.location_id) })) });
 });
 
 // POST /api/inventory — create item
@@ -645,25 +650,45 @@ router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req
     }
   }
 
-  // Where the starting stock lands: an explicit location, or the default one.
-  let startLoc: number | null = null;
-  if (input.quantity !== 0) {
-    startLoc = input.location_id ?? getDefaultLocationId();
-    if (!queryOne('SELECT id FROM locations WHERE id = ?', startLoc)) {
-      res.status(400).json({ error: 'Starting-stock location not found' });
-      return;
-    }
-  }
-
-  // Item is inserted at qty 0; applyStockChange bumps both the total and the
-  // per-location row so the two can never disagree.
+  // Create optional child locations and the item in one transaction: a failed item
+  // save must not leave empty shelves behind. Existing callers can omit location_id.
   db.exec('BEGIN');
   let itemId: number | bigint;
+  let startLoc: number;
   try {
+    if (input.new_location_levels?.length && input.location_id == null) {
+      throw new ValidationError('Choose the parent location before adding sublocations');
+    }
+    startLoc = input.location_id ?? getDefaultLocationId();
+    const parent = queryOne<{ parent_id: number | null }>(
+      'SELECT parent_id FROM locations WHERE id = ?', startLoc
+    );
+    if (!parent) throw new ValidationError('Starting-stock location not found');
+    let depth = 1;
+    let ancestor = parent.parent_id;
+    const seen = new Set([startLoc]);
+    while (ancestor != null) {
+      if (seen.has(ancestor)) throw new ValidationError('Starting-stock location hierarchy is invalid');
+      seen.add(ancestor);
+      const row = queryOne<{ parent_id: number | null }>('SELECT parent_id FROM locations WHERE id = ?', ancestor);
+      if (!row) throw new ValidationError('Starting-stock location hierarchy is invalid');
+      depth++;
+      ancestor = row.parent_id;
+    }
+    if (depth + (input.new_location_levels?.length ?? 0) > 5) throw new ValidationError('A location can have at most five levels');
+    for (const name of input.new_location_levels ?? []) {
+      if (queryOne('SELECT 1 FROM locations WHERE name = ? COLLATE NOCASE AND parent_id = ? LIMIT 1', name, startLoc)) {
+        throw Object.assign(new Error(`Sublocation "${name}" already exists under this location; select it instead.`), { status: 409 });
+      }
+      const child = run(
+        "INSERT INTO locations (name, parent_id, type, is_default) VALUES (?, ?, 'other', 0)", name, startLoc
+      );
+      startLoc = Number(child.lastInsertRowid);
+    }
     const info = run(
       `INSERT INTO inventory_items
-        (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, unit_cost, location, notes, product_group, attributes)
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+        (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, unit_cost, location, preferred_location_id, notes, product_group, attributes)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
       input.name,
       input.sku ?? null,
       input.category ?? null,
@@ -673,13 +698,14 @@ router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req
       input.min_quantity,
       input.unit_cost ?? 0,
       input.location ?? null,
+      startLoc,
       input.notes ?? null,
       input.product_group ?? null,
       input.attributes ? JSON.stringify(input.attributes) : null
     );
     itemId = info.lastInsertRowid;
 
-    if (startLoc !== null) {
+    if (input.quantity !== 0) {
       applyStockChange({
         itemId: Number(itemId),
         locationId: startLoc,
@@ -693,7 +719,7 @@ router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req
     db.exec('ROLLBACK');
     throw e;
   }
-  res.status(201).json({ id: itemId });
+  res.status(201).json({ id: itemId, preferred_location_id: startLoc });
 });
 
 // PUT /api/inventory/:id — update details (not quantity; use /adjust)
@@ -705,6 +731,9 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
     return;
   }
   const input = parseBody(updateItemSchema, req.body);
+  if (input.preferred_location_id != null && !queryOne('SELECT id FROM locations WHERE id = ?', input.preferred_location_id)) {
+    res.status(400).json({ error: 'Preferred location not found' }); return;
+  }
   const sku = input.sku !== undefined ? input.sku : item.sku;
   if (sku) {
     const dupe = queryOne('SELECT id FROM inventory_items WHERE sku = ? AND id != ?', sku, id);
@@ -716,7 +745,7 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
 
   run(
     `UPDATE inventory_items
-     SET name = ?, sku = ?, category = ?, department_id = ?, supplier_id = ?, unit = ?, min_quantity = ?,
+     SET name = ?, sku = ?, category = ?, department_id = ?, supplier_id = ?, preferred_location_id = ?, unit = ?, min_quantity = ?,
          unit_cost = ?, location = ?, notes = ?, product_group = ?, attributes = ?, updated_at = datetime('now')
      WHERE id = ?`,
     input.name ?? item.name,
@@ -724,6 +753,7 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
     input.category !== undefined ? input.category : item.category,
     input.department_id !== undefined ? input.department_id : item.department_id,
     input.supplier_id !== undefined ? input.supplier_id : item.supplier_id,
+    input.preferred_location_id !== undefined ? input.preferred_location_id : item.preferred_location_id,
     input.unit !== undefined ? (input.unit ?? 'pcs') : item.unit,
     input.min_quantity !== undefined ? input.min_quantity : item.min_quantity,
     input.unit_cost !== undefined ? input.unit_cost : item.unit_cost ?? 0,

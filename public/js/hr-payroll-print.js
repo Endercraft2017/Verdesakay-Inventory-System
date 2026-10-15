@@ -152,6 +152,7 @@ function buildSlipContext(d) {
     sss: _money(d.sss),
     philhealth: _money(d.philhealth),
     pagibig: _money(d.pagibig),
+    withholding_tax: _money(d.withholding_tax),
     cash_advance: _money(d.cash_advance),
     // Ad-hoc per-cutoff deduction lines (Cash Advance, uniform, misc, …) — see
     // src/routes/hr.routes.ts's recomputeDeductionsFor. Rendered via the template's own

@@ -526,6 +526,7 @@
     var fileInput = state.view.querySelector('#m-chat-file');
     var filePreview = state.view.querySelector('#m-chat-files');
     var selectedFiles = [];
+    var uploadStatus = MessageUpload.create(filePreview);
     // Keep an unsent text draft through navigation or a dropped connection. Shared-phone
     // sessions keep it only in this tab; account and recipient are both part of the key.
     var me = MApp.getMe() || {};
@@ -574,6 +575,8 @@
     });
 
     function sendOrSave() {
+      if (sendBtn.disabled) return;
+      var recipientId = state.otherId;
       var body = input.value.trim();
       var files = selectedFiles.slice();
       if (state.editingId) {
@@ -592,6 +595,9 @@
       sendBtn.disabled = true;
       attachBtn.disabled = true;
       sendBtn.setAttribute('aria-label', 'Sending message');
+      input.disabled = true;
+      filePreview.querySelectorAll('button').forEach(function (button) { button.disabled = true; });
+      if (files.length) uploadStatus.start();
       var replyToId = state.replyTo ? state.replyTo.id : null;
       var send;
       if (files.length) {
@@ -599,11 +605,11 @@
           return window.ImageCompress ? ImageCompress.maybeCompress(file, { thresholdBytes: 0, maxDim: 1600, quality: 0.8 }) : file;
         })).then(function (ready) {
         var fd = new FormData();
-        fd.append('recipient_id', state.otherId);
+        fd.append('recipient_id', recipientId);
         fd.append('body', body);
         if (replyToId) fd.append('reply_to_id', replyToId);
         ready.forEach(function (file) { fd.append('files', file, file.name); });
-        return API.upload('/messages', fd);
+        return API.upload('/messages', fd, { onProgress: uploadStatus.progress });
         });
       } else {
         var payload = { recipient_id: state.otherId, body: body };
@@ -622,6 +628,9 @@
       }).catch(function (e) {
         mToast(e.offline ? 'Offline — message not sent. Your text stays as a draft; reconnect and tap Send.' : (e.message || 'Failed'), 'err');
       }).finally(function () {
+        uploadStatus.stop();
+        input.disabled = false;
+        filePreview.querySelectorAll('button').forEach(function (button) { button.disabled = false; });
         sendBtn.disabled = false;
         attachBtn.disabled = false;
         sendBtn.setAttribute('aria-label', 'Send message');

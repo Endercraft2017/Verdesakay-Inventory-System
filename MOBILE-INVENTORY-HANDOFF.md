@@ -1,5 +1,53 @@
 # Inventory and production: mobile integration gaps
 
+## Integration with newer branch work (2026-10-15)
+
+Mobile commit `5342728` is integrated with remote head `e1c0439`, preserving both
+histories. Earlier test totals below are historical; the remote baseline fix now
+makes the HR payslip ownership test pass. Final merged validation: TypeScript passed,
+174 focused tests passed, and all 2,699 tests across 257 files passed. Chromium at
+390×844 passed QA hold pass/rectify/fail recovery, releasing acceptance/decimal/serial/CKD
+recovery and single-unit/batch/grouped RTS recovery, with original keys and one
+applied operation per request identity.
+
+The phone hold-review screen now receives the frozen final-pass `checks` from
+`GET /qc/holds`, prefills held answers and requires every required check to Pass
+and every passed measurement to have a reading before enabling Pass. The reviewed
+checklist joins the immutable decision payload and survives exact-key restart
+recovery. Both stale-hold protection and the remote required-check enforcement
+remain in the backend.
+
+CKD parent lines are shown as a kit manifest with physical child quantities. The
+phone excludes the commercial parent from allocation counts/quantity actions,
+blocks an assembled parent serial, and disallows partial CKD handoff. Existing
+component availability and backend stock/return rules remain authoritative. Final
+slip/proof recovery and downstream CKD result-copy review remain open. The newer
+atomic Products In endpoint keeps compatibility with retained receipt payloads.
+Optional storage hierarchy paths and procurement handoff additions remain separate
+mobile follow-ups. PWA cache v97 includes both branches' shell additions.
+
+
+## CKD sales using the same product SKU: mobile handoff
+
+**Backend/desktop behavior:** A sales line can use `fulfillment_mode:'ckd'` while retaining the same `item_id`, SKU, unit price and ordered unit count as its built variant. The server snapshots direct BOM parts into `order_items` child lines (`fulfillment_mode:'ckd_component'`, `parent_order_item_id`). Each child has its physical quantity and zero sale price. Stock review, warehouse allocation, release slip, stock-out, cost and returns operate on those parts; the CKD parent is commercial/manifest only and does not consume finished-unit stock. Ordinary aftersales parts remain individual inventory-linked lines; `semi_built` remains on the production-stock path. An open CKD order retains its part snapshot across edits and BOM changes. Every part must be allocated before a CKD slip; partial CKD slips are currently blocked.
+
+**Mobile owner action:** `public/mobile/modules/inventory/so.js` must show the parent as **1 CKD unit** and group its child parts underneath with their required quantities and ship-from availability. Offer scan/quantity allocation only on the child lines, not on the parent product SKU, even if assembled units with that SKU exist. Use `context.lines[].fulfillment_mode` and `parent_order_item_id`; the server rejects an attempt to allocate the CKD parent. Show a missing component as a CKD shortage, not as a need to build the finished unit. At confirmation, show the parent kit and all physical parts on the slip. Returns are recorded against component slip lines; the parent manifest line cannot be restocked as a built product. Do not use legacy Pick or a direct stock adjustment.
+
+**Mobile acceptance cases:** a CKD order with assembled-unit stock but no parts is short; a CKD order with all parts but no assembled-unit stock is releasable; a BOM edit after order entry does not silently change its parts; stock changes between allocation and slip block the handoff; a second sale reserves the same part; a phone timeout after slip creation replays its original key; a component return restores that component only. Mobile source was inspected but not edited.
+
+## Products In → finished stock → sales: 2026-10-14 handoff
+
+**Owner:** mobile developer. **Backend/desktop status:** one `POST /api/job-orders/:id/products-in` now accepts `unit_ids` and `batches: [{batch_id, quantity}]` together, creating one atomic receipt and checking total location capacity before any line posts. The existing singular `batch_id` + `quantity` request remains supported. Batch quantities must be positive whole numbers; duplicate unit or batch IDs in one receipt are rejected. `Idempotency-Key` on this endpoint replays the same result for a lost response. Desktop uses one key per unchanged receipt attempt and shows the full location path and direct remaining capacity. No `public/mobile/` source was edited.
+
+| Priority | Mobile evidence | Follow-up for mobile owner |
+|---|---|---|
+| **High** | `public/mobile/modules/manufacturing/receiving.js` batch `rts-post` uses `clamp(parseInt(input.value, 10))`. `1.5`, an empty value, or an over-remaining value silently changes to another quantity. | Parse the entire entry and reject invalid/decimal/over-remaining values with a clear correction message. Keep the server's integer and remaining-quantity checks authoritative. |
+| **High** | The batch flow creates a retry key during view rendering; after navigation or restart an uncertain post can get a new key. Unit group keys and result state are held in the module's in-memory `draft`. | Persist the exact pending payload and key until confirmed, or reload receipt/receivable state before any retry. A lost response may mean stock already posted. Show **confirmation unknown** rather than “nothing saved,” and do not generate a new key for an uncertain unchanged request. |
+| **Medium** | `locName()` and the stock/location screens show `l.name`, which is ambiguous when two shelves share a name under different roots. | Use the `path` from `/api/locations` for every receipt picker, review, and result; retain `location_id` for requests. Show direct room from `capacity - total_units`, and refresh on a capacity conflict. |
+| **Medium** | Mobile unit grouping posts one request per job order; a group spanning jobs can partially succeed. | Show each job's confirmed receipt number and unresolved units separately. Retry only the unresolved job with its original key. Do not call a cross-job group “all recorded” if any request is pending or refused. |
+
+**Mobile acceptance cases:** decimal, blank and over-remaining batch entries; one batch partially received then retried; timeout after server receipt commit; full location after review; same-name shelves in separate roots; grouped units from two jobs where one post fails; receipt at the wrong warehouse leaving a sale short at its ship-from location. The backend and desktop tests cover atomic multi-line posting, capacity, retry replay, and finished stock becoming available for sale at the receipt location; phone route tests and narrow-screen verification remain with the mobile owner.
+
 **Sharing status:** This handoff and its backend/desktop implementation belong on `restructure/module-architecture`. Completed mobile steps and remaining gaps are recorded below.
 
 ## QC/QA: mobile handoff (recorded unit → inspection → hold or final pass)
@@ -221,6 +269,14 @@ attachment blobs are not recompressed during upload. Chromium verified a large
 **Mobile acceptance cases:** response lost after a unit commit; same-key multipart replay returns the original unit ID and one photo; two distinct units with the same identifier remain distinct; response lost after `/progress` or kit acceptance; user changes a rejected row and gets a fresh key; decimal and over-remaining input are rejected; an open issue is visible but does not claim an enforced production block; a manager resolves a lead's issue; returning after app restart does not claim an in-memory photo still exists. Test these in the mobile route suite and verify the phone layout at narrow widths before marking this section complete.
 
 ## Production kit: mobile handoff (approval → pick → release → lead acceptance)
+
+**2026-10-14 optional location hierarchy:** `GET /api/locations` and `GET /api/locations/:id` now return `parent_id`, `path` and `depth` (maximum five levels). Existing flat locations remain roots. Desktop New Item asks for a root starting-stock location and reveals each optional child level only after **+ Add level**; stock is placed at the last selected level. Mobile source was not changed. Update `mLocations` and the stock-in/out, receiving, transfer and kit pick views to display `path` so duplicate shelf/bin names in different warehouses are distinguishable. A parent can still hold direct stock, so do not assume its children's stock is available at the parent's ID. Test root-only, five-level selection, duplicate child names under different roots, and offline sync of a leaf `location_id`.
+
+**2026-10-14 completion of that step:** `GET /api/locations` and `/:id` now also return `total_units`/`item_count` for the exact node and `subtree_units`/`subtree_item_count` for all levels below it. Never use the roll-up as pickable stock; every receipt, transfer, kit pick and stock move still requires one exact `location_id`. Desktop New Item can choose existing children or enter new names behind each **+ Add level**; `POST /api/inventory` accepts `location_id` (last existing parent) plus optional `new_location_levels: string[]` (up to four). Item, new locations and initial stock save atomically. Item records now expose `preferred_location_id` even with zero stock; editing the preference does not transfer stock. Mobile must show that difference, show full paths in duplicate-name pickers, and keep a stable location ID in queued/offline requests. Test parent direct stock versus descendants, same-named shelves under different warehouses, a failed item save rolling back new levels, and a receipt at one shelf leaving a kit at another shelf short. No mobile source was edited.
+
+**2026-10-14 component shortage recovery:** `GET /api/job-orders/:id/availability` now also returns `purchase_requirements[]` (`component_item_id`, `need`, `have`, `held_elsewhere`, `available`, `short`, `pending_purchase`, `to_purchase`) and `linked_purchase_orders[]` (`id`, `number`, `item_id`, `outstanding`). A PO draft never makes a blocked kit releasable. `POST /api/job-orders/:id/purchase-shortfall` is repeat-safe for a draft job order: it creates only demand beyond live linked PO outstanding quantities, accounting for edits, cancellation and partial receipts. A receipt at another location does not fill the job's source-location stock. The phone's `kit-release.js` currently shows the shortage and files a tracked issue, but does not show pending PO supply or offer a procurement handoff. Show the pending PO numbers/remaining quantities and source location in the blocked screen for authorized warehouse readers; route purchasing actions to staff with `inventory.adjust`, rather than implying the warehouse clerk can buy parts. Refresh after a receipt, PO change or retry. No mobile source was edited.
+
+**Sale-linked job exception:** Availability now has `supply_planning_order: {id,number}` when a job belongs to a sale. In this case `purchase_requirements` and `linked_purchase_orders` are empty because the sale owns aggregate component procurement; the kit's `lines` and `shortfalls` still show its local stock gap. Do not draft from the job. `POST /api/job-orders/:id/purchase-shortfall` returns `409 code:'sale_supply_owner'` with that order; route authorized staff to `GET /api/orders/:id/availability` and the sale stock review, then use the sale's `purchase-shortfall` action. Show the order number on the mobile blocked-kit screen. Sale cancellation or closure also blocks job-level procurement until the link/planning ownership is resolved by a supervisor.
 
 **Owner:** mobile developer. **Checked against code:** 2026-10-14 on `restructure/module-architecture`. **Status:** warehouse phone fixes completed in step 4; manager approval review completed in step 5. Desktop and mobile support partial picks and corrections.
 

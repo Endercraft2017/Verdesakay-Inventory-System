@@ -6,12 +6,16 @@
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
+import { randomBytes } from 'node:crypto';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vds-dbtypes-'));
 process.env.DB_PATH = path.join(tmp, 'schema.db');
 process.env.UPLOAD_DIR = path.join(tmp, 'uploads');
 process.env.DATA_DIR = path.join(tmp, 'tenants');
 process.env.PLATFORM_DB_PATH = path.join(tmp, 'platform.db');
+
+// This schema-only database is disposable; its seed must not require deployment credentials.
+process.env.ADMIN_PASSWORD = randomBytes(32).toString('hex');
 
 // Dynamic imports: db.ts must see the env above before it resolves DB_PATH.
 const { getDb } = await import('../src/shared/db');

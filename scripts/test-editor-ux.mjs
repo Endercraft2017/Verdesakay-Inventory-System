@@ -56,7 +56,7 @@ try {
   token = (await api('POST', '/auth/login', { username: 'admin', password: 'admin123' })).token;
   await api('POST', '/auth/change-password', { current_password: 'admin123', new_password: 'EditorAudit!73952' });
   const template = await api('POST', '/templates', { name: 'Editor UX audit', type: 'generic',
-    body: '<style data-docpage>@page{size:210mm 297mm;margin:14mm}</style><h1>{{company.name}}</h1><p>Employee payslip layout.</p>' });
+    body: '<style data-docpage>@page{size:210mm 297mm;margin:14mm}</style><header class="doc-head"><h1>{{company.name}}</h1></header><p>Employee payslip layout.</p>' });
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/lib/chromium/chromium', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(fs.existsSync);
   browser = await chromium.launch({ ...(executablePath ? { executablePath } : {}), headless: true });
   context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce', permissions: ['clipboard-read','clipboard-write'] });
@@ -126,6 +126,18 @@ try {
     assert.equal(await page.locator('.doc-fs-bar .doc-save-status').textContent(),'No unsaved changes');
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await check('Company header divider supports direct selection, styling, removal and Undo',async()=>{
+    const header=page.locator('.doc-surface .doc-head');const box=await header.boundingBox();assert(box);await header.click({position:{x:box.width/2,y:box.height-2}});
+    assert(await page.locator('.doc-header-divider').isVisible());
+    await page.locator('[data-header-border=width]').selectOption('4');await page.locator('[data-header-border=style]').selectOption('dashed');
+    await page.locator('[data-header-border=color]').evaluate(el=>{el.value='#334455';el.dispatchEvent(new Event('change',{bubbles:true}));});
+    const fields=await page.locator('.doc-surface [data-token]').count();
+    const border=()=>header.evaluate(el=>({width:getComputedStyle(el).borderBottomWidth,style:getComputedStyle(el).borderBottomStyle,color:getComputedStyle(el).borderBottomColor}));
+    assert.deepEqual(await border(),{width:'4px',style:'dashed',color:'rgb(51, 68, 85)'});
+    for(const theme of ['light','dark']){await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);await scan('header-divider-'+theme);}
+    await page.locator('[data-header-divider-remove]').click();assert.equal((await border()).style,'none');assert.equal(await page.locator('.doc-surface [data-token]').count(),fields);
+    await editorButton('data-ex=undo').click();assert.deepEqual(await border(),{width:'4px',style:'dashed',color:'rgb(51, 68, 85)'});await editorButton('data-inspector-close').click();
+  });
   await check('Variable bank copies complete tokens and field management returns to the editor', async () => {
     await editorButton('data-studio-tab=Data').click();
     await page.locator('[data-variable-search]').fill('company.name');
@@ -136,6 +148,13 @@ try {
     await closeDialog('Template variables');
     assert(await page.locator('[data-variable-insert]').first().isVisible());
     await page.locator('[data-inspector-close]').click();
+  });
+  await check('Insert ribbon Variable shortcut inserts at the remembered caret and supports Undo',async()=>{
+    await page.locator('.doc-surface p').filter({hasText:'Employee payslip layout.'}).first().click();await page.keyboard.press('End');
+    const count=await page.locator('.doc-surface [data-token="company.name"]').count();await page.locator('[data-tab=insert]').click();
+    await editorButton('data-variable-shortcut').focus();await page.keyboard.press('Enter');const dialog=page.getByRole('dialog',{name:'Insert variable',exact:true});await dialog.locator('.var-search').fill('company.name');await dialog.locator('.var-pick').first().focus();await page.keyboard.press('Enter');await dialog.waitFor({state:'hidden'});
+    assert.equal(await page.locator('.doc-surface [data-token="company.name"]').count(),count+1);assert.equal(await page.locator('.doc-surface p').filter({hasText:'Employee payslip layout.'}).locator('[data-token="company.name"]').count(),1);
+    await editorButton('data-ex=undo').click();assert.equal(await page.locator('.doc-surface [data-token="company.name"]').count(),count);
   });
   await check('Settings opens by keyboard, traps focus, and returns to its invoker', async () => {
     await page.locator('.doc-more-menu summary').focus();await page.keyboard.press('Enter');
@@ -185,6 +204,7 @@ try {
     for(const [action,title] of [['image','Insert image'],['link','Insert link'],['symbol','Insert symbol'],['variable','Insert variable'],['formula','Insert a formula']]){
       if(['variable','formula'].includes(action)) await editorButton('data-studio-tab=Data').click();
       await editorButton('data-ins='+action).click();await page.getByRole('dialog',{name:title,exact:true}).waitFor();
+      if(action==='symbol'){const cells=await page.locator('.doc-symbol-choice').evaluateAll(buttons=>buttons.map(button=>{const b=button.getBoundingClientRect(),g=button.querySelector('.doc-symbol-glyph').getBoundingClientRect();return {dx:Math.abs((b.left+b.right-g.left-g.right)/2),dy:Math.abs((b.top+b.bottom-g.top-g.bottom)/2),w:b.width,h:b.height};}));assert.equal(cells.length,22);for(const cell of cells){assert(cell.dx<1.5&&cell.dy<1.5,'Symbols must be centered');assert(cell.w>=24&&cell.h>=44,'Symbol buttons must have usable targets');}}
       await scan('dialog-'+action+'-'+theme+'-'+width,'[role=dialog]');await closeDialog(title);if(['variable','formula'].includes(action)) await editorButton('data-inspector-close').click();
     }
     await page.locator('.doc-surface img').click(); await editorButton('data-studio-tab=Properties').click();
@@ -197,15 +217,21 @@ try {
     await editorButton('data-studio-tab=Pages').click();await editorButton('data-adv=section').click();await scan('dialog-section-'+theme+'-'+width,'[role=dialog]');await closeDialog('Insert section');await editorButton('data-inspector-close').click();
   }
   await page.setViewportSize({width:1440,height:1000});
+  await check('Symbol picker inserts by keyboard and Undo restores writing',async()=>{
+    await page.locator('.doc-surface p').filter({hasText:'Employee payslip layout.'}).first().click();await page.keyboard.press('End');
+    const authoredText=()=>page.locator('.doc-surface').evaluate(el=>{const clone=el.cloneNode(true);clone.querySelectorAll('.doc-float-handle,.doc-float-toolbar,.doc-promote-bar,.doc-snap-guide,.doc-page-guide').forEach(node=>node.remove());return clone.textContent;});const before=await authoredText();await page.locator('[data-tab=insert]').click();await editorButton('data-ins=symbol').click();
+    const dialog=page.getByRole('dialog',{name:'Insert symbol',exact:true});await dialog.getByRole('button',{name:'Insert Philippine peso (₱)',exact:true}).focus();await page.keyboard.press('Enter');await dialog.waitFor({state:'hidden'});
+    assert((await page.locator('.doc-surface').textContent()).includes('₱'));await editorButton('data-ex=undo').click();assert.equal(await authoredText(),before);
+  });
   await check('Everyday ribbon tools format, copy/cut/paste fields, replace and insert page furniture', async () => {
     await page.locator('[data-tab=home]').click();
-    await page.evaluate(()=>{const p=[...document.querySelectorAll('.doc-surface p')].find(p=>p.textContent.includes('Employee payslip layout.')),r=document.createRange();r.selectNodeContents(p);r.collapse(false);document.querySelector('.doc-surface').focus();getSelection().removeAllRanges();getSelection().addRange(r);});await page.keyboard.type('Ribbon audit text.');
-    const selectParagraph=()=>page.evaluate(()=>{const p=[...document.querySelectorAll('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3')].find(p=>p.textContent.includes('Ribbon audit text.')),r=document.createRange();if(!p)throw Error('The ribbon test paragraph was not found');r.selectNodeContents(p);document.querySelector('.doc-surface').focus();getSelection().removeAllRanges();getSelection().addRange(r);document.dispatchEvent(new Event('selectionchange'));});
+    await page.locator('.doc-surface p').filter({hasText:'Employee payslip layout.'}).first().click();await page.keyboard.press('End');await page.keyboard.type('Ribbon audit text.');
+    const selectParagraph=()=>page.evaluate(()=>{const p=[...document.querySelectorAll('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3,.doc-surface span[data-doc-run=inline]')].find(p=>p.textContent.includes('Ribbon audit text.')),r=document.createRange();if(!p)throw Error('The ribbon test writing was not found');r.selectNodeContents(p);document.querySelector('.doc-surface').focus();getSelection().removeAllRanges();getSelection().addRange(r);document.dispatchEvent(new Event('selectionchange'));});
     await selectParagraph();await page.locator('[data-fontsize]').selectOption('12');await editorButton('data-size-step=up').click();assert.equal(await page.locator('[data-fontsize]').inputValue(),'14');
     await editorButton('data-ex=removeFormat').click();assert.notEqual(await page.locator('[data-fontsize]').inputValue(),'14');await editorButton('data-ex=undo').click();
     await editorButton('data-select-all').click();await editorButton('data-clipboard=copy').click();
     await page.waitForFunction(async()=> (await navigator.clipboard.readText()).includes('{{company.name}}'));
-    await selectParagraph();const text=await page.locator('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3').filter({hasText:'Ribbon audit text.'}).first().textContent();
+    await selectParagraph();const text=await page.locator('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3,.doc-surface span[data-doc-run=inline]').filter({hasText:'Ribbon audit text.'}).first().textContent();
     await editorButton('data-clipboard=cut').click();await page.waitForFunction(text=>!document.querySelector('.doc-surface').textContent.includes(text),text);
     await editorButton('data-clipboard=paste').click();await page.waitForFunction(text=>document.querySelector('.doc-surface').textContent.includes(text),text);
     await page.evaluate(()=>navigator.clipboard.writeText('Plain {{company.name}}'));
@@ -267,7 +293,7 @@ try {
     try {
       await page.locator('[data-tab=home]').click();
       for (let attempt = 0; attempt < 3; attempt++) {
-        const paragraph = page.locator('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3').filter({hasText:/Employee payslip layout\.|Ribbon audit text\./}).first();
+        const paragraph = page.locator('.doc-surface p,.doc-surface h1,.doc-surface h2,.doc-surface h3,.doc-surface span[data-doc-run=inline]').filter({hasText:/Employee payslip layout\.|Ribbon audit text\./}).first();
         await paragraph.click(); await page.keyboard.press('End');
         const text = ` Verified save ${attempt}.`;
         await page.keyboard.type(text);
@@ -282,6 +308,7 @@ try {
       await page.locator(`[data-edit="${template.id}"]`).click();
       await page.waitForFunction(() => document.querySelector('.doc-shared-status')?.textContent.includes('Connected'));
       assert((await page.locator('.doc-surface').textContent()).includes('Verified save 2.'));
+      assert.equal(await page.locator('.doc-surface .doc-head').evaluate(el=>getComputedStyle(el).borderBottomStyle),'dashed');assert.equal(await page.locator('.doc-surface .doc-head').evaluate(el=>getComputedStyle(el).borderBottomWidth),'4px');
     } finally { await page.unroute('**/api/templates/studio/documents/**/room'); }
   });
   await check('A multipage design disables grid printing', async () => {

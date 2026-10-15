@@ -158,7 +158,8 @@ export const createItemSchema = z.object({
   department_id: optionalId,
   supplier_id: optionalId,
   location_id: optionalId, // where the starting stock lands (default: the default location)
-  quantity: intCoerce.default(0),
+  new_location_levels: z.array(trimmed.min(1).max(120)).max(4).optional(), // optional children beneath location_id
+  quantity: intCoerce.min(0).default(0),
   unit: trimmed.max(40).optional().nullable(),
   min_quantity: intCoerce.min(0).default(0),
   unit_cost: z.coerce.number().min(0).default(0), // standard cost — values raw materials / finished goods in the GL
@@ -177,6 +178,7 @@ export const updateItemSchema = z.object({
   category: optionalText,
   department_id: optionalId,
   supplier_id: optionalId,
+  preferred_location_id: optionalId.optional(),
   unit: trimmed.max(40).optional().nullable(),
   min_quantity: intCoerce.min(0).optional(),
   unit_cost: z.coerce.number().min(0).optional(),
@@ -271,6 +273,7 @@ export const updateCustomerSchema = createCustomerSchema.partial().extend({
 const locationType = z.enum(['warehouse', 'branch', 'store', 'truck', 'other']);
 export const createLocationSchema = z.object({
   name: trimmed.min(1, 'Location name is required').max(120),
+  parent_id: optionalId,
   type: locationType.default('warehouse'),
   address: trimmed.max(500).optional().nullable(),
   notes: optionalText,
@@ -535,6 +538,7 @@ export const inspectUnitsSchema = z
 export const holdDecisionSchema = z.object({
   expected_hold_record_id: z.coerce.number().int().positive().optional(),
   outcome: z.enum(['pass', 'rectify', 'fail']),
+  checklist: z.array(checklistResultSchema).max(60).optional(),
   disposition: z.enum(['scrap', 'dispose', 'recycle']).optional(),
   remarks: trimmed.min(3, 'Give the reason for the decision').max(2000),
   repair: z.object({
@@ -544,10 +548,8 @@ export const holdDecisionSchema = z.object({
   }).optional(),
 });
 
-/** POST /job-orders/:id/products-in — receive finished output into stock. Either
-    serialized `unit_ids` (units at status 'passed'), or a non-serialized `batch_id` +
-    the `quantity` of it being received (a batch's un-received qty may be received across
-    more than one receipt). */
+/** POST /job-orders/:id/products-in — one receipt can combine passed units and bulk batches.
+    The singular batch fields remain supported for existing mobile clients. */
 export const productsInSchema = z
   .object({
     received_date: trimmed.max(40).optional().nullable(),
@@ -555,12 +557,16 @@ export const productsInSchema = z
     notes: optionalText,
     unit_ids: z.array(z.coerce.number().int().positive()).max(500).optional(),
     batch_id: z.coerce.number().int().positive().optional(),
-    quantity: z.coerce.number().min(0).optional(),
+    quantity: z.coerce.number().int().positive().optional(),
+    batches: z.array(z.object({ batch_id: z.coerce.number().int().positive(), quantity: z.coerce.number().int().positive() })).max(500).optional(),
   })
-  .refine(
-    (v) => (v.unit_ids && v.unit_ids.length > 0) || (v.batch_id != null && (v.quantity || 0) > 0),
-    'Select at least one unit, or a batch and a received quantity'
-  );
+  .superRefine((v, ctx) => {
+    if ((v.batch_id == null) !== (v.quantity == null)) ctx.addIssue({ code: 'custom', message: 'Batch and quantity must be supplied together' });
+    if (v.batch_id != null && v.batches?.length) ctx.addIssue({ code: 'custom', message: 'Use either batch_id or batches' });
+    if (!v.unit_ids?.length && v.batch_id == null && !v.batches?.length) ctx.addIssue({ code: 'custom', message: 'Select at least one unit or batch' });
+    if (new Set(v.unit_ids ?? []).size !== (v.unit_ids ?? []).length) ctx.addIssue({ code: 'custom', message: 'A unit can only appear once in a receipt' });
+    if (new Set((v.batches ?? []).map(b => b.batch_id)).size !== (v.batches ?? []).length) ctx.addIssue({ code: 'custom', message: 'A batch can only appear once in a receipt' });
+  });
 
 // ---- Repair / rework parts requests (src/routes/production.routes.ts) ----
 const repairFault = z.enum(['assembler', 'production', 'supplier', 'wear', 'other']);
@@ -846,6 +852,7 @@ const numCoerce = z.coerce.number();
 
 const orderItemSchema = z.object({
   item_id: optionalId,
+  fulfillment_mode: z.enum(['assembled', 'semi_built', 'ckd']).default('assembled'),
   name: trimmed.min(1, 'Line item name is required').max(200),
   sku: optionalText,
   description: optionalText,
@@ -1651,6 +1658,12 @@ export const payrollPolicySchema = z.object({
 // statutory deductions apply to ONE payslip record. All optional; an omitted key keeps whatever
 // that deduction's current applied state already is (not reset to on).
 export const payrollDeductionTogglesSchema = z.object({
+  statutory_overrides: z.object({
+    sss: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),
+    philhealth: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),
+    pagibig: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),
+    withholding_tax: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),
+  }).optional(),
   sss_applied: boolish.optional(),
   philhealth_applied: boolish.optional(),
   pagibig_applied: boolish.optional(),
