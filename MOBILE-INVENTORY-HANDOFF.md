@@ -40,7 +40,11 @@ stock, cannot add warehouse stock, cannot consume another lot's balance or under
 reservations, requires the currently reviewed balance and records an audit row.
 Older stock needs this reconciliation before exact-batch release.
 
-PWA cache v99. Validation details are recorded after the final checks below. Figma
+Integrated concurrent remote form/payroll history commit `1916892`; batch schema uses
+v77 to preserve its v76 migration. PWA cache v99. Validation: TypeScript passed; 177 focused tests passed; all 2,721
+tests across 260 files passed in the frozen full run. Nine receiving/releasing
+Chromium scenarios passed at 390×844, including decoding the actual generated unit
+and batch QR images, exact-key retry after restart and no horizontal overflow. Figma
 node context was retrieved for 74:68 and 78:109; the screenshot service returned
 asset URLs whose download was refused (HTTP 403), so no pixel comparison is claimed.
 

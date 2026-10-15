@@ -12,6 +12,8 @@
 import path from 'node:path';
 import { createDocumentDefaultsSchema, initializeDocumentDefaults } from './document-defaults';
 import { createFormTemplateSchema } from './form-template-schema';
+import { createFormHistorySchema } from './form-history-schema';
+import { configureFormHistoryConnection } from './form-history-context';
 import { createStudioSchema } from './doc-studio-schema';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -55,6 +57,8 @@ function openConnection(slug: string): DatabaseSync {
   const dbFile = connectionPath(slug);
   fs.mkdirSync(path.dirname(dbFile), { recursive: true });
   const conn = new DatabaseSync(dbFile);
+  // Persisted history triggers can run during migration, before history schema setup.
+  configureFormHistoryConnection(conn);
   conn.exec('PRAGMA journal_mode = WAL;');
   conn.exec('PRAGMA foreign_keys = ON;');
   return conn;
@@ -63,6 +67,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 76: form versions/revisions, archive state, deduction audit and personal views.
 // 75: track fully built and semi-built stock separately per item/location and tag job orders.
 // 74: keep a commercial CKD line with a frozen physical-component manifest.
 // 73: remember an item's preferred storage location even when it has no stock.
@@ -77,6 +82,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
+// 77: exact batch/location stock, sales allocations, verified counts and return provenance.
 export const SCHEMA_VERSION = 77; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
@@ -255,6 +261,7 @@ export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
     hashLegacySessionTokens(conn);
     createStudioSchema(conn);
     createFormTemplateSchema(conn);
+    createFormHistorySchema(conn);
     createDocumentDefaultsSchema(conn);
     ensureUploadDir();
     const previousForms=new Set((conn.prepare('SELECT id FROM form_definitions').all() as Array<{id:number}>).map(f=>f.id));
@@ -289,6 +296,7 @@ export function forceMigrate(slug: string): void {
     setSetting('schema_version', SCHEMA_VERSION);
     createStudioSchema(activeDb());
     createFormTemplateSchema(activeDb());
+    createFormHistorySchema(activeDb());
     createDocumentDefaultsSchema(activeDb());
   });
 }
@@ -858,6 +866,7 @@ function createSchema(): void {
       return_id INTEGER NOT NULL UNIQUE REFERENCES sales_returns(id),
       batch_id INTEGER NOT NULL REFERENCES production_batches(id)
     );
+    CREATE INDEX IF NOT EXISTS idx_batch_stock_location ON production_batch_stock(location_id,batch_id);
     CREATE INDEX IF NOT EXISTS idx_batch_allocations_stock ON production_batch_allocations(batch_id,location_id,state);
     CREATE INDEX IF NOT EXISTS idx_batch_allocations_order ON production_batch_allocations(order_id,item_id,state);
 
@@ -2000,6 +2009,14 @@ function createSchema(): void {
 
 /** Idempotent schema upgrades for databases created before a column existed. */
 function migrate(): void {
+  const formCols = new Set((db.prepare('PRAGMA table_info(form_definitions)').all() as {name:string}[]).map(c=>c.name));
+  for (const [name, type] of Object.entries({version:'INTEGER NOT NULL DEFAULT 1',updated_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',version_reason:'TEXT',archived_at:'TEXT',archived_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',archive_reason:'TEXT'})) {
+    if (!formCols.has(name)) db.exec(`ALTER TABLE form_definitions ADD COLUMN ${name} ${type}`);
+  }
+  const recordCols = new Set((db.prepare('PRAGMA table_info(form_records)').all() as {name:string}[]).map(c=>c.name));
+  if (!recordCols.has('definition_version')) db.exec('ALTER TABLE form_records ADD COLUMN definition_version INTEGER');
+  if (!recordCols.has('revision')) db.exec('ALTER TABLE form_records ADD COLUMN revision INTEGER NOT NULL DEFAULT 1');
+
   // 73: item placement preference is separate from stock held at any one location.
   const preferredLocCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
   if (!preferredLocCols.some((c) => c.name === 'preferred_location_id')) db.exec('ALTER TABLE inventory_items ADD COLUMN preferred_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL');

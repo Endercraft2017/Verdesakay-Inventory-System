@@ -1536,6 +1536,9 @@ export interface FormAction {
 
 /** A custom form type created by an admin. */
 export interface FormDefinition {
+  version?: number;
+  archived_at?: string | null;
+  archive_reason?: string | null;
   id: number;
   name: string;
   slug: string;
@@ -1553,6 +1556,8 @@ export interface FormDefinition {
 
 /** A submitted record for a custom form. */
 export interface FormRecord {
+  definition_version?: number;
+  revision?: number;
   id: number;
   form_def_id: number;
   number: string;

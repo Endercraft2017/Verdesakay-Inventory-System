@@ -18,6 +18,7 @@
  * rejects it, the host's own undo reaches this PC through the same stream. A host running this
  * against the cloud then flushes, so its LAN PCs receive the whole rebase as effects.
  */
+import { withoutFormHistoryTriggers } from '../shared/form-history-context';
 import type { DatabaseSync } from 'node:sqlite';
 import { getDb } from '../shared/db';
 import { filterChangeset, invertChangeset } from './changeset';
@@ -78,7 +79,7 @@ export function withForeignKeysOff<T>(conn: DatabaseSync, fn: () => T): T {
 function applyStrict(conn: DatabaseSync, changes: Uint8Array, what: string): void {
   if (!changes.length) return;
   // Default conflict handling is ABORT: applyChangeset returns false and changes nothing.
-  if (!conn.applyChangeset(changes)) throw new SyncDivergenceError(what);
+  if (!withoutFormHistoryTriggers(conn,()=>conn.applyChangeset(changes))) throw new SyncDivergenceError(what);
 }
 
 export async function applyConfirmed(slug: string, pull: PullResult): Promise<RebaseSummary> {

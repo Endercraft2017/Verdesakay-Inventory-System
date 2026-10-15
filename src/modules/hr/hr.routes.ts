@@ -1,3 +1,5 @@
+import { correctRecord } from '../../core/data-forms/history';
+import { recordDeductionChange, deductionHistory } from '../payroll/deduction-history';
 import { effectiveHrForm } from './request-policy';
 import { requestMatchesDay, attachEmployeeLeaves, attachLeave, leaveDates, leaveWarnings, leavePreview, scheduledLeaveDates, ATTENDANCE_REQUESTS, requestEmployeeId } from './request-data';
 /** HR: Employees master list (201 file: status, statutory numbers, photo, documents) +
@@ -2476,7 +2478,7 @@ function recomputePayslipsFrom(employeeId: number, from: string): { recomputed: 
   const recomputed: RecomputedPayslip[] = [];
   const paid: PaidPayslipShortfall[] = [];
   const form = queryOne<FormDefinition>("SELECT * FROM form_definitions WHERE slug = 'hr_payroll'");
-  if (!form) return { recomputed, paid };
+  if (!form || form.archived_at) return { recomputed, paid };
   const periods = queryAll<AttendancePeriod>(
     `SELECT * FROM attendance_periods p
       WHERE p.end_date >= ? AND EXISTS (SELECT 1 FROM attendance_records ar WHERE ar.period_id = p.id AND ar.employee_id = ?)
@@ -2526,6 +2528,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
 
   const form = queryOne<FormDefinition>("SELECT * FROM form_definitions WHERE slug = 'hr_payroll'");
   if (!form) { res.status(400).json({ error: 'HR Payroll form is missing — check Admin > Form Builder' }); return; }
+  if (form.archived_at) { res.status(409).json({error:'Restore the archived payroll form before generating payslips.'}); return; }
 
   const roster = queryAll<PayslipEmployee>(
     `SELECT DISTINCT ${PAYSLIP_EMPLOYEE_COLUMNS}
@@ -2871,6 +2874,9 @@ router.put('/payroll/:recordId/deductions', requirePermission('payroll.manage'),
     return;
   }
   const input = parseBody(payrollDeductionTogglesSchema, req.body);
+  if (input.expected_revision != null && input.expected_revision !== ctx.rec.revision) { res.status(409).json({error:'This payslip changed. Reopen it before saving.'}); return; }
+  const archived=queryOne<{archived_at:string|null}>('SELECT archived_at FROM form_definitions WHERE id=?',ctx.rec.form_def_id)?.archived_at;
+  if(archived && !input.change_reason?.trim()){res.status(400).json({error:'A reason is required when correcting an archived payslip.'});return;}
   const current = appliedFromRecordData(ctx.data);
   const applied: StatutoryApplied = {
     sss: input.sss_applied ?? current.sss,
@@ -2890,8 +2896,18 @@ router.put('/payroll/:recordId/deductions', requirePermission('payroll.manage'),
     employer_contributions: result.employer_contributions,
     statutory_basis: result.statutory_basis,
   };
-  run(`UPDATE form_records SET data = ?, updated_at = datetime('now') WHERE id = ?`, JSON.stringify(newData), ctx.rec.id);
-  res.json({ ok: true, ...result });
+  correctRecord(ctx.rec,req.user!.id,input.change_reason,'deductions',()=>{
+    run('UPDATE form_records SET data=?,updated_at=? WHERE id=?',JSON.stringify(newData),now().toISOString(),ctx.rec.id);
+    recordDeductionChange(ctx.rec.id,ctx.data,newData,req.user!,input.change_reason);
+  });
+  const later_cutoffs=queryAll<{id:number;number:string;status:string;label:string}>(`SELECT fr.id,fr.number,fr.status,p.label FROM form_records fr JOIN attendance_periods p ON p.id=CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data,'$.cutoff_id') AS INTEGER) END WHERE fr.form_def_id=? AND CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data,'$.employee_id') AS INTEGER) END=? AND p.end_date>? AND substr(p.end_date,1,7)=? ORDER BY p.end_date`,ctx.rec.form_def_id,ctx.emp.id,ctx.period.end_date,ctx.period.end_date.slice(0,7));
+  res.json({ ok: true, ...result, later_cutoffs, revision:queryOne<{revision:number}>('SELECT revision FROM form_records WHERE id=?',ctx.rec.id)!.revision });
+});
+
+router.get('/payroll/:recordId/deductions-history',requirePermission('payroll.view'),(req,res)=>{
+  const record=queryOne<{slug:string}>('SELECT fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id=fr.form_def_id WHERE fr.id=?',Number(req.params.recordId));
+  if(!record||record.slug!=='hr_payroll'){res.status(404).json({error:'Payslip not found'});return;}
+  res.json(deductionHistory(Number(req.params.recordId)));
 });
 
 // POST /api/hr/payroll/:recordId/email — emails this payslip to the employee's linked account.

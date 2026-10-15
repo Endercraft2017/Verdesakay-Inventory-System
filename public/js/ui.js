@@ -111,7 +111,7 @@ const UI = (() => {
             <button type="button" class="icon-btn close" data-close aria-label="Close dialog" title="Close dialog">${icon('close')}</button>
           </div>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" tabindex="0">
           <div class="form-error hidden" data-modal-error></div>
           ${opts.bodyHTML}
         </div>
@@ -174,7 +174,7 @@ const UI = (() => {
         } catch (e) {
           showErr(e.message);
         } finally {
-          confirmBtn.disabled = false;
+          confirmBtn.disabled = !!opts.isConfirmDisabled?.();
           saving = false;
           overlay.__whenSaved = null;
           finishSave();

@@ -29,7 +29,7 @@ App.register('form-records', async (view, filter) => {
   if (filter.form_id) {
     await renderFormView(view, Number(filter.form_id), filter.period || '', filter.status || '', filter);
   } else {
-    await renderIndex(view, filter.scope || '', filter.q || '');
+    await renderIndex(view, filter.scope || '', filter.q || '', filter.view || 'all');
   }
 });
 
@@ -50,31 +50,33 @@ App.openFormRecordDraft = async function (proposal) {
   App.navigate('form-records', { form_id: String(id) });
 };
 
-function formCardHTML(f) {
-  return `<button type="button" class="form-card clickable" data-id="${f.id}">
+function formCardHTML(f, favorite = false) {
+  return `<div class="form-card-item"><button type="button" class="form-card clickable" data-id="${f.id}">
     <div class="form-card-icon">${UI.icon(f.icon || 'file', 32)}</div>
     <div class="form-card-info">
       <div class="form-card-name">${UI.esc(f.name)}</div>
       <div class="form-card-meta">${f.fields.length} field${f.fields.length !== 1 ? 's' : ''} · ${f.record_count} record${f.record_count !== 1 ? 's' : ''}</div>
       <div class="form-card-prefix muted mono">${UI.esc(f.number_prefix)}-#####</div>
     </div>
-  </button>`;
+  </button><button type="button" class="form-favorite icon-btn" data-favorite="${f.id}" aria-pressed="${favorite}" aria-label="${favorite ? 'Remove' : 'Add'} ${UI.esc(f.name)} ${favorite ? 'from' : 'to'} favorites">${favorite ? '★' : '☆'}</button></div>`;
 }
 
 /* ── Form index: pick which form to open, grouped by the section that owns it ────── */
-async function renderIndex(view, onlyScope, initialQuery) {
+async function renderIndex(view, onlyScope, initialQuery, initialView = 'all') {
   const owner = {};
   formRecordViews.set(view, owner);
   if (onlyScope && !DataForms.canBrowseScope(onlyScope === 'general' ? null : onlyScope)) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
     return;
   }
+  let personal = await DataForms.preferences();
   const heading = 'Data Forms';
   const manageableScope = (onlyScope !== 'general' && DataForms.canManage(onlyScope) && onlyScope) || DataForms.scopes.find((scope) => DataForms.canManage(scope));
   view.innerHTML = `
     <div class="topbar"><h2>${UI.esc(heading)}</h2><div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="fr-index-search" placeholder="Search forms…" aria-label="Search forms" /></div>
       <select id="fr-index-scope" aria-label="Form section"><option value="">All sections</option>${FORM_RECORDS_SCOPE_ORDER.filter((scope) => DataForms.canBrowseScope(scope)).map((scope) => `<option value="${scope || 'general'}">${FORM_RECORDS_SCOPE_LABELS[scope || 'general']}</option>`).join('')}</select>
+      <select id="fr-index-view" aria-label="Form collection"><option value="all">Active forms</option><option value="favorites">Favorites</option><option value="recent">Recent forms</option><option value="archived">Archived forms</option></select>
       ${manageableScope ? `<button class="btn secondary" id="fr-goto-builder">${UI.icon('edit')} Form Builder</button>` : ''}
     </div>
     <div class="panel"><div id="fr-index"></div></div>`;
@@ -89,6 +91,7 @@ async function renderIndex(view, onlyScope, initialQuery) {
   const section = view.querySelector('#fr-index-scope');
   search.value = initialQuery || '';
   section.value = onlyScope || '';
+  const collection = view.querySelector('#fr-index-view'); collection.value = initialView;
   if (builder) builder.hidden = !!onlyScope && !DataForms.canManage(onlyScope === 'general' ? null : onlyScope);
   let forms;
   try {
@@ -106,6 +109,9 @@ async function renderIndex(view, onlyScope, initialQuery) {
     const chosenScope = section ? section.value : '';
     if (builder) builder.hidden = !!chosenScope && !DataForms.canManage(chosenScope === 'general' ? null : chosenScope);
     const matches = forms.filter((form) =>
+      (collection.value === 'archived' ? !!form.archived_at : !form.archived_at) &&
+      (collection.value !== 'favorites' || personal.favorites.includes(form.id)) &&
+      (collection.value !== 'recent' || personal.recent.some(row => row.form_id === form.id)) &&
       (!chosenScope || (form.scope || 'general') === chosenScope) &&
       (!q || `${form.name} ${form.slug} ${form.number_prefix}`.toLowerCase().includes(q)));
     if (!matches.length) {
@@ -115,21 +121,23 @@ async function renderIndex(view, onlyScope, initialQuery) {
       });
       return;
     }
+    if (collection.value === 'recent') matches.sort((a,b) => personal.recent.findIndex(row=>row.form_id===a.id)-personal.recent.findIndex(row=>row.form_id===b.id));
     const groups = {};
     matches.forEach((form) => { const key = form.scope || 'general'; (groups[key] = groups[key] || []).push(form); });
     el.innerHTML = FORM_RECORDS_SCOPE_ORDER.map((scope) => scope || 'general')
       .filter((key) => groups[key]).map((key) => `
         <div class="fr-scope-group"><div class="fr-scope-heading">${UI.esc(FORM_RECORDS_SCOPE_LABELS[key])}</div>
-        <div class="form-card-grid">${groups[key].map(formCardHTML).join('')}</div></div>`).join('');
+        <div class="form-card-grid">${groups[key].map(form => formCardHTML(form, personal.favorites.includes(form.id))).join('')}</div></div>`).join('');
     el.querySelectorAll('.form-card[data-id]').forEach((card) =>
-      card.onclick = () => App.navigate('form-records', { form_id: card.dataset.id, ...(section.value ? { scope: section.value } : { index_scope: 'all' }), ...(search.value.trim() ? { index_q: search.value.trim() } : {}) }));
+      card.onclick = () => App.navigate('form-records', { form_id: card.dataset.id, ...(collection.value !== 'all' ? {index_view:collection.value} : {}), ...(section.value ? { scope: section.value } : { index_scope: 'all' }), ...(search.value.trim() ? { index_q: search.value.trim() } : {}) }));
+    el.querySelectorAll('[data-favorite]').forEach(button => button.onclick = async () => { button.disabled = true; try { personal = await DataForms.savePreference({action:'favorite',form_id:Number(button.dataset.favorite),enabled:!personal.favorites.includes(Number(button.dataset.favorite))}); render(); } catch(error) { button.disabled = false; UI.toast(error.message,'error'); } });
   }
   function refreshIndex() {
-    App.replaceFilters?.('form-records', { ...(section.value ? { scope: section.value } : {}), ...(search.value.trim() ? { q: search.value.trim() } : {}) });
+    App.replaceFilters?.('form-records', { ...(collection.value !== 'all' ? {view:collection.value} : {}), ...(section.value ? { scope: section.value } : {}), ...(search.value.trim() ? { q: search.value.trim() } : {}) });
     render();
   }
   search.oninput = refreshIndex;
-  section.onchange = refreshIndex;
+  section.onchange = refreshIndex; collection.onchange = refreshIndex;
   render();
 }
 
@@ -138,6 +146,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   const owner = {};
   formRecordViews.set(view, owner);
   let formDef = null;
+  let formVersions = new Map();
   let searchTimer;
   let currentRecords = [];
   let selectedIds = new Set();
@@ -181,12 +190,17 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         title: 'No access to this form’s records',
         hint: 'Filed one yourself? Open Requests in the mobile app to see your own submissions and their status.',
       })}</div>`;
-    view.querySelector('#fr-back').onclick = () => App.navigate('form-records', { ...(navigation.index_scope === 'all' ? {} : (navigation.scope || formDef.scope) ? { scope: navigation.scope || formDef.scope } : {}), ...(navigation.index_q ? { q: navigation.index_q } : {}) });
+  view.querySelector('#fr-back').onclick = () => App.navigate('form-records', { ...(navigation.index_view && navigation.index_view !== 'all' ? {view:navigation.index_view} : {}), ...(navigation.index_scope === 'all' ? {} : (navigation.scope || formDef.scope) ? { scope: navigation.scope || formDef.scope } : {}), ...(navigation.index_q ? { q: navigation.index_q } : {}) });
     return;
   }
 
   // HR records retain the section's visual treatment even when opened by form id.
   if (formDef.scope === 'hr') view.dataset.section = 'hr';
+  const versions = await API.get('/form-definitions/' + formId + '/versions').catch(()=>[]);
+  if(Array.isArray(versions))formVersions=new Map(versions.map(version=>[version.version,version.definition]));
+  let personal = await DataForms.preferences();
+  let viewPreferences = personal.views[String(formId)] || {};
+  DataForms.savePreference({action:'recent',form_id:formId}).catch(()=>{});
   const isPayroll = formDef.slug === 'hr_payroll';
   const canManagePayroll = isPayroll && App.hasPermission('payroll.manage');
   // Any other form with a linked print template gets the same "Print All"/"Print selected"
@@ -278,9 +292,50 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     </div>
     <div class="panel"><div id="fr-table"></div></div>`;
 
-  view.querySelector('#fr-back').onclick = () => App.navigate('form-records', { ...(navigation.index_scope === 'all' ? {} : (navigation.scope || formDef.scope) ? { scope: navigation.scope || formDef.scope } : {}), ...(navigation.index_q ? { q: navigation.index_q } : {}) });
+  const tools = document.createElement('div'); tools.className = 'form-view-tools panel';
+  tools.innerHTML = `<button type="button" class="btn secondary small" id="fr-columns">Choose columns</button><label for="fr-saved-filter">Saved view</label><select id="fr-saved-filter"><option value="">Current filters</option></select><button type="button" class="btn secondary small" id="fr-save-filter">Save current filters</button><button type="button" class="btn secondary small" id="fr-remove-filter" disabled>Remove saved view</button><span id="fr-personal-status" role="status"></span>`;
+  view.querySelector('#fr-bulk-bar').before(tools);
+  const savedSelect = tools.querySelector('#fr-saved-filter');
+  function renderSavedViews(selected = '') {
+    savedSelect.innerHTML = '<option value="">Current filters</option>' + (viewPreferences.filters || []).map(filter => `<option value="${UI.esc(filter.id)}">${UI.esc(filter.name)}</option>`).join('');
+    savedSelect.value = selected; tools.querySelector('#fr-remove-filter').disabled = !selected;
+    if (personal.unavailable) tools.querySelector('#fr-personal-status').textContent = 'Saved preferences are temporarily unavailable.';
+  }
+  async function savePersonal(change) {
+    personal = await DataForms.savePreference({ ...change, form_id: formId });
+    viewPreferences = personal.views[String(formId)] || {}; return personal;
+  }
+  function columnFields() {
+    const fields = new Map(formDef.fields.map(field => [field.key, field]));
+    currentRecords.forEach(record => (record.schema?.fields || []).forEach(field => { if (!fields.has(field.key)) fields.set(field.key, {...field,label:field.label+' (earlier version)'}); }));
+    return fields;
+  }
+  tools.querySelector('#fr-columns').onclick = () => {
+    const choices = [...columnFields().values()], selected = viewPreferences.columns || formDef.fields.slice(0,4).map(field=>field.key);
+    UI.modal({ title:'Choose record columns', bodyHTML:`<p>These columns apply to your account for this form. Number, status and date remain visible.</p>${choices.map(field=>`<label class="form-column-choice"><input type="checkbox" data-column="${UI.esc(field.key)}" ${selected.includes(field.key)?'checked':''}> ${UI.esc(field.label)}</label>`).join('')}<p class="muted">Choose up to 12 field columns.</p><label><input type="checkbox" id="fr-column-defaults"> Restore the default columns</label>`,confirmText:'Save columns',onConfirm:async(overlay,showError)=>{
+      const columns = overlay.querySelector('#fr-column-defaults').checked ? null : [...overlay.querySelectorAll('[data-column]:checked')].map(input=>input.dataset.column);
+      if(columns && columns.length>12){showError('Choose no more than 12 columns.');return false;}
+      await savePersonal({action:'columns',columns}); renderRecords(currentRecords); tools.querySelector('#fr-personal-status').textContent='Column preferences saved';
+    }});
+  };
+  savedSelect.onchange = () => {
+    const chosen=(viewPreferences.filters||[]).find(filter=>filter.id===savedSelect.value);
+    tools.querySelector('#fr-remove-filter').disabled=!chosen; if(!chosen)return;
+    state.q=chosen.q;state.status=chosen.status;state.period=chosen.period;
+    view.querySelector('#fr-search').value=state.q;view.querySelector('#fr-status').value=state.status;periodCombo?.setSelected(state.period);load();
+  };
+  tools.querySelector('#fr-save-filter').onclick=()=>UI.modal({title:'Save this filtered view',bodyHTML:`<label for="fr-filter-name">Name *</label><input id="fr-filter-name" maxlength="80"><p class="muted">Search: ${UI.esc(state.q||'All')} · Status: ${UI.esc(state.status||'All')} · Period: ${UI.esc(state.period||'All')}</p>`,confirmText:'Save view',onConfirm:async(overlay,showError)=>{
+    const name=overlay.querySelector('input').value.trim();if(!name){showError('Enter a name for this view.');return false;}
+    const id=String(Date.now())+'-'+Math.random().toString(36).slice(2);
+    await savePersonal({action:'save_filter',filter:{id,name,...state}});renderSavedViews(id);tools.querySelector('#fr-personal-status').textContent='Filtered view saved';
+  }});
+  tools.querySelector('#fr-remove-filter').onclick=async()=>{if(!savedSelect.value)return;try{await savePersonal({action:'delete_filter',filter_id:savedSelect.value});renderSavedViews();tools.querySelector('#fr-personal-status').textContent='Saved view removed';}catch(error){UI.toast(error.message,'error');}};
+  renderSavedViews();
+
+  view.querySelector('#fr-back').onclick = () => App.navigate('form-records', { ...(navigation.index_view && navigation.index_view !== 'all' ? {view:navigation.index_view} : {}), ...(navigation.index_scope === 'all' ? {} : (navigation.scope || formDef.scope) ? { scope: navigation.scope || formDef.scope } : {}), ...(navigation.index_q ? { q: navigation.index_q } : {}) });
   view.querySelector('#fr-search').value = state.q;
   const newBtn = view.querySelector('#fr-new');
+  if (formDef.archived_at) { view.querySelectorAll('#fr-new,#fr-import-csv,#fr-del-all,#fr-bulk-del').forEach(button=>button.disabled=true); const notice=document.createElement('p');notice.className='panel';notice.textContent='Archived form — no new entries. Existing records may be corrected with a reason and are kept as revisions.';view.querySelector('#fr-bulk-bar').before(notice); }
   if (newBtn) newBtn.onclick = () => isPayroll ? App.navigate('hr-timekeeping') : recordModal(null);
   view.querySelector('#fr-search').addEventListener('input', (e) => {
     clearTimeout(searchTimer);
@@ -377,7 +432,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   function batchPlan(targets, operation, nextStatus) {
     return targets.map((record) => {
       let reason = '';
-      if (operation === 'paid' && record.status === 'paid') reason = 'Already paid';
+      if (formDef.archived_at && operation === 'delete') reason = 'Archived records must be retained';
+      else if (operation === 'paid' && record.status === 'paid') reason = 'Already paid';
       else if (operation === 'unpaid' && record.status !== 'paid') reason = 'Not marked paid';
       else if (isPayroll && record.status === 'paid' && operation !== 'unpaid') reason = 'Paid payslip is locked';
       else if (operation === 'status' && !nextStatus) reason = 'Choose a target status';
@@ -396,6 +452,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           <p class="muted">${UI.esc(formDef.name)}${state.period ? ' · Period: ' + UI.esc(state.period) : ''}${state.status ? ' · Status: ' + UI.esc(state.status) : ''}${state.q ? ' · Search: ' + UI.esc(state.q) : ''}</p>
           <p>${deleting ? 'Deletion cannot be undone.' : 'Only the eligible records below will change.'}</p>
           <p id="fr-batch-count" aria-live="polite"></p>
+          ${formDef.archived_at ? '<label for="fr-batch-reason">Reason for archived-record corrections *</label><textarea id="fr-batch-reason" maxlength="1000"></textarea>' : ''}
           <div id="fr-batch-review" tabindex="0" role="region" aria-label="Affected records" style="max-height:320px;overflow:auto"></div>`,
         confirmText: deleting ? 'Delete records' : 'Apply changes',
         onOpen: (overlay) => {
@@ -410,9 +467,11 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           overlay.querySelector('#fr-batch-status')?.addEventListener('change', renderReview);
           renderReview();
         },
-        onConfirm: (overlay) => {
+        onConfirm: (overlay,showError) => {
+          const reason=overlay.querySelector('#fr-batch-reason')?.value.trim();
+          if(formDef.archived_at&&!reason){showError('Enter a reason for these archived-record corrections.');return false;}
           const status = overlay.querySelector('#fr-batch-status')?.value;
-          resolve({ status, plan: batchPlan(targets, operation, status) });
+          resolve({ status, reason, plan: batchPlan(targets, operation, status) });
         },
         onCancel: () => resolve(null),
       });
@@ -437,7 +496,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       for (const { record } of eligible) {
         try {
           const response = operation === 'delete' ? await API.del('/form-records/' + record.id)
-            : operation === 'status' ? await API.put('/form-records/' + record.id, { data: record.data, status: review.status })
+            : operation === 'status' ? await API.put('/form-records/' + record.id, { data: record.data, status: review.status, change_reason:review.reason,expected_revision:record.revision || 1 })
             : await API.post(`/hr/payroll/${record.id}/${operation === 'paid' ? 'mark-paid' : 'unmark-paid'}`, {});
           changed++;
           if (response?.action_warnings?.length) warnings.push({ record, message: response.action_warnings.join('; ') });
@@ -700,6 +759,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
             <span data-ded-amount="${k}" class="muted">${UI.money(r.data[k])} · ${r.data.statutory_overrides?.[k] != null ? 'Manual' : 'Automatic'}</span>
             ${!locked ? `<button type="button" class="btn secondary small" data-ded-reset="${k}">Use automatic</button>` : ''}
           </div>`).join('')}</div>
+        ${!locked ? `<label for="pd-change-reason">Reason for deduction change${formDef.archived_at ? ' *' : ' (optional)'}</label><textarea id="pd-change-reason" maxlength="1000" rows="2" ${formDef.archived_at ? 'aria-required="true"' : ''}></textarea>` : ''}
+        <p id="pd-save-state" role="status">Saved</p><div id="pd-later-cutoffs" class="muted"></div>
         <p id="pd-ded-error" class="form-error hidden" role="alert"></p>
         <hr style="margin:14px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
         <strong>Other Deductions</strong>
@@ -723,7 +784,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       protectChanges: true, isDirty: () => deductionsDirty,
       title: `Payslip — ${detail.employee_name}`,
       size: 'xl',
-      headActionHTML: `${detail.warning && canManagePayroll && r.status !== 'paid' ? '<button type="button" class="btn secondary small" id="pd-edit-imported">Adjust imported values</button>' : ''}<button type="button" class="btn secondary small" id="pd-print">${UI.icon('printer')} Print</button>`,
+      headActionHTML: `${detail.warning && canManagePayroll && r.status !== 'paid' ? '<button type="button" class="btn secondary small" id="pd-edit-imported">Adjust imported values</button>' : ''}<button type="button" class="btn secondary small" id="pd-history">Deduction history</button><button type="button" class="btn secondary small" id="pd-print">${UI.icon('printer')} Print</button>`,
       bodyHTML: `
         ${detail.notice ? `<p class="hr-workflow-notice" role="status">${UI.esc(detail.notice)}</p>` : ''}
         <div id="pd-slip" style="border:1px solid var(--border-strong);border-radius:8px;padding:8px;margin-bottom:14px;background:#fff;color:#111">${slipHtml}</div>
@@ -742,9 +803,15 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         // mutating the caller's own `r.data` unless/until Save actually persists it, so
         // closing without saving leaves the record (and the list behind this modal) untouched.
         if (openAdjustments) ov.querySelector('.pd-adjustments')?.setAttribute('open', '');
+        ov.querySelector('#pd-history').onclick = async () => { try {
+          const history=await API.get(`/hr/payroll/${r.id}/deductions-history`);
+          UI.modal({title:'Deduction history — '+r.number,size:'lg',cancelText:'Close',bodyHTML:history.length?history.map(entry=>`<section class="form-history-entry"><p><strong>${UI.esc(entry.changed_by_name)}</strong> · ${UI.esc(DataForms.displayTime(entry.created_at))}</p><p>${UI.esc(entry.reason||'No reason provided')}</p><table><thead><tr><th>Deduction</th><th>Before</th><th>After</th></tr></thead><tbody>${Object.entries(DED_LABELS).map(([key,label])=>`<tr><td>${label}</td><td>${UI.money(entry.before_values[key])}<small> · ${entry.before_values.applied?.[key]===false?'Off':entry.before_values.overrides?.[key]!=null?'Manual':'Automatic'}</small></td><td>${UI.money(entry.after_values[key])}<small> · ${entry.after_values.applied?.[key]===false?'Off':entry.after_values.overrides?.[key]!=null?'Manual':'Automatic'}</small></td></tr>`).join('')}<tr><td>Total deductions</td><td>${UI.money(entry.before_values.total_deductions)}</td><td>${UI.money(entry.after_values.total_deductions)}</td></tr><tr><td>Net pay</td><td>${UI.money(entry.before_values.net_pay)}</td><td>${UI.money(entry.after_values.net_pay)}</td></tr></tbody></table></section>`).join(''):'<p>No manual deduction changes have been recorded yet.</p>'});
+        }catch(error){UI.toast(error.message,'error');} };
         let liveData = { ...r.data };
-        ov.addEventListener('input', () => { deductionsDirty = true; });
-        ov.addEventListener('change', () => { deductionsDirty = true; });
+        const saveState=ov.querySelector('#pd-save-state');
+        const markUnsaved=()=>{if(saveState)saveState.textContent='Unsaved changes';};
+        ov.addEventListener('input', () => { deductionsDirty = true; markUnsaved(); });
+        ov.addEventListener('change', () => { deductionsDirty = true; markUnsaved(); });
         ov.querySelector('#pd-edit-imported')?.addEventListener('click', () => { payslipModal.close(); recordModal(r); });
         const btn = ov.querySelector('#pd-print');
         if (btn) btn.onclick = async () => {
@@ -796,9 +863,10 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           };
         }
 
-        const currentApplied = () => {
-          const applied = { other_deductions: otherDeductions, statutory_overrides: {} };
+        const currentApplied = (requireReason = false) => {
+          const applied = { other_deductions: otherDeductions, statutory_overrides: {}, change_reason:ov.querySelector('#pd-change-reason')?.value.trim(), expected_revision:r.revision || 1 };
           const errors = [];
+          if(requireReason&&formDef.archived_at&&!applied.change_reason) errors.push({control:ov.querySelector('#pd-change-reason'),message:'A reason is required for this archived payslip correction.'});
           ov.querySelectorAll('[data-ded-override]').forEach(input => {
             if (input.validity.badInput || (input.value !== '' && (!input.validity.valid || !Number.isFinite(Number(input.value))))) {
               errors.push({ control: input, message: DED_LABELS[input.dataset.dedOverride] + ' must be between 0 and 10,000,000 with at most two decimal places.' });
@@ -814,7 +882,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         // Re-renders the ACTUAL slip visual with the recomputed numbers — this is the one
         // thing the user is looking at, not a separate summary table off to the side.
         const applyPreview = (vals) => {
-          liveData = { ...liveData, ...vals };
+          const {revision,ok,later_cutoffs,...amounts}=vals;
+          liveData = { ...liveData, ...amounts };
           Object.keys(DED_LABELS).forEach(key => {
             ov.querySelector(`[data-ded-amount="${key}"]`).textContent = `${UI.money(liveData[key])} · ${liveData.statutory_overrides?.[key] != null ? 'Manual' : 'Automatic'}`;
           });
@@ -823,7 +892,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         let previewGeneration = 0;
         const refreshPreview = async () => {
           ov.querySelector('#pd-ded-error').classList.add('hidden');
-          deductionsDirty = true;
+          deductionsDirty = true; markUnsaved();
           const generation = ++previewGeneration;
           dedCheckboxes.forEach((cb) => { cb.disabled = locked; });
           try {
@@ -844,23 +913,28 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           saveBtn.onclick = async () => {
             ov.querySelector('#pd-ded-error').classList.add('hidden');
             let applied;
-            try { applied = currentApplied(); } catch { return; }
+            try { applied = currentApplied(true); } catch { return; }
             ++previewGeneration;
-            const editControls = [...ov.querySelectorAll('[data-ded], [data-ded-override], [data-ded-reset], [data-other-ded-del], #pd-other-ded-label, #pd-other-ded-amount, #pd-other-ded-add')];
+            const editControls = [...ov.querySelectorAll('[data-ded], [data-ded-override], [data-ded-reset], [data-other-ded-del], #pd-other-ded-label, #pd-other-ded-amount, #pd-other-ded-add, #pd-change-reason')];
             editControls.forEach(control => { control.disabled = true; });
-            saveBtn.disabled = true;
+            saveBtn.disabled = true; if(saveState)saveState.textContent='Saving…';
             ov.__setSaving(true);
             let finishSave;
             ov.__whenSaved = new Promise(resolve => { finishSave = resolve; });
             try {
               const vals = await API.put(`/hr/payroll/${r.id}/deductions`, applied);
               applyPreview(vals);
+              r.revision = vals.revision || r.revision;
+              if(saveState)saveState.textContent='Saved';
+              const later=ov.querySelector('#pd-later-cutoffs');
+              if(later && vals.later_cutoffs?.length){later.innerHTML='<p>Review later cutoffs in this month after changing earlier deductions. Regenerate unpaid cutoffs in date order; paid slips stay locked.</p>'+vals.later_cutoffs.map(cutoff=>`<button type="button" class="btn secondary small" data-later-cutoff="${UI.esc(cutoff.label)}">${UI.esc(cutoff.label)} · ${UI.esc(cutoff.status)}</button>`).join('');later.querySelectorAll('[data-later-cutoff]').forEach(button=>button.onclick=()=>App.navigate('form-records',{form_id:formId,period:button.dataset.laterCutoff}));}
+              if(ov.querySelector('#pd-change-reason'))ov.querySelector('#pd-change-reason').value='';
               r.data = liveData; // so the row behind this modal reflects it once it closes
               deductionsDirty = false;
               payslipModal.markSaved();
               UI.toast('Deductions saved');
               load();
-            } catch (err) { const error = ov.querySelector('#pd-ded-error'); error.hidden = false; error.textContent = err.message; error.classList.remove('hidden'); }
+            } catch (err) { if(saveState)saveState.textContent='Could not save — your changes are still here'; const error = ov.querySelector('#pd-ded-error'); error.hidden = false; error.textContent = err.message; error.classList.remove('hidden'); }
             finally {
               saveBtn.disabled = false; editControls.forEach(control => { control.disabled = locked; });
               ov.__setSaving(false); ov.__whenSaved = null; finishSave();
@@ -969,7 +1043,10 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       const signature = JSON.stringify([period, date, file.name, file.size, file.lastModified]);
       const data = new FormData(); data.append('file', file); data.append('period', period); data.append('pay_date', date);
       if (preview) data.append('dry_run', '1');
-      else if (overlay.querySelector('#fr-import-duplicates')?.checked) data.append('allow_duplicates', '1');
+      else {
+        if (overlay.querySelector('#fr-import-duplicates')?.checked) data.append('allow_duplicates', '1');
+        if (overlay.querySelector('#fr-import-partial')?.checked) data.append('allow_partial','1');
+      }
       return { data, signature };
     }
     UI.modal({
@@ -980,12 +1057,13 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         <label>Pay date</label><input type="date" data-f="pay_date">
         <div id="fr-import-review" aria-live="polite"></div>`,
       confirmText: 'Preview import',
+      isConfirmDisabled:()=>reviewed?.count===0,
       onOpen: overlay => {
         overlay.addEventListener('change', event => {
           if (!event.target.matches('[data-f]')) return;
           reviewed = null; reviewedSignature = '';
           overlay.querySelector('#fr-import-review').innerHTML = '';
-          overlay.querySelector('[data-confirm]').textContent = 'Preview import';
+          overlay.querySelector('[data-confirm]').textContent = 'Preview import';overlay.querySelector('[data-confirm]').disabled=false;
         });
       },
       onConfirm: async (overlay, showError) => {
@@ -995,11 +1073,16 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           reviewed = await API.upload('/form-definitions/' + formId + '/import', previewRequest.data);
           reviewedSignature = previewRequest.signature;
           overlay.querySelector('#fr-import-review').innerHTML = `<h4>${reviewed.count} payslips · ${UI.esc(reviewed.period)}</h4><p>Gross ${UI.money(reviewed.total_earnings)} · Deductions ${UI.money(reviewed.total_deductions)} · Net ${UI.money(reviewed.net_pay)}</p>
+            ${reviewed.rejected_count ? `<div class="form-error"><p>${reviewed.rejected_count} row(s) need correction.</p><button type="button" class="btn secondary small" id="fr-rejected-download">Download rejected rows with explanations</button><ul>${reviewed.rejected.map(row=>`<li>Row ${row.line}: ${UI.esc(row.error)}</li>`).join('')}</ul><label><input type="checkbox" id="fr-import-partial"> Import only the ${reviewed.count} valid rows; rejected rows will not be saved.</label></div>` : ''}
             ${reviewed.duplicate_count ? `<div class="form-error"><p>${reviewed.duplicate_count} row(s) match existing payslips in this period. Importing will add more records; existing payslips will not be replaced.</p><label><input id="fr-import-duplicates" type="checkbox"> I confirm importing these matching rows as additional payslips.</label></div>` : ''}
             <div class="fr-import-table" tabindex="0" role="region" aria-label="Import preview"><table><thead><tr><th>Employee</th><th>Gross</th><th>Deductions</th><th>Net</th><th>Existing matches</th></tr></thead><tbody>${reviewed.rows.map(row => `<tr><td>${UI.esc(row.employee_name)}</td><td>${UI.money(row.total_earnings)}</td><td>${UI.money(row.total_deductions)}</td><td>${UI.money(row.net_pay)}</td><td>${UI.esc(row.matched_numbers.join(', ') || 'None')}</td></tr>`).join('')}</tbody></table></div>`;
-          overlay.querySelector('[data-confirm]').textContent = 'Import reviewed payslips';
+          const download=overlay.querySelector('#fr-rejected-download');
+          if(download)download.onclick=()=>{const blob=new Blob([reviewed.rejected_csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='payroll-rejected-rows.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+          overlay.querySelector('[data-confirm]').textContent = reviewed.count ? 'Import reviewed payslips' : 'Fix rejected rows first';
+          overlay.querySelector('[data-confirm]').disabled = !reviewed.count;
           return false;
         }
+        if(reviewed.rejected_count&&!overlay.querySelector('#fr-import-partial')?.checked){showError('Confirm importing valid rows only, or correct the rejected file first.');return false;}
         if (reviewed.duplicate_count && !overlay.querySelector('#fr-import-duplicates').checked) { showError('Confirm the duplicate import before continuing.'); return false; }
         let result;
         try { result = await API.upload('/form-definitions/' + formId + '/import', request.data); }
@@ -1056,8 +1139,9 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     el.setAttribute('aria-busy', 'false');
     actionControls.forEach((control) => { control.disabled = disabledBefore.get(control); });
     // These toolbar actions remain disabled after an error until a successful retry.
-    view.querySelectorAll('#fr-new, #fr-del-all, #fr-download-csv, #fr-import-csv, #fr-print-slips, #fr-print-all-tpl, #fr-bulk-bar button').forEach((control) => { control.disabled = false; });
+    view.querySelectorAll('#fr-new, #fr-del-all, #fr-download-csv, #fr-import-csv, #fr-print-slips, #fr-print-all-tpl, #fr-bulk-bar button').forEach((control) => { control.disabled = !!formDef.archived_at && ['fr-new','fr-del-all','fr-import-csv','fr-bulk-del'].includes(control.id); });
     hasLoadedRecords = true;
+    records.forEach(record => { record.schema = formVersions.get(record.definition_version) || record.schema; });
     currentRecords = records;
     selectedIds.clear();
     updateBulkBar();
@@ -1111,7 +1195,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   // caller give its own "select all" checkbox a distinct hook (a literal id would collide once
   // there's more than one table on screen).
   function tableHTML(records, checkAllAttr) {
-    const visibleFields = formDef.fields.slice(0, 4);
+    const available = columnFields();
+    const visibleFields = Array.isArray(viewPreferences.columns) ? viewPreferences.columns.map(key=>available.get(key)).filter(Boolean) : formDef.fields.slice(0,4);
     return `<table>
       <thead><tr>
         <th style="width:36px;text-align:center"><input type="checkbox" ${checkAllAttr} title="Select all" /></th>
@@ -1125,11 +1210,11 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           <td>${isPayroll
             // A real button, so Tab + Enter opens the payslip detail; its click bubbles to the row.
             ? `<button type="button" class="hr-row-open" title="View payslip details">${UI.esc(r.number)}</button>`
-            : `<strong>${UI.esc(r.number)}</strong>`}</td>
+            : `<strong>${UI.esc(r.number)}</strong>`}<small class="muted"> · v${r.definition_version || 1} / r${r.revision || 1}</small></td>
           ${visibleFields.map((f) => `<td>${UI.esc(String(r.data[f.key] ?? ''))}</td>`).join('')}
           <td><span class="badge-pill status-${UI.esc(r.status)}">${UI.esc(r.status)}</span></td>
           <td>${UI.esc(UI.fmtDateShort(r.created_at))}</td>
-          <td class="actions">
+          <td class="actions"><button type="button" class="icon-btn" data-history="${r.id}" title="Change history" aria-label="Change history for ${UI.esc(r.number)}">${UI.icon('clock')}</button>
             ${isPayroll ? `<button class="icon-btn" data-print="${r.id}" title="Print this slip" aria-label="Print payslip ${UI.esc(r.number)}">${UI.icon('printer')}</button>` : ''}
             ${!isPayroll && formDef.template_id ? `<button class="icon-btn" data-print-tpl="${r.id}" title="Print">${UI.icon('printer')}</button>` : ''}
             ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-email="${r.id}" title="Email this payslip" aria-label="Email payslip ${UI.esc(r.number)}">${UI.icon('mail')}</button>` : ''}
@@ -1137,7 +1222,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
               ? `<button class="icon-btn" data-unpaid="${r.id}" title="Unmark Paid (unlock for editing)" aria-label="Unmark payslip ${UI.esc(r.number)} as paid">${UI.icon('reply', 15)}</button>`
               : `<button class="icon-btn" data-paid="${r.id}" title="Mark as Paid (locks this payslip)" aria-label="Mark payslip ${UI.esc(r.number)} as paid">${UI.icon('check')}</button>`) : ''}
             ${r.status !== 'paid' && canWrite ? `<button class="icon-btn" data-edit="${r.id}" title="Edit"${isPayroll ? ` aria-label="Edit payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('edit')}</button>` : ''}
-            ${r.status !== 'paid' && canWrite && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete"${isPayroll ? ` aria-label="Delete payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('trash')}</button>` : ''}
+            ${!formDef.archived_at && r.status !== 'paid' && canWrite && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete"${isPayroll ? ` aria-label="Delete payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('trash')}</button>` : ''}
           </td>
         </tr>`).join('')}
       </tbody></table>`;
@@ -1231,7 +1316,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           : 'Generate payslips from a Time Keeping cutoff, or upload a payroll CSV.',
         action: filtered
           ? '<button type="button" class="btn secondary" id="fr-empty-clear">Clear filters</button>'
-          : (canManagePayroll ? `<button type="button" class="btn" id="fr-empty-new">${UI.icon('plus')} New Record</button>` : ''),
+          : (canManagePayroll && !formDef.archived_at ? `<button type="button" class="btn" id="fr-empty-new">${UI.icon('plus')} New Record</button>` : ''),
       });
       const clear = el.querySelector('#fr-empty-clear');
       if (clear) clear.onclick = () => clearPayrollFilters();
@@ -1244,7 +1329,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         icon: formDef.icon || 'file',
         title: state.q || state.status ? 'No matching records' : `No ${formDef.name} records yet`,
         hint: state.q || state.status ? 'Try a different search or status.' : 'Create the first record to get started.',
-        action: !state.q && !state.status
+        action: !formDef.archived_at && !state.q && !state.status
           ? `<button class="btn" id="fr-empty-new">${UI.icon('plus')} ${isPayroll ? 'Generate payslips' : 'New Record'}</button>` : '',
       });
       const en = el.querySelector('#fr-empty-new');
@@ -1360,6 +1445,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       });
     el.querySelectorAll('[data-edit]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); openRecord(b.dataset.edit, records, true); });
+    el.querySelectorAll('[data-history]').forEach(button=>button.onclick=event=>{event.stopPropagation();DataForms.recordHistory(records.find(record=>String(record.id)===button.dataset.history)).catch(error=>UI.toast(error.message,'error'));});
     el.querySelectorAll('[data-del]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); delRecord(b.dataset.del, records); });
     el.querySelectorAll('tr[data-id]').forEach((tr) =>
@@ -1404,7 +1490,9 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       UI.toast('Refresh records before editing.', 'error');
       return;
     }
+    if (!existing && formDef.archived_at) { UI.toast('Restore this form before creating records.', 'error'); return; }
     const editing = !!existing;
+    const recordDefinition = existing?.schema || formDef;
     const request = HR_REQUEST_SLUGS.includes(formDef.slug);
     if (request && existing && (existing.status !== 'pending' || formDef.slug === 'information_change')) {
       UI.modal({title: `${formDef.name} — ${existing.number}`,cancelText:'Close',bodyHTML:`<p>Status: ${UI.esc(existing.status)}</p><p class="muted">HR requests are decided in Approvals. Decided requests cannot be edited.</p>${Object.entries(existing.data || {}).map(([k,v])=>`<div class="tool-row"><strong>${UI.esc(k.replace(/_/g,' '))}</strong><span>${UI.esc(String(v ?? ''))}</span></div>`).join('')}`});
@@ -1414,10 +1502,10 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     const statusOpts = (request ? ['pending'] : ['draft', 'submitted', 'approved', 'rejected', 'completed'])
       .map((s) => `<option value="${s}" ${(existing ? existing.status : 'draft') === s ? 'selected' : ''}>${s}</option>`)
       .join('');
-    const employees = formDef.fields.some((f) => f.type === 'employee') ? await getEmployees() : [];
+    const employees = recordDefinition.fields.some((f) => f.type === 'employee') ? await getEmployees() : [];
 
     // For payroll records, append a Net Pay field so users can correct the value.
-    const netPayField = isPayroll && !formDef.fields.some((field) => field.key === 'net_pay') ? `
+    const netPayField = isPayroll && !recordDefinition.fields.some((field) => field.key === 'net_pay') ? `
       <div style="margin-bottom:12px;padding:10px;background:var(--surface-2,#f5f7fa);border-radius:8px">
         <label for="fr-field-net_pay" style="font-weight:600">Net Pay</label>
         <input data-field="net_pay" id="fr-field-net_pay" type="number" step="0.01"
@@ -1428,24 +1516,25 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     UI.modal({
       protectChanges: true,
       title: editing ? `Edit ${existing.number}` : `New ${formDef.name}`,
-      size: formDef.fields.length > 6 ? 'lg' : undefined,
+      size: recordDefinition.fields.length > 6 ? 'lg' : undefined,
       bodyHTML: `
         <div style="margin-bottom:14px">
           ${editing
             ? `<span class="muted">Status: ${UI.esc(existing.status)}. To change it, select the record and choose Change status.</span>`
             : `<label for="fr-record-status">Status</label><select id="fr-record-status" ${request ? 'disabled' : ''} data-f="status">${statusOpts}</select>`}
         </div>
-        ${isPayroll ? ['Employee and period','Earnings and attendance','Deductions','Totals'].map((group,index) => `<fieldset class="payroll-edit-group"><legend>${group}</legend>${formDef.fields.filter(field => {
+        ${isPayroll ? ['Employee and period','Earnings and attendance','Deductions','Totals'].map((group,index) => `<fieldset class="payroll-edit-group"><legend>${group}</legend>${recordDefinition.fields.filter(field => {
           const totals = ['total_earnings','total_deductions','net_pay']; const deductions = ['sss','philhealth','pagibig','withholding_tax','cash_advance','late_absences']; const identity = ['employee_name','dept_position','payroll_period','pay_date'];
           return index === 0 ? identity.includes(field.key) : index === 2 ? deductions.includes(field.key) : index === 3 ? totals.includes(field.key) : !identity.includes(field.key) && !deductions.includes(field.key) && !totals.includes(field.key);
-        }).map(field => renderFieldInput(field,data,employees)).join('')}</fieldset>`).join('') : formDef.fields.map(field => renderFieldInput(field,data,employees)).join('')}
+        }).map(field => renderFieldInput(field,data,employees)).join('')}</fieldset>`).join('') : recordDefinition.fields.map(field => renderFieldInput(field,data,employees)).join('')}
+        ${editing ? `<label for="fr-change-reason">Reason for correction${formDef.archived_at ? ' *' : ' (optional)'}</label><textarea id="fr-change-reason" maxlength="1000" ${formDef.archived_at ? 'aria-required="true"' : ''}></textarea><p class="muted">Record revision ${existing.revision || 1} · Form version ${existing.definition_version || 1}. Previous revisions stay in Change history.</p>` : ''}
         ${netPayField}
-        ${formDef.fields.length === 0 && !isPayroll
+        ${recordDefinition.fields.length === 0 && !isPayroll
           ? '<div class="muted" style="text-align:center;padding:20px">This form has no fields yet. Edit it in Form Builder to add fields.</div>'
           : ''}`,
       onOpen: (ov) => {
         ov.querySelectorAll('select[data-field]').forEach((sel) => {
-          const field = formDef.fields.find((f) => f.key === sel.dataset.field);
+          const field = recordDefinition.fields.find((f) => f.key === sel.dataset.field);
           if (!field || field.type !== 'employee') return;
           sel.addEventListener('change', () => {
             const emp = employees.find((e) => e.name === sel.value);
@@ -1463,7 +1552,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         // Keep generated values and metadata that are not represented by editable fields.
         const collected = { ...data };
         const errors = [];
-        for (const field of formDef.fields) {
+        for (const field of recordDefinition.fields) {
           const inp = ov.querySelector(`[data-field="${field.key}"]`);
           if (!inp) continue;
           if (field.type === 'checkbox') {
@@ -1477,6 +1566,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
             errors.push({ control: inp, message: `${field.label}: ${inp.validationMessage}` });
           }
         }
+        const reason = ov.querySelector('#fr-change-reason')?.value.trim();
+        if (editing && formDef.archived_at && !reason) errors.push({control:ov.querySelector('#fr-change-reason'),message:'A reason is required for this archived record correction.'});
         if (!FormValidation.show(ov, errors, ov.querySelector('[data-modal-error]'))) return false;
         // For payroll forms, also capture the net_pay value.
         if (isPayroll) {
@@ -1486,8 +1577,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         const status = editing ? existing.status : ov.querySelector('[data-f="status"]').value;
 
         const res = editing
-          ? await API.put('/form-records/' + existing.id, { data: collected })
-          : await API.post('/form-records', { form_def_id: formId, data: collected, status });
+          ? await API.put('/form-records/' + existing.id, { data: collected, expected_revision:existing.revision || 1, change_reason:reason })
+          : await API.post('/form-records', { form_def_id: formId, expected_definition_version:formDef.version || 1, data: collected, status });
         UI.toast(editing ? 'Record saved' : 'Record created');
         const warns = (res && res.action_warnings) || [];
         if (warns.length) UI.toast('Some actions were skipped: ' + warns.join('; '), 'error');

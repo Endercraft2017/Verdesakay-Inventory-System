@@ -124,6 +124,10 @@ describe('HR while the site has no internet', () => {
     }
     await T.lanRound();
     expect(recordOf(T.lanDb(), leave.id)).toEqual(recordOf(T.cloudDb(), leave.id));
+    const history=(conn:ReturnType<typeof T.cloudDb>)=>conn.prepare('SELECT revision,data,status,changed_by,changed_by_name,reason,source,created_at FROM form_record_revisions WHERE record_id=? ORDER BY revision').all(leave.id);
+    expect(history(T.cloudDb()).length).toBeGreaterThan(1);
+    expect(history(T.hostDb())).toEqual(history(T.cloudDb()));
+    expect(history(T.lanDb())).toEqual(history(T.cloudDb()));
   });
 });
 

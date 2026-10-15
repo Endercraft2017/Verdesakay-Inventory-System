@@ -500,6 +500,16 @@ export interface FieldPunches {
   created_at: Generated<string>;
 }
 
+export interface FormDefinitionVersions {
+  form_id: Generated<number>;
+  version: number;
+  definition: string;
+  created_by: number | null;
+  reason: string | null;
+  created_at: string;
+  legacy_baseline: Generated<number>;
+}
+
 export interface FormDefinitions {
   id: Generated<number>;
   name: string;
@@ -510,6 +520,12 @@ export interface FormDefinitions {
   created_by: number | null;
   created_at: Generated<string>;
   updated_at: string | null;
+  version: Generated<number>;
+  updated_by: number | null;
+  version_reason: string | null;
+  archived_at: string | null;
+  archived_by: number | null;
+  archive_reason: string | null;
   template_id: number | null;
   scope: string | null;
   actions: Generated<string>;
@@ -524,6 +540,19 @@ export interface FormRecordActionRuns {
   created_at: Generated<string>;
 }
 
+export interface FormRecordRevisions {
+  record_id: Generated<number>;
+  revision: number;
+  definition_version: number;
+  data: string;
+  status: string;
+  changed_by: number | null;
+  reason: string | null;
+  changed_by_name: string | null;
+  source: string;
+  created_at: string;
+}
+
 export interface FormRecords {
   id: Generated<number>;
   form_def_id: number;
@@ -533,12 +562,22 @@ export interface FormRecords {
   created_by: number | null;
   created_at: Generated<string>;
   updated_at: string | null;
+  definition_version: number | null;
+  revision: Generated<number>;
   period: string | null;
 }
 
 export interface FormTemplateLinks {
   form_id: Generated<number>;
   template_id: number;
+}
+
+export interface FormUserPreferences {
+  user_id: Generated<number>;
+  favorites: Generated<string>;
+  recent: Generated<string>;
+  views: Generated<string>;
+  updated_at: string;
 }
 
 export interface Forms {
@@ -1023,6 +1062,17 @@ export interface PayrollTables {
   note: string | null;
   created_by: number | null;
   created_at: Generated<string>;
+}
+
+export interface PayslipDeductionHistory {
+  id: Generated<number>;
+  record_id: number;
+  before_values: string;
+  after_values: string;
+  changed_by: number | null;
+  changed_by_name: string;
+  reason: string | null;
+  created_at: string;
 }
 
 export interface PayslipPaidHistory {
@@ -1703,10 +1753,13 @@ export interface DB {
   employee_rate_history: EmployeeRateHistory;
   employees: Employees;
   field_punches: FieldPunches;
+  form_definition_versions: FormDefinitionVersions;
   form_definitions: FormDefinitions;
   form_record_action_runs: FormRecordActionRuns;
+  form_record_revisions: FormRecordRevisions;
   form_records: FormRecords;
   form_template_links: FormTemplateLinks;
+  form_user_preferences: FormUserPreferences;
   forms: Forms;
   global_variables: GlobalVariables;
   goods_receipt_items: GoodsReceiptItems;
@@ -1746,6 +1799,7 @@ export interface DB {
   payment_allocations: PaymentAllocations;
   payments: Payments;
   payroll_tables: PayrollTables;
+  payslip_deduction_history: PayslipDeductionHistory;
   payslip_paid_history: PayslipPaidHistory;
   petty_cash_entries: PettyCashEntries;
   petty_cash_funds: PettyCashFunds;

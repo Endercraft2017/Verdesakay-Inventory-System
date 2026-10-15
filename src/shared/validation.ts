@@ -1305,6 +1305,8 @@ export const formActionSchema = z.object({
 });
 
 export const formDefinitionSchema = z.object({
+  expected_version: z.number().int().positive().optional(),
+  change_reason: trimmed.max(1000).optional(),
   name: trimmed.min(1, 'Form name is required').max(120),
   slug: trimmed.min(1).max(60).regex(/^[a-z0-9_]+$/, 'Slug must be lowercase letters, numbers, or underscores'),
   number_prefix: trimmed.min(1).max(10).regex(/^[A-Z0-9]+$/, 'Prefix must be uppercase letters or numbers').default('FM'),
@@ -1334,12 +1336,15 @@ const formRecordData = z.record(z.string().max(64), formFieldValue).superRefine(
 });
 
 export const createFormRecordSchema = z.object({
+  expected_definition_version: z.number().int().positive().optional(),
   form_def_id: z.coerce.number().int().positive('Form definition is required'),
   data: formRecordData.default({}),
   status: trimmed.max(40).default('draft'),
 });
 
 export const updateFormRecordSchema = z.object({
+  expected_revision: z.number().int().positive().optional(),
+  change_reason: trimmed.max(1000).optional(),
   data: formRecordData.default({}),
   status: trimmed.max(40).optional(),
 });
@@ -1665,6 +1670,8 @@ export const payrollPolicySchema = z.object({
 // statutory deductions apply to ONE payslip record. All optional; an omitted key keeps whatever
 // that deduction's current applied state already is (not reset to on).
 export const payrollDeductionTogglesSchema = z.object({
+  expected_revision: z.number().int().positive().optional(),
+  change_reason: trimmed.max(1000).optional(),
   statutory_overrides: z.object({
     sss: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),
     philhealth: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),

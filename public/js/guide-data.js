@@ -330,7 +330,7 @@ const GUIDE_PIPELINES = [
         title: 'Review & print payslips',
         role: 'HR · hr.view',
         to: { route: 'form-records', filter: { slug: 'hr_payroll' }, label: 'HR → Payroll' },
-        body: `Open Payroll and select the cutoff in Period. Open a payslip and compare earnings, deductions and net pay with attendance and approved forms. Preview individual slips or Print Summary before printing. Mark payment only after payment is made; paid payroll locks the cutoff’s attendance and roster.`,
+        body: `Open Payroll and select the cutoff in Period. Open a payslip and compare earnings, deductions and net pay with attendance and approved forms. For an unpaid payslip, open Statutory Deductions to override SSS, PhilHealth, Pag-IBIG or withholding tax; zero is valid and Use automatic restores calculation. Preview totals, optionally enter a reason, and Save Deductions. Check Deduction history and review any later-cutoff notice. Preview individual slips or Print Summary before printing. Mark payment only after payment is made; paid payroll locks the cutoff’s attendance and roster.`,
       },
       {
         title: '13th-month & final pay',

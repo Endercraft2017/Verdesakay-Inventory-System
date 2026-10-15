@@ -50,7 +50,7 @@ try {
   const readRecord = () => api('GET', `/form-records/${record.id}`);
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/lib/chromium/chromium', '/usr/bin/chromium'].find(fs.existsSync);
   browser = await chromium.launch({ ...(executablePath ? { executablePath } : {}), headless: true });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce', timezoneId: 'Asia/Manila' });
   await context.addInitScript(value => localStorage.setItem('vds_token', value), token);
   page = await context.newPage();
   page.on('pageerror', error => report.errors.push(error.message));
@@ -100,6 +100,14 @@ try {
     await api('POST', `/hr/periods/${period.id}/generate-payslips`, { payroll_period: period.label });
     assert.equal((await readRecord()).data.withholding_tax, 333.5);
     assert.equal((await readRecord()).data.net_pay, record.data.total_earnings - 666.75);
+    await close(); await open(); // Regeneration advances the revision; refresh before editing again.
+  });
+  await check('Deduction audit opens with the saved before and after values',async()=>{
+    await page.locator('#pd-history').click();
+    await page.locator('.modal-overlay').last().getByText('Deduction history — '+record.number,{exact:true}).waitFor();
+    await scan('payroll-deduction-history');
+    assert((await page.locator('.modal-overlay').last().innerText()).includes('Manual'));
+    await page.locator('.modal-overlay').last().locator('.modal-foot [data-close]').click();
   });
   await check('Print preview includes the saved deduction amounts', async () => {
     await page.locator('#pd-print').click();
@@ -206,6 +214,54 @@ try {
     }
     await page.evaluate(() => document.documentElement.dataset.theme = 'light');
     page.once('dialog', dialog => dialog.accept()); await close();
+  });
+  await check('Personal views, schema history and archived corrections persist', async () => {
+    const fields=Array.from({length:50},(_,i)=>({key:'detail_'+i,label:'Detailed information '+i+' — a long label that should wrap clearly without hiding the input',type:'text',required:false}));
+    const definition={name:'Large lifecycle audit',slug:'ux_lifecycle',number_prefix:'UL',scope:'inventory',fields,actions:[]};
+    const form=await api('POST','/form-definitions',definition);
+    const entry=await api('POST','/form-records',{form_def_id:form.id,data:{detail_0:'Original detail'}});
+    await page.evaluate(()=>App.navigate('form-records',{scope:'inventory'}));
+    await page.locator(`[data-favorite="${form.id}"]`).click();
+    await page.locator('#fr-index-view').selectOption('favorites');
+    await page.locator(`.form-card[data-id="${form.id}"]`).click();
+    await page.locator('#fr-columns').click();
+    for(const input of await page.locator('[data-column]').all()) await input.uncheck();
+    await page.locator('[data-column="detail_0"]').check();
+    await page.locator('.modal [data-confirm]').click();
+    await page.waitForSelector('.modal-overlay',{state:'detached'});
+    assert.deepEqual((await api('GET','/data-forms/preferences')).views[form.id].columns,['detail_0']);
+    await page.locator('#fr-save-filter').click();await page.locator('#fr-filter-name').fill('Review all entries');
+    await page.locator('.modal [data-confirm]').click();await page.waitForSelector('.modal-overlay',{state:'detached'});
+    assert.equal((await api('GET','/data-forms/preferences')).views[form.id].filters[0].name,'Review all entries');
+    await api('PUT',`/form-definitions/${form.id}`,{...definition,fields:[...fields,{key:'new_field',label:'New version only',type:'text'}],expected_version:1,change_reason:'Expanded collection'});
+    await api('PUT',`/form-definitions/${form.id}/archive`,{archived:true,reason:'Collection complete'});
+    await page.evaluate(id=>App.navigate('form-records',{form_id:id}),form.id);
+    await page.locator('#fr-new:disabled').waitFor();
+    await page.locator(`[data-edit="${entry.id}"]`).click();
+    assert.equal(await page.locator('[data-field="new_field"]').count(),0);
+    for(const width of [1440,1024,768,390]) {
+      await page.setViewportSize({width,height:1000});
+      for(const theme of ['light','dark']) {
+        await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);
+        const box=await page.locator('.modal').boundingBox();assert(box.x>=0&&box.x+box.width<=width+1);
+        await scan(`large-record-${theme}-${width}`);
+      }
+    }
+    await page.locator('[data-field="detail_0"]').fill('Corrected detail');
+    await page.locator('#fr-change-reason').fill('Checked original source');
+    await page.locator('#fr-change-reason').focus();await page.keyboard.press('Tab');
+    assert(await page.locator('.modal').evaluate(el=>el.contains(document.activeElement)));
+    await page.locator('.modal [data-confirm]').click();await page.waitForSelector('.modal-overlay',{state:'detached'});
+    const revisions=await api('GET',`/form-records/${entry.id}/revisions`);
+    assert.equal(revisions[0].reason,'Checked original source');assert.equal(revisions[1].data.detail_0,'Original detail');
+    await page.locator(`[data-history="${entry.id}"]`).click();await scan('record-revision-history');await close();
+    await page.evaluate(()=>App.navigate('form-builder',{scope:'inventory'}));
+    await page.locator(`[data-versions="${form.id}"]`).click();await scan('form-schema-versions');await close();
+    await api('PUT',`/form-definitions/${form.id}/archive`,{archived:false});
+    await page.evaluate(id=>App.navigate('form-records',{form_id:id}),form.id);await page.locator('#fr-new:not(:disabled)').waitFor();
+    await page.setViewportSize({width:720,height:500});await page.locator('#fr-new').click();
+    await page.locator('.modal [data-confirm]').scrollIntoViewIfNeeded();
+    assert(await page.locator('.modal [data-confirm]').isVisible());await scan('large-form-reflow-half-viewport');await close();
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await check('Mobile requests show every missing field and preserve corrected input', async () => {

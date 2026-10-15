@@ -110,6 +110,8 @@ it('requires a current verified count within warehouse stock for legacy reconcil
     const info = await lookup(), balance = info.batch.balances.find((b: any) => b.location_id === loc);
     const path = `/api/rts/batches/${batch.id}/count`, body = { location_id: loc, quantity: balance.on_hand, expected_quantity: balance.on_hand, reason: 'Physical lot counted against attached stickers' };
     expect((await ctx.api.post(path).set(H()).send({ ...body, quantity: 1000 })).status).toBe(409);
+    expect((await ctx.api.post(`/api/inventory/${product}/adjust`).set(H()).send({location_id:loc,change:2,reason:'Other untracked stock'})).status).toBe(200);
+    expect((await ctx.api.post(path).set(H()).send({...body,quantity:balance.on_hand+1})).status).toBe(409);
     expect((await ctx.api.post(path).set(H()).send({ ...body, expected_quantity: 999 })).status).toBe(409);
     expect((await ctx.api.post(path).set(H()).send(body)).status).toBe(200);
     expect((await lookup()).batch.balances.find((b: any) => b.location_id === loc).on_hand).toBe(balance.on_hand);

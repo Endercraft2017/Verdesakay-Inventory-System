@@ -72,7 +72,7 @@
       d.batch_stock.forEach(function(s){view.appendChild(mEl('<div class="m-hint">'+mEsc(s.location_name)+': '+s.on_hand+' on hand · '+s.reserved+' reserved · '+s.available+' free</div>'));});
       (d.batch_allocations||[]).forEach(function(a){view.appendChild(mEl('<div class="m-hint">'+mEsc(a.order_number)+': '+a.quantity+' '+mEsc(a.state)+'</div>'));});
       if(!d.batch_stock.length&&b.received_qty>0)view.appendChild(mEl('<div class="m-hint">Older batch stock needs a verified count before exact-batch allocation.</div>'));
-      if(MApp.can('inventory.adjust')){
+      if(MApp.can('inventory.adjust')&&!(d.units&&d.units.length)){
         var counts=mEl('<section class="m-card"><h3>Reconcile batch stock</h3><p class="m-hint">Count the remaining physical batch. This assigns existing stock to the batch; it does not add stock.</p><label>Warehouse<select data-count-location></select></label><label>Quantity<input type="number" min="0" step="any" data-count-qty></label><label>Reason<input data-count-reason maxlength="500"></label><button class="m-btn" data-count-save>Save verified count</button></section>');
         view.appendChild(counts);
         mLocations.load().then(function(){counts.querySelector('[data-count-location]').innerHTML=mLocations.list().filter(function(l){return l.type!=='truck';}).map(function(l){return '<option value="'+l.id+'">'+mEsc(l.name)+'</option>';}).join('');});
@@ -83,6 +83,16 @@
           API.post('/rts/batches/'+b.id+'/count',{location_id:Number(counts.querySelector('[data-count-location]').value),quantity:Number(qty),expected_quantity:((d.batch_stock||[]).find(function(s){return s.location_id===Number(counts.querySelector('[data-count-location]').value);})||{on_hand:0}).on_hand,reason:reason},{idempotencyKey:crypto.randomUUID()}).then(function(result){if(API.syncLocal(result)){mToast('Batch count awaiting authority confirmation');btn.disabled=true;return;}mToast('Batch count saved');load(view,{batch:b.id});}).catch(function(e){mToast(e.message,'err');btn.disabled=false;});
         };
       }
+    }
+
+    if(b&&d.units&&d.units.length){
+      var inStock=d.units.filter(function(unit){return unit.status==='in_stock';}).length;
+      var reserved=d.units.filter(function(unit){return unit.status==='reserved';}).length;
+      view.appendChild(mEl('<h3 class="m-h3">Units in this batch</h3><p class="m-hint">'+inStock+' ready to sell · '+reserved+' reserved · '+d.units.length+' produced. Scan each unit sticker when receiving or releasing serialized stock.</p>'));
+      d.units.forEach(function(unit){
+        var button=mEl('<button class="m-btn m-btn-secondary">'+mEsc(unit.identifier||('Unit #'+unit.id))+' · '+mEsc(unit.status)+'</button>');
+        button.onclick=function(){MApp.go('record',{unit:unit.id});};view.appendChild(button);
+      });
     }
 
     // QC/QA

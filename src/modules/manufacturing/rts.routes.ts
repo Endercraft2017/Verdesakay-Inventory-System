@@ -80,6 +80,12 @@ router.post('/batches/:id/count', requirePermission('inventory.adjust'), syncCla
  if(!batch){res.status(404).json({error:'Non-serialized batch not found.'});return;}
  const balance=batchBalances(id).find(x=>x.location_id===input.location_id);
  if(input.expected_quantity!==(balance?.on_hand??0)){res.status(409).json({error:'This batch balance changed. Reload and recount before saving.'});return;}
+ const provenance=queryOne<{received:number;shipped:number;returned:number;elsewhere:number}>(`SELECT
+   (SELECT COALESCE(SUM(quantity),0) FROM production_receipt_items WHERE batch_id=?) AS received,
+   (SELECT COALESCE(SUM(quantity),0) FROM production_batch_allocations WHERE batch_id=? AND state='shipped') AS shipped,
+   (SELECT COALESCE(SUM(r.quantity),0) FROM production_batch_return_links l JOIN sales_returns r ON r.id=l.return_id WHERE l.batch_id=? AND r.status='restocked') AS returned,
+   (SELECT COALESCE(SUM(quantity),0) FROM production_batch_stock WHERE batch_id=? AND location_id!=?) AS elsewhere`,id,id,id,id,input.location_id)!;
+ if(input.quantity+provenance.elsewhere>provenance.received-provenance.shipped+provenance.returned+1e-9){res.status(409).json({error:'This count exceeds the quantity received from this batch after its known shipments and returns.'});return;}
  const other=queryOne<{n:number}>(`SELECT COALESCE(SUM(s.quantity),0) AS n FROM production_batch_stock s JOIN production_batches pb ON pb.id=s.batch_id JOIN job_orders j ON j.id=pb.job_order_id WHERE s.location_id=? AND s.batch_id!=? AND COALESCE(pb.product_item_id,j.product_item_id)=? AND j.build_mode=?`,input.location_id,id,batch.item_id,batch.build_mode)?.n??0;
  if(input.quantity<(balance?.reserved??0)||input.quantity+other>variantStockAt(batch.item_id,input.location_id,batch.build_mode)+1e-9){res.status(409).json({error:'Count must cover existing reservations and fit within the warehouse build-state stock after other batches.'});return;}
  if(!queryOne('SELECT 1 FROM locations WHERE id=?',input.location_id)){res.status(400).json({error:'Location not found.'});return;}
