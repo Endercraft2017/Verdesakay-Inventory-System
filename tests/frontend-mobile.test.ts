@@ -1528,6 +1528,35 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       };
     }
 
+    it.each(['bulk','batch','serial'])('chooses the exact repeated-SKU line and preserves it through %s retry', async (kind) => {
+      const factory=new IDBFactory(), calls: any[]=[]; let lose=true;
+      const lines=[11,12].map((id,i)=>({id,item_id:7,name:'Repeated K4',quantity:2,unit_price:80+i*15,fulfillment_mode:'assembled',units:0,released_qty:0,serialized:kind==='serial'?1:0}));
+      const base=fake([],{lines,units:[],availability:lines.map(l=>({order_item_id:l.id,item_id:7,fulfillment_mode:'assembled',on_hand:3,committed_elsewhere:0,free_to_allocate:l.id===11?2:1}))});
+      const respond=(url:string,init:any)=>{
+        if(url==='/api/orders/302/release'){calls.push({body:JSON.parse(init.body),key:init.headers['Idempotency-Key']});if(lose){lose=false;return undefined;}return {ok:true};}
+        if(url.includes('/orders/302/unit?code=REPEAT'))return kind==='serial'?{state:'available',unit:{...UNIT,status:'in_stock',build_mode:'assembled',location_id:2}}:
+          kind==='batch'?{state:'batch_available',batch:{id:81,product_item_id:7,number:'BATCH-81',product_name:'Repeated K4',build_mode:'assembled',available:3},matching_lines:lines.map(l=>({order_item_id:l.id,remaining:2}))}:
+          {state:'line_required',code:'REPEAT',matching_lines:lines.map(l=>({order_item_id:l.id,remaining:2}))};
+        return base(url,init);
+      };
+      let win=await bootAs(REL,respond,factory); win.location.hash='#/so?id=302&step=unit&code=REPEAT';
+      const choice=await relElement(win,'[data-sale-line="12"]');
+      expect(calls).toEqual([]); expect(choice.textContent).toContain('95.00'); expect(choice.textContent).toContain('2 remaining');choice.click();
+      if(kind==='serial'){await relElement(win,'#rel-ok');await scanStickers(win,['K4-01']);win.document.getElementById('rel-ok').click();}
+      else{const qty=await relElement(win,'[data-label-qty]');expect(qty.value).toBe('2');qty.value='1';await scanStickers(win,[kind==='batch'?'BATCH-81':'REPEAT']);win.document.getElementById('rel-label-ok').click();}
+      await relElement(win,'#rel-retry');expect(calls).toHaveLength(1);win.close();
+      win=await bootAs(REL,respond,factory);win.location.hash='#/so?id=302';(await relElement(win,'#rel-retry')).click();await relElement(win,'#rel-review-current');
+      expect(calls).toHaveLength(2);expect(calls[1]).toEqual(calls[0]);expect(kind==='serial'?calls[0].body.order_item_id:calls[0].body.bulk[0].order_item_id).toBe(12);
+      if(kind==='batch')expect(calls[0].body.bulk[0].batch_id).toBe(81);win.close();
+    });
+    it('chooses a build-specific pool for a repeated plain SKU and refuses stale line links',async()=>{
+      const posts:any[]=[];const lines=[{id:11,item_id:7,name:'K4',quantity:3,released_qty:0,fulfillment_mode:'assembled'}, {id:12,item_id:7,name:'K4',quantity:2,released_qty:0,fulfillment_mode:'semi_built'}];
+      const base=fake(posts,{lines,units:[],availability:[{order_item_id:11,item_id:7,on_hand:8,committed_elsewhere:1},{order_item_id:12,item_id:7,on_hand:1.25,committed_elsewhere:0}]});
+      const win=await bootAs(REL,(url,init)=>url.includes('/unit?code=MIXED')?{state:'line_required',matching_lines:lines.map(l=>({order_item_id:l.id}))}:base(url,init));
+      win.location.hash='#/so?id=302&step=unit&code=MIXED&line=999';(await relElement(win,'[data-sale-line="12"]')).click();
+      const input=await relElement(win,'[data-label-qty]');expect(input.value).toBe('1.25');expect(win.document.getElementById('m-view').textContent).toContain('Semi-built');expect(posts).toEqual([]);win.close();
+    });
+
     async function relElement(win: any, selector: string) {
       for (let i = 0; i < 100; i++) { const e = win.document.querySelector(selector); if (e) return e; await wait(20); }
       throw new Error('Missing releasing element: ' + selector + ' ' + win.document.getElementById('m-view').textContent);

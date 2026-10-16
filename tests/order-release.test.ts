@@ -173,6 +173,9 @@ describe('sale-order release', () => {
     expect(created.status).toBe(201);
     const lines = (await getOrder(created.body.id)).items;
     expect(lines.map((l: { unit_price: number }) => l.unit_price)).toEqual([8, 9]);
+    const context = (await ctx.api.get(`/api/release-slips/orders/${created.body.id}/context`).set(H())).body;
+    expect(context.lines.map((l: { unit_price: number }) => l.unit_price)).toEqual([8, 9]);
+    expect(context.order.currency).toBe('PHP');
     const preview = await ctx.api.get(`/api/release-slips/orders/${created.body.id}/unit`).query({ code: 'R3-DUP-WIDGET' }).set(H());
     expect(preview.body.state).toBe('line_required');
     expect(preview.body.matching_lines.map((l: { order_item_id: number }) => l.order_item_id))
