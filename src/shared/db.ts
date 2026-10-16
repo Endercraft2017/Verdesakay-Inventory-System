@@ -94,7 +94,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 85; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 86; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -2944,7 +2944,7 @@ function migrate(): void {
       slip_item_id INTEGER NOT NULL REFERENCES release_slip_items(id) ON DELETE RESTRICT,
       item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE RESTRICT,
       quantity REAL NOT NULL CHECK (quantity > 0),
-      unit_id INTEGER UNIQUE REFERENCES job_order_units(id) ON DELETE RESTRICT,
+      unit_id INTEGER REFERENCES job_order_units(id) ON DELETE RESTRICT,
       unit_cost REAL,
       status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received','restocked','rejected')),
       reason TEXT NOT NULL,
@@ -3403,6 +3403,22 @@ function migrate(): void {
       AND (NOT EXISTS(SELECT 1 FROM release_slips s WHERE s.order_id=u.order_id)
         OR COALESCE(u.updated_at,u.created_at)>(SELECT MAX(s.released_at) FROM release_slips s WHERE s.order_id=u.order_id))
       AND NOT EXISTS(SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id)`);
+
+  // v86: a serial may return once per separate sale shipment, rather than once forever.
+  const returnsSql=queryOne<{sql:string}>("SELECT sql FROM sqlite_master WHERE type='table' AND name='sales_returns'")!.sql;
+  if(/unit_id INTEGER UNIQUE/.test(returnsSql)){
+    const cols=(db.prepare('PRAGMA table_info(sales_returns)').all() as {name:string}[]).map(c=>'"'+c.name+'"').join(',');
+    db.exec('PRAGMA foreign_keys=OFF');
+    try{
+      db.exec('BEGIN');
+      db.exec(returnsSql.replace(/CREATE TABLE(?: IF NOT EXISTS)? ["`\[]?sales_returns["`\]]?/i, 'CREATE TABLE sales_returns_v86').replace('unit_id INTEGER UNIQUE','unit_id INTEGER'));
+      db.exec(`INSERT INTO sales_returns_v86(${cols}) SELECT ${cols} FROM sales_returns; DROP TABLE sales_returns; ALTER TABLE sales_returns_v86 RENAME TO sales_returns;`);
+      db.exec('COMMIT');
+    }catch(e){db.exec('ROLLBACK');throw e;}finally{db.exec('PRAGMA foreign_keys=ON');}
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sales_returns_slip_item ON sales_returns(slip_item_id);
+    CREATE INDEX IF NOT EXISTS idx_sales_returns_slip ON sales_returns(slip_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_return_serial_shipment ON sales_returns(slip_id,unit_id) WHERE unit_id IS NOT NULL;`);
 
 }
 

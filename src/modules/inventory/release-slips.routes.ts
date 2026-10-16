@@ -46,7 +46,7 @@ const PROGRESS_SQL = `
   (SELECT COALESCE(SUM(MIN(MAX(0,oi.quantity-oi.cancelled_qty-oi.dispatched_qty),
       MAX(0,COALESCE(oi.released_qty,0)-oi.dispatched_bulk_qty)
       + (SELECT COUNT(*) FROM job_order_units ju WHERE ju.order_item_id=oi.id AND (ju.status='reserved' OR ju.direct_sold_at IS NOT NULL
-        AND NOT EXISTS(SELECT 1 FROM release_slip_units su WHERE su.unit_id=ju.id))))),0)
+        AND NOT EXISTS(SELECT 1 FROM release_slip_units su JOIN release_slip_items sli ON sli.id=su.slip_item_id WHERE su.unit_id=ju.id AND sli.order_item_id=ju.order_item_id))))),0)
      FROM order_items oi WHERE oi.order_id=o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode!='ckd') AS qty_released`;
 
 // GET /api/release-slips/queue — { to_accept, releasing }
@@ -106,7 +106,7 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
   );
   const units = queryAll(
     `SELECT u.id, u.identifier, u.status, u.product_item_id, u.order_item_id, j.product_name, l.name AS location_name,
-            CASE WHEN u.direct_sold_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id) THEN 1 ELSE 0 END AS pending_direct,
+            CASE WHEN u.direct_sold_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM release_slip_units su JOIN release_slip_items sli ON sli.id=su.slip_item_id WHERE su.unit_id=u.id AND sli.order_item_id=u.order_item_id) THEN 1 ELSE 0 END AS pending_direct,
             (SELECT r.number FROM production_receipt_items ri JOIN production_receipts r ON r.id = ri.receipt_id
               WHERE ri.unit_id = u.id ORDER BY ri.id DESC LIMIT 1) AS receipt_number
      FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id LEFT JOIN locations l ON l.id = u.location_id
@@ -124,7 +124,7 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
     deliveries:queryAll("SELECT id,number,status,release_slip_id FROM deliveries WHERE order_id=? ORDER BY id DESC",id),
     batch_allocations:queryAll(`SELECT a.*,pb.number AS batch_number FROM production_batch_allocations a JOIN production_batches pb ON pb.id=a.batch_id WHERE a.order_id=? ORDER BY a.id`,id),
     availability: availability.lines.map((l) => ({ order_item_id: l.order_item_id, item_id: l.item_id, fulfillment_mode: l.fulfillment_mode, free_to_allocate: Math.max(0, l.available - l.covered_here),
-      on_hand: l.on_hand, committed_elsewhere: l.committed_elsewhere, kit_held: l.kit_held, repair_held: l.repair_held })),
+      on_hand: l.on_hand, committed_elsewhere: l.committed_elsewhere, kit_held: l.kit_held, repair_held: l.repair_held, elsewhere_on_hand:l.elsewhere_on_hand,linked_job_orders:l.linked_job_orders })),
     authorization: publicAuthorization(id),
     package: packageItemsFor(id),
     reports: queryAll("SELECT id, kind, description, unit_identifier, created_at FROM release_reports WHERE order_id = ? AND status = 'open' ORDER BY id", id),

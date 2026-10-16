@@ -55,7 +55,7 @@
   /** Storage locations that can hold ready-to-sell stock (trucks are transit, refused server-side too). */
   function storage() { return mLocations.list().filter(function (l) { return l.type !== 'truck'; }); }
   function buildTag(u) { return u.build_mode === 'semi_built' ? 'Semi-built' : 'Fully built'; }
-  function locName(id) { var l = mLocations.list().filter(function (x) { return x.id === id; })[0]; return l ? l.name : '—'; }
+  function locName(id) { var l = mLocations.list().filter(function (x) { return x.id === id; })[0]; return l ? mLocations.path(l) : '—'; }
   function defaultLoc(u) {
     var s = storage();
     if (u && u.output_location_id && s.some(function (l) { return l.id === u.output_location_id; })) return u.output_location_id;
@@ -69,7 +69,7 @@
   function withUnit(view, unitId, fn) {
     view.innerHTML = '<section class="rk-page">' + R.skeleton(2) + '</section>';
     var hash = location.hash, owner = mProductionDrafts.key('rts-owner');
-    Promise.all([loadQueue(), mLocations.load()]).then(function () {
+    Promise.all([loadQueue(), mLocations.load(true)]).then(function () {
       if (location.hash !== hash || owner !== mProductionDrafts.key('rts-owner')) return;
       var u = last.units.filter(function (x) { return x.id === unitId; })[0];
       if (!u) {
@@ -250,7 +250,7 @@
       body.querySelector('[data-opts]').innerHTML = opts.length ? opts.map(function (l) {
         var r = room(l), full = r !== null && r < need;
         return '<div class="rk-check-row"><button type="button"' + (full ? ' disabled' : ' data-l="' + l.id + '"') + '><span class="rk-state ' + (full ? 'issue' : l.id === sel ? 'pass' : '') + '" aria-hidden="true">' + (full ? '!' : l.id === sel ? '✓' : '○') + '</span>' +
-          '<b>' + mEsc(l.name) + '</b><small>' + mEsc(cap(l.type) + (l.is_default ? ' · default' : '') + (u.output_location_id === l.id ? ' · job order output' : '') +
+          '<b>' + mEsc(mLocations.path(l)) + '</b><small>' + mEsc(cap(l.type) + (l.is_default ? ' · default' : '') + (u.output_location_id === l.id ? ' · job order output' : '') +
             (r === null ? '' : full ? ' · full (room for ' + r + ')' : ' · room for ' + r)) + '</small></button></div>';
       }).join('') : '<div class="rk-empty">No storage locations set up. Ask an admin to add one.</div>';
       Array.prototype.forEach.call(body.querySelectorAll('[data-l]'), function (b) { b.onclick = function () { sel = Number(b.dataset.l); paint(); }; });
@@ -497,7 +497,7 @@
   function batch(view, batchId) {
     var body = page(view, '74:145', 'Record batch', 'Non-serialized output · one quantity');
     body.innerHTML = R.skeleton(2);
-    Promise.all([loadQueue(), mLocations.load()]).then(function () {
+    Promise.all([loadQueue(), mLocations.load(true)]).then(function () {
       if (!body.isConnected) return;
       var b = last.batches.filter(function (x) { return x.id === batchId; })[0];
       if (!b) { body.innerHTML = '<div class="rk-empty">Nothing left to record on this batch.</div>'; return; }
@@ -508,7 +508,7 @@
           '<input type="number" min="1" max="' + b.remaining_qty + '" value="' + b.remaining_qty + '" inputmode="numeric"><button type="button" data-inc aria-label="More">+</button></div>' +
           '<p>' + b.remaining_qty + ' produced and not yet in stock</p></div>' +
         '<label class="rk-card rk-field"><small>Finished-goods location</small><select data-loc>' + storage().map(function (l) {
-          return '<option value="' + l.id + '"' + (l.id === locId ? ' selected' : '') + '>' + mEsc(l.name) + '</option>'; }).join('') + '</select></label>' +
+          return '<option value="' + l.id + '"' + (l.id === locId ? ' selected' : '') + '>' + mEsc(mLocations.path(l)) + '</option>'; }).join('') + '</select></label>' +
         '<label class="rk-card rk-field"><small>Note (optional)</small><input class="rk-input" data-note maxlength="500" placeholder="Count discrepancy, condition…"></label>' +
         R.field('Build state', buildTag(b)) + '<div data-label-verification></div>' + R.actions([{ id: 'rts-print-labels', label: 'Print batch QR sticker', kind: 'secondary' }]) + R.check('rts-ok', 'I counted the quantity and checked the location') +
         R.actions([{ id: 'rts-post', label: 'Record as ready to sell', kind: 'navy' }, { id: 'rts-back', label: 'Back', kind: 'secondary' }]);

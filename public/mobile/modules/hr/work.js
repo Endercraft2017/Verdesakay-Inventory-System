@@ -36,6 +36,11 @@
       }); } }
   ];
 
+  OPS.push(
+    {label:'Customer returns',sub:'Receive, inspect and track returned goods',route:'returns',any:['inventory.view','inventory.adjust','orders.release','orders.view','production.inspect_qc','production.inspect_qa']},
+    {label:'Semi-built finishing',sub:'Send a complete semi-built package to finishing',route:'semi-finishing',any:['production.approve','production.manage']}
+  );
+
   function openCount(path) {
     return API.get(path).then(function (rows) {
       return (rows || []).filter(function (x) {
@@ -109,7 +114,7 @@
   }
   window.mWorkQueue = mWorkQueue;
 
-  MApp.route('work', function (view) {
+  MApp.route('work', function (view,params) {
     MApp.setTitle('Work');
     var me = MApp.getMe() || {};
     var ops = OPS.filter(allowed);
@@ -126,7 +131,7 @@
     page.appendChild(taskHead);
     var list = mEl('<div class="v2-work-list"></div>');
     page.appendChild(list);
-    if (ops.length) ops.slice(0, 4).forEach(function (op) { list.appendChild(opRow(op)); });
+    if (ops.length) (params&&params.all?ops:ops.slice(0, 4)).forEach(function (op) { list.appendChild(opRow(op)); });
     else employeeTasks(list);
 
     var blocker = mEl(
@@ -144,7 +149,7 @@
     tools.appendChild(commonTool('Guides', 'guides'));
     tools.appendChild(commonTool('Schedule', 'schedule'));
     tools.appendChild(commonTool('Announcements', 'announcements'));
-    if (ops.length > 4) tools.appendChild(commonTool('All role queues', 'production'));
+    if(ops.length>4){var all=commonTool(params&&params.all?'Primary role queues':'All role queues','work');all.onclick=function(){MApp.go('work',params&&params.all?{}:{all:'1'});};tools.appendChild(all);}
     // Case handlers for the anonymous channel (HR/admin by default).
     if (MApp.can('reports.confidential')) tools.appendChild(commonTool('Anonymous reports', 'confidential-reports'));
     page.appendChild(tools);

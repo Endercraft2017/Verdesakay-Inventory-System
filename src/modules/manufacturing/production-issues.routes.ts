@@ -57,11 +57,12 @@ function unitError(jobOrderId: number, unitId: number | null | undefined): strin
 // GET /api/production-issues?job_order_id=&unit_id=&status=open|resolved
 router.get('/', readGate, (req, res) => {
   // Narrow floor desks read reports for a particular unit, not the company-wide feed.
-  if (!req.user!.permissions.includes('production.view') && !(Number.isSafeInteger(Number(req.query.unit_id)) && Number(req.query.unit_id) > 0)) {
+  if (!req.user!.permissions.includes('production.view') && !(Number.isSafeInteger(Number(req.query.unit_id)) && Number(req.query.unit_id) > 0) && !(req.query.whole_job==='1'&&Number.isSafeInteger(Number(req.query.job_order_id))&&Number(req.query.job_order_id)>0&&req.user!.permissions.some(p=>['production.record','production.manage','production.approve','inventory.adjust'].includes(p)))) {
     res.status(403).json({ error: 'Open a unit to view its issue reports.' }); return;
   }
   const where: string[] = [];
   const params: unknown[] = [];
+  if(req.query.whole_job==='1')where.push('pi.unit_id IS NULL');
   if (req.query.job_order_id) { where.push('pi.job_order_id = ?'); params.push(Number(req.query.job_order_id)); }
   if (req.query.unit_id) { where.push('pi.unit_id = ?'); params.push(Number(req.query.unit_id)); }
   if (req.query.status === 'open' || req.query.status === 'resolved') { where.push('pi.status = ?'); params.push(req.query.status); }

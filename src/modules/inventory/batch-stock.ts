@@ -40,11 +40,11 @@ export function allocateBatch(batchId: number, orderId: number, itemId: number, 
         throw Object.assign(new Error('This batch no longer has that quantity free at the ship-from location. Rescan and review.'), { status: 409 });
     run(`INSERT INTO production_batch_allocations(batch_id,order_id,order_item_id,item_id,location_id,quantity,state) VALUES(?,?,?,?,?,?,'reserved')`, batchId, orderId, orderItemId ?? null, itemId, location, quantity);
 }
-export function undoBatchAllocations(orderId: number, itemId: number, amount: number, orderItemId?: number) {
+export function undoBatchAllocations(orderId: number, itemId: number, amount: number, orderItemId?: number,allocationId?:number) {
     for (const a of queryAll<{
         id: number;
         quantity: number;
-    }>(`SELECT id,quantity FROM production_batch_allocations WHERE order_id=? AND item_id=? AND (? IS NULL OR order_item_id=?) AND state='reserved' ORDER BY id DESC`, orderId, itemId, orderItemId ?? null, orderItemId ?? null)) {
+    }>(`SELECT id,quantity FROM production_batch_allocations WHERE order_id=? AND item_id=? AND (? IS NULL OR order_item_id=?) AND (? IS NULL OR id=?) AND state='reserved' ORDER BY id DESC`, orderId, itemId, orderItemId ?? null, orderItemId ?? null,allocationId??null,allocationId??null)) {
         if (amount <= 1e-9)
             break;
         const take = Math.min(amount, a.quantity);

@@ -475,3 +475,14 @@ The exact handoff at `6185481` was reconciled against code; see
 `docs/reviews/mobile-handoff-6185481-review.md`. Legacy Pick retirement, semi-built
 finishing intake, returns/disposition, allocation undo, build-state stock movement,
 procurement context and other follow-ups there are separate unfinished work.
+
+### Integrated remaining pipeline paths (2026-10-16)
+
+Allocation correction, customer returns/repair disposition, semi-built finishing,
+build-state stock movement, whole-job issue management and durable ordinary QC decisions
+are implemented on this branch. They extend existing role cards/forms and recovery
+primitives; returns and finishing intake have no dedicated approved design frame.
+`returns` and `semi-finishing` are permission gated. Schema v86 permits separate return
+cycles after resale; cache v109 ships the new routes/helper. See
+`docs/reviews/mobile-remaining-workflows-validation.md` for checked behavior and limits.
+Physical phone/printer acceptance remains separate from Chromium automation.

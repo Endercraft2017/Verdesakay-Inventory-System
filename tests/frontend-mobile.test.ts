@@ -15,7 +15,7 @@ const EXPECTED_ROUTES = [
   'home', 'work', 'production', 'stock-move', 'damage', 'transfer', 'new-item', 'assign-qr', 'scan',
   'item', 'low-stock', 'location', 'my-log', 'cycle-count', 'receive', 'pick',
   'batch', 'job-orders', 'kit-release', 'unit-issues', 'qc', 'repairs', 'record', 'receiving', 'so', 'report-problem', 'anonymous-report', 'settings', 'queue', 'clock',
-  'inbox', 'directory', 'payslips', 'schedule', 'requests', 'tasks', 'notes', 'guides',
+  'returns', 'semi-finishing', 'inbox', 'directory', 'payslips', 'schedule', 'requests', 'tasks', 'notes', 'guides',
   'announcements', 'notifications', 'confidential-reports', 'time-fix', 'approvals', 'allocate', 'deliveries',
 ];
 

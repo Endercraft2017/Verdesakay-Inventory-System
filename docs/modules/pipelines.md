@@ -104,7 +104,10 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
    mobile `so` view): scan unit QR labels → `job_order_units` `reserved`
    (`manufacturing` data), or enter quantities for bulk lines (`released_qty`). Records
    only — no stock movement. Auto-advances approved → `released` once every line is
-   covered; `/:id/release/unreserve` undoes a pick (refused once a slip exists).
+   covered. `/:id/release/unreserve` corrects only still-held goods, including the
+   remainder after an earlier trip. Mobile explicitly selects serials, exact batch
+   allocation rows or untracked quantities. Already-shipped quantities are immutable;
+   unshipping requires a return, and removing an allocation does not cancel customer demand.
 5. **Release slip — goods out** (`inventory` → `accounting`) —
    `POST /:id/release-slip` records each vehicle's actual load on its own numbered
    `release_slips` / `release_slip_items` manifest. Explicit lines select exact serials and
@@ -1236,3 +1239,23 @@ substitution occurs on retry. Same-product/build rows share stock; displayed fre
 counts must not be summed. Reservations remain separate from physical stock-out.
 The release context now includes line price and order currency for disambiguation.
 PWA cache v107; CKD partial-kit release and pre-slip undo remain separate work.
+
+### Mobile exception and recovery paths (2026-10-16)
+
+Issued slip → `returns` → photographed receipt (no stock-in/refund) → warehouse
+inspection → restock or reject → repair / salvage / dispose. Serialized repair requests
+use the existing parts clerk queue, then explicit repair completion and warehouse
+reinspection. A second sale/return cycle uses the new slip; history from the earlier
+sale is retained. Finance links customer credit separately.
+
+`semi-finishing` → exact semi-built source / whole-package/photo confirmation → one
+pending QC unit under a conversion job → QC/QA → RTS. It must not repeat BOM picking
+or Add unit. Pre-inspection cancellation requires a complete repacked package and reason.
+Transfers and adjustments select build state; tracked transfers select exact serials.
+Location pickers show full hierarchy paths, and RTS refreshes direct capacity before
+selection. Stock reviews distinguish holds, stock elsewhere and planned supply.
+
+Ordinary QC decisions now persist immutable attempts, matching QA-hold recovery.
+Bulk inspection is limited to one job/stage and rejects fractional or excess counts.
+Whole-job issue reports support photographed findings and explicit edit/resolve/reopen;
+reports remain informational, with Pause used to stop production.

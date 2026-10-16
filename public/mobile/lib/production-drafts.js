@@ -87,7 +87,7 @@
   // Discover interrupted approvals even after the server removes an approved
   // draft from its awaiting-approval queue. Never cross an account/tenant scope.
   function listActions(kind, namespace) {
-    var pattern = namespace === 'issue' ? /^\d+:[A-Za-z0-9-]+:action$/ : /^\d+:action$/;
+    var pattern = (namespace === 'issue'||namespace === 'jobissue') ? /^\d+:[A-Za-z0-9-]+:action$/ : /^\d+:action$/;
     var prefix = scope() + ':' + (namespace ? namespace + ':' : '');
     return Promise.all(Object.keys(writes).map(function (k) { return writes[k].catch(function () {}); })).then(function () {
       return transaction('readonly', function (store) { return store.getAllKeys(); }).then(function (keys) {

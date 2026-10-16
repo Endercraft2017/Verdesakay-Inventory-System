@@ -50,7 +50,7 @@
     if(!a)return 0;
     if(a.on_hand==null)return Math.max(0,Math.min(remaining(l),a.free_to_allocate));
     var poolHeld=c.lines.filter(function(x){return physical(x)&&x.item_id===l.item_id&&(x.fulfillment_mode==='semi_built')===(l.fulfillment_mode==='semi_built');})
-      .reduce(function(n,x){return n+held(x);},0);
+      .reduce(function(n,x){return n+Math.max(0,held(x)-c.units.filter(function(u){return u.order_item_id===x.id&&u.pending_direct;}).length);},0);
     return Math.max(0,Math.min(remaining(l),Number(a.on_hand)-Number(a.committed_elsewhere||0)-poolHeld));
   }
   function chooseLine(view,c,code,lines,selected,render) {
@@ -207,9 +207,9 @@
     function free(l) { return lineFree(c,l); }
     var bulk = c.lines.filter(function (l) { return physical(l) && !l.serialized && (l.released_qty || 0) < l.quantity; });
     body.innerHTML =
-      manifest(c) + c.lines.filter(physical).map(function(l){return R.field('Sale line',lineText(c,l));}).join('') + '<button type="button" class="rk-identify"><span class="frame" aria-hidden="true"></span><b>Scan the unit serial label</b><small>' + p.got + ' of ' + p.need + ' allocated units ready</small></button>' +
+      manifest(c) + R.note('info','Stock shown below is read-only. Planned production is not on-hand inventory; receive it at the ship-from warehouse before allocating.')+(c.availability||[]).map(function(a){var line=c.lines.find(function(l){return l.id===a.order_item_id;});return R.field('Stock context · '+(line?line.name:'#'+a.item_id),'Here '+Number(a.on_hand||0)+' · Other sales/holds '+Number(a.committed_elsewhere||0)+' (kits '+Number(a.kit_held||0)+', repairs '+Number(a.repair_held||0)+') · Elsewhere '+Number(a.elsewhere_on_hand||0)+(a.linked_job_orders&&a.linked_job_orders.length?' · Production planned '+a.linked_job_orders.reduce(function(n,j){return n+j.remaining;},0):''));}).join('')+c.lines.filter(physical).map(function(l){return R.field('Sale line',lineText(c,l));}).join('') + '<button type="button" class="rk-identify"><span class="frame" aria-hidden="true"></span><b>Scan the unit serial label</b><small>' + p.got + ' of ' + p.need + ' allocated units ready</small></button>' +
       '<label class="rk-card rk-field" data-manual hidden><small>Serial (manual)</small><div class="rk-search"><input class="rk-input" style="margin:0" data-code placeholder="Type the serial"><button type="button" class="rk-back" data-find style="padding:0">Check</button></div></label>' +
-      (c.units.length ? '<div class="rk-checks">' + c.units.filter(function(u){return u.status!=='sold';}).map(function (u) {
+      (c.units.length ? '<div class="rk-checks">' + c.units.filter(function(u){return u.status!=='sold'||u.pending_direct;}).map(function (u) {
         return '<div class="rk-check-row"><button type="button" data-unit="' + mEsc(u.identifier || '') + '"><span class="rk-state pass" aria-hidden="true">✓</span><b>' + mEsc(u.identifier || 'Unit #' + u.id) + '</b>' +
           '<small>Line #' + mEsc(u.order_item_id || '—') + ' · Allocated · Ready to sell' + (u.location_name ? ' · ' + mEsc(u.location_name) : '') + '</small></button></div>';
       }).join('') + '</div>' : '') +
@@ -238,6 +238,7 @@
         mScanner.open({ title: 'Scan the attached batch or item QR sticker', allowManual: false, onResult: check });
       };
     });
+    var correction=document.createElement('button');correction.type='button';correction.className='rk-btn secondary';correction.id='rel-correct';correction.textContent='Correct held allocation';body.appendChild(correction);correction.onclick=function(){go({id:c.order.id,step:'correct'});};
     body.querySelector('#rel-load').onclick=function(){go({id:c.order.id,step:'trip'});};
     body.querySelector('#rel-go').onclick = function () {
       go({ id: c.order.id, step: p.complete ? 'package' : 'incomplete' });
@@ -568,7 +569,7 @@
         '<div data-photos></div>' +
         R.note('info','Any unshipped remainder stays held on '+mEsc(c.order.number)+'.')+R.actions([{ id: 'rel-back', label: 'Back to queue', kind: 'secondary' }].concat(c.outstanding>0?[{id:'rel-next-trip',label:'Review remaining order',kind:'primary'}]:[]).concat(can('delivery.manage')?[{id:'rel-plan-delivery',label:'Plan delivery for this slip',kind:'secondary'}]:[]));
       if (mPhoto.thumbs) body.querySelector('[data-photos]').appendChild(mPhoto.thumbs('release', sl.id, { editable: false }));
-      body.querySelector('#rel-back').onclick = function () { go({ tab: 'done' }); };var plan=body.querySelector('#rel-plan-delivery');if(plan)plan.onclick=function(){MApp.go('deliveries',{step:'plan',order:c.order.id,slip:sl.id});};var next=body.querySelector('#rel-next-trip');if(next)next.onclick=function(){delete S[c.order.id];go({id:c.order.id});};
+      body.querySelector('#rel-back').onclick = function () { go({ tab: 'done' }); };var plan=body.querySelector('#rel-plan-delivery');if(plan)plan.onclick=function(){MApp.go('deliveries',{step:'plan',order:c.order.id,slip:sl.id});};if(can('inventory.adjust')||can('orders.release')){var ret=document.createElement('button');ret.className='rk-btn secondary';ret.textContent='Receive customer return';ret.onclick=function(){MApp.go('returns',{slip:sl.id});};body.appendChild(ret);}var next=body.querySelector('#rel-next-trip');if(next)next.onclick=function(){delete S[c.order.id];go({id:c.order.id});};
     }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { receipt(view, c); })); });
   }
 
@@ -584,6 +585,21 @@
     var req=body.querySelector('#rel-req');if(req)req.onclick=function(){go({id:c.order.id,step:'report',kind:'partial_request'});};
     body.querySelector('#rel-back').onclick=function(){go({id:c.order.id,step:'scan'});};
   }
+  function correct(view,c){
+    var body=page(view,'78:109','Correct held allocation','Already-shipped goods cannot be undone');
+    body.innerHTML=R.note('info','Remove only an incorrect warehouse allocation. The customer’s remaining demand stays committed to this sales order.')+
+      c.units.filter(function(u){return u.status==='reserved';}).map(function(u){return '<label class="rk-card rk-check-row"><input type="checkbox" data-undo-unit="'+u.id+'">'+mEsc(u.identifier||'Unit #'+u.id)+' · line #'+u.order_item_id+'</label>';}).join('')+
+      c.lines.filter(physical).map(function(l){var lots=(c.batch_allocations||[]).filter(function(a){return a.order_item_id===l.id&&a.state==='reserved';});var lotFields=lots.map(function(a){return '<label class="rk-card rk-field"><small>'+mEsc(a.batch_number)+' · line #'+l.id+' · '+a.quantity+' held</small><input class="rk-input" type="number" min="0" max="'+a.quantity+'" step="any" value="0" data-undo-line="'+l.id+'" data-allocation="'+a.id+'"></label>';}).join('');var bulk=Math.max(0,Number(l.released_qty||0)-Number(l.dispatched_bulk_qty||0)-lots.reduce(function(n,a){return n+a.quantity;},0));return lotFields+(bulk?'<label class="rk-card rk-field"><small>Line #'+l.id+' · '+mEsc(l.name)+' · '+bulk+' untracked held</small><input class="rk-input" type="number" min="0" max="'+bulk+'" step="any" value="0" data-undo-line="'+l.id+'"></label>':'');}).join('')+
+      '<label class="rk-check-row"><input type="checkbox" id="undo-reviewed"> I checked the exact serials, sale lines and quantities.</label>'+R.actions([{id:'undo-save',label:'Remove selected allocation',kind:'primary'},{id:'undo-back',label:'Back to stock review',kind:'secondary'}]);
+    body.querySelector('#undo-back').onclick=function(){go({id:c.order.id,step:'scan'});};
+    body.querySelector('#undo-save').onclick=function(){try{
+      if(!body.querySelector('#undo-reviewed').checked)throw new Error('Review and confirm the correction first.');
+      var ids=Array.prototype.map.call(body.querySelectorAll('[data-undo-unit]:checked'),function(e){return Number(e.dataset.undoUnit);}),bulk=[];
+      body.querySelectorAll('[data-undo-line]').forEach(function(e){var n=Number(e.value),l=c.lines.find(function(l){return l.id===Number(e.dataset.undoLine);});if(!e.value.trim()||!Number.isFinite(n)||n<0||n>Number(e.max))throw new Error('Use a quantity within the current held amount.');if(n)bulk.push({item_id:l.item_id,order_item_id:l.id,quantity:n,allocation_id:e.dataset.allocation?Number(e.dataset.allocation):undefined,untracked:!e.dataset.allocation});});
+      if(!ids.length&&!bulk.length)throw new Error('Select a held allocation to correct.');
+      body.querySelector('#undo-save').disabled=true;mReleaseActions.start(c,'unreserve','/orders/'+c.order.id+'/release/unreserve',{unit_ids:ids,bulk:bulk},'Remove reviewed held allocation; shipped goods stay unchanged').catch(function(e){mToast(e.message,'err');body.querySelector('#undo-save').disabled=false;});
+    }catch(e){mToast(e.message,'err');}};
+  }
   function tripLoad(view,c) {
     var s=st(c.order.id),body=page(view,'78:481','Choose vehicle load','Count only what leaves on this trip');
     var saved=s.trip,previous=c.slip?c.slip.id:null;
@@ -592,11 +608,11 @@
     body.innerHTML=R.note('info','Unloaded goods stay reserved and unavailable to other sales. Release complete CKD kits only.')+
       c.lines.filter(physical).map(function(l){
         var choice=saved&&saved.find(function(x){return x.order_item_id===l.id;});
-        var units=c.units.filter(function(u){return u.order_item_id===l.id&&u.status==='reserved';});
+        var units=c.units.filter(function(u){return u.order_item_id===l.id&&(u.status==='reserved'||u.pending_direct);});
         var lots=(c.batch_allocations||[]).filter(function(a){return a.order_item_id===l.id&&a.state==='reserved';});
         var untracked=Math.max(0,held(l)-units.length-lots.reduce(function(n,a){return n+a.quantity;},0));
-        return '<section class="rk-card rk-field" data-load-line="'+l.id+'"><b>'+mEsc(lineText(c,l).replace(/ remaining$/,' to allocate'))+'</b><small>'+Number(l.dispatched_qty||0)+' shipped · '+held(l)+' held here</small>'+
-          units.map(function(u){return '<label class="rk-check-row"><input type="checkbox" data-load-unit="'+u.id+'" '+(!saved||choice&&choice.unit_ids&&choice.unit_ids.indexOf(u.id)!==-1?'checked':'')+'>'+mEsc(u.identifier||'Unit #'+u.id)+'</label>';}).join('')+
+        return '<section class="rk-card rk-field" data-load-line="'+l.id+'"><b>'+mEsc(lineText(c,l).replace(/ remaining$/,' to allocate'))+'</b><small>'+Number(l.dispatched_qty||0)+' shipped · '+Math.max(0,held(l)-units.filter(function(u){return u.pending_direct;}).length)+' held here'+(units.some(function(u){return u.pending_direct;})?' · direct stock-out awaiting slip':'')+'</small>'+
+          units.map(function(u){return '<label class="rk-check-row"><input type="checkbox" data-load-unit="'+u.id+'" '+(u.pending_direct?'checked disabled':!saved||choice&&choice.unit_ids&&choice.unit_ids.indexOf(u.id)!==-1?'checked':'')+'>'+mEsc((u.identifier||'Unit #'+u.id)+(u.pending_direct?' · stock already removed; required on this slip':''))+'</label>';}).join('')+
           lots.map(function(a){var picked=choice&&choice.batches&&choice.batches.find(function(b){return b.allocation_id===a.id;});return '<label><small>'+mEsc(a.batch_number)+' · reserved '+a.quantity+'</small><input class="rk-input" type="number" min="0" max="'+a.quantity+'" step="any" inputmode="decimal" data-load-batch="'+a.id+'" value="'+(saved?(picked?picked.quantity:0):a.quantity)+'"></label>';}).join('')+
           (untracked>0?'<label><small>Other reserved quantity · '+untracked+'</small><input class="rk-input" type="number" min="0" max="'+untracked+'" step="any" inputmode="decimal" data-load-bulk value="'+(saved?Math.max(0,(choice?choice.quantity:0)-(choice&&choice.unit_ids?choice.unit_ids.length:0)-(choice&&choice.batches?choice.batches.reduce(function(n,b){return n+b.quantity;},0):0)):untracked)+'"></label>':'')+'</section>';
       }).join('')+R.actions([{id:'trip-continue',label:'Use this load',kind:'primary'},{id:'trip-back',label:'Back to stock review',kind:'secondary'}]);
@@ -681,7 +697,8 @@
       if (!step) return authority(view, c);
       if (authProblem(c.authorization) && step !== 'report') return authority(view, c);
       if (!c.order.warehouse_accepted_at && step !== 'report' && step !== 'receipt') return authority(view,c);
-      if(step==='trip')tripLoad(view,c);
+      if(step==='correct')correct(view,c);
+      else if(step==='trip')tripLoad(view,c);
       else if (step === 'scan') scan(view, c);
       else if (step === 'unit') unit(view, c, params.code || '',params.line);
       else if (step === 'blocked') blockedView(view, c, params.code || '', { state: 'not_found' });

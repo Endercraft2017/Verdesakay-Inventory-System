@@ -40,7 +40,7 @@ export function orderAvailability(orderId: number) {
         AND COALESCE(u.location_id, j.output_location_id, ?) IS ?`, itemId, orderId, mode, defaultLocation, at)?.n ?? 0;
     const demand = queryOne<{ n: number }>(`SELECT COALESCE(SUM(MAX(0, x.quantity - x.cancelled_qty - x.dispatched_qty -
       (SELECT COUNT(*) FROM job_order_units u WHERE u.order_item_id = x.id
-        AND u.status = 'reserved'))), 0) AS n
+        AND (u.status='reserved' OR u.status='sold' AND u.direct_sold_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM release_slip_units su JOIN release_slip_items sli ON sli.id=su.slip_item_id WHERE su.unit_id=u.id AND sli.order_item_id=u.order_item_id))))), 0) AS n
       FROM order_items x JOIN orders o ON o.id = x.order_id
       WHERE x.item_id = ? AND o.id != ? AND o.type = 'sale' AND o.fulfilled_at IS NULL
         AND CASE WHEN x.fulfillment_mode IN ('ckd_component', 'assembled') THEN 'assembled'
@@ -73,8 +73,9 @@ export function orderAvailability(orderId: number) {
     const units = queryOne<{ reserved: number; sold: number }>(`SELECT
       COALESCE(SUM(status = 'reserved'), 0) AS reserved, COALESCE(SUM(status = 'sold'), 0) AS sold
       FROM job_order_units WHERE order_item_id = ? AND status IN ('reserved', 'sold')`, oi.id)!;
-    const covered = (oi.dispatched_qty||0)+units.reserved+Math.max(0,(oi.released_qty||0)-(oi.dispatched_bulk_qty||0));
-    const ownOnHand = Math.max(0,covered-(oi.dispatched_qty||0));
+    const directOut=queryOne<{n:number}>(`SELECT COUNT(*) AS n FROM job_order_units u WHERE u.order_item_id=? AND u.status='sold' AND u.direct_sold_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM release_slip_units su JOIN release_slip_items sli ON sli.id=su.slip_item_id WHERE su.unit_id=u.id AND sli.order_item_id=u.order_item_id)`,oi.id)!.n;
+    const covered = directOut+(oi.dispatched_qty||0)+units.reserved+Math.max(0,(oi.released_qty||0)-(oi.dispatched_bulk_qty||0));
+    const ownOnHand = Math.max(0,covered-(oi.dispatched_qty||0)-directOut);
     const poolKey = `${oi.item_id}:${mode}`;
     const balance = materialPool.get(poolKey) ?? s.free;
     const free = Math.max(0, balance - ownOnHand);

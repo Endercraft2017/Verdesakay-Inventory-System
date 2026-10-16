@@ -492,8 +492,11 @@ slip line, with a shipped-quantity cap and exact sold serial for serialized good
 does not move stock. Inspection records restock (stock-in and an idempotent COGS reversal at
 the slip's captured cost) or reject (no stock-in); the issued sale and slip stay intact.
 Finance separately issues and links a customer credit note, with link history retained.
-Desktop users work from the issued slip in Releasing; mobile implementation is assigned in
-`MOBILE-INVENTORY-HANDOFF.md`. See `docs/reviews/sales-return-workflow.md` for the full contract.
+Desktop users work from the issued slip in Releasing; mobile `returns` now handles receipt, inspection, disposition, parts requests,
+repair completion and reinspection with durable JSON/photo attempts. Inspectors' minimal
+repair queue is limited to serialized repairs; warehouse stock decisions retain their
+existing permission gates. Schema v86 allows a resold serial to return against a new
+slip and preserves earlier cycles. See `docs/reviews/sales-return-workflow.md` for the full contract.
 **Warehouse-out rules (`release-auth.ts`, createSchema tables, no version bump):**
 `release_authorizations` (Sales, `orders.edit`: pickup/delivery, approved recipient, only the last 4
 of an ID reference, a `PICKUP-XXXX`/`DELIV-XXXX` token, validity, handoff area, partial allowed;
@@ -1415,3 +1418,22 @@ substitution occurs on retry. Same-product/build rows share stock; displayed fre
 counts must not be summed. Reservations remain separate from physical stock-out.
 The release context now includes line price and order currency for disambiguation.
 PWA cache v107; CKD partial-kit release and pre-slip undo remain separate work.
+
+### Mobile operational follow-up (2026-10-16)
+
+`public/mobile/lib/workflow-attempt.js` owns durable immutable JSON/multipart attempts
+for return, finishing, transfer, adjustment and ordinary QC decisions. It uses the
+existing account/server-scoped IndexedDB draft store, photo compression and sync watcher.
+`semi-finishing.js` uses `/job-orders/convert-semi/context`, `/options`, `/demand` and
+multipart `/convert-semi`; managers receive product names/location paths without sales
+prices or customer data. Conversion jobs suppress new output and support confirmed
+complete-package repacking through the existing cancellation endpoint. `so.js` adds
+exact held-serial, batch-allocation and untracked quantity correction. Whole-job reports
+reuse `unit-issues.js` with a separate `jobissue` draft namespace. Legacy queued inventory
+tools outside these pipeline paths remain governed by their existing queue UI.
+
+The phone `allocate` direct-sale route also selects the exact commercial line,
+build state and ship-from, persists its immutable request/key, and distinguishes
+stock-out from trip-slip issuance. Pending direct serials are required in the
+next mobile load. Return restock clears the old direct-sale marker; shipment
+membership and availability checks use the current sale line after resale.

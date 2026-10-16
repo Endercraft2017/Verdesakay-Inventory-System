@@ -963,10 +963,12 @@ export const releaseOrderSchema = z
 export const unreserveOrderSchema = z.object({
   unit_ids: z.array(z.coerce.number().int().positive()).max(2000).optional(),
   bulk: z.array(z.object({
+    allocation_id:z.coerce.number().int().positive().optional(),
+    untracked:z.boolean().optional(),
     item_id: z.coerce.number().int().positive(),
     order_item_id: z.coerce.number().int().positive().optional(),
     quantity: numCoerce.positive().max(1_000_000),
-  })).max(300).optional(),
+  }).refine(v=>!(v.allocation_id&&v.untracked),'Choose either an exact batch allocation or untracked goods.')).max(300).optional(),
 }).refine((v) => (v.unit_ids?.length || v.bulk?.length), {
   message: 'Choose an allocated unit or quantity to undo',
 });

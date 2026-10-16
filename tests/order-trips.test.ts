@@ -140,3 +140,14 @@ it('courier collection closes custody without reporting customer delivery or com
  expect((await get(sale)).fulfillment).toMatchObject({dispatched:1,delivered:0,state:'awaiting_delivery'});
  expect((await get(sale)).status).not.toBe('completed');
 });
+it('corrects one exact batch reservation while leaving other reservations and stock intact',async()=>{
+ const {item,sale,line,batch}=await produced(false);
+ for(const quantity of [1,3])expect((await ctx.api.post(`/api/orders/${sale}/release`).set(H()).send({bulk:[{item_id:item,order_item_id:line,batch_id:batch,quantity}]})).status).toBe(200);
+ const before=(await ctx.api.get(`/api/release-slips/orders/${sale}/context`).set(H())).body.batch_allocations;
+ const correction={bulk:[{item_id:item,order_item_id:line,allocation_id:before[0].id,quantity:1}]};
+ expect((await ctx.api.post(`/api/orders/${sale}/release/unreserve`).set(H()).send(correction)).status).toBe(200);
+ const after=(await ctx.api.get(`/api/release-slips/orders/${sale}/context`).set(H())).body.batch_allocations;
+ expect(after).toHaveLength(1);expect(after[0]).toMatchObject({id:before[1].id,quantity:3,state:'reserved'});
+ expect((await ctx.api.post(`/api/orders/${sale}/release/unreserve`).set(H()).send(correction)).status).toBe(409);
+ expect((await ctx.api.get(`/api/inventory/${item}`).set(H())).body.quantity).toBe(4);
+});

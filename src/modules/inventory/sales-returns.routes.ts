@@ -21,7 +21,7 @@ const returnSite = { home: (req: Request) => ({ location: queryOne<{ location_id
 
 type ReturnRow = { id: number; number: string; slip_id: number; slip_item_id: number; item_id: number;
   fulfillment_mode: string; batch_id:number|null;
-  quantity: number; unit_id: number | null; unit_cost: number | null; status: string; credit_note_id: number | null;
+  reason:string;condition_note:string|null; quantity: number; unit_id: number | null; unit_cost: number | null; status: string; credit_note_id: number | null;
   order_id: number; order_number: string; customer_id: number | null; customer_name: string | null;
   item_name: string; slip_number: string; location_id: number | null; credit_note_status: string | null;
   disposition_state: string | null; decision_note: string | null; repair_note: string | null; };
@@ -51,18 +51,27 @@ router.get('/slips/:slipId/context', requireAnyPermission(['inventory.view', 'in
     FROM release_slip_items li WHERE li.slip_id = ? AND li.item_id IS NOT NULL ORDER BY li.id`, slipId);
   const units = queryAll(`SELECT u.id, u.order_item_id, u.product_item_id AS item_id, u.identifier
     FROM job_order_units u WHERE u.order_id = ? AND u.status = 'sold' AND (EXISTS(SELECT 1 FROM release_slip_units su JOIN release_slip_items li ON li.id=su.slip_item_id WHERE su.unit_id=u.id AND li.slip_id=?) OR NOT EXISTS(SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id))
-    AND NOT EXISTS (SELECT 1 FROM sales_returns r WHERE r.unit_id = u.id) ORDER BY u.id`, slip.order_id,slipId);
+    AND NOT EXISTS (SELECT 1 FROM sales_returns r WHERE r.unit_id = u.id AND r.slip_id=?) ORDER BY u.id`, slip.order_id,slipId,slipId);
   const batches=queryAll(`SELECT a.batch_id,pb.number AS batch_number,a.order_item_id,a.item_id,SUM(a.quantity) AS shipped_quantity FROM production_batch_allocations a JOIN production_batches pb ON pb.id=a.batch_id WHERE a.order_id=? AND a.state='shipped' AND (a.release_slip_id=? OR a.release_slip_id IS NULL) GROUP BY a.batch_id,a.order_item_id,a.item_id`,slip.order_id,slipId);
   res.json({ slip, lines, units, batches, returns: queryAll<ReturnRow>(`${SELECT} WHERE r.slip_id = ? ORDER BY r.id DESC`, slipId) });
 });
-router.get('/:id', requireAnyPermission(['inventory.view', 'inventory.adjust', 'orders.release', 'orders.view']), (req, res) => {
+const inspectorPerms=['production.inspect_qc','production.inspect_qa'] as const;
+const returnReader=['inventory.view','inventory.adjust','orders.release','orders.view',...inspectorPerms] as const;
+function repairDesk(req:Request){return !req.user!.permissions.some(p=>['inventory.view','inventory.adjust','orders.release','orders.view'].includes(p));}
+function repairVisible(row:ReturnRow){return !!row.unit_id&&['repair','awaiting_inspection'].includes(row.disposition_state||'');}
+router.get('/repair-queue',requireAnyPermission([...inspectorPerms,'inventory.adjust']),(req,res)=>{
+  res.json(queryAll<ReturnRow>(`${SELECT} WHERE r.unit_id IS NOT NULL AND d.state IN ('repair','awaiting_inspection') ORDER BY r.id DESC`).map(r=>({id:r.id,number:r.number,unit_id:r.unit_id,item_name:r.item_name,quantity:r.quantity,status:r.status,disposition_state:r.disposition_state})));
+});
+router.get('/:id', requireAnyPermission([...returnReader]), (req, res) => {
   const row = getReturn(Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Return not found.' }); return; }
+  if(repairDesk(req)){if(!repairVisible(row)){res.status(403).json({error:'Open a serialized return in repair.'});return;}res.json({id:row.id,number:row.number,unit_id:row.unit_id,item_name:row.item_name,quantity:row.quantity,status:row.status,disposition_state:row.disposition_state,slip_number:row.slip_number,reason:row.reason,condition_note:row.condition_note});return;}
   res.json(row);
 });
-router.get('/:id/events', requireAnyPermission(['inventory.view', 'inventory.adjust', 'orders.release', 'orders.view']), (req, res) => {
+router.get('/:id/events', requireAnyPermission([...returnReader]), (req, res) => {
   const id = Number(req.params.id);
   if (!getReturn(id)) { res.status(404).json({ error: 'Return not found.' }); return; }
+  const row=getReturn(id);if(repairDesk(req)&&(!row||!repairVisible(row))){res.status(403).json({error:'Open a serialized return in repair.'});return;}
   res.json(queryAll('SELECT * FROM sales_return_disposition_events WHERE return_id = ? ORDER BY id', id));
 });
 
@@ -139,9 +148,9 @@ router.post('/:id/inspect', requirePermission('inventory.adjust'), syncClass('ph
     if (row.unit_id) {
       const changed = run(`UPDATE job_order_units SET status = ?, location_id = COALESCE(?, location_id),
         order_id = CASE WHEN ? = 'restock' THEN NULL ELSE order_id END,
-        order_item_id = CASE WHEN ? = 'restock' THEN NULL ELSE order_item_id END, updated_at = datetime('now')
+        order_item_id = CASE WHEN ? = 'restock' THEN NULL ELSE order_item_id END, direct_sold_at=CASE WHEN ?='restock' THEN NULL ELSE direct_sold_at END, updated_at = datetime('now')
         WHERE id = ? AND status = 'sold' AND order_id = ?`,
-      loc ? 'in_stock' : 'returned_rejected', loc, b.decision, b.decision, row.unit_id, row.order_id);
+      loc ? 'in_stock' : 'returned_rejected', loc, b.decision, b.decision, b.decision, row.unit_id, row.order_id);
       if (changed.changes !== 1) throw new Error('The serialized unit changed since return receipt.');
     }
     run(`UPDATE sales_returns SET status = ?, condition_note = ?, location_id = ?,
@@ -231,9 +240,9 @@ router.post('/:id/reinspect', requirePermission('inventory.adjust'), syncClass('
       userId: req.user!.id, reason: `Customer return ${row.number}: repaired and reinspected`,
       buildMode: row.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled' });
     const changed = run(`UPDATE job_order_units SET status = ?, location_id = COALESCE(?, location_id),
-      order_id = CASE WHEN ? IS NOT NULL THEN NULL ELSE order_id END, updated_at = datetime('now')
+      order_id = CASE WHEN ? IS NOT NULL THEN NULL ELSE order_id END, direct_sold_at=CASE WHEN ? IS NOT NULL THEN NULL ELSE direct_sold_at END, updated_at = datetime('now')
       WHERE id = ? AND status = 'returned_rework' AND order_id = ?`,
-      loc ? 'in_stock' : 'returned_rework', loc, loc, row.unit_id, row.order_id);
+      loc ? 'in_stock' : 'returned_rework', loc, loc, loc, row.unit_id, row.order_id);
     if (changed.changes !== 1) throw new Error('The returned serial changed before reinspection.');
     if (loc) run("UPDATE sales_returns SET status = 'restocked', location_id = ?, condition_note = ? WHERE id = ?",
       loc, b.condition_note, row.id);

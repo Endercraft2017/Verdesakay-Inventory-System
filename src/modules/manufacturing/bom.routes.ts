@@ -401,7 +401,7 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), idempo
   if (saleLine) {
     const occupied = queryOne<{ n: number }>(`SELECT COUNT(*) AS n FROM job_order_units u
       WHERE u.order_item_id = ? AND (u.status='reserved' OR u.status='sold' AND u.direct_sold_at IS NOT NULL
-        AND NOT EXISTS(SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id))`, saleLine.id)?.n ?? 0;
+        AND NOT EXISTS(SELECT 1 FROM release_slip_units su JOIN release_slip_items sli ON sli.id=su.slip_item_id WHERE su.unit_id=u.id AND sli.order_item_id=u.order_item_id))`, saleLine.id)?.n ?? 0;
     const heldBulk = Math.max(0, saleLine.released_qty - saleLine.dispatched_bulk_qty);
     if (occupied + heldBulk + saleLine.dispatched_qty + units.length > saleLine.quantity - saleLine.cancelled_qty + 1e-9) {
       res.status(409).json({ error: 'These units exceed the remaining quantity on this sale line.', code: 'line_full' }); return;

@@ -434,8 +434,10 @@
         ? '<button type="button" class="rk-card rk-job" data-inspect><span class="rk-no">' + jo.units_summary.pending + ' unit(s) waiting for inspection</span><span class="rk-pill">Inspect</span></button>' : '') +
       '<div class="rk-card rk-field" data-recent><small>Recent activity</small><b>Loading…</b></div>';
 
-    var acts = [];
-    var canBuild = canRecord() && !paused && !closed && !awaitingAcceptance(jo);
+    if(jo.conversion_job_order_id)body.querySelector('[data-acts]').insertAdjacentHTML('beforebegin',R.note('info','Finishing conversion: the original package and QC unit already exist. Inspect that unit, then record RTS; do not add another unit or pick another BOM kit.'));
+    var acts = [{id:'jo-issues',label:'Job issue reports',kind:'secondary'}];
+    if(jo.conversion_job_order_id&&!closed&&(canManage()||can('production.approve')))acts.push({id:'jo-repack',label:'Return complete package to semi-built RTS',kind:'secondary'});
+    var canBuild = canRecord() && !paused && !closed && !awaitingAcceptance(jo) && !jo.conversion_job_order_id;
     if (canBuild && left > 0) acts.push({ id: 'jo-record', label: 'Record production', kind: 'primary' });
     if (canBuild && serialized) acts.push({ id: 'jo-scrap', label: 'Report scrap', kind: 'secondary' });
     if (paused && canPause() && !canManage()) acts.push({ id: 'jo-resume', label: 'Resume', kind: 'primary' });
@@ -444,6 +446,8 @@
     if (canRecord() && sessions[jo.id]) acts.unshift({ id: 'jo-draft', label: 'Review saved draft', kind: 'primary' });
     body.querySelector('[data-acts]').innerHTML = acts.length ? R.actions(acts.slice(0, 2)) + (acts.length > 2 ? R.actions(acts.slice(2)) : '') : '';
     var on = function (sel, fn) { var el = body.querySelector(sel); if (el) el.onclick = fn; };
+    on('#jo-repack',function(){go(jo.id,'repack');});
+    on('#jo-issues',function(){MApp.go('unit-issues',{job:jo.id});});
     on('#jo-record', function () { go(jo.id, serialized ? 'count' : 'output'); });
     on('#jo-draft', function () { go(jo.id, 'interrupted'); });
     on('#jo-scrap', function () { go(jo.id, 'scrap'); });
@@ -469,6 +473,7 @@
   /* ── 66:240 Record production (how many) ─────────────────────────────────── */
   function count(view, jo) {
     if (sessions[jo.id]) { go(jo.id, 'interrupted'); return; }
+    if(jo.conversion_job_order_id){active(view,jo);return;}
     var left = remaining(jo);
     var body = leadPage(view, '66:240', 'Record production', 'Choose how many finished units to enter');
     if (left <= 0) { body.innerHTML = R.note('info', 'Every ordered unit is already accounted for.'); return; }
@@ -801,8 +806,13 @@
     }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { historyView(view, jo); })); });
   }
 
+  function repack(view,jo){
+    if(!(canManage()||can('production.approve'))||!jo.conversion_job_order_id){active(view,jo);return;}
+    var body=leadPage(view,'66:185','Return complete semi-built package','Only before the first inspection');body.innerHTML=R.note('warn','Repack and verify the entire original package before returning it to semi-built stock. The backend refuses this action after inspection begins.')+'<label class="rk-card rk-field"><small>Reason</small><textarea class="rk-input" data-repack-note maxlength="500"></textarea></label>'+R.check('repacked','The complete package is repacked and physically present')+R.actions([{id:'repack-save',label:'Confirm return to semi-built RTS',kind:'primary'}]);
+    body.querySelector('#repack-save').onclick=async function(){var btn=this;try{var reason=body.querySelector('[data-repack-note]').value.trim();if(!reason||!body.querySelector('#repacked').checked)throw new Error('Confirm the complete repacked package and record the reason.');btn.disabled=true;var s=await mWorkflow.draft('semi-finishing');if(s.operation.state==='draft')await mWorkflow.start(s,{path:'/job-orders/'+jo.id+'/cancel',payload:{reason:reason,confirmed_repacked:true},title:'Return complete package for '+jo.number,reviewRoute:'job-orders',reviewParams:{id:jo.id},reviewPath:'/job-orders/'+jo.id});mWorkflow.paint(view,s);}catch(e){mToast(e.message,'err');btn.disabled=false;}};
+  }
   var STEPS = {
-    problem: problem, count: count, units: function (v, jo) { units(v, jo); }, interrupted: interrupted, output: output, scrap: scrap,
+    repack:repack, problem: problem, count: count, units: function (v, jo) { units(v, jo); }, interrupted: interrupted, output: output, scrap: scrap,
     manage: manage, pause: function (v, jo) { reasonAction(v, jo, 'pause'); }, resume: function (v, jo) { reasonAction(v, jo, 'resume'); },
     close: closeEarly, history: historyView,
   };
@@ -810,7 +820,7 @@
   MApp.route('job-orders', function (view, params) {
     var id = params && Number(params.id);
     if (!id && params && params.view === 'approval') { approvalQueue(view); return; }
-    if (id && params.step && STEPS[params.step]) { loadInto(view, id, function (jo) { STEPS[params.step](view, jo); }); return; }
+    if (id && params.step && STEPS[params.step]) { loadInto(view, id, function (jo) { if(jo.conversion_job_order_id&&['count','units','output','scrap'].indexOf(params.step)!==-1){active(view,jo);return;}STEPS[params.step](view, jo); }); return; }
     if (id) { open1(view, id); return; }
     // Production Manager lands on exceptions; everyone else (and "View all") on the board.
     if (isManager() && !(params && params.view === 'all')) control(view);

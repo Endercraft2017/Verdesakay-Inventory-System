@@ -11,7 +11,7 @@ export const tripError=(message:string,code='trip_changed')=>Object.assign(new E
 export function lineHeld(l:OrderItem) {
   const reserved=queryOne<{n:number}>(`SELECT COUNT(*) AS n FROM job_order_units u WHERE u.order_item_id=?
     AND (u.status='reserved' OR u.status='sold' AND u.direct_sold_at IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id))`,l.id)?.n??0;
+      AND NOT EXISTS (SELECT 1 FROM release_slip_units su JOIN release_slip_items sli ON sli.id=su.slip_item_id WHERE su.unit_id=u.id AND sli.order_item_id=u.order_item_id))`,l.id)?.n??0;
   return {reserved,bulk:Math.max(0,(l.released_qty||0)-(l.dispatched_bulk_qty||0))};
 }
 export function orderOutstanding(orderId:number) {
@@ -32,7 +32,7 @@ export function prepareTrip(orderId:number, choices?:TripChoice[]):TripLine[] {
       throw tripError(`${line.name}: load only the reserved, unshipped quantity. Refresh this trip.`);
     const units=queryAll<{id:number;identifier:string|null;direct_sold_at:string|null}>(`SELECT u.id,u.identifier,u.direct_sold_at
       FROM job_order_units u WHERE u.order_item_id=? AND (u.status='reserved' OR u.status='sold' AND u.direct_sold_at IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id)) ORDER BY u.id`,line.id);
+      AND NOT EXISTS (SELECT 1 FROM release_slip_units su JOIN release_slip_items sli ON sli.id=su.slip_item_id WHERE su.unit_id=u.id AND sli.order_item_id=u.order_item_id)) ORDER BY u.id`,line.id);
     const selected=selection?.unit_ids;
     if(selected&&new Set(selected).size!==selected.length)throw tripError('A serial can be loaded only once.');
     if(selected?.some(id=>!units.some(u=>u.id===id)||usedUnits.has(id)))throw tripError('A selected serial is not held for this sale line.');
@@ -62,7 +62,7 @@ export function prepareTrip(orderId:number, choices?:TripChoice[]):TripLine[] {
     result.push({line,quantity,units:leavingUnits,lots:leavingLots});
   }
   const outWithoutSlip=queryAll<{id:number}>(`SELECT u.id FROM job_order_units u WHERE u.order_id=? AND u.direct_sold_at IS NOT NULL
-    AND NOT EXISTS (SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id)`,orderId);
+    AND NOT EXISTS (SELECT 1 FROM release_slip_units su JOIN release_slip_items sli ON sli.id=su.slip_item_id WHERE su.unit_id=u.id AND sli.order_item_id=u.order_item_id)`,orderId);
   if(outWithoutSlip.some(u=>!usedUnits.has(u.id)))throw tripError('Include every directly sold unit in the next trip slip; its stock already left the warehouse.','direct_sale_required');
   if(!result.length)throw tripError('Nothing is selected for this trip. Reserve and count the goods leaving first.','incomplete');
   for(const parent of lines.filter(l=>l.fulfillment_mode==='ckd')){

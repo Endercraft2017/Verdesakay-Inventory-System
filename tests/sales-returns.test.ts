@@ -180,6 +180,21 @@ describe('slip-linked customer returns', () => {
     expect((await ctx.api.get(`/api/inventory/${item}`).set(H())).body.quantity).toBe(before + 1);
     const units = (await ctx.api.get(`/api/finished-products/${item}/units?status=all`).set(H())).body;
     expect(units.find((u: { id: number }) => u.id === unitId).status).toBe('in_stock');
+    // A resale starts a new return cycle while retaining the earlier return history.
+    const secondSale=(await ctx.api.post('/api/orders').set(H()).send({type:'sale',status:'approved',items:[{item_id:item,name:'Resold serial',quantity:1,unit_price:80}]})).body.id;
+    await ctx.api.post(`/api/orders/${secondSale}/accept-release`).set(H());
+    expect((await ctx.api.post(`/api/finished-products/${item}/units/allocate`).set(H()).send({action:'sell',unit_ids:[unitId],order_id:secondSale,order_item_id:(await ctx.api.get(`/api/orders/${secondSale}`).set(H())).body.items[0].id})).status).toBe(200);
+    const secondSlip=(await ctx.api.post(`/api/orders/${secondSale}/release-slip`).set(H()).send({collected_by:'Second buyer'})).body.id;
+    const secondContext=(await ctx.api.get(`/api/sales-returns/slips/${secondSlip}/context`).set(H())).body;
+    expect(secondContext.units.map((u:any)=>u.id)).toContain(unitId);
+    const evidence2=await proof(secondSlip);
+    const secondReturn=await ctx.api.post('/api/sales-returns').set(H()).send({slip_id:secondSlip,slip_item_id:secondContext.lines[0].id,quantity:1,unit_id:unitId,reason:'Second customer returned serial',evidence_ids:[evidence2]});
+    expect(secondReturn.status,JSON.stringify(secondReturn.body)).toBe(201);
+    expect(secondReturn.body.id).not.toBe(received.body.id);
+    expect((await ctx.api.post(`/api/sales-returns/${secondReturn.body.id}/inspect`).set(H()).send({decision:'restock',condition_note:'Second resale return is sound'})).status).toBe(200);
+    const {queryOne}=await import('../src/shared/db');expect(queryOne<{direct_sold_at:string|null}>('SELECT direct_sold_at FROM job_order_units WHERE id=?',unitId)!.direct_sold_at).toBeNull();
+    expect((await ctx.api.post('/api/sales-returns').set(H()).send({slip_id:secondSlip,slip_item_id:secondContext.lines[0].id,quantity:1,unit_id:unitId,reason:'Duplicate second receipt',evidence_ids:[evidence2]})).status).toBe(409);
+
   });
 
   it('repairs a rejected sold serial through parts, then reinspects without repeating production receipt', async () => {

@@ -526,7 +526,7 @@ router.post('/:id/cancel-remainder', requirePermission('orders.edit'), syncClass
   const id=Number(req.params.id), order=queryOne<Order>('SELECT * FROM orders WHERE id=?',id);
   if(!order||order.type!=='sale'){res.status(404).json({error:'Sale order not found'});return;}
   if(queryOne(`SELECT 1 FROM job_order_units u WHERE u.order_id=? AND u.direct_sold_at IS NOT NULL
-    AND NOT EXISTS(SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id)`,id)){
+    AND NOT EXISTS(SELECT 1 FROM release_slip_units su JOIN release_slip_items sli ON sli.id=su.slip_item_id WHERE su.unit_id=u.id AND sli.order_item_id=u.order_item_id)`,id)){
     res.status(409).json({error:'Directly sold units still need a trip slip before cancelling the remainder.',code:'direct_sale_required'});return;
   }
   const reason=String(req.body.reason||'').trim();
@@ -703,7 +703,7 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
     const ownCovered = matching(Number(itemId), mode).reduce((n, l) => {
       const c = lineCoverage(id, l);
       const directOut = queryOne<{n:number}>(`SELECT COUNT(*) AS n FROM job_order_units u WHERE u.order_item_id=?
-        AND u.direct_sold_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id)`,l.id)?.n??0;
+        AND u.direct_sold_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM release_slip_units su JOIN release_slip_items sli ON sli.id=su.slip_item_id WHERE su.unit_id=u.id AND sli.order_item_id=u.order_item_id)`,l.id)?.n??0;
       return n + c.units + c.bulk-(l.dispatched_qty||0)-directOut;
     }, 0);
     const free = Math.max(0, (stockLine?.on_hand ?? 0) - (stockLine?.committed_elsewhere ?? 0) - ownCovered);
@@ -788,12 +788,20 @@ router.post('/:id/release/unreserve', releaseGate, syncClass('claim', orderSite)
     }
   }
   const bulkToUndo = new Map<number, number>();
+  const choices:{lineId:number;quantity:number;allocationId?:number;untracked?:boolean}[]=[];
+  const allocationUndo=new Map<number,number>(),untrackedUndo=new Map<number,number>();
   const physicalLines = queryAll<OrderItem>("SELECT * FROM order_items WHERE order_id = ? AND fulfillment_mode != 'ckd'", id);
   for (const b of input.bulk ?? []) {
     const candidates = physicalLines.filter((l) => l.item_id === b.item_id);
     const line = b.order_item_id ? candidates.find((l) => l.id === b.order_item_id) : candidates.length === 1 ? candidates[0] : null;
     if (!line) { res.status(409).json({ error: `Select the exact sale line for item #${b.item_id}.`, code: 'line_required' }); return; }
+    if(b.allocation_id){const lot=queryOne<{quantity:number}>("SELECT quantity FROM production_batch_allocations WHERE id=? AND order_id=? AND order_item_id=? AND state='reserved'",b.allocation_id,id,line.id);const n=(allocationUndo.get(b.allocation_id)||0)+b.quantity;if(!lot||n>lot.quantity+1e-9){res.status(409).json({error:'That exact batch allocation changed. Review the current held goods.',code:'allocation_changed'});return;}allocationUndo.set(b.allocation_id,n);}
+    if(b.untracked){const lots=queryOne<{n:number}>("SELECT COALESCE(SUM(quantity),0) AS n FROM production_batch_allocations WHERE order_item_id=? AND state='reserved'",line.id)!.n;const n=(untrackedUndo.get(line.id)||0)+b.quantity;if(n>line.released_qty-(line.dispatched_bulk_qty||0)-lots+1e-9){res.status(409).json({error:'That untracked allocation changed. Refresh before correction.'});return;}untrackedUndo.set(line.id,n);}
+    choices.push({lineId:line.id,quantity:b.quantity,allocationId:b.allocation_id,untracked:b.untracked});
     bulkToUndo.set(line.id, (bulkToUndo.get(line.id) ?? 0) + b.quantity);
+  }
+  if(choices.some(c=>!c.allocationId&&!c.untracked&&choices.some(other=>other.lineId===c.lineId&&(other.allocationId||other.untracked)))){
+    res.status(400).json({error:'Choose exact batches and untracked quantities consistently for this sale line.'});return;
   }
   for (const [lineId, amount] of bulkToUndo) {
     const line = physicalLines.find((l) => l.id === lineId);
@@ -812,9 +820,9 @@ router.post('/:id/release/unreserve', releaseGate, syncClass('claim', orderSite)
         id, ...unitIds
       );
     }
+    for(const choice of choices){if(!choice.untracked){const line=physicalLines.find(l=>l.id===choice.lineId)!;undoBatchAllocations(id,line.item_id!,choice.quantity,line.id,choice.allocationId);}}
     for (const [lineId, amount] of bulkToUndo) {
       const line = physicalLines.find((l) => l.id === lineId)!;
-      undoBatchAllocations(id,line.item_id!,amount,lineId);
       run('UPDATE order_items SET released_qty = MAX(dispatched_bulk_qty, released_qty - ?) WHERE id = ?', amount, lineId);
     }
     // If it no longer fully covers, drop 'released' back to 'approved'.

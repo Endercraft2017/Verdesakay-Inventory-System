@@ -7,7 +7,7 @@
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
 var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
 var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
-var CACHE_VERSION = CACHE_PREFIX + 'v108';
+var CACHE_VERSION = CACHE_PREFIX + 'v109';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -64,6 +64,7 @@ var SHELL = [
   '/mobile/lib/signature.js',
   '/mobile/lib/queue.js',
   '/mobile/lib/production-drafts.js',
+  '/mobile/lib/workflow-attempt.js',
   '/mobile/lib/push.js',
   '/mobile/lib/scanner.js',
   '/mobile/lib/selfie.js',
@@ -98,6 +99,9 @@ var SHELL = [
   '/mobile/modules/inventory/so.js',
   '/mobile/modules/inventory/delivery-recovery.js',
   '/mobile/modules/inventory/deliveries.js',
+  '/mobile/modules/inventory/returns.js',
+  '/mobile/modules/manufacturing/semi-finishing.js',
+
   '/mobile/modules/core/report-problem.js',
   '/mobile/modules/core/settings.js',
   '/mobile/modules/inventory/queue-view.js',

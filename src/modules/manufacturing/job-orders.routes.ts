@@ -252,6 +252,13 @@ function loadJobOrder(id: number): JobOrder | null {
 }
 
 // Candidate packages for the manager's explicit CKD-vs-semi planning decision.
+router.get('/convert-semi/context',conversionGate,(_req,res)=>{
+  const products=queryAll('SELECT id,name,sku,is_finished_product FROM inventory_items WHERE is_finished_product=1 ORDER BY name');
+  const locations=queryAll<{id:number;name:string;type:string;is_default:number;parent_id:number|null}>('SELECT id,name,type,is_default,parent_id FROM locations ORDER BY name')
+    .map(l=>({...l,path:locationName(l.id)}));
+  res.json({products,locations});
+});
+
 router.get('/convert-semi/options', conversionGate, (req, res) => {
   const productId = Number(req.query.product_item_id);
   const locationId = Number(req.query.location_id);

@@ -1,5 +1,14 @@
 # Inventory and production: mobile integration gaps
 
+## Mobile integration follow-up (2026-10-16)
+
+The direct-sale phone gap below is now integrated: exact commercial line/build,
+ship-from and price selection; durable immutable stock-out recovery; truthful
+“Stock removed; awaiting trip slip” confirmation; and mandatory inclusion of
+unslipped direct units in the next vehicle load. Repeat-sale membership checks
+are scoped to the current sale line, and successful return restock clears the
+old direct-sale marker. Historical ledger ambiguities still need manual review.
+
 ## Direct unit sale in same-order trip slips (2026-10-16)
 
 The legacy `POST /finished-products/:id/units/allocate` `action:'sell'`
@@ -27,6 +36,31 @@ sell endpoint now honors it. After a lost response, retry the **same** body and
 key or reconcile the unit/order before a new attempt. Never sell the same unit
 twice. No mobile source was changed here. Backend and disposable Playwright
 checks cover response loss, desktop 390px/1440px slips, and phone delivery.
+## Remaining mobile pipeline integration (2026-10-16)
+
+The follow-up implementation now includes allocation correction, customer return
+receipt/inspection/disposition/repair, semi-built finishing intake and repacking,
+build-state-aware stock movement, whole-job issue management, ordinary QC retry
+recovery, stage-safe bulk inspection, full location paths and shortage/supply context.
+New routes: `returns` and `semi-finishing`; existing routes retain their own permission
+gates. A production manager uses minimal finishing context rather than receiving
+commercial inventory or sales access. Inspectors see only serialized returns in repair,
+without customer details, and cannot perform warehouse restock/disposition decisions.
+
+Owner decision: **a resold serial may return again against its new release slip**.
+Schema v86 replaces lifetime serial uniqueness with shipment-specific uniqueness,
+retaining earlier return/disposition/credit history. PWA cache v109.
+
+All new physical/stage decisions retain their immutable body/key and compressed photo
+bytes across restart. Unknown attempts must be retried or reconciled; they are never
+shown as confirmed. Allocation correction changes only held units/exact lot quantities;
+it cannot reverse a shipment or release the customer's unshipped demand to other sales.
+Finishing intake consumes one complete package and creates one pending QC unit; ordinary
+Add unit, output and scrap entry points are suppressed for conversion jobs.
+
+Physical phone/printer acceptance remains a manual check. Validation results are recorded
+in `docs/reviews/mobile-remaining-workflows-validation.md` after regression finishes.
+Historical rows below describe earlier states and are superseded by this entry.
 
 ## Current owner decision: same-order partial trips (2026-10-16)
 

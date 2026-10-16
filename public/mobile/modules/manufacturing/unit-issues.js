@@ -4,14 +4,15 @@
 (function () {
   var R = RoleUI, renderSerial = 0;
   var canReport = function () { return ['inventory.adjust', 'production.record', 'production.inspect_qc', 'production.inspect_qa', 'production.approve', 'production.manage', 'production.receive'].some(MApp.can); };
-  function id(unit, draft) { return 'issue:' + unit + (draft ? ':' + draft : ''); }
-  function route(unit, role, extra) { MApp.go('unit-issues', Object.assign({ unit: unit, role: role }, extra || {})); }
+  function id(unit, draft) { return (unit<0?'jobissue:':'issue:') + Math.abs(unit) + (draft ? ':' + draft : ''); }
+  function route(unit, role, extra) { MApp.go('unit-issues', Object.assign(unit<0?{job:Math.abs(unit),role:role}:{unit:unit,role:role}, extra || {})); }
+  function currentId(){var p=new URLSearchParams(location.hash.split('?')[1]||'');return p.get('job')?-Number(p.get('job')):Number(p.get('unit'));}
   function label(u) { return u.identifier || 'Unit #' + u.id; }
   function page(view, ctx, title) { return R.page(view, { role: ctx.role, node: ctx.role === 'qa' ? '72:363' : '69:364', title: title, subtitle: label(ctx.unit) + ' · ' + ctx.jo.number }); }
   function visible(ctx, s) {
-    try { return s.key === mProductionDrafts.key(id(ctx.unit.id, s.operation.draftId) + ':action') && location.hash.split('?')[0] === '#/unit-issues' && Number(new URLSearchParams(location.hash.split('?')[1] || '').get('unit')) === ctx.unit.id && new URLSearchParams(location.hash.split('?')[1] || '').get('draft') === s.operation.draftId; } catch (e) { return false; }
+    try { return s.key === mProductionDrafts.key(id(ctx.unit.id, s.operation.draftId) + ':action') && location.hash.split('?')[0] === '#/unit-issues' && currentId() === ctx.unit.id && new URLSearchParams(location.hash.split('?')[1] || '').get('draft') === s.operation.draftId; } catch (e) { return false; }
   }
-  function active(ctx) { try { return MApp.getMe() && ctx.owner === mProductionDrafts.key(id(ctx.unit.id) + ':action') && location.hash.split('?')[0] === '#/unit-issues' && Number(new URLSearchParams(location.hash.split('?')[1] || '').get('unit')) === ctx.unit.id; } catch (e) { return false; } }
+  function active(ctx) { try { return MApp.getMe() && ctx.owner === mProductionDrafts.key(id(ctx.unit.id) + ':action') && location.hash.split('?')[0] === '#/unit-issues' && currentId() === ctx.unit.id; } catch (e) { return false; } }
   function owns(i) { var p = MApp.getMe() || {}; return i.reported_by === p.id || ['inventory.adjust', 'production.approve', 'production.manage'].some(MApp.can); }
   function pending(s) { return s.operation.local || s.rows.some(function (r) { return r.local; }); }
   function completed(s) { return s.operation.state === 'confirmed' && s.rows.every(function (r) { return r.saved && !r.local; }) && !s.operation.local; }
@@ -72,13 +73,13 @@
       }).catch(error);
     };
     body.querySelector('#ui-back').onclick = function () {
-      if (final) mProductionDrafts.remove(s).then(function () { if (visible(ctx, s)) { route(ctx.unit.id, ctx.role); open(view, { unit: ctx.unit.id, role: ctx.role }); } }).catch(error);
+      if (final) mProductionDrafts.remove(s).then(function () { if (visible(ctx, s)) { route(ctx.unit.id, ctx.role); open(view, ctx.unit.id<0?{job:ctx.jo.id,role:ctx.role}:{ unit: ctx.unit.id, role: ctx.role }); } }).catch(error);
       else route(ctx.unit.id, ctx.role);
     };
     var another = body.querySelector('#ui-another'); if (another) another.onclick = function () { mProductionDrafts.remove(s).then(function () { if (visible(ctx, s)) { start(ctx); } }).catch(error); };
     if (refused && op.state === 'confirmed' && !pending(s) && !s.rows.some(function (r) { return r.attempt && ['unknown','sending','conflict'].indexOf(r.attempt.state) !== -1; })) {
       body.appendChild(mEl(R.actions([{ id: 'ui-discard-photos', label: 'Discard refused / unsent photos', kind: 'secondary' }])));
-      body.querySelector('#ui-discard-photos').onclick = function () { mProductionDrafts.remove(s).then(function () { if (visible(ctx, s)) { route(ctx.unit.id, ctx.role); open(view, { unit: ctx.unit.id, role: ctx.role }); } }).catch(error); };
+      body.querySelector('#ui-discard-photos').onclick = function () { mProductionDrafts.remove(s).then(function () { if (visible(ctx, s)) { route(ctx.unit.id, ctx.role); open(view, ctx.unit.id<0?{job:ctx.jo.id,role:ctx.role}:{ unit: ctx.unit.id, role: ctx.role }); } }).catch(error); };
     }
     var locals = [{ command: op.local, clear: function () { op.local = null; } }].concat(s.rows.map(function (r) { return { command: r.local, clear: function () { r.local = null; } }; }));
     locals.filter(function (l) { return l.command; }).forEach(function (l) { body.querySelector('[data-sync]').appendChild(R.syncWatch(l.command, function (r) { if (r.state === 'confirmed' && visible(ctx, s)) { l.clear(); persist(s).then(function () { progress(view, ctx, s); }).catch(error); } })); });
@@ -111,14 +112,14 @@
     var editable = s.rows.filter(function (r) { return !r.saved; });
     var picker = mPhoto.picker({ max: 12, onBusy: function (busy) { body.querySelectorAll('#ui-send,#ui-list,#ui-discard-draft').forEach(function (b) { b.disabled = busy; }); if (busy) body.querySelector('[data-draft-status]').textContent = 'Preparing photos…'; }, initial: editable.map(function (r) { return r.file; }), onChange: function (files) { if (!body.isConnected || !visible(ctx, s) || op.state !== 'draft') return; collect(); s.rows = s.rows.filter(function (r) { return r.saved; }).concat(files.map(function (f, n) { return editable.find(function (r) { return r.file === f; }) || { identifier: 'Photo ' + (n + 1), file: f, saved: false }; })); saveDraft(); } });
     body.querySelector('[data-photos]').appendChild(picker);
-    body.querySelector('#ui-discard-draft').onclick = function () { mProductionDrafts.remove(s).then(function () { if (visible(ctx, s)) { route(ctx.unit.id, ctx.role); open(view, { unit: ctx.unit.id, role: ctx.role }); } }).catch(error); };
+    body.querySelector('#ui-discard-draft').onclick = function () { mProductionDrafts.remove(s).then(function () { if (visible(ctx, s)) { route(ctx.unit.id, ctx.role); open(view, ctx.unit.id<0?{job:ctx.jo.id,role:ctx.role}:{ unit: ctx.unit.id, role: ctx.role }); } }).catch(error); };
     body.querySelector('#ui-list').onclick = function () { collect(); persist(s).then(function () { route(ctx.unit.id, ctx.role); }).catch(error); };
     body.querySelector('#ui-send').onclick = function () {
       collect();
       if (!photoOnly && (!op.doc.category || !op.doc.description.trim())) { mToast('Choose an area and describe the issue.', 'err'); return; }
       if ((photoOnly || op.doc.visible) && !s.rows.some(function (r) { return r.file; })) { mToast('Add a photo for this visible issue.', 'err'); return; }
       if (ctx.cached || navigator.onLine === false) { mToast('Draft retained. Reconnect and reopen the unit to submit the report and photos.', 'err'); persist(s).catch(error); return; }
-      op.payload = op.mode === 'edit' ? { category: op.doc.category, severity: op.doc.severity, description: op.doc.description.trim() } : { job_order_id: ctx.jo.id, unit_id: ctx.unit.id, category: op.doc.category, severity: op.doc.severity, description: op.doc.description.trim() };
+      op.payload = op.mode === 'edit' ? { category: op.doc.category, severity: op.doc.severity, description: op.doc.description.trim() } : { job_order_id: ctx.jo.id, unit_id: ctx.unit.id<0?null:ctx.unit.id, category: op.doc.category, severity: op.doc.severity, description: op.doc.description.trim() };
       op.path = op.mode === 'edit' ? '/production-issues/' + op.issueId : '/production-issues'; op.method = op.mode === 'edit' ? 'put' : 'post';
       op.key = 'unit-issue-' + crypto.randomUUID(); op.created = Date.now(); op.state = photoOnly ? 'confirmed' : 'new';
       body.querySelectorAll('button,input,textarea,select').forEach(function (el) { el.disabled = true; });
@@ -138,16 +139,16 @@
       var add = body.querySelector('#ui-new'); if (add) add.onclick = function () { start(ctx); };
       body.querySelectorAll('[data-saved] [data-id]').forEach(function (b) { b.onclick = function () { route(ctx.unit.id, ctx.role, { draft: b.dataset.id }); }; });
       body.querySelectorAll('[data-reports] [data-id]').forEach(function (b) { b.onclick = function () { route(ctx.unit.id, ctx.role, { issue: b.dataset.id }); }; });
-      body.querySelector('#ui-unit').onclick = function () { MApp.go('record', { unit: ctx.unit.id }); };
-      if (err) body.appendChild(R.error(err, function () { open(view, { unit: ctx.unit.id, role: ctx.role }); }));
+      body.querySelector('#ui-unit').onclick = function () { ctx.unit.id<0?MApp.go('job-orders',{id:ctx.jo.id}):MApp.go('record', { unit: ctx.unit.id }); };
+      if (err) body.appendChild(R.error(err, function () { open(view, ctx.unit.id<0?{job:ctx.jo.id,role:ctx.role}:{ unit: ctx.unit.id, role: ctx.role }); }));
     }
-    API.get('/production-issues?job_order_id=' + ctx.jo.id + '&unit_id=' + ctx.unit.id).then(function (rows) { paint(rows); }).catch(function (err) { paint(null, err); });
+    API.get('/production-issues?job_order_id=' + ctx.jo.id + (ctx.unit.id<0?'&whole_job=1':'&unit_id='+ctx.unit.id)).then(function (rows) { paint(rows); }).catch(function (err) { paint(null, err); });
   }
   function detail(view, ctx, issueId, saved) {
     var body = page(view, ctx, 'Issue report'); body.innerHTML = R.skeleton(2);
     API.get('/production-issues/' + issueId).then(function (i) {
       if (!body.isConnected || !active(ctx)) return;
-      if (i.unit_id !== ctx.unit.id || i.job_order_id !== ctx.jo.id) throw new Error('This report belongs to a different unit.');
+      if ((i.unit_id||null) !== (ctx.unit.id<0?null:ctx.unit.id) || i.job_order_id !== ctx.jo.id) throw new Error('This report belongs to a different unit.');
       body.innerHTML = R.field('Affected area', i.category) + R.field('Description', i.description) + R.field('Status / severity', i.status + ' · ' + i.severity) +
         R.field('Reported by', i.reported_by_name || '—') + (i.resolution ? R.field('Resolution', i.resolution) : '') + '<div data-report-photos></div>' +
         (owns(i) && canReport() && !saved.some(function (s) { return s.operation.issueId === i.id; }) ? R.actions((i.status === 'open' ? [{ id: 'ui-edit', label: 'Edit report', kind: 'secondary' }, { id: 'ui-add-photos', label: 'Add photos', kind: 'secondary' }, { id: 'ui-resolve', label: 'Resolve issue', kind: 'primary' }] : [{ id: 'ui-reopen', label: 'Reopen issue', kind: 'secondary' }])) : '') +
@@ -174,25 +175,26 @@
     }).catch(function (err) { if (!body.isConnected) return; body.innerHTML = ''; body.appendChild(R.error(err, function () { detail(view, ctx, issueId, saved); })); });
   }
   function open(view, params) {
+    if(params.job)params.unit=-Number(params.job);
     var render = ++renderSerial;
     if (!Number(params.unit)) {
       var role = params.role === 'qa' || MApp.can('production.inspect_qa') ? 'qa' : 'qc';
       var body = R.page(view, { role: role, node: role === 'qa' ? '72:104' : '69:104', title: 'Saved unit issue reports', subtitle: 'Resume reports and photos retained on this phone' });
       body.innerHTML = R.skeleton(2);
       var savedOwner = mProductionDrafts.key('issue-list');
-      mProductionDrafts.listActions('unit-issue', 'issue').then(function (saved) {
+      Promise.all([mProductionDrafts.listActions('unit-issue','issue'),mProductionDrafts.listActions('unit-issue','jobissue')]).then(function(all){return all[0].concat(all[1]);}).then(function (saved) {
         if (render !== renderSerial || !body.isConnected || !MApp.getMe() || savedOwner !== mProductionDrafts.key('issue-list')) return;
         body.innerHTML = saved.length ? saved.map(function (a) { var c = a.record.operation.context; return R.jobCard({ id: a.record.operation.draftId, number: c.identifier, name: a.record.operation.doc.category, pill: { text: 'Review saved report', tone: 'warn' }, meta: c.job_order_number }); }).join('') : R.note('info', 'No saved report drafts. Open a unit in QC or QA to report an issue.');
-        body.querySelectorAll('[data-id]').forEach(function (b) { b.onclick = function () { var s = saved.find(function (a) { return a.record.operation.draftId === b.dataset.id; }); route(s.id, role, { draft: b.dataset.id }); }; });
+        body.querySelectorAll('[data-id]').forEach(function (b) { b.onclick = function () { var s = saved.find(function (a) { return a.record.operation.draftId === b.dataset.id; }); route(s.record.operation.context.unitId, role, { draft: b.dataset.id }); }; });
       }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { open(view, params); })); });
       return;
     }
     var unitId = Number(params.unit), role = params.role === 'qa' ? 'qa' : 'qc';
     var owner = mProductionDrafts.key(id(unitId) + ':action'), hash = location.hash;
     view.innerHTML = '<section class="rk-page">' + R.skeleton(2) + '</section>';
-    Promise.all([API.get('/production/record?unit=' + unitId).catch(function (err) { return { readError: err }; }), mProductionDrafts.listActions('unit-issue', 'issue')]).then(function (both) {
+    Promise.all([(unitId<0?API.get('/job-orders/'+Math.abs(unitId)).then(function(jo){return {unit:{id:unitId,identifier:'Whole job '+jo.number,product_name:jo.product_name},job_order:jo};}):API.get('/production/record?unit=' + unitId)).catch(function (err) { return { readError: err }; }), mProductionDrafts.listActions('unit-issue', unitId<0?'jobissue':'issue')]).then(function (both) {
       if (render !== renderSerial || location.hash !== hash || !MApp.getMe() || owner !== mProductionDrafts.key(id(unitId) + ':action')) return;
-      var d = both[0], saved = both[1].filter(function (a) { return a.id === unitId; }).map(function (a) { return a.record; }), cached = false;
+      var d = both[0], saved = both[1].filter(function (a) { return a.id === Math.abs(unitId); }).map(function (a) { return a.record; }), cached = false;
       if (d.readError) {
         if (!saved.length || d.readError.status && d.readError.status < 500) throw d.readError;
         var c = saved[0].operation.context;

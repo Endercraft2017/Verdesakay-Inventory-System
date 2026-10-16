@@ -36,6 +36,7 @@
     "test:editor:ux": "node scripts/test-editor-ux.mjs",
     "test:forms:ux": "node scripts/test-forms-ux.mjs",
     "test:mobile:qr": "node scripts/test-mobile-qr-ux.mjs",
+    "test:mobile:workflow": "node scripts/test-mobile-remaining-ux.mjs",
     "test:forms:connected:ux": "node scripts/test-connected-forms-ux.mjs",
     "test:invoice:ux": "node scripts/test-invoice-ux.mjs"
   },

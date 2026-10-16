@@ -224,7 +224,7 @@
     body.innerHTML += av.lines.map(function (l) {
       return '<label class="rk-card rk-field"><small>' + mEsc(l.component_name + ' · need ' + l.need + ' · free ' + l.available) + '</small>' +
         '<input type="number" inputmode="numeric" min="0" max="' + l.need + '" step="1" data-pick="' + l.component_item_id + '" aria-label="Picked ' + mEsc(l.component_name) + '" value="' + (l.picked || 0) + '"></label>';
-    }).join('') + R.actions([{ id: 'kr-save-pick', label: 'Save picked counts', kind: 'secondary' }]) +
+    }).join('') + (av.supply_planning_order?R.note('info','Supply is planned by Sales on '+mEsc(av.supply_planning_order.number||'the linked sales order')+'. Do not create duplicate procurement here.'): (av.linked_purchase_orders||[]).length?R.note('info','Pending purchase supply: '+mEsc(av.linked_purchase_orders.map(function(p){return p.number;}).join(', '))+'. It is not on-hand until received into this source location.'):'')+ R.actions([{ id: 'kr-save-pick', label: 'Save picked counts', kind: 'secondary' }]) +
       (av.shortfalls.length ? R.actions([{ id: 'kr-short', label: 'See shortage', kind: 'secondary' }]) : '') +
       (av.releasable ? R.actions([{ id: 'kr-go', label: 'Release to production', kind: 'primary', icon: RELEASE_ICON }]) : R.note('info', 'Save the complete picked counts to enable release.'));
     body.querySelector('#kr-save-pick').onclick = function () {

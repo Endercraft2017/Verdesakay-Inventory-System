@@ -553,16 +553,11 @@
   function record(desk, u, payload, btn, btnText) {
     // A failing / held result carries the evidence photos uploaded for it (the server needs one per unit).
     if (payload.result === 'fail') payload.evidence_ids = session(u.id).evidence.slice();
-    mSubmit('/job-orders/' + u.job_order_id + '/units/inspect', payload, { label: desk.role.toUpperCase() + ' · ' + label(u) })
-      .then(function (r) {
-        var s = session(u.id);
-        s.result = { result: payload.result, disposition: payload.disposition || null, queued: !!(r && r.queued), local: (r && r.local) || null, at: new Date().toISOString(),
-          count: (payload.unit_ids || []).length, items: (payload.checklist || []).length,
-          issues: (payload.checklist || []).filter(function (c) { return c.status === 'issue'; }).length };
-        clearDraft(u.id);
-        delete cache[desk.role];
-        go(desk, { unit: u.id, step: 'done' });
-      }).catch(fail(btn, btnText));
+    var actionHash=location.hash;
+    mWorkflow.draft('qc').then(function(saved){
+      if(actionHash!==location.hash||!mWorkflow.owns(saved))return;if(saved.operation.state!=='draft'){mWorkflow.paint(document.getElementById('m-view'),saved);return;}
+      return mWorkflow.start(saved,{path:'/job-orders/'+u.job_order_id+'/units/inspect',payload:payload,title:desk.role.toUpperCase()+' inspection · '+label(u)+' · '+payload.result,successLabel:payload.result==='pass'?'Passed to '+destination(u):payload.result==='repair'?'Sent for rework':'Inspection recorded',role:desk.role,node:desk.nodes.done,reviewRoute:'qc',reviewParams:{role:desk.role},reviewPath:'/qc/queue?role='+desk.role}).then(function(){clearDraft(u.id);delete cache[desk.role];delete jos[u.job_order_id];if(actionHash===location.hash&&mWorkflow.owns(saved))mWorkflow.paint(document.getElementById('m-view'),saved);});
+    }).catch(fail(btn,btnText));
   }
 
   /* ── Repair / rectification (69:323 / 72:322) ───────────────────────────── */
@@ -765,6 +760,7 @@
         return;
       }
       var list = byJo[joId] || [];
+      if(list.length)list=list.filter(function(u){return u.stage===list[0].stage;});
       if (!list.length) { body.innerHTML = '<div class="rk-empty">Nothing ready on this job order.</div>'; return; }
       body.innerHTML =
         '<div class="rk-stepper"><small>Units to pass</small><div class="row"><button type="button" data-dec aria-label="Fewer">−</button>' +
@@ -782,7 +778,7 @@
       body.querySelector('[data-scan]').onclick = function () { mScanner.open({ title: 'Scan batch / lot ID', onResult: function (c) { body.querySelector('[data-bid]').value = String(c || '').trim(); } }); };
       body.querySelector('#qc-back').onclick = function () { history.back(); };
       body.querySelector('#qc-go').onclick = function () {
-        var n = clamp(parseInt(input.value, 10));
+        var n=Number(input.value);if(!input.value.trim()||!Number.isInteger(n)||n<1||n>list.length){mToast('Enter a whole quantity within this inspection stage.','err');return;}
         var first = list[0];
         var s = session(first.id);
         s.bulk = n; s.bulkIds = list.slice(0, n).map(function (u) { return u.id; });
@@ -882,11 +878,12 @@
     }).catch(function (err) { if (!body.isConnected) return; body.innerHTML = ''; body.appendChild(R.error(err, function () { holdDecision(view, desk, unitId); })); });
   }
 
-  MApp.route('qc', function (view, params) {
+  MApp.route('qc', async function (view, params) {
     params = params || {};
     var desk = deskFor(params);
     var canDesk = canAdjust() || can(desk.role === 'qa' ? 'production.inspect_qa' : 'production.inspect_qc') || (desk.role === 'qa' && can('production.qa_review'));
     if (!canDesk) { view.innerHTML = '<div class="m-error">You don’t have the ' + desk.role.toUpperCase() + ' inspection permission.</div>'; return; }
+    var attemptHash=location.hash;var attempt;try{attempt=await mWorkflow.load('qc');}catch(e){view.innerHTML='';view.appendChild(R.error(e,function(){MApp.render();}));return;}if(attemptHash!==location.hash)return;if(attempt&&attempt.operation.state!=='draft'){mWorkflow.paint(view,attempt);return;}
     var unitId = params.unit && Number(params.unit);
     var step = params.step;
     if (unitId && step === 'hold' && desk.role === 'qa' && canDecideHolds()) return holdDecision(view, desk, unitId);
