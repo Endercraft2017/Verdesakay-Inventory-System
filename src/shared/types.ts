@@ -534,6 +534,8 @@ export interface ReleaseSlipItem {
   id: number;
   slip_id: number;
   order_item_id: number | null;
+  /** Stock was removed by the older direct-unit Sell action before a release slip. */
+  direct_sold_at: string | null;
   item_id: number | null;
   name: string;
   sku: string | null;

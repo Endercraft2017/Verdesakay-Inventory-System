@@ -9,6 +9,7 @@ import { explode, rollupCost, whereUsed } from './bom-explode';
 import { dbBomResolvers } from './bom-resolvers';
 import type { BomComponent, InventoryItem, JobOrderUnit } from '../../shared/types';
 import { syncClass } from '../../sync';
+import { idempotency } from '../../shared/idempotency';
 
 const router = Router();
 /** The product catalog (list, one product, its units) is read by sales orders and the warehouse
@@ -327,29 +328,36 @@ router.get('/:id/units', catalogRead, (req, res) => {
 
 // POST /api/finished-products/:id/units/allocate — sell or relocate in-stock units.
 // Only units that have passed QA/QC (status = 'in_stock') can be allocated.
-router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncClass('claim'), (req, res) => {
+router.post('/:id/units/allocate', requirePermission('inventory.adjust'), idempotency, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', id);
   if (!item) { res.status(404).json({ error: 'Item not found' }); return; }
   const input = parseBody(allocateUnitsSchema, req.body);
 
-  let order: { id: number; number: string; type: string } | undefined;
-  let saleLineId: number | null = null;
+  let order: { id: number; number: string; type: string; status: string; location_id: number | null; fulfilled_at: string | null } | undefined;
+  let saleLine: { id: number; quantity: number; released_qty: number; dispatched_qty: number; dispatched_bulk_qty: number; cancelled_qty: number } | null = null;
   if (input.order_id != null) {
-    order = queryOne<{ id: number; number: string; type: string }>(
-      "SELECT id, number, type FROM orders WHERE id = ?", input.order_id
+    order = queryOne<{ id: number; number: string; type: string; status: string; location_id: number | null; fulfilled_at: string | null }>(
+      "SELECT id, number, type, status, location_id, fulfilled_at FROM orders WHERE id = ?", input.order_id
     );
     if (!order) { res.status(400).json({ error: 'Sales order not found' }); return; }
-    if (input.action === 'sell' && order.type === 'sale') {
-      const lines = queryAll<{ id: number; fulfillment_mode: string }>(`SELECT id,fulfillment_mode FROM order_items
+    if (input.action === 'sell') {
+      if (order.type !== 'sale') { res.status(400).json({ error: 'Choose a sales order for units being sold.' }); return; }
+      if (order.fulfilled_at) {
+        res.status(409).json({ error: 'This sale already has a physical stock-out. Record a return or correction instead.', code: 'already_shipped' }); return;
+      }
+      if (String(order.status).toLowerCase() === 'cancelled') {
+        res.status(409).json({ error: 'Cancelled sales cannot receive sold units.' }); return;
+      }
+      const lines = queryAll<{ id: number; quantity: number; released_qty: number; dispatched_qty: number; dispatched_bulk_qty: number; cancelled_qty: number; fulfillment_mode: string }>(`SELECT id,quantity,released_qty,dispatched_qty,dispatched_bulk_qty,cancelled_qty,fulfillment_mode FROM order_items
         WHERE order_id = ? AND item_id = ? AND fulfillment_mode NOT IN ('ckd','ckd_component')`, input.order_id, id);
       const matching = lines.filter((l) => (l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled') === input.build_mode);
       const selected = input.order_item_id ? matching.find((l) => l.id === input.order_item_id) : matching.length === 1 ? matching[0] : null;
-      if (!selected && (lines.length || input.order_item_id)) {
+      if (!selected) {
         res.status(409).json({ error: matching.length ? 'Select the exact sale line for these units.' : 'The sale has no line for these units and build state.',
           code: matching.length ? 'line_required' : 'wrong_build' }); return;
       }
-      saleLineId = selected?.id ?? null;
+      saleLine = selected ?? null;
     }
   }
   if (input.action === 'move' && input.to_location_id != null
@@ -390,6 +398,19 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncCl
   if (units.some((u) => u.build_mode !== input.build_mode)) {
     res.status(409).json({ error: 'Selected units have a different build state. Choose fully built or semi-built units separately.' }); return;
   }
+  if (saleLine) {
+    const occupied = queryOne<{ n: number }>(`SELECT COUNT(*) AS n FROM job_order_units u
+      WHERE u.order_item_id = ? AND (u.status='reserved' OR u.status='sold' AND u.direct_sold_at IS NOT NULL
+        AND NOT EXISTS(SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id))`, saleLine.id)?.n ?? 0;
+    const heldBulk = Math.max(0, saleLine.released_qty - saleLine.dispatched_bulk_qty);
+    if (occupied + heldBulk + saleLine.dispatched_qty + units.length > saleLine.quantity - saleLine.cancelled_qty + 1e-9) {
+      res.status(409).json({ error: 'These units exceed the remaining quantity on this sale line.', code: 'line_full' }); return;
+    }
+    const shipFrom = order!.location_id ?? getDefaultLocationId();
+    if (units.some((u) => (u.location_id ?? getDefaultLocationId()) !== shipFrom)) {
+      res.status(409).json({ error: 'Move these units to the sale ship-from location before selling them.', code: 'wrong_location' }); return;
+    }
+  }
 
   const fallbackLoc = getDefaultLocationId();
   db.exec('BEGIN');
@@ -403,8 +424,8 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncCl
           reason: `Sold${order ? ' — ' + order.number : ''}${input.reason ? ' — ' + input.reason : ''}`,
         });
         run(
-          "UPDATE job_order_units SET status = 'sold', order_id = ?, order_item_id = ?, updated_at = datetime('now') WHERE id = ?",
-          order ? order.id : null, saleLineId, u.id
+          "UPDATE job_order_units SET status = 'sold', order_id = ?, order_item_id = ?, direct_sold_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+          order ? order.id : null, saleLine?.id ?? null, u.id
         );
       } else {
         if (from !== input.to_location_id) {

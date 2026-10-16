@@ -606,12 +606,15 @@ App.register('finished-products', async (view, filter) => {
         <p class="muted">${pickedUnits.length
           ? `${pickedUnits.length} unit${pickedUnits.length === 1 ? '' : 's'} selected.`
           : 'No units ticked — enter a quantity of bulk/untracked units in the selected build state.'}</p>
+        <p class="muted">Selling removes these units from stock now. The sale still needs warehouse acceptance and a release slip; that slip will not deduct these units again.</p>
         <div><label>Build state</label><select data-f="mode"><option value="assembled" ${pickedUnits[0]?.build_mode === 'semi_built' ? '' : 'selected'}>Fully built</option><option value="semi_built" ${pickedUnits[0]?.build_mode === 'semi_built' ? 'selected' : ''}>Semi-built</option></select></div>
         ${pickedUnits.length ? '' : `<div><label>Quantity</label><input data-f="qty" type="number" min="1" value="1" /></div>`}
         <div data-f="orderwrap"><label>Sales order</label>
           <select data-f="order"><option value="">— select —</option>
             ${orders.map((o) => `<option value="${o.id}">${UI.esc(o.number)}${o.customer_name ? ' · ' + UI.esc(o.customer_name) : ''}</option>`).join('')}
           </select></div>
+        <div data-f="linewrap" style="display:none"><label>Sale line</label><select data-f="line"></select>
+          <div class="muted" data-f="linehint" style="font-size:12px"></div></div>
         <div data-f="locwrap" style="display:none"><label>Destination location</label>
           <select data-f="loc"><option value="">— select —</option>
             ${locs.map((l) => `<option value="${l.id}">${UI.esc(l.path || l.name)}</option>`).join('')}
@@ -619,12 +622,46 @@ App.register('finished-products', async (view, filter) => {
         <div><label>Note (optional)</label><input data-f="note" /></div>`,
       confirmText: 'Apply',
       onOpen: (ov) => {
+        let lineRequest = 0;
+        const refreshLines = async () => {
+          const orderId = Number(ov.querySelector('[data-f="order"]').value);
+          const wrap = ov.querySelector('[data-f="linewrap"]');
+          const select = ov.querySelector('[data-f="line"]');
+          const hint = ov.querySelector('[data-f="linehint"]');
+          const act = ov.querySelector('input[name="act"]:checked').value;
+          const request = ++lineRequest;
+          wrap.style.display = act === 'sell' && orderId ? '' : 'none';
+          select.innerHTML = '<option value="">Select a sale line</option>';
+          if (act !== 'sell' || !orderId) return;
+          hint.textContent = 'Loading sale lines…';
+          try {
+            const order = await API.get('/orders/' + orderId);
+            if (request !== lineRequest || !ov.isConnected) return;
+            const mode = ov.querySelector('[data-f="mode"]').value;
+            const lines = (order.items || []).filter((line) => Number(line.item_id) === Number(product.id)
+              && (line.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled') === mode
+              && line.fulfillment_mode !== 'ckd' && line.fulfillment_mode !== 'ckd_component');
+            select.innerHTML = '<option value="">Select a sale line</option>' + lines.map((line) => {
+              const dispatched = Number(line.dispatched_qty || 0);
+              const shippedSerials = Math.max(0, dispatched - Number(line.dispatched_bulk_qty || 0));
+              const heldSerials = Number(line.reserved_qty || 0) + Math.max(0, Number(line.allocated_qty || 0) - shippedSerials);
+              const heldBulk = Math.max(0, Number(line.released_qty || 0) - Number(line.dispatched_bulk_qty || 0));
+              const left = Number(line.quantity) - Number(line.cancelled_qty || 0) - dispatched - heldSerials - heldBulk;
+              return `<option value="${line.id}" ${left <= 0 ? 'disabled' : ''}>${UI.esc(line.name)} · ${UI.esc(String(line.unit_price))} · ${UI.esc(String(Math.max(0, left)))} remaining</option>`;
+            }).join('');
+            if (lines.length === 1 && !select.options[1].disabled) select.value = String(lines[0].id);
+            hint.textContent = lines.length ? 'Choose the exact price/build-state line for these units.' : 'This order has no matching product and build-state line.';
+          } catch (e) { if (request === lineRequest) hint.textContent = e.message || 'Sale lines unavailable.'; }
+        };
         const sync = () => {
           const act = ov.querySelector('input[name="act"]:checked').value;
           ov.querySelector('[data-f="locwrap"]').style.display = act === 'move' ? '' : 'none';
           ov.querySelector('[data-f="orderwrap"]').querySelector('label').textContent = act === 'move' ? 'Sales order (optional)' : 'Sales order';
+          void refreshLines();
         };
         ov.querySelectorAll('input[name="act"]').forEach((r) => r.onchange = sync);
+        ov.querySelector('[data-f="order"]').onchange = refreshLines;
+        ov.querySelector('[data-f="mode"]').onchange = refreshLines;
         sync();
       },
       onConfirm: async (ov, showErr) => {
@@ -639,6 +676,11 @@ App.register('finished-products', async (view, filter) => {
         const orderId = ov.querySelector('[data-f="order"]').value;
         if (action === 'sell' && !orderId) { showErr('Pick the sales order'); return false; }
         if (orderId) body.order_id = Number(orderId);
+        if (action === 'sell') {
+          const lineId = Number(ov.querySelector('[data-f="line"]').value);
+          if (!lineId) { showErr('Choose a matching sale line with remaining quantity'); return false; }
+          body.order_item_id = lineId;
+        }
         if (action === 'move') {
           const loc = ov.querySelector('[data-f="loc"]').value;
           if (!loc) { showErr('Pick a destination'); return false; }

@@ -69,6 +69,8 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 85: mark units sold directly before a trip slip so stock-out is not repeated.
+// 84: same-order partial trip manifests and delivery records.
 // 83: bind sale-unit and batch allocations to a specific commercial order line.
 // 82: per-form Inventory entry grants and access revision.
 // 81: courier booking and handoff metadata on existing delivery records.
@@ -92,7 +94,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 84; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 85; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -894,6 +896,7 @@ function createSchema(): void {
       location_id     INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       order_id        INTEGER REFERENCES orders(id) ON DELETE SET NULL,
       order_item_id   INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+      direct_sold_at  TEXT,
       batch_id        INTEGER REFERENCES production_batches(id) ON DELETE SET NULL,
       disposition     TEXT,
       remarks         TEXT,
@@ -3298,6 +3301,7 @@ function migrate(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_order_items_parent ON order_items(parent_order_item_id)');
   const saleUnitCols = db.prepare('PRAGMA table_info(job_order_units)').all() as Array<{ name: string }>;
   if (!saleUnitCols.some((c) => c.name === 'order_item_id')) db.exec('ALTER TABLE job_order_units ADD COLUMN order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL');
+  if (!saleUnitCols.some((c) => c.name === 'direct_sold_at')) db.exec('ALTER TABLE job_order_units ADD COLUMN direct_sold_at TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS idx_sale_unit_line ON job_order_units(order_item_id,status)');
   db.exec(`UPDATE job_order_units AS u SET order_item_id = (
     SELECT oi.id FROM order_items oi WHERE oi.order_id = u.order_id AND oi.item_id = u.product_item_id
@@ -3369,6 +3373,7 @@ function migrate(): void {
     slip_item_id INTEGER NOT NULL REFERENCES release_slip_items(id) ON DELETE CASCADE,
     unit_id INTEGER NOT NULL REFERENCES job_order_units(id) ON DELETE RESTRICT,
     PRIMARY KEY(slip_item_id,unit_id));
+    CREATE INDEX IF NOT EXISTS idx_release_slip_units_unit ON release_slip_units(unit_id);
     CREATE TABLE IF NOT EXISTS order_remainder_cancellations (
     id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL REFERENCES orders(id),
     reason TEXT NOT NULL, cancelled_by INTEGER REFERENCES users(id), cancelled_at TEXT NOT NULL);
@@ -3389,6 +3394,15 @@ function migrate(): void {
         AND (SELECT COUNT(*) FROM deliveries d WHERE d.order_id=deliveries.order_id)=1;`);
     setSetting('trip_manifest_backfilled_v84',true);
   }
+  // The v84 trip backfill identifies already-shipped serials. A sold serial on an
+  // unfulfilled sale without a slip-unit link was deducted by the older direct
+  // Sell action, including when an earlier partial trip exists on the same order.
+  db.exec(`UPDATE job_order_units AS u SET direct_sold_at=COALESCE(u.updated_at,u.created_at)
+    WHERE u.direct_sold_at IS NULL AND u.status='sold' AND u.order_id IS NOT NULL
+      AND EXISTS(SELECT 1 FROM orders o WHERE o.id=u.order_id AND o.type='sale' AND o.fulfilled_at IS NULL)
+      AND (NOT EXISTS(SELECT 1 FROM release_slips s WHERE s.order_id=u.order_id)
+        OR COALESCE(u.updated_at,u.created_at)>(SELECT MAX(s.released_at) FROM release_slips s WHERE s.order_id=u.order_id))
+      AND NOT EXISTS(SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id)`);
 
 }
 

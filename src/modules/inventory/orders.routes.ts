@@ -330,9 +330,11 @@ function physicalSaleNeedsSlip(orderId: number, next: string): boolean {
       AND NOT EXISTS(SELECT 1 FROM deliveries d WHERE d.release_slip_id=s.id AND d.status='delivered' AND d.delivery_mode!='courier') LIMIT 1`,orderId));
 }
 
-function shippedSaleCannotReopen(orderId: number, next: string): boolean {
-  return (['open','cancelled'].includes(next)||['approved','released'].includes(next)&&orderOutstanding(orderId)<=1e-9)
-    && !!queryOne('SELECT 1 FROM release_slips WHERE order_id = ? LIMIT 1', orderId);
+function shippedSaleCannotReopen(orderId: number, next: string, current: string): boolean {
+  if ((['open','cancelled'].includes(next)||['approved','released'].includes(next)&&orderOutstanding(orderId)<=1e-9)
+    && queryOne('SELECT 1 FROM release_slips WHERE order_id = ? LIMIT 1', orderId)) return true;
+  return (next === 'cancelled' || next === 'open' && current !== 'open')
+    && !!queryOne('SELECT 1 FROM job_order_units WHERE order_id = ? AND direct_sold_at IS NOT NULL LIMIT 1', orderId);
 }
 
 /** For one line: units of this product `reserved`/`sold` against this order + the line's
@@ -523,6 +525,10 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
 router.post('/:id/cancel-remainder', requirePermission('orders.edit'), syncClass('claim',orderSite),(req,res)=>{
   const id=Number(req.params.id), order=queryOne<Order>('SELECT * FROM orders WHERE id=?',id);
   if(!order||order.type!=='sale'){res.status(404).json({error:'Sale order not found'});return;}
+  if(queryOne(`SELECT 1 FROM job_order_units u WHERE u.order_id=? AND u.direct_sold_at IS NOT NULL
+    AND NOT EXISTS(SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id)`,id)){
+    res.status(409).json({error:'Directly sold units still need a trip slip before cancelling the remainder.',code:'direct_sale_required'});return;
+  }
   const reason=String(req.body.reason||'').trim();
   if(reason.length<3||reason.length>1000){res.status(400).json({error:'Record the customer cancellation reason (3–1000 characters).'});return;}
   if(orderOutstanding(id)<=1e-9){res.status(409).json({error:'No unshipped remainder remains to cancel.'});return;}
@@ -695,7 +701,10 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
     const line = matching(Number(itemId), mode)[0]!;
     const stockLine = availability.lines.find((l) => l.item_id === Number(itemId) && (l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled') === mode);
     const ownCovered = matching(Number(itemId), mode).reduce((n, l) => {
-      const c = lineCoverage(id, l); return n + c.units + c.bulk-(l.dispatched_qty||0);
+      const c = lineCoverage(id, l);
+      const directOut = queryOne<{n:number}>(`SELECT COUNT(*) AS n FROM job_order_units u WHERE u.order_item_id=?
+        AND u.direct_sold_at IS NOT NULL AND NOT EXISTS(SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id)`,l.id)?.n??0;
+      return n + c.units + c.bulk-(l.dispatched_qty||0)-directOut;
     }, 0);
     const free = Math.max(0, (stockLine?.on_hand ?? 0) - (stockLine?.committed_elsewhere ?? 0) - ownCovered);
     if (amount > free + 1e-9 && !overdrawAllowed() && refused(409,
@@ -1009,7 +1018,7 @@ router.post('/:id/status', requirePermission('orders.edit'), syncClass('claim', 
   const cur = String(order.status || '').toLowerCase();
   const next = saleStatus(status, cur);
   if (next === cur) { recordReview(); res.json({ ok: true, status: order.status }); return; }
-  if (shippedSaleCannotReopen(id, next)) {
+  if (shippedSaleCannotReopen(id, next, cur)) {
     res.status(409).json({ error: 'This sale has a release slip. Record a return or correction instead of reopening or cancelling the physical handoff.', code: 'already_shipped' });
     return;
   }
@@ -1067,7 +1076,8 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
   // released / reserved against them). Header fields — customer, status, notes,
   // dates — stay editable; totals are recomputed from the existing lines.
   const cur = String(order.status || '').toLowerCase();
-  const lockLines = order.type === 'sale' && cur !== 'open' && cur !== 'cancelled';
+  const directStockOut = order.type === 'sale' && !!queryOne('SELECT 1 FROM job_order_units WHERE order_id=? AND direct_sold_at IS NOT NULL LIMIT 1',id);
+  const lockLines = order.type === 'sale' && (directStockOut || cur !== 'open' && cur !== 'cancelled');
   const input = parseBody(updateOrderSchema, { ...order, ...req.body, ...(lockLines ? { items: undefined } : {}) });
   if (input.expected_revision && input.expected_revision !== orderRevision(id) && siteDecisionStands()) {
     recordSiteClash(req, `Order ${order.number} changed on the cloud after a revision-checked site edit; the owning site's decision stands.`);
@@ -1076,7 +1086,7 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
     return;
   }
   if (order.type === 'sale') input.status = saleStatus(input.status, cur);
-  if (order.type === 'sale' && shippedSaleCannotReopen(id, String(input.status || '').toLowerCase())) {
+  if (order.type === 'sale' && shippedSaleCannotReopen(id, String(input.status || '').toLowerCase(), cur)) {
     res.status(409).json({ error: 'This sale has a release slip. Record a return or correction instead of reopening or cancelling the physical handoff.', code: 'already_shipped' });
     return;
   }
@@ -1089,7 +1099,7 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
     input.tax_code_id = order.tax_code_id;
     input.currency = order.currency;
   }
-  if (order.type === 'sale' && (order.released_at || order.fulfilled_at)) input.location_id = order.location_id;
+  if (order.type === 'sale' && (directStockOut || order.released_at || order.fulfilled_at)) input.location_id = order.location_id;
   const cust = resolveCustomer(order.type, input);
   const storedItems = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', id);
   const existingCkd = new Map<number, CkdPart[]>();
@@ -1187,7 +1197,8 @@ router.delete('/:id', requireAnyPermission(['orders.delete', 'purchasing.manage'
     return;
   }
   if(queryOne('SELECT record_id FROM form_sales_links WHERE order_id=?',id)){res.status(409).json({error:'This sales order was created from a submitted form. Cancel or correct it instead of deleting its audit link.'});return;}
-  if (kind?.type === 'sale' && queryOne('SELECT 1 FROM release_slips WHERE order_id = ? LIMIT 1', id)) {
+  if (kind?.type === 'sale' && (queryOne('SELECT 1 FROM release_slips WHERE order_id = ? LIMIT 1', id)
+    || queryOne('SELECT 1 FROM job_order_units WHERE order_id=? AND direct_sold_at IS NOT NULL LIMIT 1',id))) {
     res.status(409).json({ error: 'This sale has a release slip. Record a return or correction instead of deleting its physical handoff.', code: 'already_shipped' });
     return;
   }

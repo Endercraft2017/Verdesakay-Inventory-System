@@ -107,6 +107,105 @@ describe('warehouse acceptance', () => {
 });
 
 describe('release slip', () => {
+  it('deducts only remaining stock when a serialized unit was directly sold before the slip', async () => {
+    const { product, codes } = await productWithUnits('DIRECT-SLIP', 3);
+    const so = await saleOrder([{ name: 'DIRECT-SLIP Product', item_id: product, quantity: 3, unit_price: 50 }]);
+    await ctx.api.post(`/api/orders/${so}/accept-release`).set(H());
+    const units = (await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body;
+    const direct = await ctx.api.post(`/api/finished-products/${product}/units/allocate`).set(H())
+      .send({ action: 'sell', unit_ids: [units[0].id], order_id: so });
+    expect(direct.status).toBe(200);
+    expect(await onHand(product)).toBe(2);
+    const pick = await ctx.api.post(`/api/orders/${so}/release`).set(H())
+      .send({ codes: codes.filter((code) => code !== units[0].identifier) });
+    expect(pick.status, JSON.stringify(pick.body)).toBe(200);
+    const issue = () => ctx.api.post(`/api/orders/${so}/release-slip`).set(H())
+      .set('Idempotency-Key', `direct-slip-${so}`).send({ collected_by: 'Driver' });
+    const first = await issue();
+    expect(first.status).toBe(201);
+    expect((await issue()).status).toBe(201);
+    expect(await onHand(product)).toBe(0);
+    const issued = (await ctx.api.get(`/api/release-slips/${first.body.id}`).set(H())).body;
+    expect(issued.items[0].unit_identifiers.split(', ')).toHaveLength(3);
+  });
+
+  it('refuses a trip manifest that omits a unit already sold directly', async () => {
+    const { product } = await productWithUnits('DIRECT-OMIT', 1);
+    const loose = await mkItem({ name: 'Direct omit loose part', quantity: 1 });
+    const so = await saleOrder([
+      { name: 'DIRECT-OMIT Product', item_id: product, quantity: 1, unit_price: 50 },
+      { name: 'Direct omit loose part', item_id: loose, quantity: 1, unit_price: 10 },
+    ]);
+    const lines = (await getOrder(so)).items;
+    const auth = await ctx.api.post(`/api/release-slips/orders/${so}/authorizations`).set(H())
+      .send({ mode: 'pickup', recipient_name: 'Collector', partial_allowed: true });
+    await ctx.api.post(`/api/orders/${so}/accept-release`).set(H());
+    const unit = (await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body[0];
+    expect((await ctx.api.post(`/api/finished-products/${product}/units/allocate`).set(H())
+      .send({ action: 'sell', unit_ids: [unit.id], order_id: so })).status).toBe(200);
+    expect((await ctx.api.post(`/api/orders/${so}/release`).set(H())
+      .send({ bulk: [{ order_item_id: lines[1].id, item_id: loose, quantity: 1 }] })).status).toBe(200);
+    const omitted = await ctx.api.post(`/api/orders/${so}/release-slip`).set(H())
+      .send({ collected_by: 'Collector', authorization_token: auth.body.token,
+        lines: [{ order_item_id: lines[1].id, quantity: 1 }] });
+    expect(omitted.status).toBe(409);
+    expect(omitted.body.code).toBe('direct_sale_required');
+    expect(await onHand(product)).toBe(0);
+    expect(await onHand(loose)).toBe(1);
+    expect((await ctx.api.get(`/api/release-slips/orders/${so}/context`).set(H())).body.slips).toHaveLength(0);
+  });
+
+  it('issues a full slip for an accepted sale whose units were all sold directly', async () => {
+    const { product } = await productWithUnits('DIRECT-FULL', 2);
+    const so = await saleOrder([{ name: 'DIRECT-FULL Product', item_id: product, quantity: 2, unit_price: 50 }]);
+    await ctx.api.post(`/api/orders/${so}/accept-release`).set(H());
+    const units = (await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body;
+    expect((await ctx.api.post(`/api/finished-products/${product}/units/allocate`).set(H())
+      .send({ action: 'sell', unit_ids: units.map((u: { id: number }) => u.id), order_id: so })).status).toBe(200);
+    expect(await onHand(product)).toBe(0);
+    expect((await ctx.api.post(`/api/orders/${so}/status`).set(H()).send({ status: 'cancelled' })).body.code).toBe('already_shipped');
+    expect((await ctx.api.delete(`/api/orders/${so}`).set(H())).body.code).toBe('already_shipped');
+    const issued = await ctx.api.post(`/api/orders/${so}/release-slip`).set(H()).send({ collected_by: 'Driver' });
+    expect(issued.status).toBe(201);
+    expect(await onHand(product)).toBe(0);
+    expect((await getOrder(so)).fulfilled_at).toBeTruthy();
+    expect((await ctx.api.post(`/api/finished-products/${product}/units/allocate`).set(H())
+      .send({ action: 'sell', unit_ids: units.map((u: { id: number }) => u.id), order_id: so })).body.code).toBe('already_shipped');
+  });
+
+  it('keeps a direct stock-out with the shipped portion of a partial sale', async () => {
+    const { product } = await productWithUnits('DIRECT-PARTIAL', 2);
+    const so = await saleOrder([{ name: 'DIRECT-PARTIAL Product', item_id: product, quantity: 2, unit_price: 50 }]);
+    const authorization = await ctx.api.post(`/api/release-slips/orders/${so}/authorizations`).set(H())
+      .send({ mode: 'pickup', recipient_name: 'Collector', partial_allowed: true });
+    expect(authorization.status).toBe(201);
+    await ctx.api.post(`/api/orders/${so}/accept-release`).set(H());
+    const units = (await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body;
+    expect((await ctx.api.post(`/api/finished-products/${product}/units/allocate`).set(H())
+      .send({ action: 'sell', unit_ids: [units[0].id], order_id: so })).status).toBe(200);
+    expect(await onHand(product)).toBe(1);
+    const cancel = await ctx.api.post(`/api/orders/${so}/cancel-remainder`).set(H())
+      .send({ reason: 'Customer changed order', expected_revision: (await getOrder(so)).revision });
+    expect(cancel.body.code).toBe('direct_sale_required');
+    const slip = await ctx.api.post(`/api/orders/${so}/release-slip`).set(H())
+      .send({ collected_by: 'Collector', authorization_token: authorization.body.token });
+    expect(slip.status, JSON.stringify(slip.body)).toBe(201);
+    expect(slip.body.backorder).toBeNull();
+    expect(await onHand(product)).toBe(1);
+    expect((await getOrder(so)).items[0].quantity).toBe(2);
+    expect((await getOrder(so)).items[0].dispatched_qty).toBe(1);
+    expect(slip.body.remaining).toBe(1);
+    expect((await ctx.api.post(`/api/finished-products/${product}/units/allocate`).set(H())
+      .send({ action: 'sell', unit_ids: [units[1].id], order_id: so })).status).toBe(200);
+    const secondAuthorization = await ctx.api.post(`/api/release-slips/orders/${so}/authorizations`).set(H())
+      .send({ mode: 'pickup', recipient_name: 'Collector', partial_allowed: false });
+    expect(secondAuthorization.status).toBe(201);
+    const next = await ctx.api.post(`/api/orders/${so}/release-slip`).set(H())
+      .send({ collected_by: 'Collector', previous_slip_id: slip.body.id, authorization_token: secondAuthorization.body.token });
+    expect(next.status, JSON.stringify(next.body)).toBe(201);
+    expect(await onHand(product)).toBe(0);
+    expect((await getOrder(so)).items[0].dispatched_qty).toBe(2);
+  });
   it('ships repeated SKU lines once as one stock pool while preserving both slip lines', async () => {
     const raw = await mkItem({ name: 'Shared SKU, two prices', quantity: 10, unit_cost: 4 });
     const so = await saleOrder([

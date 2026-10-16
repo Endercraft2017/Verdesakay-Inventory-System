@@ -765,6 +765,7 @@ export interface JobOrderUnits {
   location_id: number | null;
   order_id: number | null;
   order_item_id: number | null;
+  direct_sold_at: string | null;
   batch_id: number | null;
   disposition: string | null;
   remarks: string | null;

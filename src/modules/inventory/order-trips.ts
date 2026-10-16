@@ -6,10 +6,12 @@ import { batchBalances } from './batch-stock';
 import { now } from '../../shared/sync-context';
 export type TripChoice = { order_item_id:number; quantity:number; unit_ids?:number[]; batches?:{allocation_id:number;quantity:number}[] };
 type Lot = {id:number;batch_id:number;quantity:number;location_id:number};
-export type TripLine = {line:OrderItem; quantity:number; units:{id:number;identifier:string|null}[]; lots:(Lot&{take:number})[]};
+export type TripLine = {line:OrderItem; quantity:number; units:{id:number;identifier:string|null;direct_sold_at:string|null}[]; lots:(Lot&{take:number})[]};
 export const tripError=(message:string,code='trip_changed')=>Object.assign(new Error(message),{status:409,code});
 export function lineHeld(l:OrderItem) {
-  const reserved=queryOne<{n:number}>("SELECT COUNT(*) AS n FROM job_order_units WHERE order_item_id=? AND status='reserved'",l.id)?.n??0;
+  const reserved=queryOne<{n:number}>(`SELECT COUNT(*) AS n FROM job_order_units u WHERE u.order_item_id=?
+    AND (u.status='reserved' OR u.status='sold' AND u.direct_sold_at IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id))`,l.id)?.n??0;
   return {reserved,bulk:Math.max(0,(l.released_qty||0)-(l.dispatched_bulk_qty||0))};
 }
 export function orderOutstanding(orderId:number) {
@@ -28,11 +30,15 @@ export function prepareTrip(orderId:number, choices?:TripChoice[]):TripLine[] {
     if(!quantity)continue;
     if(quantity>held.reserved+held.bulk+1e-9||quantity>line.quantity-(line.cancelled_qty||0)-(line.dispatched_qty||0)+1e-9)
       throw tripError(`${line.name}: load only the reserved, unshipped quantity. Refresh this trip.`);
-    const units=queryAll<{id:number;identifier:string|null}>("SELECT id,identifier FROM job_order_units WHERE order_item_id=? AND status='reserved' ORDER BY id",line.id);
+    const units=queryAll<{id:number;identifier:string|null;direct_sold_at:string|null}>(`SELECT u.id,u.identifier,u.direct_sold_at
+      FROM job_order_units u WHERE u.order_item_id=? AND (u.status='reserved' OR u.status='sold' AND u.direct_sold_at IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id)) ORDER BY u.id`,line.id);
     const selected=selection?.unit_ids;
     if(selected&&new Set(selected).size!==selected.length)throw tripError('A serial can be loaded only once.');
     if(selected?.some(id=>!units.some(u=>u.id===id)||usedUnits.has(id)))throw tripError('A selected serial is not held for this sale line.');
     const leavingUnits=selected?units.filter(u=>selected.includes(u.id)):quantity===held.reserved+held.bulk?units:[];
+    if(units.some(u=>u.direct_sold_at&&!leavingUnits.some(selected=>selected.id===u.id)))
+      throw tripError('Include every directly sold unit in the next trip slip; its stock already left the warehouse.','direct_sale_required');
     if(units.length&&!selected&&quantity<held.reserved+held.bulk)throw tripError('Select the exact serials loaded on this trip.','trip_serial_required');
     leavingUnits.forEach(u=>usedUnits.add(u.id));
     const bulk=quantity-leavingUnits.length;
@@ -55,6 +61,9 @@ export function prepareTrip(orderId:number, choices?:TripChoice[]):TripLine[] {
     if(left>untracked+1e-9)throw tripError('Select enough reserved batch quantity for this load.','trip_batch_required');
     result.push({line,quantity,units:leavingUnits,lots:leavingLots});
   }
+  const outWithoutSlip=queryAll<{id:number}>(`SELECT u.id FROM job_order_units u WHERE u.order_id=? AND u.direct_sold_at IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id)`,orderId);
+  if(outWithoutSlip.some(u=>!usedUnits.has(u.id)))throw tripError('Include every directly sold unit in the next trip slip; its stock already left the warehouse.','direct_sale_required');
   if(!result.length)throw tripError('Nothing is selected for this trip. Reserve and count the goods leaving first.','incomplete');
   for(const parent of lines.filter(l=>l.fulfillment_mode==='ckd')){
     const parts=physical.filter(l=>l.parent_order_item_id===parent.id);
@@ -73,6 +82,8 @@ export function dispatchTrip(orderId:number,slipId:number,trip:TripLine[],actor:
   const location=order.location_id??getDefaultLocationId();
   const pools=new Map<string,number>();
   for(const t of trip){if(t.line.fulfillment_mode==='ckd')continue;const key=`${t.line.item_id}:${t.line.fulfillment_mode==='semi_built'?'semi_built':'assembled'}`;pools.set(key,(pools.get(key)??0)+t.quantity);}
+  for(const t of trip){if(t.line.fulfillment_mode==='ckd')continue;const key=`${t.line.item_id}:${t.line.fulfillment_mode==='semi_built'?'semi_built':'assembled'}`;
+    pools.set(key,(pools.get(key)??0)-t.units.filter(u=>u.direct_sold_at).length);}
   for(const [key,qty]of pools){const[item,mode]=key.split(':');if(!overdrawAllowed()&&variantStockAt(Number(item),location,mode as 'assembled'|'semi_built')+1e-9<qty)throw tripError('Warehouse stock changed after counting.','stock_changed');}
   for(const t of trip){
     const l=t.line;
@@ -87,9 +98,10 @@ export function dispatchTrip(orderId:number,slipId:number,trip:TripLine[],actor:
           run(`INSERT INTO production_batch_allocations(batch_id,order_id,order_item_id,item_id,location_id,quantity,state,release_slip_id)
             VALUES(?,?,?,?,?,?,'shipped',?)`,lot.batch_id,orderId,l.id,l.item_id,lot.location_id,lot.take,slipId);}
       }
-      applyStockChange({itemId:l.item_id!,locationId:location,change:-t.quantity,buildMode:l.fulfillment_mode==='semi_built'?'semi_built':'assembled',
+      const stockOut=t.quantity-t.units.filter(u=>u.direct_sold_at).length;
+      if(stockOut>0)applyStockChange({itemId:l.item_id!,locationId:location,change:-stockOut,buildMode:l.fulfillment_mode==='semi_built'?'semi_built':'assembled',
         reason:`Sold — ${order.number} · release slip #${slipId}`,userId:actor,batchHandled:true});
-      for(const u of t.units){run("UPDATE job_order_units SET status='sold',updated_at=? WHERE id=?",now().toISOString().replace('T',' ').slice(0,19),u.id);run('INSERT INTO release_slip_units(slip_item_id,unit_id) VALUES(?,?)',row,u.id);}
+      for(const u of t.units){if(!u.direct_sold_at)run("UPDATE job_order_units SET status='sold',updated_at=? WHERE id=?",now().toISOString().replace('T',' ').slice(0,19),u.id);run('INSERT INTO release_slip_units(slip_item_id,unit_id) VALUES(?,?)',row,u.id);}
     }
     run('UPDATE order_items SET dispatched_qty=dispatched_qty+?,dispatched_bulk_qty=dispatched_bulk_qty+? WHERE id=?',t.quantity,l.fulfillment_mode==='ckd'?0:t.quantity-t.units.length,l.id);
   }

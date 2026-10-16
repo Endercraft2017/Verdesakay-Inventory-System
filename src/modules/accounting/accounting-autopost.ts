@@ -326,18 +326,27 @@ function changeSaleStockInTransaction(orderId: number, userId: number | null, fo
     pools.set(key, pool);
   }
   for (const pool of pools.values()) {
+    // The older direct-unit Sell action already removed these specific serials from
+    // stock before a slip existed. Their durable marker survives slip issuance and
+    // reversal, so neither transition moves the same physical units twice.
+    const directSold = queryOne<{ n: number }>(`SELECT COUNT(*) AS n FROM job_order_units u
+      JOIN job_orders j ON j.id = u.job_order_id WHERE u.order_id = ? AND u.product_item_id = ?
+      AND j.build_mode = ? AND u.direct_sold_at IS NOT NULL`, orderId, pool.itemId, pool.mode)?.n ?? 0;
+    if (directSold > pool.quantity + 1e-9) throw new Error(`Directly sold units exceed sale quantity for item #${pool.itemId}.`);
+    const remaining = pool.quantity - directSold;
     const tracked = queryOne<{n:number}>(`SELECT COALESCE(SUM(a.quantity),0) AS n FROM production_batch_allocations a
       JOIN production_batches pb ON pb.id=a.batch_id JOIN job_orders j ON j.id=pb.job_order_id
       WHERE a.order_id=? AND a.item_id=? AND j.build_mode=? AND a.state=?`, orderId, pool.itemId, pool.mode,
       wantFulfilled ? 'reserved' : 'shipped')?.n ?? 0;
-    if (wantFulfilled && tracked > 0 && pool.quantity > tracked + 1e-9) consumeBatchPool(pool.itemId, loc, pool.mode, pool.quantity - tracked);
+    if (tracked > remaining + 1e-9) throw new Error(`Batch allocations exceed undelivered sale quantity for item #${pool.itemId}.`);
+    if (wantFulfilled && tracked > 0 && remaining > tracked + 1e-9) consumeBatchPool(pool.itemId, loc, pool.mode, remaining - tracked);
     const batchQty = shipBatches(orderId, pool.itemId, wantFulfilled, pool.mode);
-    applyStockChange({ itemId: pool.itemId, locationId: loc, change: sign * pool.quantity, userId, reason,
+    if (remaining > 1e-9) applyStockChange({ itemId: pool.itemId, locationId: loc, change: sign * remaining, userId, reason,
       buildMode: pool.mode, batchHandled: batchQty > 0 });
     // Serialized units already sit inside the line's stock quantity; do not move them twice.
     run(
       `UPDATE job_order_units SET status = ?, updated_at = datetime('now')
-       WHERE order_id = ? AND product_item_id = ? AND status = ?
+       WHERE order_id = ? AND product_item_id = ? AND status = ? AND direct_sold_at IS NULL
          AND job_order_id IN (SELECT id FROM job_orders WHERE build_mode = ?)`,
       wantFulfilled ? 'sold' : 'reserved', orderId, pool.itemId,
       wantFulfilled ? 'reserved' : 'sold', pool.mode

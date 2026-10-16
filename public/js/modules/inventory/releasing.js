@@ -97,7 +97,13 @@ App.register('releasing', async (view, filter) => {
   }
 
   /* --------------------------------------------------- 2. pick / release an order --- */
-  const covered = (l) => Number(l.allocated_qty || 0) + Number(l.reserved_qty || 0) + Number(l.released_qty || 0);
+  const covered = (l) => {
+    const dispatched = Number(l.dispatched_qty || 0);
+    const shippedSerials = Math.max(0, dispatched - Number(l.dispatched_bulk_qty || 0));
+    const heldSerials = Number(l.reserved_qty || 0) + Math.max(0, Number(l.allocated_qty || 0) - shippedSerials);
+    const heldBulk = Math.max(0, Number(l.released_qty || 0) - Number(l.dispatched_bulk_qty || 0));
+    return dispatched + heldSerials + heldBulk;
+  };
 
   async function openRelease(orderId) {
     let order, rc = null;
@@ -147,7 +153,10 @@ App.register('releasing', async (view, filter) => {
       const items = order.items || [];
       const stock = new Map((rc && rc.availability || []).map((l) => [Number(l.order_item_id), l]));
       const serialized = new Set((rc && rc.lines || []).filter((l) => l.serialized).map((l) => Number(l.id)));
-      const fullyOut = String(order.status).toLowerCase() === 'released';
+      const heldTotal = (rc?.lines || []).filter((l) => l.item_id && l.fulfillment_mode !== 'ckd')
+        .reduce((sum, l) => sum + Number(l.held_qty || 0), 0);
+      const fullyOut = !!rc?.order?.warehouse_accepted_at && Number(rc?.outstanding || 0) > 0
+        && heldTotal + 1e-9 >= Number(rc.outstanding);
       // Partial release: only with Sales' authorization that allows it, and once something is out.
       const auth = (rc && rc.authorization) || {};
       const ckdParents = items.filter((l) => l.fulfillment_mode === 'ckd');
@@ -156,8 +165,7 @@ App.register('releasing', async (view, filter) => {
         const kits = parts.length ? Math.min(Number(parent.quantity), ...parts.map((p) => Math.floor((covered(p) + 1e-9) / (Number(p.quantity) / Number(parent.quantity))))) : 0;
         return { kits, clean: parts.every((p) => covered(p) <= kits * Number(p.quantity) / Number(parent.quantity) + 1e-9) };
       });
-      const partialOk = !fullyOut && auth.state === 'valid' && !!auth.partial_allowed
-        && (ckdPick.some((p) => p.kits > 0) || items.some((l) => l.item_id && l.fulfillment_mode !== 'ckd_component' && l.fulfillment_mode !== 'ckd' && covered(l) > 0));
+      const partialOk = !fullyOut && auth.state === 'valid' && !!auth.partial_allowed && heldTotal > 0;
       body.innerHTML = `
         <div class="kv">
           <div><span class="muted">Customer</span><div>${UI.esc(order.customer_name || 'Walk-in')}</div></div>
@@ -201,7 +209,7 @@ App.register('releasing', async (view, filter) => {
               <button type="button" class="btn secondary small" data-undo-unit="${u.id}" aria-label="Undo allocation of ${UI.esc(u.identifier || `unit ${u.id}`)}">Undo allocation</button></div>`).join('')}</div>` : ''}
         <div style="display:flex;align-items:center;gap:10px;margin-top:16px">
           <span class="muted" style="font-size:12px">${fullyOut
-            ? 'Every stock line is allocated. Issue the release slip as the goods leave — that is when stock is deducted.'
+            ? 'Every stock line is allocated. Issue the trip slip as the goods leave; directly sold units were already deducted.'
             : partialOk
               ? 'Sales allowed a partial release: the slip covers what is out now, and the rest remains held on this sales order.'
               : ckdPick.some((p) => !p.clean) ? 'Only complete CKD kits may leave. Unreserve extra picked parts or complete another kit.'
@@ -298,15 +306,15 @@ App.register('releasing', async (view, filter) => {
     UI.modal({
       title: 'Release slip — ' + order.number,
       bodyHTML: `
-        <p class="muted" style="margin-top:0">Record who took the goods out. Issuing the slip confirms
-          ${UI.esc(order.number)} and deducts the released stock.</p>
+        <p class="muted" style="margin-top:0">Record who took the goods out. Issuing the slip records
+          ${UI.esc(order.number)} and deducts stock still on hand. Units sold directly were already deducted.</p>
         ${partial ? '<div class="panel" style="padding:10px 12px;margin-bottom:10px"><b>Partial release.</b> Only what is out now leaves; the rest of the order stays reserved here.</div>' : ''}
         <div class="panel"><b>This vehicle’s load</b><p class="muted">Only this load leaves. The remainder stays reserved on this order.</p>${(rc.lines||[]).filter(l=>l.item_id&&l.fulfillment_mode!=='ckd'&&Number(l.held_qty||0)>0).map(l=>{
-          const units=(rc.units||[]).filter(u=>u.order_item_id===l.id&&u.status==='reserved');
+          const units=(rc.units||[]).filter(u=>u.order_item_id===l.id&&(u.status==='reserved'||u.pending_direct));
           const batches=(rc.batch_allocations||[]).filter(a=>a.order_item_id===l.id&&a.state==='reserved');
           const bulk=Math.max(0,l.held_qty-units.length-batches.reduce((n,a)=>n+a.quantity,0));
-          return `<fieldset data-trip-line="${l.id}"><legend>Line #${l.id} · ${UI.esc(l.name)} · ${l.held_qty} reserved</legend>
-            ${units.map(u=>`<label><input type="checkbox" data-trip-unit="${u.id}" checked> ${UI.esc(u.identifier||'Unit #'+u.id)}</label>`).join('')}
+          return `<fieldset data-trip-line="${l.id}"><legend>Line #${l.id} · ${UI.esc(l.name)} · ${l.held_qty} for this trip</legend>
+            ${units.map(u=>`<label><input type="checkbox" data-trip-unit="${u.id}" ${u.pending_direct?'disabled':''} checked> ${UI.esc(u.identifier||'Unit #'+u.id)}${u.pending_direct?' · already out; required on this slip':''}</label>`).join('')}
             ${batches.map(a=>`<label>${UI.esc(a.batch_number)} · ${a.quantity} reserved<input type="number" min="0" max="${a.quantity}" step="any" data-trip-batch="${a.id}" value="${a.quantity}"></label>`).join('')}
             ${bulk>0?`<label>Other reserved quantity<input type="number" min="0" max="${bulk}" step="any" data-trip-bulk value="${bulk}"></label>`:''}</fieldset>`;
         }).join('')}</div>

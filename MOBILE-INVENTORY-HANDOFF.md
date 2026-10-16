@@ -1,5 +1,33 @@
 # Inventory and production: mobile integration gaps
 
+## Direct unit sale in same-order trip slips (2026-10-16)
+
+The legacy `POST /finished-products/:id/units/allocate` `action:'sell'`
+deducts RTS stock immediately. Schema v85 stamps `direct_sold_at`; the next
+trip slip must include each directly sold serial and deducts only the rest of
+that trip's load. A direct-sold unit cannot be omitted from the next manifest,
+and cancel-remainder cannot discard one awaiting a slip. Older unslipped direct
+sales are backfilled. Historical slips with double stock-out need manual ledger
+review if found; they cannot be inferred safely from current balances. An old
+unlinked sold serial with an ambiguous timestamp around an earlier trip also
+needs manual review rather than automatic attribution.
+
+Phone owner: `public/mobile/modules/inventory/allocate.js` still offers open
+orders without a line picker and says “Sold / shipped” before any trip slip.
+Load the exact physical sale line, show its build state, price, ship-from and
+remaining quantity, and send `order_item_id`. Repeated-SKU phone *release*
+allocation was updated separately; this older direct-sell screen remains the
+gap. Show “Stock removed; awaiting trip slip” after a direct sale, and surface
+the unslipped serial as required in the next phone load selector. The backend
+rejects a missing/wrong/full line, wrong location, cancelled order or completed
+sale; a partial same-order sale may still use a later trip.
+
+The mobile `mSubmit` queue already sends a stable `Idempotency-Key`; the direct
+sell endpoint now honors it. After a lost response, retry the **same** body and
+key or reconcile the unit/order before a new attempt. Never sell the same unit
+twice. No mobile source was changed here. Backend and disposable Playwright
+checks cover response loss, desktop 390px/1440px slips, and phone delivery.
+
 ## Current owner decision: same-order partial trips (2026-10-16)
 
 Partial vehicle loads now stay on **one sales order** with separate release slips and
