@@ -2,6 +2,7 @@
  *  send a test notification to the caller's own devices. Any logged-in user manages
  *  only their own subscriptions — no extra permission needed. */
 import { Router } from 'express';
+import { validPushEndpoint } from '../shared/push-endpoint';
 import { queryOne, run } from '../shared/db';
 import { requireAuth } from '../shared/auth';
 import { parseBody, pushSubscriptionSchema, pushUnsubscribeSchema } from '../shared/validation';
@@ -25,6 +26,9 @@ router.post('/subscribe', (req, res) => {
     return;
   }
   const sub = parseBody(pushSubscriptionSchema, req.body);
+  if (!validPushEndpoint(sub.endpoint)) { res.status(400).json({ error: 'Unsupported browser push service.' }); return; }
+  const count = queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ? AND endpoint != ?', req.user!.id, sub.endpoint)!.n;
+  if (count >= 20) { res.status(429).json({ error: 'Device notification limit reached. Remove an old subscription first.' }); return; }
   run(
     `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, device_id)
      VALUES (?, ?, ?, ?, ?, ?)

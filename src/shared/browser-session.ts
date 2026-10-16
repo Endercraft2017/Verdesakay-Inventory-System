@@ -32,7 +32,7 @@ export function clearBrowserSession(res: Response): void {
 export function browserCsrf(req: Request, res: Response, next: NextFunction): void {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) { next(); return; }
   // Cookie login also needs protection against login CSRF, before a cookie exists.
-  if ((browserMode(req) || browserToken(req) || cookieValue(req.headers.cookie, 'vds_platform_session')) && !req.get('Authorization') && req.get('X-Requested-With') !== 'VDS') {
+  if ((browserMode(req) || browserToken(req) || cookieValue(req.headers.cookie, 'vds_platform_session')) && !/^Bearer\s+\S+$/i.test(req.get('Authorization') || '') && req.get('X-Requested-With') !== 'VDS') {
     res.status(403).json({ error: 'Request verification failed.' }); return;
   }
   next();

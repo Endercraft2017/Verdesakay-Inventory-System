@@ -12,6 +12,7 @@
  * `__sentPush` so tests can assert intent.
  */
 import webpush from 'web-push';
+import { validPushEndpoint } from './push-endpoint';
 import { getSetting, setSetting, queryAll, run } from './db';
 import { userPermissions } from './roles';
 import type { Permission, Role } from './types';
@@ -86,21 +87,23 @@ export async function notifyUser(userId: number, payload: PushPayload): Promise<
     userId
   );
   if (!subs.length) return;
+  // Revalidate persisted subscriptions too: old rows may predate URL restrictions.
+  const safeSubs = subs.filter(s => validPushEndpoint(s.endpoint));
 
   if (process.env.NODE_ENV === 'test') {
-    for (const s of subs) __sentPush.push({ userId, payload, endpoint: s.endpoint });
+    for (const s of safeSubs) __sentPush.push({ userId, payload, endpoint: s.endpoint });
     return;
   }
 
   configure();
   const body = JSON.stringify(payload);
   await Promise.all(
-    subs.map(async (s) => {
+    safeSubs.map(async (s) => {
       try {
         await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
           body,
-          { TTL: 60 * 60 * 24, urgency: 'normal' }
+          { TTL: 60 * 60 * 24, urgency: 'normal', timeout: 10_000 }
         );
       } catch (e) {
         const code = (e as { statusCode?: number }).statusCode;

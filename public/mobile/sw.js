@@ -7,7 +7,7 @@
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
 var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
 var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
-var CACHE_VERSION = CACHE_PREFIX + 'v70';
+var CACHE_VERSION = CACHE_PREFIX + 'v71';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -36,6 +36,7 @@ var SHELL = [
   '/mobile/icons/v2/camera.svg',
   '/mobile/icons/v2/check-done.svg',
   '/js/api.js',
+  '/js/lib/mfa-controls.js',
   '/js/lib/image-compress.js',
   '/js/lib/pdf-pages.js', // pdf.js itself (/js/vendor/pdfjs) loads on first PDF pick, not precached
   '/mobile/vendor/qrcode.js',

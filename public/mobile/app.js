@@ -385,6 +385,8 @@ window.MApp = (function () {
         username: document.getElementById('m-username').value.trim(),
         password: document.getElementById('m-password').value,
       };
+      var factor = document.getElementById('m-mfa');
+      if (factor && factor.value.trim()) body.mfa_code = factor.value.trim();
       if (shared) body.shared = true;
       API.post('/auth/login', body)
         .then(function (res) {

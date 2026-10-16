@@ -212,6 +212,8 @@ MApp.route('settings', function (view) {
       '<section class="profile-section"><h2>Where you’re signed in</h2><div data-sessions><div class="m-hint">Loading…</div></div></section>' +
       '<section class="profile-section"><h2>Other access</h2><a class="m-btn m-btn-secondary profile-full-button" href="' + (window.VDS_BASE_PATH || '') + '/?view=desktop">Switch to the desktop system</a>' +
       '<button class="m-btn m-btn-danger profile-full-button" type="button" data-out>Sign out</button></section>');
+    var mfaHost = document.createElement('section'); mfaHost.className = 'profile-section'; page.appendChild(mfaHost);
+    if (window.MfaControls) MfaControls.render(mfaHost);
     page.querySelector('[data-pw]').onsubmit = function (event) {
       event.preventDefault();
       var cur = page.querySelector('[data-cur]').value;

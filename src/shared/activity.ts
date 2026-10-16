@@ -10,7 +10,7 @@ import { run } from './db';
 import { deviceIdOf, userAgentOf, deviceLabel, clientIpOf } from './device';
 
 const SKIP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-const REDACT_KEY = /pass|password|token|secret|hash|otp|\bpin\b/i;
+const REDACT_KEY = /pass|password|token|secret|hash|otp|\bpin\b|api[_-]?key|authorization|credential|private[_-]?key|mfa|recovery|^code$/i;
 const META_MAX = 4000;
 
 /** Coarse module name for a path, e.g. "/api/inventory/5/adjust" -> "inventory". */
@@ -57,7 +57,8 @@ function deriveEntityId(p: string): string | null {
 }
 
 function redact(value: unknown, depth = 0): unknown {
-  if (value == null || depth > 6) return value;
+  if (depth > 6) return '[depth limit]';
+  if (value == null) return value;
   if (Array.isArray(value)) return value.slice(0, 50).map((v) => redact(v, depth + 1));
   if (typeof value === 'object') {
     const out: Record<string, unknown> = {};
@@ -172,4 +173,14 @@ export function recordActivity(req: Request, res: Response): void {
   } catch {
     /* the activity log must never break a request */
   }
+}
+
+/** Reapply current redaction to older records on read; malformed legacy metadata stays private. */
+export function redactStoredMeta(meta: string | null): string | null {
+  if (!meta) return meta;
+  try {
+    const parsed = JSON.parse(meta);
+    if (parsed?.truncated) return JSON.stringify({ truncated: true, preview: '[legacy metadata withheld]' });
+    return JSON.stringify(redact(parsed));
+  } catch { return JSON.stringify({ unavailable: 'Legacy metadata requires restricted review.' }); }
 }

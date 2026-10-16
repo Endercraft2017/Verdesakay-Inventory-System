@@ -73,18 +73,6 @@ function graceMinutes(): number {
   return typeof p?.grace_minutes === 'number' ? p.grace_minutes : 10;
 }
 
-/** Reject anything that isn't a plain single read. */
-function safeSelect(sqlRaw: unknown): string | null {
-  if (typeof sqlRaw !== 'string') return null;
-  const s = sqlRaw.trim().replace(/;+\s*$/, '');
-  if (!s || !/^(select|with)\b/i.test(s)) return null;
-  if (/;/.test(s)) return null; // no stacked statements
-  if (/\b(insert|update|delete|drop|alter|create|replace|attach|detach|pragma|vacuum|reindex|truncate|grant)\b/i.test(s)) return null;
-  if (/pragma_|sqlite_/i.test(s)) return null; // schema-introspection functions / tables
-  if (/password_hash|\bsessions\b|permission_overrides|\b(from|join)\s+(main\.)?users\b/i.test(s)) return null;
-  return s;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool specs (OpenAI-compatible, sent to the model)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -259,7 +247,7 @@ const SPECS: Record<AnalyticsToolName, CerebrasTool> = {
 
 export function analyticsToolsForUser(user: AuthUser): CerebrasTool[] {
   return (Object.keys(SPECS) as AnalyticsToolName[])
-    .filter((n) => user.permissions.includes(PERMISSION[n]))
+    .filter((n) => n !== 'run_analytics_query' && user.permissions.includes(PERMISSION[n]))
     .map((n) => SPECS[n]);
 }
 
@@ -533,17 +521,8 @@ export function executeAnalyticsTool(name: string, args: unknown, user: AuthUser
         };
       }
 
-      case 'run_analytics_query': {
-        const sql = safeSelect(a.sql);
-        if (!sql) {
-          return { success: false, error: 'Only a single read-only SELECT/WITH statement is allowed (no users/sessions).' };
-        }
-        let rows: unknown[];
-        try { rows = queryAll(sql); }
-        catch (e) { return { success: false, error: `Query failed: ${e instanceof Error ? e.message : String(e)}` }; }
-        const truncated = rows.length > 500;
-        return { success: true, data: { row_count: rows.length, truncated, rows: rows.slice(0, 500) } };
-      }
+      case 'run_analytics_query':
+        return { success: false, error: 'Custom SQL is disabled. Use the predefined permission-scoped reports.' };
 
       default:
         return { success: false, error: `Unknown tool: ${name}` };

@@ -55,6 +55,17 @@ export interface AiMessages {
   created_at: Generated<string>;
 }
 
+export interface AiToolAudit {
+  id: Generated<number>;
+  request_id: string;
+  actor_id: number;
+  tool: string;
+  phase: string;
+  payload_sha256: string;
+  success: number | null;
+  created_at: Generated<string>;
+}
+
 export interface Announcements {
   id: Generated<number>;
   title: string;
@@ -1338,6 +1349,16 @@ export interface TimePunches {
   device_user_id: number | null;
 }
 
+export interface UserMfa {
+  user_id: Generated<number>;
+  secret: string | null;
+  pending_secret: string | null;
+  pending_until: number | null;
+  pending_session: string | null;
+  last_step: number | null;
+  recovery_hashes: Generated<string>;
+}
+
 export interface Users {
   id: Generated<number>;
   username: string;
@@ -1398,6 +1419,7 @@ export interface DB {
   accounts: Accounts;
   activity_log: ActivityLog;
   ai_messages: AiMessages;
+  ai_tool_audit: AiToolAudit;
   announcements: Announcements;
   anonymous_report_aliases: AnonymousReportAliases;
   anonymous_report_attachments: AnonymousReportAttachments;
@@ -1501,6 +1523,7 @@ export interface DB {
   time_corrections: TimeCorrections;
   time_punch_holds: TimePunchHolds;
   time_punches: TimePunches;
+  user_mfa: UserMfa;
   users: Users;
   vendor_bill_items: VendorBillItems;
   vendor_bills: VendorBills;

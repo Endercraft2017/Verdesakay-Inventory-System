@@ -4,7 +4,7 @@ DRAFT — NOT APPROVED. Effective date: [OWNER]. Service provider/legal entity/a
 
 ## Data used by this application
 
-Accounts contain names, usernames, password hashes, roles and permissions. Sessions record device identifiers, IP addresses, user agents and timestamps. Workspace records can contain employee contact and government identifiers, attendance, payroll, leave, photos, signatures and clock/location evidence; customers, suppliers, sales, inventory, production and accounting records; messages, files and forms. Anonymous-report workflows have separate confidentiality controls: administrators must not infer an author from identity exports or access logs.
+Accounts contain names, usernames, password hashes, roles and permissions; optional authenticator enrollment adds encrypted TOTP seeds and hashed one-use recovery codes. Sessions record device identifiers, IP addresses, user agents and timestamps. Workspace records can contain employee contact and government identifiers, attendance, payroll, leave, photos, signatures and clock/location evidence; customers, suppliers, sales, inventory, production and accounting records; messages, files and forms. Anonymous-report workflows have separate confidentiality controls: administrators must not infer an author from identity exports or access logs.
 
 We use these records to authenticate users, enforce access, run the workspace's business workflows, prevent abuse and recover from failures. Hosting/server logs, disk uploads, databases, backups, device caches and optional integrations are separate data locations. No card-payment processing or advertising analytics was identified in this audit. Confirm any external website, SDK or infrastructure collection before publication.
 

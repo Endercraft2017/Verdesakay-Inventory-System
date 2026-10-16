@@ -43,7 +43,7 @@ beforeAll(async () => {
   unit = (await addSerializedUnits(ctx.api, token, jo, 1, 'RP'))[0]!;
   ({ __sentPush } = await import('../src/shared/push'));
   await ctx.api.post('/api/push/subscribe').set(bearer(qc.token))
-    .send({ endpoint: 'https://push.example.com/sub/qc-rp', keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
+    .send({ endpoint: 'https://fcm.googleapis.com/sub/qc-rp', keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } }); // gitleaks:allow -- synthetic push fixture, not a credential
   await ctx.api.post(`/api/job-orders/${jo}/units/inspect`).set(H()).send({ unit_ids: [unit], result: 'fail', disposition: 'repair',
     remarks: 'Intermittent signal failure', repair: { category: 'Electrical · signal system', station: 'Wiring', priority: 'Urgent' } });
 });

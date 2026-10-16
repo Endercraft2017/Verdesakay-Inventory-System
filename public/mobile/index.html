@@ -39,6 +39,8 @@
       <input id="m-username" name="username" autocomplete="username" required autofocus />
       <label for="m-password">Password</label>
       <input id="m-password" name="password" type="password" autocomplete="current-password" required />
+      <label for="m-mfa">Authenticator or recovery code (if enabled)</label>
+      <input id="m-mfa" name="mfa_code" autocomplete="one-time-code" maxlength="24" />
       <label class="m-shared-opt" for="m-shared">
         <input id="m-shared" type="checkbox" />
         <span><b>I'm using someone else's phone</b>
@@ -116,6 +118,7 @@
   <div id="m-toasts"></div>
 
   <script src="/js/api.js"></script>
+  <script src="/js/lib/mfa-controls.js"></script>
   <script src="/js/lib/image-compress.js"></script>
   <script src="/js/lib/pdf-pages.js"></script>
   <script src="/js/lib/production-steps.js"></script>

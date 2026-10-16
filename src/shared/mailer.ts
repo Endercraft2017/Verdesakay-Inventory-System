@@ -100,7 +100,7 @@ export async function sendMail(
       ok = true;
       id = info.messageId;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = 'Email provider failed. Check its connection settings and try again.';
     }
   }
 
@@ -125,7 +125,7 @@ export async function verifyMailSettings(): Promise<{ ok: boolean; error?: strin
     await buildTransport().verify();
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: 'Email provider connection failed. Check its settings and try again.' };
   }
 }
 

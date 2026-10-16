@@ -114,3 +114,12 @@ describe('forms: RBAC honors per-user overrides', () => {
     expect((await ctx.api.get(`/api/forms/${up.body.id}/download`).set('Authorization', `Bearer ${erin.token}`)).status).toBe(403);
   });
 });
+
+it('does not serve uploaded scripts as an executable same-origin script source', async () => {
+  const upload = await ctx.api.post('/api/forms').set('Authorization', `Bearer ${adminToken}`)
+    .field('title', 'Unsafe file').attach('file', Buffer.from('alert(1)'), { filename: 'script.js', contentType: 'application/javascript' });
+  expect(upload.status).toBe(201);
+  const file = await ctx.api.get(`/api/forms/${upload.body.id}/download`).set('Authorization', `Bearer ${adminToken}`);
+  expect(file.type).toBe('application/octet-stream');
+  expect(file.headers['content-disposition']).toMatch(/^attachment;/);
+});

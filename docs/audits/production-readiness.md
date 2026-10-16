@@ -10,7 +10,7 @@ The supplied Production Readiness Audit Handbook was used as a checklist, with s
 
 All 233 checks are individually recorded in [the scorecard](production-scorecard.md), with machine-readable [JSON](production-scorecard.json). Broad controls stay UNVERIFIED when only part is tested. FAIL entries include severity, evidence/location, a concrete scenario and a recommended fix. Enterprise/product recommendations are distinguished from directly exploitable defects; they do not all imply the same launch risk.
 
-Current remediation details and owner handoff: [remediation-followup.md](remediation-followup.md) and [OWNER-ACTIONS.md](../OWNER-ACTIONS.md). The scorecard is updated conservatively; partial controls remain open.
+Second audit and newly found defects: [second-pass-audit.md](second-pass-audit.md). Current remediation details and owner handoff: [remediation-followup.md](remediation-followup.md) and [OWNER-ACTIONS.md](../OWNER-ACTIONS.md). The scorecard is updated conservatively; partial controls remain open.
 
 ## Application map
 
@@ -30,7 +30,7 @@ Current remediation details and owner handoff: [remediation-followup.md](remedia
 ## Highest-priority remaining release work (updated after remediation)
 
 1. **Protect money and business actions.** Production AI tool discovery and execution now block business mutations and outbound communications; authorized reads, generated reports and form proposals remain. Verify NODE_ENV=production on the real host. Shared optional AI token caps are not hard per-user spend reservations; confirm provider billing caps. No real provider spend settings were available.
-2. **Protect employee/customer data.** Browser and console authentication now use HttpOnly cookies with CSRF checks; script CSP uses fresh nonces, and access/password changes revoke sessions. Native bearer credentials still need OS secure storage; ordinary sessions live 12 hours and MFA/step-up remains missing. Real-device/print/PDF coverage is incomplete. The historical token artifact needs an owner-verified invalidation/exposure assessment.
+2. **Protect employee/customer data.** Browser and console authentication now use HttpOnly cookies with CSRF checks; script CSP uses fresh nonces, and access/password changes revoke sessions. Native bearer credentials still need OS secure storage; ordinary sessions live 12 hours. Optional tenant authenticator MFA now exists; mandatory enrollment, owner-console MFA and fresh privileged step-up remain missing. Real-device/print/PDF coverage is incomplete. The historical token artifact needs an owner-verified invalidation/exposure assessment.
 3. **Prove recovery and operations.** Establish separate staging, live encrypted offsite/immutable backups, named operators, acceptable RPO/RTO, a dated full restore/rollback drill, external uptime/error alerts, required CI checks/branch protection and target-volume load results. Repository features/configuration cannot prove these are actually enabled.
 4. **Approve personal-data handling.** Public draft policies are now linked in both login shells; B2B contract templates, data inventory/rights/retention procedures, security ownership, recovery and incident runbooks are in docs/policies, docs/governance and docs/operations. The owner must fill jurisdictions, contacts, vendors, retention periods and commercial terms and obtain legal approval. Rights handling remains manual. Do not infer HIPAA/GDPR/SOC 2 compliance from code or draft documents.
 

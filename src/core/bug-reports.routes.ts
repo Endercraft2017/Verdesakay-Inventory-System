@@ -26,7 +26,7 @@ const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, uploadDir()),
     filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname).slice(0, 12) || '.jpg';
+      const ext = ({ 'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp' } as Record<string, string>)[file.mimetype] || '.jpg';
       cb(null, `bug-${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
     },
   }),
@@ -98,6 +98,7 @@ router.get('/:id/screenshots/:attId', requirePermission('users.manage'), (req, r
   if (!fs.existsSync(filePath)) { res.status(410).json({ error: 'File is missing on disk' }); return; }
   if (att.mime_type) res.type(att.mime_type);
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(att.original_name)}"`);
+  if (!/\.(?:jpe?g|png|gif|webp)$/i.test(filePath)) { res.attachment(path.basename(filePath)); res.type('application/octet-stream'); }
   res.sendFile(filePath);
 });
 

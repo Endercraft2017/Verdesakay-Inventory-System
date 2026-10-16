@@ -174,3 +174,11 @@ describe('restore', () => {
     safety.close();
   });
 });
+
+it('refuses restore target path traversal before touching a database', async () => {
+  const { liveFileFor, restoreBackup } = await import('../src/platform/backups');
+  for (const target of ['../escape', '/tmp/escape', '..', 'tenant/child', 'bad.db']) {
+    expect(() => liveFileFor(target)).toThrow('Invalid backup workspace name');
+    expect(() => restoreBackup(target, '/no/such/backup.db')).toThrow('Invalid backup workspace name');
+  }
+});

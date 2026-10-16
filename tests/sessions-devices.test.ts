@@ -165,7 +165,7 @@ describe('borrowed-phone sign-in', () => {
     const acc = await createEmployee(ctx.api, adminToken);
     const token = await signIn(acc.username, acc.password, BEN_PHONE, ANDROID_UA, true);
     const res = await ctx.api.post('/api/push/subscribe').set(B(token, BEN_PHONE))
-      .send({ endpoint: 'https://push.example/borrowed', keys: { p256dh: 'p', auth: 'a' } });
+      .send({ endpoint: 'https://fcm.googleapis.com/borrowed', keys: { p256dh: 'p', auth: 'a' } });
     expect(res.status).toBe(403);
   });
 });
@@ -176,18 +176,18 @@ describe('push on sign-out', () => {
     const phone = await signIn(acc.username, acc.password, 'dev-push-phone1');
     const sub = (endpoint: string, device: string, token: string) => ctx.api.post('/api/push/subscribe')
       .set(B(token, device)).send({ endpoint, keys: { p256dh: 'p', auth: 'a' } });
-    expect((await sub('https://push.example/phone', 'dev-push-phone1', phone)).status).toBe(201);
-    expect((await sub('https://push.example/laptop', 'dev-push-laptop', acc.token)).status).toBe(201);
+    expect((await sub('https://fcm.googleapis.com/phone', 'dev-push-phone1', phone)).status).toBe(201);
+    expect((await sub('https://fcm.googleapis.com/laptop', 'dev-push-laptop', acc.token)).status).toBe(201);
 
-    const st = await ctx.api.get('/api/push/status?endpoint=' + encodeURIComponent('https://push.example/phone')).set(B(phone));
+    const st = await ctx.api.get('/api/push/status?endpoint=' + encodeURIComponent('https://fcm.googleapis.com/phone')).set(B(phone));
     expect(st.body.this_device).toBe(true);
     const other = await createEmployee(ctx.api, adminToken);
-    const st2 = await ctx.api.get('/api/push/status?endpoint=' + encodeURIComponent('https://push.example/phone')).set(B(other.token));
+    const st2 = await ctx.api.get('/api/push/status?endpoint=' + encodeURIComponent('https://fcm.googleapis.com/phone')).set(B(other.token));
     expect(st2.body.this_device).toBe(false);
 
     await ctx.api.post('/api/auth/logout').set(B(phone, 'dev-push-phone1'));
     const left = queryAll<{ endpoint: string }>('SELECT endpoint FROM push_subscriptions WHERE user_id = ?', acc.id);
-    expect(left.map((r) => r.endpoint)).toEqual(['https://push.example/laptop']);
+    expect(left.map((r) => r.endpoint)).toEqual(['https://fcm.googleapis.com/laptop']);
   });
 });
 

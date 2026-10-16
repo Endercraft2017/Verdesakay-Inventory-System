@@ -48,7 +48,7 @@ const imageUpload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, uploadDir()),
     filename: (_req, file, cb) => {
-      const ext = path.extname(file.originalname).slice(0, 12) || '.img';
+      const ext = ({ 'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp' } as Record<string, string>)[file.mimetype] || '.jpg';
       cb(null, `item-${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
     },
   }),
@@ -913,6 +913,7 @@ router.get('/:id/image', viewGate, (req, res) => {
     res.status(404).json({ error: 'Image file missing' });
     return;
   }
+  if (!/\.(?:jpe?g|png|gif|webp)$/i.test(file)) { res.attachment(path.basename(file)); res.type('application/octet-stream'); }
   res.sendFile(file);
 });
 

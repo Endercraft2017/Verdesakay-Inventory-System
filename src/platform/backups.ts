@@ -23,7 +23,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { getDb, DB_PATH, DATA_DIR, UPLOAD_DIR, DEFAULT_TENANT } from '../shared/db';
-import { retiredDefaultTenant } from './platform';
+import { isValidSlug, retiredDefaultTenant } from './platform';
 import {
   backupDir, mirrorDir, kindDir, snapshotTo, pruneDaily, pruneNewest, retention, localDate, stamp,
   isRetentionManagedUpload, type BackupKind,
@@ -56,6 +56,7 @@ function targets(): Array<{ name: string; conn: () => DatabaseSync }> {
 export function liveFileFor(name: string): string {
   if (name === PLATFORM_BACKUP_NAME) return PLATFORM_DB_PATH;
   if (name === DEFAULT_TENANT) return DB_PATH;
+  if (!isValidSlug(name)) throw new Error('Invalid backup workspace name');
   return path.join(DATA_DIR, `${name}.db`);
 }
 
@@ -207,6 +208,7 @@ export function listBackups(): BackupFile[] {
  * -wal/-shm files (which belong to the old DB and would corrupt the restored one).
  */
 export function restoreBackup(name: string, backupFile: string): { restored: string; safetyCopy: string | null } {
+  liveFileFor(name); // validate the target before reading or writing anything
   if (!fs.existsSync(backupFile)) throw new Error(`backup file not found: ${backupFile}`);
   const check = new DatabaseSync(backupFile, { readOnly: true });
   try {

@@ -1,6 +1,7 @@
 /** Activity log (admin-only, `audit.view`): read the app-wide action history + prune old rows.
  *  Rows are also swept automatically after ACTIVITY_LOG_RETENTION_DAYS by cleanupSessions(). */
 import { Router } from 'express';
+import { redactStoredMeta } from '../shared/activity';
 import { queryOne, queryAll, run } from '../shared/db';
 import { requireAuth, requirePermission } from '../shared/auth';
 import type { ActivityLogRow } from '../shared/types';
@@ -43,7 +44,7 @@ router.get('/', (req, res) => {
     limit,
     offset
   );
-  res.json({ rows, total, limit, offset });
+  res.json({ rows: rows.map(row => ({ ...row, meta: redactStoredMeta(row.meta) })), total, limit, offset });
 });
 
 // GET /api/activity/options — distinct values for the filter dropdowns

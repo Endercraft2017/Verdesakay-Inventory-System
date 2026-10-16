@@ -52,6 +52,10 @@ App.register('account', async (view) => {
       </div>
     </div>` : ''}`;
 
+  var securityPanel = document.createElement('section'); securityPanel.className = 'panel panel-body';
+  view.appendChild(securityPanel);
+  if (window.MfaControls) MfaControls.render(securityPanel);
+
   // Update display name.
   const pfErr = view.querySelector('#pf-err');
   view.querySelector('#pf-save').addEventListener('click', async () => {
@@ -104,7 +108,8 @@ App.register('account', async (view) => {
     if (nw !== con) { err.textContent = 'New passwords do not match'; err.classList.remove('hidden'); return; }
     try {
       await API.post('/auth/change-password', { current_password: cur, new_password: nw });
-      UI.toast('Password updated');
+      UI.toast('Password updated. Sign in again.');
+      API.clearToken(); App.showLogin();
       view.querySelector('#cur-pw').value = view.querySelector('#new-pw').value = view.querySelector('#con-pw').value = '';
     } catch (e) {
       err.textContent = e.message; err.classList.remove('hidden');

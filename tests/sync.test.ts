@@ -147,7 +147,7 @@ describe('a sync round', () => {
     const id = await newItem(5, { min_quantity: 3 });
     await syncRound();
     for (const conn of [cloudDb(), nodeDb()]) {
-      conn.prepare("INSERT OR IGNORE INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (1, 'https://push.test/x', 'k', 'a')").run();
+      conn.prepare("INSERT OR IGNORE INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (1, 'https://fcm.googleapis.com/x', 'k', 'a')").run();
     }
     const lowStock = () => push.__sentPush.filter((p) => p.payload.title === 'Low stock').length;
     push.__sentPush.length = 0;

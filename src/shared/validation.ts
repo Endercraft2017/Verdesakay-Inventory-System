@@ -49,6 +49,7 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required').max(200),
   /** Borrowed-phone sign-in: a short, idle-limited session with no push (src/shared/auth.ts). */
   shared: z.boolean().optional(),
+  mfa_code: trimmed.max(24).optional(),
 }).strict();
 
 export const changePasswordSchema = z.object({
@@ -170,8 +171,8 @@ export const updateItemSchema = z.object({
   name: trimmed.min(1, 'Item name is required').max(160).optional(),
   sku: optionalSku,
   category: optionalText,
-  department_id: optionalId,
-  supplier_id: optionalId,
+  department_id: optionalId.optional(),
+  supplier_id: optionalId.optional(),
   unit: trimmed.max(40).optional().nullable(),
   min_quantity: intCoerce.min(0).optional(),
   unit_cost: z.coerce.number().min(0).optional(),
@@ -339,10 +340,10 @@ export const createJobOrderSchema = z.object({
 
 export const updateJobOrderSchema = z.object({
   qty_ordered: z.coerce.number().int().positive().optional(),
-  source_location_id: optionalId,
-  output_location_id: optionalId,
+  source_location_id: optionalId.optional(),
+  output_location_id: optionalId.optional(),
   qc_stages: z.coerce.number().int().min(0).max(2).optional(),
-  team_id: optionalId,
+  team_id: optionalId.optional(),
   planned_start: jobOrderDate,
   due_date: jobOrderDate,
   priority: z.coerce.number().int().min(0).max(9).optional(),

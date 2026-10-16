@@ -31,3 +31,13 @@ describe('public URL fetch boundary', () => {
     expect(await fetchPublicPage(new URL('https://user:pass@public.example'), 1024, 1000)).toBeNull();
   });
 });
+
+it('blocks translation and transition IPv6 ranges and bounds JSON provider bodies', async () => {
+  for (const ip of ['64:ff9b::7f00:1', '64:ff9b:1::a00:1', '2002:7f00:1::', '2001::1', '100::1']) expect(isPublicAddress(ip), ip).toBe(false);
+  const { fetchPublicResource } = await import('../src/shared/public-fetch');
+  vi.spyOn(dns, 'lookup').mockResolvedValue([{ address: '8.8.8.8', family: 4 }] as never);
+  const fetcher = vi.fn().mockResolvedValue(new Response('x'.repeat(2048), { headers: { 'content-type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetcher);
+  expect(await fetchPublicResource(new URL('https://provider.example'), 1024, 1000, { method: 'POST', body: '{}' }, 'application/json')).toBeNull();
+  expect(fetcher.mock.calls[0]![1]).toMatchObject({ method: 'POST', redirect: 'manual', dispatcher: expect.anything() });
+});

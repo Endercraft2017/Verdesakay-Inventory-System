@@ -1,0 +1,21 @@
+import { beforeAll, afterAll, it, expect } from 'vitest';
+import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
+let ctx: TestContext;
+beforeAll(async () => { ctx = await setupApp(); });
+afterAll(() => cleanup(ctx));
+it('keeps tool evidence after clearing chat and rejects modification or deletion', async () => {
+  const { auditTool } = await import('../src/modules/ai/ai-audit');
+  const { run, queryAll } = await import('../src/shared/db');
+  auditTool({ requestId: 'audit-test', actor: 1, tool: 'get_notes', phase: 'start', value: { password: 'never-store-this', note: 'private note' } });
+  auditTool({ requestId: 'audit-test', actor: 1, tool: 'get_notes', phase: 'complete', value: { success: true }, success: true });
+  const token = await login(ctx.api);
+  expect((await ctx.api.delete('/api/ai/messages').set('Authorization', `Bearer ${token}`)).status).toBe(200);
+  const rows = queryAll('SELECT * FROM ai_tool_audit');
+  expect(rows).toHaveLength(2); expect(JSON.stringify(rows)).not.toContain('never-store-this');
+  expect(JSON.stringify(rows)).not.toContain('private note');
+  expect(() => run('DELETE FROM ai_tool_audit')).toThrow('append-only');
+  expect(() => run("UPDATE ai_tool_audit SET tool = 'hidden'")).toThrow('append-only');
+  expect((await ctx.api.get('/api/ai/audit').set('Authorization', `Bearer ${token}`)).body).toHaveLength(2);
+  const other = await createEmployee(ctx.api, token, { username: 'audit-denied', role: 'warehouse' });
+  expect((await ctx.api.get('/api/ai/audit').set('Authorization', `Bearer ${other.token}`)).status).toBe(403);
+});

@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 
 /** Whole files whose every route is the caller's own data or checks inside its handlers. */
 const FILE_REASONS: Record<string, string> = {
+  'src/core/mfa.routes.ts': 'own MFA only, password/factor verified, sessions revoked after changes',
   'src/core/me.routes.ts': "the caller's own profile, payslips, requests and schedule; approvals check the approver inside",
   'src/core/notifications.routes.ts': "the caller's own notification history",
   'src/core/personal.routes.ts': "the caller's own notes, tasks and bookmarks",

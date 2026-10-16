@@ -218,7 +218,8 @@ describe('messages: attachments', () => {
 
     const dl = await ctx.api.get(`/api${msg.attachments[0].url}`).set(bearer(alice.token));
     expect(dl.status).toBe(200);
-    expect(dl.text).toBe(FILE.toString());
+    expect(dl.body.toString()).toBe(FILE.toString());
+    expect(dl.type).toBe('application/octet-stream');
 
     const stranger = await createEmployee(ctx.api, adminToken, { username: 'dave_stranger' });
     const blocked = await ctx.api.get(`/api${msg.attachments[0].url}`).set(bearer(stranger.token));
@@ -319,4 +320,20 @@ describe('messages: real-time via WebSocket', () => {
       server.close();
     }
   });
+});
+
+it('serves HTML and JavaScript attachments only as non-executable downloads', async () => {
+  const send = await ctx.api.post('/api/messages').set(bearer(adminToken))
+    .field('recipient_id', String(alice.id)).field('body', 'active content test')
+    .attach('files', Buffer.from('<script src="payload.js"></script>'), { filename: 'payload.html', contentType: 'text/html' })
+    .attach('files', Buffer.from('alert(document.cookie)'), { filename: 'payload.js', contentType: 'application/javascript' });
+  expect(send.status).toBe(201);
+  const thread = await ctx.api.get('/api/messages?box=inbox').set(bearer(alice.token));
+  const message = thread.body.find((m: { id: number }) => m.id === send.body.id);
+  for (const attachment of message.attachments) {
+    const result = await ctx.api.get('/api' + attachment.url).set(bearer(alice.token));
+    expect(result.type).toBe('application/octet-stream');
+    expect(result.headers['content-disposition']).toMatch(/^attachment;/);
+    expect(result.headers['x-content-type-options']).toBe('nosniff');
+  }
 });

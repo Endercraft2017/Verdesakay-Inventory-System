@@ -35,6 +35,8 @@
       <input id="login-username" name="username" autocomplete="username" required autofocus />
       <label for="login-password">Password</label>
       <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+      <label for="login-mfa">Authenticator or recovery code (if enabled)</label>
+      <input id="login-mfa" name="mfa_code" autocomplete="one-time-code" maxlength="24" />
       <label for="login-shared" style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-weight:400;cursor:pointer">
         <input id="login-shared" type="checkbox" style="width:auto;margin:2px 0 0" />
         <span>This is a shared or borrowed computer
@@ -123,6 +125,7 @@
   <!-- Core (api, ui) then App (defines the router/registry) BEFORE the view modules,
        since each view calls App.register(...) at load time. -->
   <script src="/js/api.js"></script>
+  <script src="/js/lib/mfa-controls.js"></script>
   <script src="/js/ui.js"></script>
   <script src="/js/nav-config.js"></script>
   <script src="/js/guide-data.js"></script>

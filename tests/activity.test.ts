@@ -118,3 +118,25 @@ describe('activity log', () => {
     expect(queryOne<{ n: number }>("SELECT COUNT(*) n FROM activity_log WHERE summary = 'recent'")?.n).toBe(1);
   });
 });
+
+it('never retains provider keys or deeply nested credentials in audit metadata', async () => {
+  const nested = { a: { b: { c: { d: { e: { f: { password: 'deep-secret-must-not-persist' } } } } } } };
+  await ctx.api.put('/api/ai/config').set(authHdr()).send({ api_key: 'synthetic-provider-key-private' });
+  await ctx.api.post('/api/notes').set(authHdr()).send({ body: 'redaction test', metadata: nested });
+  await tick();
+  const rows = await ctx.api.get('/api/activity?limit=500').set(authHdr());
+  const serialized = JSON.stringify(rows.body);
+  expect(serialized).not.toContain('synthetic-provider-key-private');
+  expect(serialized).not.toContain('deep-secret-must-not-persist');
+  expect(serialized).toContain('[redacted]');
+});
+
+it('redacts legacy secret-bearing metadata on read without altering historical evidence', async () => {
+  const { run, queryOne } = await import('../src/shared/db');
+  const value = JSON.stringify({ body: { api_key: 'legacy-private-api-key', nested: { authorization: 'Bearer legacy-private-token' } } });
+  const id = Number(run("INSERT INTO activity_log (method, path, entity, action, status_code, summary, meta) VALUES ('PUT','/api/ai/config','ai','update',200,'legacy record',?)", value).lastInsertRowid);
+  const response = await ctx.api.get('/api/activity?limit=500').set(authHdr());
+  expect(JSON.stringify(response.body)).not.toContain('legacy-private-api-key');
+  expect(JSON.stringify(response.body)).not.toContain('legacy-private-token');
+  expect(queryOne<{ meta: string }>('SELECT meta FROM activity_log WHERE id = ?', id)!.meta).toBe(value);
+});

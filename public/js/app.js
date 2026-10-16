@@ -64,6 +64,7 @@ const App = (() => {
     appScreen().classList.add('hidden');
     loginScreen().classList.remove('hidden');
     document.getElementById('login-password').value = '';
+    const factor = document.getElementById('login-mfa'); if (factor) factor.value = '';
   }
 
   async function showApp() {
@@ -348,10 +349,15 @@ const App = (() => {
     renderTree(primary, subtab, name, filter);
 
     // Render the view.
-    const view = document.getElementById('view');
+    const outlet = document.getElementById('view');
+    // Each navigation owns its container. A slow previous view may finish, but can
+    // only update its detached container, never overwrite the current screen.
+    const view = document.createElement('div');
+    view.style.minWidth = '0';
     view.innerHTML = '<div class="empty">Loading…</div>';
-    Promise.resolve(routes[name](view, filter)).catch((e) => {
-      view.innerHTML = `<div class="empty">Failed to load: ${UI.esc(e.message)}</div>`;
+    outlet.replaceChildren(view);
+    Promise.resolve().then(() => routes[name](view, filter)).catch((e) => {
+      if (view.parentNode === outlet) view.innerHTML = `<div class="empty">Failed to load: ${UI.esc(e.message)}</div>`;
     });
   }
 
@@ -437,6 +443,8 @@ const App = (() => {
   // (ends with the tab) — see src/shared/auth.ts.
   async function login(username, password, shared) {
     const body = { username, password };
+    const factor = document.getElementById('login-mfa');
+    if (factor && factor.value.trim()) body.mfa_code = factor.value.trim();
     if (shared) body.shared = true;
     const data = await API.post('/auth/login', body);
     API.setToken(data.token, { shared: !!shared });

@@ -16,4 +16,4 @@ Choose a measured service boundary, availability formula and monthly measurement
 
 ## Security questionnaire and customer ceiling
 
-Answer each question as Implemented / Partial / Planned / Not supported, with dated evidence and owner. Useful evidence: audit report/tests, access review, patch register, restore drill and incident exercise. Current limitations: no MFA/SSO evidence, no SOC 2 attestation, no verified residency guarantee, no live restore result, no BAA/HIPAA claim. Escalate procurement requirements before contracting; never mark planned controls as implemented.
+Answer each question as Implemented / Partial / Planned / Not supported, with dated evidence and owner. Useful evidence: audit report/tests, access review, patch register, restore drill and incident exercise. Current limitations: tenant MFA is optional; owner-console MFA/SSO are not evidenced, no SOC 2 attestation, no verified residency guarantee, only a synthetic isolated cold restore, no live restore result, no BAA/HIPAA claim. Escalate procurement requirements before contracting; never mark planned controls as implemented.

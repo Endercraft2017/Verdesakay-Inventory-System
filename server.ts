@@ -1,3 +1,4 @@
+import { requireProductionTransport } from './src/shared/hosting';
 /** Server entry point: initialize the database, then start listening.
  *
  * Serves over HTTPS so the mobile app's camera (QR scanning) works — browsers only
@@ -189,6 +190,7 @@ if (DEPLOY_MODE === 'node') {
   // Behind a TLS-terminating proxy (e.g. Railway) the proxy owns HTTPS and forwards plain
   // HTTP to PORT — serving our own self-signed cert there would break every request.
   const creds = BEHIND_PROXY ? null : loadOrCreateCert();
+  requireProductionTransport(!!creds);
 
   if (creds) {
     const httpsServer = https.createServer(creds, app).listen(PORT, '0.0.0.0', () => banner('https'));

@@ -6,3 +6,10 @@
  * kiosk) default to their locked-down mode. See docs/DEPLOY-RAILWAY.md.
  */
 export const BEHIND_PROXY = process.env.BEHIND_PROXY === 'true' || !!process.env.RAILWAY_ENVIRONMENT;
+
+/** Cloud production must never silently downgrade authenticated traffic to plain HTTP. */
+export function requireProductionTransport(tlsAvailable: boolean, behindProxy = BEHIND_PROXY, environment = process.env.NODE_ENV): void {
+  if (environment === 'production' && !tlsAvailable && !behindProxy) {
+    throw new Error('Production requires HTTPS certificates or a configured TLS reverse proxy.');
+  }
+}

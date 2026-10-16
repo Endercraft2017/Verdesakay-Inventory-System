@@ -1,6 +1,9 @@
 name: Production checks
 on:
   pull_request:
+  schedule:
+    - cron: '0 1 * * 1' # weekly synthetic verification, Monday 09:00 Manila
+  workflow_dispatch:
   push:
     branches: [main, production, restructure/module-architecture]
 permissions:

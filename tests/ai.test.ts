@@ -1,3 +1,4 @@
+import dns from 'node:dns/promises';
 /**
  * Tests for the AI agent route (POST /api/ai/chat).
  *
@@ -52,14 +53,14 @@ function mockFetch(...responses: object[]) {
   let call = 0;
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
     const body = responses[Math.min(call++, responses.length - 1)];
-    return { ok: true, json: async () => body, text: async () => JSON.stringify(body) } as Response;
+    return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
   });
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────
 
 describe('POST /api/ai/chat', () => {
-  beforeEach(() => { process.env.CEREBRAS_API_KEY = 'test-key'; });
+  beforeEach(() => { process.env.CEREBRAS_API_KEY = 'test-key'; vi.spyOn(dns, 'lookup').mockResolvedValue([{ address: '8.8.8.8', family: 4 }] as never); });
   afterEach(() => { vi.restoreAllMocks(); delete process.env.CEREBRAS_API_KEY; });
 
   it('401 without a token', async () => {
@@ -255,6 +256,7 @@ describe('POST /api/ai/chat', () => {
 describe('GET/DELETE /api/ai/messages — saved conversation history', () => {
   const hdr = () => ({ Authorization: `Bearer ${adminToken}` });
   beforeEach(async () => {
+    vi.spyOn(dns, 'lookup').mockResolvedValue([{ address: '8.8.8.8', family: 4 }] as never);
     process.env.CEREBRAS_API_KEY = 'test-key';
     await ctx.api.delete('/api/ai/messages').set(hdr()); // clean slate
   });
@@ -330,6 +332,7 @@ describe('GET/DELETE /api/ai/messages — saved conversation history', () => {
 describe('token usage cap', () => {
   const hdr = () => ({ Authorization: `Bearer ${adminToken}` });
   beforeEach(async () => {
+    vi.spyOn(dns, 'lookup').mockResolvedValue([{ address: '8.8.8.8', family: 4 }] as never);
     process.env.CEREBRAS_API_KEY = 'test-key';
     // Clean slate: no cap, zero usage, before each test in this block.
     await ctx.api.put('/api/ai/config').set(hdr()).send({ token_cap: 0 });

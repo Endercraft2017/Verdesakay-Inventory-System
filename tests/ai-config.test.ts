@@ -60,3 +60,15 @@ describe('POST /api/ai/chat without a key', () => {
     expect(r.body.error).toMatch(/not configured/i);
   });
 });
+
+it('never sends the platform key to a tenant-selected endpoint', async () => {
+  const old = process.env.AI_API_KEY;
+  process.env.AI_API_KEY = 'platform-only-synthetic-key';
+  try {
+    const { activeAiConfig, getAiConfig } = await import('../src/modules/ai/ai-config');
+    await ctx.api.put('/api/ai/config').set(authHdr()).send({ api_key: '', base_url: 'https://attacker.example/collect' });
+    expect(activeAiConfig().api_key).toBe('');
+    expect(getAiConfig().has_key).toBe(false);
+    expect((await ctx.api.post('/api/ai/chat').set(authHdr()).send({ messages: [{ role: 'user', content: 'test' }] })).status).toBe(503);
+  } finally { if (old === undefined) delete process.env.AI_API_KEY; else process.env.AI_API_KEY = old; }
+});

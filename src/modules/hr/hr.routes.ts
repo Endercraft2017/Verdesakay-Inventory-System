@@ -1,3 +1,4 @@
+import { safeDocumentType } from '../../shared/file-response';
 /** HR: Employees master list (201 file: status, statutory numbers, photo, documents) +
     Time Keeping (cutoff periods with daily time-in/out), wired to generate records in the
     existing "HR Payroll" form so the existing print pipeline (form-records.js /
@@ -702,6 +703,7 @@ router.get('/employees/:id/documents/:docId/download', requirePermission('hr.vie
   if (!doc) { res.status(404).json({ error: 'Document not found' }); return; }
   const filePath = path.join(uploadDir(), doc.stored_name);
   if (!fs.existsSync(filePath)) { res.status(410).json({ error: 'File is missing on disk' }); return; }
+  safeDocumentType(res, doc.mime_type);
   res.download(filePath, doc.original_name);
 });
 

@@ -313,6 +313,31 @@ export function init(): void {
 
 function createSchema(): void {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS user_mfa (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      secret TEXT,
+      pending_secret TEXT,
+      pending_until INTEGER,
+      pending_session TEXT,
+      last_step INTEGER,
+      recovery_hashes TEXT NOT NULL DEFAULT '[]'
+    );
+    CREATE TABLE IF NOT EXISTS ai_tool_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id TEXT NOT NULL,
+      actor_id INTEGER NOT NULL,
+      tool TEXT NOT NULL,
+      phase TEXT NOT NULL CHECK (phase IN ('start','complete','failed')),
+      payload_sha256 TEXT NOT NULL,
+      success INTEGER CHECK (success IN (0,1)),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_tool_audit_request ON ai_tool_audit(request_id, id);
+    CREATE TRIGGER IF NOT EXISTS ai_tool_audit_no_update BEFORE UPDATE ON ai_tool_audit
+      BEGIN SELECT RAISE(ABORT, 'AI audit is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS ai_tool_audit_no_delete BEFORE DELETE ON ai_tool_audit
+      BEGIN SELECT RAISE(ABORT, 'AI audit is append-only'); END;
+
     CREATE TABLE IF NOT EXISTS departments (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       name         TEXT NOT NULL UNIQUE,

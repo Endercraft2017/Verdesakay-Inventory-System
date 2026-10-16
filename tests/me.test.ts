@@ -234,7 +234,7 @@ describe('unrecorded OT (mobile prompt + Home reminder)', () => {
   it('PUT /hr/periods/:id/attendance pushes a notification to the employee when the saved day shows unrecorded OT', async () => {
     const a = await linked();
     await ctx.api.post('/api/push/subscribe').set({ Authorization: `Bearer ${a.token}` })
-      .send({ endpoint: 'https://push.example.com/sub/ot-' + a.id, keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
+      .send({ endpoint: 'https://fcm.googleapis.com/sub/ot-' + a.id, keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } }); // gitleaks:allow -- synthetic push fixture, not a credential
     const shiftId = await shiftEndingAt('17:00');
     const p = await ctx.api.post('/api/hr/periods').set(A())
       .send({ label: 'OT Notify Cutoff', start_date: today(), end_date: today() });
@@ -254,7 +254,7 @@ describe('unrecorded OT (mobile prompt + Home reminder)', () => {
   it('PUT /hr/periods/:id/attendance does NOT notify when the day is linked to an Overtime Request form', async () => {
     const a = await linked();
     await ctx.api.post('/api/push/subscribe').set({ Authorization: `Bearer ${a.token}` })
-      .send({ endpoint: 'https://push.example.com/sub/ot-linked-' + a.id, keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
+      .send({ endpoint: 'https://fcm.googleapis.com/sub/ot-linked-' + a.id, keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } }); // gitleaks:allow -- synthetic push fixture, not a credential
     const shiftId = await shiftEndingAt('17:00');
     const otFormId = await formBySlug('overtime_request');
     const otRecord = await ctx.api.post('/api/form-records').set(A())

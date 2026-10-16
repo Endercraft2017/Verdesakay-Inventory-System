@@ -20,7 +20,7 @@ beforeAll(async () => {
   ({ __sentPush } = await import('../src/shared/push'));
 });
 const subscribe = (t: string, tag: string) => ctx.api.post('/api/push/subscribe').set(bearer(t))
-  .send({ endpoint: 'https://push.example.com/sub/' + tag, keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
+  .send({ endpoint: 'https://fcm.googleapis.com/sub/' + tag, keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } }); // gitleaks:allow -- synthetic push fixture, not a credential
 afterAll(() => cleanup(ctx));
 
 const mkItem = async (body: Record<string, unknown>) => (await ctx.api.post('/api/inventory').set(H()).send(body)).body.id as number;

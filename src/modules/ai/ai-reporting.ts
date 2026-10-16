@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { enforceQuota } from '../../platform/quota';
 import { uploadDir } from '../../shared/db';
 import { parseMarkdown, renderHtml, renderDocx } from './reporting';
 import type { CerebrasTool, ToolResult } from './ai-tools';
@@ -49,6 +50,7 @@ export async function executeReportingTool(name: string, args: unknown, user: Au
   const a = (args ?? {}) as Record<string, unknown>;
   const title = typeof a.title === 'string' && a.title.trim() ? a.title.trim().slice(0, 160) : 'Report';
   const content = typeof a.content === 'string' ? a.content : '';
+  if (content.length > 100_000) return { success: false, error: 'Report content is too large.' };
   if (!content.trim()) return { success: false, error: 'No report content provided.' };
   const fmt = a.format === 'html' || a.format === 'docx' ? a.format : 'both';
 
@@ -61,17 +63,21 @@ export async function executeReportingTool(name: string, args: unknown, user: Au
     if (fmt === 'html' || fmt === 'both') {
       const fn = `ai-report-${stamp}.html`;
       const buf = Buffer.from(renderHtml(title, blocks), 'utf8');
+      if (buf.length > 5 * 1024 * 1024) throw new Error('Report size limit exceeded');
+      enforceQuota('storage_mb', buf.length);
       await fs.promises.writeFile(path.join(uploadDir(), fn), buf);
       files.push({ name: fn, url: `/api/ai/reports/${fn}`, format: 'html', bytes: buf.length });
     }
     if (fmt === 'docx' || fmt === 'both') {
       const fn = `ai-report-${stamp}.docx`;
       const buf = await renderDocx(title, blocks);
+      if (buf.length > 5 * 1024 * 1024) throw new Error('Report size limit exceeded');
+      enforceQuota('storage_mb', buf.length);
       await fs.promises.writeFile(path.join(uploadDir(), fn), buf);
       files.push({ name: fn, url: `/api/ai/reports/${fn}`, format: 'docx', bytes: buf.length });
     }
   } catch (e) {
-    return { success: false, error: `Failed to render the document: ${e instanceof Error ? e.message : String(e)}` };
+    return { success: false, error: 'Unable to create the report. Check workspace storage and retry.' };
   }
 
   return { success: true, data: { title, files, note: 'Give the user the download link(s).' } };

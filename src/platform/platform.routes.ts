@@ -1,4 +1,5 @@
 import { browserMode, browserCsrf } from '../shared/browser-session';
+import { parseBody, loginSchema } from '../shared/validation';
 import { BEHIND_PROXY } from '../shared/hosting';
 /**
  * Owner console API — mounted at `/_platform/api` ONLY when PLATFORM_CONSOLE=true
@@ -65,8 +66,7 @@ router.use(browserCsrf);
 
 // POST /_platform/api/login
 router.post('/login', loginLimiter, (req, res) => {
-  const username = String(req.body?.username || '').trim();
-  const password = String(req.body?.password || '');
+  const { username, password } = parseBody(loginSchema.omit({ mfa_code: true, shared: true }).strict(), req.body);
   if (!username || !password) { res.status(400).json({ error: 'Username and password are required.' }); return; }
   const token = platformLogin(username, password);
   if (!token) { res.status(401).json({ error: 'Invalid username or password.' }); return; }

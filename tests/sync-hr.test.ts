@@ -18,7 +18,7 @@ let leaveForm: number;
 let worker: { userId: number; empId: number; username: string; password: string };
 let lanWorkerToken = '';
 const api = () => T.ctx.api;
-const PASSWORD = 'Shift-secret-91';
+const PASSWORD = 'Shift-secret-91'; // gitleaks:allow -- synthetic push fixture, not a credential
 
 async function ok(p: Promise<import('supertest').Response>, status = 200) {
   const r = await p;

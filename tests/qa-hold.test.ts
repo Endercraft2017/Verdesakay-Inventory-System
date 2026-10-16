@@ -28,9 +28,9 @@ beforeAll(async () => {
   pm = await createEmployee(ctx.api, token, { role: 'production_manager' });
   ({ __sentPush } = await import('../src/shared/push'));
   await ctx.api.post('/api/push/subscribe').set(bearer(pm.token))
-    .send({ endpoint: 'https://push.example.com/sub/pm-hold', keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
+    .send({ endpoint: 'https://fcm.googleapis.com/sub/pm-hold', keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } }); // gitleaks:allow -- synthetic push fixture, not a credential
   await ctx.api.post('/api/push/subscribe').set(bearer(qa.token))
-    .send({ endpoint: 'https://push.example.com/sub/qa-hold', keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
+    .send({ endpoint: 'https://fcm.googleapis.com/sub/qa-hold', keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } }); // gitleaks:allow -- synthetic push fixture, not a credential
   const product = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'E-Bike HOLD', quantity: 0 })).body.id;
   const part = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'Frame HOLD', quantity: 100 })).body.id;
   await ctx.api.put(`/api/finished-products/${product}`).set(H()).send({ components: [{ component_item_id: part, quantity: 1 }] });

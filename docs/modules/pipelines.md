@@ -698,3 +698,11 @@ These extend existing session/retry branches; they create no new business stage.
 Login shell → tenant-aware `/policies` link → allowlisted escaped public draft → owner/legal approval and version record before launch. Privacy request → named private channel → manual identity/authority verification → legal retention/hold review → scoped export/correction/erasure plan → reviewed execution across processors/devices/backups → case closure; owner contact/deadlines remain required inputs. No automatic destructive cascade is implemented.
 
 AI chat → current user permissions → production tool allowlist → authorized read/report/proposal → structured start/completion audit hashes → bounded provider turn → human review. A model-requested business mutation is refused by the execution guard; users confirm changes in normal application screens. Production enforcement depends on NODE_ENV=production.
+
+## Authenticator enrollment and recovery
+
+Account security → current-password proof → ten-minute secret encrypted and bound to this session → authenticator code verification → eight one-use recovery codes shown once in an independent modal → all sessions revoked → sign in with password plus a new TOTP or recovery code. TOTP counters and atomic recovery consumption reject reuse; wrong session/expired setup fails closed. Disable requires the password and a fresh factor, then revokes sessions. Optional enrollment is available to tenant users; operator enrollment and mandatory policy remain deployment/product gaps. No payroll/stock/stage order changes.
+
+Second-pass AI flow: configured endpoint/key binding → public DNS validation/pinning and bounded HTTPS JSON → permission-scoped predefined tools (free-form SQL refused) → durable start/outcome hashes independent of conversation history → human review. New audit tables do not store raw retrieved records or secrets; centralized immutable retention still needs operations.
+
+Recovery rehearsal: synthetic fixture → manual tenant/platform snapshots and upload copy → close source → restore into separate directories → cold app start → integrity, stock, attachment, login and least-privilege checks. This local scheduled test is separate from an owner-operated real offsite disaster drill.

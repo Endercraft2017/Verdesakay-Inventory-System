@@ -1,3 +1,4 @@
+import { safeDocumentType } from '../shared/file-response';
 /** Forms & files: upload, list (with department visibility), download, delete. */
 import path from 'node:path';
 import fs from 'node:fs';
@@ -103,6 +104,7 @@ router.get('/:id/download', requirePermission('forms.view'), (req, res) => {
     res.status(410).json({ error: 'File is missing on disk' });
     return;
   }
+  safeDocumentType(res, form.mime_type);
   res.download(filePath, form.original_name);
 });
 

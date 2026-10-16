@@ -42,11 +42,12 @@ const DEFAULTS: AiConfig = {
 /** The API key actually used: the tenant's stored one, else the platform env key. */
 export function resolvedAiKey(): string {
   const stored = decryptSecret(getSetting<string>(SECRET_KEY) || '');
-  return stored || process.env.AI_API_KEY || process.env.CEREBRAS_API_KEY || '';
+  // A tenant-controlled endpoint must never receive a platform-owned credential.
+  return stored || (storedConfig().base_url === DEFAULTS.base_url ? process.env.AI_API_KEY || process.env.CEREBRAS_API_KEY || '' : '');
 }
 
 function envKeyPresent(): boolean {
-  return !!(process.env.AI_API_KEY || process.env.CEREBRAS_API_KEY);
+  return storedConfig().base_url === DEFAULTS.base_url && !!(process.env.AI_API_KEY || process.env.CEREBRAS_API_KEY);
 }
 
 export function aiReady(): boolean {

@@ -15,7 +15,7 @@ const hdr = (t = token) => ({ Authorization: `Bearer ${t}` });
 
 const fakeSub = (endpoint: string) => ({
   endpoint,
-  keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' },
+  keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' }, // gitleaks:allow -- synthetic push fixture, not a credential
 });
 
 beforeAll(async () => {
@@ -38,7 +38,7 @@ describe('web push', () => {
   });
 
   it('subscribes, upserts by endpoint, and unsubscribes', async () => {
-    const ep = 'https://push.example.com/sub/aaa';
+    const ep = 'https://fcm.googleapis.com/sub/aaa';
     expect((await ctx.api.post('/api/push/subscribe').set(hdr()).send(fakeSub(ep))).status).toBe(201);
     expect((await ctx.api.post('/api/push/subscribe').set(hdr()).send(fakeSub(ep))).status).toBe(201); // upsert
     expect((await ctx.api.get('/api/push/status').set(hdr())).body.subscriptions).toBe(1);
@@ -53,15 +53,15 @@ describe('web push', () => {
   });
 
   it('POST /test notifies the caller\'s own devices', async () => {
-    await ctx.api.post('/api/push/subscribe').set(hdr()).send(fakeSub('https://push.example.com/sub/test'));
+    await ctx.api.post('/api/push/subscribe').set(hdr()).send(fakeSub('https://fcm.googleapis.com/sub/test'));
     const res = await ctx.api.post('/api/push/test').set(hdr());
     expect(res.status).toBe(200);
-    expect(__sentPush.some((p) => p.endpoint === 'https://push.example.com/sub/test')).toBe(true);
+    expect(__sentPush.some((p) => p.endpoint === 'https://fcm.googleapis.com/sub/test')).toBe(true);
   });
 
   it('fires a low-stock notification on the downward crossing only', async () => {
     // admin (holds inventory.adjust) has a device registered
-    await ctx.api.post('/api/push/subscribe').set(hdr()).send(fakeSub('https://push.example.com/sub/admin'));
+    await ctx.api.post('/api/push/subscribe').set(hdr()).send(fakeSub('https://fcm.googleapis.com/sub/admin'));
     const { body } = await ctx.api.post('/api/inventory').set(hdr())
       .send({ name: 'Reorder Widget', quantity: 15, min_quantity: 10 });
 
@@ -76,11 +76,19 @@ describe('web push', () => {
 
   it('notifies the recipient of a new message', async () => {
     const bob = await createEmployee(ctx.api, token, { role: 'warehouse' });
-    await ctx.api.post('/api/push/subscribe').set(hdr(bob.token)).send(fakeSub('https://push.example.com/sub/bob'));
+    await ctx.api.post('/api/push/subscribe').set(hdr(bob.token)).send(fakeSub('https://fcm.googleapis.com/sub/bob'));
 
     __sentPush.length = 0;
     const res = await ctx.api.post('/api/messages').set(hdr()).send({ recipient_id: bob.id, subject: 'Hi', body: 'check bay 3' });
     expect(res.status).toBe(201);
     expect(__sentPush.some((p) => p.userId === bob.id && /Hi/.test(p.payload.title))).toBe(true);
   });
+});
+
+it('rejects SSRF endpoints, deceptive vendor hosts and excessive subscriptions', async () => {
+  for (const endpoint of ['https://127.0.0.1/private', 'http://fcm.googleapis.com/push', 'https://fcm.googleapis.com.evil.example/push', 'https://user:pass@fcm.googleapis.com/push', 'https://fcm.googleapis.com:444/push']) {
+    expect((await ctx.api.post('/api/push/subscribe').set(hdr()).send(fakeSub(endpoint))).status, endpoint).toBe(400);
+  }
+  for (let i = 0; i < 20; i++) expect((await ctx.api.post('/api/push/subscribe').set(hdr()).send(fakeSub('https://fcm.googleapis.com/limit-' + i))).status).toBe(201);
+  expect((await ctx.api.post('/api/push/subscribe').set(hdr()).send(fakeSub('https://fcm.googleapis.com/overflow'))).status).toBe(429);
 });

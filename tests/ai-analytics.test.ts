@@ -219,16 +219,21 @@ describe('ai-analytics: manufacturing reports', () => {
 });
 
 describe('ai-analytics: run_analytics_query', () => {
-  it('runs a read-only SELECT', () => {
+  it('does not expose custom SQL even to administrators', () => {
     const r = exec('run_analytics_query', { sql: 'SELECT COUNT(*) AS n FROM inventory_items LIMIT 1' }, admin()) as {
       success: boolean; data: { rows: Array<{ n: number }> };
     };
-    expect(r.success).toBe(true);
-    expect(typeof r.data.rows[0]!.n).toBe('number');
+    expect(r.success).toBe(false);
+    expect(toolsFor(admin()).map(t => t.function.name)).not.toContain('run_analytics_query');
   });
 
   it('rejects writes, stacked statements, and users/sessions access', () => {
     for (const sql of [
+      "SELECT value FROM settings",
+      'SELECT * FROM "users"',
+      'SELECT * FROM password_resets',
+      "SELECT * FROM notes",
+      "WITH RECURSIVE x(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM x) SELECT * FROM x",
       "DELETE FROM inventory_items",
       "SELECT 1; DROP TABLE inventory_items",
       "SELECT password_hash FROM users",

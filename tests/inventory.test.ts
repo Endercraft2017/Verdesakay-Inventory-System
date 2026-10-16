@@ -474,3 +474,14 @@ describe('inventory: RBAC on mutations', () => {
     expect((await ctx.api.delete(`/api/inventory/${created.body.id}`).set(hdr)).status).toBe(403);
   });
 });
+
+it('preserves department and supplier when editing only an item name', async () => {
+  const dept = (await ctx.api.get('/api/auth/me').set(authHdr())).body.user.department_id;
+  const supplier = await ctx.api.post('/api/suppliers').set(authHdr()).send({ name: 'Preserve supplier' });
+  expect(supplier.status).toBe(201);
+  const item = await ctx.api.post('/api/inventory').set(authHdr()).send({ name: 'Before partial edit', department_id: dept, supplier_id: supplier.body.id });
+  expect(item.status).toBe(201);
+  expect((await ctx.api.put(`/api/inventory/${item.body.id}`).set(authHdr()).send({ name: 'After partial edit' })).status).toBe(200);
+  const after = await ctx.api.get(`/api/inventory/${item.body.id}`).set(authHdr());
+  expect(after.body.department_id).toBe(dept); expect(after.body.supplier_id).toBe(supplier.body.id);
+});

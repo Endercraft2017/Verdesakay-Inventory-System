@@ -72,3 +72,12 @@ describe('attachments', () => {
       .field('kind', 'delivery').field('ref_id', '1').attach('image', PNG, 'x.png')).status).toBe(403);
   });
 });
+
+it('never uses an executable original extension for an image', async () => {
+  const res = await ctx.api.post('/api/attachments').set(H()).field('kind', 'problem').field('ref_id', '77')
+    .attach('image', Buffer.from('<script>alert(1)</script>'), { filename: 'payload.html', contentType: 'image/png' });
+  expect(res.status).toBe(201);
+  const image = await ctx.api.get(res.body.url).set(H());
+  expect(image.type).toBe('image/png');
+  expect(image.headers['x-content-type-options']).toBe('nosniff');
+});

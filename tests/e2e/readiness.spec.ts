@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { generateSync } from 'otplib';
 
 declare const API: { post: (path: string, body?: unknown, opts?: unknown) => Promise<any>; get: (path: string) => Promise<any>; getToken: () => string };
 
@@ -103,4 +104,120 @@ test('API attack surface: injection, oversized inputs, CORS and private caching'
   expect(cors.headers()['cache-control']).toBe('no-store');
   expect(cors.headers()['x-content-type-options']).toBe('nosniff');
   expect((await request.get('/', { headers: { Cookie: 'vds_view=%broken' } })).status()).toBe(200);
+});
+
+test('browser: separate users cannot edit each other’s notes; role changes revoke cookies', async ({ page, browser }) => {
+  await signIn(page);
+  const suffix = Date.now();
+  const account = await page.evaluate(async s => {
+    const username = 'browser.staff.' + s;
+    const created = await API.post('/users', { username, full_name: 'Browser Employee', password: 'browser-test-password', role: 'warehouse' });
+    const note = await API.post('/notes', { title: 'Owner-only', body: 'private record' });
+    return { id: created.id, note: note.id, username };
+  }, suffix);
+  const context = await browser.newContext({ baseURL: new URL(page.url()).origin });
+  const staff = await context.newPage();
+  try {
+    await staff.goto('/');
+    await staff.locator('#login-username').fill(account.username);
+    await staff.locator('#login-password').fill('browser-test-password');
+    await staff.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(staff.locator('#app-screen')).toBeVisible();
+    const forbidden = await staff.evaluate(async id => {
+      const result = await fetch('/api/notes/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'VDS' }, body: JSON.stringify({ body: 'intrusion' }) });
+      return result.status;
+    }, account.note);
+    expect(forbidden).toBe(404);
+    await page.evaluate(async id => { await API.post('/notes', { body: 'second independent write' });
+      const result = await fetch('/api/users/' + id + '/permissions', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'VDS' }, body: JSON.stringify({ overrides: { 'inventory.view': false } }) });
+      if (!result.ok) throw new Error('Override failed');
+    }, account.id);
+    expect((await staff.request.get('/api/auth/me')).status()).toBe(401);
+    const unchanged = await page.evaluate(async () => API.get('/notes'));
+    expect(unchanged.find((n: any) => n.id === account.note).body).toBe('private record');
+  } finally { await context.close(); }
+});
+
+test('browser: message HTML is a non-executable attachment and policy links are usable', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('link', { name: 'Privacy, terms and security (drafts)' }).click();
+  await expect(page.getByRole('heading', { name: 'Policies and security' })).toBeVisible();
+  await page.getByRole('link', { name: 'Privacy notice' }).click();
+  await expect(page.locator('main')).toContainText('DRAFT');
+  await signIn(page);
+  const result = await page.evaluate(async () => {
+    const user = await API.post('/users', { username: 'file.' + Date.now(), full_name: 'Attachment Reader', password: 'browser-test-password' });
+    const form = new FormData(); form.set('recipient_id', String(user.id)); form.set('body', 'File safety');
+    form.append('files', new Blob(['<script>window.COMPROMISED=true</script>'], { type: 'text/html' }), 'unsafe.html');
+    const created = await fetch('/api/messages', { method: 'POST', headers: { 'X-Requested-With': 'VDS' }, body: form });
+    const message = await created.json();
+    const sent = await API.get('/messages?box=sent');
+    const row = sent.find((m: any) => m.id === message.id);
+    const response = await fetch('/api' + row.attachments[0].url);
+    return { status: response.status, type: response.headers.get('content-type'), disposition: response.headers.get('content-disposition') };
+  });
+  expect(result.status).toBe(200); expect(result.type).toContain('application/octet-stream');
+  expect(result.disposition).toMatch(/^attachment;/);
+});
+
+test('browser: uploaded JavaScript cannot execute as a self-hosted script', async ({ page }) => {
+  await signIn(page);
+  const ran = await page.evaluate(async () => {
+    const form = new FormData(); form.set('title', 'Script execution probe');
+    form.append('file', new Blob(['window.UPLOAD_EXECUTED=true'], { type: 'application/javascript' }), 'probe.js');
+    const response = await fetch('/api/forms', { method: 'POST', headers: { 'X-Requested-With': 'VDS' }, body: form });
+    if (!response.ok) throw new Error('Probe upload failed');
+    const file = await response.json();
+    return new Promise<boolean>(resolve => {
+      const script = document.createElement('script'); script.src = '/api/forms/' + file.id + '/download';
+      script.onload = () => resolve(true); script.onerror = () => resolve(false);
+      document.head.appendChild(script);
+    });
+  });
+  expect(ran).toBe(false);
+  expect(await page.evaluate(() => (window as any).UPLOAD_EXECUTED)).toBeUndefined();
+});
+
+test('browser: authenticator enrollment, one-use recovery and mobile factor sign-in', async ({ page, browser }) => {
+  await signIn(page);
+  const username = 'mfa.' + Date.now();
+  await page.evaluate(async name => { await API.post('/users', { username: name, full_name: 'MFA Browser', password: 'browser-mfa-password', role: 'warehouse' }); }, username);
+  const context = await browser.newContext({ baseURL: new URL(page.url()).origin });
+  const account = await context.newPage();
+  try {
+    await account.goto('/');
+    await account.locator('#login-username').fill(username); await account.locator('#login-password').fill('browser-mfa-password');
+    await account.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(account.locator('#app-screen')).toBeVisible();
+    await account.goto('/#account');
+    const controls = account.getByRole('heading', { name: 'Authenticator security' }).locator('..');
+    await controls.getByLabel('Current password', { exact: true }).fill('browser-mfa-password');
+    await controls.getByRole('button', { name: 'Set up authenticator' }).click();
+    await expect(controls.locator('pre')).toContainText('setup key');
+    const text = await controls.locator('pre').innerText();
+    const secret = /key:\n([A-Z2-7]+)/.exec(text)![1]!;
+    await controls.getByLabel('Authenticator or recovery code', { exact: true }).fill(generateSync({ secret }));
+    await controls.getByRole('button', { name: 'Enable authenticator' }).click();
+    const dialog = account.getByRole('dialog', { name: 'Authenticator security result' });
+    await expect(dialog).toBeVisible();
+    const codes = (await dialog.locator('pre').innerText()).trim().split('\n'); expect(codes).toHaveLength(8);
+    await dialog.getByRole('button', { name: 'I saved my codes — return to sign in' }).click();
+    await expect(account.locator('#login-screen')).toBeVisible();
+    await account.locator('#login-username').fill(username); await account.locator('#login-password').fill('browser-mfa-password');
+    await account.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(account.locator('#login-error')).toContainText('authenticator');
+    await account.locator('#login-mfa').fill(codes[0]!);
+    await account.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(account.locator('#app-screen')).toBeVisible();
+    await account.evaluate(async () => { await API.post('/auth/logout'); (API as any).clearToken(); });
+    await account.setViewportSize({ width: 390, height: 844 }); await account.goto('/m');
+    await account.locator('#m-username').fill(username); await account.locator('#m-password').fill('browser-mfa-password');
+    await account.locator('#m-mfa').fill(codes[0]!);
+    await account.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(account.locator('#m-login-error')).toContainText('authenticator');
+    await account.locator('#m-mfa').fill(codes[1]!);
+    await account.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(account.locator('#m-app')).toBeVisible();
+    expect(await account.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  } finally { await context.close(); }
 });

@@ -20,7 +20,7 @@ beforeAll(async () => {
   ({ __sentPush } = await import('../src/shared/push'));
   // Only Sales has a phone subscribed; admin keeps no push devices.
   await ctx.api.post('/api/push/subscribe').set(bearer(sales.token))
-    .send({ endpoint: 'https://push.example.com/sub/sales-n', keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } });
+    .send({ endpoint: 'https://fcm.googleapis.com/sub/sales-n', keys: { p256dh: 'BAY'.padEnd(87, 'x'), auth: 'abc123def456' } }); // gitleaks:allow -- synthetic push fixture, not a credential
 });
 afterAll(() => cleanup(ctx));
 

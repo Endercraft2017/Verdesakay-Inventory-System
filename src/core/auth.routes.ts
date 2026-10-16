@@ -1,6 +1,8 @@
 /** Authentication routes: login, logout, current user, self password change, password reset,
  *  and the caller's own sessions ("Where you're signed in" — list / end one / end the others). */
 import crypto from 'node:crypto';
+import mfaRoutes from './mfa.routes';
+import { mfaEnabled, verifyMfa } from '../shared/mfa';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { queryOne, queryAll, run, newToken, db } from '../shared/db';
@@ -22,18 +24,23 @@ import { browserMode, setBrowserSession, clearBrowserSession } from '../shared/b
 import { tenantStore } from '../shared/db';
 
 const router = Router();
+router.use('/mfa', mfaRoutes);
 
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
 const RESET_TTL_MIN = 15;
 
 // POST /api/auth/login
 router.post('/login', (req, res) => {
-  const { username, password, shared } = parseBody(loginSchema, req.body);
+  const { username, password, shared, mfa_code } = parseBody(loginSchema, req.body);
   const user = queryOne<UserRow>('SELECT * FROM users WHERE username = ?', username.toLowerCase());
 
   if (!user || user.active !== 1 || !bcrypt.compareSync(password, user.password_hash)) {
     res.status(401).json({ error: 'Invalid username or password' });
     return;
+  }
+
+  if (mfaEnabled(user.id) && !verifyMfa(user.id, mfa_code || '')) {
+    res.status(401).json({ error: 'A fresh authenticator or recovery code is required.', mfa_required: true }); return;
   }
 
   req.user = { id: user.id, username: user.username, full_name: user.full_name, role: user.role, department_id: user.department_id, active: user.active, department_name: null, permissions: [] };

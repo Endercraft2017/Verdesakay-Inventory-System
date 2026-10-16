@@ -477,8 +477,10 @@ router.get('/:id/attachments/:attId', requirePermission('messages.view'), (req, 
     res.status(410).json({ error: 'File is missing on disk' });
     return;
   }
-  if (att.mime_type) res.type(att.mime_type);
-  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(att.original_name)}"`);
+  const safeInline = /^(image\/(jpeg|png|gif|webp)|application\/pdf)$/.test(att.mime_type || '');
+  res.setHeader('Content-Disposition', `${safeInline ? 'inline' : 'attachment'}; filename="${encodeURIComponent(att.original_name)}"`);
+  res.type(safeInline ? att.mime_type! : 'application/octet-stream');
+  // Active HTML/SVG/JS must never become a same-origin document or script source.
   res.sendFile(filePath);
 });
 

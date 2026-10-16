@@ -15,6 +15,8 @@
  */
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { auditTool } from './ai-audit';
+import { fetchPublicResource } from '../../shared/public-fetch';
 import { securityLog } from '../../shared/http-hardening';
 import path from 'node:path';
 import { Router } from 'express';
@@ -112,6 +114,12 @@ router.get('/config', requirePermission('users.manage'), (_req, res) => {
   res.json(getAiConfig());
 });
 
+// GET /api/ai/audit — hash-only durable tool evidence; conversation deletion cannot erase it.
+router.get('/audit', requirePermission('audit.view'), (req, res) => {
+  const limit = Math.min(200, Math.max(1, Math.trunc(Number(req.query.limit) || 100)));
+  res.json(queryAll('SELECT * FROM ai_tool_audit ORDER BY id DESC LIMIT ?', limit));
+});
+
 // PUT /api/ai/config — { model?, base_url?, api_key?, token_cap? } (api_key '' clears → env
 // fallback; token_cap 0 = unlimited)
 router.put('/config', requirePermission('users.manage'), syncClass('online'), (req, res) => {
@@ -194,6 +202,11 @@ function buildSystemPrompt(user: AuthUser, today: string): string {
   ].join('\n');
 }
 
+function safeReply(candidate: string, key: string): string {
+  return (key && candidate.includes(key)) || /-----BEGIN (?:RSA |EC )?PRIVATE KEY-----/.test(candidate)
+    ? 'The generated response could not be safely displayed. Please rephrase your request.' : candidate;
+}
+
 async function callLlm(
   messages: CerebrasMessage[],
   tools: object[],
@@ -213,7 +226,9 @@ async function callLlm(
     body.tool_choice = 'auto';
   }
 
-  const res = await fetch(baseUrl, {
+  const endpoint = new URL(baseUrl);
+  if (endpoint.protocol !== 'https:') throw new Error('AI provider requires HTTPS');
+  const res = await fetchPublicResource(endpoint, 1024 * 1024, 30_000, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -222,11 +237,10 @@ async function callLlm(
     body: JSON.stringify(body),
     signal: AbortSignal.any([AbortSignal.timeout(30_000), ...(deadline ? [deadline] : [])]),
     redirect: 'error',
-  });
+  }, 'application/json');
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`LLM provider request failed (${res.status})`);
+  if (!res || !res.ok || !res.body) {
+    throw new Error('AI provider unavailable or response refused');
   }
   const data = await res.json();
   const parsed = z.object({
@@ -312,8 +326,7 @@ router.post('/chat', chatLimiter, syncClass('online'), async (req, res, next) =>
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
         // Model gave a final answer
         const candidate = msg.content ?? '';
-        const reply = candidate.includes(apiKey) || /-----BEGIN (?:RSA |EC )?PRIVATE KEY-----/.test(candidate)
-          ? 'The generated response could not be safely displayed. Please rephrase your request.' : candidate;
+        const reply = safeReply(candidate, apiKey);
         if (newUserMessage) saveTurn(user.id, newUserMessage.content, reply, steps);
         res.json({ reply, steps });
         return;
@@ -325,9 +338,15 @@ router.post('/chat', chatLimiter, syncClass('online'), async (req, res, next) =>
         try { args = JSON.parse(tc.function.arguments); } catch { args = {}; }
 
         const audit = { event: 'ai_tool', request_id: res.locals.requestId, tenant: currentSlug(), actor: user.id, tool: tc.function.name, args_sha256: crypto.createHash('sha256').update(JSON.stringify(args)).digest('hex') };
+        auditTool({ requestId: res.locals.requestId, actor: user.id, tool: tc.function.name, phase: 'start', value: args });
         securityLog({ ...audit, phase: 'start' });
         const started = Date.now();
-        const result = await executeTool(tc.function.name, args, user);
+        let result;
+        try { result = await executeTool(tc.function.name, args, user); } catch (error) {
+          auditTool({ requestId: res.locals.requestId, actor: user.id, tool: tc.function.name, phase: 'failed', value: { error: 'execution failed' }, success: false });
+          throw error;
+        }
+        auditTool({ requestId: res.locals.requestId, actor: user.id, tool: tc.function.name, phase: 'complete', value: result, success: result.success });
         securityLog({ ...audit, phase: 'complete', success: result.success, duration_ms: Date.now() - started, result_sha256: crypto.createHash('sha256').update(JSON.stringify(result)).digest('hex') });
         steps.push({ tool: tc.function.name, args, result });
 
@@ -342,7 +361,7 @@ router.post('/chat', chatLimiter, syncClass('online'), async (req, res, next) =>
 
     // Hit the iteration cap — return whatever the model last said
     const lastAssistant = [...cebrasMsgs].reverse().find((m) => m.role === 'assistant' && m.content);
-    const reply = lastAssistant?.content ?? 'Unable to complete the request.';
+    const reply = safeReply(lastAssistant?.content ?? 'Unable to complete the request.', apiKey);
     if (newUserMessage) saveTurn(user.id, newUserMessage.content, reply, steps);
     res.json({ reply, steps });
   } catch (e) {

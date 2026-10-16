@@ -890,8 +890,7 @@ suite does not change existing `partial` native/desktop/sync status.
   than risking a duplicate action. Tenant fallback encryption keys are no longer
   cached across tenant contexts. No schema change.
 - Core sessions: recovery uses configured public origins, generic responses,
-  15-minute single-use links, account/IP limits and sibling invalidation. Client
-  browser token storage remains a documented open gap. Chat delivery revalidates
+  15-minute single-use links, account/IP limits and sibling invalidation. Browser sessions use HttpOnly cookies; native secure storage remains an open gap. Chat delivery revalidates
   session and tenant state after connection; logout stops subsequent delivery.
 - Platform operators: changing/resetting an operator password revokes their
   sessions. Fresh default production bootstrap requires a configured strong
@@ -900,7 +899,7 @@ suite does not change existing `partial` native/desktop/sync status.
   tenant/user rate checks; callback state is consumed before provider work and
   rejects unknown workspaces. AI mutation confirmation/output policy remain open.
 - Shell: readable desktop accent, mobile zoom and grouped Quick Orbit semantics,
-  worker v69. `tests/e2e/`, `playwright.config.ts`, security regressions and
+  worker v71. `tests/e2e/`, `playwright.config.ts`, security regressions and
   `scripts/audit-load.mjs` provide disposable local validation. No role, stock,
   payroll calculation or manufacturing stage is added or reordered.
 
@@ -915,3 +914,13 @@ native-platform validation limits: `docs/audits/dependency-audit.md`.
 `core/policies.routes.ts` serves only six allowlisted, HTML-escaped policy documents from `docs/policies/`; both login shells link to them. Draft status remains visible until owner/legal approval. `docs/governance/` and `docs/operations/` hold contract, retention/rights, security ownership, recovery, incident and support procedures; `docs/OWNER-ACTIONS.md` is the release handoff. These are documents and a manual rights procedure, not an automated erasure service or certification.
 
 Production AI tools are limited by `modules/ai/ai-tools.productionToolAllowed` to permission-checked reads, report generation and form proposals. Business mutations/communications are refused at discovery and execution. The route adds a total turn deadline, suppresses raw provider errors, and emits start/completion tool audit events containing hashes rather than raw arguments/results. External log retention/immutability, hard user spend reservations and broader output DLP remain unverified/missing.
+
+## Second-pass audit hardening (working; deployment evidence pending)
+
+Shared `mfa.ts` uses otplib 13.5 (MIT) for TOTP, encrypted tenant seeds, session-bound ten-minute enrollment, replay counters and hashed single-use recovery codes. `core/mfa.routes.ts` owns authenticated self-service setup/enable/disable/status; each change verifies the password, enable verifies TOTP, disable verifies a fresh factor, and activation/deactivation revoke all sessions. `auth.routes` enforces enrolled factors at login. `public/js/lib/mfa-controls.js` is reused by desktop Account and mobile Account security; both login forms accept an authenticator/recovery code. Enrollment remains optional; operator-console MFA/mandatory enrollment/fresh privileged step-up are partial. Worker v71 includes the shared control.
+
+AI custom SQL is disabled at discovery and execution. Predefined reports retain permission checks. `public-fetch.ts` now also owns bounded JSON provider POSTs with pinned public DNS, redirect refusal and IPv6 translation/transition exclusions. Platform AI credentials resolve only for the exact platform endpoint; tenant endpoints need tenant keys. `ai-audit.ts` writes independent, append-only `ai_tool_audit` start/complete/failed hashes (no raw records), backed by SQLite update/delete refusal triggers and auditor-only GET /ai/audit. New always-created tables: user_mfa and ai_tool_audit; generated db-types updated. Existing columns/schema version are unchanged.
+
+Activity logging recognizes provider/factor keys, bounds recursion and redacts legacy metadata on read. Historical underlying records/backups are not silently rewritten: key rotation and restricted review remain required. Push endpoint allowlisting, subscription limits and timeouts apply to existing rows as well as new subscriptions. Unknown/active uploaded document types are downloads with non-executable MIME; image filenames use canonical raster extensions. `file-response.ts` is shared by general/HR downloads. Partial inventory/production edits preserve omitted relationships. Backup restore target names are validated; cloud production refuses a plain-HTTP fallback without TLS/proxy. Desktop views render into separate containers so late responses cannot replace a newer view.
+
+Tests include actual registered-route anonymous probing, isolated cold app restore with business/attachment/access verification, OTP lifecycle/recovery/replay, legacy log redaction, malicious file headers and real browser refusal to execute uploaded JS. Weekly CI re-runs synthetic checks; it does not restore live customer backups or prove alert delivery.

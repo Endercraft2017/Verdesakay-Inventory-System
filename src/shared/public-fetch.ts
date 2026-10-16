@@ -13,19 +13,22 @@ for (const [ip, prefix] of [
   ['192.168.0.0', 16], ['198.18.0.0', 15], ['198.51.100.0', 24], ['203.0.113.0', 24],
   ['224.0.0.0', 4], ['240.0.0.0', 4],
 ] as const) blocked.addSubnet(ip, prefix, 'ipv4');
-for (const [ip, prefix] of [['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8], ['2001:db8::', 32]] as const) {
+for (const [ip, prefix] of [['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8], ['2001:db8::', 32], ['2001::', 23], ['2002::', 16], ['64:ff9b::', 96], ['64:ff9b:1::', 48]] as const) {
   blocked.addSubnet(ip, prefix, 'ipv6');
 }
 export function isPublicAddress(ip: string): boolean {
   const family = net.isIP(ip);
-  return family !== 0 && !blocked.check(ip, family === 4 ? 'ipv4' : 'ipv6');
+  if (!family) return false;
+  // IPv6 global unicast only; exclude transition/translation ranges and mapped literals.
+  if (family === 6 && !/^[23][0-9a-f]{3}:/i.test(ip)) return false;
+  return !blocked.check(ip, family === 4 ? 'ipv4' : 'ipv6');
 }
 
-export async function fetchPublicPage(url: URL, maxBytes: number, timeoutMs: number): Promise<Response | null> {
+export async function fetchPublicResource(url: URL, maxBytes: number, timeoutMs: number, init: RequestInit = {}, contentType = 'text/html'): Promise<Response | null> {
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
   const host = url.hostname.replace(/^\[|\]$/g, '');
   let dispatcher: Agent | undefined;
-  const signal = AbortSignal.timeout(timeoutMs);
+  const signal = AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(init.signal ? [init.signal] : [])]);
   try {
     const family = net.isIP(host);
     const addresses = family ? [{ address: host, family }] : await Promise.race([
@@ -41,10 +44,10 @@ export async function fetchPublicPage(url: URL, maxBytes: number, timeoutMs: num
       },
     } });
     const response = await fetch(url, {
-      dispatcher, redirect: 'manual', signal,
-      headers: { 'User-Agent': 'VerdesakayLinkPreview/1.0' },
+      ...init, dispatcher, redirect: 'manual', signal,
+      headers: init.headers || { 'User-Agent': 'VerdesakayLinkPreview/1.0' },
     } as RequestInit & { dispatcher: Agent });
-    if (!response.ok || !(response.headers.get('content-type') || '').includes('text/html')) {
+    if (!response.ok || !(response.headers.get('content-type') || '').includes(contentType)) {
       await response.body?.cancel();
       return new Response(null, { status: response.status, headers: response.headers });
     }
@@ -65,4 +68,8 @@ export async function fetchPublicPage(url: URL, maxBytes: number, timeoutMs: num
     return new Response(Buffer.concat(chunks), { status: response.status, headers });
   } catch { return null; }
   finally { if (dispatcher) await dispatcher.close().catch(() => {}); }
+}
+
+export function fetchPublicPage(url: URL, maxBytes: number, timeoutMs: number): Promise<Response | null> {
+  return fetchPublicResource(url, maxBytes, timeoutMs);
 }
