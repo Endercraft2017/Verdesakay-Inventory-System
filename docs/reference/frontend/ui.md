@@ -157,3 +157,8 @@ the single most widely-depended-upon frontend module besides `api.js`.
 - `emptyState`'s `action` param and `modal`'s `headActionHTML`/`bodyHTML` are all raw,
   un-escaped HTML by design (composability) — callers must `UI.esc()` any dynamic data
   themselves before interpolating it into these strings.
+
+Drawers opened while a shared modal is active are mounted inside that modal's overlay,
+above its content. The drawer handles Escape and Tab until it closes; a newer modal
+still takes precedence. Closing the drawer restores its invoking control and preserves
+the parent form. Closing the parent also cleans up the nested drawer.

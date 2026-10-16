@@ -127,6 +127,7 @@ const UI = (() => {
     const beforeUnload = (e) => { if (dirty || opts.isDirty?.()) { e.preventDefault(); e.returnValue = ''; } };
     const close = (cancelled = false) => {
       window.removeEventListener('beforeunload', beforeUnload);
+      if (currentDrawer && overlay.contains(currentDrawer.el)) currentDrawer.close();
       overlay.remove(); observer?.disconnect();
       if (cancelled) { opts.onCancel?.(); overlay.dispatchEvent(new CustomEvent('modalcancel')); }
       if (previousFocus && previousFocus.isConnected) previousFocus.focus();
@@ -145,7 +146,7 @@ const UI = (() => {
       window.addEventListener('beforeunload', beforeUnload);
     }
     overlay.addEventListener('keydown', (e) => {
-      if (overlay !== root.lastElementChild) return;
+      if (overlay !== root.lastElementChild || (currentDrawer && overlay.contains(currentDrawer.el) && !currentDrawer.el.inert)) return;
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); dismiss(); }
       if (e.key !== 'Tab') return;
       const elements = [...overlay.querySelectorAll('button,input,select,textarea,a[href],[tabindex="0"]')].filter(el => !el.disabled && !el.closest('.hidden,[hidden]'));
@@ -306,7 +307,9 @@ const UI = (() => {
   /* opts = { title, bodyHTML, icon?, footHTML?, key?, onOpen(el) }
      Reopening with the same `key` toggles it closed. Returns { el, close } or null. */
   function drawer(opts) {
-    const root = document.getElementById('drawer-root') || document.body;
+    // A drawer opened from a modal must share that modal's foreground layer.
+    const parentModal = document.querySelector('#modal-root > .modal-overlay:last-child');
+    const root = parentModal || document.getElementById('drawer-root') || document.body;
     if (currentDrawer && opts.key && currentDrawer.key === opts.key) {
       currentDrawer.close();
       return null;
@@ -334,7 +337,9 @@ const UI = (() => {
     root.appendChild(el);
 
     const onKey = (e) => {
-      if (document.querySelector('.modal-overlay')) return;
+      const topModal = document.querySelector('#modal-root > .modal-overlay:last-child');
+      if (topModal && topModal !== parentModal) return;
+      if (el.inert || !el.isConnected) return;
       if (e.key === 'Escape') { e.preventDefault(); close(); }
       if (e.key === 'Tab') {
         const items = [...el.querySelectorAll('button, input, select, textarea, a[href], [tabindex="0"]')].filter(x => !x.disabled && !x.closest('[hidden], .hidden'));
