@@ -10,7 +10,7 @@ beforeAll(async () => { ctx = await setupApp(); token = await login(ctx.api); })
 afterAll(() => cleanup(ctx));
 
 describe('same product SKU, CKD fulfillment', () => {
-  it('ships one complete CKD kit from a two-kit sale and backorders the other intact', async () => {
+  it('ships one complete CKD kit from a two-kit sale and holds the other intact on the same order', async () => {
     const product = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'Partial CKD Unit' })).body.id;
     const frame = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'Partial CKD Frame', quantity: 2 })).body.id;
     const wheel = (await ctx.api.post('/api/inventory').set(H()).send({ name: 'Partial CKD Wheel', quantity: 4 })).body.id;
@@ -32,18 +32,16 @@ describe('same product SKU, CKD fulfillment', () => {
     const extra = await ctx.api.post(`/api/orders/${sale}/release-slip`).set(H())
       .send({ collected_by: 'CKD Collector', authorization_token: authorization.body.token });
     expect(extra.status).toBe(409);
-    expect(extra.body.error).toMatch(/unreserve extra CKD/i);
+    expect(extra.body.error).toMatch(/complete CKD kits/i);
     await ctx.api.post(`/api/orders/${sale}/release/unreserve`).set(H())
       .send({ bulk: [{ item_id: wheel, quantity: 1 }] });
     const shipped = await ctx.api.post(`/api/orders/${sale}/release-slip`).set(H())
       .send({ collected_by: 'CKD Collector', authorization_token: authorization.body.token });
     expect(shipped.status).toBe(201);
-    const back = (await ctx.api.get(`/api/orders/${shipped.body.backorder.id}`).set(H())).body;
-    expect(back.items.map((l: { fulfillment_mode: string; quantity: number }) => [l.fulfillment_mode, l.quantity]))
-      .toEqual([['ckd', 1], ['ckd_component', 1], ['ckd_component', 2]]);
-    expect(back.items[1].parent_order_item_id).toBe(back.items[0].id);
-    expect(back.items[2].parent_order_item_id).toBe(back.items[0].id);
-    expect((await ctx.api.get(`/api/orders/${sale}`).set(H())).body.total).toBe(100);
+    expect(shipped.body.backorder).toBeNull();
+    const original=(await ctx.api.get(`/api/orders/${sale}`).set(H())).body;
+    expect(original.items.map((l:any)=>[l.fulfillment_mode,l.quantity,l.dispatched_qty])).toEqual([['ckd',2,1],['ckd_component',2,1],['ckd_component',4,2]]);
+    expect(original.total).toBe(200);
     expect(await stock(frame)).toBe(1);
     expect(await stock(wheel)).toBe(2);
     expect(await stock(product)).toBe(0);

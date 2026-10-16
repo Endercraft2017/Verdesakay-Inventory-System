@@ -376,7 +376,7 @@ App.register('orders', async (view, filter) => {
     // Sale orders get the release lifecycle: open → approved (unlocks warehouse
     // release) → released (auto once fully picked) → confirmed/completed (stock out).
     const STATUS_VALUES = type === 'sale'
-      ? (editing ? (shipped ? ['confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'] : ['open', 'cancelled'].includes(String(order.status).toLowerCase()) ? ['open', 'approved', 'cancelled'] : ['open', 'approved', 'confirmed', 'completed', 'cancelled']) : ['open'])
+      ? (editing ? (shipped ? (order.fulfillment&&order.fulfillment.remaining>0?['approved','released']:['confirmed', 'completed', 'fulfilled', 'invoiced', 'paid']) : ['open', 'cancelled'].includes(String(order.status).toLowerCase()) ? ['open', 'approved', 'cancelled'] : ['open', 'approved', 'confirmed', 'completed', 'cancelled']) : ['open'])
       : ['open', 'confirmed', 'completed', 'cancelled'];
     const curStatus = get('status', 'open');
     const statusOpts = (STATUS_VALUES.includes(curStatus) ? STATUS_VALUES : STATUS_VALUES.concat(curStatus))
@@ -389,6 +389,7 @@ App.register('orders', async (view, filter) => {
         <div class="order-editor-intro"><strong>${editing ? 'Order details' : '1. Capture the order'}</strong>
           <p>${readOnly ? 'You have view access to this order.' : !editing && type === 'sale' ? 'Save an open order first. Approval checks stock and hands the order to the warehouse.' : 'Review the customer, stock links, quantities, and totals before saving.'}</p></div>
         ${lookupWarnings.length ? `<p class="order-notice" role="status">${lookupWarnings.map(UI.esc).join(' ')}</p>` : ''}
+        ${editing&&type==='sale'&&order.fulfillment ? `<p class="order-notice">Shipped ${order.fulfillment.dispatched} · Customer delivered ${order.fulfillment.delivered} · Held ${order.fulfillment.held} · Still owed ${order.fulfillment.remaining}</p>${!readOnly&&order.fulfillment.remaining>0?'<button type="button" class="btn secondary" id="order-cancel-remainder">Cancel customer remainder</button>':''}`:''}
         ${shipped ? `<p class="order-notice" role="status">Goods left on release slip ${UI.esc(order.release_slip_number)}. Reopening, cancelling or deleting this sale cannot restore physical stock. Record a return or correction separately.</p>` : ''}
         <section class="order-section"><h4>${partyLabel} &amp; order details</h4>
         ${type === 'sale' ? `<div class="field-row">
@@ -440,6 +441,10 @@ App.register('orders', async (view, filter) => {
       confirmText: readOnly ? null : editing ? 'Save order' : type === 'sale' ? 'Save open order' : 'Create order',
       cancelText: readOnly ? 'Close' : 'Cancel',
       onOpen: (ov) => {
+        const cancelRest=ov.querySelector('#order-cancel-remainder');
+        if(cancelRest)cancelRest.onclick=()=>{const cancelKey='cancel-rest-'+crypto.randomUUID();UI.modal({title:'Cancel unshipped remainder — '+order.number,
+          bodyHTML:`<p>Only the unshipped remainder will be cancelled. Goods already on a release slip stay shipped.</p><label>Customer cancellation reason<textarea data-cancel-reason maxlength="1000"></textarea></label>`,confirmText:'Cancel remainder',onConfirm:async(box,showErr)=>{const reason=box.querySelector('[data-cancel-reason]').value.trim();if(reason.length<3){showErr('Record the customer’s cancellation reason.');return false;}try{await API.post('/orders/'+order.id+'/cancel-remainder',{reason,expected_revision:order.revision},{idempotencyKey:cancelKey});m.close();UI.toast('Remainder cancelled; unsent goods released from hold');App.render();return true;}catch(e){showErr(e.message);return false;}}});};
+
         const body = ov.querySelector('#ord-lines');
         const taxEl = ov.querySelector('[data-f="tax_percent"]');
         ov.classList.add('order-editor');

@@ -225,7 +225,7 @@ describe('deliveries', () => {
     const got = await ctx.api.get('/api/deliveries/' + del.body.id).set(A());
     expect(got.body.customer_name).toBe('Order Customer');
     expect(got.body.order_number).toBeTruthy();
-    expect(got.body.items).toHaveLength(1);
+    expect(got.body.items).toHaveLength(0); // no physical trip has been loaded yet
 
     expect((await ctx.api.delete('/api/deliveries/' + del.body.id).set(A())).status).toBe(200);
   });

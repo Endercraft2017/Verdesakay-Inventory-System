@@ -513,8 +513,15 @@ every `inventory.adjust` holder), a supervisor (`inventory.adjust`) approves or 
 reason, or overrides directly (`POST /orders/:id/override`, claim). An approved one stands in for
 the token on one slip of a valid authorization and its reason is on the slip. Release reports
 push the authorization's issuer and every `orders.edit` holder. With
-partial authority the order is split at the slip (`splitUnreleased`: released quantities stay,
-the rest becomes a new approved backorder SO). `release-slips.routes.ts` adds:
+partial authority each load gets a separate slip on the same SO (`order-trips.ts`).
+`dispatched_qty` / `dispatched_bulk_qty` / `cancelled_qty` retain ordered quantities;
+`release_slip_units` and batch allocation `release_slip_id` preserve exact trip identities.
+`sale-holds.ts` keeps net unshipped firm demand unavailable; only customer cancellation
+(`/orders/:id/cancel-remainder`, reason + revision, `orders.edit`) releases the remainder.
+Delivery records bind a unique active `release_slip_id`; their goods come only from that
+manifest. `GET /deliveries/planning-context` supplies permission-filtered dispatch choices.
+Mobile load selection, trip booking and existing evidence recovery retain immutable requests.
+Schema v84 safely backfills unambiguous historic links without merging old backorders. `release-slips.routes.ts` adds:
 `GET /orders/:id/context` | `/unit?code=` | `/verify-token?token=` (releasers; the token is never
 returned to them), `GET|POST /orders/:id/authorizations`, `POST .../authorizations/revoke`,
 `POST /orders/:id/reports`, `GET /reports/list`, `POST /reports/:rid/resolve`, `GET|PUT /policy`.

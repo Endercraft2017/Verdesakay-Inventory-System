@@ -1645,7 +1645,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       expect(win.document.getElementById('rel-ok')).toBeNull(); expect(calls).toEqual([]);
     });
 
-    it('allocates CKD component lines instead of parent stock and refuses partial CKD handoff', async () => {
+    it('allocates CKD component lines instead of parent stock and plans complete CKD trip loads', async () => {
       const calls: any[] = [];
       const lines = [{ id: 1, item_id: 7, name: 'K4 kit', fulfillment_mode: 'ckd', quantity: 1, units: 0, released_qty: 0, serialized: 1 }, { id: 2, item_id: 10, name: 'Chassis component', fulfillment_mode: 'ckd_component', parent_order_item_id: 1, quantity: 2, released_qty: 1, serialized: 0 }];
       const base = fake(calls,{ lines, units: [], authorization: { ...AUTH, partial_allowed: true }, availability: [{ item_id: 10, free_to_allocate: 1 }] });
@@ -1653,7 +1653,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       win.location.hash = '#/so?id=302&step=scan'; await relElement(win,'[data-bulk="10"]');
       expect(win.document.getElementById('m-view').textContent).toContain('CKD kit'); expect(win.document.querySelector('[data-bulk="7"]')).toBeNull(); expect(win.document.getElementById('m-view').textContent).toContain('1 of 2 allocated');
       win.location.hash = '#/so?id=302&step=unit&code=K4-01'; await wait(80); expect(win.document.getElementById('rel-ok')).toBeNull(); expect(calls).toEqual([]);
-      win.location.hash = '#/so?id=302&step=incomplete'; await wait(80); expect(win.document.getElementById('rel-part')).toBeNull(); expect(win.document.getElementById('m-view').textContent).toContain('Partial CKD handoff is unavailable');
+      win.location.hash = '#/so?id=302&step=incomplete'; await wait(80); expect(win.document.getElementById('rel-part')).toBeTruthy();expect(win.document.getElementById('m-view').textContent).toContain('Keep the remainder reserved');
     });
 
     it('splits the queue into Ready and Blocked by authorization state', async () => {

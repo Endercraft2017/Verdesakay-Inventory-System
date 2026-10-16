@@ -41,7 +41,7 @@
   function buildTag(mode) { return mode === 'semi_built' ? 'Semi-built' : mode === 'ckd_component' ? 'CKD component' : 'Fully built / standard'; }
   function physical(l) { return l.item_id && l.fulfillment_mode !== 'ckd'; }
   function manifest(c) { return c.lines.filter(function (l) { return l.fulfillment_mode === 'ckd'; }).map(function (l) { return R.field('CKD kit — components must be allocated', l.quantity + ' × ' + l.name) + R.lines(c.lines.filter(function (part) { return part.parent_order_item_id === l.id; }).map(function (part) { return { name: part.name, qty: part.quantity, ok: (part.released_qty || 0) >= part.quantity }; })); }).join(''); }
-  function remaining(l) { return Math.max(0, Number(l.quantity) - Number(l.units || 0) - Number(l.released_qty || 0)); }
+  function remaining(l) { return Math.max(0, Number(l.quantity) - Number(l.cancelled_qty||0) - Number(l.units || 0) - Number(l.released_qty || 0)); }
   function lineText(c,l) { return 'Line #' + (l.id || '?') + ' · ' + l.name + ' · ' + buildTag(l.fulfillment_mode) + (l.parent_order_item_id ? ' · Kit line #' + l.parent_order_item_id : '') +
     (l.unit_price != null ? ' · ' + (c.order.currency || 'PHP') + ' ' + Number(l.unit_price).toFixed(2) : '') + ' · ' + remaining(l) + ' remaining'; }
   function lineFree(c,l) {
@@ -49,9 +49,9 @@
     if(!a) a=rows.find(function(a){return a.item_id===l.item_id&&(!a.fulfillment_mode||a.fulfillment_mode===(l.fulfillment_mode||'assembled'));});
     if(!a)return 0;
     if(a.on_hand==null)return Math.max(0,Math.min(remaining(l),a.free_to_allocate));
-    var held=c.lines.filter(function(x){return physical(x)&&x.item_id===l.item_id&&(x.fulfillment_mode==='semi_built')===(l.fulfillment_mode==='semi_built');})
-      .reduce(function(n,x){return n+Number(x.units||0)+Number(x.released_qty||0);},0);
-    return Math.max(0,Math.min(remaining(l),Number(a.on_hand)-Number(a.committed_elsewhere||0)-held));
+    var poolHeld=c.lines.filter(function(x){return physical(x)&&x.item_id===l.item_id&&(x.fulfillment_mode==='semi_built')===(l.fulfillment_mode==='semi_built');})
+      .reduce(function(n,x){return n+held(x);},0);
+    return Math.max(0,Math.min(remaining(l),Number(a.on_hand)-Number(a.committed_elsewhere||0)-poolHeld));
   }
   function chooseLine(view,c,code,lines,selected,render) {
     if(selected){var chosen=lines.find(function(l){return Number(l.id)===Number(selected);});if(chosen){render(chosen);return;}}
@@ -63,10 +63,18 @@
     body.querySelectorAll('[data-sale-line]').forEach(function(b){b.onclick=function(){go({id:c.order.id,step:'unit',code:code,line:b.dataset.saleLine});};});
     body.querySelector('#rel-line-back').onclick=function(){go({id:c.order.id,step:'scan'});};
   }
+  function held(l) { return l.held_qty!=null?Number(l.held_qty):Math.max(0,Number(l.units||0)+Number(l.released_qty||0)-Number(l.dispatched_qty||0)); }
+  function loadLines(c) { var s=st(c.order.id);return s.trip||c.lines.filter(physical).filter(function(l){return held(l)>0;}).map(function(l){return {order_item_id:l.id,quantity:held(l)};}); }
+  function tripPackage(c) {
+    var ids=loadLines(c).map(function(r){return r.order_item_id;});
+    var items=c.lines.filter(function(l){return ids.indexOf(l.id)!==-1||l.fulfillment_mode==='ckd'&&c.lines.some(function(p){return p.parent_order_item_id===l.id&&ids.indexOf(p.id)!==-1;});}).map(function(l){return l.item_id;});
+    return c.package.filter(function(p){return items.indexOf(p.item_id)!==-1;});
+  }
+  function loadCount(c){return loadLines(c).reduce(function(n,l){return n+l.quantity;},0);}
   /** Units needed / allocated across the order's stock lines. */
   function progress(c) {
     var need = 0, got = 0;
-    c.lines.forEach(function (l) { if (!physical(l)) return; need += Number(l.quantity) || 0; got += Math.min(Number(l.quantity) || 0, (l.units || 0) + (l.released_qty || 0)); });
+    c.lines.forEach(function (l) { if (!physical(l)) return; need += Math.max(0,Number(l.quantity)-Number(l.cancelled_qty||0)-Number(l.dispatched_qty||0)); got += held(l); });
     return { need: need, got: got, complete: need > 0 && got >= need };
   }
   /** Why this order can't be released right now (authorization), or null. */
@@ -137,7 +145,7 @@
             return '<button type="button" class="rk-card rk-unitcard" data-slip="' + s.id + '" data-order="' + s.order_id + '"><b>' + mEsc(s.order_number) + '</b>' +
               '<span>' + mEsc((s.mode ? MODES[s.mode] : 'Released') + ' · ' + (s.customer_name || '')) + '</span><small>' + mEsc(s.number + ' · ' + time(s.released_at)) + '</small><i aria-hidden="true">›</i></button>';
           }).join('') : '<div class="rk-empty">Nothing released by you today.</div>';
-          Array.prototype.forEach.call(host.querySelectorAll('[data-slip]'), function (b) { b.onclick = function () { go({ id: b.dataset.order, step: 'receipt' }); }; });
+          Array.prototype.forEach.call(host.querySelectorAll('[data-slip]'), function (b) { b.onclick = function () { go({ id: b.dataset.order, step: 'receipt', slip:b.dataset.slip }); }; });
           return;
         }
         var list = which === 'blocked' ? blocked : which === 'accept' ? accept : which === 'allocating' ? allocating : ready;
@@ -201,7 +209,7 @@
     body.innerHTML =
       manifest(c) + c.lines.filter(physical).map(function(l){return R.field('Sale line',lineText(c,l));}).join('') + '<button type="button" class="rk-identify"><span class="frame" aria-hidden="true"></span><b>Scan the unit serial label</b><small>' + p.got + ' of ' + p.need + ' allocated units ready</small></button>' +
       '<label class="rk-card rk-field" data-manual hidden><small>Serial (manual)</small><div class="rk-search"><input class="rk-input" style="margin:0" data-code placeholder="Type the serial"><button type="button" class="rk-back" data-find style="padding:0">Check</button></div></label>' +
-      (c.units.length ? '<div class="rk-checks">' + c.units.map(function (u) {
+      (c.units.length ? '<div class="rk-checks">' + c.units.filter(function(u){return u.status!=='sold';}).map(function (u) {
         return '<div class="rk-check-row"><button type="button" data-unit="' + mEsc(u.identifier || '') + '"><span class="rk-state pass" aria-hidden="true">✓</span><b>' + mEsc(u.identifier || 'Unit #' + u.id) + '</b>' +
           '<small>Line #' + mEsc(u.order_item_id || '—') + ' · Allocated · Ready to sell' + (u.location_name ? ' · ' + mEsc(u.location_name) : '') + '</small></button></div>';
       }).join('') + '</div>' : '') +
@@ -211,7 +219,7 @@
           '<button type="button" class="rk-back" data-line="' + l.id + '" data-bulk="' + l.item_id + '"' + (free(l) <= 0 ? ' disabled' : '') + ' style="padding:0">Add</button></span></div></div>';
       }).join('') +
       (c.batch_allocations || []).map(function(a){return R.field(a.batch_number+' · Line #'+(a.order_item_id||'—')+' · '+a.state,a.quantity+' allocated');}).join('') + R.field('Ship from', c.order.location_name || 'Warehouse #' + c.order.location_id) + R.note('info', '<h3>Allocation check</h3>Free quantities for repeated product/build lines share one stock pool; do not add them together. A unit assigned to another order cannot be substituted without approval.') +
-      R.actions([{ id: 'rel-go', label: 'Continue', kind: 'primary' }, { id: 'rel-man', label: 'Scan manually', kind: 'secondary' }]);
+      R.actions([{ id: 'rel-go', label: 'Continue', kind: 'primary' }, {id:'rel-load',label:'Choose vehicle load',kind:'secondary'}, { id: 'rel-man', label: 'Scan manually', kind: 'secondary' }]);
     var check = function (code) {
       code = String(code || '').trim();
       if (!code) { mToast('Enter or scan a serial', 'err'); return; }
@@ -230,6 +238,7 @@
         mScanner.open({ title: 'Scan the attached batch or item QR sticker', allowManual: false, onResult: check });
       };
     });
+    body.querySelector('#rel-load').onclick=function(){go({id:c.order.id,step:'trip'});};
     body.querySelector('#rel-go').onclick = function () {
       go({ id: c.order.id, step: p.complete ? 'package' : 'incomplete' });
     };
@@ -277,6 +286,7 @@
       if (r.state !== 'allocated' && r.state !== 'available') { blockedView(view, c, code, r); return; }
       if (location.hash.split('?')[0] !== '#/so' || Number(new URLSearchParams(location.hash.split('?')[1]).get('id')) !== c.order.id) return;
       var u = r.unit, p = progress(c);
+      if(u.status==='sold'&&c.outstanding>0){blockedView(view,c,code,{state:'unavailable',unit:u});return;}
       if (!c.lines.some(function (l) { return physical(l) && l.item_id === u.product_item_id; })) { blockedView(view,c,code,{ state: 'wrong_product', error: 'Allocate the CKD component lines, not the assembled parent product.', unit: u }); return; }
       if (!c.lines.some(function (l) { return physical(l) && l.item_id === u.product_item_id && (l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled') === (u.build_mode || 'assembled'); })) { blockedView(view,c,code,{ state: 'wrong_build', unit: u }); return; }
       if (u.location_id != null && c.order.location_id != null && u.location_id !== c.order.location_id) { blockedView(view,c,code,{ state: 'refused', error: 'Unit is at a different warehouse. Transfer it before allocating.', unit: u }); return; }
@@ -331,13 +341,13 @@
 
   /* ── Verify release package (78:188) ───────────────────────────────────── */
   function pkg(view, c) {
-    var s = st(c.order.id);
+    var s = st(c.order.id), packages=tripPackage(c);
     var body = page(view, '78:188', 'Verify release package', 'Confirm everything leaves with the unit');
     var k = function (p) { return p.item_id + '|' + p.label; };
     function paint() {
-      var missing = c.package.filter(function (p) { return p.required && !s.pkg[k(p)]; });
+      var missing = packages.filter(function (p) { return p.required && !s.pkg[k(p)]; });
       body.innerHTML =
-        (c.package.length ? '<div class="rk-checks">' + c.package.map(function (p, i) {
+        (packages.length ? '<div class="rk-checks">' + packages.map(function (p, i) {
           var on = !!s.pkg[k(p)];
           return '<div class="rk-check-row"><button type="button" data-p="' + i + '"><span class="rk-state ' + (on ? 'pass' : '') + '" aria-hidden="true">' + (on ? '✓' : '○') + '</span>' +
             '<b>' + mEsc(p.label) + (p.required ? ' <span class="req">*</span>' : '') + '</b><small>' + mEsc(p.item_name + (on ? ' · confirmed' : ' · tap to confirm')) + '</small></button></div>';
@@ -346,7 +356,7 @@
         R.note('info', '<h3>Nothing is implied</h3>Every required item is confirmed explicitly before handoff.') +
         R.actions([{ id: 'rel-go', label: 'Continue to handoff', kind: 'primary' }, { id: 'rel-miss', label: 'Report missing', kind: 'secondary' }]);
       Array.prototype.forEach.call(body.querySelectorAll('[data-p]'), function (b) {
-        b.onclick = function () { var p = c.package[Number(b.dataset.p)]; s.pkg[k(p)] = !s.pkg[k(p)]; s.seal = body.querySelector('[data-seal]').value; persist(c.order.id, s).catch(saveError); paint(); };
+        b.onclick = function () { var p = packages[Number(b.dataset.p)]; s.pkg[k(p)] = !s.pkg[k(p)]; s.seal = body.querySelector('[data-seal]').value; persist(c.order.id, s).catch(saveError); paint(); };
       });
       body.querySelector('#rel-go').disabled = missing.length > 0;
       body.querySelector('#rel-go').onclick = function () { s.seal = body.querySelector('[data-seal]').value.trim(); persist(c.order.id, s).then(function () { go({ id: c.order.id, step: 'handoff' }); }).catch(saveError); };
@@ -495,9 +505,9 @@
     var s = st(c.order.id), a = c.authorization, p = progress(c);
     var body = page(view, '78:317', 'Review warehouse-out', 'Confirm authorization, unit and handoff');
     var row = function (t, sub) { return '<div class="rk-check-row"><button type="button" disabled><span class="rk-state pass" aria-hidden="true">✓</span><b>' + mEsc(t) + '</b><small>' + mEsc(sub) + '</small></button></div>'; };
-    var pkgN = c.package.filter(function (x) { return s.pkg[x.item_id + '|' + x.label]; }).length;
+    var pkgN = tripPackage(c).filter(function (x) { return s.pkg[x.item_id + '|' + x.label]; }).length;
     body.innerHTML =
-      '<div class="rk-hero"><small>Warehouse-out review</small><b>' + p.got + ' unit' + (p.got === 1 ? '' : 's') + '</b><span>' + mEsc(modeOf(c) + (s.area ? ' · ' + s.area : '')) + '</span></div>' +
+      '<div class="rk-hero"><small>Warehouse-out review</small><b>' + loadCount(c) + ' unit' + (loadCount(c) === 1 ? '' : 's') + '</b><span>' + mEsc(modeOf(c) + (s.area ? ' · ' + s.area : '')) + '</span></div>' +
       '<div class="rk-checks">' +
         row('Authorization', c.order.number + ' · ' + (a.state !== 'valid' ? 'Not required' : s.tokenOk ? 'Token verified' : overrideOk(a) ? 'Supervisor override' : 'Valid')) +
         row('Unit and package', (c.units.length ? 'Serial' + (c.units.length === 1 ? '' : 's') : 'Quantities') + (pkgN ? ' and ' + pkgN + ' package item' + (pkgN === 1 ? '' : 's') : '') + ' verified') +
@@ -514,11 +524,12 @@
     var s = st(c.order.id), a = c.authorization;
     if (!s.photos.length || !s.sign || (a.state === 'valid' && !s.tokenOk && !overrideOk(a))) { go({ id: c.order.id, step: !s.photos.length || !s.sign ? 'proof' : 'handoff' }); return; }
     var body = page(view, '78:401', 'Confirm physical release', 'Final irreversible inventory action');
-    var first = c.units[0];
+    var selected=loadLines(c).reduce(function(ids,l){return ids.concat(l.unit_ids||[]);},[]);
+    var first = c.units.find(function(u){return u.status!=='sold'&&(!s.trip||selected.indexOf(u.id)!==-1);});
     body.innerHTML =
       '<div class="rk-block ok"><span class="t">✓ Ready to release</span><b class="lg">' + mEsc(first ? first.identifier + (c.units.length > 1 ? ' + ' + (c.units.length - 1) + ' more' : '') : c.lines[0].name) + '</b>' +
         '<span style="color:var(--rk-title);font-weight:500">' + mEsc(c.order.number + ' · ' + modeOf(c)) + '</span><span>' + mEsc((first && first.location_name ? first.location_name : 'Stock') + ' → Released') + '</span></div>' +
-      (partial ? R.note('warn', '<b>Partial release.</b> What is not allocated moves to a new backorder sale order.') : '') +
+      (partial ? R.note('warn', '<b>Partial release.</b> Unloaded goods remain reserved on this sales order for another trip.') : '') +
       R.check('rel-ok', 'Physical handoff is complete') +
       R.note('info', '<h3>This records warehouse-out</h3>Stock quantity, unit stage, release order and audit history update together.') +
       R.actions([{ id: 'rel-post', label: 'Confirm warehouse-out', kind: 'ink' }, { id: 'rel-cancel', label: 'Cancel', kind: 'secondary' }]);
@@ -530,9 +541,11 @@
       if (offline()) { mToast('You’re offline — warehouse-out needs a connection. Nothing was released.', 'err'); return; }
       btn.disabled = true; btn.textContent = 'Recording…';
       var payload = {
+        previous_slip_id:c.slip?c.slip.id:null,
+        lines:s.trip||undefined,
         collected_by: a.state === 'valid' ? a.recipient_name : s.recipient, vehicle_plate: s.plate || null,
         authorization_token: s.tokenOk ? s.token : null, seal_tag: s.seal || null, handoff_area: s.area || null, acknowledged: !!s.sign,
-        package: c.package.map(function (p) { return { item_id: p.item_id, label: p.label, ok: !!s.pkg[p.item_id + '|' + p.label] }; }),
+        package: tripPackage(c).map(function (p) { return { item_id: p.item_id, label: p.label, ok: !!s.pkg[p.item_id + '|' + p.label] }; }),
       };
       mReleaseHandoff.start(c, s, payload).then(function () {
         go({ id: c.order.id, step: 'handoff-recovery' });
@@ -542,38 +555,67 @@
 
   /* ── Release recorded (78:438) ─────────────────────────────────────────── */
   function done(view, c) { receipt(view, c); }
-  function receipt(view, c) {
+  function receipt(view, c, slipId) {
     if (!c.slip) { go({ id: c.order.id }); return; }
     var body = page(view, '78:438', 'Release receipt', c.order.number);
     body.innerHTML = R.skeleton(2);
-    API.get('/release-slips/' + c.slip.id).then(function (sl) {
+    API.get('/release-slips/' + (slipId||c.slip.id)).then(function (sl) {
       body.innerHTML =
         R.field('Release slip', sl.number + ' · ' + clock(sl.released_at)) +
         R.field('Collected by', (sl.collected_by || '—') + (sl.vehicle_plate ? ' · ' + sl.vehicle_plate : '')) +
         (c.slip.backorder_number ? R.field('Backorder', c.slip.backorder_number) : '') +
         R.lines((sl.items || []).map(function (i) { return { name: i.name + (i.unit_identifiers ? ' — ' + i.unit_identifiers : ''), qty: i.quantity + (i.unit ? ' ' + i.unit : ''), ok: true }; })) +
         '<div data-photos></div>' +
-        R.actions([{ id: 'rel-back', label: 'Back to queue', kind: 'secondary' }]);
+        R.note('info','Any unshipped remainder stays held on '+mEsc(c.order.number)+'.')+R.actions([{ id: 'rel-back', label: 'Back to queue', kind: 'secondary' }].concat(c.outstanding>0?[{id:'rel-next-trip',label:'Review remaining order',kind:'primary'}]:[]).concat(can('delivery.manage')?[{id:'rel-plan-delivery',label:'Plan delivery for this slip',kind:'secondary'}]:[]));
       if (mPhoto.thumbs) body.querySelector('[data-photos]').appendChild(mPhoto.thumbs('release', sl.id, { editable: false }));
-      body.querySelector('#rel-back').onclick = function () { go({ tab: 'done' }); };
+      body.querySelector('#rel-back').onclick = function () { go({ tab: 'done' }); };var plan=body.querySelector('#rel-plan-delivery');if(plan)plan.onclick=function(){MApp.go('deliveries',{step:'plan',order:c.order.id,slip:sl.id});};var next=body.querySelector('#rel-next-trip');if(next)next.onclick=function(){delete S[c.order.id];go({id:c.order.id});};
     }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { receipt(view, c); })); });
   }
 
   /* ── Incomplete allocation (78:481) ────────────────────────────────────── */
-  function incomplete(view, c) {
-    var p = progress(c), a = c.authorization, ckd = c.lines.some(function (l) { return l.fulfillment_mode === 'ckd'; }), allowed = !ckd && a.state === 'valid' && a.partial_allowed;
-    var body = page(view, '78:481', 'Incomplete allocation', 'A partial release needs separate approval');
-    body.innerHTML =
-      '<div class="rk-block warn"><span class="t">! ' + p.got + ' of ' + p.need + ' units ready</span><b class="lg">' + mEsc(c.order.number + ' · ' + modeOf(c)) + '</b>' +
-        '<span>' + (p.need - p.got) + ' still to scan or count out.</span></div>' +
-      '<div class="rk-card rk-field"><small>Partial-release authority</small><b style="color:' + (allowed ? '#14803d' : '#c72e1a') + '">' + (allowed ? 'Approved by Sales' : 'Not approved') + '</b></div>' +
-      '<div class="rk-note warn"><h3>Default action: do not release</h3>Keep all units staged until complete, unless Sales issues a traceable partial-release authorization.</div>' +
-      (ckd ? R.note('warn','CKD kits require every physical component. Partial CKD handoff is unavailable.') : '') + R.actions(ckd ? [{ id: 'rel-back', label: 'Return to queue', kind: 'secondary' }] : allowed && p.got > 0
-        ? [{ id: 'rel-part', label: 'Continue with partial release', kind: 'primary' }, { id: 'rel-back', label: 'Return to queue', kind: 'secondary' }]
-        : [{ id: 'rel-req', label: 'Request authorization', kind: 'primary' }, { id: 'rel-back', label: 'Return to queue', kind: 'secondary' }]);
-    body.querySelector('#rel-back').onclick = function () { go(); };
-    var part = body.querySelector('#rel-part'); if (part) part.onclick = function () { st(c.order.id).partial = true; go({ id: c.order.id, step: 'package' }); };
-    var req = body.querySelector('#rel-req'); if (req) req.onclick = function () { go({ id: c.order.id, step: 'report', kind: 'partial_request' }); };
+  function incomplete(view,c) {
+    var p=progress(c),allowed=c.authorization.state==='valid'&&c.authorization.partial_allowed;
+    var body=page(view,'78:481','Partial vehicle load','Keep the remainder reserved on this sales order');
+    body.innerHTML=R.field('Ready in warehouse',p.got+' of '+p.need+' outstanding')+
+      R.note('info','Goods that do not leave remain held for this customer. Each trip gets its own release slip and delivery record.')+
+      R.field('Partial-release authority',allowed?'Approved by Sales':'Sales authorization required')+
+      R.actions((allowed&&p.got>0?[{id:'rel-part',label:'Choose this trip’s load',kind:'primary'}]:[{id:'rel-req',label:'Request authorization',kind:'primary'}]).concat([{id:'rel-back',label:'Back to stock review',kind:'secondary'}]));
+    var part=body.querySelector('#rel-part');if(part)part.onclick=function(){go({id:c.order.id,step:'trip'});};
+    var req=body.querySelector('#rel-req');if(req)req.onclick=function(){go({id:c.order.id,step:'report',kind:'partial_request'});};
+    body.querySelector('#rel-back').onclick=function(){go({id:c.order.id,step:'scan'});};
+  }
+  function tripLoad(view,c) {
+    var s=st(c.order.id),body=page(view,'78:481','Choose vehicle load','Count only what leaves on this trip');
+    var saved=s.trip,previous=c.slip?c.slip.id:null;
+    if(s.tripPrevious!==undefined&&s.tripPrevious!==previous){saved=null;s.trip=null;}
+    s.tripPrevious=previous;
+    body.innerHTML=R.note('info','Unloaded goods stay reserved and unavailable to other sales. Release complete CKD kits only.')+
+      c.lines.filter(physical).map(function(l){
+        var choice=saved&&saved.find(function(x){return x.order_item_id===l.id;});
+        var units=c.units.filter(function(u){return u.order_item_id===l.id&&u.status==='reserved';});
+        var lots=(c.batch_allocations||[]).filter(function(a){return a.order_item_id===l.id&&a.state==='reserved';});
+        var untracked=Math.max(0,held(l)-units.length-lots.reduce(function(n,a){return n+a.quantity;},0));
+        return '<section class="rk-card rk-field" data-load-line="'+l.id+'"><b>'+mEsc(lineText(c,l).replace(/ remaining$/,' to allocate'))+'</b><small>'+Number(l.dispatched_qty||0)+' shipped · '+held(l)+' held here</small>'+
+          units.map(function(u){return '<label class="rk-check-row"><input type="checkbox" data-load-unit="'+u.id+'" '+(!saved||choice&&choice.unit_ids&&choice.unit_ids.indexOf(u.id)!==-1?'checked':'')+'>'+mEsc(u.identifier||'Unit #'+u.id)+'</label>';}).join('')+
+          lots.map(function(a){var picked=choice&&choice.batches&&choice.batches.find(function(b){return b.allocation_id===a.id;});return '<label><small>'+mEsc(a.batch_number)+' · reserved '+a.quantity+'</small><input class="rk-input" type="number" min="0" max="'+a.quantity+'" step="any" inputmode="decimal" data-load-batch="'+a.id+'" value="'+(saved?(picked?picked.quantity:0):a.quantity)+'"></label>';}).join('')+
+          (untracked>0?'<label><small>Other reserved quantity · '+untracked+'</small><input class="rk-input" type="number" min="0" max="'+untracked+'" step="any" inputmode="decimal" data-load-bulk value="'+(saved?Math.max(0,(choice?choice.quantity:0)-(choice&&choice.unit_ids?choice.unit_ids.length:0)-(choice&&choice.batches?choice.batches.reduce(function(n,b){return n+b.quantity;},0):0)):untracked)+'"></label>':'')+'</section>';
+      }).join('')+R.actions([{id:'trip-continue',label:'Use this load',kind:'primary'},{id:'trip-back',label:'Back to stock review',kind:'secondary'}]);
+    function collect(){
+      var rows=[];
+      body.querySelectorAll('[data-load-line]').forEach(function(box){var ids=Array.prototype.map.call(box.querySelectorAll('[data-load-unit]:checked'),function(e){return Number(e.dataset.loadUnit);});var batches=[],qty=ids.length;
+        box.querySelectorAll('input[type=number]').forEach(function(e){var n=Number(e.value);if(e.value.trim()===''||!Number.isFinite(n)||n<0||n>Number(e.max))throw new Error('Enter quantities within the reserved load.');qty+=n;if(e.dataset.loadBatch&&n>0)batches.push({allocation_id:Number(e.dataset.loadBatch),quantity:n});});
+        if(qty>0)rows.push({order_item_id:Number(box.dataset.loadLine),quantity:qty,unit_ids:ids,batches:batches});
+      });
+      return rows;
+    }
+    body.querySelector('#trip-continue').onclick=function(){try{
+      var rows=collect(),total=rows.reduce(function(n,l){return n+l.quantity;},0),p=progress(c);
+      if(!total)throw new Error('Choose at least one reserved unit or quantity.');
+      if(total+1e-9<p.need&&!(c.authorization.state==='valid'&&c.authorization.partial_allowed))throw new Error('Sales must authorize this partial trip first.');
+      c.lines.filter(function(l){return l.fulfillment_mode==='ckd';}).forEach(function(parent){var parts=c.lines.filter(function(l){return l.parent_order_item_id===parent.id;}),counts=parts.map(function(l){var r=rows.find(function(r){return r.order_item_id===l.id;});return {ratio:l.quantity/parent.quantity,qty:r?r.quantity:0};});if(!counts.some(function(x){return x.qty>0;}))return;var kits=Math.min.apply(null,counts.map(function(x){return Math.floor((x.qty+1e-9)/x.ratio);}));if(!kits||counts.some(function(x){return Math.abs(x.qty-kits*x.ratio)>1e-9;}))throw new Error('Choose complete CKD kits with all required components.');});
+      s.trip=rows;s.partial=total+1e-9<p.need;persist(c.order.id,s).then(function(){go({id:c.order.id,step:'package'});}).catch(saveError);
+    }catch(e){mToast(e.message,'err');}};
+    body.querySelector('#trip-back').onclick=function(){go({id:c.order.id,step:'scan'});};
   }
 
   /* ── Report a release problem to Sales ─────────────────────────────────── */
@@ -628,13 +670,19 @@
       }
     } catch (err) { view.innerHTML = ''; view.appendChild(R.error(err, function () { MApp.render(); })); return; }
     withOrder(view, Number(params.id), function (c) {
-      var step = params.step;
+      var step = params.step, state=st(c.order.id), base=c.slip?c.slip.id:null;
+      // A resolved earlier trip must never donate its load, photos or signature to the next.
+      // Unknown attempts were intercepted above and retain their original immutable payload.
+      if(state.tripBase!==undefined&&state.tripBase!==base) { delete S[c.order.id]; state=st(c.order.id); }
+      state.tripBase=base;
       // Released: only the result / receipt (its authorization now reads "used").
-      if (c.slip) return step === 'done' ? done(view, c) : receipt(view, c);
+      if(c.slip&&(step==='receipt'||step==='done'||c.outstanding===0||c.outstanding==null))return receipt(view,c,params.slip);
+
       if (!step) return authority(view, c);
       if (authProblem(c.authorization) && step !== 'report') return authority(view, c);
       if (!c.order.warehouse_accepted_at && step !== 'report' && step !== 'receipt') return authority(view,c);
-      if (step === 'scan') scan(view, c);
+      if(step==='trip')tripLoad(view,c);
+      else if (step === 'scan') scan(view, c);
       else if (step === 'unit') unit(view, c, params.code || '',params.line);
       else if (step === 'blocked') blockedView(view, c, params.code || '', { state: 'not_found' });
       else if (step === 'package') pkg(view, c);

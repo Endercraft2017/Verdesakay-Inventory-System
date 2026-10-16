@@ -287,6 +287,7 @@ export interface Deliveries {
   created_by: number | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+  release_slip_id: number | null;
 }
 
 export interface Departments {
@@ -984,6 +985,17 @@ export interface OrderItems {
   released_qty: Generated<number>;
   fulfillment_mode: Generated<string>;
   parent_order_item_id: number | null;
+  dispatched_qty: Generated<number>;
+  dispatched_bulk_qty: Generated<number>;
+  cancelled_qty: Generated<number>;
+}
+
+export interface OrderRemainderCancellations {
+  id: Generated<number>;
+  order_id: number;
+  reason: string;
+  cancelled_by: number | null;
+  cancelled_at: string;
 }
 
 export interface Orders {
@@ -1143,6 +1155,7 @@ export interface ProductionBatchAllocations {
   quantity: number;
   state: string;
   created_at: Generated<string>;
+  release_slip_id: number | null;
 }
 
 export interface ProductionBatchCounts {
@@ -1360,6 +1373,11 @@ export interface ReleaseSlipItems {
   quantity: number;
   unit_identifiers: string | null;
   unit_cost: number | null;
+}
+
+export interface ReleaseSlipUnits {
+  slip_item_id: Generated<number>;
+  unit_id: number;
 }
 
 export interface ReleaseSlips {
@@ -1821,6 +1839,7 @@ export interface DB {
   notes: Notes;
   notifications: Notifications;
   order_items: OrderItems;
+  order_remainder_cancellations: OrderRemainderCancellations;
   orders: Orders;
   parts_release_slip_items: PartsReleaseSlipItems;
   parts_release_slips: PartsReleaseSlips;
@@ -1854,6 +1873,7 @@ export interface DB {
   release_reports: ReleaseReports;
   release_slip_details: ReleaseSlipDetails;
   release_slip_items: ReleaseSlipItems;
+  release_slip_units: ReleaseSlipUnits;
   release_slips: ReleaseSlips;
   release_token_overrides: ReleaseTokenOverrides;
   repair_part_holds: RepairPartHolds;

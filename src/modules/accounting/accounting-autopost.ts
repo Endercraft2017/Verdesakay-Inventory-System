@@ -307,6 +307,8 @@ function changeSaleStockInTransaction(orderId: number, userId: number | null, fo
   { wantFulfilled: boolean; ledger: boolean } | null {
   const o = queryOne<Order>('SELECT * FROM orders WHERE id = ?', orderId);
   if (!o || o.type !== 'sale') return null;
+  // Immutable trip slips own physical stock; header/status edits cannot ship or reverse it.
+  if (queryOne('SELECT 1 FROM release_slips WHERE order_id=?',orderId)) return null;
   const ledger = ledgerEnabled();
   if (!ledger && !queryOne('SELECT id FROM release_slips WHERE order_id = ?', orderId)) return null;
   const wantFulfilled = force === 'release' ? false : CONFIRMED_SALE.has(String(o.status || '').toLowerCase());
@@ -356,14 +358,16 @@ export function postFulfilledSaleCogs(orderId: number, userId: number | null): v
   try {
     if (!ledgerEnabled()) return;
     const o = queryOne<Order>('SELECT * FROM orders WHERE id = ?', orderId);
-    if (!o || !o.fulfilled_at) return;
-    // Reversal entries carry the same source type/id; only an unreversed original
-    // counts as current COGS for this sale.
-    if (queryOne(`SELECT 1 FROM journal_entries je WHERE je.source_type = 'sale_cogs'
-      AND je.source_id = ? AND je.status = 'posted' AND je.reverses_id IS NULL
-      AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.reverses_id = je.id) LIMIT 1`, orderId)) return;
-    const lines = saleLines(orderId).filter((l) => l.item_id != null && (l.quantity || 0) > 0);
-    const amount = round2(lines.reduce((s, l) => s + l.quantity * (l.cost || 0), 0));
+    if (!o) return;
+    const hasSlip=!!queryOne('SELECT 1 FROM release_slips WHERE order_id=?',orderId);
+    if(!hasSlip&&!o.fulfilled_at)return;
+    const total=hasSlip?queryOne<{n:number}>(`SELECT COALESCE(SUM(li.quantity*COALESCE(li.unit_cost,0)),0) AS n
+      FROM release_slip_items li JOIN release_slips s ON s.id=li.slip_id WHERE s.order_id=? AND li.item_id IS NOT NULL`,orderId)!.n:
+      saleLines(orderId).reduce((n,l)=>n+(l.item_id?l.quantity*l.cost:0),0);
+    const posted=queryOne<{n:number}>(`SELECT COALESCE(SUM(jl.debit),0) AS n FROM journal_lines jl JOIN journal_entries je ON je.id=jl.entry_id
+      WHERE je.source_type='sale_cogs' AND je.source_id=? AND je.status='posted' AND je.reverses_id IS NULL
+      AND NOT EXISTS(SELECT 1 FROM journal_entries r WHERE r.reverses_id=je.id)`,orderId)!.n;
+    const amount=round2(total-posted);
     const date = o.order_date || o.created_at?.slice(0, 10) || new Date().toISOString().slice(0, 10);
     if (amount <= 0 || periodClosedOn(date)) return;
     const built = buildCogsEntry({ number: o.number, date, amount }, getPostingRules(), orderId);

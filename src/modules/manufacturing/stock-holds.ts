@@ -1,3 +1,4 @@
+import { saleHeld } from '../inventory/sale-holds';
 /** Stock that is set aside but hasn't left yet — one answer for "how much of item X at location
  *  L is spoken for":
  *  - kit picks: components picked for a draft job order's parts kit (job_order_components.qty_picked
@@ -40,7 +41,7 @@ export function repairHeld(itemId: number, locationId: number | null, excludeReq
 /** What `requestId` (or anyone, without one) can still take of `itemId` at `locationId`:
  *  stock there minus kit picks and other requests' holds. */
 export function freeFor(itemId: number, locationId: number, requestId?: number): number {
-  return stockAt(itemId, locationId) - kitPickedAt(itemId, locationId) - repairHeld(itemId, locationId, requestId);
+  return stockAt(itemId, locationId) - saleHeld(itemId,locationId) - kitPickedAt(itemId, locationId) - repairHeld(itemId, locationId, requestId);
 }
 
 export interface RepairHold { request_id: number; item_id: number; location_id: number; quantity: number; location_name?: string }

@@ -4,7 +4,7 @@
      2. Issue the release slip once every line is out — who collected it, the vehicle, and
         photos of the goods. Issuing it confirms the SO, which is when stock goes out. When Sales'
         authorization allows a partial release, the slip can go for what is out now; the server
-        moves the rest to a new backorder SO. A supervisor (inventory.adjust) may release without
+        keeps the rest reserved on this SO. A supervisor (inventory.adjust) may release without
         the recipient's token, with a reason (POST /release-slips/orders/:id/override).
      3. Release Slips — the printable record of everything that left.
    Backend: /api/release-slips (queue + slips), /api/orders/:id/accept-release | release |
@@ -157,7 +157,6 @@ App.register('releasing', async (view, filter) => {
         return { kits, clean: parts.every((p) => covered(p) <= kits * Number(p.quantity) / Number(parent.quantity) + 1e-9) };
       });
       const partialOk = !fullyOut && auth.state === 'valid' && !!auth.partial_allowed
-        && ckdPick.every((p) => p.clean)
         && (ckdPick.some((p) => p.kits > 0) || items.some((l) => l.item_id && l.fulfillment_mode !== 'ckd_component' && l.fulfillment_mode !== 'ckd' && covered(l) > 0));
       body.innerHTML = `
         <div class="kv">
@@ -178,7 +177,8 @@ App.register('releasing', async (view, filter) => {
           <tbody>${items.map((l, i) => {
             if (l.fulfillment_mode === 'ckd') return `<tr><td><strong>${UI.esc(l.name)} (CKD)</strong><div class="muted">${l.quantity} unit${l.quantity === 1 ? '' : 's'} sold · pick the parts listed below</div></td><td colspan="2" class="muted">Component stock leaves on the release slip</td></tr>`;
             if (!l.item_id) return `<tr><td>${UI.esc(l.name)}</td><td class="right muted" colspan="2">service / free-text — nothing to release</td></tr>`;
-            const got = covered(l), need = Number(l.quantity) || 0;
+            const got = covered(l), need = Math.max(0, Number(l.quantity)-Number(l.cancelled_qty||0));
+            const heldBulk=Math.max(0,Number(l.released_qty||0)-Number(l.dispatched_bulk_qty||0));
             const free = Math.max(0, Number(stock.get(Number(l.id))?.free_to_allocate || 0));
             const bulk = !serialized.has(Number(l.id));
             return `<tr>
@@ -188,8 +188,8 @@ App.register('releasing', async (view, filter) => {
               <td>${got < need && bulk && free > 0 ? `<div style="display:flex;gap:6px;justify-content:flex-end">
                 <input type="number" min="0.001" step="any" max="${Math.min(need - got, free)}" value="${Math.min(need - got, free)}" data-qty="${i}" style="width:80px" aria-label="Allocate quantity of ${UI.esc(l.name)}" />
                 <button class="btn secondary small" data-bulk="${i}">Allocate qty</button></div>` : got < need && bulk ? '<span class="muted">Awaiting stock</span>' : ''}
-                ${bulk && Number(l.released_qty || 0) > 0 ? `<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px">
-                  <input type="number" min="0.001" step="any" max="${l.released_qty}" value="${l.released_qty}" data-undo-qty="${i}" style="width:80px" aria-label="Undo allocated quantity of ${UI.esc(l.name)}" />
+                ${bulk && heldBulk > 0 ? `<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px">
+                  <input type="number" min="0.001" step="any" max="${heldBulk}" value="${heldBulk}" data-undo-qty="${i}" style="width:80px" aria-label="Undo allocated quantity of ${UI.esc(l.name)}" />
                   <button type="button" class="btn secondary small" data-undo-bulk="${i}">Undo qty</button></div>` : ''}</td>
             </tr>`;
           }).join('')}</tbody>
@@ -203,7 +203,7 @@ App.register('releasing', async (view, filter) => {
           <span class="muted" style="font-size:12px">${fullyOut
             ? 'Every stock line is allocated. Issue the release slip as the goods leave — that is when stock is deducted.'
             : partialOk
-              ? 'Sales allowed a partial release: the slip covers what is out now, and the rest moves to a new backorder sale order.'
+              ? 'Sales allowed a partial release: the slip covers what is out now, and the rest remains held on this sales order.'
               : ckdPick.some((p) => !p.clean) ? 'Only complete CKD kits may leave. Unreserve extra picked parts or complete another kit.'
               : 'Allocate every stock line before issuing the release slip.'}</span>
           <div class="grow"></div>
@@ -238,7 +238,7 @@ App.register('releasing', async (view, filter) => {
       body.querySelectorAll('[data-undo-bulk]').forEach((b) => b.onclick = async () => {
         const l = items[Number(b.dataset.undoBulk)];
         const q = Number(body.querySelector(`[data-undo-qty="${b.dataset.undoBulk}"]`).value);
-        if (!Number.isFinite(q) || q <= 0 || q > Number(l.released_qty || 0)) {
+        if (!Number.isFinite(q) || q <= 0 || q > Math.max(0,Number(l.released_qty||0)-Number(l.dispatched_bulk_qty||0))) {
           UI.toast(`Enter a quantity up to ${l.released_qty || 0}`, 'error'); return;
         }
         if (!(await UI.confirmDialog(`Undo ${q} allocated ${l.name}?`, 'Undo allocation'))) return;
@@ -247,7 +247,7 @@ App.register('releasing', async (view, filter) => {
         if (b.isConnected) b.disabled = false;
       });
       body.querySelectorAll('[data-undo-unit]').forEach((b) => b.onclick = async () => {
-        if (!(await UI.confirmDialog('Return this serial to available stock?', 'Undo allocation'))) return;
+        if (!(await UI.confirmDialog('Remove this serial allocation? The customer’s remaining demand stays committed.', 'Undo allocation'))) return;
         b.disabled = true;
         await undo({ unit_ids: [Number(b.dataset.undoUnit)] });
         if (b.isConnected) b.disabled = false;
@@ -300,7 +300,16 @@ App.register('releasing', async (view, filter) => {
       bodyHTML: `
         <p class="muted" style="margin-top:0">Record who took the goods out. Issuing the slip confirms
           ${UI.esc(order.number)} and deducts the released stock.</p>
-        ${partial ? '<div class="panel" style="padding:10px 12px;margin-bottom:10px"><b>Partial release.</b> Only what is out now leaves; the rest of the order moves to a new backorder sale order.</div>' : ''}
+        ${partial ? '<div class="panel" style="padding:10px 12px;margin-bottom:10px"><b>Partial release.</b> Only what is out now leaves; the rest of the order stays reserved here.</div>' : ''}
+        <div class="panel"><b>This vehicle’s load</b><p class="muted">Only this load leaves. The remainder stays reserved on this order.</p>${(rc.lines||[]).filter(l=>l.item_id&&l.fulfillment_mode!=='ckd'&&Number(l.held_qty||0)>0).map(l=>{
+          const units=(rc.units||[]).filter(u=>u.order_item_id===l.id&&u.status==='reserved');
+          const batches=(rc.batch_allocations||[]).filter(a=>a.order_item_id===l.id&&a.state==='reserved');
+          const bulk=Math.max(0,l.held_qty-units.length-batches.reduce((n,a)=>n+a.quantity,0));
+          return `<fieldset data-trip-line="${l.id}"><legend>Line #${l.id} · ${UI.esc(l.name)} · ${l.held_qty} reserved</legend>
+            ${units.map(u=>`<label><input type="checkbox" data-trip-unit="${u.id}" checked> ${UI.esc(u.identifier||'Unit #'+u.id)}</label>`).join('')}
+            ${batches.map(a=>`<label>${UI.esc(a.batch_number)} · ${a.quantity} reserved<input type="number" min="0" max="${a.quantity}" step="any" data-trip-batch="${a.id}" value="${a.quantity}"></label>`).join('')}
+            ${bulk>0?`<label>Other reserved quantity<input type="number" min="0" max="${bulk}" step="any" data-trip-bulk value="${bulk}"></label>`:''}</fieldset>`;
+        }).join('')}</div>
         ${authBlock}
         <div><label>Collected by <span class="req">*</span></label>
           <input data-f="collected_by" placeholder="Driver / customer representative" value="${auth.state === 'valid' ? UI.esc(auth.recipient_name) : ''}" /></div>
@@ -342,7 +351,9 @@ App.register('releasing', async (view, filter) => {
         if (overriding && val('override_reason').length < 5) { showErr('Give the reason for releasing without the token'); return false; }
         if (auth.state === 'valid' && !ovOk && !overriding && !val('authorization_token')) { showErr('Enter the release token the recipient presents'); return false; }
         const pkg = (rc.package || []).map((p, i) => ({ item_id: p.item_id, label: p.label, ok: ov.querySelector(`[data-pkg="${i}"]`).checked }));
-        const missing = (rc.package || []).filter((p, i) => p.required && !pkg[i].ok);
+        const shipping=[...ov.querySelectorAll('[data-trip-line]')].filter(box=>box.querySelector('[data-trip-unit]:checked')||[...box.querySelectorAll('input[type=number]')].some(e=>Number(e.value)>0)).map(box=>Number(box.dataset.tripLine));
+        const shippingItems=(rc.lines||[]).filter(l=>shipping.includes(l.id)||l.fulfillment_mode==='ckd'&&(rc.lines||[]).some(p=>p.parent_order_item_id===l.id&&shipping.includes(p.id))).map(l=>l.item_id);
+        const missing = (rc.package || []).filter((p, i) => shippingItems.includes(p.item_id)&&p.required && !pkg[i].ok);
         if (missing.length) { showErr('Confirm every required package item: ' + missing.map((p) => p.label).join(', ')); return false; }
         if (!photos.length) { showErr('Add at least one photo of the goods going out'); return false; }
         if (overriding) await API.post('/release-slips/orders/' + order.id + '/override', { approve: true, reason: val('override_reason') });
@@ -359,7 +370,16 @@ App.register('releasing', async (view, filter) => {
           try { f._attId = (await API.upload('/attachments', fd, { idempotencyKey: f._uploadKey })).id; }
           catch (e) { showErr('Photo confirmation is unknown. Retry this upload with the same photo; warehouse-out has not been submitted. ' + e.message); return false; }
         }
+        const tripLines=[...ov.querySelectorAll('[data-trip-line]')].map(box=>{
+          const unit_ids=[...box.querySelectorAll('[data-trip-unit]:checked')].map(e=>Number(e.dataset.tripUnit));
+          const counts=[...box.querySelectorAll('input[type=number]')];
+          if(counts.some(e=>!e.value.trim()||!Number.isFinite(Number(e.value))||Number(e.value)<0||Number(e.value)>Number(e.max)))return {quantity:NaN};
+          return {order_item_id:Number(box.dataset.tripLine),unit_ids,batches:counts.filter(e=>e.dataset.tripBatch&&Number(e.value)>0).map(e=>({allocation_id:Number(e.dataset.tripBatch),quantity:Number(e.value)})),quantity:unit_ids.length+counts.reduce((n,e)=>n+Number(e.value),0)};
+        });
+        if(tripLines.some(l=>!Number.isFinite(l.quantity)||l.quantity<0)||!tripLines.some(l=>l.quantity>0)){showErr('Choose a positive trip load.');return false;}
         const payload = {
+          lines:tripLines.filter(l=>l.quantity>0),
+          previous_slip_id:rc.slip?rc.slip.id:null,
           collected_by: val('collected_by'), vehicle_plate: val('vehicle_plate') || null, notes: val('notes') || null,
           authorization_token: overriding ? null : (val('authorization_token').toUpperCase() || null), seal_tag: val('seal_tag') || null, package: pkg,
           evidence_ids: photos.map((f) => f._attId),
@@ -369,13 +389,8 @@ App.register('releasing', async (view, filter) => {
         let r;
         try { r = await API.post('/orders/' + order.id + '/release-slip', payload, { idempotencyKey: slipAttempt.key }); }
         catch (e) {
-          // A lost HTTP response can follow a committed stock movement. Reconcile the
-          // numbered slip before showing an error or allowing another decision.
-          const current = await API.get('/release-slips/orders/' + order.id + '/context').catch(() => null);
-          if (current?.slip) r = { id: current.slip.id,
-            backorder: current.slip.backorder_number ? { number: current.slip.backorder_number } : null };
-          else { showErr(e.status && e.status < 500 ? e.message
-            : 'Release confirmation is unknown. Keep this form open and retry; the same request key will be used. ' + e.message); return false; }
+          showErr(e.status && e.status < 500 ? e.message
+            : 'Release confirmation is unknown. Keep this form open and retry; the same request key will be used. ' + e.message); return false;
         }
         UI.toast(r.backorder ? `Release slip issued — the rest is on backorder ${r.backorder.number}` : 'Release slip issued — stock deducted');
         if (onDone) onDone();
@@ -428,23 +443,24 @@ App.register('releasing', async (view, filter) => {
     await load();
   }
 
-  async function courierBooking(slip) {
+  async function courierBooking(slip,mode='courier') {
+    var dispatch;try{dispatch=await API.get('/deliveries/planning-context?order_id='+slip.order_id);}catch(e){UI.toast(e.message,'error');return;}
     const bookingKey = 'courier-book:' + (crypto.randomUUID ? crypto.randomUUID() : Date.now());
-    const m = UI.modal({ title: 'Book courier pickup — ' + slip.order_number, confirmText: 'Book courier',
-      bodyHTML: `<p class="muted">The order stays in our care until the courier collects the released goods. Record pickup separately when it happens.</p>
-        <div><label>Courier company <span class="req">*</span></label><input data-f="courier" maxlength="160" placeholder="Courier name" /></div>
+    const m = UI.modal({ title: (mode==='own'?'Book own delivery — ':'Book courier pickup — ') + slip.order_number, confirmText: 'Book trip',
+      bodyHTML: `<p class="muted">This booking contains only this slip’s load. Record the trip outcome separately when it happens.</p>
+        ${mode==='courier'?'<div><label>Courier company <span class="req">*</span></label><input data-f="courier" maxlength="160" placeholder="Courier name" /></div>':''}
+        <label>Assigned driver / staff<select data-f="driver"><option value="">Choose staff</option>${dispatch.drivers.map(u=>`<option value="${u.id}">${UI.esc(u.full_name)}</option>`).join('')}</select></label>
         <div style="margin-top:10px"><label>Tracking / waybill</label><input data-f="tracking" maxlength="160" placeholder="Optional until pickup" /></div>`,
       onConfirm: async (ov, showErr) => {
-        const courier = ov.querySelector('[data-f="courier"]').value.trim();
-        if (!courier) { showErr('Enter the courier company'); return false; }
+        const courier = mode==='courier'?ov.querySelector('[data-f="courier"]').value.trim():null;
+        const assigned=Number(ov.querySelector('[data-f="driver"]').value)||null;
+        if(!assigned){showErr('Choose the assigned driver/staff.');return false;}
+        if (mode==='courier'&&!courier) { showErr('Enter the courier company'); return false; }
         try {
-          try { await API.post('/deliveries', { order_id: slip.order_id, delivery_mode: 'courier', courier_name: courier,
+          try { await API.post('/deliveries', { order_id: slip.order_id, delivery_mode: mode,assigned_to:assigned,release_slip_id:slip.id,courier_name: courier,
             tracking_number: ov.querySelector('[data-f="tracking"]').value.trim() || null }, { idempotencyKey: bookingKey }); }
-          catch (error) {
-            const existing = await API.get('/deliveries?order_id=' + slip.order_id).catch(() => []);
-            if (!existing.some((d) => d.delivery_mode === 'courier' && d.status !== 'cancelled' && d.courier_name === courier)) throw error;
-          }
-          UI.toast('Courier pickup booked'); m.close(); slipView(slip.id); return true;
+          catch (error) { throw error; }
+          UI.toast(mode==='own'?'Delivery trip booked':'Courier pickup booked'); m.close(); slipView(slip.id); return true;
         } catch (e) { showErr(e.message); return false; }
       },
     });
@@ -494,6 +510,7 @@ App.register('releasing', async (view, filter) => {
     } catch (e) { UI.toast(e.message, 'error'); return; }
     // Attachment images need the auth header, so load them as blob URLs.
     const urls = await Promise.all(photos.map((p) => API.blobUrl(p.url.replace(/^\/api/, '')).catch(() => '')));
+    deliveries=deliveries.filter(d=>d.release_slip_id===slip.id);
     const activeShipment = deliveries.find((d) => ['pending', 'out_for_delivery'].includes(d.status));
 
     const itemsTable = `
@@ -544,7 +561,7 @@ App.register('releasing', async (view, filter) => {
         ${slip.notes ? `<p style="margin:12px 0 0"><span class="muted">Notes:</span> ${UI.esc(slip.notes)}</p>` : ''}
         <div style="display:flex;align-items:center;gap:8px;margin:16px 0 6px;flex-wrap:wrap">
           <h4 style="${LABEL};margin:0">Courier pickup</h4><div class="grow"></div>
-          ${App.hasPermission('delivery.manage') && !activeShipment && !deliveries.some((d) => d.delivery_mode === 'courier' && d.status === 'delivered') ? '<button type="button" class="btn secondary small" id="rs-book-courier">Book courier</button>' : ''}
+          ${App.hasPermission('delivery.manage') && !activeShipment && !deliveries.some((d) => d.status === 'delivered') ? '<button type="button" class="btn secondary small" id="rs-book-own">Book own delivery</button><button type="button" class="btn secondary small" id="rs-book-courier">Book courier</button>' : ''}
         </div>
         ${activeShipment?.delivery_mode === 'own' ? '<p class="muted">Our delivery team has an active booking for this sale. Complete or cancel that booking before choosing a courier.</p>' : ''}
         ${deliveries.filter((d) => d.delivery_mode === 'courier').map((d) => `<div class="panel" style="padding:10px 12px;margin-bottom:8px">
@@ -582,6 +599,7 @@ App.register('releasing', async (view, filter) => {
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px">${urls.some(Boolean) ? photoGrid('') : '<span class="muted">No photos.</span>'}</div>`,
       onOpen: (ov) => {
+        ov.querySelector('#rs-book-own')?.addEventListener('click',()=>{m.close();courierBooking(slip,'own');});
         ov.querySelector('#rs-book-courier')?.addEventListener('click', () => { m.close(); courierBooking(slip); });
         ov.querySelectorAll('[data-courier-pickup]').forEach((b) => b.onclick = () => { m.close(); courierPickup(slip, Number(b.dataset.courierPickup)); });
         ov.querySelector('#rs-return')?.addEventListener('click', () => { m.close(); receiveReturn(slip, returnsContext); });

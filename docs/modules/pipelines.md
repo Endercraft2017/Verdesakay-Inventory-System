@@ -106,13 +106,13 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
    only — no stock movement. Auto-advances approved → `released` once every line is
    covered; `/:id/release/unreserve` undoes a pick (refused once a slip exists).
 5. **Release slip — goods out** (`inventory` → `accounting`) —
-   `POST /:id/release-slip` once the order is `released`: records who collected it,
-   vehicle, notes, and snapshots lines + unit serials into `release_slips` /
-   `release_slip_items` (number `RS-00001`); photos of the outgoing goods attach as
-   `attachments` kind `release` (UI requires ≥1). Issuing it sets the SO `confirmed`,
-   which runs `maybeFulfillSale`: **stock is deducted here** and reserved units → `sold`.
-   A slipped order moves stock even with the general ledger off (COGS only posts with
-   the ledger on). One slip per order. Printable from Release Slips.
+   `POST /:id/release-slip` records each vehicle's actual load on its own numbered
+   `release_slips` / `release_slip_items` manifest. Explicit lines select exact serials and
+   batch quantities; `previous_slip_id` guards stale second-trip submissions. Only that
+   load leaves stock and posts COGS. Remaining demand and allocations stay committed on
+   the **same SO**, unavailable to other sales. `dispatched_qty`, `dispatched_bulk_qty`,
+   and `cancelled_qty` preserve original quantities and physical history. Multiple slips
+   are allowed; each consumes its own Sales authority. Printable from Release Slips.
    - **Branch — manual confirm (legacy):** an SO confirmed from the order form without a
      slip still behaves as before (stock + COGS only when the ledger is on).
    - **Release authorization** (Sales, before or during stages 3–5): who may receive the goods —
@@ -129,11 +129,14 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
      expired, used or revoked authorization.
    - **Branch — evidence:** a warehouse-out from the phone or desktop app without a handoff photo
      → 409 `blocked: 'evidence'`, zero stock change. Both apps upload the photos first.
-   - **Branch — package:** every required package item of the products on the order must be
+   - **Branch — package:** every required package item of the products on the trip must be
      confirmed on the slip, else 409 with the missing items, zero stock change.
    - **Branch — partial release:** an incomplete order releases only under an authorization
-     that allows it; the order is split at the slip and the rest becomes a new approved
-     backorder SO (back to stage 3). Without it: 409, nothing moves; the releaser requests it.
+     that allows it. Unloaded/unbuilt quantities stay on the original SO. CKD loads must
+     contain whole kits; extra components remain held. Without authority: 409, nothing moves.
+   - **Customer cancellation:** Sales (`orders.edit`) cancels only the unshipped remainder
+     through `/orders/:id/cancel-remainder`, with reason and revision. It frees only remaining
+     reservations/demand, preserves shipment history, and adjusts net commercial totals.
    - **Branch — release report:** the releaser flags a wrong unit, missing item, identity
      problem or partial request (`release_reports`); Sales is pushed and resolves it. Records only.
    - **Mobile (Releasing, Figma 78:*)** — `#/so`: authority → scan/verify units → package →
@@ -143,8 +146,11 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
      partial slip under the same authority.
 6. **Delivery / fulfil** (`inventory`) — `/deliveries/:id/status` may start a trip before
    warehouse-out; `/deliveries/:id/complete` records its optional recipient/signature/GPS/photos.
-   Delivered physical sales require a release slip. Failed attempts require a reason and move no stock.
-   Commercial completion remains a separate Sales action with the same physical-slip guard;
+   Each record binds its own `release_slip_id` and shows only that manifest. Managers book
+   the next trip in mobile Deliveries or from a desktop slip; pending booking drafts and
+   submissions survive restart. Delivered physical sales require that trip’s release slip.
+   Failed attempts require a reason and move no stock. The SO stays partially fulfilled until
+   every noncancelled quantity ships and every delivery trip completes;
    the phone does not offer a forced stock completion.
 7. **Posting** (`accounting`) — `accounting-autopost.ts` posts the sale to the
    ledger.

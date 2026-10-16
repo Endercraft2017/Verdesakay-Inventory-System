@@ -22,6 +22,7 @@
     view.innerHTML =
       (canAll ? '<div class="m-seg" id="d-scope"><button data-s="mine" class="on">Mine</button><button data-s="all">All</button></div>' : '') +
       '<div data-delivery-saved></div><div id="d-list"><div class="m-hint">Loading…</div></div>';
+    if(canAll){var plan=mEl('<div class="m-actions"><button class="m-btn">Plan delivery trip</button></div>');plan.querySelector('button').onclick=function(){MApp.go('deliveries',{step:'plan'});};view.prepend(plan);}
     mDeliveryRecovery.cards(view.querySelector('[data-delivery-saved]'));
     var scope = 'mine';
     var host = view.querySelector('#d-list');
@@ -95,14 +96,14 @@
       (d.address ? '<div style="margin-top:8px"><a class="m-link" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=' +
         encodeURIComponent(d.address) + '">📍 ' + mEsc(d.address) + '</a></div>' : '') +
       (d.contact_phone ? '<div style="margin-top:4px"><a class="m-link" href="tel:' + mEsc(d.contact_phone) + '">📞 ' + mEsc(d.contact_phone) + '</a></div>' : '') +
-      (d.order_number ? '<div class="m-hint">Order ' + mEsc(d.order_number) + '</div>' : '') +
+      (d.order_number ? '<div class="m-hint">Order ' + mEsc(d.order_number) + (d.release_slip_number?' · Slip '+mEsc(d.release_slip_number):' · Load not yet released') + '</div>' : '') +
       (courier(d) ? '<div class="m-hint">Courier: ' + mEsc(d.courier_name || 'Courier') + (d.tracking_number ? ' · Tracking: ' + mEsc(d.tracking_number) : '') + '</div>' : '') +
       (d.notes ? '<div class="m-hint">' + mEsc(d.notes) + '</div>' : '') +
       '</div>'
     ));
 
     if ((d.items || []).length) {
-      view.appendChild(mEl('<div class="m-sectitle">To load</div>'));
+      view.appendChild(mEl('<div class="m-sectitle">This trip’s goods</div>'));
       view.appendChild(mEl('<ul class="m-kv">' + d.items.map(function (it) {
         return '<li><span>' + mEsc(it.name) + '</span><b>' + it.quantity + ' ' + mEsc(it.unit || '') + '</b></li>';
       }).join('') + '</ul>'));
@@ -240,6 +241,43 @@
     var fail = acts.querySelector('[data-fail]'); if (fail) fail.onclick = function () { submit('failed'); };
   }
 
+  async function planTrip(view,params){
+    if(!MApp.can('delivery.manage')){view.innerHTML='<div class="m-error">Delivery planning permission is required.</div>';return;}
+    var hash=location.hash,owner=mProductionDrafts.key('delivery-owner');
+    view.innerHTML='<div class="m-hint">Loading dispatch context…</div>';
+    try{
+      var saved=await mDeliveryRecovery.draft({id:0,number:'New delivery trip'});
+      if(saved.operation.state!=='draft'){mDeliveryRecovery.paint(view,saved);return;}
+      var ctx=await API.get('/deliveries/planning-context');
+      if(hash!==location.hash||owner!==mProductionDrafts.key('delivery-owner'))return;
+      var draft=saved.batch.plan||{order_id:Number(params.order)||null,release_slip_id:Number(params.slip)||null,delivery_mode:'own'};
+      MApp.setTitle('Plan delivery trip');
+      view.innerHTML='<div class="m-panel"><h2>Plan delivery trip</h2><p class="m-hint">Each trip belongs to the same sales order and carries only its release slip’s goods.</p>'+
+        '<label class="m-field">Sales order<select class="m-input" data-plan="order_id"><option value="">Choose sales order</option>'+ctx.orders.map(function(o){return '<option value="'+o.id+'">'+mEsc(o.number+' · '+(o.customer_name||''))+'</option>';}).join('')+'</select></label>'+
+        '<label class="m-field">This trip’s release slip<select class="m-input" data-plan="release_slip_id"></select></label><div data-trip-preview></div>'+
+        '<label class="m-field">Method<select class="m-input" data-plan="delivery_mode"><option value="own">Own delivery team</option><option value="courier">Courier pickup</option></select></label>'+
+        '<label class="m-field">Assign driver / staff<select class="m-input" data-plan="assigned_to"><option value="">Choose staff</option>'+ctx.drivers.map(function(u){return '<option value="'+u.id+'">'+mEsc(u.full_name)+'</option>';}).join('')+'</select></label>'+
+        '<label class="m-field" data-carrier>Courier company<input class="m-input" maxlength="160" data-plan="courier_name"></label>'+
+        '<label class="m-field">Scheduled date<input class="m-input" type="date" data-plan="scheduled_date"></label>'+
+        '<label class="m-field">Address<input class="m-input" maxlength="500" data-plan="address"></label>'+
+        '<label class="m-field">Notes<textarea class="m-input" maxlength="2000" data-plan="notes"></textarea></label>'+
+        '<p class="m-hint" data-plan-status>Changes are saved on this phone.</p></div>'+RoleUI.actions([{id:'plan-save',label:'Book this trip',kind:'primary'},{id:'plan-back',label:'Back to deliveries',kind:'secondary'}]);
+      function field(k){return view.querySelector('[data-plan="'+k+'"]');}
+      var initializing=true;
+      function preview(){var o=ctx.orders.find(function(o){return o.id===Number(field('order_id').value);});var slips=o?o.slips:[],selected=initializing?draft.release_slip_id:Number(field('release_slip_id').value)||null;initializing=false;
+        field('release_slip_id').innerHTML='<option value="">Await this trip’s warehouse release</option>'+slips.map(function(s){return '<option value="'+s.id+'">'+mEsc(s.number)+'</option>';}).join('');field('release_slip_id').value=selected&&slips.some(function(s){return s.id===selected;})?selected:slips.length===1&&o&&o.remaining<=0?slips[0].id:'';
+        view.querySelector('[data-trip-preview]').textContent=field('release_slip_id').value?'Only goods on the selected slip belong to this trip.':'No goods have been released to this trip yet. The clerk will link its load at warehouse-out.';
+        view.querySelector('[data-carrier]').hidden=field('delivery_mode').value!=='courier';
+      }
+      ['order_id','delivery_mode','assigned_to','courier_name','scheduled_date','address','notes'].forEach(function(k){field(k).value=draft[k]||'';});preview();
+      function collect(){var p={};['order_id','release_slip_id','assigned_to','delivery_mode','courier_name','scheduled_date','address','notes'].forEach(function(k){var v=field(k).value.trim();p[k]=['order_id','release_slip_id','assigned_to'].indexOf(k)!==-1?Number(v)||null:v||null;});if(p.delivery_mode!=='courier')p.courier_name=null;return p;}
+      function persist(){saved.batch.plan=collect();return mDeliveryRecovery.save(saved).then(function(){var status=view.querySelector('[data-plan-status]');if(status)status.textContent='Saved on this phone';}).catch(function(e){mToast(e.message,'err');throw e;});}
+      view.querySelectorAll('[data-plan]').forEach(function(input){input.onchange=function(){if(input===field('order_id')){draft.release_slip_id=null;field('release_slip_id').value='';}preview();persist().catch(function(){});};input.oninput=function(){if(input.tagName==='INPUT'||input.tagName==='TEXTAREA')persist().catch(function(){});};});
+      view.querySelector('#plan-save').onclick=async function(){var p=collect(),btn=view.querySelector('#plan-save');if(!p.order_id||!p.assigned_to){mToast('Choose the sales order and assigned driver/staff.','err');return;}if(p.delivery_mode==='courier'&&!p.courier_name){mToast('Name the courier company.','err');return;}btn.disabled=true;try{await persist();await mDeliveryRecovery.start({id:0,number:'New delivery trip',order_id:p.order_id},saved,'create',p);if(hash===location.hash)mDeliveryRecovery.paint(view,saved);}catch(e){mToast(e.message,'err');btn.disabled=false;}};
+      view.querySelector('#plan-back').onclick=function(){MApp.go('deliveries');};
+    }catch(e){if(hash===location.hash){view.innerHTML='';view.appendChild(RoleUI.error(e,function(){planTrip(view,params);}));}}
+  }
+
   function actions(items) {
     var bar = mEl('<div class="m-actions"></div>');
     items.forEach(function (i) {
@@ -252,7 +290,8 @@
 
   MApp.route('deliveries', function (view, params) {
     if (!MApp.can('delivery.run') && !MApp.can('delivery.manage')) { view.innerHTML = '<div class="m-error">You do not have delivery permission.</div>'; return; }
-    if (params && params.id) detail(view, params.id, params.step);
+    if(params&&params.step==='plan')planTrip(view,params);
+    else if (params && params.id) detail(view, params.id, params.step);
     else list(view);
   });
 })();

@@ -1,3 +1,5 @@
+import { tripSummary, prepareTrip, dispatchTrip, orderOutstanding, bindDelivery, lineHeld, refreshDeliveryCompletion, tripError } from './order-trips';
+import { now } from '../../shared/sync-context';
 import { parseProductionLabel } from '../manufacturing/label-code';
 import { allocateBatch, batchBalances, undoBatchAllocations } from './batch-stock';
 /** Job & Sale Orders: stored records with line items, auto numbers, server-computed
@@ -19,8 +21,8 @@ import { createDraftJobOrder } from '../manufacturing/job-orders.routes';
 import { orderAvailability } from './order-availability';
 import type { Order, OrderItem, OrderType } from '../../shared/types';
 import { recordSiteClash, syncClass } from '../../sync';
-import { siteDecisionStands } from '../../shared/sync-context';
-import { currentAuthorization, latestOverride, slipError, splitUnreleased } from './release-auth';
+import { siteDecisionStands, syncContext } from '../../shared/sync-context';
+import { currentAuthorization, latestOverride, slipError } from './release-auth';
 import { isAppClient } from '../../shared/device';
 import { canOnOrder, visibleOrderTypes } from './order-access';
 
@@ -270,7 +272,7 @@ router.get('/', (req, res) => {
      LEFT JOIN users u ON u.id = o.created_by
      LEFT JOIN suppliers s ON s.id = o.supplier_id
      LEFT JOIN job_orders jo ON jo.id = (SELECT id FROM job_orders WHERE order_id = o.id ORDER BY id DESC LIMIT 1)
-     LEFT JOIN release_slips rs ON rs.order_id = o.id
+     LEFT JOIN release_slips rs ON rs.id=(SELECT id FROM release_slips WHERE order_id=o.id ORDER BY id DESC LIMIT 1)
      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
      ORDER BY o.id DESC`,
     ...params
@@ -290,7 +292,7 @@ router.get('/:id', (req, res) => {
      LEFT JOIN suppliers s ON s.id = o.supplier_id
      LEFT JOIN job_orders jo ON jo.id = (SELECT id FROM job_orders WHERE order_id = o.id ORDER BY id DESC LIMIT 1)
      LEFT JOIN users wa ON wa.id = o.warehouse_accepted_by
-     LEFT JOIN release_slips rs ON rs.order_id = o.id
+     LEFT JOIN release_slips rs ON rs.id=(SELECT id FROM release_slips WHERE order_id=o.id ORDER BY id DESC LIMIT 1)
      WHERE o.id = ?`,
     Number(req.params.id)
   );
@@ -311,7 +313,7 @@ router.get('/:id', (req, res) => {
      FROM order_items oi WHERE oi.order_id = ? ORDER BY oi.sort, oi.id`,
     order.id
   );
-  res.json({ ...order, revision: orderRevision(order.id) });
+  res.json({ ...order, revision: orderRevision(order.id), ...(order.type==='sale'?{fulfillment:tripSummary(order.id),trips:queryAll('SELECT id,number,released_at FROM release_slips WHERE order_id=? ORDER BY id',order.id)}:{}) });
 });
 
 /* ---------------------------------------------------- sale-order release / pick --- */
@@ -323,17 +325,19 @@ const RELEASE_STATES = new Set(['approved', 'released']);
 function physicalSaleNeedsSlip(orderId: number, next: string): boolean {
   if (!['confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'].includes(next)) return false;
   return !!queryOne('SELECT 1 FROM order_items WHERE order_id = ? AND item_id IS NOT NULL LIMIT 1', orderId)
-    && !queryOne('SELECT 1 FROM release_slips WHERE order_id = ? LIMIT 1', orderId);
+    && (!queryOne('SELECT 1 FROM release_slips WHERE order_id = ? LIMIT 1', orderId) || orderOutstanding(orderId)>1e-9 || next==='completed'&&!!queryOne(`SELECT 1 FROM release_slips s LEFT JOIN release_slip_details sd ON sd.slip_id=s.id
+      WHERE s.order_id=? AND (sd.mode='delivery' OR EXISTS(SELECT 1 FROM deliveries d WHERE d.release_slip_id=s.id))
+      AND NOT EXISTS(SELECT 1 FROM deliveries d WHERE d.release_slip_id=s.id AND d.status='delivered' AND d.delivery_mode!='courier') LIMIT 1`,orderId));
 }
 
 function shippedSaleCannotReopen(orderId: number, next: string): boolean {
-  return ['open', 'approved', 'released', 'cancelled'].includes(next)
+  return (['open','cancelled'].includes(next)||['approved','released'].includes(next)&&orderOutstanding(orderId)<=1e-9)
     && !!queryOne('SELECT 1 FROM release_slips WHERE order_id = ? LIMIT 1', orderId);
 }
 
 /** For one line: units of this product `reserved`/`sold` against this order + the line's
  *  own `released_qty` (bulk). "Covered" once that reaches the ordered quantity. */
-function lineCoverage(orderId: number, line: Pick<OrderItem, 'id' | 'item_id' | 'quantity' | 'released_qty'>): {
+function lineCoverage(orderId: number, line: Pick<OrderItem, 'id' | 'item_id' | 'quantity' | 'released_qty' | 'dispatched_qty' | 'dispatched_bulk_qty' | 'cancelled_qty'>): {
   units: number; bulk: number; covered: boolean;
 } {
   const units = line.item_id
@@ -344,7 +348,8 @@ function lineCoverage(orderId: number, line: Pick<OrderItem, 'id' | 'item_id' | 
       )?.n ?? 0
     : 0;
   const bulk = line.released_qty || 0;
-  return { units, bulk, covered: units + bulk >= line.quantity };
+  const counted=Math.max(units,(line.dispatched_qty||0)-(line.dispatched_bulk_qty||0)+lineHeld(line as OrderItem).reserved);
+  return { units:counted, bulk, covered: counted + bulk >= line.quantity-(line.cancelled_qty||0) };
 }
 
 function orderWithLines(id: number): Order | null {
@@ -457,160 +462,86 @@ router.post('/:id/accept-release', releaseGate, syncClass('claim', orderSite), (
   res.json({ ok: true, order: orderWithLines(id) });
 });
 
-// POST /api/orders/:id/release-slip — issue the release slip for a fully released sale order:
-// the numbered record of what physically left (lines + unit serials, who collected it). Issuing
-// it confirms the order, which is when stock goes out (maybeFulfillSale). Photos of the
+// POST /api/orders/:id/release-slip — immutable trip manifest for held goods. Only this
+// load leaves stock; the same order retains its unshipped remainder. Photos of the
 // outgoing goods are `attachments` kind 'release' on the slip id: attached afterwards (desktop),
 // or uploaded first as kind 'release_proof' on the order and passed as `evidence_ids`, which the
 // slip takes over — both apps (phone and desktop) must do the latter, with at least one photo.
 router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), (req, res) => {
-  const id = Number(req.params.id);
-  const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
-  if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
-  const existing = queryOne<{ id: number; number: string }>('SELECT id, number FROM release_slips WHERE order_id = ?', id);
-  // Clash-checks (D6), replaying a site's slip for its own order: the goods left the site.
-  const stands = siteDecisionStands();
-  if (existing) {
-    if (stands) {
-      // Issued on the cloud and at the site: the goods left once — the first slip is kept.
-      recordSiteClash(req, `Sale order ${order.number} got a release slip on the cloud and at the site; ${existing.number} was kept.`);
-      res.status(201).json({ ok: true, clash: true, id: existing.id, order: orderWithLines(id) });
-      return;
+  const id=Number(req.params.id), order=queryOne<Order>('SELECT * FROM orders WHERE id=?',id);
+  if(!order||order.type!=='sale'){res.status(404).json({error:'Sale order not found'});return;}
+  const input=parseBody(releaseSlipSchema,req.body);
+  const latest=queryOne<{id:number;number:string}>('SELECT id,number FROM release_slips WHERE order_id=? ORDER BY id DESC LIMIT 1',id);
+  if(latest&&input.previous_slip_id!==latest.id){
+    if(siteDecisionStands()&&!('previous_slip_id' in req.body)){
+      recordSiteClash(req,`Sale ${order.number}: the original cloud slip ${latest.number} was retained for a legacy site replay.`);
+      res.status(201).json({ok:true,clash:true,id:latest.id,order:orderWithLines(id)});return;
     }
-    res.status(409).json({ error: 'A release slip was already issued for this order.' });
-    return;
+    res.status(409).json({error:'This order has a newer release slip. Review the current trip before another handoff.',code:'trip_changed'});return;
   }
-  // A partial release needs Sales' authorization (release-auth.ts): the order is split at the slip.
-  const { auth, state: authState } = currentAuthorization(id);
-  let partial = false;
-  if (String(order.status || '').toLowerCase() !== 'released') {
-    if (!stands) {
-      if (!(auth && authState === 'valid' && auth.partial_allowed)) {
-        res.status(409).json({ error: 'Release every line of the order before issuing the release slip.', blocked: 'incomplete' });
-        return;
-      }
-      partial = true;
-    } else {
-      recordSiteClash(req, `Sale order ${order.number} was ${order.status} on the cloud when the site's release slip arrived; the goods had left, so the slip stands.`);
-    }
+  if(!latest&&input.previous_slip_id!=null){res.status(409).json({error:'The previous trip changed. Refresh the order.',code:'trip_changed'});return;}
+  if(!['approved','released'].includes(String(order.status).toLowerCase())||order.fulfilled_at){
+    if(!siteDecisionStands()){res.status(409).json({error:'Only an approved order with an unshipped remainder can issue a trip slip.'});return;}
+    recordSiteClash(req,`The site handed off a trip for ${order.number} after its cloud state changed.`);
   }
-  const input = parseBody(releaseSlipSchema, req.body);
-  // Warehouse-out rules (release-auth.ts): the recipient's token and every required package item,
-  // checked before any write — a refusal moves no stock.
-  const rule = slipError(id, input);
-  if (rule) {
-    if (!stands) { res.status(409).json({ error: rule.error, blocked: rule.code, missing: rule.missing }); return; }
-    recordSiteClash(req, `Sale order ${order.number}: the site's release slip stands although — ${rule.error}`);
+  const {auth,state:authState}=currentAuthorization(id);
+  let trip:ReturnType<typeof prepareTrip>;
+  try{trip=prepareTrip(id,input.lines);}catch(e){const err=e as Error&{code?:string};res.status(409).json({error:err.message,blocked:err.code,code:err.code});return;}
+  const leaving=trip.filter(t=>t.line.fulfillment_mode!=='ckd').reduce((n,t)=>n+t.quantity,0);
+  const partial=leaving+1e-9<orderOutstanding(id);
+  if(partial&&!(auth&&authState==='valid'&&auth.partial_allowed)){
+    res.status(409).json({error:'Sales must authorize a partial trip. The remainder stays reserved on this order.',blocked:'incomplete'});return;
   }
-  // Handoff photos already uploaded for this order (kind 'release_proof'); either app needs one.
-  const evidence = (input.evidence_ids ?? []).length ? queryAll<{ id: number }>(
-    `SELECT id FROM attachments WHERE kind = 'release_proof' AND ref_id = ? AND id IN (${input.evidence_ids!.map(() => '?').join(',')})`,
-    id, ...input.evidence_ids!
-  ).map((a) => a.id) : [];
-  if (!stands && isAppClient(req) && !evidence.length) {
-    res.status(409).json({ error: 'Add at least one handoff photo before the warehouse-out.', blocked: 'evidence' });
-    return;
-  }
-  const override = auth && authState === 'valid' ? latestOverride(auth.id) : null;
-  if (partial && !queryOne<{ n: number }>(
-    `SELECT (SELECT COUNT(*) FROM job_order_units WHERE order_id = ? AND status IN ('reserved', 'sold'))
-          + (SELECT COALESCE(SUM(released_qty), 0) FROM order_items WHERE order_id = ?) AS n`, id, id
-  )!.n) {
-    res.status(409).json({ error: 'Nothing on this order has been allocated yet — scan or enter what is leaving first.', blocked: 'incomplete' });
-    return;
-  }
-  if (partial) {
-    const ckdLines = queryAll<OrderItem>("SELECT * FROM order_items WHERE order_id = ? AND fulfillment_mode = 'ckd'", id);
-    for (const parent of ckdLines) {
-      const parts = queryAll<OrderItem>('SELECT * FROM order_items WHERE parent_order_item_id = ?', parent.id);
-      if (!parts.length) { res.status(409).json({ error: `CKD kit ${parent.name} has no parts snapshot.`, blocked: 'incomplete' }); return; }
-      const kits = Math.min(parent.quantity, ...parts.map((p) => Math.floor((lineCoverage(id, p).units + lineCoverage(id, p).bulk + 1e-9) / (p.quantity / parent.quantity))));
-      if (parts.some((p) => lineCoverage(id, p).units + lineCoverage(id, p).bulk > kits * p.quantity / parent.quantity + 1e-9)) {
-        res.status(409).json({ error: `Unreserve extra CKD components before releasing ${parent.name}. Only whole kits may leave.`, blocked: 'incomplete' }); return;
-      }
-    }
-  }
-
-  // A staged allocation is not physical stock. An adjustment or another warehouse
-  // action may have changed the location after the scan; refuse the handoff before
-  // creating its numbered slip when the location can no longer cover the goods.
-  if (!stands && !overdrawAllowed()) {
-    const locationId = order.location_id ?? getDefaultLocationId();
-    const leaving = new Map<string, number>();
-    for (const line of queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ?', id)) {
-      if (line.item_id == null || line.fulfillment_mode === 'ckd') continue;
-      const amount = partial ? Math.min(line.quantity, lineCoverage(id, line).units + lineCoverage(id, line).bulk) : line.quantity;
-      const mode = line.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled';
-      const key = `${line.item_id}:${mode}`;
-      leaving.set(key, (leaving.get(key) ?? 0) + amount);
-    }
-    for (const [key, amount] of leaving) {
-      const [itemId, mode] = key.split(':');
-      if (variantStockAt(Number(itemId), locationId, mode as 'assembled' | 'semi_built') + 1e-9 < amount) {
-        res.status(409).json({ error: `Stock at ${locationName(locationId)} changed after allocation. Reconcile the stock before issuing the release slip.`, blocked: 'stock_changed' });
-        return;
-      }
-    }
-  }
-
-  let slipId: number;
-  let backorder: { id: number; number: string } | null = null;
-  let stockMoved = false;
+  const rule=slipError(id,{...input,shipping_item_ids:trip.map(t=>t.line.item_id!).filter(Boolean)});
+  if(rule&&!siteDecisionStands()){res.status(409).json({error:rule.error,blocked:rule.code,missing:rule.missing});return;}
+  if(rule)recordSiteClash(req,`${order.number}: site handoff stands although ${rule.error}`);
+  const evidence=input.evidence_ids?.length?queryAll<{id:number}>(`SELECT id FROM attachments WHERE kind='release_proof' AND ref_id=? AND id IN (${input.evidence_ids.map(()=>'?').join(',')})`,id,...input.evidence_ids).map(a=>a.id):[];
+  if(isAppClient(req)&&!evidence.length&&!siteDecisionStands()){res.status(409).json({error:'Add at least one handoff photo before warehouse-out.',blocked:'evidence'});return;}
+  const override=auth&&authState==='valid'?latestOverride(auth.id):null;
+  let slipId:number,deliveryId:number|null;
   db.exec('BEGIN');
-  try {
-    if (partial) backorder = splitUnreleased(id, auth!.issued_by ?? req.user!.id);
-    const lines = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', id);
-    const number = nextSequence('release_slip_number', 'RS');
-    slipId = Number(run(
-      'INSERT INTO release_slips (number, order_id, released_by, collected_by, vehicle_plate, notes) VALUES (?, ?, ?, ?, ?, ?)',
-      number, id, req.user!.id, input.collected_by, input.vehicle_plate ?? null, input.notes ?? null
-    ).lastInsertRowid);
-    for (const l of lines) {
-      if (l.item_id == null) continue; // free-text / service lines — nothing physical leaves
-      if (l.fulfillment_mode === 'ckd') {
-        run(`INSERT INTO release_slip_items (slip_id, order_item_id, item_id, name, sku, unit, quantity)
-          VALUES (?, ?, NULL, ?, ?, ?, ?)`, slipId, l.id, `${l.name} (CKD)`, l.sku ?? null, l.unit ?? null, l.quantity);
-        continue;
-      }
-      const serials = queryAll<{ identifier: string | null }>(
-        `SELECT identifier FROM job_order_units
-         WHERE order_item_id = ? AND status IN ('reserved', 'sold') ORDER BY id`, l.id
-      ).map((u) => u.identifier).filter(Boolean);
-      run(
-        `INSERT INTO release_slip_items (slip_id, order_item_id, item_id, name, sku, unit, quantity, unit_identifiers, unit_cost)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        slipId, l.id, l.item_id, l.name, l.sku ?? null, l.unit ?? null, l.quantity,
-        serials.length ? serials.join(', ') : null,
-        queryOne<{ unit_cost: number }>('SELECT unit_cost FROM inventory_items WHERE id = ?', l.item_id)?.unit_cost ?? null
-      );
-    }
-    run(
-      `INSERT INTO release_slip_details (slip_id, authorization_id, mode, recipient_name, handoff_area, seal_tag, package, acknowledged, backorder_order_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      slipId, auth && authState === 'valid' ? auth.id : null, auth?.mode ?? null, input.collected_by,
-      input.handoff_area ?? auth?.handoff_area ?? null, input.seal_tag ?? null,
-      input.package?.length ? JSON.stringify(input.package) : null, input.acknowledged ? 1 : 0, backorder?.id ?? null
-    );
-    if (auth && authState === 'valid') run('UPDATE release_authorizations SET used_slip_id = ? WHERE id = ?', slipId, auth.id);
-    // A supervisor's override is spent on this slip only when it stood in for the token.
-    if (override?.status === 'approved' && rule === null && auth && input.authorization_token?.trim().toUpperCase() !== auth.token.toUpperCase()) {
-      run("UPDATE release_token_overrides SET status = 'used', used_slip_id = ? WHERE id = ?", slipId, override.id);
-    }
-    if (evidence.length) {
-      run(`UPDATE attachments SET kind = 'release', ref_id = ? WHERE id IN (${evidence.map(() => '?').join(',')})`, slipId, ...evidence);
-    }
-    run("UPDATE orders SET status = 'confirmed', updated_at = datetime('now') WHERE id = ?", id);
-    stockMoved = fulfillSaleStockInTransaction(id, req.user!.id);
+  try{
+    const number=nextSequence('release_slip_number','RS');
+    slipId=Number(run('INSERT INTO release_slips(number,order_id,released_by,collected_by,vehicle_plate,notes) VALUES(?,?,?,?,?,?)',number,id,req.user!.id,input.collected_by,input.vehicle_plate??null,input.notes??null).lastInsertRowid);
+    dispatchTrip(id,slipId,trip,req.user!.id);
+    run(`INSERT INTO release_slip_details(slip_id,authorization_id,mode,recipient_name,handoff_area,seal_tag,package,acknowledged,backorder_order_id)
+      VALUES(?,?,?,?,?,?,?,?,NULL)`,slipId,auth&&authState==='valid'?auth.id:null,auth?.mode??null,input.collected_by,input.handoff_area??auth?.handoff_area??null,input.seal_tag??null,input.package?.length?JSON.stringify(input.package):null,input.acknowledged?1:0);
+    if(auth&&authState==='valid')run('UPDATE release_authorizations SET used_slip_id=? WHERE id=?',slipId,auth.id);
+    if(override?.status==='approved'&&rule===null&&auth&&input.authorization_token?.trim().toUpperCase()!==auth.token.toUpperCase())run("UPDATE release_token_overrides SET status='used',used_slip_id=? WHERE id=?",slipId,override.id);
+    if(evidence.length)run(`UPDATE attachments SET kind='release',ref_id=? WHERE id IN (${evidence.map(()=>'?').join(',')})`,slipId,...evidence);
+    const ctx=syncContext(),snapshot=ctx?.validatedSnapshots?.releaseTrip as {orderId:number;deliveryId:number|null}|undefined;
+    const originalDelivery=snapshot?.orderId===id?snapshot.deliveryId:input.delivery_id;
+    deliveryId=snapshot?.orderId===id&&snapshot.deliveryId===null?null:bindDelivery(id,slipId,originalDelivery,siteDecisionStands()&&snapshot?.orderId===id&&snapshot.deliveryId===originalDelivery);
+    if(ctx&&!snapshot)(ctx.validatedSnapshots??={}).releaseTrip={orderId:id,deliveryId};
     db.exec('COMMIT');
-  } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
-  }
-  // Physical stock and its slip are committed together. Accounting follows that commit.
-  maybeAutoPostSale(id, req.user!.id);
-  if (stockMoved) postFulfilledSaleCogs(id, req.user!.id);
-  maybeAutoPush(id);
-  res.status(201).json({ ok: true, id: slipId, order: orderWithLines(id), backorder });
+  }catch(e){db.exec('ROLLBACK');const err=e as Error&{status?:number;code?:string};if(err.status===409){res.status(409).json({error:err.message,code:err.code,blocked:err.code});return;}throw e;}
+  maybeAutoPostSale(id,req.user!.id);postFulfilledSaleCogs(id,req.user!.id);maybeAutoPush(id);
+  res.status(201).json({ok:true,id:slipId,delivery_id:deliveryId,order:orderWithLines(id),backorder:null,remaining:orderOutstanding(id)});
+});
+
+// Customer-authorized cancellation releases only goods that have not left the warehouse.
+router.post('/:id/cancel-remainder', requirePermission('orders.edit'), syncClass('claim',orderSite),(req,res)=>{
+  const id=Number(req.params.id), order=queryOne<Order>('SELECT * FROM orders WHERE id=?',id);
+  if(!order||order.type!=='sale'){res.status(404).json({error:'Sale order not found'});return;}
+  const reason=String(req.body.reason||'').trim();
+  if(reason.length<3||reason.length>1000){res.status(400).json({error:'Record the customer cancellation reason (3–1000 characters).'});return;}
+  if(orderOutstanding(id)<=1e-9){res.status(409).json({error:'No unshipped remainder remains to cancel.'});return;}
+  const revision=orderRevision(id);
+  if(req.body.expected_revision!==revision){res.status(409).json({error:'Review the current order before cancelling its remainder.',code:'stale_order'});return;}
+  db.exec('BEGIN');
+  try{
+    run('INSERT INTO order_remainder_cancellations(order_id,reason,cancelled_by,cancelled_at) VALUES(?,?,?,?)',id,reason,req.user!.id,now().toISOString().replace('T',' ').slice(0,19));
+    run("DELETE FROM production_batch_allocations WHERE order_id=? AND state='reserved'",id);
+    run("UPDATE job_order_units SET status='in_stock',order_id=NULL,order_item_id=NULL,updated_at=? WHERE order_id=? AND status='reserved'",now().toISOString().replace('T',' ').slice(0,19),id);
+    run('UPDATE order_items SET cancelled_qty=MAX(cancelled_qty,quantity-dispatched_qty),released_qty=dispatched_bulk_qty WHERE order_id=? AND item_id IS NOT NULL',id);
+    const subtotal=queryOne<{n:number}>('SELECT COALESCE(SUM((quantity-cancelled_qty)*unit_price),0) AS n FROM order_items WHERE order_id=?',id)!.n;
+    const tax=round2(subtotal*order.tax_percent/100);
+    const anySlip=!!queryOne('SELECT 1 FROM release_slips WHERE order_id=?',id);
+    run('UPDATE orders SET subtotal=?,tax_amount=?,total=?,status=?,fulfilled_at=?,updated_at=? WHERE id=?',round2(subtotal),tax,round2(subtotal+tax),anySlip?'confirmed':'cancelled',anySlip?now().toISOString().replace('T',' ').slice(0,19):null,now().toISOString().replace('T',' ').slice(0,19),id);
+    run("UPDATE deliveries SET status='cancelled',updated_at=? WHERE order_id=? AND release_slip_id IS NULL AND status IN ('pending','out_for_delivery')",now().toISOString().replace('T',' ').slice(0,19),id);
+    if(anySlip)refreshDeliveryCompletion(id);db.exec('COMMIT');
+  }catch(e){db.exec('ROLLBACK');throw e;}
+  maybeAutoPostSale(id,req.user!.id);res.json({ok:true,order:orderWithLines(id)});
 });
 
 // POST /api/orders/:id/release — a warehouse releaser scans / enters goods out against an
@@ -710,7 +641,7 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
     }
     const already = lineCoverage(id, line).units + lineCoverage(id, line).bulk;
     const pending = requestedPerLine.get(line.id) ?? 0;
-    if (already + pending + 1 > line.quantity) {
+    if (already + pending + 1 > line.quantity-(line.cancelled_qty||0)) {
       if (refused(400, `That exceeds the ${line.quantity} ordered of ${line.name}.`)) return;
     }
     requestedPerLine.set(line.id, pending + 1);
@@ -753,7 +684,7 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
   for (const [lineId, amount] of requestedPerLine) {
     const line = lineById.get(lineId)!;
     const cov = lineCoverage(id, line);
-    if (cov.units + cov.bulk + amount > line.quantity + 1e-9) {
+    if (cov.units + cov.bulk + amount > line.quantity-(line.cancelled_qty||0) + 1e-9) {
       if (refused(400, `That exceeds the ${line.quantity} ordered of ${line.name}.`)) return;
     }
     const key = `${line.item_id}:${modeOf(line)}`;
@@ -764,7 +695,7 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
     const line = matching(Number(itemId), mode)[0]!;
     const stockLine = availability.lines.find((l) => l.item_id === Number(itemId) && (l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled') === mode);
     const ownCovered = matching(Number(itemId), mode).reduce((n, l) => {
-      const c = lineCoverage(id, l); return n + c.units + c.bulk;
+      const c = lineCoverage(id, l); return n + c.units + c.bulk-(l.dispatched_qty||0);
     }, 0);
     const free = Math.max(0, (stockLine?.on_hand ?? 0) - (stockLine?.committed_elsewhere ?? 0) - ownCovered);
     if (amount > free + 1e-9 && !overdrawAllowed() && refused(409,
@@ -825,10 +756,7 @@ router.post('/:id/release/unreserve', releaseGate, syncClass('claim', orderSite)
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
-  if (queryOne('SELECT id FROM release_slips WHERE order_id = ?', id)) {
-    res.status(409).json({ error: 'These goods already left on a release slip.' });
-    return;
-  }
+
   if (order.fulfilled_at || !RELEASE_STATES.has(String(order.status).toLowerCase())) {
     res.status(409).json({ error: 'Only an unshipped approved sale can have its allocation undone.' });
     return;
@@ -860,7 +788,7 @@ router.post('/:id/release/unreserve', releaseGate, syncClass('claim', orderSite)
   }
   for (const [lineId, amount] of bulkToUndo) {
     const line = physicalLines.find((l) => l.id === lineId);
-    if (!line || amount > line.released_qty + 1e-9) {
+    if (!line || amount > line.released_qty-(line.dispatched_bulk_qty||0) + 1e-9) {
       if (!stands) { res.status(409).json({ error: 'That quantity is no longer allocated to this order. Refresh before undoing.' }); return; }
       clashes.push(`Sale line #${lineId} had less allocated on the cloud when the site's undo arrived.`);
     }
@@ -878,7 +806,7 @@ router.post('/:id/release/unreserve', releaseGate, syncClass('claim', orderSite)
     for (const [lineId, amount] of bulkToUndo) {
       const line = physicalLines.find((l) => l.id === lineId)!;
       undoBatchAllocations(id,line.item_id!,amount,lineId);
-      run('UPDATE order_items SET released_qty = MAX(0, released_qty - ?) WHERE id = ?', amount, lineId);
+      run('UPDATE order_items SET released_qty = MAX(dispatched_bulk_qty, released_qty - ?) WHERE id = ?', amount, lineId);
     }
     // If it no longer fully covers, drop 'released' back to 'approved'.
     if (String(order.status).toLowerCase() === 'released') {
@@ -1181,7 +1109,7 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
   // Legacy repeated lines can still have their header saved without rewriting them.
   validateOrderLinks(order.type, { ...input, items: lockLines ? [] : sourceItems }, existingCkd);
   const taxPct = lockLines ? order.tax_percent : input.tax_percent;
-  const { lines, subtotal, tax_amount, total } = computeTotals(sourceItems, taxPct);
+  const { lines, subtotal, tax_amount, total } = computeTotals(sourceItems.map((l:any)=>({...l,quantity:Math.max(0,l.quantity-(l.cancelled_qty||0))})), taxPct);
 
   db.exec('BEGIN');
   try {

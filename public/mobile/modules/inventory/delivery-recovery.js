@@ -46,7 +46,7 @@
       guard(s);
       var sign = s.rows.find(function (row) { return row.identifier === 'signature.png'; });
       if (sign && !a.payload.signature_attachment_id) { a.payload.signature_attachment_id = sign.unitId; await save(s); }
-      var r = await API.post('/deliveries/' + a.id + '/' + a.action, a.payload, { idempotencyKey: a.key });
+      var r = await API.post(a.action==='create'?'/deliveries':'/deliveries/' + a.id + '/' + a.action, a.payload, { idempotencyKey: a.key });
       guard(s); a.result = r; a.local = API.syncLocal(r); a.state = 'confirmed'; a.error = null; a.code = null; await save(s);
     } catch (err) {
       if (!owns(s)) throw err;
@@ -59,7 +59,7 @@
     MApp.setTitle('Delivery · ' + a.number);
     function visible() { return view.isConnected && location.hash === hash && owns(s); }
     var final = a.state === 'confirmed' && !a.local;
-    view.innerHTML = '<h2>' + mEsc(a.number) + '</h2>' + RoleUI.result(final ? a.action === 'status' ? 'Delivery started' : a.payload.outcome === 'courier_handoff' ? 'Picked up by courier' : a.payload.outcome === 'delivered' ? 'Delivered' : 'Marked not delivered' : a.local ? 'Saved on site PC — confirmation pending' : a.state === 'rejected' ? 'Delivery action refused' : 'Delivery confirmation unresolved', 'Saved evidence and the original request are retained on this device.', final ? '' : 'queued', final ? '✓' : '⏳') +
+    view.innerHTML = '<h2>' + mEsc(a.number) + '</h2>' + RoleUI.result(final ? a.action==='create'?'Delivery trip booked':a.action === 'status' ? 'Delivery started' : a.payload.outcome === 'courier_handoff' ? 'Picked up by courier' : a.payload.outcome === 'delivered' ? 'Delivered' : 'Marked not delivered' : a.local ? 'Saved on site PC — confirmation pending' : a.state === 'rejected' ? 'Delivery action refused' : 'Delivery confirmation unresolved', 'Saved evidence and the original request are retained on this device.', final ? '' : 'queued', final ? '✓' : '⏳') +
       (a.code === 'release_required' ? RoleUI.note('warn', 'Ask releasing staff to record the warehouse handoff first. Delivery and courier pickup do not move stock again.') : '') +
       (a.error ? RoleUI.note('warn', mEsc(a.error)) : '') + RoleUI.note(final ? 'info' : 'warn', final ? 'The server confirmed this delivery action.' : 'Retry reuses the original evidence and request. Do not submit a different outcome until this attempt is resolved.') +
       RoleUI.actions((!a.local && ['new','sending','unknown'].indexOf(a.state) !== -1 ? [{ id: 'delivery-retry', label: 'Retry original delivery', kind: 'primary' }] : [])
@@ -72,10 +72,11 @@
     if (review) review.onclick = async function () {
       review.disabled = true;
       try {
-        await API.get('/deliveries/' + a.id); guard(s);
+        var currentId=a.action==='create'&&a.result?a.result.id:a.id;
+        await API.get('/deliveries/' + currentId); guard(s);
         if (final) { await mProductionDrafts.remove(s); delete cache[s.key]; }
         else { s.operation = { kind: 'delivery', id: a.id, number: a.number, state: 'draft' }; s.rows = []; await save(s); }
-        if (visible()) MApp.go('deliveries', { id: a.id, t: Date.now() });
+        if (visible()) MApp.go('deliveries', { id: currentId, t: Date.now() });
       } catch (err) { mToast(err.message,'err'); review.disabled = false; }
     };
     var release = view.querySelector('#delivery-release'); if (release) release.onclick = function () { MApp.go('so', { id: a.orderId }); };
@@ -93,7 +94,7 @@
     mProductionDrafts.listActions('delivery','delivery').then(function (rows) {
       if (!host.isConnected || owner !== mProductionDrafts.key('delivery-list')) return;
       host.innerHTML = rows.length ? RoleUI.section('Saved delivery actions') + rows.map(function (r) { var a = r.record.operation; return RoleUI.jobCard({ id: a.id, number: a.number, name: a.state === 'draft' ? 'Resume delivery evidence' : 'Review original delivery action', pill: { text: 'Saved on device', tone: 'warn' }, meta: a.local ? 'Confirmation pending' : a.state }); }).join('') : '';
-      host.querySelectorAll('[data-id]').forEach(function (b) { b.onclick = function () { MApp.go('deliveries', { id: b.dataset.id, step: 'proof' }); }; });
+      host.querySelectorAll('[data-id]').forEach(function (b) { b.onclick = function () { MApp.go('deliveries', Number(b.dataset.id)===0?{step:'plan'}:{ id: b.dataset.id, step: 'proof' }); }; });
     }).catch(function (err) { if (host.isConnected) host.appendChild(RoleUI.error(err,function () { cards(host); })); });
   }
   window.mDeliveryRecovery = { load: load, draft: draft, save: save, start: start, paint: paint, cards: cards, send: send };

@@ -92,7 +92,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 83; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 84; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -3357,6 +3357,39 @@ function migrate(): void {
   if (!unitConversionCols.some((c) => c.name === 'received_unit_cost'))
     db.exec('ALTER TABLE job_order_units ADD COLUMN received_unit_cost REAL');
   db.exec('CREATE INDEX IF NOT EXISTS idx_unit_conversion_source ON job_order_units(conversion_source_unit_id) WHERE conversion_source_unit_id IS NOT NULL');
+  // v84: immutable per-trip manifests; the commercial order and reserved remainder stay put.
+  const tripLineCols = db.prepare('PRAGMA table_info(order_items)').all() as Array<{name:string}>;
+  for (const col of ['dispatched_qty','dispatched_bulk_qty','cancelled_qty'])
+    if (!tripLineCols.some(c=>c.name===col)) db.exec(`ALTER TABLE order_items ADD COLUMN ${col} REAL NOT NULL DEFAULT 0`);
+  const tripDeliveryCols = db.prepare('PRAGMA table_info(deliveries)').all() as Array<{name:string}>;
+  if (!tripDeliveryCols.some(c=>c.name==='release_slip_id')) db.exec('ALTER TABLE deliveries ADD COLUMN release_slip_id INTEGER REFERENCES release_slips(id) ON DELETE RESTRICT');
+  const tripBatchCols = db.prepare('PRAGMA table_info(production_batch_allocations)').all() as Array<{name:string}>;
+  if (!tripBatchCols.some(c=>c.name==='release_slip_id')) db.exec('ALTER TABLE production_batch_allocations ADD COLUMN release_slip_id INTEGER REFERENCES release_slips(id) ON DELETE RESTRICT');
+  db.exec(`CREATE TABLE IF NOT EXISTS release_slip_units (
+    slip_item_id INTEGER NOT NULL REFERENCES release_slip_items(id) ON DELETE CASCADE,
+    unit_id INTEGER NOT NULL REFERENCES job_order_units(id) ON DELETE RESTRICT,
+    PRIMARY KEY(slip_item_id,unit_id));
+    CREATE TABLE IF NOT EXISTS order_remainder_cancellations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL REFERENCES orders(id),
+    reason TEXT NOT NULL, cancelled_by INTEGER REFERENCES users(id), cancelled_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_delivery_slip ON deliveries(release_slip_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_active_trip ON deliveries(release_slip_id)
+      WHERE release_slip_id IS NOT NULL AND status NOT IN ('failed','cancelled');`);
+  if (!getSetting('trip_manifest_backfilled_v84')) {
+    db.exec(`UPDATE order_items SET dispatched_qty=COALESCE((SELECT SUM(li.quantity) FROM release_slip_items li WHERE li.order_item_id=order_items.id),
+      CASE WHEN EXISTS(SELECT 1 FROM orders o WHERE o.id=order_items.order_id AND o.fulfilled_at IS NOT NULL) THEN quantity ELSE 0 END);
+      UPDATE order_items SET dispatched_bulk_qty=MIN(released_qty,dispatched_qty);
+      UPDATE production_batch_allocations SET release_slip_id=(SELECT id FROM release_slips s WHERE s.order_id=production_batch_allocations.order_id)
+        WHERE state='shipped' AND (SELECT COUNT(*) FROM release_slips s WHERE s.order_id=production_batch_allocations.order_id)=1;
+      INSERT OR IGNORE INTO release_slip_units(slip_item_id,unit_id) SELECT li.id,u.id FROM release_slip_items li
+        JOIN job_order_units u ON u.order_item_id=li.order_item_id AND u.status='sold'
+        WHERE (SELECT COUNT(*) FROM release_slips s JOIN release_slip_items x ON x.slip_id=s.id WHERE x.order_item_id=li.order_item_id)=1;
+      UPDATE deliveries SET release_slip_id=(SELECT id FROM release_slips s WHERE s.order_id=deliveries.order_id)
+        WHERE (SELECT COUNT(*) FROM release_slips s WHERE s.order_id=deliveries.order_id)=1
+        AND (SELECT COUNT(*) FROM deliveries d WHERE d.order_id=deliveries.order_id)=1;`);
+    setSetting('trip_manifest_backfilled_v84',true);
+  }
+
 }
 
 /** One-time permission split: every role and per-account grant holding `from` also gets `to`.

@@ -1,3 +1,5 @@
+import { saleHeld } from './sale-holds';
+import { kitPickedAt, repairHeld } from '../manufacturing/stock-holds';
 import { parseProductionLabel } from '../manufacturing/label-code';
 import { batchBalances } from './batch-stock';
 /** Inventory: items, search/filter, stock adjustments with history, dashboard stats. */
@@ -44,6 +46,17 @@ import { parseCsvTable, toCsv } from '../../shared/csv';
 import { whereUsed } from '../manufacturing/bom-explode';
 import { dbBomResolvers } from '../manufacturing/bom-resolvers';
 import type { InventoryItem, InventoryTransaction } from '../../shared/types';
+
+function salesStock(itemId:number) {
+  return stockBreakdown(itemId).map(s=>{
+    const assembled=Math.max(0,s.assembled_quantity-saleHeld(itemId,s.location_id,'assembled')-kitPickedAt(itemId,s.location_id)-repairHeld(itemId,s.location_id));
+    const semi=Math.max(0,s.semi_built_quantity-saleHeld(itemId,s.location_id,'semi_built'));
+    return {...s,reserved_for_sales:saleHeld(itemId,s.location_id),available_quantity:assembled+semi,assembled_available:assembled,semi_built_available:semi};
+  });
+}
+function salesAvailability(itemId:number) {
+  return {reserved_for_sales:saleHeld(itemId),available_quantity:salesStock(itemId).reduce((n,s)=>n+s.available_quantity,0)};
+}
 
 const router = Router();
 router.use(requireAuth);
@@ -164,7 +177,7 @@ router.get('/', pickerGate, (req, res) => {
     ITEM_SELECT +
     (where.length ? ' WHERE ' + where.join(' AND ') : '') +
     ' ORDER BY i.name COLLATE NOCASE';
-  res.json(queryAll<InventoryItem>(sql, ...params).map((i) => pickerView(req, i)));
+  res.json(queryAll<InventoryItem>(sql, ...params).map((i) => pickerView(req, {...i,...salesAvailability(i.id)})));
 });
 
 // GET /api/inventory/form-config — the saved Item-form customization (or null).
@@ -598,7 +611,7 @@ router.get('/:id/stock', requirePermission('inventory.view'), (req, res) => {
     res.status(404).json({ error: 'Item not found' });
     return;
   }
-  res.json(stockBreakdown(id));
+  res.json(salesStock(id));
 });
 
 // GET /api/inventory/:id/where-used — finished products / sub-assemblies whose BOM
@@ -644,10 +657,10 @@ router.get('/:id', viewGate, (req, res) => {
      ORDER BY s.quantity DESC, l.name COLLATE NOCASE`,
     item.id
   );
-  res.json({ ...withParsedAttributes(item),
+  res.json({ ...withParsedAttributes(item), ...salesAvailability(item.id),
     preferred_location_name: item.preferred_location_id ? locationName(item.preferred_location_id) : null,
     history: history.map((h) => ({ ...h, location_name: h.location_id ? locationName(h.location_id) : null })),
-    stock: stock.map((s) => ({ ...s, location_name: locationName(s.location_id) })) });
+    stock: stock.map((s) => ({ ...s, ...salesStock(item.id).find(x=>x.location_id===s.location_id),location_name: locationName(s.location_id) })) });
 });
 
 // POST /api/inventory — create item

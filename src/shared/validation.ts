@@ -973,6 +973,14 @@ export const unreserveOrderSchema = z.object({
 
 // Issuing a release slip — who physically collected the goods, and the vehicle they left in.
 export const releaseSlipSchema = z.object({
+  previous_slip_id: optionalId,
+  delivery_id: optionalId,
+  lines: z.array(z.object({
+    order_item_id: z.coerce.number().int().positive(),
+    quantity: numCoerce.positive().max(1_000_000),
+    unit_ids: z.array(z.coerce.number().int().positive()).max(1000).optional(),
+    batches: z.array(z.object({allocation_id:z.coerce.number().int().positive(),quantity:numCoerce.positive()})).max(1000).optional(),
+  })).min(1).max(300).optional(),
   collected_by: trimmed.min(1, 'Enter who collected the goods').max(160),
   vehicle_plate: optionalText,
   notes: optionalText,
@@ -1876,6 +1884,7 @@ const ymd = trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').opti
 const geo = z.coerce.number().min(-180).max(180).optional().nullable();
 
 export const createDeliverySchema = z.object({
+  release_slip_id: optionalId.optional(),
   order_id: optionalId,
   delivery_mode: z.enum(['own', 'courier']).default('own'),
   courier_name: trimmed.max(160).optional().nullable(),

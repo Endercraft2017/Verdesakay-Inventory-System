@@ -94,7 +94,7 @@
         guard(s);
         if (final) { await mProductionDrafts.remove(s); delete records[s.key]; }
         else { s.operation = { kind: 'release-handoff', orderId: a.orderId, state: 'draft' }; s.rows = []; await mProductionDrafts.save(s); }
-        if (visible()) MApp.go('so', { id: a.orderId, step: final ? 'receipt' : 'handoff', t: Date.now() });
+        if (visible()) MApp.go('so', { id: a.orderId, step: final ? 'receipt' : 'handoff', slip:final&&a.result?a.result.id:undefined,t: Date.now() });
       } catch (err) { mToast(err.message,'err'); review.disabled = false; }
     };
     body.querySelector('#handoff-queue').onclick = function () { MApp.go('so'); };

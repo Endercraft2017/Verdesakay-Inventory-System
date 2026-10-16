@@ -1,5 +1,15 @@
 # Inventory and production: mobile integration gaps
 
+## Current owner decision: same-order partial trips (2026-10-16)
+
+Partial vehicle loads now stay on **one sales order** with separate release slips and
+separate delivery records. Unshipped goods remain committed and unavailable to other
+sales until shipped or customer-cancelled. Mobile load selection supports exact serials,
+batch quantities and complete CKD kits. Managers can plan each delivery trip; the
+second handoff requires fresh proof/signature. Schema v84, PWA cache v108. This supersedes
+historical backorder-splitting and “CKD partial UI pending” descriptions below. See the
+same-order partial vehicle trips entry at the end for the current contract.
+
 ## Mobile exact sale-line allocation (2026-10-16)
 
 The repeated-SKU handoff below is implemented for phone allocation. Staff see
@@ -840,3 +850,25 @@ and 27 real-backend Playwright checks passed. See
 Exact sale-line allocation validation: TypeScript, 160 focused tests, all 2,823
 full-suite tests across 276 files, and 33 real-backend Playwright checks passed.
 See `docs/reviews/mobile-sale-line-allocation-validation.md` for scenarios and scope.
+
+### Same-order partial vehicle trips (2026-10-16)
+
+Owner decision supersedes the earlier backorder-splitting description: keep one sales
+order, hold all unshipped demand for that customer, and create a separate release slip
+and delivery record for each actual load. Mobile Release orders offers **Choose vehicle
+load**, with exact serials and reserved batch quantities. Ship complete CKD kits only;
+extra components may remain held. Each trip uses fresh handoff proof/signature and
+Sales authorization. Existing unresolved attempts retain their immutable payload/key.
+
+Mobile managers can **Plan delivery trip** before warehouse-out or for a specific slip.
+Bookings and delivered manifests never copy the full order quantity. Own-driver and
+courier evidence remain optional; starts before the slip remain allowed. A successful
+physical delivery requires its own slip. Only Sales' audited **Cancel customer remainder**
+action frees unshipped stock; earlier releases and deliveries remain unchanged.
+
+Schema v84 adds dispatch/cancellation counters and exact trip identity links; ambiguous
+historic delivery links stay unassigned for review. Historic backorder SOs are retained.
+Validation: TypeScript passed; 154 focused mobile/backend tests and 15 sync/trip
+checks passed; all 2,832 tests across 278 files passed; all 34 real-backend
+Playwright checks passed at 390×844 with zero page errors. See
+`docs/reviews/mobile-same-order-trips-validation.md` for behavior, upgrade and scope.

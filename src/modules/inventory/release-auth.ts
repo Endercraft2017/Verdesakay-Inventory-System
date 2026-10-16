@@ -13,11 +13,10 @@
  *    It replaces only the token: the authorization itself must still be valid.
  *  - Package checklist (per finished product): the items that must leave with each unit
  *    (charger, keys, documents…). Every required item is confirmed explicitly on the slip.
- *  - Partial release: only with an authorization that allows it. The order is split at the slip —
- *    the released quantities stay on it, the rest moves to a new approved backorder sale order —
- *    so stock, COGS and the invoice only ever cover what physically left. */
+ *  - Partial release: only with an authorization that allows it. Each trip has its own immutable slip; unshipped demand
+ *    stays committed on the same order. Stock and COGS cover only the actual trip load. */
 import { randomInt } from 'node:crypto';
-import { queryOne, queryAll, run, nextSequence, getSetting } from '../../shared/db';
+import { queryOne, queryAll, run, getSetting } from '../../shared/db';
 
 export interface ReleaseAuthorization {
   id: number;
@@ -121,103 +120,15 @@ export function packageItemsFor(orderId: number): { item_id: number; item_name: 
 }
 
 /** Required package items not confirmed in `confirmed` ([{item_id, label, ok}]). */
-export function missingPackageItems(orderId: number, confirmed: { item_id: number; label: string; ok: boolean }[] | undefined): string[] {
+export function missingPackageItems(orderId: number, confirmed: { item_id: number; label: string; ok: boolean }[] | undefined, itemIds?:number[]): string[] {
   const ok = new Set((confirmed ?? []).filter((c) => c.ok).map((c) => `${c.item_id}\u0000${c.label.trim().toLowerCase()}`));
   return packageItemsFor(orderId)
-    .filter((p) => p.required && !ok.has(`${p.item_id}\u0000${p.label.trim().toLowerCase()}`))
+    .filter((p) => (!itemIds||itemIds.includes(p.item_id))&&p.required && !ok.has(`${p.item_id}\u0000${p.label.trim().toLowerCase()}`))
     .map((p) => `${p.item_name}: ${p.label}`);
 }
 
-function covered(_orderId: number, l: { id: number; item_id: number | null; quantity: number; released_qty: number | null }): number {
-  if (l.item_id == null) return l.quantity;
-  const units = queryOne<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM job_order_units WHERE order_item_id = ? AND status IN ('reserved', 'sold')`,
-    l.id
-  )!.n;
-  return Math.min(l.quantity, units + (l.released_qty || 0));
-}
-
-const r2 = (n: number) => Math.round(n * 100) / 100;
-const quantity = (n: number) => Number(n.toPrecision(15));
-
-/** Partial release: keep what is allocated on the order, move the rest to a new approved
- *  backorder sale order, re-total both, and mark the order released. Runs inside the caller's
- *  transaction. Returns the backorder, or null when nothing is outstanding. Throws when
- *  nothing at all has been allocated yet. */
-export function splitUnreleased(orderId: number, userId: number): { id: number; number: string } | null {
-  const order = queryOne<{ number: string; customer_name: string | null; customer_contact: string | null; customer_id: number | null;
-    location_id: number | null; tax_code_id: number | null; currency: string | null; tax_percent: number | null }>(
-    'SELECT * FROM orders WHERE id = ?', orderId
-  )!;
-  const lines = queryAll<{ id: number; item_id: number | null; name: string; sku: string | null; description: string | null;
-    quantity: number; unit: string | null; unit_price: number; tax_code_id: number | null; released_qty: number | null; sort: number;
-    fulfillment_mode: string; parent_order_item_id: number | null }>(
-    'SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', orderId
-  );
-  const rest: typeof lines = [];
-  const ckdKits = new Map<number, number>();
-  for (const parent of lines.filter((l) => l.fulfillment_mode === 'ckd')) {
-    const parts = lines.filter((l) => l.parent_order_item_id === parent.id);
-    if (!parts.length) throw new Error(`CKD kit ${parent.name} has no snapshotted parts.`);
-    const kits = Math.min(parent.quantity, ...parts.map((p) => Math.floor((covered(orderId, p) + 1e-9) / (p.quantity / parent.quantity))));
-    // A partial handoff must not strand already picked components on the shipped order.
-    for (const p of parts) {
-      const picked = covered(orderId, p);
-      const shipped = kits * p.quantity / parent.quantity;
-      if (picked > shipped + 1e-9) throw new Error(`Unreserve extra ${p.name} before shipping complete CKD kits.`);
-    }
-    ckdKits.set(parent.id, kits);
-  }
-  let kept = 0;
-  for (const l of lines) {
-    if (l.item_id == null) continue;
-    const c = l.fulfillment_mode === 'ckd' ? ckdKits.get(l.id) ?? 0
-      : l.parent_order_item_id ? (ckdKits.get(l.parent_order_item_id) ?? 0) * l.quantity /
-        lines.find((p) => p.id === l.parent_order_item_id)!.quantity : covered(orderId, l);
-    if (c > 0) kept++;
-    if (c >= l.quantity) continue;
-    rest.push({ ...l, quantity: quantity(l.quantity - c) });
-    if (c > 0) {
-      run('UPDATE order_items SET quantity = ?, line_total = ?, released_qty = MIN(COALESCE(released_qty, 0), ?) WHERE id = ?',
-        c, r2(c * l.unit_price), c, l.id);
-    } else {
-      run('DELETE FROM order_items WHERE id = ?', l.id);
-    }
-  }
-  if (!kept) throw new Error('Nothing on this order has been allocated yet — scan or enter what is leaving first.');
-  if (!rest.length) return null;
-  const totals = (rows: { quantity: number; unit_price: number }[]) => {
-    const subtotal = r2(rows.reduce((s, x) => s + r2(x.quantity * x.unit_price), 0));
-    const tax_amount = r2((subtotal * (order.tax_percent || 0)) / 100);
-    return { subtotal, tax_amount, total: r2(subtotal + tax_amount) };
-  };
-  const left = totals(queryAll<{ quantity: number; unit_price: number }>('SELECT quantity, unit_price FROM order_items WHERE order_id = ?', orderId));
-  run("UPDATE orders SET subtotal = ?, tax_amount = ?, total = ?, status = 'released', updated_at = datetime('now') WHERE id = ?",
-    left.subtotal, left.tax_amount, left.total, orderId);
-  const bo = totals(rest);
-  const number = nextSequence('order_seq_sale', 'SO');
-  const boId = Number(run(
-    `INSERT INTO orders (type, number, customer_name, customer_contact, customer_id, location_id, tax_code_id, order_date, status,
-       notes, currency, subtotal, tax_percent, tax_amount, total, created_by)
-     VALUES ('sale', ?, ?, ?, ?, ?, ?, date('now'), 'approved', ?, ?, ?, ?, ?, ?, ?)`,
-    number, order.customer_name, order.customer_contact, order.customer_id, order.location_id, order.tax_code_id,
-    `Backorder of ${order.number} (partial release)`, order.currency ?? 'PHP', bo.subtotal, order.tax_percent ?? 0,
-    bo.tax_amount, bo.total, userId
-  ).lastInsertRowid);
-  const newParentIds = new Map<number, number>();
-  rest.forEach((l, i) => {
-    const newId = Number(run(
-    `INSERT INTO order_items (order_id, item_id, name, sku, description, quantity, unit, unit_price, line_total, tax_code_id, sort, fulfillment_mode, parent_order_item_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    boId, l.item_id, l.name, l.sku, l.description, l.quantity, l.unit, l.unit_price, r2(l.quantity * l.unit_price), l.tax_code_id, i, l.fulfillment_mode
-    , l.parent_order_item_id ? newParentIds.get(l.parent_order_item_id) ?? null : null).lastInsertRowid);
-    if (l.fulfillment_mode === 'ckd') newParentIds.set(l.id, newId);
-  });
-  return { id: boId, number };
-}
-
 /** Everything the slip must satisfy beyond "every line released" (checked by the route). */
-export function slipError(orderId: number, input: { authorization_token?: string | null; package?: { item_id: number; label: string; ok: boolean }[] }):
+export function slipError(orderId: number, input: { authorization_token?: string | null; package?: { item_id: number; label: string; ok: boolean }[]; shipping_item_ids?:number[] }):
   { code: 'authorization' | 'package'; error: string; missing?: string[] } | null {
   const { auth, state } = currentAuthorization(orderId);
   if (auth || authorizationRequired()) {
@@ -226,7 +137,7 @@ export function slipError(orderId: number, input: { authorization_token?: string
     // expired or used authorization.
     if (err && !(auth && state === 'valid' && latestOverride(auth.id)?.status === 'approved')) return { code: 'authorization', error: err };
   }
-  const missing = missingPackageItems(orderId, input.package);
+  const missing = missingPackageItems(orderId, input.package,input.shipping_item_ids);
   if (missing.length) return { code: 'package', error: `Confirm every required package item: ${missing.join(', ')}`, missing };
   return null;
 }

@@ -213,7 +213,7 @@ describe('package checklist', () => {
 });
 
 describe('partial release', () => {
-  it('needs an authorization that allows it, then splits the rest into a backorder', async () => {
+  it('needs an authorization that allows it, keeps the rest reserved on the same sales order', async () => {
     const { product, codes } = await productWithUnits('PR', 1);
     const so = await approvedOrder(product, 2);
     await ctx.api.post(`/api/orders/${so}/release`).set(bearer(releaser.token)).send({ codes: [codes[0]!] });
@@ -222,14 +222,13 @@ describe('partial release', () => {
     const iss = await issue(so, { partial_allowed: true });
     const res = await slip(so, { authorization_token: iss.body.token });
     expect(res.status).toBe(201);
-    expect(res.body.backorder.number).toMatch(/^SO-/);
+    expect(res.body.backorder).toBeNull();
     const orig = (await ctx.api.get(`/api/orders/${so}`).set(H())).body;
-    expect(orig.status).toBe('confirmed');
-    expect(orig.items[0].quantity).toBe(1);
-    expect(orig.total).toBe(100);
-    const bo = (await ctx.api.get(`/api/orders/${res.body.backorder.id}`).set(H())).body;
-    expect(bo).toMatchObject({ status: 'approved', total: 100 });
-    expect(bo.items[0]).toMatchObject({ item_id: product, quantity: 1 });
+    expect(orig.status).toBe('approved');
+    expect(orig.items[0]).toMatchObject({quantity:2,dispatched_qty:1,cancelled_qty:0});
+    expect(orig.total).toBe(200);
+    expect(orig.fulfillment).toMatchObject({remaining:1,dispatched:1,state:'partially_fulfilled'});
+
   });
 });
 

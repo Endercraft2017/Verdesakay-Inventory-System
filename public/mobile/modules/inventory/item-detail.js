@@ -65,6 +65,8 @@
       '</div>'
     ));
 
+    if(it.available_quantity!=null)view.appendChild(mEl('<div class="m-hint">Available for sales: '+it.available_quantity+' · Committed to sales orders: '+(it.reserved_for_sales||0)+'</div>'));
+
     var locs = (breakdown || []).filter(function (b) { return b.quantity !== 0; });
     if (locs.length) {
       view.appendChild(mEl('<div class="m-sectitle">Locations</div>'));

@@ -70,10 +70,10 @@ async function product(name, qty, qc, existingId) {
     return { id: p.id, jo: jo.id };
 }
 async function order(p, qty) { const so = await api('POST', '/orders', { type: 'sale', status: 'approved', customer_name: 'QR recipient', items: [{ item_id: p.id, name: 'Audit product', quantity: qty, unit_price: 20 }] }); const auth = await api('POST', `/release-slips/orders/${so.id}/authorizations`, { mode: 'pickup', recipient_name: 'QR recipient' }); return { id: so.id, auth: auth.token, productId: p.id, quantity: qty }; }
-async function captureToReview(so) {
+async function captureToReview(so, verified = false) {
     await go('so?id=' + so.id + '&step=handoff');
-    await page.locator('[data-token]').fill(so.auth);
-    await page.locator('[data-verify]').click();
+    if(!verified){await page.locator('[data-token]').fill(so.auth);
+    await page.locator('[data-verify]').click();}
     await page.getByText(' · Valid', { exact: false }).first().waitFor();
     await page.locator('#rel-go').click();
     const chooser = page.waitForEvent('filechooser');
@@ -446,6 +446,47 @@ try {
         await launch(release,video);await go('so?id='+made.id+'&step=unit&code=VDS:UNIT:'+ids[0]);await page.locator('[data-sale-line="'+lines[1].id+'"]').click();await cameraVerify('#rel-ok');
         await page.locator('#rel-ok').click();await page.locator('#rel-review-current').waitFor();
         const context=await api('GET','/release-slips/orders/'+made.id+'/context');assert.equal(context.units[0].order_item_id,lines[1].id);assert.equal(context.lines[0].units,0);assert.equal(context.lines[1].units,1);assert.equal((await api('GET','/inventory/'+p.id)).quantity,2);
+    });
+    await check('Two mobile vehicle trips keep one sale, hold the remainder and require fresh handoff proof', async()=>{
+        const p=await api('POST','/inventory',{name:'Two-trip stock',quantity:5,unit_cost:4});
+        const made=await api('POST','/orders',{type:'sale',status:'approved',customer_name:'Multi-trip customer',items:[{item_id:p.id,name:'Two-trip stock',quantity:5,unit_price:20}]});
+        const lines=(await api('GET','/orders/'+made.id)).items;
+        await api('POST','/orders/'+made.id+'/accept-release');
+        await api('POST','/orders/'+made.id+'/release',{bulk:[{item_id:p.id,order_item_id:lines[0].id,quantity:5}]});
+        let previous=null;
+        for(const qty of [3,2]){
+            const auth=await api('POST','/release-slips/orders/'+made.id+'/authorizations',{mode:'delivery',recipient_name:'QR recipient',partial_allowed:true});
+            await launch(admin);await page.goto(base+'/m#/deliveries?step=plan&order='+made.id);
+            await page.locator('[data-plan="assigned_to"]').selectOption(String(assigned.id));
+            await page.locator('#plan-save').click();await page.locator('#delivery-review').waitFor();
+            const booked=(await api('GET','/deliveries?order_id='+made.id)).find(d=>d.release_slip_id==null&&d.status==='pending');assert(booked);
+            await page.locator('#delivery-review').click();await page.waitForURL(u=>u.hash.includes('id='+booked.id));
+            await launch(release);await go('so?id='+made.id+'&step=trip');
+            await page.locator('[data-load-bulk]').fill(String(qty));
+            await page.screenshot({path:path.join(output,'trip-load-'+qty+'.png'),fullPage:true});
+            await page.locator('#trip-continue').click();await page.locator('#rel-go').click();
+            if(previous){
+                await page.locator('[data-token]').waitFor();
+                assert.equal(await page.locator('[data-token]').inputValue(),'');
+                await page.locator('[data-token]').fill(auth.token);await page.locator('[data-verify]').click();await page.getByText(' · Valid',{exact:false}).first().waitFor();
+                await page.locator('#rel-go').click();await page.locator('[data-sign] canvas').waitFor();
+                assert.equal(await page.locator('[data-thumbs] img').count(),0);
+                assert.equal(await page.evaluate(()=>mProductionDrafts.key('release-owner')!=null),true);
+            }
+            await captureToReview({id:made.id,auth:auth.token},!!previous);
+            await page.locator('#rel-go').click();await page.locator('#rel-ok').check();await page.locator('#rel-post').click();await page.locator('#handoff-review').waitFor();
+            const c=await api('GET','/release-slips/orders/'+made.id+'/context');
+            assert.notEqual(c.slip.id,previous);
+            const d=await api('GET','/deliveries/'+booked.id);assert.equal(d.release_slip_id,c.slip.id);assert.deepEqual(d.items.map(i=>i.quantity),[qty]);
+            const stock=await api('GET','/inventory/'+p.id);assert.equal(stock.quantity,previous?0:2);assert.equal(stock.available_quantity,0);
+            await page.locator('#handoff-review').click();await page.locator('#rel-back').waitFor();
+            await launch(driver);await page.goto(base+'/m#/deliveries?id='+booked.id);await page.getByText('This trip’s goods',{exact:true}).waitFor();
+            assert.match(await page.locator('#m-view').innerText(),new RegExp(''+qty));
+            await page.getByRole('button',{name:'Start delivery',exact:true}).click();await page.locator('#delivery-review').click();await page.getByRole('button',{name:'Complete delivery',exact:true}).click();await page.locator('[data-ok]').click();await page.locator('#delivery-review').waitFor();await page.locator('#delivery-review').click();
+            previous=c.slip.id;
+        }
+        const final=await api('GET','/orders/'+made.id);assert.equal(final.items[0].quantity,5);assert.equal(final.trips.length,2);assert.equal(final.fulfillment.state,'fulfilled');assert.equal(final.fulfillment.delivered,5);
+        assert.equal((await api('GET','/deliveries?order_id='+made.id)).length,2);
     });
     await check('Basic account sees only personal mobile tools; operational URLs and APIs stay blocked', async () => {
         await api('POST','/roles',{key:'audit_basic',label:'Audit basic employee',permissions:['mobile.access','messages.view','messages.send']});

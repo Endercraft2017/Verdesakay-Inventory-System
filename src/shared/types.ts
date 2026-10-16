@@ -286,6 +286,8 @@ export interface InventoryStockRow {
 }
 
 export interface InventoryItem {
+  reserved_for_sales?:number;
+  available_quantity?:number;
   id: number;
   name: string;
   sku: string | null;
@@ -544,6 +546,7 @@ export interface ReleaseSlipItem {
 /** A field delivery / drop with its proof of delivery. See src/routes/deliveries.routes.ts. */
 export type DeliveryStatus = 'pending' | 'out_for_delivery' | 'delivered' | 'failed' | 'cancelled';
 export interface Delivery {
+  release_slip_id?: number | null;
   id: number;
   number: string;
   order_id: number | null;
@@ -974,6 +977,9 @@ export interface Order {
 }
 
 export interface OrderItem {
+  dispatched_qty?: number;
+  dispatched_bulk_qty?: number;
+  cancelled_qty?: number;
   id: number;
   order_id: number;
   item_id: number | null;

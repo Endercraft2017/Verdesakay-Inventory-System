@@ -1,3 +1,4 @@
+import { orderOutstanding, lineHeld } from './order-trips';
 import { parseProductionLabel } from '../manufacturing/label-code';
 import { batchBalances } from './batch-stock';
 /** Sale-order releasing — the warehouse side of the SO pipeline. Mounted at /api/release-slips.
@@ -41,11 +42,11 @@ const saleOrder = (id: number) => queryOne<{ id: number; number: string; status:
 
 // Per-order line progress: units reserved/sold + bulk released_qty against the ordered qty.
 const PROGRESS_SQL = `
-  (SELECT COALESCE(SUM(oi.quantity), 0) FROM order_items oi WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode != 'ckd') AS qty_ordered,
-  (SELECT COALESCE(SUM(MIN(oi.quantity, COALESCE(oi.released_qty, 0)
-      + (SELECT COUNT(*) FROM job_order_units ju
-          WHERE ju.order_item_id = oi.id AND ju.status IN ('reserved', 'sold')))), 0)
-     FROM order_items oi WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode != 'ckd') AS qty_released`;
+  (SELECT COALESCE(SUM(oi.quantity-oi.cancelled_qty-oi.dispatched_qty), 0) FROM order_items oi WHERE oi.order_id = o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode != 'ckd') AS qty_ordered,
+  (SELECT COALESCE(SUM(MIN(MAX(0,oi.quantity-oi.cancelled_qty-oi.dispatched_qty),
+      MAX(0,COALESCE(oi.released_qty,0)-oi.dispatched_bulk_qty)
+      + (SELECT COUNT(*) FROM job_order_units ju WHERE ju.order_item_id=oi.id AND ju.status='reserved'))),0)
+     FROM order_items oi WHERE oi.order_id=o.id AND oi.item_id IS NOT NULL AND oi.fulfillment_mode!='ckd') AS qty_released`;
 
 // GET /api/release-slips/queue — { to_accept, releasing }
 router.get('/queue', viewGate, (req, res) => {
@@ -60,7 +61,7 @@ router.get('/queue', viewGate, (req, res) => {
      LEFT JOIN locations fallback ON fallback.is_default = 1 AND o.location_id IS NULL
      WHERE o.type = 'sale' AND LOWER(o.status) IN ('approved', 'released')
        AND EXISTS (SELECT 1 FROM order_items physical WHERE physical.order_id = o.id AND physical.item_id IS NOT NULL)
-       AND NOT EXISTS (SELECT 1 FROM release_slips rs WHERE rs.order_id = o.id)
+       AND EXISTS(SELECT 1 FROM order_items x WHERE x.order_id=o.id AND x.item_id IS NOT NULL AND x.fulfillment_mode!='ckd' AND x.quantity-x.cancelled_qty-x.dispatched_qty>0)
      ORDER BY COALESCE(o.expected_date, '9999-12-31'), o.id`
   );
   // Mobile Releasing (Figma 78:16): each order's authorization (masked), what is leaving, its
@@ -96,9 +97,8 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
   const order = saleOrder(id);
   if (!order) { res.status(404).json({ error: 'Sale order not found' }); return; }
   const lines = queryAll(
-    `SELECT oi.id, oi.item_id, oi.name, oi.sku, oi.unit_price, oi.quantity, oi.released_qty, oi.fulfillment_mode, oi.parent_order_item_id,
-            (SELECT COUNT(*) FROM job_order_units u WHERE u.order_item_id = oi.id
-               AND u.status IN ('reserved', 'sold')) AS units,
+    `SELECT oi.id, oi.item_id, oi.name, oi.sku, oi.unit_price, oi.quantity, oi.released_qty, oi.dispatched_qty, oi.dispatched_bulk_qty, oi.cancelled_qty, oi.fulfillment_mode, oi.parent_order_item_id,
+            ((SELECT COUNT(*) FROM job_order_units u WHERE u.order_item_id=oi.id AND u.status='reserved')+MAX(oi.dispatched_qty-oi.dispatched_bulk_qty,(SELECT COUNT(*) FROM job_order_units u WHERE u.order_item_id=oi.id AND u.status='sold'))) AS units,
             EXISTS (SELECT 1 FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
               WHERE u.product_item_id = oi.item_id AND j.build_mode = CASE WHEN oi.fulfillment_mode = 'semi_built' THEN 'semi_built' ELSE 'assembled' END) AS serialized
      FROM order_items oi WHERE oi.order_id = ? ORDER BY oi.sort, oi.id`, id
@@ -116,7 +116,10 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
     order: { id, number: order.number, status: order.status, customer_name: order.customer_name, currency: order.currency,
       warehouse_accepted_at: accepted?.warehouse_accepted_at ?? null, location_id: availability.location_id,
       location_name: availability.location_name },
-    lines, units,
+    lines: lines.map((l:any)=>({...l,held_qty:lineHeld(l).reserved+lineHeld(l).bulk})), units,
+    outstanding:orderOutstanding(id),
+    slips:queryAll('SELECT id,number,released_at FROM release_slips WHERE order_id=? ORDER BY id DESC',id),
+    deliveries:queryAll("SELECT id,number,status,release_slip_id FROM deliveries WHERE order_id=? ORDER BY id DESC",id),
     batch_allocations:queryAll(`SELECT a.*,pb.number AS batch_number FROM production_batch_allocations a JOIN production_batches pb ON pb.id=a.batch_id WHERE a.order_id=? ORDER BY a.id`,id),
     availability: availability.lines.map((l) => ({ order_item_id: l.order_item_id, item_id: l.item_id, fulfillment_mode: l.fulfillment_mode, free_to_allocate: Math.max(0, l.available - l.covered_here),
       on_hand: l.on_hand, committed_elsewhere: l.committed_elsewhere, kit_held: l.kit_held, repair_held: l.repair_held })),
@@ -128,7 +131,7 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
       `SELECT rs.id, rs.number, rs.released_at, rs.collected_by, u.full_name AS released_by_name, d.backorder_order_id,
               bo.number AS backorder_number
        FROM release_slips rs LEFT JOIN users u ON u.id = rs.released_by LEFT JOIN release_slip_details d ON d.slip_id = rs.id
-       LEFT JOIN orders bo ON bo.id = d.backorder_order_id WHERE rs.order_id = ?`, id
+       LEFT JOIN orders bo ON bo.id = d.backorder_order_id WHERE rs.order_id = ? ORDER BY rs.id DESC LIMIT 1`, id
     ) ?? null,
   });
 });
@@ -161,7 +164,7 @@ router.get('/orders/:id/unit', releaseGate, (req, res) => {
     const pool=context.lines.find(x=>x.item_id===batch.product_item_id&&(x.fulfillment_mode==='semi_built'?'semi_built':'assembled')===batch.build_mode);
     const free=pool?Math.max(0,pool.on_hand-pool.committed_elsewhere-
       context.lines.filter(x=>x.item_id===batch.product_item_id&&(x.fulfillment_mode==='semi_built'?'semi_built':'assembled')===batch.build_mode)
-        .reduce((n,x)=>n+x.covered_here,0)):0;
+        .reduce((n,x)=>{const l=queryOne<{dispatched_qty:number}>('SELECT dispatched_qty FROM order_items WHERE id=?',x.order_item_id);return n+x.covered_here-(l?.dispatched_qty||0);},0)):0;
     const available=Math.max(0,Math.min(balance?.available??0,free,open));
     res.json({state:!lines.length?'wrong_product':available>0?'batch_available':'batch_unavailable',batch:{...batch,balances,available},
       matching_lines:lines.map(l=>({order_item_id:l.id,remaining:Math.max(0,l.quantity-l.released_qty)}))});return;
@@ -272,7 +275,7 @@ router.get('/orders/:id/authorizations', requireAnyPermission(['orders.view', 'o
 router.post('/orders/:id/authorizations', salesGate, syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   if (!saleOrder(id)) { res.status(404).json({ error: 'Sale order not found' }); return; }
-  if (queryOne('SELECT 1 FROM release_slips WHERE order_id = ?', id)) { res.status(409).json({ error: 'This order was already released.' }); return; }
+  if (orderOutstanding(id)<=1e-9) { res.status(409).json({ error:'No unshipped remainder remains on this order.' }); return; }
   const input = parseBody(releaseAuthorizationSchema, req.body);
   const last4 = input.id_reference ? input.id_reference.replace(/[^0-9A-Za-z]/g, '').slice(-4) || null : null;
   const token = newToken(input.mode);
