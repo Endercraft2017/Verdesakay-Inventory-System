@@ -24,7 +24,7 @@ describe('QuickBooks OAuth callback (H1, H2)', () => {
   });
 
   it('never opens or creates a database for a workspace that does not exist', async () => {
-    const res = await ctx.api.get('/api/quickbooks/callback').query({ state: 'ghostco.nonce', code: 'c', realmId: 'r' });
+    const res = await ctx.api.get('/api/quickbooks/callback').query({ state: 'ghostco.' + 'a'.repeat(32), code: 'c', realmId: 'r' });
     expect(res.status).toBe(400);
     expect(res.text).toContain('Unknown workspace');
     expect(fs.existsSync(path.join(process.env.DATA_DIR!, 'ghostco.db'))).toBe(false);

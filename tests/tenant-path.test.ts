@@ -126,4 +126,7 @@ it('scopes HttpOnly browser cookies to a tenant path and rejects another tenant 
   expect((await ctx.api.get('/otherco/api/auth/me').set('Host', host).set('Cookie', cookie)).status).toBe(401);
   expect((await ctx.api.get('/verdesakay/mobile/index.html').set('Host', host)).text).toContain('href="/verdesakay/policies"');
   expect((await ctx.api.get('/policies/privacy').set('Host', host)).status).toBe(200);
+  const tenantPolicy = await ctx.api.get('/verdesakay/policies/privacy').set('Host', host);
+  expect(tenantPolicy.status).toBe(200); expect(tenantPolicy.text).toContain('requires owner and legal approval');
+  expect(tenantPolicy.headers['x-frame-options']).toBe('DENY');
 });

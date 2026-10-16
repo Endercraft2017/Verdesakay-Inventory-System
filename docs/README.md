@@ -8,6 +8,17 @@ Start here. This folder has two layers:
   its purpose, every exported function/route, who calls it, and any gotchas. Open these when
   you're about to change or extend a specific file.
 
+## Production audit
+
+- [Second audit and unresolved release gates](audits/second-pass-audit.md)
+- [All 233 handbook controls](audits/production-scorecard.md)
+- [Validation evidence and limits](audits/validation-results.md)
+- [Owner actions](OWNER-ACTIONS.md)
+- [Public policy drafts](policies/README.md), [B2B contract templates](governance/contracts.md),
+  [data governance](governance/data-governance.md), [security program](governance/security-program.md),
+  [operating runbooks](operations/runbooks.md), [incident response](operations/incidents.md),
+  [release checklist](operations/release-checklist.md) and [API compatibility](operations/api-contract.md).
+
 ## Concept docs
 
 | File | What's in it |

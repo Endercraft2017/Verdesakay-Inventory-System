@@ -36,7 +36,8 @@ describe('while email is off', () => {
     expect(mail._testOutbox).toHaveLength(0);
     const t = await ctx.api.post('/_platform/api/mail/test').set(opHdr()).send({ to: 'me@example.test' });
     expect(t.status).toBe(502);
-    expect(t.body.error).toBe('Email is off.');
+    expect(t.body.error).toBe('Internal server error');
+    expect(t.body.request_id).toBe(t.headers['x-request-id']);
   });
 });
 

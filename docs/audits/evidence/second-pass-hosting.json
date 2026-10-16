@@ -1,0 +1,26 @@
+{
+  "inspection_date_utc": "2026-10-16",
+  "access": "read-only; metadata and variable names only; no secret values or infrastructure mutations",
+  "railway": {
+    "project": "ERP",
+    "environments": ["production"],
+    "repository": "Endercraft2017/Verdesakay-Inventory-System",
+    "source_branch": "restructure/module-architecture",
+    "check_suites": false,
+    "observed_successful_deployment_sha": "d3d54aa3c72579e36664e1cf2fd2c8fb3a249428",
+    "replicas": 1,
+    "region": "asia-southeast1-eqsg3a",
+    "persistent_volume_mount": "/data",
+    "healthcheck": "/api/health",
+    "tracing": false,
+    "instrumentation": false,
+    "limitations": ["No live recovery proof", "Bucket privacy/Object Lock unverified", "Public HTTPS checks refused by workspace proxy; no outage conclusion", "Source advanced after service inspection"]
+  },
+  "github": {
+    "production_protected": false,
+    "required_status_checks": [],
+    "protection_details": "403 integration administration permission unavailable",
+    "rulesets": "403 private-repository plan restriction; do not make repository public"
+  },
+  "final_audited_source_cutoff": "495db101c3efbe4e4546221fed2db3af233b00aa"
+}

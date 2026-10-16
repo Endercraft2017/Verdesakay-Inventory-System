@@ -4,6 +4,15 @@
 
 The AI Assistant is a right-rail tool in the Otom that lets users query data and take actions using natural language. It is powered by any OpenAI-compatible LLM (Gemini Flash-Lite by default) and runs a server-side agentic loop that executes tools against the live SQLite database on the user's behalf.
 
+Production security boundary (second audit, 2026-10-16): tools are filtered by current user
+permissions and enabled modules. In production, business mutations and outbound messages are
+blocked at discovery and execution; use the normal application screens for those decisions.
+Reports and form proposals remain permission-scoped. Arbitrary SQL is disabled. Provider calls
+and message previews use the pinned public-network fetcher; custom AI endpoints cannot inherit
+the shared platform key. Tool evidence is stored separately as append-only hashes, not as a full
+replay transcript. See `audits/second-pass-audit.md` for remaining AI/data and cost controls.
+
+
 ---
 
 ## Architecture Overview
@@ -194,7 +203,7 @@ Read-only report tools, merged into `getToolsForUser` / `executeTool` and gated 
 | `stock_movement_summary` | `inventory.view` | Total in / out / net over a range + biggest movers. |
 | `job_order_report` | `inventory.view` | MO counts by status + units ordered/done/scrapped. |
 | `qc_report` | `inventory.view` | QA/QC pass–fail counts, pass rate, top failure remarks. |
-| `run_analytics_query` | `audit.view` | Escape hatch: one read-only `SELECT`/`WITH` (no writes, no stacked statements, no `users`/`sessions`). |
+| `run_analytics_query` | Disabled | Not advertised or executable. Arbitrary SQL can bypass table-level data boundaries; use the predefined reports. |
 | `create_report_document` | *(any user)* | `src/modules/ai/ai-reporting.ts` — turns a Markdown report into HTML + `.docx` files under `UPLOAD_DIR`; downloaded via `GET /api/ai/reports/:name` (auth-checked, name-allowlisted). |
 | `send_email` | `mail.send` | `src/modules/ai/ai-mail.ts` — sends an email through the company mailbox (`src/shared/mailer.ts`, BYO SMTP; recorded in `mail_log`). Offered only when configured *and* the user holds `mail.send`. |
 

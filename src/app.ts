@@ -191,6 +191,8 @@ export function createApp() {
     }
     next();
   });
+  // The tenant prefix has now been normalized; these public documents require no tenant DB.
+  app.use('/policies', policyRoutes);
   // Offline-first sync hooks (docs/OFFLINE-FIRST.md). Inert for any tenant DB without a sync
   // role, i.e. every tenant until enrolment exists.
   installSync(app);

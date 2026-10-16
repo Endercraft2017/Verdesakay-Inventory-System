@@ -1,0 +1,36 @@
+
+> otom@1.0.0 test:load
+> node scripts/audit-load.mjs
+
+{
+  "environment": "local synthetic, 100 inventory items; read-only mixed API traffic; test-mode rate limits disabled",
+  "results": [
+    {
+      "concurrency": 5,
+      "requests": 150,
+      "failures": 0,
+      "p50_ms": 7.212575999999899,
+      "p95_ms": 17.289667999999892,
+      "p99_ms": 23.17980499999976,
+      "requests_per_second": 565.3775221147322
+    },
+    {
+      "concurrency": 15,
+      "requests": 150,
+      "failures": 0,
+      "p50_ms": 18.813364999999976,
+      "p95_ms": 53.67113599999993,
+      "p99_ms": 102.12288099999978,
+      "requests_per_second": 570.6038651633087
+    },
+    {
+      "concurrency": 30,
+      "requests": 150,
+      "failures": 0,
+      "p50_ms": 36.35118700000021,
+      "p95_ms": 124.29714000000013,
+      "p99_ms": 260.426383,
+      "requests_per_second": 563.4151573528954
+    }
+  ]
+}

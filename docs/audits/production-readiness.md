@@ -1,3 +1,5 @@
+> Historical first-pass report. The current source reconciliation, additional defects, validation and release decision are in [second-pass-audit.md](second-pass-audit.md). Do not use the older totals below as final evidence.
+
 # Production readiness audit — 16 October 2026
 
 **Release decision: not yet approved for unrestricted production use.** This branch contains audited hardening and reproducible tests, not a certificate that all 233 controls are satisfied. Remaining security, operational and owner/legal decisions are listed explicitly in the scorecard. A passing test suite does not establish production readiness by itself.

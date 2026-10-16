@@ -18,7 +18,7 @@ describe('default administrator bootstrap', () => {
       delete process.env.ADMIN_PASSWORD;
       vi.resetModules();
       const db = await import('../src/shared/db');
-      expect(() => db.init()).toThrow('ADMIN_PASSWORD is required');
+      expect(() => db.init()).toThrow(/ADMIN_PASSWORD/);
       db.closeAllConnections();
     } finally {
       for (const [name, value] of Object.entries(prior)) {

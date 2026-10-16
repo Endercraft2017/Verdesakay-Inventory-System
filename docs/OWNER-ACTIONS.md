@@ -1,8 +1,8 @@
 # Owner actions
 
-Things only the owner can do: they need your phone, your password manager, or a dashboard
-Claude has no access to (Cloudflare, Backblaze, the Railway web UI). Everything else is already
-done in code or on the server.
+Owner actions need your accounts, business decisions, phone or password manager. Engineering
+work also remains; this is not a claim that every other control is complete. The second audit
+below supersedes earlier completion claims where evidence is missing.
 
 - Tick a box (`[x]`) when you finish an item.
 - Menu names are as of October 2026. If a dashboard looks a little different, look for the
@@ -11,7 +11,20 @@ done in code or on the server.
 - Items marked **Tell Claude** have a follow-up step Claude does after you.
 - More background for each step is in [DEPLOY-RAILWAY.md](DEPLOY-RAILWAY.md).
 
-Last reviewed 2026-10-13. Most important: **1, 3 and 7**.
+Last reviewed 2026-10-16. Start with this release gate:
+
+- [ ] Revoke exposed historical sessions and rotate AI keys that may have entered older activity logs; review logs/backups and coordinate history cleanup.
+- [ ] Require branch reviews/status checks. GitHub currently reports `production` unprotected; the private-repository plan restricts rulesets.
+- [ ] Create separate staging and require CI before deployment. Railway currently follows `restructure/module-architecture` with checks disabled; do not switch the live service just because this audit branch exists.
+- [ ] Approve an outage/data-loss target and witness a full isolated restore with files, keys and configuration; record duration and alert delivery.
+- [ ] Enroll your MFA and enable the privileged-user policy using steps 1–2 below. Arrange MFA-protected access for the owner console.
+- [ ] Approve the actual privacy/terms/refund/security/AI notices and DPA/MSA/SLA with the correct entity, contacts, vendors, regions, retention and support commitments. Drafts do not authorize regulated-data use.
+- [ ] Assign the unresolved engineering items in [the second audit](audits/second-pass-audit.md): native secure storage, step-up authentication, remaining API/error contracts, privacy lifecycle and AI assurance.
+- [ ] Review the dependency and historical-secret gate failures; do not bypass them or describe the release as fully green.
+
+No production hosting, data, DNS or deployment changes were made in this audit. Older items marked
+already done below are historical notes, not newly verified service evidence. For example, variable
+names and a bucket exist, but object-lock and recovery/alert behavior still need proof.
 
 | # | Action | Time | Status |
 |---|---|---|---|

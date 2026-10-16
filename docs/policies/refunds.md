@@ -1,6 +1,6 @@
 # Refund and cancellation policy
 
-DRAFT — NOT APPROVED. Provider, effective date and billing contact: [OWNER]. The audited application has owner-managed subscription quotes, not an implemented card checkout/refund processor.
+DRAFT — NOT APPROVED. Provider, effective date and billing contact: [OWNER]. The application issues server-calculated invoices, accepts bank-transfer/GCash reports with payment evidence, and requires operator confirmation. It has no automated card checkout or refund processor.
 
 Before collecting payment, state the price/currency, billing period, renewal and cancellation process, whether trials convert automatically, any refund eligibility/window, treatment of partial periods, setup/customization fees, duplicate charges and service failure, and refund method/processing time [OWNER]. Mandatory consumer rights override contractual exclusions where applicable; obtain jurisdiction-specific review.
 

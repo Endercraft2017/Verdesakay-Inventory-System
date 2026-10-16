@@ -1,0 +1,14 @@
+{
+  "handbook_controls": 233,
+  "ledger_controls": 233,
+  "missing": [],
+  "unexpected": [],
+  "duplicate_ids": false,
+  "every_fail_has_evidence_scenario_resolution": true,
+  "status_counts": {
+    "UNVERIFIED": 125,
+    "FAIL": 59,
+    "PASS": 36,
+    "N/A": 13
+  }
+}

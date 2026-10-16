@@ -1,9 +1,9 @@
 {
   "date": "2026-10-16",
-  "source_commit": "d3d54aa3c72579e36664e1cf2fd2c8fb3a249428",
+  "source_commit": "495db101c3efbe4e4546221fed2db3af233b00aa",
   "counts": {
-    "UNVERIFIED": 127,
-    "FAIL": 57,
+    "UNVERIFIED": 125,
+    "FAIL": 59,
     "PASS": 36,
     "N/A": 13
   },
@@ -84,10 +84,10 @@
       "id": "AUDIT-04",
       "severity": "High",
       "requirement": "CI runs dependency scanning, static analysis, and secret scanning on every pull request, and failures block the merge.",
-      "status": "UNVERIFIED",
-      "evidence": "Production-checks.yml adds typecheck, Vitest, Playwright/axe, npm audit and Gitleaks jobs. New remote production branch/protection and required-check enforcement must be verified after push; writing YAML does not establish enforced controls.",
-      "scenario": "",
-      "fix": "Inspect CI workflow files and branch-protection required checks."
+      "status": "FAIL",
+      "evidence": "CI includes tests, typecheck, Playwright/axe, npm advisory and Gitleaks scans. GitHub reports production unprotected with no required status checks; Railway checkSuites=false.",
+      "scenario": "A commit can be pushed and deployed despite failing dependency or secret gates.",
+      "fix": "Require review/status checks and deploy only the approved passing or explicitly exception-reviewed commit; verify enforcement in the hosting and repository settings."
     },
     {
       "id": "AUDIT-05",
@@ -436,7 +436,7 @@
       "severity": "Critical",
       "requirement": "No secrets exist in the current source tree or anywhere in Git history.",
       "status": "FAIL",
-      "evidence": "Gitleaks history scan: 268 commits, 11 detections; ten exact fixture/alphabet false positives allowlisted. Real bearer artifact in July commit f7f644b, removed by ec4ecbf, remains in Git history.",
+      "evidence": "A redacted Git history scan covered 429 commits. After exact reviewed synthetic-fixture annotations, one real removed bearer artifact remains in July commit f7f644b. Current source/client/docs/staged scans are clean; history is not.",
       "scenario": "Anyone able to read that historical commit could have replayed its bearer token while it was live; current expiration/revocation in the original server was not inspected.",
       "fix": "Verify the original session is invalid, investigate access during exposure, and decide on coordinated history cleanup. Do not rewrite shared history automatically. Keep this detection visible to CI until resolved."
     },
@@ -741,10 +741,10 @@
       "id": "EDGE-07",
       "severity": "Critical",
       "requirement": "Server and database management panels are not reachable from the public internet (IP/VPN-restricted), require 2FA, and do not sit on default paths and ports.",
-      "status": "UNVERIFIED",
-      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
-      "scenario": "",
-      "fix": "Scan the public IPs for panel ports (for example 8443, 2083, 5050, 8080) from outside; inspect access rules."
+      "status": "FAIL",
+      "evidence": "src/app.ts and platform.routes.ts expose an operator console guarded by its own password/session. A separate public domain is configured; application code has no VPN/IP restriction or owner-console MFA. External access policy was not verified.",
+      "scenario": "An attacker who obtains the operator password can target tenant provisioning/recovery through a publicly reachable console if no separate access gateway restricts it.",
+      "fix": "Place the operator console behind an MFA-protected access gateway/VPN or verified IP policy, add owner-console MFA, and verify direct-origin bypass is blocked."
     },
     {
       "id": "EDGE-08",
@@ -1273,7 +1273,7 @@
       "severity": "Medium",
       "requirement": "Static assets are fingerprinted and served with long-lived cache headers through a CDN; safe public responses are edge-cached.",
       "status": "UNVERIFIED",
-      "evidence": "src/shared/asset-version.ts fingerprints desktop assets and applies immutable caching only to matching content hashes; PWA shell v107 controls offline assets. CDN deployment/cache behavior was not inspected.",
+      "evidence": "src/shared/asset-version.ts fingerprints desktop assets and applies immutable caching only to matching content hashes; PWA shell v108 controls offline assets. CDN deployment/cache behavior was not inspected.",
       "scenario": "",
       "fix": "Verify versioned assets through the edge; keep private APIs no-store and user/tenant caches isolated."
     },
@@ -1291,7 +1291,7 @@
       "severity": "High",
       "requirement": "A load test at realistic and peak concurrency has been run against a production-like environment, and the first bottleneck is known and addressed.",
       "status": "FAIL",
-      "evidence": "scripts/audit-load.mjs: 450 synthetic mixed read requests over 100 inventory items at 5/15/30 clients, zero failures. p95 about 43/98/381 ms on this shared local host. No representative production-sized workload or agreed peak was tested.",
+      "evidence": "scripts/audit-load.mjs: 450 synthetic mixed read requests over 100 inventory items at 5/15/30 clients, zero failures. Final local p95 about 17/54/124 ms. No representative production-sized workload or agreed peak was tested.",
       "scenario": "Payroll/export/stock workloads on real office data can saturate the single SQLite process even though a tiny local read probe passes.",
       "fix": "Agree peak concurrent users and dataset sizes, seed representative staging data, run mixed reads/writes/exports and establish latency/error/resource thresholds."
     },
@@ -1750,7 +1750,7 @@
       "severity": "Critical",
       "requirement": "Checkout sessions are created server-side from server-side or provider-side prices (Price IDs); no client-supplied amount, currency, or discount is trusted.",
       "status": "PASS",
-      "evidence": "Translated to the implemented manual bank-transfer/GCash workflow: platform/billing.ts computes invoices from operator-owned pricing. Customer submissions remain pending; only authenticated platform confirmation settles sufficient funds and clears awaiting_payment. tests/billing.test.ts and billing-flows.test.ts verify tenant scoping and confirmation gates.",
+      "evidence": "Translated to the implemented manual bank-transfer/GCash workflow: platform/billing.ts computes invoices from operator-owned pricing. Customer submissions remain pending; only authenticated platform confirmation settles sufficient funds and clears awaiting_payment. tests/billing.test.ts and billing-signup.test.ts verify tenant scoping and confirmation gates.",
       "scenario": "",
       "fix": "Operators must reconcile actual bank/GCash receipts before confirming; automated payment providers require separate webhook controls."
     },
@@ -1759,7 +1759,7 @@
       "severity": "Critical",
       "requirement": "Access and entitlements are granted only after a verified payment webhook (with amount and product checked), never from the success redirect.",
       "status": "PASS",
-      "evidence": "Translated to the implemented manual bank-transfer/GCash workflow: platform/billing.ts computes invoices from operator-owned pricing. Customer submissions remain pending; only authenticated platform confirmation settles sufficient funds and clears awaiting_payment. tests/billing.test.ts and billing-flows.test.ts verify tenant scoping and confirmation gates.",
+      "evidence": "Translated to the implemented manual bank-transfer/GCash workflow: platform/billing.ts computes invoices from operator-owned pricing. Customer submissions remain pending; only authenticated platform confirmation settles sufficient funds and clears awaiting_payment. tests/billing.test.ts and billing-signup.test.ts verify tenant scoping and confirmation gates.",
       "scenario": "",
       "fix": "Operators must reconcile actual bank/GCash receipts before confirming; automated payment providers require separate webhook controls."
     },

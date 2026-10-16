@@ -1,0 +1,80 @@
+{
+  "source_cutoff": "495db101c3efbe4e4546221fed2db3af233b00aa",
+  "date_utc": "2026-10-16",
+  "full_regression": {
+    "status": "PASS",
+    "command": "npm test -- --fileParallelism --maxWorkers=2",
+    "files": 284,
+    "tests": 2865,
+    "output": "second-pass-full-tests.txt"
+  },
+  "typecheck": {
+    "status": "PASS",
+    "command": "npm run typecheck"
+  },
+  "database_types": {
+    "status": "PASS",
+    "command": "npm run db:types",
+    "scope": "disposable database"
+  },
+  "javascript_syntax": {
+    "status": "PASS",
+    "files": 171
+  },
+  "mobile_web_bundle": {
+    "status": "PASS",
+    "command": "npm run build:web --prefix mobile-app",
+    "size_mb": 7.7,
+    "native_apk_and_devices": "UNVERIFIED"
+  },
+  "playwright": {
+    "status": "PASS",
+    "startTime": "2026-10-16T03:25:57.031Z",
+    "duration": 17130.3,
+    "expected": 8,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "latest_source_delta": {
+    "status": "PASS",
+    "files": 4,
+    "tests": 153
+  },
+  "final_website_tenant_billing_preview_checks": {
+    "status": "PASS",
+    "files": 5,
+    "tests": 28
+  },
+  "adapter_security_checks": {
+    "status": "PASS",
+    "files": 5,
+    "tests": 50
+  },
+  "zap": {
+    "target": "http://127.0.0.1:4174, disposable local unauthenticated fixture",
+    "version": "2.17.0",
+    "high": 0,
+    "medium": 2,
+    "low": 0,
+    "informational": 2,
+    "discovered_endpoints": 109,
+    "authenticated_scan": false,
+    "live_scan": false,
+    "limitations": [
+      "Only GET discovered",
+      "Add-on age/warnings reported",
+      "Inline style and HTTPS image CSP remain Medium"
+    ],
+    "tested_snapshot_note": "Local scan preceded the last small source allocation merge and final policy/preview wiring; later changes separately regression-tested."
+  },
+  "secret_scanning": {
+    "current_src_public_tests_docs_website_console": "PASS",
+    "staged": "PASS; final staged-diff scan found no leaks",
+    "history_commits_scanned": 429,
+    "remaining_real_historical_findings": 1,
+    "owner_revocation_exposure_review": "PENDING"
+  },
+  "ci_release_gates": "NOT GREEN: raw npm High advisory and historical-secret finding remain; required checks disabled",
+  "production_mutations": false
+}

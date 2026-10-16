@@ -125,6 +125,7 @@ export async function sendPlatformMail(args: { to: string[]; subject: string; te
             textContent: args.text,
           }),
           signal: AbortSignal.timeout(15_000),
+          redirect: 'error',
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({})) as { message?: string };

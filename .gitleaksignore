@@ -21,3 +21,6 @@ ed687401623539c1242d112585debb146f07dfd9:src/modules/inventory/release-auth.ts:g
 ec5779114ad665164b2300c619bd15777d16446c:tests/push.test.ts:generic-api-key:14
 # Current-tree scan: fixed token-generation alphabet, not a credential (release-auth.ts).
 src/modules/inventory/release-auth.ts:generic-api-key:42
+
+# Reviewed synthetic company-login test password, historical source commit only.
+ee4beb625f4bf7ce7a942065fdc2003700732c2b:tests/company-login.test.ts:generic-api-key:9

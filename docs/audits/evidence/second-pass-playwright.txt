@@ -1,0 +1,25 @@
+
+> otom@1.0.0 test:e2e
+> playwright test
+
+[WebServer] (node:69814) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:69827) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:69838) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 8 tests using 1 worker
+
+(node:69875) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e/readiness.spec.ts:16:1 › desktop: wrong password, keyboard login, stock journey and server logout (1.6s)
+  ✓  2 tests/e2e/readiness.spec.ts:55:1 › mobile: 360px layout, core navigation, offline failure and sign out (1.5s)
+  ✓  3 tests/e2e/readiness.spec.ts:88:1 › login forms: labelled controls, keyboard access and axe scan (1.8s)
+  ✓  4 tests/e2e/readiness.spec.ts:97:1 › API attack surface: injection, oversized inputs, CORS and private caching (30ms)
+  ✓  5 tests/e2e/readiness.spec.ts:109:1 › browser: separate users cannot edit each other’s notes; role changes revoke cookies (2.0s)
+  ✓  6 tests/e2e/readiness.spec.ts:141:1 › browser: message HTML is a non-executable attachment and policy links are usable (1.3s)
+  ✓  7 tests/e2e/readiness.spec.ts:163:1 › browser: uploaded JavaScript cannot execute as a self-hosted script (962ms)
+  ✓  8 tests/e2e/readiness.spec.ts:181:1 › browser: authenticator enrollment, one-use recovery and mobile factor sign-in (5.1s)
+
+  8 passed (17.1s)

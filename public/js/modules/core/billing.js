@@ -65,6 +65,7 @@ App.register('billing', async (view) => {
       ${waiting}
       <div class="card" style="margin-bottom:16px">
         <h3 style="margin-top:0">How to pay</h3>
+        <p class="muted"><a href="${UI.esc((window.VDS_BASE_PATH || '') + '/policies')}">Privacy, terms and refunds (drafts)</a></p>
         ${payOptions()}
         <ol class="muted" style="margin:12px 0 0;padding-left:18px;font-size:13px">
           <li>Send the payment by GCash, InstaPay, PESONet or over the counter, and write the <strong>invoice reference</strong> in the message or note.</li>
