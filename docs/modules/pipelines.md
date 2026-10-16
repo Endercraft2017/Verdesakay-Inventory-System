@@ -1216,3 +1216,17 @@ courier custody; pickup does not deduct stock again. The server stores compatibl
 records collection rather than customer receipt. Evidence stays optional by owner
 policy for both own-driver and courier flows. Supplied signatures must belong to
 the booking; assignment checks and terminal evidence locks remain. PWA cache v106.
+
+### Mobile exact sale-line allocation (2026-10-16)
+
+`#/so` now shows physical sale-line IDs, build states, prices and remaining counts.
+A scanned item/batch/unit matching multiple open lines requires an explicit line
+choice before verification and quantity entry. Completed lines are excluded, and
+stale or mismatched line links return to selection. QR verification remains
+mandatory. Bulk payloads carry `bulk[].order_item_id`; serialized requests carry
+top-level `order_item_id`. The original line, quantity, batch/serial and retry key
+are saved together by the existing scoped recovery module. No automatic line
+substitution occurs on retry. Same-product/build rows share stock; displayed free
+counts must not be summed. Reservations remain separate from physical stock-out.
+The release context now includes line price and order currency for disambiguation.
+PWA cache v107; CKD partial-kit release and pre-slip undo remain separate work.

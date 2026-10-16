@@ -388,6 +388,65 @@ try {
         assert.match(await page.locator('#m-view').innerText(),/Picked up by courier/);
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
     });
+    await check('Repeated batch lines choose an exact price line and recover its original allocation after restart', async () => {
+        const p=await product('LINE-BATCH',4,0);await api('POST','/job-orders/'+p.jo+'/progress',{done_delta:4});
+        const rec=await api('GET','/job-orders/'+p.jo+'/receivable'), lot=rec.batches[0];
+        await api('POST','/job-orders/'+p.jo+'/products-in',{location_id:rec.output_location_id,batch_id:lot.id,quantity:4});
+        const video=await printLabel('batch',lot.id,rts);
+        const made=await api('POST','/orders',{type:'sale',status:'approved',customer_name:'QR recipient',items:[{item_id:p.id,name:'Repeat batch',quantity:2,unit_price:10},{item_id:p.id,name:'Repeat batch',quantity:2,unit_price:20}]});
+        const auth=await api('POST','/release-slips/orders/'+made.id+'/authorizations',{mode:'pickup',recipient_name:'QR recipient'});
+        await api('POST','/orders/'+made.id+'/accept-release');const lines=(await api('GET','/orders/'+made.id)).items;
+        await launch(release,video);await go('so?id='+made.id+'&step=unit&code=VDS:BATCH:'+lot.id);
+        await page.locator('[data-sale-line="'+lines[1].id+'"]').waitFor();
+        assert.equal((await api('GET','/orders/'+made.id)).items[1].released_qty,0);
+        await page.screenshot({path:path.join(output,'repeat-batch-line-choice-78-147.png'),fullPage:true});
+        await page.locator('[data-sale-line="'+lines[1].id+'"]').click();await page.locator('[data-label-qty]').waitFor();
+        assert.equal(await page.locator('[data-label-qty]').inputValue(),'2');await cameraVerify('#rel-label-ok');
+        const attempts=[];await page.route('**/api/orders/'+made.id+'/release',async route=>{attempts.push({body:route.request().postData(),key:route.request().headers()['idempotency-key']});await route.fetch();await route.abort('connectionreset');});
+        await page.locator('#rel-label-ok').click();await page.locator('#rel-retry').waitFor();
+        await launch(release,video);page.on('request',req=>{if(req.method()==='POST'&&req.url().endsWith('/orders/'+made.id+'/release'))attempts.push({body:req.postData(),key:req.headers()['idempotency-key']});});
+        await go('so?id='+made.id);await page.locator('#rel-retry').click();await page.locator('#rel-review-current').waitFor();
+        assert.deepEqual(attempts[0],attempts[1]);assert.equal(JSON.parse(attempts[0].body).bulk[0].order_item_id,lines[1].id);
+        let current=await api('GET','/orders/'+made.id);assert.deepEqual(current.items.map(x=>x.released_qty),[0,2]);
+        assert.equal((await api('GET','/inventory/'+p.id)).quantity,4);
+        await page.locator('#rel-review-current').click();await go('so?id='+made.id+'&step=unit&code=VDS:BATCH:'+lot.id);
+        await page.locator('[data-label-qty]').waitFor();assert.equal(await page.locator('[data-sale-line]').count(),0);
+        await cameraVerify('#rel-label-ok');await page.locator('#rel-label-ok').click();await page.locator('#rel-review-current').waitFor();
+        const context=await api('GET','/release-slips/orders/'+made.id+'/context');assert.deepEqual(context.batch_allocations.map(a=>a.order_item_id).sort(),lines.map(l=>l.id).sort());
+        await warehouseOut({id:made.id,auth:auth.token,productId:p.id,quantity:4});
+        assert.equal((await api('GET','/inventory/'+p.id)).quantity,0);
+        const slip=(await api('GET','/release-slips/orders/'+made.id+'/context')).slip;
+        const printed=await api('GET','/release-slips/'+slip.id);assert.deepEqual(printed.items.map(i=>i.order_item_id).sort(),lines.map(l=>l.id).sort());
+    });
+    await check('Plain SKU chooses the requested build state without crossing stock pools',async()=>{
+        const p=await product('LINE-MIXED',1,0);
+        await api('POST','/inventory/'+p.id+'/adjust',{change:3,build_mode:'assembled',reason:'Isolated browser fixture'});
+        await api('POST','/inventory/'+p.id+'/adjust',{change:2,build_mode:'semi_built',reason:'Isolated browser fixture'});
+        const made=await api('POST','/orders',{type:'sale',status:'approved',items:[{item_id:p.id,name:'Mixed build',quantity:1,unit_price:100,fulfillment_mode:'assembled'},{item_id:p.id,name:'Mixed build',quantity:1,unit_price:75,fulfillment_mode:'semi_built'}]});
+        await api('POST','/release-slips/orders/'+made.id+'/authorizations',{mode:'pickup',recipient_name:'QR recipient'});
+        await api('POST','/orders/'+made.id+'/accept-release');const lines=(await api('GET','/orders/'+made.id)).items;
+        await launch(release);await page.goto(base+'/m#/so?id='+made.id+'&step=scan');await page.locator('#rel-go').waitFor();
+        const src=await page.evaluate(()=>{const q=qrcode(0,'M');q.addData('LINE-MIXED');q.make();return q.createDataURL(8,4);});const video=path.join(output,'mixed-item.y4m');await frame(src,video);
+        await launch(release,video);await go('so?id='+made.id+'&step=unit&code=LINE-MIXED');
+        await page.locator('[data-sale-line="'+lines[1].id+'"]').click();await page.locator('[data-label-qty]').waitFor();
+        assert.match(await page.locator('#m-view').innerText(),/Semi-built/);await cameraVerify('#rel-label-ok');await page.locator('#rel-label-ok').click();await page.locator('#rel-review-current').waitFor();
+        const current=await api('GET','/orders/'+made.id);assert.deepEqual(current.items.map(l=>l.released_qty),[0,1]);assert.equal((await api('GET','/inventory/'+p.id)).quantity,5);
+        assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+        await page.screenshot({path:path.join(output,'mixed-build-line-allocation.png'),fullPage:true});
+    });
+    await check('Serialized QR allocates to the selected repeated sale line',async()=>{
+        const p=await product('LINE-SERIAL',2,1), ids=[];
+        for(let i=0;i<2;i++){const f=new FormData();f.append('identifier','LINE-SERIAL-'+i);f.append('image',new Blob(['fixture-photo'],{type:'image/png'}),'unit.png');const u=await api('POST','/job-orders/'+p.jo+'/units',f);ids.push(u.id);}
+        await api('POST','/job-orders/'+p.jo+'/units/inspect',{unit_ids:ids,result:'pass'});
+        const rec=await api('GET','/job-orders/'+p.jo+'/receivable');await api('POST','/job-orders/'+p.jo+'/products-in',{location_id:rec.output_location_id,unit_ids:ids});
+        const video=await printLabel('unit',ids[0],rts);
+        const made=await api('POST','/orders',{type:'sale',status:'approved',items:[{item_id:p.id,name:'Repeat serial',quantity:1,unit_price:80},{item_id:p.id,name:'Repeat serial',quantity:1,unit_price:95}]});
+        await api('POST','/release-slips/orders/'+made.id+'/authorizations',{mode:'pickup',recipient_name:'QR recipient'});
+        await api('POST','/orders/'+made.id+'/accept-release');const lines=(await api('GET','/orders/'+made.id)).items;
+        await launch(release,video);await go('so?id='+made.id+'&step=unit&code=VDS:UNIT:'+ids[0]);await page.locator('[data-sale-line="'+lines[1].id+'"]').click();await cameraVerify('#rel-ok');
+        await page.locator('#rel-ok').click();await page.locator('#rel-review-current').waitFor();
+        const context=await api('GET','/release-slips/orders/'+made.id+'/context');assert.equal(context.units[0].order_item_id,lines[1].id);assert.equal(context.lines[0].units,0);assert.equal(context.lines[1].units,1);assert.equal((await api('GET','/inventory/'+p.id)).quantity,2);
+    });
     await check('Basic account sees only personal mobile tools; operational URLs and APIs stay blocked', async () => {
         await api('POST','/roles',{key:'audit_basic',label:'Audit basic employee',permissions:['mobile.access','messages.view','messages.send']});
         const basic=await loginRole('audit_basic'); await launch(basic);

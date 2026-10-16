@@ -35,8 +35,8 @@ const orderSite = {
     location: queryOne<{ location_id: number | null }>('SELECT location_id FROM orders WHERE id = ?', Number(req.params.id))?.location_id ?? null,
   }),
 };
-const saleOrder = (id: number) => queryOne<{ id: number; number: string; status: string; customer_name: string | null; location_id: number | null }>(
-  "SELECT id, number, status, customer_name, location_id FROM orders WHERE id = ? AND type = 'sale'", id
+const saleOrder = (id: number) => queryOne<{ id: number; number: string; status: string; customer_name: string | null; location_id: number | null; currency: string }>(
+  "SELECT id, number, status, customer_name, location_id, currency FROM orders WHERE id = ? AND type = 'sale'", id
 );
 
 // Per-order line progress: units reserved/sold + bulk released_qty against the ordered qty.
@@ -96,7 +96,7 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
   const order = saleOrder(id);
   if (!order) { res.status(404).json({ error: 'Sale order not found' }); return; }
   const lines = queryAll(
-    `SELECT oi.id, oi.item_id, oi.name, oi.sku, oi.quantity, oi.released_qty, oi.fulfillment_mode, oi.parent_order_item_id,
+    `SELECT oi.id, oi.item_id, oi.name, oi.sku, oi.unit_price, oi.quantity, oi.released_qty, oi.fulfillment_mode, oi.parent_order_item_id,
             (SELECT COUNT(*) FROM job_order_units u WHERE u.order_item_id = oi.id
                AND u.status IN ('reserved', 'sold')) AS units,
             EXISTS (SELECT 1 FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
@@ -113,7 +113,7 @@ router.get('/orders/:id/context', releaseGate, (req, res) => {
   const accepted = queryOne<{ warehouse_accepted_at: string | null }>('SELECT warehouse_accepted_at FROM orders WHERE id = ?', id);
   const availability = orderAvailability(id);
   res.json({
-    order: { id, number: order.number, status: order.status, customer_name: order.customer_name,
+    order: { id, number: order.number, status: order.status, customer_name: order.customer_name, currency: order.currency,
       warehouse_accepted_at: accepted?.warehouse_accepted_at ?? null, location_id: availability.location_id,
       location_name: availability.location_name },
     lines, units,

@@ -1,6 +1,19 @@
 # Inventory and production: mobile integration gaps
 
-## Repeated SKU sale lines: mobile release handoff (2026-10-15)
+## Mobile exact sale-line allocation (2026-10-16)
+
+The repeated-SKU handoff below is implemented for phone allocation. Staff see
+line IDs, build states, prices/currency and remaining counts, choose the exact
+matching line after scanning, then verify its sticker and quantity. Unique open
+matches continue directly. Completed lines are excluded; stale line links return
+to explicit choice. Availability is tied to the selected line/build and shared
+pool, not summed across duplicate rows. Existing saved attempts retain their
+original JSON and key; newly created requests include the exact sale-line ID.
+QR stock/unit and batch allocation records display their line ownership. The
+backend release context includes `unit_price` and currency. CKD whole-kit partial
+release and pre-slip allocation undo remain separate steps. PWA cache v107.
+
+## Repeated SKU sale lines: mobile release handoff (2026-10-15) — original backend contract
 
 The sale order may now contain two physical lines for the same `item_id`, with
 different `fulfillment_mode` (`assembled` or `semi_built`) and/or `unit_price`.
@@ -823,3 +836,7 @@ separate. Courier evidence policy alignment remains the next step.
 Courier step validation: TypeScript, 182 focused tests, all 2,819 full-suite tests
 and 27 real-backend Playwright checks passed. See
 `docs/reviews/mobile-courier-pickup-validation.md` for scenarios and scope.
+
+Exact sale-line allocation validation: TypeScript, 160 focused tests, all 2,823
+full-suite tests across 276 files, and 33 real-backend Playwright checks passed.
+See `docs/reviews/mobile-sale-line-allocation-validation.md` for scenarios and scope.

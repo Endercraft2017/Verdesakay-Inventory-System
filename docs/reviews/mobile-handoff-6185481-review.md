@@ -33,7 +33,7 @@ offers a force-backorder stock action.
 | Medium | Whole-job issue management | Unit-linked QC/QA issue management exists; whole-job kit/line issue editing/resolution still needs its operator path. Reports stay informational; Pause stops work. |
 | Medium | Legacy queued result audit | V2 recovery paths track sync commands, but legacy purchasing receipt/transfer/adjustment results still need an audit of queued, PC-local and authority-final copy and partial failures. |
 | Conditional | Mobile Sales entry, prices and fees | Mobile currently focuses on approval/releasing. If adding Sales entry/edit, use catalog starting price, explicit price-suggestion apply, negotiated prices, separate non-stock fee lines and approval locking. No need to add pricing controls to clerk releasing screens. |
-| High | Same-SKU sale-line selection | Backend dependency is resolved by `d27979c`: release/context/QR now carry line identities and accept `order_item_id`. Mobile `so.js` still chooses by item; add explicit sale-line choice and line-keyed state before supporting repeated-SKU phone allocation. Ambiguous requests return `line_required`; do not retry without a choice. |
+| Done | Same-SKU sale-line selection | Backend `d27979c` and mobile now carry exact line IDs. Scanned batch/SKU/serial ambiguity opens a build/price/remaining chooser; retries preserve the original selected line and payload. Shared stock is never summed across duplicate lines. |
 
 ## Already covered by earlier steps
 
