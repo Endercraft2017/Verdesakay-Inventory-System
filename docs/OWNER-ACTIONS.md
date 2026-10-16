@@ -16,13 +16,17 @@ Last reviewed 2026-10-16. Start with this release gate:
 Assisted MFA recovery now has a [controlled recovery procedure](operations/assisted-account-recovery.md).
 Solo support uses advance notice, owner cancellation and a 24-hour wait. Approve your identity-verification process
 and verify existing customer email delivery in staging. No operator accounts or live email
-configuration were changed automatically. Windows Hello/passkeys for console access remain open.
+configuration were changed automatically. Console passkeys and five-minute verification for
+console writes are implemented; enroll Windows Hello and a separate backup **after engineering
+and staging checks**, using the [console passkey runbook](operations/console-passkeys.md).
+No phone is required for this owner-console option. Unenrolled operators remain password-only
+until the require-passkeys policy is enabled.
 
 - [ ] Revoke exposed historical sessions and rotate AI keys that may have entered older activity logs; review logs/backups and coordinate history cleanup.
 - [ ] Require branch reviews/status checks. GitHub currently reports `production` unprotected; the private-repository plan restricts rulesets.
 - [ ] Create separate staging and require CI before deployment. Railway currently follows `restructure/module-architecture` with checks disabled; do not switch the live service just because this audit branch exists.
 - [ ] Approve an outage/data-loss target and witness a full isolated restore with files, keys and configuration; record duration and alert delivery.
-- [ ] Enroll your MFA and enable the privileged-user policy using steps 1–2 below. Arrange MFA-protected access for the owner console.
+- [ ] Enroll your MFA and enable the privileged-user policy using steps 1–2 below. Enroll and test owner-console passkeys plus a separate backup, then enable the console policy.
 - [ ] Approve the actual privacy/terms/refund/security/AI notices and DPA/MSA/SLA with the correct entity, contacts, vendors, regions, retention and support commitments. Drafts do not authorize regulated-data use.
 - [ ] Assign the unresolved engineering items in [the second audit](audits/second-pass-audit.md): native secure storage, step-up authentication, remaining API/error contracts, privacy lifecycle and AI assurance.
 - [ ] Review the dependency and historical-secret gate failures; do not bypass them or describe the release as fully green.
@@ -77,20 +81,23 @@ A sole tenant administrator who also lost recovery codes contacts support for th
 24-hour solo-support recovery process. There is no immediate session-only bypass.
 
 ## 3. Console password (5 min)
-**Why:** the owner console password is still the one typed into Railway at setup, and Railway
-shows it in plain text.
+**Why:** a password used for initial provisioning may remain in hosting variables. Verify the
+current setup; audit code does not prove those variables or the original password are still active.
 
 1. **Find the current password:** railway.com → project **ERP** → the app service →
    **Variables** → click the eye on `PLATFORM_ADMIN_PASSWORD`.
 2. **Sign in:** open `otom.afkcube.com/_platform` and sign in with that username and password.
-3. **Change it:** top right → **Change password** → enter a new strong password → save it in
+3. **Change it:** top right → **Account & security** → enter a new strong password → save it in
    your password manager.
 4. **Delete the variables:** back in Railway → **Variables**, delete `PLATFORM_ADMIN_USERNAME`
    and `PLATFORM_ADMIN_PASSWORD` (⋮ menu → Delete). Railway restarts the app for about a minute.
 5. **Check:** sign in to the console again with the **new** password.
 
-**Forgot it later?** Add both variables back plus `PLATFORM_ADMIN_RESET=true`, let Railway
-redeploy, sign in with that password, then delete all three variables again.
+**Forgot the password later?** A hosting administrator can deliberately reset the console
+password through the documented bootstrap mechanism, then remove the temporary variables.
+This does **not** remove enrolled passkeys: the operator still needs Windows Hello or the tested
+backup key. Do not use a hosting password reset as an authenticator bypass. Complete the
+[console passkey rollout](operations/console-passkeys.md) only after engineering/staging checks.
 
 ## 4. Cloudflare DNS for the console (5 min), then tell Claude
 **Why:** gives the owner console its own address, so its sign-in is completely separate from the

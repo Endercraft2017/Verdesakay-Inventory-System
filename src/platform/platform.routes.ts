@@ -41,9 +41,12 @@ import { parseBody, changeUsernameSchema, mailSettingsSchema, resetPasswordSchem
 import { PLANS, PLAN_MODULES, planModules } from './plans';
 import { rateLimitKey } from '../shared/device';
 import {
-  requirePlatformAuth, platformLogin, platformLogout, listPlatformUsers, changePlatformPassword, changePlatformUsername,
+  requirePlatformAuth, verifyPlatformPassword, createPlatformSession, platformLogout, listPlatformUsers, changePlatformPassword, changePlatformUsername,
   type PlatformAuthedRequest,
 } from './platform-users';
+import { hasPlatformPasskey, requiresPlatformPasskeySetup, platformSessionVerified, markPlatformSessionVerified, listPlatformPasskeys,
+  registrationOptions, finishRegistration, authenticationOptions, finishAuthentication, requireAllPlatformPasskeys, removePlatformPasskey } from './platform-passkeys';
+import type { RegistrationResponseJSON, AuthenticationResponseJSON } from '@simplewebauthn/server';
 
 const router = Router();
 
@@ -79,19 +82,65 @@ const loginLimiter = rateLimit({
 router.use(browserCsrf);
 
 // POST /_platform/api/login
-router.post('/login', loginLimiter, (req, res) => {
+router.post('/login', loginLimiter, async (req, res, next) => {
+  try {
   const { username, password } = parseBody(loginSchema.omit({ shared: true }).strict(), req.body);
   if (!username || !password) { res.status(400).json({ error: 'Username and password are required.' }); return; }
-  const token = platformLogin(username, password);
-  if (!token) { res.status(401).json({ error: 'Invalid username or password.' }); return; }
+  const id = verifyPlatformPassword(username, password);
+  if (!id) { res.status(401).json({ error: 'Invalid username or password.' }); return; }
+  if (hasPlatformPasskey(id)) { res.set('Cache-Control','no-store').json({ passkey_required:true, ...await authenticationOptions(id) }); return; }
+  const token = createPlatformSession(id);
+  sendOperatorSession(req,res,token);
+  } catch (error) { next(error); }
+});
+function sendOperatorSession(req: Request,res: Response,token: string) {
+  res.set('Cache-Control','no-store');
   if (browserMode(req)) {
     res.cookie('vds_platform_session', token, { httpOnly: true, secure: req.secure || BEHIND_PROXY, sameSite: 'strict', path: '/_platform', maxAge: 12 * 60 * 60 * 1000 });
     res.json({ browser_session: true });
   } else res.json({ token });
+}
+
+const credentialBody = z.object({ token:z.string().length(64), response:z.object({id:z.string().min(1).max(2048),type:z.literal('public-key')}).passthrough() }).strict();
+router.post('/passkeys/login', loginLimiter, async(req,res) => {
+  try {
+    const input=parseBody(credentialBody,req.body);
+    const id=await finishAuthentication(input.token,input.response as unknown as AuthenticationResponseJSON);
+    const token=createPlatformSession(id); markPlatformSessionVerified(token); sendOperatorSession(req,res,token);
+  } catch { res.status(400).json({error:'Passkey verification failed or expired. Start sign-in again.'}); }
 });
 
 // Everything below needs a valid operator session.
 router.use(requirePlatformAuth);
+
+const passkeyLimiter=rateLimit({windowMs:15*60_000,limit:20,standardHeaders:true,legacyHeaders:false,keyGenerator:req=>String((req as PlatformAuthedRequest).platformUser!.id)});
+router.get('/passkeys', (req,res)=>res.json({keys:listPlatformPasskeys((req as PlatformAuthedRequest).platformUser!.id)}));
+router.post('/passkeys/register/options',passkeyLimiter,async(req,res,next)=>{
+  try { const input=parseBody(z.object({current_password:z.string().min(1).max(200)}).strict(),req.body);const r=req as PlatformAuthedRequest;
+    res.set('Cache-Control','no-store').json(await registrationOptions(r.platformUser!.id,r.platformToken!,input.current_password));
+  } catch(error){next(error);}
+});
+router.post('/passkeys/register/verify',passkeyLimiter,async(req,res)=>{
+  try {const input=parseBody(credentialBody.extend({label:z.string().trim().min(1).max(80)}),req.body);const r=req as PlatformAuthedRequest;
+    await finishRegistration(r.platformUser!.id,r.platformToken!,input.token,input.response as unknown as RegistrationResponseJSON,input.label);
+    logProvisioning('_console','passkey.enrolled',`operator=${r.platformUser!.id}`);res.json({ok:true});
+  } catch {res.status(400).json({error:'Passkey enrollment failed or expired. Start again.'});}
+});
+router.post('/passkeys/verify/options',passkeyLimiter,async(req,res,next)=>{
+  try {const r=req as PlatformAuthedRequest;res.set('Cache-Control','no-store').json(await authenticationOptions(r.platformUser!.id,r.platformToken!));}catch(error){next(error);}
+});
+router.post('/passkeys/verify',passkeyLimiter,async(req,res)=>{
+  try {const input=parseBody(credentialBody,req.body);const r=req as PlatformAuthedRequest;await finishAuthentication(input.token,input.response as unknown as AuthenticationResponseJSON,r.platformToken!);res.json({ok:true});}
+  catch {res.status(400).json({error:'Passkey verification failed or expired. Try again.'});}
+});
+router.post('/passkeys/require',passkeyLimiter,(req,res,next)=>{
+  try {requireAllPlatformPasskeys((req as PlatformAuthedRequest).platformToken!);logProvisioning('_console','passkey.required',`operator=${(req as PlatformAuthedRequest).platformUser!.id}`);res.json({ok:true});}catch(error){next(error);}
+});
+router.post('/passkeys/remove',passkeyLimiter,(req,res,next)=>{
+  try {const input=parseBody(z.object({id:z.string().min(1).max(2048),current_password:z.string().min(1).max(200)}).strict(),req.body);const r=req as PlatformAuthedRequest;
+    removePlatformPasskey(r.platformUser!.id,r.platformToken!,input.id,input.current_password);logProvisioning('_console','passkey.removed',`operator=${r.platformUser!.id}`);res.json({ok:true});
+  }catch(error){next(error);}
+});
 
 router.post('/logout', (req, res) => {
   const t = (req as PlatformAuthedRequest).platformToken;
@@ -101,7 +150,8 @@ router.post('/logout', (req, res) => {
 });
 
 router.get('/me', (req, res) => {
-  res.json({ user: (req as PlatformAuthedRequest).platformUser });
+  const user=(req as PlatformAuthedRequest).platformUser!;
+  res.json({ user, passkey_enrolled:hasPlatformPasskey(user.id), passkey_setup_required:requiresPlatformPasskeySetup(user.id) });
 });
 
 // POST /_platform/api/password — change your own console password; other sessions end.

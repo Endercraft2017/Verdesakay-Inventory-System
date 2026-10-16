@@ -29,6 +29,13 @@ const NO_CLASS_NEEDED: Record<string, string> = {
   'src/modules/hr/hr.routes.ts:post /payroll/:recordId/preview-deductions': 'a read',
   // The platform console and sign-up run only on the cloud, outside any workspace.
   'src/platform/platform.routes.ts:post /login': 'cloud console',
+  'src/platform/platform.routes.ts:post /passkeys/login': 'cloud-only operator credentials and sessions; never tenant sync',
+  'src/platform/platform.routes.ts:post /passkeys/register/options': 'cloud-only operator credentials and sessions; never tenant sync',
+  'src/platform/platform.routes.ts:post /passkeys/register/verify': 'cloud-only operator credentials and sessions; never tenant sync',
+  'src/platform/platform.routes.ts:post /passkeys/verify/options': 'cloud-only operator credentials and sessions; never tenant sync',
+  'src/platform/platform.routes.ts:post /passkeys/verify': 'cloud-only operator credentials and sessions; never tenant sync',
+  'src/platform/platform.routes.ts:post /passkeys/require': 'cloud-only operator credentials and sessions; never tenant sync',
+  'src/platform/platform.routes.ts:post /passkeys/remove': 'cloud-only operator credentials and sessions; never tenant sync',
   'src/platform/platform.routes.ts:post /logout': 'cloud console',
   'src/platform/platform.routes.ts:put /tenants/:slug/mail': 'cloud-only owner-console SMTP settings; never replicated to installed tenant nodes',
   'src/platform/platform.routes.ts:post /tenants/:slug/mail/test': 'cloud-only owner-console SMTP side effect; never replayed by workspace sync',

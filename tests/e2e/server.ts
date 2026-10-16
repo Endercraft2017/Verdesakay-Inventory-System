@@ -12,6 +12,10 @@ Object.assign(process.env, {
   BACKUP_DIR: path.join(dir, 'backups'),
 });
 for (const key of ['APP_DOMAIN', 'TENANT_PATH_HOST', 'DEFAULT_TENANT_REDIRECT', 'PLATFORM_CONSOLE', 'ADMIN_PASSWORD', 'DEPLOY_MODE']) delete process.env[key];
+process.env.PLATFORM_CONSOLE = 'true';
+process.env.PLATFORM_WEBAUTHN_ORIGIN = 'http://localhost:4173';
+const { upsertPlatformUser } = await import('../../src/platform/platform-users');
+upsertPlatformUser('browser-operator', 'Synthetic browser operator password', 'Browser Operator');
 const db = await import('../../src/shared/db');
 db.init();
 const { hashPassword } = await import('../../src/shared/password-hash');

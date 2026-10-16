@@ -78,3 +78,13 @@ Redemption binds the existing contact/credential, revokes sessions and challenge
 MFA enrollment. The synchronized non-secret restriction reaches updated office hosts; a
 disconnected host cannot receive a cloud state change until it reconnects. Console passkeys,
 real email delivery, operational identity checks and broader release findings remain open.
+
+
+## Console passkey follow-up
+
+Owner-console WebAuthn now verifies required user verification, exact configured origin/RP,
+single-use challenges and fresh proofs for console mutations. Passwords alone cannot open an
+enrolled account. The [runbook](../operations/console-passkeys.md) explains opt-in rollout,
+Windows Hello, independent backup keys and the unverified physical-device/deployment boundary.
+This implements the console portion of the high-priority authentication finding; tenant-wide
+step-up, stronger new-password minimum and native secure storage remain engineering tasks.

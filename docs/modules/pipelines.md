@@ -1268,3 +1268,14 @@ substitution occurs on retry. Same-product/build rows share stock; displayed fre
 counts must not be summed. Reservations remain separate from physical stock-out.
 The release context now includes line price and order currency for disambiguation.
 PWA cache v107; CKD partial-kit release and pre-slip undo remain separate work.
+
+
+### Owner-console passkey verification (2026-10-16)
+
+Console password verification → single-use, origin/RP/account-bound challenge when enrolled →
+WebAuthn user-verified signature → separate HttpOnly console session with verification timestamp.
+Writes after five minutes request a session-bound fresh assertion before any handler mutation.
+First enrollment confirms the password; additional/removal operations also require an existing
+fresh passkey, revoke other sessions and preserve at least one key. Mandatory policy limits
+unenrolled accounts to setup and logout. See `operations/console-passkeys.md`; this does not
+apply tenant-wide step-up or automatically enable the production console policy.

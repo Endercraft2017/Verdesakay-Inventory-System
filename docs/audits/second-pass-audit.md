@@ -127,3 +127,13 @@ AI use, vendor/access/patch review and security questionnaire. Operations: incid
 backup/restore, rollback, overload, support escalation, release checklist and API compatibility.
 Documents are linked from the product or repository index as appropriate. They deliberately expose
 pending owner/legal approval instead of inventing guarantees.
+
+
+## Console authentication follow-up — 2026-10-16
+
+[Console passkeys](../operations/console-passkeys.md) now provide real WebAuthn verification,
+password-plus-passkey login for enrolled operators and recent passkey proof before console writes.
+The console no longer has only the password control described in the earlier snapshot **when
+an operator is enrolled**. Enforcing enrollment for every operator is still a staged rollout
+action. No Windows device or live external-access policy has been verified. Tenant-wide step-up,
+password policy, native secure storage and the other open audit items are not closed by this work.

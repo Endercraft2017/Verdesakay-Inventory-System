@@ -11,6 +11,7 @@ import { cookieValue } from '../shared/browser-session';
 import { platformDb } from './platform';
 import { tokenDigest } from '../shared/db';
 import { PASSWORD_MIN, PASSWORD_MAX, isCommonPassword } from '../shared/password-policy';
+import { hasPlatformPasskey, requiresPlatformPasskeySetup, platformSessionVerified } from './platform-passkeys';
 
 const SESSION_HOURS = 12;
 const newToken = () => crypto.randomBytes(32).toString('hex');
@@ -55,7 +56,7 @@ export function platformUserCount(): number {
 }
 
 /** Verify credentials and open a session. Returns the bearer token, or null. */
-export function platformLogin(username: string, password: string): string | null {
+export function verifyPlatformPassword(username: string, password: string): number | null {
   const row = platformDb().prepare(
     'SELECT id, password_hash FROM platform_users WHERE username = ?'
   ).get(username.toLowerCase().trim()) as { id: number; password_hash: string } | undefined;
@@ -63,13 +64,23 @@ export function platformLogin(username: string, password: string): string | null
   if (passwordNeedsUpgrade(row.password_hash)) {
     platformDb().prepare('UPDATE platform_users SET password_hash = ? WHERE id = ? AND password_hash = ?').run(hashPassword(password), row.id, row.password_hash);
   }
+  return row.id;
+}
+
+export function platformLogin(username: string, password: string): string | null {
+  const id = verifyPlatformPassword(username, password);
+  if (!id || hasPlatformPasskey(id)) return null;
+  return createPlatformSession(id);
+}
+
+export function createPlatformSession(userId: number): string {
   const token = newToken();
   const d = platformDb();
   d.prepare(
     `INSERT INTO platform_sessions (token, user_id, expires_at)
      VALUES (?, ?, datetime('now', '+${SESSION_HOURS} hours'))`
-  ).run(tokenDigest(token), row.id);
-  d.prepare("UPDATE platform_users SET last_login_at = datetime('now') WHERE id = ?").run(row.id);
+  ).run(tokenDigest(token), userId);
+  d.prepare("UPDATE platform_users SET last_login_at = datetime('now') WHERE id = ?").run(userId);
   return token;
 }
 
@@ -141,5 +152,11 @@ export function requirePlatformAuth(req: Request, res: Response, next: NextFunct
   }
   (req as PlatformAuthedRequest).platformUser = user;
   (req as PlatformAuthedRequest).platformToken = token ?? undefined;
+  if (requiresPlatformPasskeySetup(user.id) && !req.path.startsWith('/passkeys') && !['/me','/logout'].includes(req.path)) {
+    res.status(403).json({ error: 'Enroll a console passkey before accessing the console.', passkey_setup_required: true }); return;
+  }
+  if (hasPlatformPasskey(user.id) && !req.path.startsWith('/passkeys') && req.path !== '/logout' && !platformSessionVerified(token!, !['GET','HEAD','OPTIONS'].includes(req.method))) {
+    res.status(403).json({ error: 'Verify your console passkey to continue.', passkey_required: true }); return;
+  }
   next();
 }

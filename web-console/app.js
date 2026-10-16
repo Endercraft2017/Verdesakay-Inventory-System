@@ -1,6 +1,5 @@
 /* Owner console — talks to /_platform/api (src/routes/platform.routes.ts). Vanilla, no
-   build step, mirrors the rest of this project. Operator token is separate from any
-   tenant's token and lives under its own localStorage key. */
+   build step, mirrors the rest of this project. Operator sessions use a separate HttpOnly cookie; legacy localStorage tokens are removed. */
 (function () {
   'use strict';
   var TOKEN_KEY = 'vds_platform_token';
@@ -46,7 +45,7 @@
     setTimeout(function () { t.remove(); }, 2600);
   }
 
-  async function api(method, path, body) {
+  async function api(method, path, body, retried) {
     var headers = { 'X-Requested-With': 'VDS', 'X-Session-Mode': 'cookie' };
     var tk = token();
     if (tk) headers['Authorization'] = 'Bearer ' + tk;
@@ -57,6 +56,10 @@
     if (res.status === 401) { setToken(null); showLogin(); throw new Error('Session expired — sign in again.'); }
     var data = null;
     if ((res.headers.get('content-type') || '').indexOf('json') !== -1) data = await res.json();
+    if (res.status === 403 && data && data.passkey_required && !retried && path.indexOf('/passkeys') !== 0) {
+      await verifyConsolePasskey();
+      return api(method, path, body, true);
+    }
     if (!res.ok) throw new Error((data && data.error) || ('Request failed (' + res.status + ')'));
     return data;
   }
@@ -70,6 +73,10 @@
     var err = $('login-err'); err.textContent = '';
     try {
       var r = await api('POST', '/login', { username: $('lu').value.trim(), password: $('lp').value });
+      if (r.passkey_required) {
+        var response = await ConsoleWebAuthn.startAuthentication({ optionsJSON: r.options });
+        r = await api('POST', '/passkeys/login', { token: r.token, response: response });
+      }
       setToken(r.token);
       $('lp').value = '';
       await boot();
@@ -83,7 +90,9 @@
 
   /* ---------- data ---------- */
   async function boot() {
-    me = (await api('GET', '/me')).user;
+    var identity = await api('GET', '/me');
+    me = identity.user;
+    if (identity.passkey_setup_required) { showPasskeySettings(true); return; }
     ref = await api('GET', '/bootstrap');
     $('who').textContent = me.full_name || me.username;
     showApp();
@@ -836,10 +845,70 @@
     } catch (ex) { toast(ex.message); }
   }
 
+  async function verifyConsolePasskey() {
+    var challenge = await api('POST', '/passkeys/verify/options', {});
+    var response = await ConsoleWebAuthn.startAuthentication({ optionsJSON: challenge.options });
+    await api('POST', '/passkeys/verify', { token: challenge.token, response: response });
+  }
+
+  async function showPasskeySettings(forced) {
+    if ($('passkeys-modal')) return;
+    var card = el('div', { class: 'card account-security-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Console passkeys' }, [
+      el('h2', { text: 'Console passkeys' }),
+      el('p', { text: 'Use Windows Hello on this computer or a security key. Enroll a separate backup before relying on one device. Your PIN and biometric data stay with your authenticator.' }),
+      el('div', { id: 'pk-list' }),
+      el('div', { class: 'field' }, [el('label', { for: 'pk-password', text: 'Current password' }), el('input', { id: 'pk-password', type: 'password', autocomplete: 'current-password' })]),
+      el('div', { class: 'field' }, [el('label', { for: 'pk-label', text: 'Passkey name' }), el('input', { id: 'pk-label', maxlength: '80', value: 'My Windows computer' })]),
+      el('p', { class: 'err', id: 'pk-error', role: 'alert' }),
+      el('button', { class: 'btn', id: 'pk-add' }, ['Add passkey']),
+      el('button', { class: 'btn ghost', id: 'pk-require' }, ['Require passkeys for all operators']),
+      el('button', { class: 'btn ghost', id: 'pk-close' }, [forced ? 'Sign out' : 'Close'])
+    ]);
+    var modal = el('div', { class: 'modal', id: 'passkeys-modal' }, [card]);
+    document.body.appendChild(modal);
+    var keys = [];
+    async function refresh() {
+      keys = (await api('GET', '/passkeys')).keys;
+      $('pk-list').replaceChildren();
+      keys.forEach(function (key) {
+        var remove = el('button', { class: 'btn ghost', disabled: keys.length < 2 ? 'disabled' : null }, ['Remove']);
+        remove.onclick = async function () {
+          remove.disabled = true;
+          try { await verifyConsolePasskey(); await api('POST', '/passkeys/remove', { id: key.id, current_password: $('pk-password').value }); $('pk-password').value = ''; await refresh(); }
+          catch (error) { $('pk-error').textContent = error.message; remove.disabled = false; }
+        };
+        $('pk-list').appendChild(el('p', {}, [key.label + ' ', remove]));
+      });
+      $('pk-require').disabled = !keys.length;
+    }
+    $('pk-add').onclick = async function () {
+      this.disabled = true; $('pk-error').textContent = '';
+      try {
+        if (keys.length) await verifyConsolePasskey();
+        var challenge = await api('POST', '/passkeys/register/options', { current_password: $('pk-password').value });
+        var response = await ConsoleWebAuthn.startRegistration({ optionsJSON: challenge.options });
+        await api('POST', '/passkeys/register/verify', { token: challenge.token, response: response, label: $('pk-label').value.trim() });
+        $('pk-password').value = '';
+        if (forced) { modal.remove(); await boot(); } else { await refresh(); toast('Passkey added. Test your backup before removing another key.'); }
+      } catch (error) { $('pk-error').textContent = error.message; }
+      finally { if ($('pk-add')) $('pk-add').disabled = false; }
+    };
+    $('pk-require').onclick = async function () {
+      this.disabled = true;
+      try { await verifyConsolePasskey(); await api('POST', '/passkeys/require', {}); toast('All operators must enroll a passkey.'); }
+      catch (error) { $('pk-error').textContent = error.message; }
+      finally { this.disabled = false; }
+    };
+    $('pk-close').onclick = async function () { modal.remove(); if (forced) { await api('POST', '/logout'); showLogin(); } };
+    try { await refresh(); } catch (error) { $('pk-error').textContent = error.message; }
+    $('pk-password').focus();
+  }
+
   /* ---------- change own password ---------- */
   $('password-btn').addEventListener('click', function () {
     var card = el('div', { class: 'card account-security-card' }, [
       el('h2', { text: 'Account & security' }),
+      el('button', { class: 'btn', onclick: function () { modal.remove(); showPasskeySettings(false); } }, ['Manage passkeys']),
       el('h3', { text: 'Change username' }),
       el('p', { class: 'muted', id: 'un-current-label', text: 'Current username: ' + me.username }),
       el('div', { class: 'field' }, [el('label', { for: 'un-new', text: 'New username' }), el('input', { id: 'un-new', autocomplete: 'username', minlength: '3', maxlength: '30' })]),

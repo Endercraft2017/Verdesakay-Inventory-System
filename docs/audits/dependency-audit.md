@@ -36,3 +36,13 @@ Desktop build/download dependencies remain a separate supply-chain risk. Build i
 environment, review downloaded artifacts and signing, and retest before distributing installers.
 New High/Critical reachable findings must block release. Unpatched findings require an owner-
 approved, time-bounded decision with compensating controls; none is silently approved here.
+
+## Console passkey dependency follow-up — 2026-10-16
+
+After installing pinned SimpleWebAuthn server 14.0.3/browser 14.0.0 and esbuild 0.28.1
+(dev-only reproducible bundling), `npm audit --omit=dev --json` still reports **0 Critical,
+1 High and 3 Moderate** vulnerable-package entries. No advisory entry names either passkey
+package. Existing node-forge and Mammoth/argparse/sprintf findings and the reachability limits
+above remain. Exact runtime JSON is `evidence/console-passkeys-npm-runtime.json`; the command
+correctly exits nonzero. This increment did not revalidate launcher/mobile lockfiles or clear
+all development-chain findings.

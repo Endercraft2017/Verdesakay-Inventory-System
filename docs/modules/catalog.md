@@ -1442,3 +1442,13 @@ substitution occurs on retry. Same-product/build rows share stock; displayed fre
 counts must not be summed. Reservations remain separate from physical stock-out.
 The release context now includes line price and order currency for disambiguation.
 PWA cache v107; CKD partial-kit release and pre-slip undo remain separate work.
+
+
+### Owner-console passkeys (2026-10-16)
+
+`platform/platform-passkeys.ts` owns WebAuthn public-key/challenge/session-proof storage in
+platform.db, separate from tenant MFA and sync. `platform-users.ts` applies mandatory enrollment
+and five-minute verification to console writes; `platform.routes.ts` exposes bounded enrollment,
+login and key management. `web-console/vendor/webauthn.js` is reproducibly bundled with
+`scripts/vendor-console-passkeys.mjs`. See `operations/console-passkeys.md` for rollout, backups
+and evidence limits. Unenrolled accounts are password-only until policy enforcement is enabled.

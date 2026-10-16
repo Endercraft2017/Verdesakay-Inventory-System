@@ -139,3 +139,17 @@ The local load probe uses 100 items, read-only traffic and test-mode rate limits
 large payroll/exports, sustained writes, failover, production hardware, representative datasets
 or a promised user ceiling. A complete live-size restore with keys/files, actual alert delivery,
 WAF/email DNS/private-object policies and legal approvals remain release evidence gaps.
+
+## Console passkeys — 2026-10-16
+
+Full regression: **287 files / 2,887 tests passed** (525.80 seconds). Playwright: **11 scenarios
+passed** (37.4 seconds), including real WebAuthn enrollment/login, replay rejection, mandatory
+policy activation, last-key protection and rejection of a signed assertion without user
+verification. TypeScript, frontend/script syntax, schema-type generation and staged Gitleaks
+checks passed. The pinned browser bundle reproduced without a diff. Evidence:
+`evidence/console-passkeys-{full,playwright,typecheck,staged-secrets}.txt`.
+
+Runtime npm audit remains nonzero (0 Critical / 1 High / 3 Moderate); see the dependency report.
+Physical Windows Hello/security-key behavior, production origin/proxy/cookie enforcement,
+external access restrictions and mandatory enrollment are unverified rollout checks. This
+increment does not close broader tenant step-up, password-policy or native-vault findings.

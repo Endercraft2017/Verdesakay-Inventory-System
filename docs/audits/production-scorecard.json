@@ -355,7 +355,7 @@
       "severity": "Critical",
       "requirement": "Admin interfaces require an authenticated session with an explicit admin role on every route, are rate-limited at login, and log every admin action.",
       "status": "UNVERIFIED",
-      "evidence": "Platform auth, login limiter and provisioning log exist (src/platform/platform.routes.ts); MFA/edge configuration and every admin audit operation were not fully established. Tenant login actor attribution was fixed.",
+      "evidence": "Separate platform auth, login limits and provisioning logs exist. Console WebAuthn enrollment/login and fresh proof for console writes are implemented and locally tested (platform-passkeys.ts, tests/platform-passkeys.test.ts, tests/e2e/passkeys.spec.ts). Enforcement for every operator, external access and complete administrator audit evidence remain unverified.",
       "scenario": "",
       "fix": "Request admin routes unauthenticated and as a normal user; inspect audit logging."
     },
@@ -427,9 +427,9 @@
       "severity": "Medium",
       "requirement": "High-risk actions use step-up authentication or contextual signals (new device, unusual location, impossible travel).",
       "status": "FAIL",
-      "evidence": "src/shared/mfa.ts supports required MFA enrollment for privileged tenant users and password confirmation for enrollment/removal. A fresh factor is not required for every high-risk operation; owner-console MFA is absent.",
-      "scenario": "An attacker with an already authenticated privileged session can change sensitive data without a fresh factor.",
-      "fix": "Require fresh password/factor proof on privilege changes, bulk deletion and operator recovery; add independently verified owner-console MFA or an MFA-protected access gateway."
+      "evidence": "Tenant MFA and controlled assisted recovery exist. Enrolled console operators now require user-verified WebAuthn login and fresh proof within five minutes for console writes. Tenant-wide high-risk step-up is incomplete; console enrollment policy must still be enabled and verified in staging.",
+      "scenario": "An attacker with a tenant privileged session can perform sensitive operations that do not yet require fresh verification. Unenrolled console accounts remain password-only until enforcement is enabled.",
+      "fix": "Complete tenant-sensitive-action verification and enrollment-policy protection; stage console enrollment with independent backup keys and enable the require-passkeys policy. See operations/console-passkeys.md."
     },
     {
       "id": "SECRET-01",
@@ -742,9 +742,9 @@
       "severity": "Critical",
       "requirement": "Server and database management panels are not reachable from the public internet (IP/VPN-restricted), require 2FA, and do not sit on default paths and ports.",
       "status": "FAIL",
-      "evidence": "src/app.ts and platform.routes.ts expose an operator console guarded by its own password/session. A separate public domain is configured; application code has no VPN/IP restriction or owner-console MFA. External access policy was not verified.",
-      "scenario": "An attacker who obtains the operator password can target tenant provisioning/recovery through a publicly reachable console if no separate access gateway restricts it.",
-      "fix": "Place the operator console behind an MFA-protected access gateway/VPN or verified IP policy, add owner-console MFA, and verify direct-origin bypass is blocked."
+      "evidence": "The console has separate auth plus locally tested WebAuthn login/fresh write verification for enrolled operators. Mandatory console enrollment is opt-in; no live enforcement, VPN/IP restriction or direct-origin bypass policy has been verified.",
+      "scenario": "A public console still needs verified external-access restrictions and mandatory enrollment; a password-only unenrolled account remains exposed until rollout.",
+      "fix": "Enable and test mandatory console passkeys and independent backup keys; verify VPN/access-gateway or IP restrictions and direct-origin bypass protection. Application passkeys alone do not establish network isolation."
     },
     {
       "id": "EDGE-08",
