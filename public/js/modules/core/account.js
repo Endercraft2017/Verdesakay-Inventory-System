@@ -166,7 +166,7 @@ App.register('account', async (view) => {
     const cur = view.querySelector('#cur-pw').value;
     const nw = view.querySelector('#new-pw').value;
     const con = view.querySelector('#con-pw').value;
-    if (nw.length < 8) { err.textContent = 'New password must be at least 8 characters'; err.classList.remove('hidden'); return; }
+    if (Array.from(nw).length < 15) { err.textContent = 'New password must be at least 15 characters'; err.classList.remove('hidden'); return; }
     if (nw !== con) { err.textContent = 'New passwords do not match'; err.classList.remove('hidden'); return; }
     view.querySelector('#pw-save').disabled = true;
     try {

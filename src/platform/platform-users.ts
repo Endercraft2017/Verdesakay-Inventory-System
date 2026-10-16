@@ -10,7 +10,7 @@ import { hashPassword, verifyPassword, passwordNeedsUpgrade } from '../shared/pa
 import { cookieValue } from '../shared/browser-session';
 import { platformDb } from './platform';
 import { tokenDigest } from '../shared/db';
-import { PASSWORD_MIN, PASSWORD_MAX, isCommonPassword } from '../shared/password-policy';
+import { passwordPolicyError } from '../shared/password-policy';
 import { hasPlatformPasskey, requiresPlatformPasskeySetup, platformSessionVerified } from './platform-passkeys';
 
 const SESSION_HOURS = 12;
@@ -31,7 +31,8 @@ export interface PlatformAuthedRequest extends Request {
 export function upsertPlatformUser(username: string, password: string, fullName?: string): number {
   const u = username.toLowerCase().trim();
   if (!/^[a-z0-9._-]{3,30}$/.test(u)) throw new Error('Username must be 3–30 chars: letters, numbers, dot, underscore, hyphen.');
-  if (password.length < 6) throw new Error('Password must be at least 6 characters.');
+  const error = passwordPolicyError(password);
+  if (error) throw new Error(error);
   const hash = hashPassword(password);
   const d = platformDb();
   d.prepare(
@@ -92,9 +93,8 @@ export function changePlatformPassword(userId: number, current: string, next: st
   const row = d.prepare('SELECT password_hash FROM platform_users WHERE id = ?').get(userId) as
     { password_hash: string } | undefined;
   if (!row || !verifyPassword(current, row.password_hash)) return 'Current password is incorrect.';
-  if (next.length < PASSWORD_MIN) return `New password must be at least ${PASSWORD_MIN} characters.`;
-  if (next.length > PASSWORD_MAX) return `New password must be at most ${PASSWORD_MAX} characters.`;
-  if (isCommonPassword(next)) return 'New password is one of the most common passwords — choose one that is harder to guess.';
+  const error = passwordPolicyError(next, 'New password');
+  if (error) return error;
   if (next === current) return 'New password must be different from the current one.';
   d.prepare('UPDATE platform_users SET password_hash = ? WHERE id = ?').run(hashPassword(next), userId);
   d.prepare('DELETE FROM platform_sessions WHERE user_id = ? AND token <> ?').run(userId, tokenDigest(keepToken));

@@ -39,13 +39,13 @@ beforeAll(async () => {
   T = await setupSiteTrio();
   // An employee with a login (for the phone punch), created on the cloud, then synced to the site.
   const username = 'clk' + Math.floor(Math.random() * 1e6);
-  const u = await api().post('/api/users').set(T.cloudHdr()).send({ username, full_name: 'Clock Person', password: 'clockpw1', role: 'warehouse' });
+  const u = await api().post('/api/users').set(T.cloudHdr()).send({ username, full_name: 'Clock Person', password: 'clockpw1-test-only', role: 'warehouse' });
   expect(u.status).toBe(201);
   const employee_no = 'E' + Math.floor(Math.random() * 1e6);
   const e = await api().post('/api/hr/employees').set(T.cloudHdr())
     .send({ employee_no, name: 'CLOCK PERSON', user_id: u.body.id, daily_rate: 500, rate_type: 'daily', status: 'regular' });
   expect(e.status).toBe(201);
-  emp = { employee_no, id: e.body.id, username, password: 'clockpw1' };
+  emp = { employee_no, id: e.body.id, username, password: 'clockpw1-test-only' };
   const no2 = 'E' + Math.floor(Math.random() * 1e6);
   const e2 = await api().post('/api/hr/employees').set(T.cloudHdr())
     .send({ employee_no: no2, name: 'SECOND PERSON', daily_rate: 500, rate_type: 'daily', status: 'regular' });

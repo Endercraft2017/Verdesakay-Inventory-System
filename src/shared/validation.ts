@@ -50,7 +50,7 @@ const intCoerce = z.coerce.number().int();
 // ---- Auth ----
 export const loginSchema = z.object({
   username: trimmed.min(1, 'Username is required').max(200),
-  password: z.string().min(1, 'Password is required').max(200),
+  password: z.string().min(1, 'Password is required').max(256),
   /** Borrowed-phone sign-in: a short, idle-limited session with no push (src/shared/auth.ts). */
   shared: z.boolean().optional(),
 }).strict();
@@ -831,7 +831,7 @@ const blankToNull = (max: number) => z.preprocess(
 );
 export const selfProfileSchema = z.object({
   // Re-authentication: floor phones get shared, so a contact/emergency change needs the password.
-  current_password: z.string().min(1, 'Enter your current password to save changes').max(200),
+  current_password: z.string().min(1, 'Enter your current password to save changes').max(256),
   preferred_name: blankToNull(60),
   mobile_phone: phoneOpt,
   personal_email: z.preprocess(

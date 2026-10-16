@@ -22,7 +22,7 @@ async function api(method, route, body, token = admin, expected) {
     return value;
 }
 async function check(name, fn) { await fn(); report.checks.push({ name, passed: true }); console.log('PASS ' + name); }
-async function loginRole(role) { const username = 'audit_' + role; await api('POST', '/users', { username, full_name: role, password: 'test-secret123', role }); return (await api('POST', '/auth/login', { username, password: 'test-secret123' }, null)).token; }
+async function loginRole(role) { const username = 'audit_' + role; await api('POST', '/users', { username, full_name: role, password: 'test-secret123-fixture', role }); return (await api('POST', '/auth/login', { username, password: 'test-secret123-fixture' }, null)).token; }
 async function launch(token, camera) {
     await context?.close();
     context = await chromium.launchPersistentContext(profile, { viewport: { width: 390, height: 844 }, permissions: ['camera'], timezoneId: 'Asia/Manila', serviceWorkers: 'block', ...((process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/bin/chromium', '/usr/lib/chromium/chromium'].find(fs.existsSync)) ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/bin/chromium', '/usr/lib/chromium/chromium'].find(fs.existsSync) } : {}), headless: true, args: camera ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--use-file-for-fake-video-capture=' + camera] : [] });
@@ -155,7 +155,7 @@ async function warehouseOut(so) {
 try {
     base = 'http://127.0.0.1:' + await new Promise((resolve, reject) => { let text = ''; server.stdout.on('data', d => { text += d; const m = text.match(/EDITOR_UX_PORT=(\d+)/); if (m)
         resolve(m[1]); }); server.on('exit', c => reject(Error('server exit ' + c))); });
-    admin = (await api('POST', '/auth/login', { username: 'admin', password: 'admin123' }, null)).token;
+    admin = (await api('POST', '/auth/login', { username: 'admin', password: 'admin123-test-only' }, null)).token;
     await check('Legacy Pick bookmarks open permissioned Work without stock writes', async () => {
         await launch(admin);
         const writes = [];

@@ -48,8 +48,8 @@ describe('desktop installer download', () => {
   });
 
   it('is for admins only', async () => {
-    await ctx.api.post('/api/users').set(hdr()).send({ username: 'clerk-dl', full_name: 'Clerk', password: 'clerkpass1', role: 'warehouse' });
-    const t = await login(ctx.api, 'clerk-dl', 'clerkpass1');
+    await ctx.api.post('/api/users').set(hdr()).send({ username: 'clerk-dl', full_name: 'Clerk', password: 'clerkpass1-test-only', role: 'warehouse' });
+    const t = await login(ctx.api, 'clerk-dl', 'clerkpass1-test-only');
     expect((await ctx.api.get('/api/desktop/installer/info').set({ Authorization: `Bearer ${t}` })).status).toBe(403);
     expect((await ctx.api.get('/api/desktop/installer/info')).status).toBe(401);
   });

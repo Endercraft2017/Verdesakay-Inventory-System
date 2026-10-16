@@ -15,7 +15,7 @@ beforeAll(async () => {
   const { createTenant } = await import('../src/platform/provisioning');
   createTenant({ slug: 'hexter', name: 'Hexter', admin_username: 'owner', admin_password: credentials.password });
   createTenant({ slug: 'hoster', name: 'Hoster', admin_username: 'owner', admin_password: 'hoster-pass-123' });
-  createTenant({ slug: 'joes', name: 'Joes', admin_username: 'owner', admin_password: 'joes-pass-123' });
+  createTenant({ slug: 'joes', name: 'Joes', admin_username: 'owner', admin_password: 'joes-pass-123-test-only' });
 });
 afterAll(() => {
   if (oldHost === undefined) delete process.env.TENANT_PATH_HOST; else process.env.TENANT_PATH_HOST = oldHost;

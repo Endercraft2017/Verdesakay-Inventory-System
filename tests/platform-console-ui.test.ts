@@ -36,7 +36,7 @@ it('shows the owner username, checks confirmation, submits the reset and clears 
     const password = w.document.querySelector('#d-owner-password') as HTMLInputElement;
     const confirm = w.document.querySelector('#d-owner-confirm') as HTMLInputElement;
     const form = password.closest('form')!;
-    password.value = 'newsecret1'; confirm.value = 'different';
+    password.value = 'newsecret1-test-only'; confirm.value = 'different';
     form.dispatchEvent(new w.Event('submit', { cancelable: true }));
     expect(w.document.querySelector('#d-owner-err')!.textContent).toBe('Passwords do not match.');
     expect(fetch.mock.calls.some(([url]) => url.endsWith('/reset-owner-password'))).toBe(false);
@@ -45,7 +45,7 @@ it('shows the owner username, checks confirmation, submits the reset and clears 
     await vi.waitFor(() => expect(password.value).toBe(''));
     expect(confirm.value).toBe('');
     const call = fetch.mock.calls.find(([url]) => url.endsWith('/reset-owner-password'))!;
-    expect(JSON.parse(call[1].body!)).toEqual({ owner_id: 1, new_password: 'newsecret1', current_password: '', reason: '' });
+    expect(JSON.parse(call[1].body!)).toEqual({ owner_id: 1, new_password: 'newsecret1-test-only', current_password: '', reason: '' });
     expect(w.document.querySelector('#d-owner-err')!.textContent).toContain('Password reset for original-owner');
     const fallback = w.document.getElementById('d-owner-temporary') as HTMLButtonElement;
     expect(fallback.classList.contains('hidden')).toBe(false);
@@ -90,7 +90,7 @@ it('requires regular recovery email, creates a minimal sandbox, and offers remov
     input('new-btn').click();
     input('n-name').value = 'Sandbox Company';
     input('n-user').value = 'sandboxowner';
-    input('n-pass').value = 'sandboxpass1';
+    input('n-pass').value = 'sandboxpass1-test-only';
     input('n-go').click();
     expect(w.document.getElementById('n-err')!.textContent).toContain('recovery email');
     expect(fetch.mock.calls.some(([url, opts]) => url.endsWith('/tenants') && opts.method === 'POST')).toBe(false);
@@ -102,7 +102,7 @@ it('requires regular recovery email, creates a minimal sandbox, and offers remov
     await vi.waitFor(() => expect(w.document.querySelector('.subscription-card')).not.toBeNull());
     (w.document.querySelector('[data-tab="settings"]') as HTMLElement).click();
     const create = fetch.mock.calls.find(([url, opts]) => url.endsWith('/tenants') && opts.method === 'POST')!;
-    expect(JSON.parse(create[1].body!)).toMatchObject({ name: 'Sandbox Company', admin_username: 'sandboxowner', admin_password: 'sandboxpass1', is_sandbox: true });
+    expect(JSON.parse(create[1].body!)).toMatchObject({ name: 'Sandbox Company', admin_username: 'sandboxowner', admin_password: 'sandboxpass1-test-only', is_sandbox: true });
     expect(JSON.parse(create[1].body!).admin_email).toBeUndefined();
     expect(JSON.parse(create[1].body!).slug).toBeUndefined();
     const remove = [...w.document.querySelectorAll('button')].find(b => b.textContent === 'Remove sandbox tenant')!;

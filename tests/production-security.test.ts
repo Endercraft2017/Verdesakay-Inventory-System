@@ -63,10 +63,10 @@ describe('production security regression', () => {
 
   it('revokes platform operator sessions when a password is reset', async () => {
     const operators = await import('../src/platform/platform-users');
-    operators.upsertPlatformUser('audit-operator', 'old-password');
-    const session = operators.platformLogin('audit-operator', 'old-password');
+    operators.upsertPlatformUser('audit-operator', 'old-password-test-only');
+    const session = operators.platformLogin('audit-operator', 'old-password-test-only');
     expect(operators.platformUserFromToken(session)).not.toBeNull();
-    operators.upsertPlatformUser('audit-operator', 'new-password');
+    operators.upsertPlatformUser('audit-operator', 'new-password-test-only');
     expect(operators.platformUserFromToken(session)).toBeNull();
   });
 
@@ -78,9 +78,9 @@ describe('production security regression', () => {
       const supertest = (await import('supertest')).default;
       const api = supertest(createApp());
       for (let i = 0; i < 10; i++) {
-        expect((await api.post('/api/auth/reset-password').send({ token: 'invalid-token-' + i, new_password: 'secret123' })).status).toBe(400);
+        expect((await api.post('/api/auth/reset-password').send({ token: 'invalid-token-' + i, new_password: 'secret123-test-only' })).status).toBe(400);
       }
-      expect((await api.post('/api/auth/reset-password').send({ token: 'invalid-token-last', new_password: 'secret123' })).status).toBe(429);
+      expect((await api.post('/api/auth/reset-password').send({ token: 'invalid-token-last', new_password: 'secret123-test-only' })).status).toBe(429);
     } finally { process.env.NODE_ENV = previous; }
   });
 });

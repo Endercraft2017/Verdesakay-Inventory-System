@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { Socket } from 'node:net';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'otom-editor-ux-'));
 process.env.NODE_ENV = 'test';
-process.env.VDS_TEST_ADMIN_PASSWORD = 'admin123'; // disposable fixture, never production bootstrap
+process.env.VDS_TEST_ADMIN_PASSWORD = 'admin123-test-only'; // disposable fixture, never production bootstrap
 process.env.DB_PATH = path.join(dir, 'test.db');
 process.env.PLATFORM_DB_PATH = path.join(dir, 'platform.db');
 process.env.UPLOAD_DIR = path.join(dir, 'uploads');

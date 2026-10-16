@@ -33,7 +33,7 @@ it('runs the migration CLI on a real app database and serves its existing compan
   expect(fs.readFileSync(process.env.DB_PATH!)).toEqual(source);
   process.env.TENANT_PATH_HOST = 'otom.afkcube.com';
   process.env.DEFAULT_TENANT_REDIRECT = 'verdesakay';
-  const signedIn = await ctx.api.post('/verdesakay/api/auth/login').set('Host', 'otom.afkcube.com').send({ username: 'admin', password: 'admin123' });
+  const signedIn = await ctx.api.post('/verdesakay/api/auth/login').set('Host', 'otom.afkcube.com').send({ username: 'admin', password: 'admin123-test-only' });
   expect(signedIn.status).toBe(200);
   const headers = { Host: 'otom.afkcube.com', Authorization: `Bearer ${signedIn.body.token}` };
   const items = await ctx.api.get('/verdesakay/api/inventory').set(headers);

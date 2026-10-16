@@ -1,7 +1,7 @@
 /**
  * Owner-console operator accounts (separate from every tenant's users).
  *
- *   npm run platform:user -- --username owner --password s3cret [--name "System Owner"]
+ *   npm run platform:user -- --username owner --password "<unique passphrase of 15+ characters>" [--name "System Owner"]
  *   npm run platform:user -- --list
  *
  * The console itself is only reachable when the server runs with PLATFORM_CONSOLE=true.

@@ -43,7 +43,7 @@ beforeAll(async () => {
   setLan(T.hostDb(), T.hostSlug);
   setLan(T.lanDb(), T.lanSlug);
   // A second desk PC on the same site.
-  const reg = await T.sync.registerNode({ cloudUrl: T.url, username: 'admin', password: 'admin123', name: 'Desk 2', hostNodeNo: T.hostNo });
+  const reg = await T.sync.registerNode({ cloudUrl: T.url, username: 'admin', password: 'admin123-test-only', name: 'Desk 2', hostNodeNo: T.hostNo });
   desk2No = reg.nodeNo;
   await T.hostRound(); // the host learns about it
   const file = path.join(T.ctx.tmpDir, `${DESK2}.db`);
@@ -52,7 +52,7 @@ beforeAll(async () => {
   provisioning.importTenant({ slug: DESK2, name: DESK2, sourceFile: file, plan: 'unlimited' });
   T.sync.adoptSnapshot(desk2Db(), { ...reg, cloudUrl: T.url, tenant: T.hostSlug, hostNodeNo: T.hostNo });
   setLan(desk2Db(), DESK2);
-  desk2Token = (await ok(api().post('/api/auth/login').set('X-Tenant', DESK2).send({ username: 'admin', password: 'admin123' }))).body.token;
+  desk2Token = (await ok(api().post('/api/auth/login').set('X-Tenant', DESK2).send({ username: 'admin', password: 'admin123-test-only' }))).body.token;
   await T.lanRound();
   await desk2Round();
   await T.hostRound(); // the cloud learns where everyone is

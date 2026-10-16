@@ -37,7 +37,7 @@ try {
     server.stdout.on('data', data => { text += data; const match = text.match(/EDITOR_UX_PORT=(\d+)/); if (match) resolve(match[1]); });
     server.on('exit', code => reject(new Error('Audit server exited: ' + code)));
   });
-  token = (await api('POST', '/auth/login', { username: 'admin', password: 'admin123' })).token;
+  token = (await api('POST', '/auth/login', { username: 'admin', password: 'admin123-test-only' })).token;
   await api('PUT', '/hr/payroll-policy', { pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [] });
   const employee = await api('POST', '/hr/employees', { employee_no: 'UX-PAY', name: 'Payroll UX Employee', daily_rate: 1800, user_id: (await api('GET', '/auth/me')).user.id });
   const shift = await api('POST', '/hr/shifts', { name: 'UX shift', start_time: '08:00', end_time: '17:00', is_default: false });

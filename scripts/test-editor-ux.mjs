@@ -53,8 +53,8 @@ try {
     backend.stdout.on('data', data => { text += data; const match = text.match(/EDITOR_UX_PORT=(\d+)/); if (match) resolve(match[1]); });
     backend.on('exit', code => reject(new Error('Audit server exited: ' + code)));
   });
-  token = (await api('POST', '/auth/login', { username: 'admin', password: 'admin123' })).token;
-  await api('POST', '/auth/change-password', { current_password: 'admin123', new_password: 'EditorAudit!73952' });
+  token = (await api('POST', '/auth/login', { username: 'admin', password: 'admin123-test-only' })).token;
+  await api('POST', '/auth/change-password', { current_password: 'admin123-test-only', new_password: 'EditorAudit!73952' });
   const template = await api('POST', '/templates', { name: 'Editor UX audit', type: 'generic',
     body: '<style data-docpage>@page{size:210mm 297mm;margin:14mm}</style><header class="doc-head"><h1>{{company.name}}</h1></header><p>Employee payslip layout.</p>' });
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/lib/chromium/chromium', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(fs.existsSync);

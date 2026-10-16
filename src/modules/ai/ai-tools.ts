@@ -440,7 +440,7 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
         properties: {
           username: { type: 'string', description: '3-30 chars: letters, numbers, dot, underscore, hyphen.' },
           full_name: { type: 'string' },
-          password: { type: 'string', description: 'Initial password (min 6 characters).' },
+          password: { type: 'string', description: 'Initial password (15–128 characters; use a unique passphrase).' },
           role: {
             type: 'string',
             description: "Role key (a permission bundle the workspace defines under Admin → Roles), e.g. 'warehouse', 'hr', 'admin_staff'. Defaults to admin_staff.",

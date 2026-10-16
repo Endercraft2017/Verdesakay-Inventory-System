@@ -11,16 +11,16 @@ beforeAll(async () => {
   const { createTenant } = await import('../src/platform/provisioning');
   const { setTenantModules } = await import('../src/platform/platform');
   for (const slug of ['supportco', 'otherco']) {
-    createTenant({ slug, name: slug, plan: 'complete', admin_username: 'owner', admin_password: 'ownerpass1' });
+    createTenant({ slug, name: slug, plan: 'complete', admin_username: 'owner', admin_password: 'ownerpass1-test-only' });
     setTenantModules(slug, []);
   }
-  admin = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'supportco').send({ username: 'owner', password: 'ownerpass1' })).body.token;
-  other = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'otherco').send({ username: 'owner', password: 'ownerpass1' })).body.token;
+  admin = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'supportco').send({ username: 'owner', password: 'ownerpass1-test-only' })).body.token;
+  other = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'otherco').send({ username: 'owner', password: 'ownerpass1-test-only' })).body.token;
   const { withTenant, run } = await import('../src/shared/db');
-  withTenant('supportco', () => run("INSERT INTO users(username,password_hash,full_name,role) VALUES(?,?,?,?)", 'staff', bcrypt.hashSync('staffpass1', 10), 'Staff', 'employee'));
-  employee = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'supportco').send({ username: 'staff', password: 'staffpass1' })).body.token;
-  (await import('../src/platform/platform-users')).upsertPlatformUser('operator', 'ownerpass1');
-  owner = (await ctx.api.post('/_platform/api/login').send({ username: 'operator', password: 'ownerpass1' })).body.token;
+  withTenant('supportco', () => run("INSERT INTO users(username,password_hash,full_name,role) VALUES(?,?,?,?)", 'staff', bcrypt.hashSync('staffpass1-test-only', 10), 'Staff', 'employee'));
+  employee = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'supportco').send({ username: 'staff', password: 'staffpass1-test-only' })).body.token;
+  (await import('../src/platform/platform-users')).upsertPlatformUser('operator', 'ownerpass1-test-only');
+  owner = (await ctx.api.post('/_platform/api/login').send({ username: 'operator', password: 'ownerpass1-test-only' })).body.token;
 });
 afterAll(() => { delete process.env.PLATFORM_CONSOLE; cleanup(ctx); });
 describe('tenant admin support', () => {

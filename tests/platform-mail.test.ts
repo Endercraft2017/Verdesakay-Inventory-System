@@ -21,8 +21,8 @@ beforeAll(async () => {
   ctx = await setupApp();
   mail = await import('../src/platform/platform-mail');
   const users = await import('../src/platform/platform-users');
-  users.upsertPlatformUser('boss', 'bosspass1', 'Owner');
-  op = (await ctx.api.post('/_platform/api/login').set('Host', host).send({ username: 'boss', password: 'bosspass1' })).body.token;
+  users.upsertPlatformUser('boss', 'bosspass1-test-only', 'Owner');
+  op = (await ctx.api.post('/_platform/api/login').set('Host', host).send({ username: 'boss', password: 'bosspass1-test-only' })).body.token;
 });
 afterAll(() => {
   for (const key of ['TENANT_PATH_HOST', 'PLATFORM_CONSOLE', 'PLATFORM_HOST', 'SIGNUPS_OPEN']) delete process.env[key];
@@ -81,12 +81,12 @@ describe('owner alerts', () => {
 
   it('a self-serve sign-up and its reported payment email the owner', async () => {
     await ctx.api.put('/_platform/api/billing/settings').set(opHdr()).send({ module_prices: { hr: 3000 }, seat_price: 100, gcash_number: '09171234567' });
-    const s = await ctx.api.post('/api/signup').set('Host', host).send({ slug: 'cruzfoods', company_name: 'Cruz Foods', admin_username: 'owner', admin_password: 'secret123', admin_email: 'ana@cruz.test', seats: 2, modules: ['hr'] });
+    const s = await ctx.api.post('/api/signup').set('Host', host).send({ slug: 'cruzfoods', company_name: 'Cruz Foods', admin_username: 'owner', admin_password: 'secret123-test-only', admin_email: 'ana@cruz.test', seats: 2, modules: ['hr'] });
     expect(s.status, JSON.stringify(s.body)).toBe(201);
     await tick();
     expect(mail._testOutbox.at(-1)!.subject).toBe('New sign-up: Cruz Foods');
 
-    const login = await ctx.api.post('/cruzfoods/api/auth/login').set('Host', host).send({ username: 'owner', password: 'secret123' });
+    const login = await ctx.api.post('/cruzfoods/api/auth/login').set('Host', host).send({ username: 'owner', password: 'secret123-test-only' });
     const h = { Host: host, Authorization: `Bearer ${login.body.token}` };
     const inv = (await ctx.api.get('/cruzfoods/api/tenant/billing').set(h)).body.invoices[0];
     const rep = await ctx.api.post(`/cruzfoods/api/tenant/billing/invoices/${inv.id}/payments`).set(h)

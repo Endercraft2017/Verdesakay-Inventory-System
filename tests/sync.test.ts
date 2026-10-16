@@ -45,7 +45,7 @@ async function enrolNode(): Promise<void> {
   sync.snapshotForNode('default', file);
   provisioning.importTenant({ slug: NODE, name: 'Plant A', sourceFile: file });
   sync.enableSync(nodeDb(), { role: 'node', nodeNo: NODE_NO });
-  const r = await ctx.api.post('/api/auth/login').set('X-Tenant', NODE).send({ username: 'admin', password: 'admin123' });
+  const r = await ctx.api.post('/api/auth/login').set('X-Tenant', NODE).send({ username: 'admin', password: 'admin123-test-only' });
   expect(r.status).toBe(200); // sign-in only writes node-local tables, so it works on a node
   nodeToken = r.body.token as string;
 }
@@ -70,8 +70,8 @@ afterAll(() => cleanup(ctx));
 describe('a DB without a sync role', () => {
   it('is untouched: ordinary ids, no guard, no provisional numbers', async () => {
     const provisioning = await import('../src/platform/provisioning');
-    provisioning.createTenant({ slug: 'plain', name: 'Plain', admin_username: 'owner', admin_password: 'plainpass1' });
-    const t = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'plain').send({ username: 'owner', password: 'plainpass1' })).body.token;
+    provisioning.createTenant({ slug: 'plain', name: 'Plain', admin_username: 'owner', admin_password: 'plainpass1-test-only' });
+    const t = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'plain').send({ username: 'owner', password: 'plainpass1-test-only' })).body.token;
     const r = await ctx.api.post('/api/inventory').set({ Authorization: `Bearer ${t}`, 'X-Tenant': 'plain' }).send({ name: 'Plain item', quantity: 1 });
     expect(r.status).toBe(201);
     expect(r.body.id).toBeLessThan(1000);
@@ -206,10 +206,10 @@ describe('a sync round', () => {
   it('rejects and undoes the offline work of someone disabled on the cloud meanwhile', async () => {
     const id = await newItem(9);
     const u = await ctx.api.post('/api/users').set(cloudHdr())
-      .send({ username: 'wh-offline', full_name: 'Warehouse Offline', password: 'whpass123', role: 'warehouse' });
+      .send({ username: 'wh-offline', full_name: 'Warehouse Offline', password: 'whpass123-test-only', role: 'warehouse' });
     expect(u.status).toBe(201);
     await syncRound(); // the user (and password hash) reach the node, so they can sign in there
-    const wl = await ctx.api.post('/api/auth/login').set('X-Tenant', NODE).send({ username: 'wh-offline', password: 'whpass123' });
+    const wl = await ctx.api.post('/api/auth/login').set('X-Tenant', NODE).send({ username: 'wh-offline', password: 'whpass123-test-only' });
     expect(wl.status).toBe(200);
     const r = await ctx.api.post(`/api/inventory/${id}/adjust`)
       .set({ Authorization: `Bearer ${wl.body.token}`, 'X-Tenant': NODE }).send({ change: -2, reason: 'Before being disabled' });

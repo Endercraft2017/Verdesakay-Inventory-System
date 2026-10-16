@@ -37,7 +37,7 @@ try {
     server.stdout.on('data', data => { text += data; const match = text.match(/EDITOR_UX_PORT=(\d+)/); if (match) resolve(match[1]); });
     server.on('exit', code => reject(new Error('Audit server exited: ' + code)));
   });
-  token = (await api('POST', '/auth/login', { username: 'admin', password: 'admin123' })).token;
+  token = (await api('POST', '/auth/login', { username: 'admin', password: 'admin123-test-only' })).token;
 
   const product=await api('POST','/inventory',{name:'Connected UX Product',sku:'CX-1',unit:'box',quantity:20,attributes:{sale_price:125.5}});
   const customer=await api('POST','/customers',{name:'Connected UX Customer'});

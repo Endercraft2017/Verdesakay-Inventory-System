@@ -6,7 +6,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { recoveryUsername, recoveryFixtureToken, cancellationId, cancellationNonce } from './recovery-fixture';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vds-playwright-'));
 Object.assign(process.env, {
-  VDS_TEST_ADMIN_PASSWORD: 'admin123', NODE_ENV: 'test', TZ: 'Asia/Manila',
+  VDS_TEST_ADMIN_PASSWORD: 'admin123-test-only', NODE_ENV: 'test', TZ: 'Asia/Manila',
   DB_PATH: path.join(dir, 'app.db'), DATA_DIR: path.join(dir, 'data'),
   PLATFORM_DB_PATH: path.join(dir, 'platform.db'), UPLOAD_DIR: path.join(dir, 'uploads'),
   BACKUP_DIR: path.join(dir, 'backups'),

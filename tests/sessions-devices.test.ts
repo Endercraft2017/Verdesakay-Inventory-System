@@ -119,7 +119,7 @@ describe('sessions', () => {
     const acc = await createEmployee(ctx.api, adminToken);
     const other = await signIn(acc.username, acc.password, 'dev-pw-other001');
     const res = await ctx.api.post('/api/auth/change-password').set(B(acc.token))
-      .send({ current_password: acc.password, new_password: 'newsecret1' });
+      .send({ current_password: acc.password, new_password: 'newsecret1-test-only' });
     expect(res.status).toBe(200);
     expect((await ctx.api.get('/api/auth/me').set(B(other))).status).toBe(401);
     expect(queryOne<{ end_reason: string }>('SELECT end_reason FROM sessions WHERE token = ?', tokenDigest(other))!.end_reason).toBe('password');

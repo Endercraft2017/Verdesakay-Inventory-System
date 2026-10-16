@@ -41,19 +41,19 @@ describe('the default tenant still works with no catalog', () => {
 
 describe('provisioning + isolation', () => {
   it('rejects a reserved or malformed slug', () => {
-    expect(() => provisioning.createTenant({ slug: 'admin', name: 'X', admin_username: 'owner', admin_password: 'secret123' })).toThrow();
-    expect(() => provisioning.createTenant({ slug: 'A B', name: 'X', admin_username: 'owner', admin_password: 'secret123' })).toThrow();
+    expect(() => provisioning.createTenant({ slug: 'admin', name: 'X', admin_username: 'owner', admin_password: 'secret123-test-only' })).toThrow();
+    expect(() => provisioning.createTenant({ slug: 'A B', name: 'X', admin_username: 'owner', admin_password: 'secret123-test-only' })).toThrow();
   });
 
   it('creates a tenant with its own admin, isolated from the default tenant', async () => {
-    provisioning.createTenant({ slug: 'acme', name: 'Acme Mfg', admin_username: 'owner', admin_password: 'acmepass1' });
+    provisioning.createTenant({ slug: 'acme', name: 'Acme Mfg', admin_username: 'owner', admin_password: 'acmepass1-test-only' });
 
     // The default admin cannot log into the acme tenant…
-    const bad = await ctx.api.post('/api/auth/login').set(asTenant('acme')).send({ username: 'admin', password: 'admin123' });
+    const bad = await ctx.api.post('/api/auth/login').set(asTenant('acme')).send({ username: 'admin', password: 'admin123-test-only' });
     expect(bad.status).toBe(401);
 
     // …but the acme admin can.
-    const good = await ctx.api.post('/api/auth/login').set(asTenant('acme')).send({ username: 'owner', password: 'acmepass1' });
+    const good = await ctx.api.post('/api/auth/login').set(asTenant('acme')).send({ username: 'owner', password: 'acmepass1-test-only' });
     expect(good.status).toBe(200);
     const acmeToken = good.body.token as string;
 
@@ -74,23 +74,23 @@ describe('provisioning + isolation', () => {
     expect((await ctx.api.get('/api/health').set(asTenant('ghostco'))).status).toBe(404);
 
     provisioning.suspendTenant('acme');
-    const suspended = await ctx.api.post('/api/auth/login').set(asTenant('acme')).send({ username: 'owner', password: 'acmepass1' });
+    const suspended = await ctx.api.post('/api/auth/login').set(asTenant('acme')).send({ username: 'owner', password: 'acmepass1-test-only' });
     expect(suspended.status).toBe(403);
 
     provisioning.resumeTenant('acme');
-    const back = await ctx.api.post('/api/auth/login').set(asTenant('acme')).send({ username: 'owner', password: 'acmepass1' });
+    const back = await ctx.api.post('/api/auth/login').set(asTenant('acme')).send({ username: 'owner', password: 'acmepass1-test-only' });
     expect(back.status).toBe(200);
   });
 
   it('rejects a duplicate slug', () => {
-    expect(() => provisioning.createTenant({ slug: 'acme', name: 'Dupe', admin_username: 'x', admin_password: 'secret123' })).toThrow(/taken/i);
+    expect(() => provisioning.createTenant({ slug: 'acme', name: 'Dupe', admin_username: 'x', admin_password: 'secret123-test-only' })).toThrow(/taken/i);
   });
 });
 
 describe('POST /api/signup', () => {
   it('404s while SIGNUPS_OPEN is off (default)', async () => {
     const r = await ctx.api.post('/api/signup').send({
-      company_name: 'Trial Co', slug: 'trialco', admin_username: 'owner', admin_password: 'trialpass1',
+      company_name: 'Trial Co', slug: 'trialco', admin_username: 'owner', admin_password: 'trialpass1-test-only',
     });
     expect(r.status).toBe(404);
   });

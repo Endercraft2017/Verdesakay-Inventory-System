@@ -9,7 +9,7 @@ declare const API: { post: (path: string, body?: unknown, opts?: unknown) => Pro
 async function signIn(page: Page, mobile = false) {
   await page.goto(mobile ? '/m' : '/');
   await page.locator(mobile ? '#m-username' : '#login-username').fill('admin');
-  await page.locator(mobile ? '#m-password' : '#login-password').fill('admin123');
+  await page.locator(mobile ? '#m-password' : '#login-password').fill('admin123-test-only');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page.locator(mobile ? '#m-app' : '#app-screen')).toBeVisible();
 }
@@ -22,7 +22,7 @@ test('desktop: wrong password, keyboard login, stock journey and server logout',
   await page.locator('#login-password').fill('wrong');
   await page.locator('#login-password').press('Enter');
   await expect(page.locator('#login-error')).toContainText(/invalid/i);
-  await page.locator('#login-password').fill('admin123');
+  await page.locator('#login-password').fill('admin123-test-only');
   await page.locator('#login-password').press('Enter');
   await expect(page.locator('#app-screen')).toBeVisible();
   const item = await page.evaluate(async () => {

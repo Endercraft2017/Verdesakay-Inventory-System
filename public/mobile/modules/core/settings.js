@@ -245,7 +245,7 @@ MApp.route('settings', function (view) {
       var cur = page.querySelector('[data-cur]').value;
       var next = page.querySelector('[data-new]').value;
       if (next !== page.querySelector('[data-confirm]').value) { mToast('New passwords do not match', 'err'); return; }
-      if (next.length < 8) { mToast('New password must be at least 8 characters', 'err'); return; }
+      if (Array.from(next).length < 15) { mToast('New password must be at least 15 characters', 'err'); return; }
       var button = event.target.querySelector('button');
       button.disabled = true;
       API.post('/auth/change-password', { current_password: cur, new_password: next })

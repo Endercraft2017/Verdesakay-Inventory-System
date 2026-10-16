@@ -93,7 +93,7 @@ const recoveryLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 10, skipSucces
 router.post('/:id/mfa/reset', requirePermission('users.manage'), syncClass('online'), recoveryLimiter, async (req, res, next) => {
   try {
   const id = Number(req.params.id);
-  const input = parseBody(recoveryEvidenceSchema.extend({ current_password: z.string().min(1).max(200), code: z.string().min(6).max(20) }).strict(), req.body);
+  const input = parseBody(recoveryEvidenceSchema.extend({ current_password: z.string().min(1).max(256), code: z.string().min(6).max(20) }).strict(), req.body);
   if (id === req.user!.id) { res.status(403).json({ error: 'Use your recovery codes for your own account, or ask another verified administrator.' }); return; }
   const operator = queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id=?', req.user!.id)!;
   if (!mfaEnabled(req.user!.id) || !verifyPassword(input.current_password, operator.password_hash) || !checkMfaCode(req.user!.id, input.code)) {
@@ -202,7 +202,7 @@ router.put('/:id', requirePermission('users.manage'), syncClass('online'), (req,
 // POST /api/users/:id/reset-password
 router.post('/:id/reset-password', requirePermission('users.manage'), syncClass('online'), recoveryLimiter, (req, res) => {
   const id = Number(req.params.id);
-  const { new_password, current_password, code } = parseBody(resetPasswordSchema.extend({ current_password: z.string().min(1).max(200), code: z.string().max(20).optional(), reason: z.string().trim().min(20).max(500) }).strict(), req.body);
+  const { new_password, current_password, code } = parseBody(resetPasswordSchema.extend({ current_password: z.string().min(1).max(256), code: z.string().max(20).optional(), reason: z.string().trim().min(20).max(500) }).strict(), req.body);
   const operator = queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id=?', req.user!.id)!;
   if (!verifyPassword(current_password, operator.password_hash) || (mfaEnabled(req.user!.id) && !checkMfaCode(req.user!.id, code || ''))) {
     res.status(403).json({ error: 'Confirm your own password and, if enrolled, your authenticator or recovery code.' }); return;

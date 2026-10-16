@@ -57,14 +57,15 @@ its discarded suffix, and do not automatically store an unverified suffix as a n
 No immediate password change, secret sharing or live deployment is requested. When a tested
 staging release is ready, help verify access on the actual office computers and phones and
 keep recovery information in a password manager. The separate console-MFA setup will need
-the operator's authenticator and recovery-code storage; it is not implemented by this hash
-change. Never send passwords, authenticator seeds or recovery codes in chat.
+Windows Hello and an independent backup key, as described in
+[console-passkeys.md](console-passkeys.md); it is separate from this hash change. Never send passwords, authenticator seeds or recovery codes in chat.
 
-## Remaining policy work
+## New-password policy follow-up
 
-The new-password minimum is still eight characters. A coordinated move to the researched
-15-character minimum for password-only accounts, consistent Unicode length handling, UI
-messages, stronger console bootstrap validation and legacy weak-password remediation remains
-open. No automatic expiry or arbitrary character-composition rule was introduced. Password
-hashing alone does not close console MFA, passkeys, fresh privileged verification, native
-storage or the other release findings in the standards research record.
+New or replaced passwords now require 15–128 Unicode code points through the shared policy,
+including direct console/tenant provisioning and environment bootstrap. Existing shorter
+credentials remain usable. See [new-password-policy.md](new-password-policy.md) for Unicode,
+blocklist, compatibility and rollout limits. This does not force arbitrary periodic expiry.
+Console passkeys and fresh console write verification are implemented separately; enrollment
+and independent backups still need a staged rollout. Native storage, broader tenant step-up
+and the other release findings remain separate work.

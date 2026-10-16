@@ -19,8 +19,8 @@ beforeAll(async () => {
   snapshot = path.join(ctx.tmpDir, 'snapshot.db');
   db.getDb().exec(`VACUUM INTO '${snapshot.replace(/'/g, "''")}'`);
   const users = await import('../src/platform/platform-users');
-  users.upsertPlatformUser('owner', 'ownerpass1', 'System Owner');
-  op = (await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1' })).body.token;
+  users.upsertPlatformUser('owner', 'ownerpass1-test-only', 'System Owner');
+  op = (await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1-test-only' })).body.token;
 });
 afterAll(() => {
   delete process.env.PLATFORM_CONSOLE;
@@ -38,7 +38,7 @@ describe('import workspace', () => {
     expect(r.body.imported_users).toBeGreaterThan(0);
 
     const li = await ctx.api.post('/api/auth/login').set('X-Tenant', 'ourco')
-      .send({ username: 'admin', password: 'admin123' });
+      .send({ username: 'admin', password: 'admin123-test-only' });
     expect(li.status).toBe(200);
 
     const db = await import('../src/shared/db');

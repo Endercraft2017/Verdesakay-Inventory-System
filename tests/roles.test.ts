@@ -82,7 +82,7 @@ describe('custom roles', () => {
     const dup = await ctx.api.post('/api/roles').set(auth(adminToken)).send({ label: 'line supervisor' });
     expect(dup.status).toBe(409);
     const bad = await ctx.api.post('/api/users').set(auth(adminToken))
-      .send({ username: 'ghost.role', full_name: 'Ghost', password: 'secret123', role: 'no_such_role' });
+      .send({ username: 'ghost.role', full_name: 'Ghost', password: 'secret123-test-only', role: 'no_such_role' });
     expect(bad.status).toBe(400);
   });
 
@@ -117,10 +117,10 @@ describe('HR and custom roles', () => {
     expect(cat.body.assignableRoles).not.toContain('payroll_clerk');
 
     const ok = await ctx.api.post('/api/users').set(auth(hr.token))
-      .send({ username: 'packer.one', full_name: 'Packer One', password: 'secret123', role: 'packer' });
+      .send({ username: 'packer.one', full_name: 'Packer One', password: 'secret123-test-only', role: 'packer' });
     expect(ok.status).toBe(201);
     const no = await ctx.api.post('/api/users').set(auth(hr.token))
-      .send({ username: 'payroll.one', full_name: 'Payroll One', password: 'secret123', role: 'payroll_clerk' });
+      .send({ username: 'payroll.one', full_name: 'Payroll One', password: 'secret123-test-only', role: 'payroll_clerk' });
     expect(no.status).toBe(403);
   });
 });

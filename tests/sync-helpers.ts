@@ -43,7 +43,7 @@ export async function setupSyncPair(nodeSlug = 'plant-b', nodeNo = 9): Promise<S
       // A real installed PC runs as the `default` workspace (every module); match that here.
       provisioning.importTenant({ slug: nodeSlug, name: nodeSlug, sourceFile: file, plan: 'unlimited' });
       sync.enableSync(dbmod.getDb(nodeSlug), { role: 'node', nodeNo });
-      const r = await ctx.api.post('/api/auth/login').set('X-Tenant', nodeSlug).send({ username: 'admin', password: 'admin123' });
+      const r = await ctx.api.post('/api/auth/login').set('X-Tenant', nodeSlug).send({ username: 'admin', password: 'admin123-test-only' });
       if (r.status !== 200) throw new Error(`node login failed: ${r.status}`);
       nodeToken = r.body.token as string;
     },
@@ -95,18 +95,18 @@ export async function setupSiteTrio(seed?: (t: { api: TestContext['api']; cloudH
   const hostSlug = 'trio-host';
   const lanSlug = 'trio-lan';
   const signIn = async (tenant: string) => {
-    const r = await ctx.api.post('/api/auth/login').set('X-Tenant', tenant).send({ username: 'admin', password: 'admin123' });
+    const r = await ctx.api.post('/api/auth/login').set('X-Tenant', tenant).send({ username: 'admin', password: 'admin123-test-only' });
     if (r.status !== 200) throw new Error(`login on ${tenant} failed: ${r.status}`);
     return r.body.token as string;
   };
 
-  const host = await sync.registerNode({ cloudUrl: url, username: 'admin', password: 'admin123', name: 'Trio host', asHost: true });
+  const host = await sync.registerNode({ cloudUrl: url, username: 'admin', password: 'admin123-test-only', name: 'Trio host', asHost: true });
   const hostFile = path.join(ctx.tmpDir, `${hostSlug}.db`);
   await sync.downloadSnapshot({ fromUrl: url, nodeToken: host.nodeToken, file: hostFile });
   provisioning.importTenant({ slug: hostSlug, name: hostSlug, sourceFile: hostFile, plan: 'unlimited' }); // every module, like a real PC
   sync.adoptSnapshot(dbmod.getDb(hostSlug), { ...host, cloudUrl: url, isHost: true });
 
-  const lan = await sync.registerNode({ cloudUrl: url, username: 'admin', password: 'admin123', name: 'Trio desk', hostNodeNo: host.nodeNo });
+  const lan = await sync.registerNode({ cloudUrl: url, username: 'admin', password: 'admin123-test-only', name: 'Trio desk', hostNodeNo: host.nodeNo });
   await sync.syncWithCloud(hostSlug); // the host learns about its LAN PC
   const lanFile = path.join(ctx.tmpDir, `${lanSlug}.db`);
   await sync.downloadSnapshot({ fromUrl: url, tenant: hostSlug, nodeToken: lan.nodeToken, file: lanFile });

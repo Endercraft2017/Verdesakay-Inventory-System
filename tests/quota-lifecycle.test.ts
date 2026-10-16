@@ -34,14 +34,14 @@ describe('plan quotas on a named tenant', () => {
   let tkn: string;
   beforeAll(async () => {
     // 'trial' plan → users cap 5. The seeded admin is user #1.
-    provisioning.createTenant({ slug: 'capco', name: 'Cap Co', admin_username: 'owner', admin_password: 'ownerpass1', plan: 'trial' });
-    const r = await ctx.api.post('/api/auth/login').set(asTenant('capco')).send({ username: 'owner', password: 'ownerpass1' });
+    provisioning.createTenant({ slug: 'capco', name: 'Cap Co', admin_username: 'owner', admin_password: 'ownerpass1-test-only', plan: 'trial' });
+    const r = await ctx.api.post('/api/auth/login').set(asTenant('capco')).send({ username: 'owner', password: 'ownerpass1-test-only' });
     tkn = r.body.token;
   });
 
   it('blocks the 6th user with a 402', async () => {
     const mk = (n: number) => ctx.api.post('/api/users').set(asTenant('capco')).set('Authorization', `Bearer ${tkn}`)
-      .send({ username: `capuser${n}`, full_name: `Cap User ${n}`, password: 'secret123' });
+      .send({ username: `capuser${n}`, full_name: `Cap User ${n}`, password: 'secret123-test-only' });
     for (let i = 2; i <= 5; i++) expect((await mk(i)).status).toBe(201); // 1 (admin) + 4 = 5
     const sixth = await mk(6);
     expect(sixth.status).toBe(402);
@@ -83,10 +83,10 @@ describe('plan quotas on a named tenant', () => {
 describe('lapsed trial → read-only', () => {
   let tkn: string;
   beforeAll(async () => {
-    provisioning.createTenant({ slug: 'lapsed', name: 'Lapsed Co', admin_username: 'owner', admin_password: 'ownerpass1', plan: 'trial' });
+    provisioning.createTenant({ slug: 'lapsed', name: 'Lapsed Co', admin_username: 'owner', admin_password: 'ownerpass1-test-only', plan: 'trial' });
     platform.setTenantStatus('lapsed', 'trial');
     platform.setTrialEndsAt('lapsed', new Date(Date.now() - 86_400_000).toISOString()); // yesterday
-    const r = await ctx.api.post('/api/auth/login').set(asTenant('lapsed')).send({ username: 'owner', password: 'ownerpass1' });
+    const r = await ctx.api.post('/api/auth/login').set(asTenant('lapsed')).send({ username: 'owner', password: 'ownerpass1-test-only' });
     tkn = r.body.token;
   });
 

@@ -12,7 +12,7 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   if (!ready) throw new Error('Isolated fixture failed to start');
-  const session = await (await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: 'admin123' }) })).json();
+  const session = await (await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: 'admin123-test-only' }) })).json();
   const headers = { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' };
   for (let i = 0; i < 100; i++) {
     const result = await fetch(base + '/api/inventory', { method: 'POST', headers, body: JSON.stringify({ name: 'Capacity fixture ' + i, quantity: 100 }) });

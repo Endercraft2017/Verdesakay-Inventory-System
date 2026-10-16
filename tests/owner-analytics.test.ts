@@ -13,12 +13,12 @@ beforeAll(async () => {
   ctx = await setupApp();
   platform = await import('../src/platform/platform');
   db = await import('../src/shared/db');
-  (await import('../src/platform/platform-users')).upsertPlatformUser('owner', 'ownerpass1');
-  owner = (await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1' })).body.token;
+  (await import('../src/platform/platform-users')).upsertPlatformUser('owner', 'ownerpass1-test-only');
+  owner = (await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1-test-only' })).body.token;
   const { createTenant } = await import('../src/platform/provisioning');
-  createTenant({ slug: 'analyticsco', name: 'Analytics', plan: 'complete', admin_username: 'owner', admin_password: 'secret123' });
-  createTenant({ slug: 'isolatedco', name: 'Isolated', plan: 'complete', admin_username: 'owner', admin_password: 'secret123' });
-  token = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'analyticsco').send({ username: 'owner', password: 'secret123' })).body.token;
+  createTenant({ slug: 'analyticsco', name: 'Analytics', plan: 'complete', admin_username: 'owner', admin_password: 'secret123-test-only' });
+  createTenant({ slug: 'isolatedco', name: 'Isolated', plan: 'complete', admin_username: 'owner', admin_password: 'secret123-test-only' });
+  token = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'analyticsco').send({ username: 'owner', password: 'secret123-test-only' })).body.token;
 });
 afterAll(() => { delete process.env.PLATFORM_CONSOLE; cleanup(ctx); });
 describe('owner aggregate analytics', () => {
@@ -51,7 +51,7 @@ describe('owner aggregate analytics', () => {
     expect(a.history).toHaveLength(1);
     expect(a.storage_growth.mb_per_day).toBeNull();
     const telemetry = platform.platformDb().prepare('SELECT * FROM tenant_telemetry WHERE slug=?').all('analyticsco');
-    expect(JSON.stringify(telemetry)).not.toContain('secret123');
+    expect(JSON.stringify(telemetry)).not.toContain('secret123-test-only');
     expect(JSON.stringify(telemetry)).not.toContain('Bearer');
   });
   it('saves owner-only notes and thresholds, provides alerts, and exports a summary', async () => {

@@ -144,8 +144,8 @@ describe('per-tenant punch-photo retention (owner-only)', () => {
   let tkn: string;
 
   beforeAll(async () => {
-    provisioning.createTenant({ slug, name: 'Photo Co', admin_username: 'owner', admin_password: 'ownerpass1', plan: 'trial' });
-    const r = await ctx.api.post('/api/auth/login').set(asTenant()).send({ username: 'owner', password: 'ownerpass1' });
+    provisioning.createTenant({ slug, name: 'Photo Co', admin_username: 'owner', admin_password: 'ownerpass1-test-only', plan: 'trial' });
+    const r = await ctx.api.post('/api/auth/login').set(asTenant()).send({ username: 'owner', password: 'ownerpass1-test-only' });
     tkn = r.body.token;
   });
 
@@ -154,7 +154,7 @@ describe('per-tenant punch-photo retention (owner-only)', () => {
 
   async function tenantEmployee() {
     const acc = await ctx.api.post('/api/users').set(H())
-      .send({ username: 't' + Math.floor(Math.random() * 1e6), full_name: 'T', password: 'secret123', role: 'warehouse' });
+      .send({ username: 't' + Math.floor(Math.random() * 1e6), full_name: 'T', password: 'secret123-test-only', role: 'warehouse' });
     const employee_no = 'T' + Math.floor(Math.random() * 1e6);
     const emp = await ctx.api.post('/api/hr/employees').set(H())
       .send({ employee_no, name: 'TENANT EMP', user_id: acc.body.id, daily_rate: 500, rate_type: 'daily', status: 'regular' });

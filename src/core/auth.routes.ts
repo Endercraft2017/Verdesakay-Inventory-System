@@ -118,7 +118,7 @@ function signIn(user: UserRow, req: Request, shared: boolean, res: Response) {
 }
 
 // ── Two-step sign-in: the caller's own set-up (shared/mfa.ts) ──────────────────────────────
-const passwordOnly = z.object({ password: z.string().min(1, 'Enter your password').max(200) });
+const passwordOnly = z.object({ password: z.string().min(1, 'Enter your password').max(256) });
 const passwordAndCode = passwordOnly.extend({ code: z.string().trim().min(6, 'Enter the code from your app').max(20) });
 
 // A session is not proof of a factor. Bound guesses across all self-service factor

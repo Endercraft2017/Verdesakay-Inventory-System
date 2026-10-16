@@ -19,8 +19,8 @@ beforeAll(async () => {
   process.env.PLATFORM_HOST = host;
   ctx = await setupApp();
   const users = await import('../src/platform/platform-users');
-  users.upsertPlatformUser('boss', 'bosspass1', 'Owner');
-  op = (await ctx.api.post('/_platform/api/login').set('Host', host).send({ username: 'boss', password: 'bosspass1' })).body.token;
+  users.upsertPlatformUser('boss', 'bosspass1-test-only', 'Owner');
+  op = (await ctx.api.post('/_platform/api/login').set('Host', host).send({ username: 'boss', password: 'bosspass1-test-only' })).body.token;
 });
 afterAll(() => {
   for (const key of ['TENANT_PATH_HOST', 'PLATFORM_CONSOLE', 'PLATFORM_HOST']) delete process.env[key];
@@ -74,7 +74,7 @@ describe('the console', () => {
     expect(p.body).toMatchObject({ status: 'contacted', notes: 'Demo on Monday' });
 
     const t = await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({
-      name: 'Santos Metalworks', slug: 'santos', admin_username: 'owner', admin_password: 'secret123',
+      name: 'Santos Metalworks', slug: 'santos', admin_username: 'owner', admin_password: 'secret123-test-only',
       admin_email: 'maria@santos.test', awaiting_payment: true, inquiry_id: id,
     });
     expect(t.status, JSON.stringify(t.body)).toBe(201);
@@ -83,14 +83,14 @@ describe('the console', () => {
     expect(linked.tenant_slug).toBe('santos');
 
     // locked: sign-in works, the rest waits for the first payment
-    const login = await ctx.api.post('/santos/api/auth/login').set('Host', host).send({ username: 'owner', password: 'secret123' });
+    const login = await ctx.api.post('/santos/api/auth/login').set('Host', host).send({ username: 'owner', password: 'secret123-test-only' });
     const h = { Host: host, Authorization: `Bearer ${login.body.token}` };
     expect((await ctx.api.get('/santos/api/users').set(h)).status).toBe(402);
   });
 
   it('a workspace created without the lock is usable straight away', async () => {
     const t = await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({
-      name: 'Open Co', slug: 'openco', admin_username: 'owner', admin_password: 'secret123', admin_email: 'o@open.test',
+      name: 'Open Co', slug: 'openco', admin_username: 'owner', admin_password: 'secret123-test-only', admin_email: 'o@open.test',
     });
     expect(t.body.awaiting_payment).toBe(false);
   });

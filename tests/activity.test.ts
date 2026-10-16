@@ -55,7 +55,7 @@ describe('activity log', () => {
   });
 
   it('redacts passwords in the stored payload snapshot', async () => {
-    const emp = await createEmployee(ctx.api, token, { username: 'audit_pw_user', password: 'sup3rsecret' });
+    const emp = await createEmployee(ctx.api, token, { username: 'audit_pw_user', password: 'sup3rsecret-test-only' });
     await tick();
     const res = await ctx.api.get('/api/activity?entity=users&action=create&limit=50').set(authHdr());
     const row = res.body.rows.find((r: { meta: string }) => (r.meta || '').includes('audit_pw_user'));
@@ -63,7 +63,7 @@ describe('activity log', () => {
     const meta = JSON.parse(row.meta);
     expect(meta.body.username).toBe('audit_pw_user');
     expect(meta.body.password).toBe('[redacted]');
-    expect(row.meta).not.toContain('sup3rsecret');
+    expect(row.meta).not.toContain('sup3rsecret-test-only');
     expect(emp.id).toBeTruthy();
   });
 

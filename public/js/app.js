@@ -598,12 +598,12 @@ const App = (() => {
     UI.modal({
       title: 'Set a new password',
       bodyHTML: `<label>New password</label>
-        <input data-f="pw" type="password" autocomplete="new-password" placeholder="at least 8 characters" />`,
+        <input data-f="pw" type="password" autocomplete="new-password" placeholder="at least 15 characters" />`,
       confirmText: 'Save & sign in',
       cancelText: 'Cancel',
       onConfirm: async (ov, showErr) => {
         const pw = ov.querySelector('[data-f="pw"]').value;
-        if ((pw || '').length < 8) { showErr('Password must be at least 8 characters.'); return false; }
+        if (Array.from(pw || '').length < 15) { showErr('Password must be at least 15 characters.'); return false; }
         try {
           await API.post('/auth/reset-password', { token, new_password: pw });
         } catch (e) { showErr(e.message); return false; }

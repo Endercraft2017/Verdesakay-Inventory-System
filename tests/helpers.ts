@@ -56,7 +56,7 @@ export function cleanup(ctx: TestContext): void {
 export async function login(
   api: supertest.Agent,
   username = 'admin',
-  password = 'admin123'
+  password = 'admin123-test-only'
 ): Promise<string> {
   const res = await api.post('/api/auth/login').send({ username, password });
   if (res.status !== 200) throw new Error(`Login failed for ${username}: ${res.status}`);
@@ -99,7 +99,7 @@ export async function createEmployee(
 ): Promise<{ id: number; token: string; username: string; password: string }> {
   const { permission_overrides, ...accountFields } = overrides;
   const username = (overrides.username as string) || 'emp' + Math.floor(Math.random() * 1e6);
-  const password = (overrides.password as string) || 'secret123';
+  const password = (overrides.password as string) || 'secret123-test-only';
   const res = await api
     .post('/api/users')
     .set('Authorization', `Bearer ${adminToken}`)

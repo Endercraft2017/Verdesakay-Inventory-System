@@ -60,9 +60,9 @@ afterAll(() => {
 describe('enrolment', () => {
   it('needs an admin who can manage users', async () => {
     const u = await ctx.api.post('/api/users').set(cloudHdr())
-      .send({ username: 'clerk-t', full_name: 'Clerk', password: 'clerkpass1', role: 'warehouse' });
+      .send({ username: 'clerk-t', full_name: 'Clerk', password: 'clerkpass1-test-only', role: 'warehouse' });
     expect(u.status).toBe(201);
-    const t = await login(ctx.api, 'clerk-t', 'clerkpass1');
+    const t = await login(ctx.api, 'clerk-t', 'clerkpass1-test-only');
     const r = await ctx.api.post('/api/sync/nodes').set({ Authorization: `Bearer ${t}` }).send({ name: 'Nope' });
     expect(r.status).toBe(403);
     expect(sync.syncConfigOf(cloudDb())).toBeNull(); // nothing switched on
@@ -70,7 +70,7 @@ describe('enrolment', () => {
 
   it('registers the PC, switches the workspace to sync mode, and downloads a copy', async () => {
     snapshotFile = path.join(ctx.tmpDir, 'desk-1.db');
-    const id = await sync.enrolNode({ cloudUrl, username: 'admin', password: 'admin123', name: 'Warehouse desk', file: snapshotFile });
+    const id = await sync.enrolNode({ cloudUrl, username: 'admin', password: 'admin123-test-only', name: 'Warehouse desk', file: snapshotFile });
     expect(id.nodeNo).toBe(1);
     nodeNo = id.nodeNo;
     expect(sync.syncConfigOf(cloudDb())).toEqual({ role: 'cloud', nodeNo: 0 });
@@ -81,7 +81,7 @@ describe('enrolment', () => {
     provisioning.importTenant({ slug: NODE, name: 'Desk 1', sourceFile: snapshotFile });
     sync.adoptSnapshot(nodeDb(), { ...id, cloudUrl });
     expect(sync.syncConfigOf(nodeDb())).toEqual({ role: 'node', nodeNo: 1 });
-    const nl = await ctx.api.post('/api/auth/login').set('X-Tenant', NODE).send({ username: 'admin', password: 'admin123' });
+    const nl = await ctx.api.post('/api/auth/login').set('X-Tenant', NODE).send({ username: 'admin', password: 'admin123-test-only' });
     expect(nl.status).toBe(200);
     nodeToken = nl.body.token as string;
     expect(qty(nodeDb(), itemId)).toBe(20);

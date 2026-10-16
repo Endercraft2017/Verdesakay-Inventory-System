@@ -114,7 +114,7 @@ it('refuses changed payloads and routes with a reused key', async () => {
 
 it('does not cache sign-in tokens or bypass logout revocation', async () => {
   const key = 'never-cache-login';
-  const first = await ctx.api.post('/api/auth/login').set('Idempotency-Key', key).send({ username: 'admin', password: 'admin123' });
+  const first = await ctx.api.post('/api/auth/login').set('Idempotency-Key', key).send({ username: 'admin', password: 'admin123-test-only' });
   expect(first.status).toBe(200);
   const bad = await ctx.api.post('/api/auth/login').set('Idempotency-Key', key).send({ username: 'admin', password: 'wrong' });
   expect(bad.status).toBe(401);

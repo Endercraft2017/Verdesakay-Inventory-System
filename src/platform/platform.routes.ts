@@ -116,7 +116,7 @@ router.use(requirePlatformAuth);
 const passkeyLimiter=rateLimit({windowMs:15*60_000,limit:20,standardHeaders:true,legacyHeaders:false,keyGenerator:req=>String((req as PlatformAuthedRequest).platformUser!.id)});
 router.get('/passkeys', (req,res)=>res.json({keys:listPlatformPasskeys((req as PlatformAuthedRequest).platformUser!.id)}));
 router.post('/passkeys/register/options',passkeyLimiter,async(req,res,next)=>{
-  try { const input=parseBody(z.object({current_password:z.string().min(1).max(200)}).strict(),req.body);const r=req as PlatformAuthedRequest;
+  try { const input=parseBody(z.object({current_password:z.string().min(1).max(256)}).strict(),req.body);const r=req as PlatformAuthedRequest;
     res.set('Cache-Control','no-store').json(await registrationOptions(r.platformUser!.id,r.platformToken!,input.current_password));
   } catch(error){next(error);}
 });
@@ -137,7 +137,7 @@ router.post('/passkeys/require',passkeyLimiter,(req,res,next)=>{
   try {requireAllPlatformPasskeys((req as PlatformAuthedRequest).platformToken!);logProvisioning('_console','passkey.required',`operator=${(req as PlatformAuthedRequest).platformUser!.id}`);res.json({ok:true});}catch(error){next(error);}
 });
 router.post('/passkeys/remove',passkeyLimiter,(req,res,next)=>{
-  try {const input=parseBody(z.object({id:z.string().min(1).max(2048),current_password:z.string().min(1).max(200)}).strict(),req.body);const r=req as PlatformAuthedRequest;
+  try {const input=parseBody(z.object({id:z.string().min(1).max(2048),current_password:z.string().min(1).max(256)}).strict(),req.body);const r=req as PlatformAuthedRequest;
     removePlatformPasskey(r.platformUser!.id,r.platformToken!,input.id,input.current_password);logProvisioning('_console','passkey.removed',`operator=${r.platformUser!.id}`);res.json({ok:true});
   }catch(error){next(error);}
 });
@@ -368,7 +368,7 @@ router.get('/tenants/:slug/account-recoveries', (req, res) => {
 });
 router.post('/tenants/:slug/account-recoveries', supportRecoveryLimiter, async (req, res, next) => {
   try {
-    const input = parseBody(recoveryEvidenceSchema.extend({ current_password: z.string().min(1).max(200), owner_id: z.number().int().positive() }).strict(), req.body);
+    const input = parseBody(recoveryEvidenceSchema.extend({ current_password: z.string().min(1).max(256), owner_id: z.number().int().positive() }).strict(), req.body);
     if (!verifiedOperator(req, input.current_password)) { res.status(403).json({ error: 'Confirm your current console password.' }); return; }
     const tenant = getTenant(String(req.params.slug));
     const owner = tenant && tenant.status !== 'purged' ? tenantOwner(tenant.slug) : null;
@@ -394,7 +394,7 @@ router.post('/tenants/:slug/account-recoveries', supportRecoveryLimiter, async (
 });
 router.post('/tenants/:slug/account-recoveries/:id/approve', supportRecoveryLimiter, async (req, res, next) => {
   try {
-    const input = parseBody(z.object({ current_password: z.string().min(1).max(200), verification_reference: z.string().trim().min(8).max(120) }).strict(), req.body);
+    const input = parseBody(z.object({ current_password: z.string().min(1).max(256), verification_reference: z.string().trim().min(8).max(120) }).strict(), req.body);
     if (!verifiedOperator(req, input.current_password)) { res.status(403).json({ error: 'Confirm your current console password.' }); return; }
     const conn = supportRecoveryDb();
     const request = conn.prepare("SELECT * FROM platform_recovery_approvals WHERE id=? AND slug=? AND state='pending' AND expires_at>datetime('now')").get(String(req.params.id), String(req.params.slug)) as { id: string; slug: string; user_id: number; contact_email: string; credential_hash: string; requested_by: number; reason: string; verification_reference: string } | undefined;
@@ -423,7 +423,7 @@ router.post('/tenants/:slug/account-recoveries/:id/approve', supportRecoveryLimi
 
 router.post('/tenants/:slug/account-recoveries/:id/cancel', supportRecoveryLimiter, (req, res, next) => {
   try {
-    const input = parseBody(z.object({ current_password: z.string().min(1).max(200) }).strict(), req.body);
+    const input = parseBody(z.object({ current_password: z.string().min(1).max(256) }).strict(), req.body);
     if (!verifiedOperator(req, input.current_password)) { res.status(403).json({ error: 'Confirm your current console password.' }); return; }
     const result = supportRecoveryDb().prepare("UPDATE platform_recovery_approvals SET state='cancelled' WHERE id=? AND slug=? AND state IN ('pending','notifying')").run(String(req.params.id), String(req.params.slug));
     if (!Number(result.changes)) { res.status(409).json({ error: 'This request can no longer be cancelled here. Contact support if recovery was already issued.' }); return; }
@@ -439,7 +439,7 @@ router.post('/tenants/:slug/reset-owner-password', supportRecoveryLimiter, async
     if ('temporary' in (req.body || {}) && typeof req.body.temporary !== 'boolean') {
       res.status(400).json({ error: 'temporary must be a boolean.' }); return;
     }
-    const input = parseBody(resetPasswordSchema.partial().extend({ owner_id: z.number().int().positive(), temporary: z.boolean().optional(), current_password: z.string().min(1).max(200), reason: z.string().trim().min(20).max(500) }).strict().refine(value => value.temporary || !!value.new_password, 'A new password is required'), req.body);
+    const input = parseBody(resetPasswordSchema.partial().extend({ owner_id: z.number().int().positive(), temporary: z.boolean().optional(), current_password: z.string().min(1).max(256), reason: z.string().trim().min(20).max(500) }).strict().refine(value => value.temporary || !!value.new_password, 'A new password is required'), req.body);
     if (!verifiedOperator(req, input.current_password)) { res.status(403).json({ error: 'Confirm your current console password.' }); return; }
     const temporary = input.temporary === true;
     const new_password = temporary ? crypto.randomBytes(18).toString('base64url') : input.new_password!;

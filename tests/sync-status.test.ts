@@ -17,10 +17,10 @@ beforeAll(async () => {
   P = await setupSyncPair('plant-c', 11);
   itemId = (await api().post('/api/inventory').set(P.cloudHdr()).send({ name: 'Status item', quantity: 10 })).body.id;
   const u = await api().post('/api/users').set(P.cloudHdr())
-    .send({ username: 'clerk-s', full_name: 'Clerk S', password: 'clerkpass1', role: 'warehouse' });
+    .send({ username: 'clerk-s', full_name: 'Clerk S', password: 'clerkpass1-test-only', role: 'warehouse' });
   expect(u.status).toBe(201);
   await P.enrol(); // the clerk exists on the PC from its snapshot
-  const r = await api().post('/api/auth/login').set('X-Tenant', P.nodeSlug).send({ username: 'clerk-s', password: 'clerkpass1' });
+  const r = await api().post('/api/auth/login').set('X-Tenant', P.nodeSlug).send({ username: 'clerk-s', password: 'clerkpass1-test-only' });
   expect(r.status).toBe(200);
   clerkNodeToken = r.body.token as string;
 });
@@ -47,11 +47,11 @@ describe('GET /api/sync/command/:id', () => {
     expect((await api().get(`/api/sync/command/${id}`).set(clerkHdr())).body).toMatchObject({ state: 'local' });
     // Another person can't look at it (admin, users.manage, can).
     const other = await api().post('/api/users').set(P.cloudHdr())
-      .send({ username: 'clerk-t', full_name: 'Clerk T', password: 'clerkpass1', role: 'warehouse' });
+      .send({ username: 'clerk-t', full_name: 'Clerk T', password: 'clerkpass1-test-only', role: 'warehouse' });
     expect(other.status).toBe(201);
     await P.round();
     expect((await api().get(`/api/sync/command/${id}`).set(clerkHdr())).body.state).toBe('confirmed');
-    const t = (await api().post('/api/auth/login').set('X-Tenant', P.nodeSlug).send({ username: 'clerk-t', password: 'clerkpass1' })).body.token;
+    const t = (await api().post('/api/auth/login').set('X-Tenant', P.nodeSlug).send({ username: 'clerk-t', password: 'clerkpass1-test-only' })).body.token;
     expect((await api().get(`/api/sync/command/${id}`).set({ Authorization: `Bearer ${t}`, 'X-Tenant': P.nodeSlug })).status).toBe(404);
     expect((await api().get(`/api/sync/command/${id}`).set(P.nodeHdr())).body.state).toBe('confirmed');
     // The cloud has nothing waiting: its answer is always final.
@@ -86,8 +86,8 @@ describe('GET /api/sync/status', () => {
 
   it('a workspace without sync says "off"', async () => {
     const provisioning = await import('../src/platform/provisioning');
-    provisioning.createTenant({ slug: 'plain-s', name: 'Plain', admin_username: 'owner', admin_password: 'plainpass1' });
-    const t = (await api().post('/api/auth/login').set('X-Tenant', 'plain-s').send({ username: 'owner', password: 'plainpass1' })).body.token;
+    provisioning.createTenant({ slug: 'plain-s', name: 'Plain', admin_username: 'owner', admin_password: 'plainpass1-test-only' });
+    const t = (await api().post('/api/auth/login').set('X-Tenant', 'plain-s').send({ username: 'owner', password: 'plainpass1-test-only' })).body.token;
     const r = await api().get('/api/sync/status').set({ Authorization: `Bearer ${t}`, 'X-Tenant': 'plain-s' });
     expect(r.body).toMatchObject({ mode: 'off' });
   });
@@ -107,10 +107,10 @@ describe('needs attention', () => {
 
     // Someone else can't dismiss it…
     const u2 = await api().post('/api/users').set(P.cloudHdr())
-      .send({ username: 'clerk-t2', full_name: 'Clerk T2', password: 'clerkpass1', role: 'warehouse' });
+      .send({ username: 'clerk-t2', full_name: 'Clerk T2', password: 'clerkpass1-test-only', role: 'warehouse' });
     expect(u2.status).toBe(201);
     await P.round();
-    const t2 = (await api().post('/api/auth/login').set('X-Tenant', P.nodeSlug).send({ username: 'clerk-t2', password: 'clerkpass1' })).body.token;
+    const t2 = (await api().post('/api/auth/login').set('X-Tenant', P.nodeSlug).send({ username: 'clerk-t2', password: 'clerkpass1-test-only' })).body.token;
     const other = await api().post(`/api/sync/activity/${att.body[0].id}/dismiss`).set({ Authorization: `Bearer ${t2}`, 'X-Tenant': P.nodeSlug });
     expect(other.status).toBe(404);
     // …the person who made it can.

@@ -88,3 +88,12 @@ enrolled account. The [runbook](../operations/console-passkeys.md) explains opt-
 Windows Hello, independent backup keys and the unverified physical-device/deployment boundary.
 This implements the console portion of the high-priority authentication finding; tenant-wide
 step-up, stronger new-password minimum and native secure storage remain engineering tasks.
+
+
+## New-password policy follow-up
+
+The 15–128 Unicode-code-point policy now covers HTTP and direct writers, including both
+bootstrap paths and operator CLI. Existing short credentials continue to verify.
+The [policy runbook](../operations/new-password-policy.md) records blocklist, normalization,
+installed-host compatibility and test limits. This resolves the new-password minimum/writer
+consistency increment; synchronous scrypt availability and the other open controls remain.

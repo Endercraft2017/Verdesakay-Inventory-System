@@ -1,7 +1,7 @@
 /**
  * Tenant admin CLI (the control-plane UI until a /_platform page exists).
  *
- *   npm run tenant:create -- --slug acme --name "Acme Mfg" --admin owner --password s3cret [--plan starter]
+ *   npm run tenant:create -- --slug acme --name "Acme Mfg" --admin owner --password "<unique passphrase of 15+ characters>" [--plan starter]
  *   npm run tenant:list
  *   npm run tenant:status -- --slug acme --status suspended        (active|suspended|trial|past_due)
  *   npm run tenant:plan   -- --slug acme --plan operations         (trial|starter|operations|complete)

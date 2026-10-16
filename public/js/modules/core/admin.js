@@ -322,7 +322,7 @@ App.register('admin', async (view, filter) => {
       confirmText: 'Set password',
       onConfirm: async (overlay, showErr) => {
         const pw = overlay.querySelector('[data-f="pw"]').value;
-        if (!pw || pw.length < 8) { showErr('Password must be at least 8 characters'); return false; }
+        if (!pw || Array.from(pw).length < 15) { showErr('Password must be at least 15 characters'); return false; }
         await API.post(`/users/${u.id}/reset-password`, { new_password: pw, current_password: overlay.querySelector('[data-f="current"]').value, code: overlay.querySelector('[data-f="code"]').value, reason: overlay.querySelector('[data-f="reason"]').value });
         UI.toast('Password reset');
       },

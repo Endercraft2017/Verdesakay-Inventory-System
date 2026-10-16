@@ -301,11 +301,11 @@ describe('GET /api/hr/daily-report', () => {
     const emp = await ctx.api.post('/api/hr/employees').set(hdr()).send({ employee_no: 'DR-3', name: 'Puncher Only' });
     // Link a login so we can punch in via the mobile clock endpoint.
     const acct = await ctx.api.post('/api/users').set(hdr())
-      .send({ username: 'dr_puncher', full_name: 'Puncher Only', password: 'secret123', role: 'admin_staff' });
+      .send({ username: 'dr_puncher', full_name: 'Puncher Only', password: 'secret123-test-only', role: 'admin_staff' });
     await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
       .send({ employee_no: 'DR-3', name: 'Puncher Only', user_id: acct.body.id });
     await addToRoster(emp.body.id);
-    const punchToken = await login(ctx.api, 'dr_puncher', 'secret123');
+    const punchToken = await login(ctx.api, 'dr_puncher', 'secret123-test-only');
     const { code } = (await ctx.api.get('/api/hr/clock/code').set(hdr())).body;
     const punch = await phonePunch(ctx.api, { Authorization: `Bearer ${punchToken}` }, { code });
     expect(punch.status).toBe(200);

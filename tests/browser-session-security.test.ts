@@ -5,7 +5,7 @@ beforeAll(async () => { ctx = await setupApp(); });
 afterAll(() => cleanup(ctx));
 const browser = { 'X-Session-Mode': 'cookie', 'X-Requested-With': 'VDS' };
 it('keeps web credentials HttpOnly and requires CSRF verification, then revokes on logout', async () => {
-  const signed = await ctx.api.post('/api/auth/login').set(browser).send({ username: 'admin', password: 'admin123' });
+  const signed = await ctx.api.post('/api/auth/login').set(browser).send({ username: 'admin', password: 'admin123-test-only' });
   expect(signed.status).toBe(200);
   expect(signed.body.token).toBeUndefined();
   const raw = signed.headers['set-cookie']![0] as string;
@@ -15,7 +15,7 @@ it('keeps web credentials HttpOnly and requires CSRF verification, then revokes 
   expect((await ctx.api.post('/api/auth/logout').set('Cookie', cookie)).status).toBe(403);
   expect((await ctx.api.post('/api/auth/logout').set(browser).set('Cookie', cookie)).status).toBe(200);
   expect((await ctx.api.get('/api/auth/me').set('Cookie', cookie)).status).toBe(401);
-  expect((await ctx.api.post('/api/auth/login').set('X-Session-Mode', 'cookie').send({ username: 'admin', password: 'admin123' })).status).toBe(403);
+  expect((await ctx.api.post('/api/auth/login').set('X-Session-Mode', 'cookie').send({ username: 'admin', password: 'admin123-test-only' })).status).toBe(403);
 });
 it('rejects a queued operation from a different signed-in account and revokes changed access', async () => {
   const admin = await login(ctx.api);
@@ -78,7 +78,7 @@ it('accepts cookie WebSockets only with the same origin and stops delivery after
   const { once } = await import('node:events');
   const { WebSocket } = await import('ws');
   const { attachWebSocket, broadcast } = await import('../src/shared/ws');
-  const signed = await ctx.api.post('/api/auth/login').set(browser).send({ username: 'admin', password: 'admin123' });
+  const signed = await ctx.api.post('/api/auth/login').set(browser).send({ username: 'admin', password: 'admin123-test-only' });
   const cookie = (signed.headers['set-cookie']![0] as string).split(';')[0]!;
   const server = http.createServer(ctx.app); attachWebSocket(server);
   server.listen(0, '127.0.0.1'); await once(server, 'listening');

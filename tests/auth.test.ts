@@ -17,7 +17,7 @@ describe('auth', () => {
   });
 
   it('logs in the seeded admin', async () => {
-    const res = await ctx.api.post('/api/auth/login').send({ username: 'admin', password: 'admin123' });
+    const res = await ctx.api.post('/api/auth/login').send({ username: 'admin', password: 'admin123-test-only' });
     expect(res.status).toBe(200);
     expect(res.body.token).toBeTruthy();
     expect(res.body.user.role).toBe('admin');
@@ -26,7 +26,7 @@ describe('auth', () => {
   it('the login response includes permissions — was previously omitted entirely, so every ' +
     'App.hasPermission(...) check silently failed right after a fresh login until something ' +
     'else (e.g. a page reload hitting /auth/me) repopulated it', async () => {
-    const res = await ctx.api.post('/api/auth/login').send({ username: 'admin', password: 'admin123' });
+    const res = await ctx.api.post('/api/auth/login').send({ username: 'admin', password: 'admin123-test-only' });
     expect(Array.isArray(res.body.user.permissions)).toBe(true);
     expect(res.body.user.permissions).toContain('hr.manage');
     // Matches what GET /auth/me (already correct) resolves for the same account.
@@ -43,7 +43,7 @@ describe('auth', () => {
   });
 
   it('is case-insensitive on username', async () => {
-    const res = await ctx.api.post('/api/auth/login').send({ username: 'ADMIN', password: 'admin123' });
+    const res = await ctx.api.post('/api/auth/login').send({ username: 'ADMIN', password: 'admin123-test-only' });
     expect(res.status).toBe(200);
   });
 
@@ -84,7 +84,7 @@ describe('rbac', () => {
     const res = await ctx.api
       .post('/api/users')
       .set('Authorization', `Bearer ${emp.token}`)
-      .send({ username: 'sneaky', full_name: 'X', password: 'secret123' });
+      .send({ username: 'sneaky', full_name: 'X', password: 'secret123-test-only' });
     expect(res.status).toBe(403);
   });
 
@@ -123,16 +123,16 @@ describe('profile', () => {
 describe('change password', () => {
   it('lets a user change their own password and rejects the old one', async () => {
     const adminToken = await login(ctx.api);
-    const emp = await createEmployee(ctx.api, adminToken, { username: 'pwuser', password: 'secret123' });
+    const emp = await createEmployee(ctx.api, adminToken, { username: 'pwuser', password: 'secret123-test-only' });
     const change = await ctx.api
       .post('/api/auth/change-password')
       .set('Authorization', `Bearer ${emp.token}`)
-      .send({ current_password: 'secret123', new_password: 'brandnew2' });
+      .send({ current_password: 'secret123-test-only', new_password: 'brandnew2-test-only' });
     expect(change.status).toBe(200);
 
-    const oldLogin = await ctx.api.post('/api/auth/login').send({ username: 'pwuser', password: 'secret123' });
+    const oldLogin = await ctx.api.post('/api/auth/login').send({ username: 'pwuser', password: 'secret123-test-only' });
     expect(oldLogin.status).toBe(401);
-    const newLogin = await ctx.api.post('/api/auth/login').send({ username: 'pwuser', password: 'brandnew2' });
+    const newLogin = await ctx.api.post('/api/auth/login').send({ username: 'pwuser', password: 'brandnew2-test-only' });
     expect(newLogin.status).toBe(200);
   });
 });

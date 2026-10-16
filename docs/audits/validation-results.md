@@ -153,3 +153,17 @@ Runtime npm audit remains nonzero (0 Critical / 1 High / 3 Moderate); see the de
 Physical Windows Hello/security-key behavior, production origin/proxy/cookie enforcement,
 external access restrictions and mandatory enrollment are unverified rollout checks. This
 increment does not close broader tenant step-up, password-policy or native-vault findings.
+
+## New-password policy — 2026-10-16
+
+Focused authentication/provisioning regression: 8 files / 88 tests passed. Final policy/default
+bootstrap boundary checks: 2 files / 11 tests passed. All 11 Playwright scenarios passed
+(35.6 seconds). Typecheck/schema generation and changed frontend/script syntax checks passed.
+
+The initial full run had **287 passing files / 2,891 passing tests**, with one setup failure
+skipping six tenant-path tests: its second tenant still used a 14-character password. That
+synthetic fixture now uses a compliant password; its isolated rerun passed all six tests.
+This is not described as an uninterrupted green full run. Evidence is retained in
+`evidence/password-policy-{focused,boundaries,regression-initial,tenant-check,typecheck,playwright}.txt`.
+A fresh complete regression is required after the native-storage follow-up before final release
+review. No security rule was relaxed to accommodate a fixture.

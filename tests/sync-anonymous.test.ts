@@ -31,7 +31,7 @@ const releaseHeld = (conn: DatabaseSync) => conn.prepare("UPDATE sync_commands S
 
 beforeAll(async () => {
   T = await setupSiteTrio();
-  lanToken = (await ok(api().post('/api/auth/login').set('X-Tenant', T.lanSlug).send({ username: 'admin', password: 'admin123' }))).body.token;
+  lanToken = (await ok(api().post('/api/auth/login').set('X-Tenant', T.lanSlug).send({ username: 'admin', password: 'admin123-test-only' }))).body.token;
 });
 afterAll(() => {
   delete process.env.SYNC_ANON_DELAY_MIN_MIN;

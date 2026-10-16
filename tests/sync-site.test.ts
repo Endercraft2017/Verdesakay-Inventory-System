@@ -40,7 +40,7 @@ const txRows = (conn: DatabaseSync, id: number) =>
   conn.prepare('SELECT id, change, reason, created_at FROM inventory_transactions WHERE item_id = ? ORDER BY id').all(id);
 const stateOf = (conn: DatabaseSync, id: string) =>
   (conn.prepare('SELECT state FROM sync_commands WHERE id = ?').get(id) as { state: string } | undefined)?.state;
-const signIn = async (tenant: string, u = 'admin', p = 'admin123') => {
+const signIn = async (tenant: string, u = 'admin', p = 'admin123-test-only') => {
   const r = await ctx.api.post('/api/auth/login').set('X-Tenant', tenant).send({ username: u, password: p });
   expect(r.status).toBe(200);
   return r.body.token as string;
@@ -63,7 +63,7 @@ beforeAll(async () => {
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   itemA = (await ctx.api.post('/api/inventory').set(cloudHdr()).send({ name: 'Site item', quantity: 20 })).body.id;
   const u = await ctx.api.post('/api/users').set(cloudHdr())
-    .send({ username: 'wh-site', full_name: 'Site Clerk', password: 'whsite123', role: 'warehouse' });
+    .send({ username: 'wh-site', full_name: 'Site Clerk', password: 'whsite123-test-only', role: 'warehouse' });
   expect(u.status).toBe(201);
 });
 afterAll(() => {
@@ -73,7 +73,7 @@ afterAll(() => {
 
 describe('setting up a site', () => {
   it('enrols the host against the cloud', async () => {
-    const reg = await sync.registerNode({ cloudUrl: url, username: 'admin', password: 'admin123', name: 'Office PC (host)', asHost: true });
+    const reg = await sync.registerNode({ cloudUrl: url, username: 'admin', password: 'admin123-test-only', name: 'Office PC (host)', asHost: true });
     hostNo = reg.nodeNo;
     const file = path.join(ctx.tmpDir, 'host.db');
     await sync.downloadSnapshot({ fromUrl: url, nodeToken: reg.nodeToken, file });
@@ -89,7 +89,7 @@ describe('setting up a site', () => {
 
   it('enrols a LAN PC through the host: registered at the cloud, copied from the host', async () => {
     expect(await sync.hostNodeNo(url, HOST)).toBe(hostNo);
-    const reg = await sync.registerNode({ cloudUrl: url, username: 'admin', password: 'admin123', name: 'Warehouse desk', hostNodeNo: hostNo });
+    const reg = await sync.registerNode({ cloudUrl: url, username: 'admin', password: 'admin123-test-only', name: 'Warehouse desk', hostNodeNo: hostNo });
     lanNo = reg.nodeNo;
     const file = path.join(ctx.tmpDir, 'lan.db');
     // The host only lets it in once it has heard about it from the cloud.
@@ -151,7 +151,7 @@ describe('a LAN PC with its host', () => {
   });
 
   it('what the host accepted but the cloud rejects is undone on every copy', async () => {
-    const clerk = await signIn(LAN, 'wh-site', 'whsite123');
+    const clerk = await signIn(LAN, 'wh-site', 'whsite123-test-only');
     const r = await ctx.api.post(`/api/inventory/${itemA}/adjust`)
       .set({ Authorization: `Bearer ${clerk}`, 'X-Tenant': LAN }).send({ change: -4, reason: 'Clerk' });
     const cmdId = r.headers['x-sync-command'] as string;

@@ -59,8 +59,8 @@ describe('plan bundle gates whole feature areas', () => {
   let tkn: string;
   beforeAll(async () => {
     // starter bundle = inventory + purchasing + mobile (see src/plans.ts PLAN_MODULES).
-    provisioning.createTenant({ slug: 'starterco', name: 'Starter Co', admin_username: 'owner', admin_password: 'ownerpass1', plan: 'starter' });
-    const r = await ctx.api.post('/api/auth/login').set(asTenant('starterco')).send({ username: 'owner', password: 'ownerpass1' });
+    provisioning.createTenant({ slug: 'starterco', name: 'Starter Co', admin_username: 'owner', admin_password: 'ownerpass1-test-only', plan: 'starter' });
+    const r = await ctx.api.post('/api/auth/login').set(asTenant('starterco')).send({ username: 'owner', password: 'ownerpass1-test-only' });
     tkn = r.body.token;
   });
   const hdr = () => ({ ...asTenant('starterco'), Authorization: `Bearer ${tkn}` });
@@ -95,8 +95,8 @@ describe('per-tenant override wins over the plan bundle', () => {
   let tkn: string;
   const hdr = () => ({ ...asTenant('modco'), Authorization: `Bearer ${tkn}` });
   beforeAll(async () => {
-    provisioning.createTenant({ slug: 'modco', name: 'Mod Co', admin_username: 'owner', admin_password: 'ownerpass1', plan: 'complete' });
-    const r = await ctx.api.post('/api/auth/login').set(asTenant('modco')).send({ username: 'owner', password: 'ownerpass1' });
+    provisioning.createTenant({ slug: 'modco', name: 'Mod Co', admin_username: 'owner', admin_password: 'ownerpass1-test-only', plan: 'complete' });
+    const r = await ctx.api.post('/api/auth/login').set(asTenant('modco')).send({ username: 'owner', password: 'ownerpass1-test-only' });
     tkn = r.body.token;
   });
 
@@ -136,8 +136,8 @@ describe('module isolation and downgrade safety', () => {
   let tkn: string;
   const hdr = () => ({ 'X-Tenant': 'isolationco', Authorization: `Bearer ${tkn}` });
   beforeAll(async () => {
-    provisioning.createTenant({ slug: 'isolationco', name: 'Isolation', plan: 'complete', admin_username: 'owner', admin_password: 'ownerpass1' });
-    tkn = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'isolationco').send({ username: 'owner', password: 'ownerpass1' })).body.token;
+    provisioning.createTenant({ slug: 'isolationco', name: 'Isolation', plan: 'complete', admin_username: 'owner', admin_password: 'ownerpass1-test-only' });
+    tkn = (await ctx.api.post('/api/auth/login').set('X-Tenant', 'isolationco').send({ username: 'owner', password: 'ownerpass1-test-only' })).body.token;
   });
   it('each module configuration keeps core login and reporting available, with disabled areas blocked', async () => {
     const routes = { inventory: '/api/inventory', manufacturing: '/api/job-orders', purchasing: '/api/purchasing/goods-receipts', hr: '/api/hr/employees', accounting: '/api/accounting/bir-1601c', ai: '/api/ai/messages', email: '/api/mail/status', quickbooks: '/api/quickbooks/status' };

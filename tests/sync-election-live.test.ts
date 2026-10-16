@@ -47,14 +47,14 @@ beforeAll(async () => {
   T = await setupSiteTrio(async ({ api: a, cloudHdr }) => {
     item = (await a.post('/api/inventory').set(cloudHdr()).send({ name: 'Election widget', quantity: 50 })).body.id;
   });
-  const reg = await T.sync.registerNode({ cloudUrl: T.url, username: 'admin', password: 'admin123', name: 'Desk 2', hostNodeNo: T.hostNo });
+  const reg = await T.sync.registerNode({ cloudUrl: T.url, username: 'admin', password: 'admin123-test-only', name: 'Desk 2', hostNodeNo: T.hostNo });
   await T.hostRound();
   const file = path.join(T.ctx.tmpDir, `${DESK2}.db`);
   await T.sync.downloadSnapshot({ fromUrl: T.url, tenant: T.hostSlug, nodeToken: reg.nodeToken, file });
   const provisioning = await import('../src/platform/provisioning');
   provisioning.importTenant({ slug: DESK2, name: DESK2, sourceFile: file, plan: 'unlimited' });
   T.sync.adoptSnapshot(db(DESK2), { ...reg, cloudUrl: T.url, tenant: T.hostSlug, hostNodeNo: T.hostNo });
-  desk2Token = (await ok(api().post('/api/auth/login').set('X-Tenant', DESK2).send({ username: 'admin', password: 'admin123' }))).body.token;
+  desk2Token = (await ok(api().post('/api/auth/login').set('X-Tenant', DESK2).send({ username: 'admin', password: 'admin123-test-only' }))).body.token;
   for (const slug of [T.hostSlug, T.lanSlug, DESK2]) db(slug).prepare('UPDATE sync_node SET lan_url = ?, lan_tenant = ?').run(T.url, slug);
   // Everyone learns everyone: the cloud learns addresses, the host passes them on.
   for (let i = 0; i < 2; i++) { await T.hostRound(); await T.lanRound(); await T.sync.syncWithCloud(DESK2); }

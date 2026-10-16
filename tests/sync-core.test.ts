@@ -23,7 +23,7 @@ async function ok(p: Promise<import('supertest').Response>, status = 200) {
 beforeAll(async () => {
   T = await setupSiteTrio(async ({ api: a, cloudHdr }) => {
     colleague = (await a.post('/api/users').set(cloudHdr()).send({
-      username: 'mara', full_name: 'Mara Santos', password: 'Mara-pass-77', role: 'admin_staff',
+      username: 'mara', full_name: 'Mara Santos', password: 'Mara-pass-77-test-only', role: 'admin_staff',
     })).body.id;
   });
   await ok(api().put('/api/sync/sites').set(T.cloudHdr()).send({ main_host: T.hostNo }));
@@ -59,10 +59,10 @@ describe('everyday work at a desk PC with no internet', () => {
   });
 
   it('account administration and password changes need the internet', async () => {
-    const add = await api().post('/api/users').set(T.lanHdr()).send({ username: 'nope', full_name: 'Nope', password: 'xxxxxx12', role: 'admin_staff' });
+    const add = await api().post('/api/users').set(T.lanHdr()).send({ username: 'nope', full_name: 'Nope', password: 'xxxxxx12-test-only', role: 'admin_staff' });
     expect(add.status).toBe(503);
     expect(add.body.error).toMatch(/internet/i);
-    const pw = await api().post('/api/auth/change-password').set(T.lanHdr()).send({ current_password: 'admin123', new_password: 'admin1234' });
+    const pw = await api().post('/api/auth/change-password').set(T.lanHdr()).send({ current_password: 'admin123-test-only', new_password: 'admin1234-test-only' });
     expect(pw.status).toBe(503);
   });
 
@@ -83,7 +83,7 @@ describe('everyday work at a desk PC with no internet', () => {
     expect(c.prepare('SELECT title FROM announcements WHERE id = ?').get(announcement)).toEqual({ title: 'Fire drill' });
     expect(c.prepare('SELECT name FROM departments WHERE id = ?').get(dept)).toEqual({ name: 'Night shift' });
     // The colleague sees the message on the cloud.
-    const token = (await ok(api().post('/api/auth/login').send({ username: 'mara', password: 'Mara-pass-77' }))).body.token;
+    const token = (await ok(api().post('/api/auth/login').send({ username: 'mara', password: 'Mara-pass-77-test-only' }))).body.token;
     const inbox = await ok(api().get('/api/messages/conversations').set('Authorization', `Bearer ${token}`));
     expect(JSON.stringify(inbox.body)).toContain('Shipment is in bay 3');
   });

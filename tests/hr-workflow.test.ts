@@ -327,7 +327,7 @@ it('account creation links the saved employee atomically and refuses duplicate l
   const body = {
     username: `wfaccount${++seq}`,
     full_name: 'Needs account',
-    password: 'secret123',
+    password: 'secret123-test-only',
     role: 'admin_staff',
     employee_id: employee.body.id,
   };

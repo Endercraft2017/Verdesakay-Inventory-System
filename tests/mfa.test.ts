@@ -34,8 +34,8 @@ async function enrol(username: string, password: string, role = 'admin') {
 
 describe('two-step sign-in', () => {
   it('asks for the code after the password, and each code works once', async () => {
-    const { secret } = await enrol('mfa-alice', 'alice-pass-123');
-    const first = await ctx.api.post('/api/auth/login').send({ username: 'mfa-alice', password: 'alice-pass-123' });
+    const { secret } = await enrol('mfa-alice', 'alice-pass-123-test-only');
+    const first = await ctx.api.post('/api/auth/login').send({ username: 'mfa-alice', password: 'alice-pass-123-test-only' });
     expect(first.body.mfa_required).toBe(true);
     expect(first.body.token).toBeUndefined();
     expect((await ctx.api.post('/api/auth/login/mfa').send({ mfa_token: first.body.mfa_token, code: '123456' })).status).toBe(401);
@@ -44,15 +44,15 @@ describe('two-step sign-in', () => {
     expect(ok.status).toBe(200);
     expect(ok.body.token).toBeTruthy();
     // The same code can't sign in again (replay), even with a fresh password step.
-    const again = await ctx.api.post('/api/auth/login').send({ username: 'mfa-alice', password: 'alice-pass-123' });
+    const again = await ctx.api.post('/api/auth/login').send({ username: 'mfa-alice', password: 'alice-pass-123-test-only' });
     expect((await ctx.api.post('/api/auth/login/mfa').send({ mfa_token: again.body.mfa_token, code })).status).toBe(401);
   });
 
   it('accepts a recovery code once, and stops a challenge after five wrong codes', async () => {
-    const { recovery } = await enrol('mfa-bob', 'bob-pass-1234');
-    const step = await ctx.api.post('/api/auth/login').send({ username: 'mfa-bob', password: 'bob-pass-1234' });
+    const { recovery } = await enrol('mfa-bob', 'bob-pass-1234-test-only');
+    const step = await ctx.api.post('/api/auth/login').send({ username: 'mfa-bob', password: 'bob-pass-1234-test-only' });
     expect((await ctx.api.post('/api/auth/login/mfa').send({ mfa_token: step.body.mfa_token, code: recovery[0] })).status).toBe(200);
-    const step2 = await ctx.api.post('/api/auth/login').send({ username: 'mfa-bob', password: 'bob-pass-1234' });
+    const step2 = await ctx.api.post('/api/auth/login').send({ username: 'mfa-bob', password: 'bob-pass-1234-test-only' });
     expect((await ctx.api.post('/api/auth/login/mfa').send({ mfa_token: step2.body.mfa_token, code: recovery[0] })).status).toBe(401);
     for (let i = 0; i < 4; i++) {
       await ctx.api.post('/api/auth/login/mfa').send({ mfa_token: step2.body.mfa_token, code: '000000' });
@@ -65,7 +65,7 @@ describe('two-step sign-in', () => {
 
   it('can be required for privileged accounts, but only by someone who uses it', async () => {
     expect((await ctx.api.put('/api/users/security-policy').set(bearer(admin)).send({ require_mfa_privileged: true })).status).toBe(409);
-    const { token: carolToken } = await enrol('mfa-carol', 'carol-pass-123');
+    const { token: carolToken } = await enrol('mfa-carol', 'carol-pass-123-test-only');
     // carol (admin, enrolled) switches the requirement on.
     expect((await ctx.api.put('/api/users/security-policy').set(bearer(carolToken)).send({ require_mfa_privileged: true })).status).toBe(200);
     // The seeded admin (no two-step yet) can only reach the set-up screens now.
@@ -75,23 +75,23 @@ describe('two-step sign-in', () => {
     expect(blocked.status).toBe(403);
     expect(blocked.body.mfa_setup_required).toBe(true);
     // A plain staff account isn't affected.
-    await ctx.api.post('/api/users').set(bearer(carolToken)).send({ username: 'mfa-staff', full_name: 'Staff', password: 'staff-pass-12', role: 'admin_staff' });
-    const staff = await login(ctx.api, 'mfa-staff', 'staff-pass-12');
+    await ctx.api.post('/api/users').set(bearer(carolToken)).send({ username: 'mfa-staff', full_name: 'Staff', password: 'staff-pass-12-test-only', role: 'admin_staff' });
+    const staff = await login(ctx.api, 'mfa-staff', 'staff-pass-12-test-only');
     expect((await ctx.api.get('/api/auth/me').set(bearer(staff))).body.user.mfa_setup_required).toBe(false);
     // While required, carol can't switch hers off.
-    expect((await ctx.api.post('/api/auth/mfa/disable').set(bearer(carolToken)).send({ password: 'carol-pass-123', code: '000000' })).status).toBe(403);
+    expect((await ctx.api.post('/api/auth/mfa/disable').set(bearer(carolToken)).send({ password: 'carol-pass-123-test-only', code: '000000' })).status).toBe(403);
     // Back off for the remaining tests.
     expect((await ctx.api.put('/api/users/security-policy').set(bearer(carolToken)).send({ require_mfa_privileged: false })).status).toBe(200);
     expect((await ctx.api.get('/api/inventory').set(bearer(admin))).status).toBe(200);
   });
 
   it('refuses the old session-only authenticator bypass', async () => {
-    await enrol('mfa-dan', 'dan-pass-1234');
+    await enrol('mfa-dan', 'dan-pass-1234-test-only');
     const users = await ctx.api.get('/api/users').set(bearer(admin));
     const dan = users.body.find((u: { username: string }) => u.username === 'mfa-dan');
     expect(dan.mfa_enabled).toBe(true);
     expect((await ctx.api.post(`/api/users/${dan.id}/mfa/reset`).set(bearer(admin)).send({})).status).toBe(400);
-    const back = await ctx.api.post('/api/auth/login').send({ username: 'mfa-dan', password: 'dan-pass-1234' });
+    const back = await ctx.api.post('/api/auth/login').send({ username: 'mfa-dan', password: 'dan-pass-1234-test-only' });
     expect(back.body.token).toBeUndefined();
     expect(back.body.mfa_required).toBe(true); // no session-only bypass
   });

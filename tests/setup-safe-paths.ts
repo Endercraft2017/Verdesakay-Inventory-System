@@ -21,6 +21,6 @@ process.env.UPLOAD_DIR = path.join(dir, 'uploads');
 process.env.PLATFORM_DB_PATH = path.join(dir, 'platform.db');
 process.env.BACKUP_DIR = path.join(dir, 'backups');
 // Deterministic, test-only bootstrap credential; production reads ADMIN_PASSWORD instead.
-process.env.VDS_TEST_ADMIN_PASSWORD = 'admin123';
+process.env.VDS_TEST_ADMIN_PASSWORD = 'admin123-test-only';
 
 process.env.PUBLIC_APP_URL = 'https://app.example.test';

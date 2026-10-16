@@ -26,7 +26,7 @@ and 30 min idle; `endUserSessions` / `endSessionBySid` / `listUserSessions` /
 `deviceUsualUserId`), `device.ts` (`X-Device-Id` — a random per-browser ID from
 `public/js/api.js`, not a fingerprint — plus client IP (`clientIpOf`: the edge's `X-Real-IP` on
 Railway via `CLIENT_IP_HEADER` in `hosting.ts`) and `rateLimitKey` for every rate limiter, and a
-readable user-agent label), `password-policy.ts` (`newPasswordSchema`: 8–128 characters, not on
+readable user-agent label), `password-policy.ts` (`newPasswordSchema`: 15–128 Unicode code points, not on
 the bundled common-password list — used by every password-setting schema in `validation.ts`),
 `totp.ts` (RFC 6238 codes, no dependency) + `mfa.ts` (two-step sign-in: enrol / verify / recovery
 codes / sign-in challenge, `security_policy.require_mfa_privileged` enforced in `requireAuth`; tables
@@ -104,7 +104,8 @@ by this reorg; flagged for a future follow-up rather than fixed here.
 Credential storage uses `shared/password-hash.ts` across tenant and platform writers/verifiers:
 versioned scrypt (N=131072, r=8, p=1), bounded legacy bcrypt verification and conditional upgrade
 after a verified password at login. See `docs/operations/password-migration.md` for deployment,
-rollback and availability limits; password minimum policy and console MFA remain partial.
+rollback and availability limits. New-password rules and console passkeys now have separate
+runbooks; staged enrollment, wider tenant step-up and native credential storage remain open.
 
 ## platform/ — SaaS control plane
 
@@ -1452,3 +1453,11 @@ and five-minute verification to console writes; `platform.routes.ts` exposes bou
 login and key management. `web-console/vendor/webauthn.js` is reproducibly bundled with
 `scripts/vendor-console-passkeys.mjs`. See `operations/console-passkeys.md` for rollout, backups
 and evidence limits. Unenrolled accounts are password-only until policy enforcement is enabled.
+
+
+### New-password writer consistency (2026-10-16)
+
+`shared/password-policy.ts` supplies the 15–128 Unicode-code-point validator and
+`passwordPolicyError` for non-HTTP writers. Operator CLI/environment bootstrap, default-admin
+bootstrap and direct tenant provisioning use the same bounds/blocklist as account schemas.
+Existing-password verification is unchanged. See `operations/new-password-policy.md`.

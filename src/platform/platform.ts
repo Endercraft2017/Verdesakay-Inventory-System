@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { hashPassword } from '../shared/password-hash';
+import { passwordPolicyError } from '../shared/password-policy';
 import { DEFAULT_TENANT, hashLegacySessionTokens } from '../shared/db';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
@@ -174,11 +175,13 @@ export function platformDb(): DatabaseSync {
 function seedPlatformUserFromEnv(): void {
   const u = (process.env.PLATFORM_ADMIN_USERNAME || '').toLowerCase().trim();
   const p = process.env.PLATFORM_ADMIN_PASSWORD || '';
-  if (!u || p.length < 6) return;
+  if (!u) return;
   const count = (_db!.prepare('SELECT COUNT(*) AS c FROM platform_users').get() as { c: number }).c;
   const existing = _db!.prepare('SELECT id FROM platform_users WHERE username = ?').get(u) as { id: number } | undefined;
   if (count > 0 && !existing) return; // don't silently add a second operator once set up
   if (existing && process.env.PLATFORM_ADMIN_RESET !== 'true') return;
+  const passwordError = passwordPolicyError(p);
+  if (passwordError) throw new Error('PLATFORM_ADMIN_PASSWORD: ' + passwordError);
   const hash = hashPassword(p);
   _db!.prepare(
     `INSERT INTO platform_users (username, password_hash, full_name) VALUES (?, ?, ?)

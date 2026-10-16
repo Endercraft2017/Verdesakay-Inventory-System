@@ -15,8 +15,8 @@ beforeAll(async () => {
   ctx = await setupApp();
   await login(ctx.api); // seeds the default tenant
   users = await import('../src/platform/platform-users');
-  users.upsertPlatformUser('owner', 'ownerpass1', 'System Owner');
-  const r = await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1' });
+  users.upsertPlatformUser('owner', 'ownerpass1-test-only', 'System Owner');
+  const r = await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1-test-only' });
   op = r.body.token;
 });
 afterAll(() => { delete process.env.PLATFORM_CONSOLE; cleanup(ctx); });
@@ -42,7 +42,7 @@ describe('operator auth', () => {
   it('the console 404s on a tenant sub-domain (apex host only)', async () => {
     // create one first so the slug resolves past the tenant middleware
     await ctx.api.post('/_platform/api/tenants').set(opHdr())
-      .send({ slug: 'hostcheck', name: 'Host Check', admin_username: 'owner', admin_password: 'ownerpass1', admin_email: 'owner@acme.test', plan: 'starter' });
+      .send({ slug: 'hostcheck', name: 'Host Check', admin_username: 'owner', admin_password: 'ownerpass1-test-only', admin_email: 'owner@acme.test', plan: 'starter' });
     const r = await ctx.api.get('/_platform/api/tenants').set(opHdr()).set(asTenant('hostcheck'));
     expect(r.status).toBe(404);
   });
@@ -60,7 +60,7 @@ describe('bootstrap reference', () => {
 
 describe('provision + edit a workspace', () => {
   it('requires a recovery email for regular accounts and persists it on the owner', async () => {
-    const input = { name: 'Real Company', admin_username: 'realowner', admin_password: 'realpass1' };
+    const input = { name: 'Real Company', admin_username: 'realowner', admin_password: 'realpass1-test-only' };
     expect((await ctx.api.post('/_platform/api/tenants').set(opHdr()).send(input)).status).toBe(400);
     expect((await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({ ...input, admin_email: 'invalid' })).status).toBe(400);
     expect((await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({ ...input, is_sandbox: 'true' })).status).toBe(400);
@@ -76,13 +76,13 @@ describe('provision + edit a workspace', () => {
     expect(withTenant('real-company', () => queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM password_resets')!.n)).toBeGreaterThan(0);
     expect((await ctx.api.post('/_platform/api/tenants/real-company/recover-owner-username').set(opHdr())).body.email.sent).toBe(true);
     const reset = await ctx.api.post('/_platform/api/tenants/real-company/reset-owner-password').set(opHdr())
-      .send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, new_password: 'newrealpass1' });
+      .send({ current_password: 'ownerpass1-test-only', reason: 'Verified through established company contact', owner_id: 1, new_password: 'newrealpass1-test-only' });
     expect(reset.body.email.sent).toBe(true);
     expect(withTenant('real-company', () => queryOne<{ c: number }>("SELECT COUNT(*) AS c FROM mail_log WHERE to_addr = 'owner@real.test' AND status = 'sent'")!.c)).toBe(3);
   });
 
   it('creates sandbox tenants from just company and login, skips every recovery email, and removes them', async () => {
-    const input = { name: 'Sandbox Company', admin_username: 'sandboxowner', admin_password: 'sandboxpass1', is_sandbox: true };
+    const input = { name: 'Sandbox Company', admin_username: 'sandboxowner', admin_password: 'sandboxpass1-test-only', is_sandbox: true };
     expect((await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({ ...input, name: '' })).status).toBe(400);
     const r = await ctx.api.post('/_platform/api/tenants').set(opHdr()).send(input);
     expect(r.status).toBe(201);
@@ -107,12 +107,12 @@ describe('provision + edit a workspace', () => {
     const reminder = await ctx.api.post('/_platform/api/tenants/sandbox-company/recover-owner-username').set(opHdr());
     expect(reminder.body.email).toEqual({ sent: false, reason: 'sandbox' });
     const reset = await ctx.api.post('/_platform/api/tenants/sandbox-company/reset-owner-password').set(opHdr())
-      .send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, new_password: 'new-sandbox1' });
+      .send({ current_password: 'ownerpass1-test-only', reason: 'Verified through established company contact', owner_id: 1, new_password: 'new-sandbox1-test-only' });
     expect(reset.status).toBe(200);
     expect(reset.body.email).toEqual({ sent: false, reason: 'sandbox' });
     expect(withTenant('sandbox-company', () => queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM mail_log')!.c)).toBe(0);
     expect(withTenant('sandbox-company', () => queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM password_resets')!.c)).toBe(0);
-    expect((await ctx.api.post('/api/auth/login').set(asTenant('sandbox-company')).send({ username: 'sandboxowner', password: 'new-sandbox1' })).status).toBe(200);
+    expect((await ctx.api.post('/api/auth/login').set(asTenant('sandbox-company')).send({ username: 'sandboxowner', password: 'new-sandbox1-test-only' })).status).toBe(200);
     const path = '/_platform/api/tenants/sandbox-company/purge';
     expect((await ctx.api.post(path).send({ confirm: 'sandbox-company' })).status).toBe(401);
     expect((await ctx.api.post(path).set(opHdr()).send({ confirm: 'wrong' })).status).toBe(400);
@@ -120,14 +120,14 @@ describe('provision + edit a workspace', () => {
     expect((await ctx.api.post(path).set(opHdr()).send({ confirm: 'sandbox-company' })).status).toBe(200);
     expect(fs.existsSync(`${DATA_DIR}/sandbox-company.db`)).toBe(false);
     expect((await ctx.api.get('/_platform/api/tenants').set(opHdr())).body.some((t: { slug: string }) => t.slug === 'sandbox-company')).toBe(false);
-    expect((await ctx.api.post('/api/auth/login').set(asTenant('sandbox-company')).send({ username: 'sandboxowner', password: 'new-sandbox1' })).status).toBe(403);
+    expect((await ctx.api.post('/api/auth/login').set(asTenant('sandbox-company')).send({ username: 'sandboxowner', password: 'new-sandbox1-test-only' })).status).toBe(403);
     expect((await ctx.api.get('/_platform/api/tenants/sandbox-company').set(opHdr())).status).toBe(404);
     expect(fs.existsSync(`${DATA_DIR}/sandbox-company.db`)).toBe(false);
   });
 
   it('creates one on the starter bundle', async () => {
     const r = await ctx.api.post('/_platform/api/tenants').set(opHdr())
-      .send({ slug: 'consoleco', name: 'Console Co', admin_username: 'owner', admin_password: 'ownerpass1', admin_email: 'owner@acme.test', plan: 'starter' });
+      .send({ slug: 'consoleco', name: 'Console Co', admin_username: 'owner', admin_password: 'ownerpass1-test-only', admin_email: 'owner@acme.test', plan: 'starter' });
     expect(r.status).toBe(201);
     expect(r.body.slug).toBe('consoleco');
     expect(r.body.modules.effective).toEqual(['inventory', 'purchasing', 'mobile']);
@@ -138,7 +138,7 @@ describe('provision + edit a workspace', () => {
 
     // the tenant's own admin can log in normally
     const t = await ctx.api.post('/api/auth/login').set(asTenant('consoleco'))
-      .send({ username: 'owner', password: 'ownerpass1' });
+      .send({ username: 'owner', password: 'ownerpass1-test-only' });
     expect(t.status).toBe(200);
   });
 
@@ -151,7 +151,7 @@ describe('provision + edit a workspace', () => {
     expect(p.body.modules.override).toEqual(['hr']);
 
     const tok = (await ctx.api.post('/api/auth/login').set(asTenant('consoleco'))
-      .send({ username: 'owner', password: 'ownerpass1' })).body.token;
+      .send({ username: 'owner', password: 'ownerpass1-test-only' })).body.token;
     const view = await ctx.api.get('/api/tenant').set(asTenant('consoleco')).set({ Authorization: `Bearer ${tok}` });
     expect(view.body.plan).toBe('complete');
     expect(view.body.modules).toEqual(['hr']);
@@ -196,27 +196,27 @@ describe('provision + edit a workspace', () => {
   it('suspending blocks tenant login; resuming restores it', async () => {
     await ctx.api.patch('/_platform/api/tenants/consoleco').set(opHdr()).send({ status: 'suspended' });
     expect((await ctx.api.post('/api/auth/login').set(asTenant('consoleco'))
-      .send({ username: 'owner', password: 'ownerpass1' })).status).toBe(403);
+      .send({ username: 'owner', password: 'ownerpass1-test-only' })).status).toBe(403);
     await ctx.api.patch('/_platform/api/tenants/consoleco').set(opHdr()).send({ status: 'active' });
     expect((await ctx.api.post('/api/auth/login').set(asTenant('consoleco'))
-      .send({ username: 'owner', password: 'ownerpass1' })).status).toBe(200);
+      .send({ username: 'owner', password: 'ownerpass1-test-only' })).status).toBe(200);
   });
 
   it('recovers only the first admin login, revokes sessions and reset links, and audits without secrets', async () => {
     const { withTenant, run, queryOne } = await import('../src/shared/db');
     const bcrypt = (await import('bcryptjs')).default;
     const old = await ctx.api.post('/api/auth/login').set(asTenant('consoleco'))
-      .send({ username: 'owner', password: 'ownerpass1' });
+      .send({ username: 'owner', password: 'ownerpass1-test-only' });
     withTenant('consoleco', () => {
       run("INSERT INTO users (username, full_name, password_hash, role) VALUES (?, ?, ?, 'admin')",
-        'secondadmin', 'Second Admin', bcrypt.hashSync('secondpass1', 10));
+        'secondadmin', 'Second Admin', bcrypt.hashSync('secondpass1-test-only', 10));
       run("INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES ('old-reset', 1, datetime('now', '+1 hour'))");
     });
     const view = await ctx.api.get('/_platform/api/tenants/consoleco').set(opHdr());
     expect(view.body.owner).toMatchObject({ id: 1, username: 'owner' });
     expect(view.body.owner.password_hash).toBeUndefined();
     const path = '/_platform/api/tenants/consoleco/reset-owner-password';
-    const body = { current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, new_password: 'replacement1' };
+    const body = { current_password: 'ownerpass1-test-only', reason: 'Verified through established company contact', owner_id: 1, new_password: 'replacement1-test-only' };
     expect((await ctx.api.post(path).send(body)).status).toBe(401);
     expect((await ctx.api.post(path).set({ Authorization: `Bearer ${old.body.token}` }).send(body)).status).toBe(401);
     expect((await ctx.api.post(path).set(opHdr()).set(asTenant('consoleco')).send(body)).status).toBe(404);
@@ -224,15 +224,15 @@ describe('provision + edit a workspace', () => {
     expect((await ctx.api.post(path).set(opHdr()).send({ ...body, new_password: 'short' })).status).toBe(400);
     expect((await ctx.api.post(path).set(opHdr()).send(body)).status).toBe(200);
     expect((await ctx.api.post('/api/auth/login').set(asTenant('consoleco'))
-      .send({ username: 'owner', password: 'ownerpass1' })).status).toBe(401);
+      .send({ username: 'owner', password: 'ownerpass1-test-only' })).status).toBe(401);
     expect((await ctx.api.post('/api/auth/login').set(asTenant('consoleco'))
       .send({ username: 'owner', password: body.new_password })).status).toBe(200);
     expect((await ctx.api.get('/api/auth/me').set(asTenant('consoleco'))
       .set({ Authorization: `Bearer ${old.body.token}` })).status).toBe(401);
     expect((await ctx.api.post('/api/auth/login').set(asTenant('consoleco'))
-      .send({ username: 'secondadmin', password: 'secondpass1' })).status).toBe(200);
+      .send({ username: 'secondadmin', password: 'secondpass1-test-only' })).status).toBe(200);
     expect(withTenant('consoleco', () => queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM password_resets')!.c)).toBe(0);
-    expect((await ctx.api.post('/api/auth/login').send({ username: 'admin', password: 'admin123' })).status).toBe(200);
+    expect((await ctx.api.post('/api/auth/login').send({ username: 'admin', password: 'admin123-test-only' })).status).toBe(200);
     const detail = (await ctx.api.get('/_platform/api/tenants/consoleco').set(opHdr())).body;
     expect(detail.log.find((e: { action: string }) => e.action === 'owner-password-reset').detail).toContain('owner: reset owner owner');
     expect(JSON.stringify(detail)).not.toContain(body.new_password);
@@ -244,13 +244,13 @@ describe('provision + edit a workspace', () => {
     const bcrypt = (await import('bcryptjs')).default;
     const create = await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({
       slug: 'temprecovery', name: 'Temporary Recovery', admin_email: 'tempowner@acme.test',
-      admin_username: 'tempowner', admin_password: 'old-temporary1',
+      admin_username: 'tempowner', admin_password: 'old-temporary1-test-only',
     });
     expect(create.status).toBe(201);
     const path = '/_platform/api/tenants/temprecovery/reset-owner-password';
-    expect((await ctx.api.post(path).send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, temporary: true })).status).toBe(401);
-    expect((await ctx.api.post(path).set(opHdr()).send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, temporary: 'true' })).status).toBe(400);
-    const issue = await ctx.api.post(path).set(opHdr()).send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, temporary: true });
+    expect((await ctx.api.post(path).send({ current_password: 'ownerpass1-test-only', reason: 'Verified through established company contact', owner_id: 1, temporary: true })).status).toBe(401);
+    expect((await ctx.api.post(path).set(opHdr()).send({ current_password: 'ownerpass1-test-only', reason: 'Verified through established company contact', owner_id: 1, temporary: 'true' })).status).toBe(400);
+    const issue = await ctx.api.post(path).set(opHdr()).send({ current_password: 'ownerpass1-test-only', reason: 'Verified through established company contact', owner_id: 1, temporary: true });
     expect(issue.status).toBe(200);
     expect(issue.headers['cache-control']).toBe('no-store');
     const temporary = issue.body.temporary_password;
@@ -281,7 +281,7 @@ describe('provision + edit a workspace', () => {
     const freshOwner = await ctx.api.post('/api/auth/login').set(asTenant('temprecovery')).send({ username: 'tempowner', password: 'permanent-owner1' });
     expect(freshOwner.status).toBe(200);
     expect((await ctx.api.post('/api/auth/login').set(asTenant('temprecovery')).send({ username: 'tempowner', password: temporary })).status).toBe(401);
-    const replacement = await ctx.api.post(path).set(opHdr()).send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, temporary: true });
+    const replacement = await ctx.api.post(path).set(opHdr()).send({ current_password: 'ownerpass1-test-only', reason: 'Verified through established company contact', owner_id: 1, temporary: true });
     expect(replacement.body.temporary_password).not.toBe(temporary);
     expect((await ctx.api.get('/api/auth/me').set(asTenant('temprecovery')).set(header)).status).toBe(401);
     withTenant('temprecovery', () => run("UPDATE users SET temporary_password_expires_at = ? WHERE id = 1", new Date(Date.now() - 1000).toISOString()));
@@ -295,13 +295,13 @@ describe('provision + edit a workspace', () => {
     const list = (await ctx.api.get('/_platform/api/tenants').set(opHdr())).body;
     expect(list.map((t: { slug: string }) => t.slug)).not.toContain('consoleco');
     expect((await ctx.api.post('/_platform/api/tenants/consoleco/reset-owner-password').set(opHdr())
-      .send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, new_password: 'replacement2' })).status).toBe(404);
+      .send({ current_password: 'ownerpass1-test-only', reason: 'Verified through established company contact', owner_id: 1, new_password: 'replacement2-test-only' })).status).toBe(404);
   });
 });
 
 describe('logout', () => {
   it('invalidates the operator session', async () => {
-    const tok = (await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1' })).body.token;
+    const tok = (await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1-test-only' })).body.token;
     expect((await ctx.api.get('/_platform/api/me').set({ Authorization: `Bearer ${tok}` })).status).toBe(200);
     await ctx.api.post('/_platform/api/logout').set({ Authorization: `Bearer ${tok}` });
     expect((await ctx.api.get('/_platform/api/me').set({ Authorization: `Bearer ${tok}` })).status).toBe(401);
@@ -319,14 +319,14 @@ describe('module subscriptions and login seats', () => {
 
   it('creates a tenant without selecting or pricing modules', async () => {
     const r = await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({
-      slug: 'subscriptionco', name: 'Subscription Co', admin_username: 'owner', admin_password: 'ownerpass1', admin_email: 'owner@subscription.test',
+      slug: 'subscriptionco', name: 'Subscription Co', admin_username: 'owner', admin_password: 'ownerpass1-test-only', admin_email: 'owner@subscription.test',
     });
     expect(r.status).toBe(201);
     expect(r.body.modules.effective).toEqual([]);
     expect(r.body.subscription.seat_limit).toBeNull();
     expect(r.body.subscription.monthly_total).toBeNull();
     tenantToken = (await ctx.api.post('/api/auth/login').set(asTenant('subscriptionco'))
-      .send({ username: 'owner', password: 'ownerpass1' })).body.token;
+      .send({ username: 'owner', password: 'ownerpass1-test-only' })).body.token;
   });
 
   it('saves module prices, expands dependencies and quotes seat allowance', async () => {
@@ -352,11 +352,11 @@ describe('module subscriptions and login seats', () => {
   });
 
   it('enforces active login seats on creation and reactivation, without capping employees', async () => {
-    const second = await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'second', full_name: 'Second', password: 'secret123' });
+    const second = await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'second', full_name: 'Second', password: 'secret123-test-only' });
     expect(second.status).toBe(201);
-    expect((await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'third', full_name: 'Third', password: 'secret123' })).status).toBe(402);
+    expect((await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'third', full_name: 'Third', password: 'secret123-test-only' })).status).toBe(402);
     expect((await ctx.api.put('/api/users/' + second.body.id).set(tenantHeaders()).send({ active: false })).status).toBe(200);
-    const third = await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'third', full_name: 'Third', password: 'secret123' });
+    const third = await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'third', full_name: 'Third', password: 'secret123-test-only' });
     expect(third.status).toBe(201);
     expect((await ctx.api.put('/api/users/' + second.body.id).set(tenantHeaders()).send({ active: true })).status).toBe(402);
     const created = await ctx.api.post('/api/hr/employees').set(tenantHeaders()).send({ employee_no: 'E1', name: 'First', status: 'resigned' });
@@ -378,7 +378,7 @@ describe('module subscriptions and login seats', () => {
     expect(r.body.subscription.monthly_total).toBe(2050);
     expect(r.body.usage.employees).toBe(4);
     expect((await ctx.api.post('/api/hr/employees').set(tenantHeaders()).send({ employee_no: 'E5', name: 'Fifth' })).status).toBe(201);
-    expect((await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'fourth', full_name: 'Fourth', password: 'secret123' })).status).toBe(402);
+    expect((await ctx.api.post('/api/users').set(tenantHeaders()).send({ username: 'fourth', full_name: 'Fourth', password: 'secret123-test-only' })).status).toBe(402);
     const blank = await ctx.api.put('/_platform/api/tenants/subscriptionco/subscription').set(opHdr())
       .send({ ...settings, module_prices: { hr: 0 }, seat_limit: null });
     expect(blank.body.subscription.monthly_total).toBeNull();
@@ -393,16 +393,16 @@ describe('operator password', () => {
     ctx.api.post('/_platform/api/password').set({ Authorization: `Bearer ${tok}` }).send({ current_password, new_password });
 
   it('changes your own password and signs out your other sessions', async () => {
-    users.upsertPlatformUser('pwtest', 'pwtestpass1');
-    const a = (await sessionOf('pwtest', 'pwtestpass1'))!;
-    const b = (await sessionOf('pwtest', 'pwtestpass1'))!;
+    users.upsertPlatformUser('pwtest', 'pwtestpass1-test-only');
+    const a = (await sessionOf('pwtest', 'pwtestpass1-test-only'))!;
+    const b = (await sessionOf('pwtest', 'pwtestpass1-test-only'))!;
     expect((await change(a, 'wrong-current', 'Brand-new-pass-42')).status).toBe(400);
-    expect((await change(a, 'pwtestpass1', 'short1')).body.error).toMatch(/at least 8/);
-    expect((await change(a, 'pwtestpass1', 'Password1')).body.error).toMatch(/common/);
-    expect((await change(a, 'pwtestpass1', 'Brand-new-pass-42')).status).toBe(200);
+    expect((await change(a, 'pwtestpass1-test-only', 'short1')).body.error).toMatch(/at least 15/);
+    expect((await change(a, 'pwtestpass1-test-only', 'PasswordPassword')).body.error).toMatch(/common/);
+    expect((await change(a, 'pwtestpass1-test-only', 'Brand-new-pass-42')).status).toBe(200);
     expect((await ctx.api.get('/_platform/api/me').set({ Authorization: `Bearer ${a}` })).status).toBe(200);
     expect((await ctx.api.get('/_platform/api/me').set({ Authorization: `Bearer ${b}` })).status).toBe(401);
-    expect(await sessionOf('pwtest', 'pwtestpass1')).toBeUndefined();
+    expect(await sessionOf('pwtest', 'pwtestpass1-test-only')).toBeUndefined();
     expect(typeof await sessionOf('pwtest', 'Brand-new-pass-42')).toBe('string');
   });
 
@@ -414,15 +414,15 @@ describe('operator password', () => {
     const platform = await import('../src/platform/platform');
     const reopen = () => { platform._resetPlatformDb(); platform.platformDb(); };
     process.env.PLATFORM_ADMIN_USERNAME = 'pwtest';
-    process.env.PLATFORM_ADMIN_PASSWORD = 'env-password-1';
+    process.env.PLATFORM_ADMIN_PASSWORD = 'env-password-1-test-only';
     try {
       const live = (await sessionOf('pwtest', 'Brand-new-pass-42'))!;
       reopen();
-      expect(await sessionOf('pwtest', 'env-password-1')).toBeUndefined();
+      expect(await sessionOf('pwtest', 'env-password-1-test-only')).toBeUndefined();
       expect(typeof await sessionOf('pwtest', 'Brand-new-pass-42')).toBe('string');
       process.env.PLATFORM_ADMIN_RESET = 'true';
       reopen();
-      expect(typeof await sessionOf('pwtest', 'env-password-1')).toBe('string');
+      expect(typeof await sessionOf('pwtest', 'env-password-1-test-only')).toBe('string');
       expect((await ctx.api.get('/_platform/api/me').set({ Authorization: `Bearer ${live}` })).status).toBe(401);
     } finally {
       delete process.env.PLATFORM_ADMIN_USERNAME;

@@ -13,7 +13,7 @@ beforeAll(async () => {
   ctx = await setupApp();
   const { createTenant } = await import('../src/platform/provisioning');
   createTenant({ slug: 'verdesakay', name: 'Verdesakay', admin_username: 'existing-admin', admin_password: 'existing-password', plan: 'unlimited' });
-  createTenant({ slug: 'otherco', name: 'Other', admin_username: 'other-admin', admin_password: 'other-password', plan: 'unlimited' });
+  createTenant({ slug: 'otherco', name: 'Other', admin_username: 'other-admin', admin_password: 'other-password-test-only', plan: 'unlimited' });
 });
 afterAll(() => {
   delete process.env.TENANT_PATH_HOST;
@@ -60,7 +60,7 @@ describe('tenants on one configured domain', () => {
       expect(create.status).toBe(201);
       expect((await ctx.api.get('/otherco/api/inventory').set('Host', host).set('Authorization', `Bearer ${token}`)).status).toBe(401);
       const otherLogin = await ctx.api.post('/otherco/api/auth/login').set('Host', host)
-        .send({ username: 'other-admin', password: 'other-password' });
+        .send({ username: 'other-admin', password: 'other-password-test-only' });
       const list = await ctx.api.get('/otherco/api/inventory').set('Host', host).set('Authorization', `Bearer ${otherLogin.body.token}`);
       expect(list.status).toBe(200);
       expect(JSON.stringify(list.body)).not.toContain('Verdesakay private item');
@@ -90,7 +90,7 @@ describe('tenants on one configured domain', () => {
     expect(root.text).toContain('Less busywork.');
     expect(root.text).not.toContain('window.VDS_BASE_PATH');
     expect((await ctx.api.get('/m').set('Host', host)).headers.location).toBe('/verdesakay/m');
-    expect((await ctx.api.post('/api/auth/login').set('Host', host).send({ username: 'admin', password: 'admin123' })).status).toBe(410);
+    expect((await ctx.api.post('/api/auth/login').set('Host', host).send({ username: 'admin', password: 'admin123-test-only' })).status).toBe(410);
     expect((await ctx.api.get('/api/health').set('Host', host)).body.ok).toBe(true);
     expect((await ctx.api.get('/js/api.js').set('Host', host)).status).toBe(200);
   });

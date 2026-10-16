@@ -18,13 +18,13 @@ beforeAll(async () => {
   ctx = await setupApp();
   dbmod = await import('../src/shared/db');
   const provisioning = await import('../src/platform/provisioning');
-  provisioning.createTenant({ slug: 'branch-co', name: 'Branch Co', admin_username: 'owner', admin_password: 'branchpass1', plan: 'unlimited' });
+  provisioning.createTenant({ slug: 'branch-co', name: 'Branch Co', admin_username: 'owner', admin_password: 'branchpass1-test-only', plan: 'unlimited' });
 });
 afterAll(() => cleanup(ctx));
 
 describe('in-memory uploads keep the request\'s workspace', () => {
   it('a multipart anonymous report lands in its own workspace, not the default one', async () => {
-    const token = (await ctx.api.post('/api/auth/login').set(asTenant('branch-co')).send({ username: 'owner', password: 'branchpass1' })).body.token;
+    const token = (await ctx.api.post('/api/auth/login').set(asTenant('branch-co')).send({ username: 'owner', password: 'branchpass1-test-only' })).body.token;
     const ticket = (await ctx.api.post('/api/anonymous-reports/ticket').set({ ...asTenant('branch-co'), Authorization: `Bearer ${token}` })).body.ticket;
     const r = await ctx.api.post('/api/anonymous-reports').set(asTenant('branch-co'))
       .field('ticket', ticket).field('category', 'Safety risk').field('description', 'Blocked fire exit on level 2.')
@@ -40,7 +40,7 @@ describe('in-memory uploads keep the request\'s workspace', () => {
 describe('durable uploads keep their workspace', () => {
   it('recovers a branch form without exposing its bytes to the default tenant', async () => {
     const token = (await ctx.api.post('/api/auth/login').set(asTenant('branch-co'))
-      .send({ username: 'owner', password: 'branchpass1' })).body.token;
+      .send({ username: 'owner', password: 'branchpass1-test-only' })).body.token;
     const headers = { ...asTenant('branch-co'), Authorization: `Bearer ${token}` };
     const upload = await ctx.api.post('/api/forms').set(headers)
       .attach('file', Buffer.from('branch-only content'), 'branch.txt');

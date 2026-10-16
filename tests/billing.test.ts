@@ -16,8 +16,8 @@ const due = '2099-12-31';
 
 async function newTenant(slug: string) {
   await ctx.api.post('/_platform/api/tenants').set(opHdr())
-    .send({ slug, name: slug.toUpperCase(), admin_username: 'owner', admin_password: 'ownerpass1', admin_email: `${slug}@example.test`, plan: 'starter' });
-  const r = await ctx.api.post('/api/auth/login').set(asTenant(slug)).send({ username: 'owner', password: 'ownerpass1' });
+    .send({ slug, name: slug.toUpperCase(), admin_username: 'owner', admin_password: 'ownerpass1-test-only', admin_email: `${slug}@example.test`, plan: 'starter' });
+  const r = await ctx.api.post('/api/auth/login').set(asTenant(slug)).send({ username: 'owner', password: 'ownerpass1-test-only' });
   tenantTok[slug] = r.body.token;
 }
 
@@ -42,8 +42,8 @@ beforeAll(async () => {
   ctx = await setupApp();
   await login(ctx.api);
   const users = await import('../src/platform/platform-users');
-  users.upsertPlatformUser('owner', 'ownerpass1', 'System Owner');
-  op = (await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1' })).body.token;
+  users.upsertPlatformUser('owner', 'ownerpass1-test-only', 'System Owner');
+  op = (await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1-test-only' })).body.token;
   await ctx.api.put('/_platform/api/billing/settings').set(opHdr())
     .send({ bank_details: 'BPI · Our Company Inc. · 1234-5678-90', reference_prefix: 'vdk' });
   await newTenant('billco');

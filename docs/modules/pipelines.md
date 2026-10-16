@@ -1279,3 +1279,12 @@ First enrollment confirms the password; additional/removal operations also requi
 fresh passkey, revoke other sessions and preserve at least one key. Mandatory policy limits
 unenrolled accounts to setup and logout. See `operations/console-passkeys.md`; this does not
 apply tenant-wide step-up or automatically enable the production console policy.
+
+
+### New-password policy (2026-10-16)
+
+Creation/change/reset/provisioning/bootstrap → shared 15–128-code-point policy and whole-value
+blocklist → versioned password hash → existing session/recovery invalidation rules. Login
+continues to verify existing short credentials without applying new-password validation.
+Current-password inputs allow the full Unicode range; policy rejects neither spaces nor
+password-manager paste. See `operations/new-password-policy.md`; no live account rewrite.

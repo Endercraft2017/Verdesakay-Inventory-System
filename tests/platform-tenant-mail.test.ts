@@ -12,10 +12,10 @@ beforeAll(async () => {
   ctx = await setupApp();
   tenantToken = await login(ctx.api);
   const users = await import('../src/platform/platform-users');
-  users.upsertPlatformUser('owner', 'ownerpass1');
-  op = (await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1' })).body.token;
+  users.upsertPlatformUser('owner', 'ownerpass1-test-only');
+  op = (await ctx.api.post('/_platform/api/login').send({ username: 'owner', password: 'ownerpass1-test-only' })).body.token;
   const { createTenant } = await import('../src/platform/provisioning');
-  for (const slug of ['smtpco', 'smtpother']) createTenant({ slug, name: slug, admin_username: 'owner', admin_password: 'ownerpass1', admin_email: `${slug}@example.test`, plan: 'complete' });
+  for (const slug of ['smtpco', 'smtpother']) createTenant({ slug, name: slug, admin_username: 'owner', admin_password: 'ownerpass1-test-only', admin_email: `${slug}@example.test`, plan: 'complete' });
 });
 afterAll(() => { delete process.env.PLATFORM_CONSOLE; delete process.env.PLATFORM_HOST; delete process.env.TENANT_PATH_HOST; cleanup(ctx); });
 

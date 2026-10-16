@@ -34,8 +34,8 @@ describe('QuickBooks OAuth callback (H1, H2)', () => {
 describe('client IP and headers (M1, M3)', () => {
   it('records the edge proxy\'s client address, not the connecting hop', async () => {
     await ctx.api.post('/api/users').set(bearer(admin))
-      .send({ username: 'ipcheck', full_name: 'IP Check', password: 'ipcheck-pass-1', role: 'admin' });
-    const login1 = await ctx.api.post('/api/auth/login').set('X-Real-IP', '203.0.113.7').send({ username: 'ipcheck', password: 'ipcheck-pass-1' });
+      .send({ username: 'ipcheck', full_name: 'IP Check', password: 'ipcheck-pass-1-test-only', role: 'admin' });
+    const login1 = await ctx.api.post('/api/auth/login').set('X-Real-IP', '203.0.113.7').send({ username: 'ipcheck', password: 'ipcheck-pass-1-test-only' });
     const sessions = await ctx.api.get('/api/auth/sessions').set(bearer(login1.body.token));
     expect(sessions.body[0].ip).toBe('203.0.113.7');
   });
@@ -51,9 +51,9 @@ describe('passwords (M2)', () => {
   it('rejects short and common passwords for new accounts', async () => {
     const short = await ctx.api.post('/api/users').set(bearer(admin)).send({ username: 'pw1', full_name: 'Pw', password: 'abc1234', role: 'admin' });
     expect(short.status).toBe(400);
-    const common = await ctx.api.post('/api/users').set(bearer(admin)).send({ username: 'pw2', full_name: 'Pw', password: 'Password1', role: 'admin' });
+    const common = await ctx.api.post('/api/users').set(bearer(admin)).send({ username: 'pw2', full_name: 'Pw', password: 'PasswordPassword', role: 'admin' });
     expect(common.status).toBe(400);
-    const good = await ctx.api.post('/api/users').set(bearer(admin)).send({ username: 'pw3', full_name: 'Pw', password: 'tide-lamp-9', role: 'admin' });
+    const good = await ctx.api.post('/api/users').set(bearer(admin)).send({ username: 'pw3', full_name: 'Pw', password: 'tide-lamp-9-test-only', role: 'admin' });
     expect(good.status).toBe(201);
   });
 });
@@ -72,7 +72,7 @@ describe('activity log redaction (M5)', () => {
 describe('chat attachments (L4)', () => {
   it('serves anything but a plain image as a download', async () => {
     const u = await ctx.api.post('/api/users').set(bearer(admin))
-      .send({ username: 'chatpal', full_name: 'Chat Pal', password: 'chatpal-pass-1', role: 'admin' });
+      .send({ username: 'chatpal', full_name: 'Chat Pal', password: 'chatpal-pass-1-test-only', role: 'admin' });
     const send = await ctx.api.post('/api/messages').set(bearer(admin))
       .field('recipient_id', String(u.body.id)).field('body', 'see attached')
       .attach('files', Buffer.from('<script>alert(1)</script>'), { filename: 'page.html', contentType: 'text/html' });
@@ -92,7 +92,7 @@ describe('idempotency replay (L5)', () => {
     expect(first.status).toBeLessThan(300);
     const again = await ctx.api.post('/api/notes').set(bearer(admin)).set('Idempotency-Key', key).send({ title: 'mine', body: 'private note' });
     expect(again.headers['idempotency-replayed']).toBe('true');
-    const other = await login(ctx.api, 'chatpal', 'chatpal-pass-1');
+    const other = await login(ctx.api, 'chatpal', 'chatpal-pass-1-test-only');
     const stranger = await ctx.api.post('/api/notes').set(bearer(other)).set('Idempotency-Key', key).send({ title: 'x', body: 'y' });
     expect(stranger.headers['idempotency-replayed']).toBeUndefined();
     const anonymous = await ctx.api.post('/api/notes').set('Idempotency-Key', key).send({});

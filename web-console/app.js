@@ -920,7 +920,7 @@
       el('h3', { text: 'Change password' }),
       el('div', { class: 'field' }, [el('label', { for: 'pw-cur', text: 'Current password' }), el('input', { id: 'pw-cur', type: 'password', autocomplete: 'current-password' })]),
       el('div', { class: 'field' }, [el('label', { for: 'pw-new', text: 'New password' }), el('input', { id: 'pw-new', type: 'password', autocomplete: 'new-password' }),
-        el('small', { class: 'muted', text: 'At least 8 characters, not a common password. Other signed-in browsers are signed out.' })]),
+        el('small', { class: 'muted', text: 'At least 15 characters, not a common password. Other signed-in browsers are signed out.' })]),
       el('div', { class: 'field' }, [el('label', { for: 'pw-again', text: 'New password again' }), el('input', { id: 'pw-again', type: 'password', autocomplete: 'new-password' })]),
       el('div', { class: 'err', id: 'pw-err', role: 'alert' }),
       el('div', { style: 'display:flex;gap:10px;margin-top:6px' }, [
