@@ -1,5 +1,6 @@
 /** Two-step sign-in (src/shared/mfa.ts, src/shared/totp.ts) and hashed session tokens. */
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { setupApp, cleanup, login, type TestContext } from './helpers';
 import { totpCode, totpCounter } from '../src/shared/totp';
 
@@ -108,6 +109,41 @@ describe('hashed session tokens', () => {
     // The stored digest itself is useless as a bearer token.
     expect((await ctx.api.get('/api/auth/me').set(bearer(db.tokenDigest(legacy)))).status).toBe(401);
   });
+});
+
+it('shares the security verification failure budget across sessions and factor endpoints', async () => {
+  const password = randomUUID();
+  const { token, recovery } = await enrol('mfa-throttle', password);
+  const challenge = await ctx.api.post('/api/auth/login').send({ username: 'mfa-throttle', password });
+  const other = await ctx.api.post('/api/auth/login/mfa').send({ mfa_token: challenge.body.mfa_token, code: recovery[0] });
+  expect(other.status).toBe(200);
+  // enrol() already made two failed verifications for this account.
+  for (let i = 0; i < 8; i++) {
+    const endpoint = i % 2 ? 'disable' : 'recovery-codes';
+    const session = i % 2 ? token : other.body.token;
+    expect((await ctx.api.post(`/api/auth/mfa/${endpoint}`).set(bearer(session))
+      .send({ password: 'wrong-password', code: '000000' })).status).toBe(400);
+  }
+  const blocked = await ctx.api.post('/api/auth/mfa/recovery-codes').set(bearer(other.body.token))
+    .send({ password, code: recovery[1] });
+  expect(blocked.status).toBe(429);
+  expect(blocked.headers['retry-after']).toBeTruthy();
+  // Blocking happens before any factor is consumed or changed.
+  const { checkMfaCode } = await import('../src/shared/mfa');
+  expect(checkMfaCode(db.queryOne<{ id: number }>('SELECT id FROM users WHERE username = ?', 'mfa-throttle')!.id, recovery[1]!)).toBe(true);
+});
+
+it('requires an existing factor to disable MFA and revokes other sessions after success', async () => {
+  const password = randomUUID();
+  const { token, recovery } = await enrol('mfa-disable', password);
+  const challenge = await ctx.api.post('/api/auth/login').send({ username: 'mfa-disable', password });
+  const other = await ctx.api.post('/api/auth/login/mfa').send({ mfa_token: challenge.body.mfa_token, code: recovery[0] });
+  expect(other.status).toBe(200);
+  expect((await ctx.api.post('/api/auth/mfa/disable').set(bearer(token)).send({ password, code: 'invalid-code' })).status).toBe(400);
+  expect((await ctx.api.get('/api/auth/me').set(bearer(other.body.token))).status).toBe(200);
+  expect((await ctx.api.post('/api/auth/mfa/disable').set(bearer(token)).send({ password, code: recovery[1] })).status).toBe(200);
+  expect((await ctx.api.get('/api/auth/me').set(bearer(other.body.token))).status).toBe(401);
+  expect((await ctx.api.get('/api/auth/me').set(bearer(token))).status).toBe(200);
 });
 
 

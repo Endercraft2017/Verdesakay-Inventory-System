@@ -10,6 +10,10 @@ evidence, failure scenarios and resolutions. [Owner actions](../OWNER-ACTIONS.md
 account/business decisions from engineering work. [Validation results](validation-results.md)
 records command outcomes and their limits.
 
+The subsequent [standards research record](standards-research.md) adds current primary-source
+guidance, newly identified password/hash gaps and a bounded MFA security increment. Its open
+findings supplement the original scorecard; they are not closed by this audit's earlier totals.
+
 ## Scope and source
 
 The starting `production` branch was `1815c8a`. Its earlier evidence covered an older source

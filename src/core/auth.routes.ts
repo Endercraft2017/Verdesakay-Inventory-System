@@ -6,6 +6,7 @@ import { approverDepartmentIds } from '../modules/hr/workflow';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import bcrypt from 'bcryptjs';
+import rateLimit from 'express-rate-limit';
 import { queryOne, queryAll, run, newToken, DEFAULT_TENANT } from '../shared/db';
 import {
   createSession, destroySession, requireAuth, endUserSessions, endSessionBySid, listUserSessions,
@@ -115,6 +116,19 @@ function signIn(user: UserRow, req: Request, shared: boolean, res: Response) {
 const passwordOnly = z.object({ password: z.string().min(1, 'Enter your password').max(200) });
 const passwordAndCode = passwordOnly.extend({ code: z.string().trim().min(6, 'Enter the code from your app').max(20) });
 
+// A session is not proof of a factor. Bound guesses across all self-service factor
+// operations, devices and sessions for this account, independently of login challenges.
+// Successful requests do not spend the failure budget. Keep this active in tests too.
+const mfaChangeLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: req => `${currentSlug()}:${req.user!.id}`,
+  message: { error: 'Too many security verification attempts. Try again in fifteen minutes.' },
+});
+
 function passwordMatches(userId: number, password: string): boolean {
   const row = queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = ?', userId);
   return !!row && bcrypt.compareSync(password, row.password_hash);
@@ -132,14 +146,14 @@ router.get('/mfa', requireAuth, (req, res) => {
 });
 
 // POST /api/auth/mfa/setup — { password }: a new secret + otpauth link to add to the app.
-router.post('/mfa/setup', requireAuth, syncClass('online'), (req, res) => {
+router.post('/mfa/setup', requireAuth, syncClass('online'), mfaChangeLimiter, (req, res) => {
   const { password } = parseBody(passwordOnly, req.body);
   if (!passwordMatches(req.user!.id, password)) { res.status(400).json({ error: 'Password is incorrect' }); return; }
   res.set('Cache-Control', 'no-store').json(startMfaSetup(req.user!.id, `${req.user!.username}@${currentSlug()}`, req.token!));
 });
 
 // POST /api/auth/mfa/enable — { code }: confirm the app works; returns the recovery codes once.
-router.post('/mfa/enable', requireAuth, syncClass('online'), (req, res) => {
+router.post('/mfa/enable', requireAuth, syncClass('online'), mfaChangeLimiter, (req, res) => {
   const { code } = parseBody(z.object({ code: z.string().trim().min(6).max(10) }), req.body);
   const codes = enableMfa(req.user!.id, code, req.token!);
   if (!codes) { res.status(400).json({ error: 'That code is not right. Check the time on your phone and try the newest code.' }); return; }
@@ -148,7 +162,7 @@ router.post('/mfa/enable', requireAuth, syncClass('online'), (req, res) => {
 });
 
 // POST /api/auth/mfa/disable — { password, code }
-router.post('/mfa/disable', requireAuth, syncClass('online'), (req, res) => {
+router.post('/mfa/disable', requireAuth, syncClass('online'), mfaChangeLimiter, (req, res) => {
   const { password, code } = parseBody(passwordAndCode, req.body);
   if (securityPolicy().require_mfa_privileged && isPrivileged(req.user!)) {
     res.status(403).json({ error: 'Your workspace requires two-step sign-in for your account. Ask an admin to reset it if you changed phones.' });
@@ -159,11 +173,12 @@ router.post('/mfa/disable', requireAuth, syncClass('online'), (req, res) => {
     return;
   }
   disableMfa(req.user!.id);
+  endUserSessions(req.user!.id, 'revoked', req.token);
   res.json({ ok: true });
 });
 
 // POST /api/auth/mfa/recovery-codes — { password, code }: replace the recovery codes.
-router.post('/mfa/recovery-codes', requireAuth, syncClass('online'), (req, res) => {
+router.post('/mfa/recovery-codes', requireAuth, syncClass('online'), mfaChangeLimiter, (req, res) => {
   const { password, code } = parseBody(passwordAndCode, req.body);
   if (!passwordMatches(req.user!.id, password) || !checkMfaCode(req.user!.id, code)) {
     res.status(400).json({ error: 'Password or code is incorrect' });

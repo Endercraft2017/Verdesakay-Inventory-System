@@ -1,7 +1,9 @@
 /**
- * Rules for every newly set password (OWASP ASVS 5.0 §6.2): 8–128 characters and not one of the
+ * Current legacy rules for newly set passwords: 8–128 characters and not one of the
  * common passwords people try first. Existing passwords keep working; the rules apply whenever a
  * password is set (account creation, change, reset, workspace provisioning).
+ * This is not a standards-conformance claim: password-only minimum length and bcrypt's
+ * 72-byte truncation require migration (docs/audits/standards-research.md).
  *
  * common-passwords.txt: the entries of 8+ characters from SecLists'
  * Passwords/Common-Credentials/10k-most-common.txt, lowercased (2,087 lines). Shorter entries

@@ -223,5 +223,23 @@ test('browser: authenticator enrollment, one-use recovery and mobile factor sign
     await account.locator('#m-mfa-form').getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(account.locator('#m-app')).toBeVisible();
     expect(await account.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    // A factor change in another browser must terminate this mobile session too.
+    await page.evaluate(async () => { await API.post('/auth/logout'); (API as any).clearToken(); });
+    await page.goto('/');
+    await page.locator('#login-username').fill(username);
+    await page.locator('#login-password').fill('browser-mfa-password');
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+    const factorDialog = page.locator('.modal-overlay');
+    await factorDialog.locator('[data-f="code"]').fill(codes[2]!);
+    await factorDialog.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(page.locator('#app-screen')).toBeVisible();
+    await page.goto('/#account');
+    await page.locator('#mfa-off').click();
+    const disableDialog = page.locator('.modal-overlay');
+    await disableDialog.locator('[data-f="pw"]').fill('browser-mfa-password');
+    await disableDialog.locator('[data-f="code"]').fill(codes[3]!);
+    await disableDialog.getByRole('button', { name: 'Turn off', exact: true }).click();
+    await expect(page.locator('#mfa-on')).toBeVisible();
+    expect(await account.evaluate(async () => (await fetch('/api/auth/me')).status)).toBe(401);
   } finally { await context.close(); }
 });

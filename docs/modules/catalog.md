@@ -303,6 +303,12 @@ distribution route, icon artwork.
 
 ## core/ — ungated baseline
 
+Authentication security changes share a per-account/tenant failure limiter across MFA setup,
+enable, disable and recovery-code replacement. The existing-factor-verified disable flow
+revokes other sessions via `shared/auth.endUserSessions`. The limiter is process-local;
+multi-replica enforcement and privileged step-up remain incomplete. Research and limits:
+`docs/audits/standards-research.md`.
+
 **Responsibility:** the product features every workspace has regardless of plan —
 login, user/department admin, documents & templates, forms engine, real-time 1:1 chat
 messaging (conversations, reply, edit, reactions, sender-only soft delete, link/file

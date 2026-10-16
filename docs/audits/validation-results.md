@@ -2,8 +2,33 @@
 
 Source cutoff: `restructure/module-architecture` at
 `495db101c3efbe4e4546221fed2db3af233b00aa`, merged into `production` with the audit fixes.
-Earlier reports describe older trees. The final verification summary in
-`evidence/second-pass-verification.json` is authoritative for the completed run.
+Earlier reports describe older trees. The verification summary in
+`evidence/second-pass-verification.json` describes the original second-pass run.
+
+## Standards follow-up
+
+The [standards research increment](standards-research.md) adds account-scoped MFA failure
+limits and revocation of other sessions when disabling MFA. Validation after these changes:
+
+- Full regression: **284 files / 2,867 tests passed**, 277.78 seconds, using
+  `npm test -- --fileParallelism --maxWorkers=2` ([log](evidence/standards-regression.txt)).
+- Playwright: **8 scenarios passed**, 17.6 seconds, including the expanded desktop factor-disable
+  flow and revoked mobile browser session ([log](evidence/standards-playwright.txt)).
+- `npm run typecheck` passed; MFA and route-class focused run: 9 tests passed.
+  After replacing the two new tests' fixed passwords with runtime-generated values,
+  the MFA file was rechecked: 8 tests passed. Application behavior was unchanged.
+- Staged Gitleaks scan passed with no findings ([log](evidence/standards-staged-secrets.txt)).
+  A first scan used multiple positional paths incorrectly and scanned wider local artifacts;
+  it is not the staged-source result. Reviewed fixed synthetic passwords in the new tests were
+  replaced rather than added to the secret scanner's ignore list.
+- The sandbox initially prevented temporary HTTP listeners; API/browser tests were rerun
+  successfully with local-server execution permitted. No live target was tested.
+
+No new ZAP, capacity or dependency scan was performed for this bounded authentication change;
+their earlier scopes and unresolved findings below still apply. Research identifies additional
+open gaps; these results are not a production sign-off or standards certification.
+
+## Earlier second-pass results
 
 | Check | Scope and result |
 |---|---|
