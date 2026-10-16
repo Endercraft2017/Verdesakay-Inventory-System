@@ -1816,3 +1816,8 @@ select option, select optgroup { background-color: var(--surface); color: var(--
 @media(max-width:700px) { .form-item-values { grid-template-columns: minmax(0,1fr); } }
 
 [data-lookup-retry][hidden], [data-system-retry][hidden] { display:none; }
+
+/* Inventory feedback uses the existing visual theme. */
+.inventory-result-count { font-size: 12px; }
+
+.topbar [hidden], .actions [hidden] { display: none !important; }

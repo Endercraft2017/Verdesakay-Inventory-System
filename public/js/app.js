@@ -377,7 +377,7 @@ const App = (() => {
     if (!primary) { el.innerHTML = ''; return; }
     const subs = visibleSubtabs(primary);
     el.innerHTML = subs.map((s) =>
-      `<button class="subtab ${s.id === activeSubtabId ? 'active' : ''}" data-subtab="${s.id}">${UI.esc(s.label)}</button>`
+      `<button class="subtab ${s.id === activeSubtabId ? 'active' : ''}" ${s.id === activeSubtabId ? 'aria-current="page"' : ''} data-subtab="${s.id}">${UI.esc(s.label)}</button>`
     ).join('');
     el.querySelectorAll('[data-subtab]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -393,7 +393,7 @@ const App = (() => {
     if (!primary || !subtab) { el.innerHTML = ''; return; }
     const leaves = subtab.tree.map((leaf) => {
       const on = leaf.route === activeRoute && (!leaf.filter || filtersEqual(leaf.filter, activeFilter) || (leaf.filter && Object.keys(leaf.filter).every(key => String(leaf.filter[key]) === String((activeFilter || {})[key]))));
-      return `<button class="tree-leaf ${on ? 'active' : ''}" data-route="${leaf.route}"
+      return `<button class="tree-leaf ${on ? 'active' : ''}" ${on ? 'aria-current="page"' : ''} data-route="${leaf.route}"
         data-filter='${leaf.filter ? UI.esc(JSON.stringify(leaf.filter)) : ''}'>
         ${UI.icon(leaf.icon, 16)}<span>${UI.esc(leaf.label)}</span></button>`;
     }).join('');
@@ -406,8 +406,12 @@ const App = (() => {
   }
 
   function setActivePrimaryHighlight() {
-    document.querySelectorAll('#primary-nav [data-primary]').forEach((b) =>
-      b.classList.toggle('active', b.dataset.primary === activePrimaryId));
+    document.querySelectorAll('#primary-nav [data-primary]').forEach((b) => {
+      const active = b.dataset.primary === activePrimaryId;
+      b.classList.toggle('active', active);
+      if (active) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
+    });
   }
 
   /* ---------- Navigation ---------- */

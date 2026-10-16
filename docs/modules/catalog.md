@@ -475,6 +475,14 @@ UPLOAD_DIR; deliberately not enforced so a plan limit can't block a report).
 
 ## modules/inventory
 
+**Inventory UI review (Chunk 1):** the existing desktop layout is retained. List filters
+include clear-all, result counts, stale-response protection and retry; action visibility
+follows inventory permissions. Item validation focuses the affected field and explicit
+item/Option dialogs ignore backdrop clicks. The existing shared dismissal/focus guard
+is reused. Mobile item detail reports connectivity rather than claiming sync, shows
+zero-stock locations and filters actions by permission. Regression coverage:
+`tests/frontend-chunk1.test.ts`; mobile shell cache v110.
+
 **Responsibility:** items, stock levels, suppliers, customers, locations, sale/purchase
 orders (the order shell — 3-way-match purchase logic lives in `purchasing/`),
 sale-order releasing (warehouse acceptance → pick → release slip), deliveries.

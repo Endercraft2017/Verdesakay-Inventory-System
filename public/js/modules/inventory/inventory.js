@@ -3,6 +3,7 @@
 /* ---------- ECOUNT-style Item form (data-driven from item-form-config.js) ---------- */
 // Cached merged config (defaults overlaid with the admin's saved customization).
 let _itemFormConfig = null;
+let _itemFieldSequence = 0;
 
 /** Merge the admin's saved per-field overrides over ITEM_FORM_DEFAULTS (by key). */
 function mergeFormConfig(saved) {
@@ -148,11 +149,12 @@ function renderItemField(def, value, opts = {}) {
   const v = value === null || value === undefined ? '' : value;
   const req = def.required ? ' <span class="req">*</span>' : '';
   const help = UI.helpIcon(def.help);
-  const head = `<div class="field-label"><label>${e(def.label)}${req}</label>${help}</div>`;
+  const fieldId = `item-field-${++_itemFieldSequence}`;
+  const head = `<div class="field-label"><label for="${fieldId}">${e(def.label)}${req}</label>${help}</div>`;
 
   if (def.type === 'checkbox') {
     return `<div class="form-field inline">
-      <label class="check-opt"><input type="checkbox" data-key="${def.key}" ${isChecked(v) ? 'checked' : ''} /> ${e(def.label)}</label>${help}
+      <label class="check-opt"><input type="checkbox" id="${fieldId}" data-key="${def.key}" ${isChecked(v) ? 'checked' : ''} /> ${e(def.label)}</label>${help}
     </div>`;
   }
   if (def.type === 'static') {
@@ -166,18 +168,18 @@ function renderItemField(def, value, opts = {}) {
       : def.type === 'supplier'
         ? itemSupplierOptions(v)
         : (def.options || []).map((o) => `<option value="${e(o)}" ${String(v) === String(o) ? 'selected' : ''}>${e(o)}</option>`).join('');
-    return `<div class="form-field">${head}<select data-key="${def.key}">${inner}</select></div>`;
+    return `<div class="form-field">${head}<select id="${fieldId}" data-key="${def.key}">${inner}</select></div>`;
   }
   if (def.type === 'textarea') {
-    return `<div class="form-field span2">${head}<textarea data-key="${def.key}" placeholder="${e(def.placeholder || '')}">${e(v)}</textarea></div>`;
+    return `<div class="form-field span2">${head}<textarea id="${fieldId}" data-key="${def.key}" placeholder="${e(def.placeholder || '')}">${e(v)}</textarea></div>`;
   }
   if (def.type === 'search') {
-    return `<div class="form-field">${head}<div class="search-box">${UI.icon('search', 16)}<input data-key="${def.key}" value="${e(v)}" placeholder="${e(def.placeholder || '')}" /></div></div>`;
+    return `<div class="form-field">${head}<div class="search-box">${UI.icon('search', 16)}<input id="${fieldId}" data-key="${def.key}" value="${e(v)}" placeholder="${e(def.placeholder || '')}" /></div></div>`;
   }
   if (def.type === 'combobox') {
     return `<div class="form-field">${head}
       <div class="combobox" data-combo-src="${e(def.source || '')}">
-        <input data-key="${def.key}" value="${e(v)}" autocomplete="off" placeholder="${e(def.placeholder || 'Type to search…')}" />
+        <input id="${fieldId}" data-key="${def.key}" value="${e(v)}" autocomplete="off" placeholder="${e(def.placeholder || 'Type to search…')}" />
         <div class="combo-list hidden"></div>
       </div></div>`;
   }
@@ -200,7 +202,7 @@ function renderItemField(def, value, opts = {}) {
   const disabled = opts.disabled ? ' disabled' : '';
   const suffix = def.type === 'percent' ? '<span class="field-suffix">%</span>'
     : (def.suffix ? `<span class="field-suffix">${e(def.suffix)}</span>` : '');
-  const input = `<input data-key="${def.key}" type="${numeric ? 'number' : 'text'}"${step}${disabled} value="${e(v)}" placeholder="${e(def.placeholder || '')}" />`;
+  const input = `<input id="${fieldId}" data-key="${def.key}" type="${numeric ? 'number' : 'text'}"${step}${disabled} value="${e(v)}" placeholder="${e(def.placeholder || '')}" />`;
   return `<div class="form-field">${head}<div class="field-with-suffix">${input}${suffix}</div></div>`;
 }
 
@@ -327,6 +329,8 @@ function collectItemForm(overlay, cfg, it) {
 App.register('inventory', async (view, filter) => {
   const state = { q: '', department_id: '', supplier_id: '', location_id: '', category: '', low: !!(filter && filter.low), include_damaged: false };
   let lastItems = [];
+  let requestVersion = 0;
+  let searchTimer;
 
   function deptOptions(selected) {
     return '<option value="">— Department —</option>' +
@@ -338,20 +342,22 @@ App.register('inventory', async (view, filter) => {
     <div class="topbar">
       <h2>Inventory</h2>
       <div class="grow"></div>
-      <div class="search-box search">${UI.icon('search', 16)}<input id="inv-search" placeholder="Search name, SKU, spec, location…" /></div>
-      <select id="inv-cat" style="width:150px"><option value="">— Category —</option></select>
-      <select id="inv-dept" style="width:160px">${deptOptions('')}</select>
-      <select id="inv-supplier" style="width:150px"><option value="">— Supplier —</option></select>
-      <select id="inv-location" style="width:150px"><option value="">— Location —</option></select>
+      <div class="search-box search">${UI.icon('search', 16)}<input id="inv-search" aria-label="Search inventory" placeholder="Search name, SKU, spec, location…" /></div>
+      <select id="inv-cat" aria-label="Category" style="width:150px"><option value="">— Category —</option></select>
+      <select id="inv-dept" aria-label="Department" style="width:160px">${deptOptions('')}</select>
+      <select id="inv-supplier" aria-label="Supplier" style="width:150px"><option value="">— Supplier —</option></select>
+      <select id="inv-location" aria-label="Location" style="width:150px"><option value="">— Location —</option></select>
       <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500;white-space:nowrap;">
         <input type="checkbox" id="inv-low" style="width:auto" ${state.low ? 'checked' : ''} /> Low stock</label>
       <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500;white-space:nowrap;" title="Show damaged-stock records (hidden by default)">
         <input type="checkbox" id="inv-damaged" style="width:auto" ${state.include_damaged ? 'checked' : ''} /> Show damaged</label>
-      <button class="btn secondary" id="inv-import" title="Create or update items from a CSV file">${UI.icon('upload')} Import</button>
+      <button class="btn secondary" id="inv-import" ${App.hasPermission('inventory.create') ? '' : 'hidden'} title="Create or update items from a CSV file">${UI.icon('upload')} Import</button>
       <button class="btn secondary" id="inv-export" title="Export current list to CSV">${UI.icon('download')} Export</button>
       <button class="btn secondary" id="inv-labels" title="Print barcode labels for the current list">${UI.icon('printer')} Labels</button>
       ${App.hasPermission('purchasing.manage') ? `<button class="btn secondary" id="inv-reorder" title="Draft purchase orders to restock everything below its reorder level">${UI.icon('inbox')} Reorder PO</button>` : ''}
-      <button class="btn" id="inv-add">${UI.icon('plus')} New item</button>
+      <button class="btn" id="inv-add" ${App.hasPermission('inventory.create') ? '' : 'hidden'}>${UI.icon('plus')} New item</button>
+      <span class="muted inventory-result-count" id="inv-count" role="status"></span>
+      <button class="btn secondary small" id="inv-clear">Clear filters</button>
     </div>
     <div class="panel"><div id="inv-table"></div></div>`;
 
@@ -390,10 +396,28 @@ App.register('inventory', async (view, filter) => {
     if (state.category) params.set('category', state.category);
     if (state.low) params.set('low', '1');
     if (state.include_damaged) params.set('include_damaged', '1');
-    tableEl.innerHTML = '<div class="empty">Loading…</div>';
-    const items = await API.get('/inventory?' + params.toString());
-    lastItems = items;
-    render(items);
+    const version = ++requestVersion;
+    lastItems = [];
+    tableEl.setAttribute('aria-busy', 'true');
+    view.querySelector('#inv-count').textContent = 'Loading…';
+    tableEl.innerHTML = '<div class="empty" role="status">Loading…</div>';
+    try {
+      const items = await API.get('/inventory?' + params.toString());
+      if (version !== requestVersion) return;
+      lastItems = items;
+      render(items);
+      view.querySelector('#inv-count').textContent = `${items.length} item${items.length === 1 ? '' : 's'} shown`;
+    } catch (err) {
+      if (version !== requestVersion) return;
+      // Do not offer an export or label sheet from an older filter result.
+      lastItems = [];
+      view.querySelector('#inv-count').textContent = 'Could not load items';
+      tableEl.innerHTML = `<div class="empty" role="alert">Could not load items. Your filters are unchanged.
+        <button class="btn secondary small" data-retry>Try again</button></div>`;
+      tableEl.querySelector('[data-retry]').onclick = load;
+    } finally {
+      if (version === requestVersion) tableEl.removeAttribute('aria-busy');
+    }
   }
 
   function exportCsv() {
@@ -619,6 +643,11 @@ App.register('inventory', async (view, filter) => {
         </tbody>
       </table>`;
 
+    [['data-adjust', 'inventory.adjust'], ['data-transfer', 'inventory.adjust'], ['data-edit', 'inventory.edit'], ['data-del', 'inventory.delete']].forEach(([attr, permission]) => {
+      if (!App.hasPermission(permission)) tableEl.querySelectorAll('[' + attr + ']').forEach((button) => { button.hidden = true; });
+    });
+    tableEl.querySelectorAll('button[title]').forEach((button) => button.setAttribute('aria-label', button.title));
+
     tableEl.querySelectorAll('[data-adjust]').forEach((b) => b.onclick = () => adjustModal(b.dataset.adjust, items));
     tableEl.querySelectorAll('[data-transfer]').forEach((b) => b.onclick = () => transferModal(b.dataset.transfer, items));
     tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => itemModal(items.find((x) => x.id == b.dataset.edit)));
@@ -760,6 +789,7 @@ App.register('inventory', async (view, filter) => {
     let startingLocation = () => null;
     const m = UI.modal({
       title: editing ? 'Edit item' : 'New item',
+      protectChanges: true,
       helpTopic: 'new-item',
       size: 'lg',
       headActionHTML: canCustomize ? `<button class="btn secondary small" id="item-option-btn">Option</button>` : '',
@@ -788,10 +818,20 @@ App.register('inventory', async (view, filter) => {
         for (const def of _itemFormConfig) {
           if (!def.visible || def.type === 'static' || def.type === 'image' || !def.required) continue;
           const val = readItemField(overlay, def);
-          if (val === '' || val === false || val === null || val === undefined) {
+          if (val === false || val === null || val === undefined || String(val).trim() === '') {
             showErr(`${def.label} is required`);
             const panelBtn = overlay.querySelector(`[data-formtab="${def.tab}"]`);
             if (panelBtn) panelBtn.click();
+            const field = overlay.querySelector(`[data-key="${def.key}"]`);
+            if (field) {
+              field.setAttribute('aria-invalid', 'true');
+              field.setAttribute('aria-describedby', overlay.querySelector('[data-modal-error]').id);
+              field.focus();
+              field.addEventListener('input', () => {
+                field.removeAttribute('aria-invalid');
+                field.removeAttribute('aria-describedby');
+              }, { once: true });
+            }
             return false;
           }
         }
@@ -878,6 +918,7 @@ App.register('inventory', async (view, filter) => {
 
     UI.modal({
       title: 'Form Options',
+      protectChanges: true,
       size: 'lg',
       headActionHTML: `<button class="btn secondary small" id="opt-reset">Reset to defaults</button>`,
       bodyHTML: `<p class="muted" style="margin-top:0">Show or hide fields, mark them required, and set defaults. Saved for everyone.</p>
@@ -1049,10 +1090,18 @@ App.register('inventory', async (view, filter) => {
   }
 
   // Wire toolbar
-  let searchTimer;
+  view.querySelector('#inv-clear').onclick = () => {
+    clearTimeout(searchTimer);
+    Object.assign(state, { q: '', department_id: '', supplier_id: '', location_id: '', category: '', low: false, include_damaged: false });
+    ['inv-search', 'inv-cat', 'inv-dept', 'inv-supplier', 'inv-location'].forEach((id) => { view.querySelector('#' + id).value = ''; });
+    view.querySelector('#inv-low').checked = false;
+    view.querySelector('#inv-damaged').checked = false;
+    load();
+  };
   view.querySelector('#inv-search').addEventListener('input', (e) => {
     clearTimeout(searchTimer);
     state.q = e.target.value.trim();
+    requestVersion++;
     searchTimer = setTimeout(load, 250);
   });
   view.querySelector('#inv-cat').addEventListener('change', (e) => { state.category = e.target.value; load(); });

@@ -88,6 +88,7 @@ const UI = (() => {
     });
   }
 
+  let modalErrorSequence = 0;
   function modal(opts) {
     const root = document.getElementById('modal-root');
     const previousFocus = document.activeElement;
@@ -155,9 +156,10 @@ const UI = (() => {
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); if (first) first.focus(); }
     });
     overlay.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', dismiss));
-    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) dismiss(); });
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay && !opts.protectChanges) dismiss(); });
 
     const errBox = overlay.querySelector('[data-modal-error]');
+    errBox.id = `modal-error-${++modalErrorSequence}`;
     errBox.setAttribute('role', 'alert'); errBox.tabIndex = -1;
     const showErr = (msg) => { errBox.hidden = false; errBox.textContent = msg; errBox.classList.remove('hidden'); if (!overlay.contains(document.activeElement) || document.activeElement?.getAttribute('aria-invalid') !== 'true') errBox.focus(); };
 

@@ -26,7 +26,7 @@
     view.appendChild(mEl(
       '<div class="m-sr-head"><div class="m-hint" style="margin:0">Item detail</div>' +
       '<div class="m-sr-saved">' + (navigator.onLine
-        ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg> Synced'
+        ? '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg> Online'
         : 'Offline') + '</div></div>'
     ));
 
@@ -44,7 +44,8 @@
       var pill = mEl('<div class="m-sr-unit">Serialized Unit · ' + mEsc(unit.identifier) +
         ' <button aria-label="Copy"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button></div>');
       pill.querySelector('button').onclick = function () {
-        try { navigator.clipboard.writeText(unit.identifier); mToast('Copied'); } catch (e) { mToast(unit.identifier); }
+        Promise.resolve().then(function () { return navigator.clipboard.writeText(unit.identifier); })
+          .then(function () { mToast('Copied'); }).catch(function () { mToast(unit.identifier); });
       };
       view.appendChild(pill);
       view.appendChild(mEl('<div class="m-hint">' + mEsc(unit.status || '') +
@@ -67,7 +68,7 @@
 
     if(it.available_quantity!=null)view.appendChild(mEl('<div class="m-hint">Available for sales: '+it.available_quantity+' · Committed to sales orders: '+(it.reserved_for_sales||0)+'</div>'));
 
-    var locs = (breakdown || []).filter(function (b) { return b.quantity !== 0; });
+    var locs = breakdown || [];
     if (locs.length) {
       view.appendChild(mEl('<div class="m-sectitle">Locations</div>'));
       view.appendChild(mEl('<ul class="m-kv">' + locs.map(function (b) {
@@ -76,6 +77,7 @@
     }
 
     var hist = (it.history || []).slice(0, 3);
+    if (!hist.length) view.appendChild(mEl('<div class="m-hint">No recent stock movements.</div>'));
     if (hist.length) {
       view.appendChild(mEl('<div class="m-sectitle">Recent movement</div>'));
       var ul = mEl('<ul class="m-moves"></ul>');
@@ -97,6 +99,8 @@
       ['Add photo', function () { mPhoto.capture(it.id).then(function () { detail(view, it.id); }).catch(function () {}); }],
       ['Report problem', function () { MApp.go('report-problem', { about: it.name + (it.sku ? ' (#' + it.sku + ')' : '') }); }],
     ].forEach(function (a) {
+      if (a[0] === 'Add photo' && !MApp.can('inventory.edit')) return;
+      if (a[0] === 'Add QR' && !MApp.can('inventory.adjust')) return;
       var b = mEl('<button class="m-chip">' + mEsc(a[0]) + '</button>');
       b.onclick = a[1];
       chips.appendChild(b);
@@ -116,6 +120,8 @@
           MApp.go('qc');
         } },
     ].forEach(function (a) {
+      if (a.key !== 'qa' && !MApp.can('inventory.adjust')) return;
+      if (a.key === 'qa' && !MApp.can('inventory.adjust') && !MApp.can('production.inspect_qc') && !MApp.can('production.inspect_qa')) return;
       var b = mEl('<button class="' + (a.warn ? 'warn' : '') + '"' + (a.dim ? ' disabled' : '') +
         '><span class="ic">' + icon(a.key) + '</span>' + mEsc(a.label) + '</button>');
       b.onclick = a.fn;
