@@ -274,7 +274,7 @@
         var button = this; button.disabled = true;
         temporaryValue.value = ''; temporaryValue.classList.add('hidden'); temporaryInfo.textContent = '';
         try {
-          var r = await api('POST', '/tenants/' + encodeURIComponent(st.slug) + '/reset-owner-password', { owner_id: owner.id, temporary: true });
+          var r = await api('POST', '/tenants/' + encodeURIComponent(st.slug) + '/reset-owner-password', { owner_id: owner.id, temporary: true, current_password: $('d-recovery-current').value, reason: $('d-recovery-reason').value });
           temporaryValue.value = r.temporary_password; temporaryValue.classList.remove('hidden');
           temporaryInfo.textContent = 'Share this password with the owner now. It expires in 24 hours and they must choose a new password at sign-in. It will disappear when you close this panel.';
           $('d-owner-err').textContent = 'Temporary password generated for ' + r.username + '.';
@@ -293,9 +293,9 @@
       btn.disabled = true;
       try {
         var result = await api('POST', '/tenants/' + encodeURIComponent(st.slug) + '/reset-owner-password', {
-          owner_id: owner.id, new_password: password.value,
+          owner_id: owner.id, new_password: password.value, current_password: $('d-recovery-current').value, reason: $('d-recovery-reason').value,
         });
-        password.value = ''; again.value = '';
+        password.value = ''; again.value = ''; $('d-recovery-current').value = '';
         temporaryValue.value = ''; temporaryValue.classList.add('hidden'); temporaryInfo.textContent = '';
         err.textContent = 'Password reset for ' + owner.username + '. Share the new password with the owner.';
         if (!st.isSandbox && result.email) err.textContent += result.email.sent ? ' Notification email sent.' : ' Email not sent: ' + result.email.reason;
@@ -309,6 +309,44 @@
       el('p', { class: 'muted', text: owner ? 'First admin login: ' + owner.username + (owner.active ? '' : ' (inactive)') : 'No administrator account available.' }),
     ]);
     if (owner) {
+      recovery.appendChild(el('label', { for: 'd-recovery-current', text: 'Your console password (fresh verification)' }));
+      recovery.appendChild(el('input', { id: 'd-recovery-current', type: 'password', autocomplete: 'current-password' }));
+      recovery.appendChild(el('label', { for: 'd-recovery-reason', text: 'Verified recovery reason (at least 20 characters)' }));
+      recovery.appendChild(el('textarea', { id: 'd-recovery-reason' }));
+      recovery.appendChild(el('label', { for: 'd-recovery-reference', text: 'Independent identity verification ticket/reference — no documents or secrets' }));
+      recovery.appendChild(el('input', { id: 'd-recovery-reference' }));
+      var approvals = el('div', { id: 'd-recovery-approvals', role: 'status' });
+      async function refreshApprovals() {
+        var list = await api('GET', '/tenants/' + encodeURIComponent(st.slug) + '/account-recoveries');
+        approvals.textContent = '';
+        list.forEach(function (request) {
+          var row = el('p', { text: request.id + ' · ' + request.state + ' · requested by operator ' + request.requested_by });
+          if (request.state === 'pending') row.appendChild(el('button', { type: 'button', class: 'btn ghost', text: 'Complete after 24-hour wait', onclick: async function () {
+            this.disabled = true;
+            try {
+              var result = await api('POST', '/tenants/' + encodeURIComponent(st.slug) + '/account-recoveries/' + encodeURIComponent(request.id) + '/approve', { current_password: $('d-recovery-current').value, verification_reference: $('d-recovery-reference').value });
+              toast(result.message); await refreshApprovals();
+            } catch (ex) { toast(ex.message); }
+            finally { $('d-recovery-current').value = ''; this.disabled = false; }
+          } }));
+          if (request.state === 'pending') row.appendChild(el('button', { type: 'button', class: 'btn ghost', text: 'Cancel request', onclick: async function () {
+            try { await api('POST', '/tenants/' + encodeURIComponent(st.slug) + '/account-recoveries/' + encodeURIComponent(request.id) + '/cancel', { current_password: $('d-recovery-current').value }); await refreshApprovals(); }
+            catch (ex) { toast(ex.message); } finally { $('d-recovery-current').value = ''; }
+          } }));
+          approvals.appendChild(row);
+        });
+      }
+      recovery.appendChild(el('p', { class: 'muted', text: 'Lost authenticator: verify identity using established contacts, notify the existing owner email, then wait 24 hours. Verify again and confirm your console password before issuing a 15-minute recovery link. No second operator is needed. Password-only reset below does not remove MFA.' }));
+      recovery.appendChild(el('button', { type: 'button', class: 'btn ghost', text: 'Request authenticator recovery', onclick: async function () {
+        this.disabled = true;
+        try {
+          var result = await api('POST', '/tenants/' + encodeURIComponent(st.slug) + '/account-recoveries', { owner_id: owner.id, current_password: $('d-recovery-current').value, reason: $('d-recovery-reason').value, verification_reference: $('d-recovery-reference').value });
+          toast(result.message); await refreshApprovals();
+        } catch (ex) { toast(ex.message); }
+        finally { $('d-recovery-current').value = ''; this.disabled = false; }
+      } }));
+      recovery.appendChild(el('button', { type: 'button', class: 'btn ghost', text: 'Refresh recovery approvals', onclick: function () { refreshApprovals().catch(function (ex) { toast(ex.message); }); } }));
+      recovery.appendChild(approvals);
       recovery.appendChild(el('p', { class: 'muted', text: 'Set a new password when the owner cannot sign in. This signs them out everywhere and invalidates recovery links.' }));
       recovery.appendChild(el('label', { for: 'd-owner-password', text: 'New owner password' }));
       recovery.appendChild(el('input', { id: 'd-owner-password', type: 'password', minlength: '6', required: 'required', autocomplete: 'new-password' }));

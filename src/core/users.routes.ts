@@ -1,11 +1,13 @@
 /** User-account and department management. Listing is open to all; mutations require users.manage. */
 import { Router } from 'express';
-import { hashPassword } from '../shared/password-hash';
+import { hashPassword, verifyPassword } from '../shared/password-hash';
+import rateLimit from 'express-rate-limit';
+import { issueAccountRecovery, recoveryEvidenceSchema } from '../shared/account-recovery';
 import { db, queryOne, queryAll, run } from '../shared/db';
 import {
   requireAuth, requirePermission, requireAnyPermission, endUserSessions, endSessionBySid, listUserSessions,
 } from '../shared/auth';
-import { enforceQuota } from '../platform/quota';
+import { enforceQuota, currentSlug } from '../platform/quota';
 import {
   parseBody,
   createUserSchema,
@@ -20,7 +22,7 @@ import { listRoles, getRole } from '../shared/roles';
 import type { UserRow, Department, Role } from '../shared/types';
 import { syncClass } from '../sync';
 import { z } from 'zod';
-import { mfaApplies, mfaEnabled, mfaUserIds, securityPolicy, setSecurityPolicy, disableMfa } from '../shared/mfa';
+import { mfaApplies, mfaEnabled, mfaUserIds, securityPolicy, setSecurityPolicy, checkMfaCode } from '../shared/mfa';
 
 const router = Router();
 router.use(requireAuth);
@@ -87,12 +89,19 @@ router.put('/security-policy', requirePermission('users.manage'), syncClass('onl
 
 // POST /api/users/:id/mfa/reset — someone lost their phone: remove their two-step sign-in so
 // they can set it up again (and sign them out everywhere).
-router.post('/:id/mfa/reset', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+const recoveryLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 10, skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false, keyGenerator: req => `${currentSlug()}:${req.user!.id}`, message: { error: 'Too many recovery approvals. Try again later.' } });
+router.post('/:id/mfa/reset', requirePermission('users.manage'), syncClass('online'), recoveryLimiter, async (req, res, next) => {
+  try {
   const id = Number(req.params.id);
-  if (!queryOne('SELECT 1 AS x FROM users WHERE id = ?', id)) { res.status(404).json({ error: 'User not found' }); return; }
-  disableMfa(id);
-  endUserSessions(id, 'revoked');
-  res.json({ ok: true });
+  const input = parseBody(recoveryEvidenceSchema.extend({ current_password: z.string().min(1).max(200), code: z.string().min(6).max(20) }).strict(), req.body);
+  if (id === req.user!.id) { res.status(403).json({ error: 'Use your recovery codes for your own account, or ask another verified administrator.' }); return; }
+  const operator = queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id=?', req.user!.id)!;
+  if (!mfaEnabled(req.user!.id) || !verifyPassword(input.current_password, operator.password_hash) || !checkMfaCode(req.user!.id, input.code)) {
+    res.status(403).json({ error: 'Confirm your own password and enrolled authenticator or recovery code.' }); return;
+  }
+  await issueAccountRecovery(id, String(res.locals.tenantBase || ''), { requested_by: `tenant:${req.user!.id}`, approved_by: `tenant:${req.user!.id}`, reason: input.reason, verification_reference: input.verification_reference });
+  res.set('Cache-Control','no-store').json({ ok: true, message: 'Recovery instructions were sent to the existing account email. Current MFA remains enabled until the owner uses the link.' });
+  } catch (error) { next(error); }
 });
 
 // POST /api/users — create an account. hr.manage (without users.manage) may also create one —
@@ -191,9 +200,13 @@ router.put('/:id', requirePermission('users.manage'), syncClass('online'), (req,
 });
 
 // POST /api/users/:id/reset-password
-router.post('/:id/reset-password', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+router.post('/:id/reset-password', requirePermission('users.manage'), syncClass('online'), recoveryLimiter, (req, res) => {
   const id = Number(req.params.id);
-  const { new_password } = parseBody(resetPasswordSchema, req.body);
+  const { new_password, current_password, code } = parseBody(resetPasswordSchema.extend({ current_password: z.string().min(1).max(200), code: z.string().max(20).optional(), reason: z.string().trim().min(20).max(500) }).strict(), req.body);
+  const operator = queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id=?', req.user!.id)!;
+  if (!verifyPassword(current_password, operator.password_hash) || (mfaEnabled(req.user!.id) && !checkMfaCode(req.user!.id, code || ''))) {
+    res.status(403).json({ error: 'Confirm your own password and, if enrolled, your authenticator or recovery code.' }); return;
+  }
   const user = queryOne('SELECT id FROM users WHERE id = ?', id);
   if (!user) {
     res.status(404).json({ error: 'User not found' });
@@ -201,6 +214,7 @@ router.post('/:id/reset-password', requirePermission('users.manage'), syncClass(
   }
   const hash = hashPassword(new_password);
   run('UPDATE users SET password_hash = ?, password_change_required = 0, temporary_password_expires_at = NULL WHERE id = ?', hash, id);
+  run('DELETE FROM mfa_challenges WHERE user_id=?', id);
   endUserSessions(id, 'password');
   run('UPDATE password_resets SET used = 1 WHERE user_id = ?', id);
   res.json({ ok: true });

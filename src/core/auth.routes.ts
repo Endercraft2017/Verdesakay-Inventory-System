@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { hashPassword, verifyPassword, passwordNeedsUpgrade } from '../shared/password-hash';
 import rateLimit from 'express-rate-limit';
-import { queryOne, queryAll, run, newToken, DEFAULT_TENANT } from '../shared/db';
+import { db, queryOne, queryAll, run, newToken, DEFAULT_TENANT } from '../shared/db';
 import {
   createSession, destroySession, requireAuth, endUserSessions, endSessionBySid, listUserSessions,
 } from '../shared/auth';
@@ -20,7 +20,7 @@ import {
 } from '../shared/validation';
 import { sendMail, mailReady } from '../shared/mailer';
 import { currentSlug } from '../platform/quota';
-import { getTenant } from '../platform/platform';
+import { getTenant, platformDb, logProvisioning } from '../platform/platform';
 import type { UserRow } from '../shared/types';
 import { syncClass } from '../sync';
 import { z } from 'zod';
@@ -278,6 +278,7 @@ router.post('/change-password', requireAuth, syncClass('online'), (req, res) => 
   run('UPDATE users SET password_hash = ?, password_change_required = 0, temporary_password_expires_at = NULL WHERE id = ?', hash, req.user!.id);
   // Password replacement invalidates every credential, including the caller's.
   endUserSessions(req.user!.id, 'password');
+  run('DELETE FROM mfa_challenges WHERE user_id=?', req.user!.id);
   clearBrowserSession(res);
   res.json({ ok: true });
 });
@@ -327,22 +328,57 @@ router.post('/forgot-password', syncClass('online'), async (req, res, next) => {
 });
 
 // POST /api/auth/reset-password — { token, new_password }
+router.post('/cancel-recovery', syncClass('online'), (req, res) => {
+  const { token } = parseBody(z.object({ token: z.string().regex(/^[a-f0-9-]{36}\.[a-f0-9]{64}$/) }).strict(), req.body);
+  const [id, nonce] = token.split('.');
+  const conn = platformDb();
+  const exists = conn.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='platform_recovery_approvals'").get();
+  const changed = exists ? conn.prepare("UPDATE platform_recovery_approvals SET state='cancelled' WHERE id=? AND cancel_hash=? AND slug=? AND state IN ('pending','notifying') AND expires_at>datetime('now')").run(id!, sha256(nonce!), currentSlug()) : null;
+  if (!changed || !Number(changed.changes)) { res.status(400).json({ error: 'This cancellation link is invalid, expired, or recovery was already issued. Contact your administrator if this was unexpected.' }); return; }
+  logProvisioning(currentSlug(), 'account-recovery-cancelled', `owner email confirmation; request=${id}`);
+  res.json({ ok: true });
+});
+
 router.post('/reset-password', syncClass('online'), (req, res) => {
   const { token, new_password } = parseBody(selfResetPasswordSchema, req.body);
+  const digest = sha256(token);
+  if (!queryOne("SELECT 1 FROM password_resets WHERE token_hash=? AND used=0 AND expires_at>datetime('now')", digest)) {
+    res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new one.' }); return;
+  }
+  const replacementHash = hashPassword(new_password);
+  db.exec('BEGIN IMMEDIATE');
+  try {
   const row = queryOne<{ user_id: number }>(
     "SELECT user_id FROM password_resets WHERE token_hash = ? AND used = 0 AND expires_at > datetime('now')",
-    sha256(token)
+    digest
   );
+  const recovery = queryOne<{ state: string; contact_email: string; credential_hash: string }>('SELECT state,contact_email,credential_hash FROM account_recoveries WHERE token_hash=?', digest);
+  const current = row ? queryOne<{ email: string | null; password_hash: string; active: number }>('SELECT email,password_hash,active FROM users WHERE id=?', row.user_id) : null;
+  if (recovery && (recovery.state !== 'pending' || !current || current.active !== 1 || current.email !== recovery.contact_email || sha256(current.password_hash) !== recovery.credential_hash)) {
+    db.exec('ROLLBACK');
+    res.status(400).json({ error: 'Recovery is no longer valid. Ask your administrator to verify the account again.' }); return;
+  }
   // Claim the link in one statement, so two submissions racing with the same link can't both win.
   if (!row || Number(run('UPDATE password_resets SET used = 1 WHERE token_hash = ? AND used = 0', sha256(token)).changes) !== 1) {
+    db.exec('ROLLBACK');
     res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new one.' });
     return;
   }
-  run('UPDATE users SET password_hash = ?, password_change_required = 0, temporary_password_expires_at = NULL WHERE id = ?', hashPassword(new_password), row.user_id);
+  run('UPDATE users SET password_hash = ?, password_change_required = 0, temporary_password_expires_at = NULL WHERE id = ?', replacementHash, row.user_id);
+  if (recovery) {
+    disableMfa(row.user_id);
+    run('UPDATE users SET mfa_recovery_required=1 WHERE id=?', row.user_id);
+    run('DELETE FROM mfa_challenges WHERE user_id=?', row.user_id);
+    run("UPDATE account_recoveries SET state='redeemed',redeemed_at=datetime('now') WHERE token_hash=?", digest);
+  }
   // Every other outstanding link for this account stops working too.
   run('UPDATE password_resets SET used = 1 WHERE user_id = ? AND used = 0', row.user_id);
   endUserSessions(row.user_id, 'password'); // force re-login everywhere
+  run('DELETE FROM mfa_challenges WHERE user_id=?', row.user_id);
+  db.exec('COMMIT');
+  if (recovery) void sendMail({ to: recovery.contact_email, subject: 'Account recovery completed — authenticator enrollment required', text: 'Your password was replaced through assisted recovery, previous sessions were revoked and your old authenticator was removed. Sign in and enroll your authenticator before accessing the workspace. If you did not do this, contact your administrator immediately using your established contact details.' }, row.user_id).catch(() => {});
   res.json({ ok: true });
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
 });
 
 // PUT /api/auth/profile — update your own display name

@@ -3,6 +3,21 @@
 // Do not edit by hand. tests/db-types.test.ts fails when this is stale.
 import type { Generated } from 'kysely';
 
+export interface AccountRecoveries {
+  token_hash: string;
+  user_id: number;
+  requested_by: string;
+  approved_by: string;
+  reason: string;
+  verification_reference: string;
+  contact_email: string;
+  credential_hash: string;
+  state: Generated<string>;
+  created_at: Generated<string>;
+  redeemed_at: string | null;
+  completed_at: string | null;
+}
+
 export interface AccountingPeriods {
   id: Generated<number>;
   name: string;
@@ -1712,6 +1727,7 @@ export interface Users {
   created_at: Generated<string>;
   password_change_required: Generated<number>;
   temporary_password_expires_at: string | null;
+  mfa_recovery_required: Generated<number>;
 }
 
 export interface VendorBillItems {
@@ -1757,6 +1773,7 @@ export interface VendorBills {
 }
 
 export interface DB {
+  account_recoveries: AccountRecoveries;
   accounting_periods: AccountingPeriods;
   accounts: Accounts;
   activity_log: ActivityLog;

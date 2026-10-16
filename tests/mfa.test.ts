@@ -85,14 +85,15 @@ describe('two-step sign-in', () => {
     expect((await ctx.api.get('/api/inventory').set(bearer(admin))).status).toBe(200);
   });
 
-  it('an admin can reset it for someone who lost their phone', async () => {
+  it('refuses the old session-only authenticator bypass', async () => {
     await enrol('mfa-dan', 'dan-pass-1234');
     const users = await ctx.api.get('/api/users').set(bearer(admin));
     const dan = users.body.find((u: { username: string }) => u.username === 'mfa-dan');
     expect(dan.mfa_enabled).toBe(true);
-    expect((await ctx.api.post(`/api/users/${dan.id}/mfa/reset`).set(bearer(admin)).send({})).status).toBe(200);
+    expect((await ctx.api.post(`/api/users/${dan.id}/mfa/reset`).set(bearer(admin)).send({})).status).toBe(400);
     const back = await ctx.api.post('/api/auth/login').send({ username: 'mfa-dan', password: 'dan-pass-1234' });
-    expect(back.body.token).toBeTruthy(); // password alone again, until they set it up anew
+    expect(back.body.token).toBeUndefined();
+    expect(back.body.mfa_required).toBe(true); // no session-only bypass
   });
 });
 

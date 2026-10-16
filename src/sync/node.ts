@@ -36,7 +36,7 @@ export const MAX_NODE_NO = 65535;
 const CLOUD_ONLY_TABLES = new Set(['password_resets', 'qbo_links', 'mail_log', 'ai_messages', 'ai_pending_actions',
   // Two-step sign-in: secrets are encrypted with the cloud's key, and installed PCs (on-site,
   // on the office network) sign in with the password alone — see src/core/mfa.ts.
-  'user_mfa', 'user_mfa_recovery', 'mfa_challenges', 'mfa_enrollments', 'ai_tool_audit']);
+  'user_mfa', 'user_mfa_recovery', 'mfa_challenges', 'mfa_enrollments', 'account_recoveries', 'ai_tool_audit']);
 
 /** Tables that never replicate: sync bookkeeping, per-device state, credentials, derived
  *  indexes, online-only features (OFFLINE-FIRST §7.5 "node-local tables"). */

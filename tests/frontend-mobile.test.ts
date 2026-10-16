@@ -1697,7 +1697,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const win = await bootAs(REL, fake([]));
       const doc = win.document;
       win.location.hash = '#/so?id=302&step=package';
-      await wait();
+      await vi.waitFor(() => expect(doc.querySelector('[data-p="0"]')).not.toBeNull());
       const go = doc.getElementById('rel-go') as HTMLButtonElement;
       expect(go.disabled).toBe(true);
       (doc.querySelector('[data-p="0"]') as HTMLButtonElement).click();

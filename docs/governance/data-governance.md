@@ -5,6 +5,7 @@ DRAFT schedule; privacy owner/counsel must approve retention durations and lawfu
 | Category | Locations/processors to inventory | Decision needed |
 |---|---|---|
 | Accounts and security | tenant/platform DB, IP/device/session history, reset-attempt hashes, logs | Account lifecycle, security-log period, access/export scope |
+| Assisted account recovery | tenant `account_recoveries`, control-plane `platform_recovery_approvals`, existing email processor, security/activity logs; actor IDs, email, reason/reference, nonce/verifier fingerprints and lifecycle times | Approve evidence/log retention, support authority, escalation and access scope; no identity-document copies or raw recovery bearers in these records |
 | Employee/HR/payroll | employee tables, attendance/location/photos, IDs, forms, uploads, backups | Employment/tax retention, restricted roles, correction and legal holds |
 | Sales/production/accounting | operational/financial tables, exports, QuickBooks, backups | Tax/warranty/audit retention and append-only adjustments |
 | Messages/files/anonymous reports | DB, attachments, search indexes, mail, device caches | Confidential handling, distinct rights review, attachment expiry |

@@ -2,6 +2,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { generateSync } from 'otplib';
+import { recoveryUsername, recoveryFixtureToken, cancellationFixtureToken } from './recovery-fixture';
 
 declare const API: { post: (path: string, body?: unknown, opts?: unknown) => Promise<any>; get: (path: string) => Promise<any>; getToken: () => string };
 
@@ -244,4 +245,48 @@ test('browser: authenticator enrollment, one-use recovery and mobile factor sign
     await expect(page.locator('#mfa-on')).toBeVisible();
     expect(await account.evaluate(async () => (await fetch('/api/auth/me')).status)).toBe(401);
   } finally { await context.close(); }
+});
+
+test('assisted recovery: email-link redemption requires authenticator enrollment before workspace access', async ({ page }) => {
+  const password = 'Recovered browser password ' + Date.now();
+  await page.goto('/?reset=' + recoveryFixtureToken);
+  let dialog = page.locator('.modal-overlay');
+  await expect(dialog).toContainText('Set a new password');
+  await dialog.locator('[data-f="pw"]').fill(password);
+  await dialog.getByRole('button', { name: 'Save & sign in', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await page.locator('#login-username').fill(recoveryUsername);
+  await page.locator('#login-password').fill(password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  dialog = page.locator('.modal-overlay');
+  await expect(dialog.locator('[data-f="pw"]')).toBeVisible();
+  await expect(page.locator('#app-screen')).toBeHidden();
+  expect(await page.evaluate(async () => (await fetch('/api/inventory')).status)).toBe(403);
+  await dialog.locator('[data-f="pw"]').fill(password);
+  await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(dialog).toContainText('Add it to your authenticator app');
+  const secret = (await dialog.locator('.mono').innerText()).replace(/\s/g, '');
+  await dialog.locator('[data-f="code"]').fill(generateSync({ secret }));
+  await dialog.getByRole('button', { name: 'Turn on', exact: true }).click();
+  await expect(dialog).toContainText('Two-step sign-in is on');
+  await dialog.getByRole('button', { name: 'I saved them', exact: true }).click();
+  await expect(page.locator('#app-screen')).toBeVisible();
+  expect(await page.evaluate(async () => (await fetch('/api/inventory')).status)).toBe(200);
+});
+
+test('recovery cancellation: GET previews are inert and owner confirmation is single-use', async ({ page }) => {
+  const url = '/?cancel_recovery=' + cancellationFixtureToken;
+  await page.goto(url);
+  let dialog = page.locator('.modal-overlay');
+  await expect(dialog).toContainText('Cancel account recovery');
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.goto(url);
+  dialog = page.locator('.modal-overlay');
+  await dialog.getByRole('button', { name: 'Cancel recovery request', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page).not.toHaveURL(/cancel_recovery=/);
+  await page.goto(url);
+  dialog = page.locator('.modal-overlay');
+  await dialog.getByRole('button', { name: 'Cancel recovery request', exact: true }).click();
+  await expect(dialog).toContainText('invalid, expired');
 });

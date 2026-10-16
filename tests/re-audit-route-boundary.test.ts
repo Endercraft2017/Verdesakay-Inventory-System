@@ -19,7 +19,7 @@ function endpoints(stack: any[], prefix = ''): Endpoint[] {
 }
 it('denies anonymous access across every registered protected API route and method', async () => {
   const routes = endpoints((ctx.app as any)._router.stack).filter(r => r.path.startsWith('/api/'));
-  const publicPaths = /^\/api\/(?:health\/?$|signup\/?$|auth\/(?:login(?:\/mfa)?|forgot-password|reset-password)\/?$|anonymous-reports(?:\/|$)|quickbooks\/callback\/?$|sync(?:\/|$)|desktop(?:\/|$))/;
+  const publicPaths = /^\/api\/(?:health\/?$|signup\/?$|auth\/(?:login(?:\/mfa)?|forgot-password|reset-password|cancel-recovery)\/?$|anonymous-reports(?:\/|$)|quickbooks\/callback\/?$|sync(?:\/|$)|desktop(?:\/|$))/;
   const failures: unknown[] = [];
   let checked = 0;
   for (const route of routes) {

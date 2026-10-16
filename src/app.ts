@@ -410,7 +410,7 @@ export function createApp() {
   app.use('/api/ai', rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey, skip: () => process.env.NODE_ENV === 'test', message: { error: 'Too many AI requests. Please wait a minute.' } }));
   app.use('/api/auth/login', loginLimiter, accountLoginLimiter);
   app.use('/api/auth/forgot-password', recoveryLimiter, rateLimit({ windowMs: 15 * 60_000, limit: 5, standardHeaders: true, legacyHeaders: false, keyGenerator: req => String(tenantStore.getStore()?.slug || DEFAULT_TENANT) + ':' + crypto.createHash('sha256').update(String(req.body?.identifier || '').trim().toLowerCase()).digest('hex'), skip: () => process.env.NODE_ENV === 'test', message: { error: 'Too many recovery requests. Please wait a few minutes.' } }));
-  app.use('/api/auth/reset-password', recoveryLimiter);
+  app.use(['/api/auth/reset-password', '/api/auth/cancel-recovery'], recoveryLimiter);
   app.use('/api/auth', authRoutes);
   // Before the bare-'/api' routers below: their blanket requireAuth would otherwise 401 it.
   app.use('/api/anonymous-reports', anonymousReportRoutes);

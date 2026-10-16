@@ -76,7 +76,7 @@ describe('provision + edit a workspace', () => {
     expect(withTenant('real-company', () => queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM password_resets')!.n)).toBeGreaterThan(0);
     expect((await ctx.api.post('/_platform/api/tenants/real-company/recover-owner-username').set(opHdr())).body.email.sent).toBe(true);
     const reset = await ctx.api.post('/_platform/api/tenants/real-company/reset-owner-password').set(opHdr())
-      .send({ owner_id: 1, new_password: 'newrealpass1' });
+      .send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, new_password: 'newrealpass1' });
     expect(reset.body.email.sent).toBe(true);
     expect(withTenant('real-company', () => queryOne<{ c: number }>("SELECT COUNT(*) AS c FROM mail_log WHERE to_addr = 'owner@real.test' AND status = 'sent'")!.c)).toBe(3);
   });
@@ -107,7 +107,7 @@ describe('provision + edit a workspace', () => {
     const reminder = await ctx.api.post('/_platform/api/tenants/sandbox-company/recover-owner-username').set(opHdr());
     expect(reminder.body.email).toEqual({ sent: false, reason: 'sandbox' });
     const reset = await ctx.api.post('/_platform/api/tenants/sandbox-company/reset-owner-password').set(opHdr())
-      .send({ owner_id: 1, new_password: 'new-sandbox1' });
+      .send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, new_password: 'new-sandbox1' });
     expect(reset.status).toBe(200);
     expect(reset.body.email).toEqual({ sent: false, reason: 'sandbox' });
     expect(withTenant('sandbox-company', () => queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM mail_log')!.c)).toBe(0);
@@ -216,7 +216,7 @@ describe('provision + edit a workspace', () => {
     expect(view.body.owner).toMatchObject({ id: 1, username: 'owner' });
     expect(view.body.owner.password_hash).toBeUndefined();
     const path = '/_platform/api/tenants/consoleco/reset-owner-password';
-    const body = { owner_id: 1, new_password: 'replacement1' };
+    const body = { current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, new_password: 'replacement1' };
     expect((await ctx.api.post(path).send(body)).status).toBe(401);
     expect((await ctx.api.post(path).set({ Authorization: `Bearer ${old.body.token}` }).send(body)).status).toBe(401);
     expect((await ctx.api.post(path).set(opHdr()).set(asTenant('consoleco')).send(body)).status).toBe(404);
@@ -248,9 +248,9 @@ describe('provision + edit a workspace', () => {
     });
     expect(create.status).toBe(201);
     const path = '/_platform/api/tenants/temprecovery/reset-owner-password';
-    expect((await ctx.api.post(path).send({ owner_id: 1, temporary: true })).status).toBe(401);
-    expect((await ctx.api.post(path).set(opHdr()).send({ owner_id: 1, temporary: 'true' })).status).toBe(400);
-    const issue = await ctx.api.post(path).set(opHdr()).send({ owner_id: 1, temporary: true });
+    expect((await ctx.api.post(path).send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, temporary: true })).status).toBe(401);
+    expect((await ctx.api.post(path).set(opHdr()).send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, temporary: 'true' })).status).toBe(400);
+    const issue = await ctx.api.post(path).set(opHdr()).send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, temporary: true });
     expect(issue.status).toBe(200);
     expect(issue.headers['cache-control']).toBe('no-store');
     const temporary = issue.body.temporary_password;
@@ -281,7 +281,7 @@ describe('provision + edit a workspace', () => {
     const freshOwner = await ctx.api.post('/api/auth/login').set(asTenant('temprecovery')).send({ username: 'tempowner', password: 'permanent-owner1' });
     expect(freshOwner.status).toBe(200);
     expect((await ctx.api.post('/api/auth/login').set(asTenant('temprecovery')).send({ username: 'tempowner', password: temporary })).status).toBe(401);
-    const replacement = await ctx.api.post(path).set(opHdr()).send({ owner_id: 1, temporary: true });
+    const replacement = await ctx.api.post(path).set(opHdr()).send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, temporary: true });
     expect(replacement.body.temporary_password).not.toBe(temporary);
     expect((await ctx.api.get('/api/auth/me').set(asTenant('temprecovery')).set(header)).status).toBe(401);
     withTenant('temprecovery', () => run("UPDATE users SET temporary_password_expires_at = ? WHERE id = 1", new Date(Date.now() - 1000).toISOString()));
@@ -295,7 +295,7 @@ describe('provision + edit a workspace', () => {
     const list = (await ctx.api.get('/_platform/api/tenants').set(opHdr())).body;
     expect(list.map((t: { slug: string }) => t.slug)).not.toContain('consoleco');
     expect((await ctx.api.post('/_platform/api/tenants/consoleco/reset-owner-password').set(opHdr())
-      .send({ owner_id: 1, new_password: 'replacement2' })).status).toBe(404);
+      .send({ current_password: 'ownerpass1', reason: 'Verified through established company contact', owner_id: 1, new_password: 'replacement2' })).status).toBe(404);
   });
 });
 

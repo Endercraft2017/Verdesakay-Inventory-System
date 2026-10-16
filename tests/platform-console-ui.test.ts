@@ -45,7 +45,7 @@ it('shows the owner username, checks confirmation, submits the reset and clears 
     await vi.waitFor(() => expect(password.value).toBe(''));
     expect(confirm.value).toBe('');
     const call = fetch.mock.calls.find(([url]) => url.endsWith('/reset-owner-password'))!;
-    expect(JSON.parse(call[1].body!)).toEqual({ owner_id: 1, new_password: 'newsecret1' });
+    expect(JSON.parse(call[1].body!)).toEqual({ owner_id: 1, new_password: 'newsecret1', current_password: '', reason: '' });
     expect(w.document.querySelector('#d-owner-err')!.textContent).toContain('Password reset for original-owner');
     const fallback = w.document.getElementById('d-owner-temporary') as HTMLButtonElement;
     expect(fallback.classList.contains('hidden')).toBe(false);

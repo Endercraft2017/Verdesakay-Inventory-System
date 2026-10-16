@@ -142,12 +142,14 @@ export function authUserById(id: number): AuthUser | null {
   let overrides: Record<string, boolean> = {};
   try { overrides = JSON.parse(row.permission_overrides) as Record<string, boolean>; } catch { /* use empty */ }
   const { permission_overrides: _po, ...rest } = row;
-  return { ...rest, permissions: row.password_change_required ? [] : userPermissions(row.role, overrides) };
+  const user = { ...rest, permissions: row.password_change_required ? [] : userPermissions(row.role, overrides) };
+  return mfaSetupRequired(user) ? null : user;
 }
 
 /** Resolve a bearer token to the current user, or null if invalid/expired/ended/disabled. */
 export function userFromToken(token: string | null, allowPasswordChange = false): AuthUser | null {
-  return resolveSession(token, allowPasswordChange)?.user ?? null;
+  const user = resolveSession(token, allowPasswordChange)?.user;
+  return user && !mfaSetupRequired(user) ? user : null;
 }
 
 /** Record that the session was just used (throttled — see TOUCH_SECONDS). */

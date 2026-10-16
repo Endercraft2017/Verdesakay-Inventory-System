@@ -637,6 +637,17 @@ const App = (() => {
     // Arriving from a "reset your password" email link.
     const resetToken = new URLSearchParams(location.search).get('reset');
     if (resetToken) setNewPassword(resetToken);
+    const cancelRecoveryToken = new URLSearchParams(location.search).get('cancel_recovery');
+    if (cancelRecoveryToken && !resetToken) UI.modal({
+      title: 'Cancel account recovery',
+      bodyHTML: '<p>Cancel the pending authenticator recovery request? Your current password and authenticator will remain in place. If this request was unexpected, contact your administrator through your established contact details.</p>',
+      confirmText: 'Cancel recovery request', cancelText: 'Close',
+      onConfirm: async () => {
+        await API.post('/auth/cancel-recovery', { token: cancelRecoveryToken });
+        history.replaceState(null, '', location.pathname + location.hash);
+        UI.toast('Recovery request cancelled. Your sign-in has not changed.');
+      },
+    });
 
     // Utility bar: menu search + site map + pin glyph.
     document.getElementById('menu-search')

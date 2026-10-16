@@ -150,7 +150,7 @@ App.register('admin', async (view, filter) => {
             <td class="actions">
               <button class="icon-btn" title="Edit" data-edit="${u.id}">${UI.icon('edit')}</button>
               <button class="icon-btn" title="Reset password" data-pw="${u.id}">${UI.icon('key')}</button>
-              ${u.mfa_enabled ? `<button class="btn secondary small" title="Lost phone: remove their two-step sign-in so they can set it up again" data-mfa-reset="${u.id}">Reset 2-step</button>` : ''}
+              ${u.mfa_enabled ? `<button class="btn secondary small" title="Verify identity and send a controlled recovery link to the existing account email" data-mfa-reset="${u.id}">Recover 2-step</button>` : ''}
             </td>
           </tr>`).join('')}
         </tbody>
@@ -159,11 +159,20 @@ App.register('admin', async (view, filter) => {
     tableEl.querySelectorAll('[data-pw]').forEach((b) => b.onclick = () => resetPw(allUsers.find((x) => x.id == b.dataset.pw)));
     tableEl.querySelectorAll('[data-mfa-reset]').forEach((b) => b.onclick = async () => {
       const u = allUsers.find((x) => x.id == b.dataset.mfaReset);
-      if (!(await UI.confirmDialog(`Reset two-step sign-in for ${u.full_name}? They will be signed out and can set it up again with their password.`, 'Reset'))) return;
-      try { await API.post(`/users/${u.id}/mfa/reset`, {}); } catch (e) { UI.toast(e.message, 'error'); return; }
-      u.mfa_enabled = false;
-      UI.toast('Two-step sign-in reset');
-      renderUsers();
+      UI.modal({
+        title: 'Recover authenticator — ' + u.full_name,
+        bodyHTML: '<p>Independently verify the requester using established company contacts. A single-use link goes only to the existing account email. MFA stays enabled until redemption; the owner must choose a new password and enroll again.</p>' +
+          '<label>Your password</label><input data-f="current" type="password" autocomplete="current-password">' +
+          '<label>Your authenticator or recovery code</label><input data-f="code" autocomplete="one-time-code">' +
+          '<label>Reason (at least 20 characters)</label><textarea data-f="reason"></textarea>' +
+          '<label>Verification ticket/reference (no identity documents or secrets)</label><input data-f="reference">',
+        confirmText: 'Send recovery link',
+        onConfirm: async (overlay) => {
+          const value = key => overlay.querySelector('[data-f="' + key + '"]').value;
+          await API.post(`/users/${u.id}/mfa/reset`, { current_password: value('current'), code: value('code'), reason: value('reason'), verification_reference: value('reference') });
+          UI.toast('Recovery link sent to the existing account email');
+        },
+      });
     });
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
       if (e.target.closest('.actions')) return;
@@ -306,12 +315,15 @@ App.register('admin', async (view, filter) => {
     UI.modal({
       title: 'Reset password — ' + u.full_name,
       bodyHTML: `<div><label>New password *</label><input data-f="pw" type="text" placeholder="min 8 characters" /></div>
-        <p class="muted" style="font-size:12px">This signs the user out of all sessions.</p>`,
+        <label>Your password</label><input data-f="current" type="password" autocomplete="current-password" />
+        <label>Your authenticator/recovery code (if enrolled)</label><input data-f="code" autocomplete="one-time-code" />
+        <label>Reason (at least 20 characters)</label><textarea data-f="reason"></textarea>
+        <p class="muted" style="font-size:12px">This signs the user out of all sessions. Their authenticator stays enabled.</p>`,
       confirmText: 'Set password',
       onConfirm: async (overlay, showErr) => {
         const pw = overlay.querySelector('[data-f="pw"]').value;
         if (!pw || pw.length < 8) { showErr('Password must be at least 8 characters'); return false; }
-        await API.post(`/users/${u.id}/reset-password`, { new_password: pw });
+        await API.post(`/users/${u.id}/reset-password`, { new_password: pw, current_password: overlay.querySelector('[data-f="current"]').value, code: overlay.querySelector('[data-f="code"]').value, reason: overlay.querySelector('[data-f="reason"]').value });
         UI.toast('Password reset');
       },
     });

@@ -24,6 +24,11 @@ const PRIVILEGED_PERMISSIONS = ['users.manage', 'payroll.manage', 'accounting.ma
 
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
 
+function cancelPendingRecoveries(userId: number): void {
+  run("UPDATE password_resets SET used=1 WHERE token_hash IN (SELECT token_hash FROM account_recoveries WHERE user_id=? AND state='pending')", userId);
+  run("UPDATE account_recoveries SET state='cancelled' WHERE user_id=? AND state='pending'", userId);
+}
+
 export interface SecurityPolicy { require_mfa_privileged: boolean }
 
 /** Two-step sign-in runs on the cloud (and self-hosted servers), not on installed PCs. */
@@ -49,6 +54,9 @@ export function mfaEnabled(userId: number): boolean {
 
 /** True when the workspace requires two-step sign-in for this account and it isn't set up yet. */
 export function mfaSetupRequired(user: { id: number; role: string; permissions: string[] }): boolean {
+  // This non-secret account flag syncs to office hosts; recovery secrets never do.
+  const recovering = queryOne<{ required: number }>('SELECT mfa_recovery_required AS required FROM users WHERE id=?', user.id)?.required === 1;
+  if (recovering) return true;
   return mfaApplies() && securityPolicy().require_mfa_privileged && isPrivileged(user) && !mfaEnabled(user.id);
 }
 
@@ -89,6 +97,9 @@ export function enableMfa(userId: number, code: string, sessionToken: string): s
   const step = verifyTotp(decryptSecret(row.secret), code);
   if (step === null) return null;
   run("UPDATE user_mfa SET enabled_at = datetime('now'), last_step = ? WHERE user_id = ?", step, userId);
+  cancelPendingRecoveries(userId);
+  run("UPDATE account_recoveries SET state='completed', completed_at=datetime('now') WHERE user_id=? AND state='redeemed'", userId);
+  run('UPDATE users SET mfa_recovery_required=0 WHERE id=?', userId);
   return newRecoveryCodes(userId);
 }
 
@@ -114,6 +125,7 @@ export function regenerateRecoveryCodes(userId: number): string[] {
 
 /** Turn it off (the person themselves, or an admin reset). */
 export function disableMfa(userId: number): void {
+  cancelPendingRecoveries(userId);
   run('DELETE FROM mfa_enrollments WHERE user_id = ?', userId);
   run('DELETE FROM user_mfa WHERE user_id = ?', userId);
   run('DELETE FROM user_mfa_recovery WHERE user_id = ?', userId);

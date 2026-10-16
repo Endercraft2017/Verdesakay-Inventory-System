@@ -20,7 +20,7 @@ import { tenantStore, withTenant, DEFAULT_TENANT, db, queryOne, run } from '../s
 import {
   listTenants, getTenant, isValidSlug, setTenantPlan, setTenantStatus, setTenantName,
   setTrialEndsAt, setTenantModules, setTenantPhotoRetention, listProvisioningLog, logProvisioning, setAwaitingPayment,
-  type TenantRow, type TenantStatus, tenantPublicUrl,
+  type TenantRow, type TenantStatus, tenantPublicUrl, platformDb,
 } from './platform';
 import { createTenant, importTenant, purgeTenant } from './provisioning';
 import billingConsoleRoutes from './billing-console.routes';
@@ -33,7 +33,8 @@ import { saveSubscription, subscriptionView } from './subscription';
 import { tenantUsage } from './quota';
 import { punchPhotoUsageBytes } from '../modules/hr/punch-photos';
 import { enabledModules, isModuleName, withDeps, MODULES, MODULE_DEPS } from '../shared/modules';
-import { hashPassword } from '../shared/password-hash';
+import { hashPassword, verifyPassword } from '../shared/password-hash';
+import { issueAccountRecovery, recoveryEvidenceSchema, credentialStamp, recoveryLinkBase } from '../shared/account-recovery';
 import { endUserSessions } from '../shared/auth';
 import { getMailSettings, saveMailSettings, mailReady, verifyMailSettings, sendMail } from '../shared/mailer';
 import { parseBody, changeUsernameSchema, mailSettingsSchema, resetPasswordSchema, platformCreateTenantSchema } from '../shared/validation';
@@ -293,14 +294,103 @@ router.patch('/tenants/:slug/support/:id', (req, res) => {
 });
 
 // POST /_platform/api/tenants/:slug/reset-owner-password — operator-only recovery.
-router.post('/tenants/:slug/reset-owner-password', async (req, res, next) => {
+const supportRecoveryLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 10, skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: req => String((req as PlatformAuthedRequest).platformUser!.id), message: { error: 'Too many recovery attempts. Try again later.' } });
+function supportRecoveryDb() {
+  const conn = platformDb();
+  conn.exec(`CREATE TABLE IF NOT EXISTS platform_recovery_approvals (
+    id TEXT PRIMARY KEY, slug TEXT NOT NULL, user_id INTEGER NOT NULL, contact_email TEXT NOT NULL,
+    credential_hash TEXT NOT NULL, requested_by INTEGER NOT NULL, approved_by INTEGER,
+    reason TEXT NOT NULL, verification_reference TEXT NOT NULL,
+    cancel_hash TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'notifying', created_at TEXT NOT NULL DEFAULT(datetime('now')),
+    expires_at TEXT NOT NULL DEFAULT(datetime('now','+48 hours'))
+  )`);
+  return conn;
+}
+function verifiedOperator(req: Request, password: string): boolean {
+  const id = (req as PlatformAuthedRequest).platformUser!.id;
+  const row = platformDb().prepare('SELECT password_hash FROM platform_users WHERE id=?').get(id) as { password_hash: string } | undefined;
+  return !!row && verifyPassword(password, row.password_hash);
+}
+router.get('/tenants/:slug/account-recoveries', (req, res) => {
+  res.json(supportRecoveryDb().prepare('SELECT id,user_id,requested_by,approved_by,reason,verification_reference,state,created_at,expires_at FROM platform_recovery_approvals WHERE slug=? ORDER BY created_at DESC LIMIT 20').all(String(req.params.slug)));
+});
+router.post('/tenants/:slug/account-recoveries', supportRecoveryLimiter, async (req, res, next) => {
   try {
-    const t = getTenant(req.params.slug);
+    const input = parseBody(recoveryEvidenceSchema.extend({ current_password: z.string().min(1).max(200), owner_id: z.number().int().positive() }).strict(), req.body);
+    if (!verifiedOperator(req, input.current_password)) { res.status(403).json({ error: 'Confirm your current console password.' }); return; }
+    const tenant = getTenant(String(req.params.slug));
+    const owner = tenant && tenant.status !== 'purged' ? tenantOwner(tenant.slug) : null;
+    if (!owner || owner.id !== input.owner_id || !owner.active || !owner.email || tenant!.is_sandbox) { res.status(409).json({ error: 'Select the current active owner with an existing recovery email. Sandbox recovery is unavailable.' }); return; }
+    const credential = withTenant(tenant!.slug, () => queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id=?', owner.id)!.password_hash);
+    const id = crypto.randomUUID();
+    const by = (req as PlatformAuthedRequest).platformUser!.id;
+    const cancel = crypto.randomBytes(32).toString('hex');
+    const conn = supportRecoveryDb();
+    conn.prepare('INSERT INTO platform_recovery_approvals(id,slug,user_id,contact_email,credential_hash,requested_by,reason,verification_reference,cancel_hash) VALUES(?,?,?,?,?,?,?,?,?)').run(id, tenant!.slug, owner.id, owner.email, credentialStamp(credential), by, input.reason, input.verification_reference, credentialStamp(cancel));
+    try {
+      await withTenant(tenant!.slug, async () => {
+        if (!mailReady()) throw Object.assign(new Error('Configure working workspace email before recovery.'), { status: 409 });
+        const base = recoveryLinkBase(process.env.TENANT_PATH_HOST ? `/${tenant!.slug}` : '');
+        const sent = await sendMail({ to: owner.email!, subject: 'Authenticator recovery requested — no changes made', text: `Support requested authenticator recovery for ${owner.username}. No password or factor has changed. Solo support must wait at least 24 hours before approving; requests expire after 48 hours. If this was unexpected, cancel the request during the waiting period using this link and confirmation screen:\n${base}/?cancel_recovery=${id}.${cancel}\n\nContact your company administrator through your established contact details.` });
+        if (!sent.ok) throw Object.assign(new Error('Recovery notification could not be delivered.'), { status: 503 });
+      });
+      conn.prepare("UPDATE platform_recovery_approvals SET state='pending' WHERE id=? AND state='notifying'").run(id);
+    } catch (error) { conn.prepare("UPDATE platform_recovery_approvals SET state='failed' WHERE id=? AND state='notifying'").run(id); throw error; }
+    logProvisioning(tenant!.slug, 'account-recovery-requested', `operator=${by}; request=${id}; owner=${owner.id}`);
+    res.status(201).json({ id, message: 'The existing owner email was notified. Solo approval requires a 24-hour wait, fresh password and renewed identity verification. The request expires in 48 hours.' });
+  } catch (error) { next(error); }
+});
+router.post('/tenants/:slug/account-recoveries/:id/approve', supportRecoveryLimiter, async (req, res, next) => {
+  try {
+    const input = parseBody(z.object({ current_password: z.string().min(1).max(200), verification_reference: z.string().trim().min(8).max(120) }).strict(), req.body);
+    if (!verifiedOperator(req, input.current_password)) { res.status(403).json({ error: 'Confirm your current console password.' }); return; }
+    const conn = supportRecoveryDb();
+    const request = conn.prepare("SELECT * FROM platform_recovery_approvals WHERE id=? AND slug=? AND state='pending' AND expires_at>datetime('now')").get(String(req.params.id), String(req.params.slug)) as { id: string; slug: string; user_id: number; contact_email: string; credential_hash: string; requested_by: number; reason: string; verification_reference: string } | undefined;
+    const by = (req as PlatformAuthedRequest).platformUser!.id;
+    if (!request) { res.status(409).json({ error: 'This approval is unavailable or expired.' }); return; }
+    if (!conn.prepare("SELECT 1 FROM platform_recovery_approvals WHERE id=? AND created_at<=datetime('now','-24 hours')").get(request.id)) {
+      res.status(403).json({ error: 'Solo recovery requires a 24-hour waiting period after notifying the existing owner email.' }); return;
+    }
+    const tenant = getTenant(request.slug);
+    const owner = tenant && tenant.status !== 'purged' ? tenantOwner(tenant.slug) : null;
+    const currentHash = owner ? withTenant(request.slug, () => queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id=?', owner.id)!.password_hash) : '';
+    if (!owner || owner.id !== request.user_id || !owner.active || owner.email !== request.contact_email || credentialStamp(currentHash) !== request.credential_hash) { res.status(409).json({ error: 'The owner account changed. Start a new verification.' }); return; }
+    const claimed = conn.prepare("UPDATE platform_recovery_approvals SET state='issuing',approved_by=? WHERE id=? AND state='pending'").run(by, request.id);
+    if (Number(claimed.changes) !== 1) { res.status(409).json({ error: 'Already processed.' }); return; }
+    try {
+      await withTenant(request.slug, () => issueAccountRecovery(request.user_id, process.env.TENANT_PATH_HOST ? `/${request.slug}` : '', {
+        requested_by: `platform:${request.requested_by}`, approved_by: `platform:${by}`, reason: request.reason,
+        verification_reference: `${request.verification_reference}; approval: ${input.verification_reference}`,
+      }));
+      conn.prepare("UPDATE platform_recovery_approvals SET state='issued' WHERE id=?").run(request.id);
+    } catch (error) { conn.prepare("UPDATE platform_recovery_approvals SET state='failed' WHERE id=?").run(request.id); throw error; }
+    logProvisioning(request.slug, 'account-recovery-approved', `operator=${by}; request=${request.id}; owner=${request.user_id}`);
+    res.set('Cache-Control','no-store').json({ ok: true, message: 'A single-use recovery link was sent to the existing owner email. MFA is not removed until redemption.' });
+  } catch (error) { next(error); }
+});
+
+router.post('/tenants/:slug/account-recoveries/:id/cancel', supportRecoveryLimiter, (req, res, next) => {
+  try {
+    const input = parseBody(z.object({ current_password: z.string().min(1).max(200) }).strict(), req.body);
+    if (!verifiedOperator(req, input.current_password)) { res.status(403).json({ error: 'Confirm your current console password.' }); return; }
+    const result = supportRecoveryDb().prepare("UPDATE platform_recovery_approvals SET state='cancelled' WHERE id=? AND slug=? AND state IN ('pending','notifying')").run(String(req.params.id), String(req.params.slug));
+    if (!Number(result.changes)) { res.status(409).json({ error: 'This request can no longer be cancelled here. Contact support if recovery was already issued.' }); return; }
+    logProvisioning(String(req.params.slug), 'account-recovery-cancelled', `operator=${(req as PlatformAuthedRequest).platformUser!.id}; request=${String(req.params.id)}`);
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+
+router.post('/tenants/:slug/reset-owner-password', supportRecoveryLimiter, async (req, res, next) => {
+  try {
+    const t = getTenant(String(req.params.slug));
     if (!t || t.status === 'purged') { res.status(404).json({ error: 'Unknown workspace.' }); return; }
     if ('temporary' in (req.body || {}) && typeof req.body.temporary !== 'boolean') {
       res.status(400).json({ error: 'temporary must be a boolean.' }); return;
     }
-    const input = parseBody(resetPasswordSchema.partial().extend({ owner_id: z.number().int().positive(), temporary: z.boolean().optional() }).strict().refine(value => value.temporary || !!value.new_password, 'A new password is required'), req.body);
+    const input = parseBody(resetPasswordSchema.partial().extend({ owner_id: z.number().int().positive(), temporary: z.boolean().optional(), current_password: z.string().min(1).max(200), reason: z.string().trim().min(20).max(500) }).strict().refine(value => value.temporary || !!value.new_password, 'A new password is required'), req.body);
+    if (!verifiedOperator(req, input.current_password)) { res.status(403).json({ error: 'Confirm your current console password.' }); return; }
     const temporary = input.temporary === true;
     const new_password = temporary ? crypto.randomBytes(18).toString('base64url') : input.new_password!;
     const expiresAt = temporary ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null;
@@ -317,11 +407,12 @@ router.post('/tenants/:slug/reset-owner-password', async (req, res, next) => {
         run('UPDATE users SET password_hash = ?, password_change_required = ?, temporary_password_expires_at = ? WHERE id = ?', hash, temporary ? 1 : 0, expiresAt, owner.id);
         endUserSessions(owner.id, 'password');
         run('DELETE FROM password_resets WHERE user_id = ?', owner.id);
+        run('DELETE FROM mfa_challenges WHERE user_id = ?', owner.id);
         db.exec('COMMIT');
       } catch (e) { db.exec('ROLLBACK'); throw e; }
     });
     const by = (req as PlatformAuthedRequest).platformUser!.username;
-    logProvisioning(t.slug, 'owner-password-reset', `${by}: reset owner ${owner.username} (id=${owner.id}); ${temporary ? 'temporary password' : 'password'}`);
+    logProvisioning(t.slug, 'owner-password-reset', `${by}: reset owner ${owner.username} (id=${owner.id}); ${temporary ? 'temporary password' : 'password'}; reason=${input.reason}`);
     const email = temporary ? { sent: false, reason: 'Share the temporary password directly with the owner.' } : t.is_sandbox === 1 ? { sent: false, reason: 'sandbox' } :
       owner.email ? await withTenant(t.slug, async () => {
         const result = await sendMail({

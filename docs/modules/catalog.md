@@ -308,6 +308,16 @@ distribution route, icon artwork.
 
 ## core/ — ungated baseline
 
+Assisted authenticator recovery is owned by `shared/account-recovery.ts` and exposed through
+`core/users.routes.ts` (fresh password + enrolled factor, no self-reset) and the platform owner
+console (solo operator with advance email notice, a server-enforced 24-hour wait, cancellation and fresh password verification). `account_recoveries` is cloud-only and
+records actor identities, reason/reference, contact/credential binding and completion state.
+Schema 84 synchronizes `users.mfa_recovery_required` to updated office hosts.
+The existing password-reset nonce/UI handles redemption transactionally; `shared/mfa.ts`
+requires enrollment after recovery independently of the optional workspace policy. HTTP,
+WebSocket and cloud replay-actor authorization enforce the incomplete-recovery restriction.
+See `docs/operations/assisted-account-recovery.md` for interfaces, limits and operator procedure.
+
 Authentication security changes share a per-account/tenant failure limiter across MFA setup,
 enable, disable and recovery-code replacement. The existing-factor-verified disable flow
 revokes other sessions via `shared/auth.endUserSessions`. The limiter is process-local;

@@ -1233,8 +1233,17 @@ change; see `operations/password-migration.md` for rollback and resource require
 
 Self-service MFA operations share an account-and-tenant failure budget across sessions and
 factor endpoints (ten failures per fifteen minutes, process-local). Disabling MFA requires the
-password plus an existing factor and revokes other sessions. Administrator resets and policy
+password plus an existing factor and revokes other sessions. Broader privileged actions and policy
 changes still need fresh verification; see `audits/standards-research.md`.
+
+Assisted factor recovery now uses a verified tenant administrator (fresh password + existing
+factor), or a solo console operator (fresh password, advance notice, cancellation, a 24-hour wait and renewed case verification).
+The app emails a fifteen-minute single-use link to the existing contact. Current MFA remains
+enabled until redemption. Claiming the link atomically replaces the password, removes the
+old factor, ends sessions/challenges and requires authenticator enrollment before workspace,
+WebSocket or cloud replay access. Password-only reset retains MFA. No new-contact fallback
+is provided; see `operations/assisted-account-recovery.md`. Console passkeys, broader privileged
+step-up and policy-change verification remain unfinished.
 
 Queued mutations identify their original actor. Deduplication validates current authentication,
 actor, payload, route and access scope before returning a receipt. Order saves and form-record

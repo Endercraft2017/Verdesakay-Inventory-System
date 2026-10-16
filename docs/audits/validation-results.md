@@ -5,7 +5,46 @@ Source cutoff: `restructure/module-architecture` at
 Earlier reports describe older trees. The verification summary in
 `evidence/second-pass-verification.json` describes the original second-pass run.
 
-## Password storage follow-up
+## Assisted recovery follow-up
+
+Final schema-84 implementation supports a solo provider operator: fresh password and documented
+verification, advance notice/cancellation to the existing owner email, a server-enforced
+24-hour wait, then fresh verification and a fifteen-minute single-use recovery link. Requests
+expire after 48 hours. A different operator cannot bypass the waiting period. Verified tenant
+peer recovery instead requires the assisting administrator's password and existing factor.
+Ordinary password resets preserve MFA and invalidate pending MFA login challenges.
+
+- **Full regression: 286 files / 2,881 tests passed**, 527.39 seconds
+  ([log](evidence/recovery-regression.txt)). This is the completed run after the solo-support,
+  cancellation and final synchronized restriction changes.
+- **Focused: 8 files / 54 tests passed**, 43.42 seconds
+  ([log](evidence/recovery-focused.txt)): fresh proof, early approval denial, later solo approval,
+  cross-tenant denial, cancellation/reuse, expiry, changed contact, failed send, stale challenges,
+  mandatory re-enrollment, site-mode restriction and schema-83 migration column order.
+- **Playwright: 10 scenarios passed**, 36.8 seconds
+  ([log](evidence/recovery-playwright.txt)). New scenarios cover actual reset-link UI and forced
+  enrollment, plus inert cancellation GET previews and explicit single-use confirmation. The
+  browser recovery cases use disposable preapproved/cancellation fixtures; the request/approval
+  API tests use mocked email, not a real provider or a wall-clock 24-hour wait.
+- Typecheck and delivered JS syntax checks passed ([TypeScript log](evidence/recovery-typecheck.txt)).
+  Database types regenerated successfully ([generator log](evidence/recovery-dbtypes.txt)).
+- Staged Gitleaks passed ([log](evidence/recovery-secrets.txt)); the commit hook scans final staged
+  content again. This does not close historical-secret findings or dependency advisories.
+
+Earlier runs were interrupted to incorporate review findings and the user's solo-support
+constraint. One broad run exposed an existing mobile handoff test's fixed-delay assumption;
+that test now waits for the actual package control before checking the required-item behavior.
+The complete final run includes that correction. No application handoff behavior was changed.
+
+The [operational runbook](../operations/assisted-account-recovery.md) covers manual identity
+verification, notices, cancellation, expiry, legal/process approval, and release limits.
+The non-secret recovery restriction synchronizes to updated office hosts; a disconnected host
+cannot receive a cloud revocation until reconnection. Real email delivery, device acceptance,
+console Windows Hello/passkeys, multi-replica limits and externally immutable/retention-complete
+audit storage remain unverified or unfinished. No live account, email or hosting settings
+were changed. These results establish this increment's tests, not a full production sign-off.
+
+## Earlier password storage follow-up
 
 Versioned scrypt storage replaces all application bcrypt writers; bounded bcrypt verification
 remains for legacy credentials. No dependency or database-schema change was needed.

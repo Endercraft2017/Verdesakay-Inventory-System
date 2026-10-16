@@ -13,6 +13,11 @@ below supersedes earlier completion claims where evidence is missing.
 
 Last reviewed 2026-10-16. Start with this release gate:
 
+Assisted MFA recovery now has a [controlled recovery procedure](operations/assisted-account-recovery.md).
+Solo support uses advance notice, owner cancellation and a 24-hour wait. Approve your identity-verification process
+and verify existing customer email delivery in staging. No operator accounts or live email
+configuration were changed automatically. Windows Hello/passkeys for console access remain open.
+
 - [ ] Revoke exposed historical sessions and rotate AI keys that may have entered older activity logs; review logs/backups and coordinate history cleanup.
 - [ ] Require branch reviews/status checks. GitHub currently reports `production` unprotected; the private-repository plan restricts rulesets.
 - [ ] Create separate staging and require CI before deployment. Railway currently follows `restructure/module-architecture` with checks disabled; do not switch the live service just because this audit branch exists.
@@ -65,8 +70,11 @@ should not be enough to get in.
    yourself out.
 2. **Accounts & Roles** → **Sign-in security** → tick **Require two-step sign-in** → **Save**.
 
-Those people set it up at their next sign-in (desktop or phone). If someone loses their phone:
-**Accounts & Roles** → find them (badge **2-step**) → **Reset 2-step**.
+Those people set it up at their next sign-in (desktop or phone). If someone loses their phone,
+use a saved recovery code first. Another MFA-enrolled administrator can use **Accounts & Roles**
+→ **Recover 2-step**, verify identity and send a controlled link to the existing account email.
+A sole tenant administrator who also lost recovery codes contacts support for the documented
+24-hour solo-support recovery process. There is no immediate session-only bypass.
 
 ## 3. Console password (5 min)
 **Why:** the owner console password is still the one typed into Railway at setup, and Railway

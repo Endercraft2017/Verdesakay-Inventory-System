@@ -1,0 +1,12 @@
+
+> otom@1.0.0 test
+> vitest run --fileParallelism --maxWorkers=2
+
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+
+ Test Files  286 passed (286)
+      Tests  2881 passed (2881)
+   Start at  07:04:45
+   Duration  527.39s (transform 7.62s, setup 2.53s, import 38.18s, tests 977.86s, environment 1.09s)

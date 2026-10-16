@@ -92,7 +92,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 83; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 84; // 84: synchronized users.mfa_recovery_required; 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -417,6 +417,21 @@ function createSchema(): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS account_recoveries (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      requested_by TEXT NOT NULL,
+      approved_by TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      verification_reference TEXT NOT NULL,
+      contact_email TEXT NOT NULL,
+      credential_hash TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','redeemed','completed','cancelled')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      redeemed_at TEXT,
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS account_recoveries_user_state ON account_recoveries(user_id,state);
     CREATE TABLE IF NOT EXISTS sessions (
       token      TEXT PRIMARY KEY,
       user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -3380,6 +3395,9 @@ function migrate(): void {
   if (!unitConversionCols.some((c) => c.name === 'received_unit_cost'))
     db.exec('ALTER TABLE job_order_units ADD COLUMN received_unit_cost REAL');
   db.exec('CREATE INDEX IF NOT EXISTS idx_unit_conversion_source ON job_order_units(conversion_source_unit_id) WHERE conversion_source_unit_id IS NOT NULL');
+  // Append on both fresh and upgraded databases: SQLite changesets require matching column order.
+  const mfaRecoveryUserCols = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+  if (!mfaRecoveryUserCols.some(c => c.name === 'mfa_recovery_required')) db.exec('ALTER TABLE users ADD COLUMN mfa_recovery_required INTEGER NOT NULL DEFAULT 0');
 }
 
 /** One-time permission split: every role and per-account grant holding `from` also gets `to`.
