@@ -94,3 +94,50 @@ Actual phone cameras, printed/stuck labels and the intended printer must be chec
 on hardware. Virtual-camera Chromium cannot certify paper sizing, focus/optics or
 OS-specific browser termination behavior. No deployment or real stock mutation was
 performed by the test fixtures.
+
+
+## Additional acceptance: compression, forced termination and site sync
+
+The QR audit now supports an opt-in crash mode:
+
+```sh
+MOBILE_AUDIT_ABRUPT_RESTART=1 npm run test:mobile:qr
+```
+
+This mode asks Chromium for its own browser-process ID through CDP and sends
+SIGKILL only to that disposable audit browser at explicit release/delivery
+restart checkpoints. It reuses the persistent profile and original request
+keys; unrelated camera/print setup continues using ordinary browser closure.
+It does not kill the application server or any installed browser.
+
+A generated, high-detail 4000×3000 JPEG is selected through the real `mPhoto.capture`
+file chooser, compressed by the production code, uploaded to the disposable backend,
+then downloaded and decoded again. The fixture exceeds the server's original-file
+size limit so a successful stored image proves preparation preceded upload.
+
+Separate tests provision disposable cloud, host-PC and LAN-PC database copies.
+They exercise offline production and sales/releasing/delivery, photo/file transfer,
+authority decisions, queued command replay, host election, failover and recovery.
+They do not connect to the actual company's site-PC installation.
+
+The first added test run needed its Work-screen readiness selector corrected;
+one early crash-mode run stalled in Chromium setup and was stopped and isolated.
+These were audit-harness/setup issues; no application code was changed.
+Final validation includes incoming commit `b354169` (historical stock-out review,
+schema v87):
+
+- 69 focused tests across 11 files passed; type checking passed.
+- QR/print/stock-out/delivery browser acceptance: 35 checks passed, zero browser errors.
+- That browser run executed 10 SIGKILL restarts at release/delivery checkpoints.
+- Generated 12 MP JPEG: 35,032,516 bytes before preparation; stored JPEG:
+  1,532,426 bytes at 1920×1440 (95.6% smaller). Stored bytes were downloaded and decoded.
+- The remaining-workflow browser suite passed all 10 checks on the integrated branch,
+  with zero browser errors: **45 passing browser checks total**.
+- Script syntax and whitespace checks passed. Only audit code/documentation changed;
+  no application fixes were needed. The previous 2,844-test full-suite result above
+  predates the incoming historical-review commit and is not claimed as a new full run.
+
+Hardware acceptance remains open: an actual phone camera, a physically printed
+and attached sticker, printer stock/layout, and the installed site-PC/LAN must
+be checked on those devices. A staff walkthrough also requires staff participation.
+Browser emulation and disposable database copies do not certify those checks.

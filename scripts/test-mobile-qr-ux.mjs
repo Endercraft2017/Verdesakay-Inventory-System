@@ -10,6 +10,7 @@ fs.mkdirSync(output, { recursive: true });
 const profile = path.join(output, 'browser-profile');
 fs.rmSync(profile, { recursive: true, force: true });
 const requests = [];
+const abruptRestart = process.env.MOBILE_AUDIT_ABRUPT_RESTART === '1';
 const report = { backend: 'Disposable real Express/SQLite backend', camera: 'Chromium virtual-camera Y4M frames generated from actual printed QR images; scanner callbacks unchanged', viewport: '390x844', checks: [], errors: [], limits: ['Virtual camera, not physical paper/printer or phone optics.'] };
 const server = spawn(process.execPath, ['--import', 'tsx', 'scripts/browser/editor-ux-server.ts'], { stdio: ['ignore', 'pipe', 'pipe'] });
 server.stderr.on('data', d => fs.appendFileSync(path.join(output, 'server.log'), d));
@@ -23,8 +24,18 @@ async function api(method, route, body, token = admin, expected) {
 }
 async function check(name, fn) { await fn(); report.checks.push({ name, passed: true }); console.log('PASS ' + name); }
 async function loginRole(role) { const username = 'audit_' + role; await api('POST', '/users', { username, full_name: role, password: 'test-secret123', role }); return (await api('POST', '/auth/login', { username, password: 'test-secret123' }, null)).token; }
-async function launch(token, camera) {
-    await context?.close();
+async function launch(token, camera, crash = false) {
+    if (context && abruptRestart && crash) {
+        const session = await browser.newBrowserCDPSession();
+        const processes = await session.send('SystemInfo.getProcessInfo');
+        const browserProcess = processes.processInfo.find(p => p.type === 'browser');
+        assert(browserProcess, 'Only kill the disposable browser owned by this audit');
+        const disconnected = new Promise(resolve => browser.once('disconnected', resolve));
+        process.kill(browserProcess.id, 'SIGKILL');
+        await disconnected;
+        context = null;
+        report.abruptRestarts = (report.abruptRestarts || 0) + 1;
+    } else await context?.close();
     context = await chromium.launchPersistentContext(profile, { viewport: { width: 390, height: 844 }, permissions: ['camera'], timezoneId: 'Asia/Manila', serviceWorkers: 'block', ...((process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/bin/chromium', '/usr/lib/chromium/chromium'].find(fs.existsSync)) ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/bin/chromium', '/usr/lib/chromium/chromium'].find(fs.existsSync) } : {}), headless: true, args: camera ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--use-file-for-fake-video-capture=' + camera] : [] });
     browser = context.browser();
     await context.addInitScript(t => localStorage.setItem('vds_token', t), token);
@@ -97,7 +108,7 @@ async function warehouseOut(so) {
     await captureToReview(so);
     await check('Handoff photos and signature survive a browser restart', async () => {
         const url = page.url(), token = await page.evaluate(() => localStorage.getItem('vds_token'));
-        await launch(token);
+        await launch(token, undefined, true);
         await page.goto(url);
         await page.locator('#rel-go').waitFor();
         assert.match(await page.locator('#m-view').innerText(), /1 photo and acknowledgement attached/);
@@ -136,7 +147,7 @@ async function warehouseOut(so) {
         assert.equal((await api('GET', '/inventory/' + so.productId)).quantity, 0);
         const token = await page.evaluate(() => localStorage.getItem('vds_token'));
         const url = page.url();
-        await launch(token);
+        await launch(token, undefined, true);
         await page.goto(url);
         await page.locator('#handoff-retry').click();
         await page.locator('#handoff-review').waitFor();
@@ -156,6 +167,23 @@ try {
     base = 'http://127.0.0.1:' + await new Promise((resolve, reject) => { let text = ''; server.stdout.on('data', d => { text += d; const m = text.match(/EDITOR_UX_PORT=(\d+)/); if (m)
         resolve(m[1]); }); server.on('exit', c => reject(Error('server exit ' + c))); });
     admin = (await api('POST', '/auth/login', { username: 'admin', password: 'admin123' }, null)).token;
+    if (abruptRestart) await check('A 12 MP camera image compresses before real upload and remains decodable', async () => {
+        await launch(admin); await page.goto(base+'/m#/work'); await page.locator('.v2-work').waitFor();
+        const encoded = await page.evaluate(async () => {
+            const canvas = document.createElement('canvas'); canvas.width=4000;canvas.height=3000;
+            const ctx=canvas.getContext('2d'), data=ctx.createImageData(4000,3000), pixels=new Uint32Array(data.data.buffer);
+            let seed=123456789;for(let i=0;i<pixels.length;i++){seed=(Math.imul(seed,1664525)+1013904223)>>>0;pixels[i]=0xff000000|(seed>>>8);}
+            ctx.putImageData(data,0,0);return canvas.toDataURL('image/jpeg',1).split(',')[1];
+        });
+        const original=Buffer.from(encoded,'base64');assert(original.length>8*1024*1024,'Fixture must exceed the upload limit before compression');
+        const item=await api('POST','/inventory',{name:'Camera compression acceptance'});
+        const chooser=page.waitForEvent('filechooser');await page.evaluate(id=>{window.auditUpload=mPhoto.capture(id);},item.id);
+        await(await chooser).setFiles({name:'phone-12mp.jpg',mimeType:'image/jpeg',buffer:original});
+        await page.evaluate(()=>window.auditUpload);
+        const stored=await page.evaluate(async id=>{const res=await fetch('/api/inventory/'+id+'/image',{headers:{Authorization:'Bearer '+localStorage.getItem('vds_token')}});if(!res.ok)throw new Error('Stored photo unavailable');const blob=await res.blob(),img=await createImageBitmap(blob);return{bytes:blob.size,width:img.width,height:img.height,type:blob.type};},item.id);
+        assert.equal(stored.width,1920);assert.equal(stored.height,1440);assert(stored.bytes<original.length);assert(stored.bytes<8*1024*1024);assert.equal(stored.type,'image/jpeg');
+        report.compression={originalBytes:original.length,...stored};
+    });
     await check('Legacy Pick bookmarks open permissioned Work without stock writes', async () => {
         await launch(admin);
         const writes = [];
@@ -275,7 +303,7 @@ try {
         });
     }
     async function restartDelivery(step) {
-        await launch(driver);
+        await launch(driver, undefined, true);
         page.on('request', req => { if (req.method() === 'POST' && req.url().includes('/api/deliveries/' + delivery.id + '/')) deliveryPosts.push({ action: new URL(req.url()).pathname.split('/').pop(), body: req.postData(), key: req.headers()['idempotency-key'] }); });
         await page.goto(base + '/m#/deliveries?id=' + delivery.id + (step ? '&step=' + step : ''));
     }
