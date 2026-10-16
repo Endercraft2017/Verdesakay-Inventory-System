@@ -191,6 +191,25 @@ match) — a known, deliberate shortcut for warehouse speed, not a bug.
 
 **Terminal states:** bill posted (success); PO cancelled before receipt.
 
+## Physical stock count and variance resolution
+
+**Trigger:** a discrepancy, possible legacy direct-sale double deduction, or
+scheduled shelf count. Inventory → Physical Counts records one item at one exact
+location and build state. The counter enters physically present untracked
+quantity, serial identifiers and every displayed batch quantity against the
+current book snapshot. A changed book/serial/batch snapshot requires a recount.
+
+An independent `inventory.adjust` holder approves or rejects the observation.
+After approval, an untracked difference and each named batch difference can be
+posted as separate linked inventory movements. Batch correction preserves sale
+reservations and known receipt/shipment/return provenance. A serial mismatch
+blocks generic correction; resolve exact unit records through their owning
+workflow, then verify that the current balance and tracked identities equal the count.
+The count stores its source issue, counter, reviewer, notes and correction
+transaction. Mobile integration is specified in the root handoff; desktop is
+the implemented count UI. Physical phone/camera and printed-label checks
+remain a manual acceptance gate.
+
 ## Production / manufacturing run
 
 **Offline (phase 4b, docs/OFFLINE-FIRST.md §21):** the whole run works at a site with the internet

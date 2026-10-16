@@ -83,12 +83,16 @@ App.register('stock-discrepancies', async (view) => {
             <td>${d.status === 'open'
               ? '<span class="badge-pill low">open</span>'
               : `<span class="badge-pill ok">resolved</span><div class="muted small">${UI.esc(d.resolution_note || '')}</div>`}</td>
-            <td class="actions">${d.status === 'open' && canResolve
-              ? `<button class="btn secondary small" data-resolve="${d.id}">Resolve</button>` : ''}</td>
+            <td class="actions">${d.status === 'open' && d.location_id ? `<button class="btn secondary small" data-count="${d.id}">Count</button>` : ''}
+              ${d.status === 'open' && canResolve ? `<button class="btn secondary small" data-resolve="${d.id}">Resolve</button>` : ''}</td>
           </tr>`).join('')}
         </tbody>
       </table>`;
     tableEl.querySelectorAll('[data-resolve]').forEach((b) => b.onclick = () => resolve(rows.find((x) => x.id == b.dataset.resolve)));
+    tableEl.querySelectorAll('[data-count]').forEach((b) => b.onclick = () => {
+      const d=rows.find(x=>x.id==b.dataset.count);
+      App.navigate('stock-counts',{item_id:d.item_id,location_id:d.location_id,source_kind:'discrepancy',source_id:d.id});
+    });
   }
 
   function renderSaleAudit(rows) {
@@ -128,6 +132,12 @@ App.register('stock-discrepancies', async (view) => {
         load();
       },
     });
+    const active = document.querySelector('#modal-root .modal-overlay:last-child');
+    if(active){
+      const button=document.createElement('button');button.className='btn secondary small';button.textContent='Start physical count';
+      button.onclick=()=>App.navigate('stock-counts',{item_id:d.item_id,source_kind:'direct_sale',source_id:d.order_id});
+      active.querySelector('.modal-body').append(button);
+    }
   }
 
   function resolve(d) {

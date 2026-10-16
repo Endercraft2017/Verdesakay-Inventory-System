@@ -1,5 +1,39 @@
 # Inventory and production: mobile integration gaps
 
+## Physical stock counts and variance resolution (2026-10-16)
+
+The new Inventory → Physical Counts desktop workflow counts **one item, exact
+location and build state** at a time. Schema v88 records the book snapshot,
+counter, physically found untracked quantity, checked serial codes, quantities
+for each displayed production batch, note, source issue and a separate reviewer.
+`GET /api/inventory/stock-counts/context?item_id=&location_id=&build_mode=`
+returns the live book/serial/batch breakdown. `POST /api/inventory/stock-counts`
+submits the immutable observation with the matching `expected_*` snapshot.
+`GET /api/inventory/stock-counts?status=open|all` and `GET .../:id` show history.
+The count needs `inventory.view`; approve/reject/apply/verify need
+`inventory.adjust`. The approver must differ from the counter.
+
+Approval checks that stock has not changed since counting. `POST .../:id/apply`
+posts an untracked variance and each **named batch** variance as separate linked
+inventory movements; batch corrections must preserve reservations and stay within
+known receipt/shipment/return provenance. It refuses a changed snapshot or
+mismatched serialized identities. A supervised serialized correction happens in
+the existing exact-unit workflow;
+`POST .../:id/verify` closes the approved count only when the current location
+balance and exact tracked identities match the recorded observation. Linked
+discrepancy/direct-sale cases can start a count with `source_kind` and `source_id`.
+The count is evidence, and a source issue should not be marked resolved until its
+physical finding and any separate movement have been reviewed.
+
+Phone owner: build a count screen with exact location path, build-state choice,
+fresh book snapshot, physical untracked entry, **unchecked until scanned** serial
+list, and a required count for every shown batch. Preserve the submitted body and
+retry key across response loss; show pending/unknown site decisions rather than
+assuming a count was accepted. A stale snapshot means recount. Keep approval and
+correction separate from counting. Generic negative adjustment/damage now rejects
+amounts that would consume serialized stock (`use_unit_workflow`); guide the user
+to an exact-unit flow. No mobile source was changed in this step.
+
 ## Mobile integration follow-up (2026-10-16)
 
 The direct-sale phone gap below is now integrated: exact commercial line/build,

@@ -65,6 +65,15 @@ export function variantStockTotal(itemId: number, mode: BuildMode): number {
   )?.quantity ?? 0;
 }
 
+/** Serialized RTS units still physically on hand, including units reserved for a sale. */
+export function serializedOnHand(itemId:number,locationId:number,mode:BuildMode):number {
+  return queryOne<{n:number}>(`SELECT COUNT(*) AS n FROM job_order_units u
+    JOIN job_orders j ON j.id=u.job_order_id
+    WHERE COALESCE(u.product_item_id,j.product_item_id)=? AND j.build_mode=?
+      AND u.status IN ('in_stock','reserved') AND COALESCE(u.location_id,j.output_location_id,?)=?`,
+    itemId,mode,getDefaultLocationId(),locationId)?.n??0;
+}
+
 /** Every location with this item's quantity there (0 where there's no row). */
 export function stockBreakdown(itemId: number): Array<{
   location_id: number; location_name: string; location_type: string; is_default: number; quantity: number;

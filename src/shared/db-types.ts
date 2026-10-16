@@ -1592,6 +1592,36 @@ export interface SiteDecisionClashes {
   resolved_at: string | null;
 }
 
+export interface StockCountMovements {
+  count_id: Generated<number>;
+  transaction_id: number;
+  batch_id: number | null;
+}
+
+export interface StockCounts {
+  id: Generated<number>;
+  item_id: number;
+  location_id: number;
+  build_mode: string;
+  book_quantity: number;
+  book_serial_ids: string;
+  book_batches: string;
+  counted_untracked: number;
+  counted_serial_ids: string;
+  counted_batches: string;
+  note: string;
+  source_kind: string;
+  source_id: number | null;
+  status: Generated<string>;
+  counted_by: number | null;
+  counted_at: Generated<string>;
+  reviewed_by: number | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  transaction_id: number | null;
+  completed_at: string | null;
+}
+
 export interface StockDiscrepancies {
   id: Generated<number>;
   item_id: number;
@@ -1903,6 +1933,8 @@ export interface DB {
   settings: Settings;
   shifts: Shifts;
   site_decision_clashes: SiteDecisionClashes;
+  stock_count_movements: StockCountMovements;
+  stock_counts: StockCounts;
   stock_discrepancies: StockDiscrepancies;
   suppliers: Suppliers;
   tasks: Tasks;

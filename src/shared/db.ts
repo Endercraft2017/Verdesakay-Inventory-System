@@ -69,6 +69,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 88: structured location/build-state stock counts and supervised resolution.
 // 87: record human reviews of historical direct-sale stock-out candidates.
 // 86: permit a serialized unit to return once per separate sale shipment.
 // 85: mark units sold directly before a trip slip so stock-out is not repeated.
@@ -96,7 +97,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 87; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 88; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -1036,6 +1037,37 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_direct_sale_stockout_review_case ON direct_sale_stockout_reviews(order_id,item_id,id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_direct_sale_stockout_review_evidence ON direct_sale_stockout_reviews(order_id,item_id,evidence_hash);
+
+    CREATE TABLE IF NOT EXISTS stock_counts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+      build_mode TEXT NOT NULL CHECK(build_mode IN ('assembled','semi_built')),
+      book_quantity REAL NOT NULL,
+      book_serial_ids TEXT NOT NULL,
+      book_batches TEXT NOT NULL,
+      counted_untracked REAL NOT NULL,
+      counted_serial_ids TEXT NOT NULL,
+      counted_batches TEXT NOT NULL,
+      note TEXT NOT NULL,
+      source_kind TEXT NOT NULL CHECK(source_kind IN ('manual','discrepancy','direct_sale')),
+      source_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted','approved','applied','rejected')),
+      counted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      counted_at TEXT NOT NULL DEFAULT (datetime('now')),
+      reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reviewed_at TEXT,
+      review_note TEXT,
+      transaction_id INTEGER REFERENCES inventory_transactions(id) ON DELETE SET NULL,
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_stock_counts_status ON stock_counts(status, counted_at, id);
+    CREATE TABLE IF NOT EXISTS stock_count_movements (
+      count_id INTEGER NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE,
+      transaction_id INTEGER NOT NULL REFERENCES inventory_transactions(id) ON DELETE RESTRICT,
+      batch_id INTEGER REFERENCES production_batches(id) ON DELETE SET NULL,
+      PRIMARY KEY(count_id,transaction_id)
+    );
 
     -- Offline sync home sites (docs/OFFLINE-FIRST.md §16): which site host decides a location's
     -- records while the internet is down. A location with no row — and company-wide records —
@@ -3443,6 +3475,29 @@ function migrate(): void {
     reviewed_at TEXT NOT NULL DEFAULT (datetime('now')));
     CREATE INDEX IF NOT EXISTS idx_direct_sale_stockout_review_case ON direct_sale_stockout_reviews(order_id,item_id,id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_direct_sale_stockout_review_evidence ON direct_sale_stockout_reviews(order_id,item_id,evidence_hash)`);
+
+  // v88: a count records a book snapshot and physical evidence before a separate approval.
+  db.exec(`CREATE TABLE IF NOT EXISTS stock_counts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+    location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+    build_mode TEXT NOT NULL CHECK(build_mode IN ('assembled','semi_built')),
+    book_quantity REAL NOT NULL, book_serial_ids TEXT NOT NULL, book_batches TEXT NOT NULL,
+    counted_untracked REAL NOT NULL, counted_serial_ids TEXT NOT NULL, counted_batches TEXT NOT NULL,
+    note TEXT NOT NULL, source_kind TEXT NOT NULL CHECK(source_kind IN ('manual','discrepancy','direct_sale')),
+    source_id INTEGER, status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted','approved','applied','rejected')),
+    counted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    counted_at TEXT NOT NULL DEFAULT (datetime('now')),
+    reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TEXT, review_note TEXT,
+    transaction_id INTEGER REFERENCES inventory_transactions(id) ON DELETE SET NULL,
+    completed_at TEXT);
+    CREATE INDEX IF NOT EXISTS idx_stock_counts_status ON stock_counts(status,counted_at,id)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS stock_count_movements (
+    count_id INTEGER NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE,
+    transaction_id INTEGER NOT NULL REFERENCES inventory_transactions(id) ON DELETE RESTRICT,
+    batch_id INTEGER REFERENCES production_batches(id) ON DELETE SET NULL,
+    PRIMARY KEY(count_id,transaction_id))`);
 
 }
 

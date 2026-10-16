@@ -35,6 +35,7 @@ import {
   transferStock,
   stockAt,
   variantStockAt,
+  serializedOnHand,
   stockBreakdown,
   locationName,
   getDefaultLocationId,
@@ -48,6 +49,7 @@ import { whereUsed } from '../manufacturing/bom-explode';
 import { dbBomResolvers } from '../manufacturing/bom-resolvers';
 import type { InventoryItem, InventoryTransaction } from '../../shared/types';
 import { findDirectSaleStockoutCase, listDirectSaleStockoutCases } from './direct-sale-stockout-audit';
+import stockCountRoutes from './stock-counts.routes';
 
 function salesStock(itemId:number) {
   return stockBreakdown(itemId).map(s=>{
@@ -62,6 +64,7 @@ function salesAvailability(itemId:number) {
 
 const router = Router();
 router.use(requireAuth);
+router.use('/stock-counts', stockCountRoutes);
 
 // ---- Item image upload (JPG/PNG/GIF/WebP, 5 MB) — stored under UPLOAD_DIR ----
 const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
@@ -862,6 +865,11 @@ router.post('/:id/adjust', requirePermission('inventory.adjust'), syncClass('phy
     return;
   }
   const atLoc = variantStockAt(id, locId, build_mode);
+  const serialQty=serializedOnHand(id,locId,build_mode);
+  if(change<0 && serialQty>0 && -change>atLoc-serialQty+1e-9){
+    res.status(409).json({error:'This stock includes serialized units. Move or resolve their exact unit records before adjusting them.',code:'use_unit_workflow'});
+    return;
+  }
   // Offline (D1): the goods left even if the records say they weren't there — accepted and
   // flagged as a stock discrepancy by applyStockChange instead of refused.
   if (atLoc + change < 0 && !overdrawAllowed()) {
@@ -910,6 +918,11 @@ router.post('/:id/damage', requirePermission('inventory.adjust'), syncClass('phy
     return;
   }
   const atLoc = variantStockAt(id, locId, build_mode);
+  const serialQty=serializedOnHand(id,locId,build_mode);
+  if(serialQty>0 && quantity>atLoc-serialQty+1e-9){
+    res.status(409).json({error:'This stock includes serialized units. Report damage against their exact unit records first.',code:'use_unit_workflow'});
+    return;
+  }
   if (quantity > atLoc && !overdrawAllowed()) { // offline: accepted + flagged (D1)
     res.status(400).json({ error: `Not enough stock at ${loc.name}. Only ${atLoc} available.` });
     return;
