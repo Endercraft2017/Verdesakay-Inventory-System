@@ -1304,3 +1304,13 @@ foreign/unbound rows; cookie replay also carries CSRF and queue-actor headers. N
 uses the foreground memory credential and persists no bearer mirror. Unknown legacy work stays
 for review. Personal cache ownership includes company scope; review native legacy drafts before
 upgrading. Physical-device and real TLS acceptance remain pending; see the native storage runbook.
+
+
+### Public password work (2026-10-16)
+
+Bounded public login queue → async password verification / optional legacy upgrade → re-read
+credential, activation, username and temporary expiry → conditional hash update → existing
+MFA/passkey challenge or session. Concurrent credential/status changes refuse the old result.
+A saturated/expired work queue responds 503 with Retry-After and issues no session. The queue
+is shared across console/tenants per process; it never changes tenant scope. Internal synchronous
+writers and real deployment load remain separate availability concerns.

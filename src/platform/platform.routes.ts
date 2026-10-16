@@ -41,11 +41,12 @@ import { parseBody, changeUsernameSchema, mailSettingsSchema, resetPasswordSchem
 import { PLANS, PLAN_MODULES, planModules } from './plans';
 import { rateLimitKey } from '../shared/device';
 import {
-  requirePlatformAuth, verifyPlatformPassword, createPlatformSession, platformLogout, listPlatformUsers, changePlatformPassword, changePlatformUsername,
+  requirePlatformAuth, verifyPlatformPasswordAsync, platformPasswordStillCurrent, createPlatformSession, platformLogout, listPlatformUsers, changePlatformPassword, changePlatformUsername,
   type PlatformAuthedRequest,
 } from './platform-users';
 import { hasPlatformPasskey, requiresPlatformPasskeySetup, platformSessionVerified, markPlatformSessionVerified, listPlatformPasskeys,
   registrationOptions, finishRegistration, authenticationOptions, finishAuthentication, requireAllPlatformPasskeys, removePlatformPasskey } from './platform-passkeys';
+import { PasswordWorkBusyError } from '../shared/password-work';
 import type { RegistrationResponseJSON, AuthenticationResponseJSON } from '@simplewebauthn/server';
 
 const router = Router();
@@ -86,12 +87,17 @@ router.post('/login', loginLimiter, async (req, res, next) => {
   try {
   const { username, password } = parseBody(loginSchema.omit({ shared: true }).strict(), req.body);
   if (!username || !password) { res.status(400).json({ error: 'Username and password are required.' }); return; }
-  const id = verifyPlatformPassword(username, password);
-  if (!id) { res.status(401).json({ error: 'Invalid username or password.' }); return; }
-  if (hasPlatformPasskey(id)) { res.set('Cache-Control','no-store').json({ passkey_required:true, ...await authenticationOptions(id) }); return; }
+  const verified = await verifyPlatformPasswordAsync(username, password);
+  if (!verified) { res.status(401).json({ error: 'Invalid username or password.' }); return; }
+  const id = verified.id;
+  if (hasPlatformPasskey(id)) {
+    const challenge = await authenticationOptions(id);
+    if (!platformPasswordStillCurrent(verified)) { res.status(401).json({error:'Invalid username or password.'}); return; }
+    res.set('Cache-Control','no-store').json({ passkey_required:true, ...challenge }); return;
+  }
   const token = createPlatformSession(id);
   sendOperatorSession(req,res,token);
-  } catch (error) { next(error); }
+  } catch (error) { if (error instanceof PasswordWorkBusyError) res.set('Retry-After','5'); next(error); }
 });
 function sendOperatorSession(req: Request,res: Response,token: string) {
   res.set('Cache-Control','no-store');

@@ -5,8 +5,9 @@ import { approverDepartmentIds } from '../modules/hr/workflow';
  *  and the caller's own sessions ("Where you're signed in" — list / end one / end the others). */
 import crypto from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
-import { hashPassword, verifyPassword, passwordNeedsUpgrade } from '../shared/password-hash';
+import { hashPassword, verifyPassword, verifyPasswordForLogin } from '../shared/password-hash';
 import rateLimit from 'express-rate-limit';
+import { PasswordWorkBusyError } from '../shared/password-work';
 import { db, queryOne, queryAll, run, newToken, DEFAULT_TENANT } from '../shared/db';
 import {
   createSession, destroySession, requireAuth, endUserSessions, endSessionBySid, listUserSessions,
@@ -49,27 +50,39 @@ function appOrigin(req: Request): string {
 }
 
 // POST /api/auth/login
-router.post('/login', (req, res) => {
-  const { username, password, shared } = parseBody(loginSchema, req.body);
-  const user = queryOne<UserRow>('SELECT * FROM users WHERE username = ?', username.toLowerCase());
-
-  if (!user || user.active !== 1 || (user.password_change_required === 1 && user.temporary_password_expires_at && Date.parse(user.temporary_password_expires_at) <= Date.now()) || !verifyPassword(password, user.password_hash)) {
-    res.status(401).json({ error: 'Invalid username or password' });
-    return;
+router.post('/login', async (req, res, next) => {
+  try {
+    const { username, password, shared } = parseBody(loginSchema, req.body);
+    const eligible = (user: UserRow | undefined): user is UserRow => {
+      if (!user || user.active !== 1) return false;
+      if (user.password_change_required === 1 && user.temporary_password_expires_at) {
+        const expiry = Date.parse(user.temporary_password_expires_at);
+        return Number.isFinite(expiry) && expiry > Date.now();
+      }
+      return true;
+    };
+    const snapshot = queryOne<UserRow>('SELECT * FROM users WHERE username = ?', username.toLowerCase());
+    if (!eligible(snapshot)) { res.status(401).json({ error: 'Invalid username or password' }); return; }
+    const checked = await verifyPasswordForLogin(password, snapshot.password_hash, process.env.DEPLOY_MODE !== 'node');
+    // Password reset/deactivation/rename may happen while asynchronous work is pending.
+    const user = queryOne<UserRow>('SELECT * FROM users WHERE id = ?', snapshot.id);
+    if (!checked.valid || !eligible(user) || user.password_hash !== snapshot.password_hash || user.username.toLowerCase() !== username.toLowerCase()) {
+      res.status(401).json({ error: 'Invalid username or password' }); return;
+    }
+    if (checked.upgradedHash) {
+      if (Number(run('UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?', checked.upgradedHash, user.id, snapshot.password_hash).changes) !== 1) {
+        res.status(401).json({ error: 'Invalid username or password' }); return;
+      }
+      user.password_hash = checked.upgradedHash;
+    }
+    if (mfaApplies() && mfaEnabled(user.id)) {
+      res.json({ mfa_required: true, mfa_token: createMfaChallenge(user.id, !!shared) }); return;
+    }
+    res.json({ ...signIn(user, req, !!shared, res), ...(res.locals.companyLogin ? { workspace_path: res.locals.tenantBase } : {}) });
+  } catch (error) {
+    if (error instanceof PasswordWorkBusyError) res.set('Retry-After', '5');
+    next(error);
   }
-
-  // Upgrade only a verified password and only if the stored hash has not changed.
-  if (process.env.DEPLOY_MODE !== 'node' && passwordNeedsUpgrade(user.password_hash)) {
-    run('UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?', hashPassword(password), user.id, user.password_hash);
-  }
-
-  // Two-step sign-in on: the password alone opens nothing — the app asks for the code next
-  // (POST /login/mfa with this short-lived token). See shared/mfa.ts.
-  if (mfaApplies() && mfaEnabled(user.id)) {
-    res.json({ mfa_required: true, mfa_token: createMfaChallenge(user.id, !!shared) });
-    return;
-  }
-  res.json({ ...signIn(user, req, !!shared, res), ...(res.locals.companyLogin ? { workspace_path: res.locals.tenantBase } : {}) });
 });
 
 // POST /api/auth/login/mfa — { mfa_token, code }: the second step (authenticator code or a

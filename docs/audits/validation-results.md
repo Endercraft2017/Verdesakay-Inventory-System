@@ -183,3 +183,17 @@ is required before final review. Java 21 is available; no Android SDK/build tool
 device are configured, so APK compilation, actual Keystore/extraction and backup/transfer
 acceptance remain unverified. The bridge tests use a test OS provider; worker/queue tests run
 the actual source with IndexedDB transactions.
+
+## Consolidated authentication regression — 2026-10-16
+
+A fresh complete run after the password policy, native upload-timing fix and bounded async
+public-login work passed **293 files / 2,932 tests** (565.56 seconds), with no failed or skipped
+tests. The exact final code also passed **11 Playwright scenarios** (37.3 seconds). This run
+supersedes the initial password/native fixture/timing failures recorded above. Evidence:
+`evidence/auth-hardening-full.txt` and `evidence/auth-hardening-playwright.txt`.
+
+Async-login focused checks passed 6 files / 63 tests; final queue/race/temporary-expiry boundaries
+passed 2 files / 13 tests. Typecheck and diff/syntax checks passed. Native asset/plugin sync and
+mobile npm audit results remain as documented above; no live deployment, physical-device,
+production-capacity or full-history credential-revocation claim follows from these local passes.
+Tenant-wide administrative step-up and the remaining audit controls still need separate evidence.

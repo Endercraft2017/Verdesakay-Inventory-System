@@ -6,7 +6,7 @@
  */
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
-import { hashPassword, verifyPassword, passwordNeedsUpgrade } from '../shared/password-hash';
+import { hashPassword, verifyPassword, verifyPasswordForLogin, passwordNeedsUpgrade } from '../shared/password-hash';
 import { cookieValue } from '../shared/browser-session';
 import { platformDb } from './platform';
 import { tokenDigest } from '../shared/db';
@@ -66,6 +66,24 @@ export function verifyPlatformPassword(username: string, password: string): numb
     platformDb().prepare('UPDATE platform_users SET password_hash = ? WHERE id = ? AND password_hash = ?').run(hashPassword(password), row.id, row.password_hash);
   }
   return row.id;
+}
+
+export interface VerifiedPlatformPassword { id: number; username: string; passwordHash: string }
+
+/** Public HTTP path; synchronous platformLogin remains an internal/CLI compatibility helper. */
+export async function verifyPlatformPasswordAsync(username: string, password: string): Promise<VerifiedPlatformPassword | null> {
+  const name = username.toLowerCase().trim(), d = platformDb();
+  const snapshot = d.prepare('SELECT id,password_hash FROM platform_users WHERE username=?').get(name) as {id:number;password_hash:string} | undefined;
+  if (!snapshot) return null;
+  const checked = await verifyPasswordForLogin(password, snapshot.password_hash);
+  const current = d.prepare('SELECT username,password_hash FROM platform_users WHERE id=?').get(snapshot.id) as {username:string;password_hash:string} | undefined;
+  if (!checked.valid || !current || current.password_hash !== snapshot.password_hash || current.username !== name) return null;
+  if (checked.upgradedHash && Number(d.prepare('UPDATE platform_users SET password_hash=? WHERE id=? AND password_hash=?').run(checked.upgradedHash,snapshot.id,snapshot.password_hash).changes)!==1) return null;
+  return { id:snapshot.id, username:name, passwordHash:checked.upgradedHash || snapshot.password_hash };
+}
+
+export function platformPasswordStillCurrent(verified: VerifiedPlatformPassword): boolean {
+  return !!platformDb().prepare('SELECT 1 FROM platform_users WHERE id=? AND username=? AND password_hash=?').get(verified.id,verified.username,verified.passwordHash);
 }
 
 export function platformLogin(username: string, password: string): string | null {

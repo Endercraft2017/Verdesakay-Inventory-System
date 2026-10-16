@@ -2,8 +2,9 @@
  * OWASP's scrypt baseline: N=2^17, r=8, p=1. Built into every supported Node runtime.
  * Only this module may interpret password hashes; malformed/unknown formats fail closed.
  */
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { randomBytes, scrypt, scryptSync, timingSafeEqual } from 'node:crypto';
 import bcrypt from 'bcryptjs';
+import { withPasswordWork } from './password-work';
 
 const PREFIX = 'scrypt$v1$131072$8$1$';
 const OPTIONS = { N: 131072, r: 8, p: 1, maxmem: 192 * 1024 * 1024 };
@@ -36,4 +37,33 @@ export function verifyPassword(password: string, encoded: string): boolean {
   if (parts.length !== 2 || !/^[a-f0-9]{32}$/.test(parts[0]!) || !/^[a-f0-9]{128}$/.test(parts[1]!)) return false;
   const actual = scryptSync(password, Buffer.from(parts[0]!, 'hex'), 64, OPTIONS);
   return timingSafeEqual(actual, Buffer.from(parts[1]!, 'hex'));
+}
+
+/** Public HTTP sign-in uses asynchronous native scrypt in a bounded queue. Legacy bcrypt
+ * cooperatively yields via its supported async API. Other synchronous helpers remain for
+ * bootstrap/CLI and existing authenticated writers; the stored format is unchanged. */
+export async function verifyPasswordForLogin(password: string, encoded: string, upgrade = true): Promise<{ valid: boolean; upgradedHash?: string }> {
+  if (!password || Buffer.byteLength(password, 'utf8') > MAX_INPUT_BYTES) return { valid: false };
+  const legacy = LEGACY.test(encoded);
+  if (legacy) {
+    const cost = Number(encoded.slice(4, 6));
+    if (Buffer.byteLength(password, 'utf8') > 72 || cost < 4 || cost > 16) return { valid: false };
+  }
+  const parts = encoded.startsWith(PREFIX) ? encoded.slice(PREFIX.length).split('$') : [];
+  if (!legacy && (parts.length !== 2 || !/^[a-f0-9]{32}$/.test(parts[0]!) || !/^[a-f0-9]{128}$/.test(parts[1]!))) return { valid: false };
+  return withPasswordWork(async () => {
+    const valid = legacy
+      ? await bcrypt.compare(password, encoded)
+      : timingSafeEqual(await deriveAsync(password, Buffer.from(parts[0]!, 'hex')), Buffer.from(parts[1]!, 'hex'));
+    if (!valid) return { valid: false };
+    if (!legacy || !upgrade) return { valid: true };
+    const salt = randomBytes(16), derived = await deriveAsync(password, salt);
+    return { valid: true, upgradedHash: `${PREFIX}${salt.toString('hex')}$${derived.toString('hex')}` };
+  });
+}
+
+function deriveAsync(password: string, salt: Buffer): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(password, salt, 64, OPTIONS, (error, key) => error ? reject(error) : resolve(key));
+  });
 }

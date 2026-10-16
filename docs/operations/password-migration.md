@@ -45,10 +45,11 @@ its discarded suffix, and do not automatically store an unverified suffix as a n
 4. Budget approximately 128 MiB of working memory per active scrypt derivation, plus runtime
    overhead. The configured 192 MiB is a memory ceiling, not proof of allocated/resident
    usage. Measure actual memory and sign-in latency on deployment hardware.
-5. Password derivations currently retain the existing synchronous call pattern. Local
-   focused tests observed roughly 0.3 seconds per verification; derivation blocks the Node
-   event loop. Representative sign-in load, global resource limits and an asynchronous
-   bounded execution path remain availability work before unrestricted public scale.
+5. Public tenant/console sign-in now uses bounded asynchronous scrypt: one active job,
+   eight queued and a ten-second queue wait; saturation returns 503/Retry-After. Existing
+   authenticated writers/CLI/bootstrap still have synchronous helpers. Measure actual memory
+   and sign-in/admin-write latency; this is not a blanket event-loop or capacity guarantee.
+   See [password-work-budget.md](password-work-budget.md).
 6. Confirm there is a usable recovery channel for legacy long-password accounts. Generic
    login errors intentionally do not reveal whether an account exists or needs recovery.
 

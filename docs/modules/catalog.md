@@ -1477,3 +1477,12 @@ metadata, and quarantines old unbound work. `mobile/sw.js` enforces the same sco
 CSRF/actor headers; cache v110. Queue UI distinguishes separate/review work and storage failure.
 Android disables backup/transfer for app data. See `operations/native-credential-storage.md`:
 web bundle/plugin sync and local tests are complete; APK/Keystore/device acceptance is not.
+
+
+### Public credential-work budget (2026-10-16)
+
+`shared/password-work.ts` bounds public password work to one active/eight waiting jobs per
+process with ten-second queue expiry. `password-hash.ts.verifyPasswordForLogin` uses async
+native scrypt and cooperative legacy bcrypt, with conditional upgrade support. Tenant/console
+public login re-read credential/account state after awaiting and return 503/Retry-After when
+busy. Synchronous internal/authenticated writers remain; see `operations/password-work-budget.md`.

@@ -107,3 +107,12 @@ Both replay paths bind actor/company, and web workers now carry cookie CSRF/acto
 The [runbook](../operations/native-credential-storage.md) distinguishes local test/build evidence
 from unperformed APK/Keystore/device/backup validation. It also identifies plaintext personal
 caches outside the credential vault, old draft migration and still-open TLS pinning decisions.
+
+
+## Public sign-in availability follow-up
+
+Public tenant/console verification now uses async native scrypt with a bounded shared work
+queue, stale-credential rechecks and explicit 503/Retry-After backpressure. Existing bcrypt
+compatibility yields cooperatively. See [the work-budget runbook](../operations/password-work-budget.md)
+for tests and limits: authenticated/CLI synchronous writers, per-process request limits and
+real hardware capacity are not declared resolved by this increment.
