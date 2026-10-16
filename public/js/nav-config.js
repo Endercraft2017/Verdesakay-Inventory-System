@@ -60,7 +60,7 @@ const NAV = [
         tree: [
           { label: 'All Movements', icon: 'adjust', route: 'inventory-movements' },
           // Offline stock-outs that went below recorded stock (docs/OFFLINE-FIRST.md D1).
-          { label: 'Discrepancies', icon: 'alert', route: 'stock-discrepancies' },
+          { label: 'Stock Review', icon: 'alert', route: 'stock-discrepancies' },
         ],
       },
       {

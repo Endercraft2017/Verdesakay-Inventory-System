@@ -27,6 +27,7 @@ import {
   importInventorySchema,
   reorderPoSchema,
   resolveDiscrepancySchema,
+  directSaleStockoutReviewSchema,
 } from '../../shared/validation';
 import { createDraftPurchaseOrders } from './orders.routes';
 import {
@@ -46,6 +47,7 @@ import { parseCsvTable, toCsv } from '../../shared/csv';
 import { whereUsed } from '../manufacturing/bom-explode';
 import { dbBomResolvers } from '../manufacturing/bom-resolvers';
 import type { InventoryItem, InventoryTransaction } from '../../shared/types';
+import { findDirectSaleStockoutCase, listDirectSaleStockoutCases } from './direct-sale-stockout-audit';
 
 function salesStock(itemId:number) {
   return stockBreakdown(itemId).map(s=>{
@@ -545,6 +547,44 @@ router.post('/import', requirePermission('inventory.create'), syncClass('claim')
   });
 });
 
+
+// Historical direct sales may have been deducted again when their slip was issued.
+// This queue presents ledger evidence only; reviewing never changes quantities.
+router.get('/direct-sale-audit', viewGate, (req, res) => {
+  const status = req.query.status === 'reviewed' ? 'reviewed' : req.query.status === 'all' ? 'all' : 'open';
+  res.json(listDirectSaleStockoutCases(status));
+});
+
+router.post('/direct-sale-audit/:orderId/:itemId/review', requirePermission('inventory.adjust'),
+  syncClass('claim', { home: (req: Request) => ({ location: queryOne<{location_id:number|null}>(
+    'SELECT location_id FROM orders WHERE id=?', Number(req.params.orderId))?.location_id ?? null }) }), (req, res) => {
+  const orderId = Number(req.params.orderId);
+  const itemId = Number(req.params.itemId);
+  if (!Number.isSafeInteger(orderId) || orderId < 1 || !Number.isSafeInteger(itemId) || itemId < 1) {
+    res.status(400).json({ error: 'Invalid order or item' });
+    return;
+  }
+  const { evidence_hash, note } = parseBody(directSaleStockoutReviewSchema, req.body);
+  const candidate = findDirectSaleStockoutCase(orderId, itemId);
+  if (!candidate) {
+    res.status(404).json({ error: 'Audit candidate no longer exists; refresh the queue' });
+    return;
+  }
+  if (candidate.evidence_hash !== evidence_hash) {
+    res.status(409).json({ error: 'Audit evidence changed; refresh and review the new movements' });
+    return;
+  }
+  const info = run(`INSERT OR IGNORE INTO direct_sale_stockout_reviews(order_id,item_id,evidence_hash,note,reviewed_by)
+    VALUES(?,?,?,?,?)`, orderId, itemId, evidence_hash, note, req.user!.id);
+  if (!info.changes) {
+    const existing = queryOne<{note:string}>(`SELECT note FROM direct_sale_stockout_reviews
+      WHERE order_id=? AND item_id=? AND evidence_hash=?`,orderId,itemId,evidence_hash);
+    if (existing?.note === note) res.json({ ok: true, already_reviewed: true });
+    else res.status(409).json({ error: 'This evidence was already reviewed; refresh the queue' });
+    return;
+  }
+  res.json({ ok: true });
+});
 
 // ---- Stock discrepancies (docs/OFFLINE-FIRST.md decision D1) ----
 // An offline stock-out is accepted even when the records say the stock isn't there (the goods

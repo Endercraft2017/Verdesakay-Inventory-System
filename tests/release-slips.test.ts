@@ -107,6 +107,40 @@ describe('warehouse acceptance', () => {
 });
 
 describe('release slip', () => {
+  it('flags an older double stock-out, records a review without adjusting stock, and reopens on new evidence', async () => {
+    const { product } = await productWithUnits('AUDIT-DIRECT', 3);
+    const so = await saleOrder([{ name: 'AUDIT-DIRECT Product', item_id: product, quantity: 1, unit_price: 50 }]);
+    await ctx.api.post(`/api/orders/${so}/accept-release`).set(H());
+    const unit = (await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body[0];
+    expect((await ctx.api.post(`/api/finished-products/${product}/units/allocate`).set(H())
+      .send({ action: 'sell', unit_ids: [unit.id], order_id: so })).status).toBe(200);
+    expect((await ctx.api.post(`/api/orders/${so}/release-slip`).set(H()).send({ collected_by: 'Driver' })).status).toBe(201);
+    expect((await ctx.api.get('/api/inventory/direct-sale-audit').set(H())).body).toEqual([]);
+
+    const { queryOne } = await import('../src/shared/db');
+    const { applyStockChange } = await import('../src/modules/inventory/inventory-stock');
+    const location = queryOne<{location_id:number}>(`SELECT location_id FROM inventory_transactions
+      WHERE item_id=? AND reason=? ORDER BY id DESC LIMIT 1`, product, `Sold — ${(await getOrder(so)).number}`)!.location_id;
+    const reason = `Sold — ${(await getOrder(so)).number}`;
+    applyStockChange({itemId:product,locationId:location,change:-1,reason,userId:null});
+    const stockAfterLegacy = await onHand(product);
+    let rows = (await ctx.api.get('/api/inventory/direct-sale-audit').set(H())).body;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({order_id:so,item_id:product,shipped_quantity:1,removed_quantity:2,
+      awaiting_slip_quantity:0,possible_extra_quantity:1,status:'open'});
+    expect((await ctx.api.post(`/api/inventory/direct-sale-audit/${so}/${product}/review`).set(H())
+      .send({evidence_hash:'0'.repeat(64),note:'Counted two units on the production shelf'})).status).toBe(409);
+    const review = () => ctx.api.post(`/api/inventory/direct-sale-audit/${so}/${product}/review`).set(H())
+      .send({evidence_hash:rows[0].evidence_hash,note:'Counted two units on the production shelf'});
+    expect((await review()).status).toBe(200);
+    expect((await review()).body.already_reviewed).toBe(true);
+    expect(await onHand(product)).toBe(stockAfterLegacy);
+    expect((await ctx.api.get('/api/inventory/direct-sale-audit?status=reviewed').set(H())).body[0].status).toBe('reviewed');
+    applyStockChange({itemId:product,locationId:location,change:1,reason:'Count correction',userId:null});
+    applyStockChange({itemId:product,locationId:location,change:-1,reason,userId:null});
+    rows = (await ctx.api.get('/api/inventory/direct-sale-audit').set(H())).body;
+    expect(rows[0]).toMatchObject({status:'open',possible_extra_quantity:2,review:{stale:true}});
+  });
   it('deducts only remaining stock when a serialized unit was directly sold before the slip', async () => {
     const { product, codes } = await productWithUnits('DIRECT-SLIP', 3);
     const so = await saleOrder([{ name: 'DIRECT-SLIP Product', item_id: product, quantity: 3, unit_price: 50 }]);

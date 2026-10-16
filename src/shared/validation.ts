@@ -735,6 +735,11 @@ export const resolveDiscrepancySchema = z.object({
   note: z.string().trim().min(1, 'Say what was found or done (e.g. counted, adjusted to 12)').max(500),
 });
 
+export const directSaleStockoutReviewSchema = z.object({
+  evidence_hash: z.string().regex(/^[a-f0-9]{64}$/, 'Invalid audit evidence'),
+  note: z.string().trim().min(10, 'Describe the count and what you found').max(1000),
+});
+
 /** Draft purchase orders for items at/under their reorder level. `item_ids` restricts to
     a chosen set (else every low-stock item); `multiplier` sets the top-up target as a
     multiple of each item's reorder level (default 2×). See POST /api/inventory/reorder-po. */

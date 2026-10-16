@@ -9,6 +9,27 @@ unslipped direct units in the next vehicle load. Repeat-sale membership checks
 are scoped to the current sale line, and successful return restock clears the
 old direct-sale marker. Historical ledger ambiguities still need manual review.
 
+## Historical direct-sale stock-out review queue (2026-10-16)
+
+Inventory → Stock Review → Direct-sale audit now lists possible excess stock-outs
+on sales with a directly sold serialized unit and a release slip. `GET
+/api/inventory/direct-sale-audit?status=open|reviewed|all` requires `inventory.view`.
+Each row includes order/item IDs and names, shipped quantity, sale-ledger removed
+quantity, directly sold units awaiting a slip, possible excess, current on-hand,
+latest 50 movements, and an evidence hash. A supervisor with `inventory.adjust`
+can `POST /api/inventory/direct-sale-audit/:orderId/:itemId/review` with
+`{evidence_hash,note}` after a physical count. A stale hash returns 409; changed
+evidence reopens a reviewed case. Review **never** changes stock; any verified
+correction still uses the ordinary inventory adjustment workflow. This is a
+candidate queue based on historical movement descriptions, not proof of a
+duplicate deduction. Returned/removed serialized units and movements whose old
+reason format no longer identifies the sale may need separate manual review.
+
+Phone owner: consider a read-only view of open cases for a supervisor, with the
+same movement evidence and a count/adjustment reference in the review note.
+Keep the employee's direct-sale and trip-slip flows separate; this audit does
+not authorize an automatic correction. This audit did not change mobile source.
+
 ## Direct unit sale in same-order trip slips (2026-10-16)
 
 The legacy `POST /finished-products/:id/units/allocate` `action:'sell'`

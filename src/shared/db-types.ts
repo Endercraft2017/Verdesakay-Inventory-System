@@ -297,6 +297,16 @@ export interface Departments {
   created_at: Generated<string>;
 }
 
+export interface DirectSaleStockoutReviews {
+  id: Generated<number>;
+  order_id: number;
+  item_id: number;
+  evidence_hash: string;
+  note: string;
+  reviewed_by: number | null;
+  reviewed_at: Generated<string>;
+}
+
 export interface DocChunks {
   body: string | null;
   ref_label: string | null;
@@ -1783,6 +1793,7 @@ export interface DB {
   customers: Customers;
   deliveries: Deliveries;
   departments: Departments;
+  direct_sale_stockout_reviews: DirectSaleStockoutReviews;
   doc_chunks: DocChunks;
   doc_studio_comments: DocStudioComments;
   doc_studio_drafts: DocStudioDrafts;
