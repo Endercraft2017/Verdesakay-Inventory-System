@@ -2,8 +2,9 @@
  * Current legacy rules for newly set passwords: 8–128 characters and not one of the
  * common passwords people try first. Existing passwords keep working; the rules apply whenever a
  * password is set (account creation, change, reset, workspace provisioning).
- * This is not a standards-conformance claim: password-only minimum length and bcrypt's
- * 72-byte truncation require migration (docs/audits/standards-research.md).
+ * This is not a standards-conformance claim: the password-only minimum still needs a
+ * coordinated policy rollout. Storage is handled by password-hash.ts, including bounded
+ * bcrypt compatibility (docs/operations/password-migration.md).
  *
  * common-passwords.txt: the entries of 8+ characters from SecLists'
  * Passwords/Common-Credentials/10k-most-common.txt, lowercased (2,087 lines). Shorter entries

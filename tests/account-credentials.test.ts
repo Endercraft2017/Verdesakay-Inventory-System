@@ -41,7 +41,7 @@ describe('tenant self-service credentials', () => {
       expect((await ctx.api.post('/api/auth/login').send({ username: newName, password: current })).status).toBe(401);
       expect((await ctx.api.post('/api/auth/login').send({ username: newName, password: next })).status).toBe(200);
     }
-  });
+  }, 60000); // Exercises every role with production-strength password derivations.
   it('requires a session and current password, rejects duplicates, and only edits the caller', async () => {
     const own = addUser('credential-owner');
     const target = addUser('credential-target');

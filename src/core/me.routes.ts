@@ -2,7 +2,7 @@
  *  record. Mounted at /api/me. Any logged-in user; endpoints 403 if the account
  *  isn't linked to an `employees` row. */
 import { Router, type Request } from 'express';
-import bcrypt from 'bcryptjs';
+import { verifyPassword } from '../shared/password-hash';
 import { db, queryOne, queryAll, run, getSetting } from '../shared/db';
 import { logEvent } from '../shared/activity';
 import { renderPayslipPdf } from '../modules/payroll/payslip-pdf';
@@ -98,7 +98,7 @@ router.put('/profile', syncClass('merge', { redact: ['current_password'] }), (re
   const { current_password, ...input } = parseBody(selfProfileSchema, reRun ? { ...req.body, current_password: '-' } : req.body);
   const user = queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = ?', req.user!.id);
   // 400, not 401: the mobile API client treats 401 as "session expired" and signs the user out.
-  if (!user || (!reRun && !bcrypt.compareSync(current_password, user.password_hash))) {
+  if (!user || (!reRun && !verifyPassword(current_password, user.password_hash))) {
     res.status(400).json({ error: 'Current password is incorrect' }); return;
   }
   const values = Object.fromEntries(PROFILE_FIELDS.filter((k) => k in input).map((k) => [k, input[k] ?? null]));

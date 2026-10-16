@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from '../shared/password-hash';
 import { withTenant, run, DATA_DIR, UPLOAD_DIR } from '../shared/db';
 import { PASSWORD_MIN, isCommonPassword } from '../shared/password-policy';
 import { removeUploadFolder } from '../shared/file-store';
@@ -50,7 +50,7 @@ export function createTenant(input: CreateTenantInput): { slug: string } {
   // withTenant opens + creates + migrates + seeds <DATA_DIR>/<slug>.db (seed() makes a
   // default 'admin' account); adopt the caller's chosen credentials onto it.
   withTenant(slug, () => {
-    const hash = bcrypt.hashSync(input.admin_password, 10);
+    const hash = hashPassword(input.admin_password);
     // The operator chose this password for the owner, so the seed's "change the default
     // password" flag no longer applies.
     run("UPDATE users SET username = ?, password_hash = ?, email = ?, password_change_required = 0 WHERE username = 'admin'", username, hash, input.is_sandbox ? null : (input.admin_email?.trim().toLowerCase() || null));

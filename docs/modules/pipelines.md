@@ -1225,6 +1225,12 @@ code. Native clients retain bearer compatibility. Recovery links use configured 
 expire after fifteen minutes and are claimed once. Password replacement revokes all sessions.
 Role/permission changes revoke the affected sessions; clients must sign in again.
 
+Verified legacy passwords upgrade conditionally to versioned scrypt in the owning account
+database before the existing MFA/session stage; failed passwords do not migrate. Both tenant
+and console password writers use the shared format. Legacy bcrypt inputs over 72 UTF-8 bytes
+require recovery. Cloud/site binaries must support the format before synchronized credentials
+change; see `operations/password-migration.md` for rollback and resource requirements.
+
 Self-service MFA operations share an account-and-tenant failure budget across sessions and
 factor endpoints (ten failures per fifteen minutes, process-local). Disabling MFA requires the
 password plus an existing factor and revokes other sessions. Administrator resets and policy

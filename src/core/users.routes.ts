@@ -1,6 +1,6 @@
 /** User-account and department management. Listing is open to all; mutations require users.manage. */
 import { Router } from 'express';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from '../shared/password-hash';
 import { db, queryOne, queryAll, run } from '../shared/db';
 import {
   requireAuth, requirePermission, requireAnyPermission, endUserSessions, endSessionBySid, listUserSessions,
@@ -121,7 +121,7 @@ router.post('/', requireAnyPermission(['users.manage', 'hr.manage']), syncClass(
     if (employee.user_id != null) { res.status(409).json({ error: 'This employee already has an account. Unlink and save before creating another.' }); return; }
   }
   enforceQuota('users');
-  const hash = bcrypt.hashSync(input.password, 10);
+  const hash = hashPassword(input.password);
   db.exec('BEGIN');
   try {
     const info = run(
@@ -199,7 +199,7 @@ router.post('/:id/reset-password', requirePermission('users.manage'), syncClass(
     res.status(404).json({ error: 'User not found' });
     return;
   }
-  const hash = bcrypt.hashSync(new_password, 10);
+  const hash = hashPassword(new_password);
   run('UPDATE users SET password_hash = ?, password_change_required = 0, temporary_password_expires_at = NULL WHERE id = ?', hash, id);
   endUserSessions(id, 'password');
   run('UPDATE password_resets SET used = 1 WHERE user_id = ?', id);

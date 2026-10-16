@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { DatabaseSync } from 'node:sqlite';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from './password-hash';
 import { SSS_2026, PHILHEALTH_2026, PAGIBIG_2026, RWT_2026 } from '../modules/payroll/ph-statutory';
 import { DEFAULT_COA } from '../modules/accounting/ledger';
 import { preMigrationSnapshot, backupDir, mirrorDir } from './backup';
@@ -3478,7 +3478,7 @@ function seed(): void {
       .get('Administration') as { id: number } | undefined;
     const password = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === 'test' ? process.env.VDS_TEST_ADMIN_PASSWORD : undefined);
     if (!password || (process.env.NODE_ENV === 'production' && (password.length < 12 || ['admin123', 'password1234'].includes(password.toLowerCase())))) throw new Error('Set ADMIN_PASSWORD to a unique password of at least 12 characters before creating the default admin account');
-    const hash = bcrypt.hashSync(password, 10);
+    const hash = hashPassword(password);
     // The configured first-boot password must be replaced at first sign-in (shared/auth.ts).
     // Tests use a separate fixture variable. Provisioning clears the flag when the operator
     // sets the owner's own password (platform/provisioning.ts).

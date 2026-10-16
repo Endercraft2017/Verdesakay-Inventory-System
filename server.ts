@@ -6,7 +6,7 @@ import { requireProductionTransport } from './src/shared/hosting';
  * first run (via `openssl`); if that isn't possible the server falls back to plain
  * HTTP and the camera scanner degrades to manual code entry. */
 import os from 'node:os';
-import bcrypt from 'bcryptjs';
+import { verifyPassword } from './src/shared/password-hash';
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
@@ -48,7 +48,7 @@ const backgroundTenants = () => DEPLOY_MODE === 'cloud'
 if (process.env.NODE_ENV === 'production') {
   for (const slug of backgroundTenants()) withTenant(slug, () => {
     const admin = getDb(slug).prepare("SELECT password_hash FROM users WHERE username = 'admin' AND active = 1").get() as { password_hash: string } | undefined;
-    if (admin && bcrypt.compareSync('admin123', admin.password_hash)) {
+    if (admin && verifyPassword('admin123', admin.password_hash)) {
       throw new Error(`Refusing production startup: change the default administrator password for ${slug}.`);
     }
   });

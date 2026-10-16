@@ -999,8 +999,8 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
         if (!getRole(input.role)) return { success: false, error: `Unknown role "${input.role}".` };
         const exists = queryOne('SELECT id FROM users WHERE username = ?', input.username);
         if (exists) return { success: false, error: 'Username already taken.' };
-        const { hashSync } = await import('bcryptjs');
-        const hash = hashSync(input.password, 10);
+        const { hashPassword } = await import('../../shared/password-hash');
+        const hash = hashPassword(input.password);
         const r = run(
           'INSERT INTO users (username, full_name, password_hash, role, department_id) VALUES (?, ?, ?, ?, ?)',
           input.username, input.full_name, hash, input.role, input.department_id,

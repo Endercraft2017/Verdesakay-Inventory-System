@@ -6,7 +6,7 @@
  */
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
-import bcrypt from 'bcryptjs';
+import { hashPassword, verifyPassword, passwordNeedsUpgrade } from '../shared/password-hash';
 import { cookieValue } from '../shared/browser-session';
 import { platformDb } from './platform';
 import { tokenDigest } from '../shared/db';
@@ -31,7 +31,7 @@ export function upsertPlatformUser(username: string, password: string, fullName?
   const u = username.toLowerCase().trim();
   if (!/^[a-z0-9._-]{3,30}$/.test(u)) throw new Error('Username must be 3–30 chars: letters, numbers, dot, underscore, hyphen.');
   if (password.length < 6) throw new Error('Password must be at least 6 characters.');
-  const hash = bcrypt.hashSync(password, 10);
+  const hash = hashPassword(password);
   const d = platformDb();
   d.prepare(
     `INSERT INTO platform_users (username, password_hash, full_name) VALUES (?, ?, ?)
@@ -59,7 +59,10 @@ export function platformLogin(username: string, password: string): string | null
   const row = platformDb().prepare(
     'SELECT id, password_hash FROM platform_users WHERE username = ?'
   ).get(username.toLowerCase().trim()) as { id: number; password_hash: string } | undefined;
-  if (!row || !bcrypt.compareSync(password, row.password_hash)) return null;
+  if (!row || !verifyPassword(password, row.password_hash)) return null;
+  if (passwordNeedsUpgrade(row.password_hash)) {
+    platformDb().prepare('UPDATE platform_users SET password_hash = ? WHERE id = ? AND password_hash = ?').run(hashPassword(password), row.id, row.password_hash);
+  }
   const token = newToken();
   const d = platformDb();
   d.prepare(
@@ -77,12 +80,12 @@ export function changePlatformPassword(userId: number, current: string, next: st
   const d = platformDb();
   const row = d.prepare('SELECT password_hash FROM platform_users WHERE id = ?').get(userId) as
     { password_hash: string } | undefined;
-  if (!row || !bcrypt.compareSync(current, row.password_hash)) return 'Current password is incorrect.';
+  if (!row || !verifyPassword(current, row.password_hash)) return 'Current password is incorrect.';
   if (next.length < PASSWORD_MIN) return `New password must be at least ${PASSWORD_MIN} characters.`;
   if (next.length > PASSWORD_MAX) return `New password must be at most ${PASSWORD_MAX} characters.`;
   if (isCommonPassword(next)) return 'New password is one of the most common passwords — choose one that is harder to guess.';
   if (next === current) return 'New password must be different from the current one.';
-  d.prepare('UPDATE platform_users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(next, 10), userId);
+  d.prepare('UPDATE platform_users SET password_hash = ? WHERE id = ?').run(hashPassword(next), userId);
   d.prepare('DELETE FROM platform_sessions WHERE user_id = ? AND token <> ?').run(userId, tokenDigest(keepToken));
   return null;
 }
@@ -91,7 +94,7 @@ export function changePlatformPassword(userId: number, current: string, next: st
 export function changePlatformUsername(userId: number, current: string, next: string, keepToken: string): string | null {
   const d = platformDb();
   const row = d.prepare('SELECT username, password_hash FROM platform_users WHERE id = ?').get(userId) as { username: string; password_hash: string } | undefined;
-  if (!row || !bcrypt.compareSync(current, row.password_hash)) return 'Current password is incorrect.';
+  if (!row || !verifyPassword(current, row.password_hash)) return 'Current password is incorrect.';
   const username = next.trim().toLowerCase();
   if (!/^[a-z0-9._-]{3,30}$/.test(username)) return 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen.';
   if (username === row.username.toLowerCase()) return 'Choose a different username.';

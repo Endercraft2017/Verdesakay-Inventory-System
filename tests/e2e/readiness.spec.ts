@@ -181,18 +181,20 @@ test('browser: uploaded JavaScript cannot execute as a self-hosted script', asyn
 test('browser: authenticator enrollment, one-use recovery and mobile factor sign-in', async ({ page, browser }) => {
   await signIn(page);
   const username = 'mfa.' + Date.now();
-  await page.evaluate(async name => { await API.post('/users', { username: name, full_name: 'MFA Browser', password: 'browser-mfa-password', role: 'warehouse' }); }, username);
+  // Exercise real creation and both sign-in UIs with a password past bcrypt's old byte limit.
+  const password = 'browser-mfa-password'.repeat(5);
+  await page.evaluate(async args => { await API.post('/users', { username: args.username, full_name: 'MFA Browser', password: args.password, role: 'warehouse' }); }, { username, password });
   const context = await browser.newContext({ baseURL: new URL(page.url()).origin });
   const account = await context.newPage();
   try {
     await account.goto('/');
-    await account.locator('#login-username').fill(username); await account.locator('#login-password').fill('browser-mfa-password');
+    await account.locator('#login-username').fill(username); await account.locator('#login-password').fill(password);
     await account.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(account.locator('#app-screen')).toBeVisible();
     await account.goto('/#account');
     await account.locator('#mfa-on').click();
     let dialog = account.locator('.modal-overlay');
-    await dialog.locator('[data-f="pw"]').fill('browser-mfa-password');
+    await dialog.locator('[data-f="pw"]').fill(password);
     await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
     dialog = account.locator('.modal-overlay');
     await expect(dialog).toContainText('Add it to your authenticator app');
@@ -204,7 +206,7 @@ test('browser: authenticator enrollment, one-use recovery and mobile factor sign
     await dialog.getByRole('button', { name: 'I saved them', exact: true }).click();
     await account.evaluate(async () => { await API.post('/auth/logout'); (API as any).clearToken(); });
     await account.goto('/');
-    await account.locator('#login-username').fill(username); await account.locator('#login-password').fill('browser-mfa-password');
+    await account.locator('#login-username').fill(username); await account.locator('#login-password').fill(password);
     await account.getByRole('button', { name: 'Sign in', exact: true }).click();
     dialog = account.locator('.modal-overlay');
     await expect(dialog).toContainText('Two-step sign-in');
@@ -213,7 +215,7 @@ test('browser: authenticator enrollment, one-use recovery and mobile factor sign
     await expect(account.locator('#app-screen')).toBeVisible();
     await account.evaluate(async () => { await API.post('/auth/logout'); (API as any).clearToken(); });
     await account.setViewportSize({ width: 390, height: 844 }); await account.goto('/m');
-    await account.locator('#m-username').fill(username); await account.locator('#m-password').fill('browser-mfa-password');
+    await account.locator('#m-username').fill(username); await account.locator('#m-password').fill(password);
     await account.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(account.locator('#m-mfa-code')).toBeVisible();
     await account.locator('#m-mfa-code').fill(codes[0]!);
@@ -227,7 +229,7 @@ test('browser: authenticator enrollment, one-use recovery and mobile factor sign
     await page.evaluate(async () => { await API.post('/auth/logout'); (API as any).clearToken(); });
     await page.goto('/');
     await page.locator('#login-username').fill(username);
-    await page.locator('#login-password').fill('browser-mfa-password');
+    await page.locator('#login-password').fill(password);
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     const factorDialog = page.locator('.modal-overlay');
     await factorDialog.locator('[data-f="code"]').fill(codes[2]!);
@@ -236,7 +238,7 @@ test('browser: authenticator enrollment, one-use recovery and mobile factor sign
     await page.goto('/#account');
     await page.locator('#mfa-off').click();
     const disableDialog = page.locator('.modal-overlay');
-    await disableDialog.locator('[data-f="pw"]').fill('browser-mfa-password');
+    await disableDialog.locator('[data-f="pw"]').fill(password);
     await disableDialog.locator('[data-f="code"]').fill(codes[3]!);
     await disableDialog.getByRole('button', { name: 'Turn off', exact: true }).click();
     await expect(page.locator('#mfa-on')).toBeVisible();

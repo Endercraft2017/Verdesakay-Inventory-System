@@ -9,7 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from '../shared/password-hash';
 import { DEFAULT_TENANT, hashLegacySessionTokens } from '../shared/db';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
@@ -179,7 +179,7 @@ function seedPlatformUserFromEnv(): void {
   const existing = _db!.prepare('SELECT id FROM platform_users WHERE username = ?').get(u) as { id: number } | undefined;
   if (count > 0 && !existing) return; // don't silently add a second operator once set up
   if (existing && process.env.PLATFORM_ADMIN_RESET !== 'true') return;
-  const hash = bcrypt.hashSync(p, 10);
+  const hash = hashPassword(p);
   _db!.prepare(
     `INSERT INTO platform_users (username, password_hash, full_name) VALUES (?, ?, ?)
      ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash`

@@ -258,7 +258,8 @@ describe('provision + edit a workspace', () => {
     expect(Date.parse(issue.body.expires_at) - Date.now()).toBeGreaterThan(23 * 60 * 60 * 1000);
     const user = withTenant('temprecovery', () => queryOne<{ password_hash: string; password_change_required: number }>('SELECT * FROM users WHERE id = 1')!);
     expect(user.password_hash).not.toBe(temporary);
-    expect(bcrypt.compareSync(temporary, user.password_hash)).toBe(true);
+    const { verifyPassword } = await import('../src/shared/password-hash');
+    expect(verifyPassword(temporary, user.password_hash)).toBe(true);
     expect(user.password_change_required).toBe(1);
     expect(withTenant('temprecovery', () => queryOne<{ c: number }>('SELECT COUNT(*) AS c FROM mail_log')!.c)).toBe(0);
     const detail = await ctx.api.get('/_platform/api/tenants/temprecovery').set(opHdr());

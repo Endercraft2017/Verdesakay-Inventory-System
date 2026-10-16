@@ -5,7 +5,7 @@ import { approverDepartmentIds } from '../modules/hr/workflow';
  *  and the caller's own sessions ("Where you're signed in" — list / end one / end the others). */
 import crypto from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
-import bcrypt from 'bcryptjs';
+import { hashPassword, verifyPassword, passwordNeedsUpgrade } from '../shared/password-hash';
 import rateLimit from 'express-rate-limit';
 import { queryOne, queryAll, run, newToken, DEFAULT_TENANT } from '../shared/db';
 import {
@@ -53,9 +53,14 @@ router.post('/login', (req, res) => {
   const { username, password, shared } = parseBody(loginSchema, req.body);
   const user = queryOne<UserRow>('SELECT * FROM users WHERE username = ?', username.toLowerCase());
 
-  if (!user || user.active !== 1 || (user.password_change_required === 1 && user.temporary_password_expires_at && Date.parse(user.temporary_password_expires_at) <= Date.now()) || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || user.active !== 1 || (user.password_change_required === 1 && user.temporary_password_expires_at && Date.parse(user.temporary_password_expires_at) <= Date.now()) || !verifyPassword(password, user.password_hash)) {
     res.status(401).json({ error: 'Invalid username or password' });
     return;
+  }
+
+  // Upgrade only a verified password and only if the stored hash has not changed.
+  if (process.env.DEPLOY_MODE !== 'node' && passwordNeedsUpgrade(user.password_hash)) {
+    run('UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?', hashPassword(password), user.id, user.password_hash);
   }
 
   // Two-step sign-in on: the password alone opens nothing — the app asks for the code next
@@ -131,7 +136,7 @@ const mfaChangeLimiter = rateLimit({
 
 function passwordMatches(userId: number, password: string): boolean {
   const row = queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = ?', userId);
-  return !!row && bcrypt.compareSync(password, row.password_hash);
+  return !!row && verifyPassword(password, row.password_hash);
 }
 
 // GET /api/auth/mfa — whether it is on, required, and how many recovery codes are left.
@@ -248,7 +253,7 @@ router.get('/me', requireAuth, (req, res) => {
 router.post('/change-username', requireAuth, syncClass('online'), (req, res) => {
   const { current_password, new_username } = parseBody(changeUsernameSchema, req.body);
   const user = queryOne<UserRow>('SELECT * FROM users WHERE id = ?', req.user!.id)!;
-  if (!bcrypt.compareSync(current_password, user.password_hash)) { res.status(400).json({ error: 'Current password is incorrect' }); return; }
+  if (!verifyPassword(current_password, user.password_hash)) { res.status(400).json({ error: 'Current password is incorrect' }); return; }
   if (new_username === user.username.toLowerCase()) { res.status(400).json({ error: 'Choose a different username' }); return; }
   if (queryOne('SELECT id FROM users WHERE lower(username) = ? AND id <> ?', new_username, user.id)) {
     res.status(409).json({ error: 'That username is already in use in your company' }); return;
@@ -262,14 +267,14 @@ router.post('/change-username', requireAuth, syncClass('online'), (req, res) => 
 router.post('/change-password', requireAuth, syncClass('online'), (req, res) => {
   const { current_password, new_password } = parseBody(changePasswordSchema, req.body);
   const user = queryOne<UserRow>('SELECT * FROM users WHERE id = ?', req.user!.id)!;
-  if (!bcrypt.compareSync(current_password, user.password_hash)) {
+  if (!verifyPassword(current_password, user.password_hash)) {
     res.status(400).json({ error: 'Current password is incorrect' });
     return;
   }
-  if (user.password_change_required && bcrypt.compareSync(new_password, user.password_hash)) {
+  if (user.password_change_required && verifyPassword(new_password, user.password_hash)) {
     res.status(400).json({ error: 'Choose a password different from the temporary password.' }); return;
   }
-  const hash = bcrypt.hashSync(new_password, 10);
+  const hash = hashPassword(new_password);
   run('UPDATE users SET password_hash = ?, password_change_required = 0, temporary_password_expires_at = NULL WHERE id = ?', hash, req.user!.id);
   // Password replacement invalidates every credential, including the caller's.
   endUserSessions(req.user!.id, 'password');
@@ -333,7 +338,7 @@ router.post('/reset-password', syncClass('online'), (req, res) => {
     res.status(400).json({ error: 'This reset link is invalid or has expired. Request a new one.' });
     return;
   }
-  run('UPDATE users SET password_hash = ?, password_change_required = 0, temporary_password_expires_at = NULL WHERE id = ?', bcrypt.hashSync(new_password, 10), row.user_id);
+  run('UPDATE users SET password_hash = ?, password_change_required = 0, temporary_password_expires_at = NULL WHERE id = ?', hashPassword(new_password), row.user_id);
   // Every other outstanding link for this account stops working too.
   run('UPDATE password_resets SET used = 1 WHERE user_id = ? AND used = 0', row.user_id);
   endUserSessions(row.user_id, 'password'); // force re-login everywhere

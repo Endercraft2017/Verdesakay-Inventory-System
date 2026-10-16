@@ -5,7 +5,36 @@ Source cutoff: `restructure/module-architecture` at
 Earlier reports describe older trees. The verification summary in
 `evidence/second-pass-verification.json` describes the original second-pass run.
 
-## Standards follow-up
+## Password storage follow-up
+
+Versioned scrypt storage replaces all application bcrypt writers; bounded bcrypt verification
+remains for legacy credentials. No dependency or database-schema change was needed.
+
+- Full regression: **285 files / 2,872 tests passed**, 498.47 seconds
+  ([log](evidence/password-regression.txt)). This run started before the final installed-site
+  migration guard/test was added and is broad regression evidence, not an exact-final-tree run.
+- Final focused regression: **2 files / 9 tests passed**, 45.19 seconds
+  ([log](evidence/password-focused.txt)), including that site credential-ownership guard,
+  both account stores, long Unicode input, legacy truncation rejection, malformed hashes,
+  failed-login non-migration and every configured role's credential-change workflow.
+- Final Playwright: **8 scenarios passed**, 27.1 seconds
+  ([log](evidence/password-playwright.txt)). The MFA scenario now creates and signs into the
+  account with a 100-character password through both desktop and mobile UIs.
+- Final TypeScript check passed ([log](evidence/password-typecheck.txt)).
+- Staged secret scan passed ([log](evidence/password-secrets.txt)); commit hook scans the
+  final staged content again. No historical-secret or advisory finding is closed by this.
+
+The initial focused all-role workflow exceeded its 20-second test timeout under the stronger
+derivation cost. Only that test's timeout was extended to 60 seconds; no test-only hash cost
+or production policy bypass was introduced. The final focused run passes at real parameters.
+
+The [migration runbook](../operations/password-migration.md) describes old-site compatibility,
+rollback restrictions, recovery for legacy long passwords, and synchronous CPU/memory limits.
+Password minimum policy, console MFA, fresh privileged verification and native vault storage
+remain open. Live rollout, real-device/installed-host acceptance and representative sign-in
+load were not performed. This is a tested password-storage increment, not release sign-off.
+
+## Earlier standards follow-up
 
 The [standards research increment](standards-research.md) adds account-scoped MFA failure
 limits and revocation of other sessions when disabling MFA. Validation after these changes:

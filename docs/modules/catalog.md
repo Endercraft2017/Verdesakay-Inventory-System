@@ -101,6 +101,11 @@ pre-existing upward dependency from shared into two business modules. Not introd
 by this reorg; flagged for a future follow-up rather than fixed here.
 **Status:** working.
 
+Credential storage uses `shared/password-hash.ts` across tenant and platform writers/verifiers:
+versioned scrypt (N=131072, r=8, p=1), bounded legacy bcrypt verification and conditional upgrade
+after a verified password at login. See `docs/operations/password-migration.md` for deployment,
+rollback and availability limits; password minimum policy and console MFA remain partial.
+
 ## platform/ — SaaS control plane
 
 **Responsibility:** tenant provisioning, plans, quotas, and the owner console — sits

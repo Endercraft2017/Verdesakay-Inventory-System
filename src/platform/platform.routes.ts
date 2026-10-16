@@ -33,7 +33,7 @@ import { saveSubscription, subscriptionView } from './subscription';
 import { tenantUsage } from './quota';
 import { punchPhotoUsageBytes } from '../modules/hr/punch-photos';
 import { enabledModules, isModuleName, withDeps, MODULES, MODULE_DEPS } from '../shared/modules';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from '../shared/password-hash';
 import { endUserSessions } from '../shared/auth';
 import { getMailSettings, saveMailSettings, mailReady, verifyMailSettings, sendMail } from '../shared/mailer';
 import { parseBody, changeUsernameSchema, mailSettingsSchema, resetPasswordSchema, platformCreateTenantSchema } from '../shared/validation';
@@ -310,7 +310,7 @@ router.post('/tenants/:slug/reset-owner-password', async (req, res, next) => {
     if (req.body?.owner_id !== owner.id) {
       res.status(409).json({ error: 'The owner account changed. Reopen the workspace and try again.' }); return;
     }
-    const hash = bcrypt.hashSync(new_password, 10);
+    const hash = hashPassword(new_password);
     withTenant(t.slug, () => {
       db.exec('BEGIN IMMEDIATE');
       try {
