@@ -61,6 +61,15 @@ describe('inventory', () => {
     expect(detail.body.history[0].balance_after).toBe(25); // newest first
   });
 
+  it('refuses the legacy phone Pick adjustment so a later release cannot deduct twice', async () => {
+    const { body } = await createItem({ name: 'Legacy pick guard', quantity: 4 });
+    const blocked = await ctx.api.post(`/api/inventory/${body.id}/adjust`).set(authHdr())
+      .send({ change: -2, reason: 'Picked for order SO-00042' });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe('use_release_workflow');
+    expect((await ctx.api.get(`/api/inventory/${body.id}`).set(authHdr())).body.quantity).toBe(4);
+  });
+
   it('refuses to take stock below zero', async () => {
     const { body } = await createItem({ name: 'Staplers', quantity: 3 });
     const res = await ctx.api.post(`/api/inventory/${body.id}/adjust`).set(authHdr()).send({ change: -10 });
@@ -393,6 +402,10 @@ describe('inventory: item image', () => {
 
     const detail = await ctx.api.get(`/api/inventory/${body.id}`).set(authHdr());
     expect(detail.body.image_path).toBe(up.body.image_path);
+
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    fs.unlinkSync(path.join(ctx.tmpDir, 'uploads', up.body.image_path));
 
     const img = await ctx.api.get(`/api/inventory/${body.id}/image`).set(authHdr());
     expect(img.status).toBe(200);

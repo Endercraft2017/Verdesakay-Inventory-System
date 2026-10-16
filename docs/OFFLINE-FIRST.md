@@ -444,7 +444,7 @@ snapshot imported as tenant `plant-a`, node 7) in one process and syncs them in-
 | Clock | `sync/clock.ts` | `datetime/date/time/julianday/unixepoch/strftime` override per sync connection |
 | Capture | `sync/capture.ts` | `syncRequestMiddleware` (replay context · node guard · cloud flush) and `syncClass()`; one lock-serialized SQLite session per command |
 | Replay | `sync/replay.ts` | loopback dispatch with a per-process secret; runs as the command's actor via `authUserById` (a disabled actor fails auth → rejected) |
-| Authority | `sync/authority.ts` | `flushEffects`, `acceptCommand` (idempotent), `pullFor`, `snapshotForNode` |
+| Authority | `sync/authority.ts` | `flushEffects`, `acceptCommand` (idempotent), `pullFor`, `snapshotForNode`; `withoutReplicating(conn, fn)` for cloud-only housekeeping writes that PCs must not replay (flush first, run `fn` synchronously, discard what it recorded) — used when the file bucket takes over the in-database upload copies (`platform/upload-offload.ts`) |
 | Rebase | `sync/rebase.ts` | undo pending → apply effects → verdicts (one transaction, strict: any conflict ⇒ `SyncDivergenceError`, nothing applied) → re-run pending; a failed re-run is undone and marked `conflict` |
 
 **Routes classed in phase 1:** `POST /api/inventory/:id/adjust` (`physical`) — the pilot vehicle.
@@ -813,7 +813,7 @@ with real DPAPI (`pc-secret.bin` holds only ciphertext).
 
 | Route | Class | Offline behaviour |
 |---|---|---|
-| `POST /api/hr/clock/kiosk-punch`, `/correct`, `POST /api/hr/clock/punch` (phone), `POST /api/hr/field/kiosk-punch`, punch photos (`POST …/photo/:punchId`) | `physical` | Always work offline: a punch records something that happened |
+| `POST /api/hr/clock/kiosk-punch`, `/correct`, `POST /api/hr/clock/punch/scan` + `/punch/selfie` (phone, 2026-10-10: two commands, each replayed at its own time; the hold row links them and the selfie travels with its command), `POST /api/hr/field/kiosk-punch`, punch photos (`POST …/photo/:punchId`) | `physical` | Always work offline: a punch records something that happened |
 | kiosk approval / revoke, kiosk lock, office location lock, punch import | `claim` | Company-wide: decided offline at the main site |
 
 **A punch keeps its own time.** All time logic in `clock.ts` uses `now()`: the QR code's window, the

@@ -55,6 +55,17 @@ export interface AiMessages {
   created_at: Generated<string>;
 }
 
+export interface AiPendingActions {
+  id: string;
+  user_id: number;
+  tool: string;
+  args: string;
+  status: Generated<string>;
+  result: string | null;
+  created_at: Generated<string>;
+  decided_at: string | null;
+}
+
 export interface AiToolAudit {
   id: Generated<number>;
   request_id: string;
@@ -272,6 +283,9 @@ export interface Deliveries {
   contact_phone: string | null;
   scheduled_date: string | null;
   assigned_to: number | null;
+  delivery_mode: Generated<string>;
+  courier_name: string | null;
+  tracking_number: string | null;
   status: Generated<string>;
   notes: string | null;
   pod_recipient: string | null;
@@ -302,6 +316,58 @@ export interface DocChunks {
   dept_id: string | null;
 }
 
+export interface DocStudioComments {
+  id: Generated<number>;
+  document_key: string;
+  block_id: Generated<string>;
+  body: string;
+  created_by: number | null;
+  resolved: Generated<number>;
+  created_at: Generated<string>;
+}
+
+export interface DocStudioDrafts {
+  document_key: string;
+  user_id: number;
+  snapshot: string;
+  version: Generated<number>;
+  updated_at: Generated<string>;
+}
+
+export interface DocStudioLibrary {
+  id: Generated<number>;
+  kind: string;
+  name: string;
+  value: string;
+  version: Generated<number>;
+  created_by: number | null;
+  updated_at: Generated<string>;
+}
+
+export interface DocStudioPresence {
+  document_key: string;
+  client_id: string;
+  user_id: number;
+  touched_at: number;
+}
+
+export interface DocStudioRooms {
+  document_key: string;
+  snapshot: string;
+  version: Generated<number>;
+  saved_revision: string | null;
+  updated_by: number | null;
+  updated_at: Generated<string>;
+}
+
+export interface DocStudioVersions {
+  id: Generated<number>;
+  template_id: number;
+  snapshot: string;
+  label: Generated<string>;
+  created_at: Generated<string>;
+}
+
 export interface DocTemplates {
   id: Generated<number>;
   name: string;
@@ -314,6 +380,8 @@ export interface DocTemplates {
   copies_per_record: Generated<number>;
   records_per_page: Generated<number>;
   tile_fill: Generated<string>;
+  grid_gap_x_mm: Generated<number>;
+  grid_gap_y_mm: Generated<number>;
   repeat_count: Generated<number>;
   tile_continuous: Generated<number>;
 }
@@ -333,6 +401,18 @@ export interface DocVariables {
   sort: Generated<number>;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+}
+
+export interface DocumentDefaults {
+  key: string;
+  template_id: number | null;
+}
+
+export interface DurableUploads {
+  name: string;
+  data: Uint8Array;
+  size_bytes: number;
+  saved_at: Generated<string>;
 }
 
 export interface EmployeeDocuments {
@@ -434,6 +514,16 @@ export interface FieldPunches {
   created_at: Generated<string>;
 }
 
+export interface FormDefinitionVersions {
+  form_id: Generated<number>;
+  version: number;
+  definition: string;
+  created_by: number | null;
+  reason: string | null;
+  created_at: string;
+  legacy_baseline: Generated<number>;
+}
+
 export interface FormDefinitions {
   id: Generated<number>;
   name: string;
@@ -444,6 +534,14 @@ export interface FormDefinitions {
   created_by: number | null;
   created_at: Generated<string>;
   updated_at: string | null;
+  entry_access: Generated<string>;
+  access_revision: Generated<number>;
+  version: Generated<number>;
+  updated_by: number | null;
+  version_reason: string | null;
+  archived_at: string | null;
+  archived_by: number | null;
+  archive_reason: string | null;
   template_id: number | null;
   scope: string | null;
   actions: Generated<string>;
@@ -458,6 +556,19 @@ export interface FormRecordActionRuns {
   created_at: Generated<string>;
 }
 
+export interface FormRecordRevisions {
+  record_id: Generated<number>;
+  revision: number;
+  definition_version: number;
+  data: string;
+  status: string;
+  changed_by: number | null;
+  reason: string | null;
+  changed_by_name: string | null;
+  source: string;
+  created_at: string;
+}
+
 export interface FormRecords {
   id: Generated<number>;
   form_def_id: number;
@@ -467,7 +578,29 @@ export interface FormRecords {
   created_by: number | null;
   created_at: Generated<string>;
   updated_at: string | null;
+  definition_version: number | null;
+  revision: Generated<number>;
   period: string | null;
+}
+
+export interface FormSalesLinks {
+  record_id: Generated<number>;
+  order_id: number;
+  order_number: string;
+  created_at: string;
+}
+
+export interface FormTemplateLinks {
+  form_id: Generated<number>;
+  template_id: number;
+}
+
+export interface FormUserPreferences {
+  user_id: Generated<number>;
+  favorites: Generated<string>;
+  recent: Generated<string>;
+  views: Generated<string>;
+  updated_at: string;
 }
 
 export interface Forms {
@@ -523,7 +656,43 @@ export interface IdempotencyKeys {
   path: string;
   status_code: number;
   response: string;
+  request_hash: string | null;
   created_at: Generated<string>;
+}
+
+export interface IdentifiedReportAttachments {
+  id: Generated<number>;
+  report_id: number;
+  stored_name: string;
+  original_name: string;
+  mime_type: string;
+  size_bytes: number;
+}
+
+export interface IdentifiedReportEvents {
+  id: Generated<number>;
+  report_id: number;
+  actor_id: number | null;
+  kind: string;
+  body: string | null;
+  created_at: Generated<string>;
+}
+
+export interface IdentifiedReports {
+  id: Generated<number>;
+  number: string | null;
+  reporter_id: number;
+  recipient_id: number;
+  assignee_id: number | null;
+  category: string;
+  subject: string;
+  description: string;
+  incident_date: string | null;
+  incident_time: string | null;
+  location: string | null;
+  status: Generated<string>;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
 }
 
 export interface InventoryItems {
@@ -537,6 +706,7 @@ export interface InventoryItems {
   unit: Generated<string | null>;
   min_quantity: Generated<number>;
   location: string | null;
+  preferred_location_id: number | null;
   notes: string | null;
   attributes: string | null;
   image_path: string | null;
@@ -568,6 +738,13 @@ export interface InventoryTransactions {
   created_at: Generated<string>;
 }
 
+export interface InventoryVariantStock {
+  item_id: Generated<number>;
+  location_id: number;
+  build_mode: string;
+  quantity: Generated<number>;
+}
+
 export interface JobOrderComponents {
   id: Generated<number>;
   job_order_id: number;
@@ -597,11 +774,14 @@ export interface JobOrderUnits {
   stage: Generated<number>;
   location_id: number | null;
   order_id: number | null;
+  order_item_id: number | null;
   batch_id: number | null;
   disposition: string | null;
   remarks: string | null;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+  conversion_source_unit_id: number | null;
+  received_unit_cost: number | null;
 }
 
 export interface JobOrders {
@@ -617,6 +797,8 @@ export interface JobOrders {
   source_location_id: number | null;
   output_location_id: number | null;
   qc_stages: Generated<number>;
+  qc_checklist_qc_snapshot: string | null;
+  qc_checklist_qa_snapshot: string | null;
   team_id: number | null;
   planned_start: string | null;
   due_date: string | null;
@@ -642,6 +824,13 @@ export interface JobOrders {
   paused_by: number | null;
   paused_at: string | null;
   pause_reason: string | null;
+  build_mode: Generated<string>;
+}
+
+export interface JobShortfallPurchases {
+  id: Generated<number>;
+  job_order_id: number;
+  purchase_order_id: number;
 }
 
 export interface JournalEntries {
@@ -707,6 +896,7 @@ export interface LocationSites {
 export interface Locations {
   id: Generated<number>;
   name: string;
+  parent_id: number | null;
   type: Generated<string>;
   address: string | null;
   notes: string | null;
@@ -733,6 +923,7 @@ export interface MessageAttachments {
   original_name: string;
   mime_type: string | null;
   size_bytes: Generated<number>;
+  data: Uint8Array | null;
   created_at: Generated<string>;
 }
 
@@ -758,6 +949,21 @@ export interface Messages {
   deleted_by: number | null;
 }
 
+export interface MfaChallenges {
+  token_hash: string;
+  user_id: number;
+  shared: Generated<number>;
+  attempts: Generated<number>;
+  expires_at: string;
+}
+
+export interface MfaEnrollments {
+  user_id: Generated<number>;
+  session_hash: string;
+  expires_at: string;
+  attempts: Generated<number>;
+}
+
 export interface Notes {
   id: Generated<number>;
   user_id: number;
@@ -765,6 +971,7 @@ export interface Notes {
   body: string;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+  checklist: Generated<string>;
 }
 
 export interface Notifications {
@@ -793,6 +1000,8 @@ export interface OrderItems {
   sort: Generated<number>;
   tax_code_id: number | null;
   released_qty: Generated<number>;
+  fulfillment_mode: Generated<string>;
+  parent_order_item_id: number | null;
 }
 
 export interface Orders {
@@ -888,6 +1097,25 @@ export interface PayrollTables {
   created_at: Generated<string>;
 }
 
+export interface PayslipDeductionHistory {
+  id: Generated<number>;
+  record_id: number;
+  before_values: string;
+  after_values: string;
+  changed_by: number | null;
+  changed_by_name: string;
+  reason: string | null;
+  created_at: string;
+}
+
+export interface PayslipPaidHistory {
+  id: Generated<number>;
+  record_id: number;
+  action: string;
+  by_user_id: number | null;
+  at: Generated<string>;
+}
+
 export interface PettyCashEntries {
   id: Generated<number>;
   fund_id: number;
@@ -921,6 +1149,43 @@ export interface ProductPackageItems {
   label: string;
   required: Generated<number>;
   sort: Generated<number>;
+}
+
+export interface ProductionBatchAllocations {
+  id: Generated<number>;
+  batch_id: number;
+  order_id: number;
+  order_item_id: number | null;
+  item_id: number;
+  location_id: number;
+  quantity: number;
+  state: string;
+  created_at: Generated<string>;
+}
+
+export interface ProductionBatchCounts {
+  id: Generated<number>;
+  batch_id: number;
+  location_id: number;
+  before_quantity: number;
+  counted_quantity: number;
+  reason: string;
+  counted_by: number | null;
+  created_at: Generated<string>;
+}
+
+export interface ProductionBatchReturnLinks {
+  id: Generated<number>;
+  return_id: number;
+  batch_id: number;
+}
+
+export interface ProductionBatchStock {
+  id: Generated<number>;
+  batch_id: number;
+  location_id: number;
+  quantity: Generated<number>;
+  received: Generated<number>;
 }
 
 export interface ProductionBatches {
@@ -1112,6 +1377,7 @@ export interface ReleaseSlipItems {
   unit: string | null;
   quantity: number;
   unit_identifiers: string | null;
+  unit_cost: number | null;
 }
 
 export interface ReleaseSlips {
@@ -1167,6 +1433,7 @@ export interface RepairPartRequests {
   created_at: Generated<string>;
   updated_at: Generated<string>;
   decided_at: string | null;
+  sales_return_id: number | null;
 }
 
 export interface RepairRequestEvents {
@@ -1201,6 +1468,73 @@ export interface Roles {
   sort_order: Generated<number>;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+}
+
+export interface SaleShortfallPurchases {
+  id: Generated<number>;
+  source_order_id: number;
+  purchase_order_id: number;
+}
+
+export interface SalesReturnCreditLinks {
+  id: Generated<number>;
+  return_id: number;
+  credit_note_id: number;
+  linked_by: number | null;
+  linked_at: Generated<string>;
+}
+
+export interface SalesReturnDispositionEvents {
+  id: Generated<number>;
+  return_id: number;
+  action: string;
+  note: string;
+  actor_id: number | null;
+  created_at: Generated<string>;
+}
+
+export interface SalesReturnDispositions {
+  return_id: Generated<number>;
+  state: string;
+  decision_note: string;
+  repair_note: string | null;
+  location_id: number | null;
+  decided_by: number | null;
+  decided_at: Generated<string>;
+  completed_by: number | null;
+  completed_at: string | null;
+}
+
+export interface SalesReturns {
+  id: Generated<number>;
+  number: string;
+  slip_id: number;
+  slip_item_id: number;
+  item_id: number;
+  quantity: number;
+  unit_id: number | null;
+  unit_cost: number | null;
+  status: Generated<string>;
+  reason: string;
+  condition_note: string | null;
+  location_id: number | null;
+  credit_note_id: number | null;
+  received_by: number | null;
+  received_at: Generated<string>;
+  inspected_by: number | null;
+  inspected_at: string | null;
+}
+
+export interface SemiBuildConversions {
+  job_order_id: Generated<number>;
+  source_unit_id: number | null;
+  source_batch_id: number | null;
+  source_cost: Generated<number>;
+  finishing_cost: Generated<number>;
+  cancel_reason: string | null;
+  cancelled_by: number | null;
+  cancelled_at: string | null;
+  created_at: Generated<string>;
 }
 
 export interface Sessions {
@@ -1286,6 +1620,7 @@ export interface Tasks {
   remind_sent: Generated<number>;
   done: Generated<number>;
   created_at: Generated<string>;
+  note_id: number | null;
 }
 
 export interface TaxCodes {
@@ -1351,12 +1686,17 @@ export interface TimePunches {
 
 export interface UserMfa {
   user_id: Generated<number>;
-  secret: string | null;
-  pending_secret: string | null;
-  pending_until: number | null;
-  pending_session: string | null;
-  last_step: number | null;
-  recovery_hashes: Generated<string>;
+  secret: string;
+  enabled_at: string | null;
+  last_step: Generated<number>;
+  created_at: Generated<string>;
+}
+
+export interface UserMfaRecovery {
+  id: Generated<number>;
+  user_id: number;
+  code_hash: string;
+  used_at: string | null;
 }
 
 export interface Users {
@@ -1370,6 +1710,8 @@ export interface Users {
   active: Generated<number>;
   permission_overrides: Generated<string>;
   created_at: Generated<string>;
+  password_change_required: Generated<number>;
+  temporary_password_expires_at: string | null;
 }
 
 export interface VendorBillItems {
@@ -1419,6 +1761,7 @@ export interface DB {
   accounts: Accounts;
   activity_log: ActivityLog;
   ai_messages: AiMessages;
+  ai_pending_actions: AiPendingActions;
   ai_tool_audit: AiToolAudit;
   announcements: Announcements;
   anonymous_report_aliases: AnonymousReportAliases;
@@ -1441,29 +1784,47 @@ export interface DB {
   deliveries: Deliveries;
   departments: Departments;
   doc_chunks: DocChunks;
+  doc_studio_comments: DocStudioComments;
+  doc_studio_drafts: DocStudioDrafts;
+  doc_studio_library: DocStudioLibrary;
+  doc_studio_presence: DocStudioPresence;
+  doc_studio_rooms: DocStudioRooms;
+  doc_studio_versions: DocStudioVersions;
   doc_templates: DocTemplates;
   doc_variables: DocVariables;
+  document_defaults: DocumentDefaults;
+  durable_uploads: DurableUploads;
   employee_documents: EmployeeDocuments;
   employee_profile_changes: EmployeeProfileChanges;
   employee_profiles: EmployeeProfiles;
   employee_rate_history: EmployeeRateHistory;
   employees: Employees;
   field_punches: FieldPunches;
+  form_definition_versions: FormDefinitionVersions;
   form_definitions: FormDefinitions;
   form_record_action_runs: FormRecordActionRuns;
+  form_record_revisions: FormRecordRevisions;
   form_records: FormRecords;
+  form_sales_links: FormSalesLinks;
+  form_template_links: FormTemplateLinks;
+  form_user_preferences: FormUserPreferences;
   forms: Forms;
   global_variables: GlobalVariables;
   goods_receipt_items: GoodsReceiptItems;
   goods_receipts: GoodsReceipts;
   idempotency_keys: IdempotencyKeys;
+  identified_report_attachments: IdentifiedReportAttachments;
+  identified_report_events: IdentifiedReportEvents;
+  identified_reports: IdentifiedReports;
   inventory_items: InventoryItems;
   inventory_stock: InventoryStock;
   inventory_transactions: InventoryTransactions;
+  inventory_variant_stock: InventoryVariantStock;
   job_order_components: JobOrderComponents;
   job_order_events: JobOrderEvents;
   job_order_units: JobOrderUnits;
   job_orders: JobOrders;
+  job_shortfall_purchases: JobShortfallPurchases;
   journal_entries: JournalEntries;
   journal_lines: JournalLines;
   kiosk_devices: KioskDevices;
@@ -1475,6 +1836,8 @@ export interface DB {
   message_attachments: MessageAttachments;
   message_reactions: MessageReactions;
   messages: Messages;
+  mfa_challenges: MfaChallenges;
+  mfa_enrollments: MfaEnrollments;
   notes: Notes;
   notifications: Notifications;
   order_items: OrderItems;
@@ -1485,9 +1848,15 @@ export interface DB {
   payment_allocations: PaymentAllocations;
   payments: Payments;
   payroll_tables: PayrollTables;
+  payslip_deduction_history: PayslipDeductionHistory;
+  payslip_paid_history: PayslipPaidHistory;
   petty_cash_entries: PettyCashEntries;
   petty_cash_funds: PettyCashFunds;
   product_package_items: ProductPackageItems;
+  production_batch_allocations: ProductionBatchAllocations;
+  production_batch_counts: ProductionBatchCounts;
+  production_batch_return_links: ProductionBatchReturnLinks;
+  production_batch_stock: ProductionBatchStock;
   production_batches: ProductionBatches;
   production_issues: ProductionIssues;
   production_receipt_items: ProductionReceiptItems;
@@ -1512,6 +1881,12 @@ export interface DB {
   repair_request_events: RepairRequestEvents;
   repair_revisions: RepairRevisions;
   roles: Roles;
+  sale_shortfall_purchases: SaleShortfallPurchases;
+  sales_return_credit_links: SalesReturnCreditLinks;
+  sales_return_disposition_events: SalesReturnDispositionEvents;
+  sales_return_dispositions: SalesReturnDispositions;
+  sales_returns: SalesReturns;
+  semi_build_conversions: SemiBuildConversions;
   sessions: Sessions;
   settings: Settings;
   shifts: Shifts;
@@ -1524,6 +1899,7 @@ export interface DB {
   time_punch_holds: TimePunchHolds;
   time_punches: TimePunches;
   user_mfa: UserMfa;
+  user_mfa_recovery: UserMfaRecovery;
   users: Users;
   vendor_bill_items: VendorBillItems;
   vendor_bills: VendorBills;

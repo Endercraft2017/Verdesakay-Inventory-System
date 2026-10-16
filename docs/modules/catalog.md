@@ -24,7 +24,14 @@ ENDED on sign-out rather than deleted — `ended_at`/`end_reason`, swept after
 `SESSION_HISTORY_DAYS` = 90 by `cleanupSessions()`; `shared` = borrowed-phone session, 4 h max
 and 30 min idle; `endUserSessions` / `endSessionBySid` / `listUserSessions` /
 `deviceUsualUserId`), `device.ts` (`X-Device-Id` — a random per-browser ID from
-`public/js/api.js`, not a fingerprint — plus client IP and a readable user-agent label),
+`public/js/api.js`, not a fingerprint — plus client IP (`clientIpOf`: the edge's `X-Real-IP` on
+Railway via `CLIENT_IP_HEADER` in `hosting.ts`) and `rateLimitKey` for every rate limiter, and a
+readable user-agent label), `password-policy.ts` (`newPasswordSchema`: 8–128 characters, not on
+the bundled common-password list — used by every password-setting schema in `validation.ts`),
+`totp.ts` (RFC 6238 codes, no dependency) + `mfa.ts` (two-step sign-in: enrol / verify / recovery
+codes / sign-in challenge, `security_policy.require_mfa_privileged` enforced in `requireAuth`; tables
+`user_mfa`, `user_mfa_recovery`, `mfa_challenges`, cloud-only), `db.ts tokenDigest` (sessions and
+owner-console sessions store `h1:`+SHA-256 of the bearer token, never the token),
 `activity.ts` (audit log writer, now with `device_id` + `device` label per row; `logEvent()` for events the
 mutation middleware can't see, e.g. a payslip download; a route may set
 `res.locals.activity = { action, summary, snapshot }` to make its middleware row readable and
@@ -36,7 +43,8 @@ compiler over the sync db helpers; `qb`/`all`/`first`/`exec`), `db-types.ts` (GE
 schema types, via `npm run db:types` / `db-types-codegen.ts`; drift-checked by
 `tests/db-types.test.ts`), `backup.ts` (`VACUUM INTO` snapshot +
 retention primitives; `preMigrationSnapshot()` is called by `db.ts`'s `getDb()` before
-`migrate()` and blocks the migration if it fails), `modules.ts` (the `requireModule()` gate
+`migrate()` and blocks the migration if it fails), `durable-uploads.ts` + `file-store.ts`
+(recoverable upload copies — see "Upload copies" below), `modules.ts` (the `requireModule()` gate
 every business module below is mounted behind), `ws.ts` (WebSocket real-time push —
 the app's one live channel; everything else is REST + polling. `attachWebSocket(server)`
 is wired from `server.ts`; `broadcast(tenantSlug, userIds, event)` is exported for a
@@ -55,6 +63,22 @@ history; test pushes). Rows older than 120 days are trimmed. `core/notifications
 `/api/notifications`: `GET /` (own rows + unread), `GET /unread-count`, `POST /:id/read`,
 `POST /read-all` (merge). UI: phone `#/notifications` leads with it; desktop rail bell (badge +
 panel opening `link`). Tests: `tests/notifications.test.ts`.
+**Upload copies (`shared/durable-uploads.ts`, `shared/file-store.ts`, `platform/upload-offload.ts`):**
+every accepted upload keeps a recoverable copy — `storeDurableUpload` / `resolveDurableUpload`
+(sync) / `resolveDurableUploadAsync` (routes) / `forgetDurableUpload`. Without a file bucket the
+copy is in the tenant DB (`durable_uploads`, chat files in `message_attachments.data`, schema
+65/66). With one (`FILES_S3_FROM` / `FILES_S3_*`, 2026-10-13) the bucket holds it instead: new
+uploads are sent at once (AES-256-GCM, `FILES_KEY` → `BACKUP_KEY`, key `files/<path under
+UPLOAD_DIR>`), `UPLOAD_DIR` is a cache trimmed after `FILES_CACHE_DAYS` (7) and refilled on
+demand, a file gone from disk outside the app stays in the bucket (only `forgetDurableUpload` /
+message unsend / tenant purge delete there), and `upload-offload.ts` moves the bytes a DB
+already holds into the bucket after each minute sweep — deletes under `withoutReplicating`
+(`sync/authority.ts`) so PCs keep their copies — then VACUUMs once. Never in the bucket:
+`.sync-blobs/` (keep DB copies), and kept on disk: `kiosk-punches/`, plain-text files
+(`TEXT_EXT`, the AI index reads them synchronously). Quota counts each file once wherever it is.
+Chat attachments retain their database bytes until the bucket confirms storage; a failed upload
+keeps the recoverable database copy. Tests: `tests/file-store.test.ts`,
+`tests/upload-offload.test.ts` (fake S3), `tests/message-upload-durability.test.ts`.
 **Desk-scoped reads (`shared/desk-access.ts`):** the one list of which shop-floor desks (LINE,
 INSPECT, PARTS, RTS, RELEASE) may read which shared data — user decision 2026-10-06, "a floor role
 sees only its own desk". The broad `inventory.view` / `production.view` still open everything; a
@@ -85,10 +109,15 @@ installs never touch this.
 **Owned files:** `plans.ts`, `quota.ts`, `provisioning.ts`, `adopt-default.ts` (offline,
 verified adoption of the original company, preserving source DB/uploads; CLI
 `scripts/adopt-default-tenant.ts`), `tenant-path.ts` (optional host-bound path routing), `platform.ts` (tenant
-catalog in `platform.db`), `platform-users.ts` (operator accounts, separate auth from
-`shared/auth.ts`), `backups.ts` (daily backup job over every tenant DB + `platform.db` +
+catalog in `platform.db`; permanent company login IDs with pair-scoped counters,
+backfilled for existing tenants), `platform-users.ts` (operator accounts, separate auth from
+`shared/auth.ts`; self-service password and username changes `POST /_platform/api/password` / `POST /_platform/api/username`), `backups.ts` (daily + hourly backup jobs over every tenant DB + `platform.db` +
 uploads, run from `server.ts`; manual backup/list/restore behind `npm run backup*` /
-`scripts/backup.ts`. Also runs for single-tenant installs, covering only `default` + `platform.db`), `offsite.ts` (encrypted copies of daily snapshots + uploads to S3-compatible buckets, e.g. Backblaze B2 / Railway Buckets, via `shared/s3.ts`; CLI `scripts/offsite.ts`), routes: `signup.routes.ts`, `tenant.routes.ts`, `platform.routes.ts`.
+`scripts/backup.ts`. Also runs for single-tenant installs, covering only `default` + `platform.db`;
+skips the local uploads mirror when a file bucket and an off-site target are both set), `offsite.ts` (encrypted copies of daily snapshots + uploads to S3-compatible buckets, e.g. Backblaze B2 / Railway Buckets, via `shared/s3.ts`; CLI `scripts/offsite.ts`), `backup-health.ts` (hourly after the backup run:
+restore drill every 30 days — newest off-site copy of every DB decrypted into a temp file and
+integrity-checked — plus failed/stale-backup checks, alerts to `BACKUP_ALERT_WEBHOOK`, results in
+`status.json` for the owner console; CLI `npm run backup:drill` / `backup:health`), routes: `signup.routes.ts`, `tenant.routes.ts`, `platform.routes.ts`.
 Frontend: `web-console/` (its own mini-app, not under `public/`).
 **Public interface:** `enabledModules()`/`requireModule()` (re-exported from
 `shared/modules.ts`, which reads `platform/plans.ts` + `platform/platform.ts`),
@@ -99,6 +128,30 @@ workspace DB as a tenant; console route `POST /_platform/api/tenants/import`).
 reads `platform/platform.ts` for per-tenant photo-retention settings.
 **Status:** working.
 
+Billing (partial, 2026-10-10, `docs/SAAS-READINESS.md` §12): `billing.ts` (invoices / payments /
+settings in `platform.db`, VAT + EWT-on-net-of-VAT, price list, GCash + bank details, status from
+payments; paid → a website sign-up's `awaiting_payment` lock lifts, `trial`/`past_due` → `active`),
+`billing.routes.ts` (customer `/api/tenant/billing`: invoices, how to pay, report a GCash / bank
+payment with proof + optional 2307, GCash QR image; `syncClass('online')`), `billing-console.routes.ts`
+(operator: issue, confirm / reject / record / void, BIR invoice no., settings, QR upload). Website
+sign-up (`signup.routes.ts`) is pay-first: locked workspace + automatic first invoice when the price
+list covers it. Frontend: `web-console/billing.js`, desktop `public/js/modules/core/billing.js` and
+the locked shell in `public/js/app.js`. Website inquiries (2026-10-10): `inquiries.ts` (`inquiries` + `site_settings` contact details in
+`platform.db`), `inquiries.routes.ts` (public `POST /site/inquiry`, site host only, rate-limited +
+honeypot), `inquiries-console.routes.ts` (operator list / status / notes / contact details); console
+`web-console/inquiries.js`; console tenant creation takes `awaiting_payment` + `inquiry_id`.
+Tests: `tests/inquiries.test.ts`. Owner email alerts (2026-10-12): `platform-mail.ts` (Brevo API or
+SMTP, encrypted secret, `platform_mail` + `platform_mail_log` in `platform.db`, `notifyOwner()` called
+by inquiries / billing / signup routes), `platform-mail-console.routes.ts`, console `web-console/mail.js`.
+Tenant-assisted SMTP: operator GET/PUT `/tenants/:slug/mail` and POST `/tenants/:slug/mail/test`
+use the target tenant's existing mailer; console Settings links a locally served guide and
+prefills the existing Billing form for a one-time implementation fee. No parallel invoice store.
+Platform email keys have an explicit clear action; settings saves are operator-audited.
+Tests: `tests/platform-mail.test.ts`, `tests/platform-tenant-mail.test.ts`,
+`tests/platform-tenant-mail-ui.test.ts`. **Interface:** `tenantBillingSummary()`, `priceListQuote()`,
+`setAwaitingPayment()` (platform.ts). **Not built:** PayMongo, overdue automation, notifications,
+recurring invoices. Tests: `tests/billing.test.ts`, `tests/billing-signup.test.ts`, `tests/frontend-billing.test.ts`.
+
 Path tenancy: `TENANT_PATH_HOST` enables `/<slug>` for desktop/mobile/API/chat;
 `DEFAULT_TENANT_REDIRECT` retires the original company after verified adoption.
 The owner console remains separate and shows tenant URLs. Browser storage, mobile
@@ -106,6 +159,10 @@ queues, service-worker caches/scopes and manifests are tenant-scoped. Server
 maintenance, backups and `migrate:all` skip the retired source. Operational cutover
 and recovery: `docs/VERDESAKAY-TENANT-CUTOVER.md`. Paths share a browser origin;
 these namespaces do not replace authentication or sanitization.
+
+App shell caching (`src/shared/asset-version.ts`, shared utility): the desktop shell names each
+script/style `?v=<content hash>`; a matching request is `immutable` (browser + Cloudflare edge),
+anything else `no-cache`. The phone shell keeps plain URLs for its service-worker precache.
 
 ## sync/ — offline-first replication (partial)
 
@@ -251,10 +308,13 @@ login, user/department admin, documents & templates, forms engine, real-time 1:1
 messaging (conversations, reply, edit, reactions, sender-only soft delete, link/file
 previews — see `messages.routes.ts` below and `shared/ws.ts`), attachments, bug reports,
 personal notes/tasks, announcements, activity log, analytics, push-reminder routes.
-**Owned files:** `doc-catalog.ts`, `form-actions.ts`, routes: `auth.routes.ts`,
+**Owned files:** `doc-catalog.ts`, `form-actions.ts`, `file-visibility.ts`,
+`data-forms/` (definition, record, and global-variable routers plus shared scope policy
+and self-service request types; composed by `form-builder.routes.ts`), routes: `auth.routes.ts`,
 `users.routes.ts`, `attachments.routes.ts`, `bug-reports.routes.ts`, `forms.routes.ts`,
 `form-builder.routes.ts`, `messages.routes.ts`, `personal.routes.ts`,
-`templates.routes.ts`, `me.routes.ts`, `announcements.routes.ts`, `activity.routes.ts`,
+`templates.routes.ts`, `doc-studio.routes.ts`, `doc-template-version.ts`,
+`document-conversion.ts`, `doc-studio-merge.ts`, `me.routes.ts`, `announcements.routes.ts`, `activity.routes.ts`,
 `analytics.routes.ts`, `push.routes.ts`.
 **Offline (sync/, phase 4i, §28):** chat, personal notes / tasks / bookmarks and bug reports `merge` (files
 travel with the command); announcements, templates, departments and bug triage `claim`s at the main site; user
@@ -269,6 +329,26 @@ kept, flagged; a leave approval past the cloud's balance stands, flagged). The f
 **Offline (sync/, phase 4c):** `POST /api/attachments` is `physical`, and the photo travels with the
 command via `syncUpload`. Deleting one is a company-wide `claim`; an installed PC keeps the file until
 the cloud confirms. The other core routes are not classed yet.
+**Form lifecycle (schema 76):** `shared/form-history-schema.ts` retains definition snapshots
+(`form_definition_versions`) and record revisions (`form_record_revisions`). Records carry
+`definition_version` and `revision`; corrections use the original schema and optional stale
+revision guards. Archived definitions reject new records/imports but permit corrections with
+required reasons, preserving layouts. Existing records are captured as legacy baselines.
+`shared/form-history-context.ts` attributes trigger snapshots to the authenticated actor and
+shared command clock. During changeset application, derived history triggers are suppressed:
+the captured authoritative history is applied exactly once. History foreign keys cascade ID
+renumbering used by offline allocation. `data-forms/preferences.routes.ts` owns per-user
+favorites, recents, columns and saved filters (`form_user_preferences`, merge writes).
+`payroll/deduction-history.ts` retains before/after employee deduction values and modes,
+actor/name/time and optional reason in `payslip_deduction_history`; payroll.view gates reading.
+Actual-app lifecycle/large-form coverage extends `npm run test:forms:ux`; the HR review
+protocol is `docs/guides/data-forms-hr-acceptance.md`.
+
+**Form validation (`public/js/lib/form-validation.js`):** shared by Data Forms, Form Builder,
+desktop HR requests and mobile requests. Inline errors are linked through `aria-describedby`; a
+summary focuses the affected control and reveals hidden setup panels. Required checkboxes mean
+checked, not merely present. The mobile shell precaches the helper. Actual-app browser coverage:
+`npm run test:forms:ux` (disposable database, reports/screenshots under `work/forms-ux`).
 **Public interface:** standard REST routes mounted with no `requireModule()` gate.
 `messages.routes.ts` also calls `shared/ws.ts`'s `broadcast()` after each mutation for
 live chat updates — VOIP/calling is explicitly out of scope for this feature (deferred as
@@ -398,14 +478,22 @@ UPLOAD_DIR; deliberately not enforced so a plan limit can't block a report).
 **Responsibility:** items, stock levels, suppliers, customers, locations, sale/purchase
 orders (the order shell — 3-way-match purchase logic lives in `purchasing/`),
 sale-order releasing (warehouse acceptance → pick → release slip), deliveries.
-**Owned files:** `inventory-stock.ts`, routes: `inventory.routes.ts`,
+**Owned files:** `inventory-stock.ts`, `order-availability.ts`, routes: `inventory.routes.ts`,
 `suppliers.routes.ts`, `customers.routes.ts`, `locations.routes.ts`,
-`deliveries.routes.ts`, `orders.routes.ts`, `release-slips.routes.ts`.
+`deliveries.routes.ts`, `orders.routes.ts`, `release-slips.routes.ts`,
+`sales-returns.routes.ts`.
 UI: desktop Inventory → Releasing (`public/js/modules/inventory/releasing.js`),
 mobile `so` view (`public/mobile/modules/inventory/so.js`).
 **Owned data (releasing):** `orders.warehouse_accepted_by/_at`, `release_slips`,
 `release_slip_items` (snapshot of lines + unit serials); photos are core `attachments`
 kind `release` (ref = slip id).
+**After shipment:** `sales-returns.routes.ts` records photo-backed customer receipts against a
+slip line, with a shipped-quantity cap and exact sold serial for serialized goods. Receipt
+does not move stock. Inspection records restock (stock-in and an idempotent COGS reversal at
+the slip's captured cost) or reject (no stock-in); the issued sale and slip stay intact.
+Finance separately issues and links a customer credit note, with link history retained.
+Desktop users work from the issued slip in Releasing; mobile implementation is assigned in
+`MOBILE-INVENTORY-HANDOFF.md`. See `docs/reviews/sales-return-workflow.md` for the full contract.
 **Warehouse-out rules (`release-auth.ts`, createSchema tables, no version bump):**
 `release_authorizations` (Sales, `orders.edit`: pickup/delivery, approved recipient, only the last 4
 of an ID reference, a `PICKUP-XXXX`/`DELIV-XXXX` token, validity, handoff area, partial allowed;
@@ -453,7 +541,32 @@ stock-out takes a location below zero (decision D1); `GET /api/inventory/discrep
 `POST /api/inventory/discrepancies/:id/resolve`. `overdrawAllowed()` in `inventory-stock.ts`.
 UI: Inventory → Stock Movements → Discrepancies (`public/js/modules/inventory/stock-discrepancies.js`,
 route `stock-discrepancies`).
+
+Order intake is handled by `orders.routes.ts` and `public/js/modules/inventory/orders.js`:
+explicit stock links, positive line quantities, date/reference validation, one stock
+line per sale item, customer defaults, permission-aware controls, visible approved-line
+locks, and a responsive editor with inline errors and keyboard dialog handling.
+Validation/interaction coverage: `tests/orders.test.ts`, `tests/orders-ui.test.ts`;
+availability/release compatibility: `tests/order-availability.test.ts`,
+`tests/order-release.test.ts`. Existing records are not migrated; locked legacy lines
+are retained when a header is saved.
+Audit additions: `orders.view` read gates, preserved partial headers/line IDs,
+content revision checks, warehouse-only released transitions, financial/location
+locks, inactive reference preservation, unsaved-change protection, and retry-safe
+editor saves. `src/app.ts` mounts order-save idempotency after mutation permissions;
+`shared/idempotency.ts` scopes cached responses to authenticated users and endpoints. Local cached acknowledgements retain `X-Sync-State` and `X-Sync-Command` on replay so a retry cannot turn a pending site-PC action into final success.
 **Status:** working.
+
+**Sales stock approval refinement:** `order-availability.ts` is the shared warehouse ATP
+and supply-planning calculation; `orders.routes.ts` re-exports it. Desktop saved orders have
+an explicit stock review with local/elsewhere stock, commitments and kit/repair holds.
+Approval and shortage actions use optional revision checks; drafting supply never clears ATP.
+Existing job snapshots and unreceived output cover planned production. Purchase cover is tracked
+by `sale_shortfall_purchases`, current PO lines and receipts; repeated actions draft incremental
+requirements only, atomically across suppliers/jobs. Mobile implementation remains unchanged;
+its prioritized gaps and contract checklist are in [MOBILE-INVENTORY-HANDOFF.md](../../MOBILE-INVENTORY-HANDOFF.md).
+Coverage: `order-planning.test.ts`, `sync-order-planning.test.ts`, `orders-ui.test.ts` plus
+existing availability, release, permissions and sync regressions.
 
 ## modules/manufacturing
 
@@ -469,8 +582,16 @@ batches/teams/scheduling.
 `modules/accounting` (`accounting-autopost.ts`, to post job-order costs).
 **Pre-release interface (job orders):** `POST /job-orders/:id/approve|unapprove`
 (`production.approve`, not implied by `inventory.adjust`), `GET /job-orders/:id/availability`
-(component need vs. on-hand at the source location + `releasable`), and
+(component need vs. on-hand/held/free at the source + `releasable`; also readable
+by narrow approvers), and
 `GET /job-orders?stage=awaiting_approval|awaiting_release|awaiting_warehouse|preparing|ready_to_release`.
+Draft detail and availability expose `approval_revision`. Approval accepts optional
+`expected_revision`; a changed plan returns `409 code: stale_job_order` before signing.
+The hash covers draft/component/checklist contents, not live stock or timestamps.
+Mobile approval is discoverable from Work, the Production hub and manager control,
+with a full draft/stock review and explicit acknowledgement for shortage follow-up.
+Persisted approval keys, notes and plan summaries survive restart; scoped saved
+attempts stay in the queue even after an approved draft leaves the authority queue.
 **Warehouse release interface:** `POST /job-orders/warehouse-accept`, `POST /job-orders/prepare`
 (bulk), `GET /job-orders/pick-list?ids=[&format=html]`, `POST /job-orders/:id/release`
 (issues the `PRS-#####` parts release slip, deducts stock). **Floor:** `POST /job-orders/:id/units`
@@ -486,13 +607,37 @@ take `status` (`pass|issue|na`; only `pass` satisfies a required check) and `val
 result takes `repair {category, station, priority}`, stored in `qc_repair_details` (createSchema,
 no version bump). Checklist items take `group`, `measure`, `hint`.
 Tests: `tests/qc-inspection-v2.test.ts`.
+**Separate mobile unit findings:** `manufacturing/unit-issues.js` registers
+`#/unit-issues?unit=&role=qc|qa`, opened from QC/QA verify/recheck/review, the unit
+record and Work's saved-report tile. Each issue owns its category/severity/description
+and compressed photos. Independent UUID drafts permit multiple unsent findings on
+one unit and persist photo bytes with account/server scope. During an authority
+outage, saved context allows draft editing/new findings while live issues stay
+unknown; reconnect/reopen is required before sending a draft. Report creation and each
+photo upload use immutable persisted retry keys, explicit unknown recovery, reviewed
+refusal corrections and local-command pending states. Reporter/manager edits,
+add-photos, resolve and reopen retain backend enforcement. Narrow floor readers
+must specify a unit for the issue list and can read unit-linked reports/photos;
+they do not receive the global feed. Reports are informational.
+Own unused `production_issue` photos of the inspected unit can also satisfy
+`evidence_ids`, without reuploading. Used evidence photos cannot be deleted.
+Tests: `tests/unit-issue-reports.test.ts`, mobile frontend and draft storage tests.
 **QA hold + evidence:** a final-pass `fail` with disposition `hold` puts the unit in status `hold`
-(`qc_records.result = 'hold'`; counts as unresolved — the job order can't complete, its batch can't
-close, cancel scraps it). `GET /api/qc/holds` lists held units; `POST /job-orders/:id/units/:unitId/
-hold-decision {outcome: pass|rectify|fail, remarks, disposition?, repair?}` decides one — any QA
+(`qc_records.result = 'hold'`; counts as unresolved — the job order can't auto-complete, its batch can't
+close, cancellation scraps it; early close preserves it for review and receiving).
+`GET /api/qc/holds` lists held units; `POST /job-orders/:id/units/:unitId/
+hold-decision {outcome: pass|rectify|fail, remarks, disposition?, repair?, expected_hold_record_id?}` decides one — any QA
 inspector or a new grantable `production.qa_review` (Production Manager by default), or
-`inventory.adjust`. Holding pushes every QA inspector / `qa_review` holder; the decision pushes the
-inspector who held it. Evidence: a failing / held result carries `evidence_ids` (`qc_unit` photos
+`inventory.adjust`. The optional reviewed-hold ID rejects a newer hold episode with `409 code: stale_hold`.
+Mobile hold decisions persist their immutable payload/key and reviewed context in
+account/server-scoped IndexedDB; original-key retries survive restart. Saved decisions
+remain discoverable after a unit leaves the live list. Definitive refusals require
+fresh review/key; expired/key-conflict attempts require reconciliation. Holds lookup
+errors/timeouts show unknown counts and retry instead of zero. Hold-only reviewers
+get decision controls without inspection actions; local sync results remain pending.
+A confirmed pass still waits for Products In before stock entry.
+Holding pushes every QA inspector / `qa_review` holder; the decision pushes the
+inspector who held it. Evidence: a failing / held result carries `evidence_ids` (`qc_unit` or unit-linked `production_issue` photos
 of that unit by that inspector, each backing one record — `qc_evidence`, createSchema); from the
 phone or desktop app (`isAppClient`) one per unit is required (409 `blocked: 'evidence'`); the desktop
 QC form uploads the chosen photo(s) to each failed unit first (`production-qc.js`). Desktop job
@@ -509,6 +654,20 @@ room = capacity − the sum of stock there). `rts.routes.ts` at `/api/rts`: `GET
 with final-pass record and hold, receivable batches, the caller's postings today),
 `POST /check` (same rules, no writes), `GET /lookup?q=&status=ready|allocated|hold`
 (`inventory.view` or `production.view`). `production.receive` may file production issues (the mismatch report).
+Mobile `manufacturing/rts-recovery.js` persists immutable receipt groups in scoped
+IndexedDB (`rts-unit`/`rts-batch`), with one payload/key/status/receipt/sync command
+per job order. Explicit original-key retry survives restart and skips confirmed
+job orders; saved entries remain discoverable after live queue removal or failure.
+Overlapping unit/batch routes recover existing attempts, and same-batch tab races
+are refused by draft revisions. Refusals require live review and a fresh corrected
+key; unknown/expired/conflicting and site-PC pending attempts cannot be replaced.
+Local command confirmation gates continuation/final Ready-to-sell copy; failed
+commands require reconciliation. Queue timeout/failure shows unknown counts and
+preserves recovery access. Work merges unresolved saved candidates with the live
+queue. Batch form rejects invalid/fractional counts. Receipt mutations remain
+online-only; there is no background resubmission or schema change.
+Tests: `tests/rts-recovery.test.ts`, mobile frontend, and bulk idempotency coverage
+in `tests/production-receiving.test.ts`.
 Tests: `tests/rts.test.ts`.
 **Repair-parts interface (mobile Parts clerk, Figma 83:*):** `production.routes.ts` adds
 `GET /repairs/:id/context` (unit, source inspection with station/priority, duplicate open
@@ -561,12 +720,20 @@ computation itself is `modules/payroll`.
 `clock_geofence` setting + `employees.clock_anywhere` exemption + per-punch location,
 SCHEMA_VERSION 46), `kiosk-devices.ts` (approved time-in kiosk PCs + the `kiosk_lock`
 setting; locked by default when internet-facing, SCHEMA_VERSION 47), `field.ts`, `hr-daily-report.ts`,
-`hr-employee-numbering.ts`, `punch-photos.ts`, routes: `hr.routes.ts` (also owns the
+`hr-employee-numbering.ts`, `punch-photos.ts`, `punch-holds.ts` (phone punch scan → selfie
+holds), routes: `hr.routes.ts` (also owns the
 `asset_issuances`/`asset_issuance_items` tables and the seeded "Asset Issuance Form"
 doc_template, SCHEMA_VERSION 43; company-wide register `GET /api/hr/assets` with still-out /
 people-who-left filters + CSV, UI `public/js/modules/hr/hr-assets.js` at HR → Employees →
 Company Assets, tests `tests/hr-assets.test.ts`), `clock.routes.ts`, `field.routes.ts`,
 `employee-profile.ts` + `employee-profile.routes.ts` (self-service profile, below).
+**Employee photos (2026-10-13):** `GET /api/hr/employees` leaves `employees.photo` (a data URI)
+out and sends `photo_rev` (12-hex fingerprint, null = none) instead; the image itself is
+`GET /api/hr/employees/:id/photo?v=<rev>` (hr.view, `Cache-Control: private, max-age=31536000,
+immutable` — the browser keeps it, Cloudflare doesn't). `PUT /hr/employees/:id` with `photo`
+omitted keeps the stored photo; `''`/null removes it. The Employees screen draws its last list
+at once via `API.peek` (memory-only, `public/js/api.js`). Tests: `tests/hr.test.ts`,
+`tests/frontend-api-client.test.ts`.
 **Self-service profile:** `employee_profiles` / `employee_profile_changes` (createSchema, no
 version bump) hold the preferred name and personal contact/emergency details the employee edits
 themselves via `GET/PUT /api/me/profile` (`core/me.routes.ts`) — re-authenticated with the
@@ -611,6 +778,12 @@ approved one linked. Both forms are seeded in `seedHrRequestForms`, self-fileabl
 count only once approved, and are linkable/creatable from the grid's Linked Form column
 (`public/js/modules/hr/hr-timekeeping.js`, which also shows "Rest Day (moved)" / "Rest Day Moved"
 tags and a "Needs Rest Day form" nudge). Tests: `tests/rest-day-forms.test.ts`.
+**Schedule-change requests:** `schedule_change` is seeded alongside HR request forms. The
+employee selects a future published roster date and a configured shift; the department head
+or HR decides it through the shared approval endpoint. Approval updates that attendance day's
+`shift_id` in the decision transaction and refuses a changed roster, elapsed date or paid
+cutoff. `GET /api/me/schedule` then shows the approved shift. Tests:
+`tests/mobile-schedule-change.test.ts`.
 **Employee status `suspended`** (SCHEMA_VERSION 53, table rebuilt to widen the CHECK): still
 employed — stays on rosters, payroll and the HR lists — but `clock.ts`'s `punchBlockedReason`
 refuses kiosk, phone and field punches, and production team pickers exclude them. HR lifts it by
@@ -621,6 +794,31 @@ for review only (never blocked), `device_flag` — `borrowed` (borrowed-phone si
 `other_user` (a device another account usually signs in on, per `shared/auth.ts`
 `deviceUsualUserId`) — with `device_user_id` = that usual account. Shown in the Punch Log
 (`GET /api/hr/clock/punches`). Tests: `tests/sessions-devices.test.ts`.
+**Phone time-in selfie** (built 2026-10-10 on the v51 `time_punch_holds` table, no version bump):
+a phone punch is two steps. `POST /api/hr/clock/punch/scan` runs every punch check (kiosk QR,
+location lock, linked/active employee) and parks a hold stamped with the scan time;
+`POST /api/hr/clock/punch/selfie` (multipart `hold_id` + `slot` + JPEG `photo`) records the
+**slot the employee picked** — the kiosk's four: `in` / `lunchOut` (Afternoon out) / `lunchIn`
+(Afternoon in) / `out` — **at the scan time**, via `clock.ts` `setSlotPunch` (shared with the
+kiosk's click-to-fix `correctPunch`), and saves the photo through `punch-photos.ts` as an
+`attendance` punch photo. **Re-doing a slot moves that slot's punch** (time, location, device)
+and replaces its photo (same punch id → same `punch_photos` row, new file) instead of adding a
+punch. The phone has no automatic in/out classification, 45 s de-dupe or "already timed out"
+refusal — those stay on the kiosk's `POST /kiosk-punch` (`recordPunch`). `GET /my-status` adds
+`slots` (each slot's HH:MM, HR-typed brackets filling gaps) and `next_slot` (what an automatic
+punch would fill now; null once Out is recorded) for the phone's tiles. Holds: one per employee,
+5-minute expiry, used once, someone else's refused. No selfie → no punch. The old one-step
+`POST /punch` answers 410 ("update the app"). The selfie shows in the attendance grid's camera
+badge and the Punch Log's Photo column (desktop `hr-timekeeping.js`).
+**Phone Clock screen** (`public/mobile/modules/hr/clock.js`, reworked 2026-10-10 with Kyle's
+approval — departs from Figma 46:577's dropdown + Review & confirm): four slot tiles (suggested
+one marked Next); one tap starts the scan with GPS fetched meanwhile (clock_anywhere staff get an
+"At the office / Outside the office" toggle, remembered per phone); a filled tile asks "Replace?"
+first; the selfie auto-captures after a 2 s countdown (`public/mobile/lib/selfie.js` `auto`,
+live front camera only, tap to take sooner); the result returns to Home after 2.5 s unless it
+offers "Request OT". Tests: `tests/clock.test.ts` ("phone punch: scan, then selfie"),
+`tests/sync-clock.test.ts`, `tests/frontend-mobile.test.ts`; helper `phonePunch()` in
+`tests/helpers.ts` (defaults to `next_slot`).
 **Dependencies:** `modules/payroll` (pay computation + statutory tables),
 `modules/accounting` (`accounting-autopost.ts`, to post payroll to the ledger),
 `platform/` (photo-retention settings).
@@ -762,9 +960,10 @@ and hour blocks = 3 h). Same for lunch lateness, the HR Daily Report board and t
 assistant's lateness report. Before, only the minutes past the grace counted.
 **Finalization rule:** a payslip is final only when HR marks it Paid
 (`POST /api/hr/payroll/:id/mark-paid`, the lock generate/edit/delete all refuse). The employee
-list (`GET /api/me/payslips`) returns `finalized`, `finalized_at`, and a `download_url` only for
-those; the PDF route re-checks ownership (own `employee_name`, 404 otherwise) and Paid status
-(409) at download time and logs `payslip-download` to the activity log.
+list (`GET /api/me/payslips`) returns both draft and Paid records. Drafts have `finalized: false`,
+no `download_url`, and a watermarked mobile preview with current timekeeping punches; Paid slips
+have `finalized: true` and a `download_url`. The PDF route re-checks ownership and Paid status
+(404 otherwise) at download time and logs `payslip-download` to the activity log.
 **Dependencies:** `shared/` only.
 **Licensing note:** not a separately-sold SaaS module — still bundled under the
 existing `hr` entry in `shared/modules.ts`'s `MODULES` list. This is an internal
@@ -796,14 +995,17 @@ report/docx generation, FTS5 RAG over documents, HR-form proposals, sending mail
 `ai-rag.ts`, `ai-reporting.ts`, `ai-tools.ts`, `rag.ts`, `reporting.ts` (generic
 markdown/docx rendering, used only by `ai-reporting.ts` today), routes: `ai.routes.ts`.
 **Dependencies:** `shared/`, `modules/inventory` (`ai-tools.ts` calls stock-mutation
-functions directly), `core/` (the `visibilityClause` wart noted above).
+functions directly), `core/` (`file-visibility.ts`).
+**Confirm before run:** data-changing / sending tools (`CONFIRM_TOOLS` in `ai.routes.ts`) become
+`ai_pending_actions` rows shown as Confirm / Cancel cards; `POST /ai/actions/:id/confirm` runs one once,
+as the person, with their current permissions (prompt-injection guard).
 **Offline (phase 4i):** `online`: the assistant, its key, history and usage stay on the cloud (D8); an
 installed PC says it needs the internet. The search-index rebuild is per copy (no class).
 **Status:** working.
 
 ## modules/email
 
-**Responsibility:** the BYO-SMTP outbound mail tool and its route surface.
+**Responsibility:** the BYO-SMTP outbound mail tool and its route surface; tenant-visible setup guide at `/email-setup.html` linked from Email and settings.
 **Owned files:** routes: `mail.routes.ts` (the transport itself, `mailer.ts`, lives in
 `shared/` since `modules/ai` and `modules/quickbooks` also send mail through it).
 **Offline (phase 4i):** `online`: the mail server and its password are cloud-only (D8).
@@ -829,7 +1031,24 @@ pages, light + dark) and `public/mobile/lib/role-ui.js` (chip/title, hero, tabs,
 line lists, notices, acknowledgement check, success, actions). First role on it: warehouse
 kit release, `modules/manufacturing/kit-release.js` (Figma 62:14–62:372). Every step is its own
 URL so the header back arrow walks the flow; `app.js` clears `#m-view` data-* tags per route.
+Warehouse acceptance, partial/full picked counts and release are separate operations.
+Availability failures and saved attempts go to Review; Ready requires `releasable`.
+Pick corrections stay available before the slip. Needed/picked and on-hand/held/free
+stock are displayed; edited unsaved counts block release, and confirmation rechecks
+availability. Each warehouse action persists an immutable retry key/payload using
+`production-drafts.js` under its own kit namespace; interrupted attempts reload stages
+and replay explicitly after restart. Local sync commands stay pending, including cached
+backend replay; refusal shapes and cancelled deep links retain their actual state.
 Second: Production Lead + Manager, `modules/manufacturing/job-orders.js` (Figma 66:14–66:650) —
+serialized recording uses `lib/production-drafts.js`: IndexedDB retains photo bytes,
+unit IDs and immutable retry attempts scoped to server/tenant and account. Unknown
+uploads stay locked and replay their original key; completed rows are skipped. Stale
+tabs cannot overwrite or delete a newer draft. Operator recovery is explicit, never
+background submission; local site-PC results remain confirmation-pending.
+Approval, kit acceptance, bulk output and scrap use a separate persisted JSON-action record
+per job. Uncertain attempts lock input and reuse their original key after restart;
+definitive refusals require review before a new corrected attempt. Recording quantities
+must be whole and within remaining output, including unresolved units in that count.
 role accents (`.rk-accent-lead` blue, `.rk-accent-manager` purple) also tint the Quick Orbit and
 active dock tab via `html[data-role-accent]`, cleared per route. `lib/queue.js` background
 flushes now swallow storage errors (no IndexedDB / blocked site data) instead of throwing.
@@ -877,50 +1096,314 @@ phone") keeps token + profile in sessionStorage, shows `#m-shared-banner`, and k
 Tests: `tests/mobile-shared-phone.test.ts`.
 **Status:** working.
 
-## Production audit hardening (16 October 2026)
 
-Security assessment and unresolved release gates: `docs/audits/production-readiness.md`
-and all 233 checklist results in `docs/audits/production-scorecard.md`. A passing
-suite does not change existing `partial` native/desktop/sync status.
+### Document studio and form print layouts (core)
 
-- Shared infrastructure: `shared/public-fetch.ts` owns DNS-pinned public-URL fetches
-  for core chat previews (undici). `idempotency.ts` authenticates before replay,
-  binds JSON outcomes to actor/request/current access, isolates pending requests,
-  excludes authentication responses and returns 409 for legacy unbound keys rather
-  than risking a duplicate action. Tenant fallback encryption keys are no longer
-  cached across tenant contexts. No schema change.
-- Core sessions: recovery uses configured public origins, generic responses,
-  15-minute single-use links, account/IP limits and sibling invalidation. Browser sessions use HttpOnly cookies; native secure storage remains an open gap. Chat delivery revalidates
-  session and tenant state after connection; logout stops subsequent delivery.
-- Platform operators: changing/resetting an operator password revokes their
-  sessions. Fresh default production bootstrap requires a configured strong
-  password; production refuses known admin/admin123 credentials.
-- AI/email/S3/QuickBooks adapters: bounded network calls; AI shape/length and
-  tenant/user rate checks; callback state is consumed before provider work and
-  rejects unknown workspaces. AI mutation confirmation/output policy remain open.
-- Shell: readable desktop accent, mobile zoom and grouped Quick Orbit semantics,
-  worker v71. `tests/e2e/`, `playwright.config.ts`, security regressions and
-  `scripts/audit-load.mjs` provide disposable local validation. No role, stock,
-  payroll calculation or manufacturing stage is added or reordered.
+The document studio stores structured HTML in `doc_templates.body`: design pages, named
+styles, sections, notes, revisions and field bindings. Form-template links and built-in
+defaults support alternative/default layouts without depending on their display names.
+SQLite schema 63 adds layout link/default tables, studio recovery/history tables and grid
+gap columns while preserving migrations through production schema 62. Published layout and
+company-library writes use the existing claim workflow. Private drafts, shared working
+rooms, presence/comments and conversion operations require the cloud; their working
+state/history is excluded from replication. Browser recovery and normal editor undo
+remain local. Studio library assets/styles replicate as company data.
 
-Dependency follow-up: patched root HTTP/upload/mail dependencies, upgraded launcher
-Electron/build tooling, and scoped mobile xcode UUID override. Reachability and
-native-platform validation limits: `docs/audits/dependency-audit.md`.
+Tests cover template revisions/permissions, form links, premade mappings, conversion,
+pagination/grid guards, private recovery/shared conflicts and editor workflows. See
+`DOCUMENT-STUDIO-CAPABILITIES.md` for delivered tools and remaining fidelity limits.
 
-## Production security and public policies (working; operational approval pending)
+The incremental Wordcraft port is tracked in `WORDCRAFT-PORT-PLAN.md`. Phase 1 keeps the
+HTML storage contract and adds direction-preserving browser selection bookmarks to undo,
+input transaction boundaries, browser history-event routing and composition-safe updates.
+Shared polling defers document replacement during composition and reconciles afterward.
+These are browser-side changes, not a replacement of the Rust document/layout engine.
 
-`shared/browser-session.ts` owns tenant-scoped HttpOnly browser cookies, CSRF request headers and native bearer compatibility. `shared/http-hardening.ts` owns generated request IDs/nonces and structured security logs; `shared/request-validation.ts` rejects malformed numeric resource path segments (not a substitute for per-route schemas). `app.ts` enforces nonce script CSP and JSON API fallback. Browser shells opt in to cookies; native clients retain bearer storage, a recorded release gap. WebSocket cookie handshakes require the same origin. Permission/role/department changes and password changes revoke sessions; queue replay checks the intended actor.
+Phase-1 command dispatch centralizes browser formatting, insertion and history commands.
+Toolbar shortcuts share the same enabled/active state; selection memory spans font/color
+controls and insert dialogs, and commands respect locked content and editable float islands.
+The native browser adapter remains behind this registry until the document-model phase.
 
-`core/policies.routes.ts` serves only six allowlisted, HTML-escaped policy documents from `docs/policies/`; both login shells link to them. Draft status remains visible until owner/legal approval. `docs/governance/` and `docs/operations/` hold contract, retention/rights, security ownership, recovery, incident and support procedures; `docs/OWNER-ACTIONS.md` is the release handoff. These are documents and a manual rights procedure, not an automated erasure service or certification.
+Clipboard copy/paste round-trips field tokens instead of editor markup; normal cut is a
+command transaction and tracked cut/paste retains the review handler. Table/list Tab and
+atomic-token navigation extend the same keyboard editing pipeline without schema changes.
 
-Production AI tools are limited by `modules/ai/ai-tools.productionToolAllowed` to permission-checked reads, report generation and form proposals. Business mutations/communications are refused at discovery and execution. The route adds a total turn deadline, suppresses raw provider errors, and emits start/completion tool audit events containing hashes rather than raw arguments/results. External log retention/immutability, hard user spend reservations and broader output DLP remain unverified/missing.
+`public/js/doc-model.js` belongs to the core document studio: typed node categories,
+canonical HTML adapters and immutable paragraph-alignment changes. It preserves unknown
+content and keeps live DOM/path maps ephemeral. The editor patches alignment attributes
+in place; existing HTML snapshots, field rendering and API publication remain authoritative.
+Tests: doc-model, doc-model-templates and the model-backed doc-editor-commands fixtures.
 
-## Second-pass audit hardening (working; deployment evidence pending)
+The model now owns selected text-range formatting for bold/italic, font/size/color and
+highlight. Temporary bookmarks restore selection and are removed before snapshots.
+Immutable run operations preserve annotations/atomic nodes; owned runs are reused.
+Word conversion shares run-format inheritance and exports explicit resets/highlights and
+formatted revision text. No persistence-schema change is introduced.
 
-Shared `mfa.ts` uses otplib 13.5 (MIT) for TOTP, encrypted tenant seeds, session-bound ten-minute enrollment, replay counters and hashed single-use recovery codes. `core/mfa.routes.ts` owns authenticated self-service setup/enable/disable/status; each change verifies the password, enable verifies TOTP, disable verifies a fresh factor, and activation/deactivation revoke all sessions. `auth.routes` enforces enrolled factors at login. `public/js/lib/mfa-controls.js` is reused by desktop Account and mobile Account security; both login forms accept an authenticator/recovery code. Enrollment remains optional; operator-console MFA/mandatory enrollment/fresh privileged step-up are partial. Worker v71 includes the shared control.
+Phase-2 caret marks now own bold/italic/font/size/color/highlight state without writing
+empty formatting runs or creating undo entries. Marked text insertion and committed IME
+formatting use the model helpers; tracked typing keeps revision attribution. Whole-field
+marks preserve actual chip nodes and raw bindings. Selected underline/strike removal
+splits inline paint wrappers while preserving other marks, links and atoms; block/caret
+decorations and general typing/deletion remain on the native adapter. Word export and
+sanitized paste retain text-decoration-line. No database or mobile-shell change is needed.
 
-AI custom SQL is disabled at discovery and execution. Predefined reports retain permission checks. `public-fetch.ts` now also owns bounded JSON provider POSTs with pinned public DNS, redirect refusal and IPv6 translation/transition exclusions. Platform AI credentials resolve only for the exact platform endpoint; tenant endpoints need tenant keys. `ai-audit.ts` writes independent, append-only `ai_tool_audit` start/complete/failed hashes (no raw records), backed by SQLite update/delete refusal triggers and auditor-only GET /ai/audit. New always-created tables: user_mfa and ai_tool_audit; generated db-types updated. Existing columns/schema version are unchanged.
+Phase-2 paragraph text transactions now own ordinary untracked insertion/replacement,
+within-paragraph grapheme deletion and selected plain-text/Cut commands. They preserve
+unaffected bindings/markup and refuse protected islands. Caret underline/strike, super/sub
+and Clear Formatting apply to the next inserted/committed text without empty undo entries.
+Selected scripts and paragraph-scoped character resets isolate wrappers; normalization
+handles matching span/sup/sub runs. Structural transitions and multi-paragraph clearing
+retain existing handlers; HTML remains authoritative. Word export prevents conflicting
+script flags and preserves baseline resets. No schema or mobile-loader changes are added.
 
-Activity logging recognizes provider/factor keys, bounds recursion and redacts legacy metadata on read. Historical underlying records/backups are not silently rewritten: key rotation and restricted review remain required. Push endpoint allowlisting, subscription limits and timeouts apply to existing rows as well as new subscriptions. Unknown/active uploaded document types are downloads with non-executable MIME; image filenames use canonical raster extensions. `file-response.ts` is shared by general/HR downloads. Partial inventory/production edits preserve omitted relationships. Backup restore target names are validated; cloud production refuses a plain-HTTP fallback without TLS/proxy. Desktop views render into separate containers so late responses cannot replace a newer view.
+The studio UI now separates primary editing from secondary configuration: editable title
+and Save in the header, metadata under Settings, source/tools under Advanced, and Text /
+Insert / Page & print ribbon tabs. A labelled rail opens a closed-by-default inspector;
+font/style/size readouts reflect the selection and inspector sizes use points. Initial
+fit-to-width/footer zoom and wrapped phone controls preserve usable page space. Find mounts
+above the workspace, and keyboard tab/menu behavior is covered alongside the editor tests.
+Compact header/ribbon spacing and reduced canvas padding reserve room for the document.
+The ribbon can be hidden while retaining its tabs; the tool rail collapses to labelled
+icons and the inspector has an explicit Collapse action. Workspace changes recalculate fit.
+Inspector colors use native swatch pickers and an explicit No fill background action.
+Typography/spacing use presets plus a custom-value dialog, preserving nonpreset values.
+Variables opens the searchable/category-filtered variable bank with Copy and Insert.
+Whole-chip click selection enables Delete/Backspace for optional starter fields, with
+existing atomic commands, lock checks, undo and HTML serialization.
+Floating-object toolbars use compact SVG buttons with tooltips and accessible labels for
+move, stacking, inline placement, fill/border and delete; action selectors are unchanged.
+Print tiling fixes each source page's paper dimensions/margins before applying a uniform
+fit scale. Text wrapping, table layout and percentage floats stay in their original space;
+configured cell gaps remain physical sheet spacing. Preview and browser PDFs share this path.
+Page dimensions are always exposed; corner resize handles edit custom mm dimensions with
+zoom-aware pointer math, Shift aspect locking and keyboard increments. Cancel restores the
+previous page; completed drags enter the existing history/save path once. Chrome stays outside
+the serialized surface, and shared polling defers replacement until the drag ends.
+Expanded sidebar tooltips explain each tool; collapsed tooltips show its name. Both use
+the shared hover/focus tooltip controller and retain accessible button labels.
+Editor settings use compact 16px checkboxes with inline labels, including tracking, grid
+continuous mode, layer visibility/locking and table dialogs. Inputs, actions and selected
+rail tools follow app theme tokens; compact ribbon tiles size to their labels without overlap.
+The Playwright audit (reviews/document-editor-playwright-audit-2026-10-13.md) covers the real
+app route and responsive themes. Single variable insertion stays inside paragraph boundaries,
+Undo/Redo remain available across ribbon tabs, and phone text controls wrap at full width.
 
-Tests include actual registered-route anonymous probing, isolated cold app restore with business/attachment/access verification, OTP lifecycle/recovery/replay, legacy log redaction, malicious file headers and real browser refusal to execute uploaded JS. Weekly CI re-runs synthetic checks; it does not restore live customer backups or prove alert delivery.
+The editor exposes Linked forms for saved document and form templates.
+The linking dialog lists only forms the user can manage, reusing scoped link/default/
+unlink APIs; several layouts remain available while one is the default. Unsaved templates
+offer Save template and continue. Workspace isolation keeps resize/guide chrome beneath header menus.
+Page & print wraps whole control groups, keeps empty-cell/zoom labels readable, and uses
+compact themed checkboxes. Global desktop native select options follow shared theme tokens;
+printed paper keeps its independent light appearance.
+
+Page dimensions keep Width → Swap → Height together, with a theme divider before Margin.
+
+The editor UX audit covers ribbon tabs, all ten tool panels and primary dialogs across
+1440/1024/768/390px viewports and both themes. Compact header actions retain accessible
+names; Save/Close stay inside the viewport. Ribbon groups wrap at tablet widths, and phone
+ribbons have bounded scroll height plus a visible overflow action to preserve canvas space.
+Paper dimension inputs have explicit accessible names. Variable bank field management
+reuses the existing callback and refreshes the bank after catalog changes; linked forms
+supports local search within the existing permission-filtered form list.
+
+Table and named-style dialog color pickers use full swatches with explicit height/padding,
+matching the existing inspector pickers rather than generic text-input padding.
+
+The project-specific editor UX skill lives in `.agents/skills/editor-ux/SKILL.md` and is
+routed from CLAUDE.md. It records the evaluated UI UX Pro Max revision and adapts NN/g,
+Fluent and W3C guidance to the existing stack. `npm run test:editor:ux` starts a disposable
+loopback app/database, performs Playwright task checks and axe A/AA scans, and fails on
+violations, task failures or runtime errors. JSON/screenshots/trace remain in ignored work/.
+Shared modal Close controls have explicit names; Insert table labels are associated with
+inputs. Resize handles retain their small visual square with larger hit areas, phone zoom
+controls meet minimum target sizing, and the enabled assistant moves into the editor rail
+rather than obscuring the paper. Mode buttons expose selection; word-count semantics avoid
+announcing every keystroke. None of these changes alter stored document content.
+
+Shared-save operations, polling and Shared-panel actions now share one queue. Successful
+room writes received during text composition/page resizing retain their acknowledgment
+until DOM reconciliation is safe. Room versions cannot regress; genuine overlapping peer
+edits still require review. Save holds background writes through publication/draft cleanup.
+Advanced dialog scans include image-upload labels, variable/formula search, picture settings,
+paragraph/styles/sections and Find in both themes at desktop/phone widths. Formula code
+examples and section color swatches reuse app tokens/picker sizing.
+Save validation releases the shared-sync pause; initializing Picture settings updates its
+preview directly and does not create a dirty dialog. Real picture edits retain discard protection.
+Transient promotion chrome dismisses when focus leaves the canvas, preserving its own
+action while preventing stale overlays after tool/viewport changes.
+
+The 14 October layout pass uses Wordcraft's actual Home/Insert/Layout grouping as a reference.
+Home separates Font, Paragraph, Styles and Editing; Insert groups ordinary document elements.
+Layout contains page setup and a route to printing. Labeled sidebar sections organize Document,
+Design, Template and Review tools. Variables/formulas/field management, Form links with template
+metadata, and Print grid are sidebar tools; grid controls remain available in measured preview.
+Zoom is in the footer, and More groups preferences/help/source editing. Live control nodes are
+moved rather than cloned, preserving selection handlers, undo, draft/shared and save state.
+The browser fixture sets an explicit test-only admin bootstrap for the current secure seed.
+
+The common Word ribbon pass adds Clipboard (Paste, Cut, Copy, Paste text), font-size
+steps, direct Clear formatting, Replace and Select all to Home. Insert exposes existing
+Header/Footer/Page number tools through the Pages sidebar. Ribbon groups use compact rows;
+custom select arrows avoid white native arrow areas while keeping native keyboard behavior.
+Clipboard text/HTML passes through existing canonical field serialization and sanitized paste.
+Denied access leaves content intact and offers keyboard fallback; delayed Cut/Paste aborts if
+the document or selection changes. Ribbon Cut is disabled while tracking text changes.
+Header/footer creation preserves selected body text, reuses existing elements and is undoable.
+
+Wide desktop Home now uses one command row with stroke icons for Clipboard and Editing, keeping labeled group dividers. The paragraph selector is labeled Paragraph type; Text styles explains body text, heading levels and shared formatting. Editor select arrow image/repeat/position/size are protected from later background shorthands, including sidebar Empty cells.
+
+Heading controls now say Body text, Main heading (H1), Subheading (H2), with deeper levels grouped separately. Headings & styles opens a Style gallery: preview cards explain paragraph roles and show font/size metadata; separate named pencil controls edit reusable formatting. Existing command/style keys and saved markup are unchanged.
+
+Insert symbol uses a scoped responsive grid with centered glyphs, consistent 48px-high buttons, descriptive names/tooltips and themed hover/focus. Narrow screens use five columns. Symbol insertion keeps the existing selection/history path.
+
+Company header divider controls appear in Inspect for the header or text inside it. Clicking the bottom 12px of a .doc-head opens Inspect without moving the caret. Users can remove the border or change thickness, style and color while preserving company fields. Locked header controls are disabled and handlers reject edits.
+
+Insert includes a quick Variable button in a Fields group. It and the persistent Variables sidebar action share the same picker/insert command; the shortcut remembers the caret and does not clone sidebar controls.
+
+Variable chips with trailing whitespace now insert as a DOM fragment through the existing atomic command adapter, keeping them inside the selected paragraph at its end. The shared fix applies to both picker launchers and preserves Undo.
+
+### Mobile release acceptance/allocation recovery (2026-10-15)
+
+`inventory/release-actions.js` uses scoped IndexedDB action records for exact
+warehouse acceptance and serialized/bulk allocation payloads and keys. Explicit
+restart retries, refusal review, expired/conflict retention, local-command pending
+states and saved-action discovery are integrated into `so.js`. Queue stages split
+unaccepted/incomplete/fully allocated/blocked orders; ship-from context and preview
+unit location IDs prevent misleading readiness. Bulk inputs preserve decimals and
+use `free_to_allocate`. Existing backend permissions, reservation and release-slip
+stock semantics remain in force; no schema changes. Tests: mobile frontend,
+`order-release.test.ts`, `release-slips.test.ts`, `release-auth.test.ts` and draft/PWA
+checks. Final slip/proof recovery, mobile allocation undo and delivery remain open.
+
+### Mobile compatibility after branch integration (2026-10-15)
+
+QA holds expose frozen final-pass checks alongside prior answers for narrow hold
+reviewers. Mobile prefills status/readings, blocks incomplete Pass decisions and
+persists reviewed answers with the original hold episode/key. CKD release screens
+show parent manifests/child demand, allocate only physical child lines and prevent
+assembled-parent substitution or partial kit handoff. Retained RTS payloads remain
+compatible with the remote atomic Products In endpoint. Both histories' PWA assets
+are included under v97. Tests cover hold-check retry, CKD guards and backend contracts.
+
+Mobile build-state integration (2026-10-15): approval review and revision include job-order build state; RTS shows it and groups only matching states; releasing uses fulfillment-specific availability and blocks cross-state serial scans. PWA cache v98. Mobile transfer/adjustment variant selection and shortfall creation remain follow-ups.
+
+QR receiving/releasing integration (2026-10-15): immutable `VDS:UNIT:<id>` and
+`VDS:BATCH:<id>` printed identities resolve to read-only dossiers or role-specific
+workflows. Mobile RTS and allocation confirmations require attached-label scans;
+manual lookup and printing do not verify labels. Exact batch/location balances and
+sale reservations (`batch-stock.ts`, schema v77) persist through receipt, allocation,
+undo, handoff, transfer and inspected return. Batch count reconciliation partitions
+existing stock with a reason/current-balance check and audit, without creating stock.
+Legacy batch balances need a physical count; old ambiguous labels need reprinting.
+Quantity-only API clients reserve tracked lots FIFO; scanned mobile picks name the
+exact batch. Shared recovery retains original batch IDs, quantities and request keys.
+PWA cache v99; final proof/delivery recovery remains open.
+
+Mobile QR acceptance audit: `npm run test:mobile:qr` uses a disposable real backend,
+actual print-sheet QR images through Chromium's virtual camera, narrow floor roles,
+proof/signature uploads and exact allocation retry after a lost committed response.
+Explicit non-serialized batches can coexist with serialized runs of the same SKU;
+CKD physical component previews map to standard build stock; failed unit-template
+reads cannot open blank sheets. See `docs/reviews/mobile-qr-playwright-audit.md`.
+Handoff photos/signature/token state still require recapture after page restart;
+physical phone/printer acceptance and final-slip/delivery recovery remain open.
+### Connected staff Data Forms
+
+`core/data-forms/sources.ts` owns the explicit source registry, module/read gates,
+whitelisted snapshots and field binding validation. `sources.routes.ts` exposes the
+catalog and bounded searches under `/api/data-forms/sources`. Product sale prices use
+`attributes.sale_price`, matching Sales Orders; cost is not offered by that source.
+`calculations.ts` normalizes product rows and uses the same `public/js/lib/form-math.js`
+arithmetic as browser previews. `form-connections.js` and `form-items.js` render the shared
+lookup/retry, binding and repeating-row controls. Definitions retain this configuration in
+the existing versioned fields JSON. Saved references use stable IDs and historical values.
+
+`sales-workflow.ts` validates configured submission mappings and atomically creates one open
+sales order using `orders.routes.ts#createDraftSaleForForm` and the existing sales validators,
+item writer and totals. `form_sales_links` is the durable per-record idempotency/link boundary;
+linked record values and status are immutable and deletion is refused. Existing create-key
+middleware protects response-loss retries. Schema 80 repairs the template-history foreign key
+to cascade offline ID allocation without losing snapshots. Template and layout derived triggers
+are suppressed during changeset application because their authoritative effects are captured.
+Employee self-service request schemas reject unsupported connected types; staff forms support
+all new types. Print catalogs expose nested references and repeating product rows.
+Connected item validation joins ordinary required fields in one linked summary, including
+all invalid row controls; correcting or removing rows refreshes that group without clearing
+unrelated errors. Print frames have descriptive titles. Shared document interpolation prints
+boolean values as Yes/No without changing stored data, conditions or numeric formulas.
+New generated layouts use neutral Issued by / Received by signatures; saved layouts remain
+versioned and are not overwritten automatically.
+
+`form-print.js` shares generated field/table markup between the server and browser. Numeric
+fields can declare `format: currency` and a three-letter currency code; calculated fields use
+the same metadata. `money(value, "PHP")` renders two decimals and the code without changing
+numeric values. Catalog products expose their currency; mixed-currency bindings/rows and
+workflow mappings are rejected rather than converted. Invoice date, optional due date and
+payment terms map into the draft order date/notes. The opt-in Inventory invoice starter uses
+PHP and zero tax for review, with company/customer snapshots and a dedicated printable layout.
+Starter template saves include the revision of the automatically created layout.
+
+`nextFormRecordNumber` owns the shared per-prefix record series, skipping existing legacy
+numbers without renumbering them. Form routes, payroll and holiday seed writers use it.
+`sync-snapshots.ts` captures canonical connected values in server-owned command context and
+uses them on authenticated replay/rebase, with current source permissions and form-version
+checks. Ordinary request bodies cannot provide these snapshots. Older recorded commands
+without this context retain their previous replay behavior; update installed nodes before
+relying on the new snapshot guarantee.
+
+Guide: `docs/guides/connected-data-forms.md`. Browser gates: `npm run test:forms:connected:ux`
+and `npm run test:invoice:ux`. Permission/fulfillment gates remain the existing sales routes.
+
+### Mobile final handoff and delivery recovery (2026-10-16)
+
+`inventory/release-handoff.js` and `inventory/delivery-recovery.js` reuse scoped
+`lib/production-drafts.js`, `mPhoto`, `mSignature`, API idempotency and `RoleUI.syncWatch`.
+They retain Blob bytes and immutable submissions, block replacement of uncertain
+attempts and expose saved records independently of live queues. Release photos and
+signature upload as order evidence before the atomic slip. Delivery start and POD
+have explicit recovery; evidence stays optional and pre-slip starts stay allowed.
+Driver results do not offer force-backorder stock completion.
+
+`MApp.canOpen` combines effective account permissions with workspace modules for
+operational routes; Work/production queues and Quick Orbit filter using it. Account
+permissions refresh on focus, foreground and reconnect, guarded against account/server
+changes. Personal employee tools stay available without operational permissions.
+Backend delivery guards accept `delivery.run` or `delivery.manage`, retaining
+assignment checks. See `docs/reviews/mobile-handoff-6185481-review.md` for remaining work.
+
+### Mobile legacy Pick retirement (2026-10-16)
+
+The obsolete `#/pick` route now returns to permission-filtered Work (`46:548`).
+Sales use Release orders (`#/so`); production uses Kit releases (`#/kit-release`).
+The old order list, per-line negative adjustments and false batch-success result
+are removed. Commercial order IDs are never reused as manufacturing job IDs.
+Purchase-order receiving and intentional stock-adjustment tools remain available.
+Old bookmarks perform no stock action; canonical queues retain their own gates.
+Inventory form entry uses forms.fill.inventory plus per-form role/account grants (form_definitions.entry_access, access_revision; schema 82). Entry users read all assigned-form records and create/edit/submit active drafts; design, delete and approvals retain their existing manager gates. Current grants are rechecked during sync replay. See tests/form-entry-access.test.ts and the invoice Playwright gate.
+
+### Courier pickup on mobile (2026-10-16)
+
+Assigned staff or a delivery manager opens Work → Deliveries → a courier booking
+→ Record courier pickup. Check carrier/tracking, optionally enter collector, note,
+photos, signature and location, then Confirm courier pickup after physical
+collection. Tracking and evidence drafts survive restart; unresolved submissions
+reuse the exact request and upload keys. Warehouse-out is required before closing
+courier custody; pickup does not deduct stock again. The server stores compatible
+`status:delivered`, while the phone explicitly says Picked up by courier. This
+records collection rather than customer receipt. Evidence stays optional by owner
+policy for both own-driver and courier flows. Supplied signatures must belong to
+the booking; assignment checks and terminal evidence locks remain. PWA cache v106.
+
+## Production security boundaries (second audit, 2026-10-16)
+
+- `src/shared/browser-session.ts`, `http-hardening.ts`, `request-validation.ts`: tenant-scoped
+  HttpOnly web sessions, CSRF verification, request IDs, malformed-resource rejection.
+- `src/shared/public-fetch.ts`, `push-endpoint.ts`, `file-response.ts`: pinned public-network
+  requests, vendor push endpoint validation and non-executable untrusted downloads.
+- `src/shared/mfa.ts`, `totp.ts`: the source branch's two-step challenge workflow and privileged
+  enrollment policy. Pending setup is session-bound, expires in ten minutes and allows five attempts.
+- `src/modules/ai/ai-audit.ts`: append-only tenant-local hash evidence for executed tool calls;
+  separate from erasable conversations, excluded from installed-node replication.
+- `src/core/policies.routes.ts`: allowlisted public draft documents. Draft availability does not
+  imply legal approval; see `docs/OWNER-ACTIONS.md` and the audit scorecard.

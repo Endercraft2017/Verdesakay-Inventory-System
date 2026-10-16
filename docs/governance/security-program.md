@@ -11,3 +11,12 @@ Owner and deputy for security, privacy, infrastructure, engineering and billing:
 - Compliance calendar: monthly dependency/secrets review and billing check; quarterly access/vendor/retention review and restore drill; annual incident exercise, external penetration-test scope, legal-policy review and insurance assessment. Revisit on new regions/features/vendors/incidents.
 
 Evidence register fields: control/check ID, status (verified/partial/unverified), evidence date/link, accountable owner, next due, exception and expiry. SOC 2 readiness can reuse these records; no attestation exists merely because this file exists.
+
+## Local secret gate
+
+Install Gitleaks from its official release, then run `git config core.hooksPath .githooks` once
+per clone. The checked-in pre-commit hook scans the staged diff and fails closed if the scanner
+is unavailable. CI independently scans Git history. Only exact reviewed synthetic fixtures may
+carry an inline `gitleaks:allow` comment. Never allowlist a real credential to make a gate pass;
+revoke it, assess exposure and coordinate history cleanup. Local hooks alone do not establish
+GitHub push protection or required reviews.

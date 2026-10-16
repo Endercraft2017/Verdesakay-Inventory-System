@@ -1,7 +1,7 @@
 # SOP — Production, end to end
 
 **For:** production planners, shop floor, QA/QC, warehouse
-**In the app:** Home → **Help / SOP** → *Production — end to end* (browsable, printable).
+**In the app:** Home → **Help / SOP** → *Production* (browsable, printable).
 This file is the trainer's copy of the same playbook.
 
 ---
@@ -9,7 +9,7 @@ This file is the trainer's copy of the same playbook.
 ## The flow
 
 Production's tabs are ordered to match this list left to right: **Overview → Product Setup →
-Job Orders → Scheduling → QA / QC → Repairs & Parts Requests → Products In → Batches / Lots →
+Job Orders → Scheduling → QC / QA → Repairs & Parts Requests → Products In → Batches / Lots →
 Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flow.
 
 0. **Overview** — *Production → Overview*, the tab's home screen (`inventory.view`). Not a
@@ -29,7 +29,7 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
    nothing until components are added.
 
 2. **Attach a QA/QC checklist (optional)** — build it from **Manage Checklists**
-   (`qc.configure`), reachable from either *Production → QA / QC* screen or *Product
+   (`qc.configure`), reachable from either *Production → QC / QA* screen or *Product
    Setup*. Named, reusable; each check scoped to *every* inspection, the *QA* pass, or
    the *QC* pass. Required checks must be ticked before a unit/batch can pass. Attach the
    checklist to a product on its BOM editor in Product Setup.
@@ -44,9 +44,13 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
    order, for monitoring at a glance — schedule/team fields live on the job order itself,
    Scheduling isn't where you set them, just where you watch them.
 
-4. **Release (parts out)** — reserves + deducts the planned components from the source
-   location (fails with a shortfall list, no partial release). With the GL on, material
-   value moves Inventory → Work in Process. Records who released it.
+4. **Approve, pick, and release the parts kit** — a production approver signs off the
+   draft. The warehouse accepts it, then records component quantities picked. A partial
+   pick is saved without moving stock; staff can correct the count before release. When
+   the whole kit is prepared, **Release & issue slip** rechecks free stock at the source
+   after other kit picks and repair holds, deducts the planned components, and creates
+   a numbered parts release slip. A shortage blocks the slip and stock movement. With
+   the GL on, material value moves Inventory → Work in Process.
 
 4a. **Accept the parts kit (production lead)** — on the job order (desktop or phone), the
    production lead counts the released kit against the **Components** list, ticks *I
@@ -55,18 +59,21 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
    be recorded until this is done.** A short or damaged kit isn't accepted — report it
    (phone: **Report a kit problem**) and the warehouse/supervisor fixes the release.
 
-5. **Build (record production progress)** — units **finished** / **scrapped**; every unit
+5. **Build (record production progress)** — needs `production.record` or `inventory.adjust`.
+   On desktop or phone, record each serialized unit with its required identifier and build photo while online.
+   For bulk output, enter units **finished** / **scrapped**; every unit
    off the line consumes its components. Either way this does **not** post to stock yet:
    **0 stages** → one **batch/lot** recorded per entry, awaiting Products In. **1–2 stages**
    → units queue for inspection instead; add a **batch label** to group the entry.
 
-6. **Inspect (QA/QC)** — *Production → QA / QC → Inspection Queue* lists every unit waiting on
-   inspection across all job orders; open one to work the checklist and **Pass** / **Fail**.
+6. **Inspect (QC/QA)** — *Production → QC / QA → Inspection Queue* lists every unit waiting on
+   inspection across all job orders; needs the appropriate `production.inspect_qc` /
+   `production.inspect_qa` permission or `inventory.adjust`. Open one to work the checklist and **Pass** / **Fail**.
    Pass advances the stage; the final pass queues the unit for **Products In** (step 8) — it
    is not stock yet. A **fail** needs a **disposition**: *scrap / dispose / recycle*
    (terminal, counts as scrapped) or *repair*. Non-serialized job orders can get an optional
    **batch-level sign-off** from Production → Batches / Lots — a quality record, independent
-   of receiving. Every pass/fail ever recorded is queryable at *Production → QA / QC →
+   of receiving. Every pass/fail ever recorded is queryable at *Production → QC / QA →
    Findings & Reports* — filter by result / date / job order or product, export to CSV, open
    one for its full checklist snapshot.
 
@@ -78,7 +85,7 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
    is **re-inspectable** only once every request is accepted / rejected / cancelled — a pass
    then rejoins the flow at Products In.
 
-8. **Products In** — *Production → Products In* (`inventory.adjust`). The checkpoint that
+8. **Products In** — *Production → Products In* (`production.receive` or `inventory.adjust`). The checkpoint that
    mirrors Purchasing's **Goods Receipt**: nothing posts to stock — and the GL's
    material-only "DR Inventory / CR WIP" entry doesn't post — until it's confirmed here,
    whether QC applied or not. **Ready to Receive** lists every job order with output
@@ -92,9 +99,10 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
 9. **Completion & returns** — production completion tracks the *build*, not receiving: once
    every ordered unit is accounted for (built + scrapped) and nothing is pending or in
    rework, the job order **completes** and unused reserved components return to the source
-   location — even if some output is still awaiting Products In. **Close (finish early)** /
-   **Cancel** do the return manually; either way, whatever was already built still needs to
-   be received.
+   location — even if some output is still awaiting Products In. **Close (finish early)**
+   stops unbuilt output and returns unused parts, keeping built units for QC/QA, rework,
+   hold review and Products In. Open repair-parts requests remain active. **Cancel** is a
+   separate write-off action for unresolved units. Output already passed still needs receipt.
 
 10. **Labels & QR** — print QR labels per unit (identifier) or per batch (`BATCH-#####`).
     Edit the layout under **Label design** (model, variant, code, batch fields, QR). Scanning
@@ -108,8 +116,9 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
 12. **Sell / move (Finished Goods)** — *Production → Finished Goods* is the cross-product
     view of what Products In has actually received — everything on hand, ready to sell or
     move. Only received (in-stock) units can be sold or moved; the same Sell / Move action
-    used at receiving handles a later transfer too. Allocate to a sales order from the order
-    screen or from Finished Goods — removes them from stock and stamps the order.
+    used at receiving handles a later transfer too. **Sell / Move → Sell** deducts stock
+    immediately and can link the unit to a sale order. This differs from **Release SOs**:
+    that reserves the units, and stock leaves only when the order is confirmed/completed.
 
 ## Watch out
 
@@ -117,6 +126,8 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
 - A QC pass (or, with no QC stages, recorded progress) does not post stock on its own —
   **Products In** does. "Built" and "on hand" are different states; don't assume one implies
   the other when reading a report or reconciling counts.
+- Parts requests need `production.inspect_qc` / `production.inspect_qa` or `inventory.adjust`;
+  accepting/rejecting requests needs `production.repairs` or `inventory.adjust`.
 - Repair-issued parts are a direct stock movement (component out, old part → damage); they
   don't roll into the job order's standard per-unit cost or the GL.
 - Deleting a **production team** is blocked while a job order points at it — deactivate.

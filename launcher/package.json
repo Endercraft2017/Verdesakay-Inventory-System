@@ -1,18 +1,18 @@
 {
-  "name": "verdesakay-inventory-launcher",
+  "name": "otom-launcher",
   "version": "1.0.0",
-  "description": "Verdesakay Inventory System desktop launcher",
+  "description": "Otom desktop launcher",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win --x64"
   },
   "build": {
-    "appId": "com.verdesakay.inventory",
-    "productName": "Verdesakay Inventory",
+    "appId": "com.afkcube.otom",
+    "productName": "Otom",
     "win": {
       "target": "portable",
-      "artifactName": "Verdesakay-Inventory.exe",
+      "artifactName": "Otom.exe",
       "sign": null,
       "signAndEditExecutable": false
     },

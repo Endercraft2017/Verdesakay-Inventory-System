@@ -47,7 +47,7 @@ export function isSealed(value: string): boolean {
 export function openForPc(value: string): string {
   if (!isSealed(value)) return value;
   const k = key();
-  if (!k) throw new Error('This PC\'s stored credentials are encrypted; start it from the Verdesakay desktop app.');
+  if (!k) throw new Error('This PC\'s stored credentials are encrypted; start it from the Otom desktop app.');
   const [iv, tag, ct] = value.slice(PREFIX.length).split(':').map((p) => Buffer.from(p, 'base64'));
   const d = crypto.createDecipheriv('aes-256-gcm', k, iv!);
   d.setAuthTag(tag!);

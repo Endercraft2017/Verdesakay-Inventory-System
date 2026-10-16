@@ -214,3 +214,9 @@ describe('page setup + find/replace helpers', () => {
     expect(root.querySelector('.doc-chip')!.textContent).toBe('world'); // chip untouched
   });
 });
+
+it('preserves DOM-normalized page settings without accumulating duplicate setup tags',()=>{
+ const api=load();const normalized='<style data-docpage="">@page{size:180mm 250mm;margin:12mm}</style>';
+ const parsed=api.parsePageStyle(normalized+normalized+'<p>Content</p>');
+ expect(parsed.widthMm).toBe(180);expect(parsed.heightMm).toBe(250);expect(parsed.marginMm).toBe(12);expect(parsed.rest).toBe('<p>Content</p>');
+});

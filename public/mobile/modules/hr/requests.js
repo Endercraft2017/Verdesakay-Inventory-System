@@ -5,11 +5,11 @@
   var TYPE_META = {
     overtime_request: { icon: '◷', guide: 'Requires supervisor approval and attendance verification.' },
     leave_request: { icon: '☼', guide: 'Your available leave balance is checked during approval.' },
-    half_day_request: { icon: '◐', guide: 'Choose the date and which half of the shift is affected.' },
+    halfday_request: { icon: '◐', guide: 'Choose the date and which half of the shift is affected.' },
     undertime_request: { icon: '↙', guide: 'State the planned departure time and operational reason.' },
-    offset_request: { icon: '⇄', guide: 'Identify the earned time and the date you plan to use it.' },
+    offset_form: { icon: '⇄', guide: 'Identify the earned time and the date you plan to use it.' },
     time_correction: { icon: '⟳', guide: 'Give the correct punch details so HR can verify attendance.' },
-    schedule_change: { icon: '▦', guide: 'Your current roster remains active until this request is approved.' },
+    schedule_change: { icon: '▦', guide: 'Choose a published future work date and a shift. Your roster changes only after approval.' },
     information_change: { icon: '✎', guide: 'Authoritative employee information changes only after approval.' }
   };
 
@@ -74,10 +74,7 @@
         }).join('') +
       '</div><div id="m-req-list"><div class="m-hint">Loading…</div></div>' +
       '<div id="m-req-balance"></div>' +
-      '<aside class="m-request-types-note"><b>Available to every employee</b>' +
-        '<span>Overtime · Leave · Half-day · Undertime</span>' +
-        '<span>Offset · Time correction · Schedule change</span>' +
-        '<span>Information change · Documents · Other</span></aside>';
+      '<aside class="m-request-types-note" id="m-req-available" hidden></aside>';
 
     host.querySelector('#m-req-new').onclick = function () { pickType(view); };
     Array.prototype.forEach.call(host.querySelectorAll('[data-filter]'), function (button) {
@@ -87,6 +84,13 @@
     API.get('/me').then(function (r) {
       var balance = host.querySelector('#m-req-balance');
       if (balance) balance.innerHTML = leaveBalanceStrip(r.employee);
+    }).catch(function () {});
+
+    API.get('/me/request-types').then(function (types) {
+      var note = host.querySelector('#m-req-available');
+      if (!note || !types || !types.length) return;
+      note.innerHTML = '<b>Forms available now</b><span>' + types.map(function (type) { return mEsc(type.name); }).join(' · ') + '</span>';
+      note.hidden = false;
     }).catch(function () {});
 
     var rowsHost = host.querySelector('#m-req-list');
@@ -118,9 +122,10 @@
   function detail(view, r) {
     MApp.setTitle(r.form_name);
     var host = shell(view, '46:692', r.form_name, r.number || 'Request details', function () { list(view); });
-    var data = r.data || {};
+    var data = r.display_data || r.data || {};
+    var decisionNote = r.data && r.data.decision_note;
     var fields = Object.keys(data).filter(function (key) {
-      return data[key] != null && String(data[key]).trim() !== '' && typeof data[key] !== 'object' && key !== 'decision_note';
+      return data[key] != null && String(data[key]).trim() !== '' && typeof data[key] !== 'object' && ['decision_note', 'employee_id', 'decided_by'].indexOf(key) < 0;
     });
     var current = statusLabel(r.status);
     var isPending = r.status === 'pending' || r.status === 'draft' || r.status === 'review';
@@ -134,7 +139,7 @@
           return '<div class="m-request-detail-row"><b>' + mEsc(titleCase(key)) + '</b><span>' + mEsc(String(data[key])) + '</span></div>';
         }).join('') : '<div class="m-empty">No additional details were recorded.</div>') +
       '</div>' +
-      (data.decision_note ? '<aside class="m-request-decision"><b>Decision note</b><span>' + mEsc(String(data.decision_note)) + '</span></aside>' : '') +
+      (decisionNote ? '<aside class="m-request-decision"><b>Decision note</b><span>' + mEsc(String(decisionNote)) + '</span></aside>' : '') +
       '<section class="m-request-timeline"><h2>Approval timeline</h2><div>' +
         '<span class="done">✓ Submitted · ' + mEsc(dateText(r.created_at)) + '</span>' +
         '<span class="' + (r.status === 'approved' || r.status === 'completed' || r.status === 'rejected' ? 'done' : '') + '">○ Review · ' + mEsc(isPending ? 'Waiting' : current) + '</span>' +
@@ -186,11 +191,12 @@
   function fieldMarkup(field) {
     var label = mEsc(field.label) + (field.required ? ' *' : '');
     var key = mEsc(field.key);
+    var required = field.required ? ' aria-required="true"' : '';
     if (field.type === 'checkbox') {
-      return '<label class="m-request-check"><input type="checkbox" data-k="' + key + '"><span>' + label + '</span></label>';
+      return '<label data-validation-field class="m-request-check"><input type="checkbox" data-k="' + key + '"' + required + '><span>' + label + '</span></label>';
     }
     if (field.type === 'textarea') {
-      return '<label class="m-request-field"><span>' + label + '</span><textarea data-k="' + key + '" rows="3"></textarea></label>';
+      return '<label data-validation-field class="m-request-field"><span>' + label + '</span><textarea data-k="' + key + '"' + required + ' rows="3"></textarea></label>';
     }
     if (field.type === 'select' || field.type === 'employee') {
       var options = (field.options || []).map(function (option) {
@@ -198,49 +204,63 @@
         var text = typeof option === 'object' ? (option.label || option.name || value) : option;
         return '<option value="' + mEsc(String(value)) + '">' + mEsc(String(text)) + '</option>';
       }).join('');
-      return '<label class="m-request-field"><span>' + label + '</span><select data-k="' + key + '"><option value="">Choose one</option>' + options + '</select></label>';
+      return '<label data-validation-field class="m-request-field"><span>' + label + '</span><select data-k="' + key + '"' + required + '><option value="">Choose one</option>' + options + '</select></label>';
     }
     var inputType = field.type === 'number' ? 'number' : (field.type === 'date' ? 'date' : (field.type === 'time' ? 'time' : 'text'));
-    return '<label class="m-request-field"><span>' + label + '</span><input type="' + inputType + '" data-k="' + key + '"></label>';
+    return '<label data-validation-field class="m-request-field"><span>' + label + '</span><input type="' + inputType + '"' + (inputType === 'number' ? ' step="any"' : '') + ' data-k="' + key + '"' + required + '></label>';
   }
 
   function collect(formEl, type, autofill) {
     var data = {};
     var missing = null;
+    var errors = [];
     Object.keys(autofill).forEach(function (key) { if (autofill[key]) data[key] = autofill[key]; });
     (type.fields || []).forEach(function (field) {
       if (autofill[field.key]) return;
       var input = formEl.querySelector('[data-k="' + field.key + '"]');
       if (!input) return;
       var value = input.type === 'checkbox' ? (input.checked ? 'Yes' : 'No') : String(input.value || '').trim();
-      if (field.required && !value) missing = missing || field.label;
+      if (field.required && (input.type === 'checkbox' ? !input.checked : !value)) {
+        missing = missing || field.label;
+        errors.push({ control: input, message: field.label + ' is required' });
+      } else if (!input.validity.valid) errors.push({ control: input, message: field.label + ': ' + input.validationMessage });
       if (value) data[field.key] = value;
     });
-    return { data: data, missing: missing };
+    return { data: data, missing: missing, errors: errors };
   }
 
-  function form(view, type, prefillDate) {
+  function form(view, type, prefillDate, draft) {
     MApp.setTitle(type.name);
     var host = shell(view, '46:663', 'New ' + type.name.toLowerCase(), 'Complete the details, then review before submitting', function () { pickType(view); });
     var employee = (MApp.getMe() || {}).employee || {};
+    if (!employee.id) { host.innerHTML = '<div class="m-empty">Your account is not linked to an employee record. Ask HR to link your account before filing requests.</div>'; return; }
     var autofill = { employee_name: employee.name, name: employee.name, department: employee.department_name, position: employee.position, employee_no: employee.employee_no };
-    var fields = (type.fields || []).filter(function (field) { return !autofill[field.key]; });
+    var fields = (type.fields || []).filter(function (field) { return !autofill[field.key] && !(type.slug === 'leave_request' && ['date_from','date_to','days','leave_dates'].indexOf(field.key) >= 0); });
     var meta = TYPE_META[type.slug] || { guide: 'This request will be routed for the required approval.' };
 
     host.innerHTML =
       '<button class="m-request-selected-type" type="button"><span><small>Request type</small><b>' + mEsc(type.name) + '</b></span><i aria-hidden="true">›</i></button>' +
-      '<form class="m-request-form">' + fields.map(fieldMarkup).join('') +
+      '<form class="m-request-form" novalidate><div data-validation-summary class="m-error" role="alert" tabindex="-1" hidden></div>' + (type.slug === 'leave_request' ? LeaveDates.markup() : '') + fields.map(fieldMarkup).join('') +
         '<aside class="m-request-guidance">' + mEsc(meta.guide) + '</aside>' +
         '<button class="m-v2-primary" type="submit">Review request</button></form>' +
       '<div id="m-req-form-balance"></div>';
     host.querySelector('.m-request-selected-type').onclick = function () { pickType(view); };
     var formEl = host.querySelector('form');
+    if (type.slug === 'schedule_change') {
+      var shiftField = (type.fields || []).filter(function (field) { return field.key === 'requested_shift_id'; })[0];
+      if (!shiftField || !shiftField.options || !shiftField.options.length) {
+        formEl.insertAdjacentHTML('afterbegin', '<aside class="m-request-guidance">HR needs to configure work shifts before you can request a change.</aside>');
+        formEl.querySelector('button[type="submit"]').disabled = true;
+      }
+    }
+    var leavePicker = type.slug === 'leave_request' ? LeaveDates.mount(formEl, { data: draft || (prefillDate ? { date_from: prefillDate, date_to: prefillDate } : {}), preview: function (data) { return API.post('/me/leave-preview', data); } }) : null;
 
     (type.fields || []).forEach(function (field) {
       var input = formEl.querySelector('[data-k="' + field.key + '"]');
-      if (input && field.default != null && field.default !== '' && input.type !== 'checkbox') input.value = field.default;
+      var value = draft && draft[field.key] != null ? draft[field.key] : field.default;
+      if (input && value != null && value !== '') { if (input.type === 'checkbox') input.checked = value === true || value === 'Yes'; else input.value = value; }
     });
-    if (prefillDate) {
+    if (prefillDate && !draft) {
       var dateInput = formEl.querySelector('[data-k="work_date"]') || formEl.querySelector('[data-k="date"]');
       if (dateInput) dateInput.value = prefillDate;
     }
@@ -254,14 +274,9 @@
     formEl.onsubmit = function (event) {
       event.preventDefault();
       var result = collect(formEl, type, autofill);
-      if (result.missing) {
-        mToast(result.missing + ' is required', 'err');
-        var missingField = (type.fields || []).filter(function (field) { return field.label === result.missing; })[0];
-        var input = missingField && formEl.querySelector('[data-k="' + missingField.key + '"]');
-        if (input) input.focus();
-        return;
-      }
-      review(view, type, result.data, function () { form(view, type, prefillDate); });
+      if (leavePicker) { Object.assign(result.data, leavePicker.value()); if (!result.data.leave_dates) result.errors.push({ control: formEl.querySelector('[data-leave-single]'), message: 'Select at least one leave date.', isValid: function () { return !!leavePicker.value().leave_dates; } }); }
+      if (!FormValidation.show(formEl, result.errors, formEl.querySelector('[data-validation-summary]'))) return;
+      review(view, type, result.data, function () { form(view, type, prefillDate, result.data); });
     };
   }
 
@@ -279,7 +294,14 @@
       var button = this;
       button.disabled = true;
       button.textContent = 'Submitting…';
-      API.post('/form-records', { form_def_id: type.id, data: data, status: 'pending' }).then(function () {
+      mSubmit('/form-records', { form_def_id: type.id, data: data, status: 'pending' }, { label: type.name + ' request' }).then(function (sent) {
+        if (sent.queued) {
+          mToast('Saved on this phone. It will be sent when you reconnect; check Pending sync.');
+          MApp.go('queue');
+          return;
+        }
+        var result = sent.response;
+        if (result.action_warnings && result.action_warnings.length) window.alert(result.action_warnings.join('\n\n'));
         mToast('Request submitted');
         list(view, 'pending');
       }).catch(function (ex) {

@@ -67,7 +67,7 @@ App.register('sync', async (view) => {
       auto.onchange = async () => {
         const on = await window.desktopApp.setAutostart(auto.checked);
         auto.checked = on;
-        UI.toast(on ? 'Verdesakay will open when Windows starts.' : 'Verdesakay will no longer open when Windows starts.');
+        UI.toast(on ? 'Otom will open when Windows starts.' : 'Otom will no longer open when Windows starts.');
       };
     }
 

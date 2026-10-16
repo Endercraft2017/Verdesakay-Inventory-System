@@ -3,7 +3,8 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { fetchPublicPage } from '../shared/public-fetch';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { queryOne, queryAll, run, uploadDir, tenantStore, DEFAULT_TENANT } from '../shared/db';
@@ -14,6 +15,10 @@ import { broadcast } from '../shared/ws';
 import { syncClass } from '../sync';
 import { syncUpload } from '../sync/files';
 import { sideEffectsSuppressed } from '../shared/sync-context';
+import { messageBytesToKeep, resolveDurableUploadAsync } from '../shared/durable-uploads';
+import { removeUpload } from '../shared/file-store';
+import { previewMessageFile } from './message-preview';
+import { enforceQuota } from '../platform/quota';
 
 const router = Router();
 router.use(requireAuth);
@@ -22,8 +27,8 @@ function currentSlug(): string {
   return tenantStore.getStore()?.slug ?? DEFAULT_TENANT;
 }
 
-/** Fixed per-user pool for message attachments — independent of the tenant's plan
- *  storage_mb quota (see src/quota.ts). Freed automatically as messages are deleted. */
+/** Fixed per-user pool for message attachments, alongside the tenant plan's
+ *  storage_mb quota (see src/platform/quota.ts). Freed as messages are deleted. */
 const USER_STORAGE_CAP_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB
 const FILE_MAX_BYTES = 10 * 1024 * 1024; // 10 MB per file
 const MAX_FILES_PER_MESSAGE = 10;
@@ -248,11 +253,14 @@ router.get('/conversations', requirePermission('messages.view'), (req, res) => {
       p.other_id,
       uid
     )!.c;
+    const attachment = !last.body && !last.deleted_at
+      ? queryOne<{ original_name: string }>('SELECT original_name FROM message_attachments WHERE message_id = ? ORDER BY id LIMIT 1', p.last_id)
+      : null;
     return {
       other_id: p.other_id,
       other_name: other?.full_name ?? '(deleted user)',
       other_username: other?.username ?? '',
-      last_message: last.deleted_at ? 'Message was removed' : last.body,
+      last_message: last.deleted_at ? 'Message was removed' : (last.body || (attachment ? `Attachment: ${attachment.original_name}` : '')),
       last_message_at: last.created_at,
       last_message_mine: last.sender_id === uid,
       unread_count: unread,
@@ -310,6 +318,11 @@ router.post('/', requirePermission('messages.send'), syncClass('merge'), syncUpl
     throw e;
   }
   const { recipient_id, subject, body, reply_to_id } = parsed;
+  if (!body && !files.length) {
+    unlinkAll(files);
+    res.status(400).json({ error: 'Write a message or attach a file' });
+    return;
+  }
   if (recipient_id === req.user!.id) {
     unlinkAll(files);
     res.status(400).json({ error: 'You cannot message yourself' });
@@ -344,6 +357,14 @@ router.post('/', requirePermission('messages.send'), syncClass('merge'), syncUpl
       });
       return;
     }
+    try {
+      // Multer has already placed these files in uploadDir(), which dirSizeBytes
+      // includes. Passing addingBytes here would count the same upload twice.
+      enforceQuota('storage_mb');
+    } catch (error) {
+      unlinkAll(files);
+      throw error;
+    }
   }
   const info = run(
     'INSERT INTO messages (sender_id, recipient_id, subject, body, reply_to_id) VALUES (?, ?, ?, ?, ?)',
@@ -355,19 +376,25 @@ router.post('/', requirePermission('messages.send'), syncClass('merge'), syncUpl
   );
   const messageId = Number(info.lastInsertRowid);
   for (const f of files) {
-    run(
-      'INSERT INTO message_attachments (message_id, stored_name, original_name, mime_type, size_bytes) VALUES (?, ?, ?, ?, ?)',
+    // The bytes stay with the row, unless the file bucket keeps them (durable-uploads.ts).
+    let attId = 0;
+    const keep = messageBytesToKeep(f.path, (bytes) => {
+      if (attId) run('UPDATE message_attachments SET data = ? WHERE id = ?', bytes, attId);
+    });
+    attId = Number(run(
+      'INSERT INTO message_attachments (message_id, stored_name, original_name, mime_type, size_bytes, data) VALUES (?, ?, ?, ?, ?, ?)',
       messageId,
       f.filename,
       f.originalname,
       f.mimetype,
-      f.size
-    );
+      f.size,
+      keep
+    ).lastInsertRowid);
   }
   broadcast(currentSlug(), [recipient_id, req.user!.id], { type: 'message:new', data: hydrateMessageForBroadcast(messageId) });
   void notifyUser(recipient_id, {
     title: subject ? `Message: ${subject}` : `New message from ${req.user!.full_name}`,
-    body: body.length > 140 ? body.slice(0, 137) + '…' : body,
+    body: body ? (body.length > 140 ? body.slice(0, 137) + '…' : body) : (files.length === 1 ? `Sent ${files[0]!.originalname}` : `Sent ${files.length} attachments`),
     url: '#/inbox',
     tag: 'msg',
     record: false, // the inbox is the history for messages
@@ -448,7 +475,7 @@ router.post('/:id/react', requirePermission('messages.view'), syncClass('merge')
 });
 
 // GET /api/messages/:id/attachments/:attId — stream a message's attached file
-router.get('/:id/attachments/:attId', requirePermission('messages.view'), (req, res) => {
+router.get('/:id/attachments/:attId', requirePermission('messages.view'), async (req, res) => {
   const messageId = Number(req.params.id);
   const uid = req.user!.id;
   const msg = queryOne<{ sender_id: number; recipient_id: number }>(
@@ -463,8 +490,8 @@ router.get('/:id/attachments/:attId', requirePermission('messages.view'), (req, 
     res.status(403).json({ error: 'Forbidden' });
     return;
   }
-  const att = queryOne<{ stored_name: string; original_name: string; mime_type: string | null }>(
-    'SELECT stored_name, original_name, mime_type FROM message_attachments WHERE id = ? AND message_id = ?',
+  const att = queryOne<{ stored_name: string; original_name: string; mime_type: string | null; data: Buffer | null }>(
+    'SELECT stored_name, original_name, mime_type, data FROM message_attachments WHERE id = ? AND message_id = ?',
     Number(req.params.attId),
     messageId
   );
@@ -472,16 +499,54 @@ router.get('/:id/attachments/:attId', requirePermission('messages.view'), (req, 
     res.status(404).json({ error: 'Attachment not found' });
     return;
   }
-  const filePath = path.join(uploadDir(), att.stored_name);
-  if (!fs.existsSync(filePath)) {
-    res.status(410).json({ error: 'File is missing on disk' });
+  // The file on disk, fetched back from the file bucket, this PC's durable copy, or a backup
+  // (older messages predate the database copy) — else the bytes kept with the row.
+  const filePath = await resolveDurableUploadAsync(path.basename(att.stored_name));
+  if (!filePath && !att.data) {
+    res.status(410).json({ error: 'Photo or file is no longer available. Ask the sender to resend it.' });
     return;
   }
-  const safeInline = /^(image\/(jpeg|png|gif|webp)|application\/pdf)$/.test(att.mime_type || '');
-  res.setHeader('Content-Disposition', `${safeInline ? 'inline' : 'attachment'}; filename="${encodeURIComponent(att.original_name)}"`);
-  res.type(safeInline ? att.mime_type! : 'application/octet-stream');
-  // Active HTML/SVG/JS must never become a same-origin document or script source.
-  res.sendFile(filePath);
+  // The type is whatever the uploader's browser claimed. Only plain raster images may render in
+  // place; anything else (HTML, SVG, PDF, …) is served as a download, so a file sent in chat can
+  // never run script on the app's own origin.
+  const inlineImage = !!att.mime_type && /^image\/(png|jpe?g|gif|webp|bmp)$/i.test(att.mime_type);
+  res.type(inlineImage ? att.mime_type! : 'application/octet-stream');
+  res.setHeader('Content-Disposition', `${inlineImage ? 'inline' : 'attachment'}; filename="${encodeURIComponent(att.original_name)}"`);
+  if (filePath) res.sendFile(filePath);
+  else if (att.data) res.send(Buffer.from(att.data));
+});
+
+// Text-only document previews. The same participant check as downloading applies;
+// never send Office markup to the chat page or a third-party conversion service.
+router.get('/:id/attachments/:attId/preview', requirePermission('messages.view'), async (req, res) => {
+  const messageId = Number(req.params.id);
+  const msg = queryOne<{ sender_id: number; recipient_id: number }>(
+    'SELECT sender_id, recipient_id FROM messages WHERE id = ?', messageId
+  );
+  if (!msg) { res.status(404).json({ error: 'Message not found' }); return; }
+  if (msg.sender_id !== req.user!.id && msg.recipient_id !== req.user!.id) {
+    res.status(403).json({ error: 'Forbidden' }); return;
+  }
+  const att = queryOne<{ stored_name: string; original_name: string; data: Uint8Array | null }>(
+    'SELECT stored_name, original_name, data FROM message_attachments WHERE id = ? AND message_id = ?',
+    Number(req.params.attId), messageId
+  );
+  if (!att) { res.status(404).json({ error: 'Attachment not found' }); return; }
+  const ext = path.extname(att.original_name).toLowerCase();
+  if (!['.txt', '.log', '.md', '.csv', '.tsv', '.json', '.docx', '.xlsx'].includes(ext)) {
+    res.status(415).json({ error: 'Preview is not available for this file type. Download it to view.' }); return;
+  }
+  const location = await resolveDurableUploadAsync(path.basename(att.stored_name));
+  if (!location && !att.data) {
+    res.status(410).json({ error: 'File is no longer available. Ask the sender to resend it.' }); return;
+  }
+  try {
+    const input = location ? fs.readFileSync(location) : Buffer.from(att.data!);
+    const text = await previewMessageFile(att.original_name, input);
+    res.json({ text });
+  } catch {
+    res.status(422).json({ error: 'This file could not be previewed. Download it to view.' });
+  }
 });
 
 // POST /api/messages/:id/read — mark a single received message read (kept alongside the
@@ -522,7 +587,7 @@ router.delete('/:id', requirePermission('messages.send'), syncClass('merge'), (r
   run('DELETE FROM message_attachments WHERE message_id = ?', id);
   run('DELETE FROM message_reactions WHERE message_id = ?', id);
   // An installed PC keeps the files until the cloud confirms: a refused delete brings the rows back.
-  if (!sideEffectsSuppressed('unlink')) atts.forEach((a) => fs.promises.unlink(path.join(uploadDir(), a.stored_name)).catch(() => {}));
+  if (!sideEffectsSuppressed('unlink')) atts.forEach((a) => void removeUpload(path.join(uploadDir(), a.stored_name))); // and its bucket copy
   broadcast(currentSlug(), [msg.sender_id, msg.recipient_id], { type: 'message:deleted', data: { id } });
   res.json({ ok: true });
 });
@@ -533,6 +598,46 @@ const LINK_PREVIEW_TIMEOUT_MS = 5000;
 const LINK_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
 const LINK_PREVIEW_MAX_REDIRECTS = 3;
 const LINK_PREVIEW_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function isPrivateIp(ip: string): boolean {
+  if (net.isIPv4(ip)) {
+    const parts = ip.split('.').map(Number);
+    const [a, b] = parts;
+    if (a === undefined || b === undefined) return true;
+    if (a === 10 || a === 127 || a === 0) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true; // carrier-grade NAT (100.64.0.0/10)
+    if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking (198.18.0.0/15)
+    if (a === 192 && b === 0 && (parts[2] === 0 || parts[2] === 2)) return true; // 192.0.0.0/24, TEST-NET-1
+    if (a >= 224) return true; // multicast, reserved, broadcast
+    return false;
+  }
+  if (net.isIPv6(ip)) {
+    const low = ip.toLowerCase();
+    if (low === '::1' || low === '::') return true;
+    if (low.startsWith('fe80:') || low.startsWith('fc') || low.startsWith('fd') || low.startsWith('ff')) return true;
+    if (low.startsWith('::ffff:')) return isPrivateIp(low.slice(7));
+    if (low.startsWith('64:ff9b:')) return true; // NAT64: an IPv4 address in disguise
+    return false;
+  }
+  return true; // not a literal IP we recognize -- treat conservatively as unsafe
+}
+
+/** True if `hostname` (as given by `URL#hostname`, which brackets a literal IPv6 address
+ *  e.g. `[::1]`) is or resolves to a loopback/private/link-local address, or fails to
+ *  resolve at all. Used to block SSRF via the link-preview fetcher. */
+async function isPrivateHost(hostname: string): Promise<boolean> {
+  const host = hostname.replace(/^\[|\]$/g, '');
+  if (net.isIP(host)) return isPrivateIp(host);
+  try {
+    const addrs = await dns.lookup(host, { all: true });
+    return addrs.length === 0 || addrs.some((a) => isPrivateIp(a.address));
+  } catch {
+    return true;
+  }
+}
 
 function decodeHtmlEntities(s: string): string {
   return s
@@ -574,7 +679,7 @@ function parseOgTags(html: string, baseUrl: string): LinkPreviewData | null {
 }
 
 /** Fetch `startUrl` and parse its OG tags, re-validating every hop of up to
- *  `LINK_PREVIEW_MAX_REDIRECTS` manual redirects through a DNS-pinned public-address fetch (a redirect is
+ *  `LINK_PREVIEW_MAX_REDIRECTS` manual redirects against `isPrivateHost` (a redirect is
  *  the classic SSRF bypass for a naive "check the URL once" guard). Returns null on any
  *  failure — non-http(s), private/unresolvable host, timeout, non-HTML response, oversized
  *  body, or no recognizable OG/title data. */
@@ -588,8 +693,22 @@ async function fetchLinkPreview(startUrl: string): Promise<LinkPreviewData | nul
       return null;
     }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
-    const resp = await fetchPublicPage(parsed, LINK_PREVIEW_MAX_BYTES, LINK_PREVIEW_TIMEOUT_MS);
-    if (!resp) return null;
+    if (await isPrivateHost(parsed.hostname)) return null;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), LINK_PREVIEW_TIMEOUT_MS);
+    let resp: globalThis.Response;
+    try {
+      resp = await fetch(parsed, {
+        redirect: 'manual',
+        signal: controller.signal,
+        headers: { 'User-Agent': 'OtomLinkPreview/1.0' },
+      });
+    } catch {
+      clearTimeout(timer);
+      return null;
+    }
+    clearTimeout(timer);
 
     if (resp.status >= 300 && resp.status < 400) {
       const loc = resp.headers.get('location');

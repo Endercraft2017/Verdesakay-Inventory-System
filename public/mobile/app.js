@@ -10,11 +10,15 @@ window.MApp = (function () {
   var viewEl = function () { return document.getElementById('m-view'); };
 
   function getMe() { return me; }
+  function setMe(patch) {
+    Object.assign(me, patch);
+    try { (API.isSharedSession() ? sessionStorage : localStorage).setItem(ME_KEY, JSON.stringify(me)); } catch (e) { /* storage blocked */ }
+  }
   function can(perm) { return me && Array.isArray(me.permissions) && me.permissions.indexOf(perm) !== -1; }
   /** SaaS feature-module entitlement for this workspace (see src/modules.ts). Absent list
       (self-hosted, or pre-login) → treat every module as on. */
   function hasModule(m) { return !me || !Array.isArray(me.modules) || me.modules.indexOf(m) !== -1; }
-  function isEmployee() { return !!(me && me.employee); }
+  function isEmployee() { return hasModule('hr') && !!(me && me.employee); }
   // The warehouse phone tools (stock moves, counts, picking, scan). Floor desks don't hold
   // inventory.mobile (src/shared/permissions.ts): their Work rows, Quick Orbit action and the
   // Production tab follow their own desk permission instead.
@@ -45,7 +49,7 @@ window.MApp = (function () {
     }
     return '#/' + name + q;
   }
-  function go(name, params) { location.hash = hashFor(name, params); }
+  function go(name, params) { if(window.mPersonalDraft && !mPersonalDraft.allow()) return; location.hash = hashFor(name, params); }
   function back() { if (history.length > 1) history.back(); else go('home'); }
 
   function parseHash() {
@@ -74,11 +78,11 @@ window.MApp = (function () {
     batch: 'work', 'cycle-count': 'work', receive: 'work', pick: 'work',
     allocate: 'work', 'assign-qr': 'work', 'low-stock': 'work', location: 'work',
     'my-log': 'work', item: 'work', scan: 'work', deliveries: 'work', so: 'work',
-    production: 'work', 'job-orders': 'work', 'kit-release': 'work', qc: 'work', repairs: 'work', record: 'work', receiving: 'work',
+    production: 'work', 'job-orders': 'work', 'kit-release': 'work', 'unit-issues': 'work', qc: 'work', repairs: 'work', record: 'work', receiving: 'work',
     inbox: 'inbox', directory: 'inbox',
     settings: 'profile', queue: 'profile',
     clock: 'clock', 'time-fix': 'home', requests: 'home', payslips: 'home', schedule: 'home', notifications: 'home',
-    tasks: 'work', approvals: 'home', announcements: 'home', 'report-problem': 'home', 'anonymous-report': 'home',
+    tasks: 'work', notes: 'work', guides: 'work', approvals: 'home', announcements: 'home', 'report-problem': 'home', 'anonymous-report': 'home',
     'confidential-reports': 'work',
   };
   var SEGMENTS = ['me', 'approvals', 'people', 'warehouse'];
@@ -144,17 +148,45 @@ window.MApp = (function () {
       receiving, so, job-orders, kit-release, scan …). tests/frontend-mobile.test.ts walks every route. */
   var ROUTE_NEEDS = {
     allocate: ['inventory.adjust'], batch: ['inventory.adjust'], 'cycle-count': ['inventory.adjust'],
-    damage: ['inventory.adjust'], receive: ['inventory.adjust'], pick: ['inventory.adjust'],
+    damage: ['inventory.adjust'], receive: ['inventory.adjust'],
     'stock-move': ['inventory.adjust'], transfer: ['inventory.adjust'], 'assign-qr': ['inventory.adjust'],
     'new-item': ['inventory.create'],
-    item: ['inventory.view'], location: ['inventory.view'], 'low-stock': ['inventory.view'],
+    'my-log': ['inventory.view'], item: ['inventory.view'], location: ['inventory.view'], 'low-stock': ['inventory.view'],
     // A unit's production record: the broad views, or any desk that handles the unit (src/shared/desk-access.ts).
     record: ['inventory.view', 'production.view', 'production.record', 'production.pause', 'production.manage',
       'production.approve', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review',
       'production.repairs', 'production.receive', 'orders.release'],
   };
 
+  var ROUTE_MODULES = {
+    allocate: ['manufacturing'], production: ['manufacturing'], 'job-orders': ['manufacturing'], 'kit-release': ['manufacturing'],
+    'unit-issues': ['manufacturing'], qc: ['manufacturing'], repairs: ['manufacturing'], record: ['manufacturing'], receiving: ['manufacturing'],
+    batch: ['inventory'], 'cycle-count': ['inventory'], damage: ['inventory'], receive: ['inventory', 'purchasing'],
+    'stock-move': ['inventory'], transfer: ['inventory'], 'assign-qr': ['inventory'], 'new-item': ['inventory'],
+    'my-log': ['inventory'], item: ['inventory'], location: ['inventory'], 'low-stock': ['inventory'], scan: ['inventory'], so: ['inventory'], deliveries: ['inventory']
+  };
+  var DESK_NEEDS = {
+    production: ['inventory.adjust', 'production.record', 'production.pause', 'production.manage', 'production.approve', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.repairs', 'production.receive'],
+    'job-orders': ['inventory.adjust', 'production.view', 'production.record', 'production.pause', 'production.manage', 'production.approve'],
+    'kit-release': ['inventory.adjust'],
+    'unit-issues': ['inventory.adjust', 'production.view', 'production.record', 'production.manage', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.receive', 'production.repairs', 'orders.release'],
+    qc: ['inventory.adjust', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review'],
+    repairs: ['inventory.adjust', 'production.repairs', 'production.inspect_qc', 'production.inspect_qa', 'production.approve'], receiving: ['inventory.adjust', 'production.receive'],
+    so: ['inventory.adjust', 'orders.release'], deliveries: ['delivery.run', 'delivery.manage'],
+    scan: ['inventory.mobile', 'inventory.view', 'inventory.adjust', 'production.view', 'production.record', 'production.manage', 'production.approve', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.repairs', 'production.receive', 'orders.release'],
+    'confidential-reports': ['reports.confidential']
+  };
+  function routeEnabled(name) { return (ROUTE_MODULES[name] || []).every(hasModule); }
+  function canOpen(name) {
+    var needs = ROUTE_NEEDS[name] || DESK_NEEDS[name];
+    return routeEnabled(name) && (!needs || needs.some(can));
+  }
+
   function render() {
+    if(window.mPersonalDraft && !mPersonalDraft.allow()) return;
+    window.GuideTour?.close();window.PersonalUX?.release();
+    window.mChatViewport?.release();
+    if (me && me.password_change_required) return;
     if (!me) return;
     if (!hasAccess()) { showBlocked(); return; }
     var parsed = parseHash();
@@ -168,9 +200,9 @@ window.MApp = (function () {
     Array.prototype.slice.call(v.attributes).forEach(function (a) {
       if (a.name.indexOf('data-') === 0) v.removeAttribute(a.name);
     });
+    v.dataset.route=parsed.name;
     document.documentElement.removeAttribute('data-role-accent'); // set again by role screens (role-ui.js)
-    var needs = routes[parsed.name] && ROUTE_NEEDS[parsed.name];
-    if (needs && !needs.some(function (p) { return can(p); })) {
+    if (!canOpen(parsed.name)) {
       v.innerHTML = '<div class="m-error" data-no-permission>You don’t have permission for this screen. Ask an administrator if you need it.</div>';
       return;
     }
@@ -183,6 +215,7 @@ window.MApp = (function () {
 
   /* ---------- auth ---------- */
   function showLogin() {
+    window.mPersonalDraft?.clear();window.GuideTour?.close();window.PersonalUX?.release();
     me = null;
     API.clearToken();
     if (window.mQueue) mQueue.clearToken();
@@ -205,7 +238,7 @@ window.MApp = (function () {
     document.getElementById('m-back').classList.add('hidden');
     document.getElementById('m-segments').classList.add('hidden');
     document.getElementById('m-tabbar').classList.add('hidden');
-    setTitle('Verdesakay');
+    setTitle('Otom');
     viewEl().innerHTML =
       '<div class="m-blocked">' +
       '<div class="m-blocked-icon">&#128683;</div>' +
@@ -222,7 +255,7 @@ window.MApp = (function () {
      Device-level keys survive; every other vds_* key is one person's (cached profile, recent
      items, drafts — including the anonymous-report draft). OWNER_KEY records whose they are, so
      the next different person to sign in here gets them cleared before seeing anything. */
-  var DEVICE_KEYS = { vds_theme: 1, vds_device_id: 1, vds_kiosk_token: 1, vds_token: 1, vds_m_seg: 1, vds_m_orbit_v2: 1 };
+  var DEVICE_KEYS = { vds_theme: 1, vds_device_id: 1, vds_kiosk_token: 1, vds_token: 1, vds_browser_session: 1, vds_m_seg: 1, vds_m_orbit_v2: 1 };
   var OWNER_KEY = 'vds_m_owner';
 
   function clearUserData() {
@@ -277,8 +310,125 @@ window.MApp = (function () {
     if (out) out.onclick = signOut;
   }
 
+  function temporaryPasswordScreen() {
+    loginScreen().classList.add('hidden'); appScreen().classList.remove('hidden');
+    ['m-back', 'm-segments', 'm-tabbar'].forEach(function (id) { var element = document.getElementById(id); if (element) element.classList.add('hidden'); });
+    setTitle('Choose a new password');
+    if (window.ChatWS) ChatWS.disconnect();
+    viewEl().innerHTML = '<form id="m-new-password-form">' +
+      '<p>Replace your temporary password before accessing the workspace.</p>' +
+      '<label>Temporary password</label><input id="m-temp-password" type="password" autocomplete="current-password" required />' +
+      '<label>New password</label><input id="m-new-password" type="password" autocomplete="new-password" minlength="8" required />' +
+      '<label>Confirm new password</label><input id="m-confirm-password" type="password" autocomplete="new-password" required />' +
+      '<p id="m-password-error" role="status"></p><button class="m-btn" type="submit">Save new password</button>' +
+      '<button class="m-btn m-btn-secondary" id="m-password-out" type="button">Sign out</button></form>';
+    document.getElementById('m-password-out').onclick = function () { API.post('/auth/logout').catch(function () {}).finally(showLogin); };
+    document.getElementById('m-new-password-form').onsubmit = async function (e) {
+      e.preventDefault();
+      var err = document.getElementById('m-password-error'); var button = e.target.querySelector('[type="submit"]');
+      var pw = document.getElementById('m-new-password').value;
+      if (pw !== document.getElementById('m-confirm-password').value) { err.textContent = 'Passwords do not match.'; return; }
+      button.disabled = true;
+      try {
+        await API.post('/auth/change-password', { current_password: document.getElementById('m-temp-password').value, new_password: pw });
+        e.target.querySelectorAll('input').forEach(function (input) { input.value = ''; });
+        API.clearToken(); showLogin();
+      } catch (ex) { err.textContent = ex.message; }
+      finally { button.disabled = false; }
+    };
+  }
+
+  /* Two-step sign-in (server: src/shared/mfa.ts). A full-screen step like the temporary-password
+     screen: hide the chrome, show one small form. */
+  function bareScreen(title, html) {
+    loginScreen().classList.add('hidden'); appScreen().classList.remove('hidden');
+    ['m-back', 'm-segments', 'm-tabbar'].forEach(function (id) { var element = document.getElementById(id); if (element) element.classList.add('hidden'); });
+    setTitle(title);
+    if (window.ChatWS) ChatWS.disconnect();
+    viewEl().innerHTML = html;
+  }
+
+  /** After a correct password: the authenticator code (or a recovery code). */
+  function mfaCodeScreen(mfaToken, shared) {
+    bareScreen('Two-step sign-in', '<form id="m-mfa-form">' +
+      '<p>Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>' +
+      '<input id="m-mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="11" required />' +
+      '<p id="m-mfa-error" role="status"></p><button class="m-btn" type="submit">Sign in</button>' +
+      '<button class="m-btn m-btn-secondary" id="m-mfa-back" type="button">Back</button></form>');
+    document.getElementById('m-mfa-back').onclick = showLogin;
+    document.getElementById('m-mfa-form').onsubmit = async function (e) {
+      e.preventDefault();
+      var err = document.getElementById('m-mfa-error'); var button = e.target.querySelector('[type="submit"]');
+      button.disabled = true;
+      try {
+        var res = await API.post('/auth/login/mfa', { mfa_token: mfaToken, code: document.getElementById('m-mfa-code').value.trim() });
+        API.setToken(res.token, { shared: shared });
+        enterApp((await API.get('/auth/me')).user);
+      } catch (ex) { err.textContent = ex.message; button.disabled = false; }
+    };
+    setTimeout(function () { var c = document.getElementById('m-mfa-code'); if (c) c.focus(); }, 50);
+  }
+
+  /** The workspace requires two-step sign-in for this account: set it up before anything else. */
+  function mfaSetupScreen() {
+    var signOutBtn = '<button class="m-btn m-btn-secondary" data-mfa-out type="button">Sign out</button>';
+    var wireOut = function () { var b = viewEl().querySelector('[data-mfa-out]'); if (b) b.onclick = function () { API.post('/auth/logout').catch(function () {}).finally(showLogin); }; };
+    bareScreen('Set up two-step sign-in', '<form id="m-mfa-pw">' +
+      '<p>Your workspace requires two-step sign-in for your account. You need an authenticator app ' +
+      '(Google Authenticator, Microsoft Authenticator, Authy…).</p>' +
+      '<label>Your password</label><input id="m-mfa-password" type="password" autocomplete="current-password" required />' +
+      '<p id="m-mfa-error" role="status"></p><button class="m-btn" type="submit">Continue</button>' + signOutBtn + '</form>');
+    wireOut();
+    document.getElementById('m-mfa-pw').onsubmit = async function (e) {
+      e.preventDefault();
+      var err = document.getElementById('m-mfa-error');
+      var s;
+      try { s = await API.post('/auth/mfa/setup', { password: document.getElementById('m-mfa-password').value }); }
+      catch (ex) { err.textContent = ex.message; return; }
+      var key = String(s.secret).replace(/(.{4})/g, '$1 ').trim();
+      viewEl().innerHTML = '<form id="m-mfa-enable">' +
+        '<p><a class="m-btn" href="' + mEsc(s.otpauth_url) + '">Open in authenticator app</a></p>' +
+        '<p>Or add an account in the app and type this key: <strong style="user-select:all">' + mEsc(key) + '</strong></p>' +
+        '<label>Code the app shows</label><input id="m-mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required />' +
+        '<p id="m-mfa-error" role="status"></p><button class="m-btn" type="submit">Turn on</button>' + signOutBtn + '</form>';
+      wireOut();
+      document.getElementById('m-mfa-enable').onsubmit = async function (ev) {
+        ev.preventDefault();
+        var err2 = document.getElementById('m-mfa-error');
+        var r;
+        try { r = await API.post('/auth/mfa/enable', { code: document.getElementById('m-mfa-code').value.trim() }); }
+        catch (ex) { err2.textContent = ex.message; return; }
+        viewEl().innerHTML = '<p><strong>Two-step sign-in is on.</strong> Save these recovery codes somewhere safe — each signs you in once ' +
+          'if you lose your phone. They won\'t be shown again.</p><pre style="user-select:all">' + r.recovery_codes.map(mEsc).join('\n') + '</pre>' +
+          '<button class="m-btn" id="m-mfa-done" type="button">I saved them</button>';
+        document.getElementById('m-mfa-done').onclick = async function () { enterApp((await API.get('/auth/me')).user); };
+      };
+    };
+  }
+
+  var refreshingAccess = false;
+  async function refreshAccess() {
+    if (refreshingAccess || !me || !API.hasSession() || navigator.onLine === false || document.visibilityState === 'hidden') return;
+    var token = API.getToken(), server = API.base(), userId = me.id;
+    refreshingAccess = true;
+    try {
+      var profile = await API.get('/auth/me');
+      if (token !== API.getToken() || server !== API.base() || !me || me.id !== userId) return;
+      var current = profile.user;
+      if (!current || current.id !== userId) return;
+      if (JSON.stringify([me.permissions, me.modules, me.can_approve, me.employee, me.password_change_required, me.mfa_setup_required]) !==
+          JSON.stringify([current.permissions, current.modules, current.can_approve, current.employee, current.password_change_required, current.mfa_setup_required])) enterApp(current);
+    } catch (err) { /* Network failure retains the scoped offline profile; APIs still enforce current rights. */ }
+    finally { refreshingAccess = false; }
+  }
+
   function enterApp(user) {
     me = user;
+    if (user.password_change_required) {
+      try { localStorage.removeItem(ME_KEY); sessionStorage.removeItem(ME_KEY); } catch (e) {}
+      temporaryPasswordScreen(); return;
+    }
+    if (user.mfa_setup_required) { mfaSetupScreen(); return; }
     var cached = cachedMe();
     var prevOwner = null;
     try { prevOwner = localStorage.getItem(OWNER_KEY); } catch (e) { /* ignore */ }
@@ -369,7 +519,9 @@ window.MApp = (function () {
       }).catch(function () {});
     }
     if (window.mQueue) mQueue.onChange(refreshQueueBadge);
-    window.addEventListener('online', function () { setOnline(true); refreshQueueBadge(); });
+    window.addEventListener('online', function () { setOnline(true); refreshQueueBadge(); refreshAccess(); });
+    window.addEventListener('focus', refreshAccess);
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState !== 'hidden') refreshAccess(); });
     window.addEventListener('offline', function () { setOnline(false); refreshQueueBadge(); });
     refreshQueueBadge();
 
@@ -385,14 +537,13 @@ window.MApp = (function () {
         username: document.getElementById('m-username').value.trim(),
         password: document.getElementById('m-password').value,
       };
-      var factor = document.getElementById('m-mfa');
-      if (factor && factor.value.trim()) body.mfa_code = factor.value.trim();
       if (shared) body.shared = true;
       API.post('/auth/login', body)
         .then(function (res) {
+          if (res.mfa_required) { if (sharedBox) sharedBox.checked = false; mfaCodeScreen(res.mfa_token, shared); return; }
           API.setToken(res.token, { shared: shared });
           if (sharedBox) sharedBox.checked = false;
-          enterApp(res.user);
+          return API.get('/auth/me').then(function (profile) { enterApp(profile.user); });
         })
         .catch(function (ex) {
           err.textContent = ex.message || 'Sign in failed';
@@ -435,9 +586,9 @@ window.MApp = (function () {
 
   return {
     route: route, go: go, back: back, nav: hashFor,
-    getMe: getMe, can: can, hasModule: hasModule, isEmployee: isEmployee, isWarehouse: isWarehouse,
-    hasProductionAccess: hasProductionAccess, canApprove: canApprove,
-    seg: seg, setTitle: setTitle, render: render, refreshInboxBadge: refreshInboxBadge,
+    getMe: getMe, setMe: setMe, can: can, hasModule: hasModule, isEmployee: isEmployee, isWarehouse: isWarehouse,
+    hasProductionAccess: hasProductionAccess, canApprove: canApprove, canOpen: canOpen, routeEnabled: routeEnabled,
+    seg: seg, setTitle: setTitle, render: render, currentLocation: parseHash, refreshInboxBadge: refreshInboxBadge,
     signOut: signOut, isSharedSession: function () { return API.isSharedSession(); },
     routes: function () { return Object.keys(routes); },
   };

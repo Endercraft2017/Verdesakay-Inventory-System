@@ -37,14 +37,63 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
 
 **Trigger:** a sale order is created (`modules/inventory`, `orders.routes.ts`).
 
-1. **Intake** (`inventory`) — order created in `open` status.
-2. **Availability check** (`inventory`) — on approve, an ATP (available-to-promise)
-   gate runs (`GET /orders/:id/availability`); short of stock returns 409 unless
-   forced.
-   - **Branch — shortfall:** `POST /orders/:id/produce-shortfall` raises a linked
-     draft MO in `manufacturing` (BOM-checked first), or
-     `POST /orders/:id/purchase-shortfall` raises draft POs in `purchasing`
-     (one per supplier).
+1. **Intake** (`inventory`) — the desktop order editor (also responsive at phone
+   widths) saves new sales in `open` status; approval is a subsequent action.
+   Inventory links are explicit selections, while services/charges remain non-stock
+   even when their name matches an inventory item. Positive quantities, valid dates,
+   existing linked records, and one line per stock item are validated before saving.
+   The editor identifies stock/non-stock lines, reports field errors without dropping
+   unnamed lines, and visibly locks lines/tax after approval. New/edit/delete controls
+   follow their respective permissions; view-only users can still inspect orders.
+   The legacy direct-to-sale unit allocation shortcut is removed from intake; use the
+   warehouse release stage for stock handoff.
+   The API retains existing direct-to-firm creation behavior for integrations; normal
+   intake UI does not offer it. Dedicated mobile warehouse screens begin at release;
+   they do not create sales orders.
+   **Audit hardening:** sales/job reads require `orders.view` (purchase access retains
+   `purchasing.view`/`purchasing.manage`); partial edits preserve omitted
+   fields and line IDs; explicit null resets an unpicked ship-from location. Browser
+   saves carry a content revision and use authenticated, permission-checked retry
+   keys. Stale interactive edits return 409 without replacing another person's changes.
+   Already validated owning-site decisions retain D6 on cloud replay, with a clash recorded. Tax/currency
+   lock with approved lines; ship-from locks once picking/fulfilment starts. Released
+   status is assigned by warehouse picking, not manual intake/status edits.
+2. **Stock review and approval** (`inventory`, `order-availability.ts`) — the desktop row's
+   stock review shows the ship-from warehouse, stock elsewhere, other sale commitments,
+   draft kit/repair holds, own coverage and shortages. Choosing approved in an open editor
+   first saves open details, then opens this review; the approval decision is separate.
+   A sale line marked **CKD** keeps its product SKU, unit price and quantity, but snapshots
+   the product's direct BOM as zero-price child pick lines. Stock review checks those parts
+   at ship-from instead of built-unit stock. The commercial CKD parent never adds a
+   manufactured unit or consumes finished-goods stock. Aftersales parts are ordinary
+   inventory-linked lines entered one by one; semi-built and fully built lines continue
+   through their production/finished-stock path. A semi-built unit is a complete
+   package with its loose parts included. For a fully built shortage, a manager
+   may explicitly finish one semi-built RTS unit even when CKD parts are available;
+   the complete kit is counted and photographed at finishing intake; the unit keeps
+   its identity (including exact QR batch when lot tracked), costs and QC/Products In
+   gate, and no BOM parts are
+   deducted a second time. When CKD components are short, stock review highlights
+   eligible semi-built packages. Sales may change an order's unit selling price
+   independently of BOM production cost and add shipping/admin/other non-stock fees
+   before approval.
+   `GET /orders/:id/availability` retains the ATP contract and adds source/planning fields.
+   Approval rechecks current stock and accepts an optional review revision; stale interactive
+   decisions return 409, while validated owning-site decisions retain D6 on replay.
+   - **Branch — shortfall:** `POST /orders/:id/produce-shortfall` creates only additional
+     linked draft MOs; completed output awaiting receipt still covers planned demand.
+     Components follow direct BOM/job snapshots, use each job's source and share one free pool.
+     `POST /orders/:id/purchase-shortfall` creates only purchasing demand not already covered
+     by live linked POs, factoring receipts/cancellations/edited quantities. Durable
+     `sale_shortfall_purchases` links survive PO edits. Each sale action is atomic; replay
+     conflict auditing happens after allocated business inserts to preserve site-issued IDs.
+   - Drafts remain shortages until receipt. Permission-gated actions describe drafts and
+     pending sync explicitly. Backorder approval is a separate confirmation and only sets
+     `approved`; it never picks or ships. Cancelled/fulfilled demand cannot draft supply.
+   - The desktop **Awaiting release** filter preserves `?backorder=1` API compatibility but
+     labels unpicked firm demand accurately; it is not a stock-shortage-only filter.
+   - Operator guide: [sales stock approval](../guides/sales-stock-approval.md).
+     Mobile audit (read only): [root handoff](../../MOBILE-INVENTORY-HANDOFF.md).
 3. **Warehouse acceptance** (`inventory`) — the approved SO waits in Inventory →
    Releasing → Release Queue ("waiting for warehouse acceptance") until a releaser
    accepts it (`POST /orders/:id/accept-release`, stamps `warehouse_accepted_by/_at`).
@@ -89,12 +138,14 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
      problem or partial request (`release_reports`); Sales is pushed and resolves it. Records only.
    - **Mobile (Releasing, Figma 78:*)** — `#/so`: authority → scan/verify units → package →
      handoff token (or supervisor override) → photo + signature proof → review → confirm
-     warehouse-out (online-only, idempotent); photos upload first on the order and the slip takes
-     them over; the signature attaches to the slip (`release`). Desktop Releasing can issue a
+     warehouse-out (online-only, idempotent); photos and signature upload first on the order and the slip takes
+     them over atomically as `release` evidence. Desktop Releasing can issue a
      partial slip under the same authority.
-6. **Delivery / fulfil** (`inventory`) — `POST /orders/:id/status` transitions
-   delivery → fulfilled (mobile-triggered prompt supported); the delivery's proof of
-   delivery (signature/GPS/photos) is captured at the customer.
+6. **Delivery / fulfil** (`inventory`) — `/deliveries/:id/status` may start a trip before
+   warehouse-out; `/deliveries/:id/complete` records its optional recipient/signature/GPS/photos.
+   Delivered physical sales require a release slip. Failed attempts require a reason and move no stock.
+   Commercial completion remains a separate Sales action with the same physical-slip guard;
+   the phone does not offer a forced stock completion.
 7. **Posting** (`accounting`) — `accounting-autopost.ts` posts the sale to the
    ledger.
 
@@ -151,7 +202,16 @@ raised by the sales-order shortfall flow.
      `/release` 409s (`needs_approval: true`) until approved. Editing the draft
      (`PUT /:id`, `PUT /:id/components`) clears the approval. `inventory.adjust` does
      *not* grant it, so the warehouse can't approve its own release. Short stock doesn't
-     block approval — the response lists `shortfalls` as a warning.
+     block approval — the response lists `shortfalls` as a warning. Detail and availability
+     expose `approval_revision`; approval's optional `expected_revision` rejects a
+     changed reviewed plan with `409 code: stale_job_order`. The content hash includes
+     draft/components/checklists, excluding live stock. Narrow approvers can read
+     this job's availability without broad inventory access. Mobile Work, Production
+     hub and manager control expose Awaiting approval. Review includes locations,
+     quantity, schedule, inspection stages, notes, component snapshot and stock holds;
+     short demand requires an explicit warehouse-follow-up acknowledgement. Persisted
+     approval attempts retain the original plan/note/revision/key through restart and
+     remain discoverable after the server queue clears; local results stay pending.
    - **Stock check** — `GET /:id/availability` returns each planned component's
      need / have / short at the source location plus `in_stock`, `approved`, `releasable`.
    - Queues: `GET /job-orders?stage=awaiting_approval` (manager); for the warehouse,
@@ -171,24 +231,54 @@ raised by the sales-order shortfall flow.
       `&format=html` returns a printable version. A fully picked kit gets
       `prepared_by/_at`; a partial pick is saved but stays in `preparing`. Picks are
       checked against on-hand stock minus what other unreleased kits already picked
-      (`pickedElsewhere()`), so two kits can't claim the same parts. **Branch — short:**
-      the pick returns 400 with `shortfalls`, and
-      `POST /:id/purchase-shortfall` drafts POs for the missing parts. No stock moves at
-      this step.
+      and open repair-part holds (`pickedElsewhere()`), so two kits can't claim the same parts.
+      Desktop and mobile can save a partial pick or correct a prepared kit before slip issuance. The
+      pick list and availability response show stock held elsewhere and the free amount.
+      **Branch — short:**
+      the pick returns 400 with `shortfalls`. `GET /:id/availability` shows free stock,
+      holds, linked PO outstanding quantities and only the remaining quantity to
+      purchase. `POST /:id/purchase-shortfall` drafts POs only for that uncovered demand,
+      links them durably to the draft job order, and is safe to repeat after PO edits,
+      cancellation or partial receipts. Desktop opens this supply review from the
+      blocked pick or job detail. A PO is planning only: receive it at the job's source
+      location, finish the pick and then issue the parts slip. No stock moves when the
+      PO is drafted.
+      For a sale-linked job, the sale's stock review owns aggregate component purchasing;
+      the job supply review links there and job-level PO drafting returns
+      `409 sale_supply_owner` to prevent two purchase plans for the same parts.
+      Stock locations can be nested up to five levels. Each level after the first is
+      optional, and stock remains attached to the exact selected location ID; a parent
+      does not automatically own its children's stock. The location registry reports
+      both direct units and a read-only roll-up of descendant units. The desktop New
+      Item form reveals child selectors one at a time with **+ Add level**, allows inline
+      creation of missing children, and atomically posts starting stock at the last
+      selected location. The item retains that preferred location even with zero stock;
+      changing it later does not move physical stock. Mobile picker updates are tracked
+      in the handoff.
    3. **Release = parts release slip** — `POST /:id/release {received_by?, notes?}`
       needs approved + accepted + prepared. It issues the numbered slip `PRS-#####`
       (`parts_release_slips` / `_items` store a copy of the lines), deducts the components
       from the source location (GL: Raw Materials → WIP), and moves the job order to
       `released`. The slip is kept in the app (paperless): `GET /parts-slips`,
       `/parts-slips/:id`, `/parts-slips/:id/print` (printable HTML). Photos of the kit
-      are attachments of kind `parts_release` on the slip.
-   - **Mobile (warehouse, Figma 62:*)** — `#/kit-release` walks the same three server steps as
-     one guided flow: queue (Ready / Blocked by availability / Released awaiting acceptance) →
-     verify kit (`GET /:id/availability`) → confirm with a "picked and counted" acknowledgement
-     (runs accept → prepare → release in order) → released handoff. **Branch — short stock:**
-     a shortfall (from availability or `prepare`) shows Release blocked with nothing deducted;
-     "Report shortage" files a tracked `production_issues` row (category `Parts shortage`),
-     not a loose message. Online-only; Quick Orbit "Scan job order" opens it by JO number.
+      are attachments of kind `parts_release` on the slip. The final release rechecks
+      free stock after other kit picks and repair holds; a changed commitment blocks the
+      slip before any stock movement.
+   - **Mobile (warehouse, Figma 62:*)** — `#/kit-release` separates acceptance,
+     partial/full picked counts (and corrections), and final release. Ready requires
+     current `releasable`; unknown stock checks and saved attempts go to Review.
+     Verification shows source location, needed/picked, on-hand/held/free quantities.
+     Picking reserves stock; only the final numbered slip deducts it. Confirmation
+     rechecks availability, and unsaved count edits block release. Every action saves
+     its immutable payload/key to account/server-scoped IndexedDB before POST.
+     Interrupted responses reload current stages/slip and offer explicit original-key
+     replay; each stage can save independently. Site-PC acknowledgements stay pending
+     through their sync command, including cached-response replay. A deterministic
+     refusal requires review before a fresh corrected attempt; expired or conflicting
+     keys require reconciliation. Both prepare and release shortage shapes are shown.
+     Shortage reports include source/on-hand/held/free stock and suggest commitment
+     review where appropriate. Cancelled deep links cannot show handoff success.
+     Online-only; Quick Orbit "Scan job order" opens it by JO number.
    - **Mobile (production, Figma 66:*)** — `#/job-orders`: the Production Lead board (To accept /
      Active / Paused) → Accept parts kit (count acknowledgement) → Active production → Record
      production (how many) → Unit details, saved **one unit at a time** (identifier + photo per
@@ -220,6 +310,18 @@ raised by the sales-order shortfall flow.
    `needs_photo` if the photo is missing. `/progress`'s bulk `done_delta` refuses to run
    on a serialized job order for this reason. Either path consumes components by BOM
    ratio and moves the job order to `in_progress`.
+   - **Mobile serialized recovery** — before upload, persist the identifier, photo,
+     batch and stable request key in account/server-scoped IndexedDB. A missing
+     response is **confirmation unknown**, not proof of failure. After a browser
+     restart, explicit recovery retries the immutable attempt with its original
+     key and retains the returned unit ID. Confirmed rows are not resent; site-PC
+     local results show confirmation pending. Storage failure blocks a new upload,
+     and stale tabs must reload rather than overwrite newer draft state.
+   - **Mobile acceptance/bulk/scrap recovery** — persist an immutable JSON request
+     and key before sending. Unknown results restore after restart for explicit
+     same-key retry. Refused requests need review before a fresh corrected attempt;
+     local site-PC saves remain pending. Pending, rework and held units reduce the
+     still-to-record count, and invalid/fractional quantities are rejected on the phone.
    - **Pause / resume / close early** — `POST /:id/pause|resume|close {reason}`. Pause and
      resume: `inventory.adjust`, `production.pause` (a lead trusted to stop the line) or
      `production.manage` (Production Manager). Close early (returns unused components):
@@ -227,6 +329,10 @@ raised by the sales-order shortfall flow.
      the broad `inventory.adjust` override (400 otherwise). `paused_by/_at` + `pause_reason`
      hold the current hold; every action is appended to `job_order_events` (actor, reason,
      time) — `GET /:id/events`. A manager still cannot release, cancel or delete.
+     Early close stops new output and returns unused components, preserving built
+     pending/rework/held units and their repair requests for QC/QA and receiving.
+     WIP settlement waits for unresolved or unreceived output. Cancellation retains
+     its separate write-off behavior; closing early does not scrap built units.
    - **Issue reports** (`/api/production-issues`, `production-issues.routes.ts`) — anyone
      on the floor (`production.record`, `inspect_qc`/`inspect_qa`, `inventory.adjust`,
      `production.approve`) files an issue against the whole job order or one unit
@@ -260,11 +366,29 @@ raised by the sales-order shortfall flow.
      A returned unit shows the original issue and failed items for reinspection; waiting parts
      requests block the start. A failing / held result from the phone or desktop needs an evidence photo of
      that unit (uploaded first, sent as `evidence_ids`), else 409 and nothing is recorded.
+   - **Separate unit issue reports:** QC/QA verify/recheck/review and the unit record
+     open **Issues and photos** (`#/unit-issues`). Each chassis/fairings/etc. finding
+     gets its own report and photo set. Multiple independent drafts retain compressed
+     bytes across restart; Work exposes saved reports. Immutable report/photo keys
+     recover uncertain submissions without duplicates; site-PC results remain pending.
+     Reporters/managers edit open reports, add photos, resolve or reopen. Reporting
+     remains informational; inspection disposition advances the unit. Own unused
+     unit-linked report photos may be reused as inspection evidence without another
+     upload; backend inspector/unit/one-record checks remain in force, and evidence
+     photos cannot be deleted.
    - **Branch — QA hold for review** (final pass only): the unit goes to `hold` — out of RTS, and
      the job order can't complete. Every QA inspector and `production.qa_review` holder is
      pushed; one of them decides it on the Hold tab (or the desktop job order) with a reason:
      **pass** (on to stage 6), **rectify** (rework, back to the Recheck list) or **fail**
      (scrap / dispose / recycle). The inspector who held it hears the outcome.
+     Mobile saves the exact decision/reason/disposition/station and original key to
+     scoped IndexedDB before posting; unknown outcomes replay unchanged after restart.
+     Saved decisions remain in the hold queue after the live hold clears. Optional
+     `expected_hold_record_id` prevents an old reviewed decision applying to a later
+     hold (`409 stale_hold`). Refused attempts require current-hold review and a fresh
+     corrected key; expired/key-conflict attempts require reconciliation. Local site-PC
+     results stay pending, and lookup failure/timeout means unknown count, never empty.
+     A passed hold decision only advances to Products In; it does not add stock.
 5. **Repair parts handoff** (`manufacturing` → `inventory`) — a side branch off
    stage 4: the warehouse parts clerk (`parts_clerk` role, or `production.repairs`)
    accepts or rejects the request (`POST /production/repairs/:id/accept|reject`);
@@ -299,11 +423,26 @@ raised by the sales-order shortfall flow.
    /:id/products-in` desktop uses, plus a continuous QR-scan-to-receive mode and a
    unit dossier (`record.js`: photo, QR, printable label) reachable from either
    platform.
+   - **Desktop receipt:** the clerk can combine selected passed units and whole-number
+     quantities from multiple open batches into one receipt at one exact storage
+     location. The API validates all lines and the *total* location capacity before
+     writing, then posts all lines and stock changes in one transaction. A stable
+     `Idempotency-Key` safely replays a lost response. Legacy single-batch phone
+     requests remain accepted. A receipt at a different warehouse does not fill a
+     sale's ship-from location; transfer stock before warehouse release.
    - **Mobile (RTS clerk, Figma 74:*)** — `#/receiving`, fed by `GET /api/rts/queue` (units
      across job orders): identify → verify (final-pass record, SKU) → stock details (storage
      location) → optional group of same-SKU units → review → final duplicate check (`POST
      /api/rts/check`) → confirm with a physical-verification tick → `products-in`, one call per
-     job order, online-only with an idempotency key. **Branch — duplicate:** a unit already in
+     job order, online-only with an idempotency key. Exact group/batch requests and
+     per-job receipt/command statuses persist before posting in account/server-scoped
+     IndexedDB. Saved receipts remain discoverable after queue removal/failure;
+     explicit original-key retries survive restart, skip confirmed entries and retain
+     unresolved/not-started entries. Site-PC saves remain pending until command
+     confirmation; failed/conflicting commands and expired keys require reconciliation.
+     Definitive refusals return to live review for a corrected key. Overlapping
+     candidates recover their existing receipt, and batch revisions prevent competing
+     tab attempts. No background offline stock posting is added. **Branch — duplicate:** a unit already in
      finished goods or a serial already in stock is refused (409, existing receipt shown), zero
      stock change; the clerk removes it from the group. **Branch — location:** a truck/transit or
      missing location, or one without room under its capacity (location_capacities), is refused
@@ -408,7 +547,7 @@ or with "I'm using someone else's phone" / "shared or borrowed computer" ticked.
 1. **Sign in** (`core/auth.routes` → `shared/auth.createSession`) — password check; the session
    records device ID (`X-Device-Id`, `shared/device.ts`), IP and user agent; the activity log
    gets a `login` row with the same device. Borrowed ⇒ `shared` session (4 h max, 30 min idle),
-   browser credential in an HttpOnly tenant cookie with a nonsecret sessionStorage marker; installed clients retain sessionStorage bearer behavior. Mobile: if the phone's local data belongs to someone else
+   token kept in sessionStorage. Mobile: if the phone's local data belongs to someone else
    (`vds_m_owner`), it is cleared before anything renders.
 2. **Use** (`shared/auth.requireAuth`) — every request refreshes last-seen/last-IP (≤ 1/min);
    mutations are logged with IP + device; offline mobile writes queue under this account only
@@ -418,7 +557,7 @@ or with "I'm using someone else's phone" / "shared or borrowed computer" ticked.
    about this person's queued actions and releases their push subscription on this device;
    borrowed ⇒ their local data is cleared), revoked from another of their devices
    (`/auth/sessions/...`) or by an admin (`/users/:id/sessions/...`), password change/reset
-   (all sessions end), access/role/department change (fresh login required), account disabled, idle timeout (borrowed only), or expiry (12 h / 4 h).
+   (others end), account disabled, idle timeout (borrowed only), or expiry (12 h / 4 h).
 
 **Branches:** borrowed vs own device (session length, push refused, data cleanup);
 unsent queued actions at sign-out (send now if online, else confirm — they stay on the phone and
@@ -479,6 +618,9 @@ snapshot). Not linked to Inventory stock — issuing moves no stock.
 step — rates, payroll rules, generate / post / mark paid / email payslips, 13th month, final pay —
 is `payroll.view` / `payroll.manage` (`payroll/pay-access.ts`), so a timekeeping clerk can close
 cutoffs without seeing pay.
+**Terminal state "paid" is permanent:** every Mark Paid / Unmark Paid is logged to
+`payslip_paid_history`, and a payslip with any entry there can't be deleted (only unmarked and
+corrected), so the payroll record keeps every slip that was ever paid.
 
 **Offline (phase 4g, docs/OFFLINE-FIRST.md §26):** the whole run, from cutoff to marked paid, works at the
 main site with the internet down; payslip numbers come from the site host's blocks. Emailing payslips waits
@@ -492,7 +634,12 @@ for the internet (it uses the company's mail server, which only the cloud has).
    outside every office radius → refused; employee marked "can time in outside the office"
    → may punch without the QR from anywhere (`source = remote`), location required and
    stored. Employee status `suspended` (or resigned/terminated) → every punch refused
-   (`punchBlockedReason`). Lands in `time_punches` with its location. A phone punch from a
+   (`punchBlockedReason`). A phone punch: the employee picks the slot (Time in / Afternoon out /
+   Afternoon in / Time out — the kiosk's four), then the scan passes those checks and is held at
+   its own time (`punch-holds.ts`, 5-minute expiry); the auto-captured selfie then records that
+   slot at the scan time with the photo kept beside it. Re-doing a slot replaces its time and
+   photo (`setSlotPunch`). No selfie, or an expired scan → nothing recorded. Kiosk punches stay
+   automatic (in/out decided by the day's punches). Lands in `time_punches` with its location. A phone punch from a
    borrowed-phone sign-in, or from a phone another account usually uses, is recorded with a
    `device_flag` for HR to review in the Punch Log — never refused (a forgotten phone is a real
    reason; see "Account session" above).
@@ -532,7 +679,8 @@ for the internet (it uses the company's mail server, which only the cloud has).
    Always-whole-day branch (2026-10-05): an employee with "Always paid a whole day" gets a
    full day for any day with both a time-in and a time-out — no half day, late or undertime.
 3. **Payslip** (`hr`) — generated per employee as a `draft`; Other Deductions itemized.
-   Employees see drafts on mobile as previews that may still change (no download).
+   Employees see their own draft payroll figures and current timekeeping as watermarked previews;
+   the figures may change until HR marks the payslip Paid.
    HR reviews the cutoff on Forms → HR Payroll: **Print All** (slips), **Print Summary** (A4
    landscape register — totals, department subtotals, every payslip, Prepared/Checked/Approved
    lines; 2026-10-05) and **Download Excel** read the same totals (`public/js/hr-payroll-export.js`).
@@ -547,10 +695,11 @@ for the internet (it uses the company's mail server, which only the cloud has).
    and regenerate. A recomputed cutoff whose payroll was already posted to the GL is flagged for
    re-posting (stage 4). Cutoffs with no payslip yet just use the new rate when generated.
 3a. **Finalize & release** (`hr` → `payroll` → `core/me`) — HR marks the payslip Paid (locks
-   it). Only then does the employee's list carry `finalized` + `download_url`, and
+   it). Draft and Paid records both appear in the employee's list, but only Paid records receive
+   `finalized: true` and a `download_url`, and
    `GET /api/me/payslips/:id/pdf` render it (`payroll/payslip-pdf.ts`), re-checking ownership
    and Paid at download time and logging each download. Branch: HR un-marks Paid to correct
-   it → download blocked again (409) until re-marked.
+   it → download hidden (404) until re-marked.
 4. **Ledger posting** (`accounting`) — `hr.routes.ts` calls
    `accounting-autopost.ts`'s `maybeAutoPostPayroll`.
 5. **Statutory filing** (`accounting`, under Tax & Compliance) — `payroll`'s
@@ -676,33 +825,412 @@ stops working at once; its rows keep their ids); diverged (sync loop stops — r
 **Phone setup (site host):** a phone opens `http://<host>:3001`, installs the site certificate
 once, then uses `https://<host>:3000/m` on the office Wi-Fi (D5).
 
-### Session/recovery security additions — 16 October 2026
+## Workspace billing (sign up / invoice → pay → confirm → open) — partial
 
-The account-session pipeline's recovery branch now accepts an identifier with a
-uniform response; eligible mail is limited per account and IP. Links use a trusted
-configured origin and expire in 15 minutes. Requesting another link, changing a
-password or resetting it invalidates sibling recovery links. Reset consumes the
-link, changes the password and ends sessions in one transaction. An ordinary
-password change still preserves the current session (an explicit audit gap).
+Built 2026-10-10, design `docs/SAAS-READINESS.md` §12. **Trigger:** a company signs up on the public
+website, or the owner issues an invoice (monthly plan, implementation fee).
+1. **Sign up** (`platform/signup.routes.ts`, website) — workspace created with `awaiting_payment`
+   (locked to sign-in, Billing, Support); quote priced from the price list; first month's invoice
+   issued automatically when every chosen module and the seat price are priced. *Skipped* for
+   workspaces the owner creates in the console (never locked).
+2. **Invoice** (`platform/billing.ts`, console) — reference `<prefix>-<year>-0001`, gross, net of 2%
+   EWT, due date. Status `open`.
+3. **Pay** (customer, desktop Admin → Billing) — by GCash (number + QR shown) or bank transfer, then
+   **Report payment** with channel, reference no., amount, date, receipt screenshot, optional 2307.
+   Status `payment_submitted`. *Planned:* PayMongo checkout as a third, automatic branch.
+4. **Confirm** (operator, console Billing) — checks GCash history / bank app; confirm or reject with
+   a note the customer sees; or records a payment seen directly (check, bank app).
+5. **Open / activate** (`platform/billing.ts`) — confirmed ≥ net − ₱1 → `paid`; for subscription invoices the workspace's
+   `awaiting_payment` lock lifts; a `trial`/`past_due` workspace becomes `active`.
 
-A mutating retry authenticates first and cannot read another actor's cached
-response. JSON retries must match method, URL, payload and current access scope.
-A pending retry or key from before the security upgrade ends in 409; the caller
-checks the original record before deciding on a new submission. Server-confirmed
-stock changes remain distinct from mobile queued drafts. Chat sockets revalidate
-session/tenant state before delivery, so ending a session stops later messages.
-These extend existing session/retry branches; they create no new business stage.
+**Branches:** proof doesn't match → rejected, back to `open`; short payment → stays `open` with a
+balance; owner opens a waiting workspace without payment; sign-up with an unpriced module → no
+automatic invoice, owner issues it; a `suspended` workspace is not reopened by a payment.
+**Terminal states:** paid (workspace open/active); voided; overdue → flagged only (moving to
+`past_due` / `suspended` is manual; automatic step planned). Customer routes are sync class `online`.
 
-## Public policies and production AI boundary
+## Assisted SMTP setup — working
 
-Login shell → tenant-aware `/policies` link → allowlisted escaped public draft → owner/legal approval and version record before launch. Privacy request → named private channel → manual identity/authority verification → legal retention/hold review → scoped export/correction/erasure plan → reviewed execution across processors/devices/backups → case closure; owner contact/deadlines remain required inputs. No automatic destructive cascade is implemented.
+Tenant self-service: Email → Setup guide → Settings → Save & test → confirm receipt.
+Operator service: console tenant Settings → Tenant email / assisted setup → configure the tenant's
+own provider → save and test → confirm delivery. Secret stays in that tenant's encrypted settings;
+operator changes/tests are audited, and operator tests use no tenant user ID. Our platform Brevo
+HTTPS mailbox remains separate. Guide URLs work for path tenants and dedicated console hosts.
 
-AI chat → current user permissions → production tool allowlist → authorized read/report/proposal → structured start/completion audit hashes → bounded provider turn → human review. A model-requested business mutation is refused by the execution guard; users confirm changes in normal application screens. Production enforcement depends on NODE_ENV=production.
+Agree the one-time fee manually → **Invoice assisted SMTP setup** → existing implementation
+invoice (PHP; no default price/period) → customer Billing / manual BIR invoice → record or confirm
+payment → resolve the Support entry after delivery verification. Service fees do not reactivate
+subscriptions or open signup payment locks. No separate invoice table is introduced.
 
-## Authenticator enrollment and recovery
+## Sales inquiry (website → follow-up → workspace) — working
 
-Account security → current-password proof → ten-minute secret encrypted and bound to this session → authenticator code verification → eight one-use recovery codes shown once in an independent modal → all sessions revoked → sign in with password plus a new TOTP or recovery code. TOTP counters and atomic recovery consumption reject reuse; wrong session/expired setup fails closed. Disable requires the password and a fresh factor, then revokes sessions. Optional enrollment is available to tenant users; operator enrollment and mandatory policy remain deployment/product gaps. No payroll/stock/stage order changes.
+Built 2026-10-10 (`docs/SAAS-READINESS.md` §12). **Trigger:** a visitor sends the website's
+**Talk to us** form.
+1. **Inquire** (`platform/inquiries.routes.ts`, public site) — name, company, email, mobile,
+   employees, modules of interest, message → `inquiries` row, status `new`. The form also shows the
+   owner's phone / email / Messenger (console-set) for direct contact.
+2. **Follow up** (owner, console → Inquiries) — call / email; status `contacted`, private notes.
+3. **Create workspace** (console, prefilled from the inquiry) — linked to the inquiry; optionally
+   **locked until first payment**, which hands over to the "Workspace billing" pipeline (invoice →
+   pay → confirm → open). Unlocked, it is usable at once.
 
-Second-pass AI flow: configured endpoint/key binding → public DNS validation/pinning and bounded HTTPS JSON → permission-scoped predefined tools (free-form SQL refused) → durable start/outcome hashes independent of conversation history → human review. New audit tables do not store raw retrieved records or secrets; centralized immutable retention still needs operations.
+Each new inquiry, reported payment and self-serve sign-up also emails the owner when Email alerts
+are set up (`platform/platform-mail.ts`); a failed email never fails the request.
+**Branches:** bot fills the hidden field → accepted silently, nothing stored; invalid fields → 400;
+more than 5 per hour from one connection → 429. **Terminal states:** `won` (workspace created and
+linked), `lost`. The owner sets these; nothing changes them automatically.
 
-Recovery rehearsal: synthetic fixture → manual tenant/platform snapshots and upload copy → close source → restore into separate directories → cold app start → integrity, stock, attachment, login and least-privilege checks. This local scheduled test is separate from an owner-operated real offsite disaster drill.
+
+## Design, link and print a form layout
+
+Trigger: a form manager opens Print templates, or an editor opens the document library.
+1. Core resolves the template/form identity and edit scope, then loads HTML and revision.
+2. The studio edits text/design pages, fields, sections, tables and review markup. Local
+   undo/recovery preserves unsaved changes; cloud rooms/version checks protect shared edits.
+3. Publication validates the revision and shared version. Multipage layouts require 1×1
+   printing with Continuous off. Alternative links do not silently change the form default.
+4. The form manager chooses a default or selects an alternative for one print. Rendering
+   binds record/company/custom fields and the preview uses the same physical print layout.
+5. Single designs can use configurable grids; explicit multipage designs bypass grids.
+   Word conversion reports unsupported visual/template features and retains import originals.
+
+Failures: permission/stale-revision/shared-version errors retain local work; retry after
+reviewing the latest document. Server private/shared working tables are cloud-only and
+are excluded from offline replication; publication follows the existing claim workflow.
+
+Editing transaction detail (Wordcraft port phase 1): capture the selection before an input,
+coalesce consecutive typing/deletion at the same caret, and close the group on movement,
+paste or toolbar activation. Undo/redo restores both HTML and anchor/focus. Composition
+keeps the live DOM intact until commit; shared-room reconciliation waits for composition
+to finish. Track-changes composition remains outside the supported review scope.
+
+Formatting dispatch captures selection, restores the document focus, checks the edit
+boundary, closes pending typing, executes the command and commits an undo transaction.
+Dialogs return focus/selection to the surface after dismissal; locked selections refuse
+formatting rather than silently changing protected content.
+
+Clipboard serialization writes canonical HTML/plain bindings and paste restores editable
+chips after sanitization. List Tab changes level; table Tab traverses merged physical
+cells and creates an undoable data row at the end. Token boundary movement/deletion
+operates on whole chips and respects the review/locked-content guards.
+
+Model-backed paragraph alignment captures the current document into versioned nodes,
+resolves selected paragraph paths, rejects locked ancestors, creates an immutable model
+change and patches only changed style attributes. Existing caret/history and shared
+publication then persist canonical HTML. Unknown markup and opaque SVG remain preserved.
+
+Selected inline formatting validates structural text endpoints/values, captures a model
+with ephemeral selection bookmarks, produces immutable run changes and patches selected
+text/attributes. It then restores anchor/focus and removes bookmarks before history/shared
+publish snapshots. Atomic/derived/review-deleted content stays unchanged. Word conversion
+keeps explicit inherited-format resets and emits per-run formatting inside revisions.
+
+Caret formatting choices store ephemeral marks and update toolbar state only. Captured
+beforeinput starts the existing history transaction; marked ordinary text inserts an owned
+run, while native composition is marked after commit using its final text range. Tracked
+text first creates attributed revisions, then applies marks only to the inserted text.
+Normalization coalesces identical owned runs and restores the caret before snapshots.
+Whole-field formatting wraps the live chip; serialization replaces only the chip with its
+raw binding. Selected inline decoration removal isolates the selected wrapper fragments,
+keeps unselected paint and other marks, and removes all temporary bookmarks before history,
+shared saves and Word export. General deletion and block/caret decorations remain native.
+
+Paragraph text editing now follows: capture history boundary → validate editable endpoints,
+protected atoms and paragraph scope → replace/insert text or resolve one Unicode grapheme
+for deletion → apply pending character/script/decoration marks → unwrap/coalesce owned runs
+within the block → restore the caret → record the existing HTML snapshot/shared change.
+Field chips delete/replace atomically; unaffected chips retain live identity. Structural
+boundaries delegate after lock checks. Composition and tracked text keep their handlers,
+with pending formats applied to committed/new revision text. Clear Formatting restores
+paragraph character defaults without changing paragraph layout; selections across differing
+paragraph defaults delegate rather than forcing one font/size onto all blocks.
+
+Editor workspace controls are UI state: metadata settings visibility, active ribbon tab,
+inspector panel, menus and fit/zoom do not alter saved document HTML or dirty/history state.
+Ribbon and sidebar collapse also remain UI state, recalculate page fit, and keep tools
+reachable. Selecting a ribbon tab expands its controls; inspector collapse returns focus.
+Inspector color/spacing pickers write validated CSS through the existing history/save
+pipeline. Color swatches normalize their display only; existing alpha remains until edited.
+Variable bank → search/category → Insert restores the remembered editor range and inserts
+the canonical chip through the command registry; Copy writes the full template token and
+does not edit the document. Click a chip → select its outer boundaries → Delete/Backspace
+uses atomic deletion and an undo snapshot. Starter fields are not regenerated on save.
+Floating-object toolbar icons retain the existing drag/action pipeline and are stripped
+from saved HTML with the rest of the editor chrome.
+Grid print → render each record at its source paper size/margins → measure the complete
+inner page → apply one proportional scale into its fixed cell. The grid width never becomes
+the source design width. Preview and print share fitting, including custom page dimensions;
+record ordering, repeat/blank cells, gaps and multipage guards retain their existing behavior.
+Page resizing → flush pending typing → freeze display zoom → adjust custom width/height →
+update page/handle geometry → release/cancel → restore zoom. Release records one history
+change and updates preview/shared/save; cancel restores dimensions without an undo entry.
+Visible mm inputs and keyboard handles share page sizing, including safe margin adjustment.
+Sidebar collapse updates tooltip text from purpose descriptions to tool names; it leaves
+the selected panel, document history and editing pipeline unchanged.
+Control styling scopes checkbox sizing to editor settings, preserving native label/keyboard
+behavior and all existing change handlers. Document checkboxes and printed content keep
+their own styles; settings fields/actions use the app's shared theme conventions.
+Single-chip insertion validates the existing command selection, replaces its range and
+places the caret after the chip without native insertHTML boundary relocation. Existing
+history/shared/save snapshots still own persistence. Sidebar memory retains a structural
+selection bookmark when live nodes are replaced; history controls stay outside tab panels.
+The selected font/style/point-size readout follows current text rather than field-label
+chrome; mixed values are shown explicitly. Inspector point sizes write CSS pt values through
+the existing change/history path. Find/replace mounts above the workspace; source editing,
+print preview, fields, drafts and shared rooms retain their existing command/save pipelines.
+
+Linked forms → load saved template identity → filter forms by existing
+forms.manage scope permissions → read linked layouts → link, make default or unlink through
+form-definition APIs → reload current status. Linking preserves other layouts; removing the
+default uses the backend's existing fallback. No template content or editor draft is changed.
+The workspace forms a lower stacking context than editor menus; page resizing stays inside
+it. Native desktop options inherit app surface/text tokens in light and dark themes.
+
+The dimension swap remains between its two mm inputs; margin has a separate divider. Page sizing and history handlers are unchanged.
+
+Variable bank → Manage fields → existing variable manager → reload catalog → refresh bank
+and preview. Linked-form search filters the already authorized form catalog and clears
+selection when it no longer matches, while link/default/unlink APIs remain unchanged.
+Responsive ribbon ResizeObserver/scroll events update the overflow action; closure disconnects
+its observer. Keyboard users can focus and scroll the toolbar, reaching all its controls.
+
+Dialog color swatch sizing preserves native picker and existing color-application handlers.
+
+Editor UX validation → isolated loopback server with real app routes/WebSocket → disposable
+admin/template fixtures → task checks and axe scans across modes, panels, dialogs and themes
+→ JSON plus screenshots/trace → nonzero exit on violations/task errors/runtime failures.
+A report-only baseline can collect violations but is not the delivery gate. Incomplete axe
+results, keyboard behavior and actual-user task understanding require separate judgment.
+The editor rail delegates Assistant to the existing enabled-module launcher; opening/closing
+the editor controls where the launcher is exposed, without changing AI requests or permissions.
+
+Shared polling/change ticks and explicit panel actions → serialized room queue. Save joins
+that queue → accept latest room → sync local snapshot → pause background writes → publish
+with existing room-version/revision checks → accept publication/draft cleanup → resume.
+An in-flight successful PUT received during composition/resize stores sent/response snapshots;
+afterward merge from the sent base to preserve newer local input and independent peer blocks.
+Delayed older versions are ignored. Real conflicts retain local content and the actual merge
+base for review; server CAS, private-draft protection and publication checks are unchanged.
+Pre-publication empty/page validation → shared failed/unpause → local editing can resume.
+Picture initialization → direct preview update; real input → preview plus modal dirty tracking.
+Canvas focus → transient promotion action; focus outside canvas → dismiss promotion chrome.
+Its own button remains inside the canvas; teardown removes the focus handler.
+
+Editor layout initialization → wire existing command/metadata/print controls → move live controls
+into persistent sidebar sections and footer. Panel navigation changes visibility only; dynamic
+inspector rendering cannot recreate/destroy the print, field-action or metadata controls.
+Print grid → change existing row/column/copy/gap controls → original preview/history/shared/save
+pipeline; measured preview keeps these controls visible and source design scaling unchanged.
+More-menu action → focus visible summary before opening dialog → modal returns focus to summary.
+The Sidebar Help action uses the same editor guide; new-template and guide wording follow the
+new tool locations. Existing authored template HTML is unchanged by navigation/layout changes.
+
+Ribbon Clipboard → restore remembered document selection → capture document/bookmark →
+async browser clipboard permission/read/write → compare current document/bookmark →
+Cut through command deleteSelection, or Paste through existing sanitized paste event.
+Copy serializes chips to canonical {{tokens}} in plain text and retains editor HTML.
+Clipboard failure never deletes text; selection/content changes cancel destructive completion.
+Font-size steps → selected size/readout → existing format.size command and history; empty
+placeholder selection becomes a caret for pending formatting rather than a fabricated edit.
+Insert header/footer/page number → Pages panel's existing action → append/prepend missing
+running element without replacing the selected body → existing history/save/print pipeline.
+
+Editor select theme → fixed single-arrow image, no-repeat, right placement and size longhands → survive mounted sidebar background shorthand. Wide desktop media rule → horizontal command wrappers → unchanged command listeners and selection/history. Smaller screens retain bounded wrapping and keyboard access.
+
+Descriptive text-type options retain p/h1–h6 command values → existing formatBlock command/history/outline pipeline. Style preview cards retain style-apply/style-edit keys → existing named-style apply/update pipeline; display role descriptions and px-to-pt font metadata without editing content when opened.
+
+Symbol picker → named native button (pointer or keyboard Enter) → existing insertHtml command at remembered selection → close modal → existing Undo/save pipeline. Presentation uses scoped grid centering instead of shared generic button alignment.
+
+Company-header edge click → select header → Inspect divider controls. Divider change/removal → validate choices and ancestor lock → beforeEdit history boundary → update inline border-bottom width/style/color only → existing change/save/shared/print pipeline. Removing the divider changes style to none; its fields and geometry remain, and Undo restores the previous border.
+
+Insert → Variable and sidebar Insert variable → shared variableDialog → existing catalog/token chip insertion at the remembered selection → existing undo/save/lock pipeline. Sidebar search/copy/formula/field management stays in its persistent panel.
+
+Single chip plus whitespace → direct range insertion of the complete fragment → caret after the trailing text node → existing command history/change. Other HTML retains its existing adapter; no catalog/permission/state duplication is introduced.
+
+### Mobile warehouse acceptance/allocation recovery (2026-10-15)
+
+Release queue → To accept / Allocating / Ready / Blocked → ship-from review → exact
+acceptance/allocation request retained before POST → authority confirmation or
+saved recovery. Uncertain outcomes explicitly reuse the original key and payload;
+site-PC acknowledgements remain pending until their original command confirms.
+Refusals require fresh stock/order review and corrected keys; expired/conflicting
+attempts require reconciliation. Decimal bulk allocation is capped by free stock
+at the ship-from warehouse. Allocation remains a reservation; the release slip is
+the physical stock-out stage. Final slip/proof recovery and delivery are subsequent
+steps, alongside the remaining legacy Pick/Delivery integration audit.
+
+### Branch integration compatibility (2026-10-15)
+
+Held unit → frozen final-pass checks and prior answers → required Pass/readings →
+immutable reviewed checklist and hold episode → original-key recovery. CKD parent
+manifest → physical child allocation → complete kit only → existing release slip
+and component stock/return rules. Parent built-unit stock is not a component supply.
+The remote atomic Products In endpoint preserves legacy receipt-request compatibility.
+
+Mobile build-state integration (2026-10-15): approval review and revision include job-order build state; RTS shows it and groups only matching states; releasing uses fulfillment-specific availability and blocks cross-state serial scans. PWA cache v98. Mobile transfer/adjustment variant selection and shortfall creation remain follow-ups.
+
+QR receiving/releasing integration (2026-10-15): immutable `VDS:UNIT:<id>` and
+`VDS:BATCH:<id>` printed identities resolve to read-only dossiers or role-specific
+workflows. Mobile RTS and allocation confirmations require attached-label scans;
+manual lookup and printing do not verify labels. Exact batch/location balances and
+sale reservations (`batch-stock.ts`, schema v77) persist through receipt, allocation,
+undo, handoff, transfer and inspected return. Batch count reconciliation partitions
+existing stock with a reason/current-balance check and audit, without creating stock.
+Legacy batch balances need a physical count; old ambiguous labels need reprinting.
+Quantity-only API clients reserve tracked lots FIFO; scanned mobile picks name the
+exact batch. Shared recovery retains original batch IDs, quantities and request keys.
+PWA cache v99; final proof/delivery recovery remains open.
+
+## Data Forms lifecycle and payroll corrections
+
+1. Documents → Data Forms is the shared hub. Section shortcuts retain scope permissions.
+   Personal favorites/recents, selected columns and named filters are stored per user.
+2. Definition changes create schema versions; each new record binds to its creation version.
+   Existing entries render and validate against their original version. Record changes,
+   approvals, payment and recalculations append revisions. Expected version/revision guards
+   reject stale editors. Migrated historical schemas have only the migration baseline.
+3. Archive retires a definition without deleting entries or linked printing layouts.
+   New records/imports/generation are blocked; authorized corrections require a reason and
+   keep revisions. Restore permits new entries. Definitions with records cannot be deleted.
+4. HR previews employee deduction overrides without persistence, then explicitly saves.
+   Active-form reasons are optional; archived corrections require one. Before/after amounts
+   and modes, actor/name/date and reason are retained. Paid slips reject editing. Printing
+   uses the final amounts with normal labels; employer contributions remain independent.
+5. Changing an earlier cutoff flags later same-month cutoffs for review. Regenerate unpaid
+   later cutoffs in chronological order: automatic reconciliation uses actual earlier
+   deductions and manual later amounts remain. Paid cutoffs stay locked.
+6. CSV preview returns rejected source lines, explanations and a downloadable recovery CSV.
+   One invalid split-rate row excludes all rows for that employee. Partial imports require
+   explicit consent; correction/reimport preserves the source structure and duplicate guard.
+7. Offline commands capture history with the shared command clock; changeset application
+   suppresses history triggers because the recorded history is already in the effects.
+
+## Company-ID login from the public website
+
+`otom.afkcube.com` → Company ID + username + password → `/site/login` resolves
+the catalog ID → existing tenant lifecycle checks and login limits → tenant-scoped
+authentication → optional `/site/login/mfa` → existing `/<slug>/` workspace. Tokens
+use the existing browser/session storage convention and never enter URLs.
+
+IDs use the first and last ASCII letters of the normalized company name and a
+four-digit counter per letter pair (H0000R, H0001R; J0000S). The slug is the fallback
+for names without ASCII letters. IDs remain unchanged after renames, suspension,
+or purge, and are not recycled. Pair capacity is 10,000 IDs; exhaustion rejects
+provisioning rather than generating an ambiguous ID. Company IDs are visible in
+the owner console, desktop My Account, and mobile Profile. Existing tenant URLs
+and direct login forms continue to work.
+
+Mobile QR acceptance audit: `npm run test:mobile:qr` uses a disposable real backend,
+actual print-sheet QR images through Chromium's virtual camera, narrow floor roles,
+proof/signature uploads and exact allocation retry after a lost committed response.
+Explicit non-serialized batches can coexist with serialized runs of the same SKU;
+CKD physical component previews map to standard build stock; failed unit-template
+reads cannot open blank sheets. See `docs/reviews/mobile-qr-playwright-audit.md`.
+Handoff photos/signature/token state still require recapture after page restart;
+physical phone/printer acceptance and final-slip/delivery recovery remain open.
+
+## Self-service login credentials
+
+Every tenant role uses `POST /api/auth/change-username` with the current password
+and a unique new username (3–30 letters, digits, dots, underscores or hyphens).
+Desktop My Account and mobile Profile → Account & security expose the same action.
+Passwords continue through `/api/auth/change-password`; all three clients confirm
+the new password. Owner operators use separate `/username` and `/password` console
+endpoints. Renames keep account identity and Company ID, retain the calling session,
+and revoke other sessions. Homepage login saves its session in the selected tenant's
+storage namespace before redirecting.
+## Connected form submission to sales review
+
+Builder selects typed fields and permissioned sources → field bindings select a source property
+and editable/locked behavior → product rows capture ID/name/unit/list price, quantity and discount
+→ shared arithmetic previews subtotal/tax/total → server rebuilds allowed snapshots and amounts →
+draft save retains these values → explicit submission checks sales permissions and active links →
+one transaction saves the submitted record, an open sales order, its net-priced lines and the
+`form_sales_links` row → review through existing Sales Orders → existing approval/release/accounting.
+
+Validation/permission failure rolls the submission back. Lost create responses retry the same
+idempotency key and body. Linked record data/status remain immutable; later sales corrections
+happen on the sales order. Source records never silently refresh saved names/prices. Company and
+current-user fields are captured on creation. Offline form records use the existing merge class;
+form-definition changes retain the existing main-site claim rules. Captured template/link/history
+effects are applied once without rerunning their derived triggers. See the connected forms guide
+for field types, calculation limits, print tokens and acceptance tasks. Before saving, collect
+all ordinary and product-row validation errors into the linked summary; calculate only after
+those fields pass. Printing keeps boolean values in context and formats their direct output
+as Yes/No, retaining conditional and formula behavior.
+
+### Final warehouse-out → delivery recovery (2026-10-16)
+
+The phone persists handoff photos/signature before slip submission, with a stable
+key per attachment and an immutable JSON key/body for the slip. Both evidence types
+transfer with the slip before stock leaves. Lost responses and browser restarts
+return to explicit original-attempt recovery, not recapture or a fresh stock request.
+Site-PC acknowledgements remain pending until their sync command confirms. Definitive
+refusals require current-context review; conflicts/expired attempts retain their record.
+
+Delivery separately persists start and POD attempts plus optional recipient, note,
+GPS, photos and signature. The owner permits starting a linked delivery before its
+slip and keeps POD evidence optional in-app; staff still follow the SOP. Delivery
+submission never runs in the background and its result cannot force a sale/stock
+completion. Server permissions and assignment checks remain authoritative. Basic
+employee accounts see personal tools; operational mobile routes and entry points
+follow effective permissions and enabled workspace modules.
+
+### Mobile legacy Pick retirement (2026-10-16)
+
+The obsolete `#/pick` route now returns to permission-filtered Work (`46:548`).
+Sales use Release orders (`#/so`); production uses Kit releases (`#/kit-release`).
+The old order list, per-line negative adjustments and false batch-success result
+are removed. Commercial order IDs are never reused as manufacturing job IDs.
+Purchase-order receiving and intentional stock-adjustment tools remain available.
+Old bookmarks perform no stock action; canonical queues retain their own gates.
+
+### Invoice starter and disconnected recovery
+
+Inventory → Sales invoice starter → review PHP, zero tax, billing/date/payment fields → save
+with a revision-checked invoice layout → choose matching-currency catalog rows → retain
+negotiated numeric prices → format monetary tokens with two decimals → save draft or review
+submission → linked draft sales order receives invoice date, currency, terms and due-date notes.
+Approval, partial picking and final release stay in the existing order lifecycle; the original
+submitted form remains unchanged, and repeated final release does not deduct stock twice.
+
+A browser connection failure retains the original idempotent request for retry. Installed
+nodes additionally capture server-validated source snapshots in command context → disconnected
+local acceptance stays pending → reconnect/replay checks current permissions and definition
+version → retained product/customer/system values survive concurrent master-data changes → one
+record/order/link synchronizes. Permission revocation is rejected, not silently bypassed.
+Record numbering uses a global series per prefix, including across different form definitions.
+Automated cloud/site/LAN tests simulate separate nodes; physical-device acceptance is still manual.
+
+Inventory form entry uses forms.fill.inventory plus per-form role/account grants (form_definitions.entry_access, access_revision; schema 82). Entry users read all assigned-form records and create/edit/submit active drafts; design, delete and approvals retain their existing manager gates. Current grants are rechecked during sync replay. See tests/form-entry-access.test.ts and the invoice Playwright gate.
+
+### Courier pickup on mobile (2026-10-16)
+
+Assigned staff or a delivery manager opens Work → Deliveries → a courier booking
+→ Record courier pickup. Check carrier/tracking, optionally enter collector, note,
+photos, signature and location, then Confirm courier pickup after physical
+collection. Tracking and evidence drafts survive restart; unresolved submissions
+reuse the exact request and upload keys. Warehouse-out is required before closing
+courier custody; pickup does not deduct stock again. The server stores compatible
+`status:delivered`, while the phone explicitly says Picked up by courier. This
+records collection rather than customer receipt. Evidence stays optional by owner
+policy for both own-driver and courier flows. Supplied signatures must belong to
+the booking; assignment checks and terminal evidence locks remain. PWA cache v106.
+
+## Audited sign-in and mutation boundaries (2026-10-16)
+
+Tenant resolution precedes tenant database access. Browser sign-in opts into an HttpOnly cookie;
+MFA accounts first receive a short-lived challenge, then obtain their session after a one-use
+code. Native clients retain bearer compatibility. Recovery links use configured public origins,
+expire after fifteen minutes and are claimed once. Password replacement revokes all sessions.
+Role/permission changes revoke the affected sessions; clients must sign in again.
+
+Queued mutations identify their original actor. Deduplication validates current authentication,
+actor, payload, route and access scope before returning a receipt. Order saves and form-record
+creation place deduplication after their route access gate. Concurrent retries are refused until
+the first response completes; local-only sync receipts retain their local status on replay.
+
+Production AI exposes read/report/proposal tools only; arbitrary SQL is disabled. Provider calls
+use pinned public DNS, bounded bodies, per-call timeouts and a total chat deadline. Independent
+hash audit events survive clearing chat. These controls do not establish a complete AI output
+privacy filter or an externally immutable audit archive.

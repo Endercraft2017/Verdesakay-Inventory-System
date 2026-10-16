@@ -7,6 +7,13 @@
  */
 export const BEHIND_PROXY = process.env.BEHIND_PROXY === 'true' || !!process.env.RAILWAY_ENVIRONMENT;
 
+/** The request header that carries the visitor's address, written by the edge proxy (which
+ *  replaces any copy the caller sent). On Railway that is X-Real-IP: `req.ip` there resolves to an
+ *  internal hop between Railway's edge and the app, the same few addresses for every user, which
+ *  made every rate limit shared and every logged IP useless. CLIENT_IP_HEADER overrides it;
+ *  empty (the default off Railway) keeps Express's `req.ip`. */
+export const CLIENT_IP_HEADER = (process.env.CLIENT_IP_HEADER ?? (process.env.RAILWAY_ENVIRONMENT ? 'x-real-ip' : '')).trim().toLowerCase();
+
 /** Cloud production must never silently downgrade authenticated traffic to plain HTTP. */
 export function requireProductionTransport(tlsAvailable: boolean, behindProxy = BEHIND_PROXY, environment = process.env.NODE_ENV): void {
   if (environment === 'production' && !tlsAvailable && !behindProxy) {

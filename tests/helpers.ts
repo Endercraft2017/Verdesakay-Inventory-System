@@ -97,13 +97,42 @@ export async function createEmployee(
   adminToken: string,
   overrides: Record<string, unknown> = {}
 ): Promise<{ id: number; token: string; username: string; password: string }> {
+  const { permission_overrides, ...accountFields } = overrides;
   const username = (overrides.username as string) || 'emp' + Math.floor(Math.random() * 1e6);
-  const password = (overrides.password as string) || 'secret1';
+  const password = (overrides.password as string) || 'secret123';
   const res = await api
     .post('/api/users')
     .set('Authorization', `Bearer ${adminToken}`)
-    .send({ username, full_name: 'Test Employee', password, role: 'admin_staff', ...overrides });
+    .send({ username, full_name: 'Test Employee', password, role: 'admin_staff', ...accountFields });
   if (res.status !== 201) throw new Error('Failed to create employee: ' + JSON.stringify(res.body));
+  if (permission_overrides) {
+    const changed = await api.put('/api/users/' + res.body.id + '/permissions').set('Authorization', `Bearer ${adminToken}`).send({ overrides: permission_overrides });
+    if (changed.status !== 200) throw new Error('Failed to set fixture permissions');
+  }
   const token = await login(api, username, password);
   return { id: res.body.id, token, username, password };
+}
+
+/** A tiny stand-in selfie: JPEG start/end markers around a label, enough for the upload filter. */
+export function fakeJpeg(label = 'selfie'): Buffer {
+  return Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(label), Buffer.from([0xff, 0xd9])]);
+}
+
+/** A phone punch the way the app makes one (src/modules/hr/punch-holds.ts): scan (`body` is the
+ *  scan's { code?, location? }), then the selfie for `slot` -- by default the slot the Clock
+ *  screen highlights as next (GET /my-status next_slot; 'out' once the day is done). Returns the
+ *  scan's response when the scan is refused, otherwise the selfie's (the punch result). */
+export async function phonePunch(
+  api: supertest.Agent,
+  headers: Record<string, string>,
+  body: Record<string, unknown> = {},
+  slot?: 'in' | 'lunchOut' | 'lunchIn' | 'out'
+): Promise<supertest.Response> {
+  const scan = await api.post('/api/hr/clock/punch/scan').set(headers).send(body);
+  if (scan.status !== 200) return scan;
+  const pick = slot ?? (((await api.get('/api/hr/clock/my-status').set(headers)).body.next_slot as string | null) || 'out');
+  return api.post('/api/hr/clock/punch/selfie').set(headers)
+    .field('hold_id', String(scan.body.hold_id))
+    .field('slot', pick)
+    .attach('photo', fakeJpeg(), { filename: 'selfie.jpg', contentType: 'image/jpeg' });
 }

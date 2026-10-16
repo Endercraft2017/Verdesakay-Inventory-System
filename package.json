@@ -1,7 +1,7 @@
 {
-  "name": "verdesakay-office-system",
+  "name": "otom",
   "version": "1.0.0",
-  "description": "Verdesakay local office system: inventory, forms, accounts, messaging",
+  "description": "Otom by AFKcube: office system: inventory, forms, accounts, messaging",
   "type": "module",
   "main": "server.ts",
   "scripts": {
@@ -23,6 +23,8 @@
     "db:types": "tsx scripts/gen-db-types.ts",
     "backup": "tsx scripts/backup.ts now",
     "backup:list": "tsx scripts/backup.ts list",
+    "backup:drill": "tsx scripts/backup.ts drill",
+    "backup:health": "tsx scripts/backup.ts health",
     "backup:restore": "tsx scripts/backup.ts restore",
     "backup:offsite": "tsx scripts/offsite.ts",
     "sync:enrol": "tsx scripts/sync-enrol.ts",
@@ -31,13 +33,18 @@
     "desktop:cert": "powershell -ExecutionPolicy Bypass -File scripts/desktop-cert.ps1",
     "desktop:build": "electron-builder --win nsis",
     "test:node24": "node scripts/test-node24.mjs",
+    "test:editor:ux": "node scripts/test-editor-ux.mjs",
+    "test:forms:ux": "node scripts/test-forms-ux.mjs",
+    "test:mobile:qr": "node scripts/test-mobile-qr-ux.mjs",
+    "test:forms:connected:ux": "node scripts/test-connected-forms-ux.mjs",
+    "test:invoice:ux": "node scripts/test-invoice-ux.mjs",
     "test:e2e": "playwright test",
     "test:load": "node scripts/audit-load.mjs"
   },
   "build": {
-    "appId": "com.verdesakay.desktop",
-    "productName": "Verdesakay",
-    "copyright": "Verdesakay",
+    "appId": "com.afkcube.otom.desktop",
+    "productName": "Otom",
+    "copyright": "AFKcube",
     "directories": {
       "output": "dist-desktop"
     },
@@ -62,7 +69,7 @@
       "perMachine": false,
       "allowElevation": false,
       "createDesktopShortcut": true,
-      "shortcutName": "Verdesakay"
+      "shortcutName": "Otom"
     }
   },
   "engines": {
@@ -71,23 +78,26 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "docx": "^9.7.1",
-    "express": "^4.21.2",
+    "domhandler": "^6.0.1",
+    "express": "^4.22.3",
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
+    "htmlparser2": "^12.0.0",
+    "jszip": "^3.10.2",
     "kysely": "^0.29.6",
-    "multer": "^2.2.0",
+    "mammoth": "^1.13.0",
+    "multer": "^2.4.0",
     "node-forge": "^1.4.0",
     "nodemailer": "^10.1.1",
-    "otplib": "^13.5.0",
     "tsx": "^4.23.15",
-    "undici": "^7.30.1",
     "web-push": "^3.6.7",
     "ws": "^8.21.3",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "otplib": "^13.5.0",
+    "undici": "^7.30.1"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
-    "@playwright/test": "^1.64.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.6",
     "@types/jsdom": "^28.0.3",
@@ -100,9 +110,12 @@
     "@types/ws": "^8.18.1",
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
+    "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1",
+    "playwright": "^1.64.0",
     "supertest": "^7.2.2",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.9",
+    "@playwright/test": "^1.64.1"
   }
 }

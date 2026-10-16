@@ -1,8 +1,8 @@
-/** Activity log (admin-only, `audit.view`): read the app-wide action history + prune old rows.
- *  Rows are also swept automatically after ACTIVITY_LOG_RETENTION_DAYS by cleanupSessions(). */
-import { Router } from 'express';
 import { redactStoredMeta } from '../shared/activity';
-import { queryOne, queryAll, run } from '../shared/db';
+/** Activity log (admin-only, `audit.view`): read the app-wide action history. Read-only: rows
+ *  are removed only by the retention sweep after ACTIVITY_LOG_RETENTION_DAYS (cleanupSessions). */
+import { Router } from 'express';
+import { queryOne, queryAll } from '../shared/db';
 import { requireAuth, requirePermission } from '../shared/auth';
 import type { ActivityLogRow } from '../shared/types';
 
@@ -63,15 +63,7 @@ router.get('/options', (_req, res) => {
   res.json({ entities, actions, users });
 });
 
-// DELETE /api/activity?before=<ISO datetime> — prune entries older than the cutoff
-router.delete('/', (req, res) => {
-  const before = typeof req.query.before === 'string' ? req.query.before.trim() : '';
-  if (!before) {
-    res.status(400).json({ error: 'A "before" date is required' });
-    return;
-  }
-  const info = run('DELETE FROM activity_log WHERE created_at < ?', before);
-  res.json({ deleted: info.changes });
-});
+// No DELETE: the audit trail is what catches misuse by the people who can read it, so nothing in
+// the app removes entries early — only the retention sweep (cleanupSessions) does.
 
 export default router;

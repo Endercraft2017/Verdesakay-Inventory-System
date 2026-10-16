@@ -1,0 +1,40 @@
+import { it, expect } from 'vitest';
+import { JSDOM } from 'jsdom';
+import fs from 'node:fs';
+import path from 'node:path';
+it('creates a checklist-only note, schedules it, and retries scheduling without duplicating the note', async () => {
+  const dom = new JSDOM('<button class="rail-btn" data-tool="notes"></button><div id="drawer-root"></div><div id="modal-root"></div><div id="toasts"></div>', { runScripts: 'outside-only', url: 'https://localhost/' });
+  const w = dom.window as any; await new Promise(r => setTimeout(r, 0));
+  const calls: Array<{ method: string; path: string; body: any }> = []; let failSchedule = true;
+  w.API = { get: async () => [], post: async (p: string, body: any) => { calls.push({ method: 'POST', path: p, body }); if (p.endsWith('/schedule') && failSchedule) { failSchedule = false; throw Error('Network issue'); } return { id: 12 }; }, put: async (p: string, body: any) => { calls.push({ method: 'PUT', path: p, body }); return { ok: true }; } };
+  w.App = { hasPermission: () => true }; w.requestAnimationFrame = (cb: any) => { cb(); return 1; }; w.crypto.randomUUID = () => 'check-one';
+  w.eval(['ui.js', 'personal-ux.js', 'tools.js'].map(s => fs.readFileSync(path.join(import.meta.dirname, '../public/js', s), 'utf8')).join('\n;\n'));
+  w.document.dispatchEvent(new w.Event('DOMContentLoaded'));
+  const click = (s: string) => w.document.querySelector(s).click(); const fill = (s: string, value: string) => { w.document.querySelector(s).value = value; };
+  const flush = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 0)); };
+  click('[data-tool="notes"]'); await flush(); click('#note-new');
+  fill('#note-title', 'HR preparation'); fill('#note-item-text', 'Review leave');
+  w.document.querySelector('#note-item-text').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await flush(); expect(calls).toHaveLength(0); expect(w.document.querySelector('#note-items [data-text]')).not.toBeNull();
+  w.document.querySelector('#note-scheduled').checked = true; w.document.querySelector('#note-scheduled').dispatchEvent(new w.Event('change'));
+  fill('#note-due', '2026-11-05T10:00'); fill('#note-remind', '2026-11-05T09:00'); click('[data-confirm]'); await flush();
+  expect(calls[0]!.body).toMatchObject({ title: 'HR preparation', body: '', checklist: [{ id: 'check-one', text: 'Review leave', done: false }] });
+  expect(calls[1]!.path).toBe('/notes/12/schedule'); expect(calls[1]!.body.due_date).toBe('2026-11-05T10:00'); expect(calls[1]!.body.remind_at).toMatch(/Z$/);
+  expect(w.document.querySelector('[data-modal-error]').textContent).toContain('Note saved.');
+  click('[data-confirm]'); await flush(); expect(calls.filter(c => c.method === 'POST' && c.path === '/notes')).toHaveLength(1); expect(calls[2]!.path).toBe('/notes/12'); expect(w.document.querySelector('.modal-overlay')).toBeNull();
+  dom.window.close();
+});
+
+it('prevents rapid checklist clicks from overwriting another in-flight change', async () => {
+  const dom = new JSDOM('<button class="rail-btn" data-tool="notes"></button><div id="drawer-root"></div>', { runScripts: 'outside-only', url: 'https://localhost/' });
+  const w = dom.window as any; await new Promise(r => setTimeout(r, 0));
+  let note = { id: 1, title: 'Checklist', body: '', checklist: [{ id: 'a', text: 'First', done: false }, { id: 'b', text: 'Second', done: false }] };
+  let resolveSave: () => void = () => {}; let writes = 0;
+  w.API = { get: async () => [note], put: async (_p: string, data: any) => { writes++; await new Promise<void>(r => { resolveSave = r; }); note = { ...note, ...data }; } };
+  w.App = { hasPermission: () => true }; w.requestAnimationFrame = (cb: any) => { cb(); return 1; };
+  w.eval(['ui.js', 'personal-ux.js', 'tools.js'].map(s => fs.readFileSync(path.join(import.meta.dirname, '../public/js', s), 'utf8')).join('\n;\n'));
+  w.document.dispatchEvent(new w.Event('DOMContentLoaded')); w.document.querySelector('[data-tool]').click();
+  const flush = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 0)); }; await flush();
+  w.document.querySelector('[data-item="0"]').click(); expect(w.document.querySelector('[data-item="1"]').disabled).toBe(true); w.document.querySelector('[data-item="1"]').click(); expect(writes).toBe(1);
+  resolveSave(); await flush(); expect(w.document.querySelector('[data-item="0"]').checked).toBe(true); expect(w.document.querySelector('[data-item="1"]').disabled).toBe(false);
+  dom.window.close();
+});

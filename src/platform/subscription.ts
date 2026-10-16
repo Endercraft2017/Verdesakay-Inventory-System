@@ -10,10 +10,10 @@ const schema = z.object({
   mode: z.enum(['bundle', 'per_module']),
   bundle: z.enum(['unlimited', 'trial', 'starter', 'operations', 'complete']),
   modules: z.array(z.enum(MODULES)),
-  employee_limit: z.number().int().min(0).max(1_000_000).nullable(),
+  seat_limit: z.number().int().min(1).max(1_000_000).nullable(),
   bundle_price: price,
   module_prices: z.partialRecord(z.enum(MODULES), price),
-  employee_price: price,
+  seat_price: price,
 }).strict();
 
 export type Subscription = z.infer<typeof schema>;
@@ -23,7 +23,15 @@ export function parseSubscription(value: unknown): Subscription {
   return s;
 }
 export function storedSubscription(t: TenantRow): Subscription | null {
-  return t.subscription ? parseSubscription(JSON.parse(t.subscription)) : null;
+  if (!t.subscription) return null;
+  const value = JSON.parse(t.subscription);
+  // Older quotes priced employee records. Keep their modules, but do not silently
+  // convert the old employee rate/allowance into a login-seat charge.
+  if ('employee_limit' in value || 'employee_price' in value) {
+    delete value.employee_limit; delete value.employee_price;
+    value.seat_limit = null; value.seat_price = null;
+  }
+  return parseSubscription(value);
 }
 export function subscriptionView(t: TenantRow) {
   const s = storedSubscription(t);
@@ -33,11 +41,10 @@ export function subscriptionView(t: TenantRow) {
     ? s.bundle_price === null ? null : Math.round(s.bundle_price * 100)
     : !modules.length || modules.some(m => s.module_prices[m] == null) ? null
       : modules.reduce((sum, m) => sum + Math.round(s.module_prices[m]! * 100), 0);
-  const employeeCents = s.employee_limit === 0 ? 0
-    : s.employee_limit === null || s.employee_price === null ? null
-      : s.employee_limit * Math.round(s.employee_price * 100);
+  const seatCents = s.seat_limit === null || s.seat_price === null ? null
+      : s.seat_limit * Math.round(s.seat_price * 100);
   return { ...s, effective_modules: modules, currency: 'PHP', interval: 'month',
-    monthly_total: moduleCents === null || employeeCents === null ? null : (moduleCents + employeeCents) / 100 };
+    monthly_total: moduleCents === null || seatCents === null ? null : (moduleCents + seatCents) / 100 };
 }
 
 /** Validate first, then atomically update pricing and the matching entitlements. */

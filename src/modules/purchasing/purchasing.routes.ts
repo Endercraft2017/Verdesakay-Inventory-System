@@ -16,7 +16,7 @@ import {
   parseBody, createReceiptSchema, vendorBillSchema, approveBillSchema,
   disputeBillSchema, matchToleranceSchema,
 } from '../../shared/validation';
-import { applyStockChange } from '../inventory/inventory-stock';
+import { applyStockChange, locationName } from '../inventory/inventory-stock';
 import { maybeAutoPostVendorBill, maybeAutoPostGoodsReceipt, unpostSource } from '../accounting/accounting-autopost';
 import {
   threeWayMatch, receiptStatus, DEFAULT_TOLERANCE,
@@ -30,6 +30,9 @@ const router = Router();
 router.use(requireAuth);
 
 const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+const withReceiptPath = (receipt: GoodsReceipt): GoodsReceipt => ({
+  ...receipt, location_name: receipt.location_id ? locationName(receipt.location_id) : receipt.location_name,
+});
 const TOL_KEY = 'purchasing_match_tolerance';
 
 /** A goods receipt belongs to the site of the location the goods arrive at (docs/OFFLINE-FIRST.md
@@ -153,7 +156,7 @@ router.get('/orders/:id', requirePermission('purchasing.view'), (req, res) => {
        LEFT JOIN users u ON u.id = g.received_by
        WHERE g.order_id = ? ORDER BY g.id DESC`,
       order.id
-    ),
+    ).map(withReceiptPath),
     bills: queryAll<VendorBill>(
       `SELECT b.*, u.full_name AS approved_by_name
        FROM vendor_bills b LEFT JOIN users u ON u.id = b.approved_by
@@ -183,7 +186,7 @@ router.get('/receipts', requirePermission('purchasing.view'), (req, res) => {
        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
        ORDER BY g.id DESC LIMIT 200`,
       ...params
-    )
+    ).map(withReceiptPath)
   );
 });
 
@@ -200,7 +203,7 @@ router.get('/receipts/:id', requirePermission('purchasing.view'), (req, res) => 
   );
   if (!receipt) { res.status(404).json({ error: 'Receipt not found' }); return; }
   receipt.items = queryAll('SELECT * FROM goods_receipt_items WHERE receipt_id = ? ORDER BY sort, id', receipt.id);
-  res.json(receipt);
+  res.json(withReceiptPath(receipt));
 });
 
 // POST /api/purchasing/orders/:id/receipts — record what arrived + post stock in.

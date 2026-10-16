@@ -162,7 +162,11 @@ MApp.route('schedule', function (view) {
   }
 
   view.querySelector('#scheduleRequest').addEventListener('click', function () {
-    MApp.go('requests');
+    var future = (schedule && schedule.days || []).filter(function (day) { return day.work_date > todayKey && day.is_working_day !== false; });
+    var target = future.some(function (day) { return day.work_date === selectedKey; })
+      ? selectedKey : (future[0] && future[0].work_date);
+    if (!target) { mToast('No future roster day is published yet. Ask HR to publish your schedule first.', 'err'); return; }
+    MApp.go('requests', { type: 'schedule_change', date: target });
   });
 
   API.get('/me/schedule').then(function (response) {

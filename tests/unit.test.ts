@@ -26,7 +26,7 @@ describe('validation: createUser', () => {
     const out = parseBody(createUserSchema, {
       username: 'JDoe',
       full_name: 'Jane Doe',
-      password: 'secret1',
+      password: 'secret123',
     });
     expect(out.username).toBe('jdoe');
     expect(out.role).toBe('admin_staff'); // default
@@ -35,18 +35,18 @@ describe('validation: createUser', () => {
   it('rejects a too-short password', () => {
     expect(() =>
       parseBody(createUserSchema, { username: 'jdoe', full_name: 'J', password: '123' })
-    ).toThrow(/at least 6/);
+    ).toThrow(/at least 8/);
   });
   it('rejects an invalid username', () => {
     expect(() =>
-      parseBody(createUserSchema, { username: 'a b!', full_name: 'J', password: 'secret1' })
+      parseBody(createUserSchema, { username: 'a b!', full_name: 'J', password: 'secret123' })
     ).toThrow(ValidationError);
   });
   it('coerces a numeric department_id string', () => {
     const out = parseBody(createUserSchema, {
       username: 'jdoe',
       full_name: 'J',
-      password: 'secret1',
+      password: 'secret123',
       department_id: '3',
     });
     expect(out.department_id).toBe(3);
@@ -71,10 +71,8 @@ describe('validation: inventory', () => {
 });
 
 describe('validation: messages', () => {
-  it('requires a non-empty body', () => {
-    expect(() => parseBody(sendMessageSchema, { recipient_id: 2, body: '' })).toThrow(
-      ValidationError
-    );
+  it('allows empty text for attachment messages; the route requires text or files', () => {
+    expect(parseBody(sendMessageSchema, { recipient_id: 2, body: '' }).body).toBe('');
   });
 });
 

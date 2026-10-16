@@ -188,7 +188,7 @@ describe('POST /api/ai/chat', () => {
     expect(res.body.steps[0].result.success).toBe(true);
   });
 
-  it('send_message tool creates a real message', async () => {
+  it('send_message waits for the person to confirm, then sends exactly once', async () => {
     // Create a second user to message
     const recipient = await createEmployee(ctx.api, adminToken, { role: 'admin_staff' });
 
@@ -198,7 +198,7 @@ describe('POST /api/ai/chat', () => {
         subject: 'AI Test',
         body: 'Hello from AI',
       }),
-      makeCerebrasReply('Message sent!'),
+      makeCerebrasReply('Ready to send — please confirm.'),
     );
 
     const res = await ctx.api
@@ -207,10 +207,37 @@ describe('POST /api/ai/chat', () => {
       .send({ messages: [{ role: 'user', content: `Message user ${recipient.id}` }] });
 
     expect(res.status).toBe(200);
-    const step = res.body.steps[0];
-    expect(step.result.success).toBe(true);
-    // Tool confirms who it was sent to
-    expect(step.result.data.sent_to).toBeTruthy();
+    // Nothing was sent yet: the call is parked for confirmation.
+    expect(res.body.steps[0].result.data.status).toBe('awaiting_confirmation');
+    expect(res.body.pending).toHaveLength(1);
+    const { queryOne } = await import('../src/shared/db');
+    const sentCount = () => queryOne<{ n: number }>("SELECT COUNT(*) AS n FROM messages WHERE body LIKE '%Hello from AI%'")!.n;
+    expect(sentCount()).toBe(0);
+
+    const id = res.body.pending[0].id;
+    const confirm = await ctx.api.post(`/api/ai/actions/${id}/confirm`).set('Authorization', `Bearer ${adminToken}`).send({});
+    expect(confirm.status).toBe(200);
+    expect(confirm.body.ok).toBe(true);
+    expect(confirm.body.result.data.sent_to).toBeTruthy();
+    expect(sentCount()).toBe(1);
+    // A second click (or a replay) does nothing.
+    expect((await ctx.api.post(`/api/ai/actions/${id}/confirm`).set('Authorization', `Bearer ${adminToken}`).send({})).status).toBe(404);
+    expect(sentCount()).toBe(1);
+  });
+
+  it('a prepared action can be cancelled, and only by the person it was prepared for', async () => {
+    mockFetch(
+      makeCerebrasToolCall('tc5b', 'delete_note', { id: 999 }),
+      makeCerebrasReply('Confirm to delete.'),
+    );
+    const res = await ctx.api.post('/api/ai/chat').set('Authorization', `Bearer ${adminToken}`)
+      .send({ messages: [{ role: 'user', content: 'delete note 999' }] });
+    const id = res.body.pending[0].id;
+    const other = await createEmployee(ctx.api, adminToken, { role: 'admin_staff' });
+    const otherToken = await login(ctx.api, other.username, other.password);
+    expect((await ctx.api.post(`/api/ai/actions/${id}/confirm`).set('Authorization', `Bearer ${otherToken}`).send({})).status).toBe(404);
+    expect((await ctx.api.post(`/api/ai/actions/${id}/cancel`).set('Authorization', `Bearer ${adminToken}`).send({})).status).toBe(200);
+    expect((await ctx.api.post(`/api/ai/actions/${id}/confirm`).set('Authorization', `Bearer ${adminToken}`).send({})).status).toBe(404);
   });
 
   it('get_departments tool returns seeded departments', async () => {

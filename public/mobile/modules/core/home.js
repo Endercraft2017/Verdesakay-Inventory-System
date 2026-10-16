@@ -105,7 +105,7 @@
       approvals.onclick = function () { MApp.go('approvals'); };
       page.appendChild(approvals);
     }
-    if (MApp.hasProductionAccess() || MApp.can('orders.release')) {
+    if (MApp.hasProductionAccess() || MApp.can('orders.release') && MApp.canOpen('so')) {
       var role = mEl('<button type="button" class="v2-home-secondary">Open my role work queue</button>');
       role.onclick = function () { MApp.go('work'); };
       page.appendChild(role);

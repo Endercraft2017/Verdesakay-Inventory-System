@@ -6,6 +6,7 @@
  * Everything here is read-only. Costs come from the item `attributes` JSON
  * (`standard_cost` → `purchase_price` → 0), same convention as src/bom-resolvers.ts.
  */
+import { moduleEnabled } from '../shared/modules';
 import { Router } from 'express';
 import { queryOne, queryAll } from '../shared/db';
 import { requireAuth } from '../shared/auth';
@@ -262,11 +263,11 @@ router.get('/overview', (req, res) => {
   const can = (p: Permission) => req.user!.permissions.includes(p);
   const out: Record<string, unknown> = { generated_at: new Date().toISOString() };
 
-  if (can('inventory.view')) out.inventory = inventorySection();
-  if (can('production.view')) out.production = productionSection();
-  if (can('purchasing.view')) out.purchasing = purchasingSection();
-  if (can('orders.view')) out.sales = salesSection();
-  if (can('payroll.view')) out.payroll = payrollSection(); // pay is its own permission (payroll/pay-access.ts)
+  if (moduleEnabled('inventory') && can('inventory.view')) out.inventory = inventorySection();
+  if (moduleEnabled('manufacturing') && can('production.view')) out.production = productionSection();
+  if (moduleEnabled('purchasing') && can('purchasing.view')) out.purchasing = purchasingSection();
+  if (moduleEnabled('inventory') && can('orders.view')) out.sales = salesSection();
+  if (moduleEnabled('hr') && can('payroll.view')) out.payroll = payrollSection(); // pay is its own permission (payroll/pay-access.ts)
 
   res.json(out);
 });

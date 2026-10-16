@@ -10,6 +10,15 @@
 const API = (() => {
   const TOKEN_KEY = 'vds_token';
   const cookies = () => !!window.VDS_COOKIE_AUTH && !window.VDS_NATIVE;
+
+  /* The last response of a GET made with { remember: true }, so a screen can draw what it showed
+     last time while the fresh copy loads (API.peek). Memory only — never written to storage, so
+     nothing personal stays on a shared PC — and emptied on sign-in/out and after any change
+     (POST/PUT/PATCH/DELETE), which may have made it out of date. */
+  const remembered = new Map();
+  const REMEMBER_MAX = 30;
+  function peek(path) { return remembered.has(path) ? remembered.get(path) : null; }
+
   const SESSION_KEY = 'vds_browser_session';
   const DEVICE_KEY = 'vds_device_id';
 
@@ -30,6 +39,7 @@ const API = (() => {
     try { return !!(sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY)); } catch (e) { return true; }
   }
   function clearToken() {
+    remembered.clear();
     try { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
     try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
     try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
@@ -65,7 +75,26 @@ const API = (() => {
     try { return (localStorage.getItem('vds_api_base') || '').replace(/\/+$/, ''); } catch (e) { return ''; }
   }
 
+  // fetch has no upload progress events; keep the same response handling for XHR uploads.
+  function uploadResponse(url, method, headers, payload, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, url);
+      Object.entries(headers).forEach(([key, value]) => xhr.setRequestHeader(key, value));
+      xhr.upload.onprogress = (event) => onProgress({ loaded: event.loaded, total: event.lengthComputable ? event.total : null });
+      xhr.onerror = () => reject(new Error('Network unavailable'));
+      xhr.onabort = () => reject(new Error('Upload cancelled'));
+      xhr.onload = () => resolve({
+        status: xhr.status, ok: xhr.status >= 200 && xhr.status < 300,
+        headers: { get: (key) => xhr.getResponseHeader(key) },
+        json: async () => JSON.parse(xhr.responseText),
+      });
+      xhr.send(payload);
+    });
+  }
+
   async function request(method, path, body, isForm, opts) {
+    if (method !== 'GET') remembered.clear();
     const headers = cookies() ? { 'X-Session-Mode': 'cookie', 'X-Requested-With': 'VDS' } : {};
     const token = getToken();
     if (token) headers['Authorization'] = 'Bearer ' + token;
@@ -92,7 +121,10 @@ const API = (() => {
 
     let res;
     try {
-      res = await fetch(base() + '/api' + path, { method, headers, body: payload, credentials: cookies() ? 'same-origin' : 'omit' });
+      const url = base() + (path.startsWith('/api/') ? path : '/api' + path);
+      res = isForm && opts && opts.onProgress
+        ? await uploadResponse(url, method, headers, payload, opts.onProgress)
+        : await fetch(url, { method, headers, body: payload, credentials: cookies() ? 'same-origin' : 'omit' });
     } catch (e) {
       // fetch only throws on a genuine network failure (offline, DNS, connection reset).
       const err = new Error('Network unavailable');
@@ -131,22 +163,31 @@ const API = (() => {
       err.data = data;   // full parsed body — callers can inspect extra fields (e.g. a 409's details)
       throw err;
     }
+    if (method === 'GET' && opts && opts.remember) {
+      remembered.delete(path); // re-insert at the end: the Map's order is oldest first
+      remembered.set(path, data);
+      if (remembered.size > REMEMBER_MAX) remembered.delete(remembered.keys().next().value);
+    }
     return data;
   }
 
   /** Fetch a binary endpoint with auth and return an object URL (caller revokes it). */
-  async function blobUrl(path) {
+  async function blobUrl(path, mimeOverride) {
     const token = getToken();
     const headers = { 'X-Device-Id': deviceId() };
     if (token) headers.Authorization = 'Bearer ' + token;
-    const res = await fetch(base() + '/api' + path, { headers });
+    const res = await fetch(base() + (path.startsWith('/api/') ? path : '/api' + path), { headers });
     if (res.status === 401) {
       clearToken();
       if (window.App) window.App.showLogin();
       throw new Error('Session expired. Please sign in again.');
     }
-    if (!res.ok) throw new Error('Request failed (' + res.status + ')');
-    return URL.createObjectURL(await res.blob());
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error((data && data.error) || ('Request failed (' + res.status + ')'));
+    }
+    const blob = await res.blob();
+    return URL.createObjectURL(mimeOverride ? new Blob([blob], { type: mimeOverride }) : blob);
   }
 
   /** Fetch an auth'd endpoint that returns a file (CSV / DAT / etc.) and save it. */
@@ -155,26 +196,26 @@ const API = (() => {
     const a = document.createElement('a');
     a.href = url;
     a.download = filename || 'download';
+    document.body.appendChild(a);
     a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
   return {
-    getToken, setToken, clearToken, isSharedSession, hasSession, cookieAuth: cookies, deviceId, base,
-    get: (p) => request('GET', p),
+    getToken, setToken, clearToken, hasSession, cookieAuth: cookies, isSharedSession, deviceId, base,
+    /** opts.remember: keep the response for API.peek(p) (see `remembered`). */
+    get: (p, opts) => request('GET', p, undefined, false, opts),
+    peek,
     post: (p, b, opts) => request('POST', p, b, false, opts),
     put: (p, b, opts) => request('PUT', p, b, false, opts),
     patch: (p, b, opts) => request('PATCH', p, b, false, opts),
     del: (p) => request('DELETE', p),
-    upload: (p, formData) => request('POST', p, formData, true),
+    upload: (p, formData, opts) => request('POST', p, formData, true, opts),
     /** The installed-PC command id when `result` was only saved on that PC (not final yet), else null. */
     syncLocal: (result) => (result && result.__syncCommand) || null,
     blobUrl, download,
   };
 })();
-// Never retain a legacy bearer credential in a web browser after migration.
-if (window.VDS_COOKIE_AUTH && !window.VDS_NATIVE) {
-  try { localStorage.removeItem('vds_token'); sessionStorage.removeItem('vds_token'); } catch (e) {}
-}
 // Shared mobile helpers and chat test for window.API before using the client.
 window.API = API;

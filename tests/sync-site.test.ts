@@ -63,7 +63,7 @@ beforeAll(async () => {
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   itemA = (await ctx.api.post('/api/inventory').set(cloudHdr()).send({ name: 'Site item', quantity: 20 })).body.id;
   const u = await ctx.api.post('/api/users').set(cloudHdr())
-    .send({ username: 'wh-site', full_name: 'Site Clerk', password: 'whsite1', role: 'warehouse' });
+    .send({ username: 'wh-site', full_name: 'Site Clerk', password: 'whsite123', role: 'warehouse' });
   expect(u.status).toBe(201);
 });
 afterAll(() => {
@@ -151,7 +151,7 @@ describe('a LAN PC with its host', () => {
   });
 
   it('what the host accepted but the cloud rejects is undone on every copy', async () => {
-    const clerk = await signIn(LAN, 'wh-site', 'whsite1');
+    const clerk = await signIn(LAN, 'wh-site', 'whsite123');
     const r = await ctx.api.post(`/api/inventory/${itemA}/adjust`)
       .set({ Authorization: `Bearer ${clerk}`, 'X-Tenant': LAN }).send({ change: -4, reason: 'Clerk' });
     const cmdId = r.headers['x-sync-command'] as string;

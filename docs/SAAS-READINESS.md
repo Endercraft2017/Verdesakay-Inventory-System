@@ -8,7 +8,7 @@
 > `default` tenant needs no catalog row, has every module, and the console is off unless
 > `PLATFORM_CONSOLE=true`). Backups job done 2026-09-24 (daily + pre-migration snapshots, see
 > SAAS-OPERATIONS.md#backups). Remaining: custom domains / branding / billing, retention policies.
-> **Last updated:** 2026-09-10
+> **Last updated:** 2026-10-10 (billing, §12)
 > **Question asked:** "Can this be a SaaS (many companies on one deployment)?"
 
 **Short answer:** yes, and the current design is closer than it looks — *because* it's
@@ -223,7 +223,7 @@ New, and it lives **outside** the tenant DBs (its own `platform.db` or Postgres)
 | `tenants` | `id, slug, name, status (trial/active/past_due/suspended/purged), plan, trial_ends_at, created_at` |
 | `tenant_domains` | custom-domain → tenant mapping, verification state |
 | `platform_users` | *your* staff who can see across tenants (support, billing) — separate from any tenant's `users` |
-| `subscriptions` / billing | plan, seats, current period, Stripe (or manual) — drives §9 |
+| `subscriptions` / billing | plan, seats, current period, invoices; manual GCash / bank transfer now, PayMongo later (§12) — drives §9 |
 | `provisioning_log` | audit of create/migrate/suspend/delete per tenant |
 | `tenant_secrets` (optional) | if you centralise SMTP/AI keys instead of per-tenant `settings` |
 
@@ -297,7 +297,31 @@ All enforceable cheaply per-tenant because the data is one file:
    404s off the apex host), `web-console/` (dependency-free SPA), mounted in `src/app.ts`
    only when `PLATFORM_CONSOLE=true`. CLI: `npm run platform:user`. Tests:
    `tests/platform-console*.test.ts`.
-9. **Custom domains, per-tenant branding, billing integration** (§8).
+   Owner recovery: open a workspace in `/_platform/` and use **Owner login recovery**.
+   It displays the first administrator (lowest user ID with role `admin`) and lets an
+   operator set and confirm a new password. `POST /_platform/api/tenants/:slug/reset-owner-password`
+   accepts `{ owner_id, new_password }`; the account ID must match the displayed owner.
+   Recovery revokes that account's sessions and password-reset links and records the
+   operator and account in the provisioning log, without storing the password there.
+   Account activation and workspace suspension remain separate controls.
+   When operators create a workspace, **Sandbox account** permits company name and
+   login details only; the slug can be generated automatically. Regular accounts require
+   a valid owner recovery email, saved on the first admin. Existing tenants default to
+   regular accounts; creation validation does not change their existing login details.
+   Recovery emails include the username; operators can also use **Email owner username**.
+   Regular owner password resets send a notification without the new password. Email
+   uses the workspace's existing SMTP settings; the console reports delivery failures.
+   Sandbox recovery sends no emails, even if an email address is added later.
+   **Remove sandbox tenant** requires the slug confirmation and permanently deletes
+   its database and uploads, removing it from the active tenant list. The provisioning
+   audit record remains available.
+   If recovery email fails, **Generate temporary password** displays a random password
+   once in the operator's panel for direct sharing. It is never emailed or logged,
+   expires after 24 hours, revokes existing sessions and recovery links, and requires
+   the owner to choose a different password before desktop, mobile, or WebSocket access.
+   Closing the panel removes the displayed password. Sandbox operators can use this
+   action directly because sandbox recovery email is disabled.
+9. **Custom domains, per-tenant branding, billing integration** (§8; billing phase a built 2026-10-10 — §12).
 10. **Backups job, deploy-time migration runner** (§5, §7).
 11. **Retention policies** by plan (`activity_log` / `mail_log` / soft-deletes) (§9).
 
@@ -312,7 +336,7 @@ provisioning? Findings and the pick for this codebase.
 
 ### Tenant identification → **subdomain, resolved in middleware, + a dev-only fallback**
 
-Industry standard for B2B SaaS is **subdomain per tenant** (`acme.verdesakay.app`),
+Industry standard for B2B SaaS is **subdomain per tenant** (`acme.app.afkcube.com`),
 resolved as early as possible in middleware, with the tenant then carried in the
 session/JWT for the rest of the request. Path-based (`/acme/…`) is the fallback when
 wildcard DNS/TLS isn't practical (e.g. Vercel); header-based (`X-Tenant`) is for pure
@@ -324,7 +348,7 @@ API products. ([zenn.dev SaaS 2025](https://zenn.dev/shineos/articles/saas-multi
 `slug` from `Host` (first label; reject reserved: `www app api admin static _platform`).
 Also accept `X-Tenant` / `?tenant=` **when `NODE_ENV !== 'production'`** so tests and
 `localhost` dev work with no DNS. Custom domains (`inventory.acme.com`) come in Phase 7
-as a `tenant_domains` lookup feeding the *same* resolver. Wildcard TLS (`*.verdesakay.app`)
+as a `tenant_domains` lookup feeding the *same* resolver. Wildcard TLS (`*.app.afkcube.com`)
 is an ops task, not code.
 
 ### Control plane → **a dedicated `platform.db`, off the request path**
@@ -342,7 +366,7 @@ fine until you need status/plan/billing, which we do.
 `tenantStore`), wrapped by a new `src/platform/platform.ts`. Tables now: `tenants`
 (`id, slug UNIQUE, name, status, plan, created_at, trial_ends_at`), `provisioning_log`.
 Later: `platform_users`, `tenant_domains`, `subscriptions`. Control-plane routes live
-under `/_platform` (later `admin.verdesakay.app`), guarded separately. The tenant
+under `/_platform` (later `admin.app.afkcube.com`), guarded separately. The tenant
 resolver reads `tenants` on each request and fast-rejects unknown / `suspended` /
 `purged` before opening any tenant DB.
 
@@ -383,10 +407,73 @@ writer ("all tenants fighting each other to get the single write lock")
 
 ### Open questions for the owner
 
-- Root domain for tenant subdomains? (`*.verdesakay.app`? something else?)
+- Root domain for tenant subdomains? (`*.app.afkcube.com`? something else?)
 - Self-serve signup **open** at launch, or **flag-off** and you provision each tenant?
 - Control-plane admin: a `/_platform` page in this same app now, or just the CLI script
   until it's needed?
+
+---
+
+## 12. Billing (decided + phase a built 2026-10-10)
+
+**Decision:** collect fees by **manual GCash / bank transfer** first — the customer reports the
+payment with its reference number and a receipt screenshot (and the BIR 2307 when they withhold),
+and an operator confirms it against the GCash / bank history. **PayMongo** comes later, once the
+business is registered (DTI/SEC + BIR 2303); an unregistered PayMongo "Individual" account is QR Ph
+only with a ₱50k wallet cap. Personal GCash has no API, so there is no automatic detection.
+
+**Why:** Stripe does not onboard Philippine companies; PayMongo is cheaper than Xendit and has no
+dormant fee. Buyers with ≥₱12M (≥₱5M in smaller districts) gross sales are BIR Top Withholding
+Agents and withhold 2% EWT (on the amount net of VAT) with a Form 2307, so an invoice paid by
+transfer must stay possible. Under the EOPT Act (RR 7-2024) the BIR-registered invoice is the
+primary sales document; this app records its number (`bir_invoice_no`) but does not print it.
+
+**Who pays when:** a company that signs up on the public website (`/api/signup`) **pays before it
+gets in** — its workspace is created with `tenants.awaiting_payment = 1`; only sign-in, Billing and
+Support answer (`src/app.ts`, 402 otherwise; `/m` shows a "finish payment on a computer" page) until
+an operator confirms the first payment. A workspace the operator creates in the console is never
+locked. The operator can also open a waiting workspace by hand (console → tenant → Billing).
+
+**Website = "Talk to us" (2026-10-10, same day):** the public site sells by conversation, not
+self-serve checkout. Every call to action opens a **Talk to us** form (name, company, email,
+mobile, employees, modules of interest, message; rate-limited + honeypot) stored in `platform.db`
+`inquiries` (`src/platform/inquiries*.ts`, `POST /site/inquiry`). The owner works them in the
+console's **Inquiries** view (status new/contacted/won/lost, notes) and **creates the workspace from
+the inquiry** — prefilled, linked, and optionally **locked until the first payment**. The phone /
+email / Messenger shown beside the form are set in the console. Self-serve sign-up (below) stays
+built but off (`SIGNUPS_OPEN` unset); its buttons only appear if it is turned on.
+
+**Owner email alerts (2026-10-12):** the platform has its own mailbox (`src/platform/platform-mail.ts`,
+console → **Email alerts**), separate from each workspace's BYO-SMTP. It emails the owner on a new
+website inquiry, a customer-reported payment and a self-serve sign-up (each switchable), with a
+test-email button and a send log. Transport **Brevo** (HTTPS API) or **SMTP**: Railway blocks
+outgoing SMTP below its Pro plan, so Brevo is the default recommendation. The API key / password
+is encrypted in `platform.db` (with `MAIL_SECRET_KEY` / `APP_SECRET` when set) and never returned.
+
+**First invoice:** the console's price list (per module per month + per login seat) prices the
+sign-up's quote; when every chosen module and the seat price have a price, the first month's
+invoice is issued automatically (due in 7 days) and the website shows the monthly total before
+sign-up. Otherwise the workspace still waits and the operator issues the invoice.
+
+**Built (`src/platform/billing.ts`, `billing.routes.ts`, `billing-console.routes.ts`):** invoices +
+payments + settings in `platform.db` (centavos; VAT 12% when VAT-registered; EWT default 2%);
+customer reporting with channel `gcash`/`bank`; operator confirm / reject / record / void / BIR
+invoice no.; GCash name, number and QR image; bank details; price list. Paid → a waiting workspace
+opens, a `trial`/`past_due` one becomes `active` (a `suspended` one is left alone). Console: header
+**Billing** view + per-tenant **Billing** tab (`web-console/billing.js`). Desktop: Admin → Billing
+(`public/js/modules/core/billing.js`), banner link, and the locked shell while awaiting payment.
+
+**Not built:** PayMongo (checkout + webhook, then subscriptions); automatic overdue → `past_due`;
+email/notification to the operator on a new sign-up or reported payment (the console badge counts
+payments to review); recurring monthly invoices (the operator issues them).
+
+**Not verified:** the EWT / invoicing rules should be confirmed by the company's accountant.
+
+Sources: [PayMongo pricing](https://www.paymongo.com/en/pricing),
+[PayMongo business types](https://docs.paymongo.com/docs/account-settings-business-types),
+[Xendit pricing](https://www.xendit.co/en/pricing/),
+[RR 31-2020](https://bir-cdn.bir.gov.ph/local/pdf/RR%20No.%2031-2020.pdf),
+[PwC – EoPT invoicing](https://www.pwc.com/ph/en/tax/tax-publications/taxwise-or-otherwise/2024/eopt-invoicing-clarified.html).
 
 ---
 

@@ -8,6 +8,7 @@
  * Everything this module stores lives in node-local `sync_*` tables, which never replicate.
  */
 import type { DatabaseSync, Session } from 'node:sqlite';
+import { configureFormHistoryConnection } from '../shared/form-history-context';
 import { installClockOverride } from './clock';
 
 export type SyncRole = 'cloud' | 'node';
@@ -32,7 +33,10 @@ export const MAX_NODE_NO = 65535;
 /** Tables of online-only features — they hold credentials or what only the cloud can use, and an
  *  installed PC never needs them (user direction 2026-10-01, OFFLINE-FIRST §7.5): password-reset
  *  tokens (sent by email), QuickBooks links, the email log, AI assistant conversations. */
-const CLOUD_ONLY_TABLES = new Set(['password_resets', 'qbo_links', 'mail_log', 'ai_messages']);
+const CLOUD_ONLY_TABLES = new Set(['password_resets', 'qbo_links', 'mail_log', 'ai_messages', 'ai_pending_actions',
+  // Two-step sign-in: secrets are encrypted with the cloud's key, and installed PCs (on-site,
+  // on the office network) sign in with the password alone — see src/core/mfa.ts.
+  'user_mfa', 'user_mfa_recovery', 'mfa_challenges', 'mfa_enrollments', 'ai_tool_audit']);
 
 /** Tables that never replicate: sync bookkeeping, per-device state, credentials, derived
  *  indexes, online-only features (OFFLINE-FIRST §7.5 "node-local tables"). */
@@ -41,10 +45,12 @@ export function isNodeLocalTable(table: string): boolean {
     CLOUD_ONLY_TABLES.has(table) ||
     table.startsWith('sync_') ||
     table.startsWith('sqlite_') ||
+    table.startsWith('doc_studio_') && table !== 'doc_studio_library' || // private working state stays on its originating server
     table.startsWith('doc_chunks') || // AI search FTS5 index + its shadow tables, rebuilt per node
     table === 'sessions' ||
     table === 'idempotency_keys' ||
     table === 'activity_log' || // the authority writes its own row when it replays a command
+    table === 'durable_uploads' || // each node keeps its own recoverable copy of transferred files
     table === 'anonymous_report_tickets' ||
     table === 'push_subscriptions'
   );
@@ -318,6 +324,7 @@ export function syncConfigOf(conn: DatabaseSync): SyncConfig | null {
 /** Give a DB its sync role. Re-running with a new role/number re-identifies it — that is how
  *  a snapshot of the cloud becomes node N at enrolment (unconfirmed commands are dropped). */
 export function enableSync(conn: DatabaseSync, cfg: SyncConfig): SyncConfig {
+  configureFormHistoryConnection(conn);
   if (cfg.role === 'cloud' && cfg.nodeNo !== 0) throw new Error('The cloud is node 0.');
   if (cfg.role === 'node' && !(Number.isInteger(cfg.nodeNo) && cfg.nodeNo >= 1 && cfg.nodeNo <= MAX_NODE_NO)) {
     throw new Error(`A node number must be 1–${MAX_NODE_NO}.`);

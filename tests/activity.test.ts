@@ -81,26 +81,24 @@ describe('activity log', () => {
     expect(Array.isArray(res.body.users)).toBe(true);
   });
 
-  it('prunes entries older than a cutoff', async () => {
-    await ctx.api.post('/api/inventory').set(authHdr()).send({ name: 'Prune Trigger', quantity: 1 });
+  it('cannot be erased from the app, even by an admin', async () => {
+    await ctx.api.post('/api/inventory').set(authHdr()).send({ name: 'Audit Keeper', quantity: 1 });
     await tick();
     const before = await ctx.api.get('/api/activity?limit=1').set(authHdr());
     expect(before.body.total).toBeGreaterThan(0);
 
     const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
     const pruned = await ctx.api.delete('/api/activity?before=' + tomorrow).set(authHdr());
-    expect(pruned.status).toBe(200);
-    expect(pruned.body.deleted).toBeGreaterThan(0);
+    expect(pruned.status).toBe(404);
 
     await tick();
     const after = await ctx.api.get('/api/activity?limit=1').set(authHdr());
-    // only the prune action itself (logged after the delete) remains
-    expect(after.body.total).toBeLessThan(before.body.total);
+    expect(after.body.total).toBeGreaterThanOrEqual(before.body.total);
   });
 
-  it('rejects a prune with no cutoff', async () => {
-    const res = await ctx.api.delete('/api/activity').set(authHdr());
-    expect(res.status).toBe(400);
+  it('keeps the trail for five years by default', async () => {
+    const { ACTIVITY_LOG_RETENTION_DAYS } = await import('../src/shared/db');
+    expect(ACTIVITY_LOG_RETENTION_DAYS).toBeGreaterThanOrEqual(1826);
   });
 
   it('auto-sweeps audit rows older than the retention window on housekeeping', async () => {

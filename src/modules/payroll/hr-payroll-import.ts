@@ -114,6 +114,7 @@ export interface PayrollSlip {
   sss: number;
   philhealth: number;
   pagibig: number;
+  withholding_tax: number;
   cash_advance: number;
   late_absences: number;
   total_deductions: number;
@@ -139,6 +140,8 @@ function isContinuationRow(row: string[] | undefined, COL: Record<ColKey, number
 export interface ParsePayrollSummaryOptions {
   /** Applied to every parsed row — the sheet itself doesn't carry a pay date. */
   payDate?: string;
+  rejected?: Array<{line:number;row:string[];error:string;employee_name?:string;department?:string}>;
+  accepted?: Array<{line:number;row:string[];employee_name:string;department:string}>;
 }
 
 /**
@@ -155,11 +158,22 @@ export function parsePayrollSummaryCsv(text: string, opts: ParsePayrollSummaryOp
   const slips: PayrollSlip[] = [];
   let dept = '';
   let lastEmployeeName = '';
+  let blockedContinuation = false;
 
   // Row 0 is the title, row 1 is the header — data starts at row 2.
   for (let r = 2; r < rows.length; r++) {
     const row = rows[r];
     if (isDeptHeader(row, COL)) { dept = cell(row, COL.no); continue; }
+    if (opts.rejected) {
+      if(cell(row,COL.name))blockedContinuation=false;
+      const candidate = !!cell(row,COL.name) || /^\d+$/.test(cell(row,COL.no)) || isContinuationRow(row,COL);
+      if (candidate) {
+        const invalid = (Object.keys(COL) as ColKey[]).filter(key => !['no','name'].includes(key) && cell(row,COL[key]) && (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(cell(row,COL[key]).replace(/,/g,'')) || !Number.isFinite(Number(cell(row,COL[key]).replace(/,/g,'')))));
+        const error = !cell(row,COL.name) && (!isContinuationRow(row,COL) || !lastEmployeeName) ? 'Employee name is required' : !cell(row,COL.name) && blockedContinuation ? 'An earlier rate row for this employee needs correction' : invalid.length ? 'Invalid numeric value in: '+invalid.map(key=>HEADER_NAMES[key]).join(', ') : null;
+        if(error){const name=cell(row,COL.name)||lastEmployeeName;opts.rejected.push({line:r+1,row:[...(row || [])],error,employee_name:name,department:dept});if(name)lastEmployeeName=name;blockedContinuation=true;continue;}
+      }
+    }
+
 
     let employeeName = cell(row, COL.name);
     if (employeeName) {
@@ -201,6 +215,7 @@ export function parsePayrollSummaryCsv(text: string, opts: ParsePayrollSummaryOp
     const totalDeductions = sss + philhealth + pagibig + tax + lateAbsences;
     const netPay = toNum(cell(row, COL.totalSalary));
 
+    opts.accepted?.push({line:r+1,row:[...(row||[])],employee_name:employeeName,department:dept});
     slips.push({
       employee_name: employeeName,
       dept_position: dept,
@@ -220,6 +235,7 @@ export function parsePayrollSummaryCsv(text: string, opts: ParsePayrollSummaryOp
       sss,
       philhealth,
       pagibig,
+      withholding_tax: tax,
       cash_advance: 0,
       late_absences: lateAbsences,
       total_deductions: totalDeductions,
@@ -227,4 +243,28 @@ export function parsePayrollSummaryCsv(text: string, opts: ParsePayrollSummaryOp
     });
   }
   return slips;
+}
+
+/** Preserve the original Summary layout in the rejection download so corrected rows can be reimported. */
+export function reviewPayrollSummaryCsv(text:string,opts:ParsePayrollSummaryOptions={}) {
+  const grid=parseCsvRows(text),rejected:Array<{line:number;row:string[];error:string;employee_name?:string;department?:string}>=[],accepted:Array<{line:number;row:string[];employee_name:string;department:string}>=[];
+  const missingHeader=resolveColumns(grid[1]).name<0;
+  if(missingHeader) rejected.push(...(grid.slice(2).length?grid.slice(2).map((row,index)=>({line:index+3,row,error:'Missing Employee Name header'})):[{line:2,row:grid[1]||[],error:'Missing Employee Name header'}]));
+  let slips=missingHeader?[]:parsePayrollSummaryCsv(text,{...opts,rejected,accepted});
+  const normalize=(name:string)=>name.trim().replace(/\s+/g,' ').toLowerCase();
+  const rejectedNames=new Set(rejected.filter(row=>row.employee_name).map(row=>normalize(row.employee_name!)));
+  for(const row of accepted)if(rejectedNames.has(normalize(row.employee_name)))rejected.push({...row,error:'Another rate row for this employee needs correction; all their rows were excluded'});
+  slips=slips.filter(row=>!rejectedNames.has(normalize(row.employee_name)));
+  rejected.sort((a,b)=>a.line-b.line);
+  const escape=(value:string)=>{const safe=/^[=+@-]/.test(value) && !/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)?"'"+value:value;return /[",\r\n]/.test(safe)?'"'+safe.replace(/"/g,'""')+'"':safe;};
+  const headers=grid[1]||[];
+  const lines=[grid[0]||[],[...headers,'Import error']];
+  let department='';const columns=resolveColumns(headers);
+  for(const entry of rejected){
+    if(entry.department&&entry.department!==department){const section=headers.map(()=> '');if(columns.no>=0)section[columns.no]=entry.department;lines.push(section);department=entry.department;}
+    const row=headers.map((_,index)=>entry.row[index]||'');
+    if(columns.name>=0&&!row[columns.name]&&entry.employee_name)row[columns.name]=entry.employee_name;
+    lines.push([...row,`Row ${entry.line}: ${entry.error}`]);
+  }
+  return {slips,rejected,rejected_csv:lines.map(row=>row.map(escape).join(',')).join('\r\n')+'\r\n'};
 }

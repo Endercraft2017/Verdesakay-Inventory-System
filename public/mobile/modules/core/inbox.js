@@ -111,24 +111,27 @@
       view: view, otherId: otherId, otherName: knownName || '',
       messages: [], replyTo: null, editingId: null, linkPreviewCache: {},
     };
-    MApp.setTitle(state.otherName || 'Conversation');
+    MApp.setTitle('Messages');
     view.setAttribute('data-figma-node', '46:837');
     view.innerHTML =
       '<section class="m-v2-page m-chat-v2"><header class="m-v2-heading m-chat-heading">' +
-      '<button class="m-chat-back" data-back type="button" aria-label="Back">‹</button><div><h1>' +
-      mEsc(state.otherName || 'Conversation') + '</h1><p>Private work conversation</p></div></header>' +
+      '<button class="m-chat-back" data-back type="button" aria-label="Back to conversations">‹</button>' +
+      '<span class="m-chat-person-avatar" aria-hidden="true">' + mEsc((state.otherName || '?').slice(0, 1).toUpperCase()) + '</span><div><h1>' +
+      mEsc(state.otherName || 'Conversation') + '</h1><p>Private conversation</p></div></header>' +
       '<div id="m-chat-typing" class="m-chat-typing hidden">typing…</div>' +
       '<div id="m-chat-load-older" class="m-chat-load-older hidden"><button class="m-v2-secondary" type="button">Load earlier</button></div>' +
       '<div id="m-chat-messages" class="m-chat-messages"><div class="m-hint">Loading…</div></div>' +
       '<div id="m-chat-reply-strip" class="m-chat-reply-strip hidden"></div>' +
+      '<div id="m-chat-files" class="m-chat-files hidden" aria-live="polite"></div>' +
       '<div class="m-chat-compose">' +
       '<button class="m-chat-attach-button" id="m-chat-attach" type="button" aria-label="Attach files">＋</button>' +
-      '<input type="file" id="m-chat-file" multiple class="hidden" />' +
+      '<input type="file" id="m-chat-file" multiple aria-label="Choose files to attach" />' +
       '<textarea id="m-chat-input" rows="1" placeholder="Write a message…" aria-label="Message"></textarea>' +
       '<button class="m-chat-send-button" id="m-chat-send" type="button" aria-label="Send message">➤</button>' +
       '</div></section>';
     view.querySelector('[data-back]').onclick = function () { MApp.go('inbox'); };
     wireComposer();
+    fitThreadToViewport();
     view.querySelector('#m-chat-load-older button').onclick = loadOlder;
 
     API.get('/messages/with/' + otherId + '?limit=50').then(function (rows) {
@@ -162,6 +165,45 @@
     if (c) c.scrollTop = c.scrollHeight;
   }
 
+  function fitThreadToViewport() {
+    document.body.classList.add('m-chat-thread-active');
+    var viewport = window.visualViewport;
+    var input = state.view.querySelector('#m-chat-input');
+    function update() {
+      var height = viewport ? viewport.height : window.innerHeight;
+      var top = viewport ? viewport.offsetTop : 0;
+      document.documentElement.style.setProperty('--chat-viewport-height', Math.round(height) + 'px');
+      document.documentElement.style.setProperty('--chat-viewport-top', Math.round(top) + 'px');
+      document.body.classList.toggle('m-chat-keyboard-open', !!viewport && viewport.height < window.innerHeight - 100);
+      if (document.activeElement === input) requestAnimationFrame(scrollToBottom);
+    }
+    function focus() {
+      update();
+      scrollToBottom();
+      setTimeout(scrollToBottom, 120);
+      setTimeout(scrollToBottom, 320);
+    }
+    input.addEventListener('focus', focus);
+    if (viewport) {
+      viewport.addEventListener('resize', update);
+      viewport.addEventListener('scroll', update);
+    }
+    window.addEventListener('resize', update);
+    update();
+    window.mChatViewport = { release: function () {
+      input.removeEventListener('focus', focus);
+      if (viewport) {
+        viewport.removeEventListener('resize', update);
+        viewport.removeEventListener('scroll', update);
+      }
+      window.removeEventListener('resize', update);
+      document.body.classList.remove('m-chat-thread-active', 'm-chat-keyboard-open');
+      document.documentElement.style.removeProperty('--chat-viewport-height');
+      document.documentElement.style.removeProperty('--chat-viewport-top');
+      window.mChatViewport = null;
+    } };
+  }
+
   function isNearBottom() {
     var c = state.view.querySelector('#m-chat-messages');
     if (!c) return true;
@@ -180,10 +222,10 @@
   function attachmentHTML(a) {
     var isImage = (a.mime_type || '').indexOf('image/') === 0;
     if (isImage) {
-      return '<div class="m-chat-attach-img-wrap" data-att-url="' + mEsc(a.url) + '" data-att-name="' + mEsc(a.name) + '"><img class="m-chat-attach-img" alt="' + mEsc(a.name) + '" /></div>';
+      return '<div class="m-chat-attach-img-wrap" data-att-url="' + mEsc(a.url) + '" data-att-name="' + mEsc(a.name) + '"><img class="m-chat-attach-img" alt="" /><span class="m-chat-photo-error" hidden>Photo unavailable. Ask the sender to resend it.</span></div>';
     }
-    return '<div class="m-msg-attach" data-att-url="' + mEsc(a.url) + '" data-att-name="' + mEsc(a.name) + '">' +
-      '<span>' + mEsc(a.name) + '</span><span class="m-muted">' + mFmtBytes(a.size_bytes) + '</span></div>';
+    return '<button type="button" class="m-msg-attach" data-att-url="' + mEsc(a.url) + '" data-att-name="' + mEsc(a.name) + '" aria-label="Preview ' + mEsc(a.name) + '">' +
+      '<span>' + mEsc(a.name) + '</span><span class="m-muted">' + mFmtBytes(a.size_bytes) + '</span></button>';
   }
 
   function bubbleHTML(m) {
@@ -231,7 +273,13 @@
     if (!row) return;
     row.querySelectorAll('.m-chat-attach-img-wrap img').forEach(function (img) {
       var wrap = img.closest('.m-chat-attach-img-wrap');
-      API.blobUrl(wrap.dataset.attUrl).then(function (u) { img.src = u; }).catch(function () {});
+      var unavailable = function () {
+        img.hidden = true;
+        wrap.querySelector('.m-chat-photo-error').hidden = false;
+        wrap.dataset.unavailable = '1';
+      };
+      img.onerror = unavailable;
+      API.blobUrl(wrap.dataset.attUrl).then(function (u) { img.src = u; }).catch(unavailable);
     });
     if (m.deleted_at || !m.body) return;
     var match = m.body.match(URL_RE);
@@ -275,8 +323,11 @@
     });
     container.querySelectorAll('[data-att-url]:not([data-wired])').forEach(function (el) {
       el.dataset.wired = '1';
-      el.addEventListener('click', function () {
-        API.download(el.dataset.attUrl, el.dataset.attName).catch(function (e) { mToast(e.message || 'Download failed', 'err'); });
+      el.addEventListener('click', function (event) {
+        event.stopPropagation();
+        if (el.dataset.unavailable) return;
+        if (el.classList.contains('m-chat-attach-img-wrap')) PhotoViewer.open(el.dataset.attUrl, el.dataset.attName);
+        else AttachmentViewer.open(el.dataset.attUrl, el.dataset.attName);
       });
     });
     container.querySelectorAll('.m-chat-reaction:not([data-wired])').forEach(function (el) {
@@ -473,13 +524,49 @@
     var sendBtn = state.view.querySelector('#m-chat-send');
     var attachBtn = state.view.querySelector('#m-chat-attach');
     var fileInput = state.view.querySelector('#m-chat-file');
+    var filePreview = state.view.querySelector('#m-chat-files');
+    var selectedFiles = [];
+    var uploadStatus = MessageUpload.create(filePreview);
+    // Keep an unsent text draft through navigation or a dropped connection. Shared-phone
+    // sessions keep it only in this tab; account and recipient are both part of the key.
+    var me = MApp.getMe() || {};
+    var draftKey = 'vds-chat-draft:' + me.id + ':' + state.otherId;
+    var draftStore = API.isSharedSession() ? sessionStorage : localStorage;
+    try { input.value = draftStore.getItem(draftKey) || ''; } catch (e) {}
+    if (input.value) input.style.height = Math.min(112, Math.max(44, input.scrollHeight)) + 'px';
+    function saveDraft() {
+      try { if (input.value.trim()) draftStore.setItem(draftKey, input.value); else draftStore.removeItem(draftKey); } catch (e) {}
+    }
+
+    function renderFiles() {
+      filePreview.classList.toggle('hidden', !selectedFiles.length);
+      filePreview.innerHTML = selectedFiles.map(function (file, index) {
+        return '<span class="m-chat-file-chip">' + mEsc(file.name) + '<button type="button" data-remove="' + index + '" aria-label="Remove ' + mEsc(file.name) + '">×</button></span>';
+      }).join('');
+      filePreview.querySelectorAll('[data-remove]').forEach(function (button) {
+        button.onclick = function () { selectedFiles.splice(Number(button.dataset.remove), 1); renderFiles(); };
+      });
+    }
 
     attachBtn.onclick = function () { fileInput.click(); };
-    fileInput.onchange = function () { if (fileInput.files.length) sendOrSave(); };
+    fileInput.onchange = function () {
+      if (selectedFiles.length + (fileInput.files || []).length > 10) mToast('Up to 10 files per message', 'err');
+      selectedFiles = selectedFiles.concat(Array.prototype.slice.call(fileInput.files || [])).slice(0, 10);
+      fileInput.value = '';
+      renderFiles();
+      if (selectedFiles.length) mToast('Files ready. Tap send when you are ready.');
+    };
     sendBtn.onclick = sendOrSave;
 
     var lastTypingSentAt = 0;
+    function growInput() {
+      input.style.height = 'auto';
+      input.style.height = Math.min(112, Math.max(44, input.scrollHeight)) + 'px';
+    }
     input.addEventListener('input', function () {
+      if (!state.editingId) saveDraft();
+      growInput();
+      if (isNearBottom()) requestAnimationFrame(scrollToBottom);
       var now = Date.now();
       if (window.ChatWS && state.otherId && now - lastTypingSentAt > 2500) {
         lastTypingSentAt = now;
@@ -488,8 +575,10 @@
     });
 
     function sendOrSave() {
+      if (sendBtn.disabled) return;
+      var recipientId = state.otherId;
       var body = input.value.trim();
-      var files = fileInput.files;
+      var files = selectedFiles.slice();
       if (state.editingId) {
         if (!body) { mToast('Message cannot be empty', 'err'); return; }
         var id = state.editingId;
@@ -497,21 +586,31 @@
           applyEdited(id, body, res.edited_at);
           state.editingId = null;
           input.value = '';
+          growInput();
           renderReplyStrip();
         }).catch(function (e) { mToast(e.message || 'Failed', 'err'); });
         return;
       }
-      if (!body && !(files && files.length)) return;
+      if (!body && !files.length) return;
       sendBtn.disabled = true;
+      attachBtn.disabled = true;
+      sendBtn.setAttribute('aria-label', 'Sending message');
+      input.disabled = true;
+      filePreview.querySelectorAll('button').forEach(function (button) { button.disabled = true; });
+      if (files.length) uploadStatus.start();
       var replyToId = state.replyTo ? state.replyTo.id : null;
       var send;
-      if (files && files.length) {
+      if (files.length) {
+        send = Promise.all(files.map(function (file) {
+          return window.ImageCompress ? ImageCompress.maybeCompress(file, { thresholdBytes: 0, maxDim: 1600, quality: 0.8 }) : file;
+        })).then(function (ready) {
         var fd = new FormData();
-        fd.append('recipient_id', state.otherId);
+        fd.append('recipient_id', recipientId);
         fd.append('body', body);
         if (replyToId) fd.append('reply_to_id', replyToId);
-        for (var i = 0; i < files.length; i++) fd.append('files', files[i]);
-        send = API.upload('/messages', fd);
+        ready.forEach(function (file) { fd.append('files', file, file.name); });
+        return API.upload('/messages', fd, { onProgress: uploadStatus.progress });
+        });
       } else {
         var payload = { recipient_id: state.otherId, body: body };
         if (replyToId) payload.reply_to_id = replyToId;
@@ -519,14 +618,22 @@
       }
       send.then(function () {
         input.value = '';
-        fileInput.value = '';
+        saveDraft();
+        growInput();
+        selectedFiles = [];
+        renderFiles();
         state.replyTo = null;
         renderReplyStrip();
         if (!(window.ChatWS && ChatWS.connected)) reloadThread();
       }).catch(function (e) {
-        mToast(e.message || 'Failed', 'err');
+        mToast(e.offline ? 'Offline — message not sent. Your text stays as a draft; reconnect and tap Send.' : (e.message || 'Failed'), 'err');
       }).finally(function () {
+        uploadStatus.stop();
+        input.disabled = false;
+        filePreview.querySelectorAll('button').forEach(function (button) { button.disabled = false; });
         sendBtn.disabled = false;
+        attachBtn.disabled = false;
+        sendBtn.setAttribute('aria-label', 'Send message');
       });
     }
   }

@@ -140,7 +140,7 @@ function renderNodes(nodes, ctx) {
     else if (n.t === 'var') {
       if (n.v[0] === '=') { out += escapeDocHtml(evalInlineFormula(n.v.slice(1), ctx)); continue; }
       const v = resolvePath(ctx, n.v);
-      out += v === undefined || v === null ? '' : escapeDocHtml(v);
+      out += v === undefined || v === null ? '' : escapeDocHtml(typeof v === 'boolean' ? (v ? 'Yes' : 'No') : v);
     } else if (n.t === 'if') {
       if (isTruthy(resolvePath(ctx, n.v))) out += renderNodes(n.children, ctx);
     } else if (n.t === 'section') {

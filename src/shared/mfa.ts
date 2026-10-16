@@ -1,44 +1,151 @@
-/** TOTP via otplib, encrypted tenant-local secrets, one-use recovery codes and replay prevention. */
+/**
+ * Two-step sign-in (OWASP ASVS 5.0 §6.3): after the password, a 6-digit code from an
+ * authenticator app (shared/totp.ts) or a one-time recovery code.
+ *
+ *  - Anyone can turn it on for their own account (Account → Two-step sign-in).
+ *  - The workspace setting `security_policy.require_mfa_privileged` makes it compulsory for
+ *    privileged accounts (admin role, or users / payroll / accounting management): until they
+ *    set it up, their session can only reach the set-up screens (shared/auth.ts requireAuth).
+ *    Only someone who already uses it may switch the requirement on, so nobody locks the
+ *    workspace out.
+ *  - An admin can reset it for someone who lost their phone (users.routes.ts).
+ *  - Installed PCs (DEPLOY_MODE=node — on-site, on the office network) sign in with the
+ *    password alone: the secrets are encrypted with the cloud's key and never sync to them.
+ */
 import crypto from 'node:crypto';
-import { generateSecret, generateURI, verifySync } from 'otplib';
-import { queryOne, run, tenantStore } from './db';
+import { queryOne, queryAll, run, getSetting, setSetting } from './db';
 import { encryptSecret, decryptSecret } from './secrets';
-const hash = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
-interface MfaRow { user_id: number; secret: string | null; pending_secret: string | null; pending_until: number | null; pending_session: string | null; last_step: number | null; recovery_hashes: string }
-export function mfaState(id: number) { return queryOne<MfaRow>('SELECT * FROM user_mfa WHERE user_id = ?', id); }
-export function mfaEnabled(id: number): boolean { return !!mfaState(id)?.secret; }
-export function startMfa(id: number, username: string, session: string) {
-  if (mfaEnabled(id)) throw Object.assign(new Error('Disable existing MFA before replacing it.'), { status: 409 });
-  const secret = generateSecret();
-  run(`INSERT INTO user_mfa (user_id, pending_secret, pending_until, pending_session) VALUES (?, ?, ?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET pending_secret=excluded.pending_secret, pending_until=excluded.pending_until, pending_session=excluded.pending_session`,
-    id, encryptSecret(secret), Date.now() + 600_000, hash(session));
-  return { secret, uri: generateURI({ issuer: 'Verdesakay', label: `${tenantStore.getStore()?.slug || 'default'}:${username}`, secret }) };
+import { newTotpSecret, verifyTotp, otpauthUrl } from './totp';
+
+const CHALLENGE_MINUTES = 5;
+const CHALLENGE_ATTEMPTS = 5;
+const RECOVERY_CODES = 10;
+const PRIVILEGED_PERMISSIONS = ['users.manage', 'payroll.manage', 'accounting.manage'];
+
+const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
+
+export interface SecurityPolicy { require_mfa_privileged: boolean }
+
+/** Two-step sign-in runs on the cloud (and self-hosted servers), not on installed PCs. */
+export function mfaApplies(): boolean {
+  return process.env.DEPLOY_MODE !== 'node';
 }
-export function finishMfa(id: number, session: string, code: string): string[] | null {
-  const row = mfaState(id);
-  if (!row?.pending_secret || row.secret || !row.pending_until || row.pending_until < Date.now() || row.pending_session !== hash(session)) return null;
-  if (!/^\d{6}$/.test(code)) return null;
-  const result = verifySync({ secret: decryptSecret(row.pending_secret), token: code, epochTolerance: 30 });
-  if (!result.valid || !('timeStep' in result)) return null;
-  const codes = Array.from({ length: 8 }, () => crypto.randomBytes(12).toString('hex'));
-  const changed = run(`UPDATE user_mfa SET secret=pending_secret, pending_secret=NULL, pending_until=NULL, pending_session=NULL, last_step=?, recovery_hashes=? WHERE user_id=? AND secret IS NULL AND pending_secret=?`,
-    result.timeStep, JSON.stringify(codes.map(hash)), id, row.pending_secret).changes;
-  return changed ? codes : null;
+
+export function securityPolicy(): SecurityPolicy {
+  return { require_mfa_privileged: false, ...(getSetting<Partial<SecurityPolicy>>('security_policy') || {}) };
 }
-export function verifyMfa(id: number, code: string): boolean {
-  const row = mfaState(id);
-  if (!row?.secret) return false;
-  if (/^[a-f0-9]{24}$/i.test(code)) {
-    const hashes: string[] = JSON.parse(row.recovery_hashes);
-    const wanted = hash(code.toLowerCase());
-    if (!hashes.includes(wanted)) return false;
-    return !!run('UPDATE user_mfa SET recovery_hashes=? WHERE user_id=? AND recovery_hashes=?', JSON.stringify(hashes.filter(h => h !== wanted)), id, row.recovery_hashes).changes;
+
+export function setSecurityPolicy(policy: SecurityPolicy): void {
+  setSetting('security_policy', policy);
+}
+
+export function isPrivileged(user: { role: string; permissions: string[] }): boolean {
+  return user.role === 'admin' || user.permissions.some((p) => PRIVILEGED_PERMISSIONS.includes(p));
+}
+
+export function mfaEnabled(userId: number): boolean {
+  return !!queryOne<{ x: number }>('SELECT 1 AS x FROM user_mfa WHERE user_id = ? AND enabled_at IS NOT NULL', userId);
+}
+
+/** True when the workspace requires two-step sign-in for this account and it isn't set up yet. */
+export function mfaSetupRequired(user: { id: number; role: string; permissions: string[] }): boolean {
+  return mfaApplies() && securityPolicy().require_mfa_privileged && isPrivileged(user) && !mfaEnabled(user.id);
+}
+
+export function recoveryCodesLeft(userId: number): number {
+  return queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM user_mfa_recovery WHERE user_id = ? AND used_at IS NULL', userId)?.n ?? 0;
+}
+
+/** Start (or restart) setting up: a fresh secret, not active until confirmed with a code. */
+export function startMfaSetup(userId: number, accountLabel: string, sessionToken: string): { secret: string; otpauth_url: string } {
+  if (mfaEnabled(userId)) throw Object.assign(new Error('Two-step sign-in is already on. Turn it off first to move it to a new phone.'), { status: 409 });
+  const secret = newTotpSecret();
+  run(`INSERT INTO user_mfa (user_id, secret, enabled_at, last_step) VALUES (?, ?, NULL, 0)
+       ON CONFLICT(user_id) DO UPDATE SET secret = excluded.secret, enabled_at = NULL, last_step = 0`,
+    userId, encryptSecret(secret));
+  run("INSERT INTO mfa_enrollments (user_id, session_hash, expires_at, attempts) VALUES (?, ?, datetime('now', '+10 minutes'), 0) ON CONFLICT(user_id) DO UPDATE SET session_hash=excluded.session_hash, expires_at=excluded.expires_at, attempts=0", userId, sha256(sessionToken));
+  return { secret, otpauth_url: otpauthUrl('Otom', accountLabel, secret) };
+}
+
+function newRecoveryCodes(userId: number): string[] {
+  run('DELETE FROM user_mfa_recovery WHERE user_id = ?', userId);
+  const codes: string[] = [];
+  for (let i = 0; i < RECOVERY_CODES; i++) {
+    const raw = crypto.randomBytes(5).toString('hex'); // 10 hex characters
+    const code = `${raw.slice(0, 5)}-${raw.slice(5)}`;
+    codes.push(code);
+    run('INSERT INTO user_mfa_recovery (user_id, code_hash) VALUES (?, ?)', userId, sha256(code));
   }
-  if (!/^\d{6}$/.test(code)) return false;
-  try {
-    const result = verifySync({ secret: decryptSecret(row.secret), token: code, epochTolerance: 30, ...(row.last_step == null ? {} : { afterTimeStep: row.last_step }) });
-    if (!result.valid || !('timeStep' in result)) return false;
-    return !!run('UPDATE user_mfa SET last_step=? WHERE user_id=? AND (last_step IS NULL OR last_step < ?)', result.timeStep, id, result.timeStep).changes;
-  } catch { return false; }
+  return codes;
+}
+
+/** Finish setting up with a code from the app. Returns the recovery codes (shown once), or null. */
+export function enableMfa(userId: number, code: string, sessionToken: string): string[] | null {
+  const enrollment = queryOne<{ attempts: number }>("SELECT attempts FROM mfa_enrollments WHERE user_id = ? AND session_hash = ? AND expires_at > datetime('now') AND attempts < 5", userId, sha256(sessionToken));
+  if (!enrollment) return null;
+  run('UPDATE mfa_enrollments SET attempts = attempts + 1 WHERE user_id = ?', userId);
+  const row = queryOne<{ secret: string; enabled_at: string | null }>('SELECT secret, enabled_at FROM user_mfa WHERE user_id = ?', userId);
+  if (!row || row.enabled_at) return null;
+  const step = verifyTotp(decryptSecret(row.secret), code);
+  if (step === null) return null;
+  run("UPDATE user_mfa SET enabled_at = datetime('now'), last_step = ? WHERE user_id = ?", step, userId);
+  return newRecoveryCodes(userId);
+}
+
+/** Check a sign-in code: the app's current code (each usable once) or an unused recovery code. */
+export function checkMfaCode(userId: number, code: string): boolean {
+  const row = queryOne<{ secret: string; last_step: number }>('SELECT secret, last_step FROM user_mfa WHERE user_id = ? AND enabled_at IS NOT NULL', userId);
+  if (!row) return false;
+  const typed = String(code || '').trim();
+  const step = verifyTotp(decryptSecret(row.secret), typed, row.last_step);
+  if (step !== null) {
+    // Claim the step atomically: two requests with the same code can't both pass.
+    return Number(run('UPDATE user_mfa SET last_step = ? WHERE user_id = ? AND last_step < ?', step, userId, step).changes) === 1;
+  }
+  const normalized = typed.toLowerCase().replace(/\s/g, '');
+  const withDash = /^[0-9a-f]{10}$/.test(normalized) ? `${normalized.slice(0, 5)}-${normalized.slice(5)}` : normalized;
+  return Number(run("UPDATE user_mfa_recovery SET used_at = datetime('now') WHERE user_id = ? AND code_hash = ? AND used_at IS NULL",
+    userId, sha256(withDash)).changes) === 1;
+}
+
+export function regenerateRecoveryCodes(userId: number): string[] {
+  return newRecoveryCodes(userId);
+}
+
+/** Turn it off (the person themselves, or an admin reset). */
+export function disableMfa(userId: number): void {
+  run('DELETE FROM mfa_enrollments WHERE user_id = ?', userId);
+  run('DELETE FROM user_mfa WHERE user_id = ?', userId);
+  run('DELETE FROM user_mfa_recovery WHERE user_id = ?', userId);
+}
+
+/** After a correct password for an account with two-step on: a short-lived challenge token. */
+export function createMfaChallenge(userId: number, shared: boolean): string {
+  run("DELETE FROM mfa_challenges WHERE expires_at < datetime('now')");
+  const token = crypto.randomBytes(32).toString('hex');
+  run(`INSERT INTO mfa_challenges (token_hash, user_id, shared, expires_at) VALUES (?, ?, ?, datetime('now', '+${CHALLENGE_MINUTES} minutes'))`,
+    sha256(token), userId, shared ? 1 : 0);
+  return token;
+}
+
+/** Complete a challenge with a code. Each challenge allows a few attempts, then a new sign-in. */
+export function completeMfaChallenge(token: string, code: string): { userId: number; shared: boolean } | { error: string } {
+  const hash = sha256(String(token || ''));
+  const row = queryOne<{ user_id: number; shared: number; attempts: number }>(
+    "SELECT user_id, shared, attempts FROM mfa_challenges WHERE token_hash = ? AND expires_at >= datetime('now')", hash);
+  if (!row || row.attempts >= CHALLENGE_ATTEMPTS) {
+    run('DELETE FROM mfa_challenges WHERE token_hash = ?', hash);
+    return { error: 'This sign-in has expired. Enter your password again.' };
+  }
+  if (!checkMfaCode(row.user_id, code)) {
+    run('UPDATE mfa_challenges SET attempts = attempts + 1 WHERE token_hash = ?', hash);
+    return { error: 'That code is not right. Check your authenticator app and try again.' };
+  }
+  run('DELETE FROM mfa_challenges WHERE token_hash = ?', hash);
+  return { userId: row.user_id, shared: row.shared === 1 };
+}
+
+/** Accounts in this workspace that have two-step sign-in on (for the admin user list). */
+export function mfaUserIds(): Set<number> {
+  return new Set(queryAll<{ user_id: number }>('SELECT user_id FROM user_mfa WHERE enabled_at IS NOT NULL').map((r) => r.user_id));
 }

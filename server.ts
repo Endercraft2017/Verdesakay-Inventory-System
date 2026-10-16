@@ -13,13 +13,17 @@ import http from 'node:http';
 import https from 'node:https';
 import { spawnSync } from 'node:child_process';
 import { init, cleanupSessions, getDb, DB_PATH, withTenant } from './src/shared/db';
+import { snapshotTenantUsage } from './src/platform/owner-analytics';
 import { retiredDefaultTenant, listTenants } from './src/platform/platform';
 import { createApp, BEHIND_PROXY } from './src/app';
 import { sendDueTaskReminders } from './src/shared/push';
 import { cleanupPlatformSessions } from './src/platform/platform-users';
 import { attachWebSocket } from './src/shared/ws';
-import { runDailyBackups } from './src/platform/backups';
+import { runDailyBackups, runHourlyBackups } from './src/platform/backups';
 import { pushOffsite } from './src/platform/offsite';
+import { backupHealthTick } from './src/platform/backup-health';
+import { startFileStore } from './src/shared/file-store';
+import { offloadAllDatabaseCopies } from './src/platform/upload-offload';
 import { DEPLOY_MODE, startSyncLoop, syncConfigOf } from './src/sync';
 import { roleChange } from './src/sync/failover';
 import { startSiteElection } from './src/sync/site-election';
@@ -54,6 +58,14 @@ const housekeeping = () => {
   for (const slug of backgroundTenants()) withTenant(slug, cleanupSessions);
   cleanupPlatformSessions();
 };
+const usageSnapshots = () => {
+  if (DEPLOY_MODE !== 'cloud') return;
+  for (const t of listTenants().filter(t => t.status !== 'purged')) {
+    try { snapshotTenantUsage(t.slug); } catch (e) { console.error('[analytics] snapshot failed:', t.slug, (e as Error).message); }
+  }
+};
+usageSnapshots();
+setInterval(usageSnapshots, 60 * 60 * 1000).unref();
 housekeeping(); // sweep stale sessions / old audit-log rows once at boot, then hourly
 setInterval(housekeeping, 60 * 60 * 1000).unref(); // hourly
 // Push reminders are an outside side effect: only the cloud sends them (OFFLINE-FIRST §7.8).
@@ -68,15 +80,20 @@ if (DEPLOY_MODE === 'node') {
   // Sites with 3+ voting PCs elect a new host by themselves when theirs is lost (§31).
   startSiteElection('default');
 }
-// Daily DB snapshots: at boot, then an hourly check that takes today's once the date rolls
-// over (a no-op for any DB that already has one). Never let a backup error crash the server.
+// DB snapshots: at boot, then hourly — today's daily once the date rolls over (a no-op for
+// any DB that already has one) and this hour's snapshot of every DB that changed since the
+// last one. Never let a backup error crash the server.
 const dailyBackup = () => {
   try { runDailyBackups(); } catch (e) { console.error(`[backup] daily run failed: ${(e as Error).message}`); }
-  // Then copy anything new (or previously failed) to the off-site buckets, if configured.
-  void pushOffsite();
+  try { runHourlyBackups(); } catch (e) { console.error(`[backup] hourly run failed: ${(e as Error).message}`); }
+  // Then copy anything new (or previously failed) to the off-site buckets, if configured, and
+  // check the result: restore drill when due, alert on failures (src/platform/backup-health.ts).
+  void pushOffsite().catch(() => [] as unknown[]).then(() => backupHealthTick());
 };
 dailyBackup();
 setInterval(dailyBackup, 60 * 60 * 1000).unref();
+// With a bucket configured (FILES_S3_*), uploads live there and the disk is a cache.
+startFileStore(offloadAllDatabaseCopies);
 
 const app = createApp();
 const PORT = Number(process.env.PORT) || 3000;
@@ -110,7 +127,7 @@ function loadOrCreateCert(): { key: Buffer; cert: Buffer } | null {
         [
           'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '3650',
           '-keyout', KEY_FILE, '-out', CERT_FILE,
-          '-subj', '/CN=Verdesakay Office System',
+          '-subj', '/CN=Otom',
           '-addext', `subjectAltName=${sans.join(',')}`,
         ],
         { stdio: 'ignore' }
@@ -134,7 +151,7 @@ function loadOrCreateCert(): { key: Buffer; cert: Buffer } | null {
 }
 
 function banner(scheme: string): void {
-  console.log(`\nVerdesakay Office System is running (${scheme.toUpperCase()}):`);
+  console.log(`\nOtom is running (${scheme.toUpperCase()}):`);
   console.log(`   Local:   ${scheme}://localhost:${PORT}`);
   for (const ip of lanIps()) {
     console.log(`   Network: ${scheme}://${ip}:${PORT}  (for other office devices)`);

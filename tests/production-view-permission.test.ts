@@ -34,6 +34,8 @@ describe('production.view', () => {
     // The permission check runs before the product lookup, so no product is needed.
     expect((await ctx.api.get('/api/finished-products/999999/cost').set(auth(stockOnly))).status).toBe(403);
     expect((await ctx.api.get('/api/finished-products/999999/cost').set(auth(prodOnly))).status).not.toBe(403);
+    // A sales/stock reader may request the price suggestion without BOM cost access.
+    expect((await ctx.api.get('/api/finished-products/999999/price-suggestion').set(auth(stockOnly))).status).toBe(404);
   });
 
   it('splits the dashboards the same way', async () => {

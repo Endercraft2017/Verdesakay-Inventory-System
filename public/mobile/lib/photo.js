@@ -9,6 +9,12 @@
                                      `room` = slots left; a rejection skips that pick.
                                      accept defaults to 'image/*' */
 (function () {
+  function preparePhoto(file) {
+    return ImageCompress.maybeCompress(file).then(function (prepared) {
+      if (prepared.size > 8 * 1024 * 1024) throw new Error('Photo is still larger than 8 MB. Take a smaller photo.');
+      return prepared;
+    });
+  }
   function pickFile() {
     return new Promise(function (resolve, reject) {
       var input = document.createElement('input');
@@ -21,8 +27,7 @@
         var file = input.files && input.files[0];
         input.remove();
         if (!file) { reject(new Error('cancelled')); return; }
-        if (file.size > 8 * 1024 * 1024) { mToast('Photo is larger than 8 MB', 'err'); reject(new Error('too big')); return; }
-        resolve(file);
+        preparePhoto(file).then(resolve).catch(function (err) { mToast(err.message, 'err'); reject(err); });
       };
       input.click();
     });
@@ -44,13 +49,13 @@
   }
 
   /** Upload an already-obtained Blob/File (e.g. a signature canvas) as an attachment. */
-  function attachBlob(kind, refId, blob, filename, caption) {
+  function attachBlob(kind, refId, blob, filename, caption, opts) {
     var fd = new FormData();
     fd.append('image', blob, filename || 'upload.png');
     fd.append('kind', kind);
     fd.append('ref_id', String(refId));
     if (caption) fd.append('caption', caption);
-    return API.upload('/attachments', fd)
+    return API.upload('/attachments', fd, opts)
       .catch(function (e) { mToast(e.message || 'Upload failed', 'err'); throw e; });
   }
 
@@ -140,16 +145,19 @@
           if ((input.files || []).length > picked.length) mToast('Up to ' + max + ' photos', 'err');
           add.disabled = true;
           add.querySelector('span').textContent = 'Preparing…';
+          if (opts.onBusy) opts.onBusy(true);
           picked.reduce(function (p, f) {
             return p.then(function () {
               var room = max - files.length;
               if (room <= 0) return;
-              var prep = opts.prepare ? opts.prepare(f, files.length, room) : Promise.resolve(f);
+              // Custom preparation (e.g. anonymous metadata stripping) keeps its
+              // stricter contract. Ordinary operational photos share compression.
+              var prep = opts.prepare ? opts.prepare(f, files.length, room) : preparePhoto(f);
               return prep.then(function (out) {
                 files = files.concat(out).slice(0, max);
               }, function (e) { mToast(e.message || 'Photo skipped', 'err'); });
             });
-          }, Promise.resolve()).then(function () { render(); if (opts.onChange) opts.onChange(files); });
+          }, Promise.resolve()).then(function () { render(); if (opts.onChange) opts.onChange(files); if (opts.onBusy) opts.onBusy(false); });
         };
         input.click();
       };
@@ -161,5 +169,5 @@
     return strip;
   }
 
-  window.mPhoto = { capture: capture, attach: attach, attachBlob: attachBlob, thumbs: thumbs, view: view, pickFile: pickFile, picker: picker };
+  window.mPhoto = { capture: capture, attach: attach, attachBlob: attachBlob, thumbs: thumbs, view: view, pickFile: pickFile, picker: picker, preparePhoto: preparePhoto };
 })();

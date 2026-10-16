@@ -75,6 +75,9 @@ App.register('hr-daily-report', async (view, filter) => {
       if (!silent) bodyEl.innerHTML = `<div class="empty">${UI.esc(e.message)}</div>`;
       return;
     }
+    // A walkthrough can navigate again while this request is pending.
+    // The shared #view may now belong to another screen.
+    if (!view.contains(bodyEl)) return;
     state.data = data;
     draw();
   }
@@ -147,7 +150,7 @@ App.register('hr-daily-report', async (view, filter) => {
       cancelText: 'Close',
       confirmText: null,
       bodyHTML: list.length
-        ? groupedTableHTML(list)
+        ? `<div class="hr-table-scroll">${groupedTableHTML(list)}</div>`
         : UI.emptyState({ icon: 'users', title: `Nobody is ${meta.label.toLowerCase()}` }),
     });
   }

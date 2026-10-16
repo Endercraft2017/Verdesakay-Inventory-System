@@ -10,6 +10,13 @@
  * With a single tenant (the default), everything behaves exactly as before.
  */
 import path from 'node:path';
+import { createRequire } from 'node:module';
+const {field:printFormField}=createRequire(import.meta.url)('../../public/js/lib/form-print.js') as {field:(field:{key:string;label:string;type?:string;source?:string;format?:string;currency?:string},classes:{row:string;label:string;value:string})=>string};
+import { createDocumentDefaultsSchema, initializeDocumentDefaults } from './document-defaults';
+import { createFormTemplateSchema } from './form-template-schema';
+import { createFormHistorySchema } from './form-history-schema';
+import { configureFormHistoryConnection } from './form-history-context';
+import { createStudioSchema } from './doc-studio-schema';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -17,7 +24,7 @@ import { DatabaseSync } from 'node:sqlite';
 import bcrypt from 'bcryptjs';
 import { SSS_2026, PHILHEALTH_2026, PAGIBIG_2026, RWT_2026 } from '../modules/payroll/ph-statutory';
 import { DEFAULT_COA } from '../modules/accounting/ledger';
-import { preMigrationSnapshot } from './backup';
+import { preMigrationSnapshot, backupDir, mirrorDir } from './backup';
 import { BUILTIN_ROLES, ADMIN_ROLE, roleDefaults } from './permissions';
 import { syncHooks } from './sync-context';
 
@@ -52,6 +59,8 @@ function openConnection(slug: string): DatabaseSync {
   const dbFile = connectionPath(slug);
   fs.mkdirSync(path.dirname(dbFile), { recursive: true });
   const conn = new DatabaseSync(dbFile);
+  // Persisted history triggers can run during migration, before history schema setup.
+  configureFormHistoryConnection(conn);
   conn.exec('PRAGMA journal_mode = WAL;');
   conn.exec('PRAGMA foreign_keys = ON;');
   return conn;
@@ -60,7 +69,30 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 61; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+// 83: bind sale-unit and batch allocations to a specific commercial order line.
+// 82: per-form Inventory entry grants and access revision.
+// 81: courier booking and handoff metadata on existing delivery records.
+// 80: connected forms, sales draft links and sync-safe template history IDs.
+// 79: preserve exact semi-built batch identity when a bulk package enters finishing.
+// 78: trace semi-built packages finished into fully built stock without BOM reissue,
+//     and preserve each serialized unit's received cost for that conversion.
+// 77: exact batch/location stock, sales allocations, verified counts and return provenance.
+// 76: form versions/revisions, archive state, deduction audit and personal views.
+// 75: track fully built and semi-built stock separately per item/location and tag job orders.
+// 74: keep a commercial CKD line with a frozen physical-component manifest.
+// 73: remember an item's preferred storage location even when it has no stock.
+// 72: optional five-level inventory location hierarchy.
+// 71: link job-order component-shortage purchase drafts so retries and partial receipts
+//     create only remaining procurement demand.
+// 70: bind JSON idempotency keys to the original request payload.
+// 69: freeze job-order QC/QA checklists when the parts kit is released.
+// 68: rejected-return disposition and reinspection.
+// 67: slip-linked sales returns and the shipped unit-cost snapshot.
+// 66: recoverable file bytes for all tenant upload modules.
+// 65: durable message attachment bytes.
+// 64: checklist notes and linked personal scheduler tasks.
+// 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
+export const SCHEMA_VERSION = 83; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -151,6 +183,7 @@ export const SCHEMA_VERSION = 61; // 20: employees.late_exempt; 21: attendance_r
 // (field staff may punch from anywhere, without the QR) and time_punches.lat / lng / accuracy_m /
 // distance_m / geo_site (where each phone punch came from, for HR review). The policy itself is
 // the clock_geofence setting; off by default, so existing installs punch exactly as before.
+// 48: durable document drafts/versions, shared company library, comments, working rooms and presence.
 // 47: kiosk_devices -- office PCs an HR manager approved to run the time-in kiosk. With the
 // kiosk lock on (default when internet-facing), the kiosk endpoints refuse any other browser.
 // 48: sale-order releasing -- orders.warehouse_accepted_by / warehouse_accepted_at (the warehouse
@@ -204,11 +237,11 @@ export const SCHEMA_VERSION = 61; // 20: employees.late_exempt; 21: attendance_r
 // 61: data, no columns -- purchasing split from orders.*: orders.view grants purchasing.view and
 //     orders.create / orders.edit grant purchasing.manage, once
 
+// 62: users temporary_password_expires_at / password_change_required for owner recovery.
+
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
-  if (slug !== DEFAULT_TENANT && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(slug)) {
-    throw new Error('Invalid workspace identifier');
-  }
+  if (slug !== DEFAULT_TENANT && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(slug)) throw new Error('Invalid workspace identifier');
   const existing = registry.get(slug);
   if (existing) return existing;
   const conn = openConnection(slug);
@@ -235,8 +268,31 @@ export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
       migrate();
       setSetting('schema_version', SCHEMA_VERSION);
     }
+    hashLegacySessionTokens(conn);
+    createStudioSchema(conn);
+    createFormTemplateSchema(conn);
+    createFormHistorySchema(conn);
+    createDocumentDefaultsSchema(conn);
     ensureUploadDir();
+    const previousForms=new Set((conn.prepare('SELECT id FROM form_definitions').all() as Array<{id:number}>).map(f=>f.id));
     seed();
+    initializeDocumentDefaults(conn);
+    if(!getSetting('payroll_print_grid_initialized')){conn.exec("UPDATE doc_templates SET copies_per_record=2,records_per_page=2 WHERE name='HR Payroll Slip' AND copies_per_record=1 AND records_per_page=1 AND tile_continuous=0 AND repeat_count=1");setSetting('payroll_print_grid_initialized',true);}
+    const linksInitialized=!!getSetting('form_template_links_initialized');
+    const newForms=(conn.prepare('SELECT id FROM form_definitions').all() as Array<{id:number}>).some(f=>!previousForms.has(f.id));
+    if (!linksInitialized || newForms) {
+      const slip = conn.prepare("SELECT id FROM doc_templates WHERE name='HR Payroll Slip' ORDER BY id LIMIT 1").get() as {id:number}|undefined;
+      const payroll=conn.prepare("SELECT id FROM form_definitions WHERE slug='hr_payroll' AND template_id IS NULL").get() as {id:number}|undefined;
+      if (slip && payroll && (!linksInitialized||!previousForms.has(payroll.id)))conn.prepare('UPDATE form_definitions SET template_id=? WHERE id=?').run(slip.id,payroll.id);
+      const forms=conn.prepare('SELECT id,name,fields FROM form_definitions WHERE template_id IS NULL').all() as Array<{id:number;name:string;fields:string}>;
+      for(const form of forms){
+        if(linksInitialized&&previousForms.has(form.id))continue;
+        const tpl=conn.prepare("INSERT INTO doc_templates(name,type,body) VALUES(?,'generic',?)").run(form.name+' Template',memoTemplateBody(form.name,JSON.parse(form.fields)));
+        conn.prepare('UPDATE form_definitions SET template_id=? WHERE id=?').run(tpl.lastInsertRowid,form.id);
+      }
+      conn.exec('INSERT OR IGNORE INTO form_template_links SELECT id,template_id FROM form_definitions WHERE template_id IS NOT NULL');
+      setSetting('form_template_links_initialized',true);
+    }
   });
   return conn;
 }
@@ -248,6 +304,10 @@ export function forceMigrate(slug: string): void {
     createSchema();
     migrate();
     setSetting('schema_version', SCHEMA_VERSION);
+    createStudioSchema(activeDb());
+    createFormTemplateSchema(activeDb());
+    createFormHistorySchema(activeDb());
+    createDocumentDefaultsSchema(activeDb());
   });
 }
 
@@ -313,31 +373,6 @@ export function init(): void {
 
 function createSchema(): void {
   db.exec(`
-    CREATE TABLE IF NOT EXISTS user_mfa (
-      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-      secret TEXT,
-      pending_secret TEXT,
-      pending_until INTEGER,
-      pending_session TEXT,
-      last_step INTEGER,
-      recovery_hashes TEXT NOT NULL DEFAULT '[]'
-    );
-    CREATE TABLE IF NOT EXISTS ai_tool_audit (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      request_id TEXT NOT NULL,
-      actor_id INTEGER NOT NULL,
-      tool TEXT NOT NULL,
-      phase TEXT NOT NULL CHECK (phase IN ('start','complete','failed')),
-      payload_sha256 TEXT NOT NULL,
-      success INTEGER CHECK (success IN (0,1)),
-      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_ai_tool_audit_request ON ai_tool_audit(request_id, id);
-    CREATE TRIGGER IF NOT EXISTS ai_tool_audit_no_update BEFORE UPDATE ON ai_tool_audit
-      BEGIN SELECT RAISE(ABORT, 'AI audit is append-only'); END;
-    CREATE TRIGGER IF NOT EXISTS ai_tool_audit_no_delete BEFORE DELETE ON ai_tool_audit
-      BEGIN SELECT RAISE(ABORT, 'AI audit is append-only'); END;
-
     CREATE TABLE IF NOT EXISTS departments (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       name         TEXT NOT NULL UNIQUE,
@@ -399,6 +434,7 @@ function createSchema(): void {
       path        TEXT NOT NULL,
       status_code INTEGER NOT NULL,
       response    TEXT NOT NULL,
+      request_hash TEXT,
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -510,6 +546,7 @@ function createSchema(): void {
     CREATE TABLE IF NOT EXISTS locations (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       name        TEXT NOT NULL,
+      parent_id   INTEGER REFERENCES locations(id) ON DELETE RESTRICT,
       type        TEXT NOT NULL DEFAULT 'warehouse',
       address     TEXT,
       notes       TEXT,
@@ -529,6 +566,7 @@ function createSchema(): void {
       unit          TEXT DEFAULT 'pcs',
       min_quantity  INTEGER NOT NULL DEFAULT 0,
       location      TEXT,
+      preferred_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       notes         TEXT,
       attributes    TEXT,
       image_path    TEXT,
@@ -589,6 +627,28 @@ function createSchema(): void {
     -- AI Assistant chat history: persists per user across sessions/reloads until they
     -- clear it (DELETE /api/ai/messages). steps is the tool-call trail for an assistant
     -- turn (JSON), kept so record/report links still work after a reload.
+    CREATE TABLE IF NOT EXISTS mfa_enrollments (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      session_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS ai_tool_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id TEXT NOT NULL,
+      actor_id INTEGER NOT NULL,
+      tool TEXT NOT NULL,
+      phase TEXT NOT NULL CHECK (phase IN ('start','complete','failed')),
+      payload_sha256 TEXT NOT NULL,
+      success INTEGER CHECK (success IN (0,1)),
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_tool_audit_request ON ai_tool_audit(request_id, id);
+    CREATE TRIGGER IF NOT EXISTS ai_tool_audit_no_update BEFORE UPDATE ON ai_tool_audit
+      BEGIN SELECT RAISE(ABORT, 'AI audit is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS ai_tool_audit_no_delete BEFORE DELETE ON ai_tool_audit
+      BEGIN SELECT RAISE(ABORT, 'AI audit is append-only'); END;
+
     CREATE TABLE IF NOT EXISTS ai_messages (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -598,6 +658,47 @@ function createSchema(): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_ai_messages_user ON ai_messages(user_id, id);
+
+    -- A data-changing AI tool call waiting for the person to confirm it (ai.routes.ts): the
+    -- assistant never changes data on its own, so text it reads can't make it act.
+    CREATE TABLE IF NOT EXISTS ai_pending_actions (
+      id          TEXT PRIMARY KEY,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      tool        TEXT NOT NULL,
+      args        TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','done','failed','cancelled')),
+      result      TEXT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      decided_at  TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_pending_actions_user ON ai_pending_actions(user_id, created_at);
+
+    -- Two-step sign-in (src/core/mfa.ts). secret: the authenticator-app secret, encrypted with
+    -- the server key (shared/secrets.ts); enabled_at NULL while being set up; last_step: the
+    -- last 30-second step accepted, so a code can't be used twice.
+    CREATE TABLE IF NOT EXISTS user_mfa (
+      user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      secret     TEXT NOT NULL,
+      enabled_at TEXT,
+      last_step  INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    -- One-time recovery codes (SHA-256 of each; shown to the person once).
+    CREATE TABLE IF NOT EXISTS user_mfa_recovery (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      code_hash TEXT NOT NULL,
+      used_at   TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_mfa_recovery_user ON user_mfa_recovery(user_id);
+    -- "Password accepted, now the code": a short-lived challenge from POST /auth/login.
+    CREATE TABLE IF NOT EXISTS mfa_challenges (
+      token_hash TEXT PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      shared     INTEGER NOT NULL DEFAULT 0,
+      attempts   INTEGER NOT NULL DEFAULT 0,
+      expires_at TEXT NOT NULL
+    );
 
     CREATE TABLE IF NOT EXISTS orders (
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -632,6 +733,14 @@ function createSchema(): void {
       sort        INTEGER NOT NULL DEFAULT 0
     );
 
+    -- Durable sales → procurement planning links; drafts are never stock or fulfilment.
+    CREATE TABLE IF NOT EXISTS sale_shortfall_purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      purchase_order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_shortfall_purchase_source ON sale_shortfall_purchases(source_order_id);
+
     -- Manufacturing job orders (Phase B). Consume a product's BOM to build N units.
     CREATE TABLE IF NOT EXISTS job_orders (
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -646,6 +755,8 @@ function createSchema(): void {
       source_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       output_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       qc_stages          INTEGER NOT NULL DEFAULT 0,
+      qc_checklist_qc_snapshot TEXT,
+      qc_checklist_qa_snapshot TEXT,
       team_id            INTEGER REFERENCES production_teams(id) ON DELETE SET NULL,
       planned_start      TEXT,
       due_date           TEXT,
@@ -665,6 +776,15 @@ function createSchema(): void {
       created_at         TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- Durable manufacturing → procurement planning links. A draft PO is pending supply,
+    -- never component stock; receipts at the job's source location close the shortage.
+    CREATE TABLE IF NOT EXISTS job_shortfall_purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_order_id INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+      purchase_order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_shortfall_purchase_job ON job_shortfall_purchases(job_order_id);
 
     CREATE TABLE IF NOT EXISTS job_order_components (
       id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -745,6 +865,44 @@ function createSchema(): void {
       quantity   REAL NOT NULL DEFAULT 1
     );
 
+    CREATE TABLE IF NOT EXISTS production_batch_stock (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL REFERENCES production_batches(id),
+      location_id INTEGER NOT NULL REFERENCES locations(id),
+      quantity REAL NOT NULL DEFAULT 0,
+      received REAL NOT NULL DEFAULT 0,
+      UNIQUE(batch_id,location_id)
+    );
+    CREATE TABLE IF NOT EXISTS production_batch_allocations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL REFERENCES production_batches(id),
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id),
+      location_id INTEGER NOT NULL REFERENCES locations(id),
+      quantity REAL NOT NULL CHECK(quantity > 0),
+      state TEXT NOT NULL CHECK(state IN ('reserved','shipped')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS production_batch_counts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL REFERENCES production_batches(id),
+      location_id INTEGER NOT NULL REFERENCES locations(id),
+      before_quantity REAL NOT NULL,
+      counted_quantity REAL NOT NULL,
+      reason TEXT NOT NULL,
+      counted_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS production_batch_return_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_id INTEGER NOT NULL UNIQUE REFERENCES sales_returns(id),
+      batch_id INTEGER NOT NULL REFERENCES production_batches(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_batch_stock_location ON production_batch_stock(location_id,batch_id);
+    CREATE INDEX IF NOT EXISTS idx_batch_allocations_stock ON production_batch_allocations(batch_id,location_id,state);
+    CREATE INDEX IF NOT EXISTS idx_batch_allocations_order ON production_batch_allocations(order_id,item_id,state);
+
     -- Phase C: one row per physical unit produced by a job order, plus its QA/QC log.
     -- status: pending | in_stock | failed | scrapped | sold | rework. order_id ties a
     -- sold / relocated unit to the sales order that consumed or moved it. disposition
@@ -758,6 +916,7 @@ function createSchema(): void {
       stage           INTEGER NOT NULL DEFAULT 0,
       location_id     INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       order_id        INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      order_item_id   INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
       batch_id        INTEGER REFERENCES production_batches(id) ON DELETE SET NULL,
       disposition     TEXT,
       remarks         TEXT,
@@ -855,6 +1014,13 @@ function createSchema(): void {
       quantity    INTEGER NOT NULL DEFAULT 0,
       UNIQUE(item_id, location_id)
     );
+    CREATE TABLE IF NOT EXISTS inventory_variant_stock (
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+      build_mode TEXT NOT NULL CHECK (build_mode IN ('assembled', 'semi_built')),
+      quantity REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (item_id, location_id, build_mode)
+    );
 
     -- A location's stock went below zero because an offline stock-out (a sync command,
     -- docs/OFFLINE-FIRST.md decision D1) was accepted beyond recorded stock: the goods
@@ -940,6 +1106,45 @@ function createSchema(): void {
       created_at   TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- Identified employee reports have a case lifecycle separate from personal messages and
+    -- from identity-free anonymous reports. Only reporter, selected recipient and assignee read.
+    CREATE TABLE IF NOT EXISTS identified_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      number TEXT UNIQUE,
+      reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      recipient_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      category TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      description TEXT NOT NULL,
+      incident_date TEXT,
+      incident_time TEXT,
+      location TEXT,
+      status TEXT NOT NULL DEFAULT 'new',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_identified_reports_reporter ON identified_reports(reporter_id, id);
+    CREATE INDEX IF NOT EXISTS idx_identified_reports_recipient ON identified_reports(recipient_id, status);
+    CREATE INDEX IF NOT EXISTS idx_identified_reports_assignee ON identified_reports(assignee_id, status);
+    CREATE TABLE IF NOT EXISTS identified_report_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id INTEGER NOT NULL REFERENCES identified_reports(id) ON DELETE CASCADE,
+      actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      kind TEXT NOT NULL,
+      body TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_identified_report_events_report ON identified_report_events(report_id, id);
+    CREATE TABLE IF NOT EXISTS identified_report_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id INTEGER NOT NULL REFERENCES identified_reports(id) ON DELETE CASCADE,
+      stored_name TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL
+    );
+
     -- Files/images/documents attached to a message. Counted against the sender's
     -- per-user storage cap (see MESSAGE_STORAGE_CAP in messages.routes.ts); freed
     -- automatically when the parent message is deleted (ON DELETE CASCADE).
@@ -950,9 +1155,19 @@ function createSchema(): void {
       original_name TEXT NOT NULL,
       mime_type     TEXT,
       size_bytes    INTEGER NOT NULL DEFAULT 0,
+      data          BLOB,
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id);
+
+    -- Recoverable bytes for files owned by the other tenant modules. The filename is
+    -- relative to this tenant's uploadDir; deleted files are removed from this table.
+    CREATE TABLE IF NOT EXISTS durable_uploads (
+      name       TEXT PRIMARY KEY,
+      data       BLOB NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      saved_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
 
     -- One emoji reaction per user per message (SCHEMA_VERSION 44). Re-reacting with the
     -- same emoji toggles it off; a different emoji replaces it (see UNIQUE below).
@@ -1001,6 +1216,18 @@ function createSchema(): void {
       created_at  TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT
     );
+
+    -- Every Mark Paid / Unmark Paid of a payslip (hr.routes.ts). A payslip with any row here was
+    -- paid at some point, so it is part of the payroll record and can no longer be deleted
+    -- (form-builder.routes.ts) — only corrected. No FK: the history must outlive the record.
+    CREATE TABLE IF NOT EXISTS payslip_paid_history (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      record_id  INTEGER NOT NULL,
+      action     TEXT NOT NULL CHECK (action IN ('paid','unpaid')),
+      by_user_id INTEGER,
+      at         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_payslip_paid_history_record ON payslip_paid_history(record_id);
 
     CREATE TABLE IF NOT EXISTS global_variables (
       key        TEXT PRIMARY KEY,
@@ -1525,6 +1752,9 @@ function createSchema(): void {
       contact_phone  TEXT,
       scheduled_date TEXT,
       assigned_to    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      delivery_mode  TEXT NOT NULL DEFAULT 'own' CHECK (delivery_mode IN ('own','courier')),
+      courier_name   TEXT,
+      tracking_number TEXT,
       status         TEXT NOT NULL DEFAULT 'pending'
                        CHECK (status IN ('pending','out_for_delivery','delivered','failed','cancelled')),
       notes          TEXT,
@@ -1816,6 +2046,21 @@ function createSchema(): void {
 
 /** Idempotent schema upgrades for databases created before a column existed. */
 function migrate(): void {
+  const formCols = new Set((db.prepare('PRAGMA table_info(form_definitions)').all() as {name:string}[]).map(c=>c.name));
+  for (const [name, type] of Object.entries({entry_access:"TEXT NOT NULL DEFAULT '{\"roles\":[],\"users\":[]}'",access_revision:'INTEGER NOT NULL DEFAULT 1',version:'INTEGER NOT NULL DEFAULT 1',updated_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',version_reason:'TEXT',archived_at:'TEXT',archived_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',archive_reason:'TEXT'})) {
+    if (!formCols.has(name)) db.exec(`ALTER TABLE form_definitions ADD COLUMN ${name} ${type}`);
+  }
+  const recordCols = new Set((db.prepare('PRAGMA table_info(form_records)').all() as {name:string}[]).map(c=>c.name));
+  if (!recordCols.has('definition_version')) db.exec('ALTER TABLE form_records ADD COLUMN definition_version INTEGER');
+  if (!recordCols.has('revision')) db.exec('ALTER TABLE form_records ADD COLUMN revision INTEGER NOT NULL DEFAULT 1');
+
+  // 73: item placement preference is separate from stock held at any one location.
+  const preferredLocCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
+  if (!preferredLocCols.some((c) => c.name === 'preferred_location_id')) db.exec('ALTER TABLE inventory_items ADD COLUMN preferred_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL');
+  // 72: optional location hierarchy; existing locations remain top-level.
+  const hierarchyCols = db.prepare('PRAGMA table_info(locations)').all() as { name: string }[];
+  if (!hierarchyCols.some((c) => c.name === 'parent_id')) db.exec('ALTER TABLE locations ADD COLUMN parent_id INTEGER REFERENCES locations(id) ON DELETE RESTRICT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_locations_parent ON locations(parent_id)');
   const itemCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
   if (!itemCols.some((c) => c.name === 'attributes')) {
     db.exec('ALTER TABLE inventory_items ADD COLUMN attributes TEXT');
@@ -1833,11 +2078,16 @@ function migrate(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_bom_product ON bom_components(product_item_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_bom_component ON bom_components(component_item_id)');
 
+  // v64: checklist notes and a durable, one-to-one scheduler link.
+  const noteCols = db.prepare('PRAGMA table_info(notes)').all() as { name: string }[];
+  if (!noteCols.some(c => c.name === 'checklist')) db.exec("ALTER TABLE notes ADD COLUMN checklist TEXT NOT NULL DEFAULT '[]'");
   // ---- Tasks: scheduling + reminders ----
   const taskCols = db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[];
   if (!taskCols.some((c) => c.name === 'notes')) db.exec('ALTER TABLE tasks ADD COLUMN notes TEXT');
   if (!taskCols.some((c) => c.name === 'remind_at')) db.exec('ALTER TABLE tasks ADD COLUMN remind_at TEXT');
   if (!taskCols.some((c) => c.name === 'remind_sent')) db.exec('ALTER TABLE tasks ADD COLUMN remind_sent INTEGER NOT NULL DEFAULT 0');
+  if (!taskCols.some(c => c.name === 'note_id')) db.exec('ALTER TABLE tasks ADD COLUMN note_id INTEGER REFERENCES notes(id) ON DELETE SET NULL');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_note ON tasks(note_id) WHERE note_id IS NOT NULL');
 
   // ---- Per-location stock (Phase 4) ----
   const txnCols = db.prepare('PRAGMA table_info(inventory_transactions)').all() as { name: string }[];
@@ -1983,6 +2233,9 @@ function migrate(): void {
 
   // (SCHEMA_VERSION 35) See the version-history comment above. Defaults (1 / 0) reproduce
   // every existing template's current output exactly — continuous mode is opt-in.
+  for (const column of ['grid_gap_x_mm','grid_gap_y_mm']) {
+    if (!tplCols.some(c => c.name === column)) db.exec(`ALTER TABLE doc_templates ADD COLUMN ${column} REAL NOT NULL DEFAULT 6`);
+  }
   if (!tplCols.some((c) => c.name === 'repeat_count')) {
     db.exec('ALTER TABLE doc_templates ADD COLUMN repeat_count INTEGER NOT NULL DEFAULT 1');
   }
@@ -2606,6 +2859,13 @@ function migrate(): void {
     db.exec('ALTER TABLE messages ADD COLUMN deleted_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
   }
 
+  // (SCHEMA_VERSION 65) Keep attachment bytes with the message so a replaced app
+  // filesystem cannot silently break photos that still appear in a conversation.
+  const attachmentCols = db.prepare('PRAGMA table_info(message_attachments)').all() as { name: string }[];
+  if (!attachmentCols.some((c) => c.name === 'data')) {
+    db.exec('ALTER TABLE message_attachments ADD COLUMN data BLOB');
+  }
+
   // (SCHEMA_VERSION 45) Production lead accepts a released job order's parts kit.
   const joAccCols = db.prepare('PRAGMA table_info(job_orders)').all() as { name: string }[];
   if (!joAccCols.some((c) => c.name === 'accepted_by')) {
@@ -2627,6 +2887,15 @@ function migrate(): void {
   const punchGeoCols = db.prepare('PRAGMA table_info(time_punches)').all() as { name: string }[];
   for (const [col, decl] of [['lat', 'REAL'], ['lng', 'REAL'], ['accuracy_m', 'REAL'], ['distance_m', 'REAL'], ['geo_site', 'TEXT']]) {
     if (!punchGeoCols.some((c) => c.name === col)) db.exec(`ALTER TABLE time_punches ADD COLUMN ${col} ${decl}`);
+  }
+
+  // (SCHEMA_VERSION 62) Temporary owner recovery passwords require replacement.
+  const recoveryUserCols = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+  if (!recoveryUserCols.some((c) => c.name === 'password_change_required')) {
+    db.exec('ALTER TABLE users ADD COLUMN password_change_required INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!recoveryUserCols.some((c) => c.name === 'temporary_password_expires_at')) {
+    db.exec('ALTER TABLE users ADD COLUMN temporary_password_expires_at TEXT');
   }
 
   // (SCHEMA_VERSION 47) Approved time-in kiosk devices (src/modules/hr/kiosk-devices.ts). Only a
@@ -2682,6 +2951,73 @@ function migrate(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_release_slip_items_slip ON release_slip_items(slip_id);
   `);
+
+  // v67: a return is a physical receiving/inspection record. Credit notes remain a
+  // separate accounting decision; neither a receipt nor a rejected item changes stock.
+  const slipItemCols = db.prepare('PRAGMA table_info(release_slip_items)').all() as { name: string }[];
+  if (!slipItemCols.some((c) => c.name === 'unit_cost')) db.exec('ALTER TABLE release_slip_items ADD COLUMN unit_cost REAL');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sales_returns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      number TEXT NOT NULL UNIQUE,
+      slip_id INTEGER NOT NULL REFERENCES release_slips(id) ON DELETE RESTRICT,
+      slip_item_id INTEGER NOT NULL REFERENCES release_slip_items(id) ON DELETE RESTRICT,
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE RESTRICT,
+      quantity REAL NOT NULL CHECK (quantity > 0),
+      unit_id INTEGER UNIQUE REFERENCES job_order_units(id) ON DELETE RESTRICT,
+      unit_cost REAL,
+      status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received','restocked','rejected')),
+      reason TEXT NOT NULL,
+      condition_note TEXT,
+      location_id INTEGER REFERENCES locations(id) ON DELETE RESTRICT,
+      credit_note_id INTEGER UNIQUE REFERENCES credit_notes(id) ON DELETE RESTRICT,
+      received_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      received_at TEXT NOT NULL DEFAULT (datetime('now')),
+      inspected_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      inspected_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_sales_returns_slip_item ON sales_returns(slip_item_id);
+    CREATE INDEX IF NOT EXISTS idx_sales_returns_slip ON sales_returns(slip_id);
+    CREATE TABLE IF NOT EXISTS sales_return_credit_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_id INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE RESTRICT,
+      credit_note_id INTEGER NOT NULL REFERENCES credit_notes(id) ON DELETE RESTRICT,
+      linked_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(return_id, credit_note_id)
+    );
+  `);
+
+  // v68: rejected customer goods stay outside sellable stock while they are repaired,
+  // salvaged, or disposed. This lifecycle is separate from the original job-order receipt.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sales_return_dispositions (
+      return_id INTEGER PRIMARY KEY REFERENCES sales_returns(id) ON DELETE RESTRICT,
+      state TEXT NOT NULL CHECK (state IN ('repair','awaiting_inspection','completed','salvaged','disposed')),
+      decision_note TEXT NOT NULL,
+      repair_note TEXT,
+      location_id INTEGER REFERENCES locations(id) ON DELETE RESTRICT,
+      decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      completed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS sales_return_disposition_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_id INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE RESTRICT,
+      action TEXT NOT NULL,
+      note TEXT NOT NULL,
+      actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_sales_return_disposition_events_return
+      ON sales_return_disposition_events(return_id, id);
+  `);
+  const repairReturnCols = db.prepare('PRAGMA table_info(repair_part_requests)').all() as { name: string }[];
+  if (!repairReturnCols.some((c) => c.name === 'sales_return_id')) {
+    db.exec('ALTER TABLE repair_part_requests ADD COLUMN sales_return_id INTEGER REFERENCES sales_returns(id) ON DELETE RESTRICT');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_repair_part_requests_sales_return ON repair_part_requests(sales_return_id)');
 
   // (SCHEMA_VERSION 49) Job-order approval before the warehouse releases parts.
   const joApvCols = db.prepare('PRAGMA table_info(job_orders)').all() as { name: string }[];
@@ -2918,6 +3254,132 @@ function migrate(): void {
   grantOnce('migrated_purchasing_split', [
     ['orders.view', 'purchasing.view'], ['orders.create', 'purchasing.manage'], ['orders.edit', 'purchasing.manage'],
   ]);
+
+  // (SCHEMA_VERSION 66) Preserve surviving older uploads before the next filesystem
+  // replacement. Only files still referenced by a record enter the durable store.
+  if ((getSetting<number>('schema_version') ?? 0) < 66) {
+    const slug = tenantStore.getStore()?.slug ?? DEFAULT_TENANT;
+    const tenantPart = slug === DEFAULT_TENANT ? '' : slug;
+    const roots = [backupDir(), mirrorDir()].filter((root): root is string => !!root);
+    const source = (name: string): string | null => {
+      if (!name || path.basename(name) !== name || name.startsWith('.')) return null;
+      const primary = path.join(uploadDir(), name);
+      if (fs.existsSync(primary)) return primary;
+      for (const root of roots) {
+        const candidate = path.join(root, 'uploads', tenantPart, name);
+        if (fs.existsSync(candidate)) return candidate;
+      }
+      return null;
+    };
+    const keep = db.prepare('INSERT OR IGNORE INTO durable_uploads (name, data, size_bytes) VALUES (?, ?, ?)');
+    for (const [table, column, prefix] of [
+      ['forms', 'stored_name', ''], ['employee_documents', 'stored_name', ''],
+      ['attachments', 'image_path', ''], ['inventory_items', 'image_path', ''],
+      ['bug_report_attachments', 'stored_name', ''], ['punch_photos', 'file_name', 'kiosk-punches/'],
+    ]) {
+      for (const row of db.prepare(`SELECT ${column} AS name FROM ${table} WHERE ${column} IS NOT NULL`).all() as Array<{ name: string }>) {
+        if (!row.name || path.basename(row.name) !== row.name || row.name.startsWith('.')) continue;
+        const fileName = `${prefix}${row.name}`;
+        const rootName = prefix ? row.name : fileName;
+        const file = prefix ? [path.join(uploadDir(), prefix, rootName), ...roots.map((root) => path.join(root, 'uploads', tenantPart, prefix, rootName))].find((p) => fs.existsSync(p)) : source(rootName);
+        if (file) { const bytes = fs.readFileSync(file); keep.run(fileName, bytes, bytes.length); }
+      }
+    }
+    for (const row of db.prepare('SELECT id, stored_name FROM message_attachments WHERE data IS NULL').all() as Array<{ id: number; stored_name: string }>) {
+      const file = source(row.stored_name);
+      if (file) db.prepare('UPDATE message_attachments SET data = ? WHERE id = ?').run(fs.readFileSync(file), row.id);
+    }
+    const aiDirs = [uploadDir(), ...roots.map((root) => path.join(root, 'uploads', tenantPart))];
+    for (const name of new Set(aiDirs.filter((dir) => fs.existsSync(dir)).flatMap((dir) => fs.readdirSync(dir)))) {
+      if (!/^ai-report-[A-Za-z0-9-]+\.(html|docx)$/.test(name)) continue;
+      const file = source(name);
+      if (file) { const bytes = fs.readFileSync(file); keep.run(name, bytes, bytes.length); }
+    }
+    // Pending offline commands can still reference blobs created before this upgrade.
+    const blobDirs = aiDirs.map((dir) => path.join(dir, '.sync-blobs'));
+    for (const name of new Set(blobDirs.filter((dir) => fs.existsSync(dir)).flatMap((dir) => fs.readdirSync(dir)))) {
+      if (!/^[0-9a-f]{64}$/.test(name)) continue;
+      const file = blobDirs.map((dir) => path.join(dir, name)).find((candidate) => fs.existsSync(candidate));
+      if (file) { const bytes = fs.readFileSync(file); keep.run(`.sync-blobs/${name}`, bytes, bytes.length); }
+    }
+  }
+  // (SCHEMA_VERSION 69) New releases snapshot the exact QC and QA requirements. Older
+  // released jobs have no reliable historical checklist version, so their null snapshots
+  // keep the previous live-resolution behavior until completed.
+  const joChecklistCols = db.prepare('PRAGMA table_info(job_orders)').all() as Array<{ name: string }>;
+  for (const col of ['qc_checklist_qc_snapshot', 'qc_checklist_qa_snapshot']) {
+    if (!joChecklistCols.some((c) => c.name === col)) db.exec(`ALTER TABLE job_orders ADD COLUMN ${col} TEXT`);
+  }
+  const idemCols = db.prepare('PRAGMA table_info(idempotency_keys)').all() as Array<{ name: string }>;
+  if (!idemCols.some((c) => c.name === 'request_hash')) db.exec('ALTER TABLE idempotency_keys ADD COLUMN request_hash TEXT');
+  // 74: one sale SKU can ship as a built unit or as its frozen CKD component list.
+  const saleLineCols = db.prepare('PRAGMA table_info(order_items)').all() as Array<{ name: string }>;
+  if (!saleLineCols.some((c) => c.name === 'fulfillment_mode'))
+    db.exec("ALTER TABLE order_items ADD COLUMN fulfillment_mode TEXT NOT NULL DEFAULT 'assembled'");
+  if (!saleLineCols.some((c) => c.name === 'parent_order_item_id'))
+    db.exec('ALTER TABLE order_items ADD COLUMN parent_order_item_id INTEGER REFERENCES order_items(id) ON DELETE CASCADE');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_order_items_parent ON order_items(parent_order_item_id)');
+  const saleUnitCols = db.prepare('PRAGMA table_info(job_order_units)').all() as Array<{ name: string }>;
+  if (!saleUnitCols.some((c) => c.name === 'order_item_id')) db.exec('ALTER TABLE job_order_units ADD COLUMN order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sale_unit_line ON job_order_units(order_item_id,status)');
+  db.exec(`UPDATE job_order_units AS u SET order_item_id = (
+    SELECT oi.id FROM order_items oi WHERE oi.order_id = u.order_id AND oi.item_id = u.product_item_id
+      AND oi.fulfillment_mode NOT IN ('ckd', 'ckd_component') LIMIT 1)
+    WHERE u.order_item_id IS NULL AND u.order_id IS NOT NULL AND u.status IN ('reserved', 'sold')
+      AND (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = u.order_id AND oi.item_id = u.product_item_id
+        AND oi.fulfillment_mode NOT IN ('ckd', 'ckd_component')) = 1`);
+  const saleBatchCols = db.prepare('PRAGMA table_info(production_batch_allocations)').all() as Array<{ name: string }>;
+  if (!saleBatchCols.some((c) => c.name === 'order_item_id')) db.exec('ALTER TABLE production_batch_allocations ADD COLUMN order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sale_batch_line ON production_batch_allocations(order_item_id,state)');
+  db.exec(`UPDATE production_batch_allocations AS a SET order_item_id = (
+    SELECT oi.id FROM order_items oi WHERE oi.order_id = a.order_id AND oi.item_id = a.item_id
+      AND oi.fulfillment_mode != 'ckd' LIMIT 1)
+    WHERE a.order_item_id IS NULL
+      AND (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = a.order_id AND oi.item_id = a.item_id
+        AND oi.fulfillment_mode != 'ckd') = 1`);
+  const deliveryCols = db.prepare('PRAGMA table_info(deliveries)').all() as Array<{ name: string }>;
+  if (!deliveryCols.some((c) => c.name === 'delivery_mode')) db.exec("ALTER TABLE deliveries ADD COLUMN delivery_mode TEXT NOT NULL DEFAULT 'own'");
+  if (!deliveryCols.some((c) => c.name === 'courier_name')) db.exec('ALTER TABLE deliveries ADD COLUMN courier_name TEXT');
+  if (!deliveryCols.some((c) => c.name === 'tracking_number')) db.exec('ALTER TABLE deliveries ADD COLUMN tracking_number TEXT');
+  // 75: keep fully and semi-built stock distinct while retaining one commercial SKU.
+  const buildCols = db.prepare('PRAGMA table_info(job_orders)').all() as Array<{ name: string }>;
+  if (!buildCols.some((c) => c.name === 'build_mode'))
+    db.exec("ALTER TABLE job_orders ADD COLUMN build_mode TEXT NOT NULL DEFAULT 'assembled'");
+  db.exec(`CREATE TABLE IF NOT EXISTS inventory_variant_stock (
+    item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+    location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+    build_mode TEXT NOT NULL CHECK (build_mode IN ('assembled', 'semi_built')),
+    quantity REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (item_id, location_id, build_mode))`);
+  if (!getSetting<boolean>('variant_stock_seeded')) {
+    db.exec(`INSERT OR IGNORE INTO inventory_variant_stock (item_id, location_id, build_mode, quantity)
+      SELECT item_id, location_id, 'assembled', quantity FROM inventory_stock`);
+    setSetting('variant_stock_seeded', true);
+  }
+  // A semi-built package contains the whole kit. Finishing it changes the build
+  // state of that physical unit; it must never issue the BOM components again.
+  db.exec(`CREATE TABLE IF NOT EXISTS semi_build_conversions (
+    job_order_id INTEGER PRIMARY KEY REFERENCES job_orders(id) ON DELETE CASCADE,
+    source_unit_id INTEGER REFERENCES job_order_units(id) ON DELETE RESTRICT,
+    source_batch_id INTEGER REFERENCES production_batches(id) ON DELETE RESTRICT,
+    source_cost REAL NOT NULL DEFAULT 0,
+    finishing_cost REAL NOT NULL DEFAULT 0,
+    cancel_reason TEXT,
+    cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    cancelled_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  const conversionCols = db.prepare('PRAGMA table_info(semi_build_conversions)').all() as Array<{ name: string }>;
+  if (!conversionCols.some((c) => c.name === 'source_batch_id')) db.exec('ALTER TABLE semi_build_conversions ADD COLUMN source_batch_id INTEGER REFERENCES production_batches(id) ON DELETE RESTRICT');
+  if (!conversionCols.some((c) => c.name === 'cancel_reason')) db.exec('ALTER TABLE semi_build_conversions ADD COLUMN cancel_reason TEXT');
+  if (!conversionCols.some((c) => c.name === 'cancelled_by')) db.exec('ALTER TABLE semi_build_conversions ADD COLUMN cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  if (!conversionCols.some((c) => c.name === 'cancelled_at')) db.exec('ALTER TABLE semi_build_conversions ADD COLUMN cancelled_at TEXT');
+  const unitConversionCols = db.prepare('PRAGMA table_info(job_order_units)').all() as Array<{ name: string }>;
+  if (!unitConversionCols.some((c) => c.name === 'conversion_source_unit_id'))
+    db.exec('ALTER TABLE job_order_units ADD COLUMN conversion_source_unit_id INTEGER REFERENCES job_order_units(id) ON DELETE RESTRICT');
+  if (!unitConversionCols.some((c) => c.name === 'received_unit_cost'))
+    db.exec('ALTER TABLE job_order_units ADD COLUMN received_unit_cost REAL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_unit_conversion_source ON job_order_units(conversion_source_unit_id) WHERE conversion_source_unit_id IS NOT NULL');
 }
 
 /** One-time permission split: every role and per-account grant holding `from` also gets `to`.
@@ -2975,6 +3437,14 @@ export function nextSequence(key: string, prefix: string, pad = 5): string {
   return `${prefix}-${String(next).padStart(pad, '0')}`;
 }
 
+/** Record numbers are unique across forms, even when administrators reuse a prefix.
+ * Start with the shared prefix series and skip legacy numbers without renumbering history. */
+export function nextFormRecordNumber(prefix:string):string {
+  let number:string;
+  do {number=nextSequence('form_record_seq_'+prefix,prefix);}while(queryOne('SELECT 1 FROM form_records WHERE number=?',number));
+  return number;
+}
+
 /** Roles: the built-in bundles the first time (empty table), so a tenant can then edit or delete
     them freely without seeing them come back. Always ensures the fixed 'admin' row, and a row for
     any role key an existing account holds (so no account is left on a role nobody can see). */
@@ -3006,25 +3476,22 @@ function seed(): void {
     const adminDept = db
       .prepare('SELECT id FROM departments WHERE name = ?')
       .get('Administration') as { id: number } | undefined;
-    const configuredPassword = process.env.ADMIN_PASSWORD;
-    if (process.env.NODE_ENV === 'production' && tenantStore.getStore()?.slug === DEFAULT_TENANT
-      && (!configuredPassword || configuredPassword.length < 12 || configuredPassword === 'admin123')) {
-      throw new Error('Set ADMIN_PASSWORD to at least 12 characters before initializing production.');
-    }
-    const password = configuredPassword || (process.env.NODE_ENV === 'production' ? newToken() : 'admin123');
+    const password = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === 'test' ? process.env.VDS_TEST_ADMIN_PASSWORD : undefined);
+    if (!password || (process.env.NODE_ENV === 'production' && (password.length < 12 || ['admin123', 'password1234'].includes(password.toLowerCase())))) throw new Error('Set ADMIN_PASSWORD to a unique password of at least 12 characters before creating the default admin account');
     const hash = bcrypt.hashSync(password, 10);
+    // The configured first-boot password must be replaced at first sign-in (shared/auth.ts).
+    // Tests use a separate fixture variable. Provisioning clears the flag when the operator
+    // sets the owner's own password (platform/provisioning.ts).
     db.prepare(
-      `INSERT INTO users (username, full_name, password_hash, role, department_id)
-       VALUES (?, ?, ?, 'admin', ?)`
-    ).run('admin', 'System Administrator', hash, adminDept ? adminDept.id : null);
+      `INSERT INTO users (username, full_name, password_hash, role, department_id, password_change_required)
+       VALUES (?, ?, ?, 'admin', ?, ?)`
+    ).run('admin', 'System Administrator', hash, adminDept ? adminDept.id : null, process.env.NODE_ENV === 'test' ? 0 : 1);
 
     if (!process.env.DB_PATH) {
-      // Only print credentials for a real server start, not during tests.
       console.log('========================================================');
       console.log('  Default admin account created:');
       console.log('     username: admin');
-      console.log('     password: the configured ADMIN_PASSWORD (development default: see README)');
-      console.log('  >> Log in and change this password immediately. <<');
+      console.log('  Use the configured ADMIN_PASSWORD and change it at first sign-in.');
       console.log('========================================================');
     }
   }
@@ -3380,6 +3847,15 @@ function seedHrRequestForms(): void {
       ],
     },
     {
+      name: 'Schedule Change Request', slug: 'schedule_change', prefix: 'SCH', icon: 'calendar',
+      fields: [
+        { ...employeeField },
+        dateField('work_date', 'Published work date'),
+        { key: 'requested_shift_id', label: 'Requested shift', type: 'select', required: true, options: [], default: '' },
+        area('reason', 'Reason', true),
+      ],
+    },
+    {
       // Correction to an authoritative HR field (legal name, gov IDs, …) — applied only when an
       // hr.manage approver approves it (src/modules/hr/info-change.ts). Options must match
       // INFO_CHANGE_FIELDS there (pinned by tests/info-change.test.ts). Keys avoid position/
@@ -3542,10 +4018,9 @@ function seedMemoForms(): void {
     then one labelled line per form field ({{key}} placeholders the form-record print flow
     and src/form-actions.ts both substitute). Deliberately minimal; HR edits it in the doc
     editor from Form Builder. */
-function memoTemplateBody(title: string, fields: Array<{ key: string; label: string }>): string {
-  const rows = fields
-    .map((f) => `  <div class="mm-row"><span class="mm-l">${f.label}</span><span class="mm-v">{{${f.key}}}</span></div>`)
-    .join('\n');
+export function memoTemplateBody(title: string, fields: Array<{ key: string; label: string; type?:string;source?:string;format?:string;currency?:string }>): string {
+  const escape=(value:string)=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+  const rows=fields.map(field=>printFormField(field,{row:'mm-row',label:'mm-l',value:'mm-v'})).join('\n');
   return `<style>
   .memo { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; max-width: 720px; margin: 0 auto; }
   .memo h1 { font-size: 15px; text-align: center; letter-spacing: .04em; margin: 0 0 2px; }
@@ -3560,13 +4035,13 @@ function memoTemplateBody(title: string, fields: Array<{ key: string; label: str
 <div class="memo">
   <h1>{{company.name}}</h1>
   <div class="co">{{company.address}}</div>
-  <h2>${title.toUpperCase()}</h2>
+  <h2>${escape(title.toUpperCase())}</h2>
   <div class="mm-row"><span class="mm-l">Reference No.</span><span class="mm-v">{{number}}</span></div>
   <div class="mm-row"><span class="mm-l">Date Issued</span><span class="mm-v">{{today}}</span></div>
 ${rows}
   <div class="sig">
-    <div>Issued by (HR)</div>
-    <div>Received by (Employee)</div>
+    <div>Issued by</div>
+    <div>Received by</div>
   </div>
 </div>`;
 }
@@ -3623,7 +4098,7 @@ function seedCompanyHolidaysForm(): void {
     `INSERT INTO form_records (form_def_id, number, data, status) VALUES (?, ?, ?, 'approved')`
   );
   for (const [date, name, type] of seedRows) {
-    const number = nextSequence(`form_seq_${formId}`, 'HOL');
+    const number = nextFormRecordNumber('HOL');
     insertRecord.run(formId, number, JSON.stringify({ date, name, type }));
   }
 }
@@ -3635,21 +4110,19 @@ function seedTemplates(): void {
   const insert = db.prepare('INSERT INTO doc_templates (name, type, body) VALUES (?, ?, ?)');
   const hasType = (type: string) =>
     (db.prepare('SELECT COUNT(*) AS c FROM doc_templates WHERE type = ?').get(type) as { c: number }).c > 0;
-  if (!hasType('sale') && !hasType('job') && !hasType('purchase')) {
-    insert.run('Sale Order', 'sale', orderTemplateBody('SALES ORDER'));
-    insert.run('Job Order', 'job', orderTemplateBody('JOB ORDER'));
-    insert.run('Purchase Request', 'purchase', orderTemplateBody('PURCHASE REQUEST'));
-  }
-  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('HR Payroll Slip')) {
+  if(!hasType('sale'))insert.run('Sale Order','sale',orderTemplateBody('SALES ORDER'));
+  if(!hasType('job'))insert.run('Job Order','job',orderTemplateBody('JOB ORDER'));
+  if(!hasType('purchase'))insert.run('Purchase Request','purchase',orderTemplateBody('PURCHASE REQUEST'));
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('HR Payroll Slip') && !db.prepare("SELECT t.id FROM form_definitions f JOIN doc_templates t ON t.id=f.template_id WHERE f.slug='hr_payroll'").get()) {
     insert.run('HR Payroll Slip', 'generic', payrollSlipTemplateBody());
   }
-  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Employee ID Card')) {
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Employee ID Card') && !db.prepare("SELECT t.id FROM document_defaults d JOIN doc_templates t ON t.id=d.template_id WHERE d.key='employee_id'").get()) {
     insert.run('Employee ID Card', 'generic', employeeIdTemplateBody());
   }
-  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('BIR 2316')) {
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('BIR 2316') && !db.prepare("SELECT t.id FROM document_defaults d JOIN doc_templates t ON t.id=d.template_id WHERE d.key='bir_2316'").get()) {
     insert.run('BIR 2316', 'generic', bir2316TemplateBody());
   }
-  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Asset Issuance Form')) {
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Asset Issuance Form') && !db.prepare("SELECT t.id FROM document_defaults d JOIN doc_templates t ON t.id=d.template_id WHERE d.key='asset_issuance'").get()) {
     insert.run('Asset Issuance Form', 'generic', assetIssuanceTemplateBody());
   }
 }
@@ -3944,9 +4417,11 @@ function orderTemplateBody(title: string): string {
 </div>`;
 }
 
-/** How long the app-wide activity_log is kept. Rows older than this are swept on the
-    housekeeping timer; admins can still prune earlier by hand via DELETE /api/activity. */
-export const ACTIVITY_LOG_RETENTION_DAYS = 31;
+/** How long the app-wide activity_log (the audit trail) is kept: 5 years by default, the span
+    PH payroll and accounting records are kept for. Rows older than this are swept on the
+    housekeeping timer; nothing in the app can delete them sooner. ACTIVITY_LOG_RETENTION_DAYS
+    overrides it (never below 31). ~60 MB per busy company-year at current volumes. */
+export const ACTIVITY_LOG_RETENTION_DAYS = Math.max(31, Number(process.env.ACTIVITY_LOG_RETENTION_DAYS) || 1827);
 
 /** How long an ended or expired session row is kept as sign-in history (account "Where
     you're signed in" / admin view). Live sessions are never swept. */
@@ -3971,9 +4446,7 @@ export function cleanupSessions(): void {
       // Idempotency keys are only useful for as long as a client might still be retrying;
       // a week is far more than enough for a flaky-LAN offline queue.
       db.prepare("DELETE FROM idempotency_keys WHERE created_at < datetime('now', '-7 days')").run();
-      // Retain hashed recovery attempts through the throttle window, even after
-      // consumption/expiry; otherwise housekeeping resets the per-account budget.
-      db.prepare("DELETE FROM password_resets WHERE created_at < datetime('now', '-1 day')").run();
+      db.prepare("DELETE FROM password_resets WHERE used = 1 OR expires_at < datetime('now')").run();
       // Cap the audit trail at roughly a month so it can't grow without bound.
       db.prepare(
         `DELETE FROM activity_log WHERE created_at < datetime('now', '-${ACTIVITY_LOG_RETENTION_DAYS} days')`
@@ -3984,6 +4457,31 @@ export function cleanupSessions(): void {
 
 export function newToken(): string {
   return crypto.randomBytes(32).toString('hex');
+}
+
+/** What is stored for a bearer token (sessions, platform_sessions): its SHA-256, prefixed so a
+ *  stored value can never be mistaken for — or presented as — a raw token. A copy of the
+ *  database then holds no usable sign-in. */
+export const TOKEN_DIGEST_PREFIX = 'h1:';
+export function tokenDigest(token: string): string {
+  return TOKEN_DIGEST_PREFIX + crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/** One-time, idempotent: sessions stored before tokens were hashed get their digest, so
+ *  everyone stays signed in across the upgrade. Rows already prefixed are skipped. */
+export function hashLegacySessionTokens(conn: DatabaseSync, table = 'sessions'): number {
+  const rows = conn.prepare(`SELECT rowid AS r, token FROM ${table} WHERE token NOT LIKE '${TOKEN_DIGEST_PREFIX}%'`).all() as Array<{ r: number; token: string }>;
+  if (!rows.length) return 0;
+  const update = conn.prepare(`UPDATE ${table} SET token = ? WHERE rowid = ?`);
+  conn.exec('BEGIN');
+  try {
+    for (const row of rows) update.run(tokenDigest(row.token), row.r);
+    conn.exec('COMMIT');
+  } catch (e) {
+    conn.exec('ROLLBACK');
+    throw e;
+  }
+  return rows.length;
 }
 
 function ensureUploadDir(): void {

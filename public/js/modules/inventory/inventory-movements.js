@@ -24,7 +24,7 @@ App.register('inventory-movements', async (view) => {
 
   API.get('/locations').then((locs) => {
     view.querySelector('#mv-loc').innerHTML = '<option value="">— Location —</option>' +
-      locs.map((l) => `<option value="${l.id}">${UI.esc(l.name)}</option>`).join('');
+      locs.map((l) => `<option value="${l.id}">${UI.esc(l.path || l.name)}</option>`).join('');
   }).catch(() => {});
 
   async function load() {

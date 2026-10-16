@@ -8,6 +8,7 @@ const App = (() => {
   // Active chrome selection (which primary/subtab the tree+subnav reflect).
   let activePrimaryId = null;
   let activeSubtabId = null;
+  let renderedLocation = null;
   let suppressHash = false; // guard so programmatic hash changes don't re-navigate
 
   function register(name, renderFn) { routes[name] = renderFn; }
@@ -59,15 +60,52 @@ const App = (() => {
 
   function showLogin() {
     me = null;
+    document.getElementById('tenant-name').textContent = 'Workspace';
+    document.title = 'Otom';
     if (window.ChatWS) ChatWS.disconnect();
     if (window.SyncStatus) SyncStatus.stop();
     appScreen().classList.add('hidden');
     loginScreen().classList.remove('hidden');
     document.getElementById('login-password').value = '';
-    const factor = document.getElementById('login-mfa'); if (factor) factor.value = '';
   }
 
-  async function showApp() {
+  function requireNewPassword() {
+    appScreen().classList.add('hidden');
+    loginScreen().classList.remove('hidden');
+    if (window.ChatWS) ChatWS.disconnect();
+    const m = UI.modal({
+      title: 'Choose your new password', cancelText: 'Sign out', confirmText: 'Save new password',
+      bodyHTML: `<p>Your temporary password must be replaced before you can access the workspace.</p>
+        <label>Temporary password</label><input data-f="current" type="password" autocomplete="current-password" />
+        <label>New password</label><input data-f="new" type="password" autocomplete="new-password" />
+        <label>Confirm new password</label><input data-f="confirm" type="password" autocomplete="new-password" />`,
+      onConfirm: async (ov, showErr) => {
+        const pw = ov.querySelector('[data-f="new"]').value;
+        if (pw !== ov.querySelector('[data-f="confirm"]').value) { showErr('Passwords do not match.'); return false; }
+        await API.post('/auth/change-password', { current_password: ov.querySelector('[data-f="current"]').value, new_password: pw });
+        ov.querySelectorAll('input').forEach((input) => { input.value = ''; });
+        API.clearToken(); showLogin();
+        UI.toast('Password updated. Sign in with your new password.');
+      },
+    });
+    m.overlay.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', logout));
+    m.overlay.addEventListener('mousedown', (e) => { if (e.target === m.overlay) logout(); });
+  }
+
+  /** The workspace requires two-step sign-in for this account and it isn't set up yet: the
+      server allows nothing else until it is (src/shared/mfa.ts). */
+  async function requireMfaSetup() {
+    appScreen().classList.add('hidden');
+    loginScreen().classList.remove('hidden');
+    if (window.ChatWS) ChatWS.disconnect();
+    if (!(await Mfa.setup({ forced: true }))) { logout(); return; }
+    me = (await API.get('/auth/me')).user;
+    await showApp();
+  }
+
+  async function showApp(departmentsReq) {
+    if (me && me.password_change_required) { requireNewPassword(); return; }
+    if (me && me.mfa_setup_required) { requireMfaSetup(); return; }
     loginScreen().classList.add('hidden');
     appScreen().classList.remove('hidden');
 
@@ -76,13 +114,25 @@ const App = (() => {
     document.getElementById('me-dept').textContent = me.department_name || 'No dept';
     document.getElementById('me-avatar').textContent = UI.initials(me.full_name);
 
-    try { departments = await API.get('/users/departments/list'); } catch { departments = []; }
+    // Signed up online and not paid yet: the server only answers sign-in, Billing and Support, so
+    // show just the Billing screen until the first payment is confirmed (src/platform/billing.ts).
+    let ws = null;
+    try { ws = await API.get('/tenant'); } catch { /* no workspace info: carry on normally */ }
+    if (ws) {
+      document.getElementById('tenant-name').textContent = ws.name || 'Workspace';
+      document.title = `${ws.name || 'Workspace'} · Otom`;
+      document.getElementById('tenant-name').title = ws.company_id ? 'Company ID: ' + ws.company_id : '';
+    }
+    appScreen().classList.toggle('awaiting-payment', !!(ws && ws.awaiting_payment));
+    if (ws && ws.awaiting_payment) { showAwaitingPayment(ws); return; }
+
+    try { departments = await (departmentsReq || API.get('/users/departments/list')); } catch { departments = []; }
 
     renderPrimaryNav(); // (re)build chrome; honours admin-only visibility
     // The AI Assistant bubble is a per-tenant feature module.
     const aiFab = document.getElementById('ai-fab');
     if (aiFab) aiFab.classList.toggle('hidden', !hasModule('ai'));
-    showWorkspaceBanner();
+    await showWorkspaceBanner();
 
     refreshUnread();
     // Installed PCs only: the sync status pill (lib/sync-status.js hides itself elsewhere).
@@ -104,23 +154,53 @@ const App = (() => {
     navigate(start, parsed.route === start ? parsed.filter : undefined);
   }
 
+  /** The locked shell for a workspace awaiting its first payment: a banner and the Billing screen. */
+  function showAwaitingPayment(ws) {
+    const aiFab = document.getElementById('ai-fab');
+    if (aiFab) aiFab.classList.add('hidden');
+    paintBanner(`Welcome, ${ws.name}! Your workspace opens once your first payment is confirmed.`, 'warn', false);
+    const view = document.getElementById('view');
+    if (routes.billing) routes.billing(view);
+  }
+
   async function showWorkspaceBanner() {
     let t;
     try { t = await API.get('/tenant'); } catch { return; }
-    document.getElementById('ws-banner')?.remove();
+    const tenantName = t.name || 'Workspace';
+    document.getElementById('tenant-name').textContent = tenantName;
+    document.title = `${tenantName} · Otom`;
     let msg = '', tone = 'warn';
     if (t.read_only) { msg = `${t.name} is past due — the workspace is read-only until billing is resolved.`; tone = 'danger'; }
     else if (t.status === 'suspended') { msg = `${t.name} is suspended.`; tone = 'danger'; }
     else if (t.trial_days_left != null && t.trial_days_left <= 14) {
       msg = t.trial_days_left <= 0 ? `${t.name}'s trial has ended.`
         : `${t.name} — trial: ${t.trial_days_left} day${t.trial_days_left === 1 ? '' : 's'} left.`;
+    } else if (t.billing && t.billing.open) {
+      // Our unpaid invoices to this workspace (only sent to users.manage — see Admin → Billing).
+      msg = t.billing.overdue
+        ? `${t.billing.overdue} overdue invoice${t.billing.overdue === 1 ? '' : 's'} for ${t.name}.`
+        : `${t.billing.open} unpaid invoice${t.billing.open === 1 ? '' : 's'} for ${t.name}.`;
+      if (t.billing.overdue) tone = 'danger';
     }
-    if (!msg) return;
+    document.getElementById('ws-banner')?.remove();
+    if (msg) paintBanner(msg, tone, !!t.billing);
+  }
+
+  function paintBanner(msg, tone, billingLink) {
+    document.getElementById('ws-banner')?.remove();
     const bar = document.createElement('div');
     bar.id = 'ws-banner';
     bar.style.cssText = `padding:6px 14px;font-size:13px;text-align:center;color:#fff;`
       + `background:${tone === 'danger' ? 'var(--danger,#d64545)' : 'var(--warn,#b8860b)'}`;
     bar.textContent = msg;
+    if (billingLink) {
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.textContent = 'View billing';
+      link.style.cssText = 'margin-left:10px;background:transparent;border:1px solid #fff;color:#fff;border-radius:6px;padding:1px 8px;font-size:12px;cursor:pointer';
+      link.onclick = () => navigate('billing');
+      bar.appendChild(link);
+    }
     appScreen().prepend(bar);
   }
 
@@ -155,7 +235,8 @@ const App = (() => {
           const n = items.find((x) => String(x.id) === tr.dataset.n);
           if (!n.read_at) { try { await API.post('/notifications/' + n.id + '/read', {}); } catch { /* ignore */ } }
           refreshNotificationBadge();
-          if (n.link && routes[n.link.route]) { m.close(); navigate(n.link.route, n.link.params || undefined); }
+          if (n.link?.route === 'tasks' && window.PersonalTools) { m.close(); window.PersonalTools.openScheduler(); }
+          else if (n.link && routes[n.link.route]) { m.close(); navigate(n.link.route, n.link.params || undefined); }
         });
       },
       onConfirm: async () => {
@@ -165,26 +246,23 @@ const App = (() => {
     });
   }
 
+  /** Rail badges: messages, notifications and (admins) open bug reports — fetched together,
+      not one after another, so a refresh costs one round trip. */
   async function refreshUnread() {
-    try {
-      const { count } = await API.get('/messages/unread-count');
-      const badge = document.getElementById('msg-badge');
+    const setBadge = (id, count) => {
+      const badge = document.getElementById(id);
       if (badge) {
         badge.textContent = count;
         badge.classList.toggle('hidden', !count);
       }
-    } catch { /* ignore */ }
-    refreshNotificationBadge();
-    if (hasPermission('users.manage')) {
-      try {
-        const { count } = await API.get('/bug-reports/open-count');
-        const bugBadge = document.getElementById('bug-badge');
-        if (bugBadge) {
-          bugBadge.textContent = count;
-          bugBadge.classList.toggle('hidden', !count);
-        }
-      } catch { /* ignore */ }
-    }
+    };
+    await Promise.all([
+      API.get('/messages/unread-count').then(({ count }) => setBadge('msg-badge', count)).catch(() => {}),
+      refreshNotificationBadge(),
+      hasPermission('users.manage')
+        ? API.get('/bug-reports/open-count').then(({ count }) => setBadge('bug-badge', count)).catch(() => {})
+        : null,
+    ]);
   }
 
   /* ---------- Nav-config helpers ---------- */
@@ -195,6 +273,7 @@ const App = (() => {
     return NAV.filter((p) => {
       if (p.adminOnly && !isAdmin()) return false;
       if (p.requiredPermission && !hasPermission(p.requiredPermission)) return false;
+      if (p.requiredAnyPermission && !p.requiredAnyPermission.some(hasPermission)) return false;
       if (p.requiredModule && !hasModule(p.requiredModule)) return false;
       return visibleSubtabs(p).length > 0;
     });
@@ -204,6 +283,7 @@ const App = (() => {
   function visibleSubtabs(primary) {
     return (primary.subtabs || []).filter((s) =>
       (!s.requiredPermission || hasPermission(s.requiredPermission)) &&
+      (!s.requiredAnyPermission || s.requiredAnyPermission.some(hasPermission)) &&
       (!s.requiredModule || hasModule(s.requiredModule)));
   }
 
@@ -214,17 +294,30 @@ const App = (() => {
     return ak.every((k) => String(ax[k]) === String(bx[k]));
   }
 
+  function canAccessRoute(route, filter) {
+    const loc = findLeaf(route, filter);
+    if (!loc) return !!routes[route];
+    return visiblePrimaries().includes(loc.primary) && visibleSubtabs(loc.primary).includes(loc.subtab);
+  }
+
   /** Find the first {primary, subtab, leaf} matching a route (+ optional filter). */
   function findLeaf(route, filter) {
+    // Section links are shortcuts into the same Documents hub, including deep links.
+    if (route === 'form-records') {
+      const primary = NAV.find((item) => item.id === 'docs');
+      const subtab = primary?.subtabs.find((item) => item.id === 'custom-forms');
+      const leaf = subtab?.tree.find((item) => item.route === route);
+      if (leaf) return { primary, subtab, leaf };
+    }
     let routeFallback = null;
     for (const primary of NAV) {
       for (const subtab of primary.subtabs) {
         for (const leaf of subtab.tree) {
           if (leaf.route !== route) continue;
+          if (!routeFallback) routeFallback = { primary, subtab, leaf };
           if (filter === undefined) {
-            if (!routeFallback) routeFallback = { primary, subtab, leaf };
             if (!leaf.filter) return { primary, subtab, leaf };
-          } else if (filtersEqual(leaf.filter, filter)) {
+          } else if (filtersEqual(leaf.filter, filter) || (leaf.filter && Object.keys(leaf.filter).every(key => String(leaf.filter[key]) === String(filter[key])))) {
             return { primary, subtab, leaf };
           }
         }
@@ -299,7 +392,7 @@ const App = (() => {
     if (!el) return;
     if (!primary || !subtab) { el.innerHTML = ''; return; }
     const leaves = subtab.tree.map((leaf) => {
-      const on = leaf.route === activeRoute && filtersEqual(leaf.filter, activeFilter);
+      const on = leaf.route === activeRoute && (!leaf.filter || filtersEqual(leaf.filter, activeFilter) || (leaf.filter && Object.keys(leaf.filter).every(key => String(leaf.filter[key]) === String((activeFilter || {})[key]))));
       return `<button class="tree-leaf ${on ? 'active' : ''}" data-route="${leaf.route}"
         data-filter='${leaf.filter ? UI.esc(JSON.stringify(leaf.filter)) : ''}'>
         ${UI.icon(leaf.icon, 16)}<span>${UI.esc(leaf.label)}</span></button>`;
@@ -320,6 +413,15 @@ const App = (() => {
   /* ---------- Navigation ---------- */
 
   function navigate(name, filter) {
+    if (me && me.password_change_required) return;
+    const dialogs = [...document.querySelectorAll('.modal-overlay')].reverse();
+    const savingDialog = dialogs.find(dialog => dialog.__whenSaved);
+    if (savingDialog) { savingDialog.__whenSaved.then(() => navigate(name, filter)); return; }
+    if (dialogs.some(dialog => dialog.__canDismiss && !dialog.__canDismiss())) {
+      if (renderedLocation) history.replaceState(null, '', '#' + hashFor(renderedLocation.name, renderedLocation.filter));
+      return;
+    }
+    dialogs.forEach(dialog => dialog.__close ? dialog.__close() : dialog.remove());
     if (!routes[name]) { name = 'dashboard'; filter = undefined; }
 
     // Resolve where this lives in the nav tree (for chrome highlighting).
@@ -334,11 +436,16 @@ const App = (() => {
     if (loc) {
       activePrimaryId = loc.primary.id;
       activeSubtabId = loc.subtab.id;
+    } else {
+      activePrimaryId = null;
+      activeSubtabId = null;
     }
 
+    renderedLocation = { name, filter };
     // Reflect in the URL without triggering a re-navigation.
     suppressHash = true;
     location.hash = hashFor(name, filter);
+    renderedLocation = { name, route: name, filter };
     suppressHash = false;
 
     // Repaint chrome.
@@ -349,16 +456,20 @@ const App = (() => {
     renderTree(primary, subtab, name, filter);
 
     // Render the view.
-    const outlet = document.getElementById('view');
-    // Each navigation owns its container. A slow previous view may finish, but can
-    // only update its detached container, never overwrite the current screen.
-    const view = document.createElement('div');
-    view.style.minWidth = '0';
+    const previousView = document.getElementById('view');
+    const view = previousView.cloneNode(false);
+    previousView.replaceWith(view);
+    view.dataset.route = name;
+    view.dataset.section = activePrimaryId || '';
     view.innerHTML = '<div class="empty">Loading…</div>';
-    outlet.replaceChildren(view);
-    Promise.resolve().then(() => routes[name](view, filter)).catch((e) => {
-      if (view.parentNode === outlet) view.innerHTML = `<div class="empty">Failed to load: ${UI.esc(e.message)}</div>`;
+    Promise.resolve(routes[name](view, filter)).catch((e) => {
+      view.innerHTML = `<div class="empty">Failed to load: ${UI.esc(e.message)}</div>`;
     });
+  }
+
+  function replaceFilters(name, filter) {
+    history.replaceState(null, '', '#' + hashFor(name, filter));
+    renderedLocation = { name, route: name, filter };
   }
 
   /* ---------- Menu search + site map ---------- */
@@ -428,8 +539,12 @@ const App = (() => {
 
     const m = UI.modal({
       title: 'Site Map',
+      headActionHTML: '<button type="button" class="btn secondary small" data-sitemap-guide>Guide</button>',
       bodyHTML: `<div class="sitemap-grid">${sections}</div>`,
       cancelText: 'Close',
+    });
+    m.overlay.querySelector('[data-sitemap-guide]').addEventListener('click', () => {
+      if (window.Help) Help.open('site-map');
     });
     m.overlay.querySelectorAll('[data-route]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -443,12 +558,13 @@ const App = (() => {
   // (ends with the tab) — see src/shared/auth.ts.
   async function login(username, password, shared) {
     const body = { username, password };
-    const factor = document.getElementById('login-mfa');
-    if (factor && factor.value.trim()) body.mfa_code = factor.value.trim();
     if (shared) body.shared = true;
     const data = await API.post('/auth/login', body);
-    API.setToken(data.token, { shared: !!shared });
-    me = data.user;
+    // Two-step sign-in: the password alone opened nothing; the code finishes it (lib/mfa.js).
+    const signedIn = data.mfa_required ? await Mfa.askCode(data.mfa_token) : data;
+    if (!signedIn) return;
+    API.setToken(signedIn.token, { shared: !!shared });
+    me = signedIn.user;
     await showApp();
   }
 
@@ -461,16 +577,19 @@ const App = (() => {
 
   function forgotPassword() {
     UI.modal({
-      title: 'Reset your password',
+      title: 'Recover your login',
       bodyHTML: `<p class="muted" style="margin-top:0">Enter your username or email. If we have an
-        address on file and email is set up, you'll get a reset link.</p>
+        address on file and email is set up, you'll get your username and a password reset link.</p>
         <label>Username or email</label><input data-f="id" autocomplete="username" />`,
       confirmText: 'Send reset link',
       onConfirm: async (ov, showErr) => {
         const id = ov.querySelector('[data-f="id"]').value.trim();
         if (!id) { showErr('Enter your username or email.'); return false; }
         const r = await API.post('/auth/forgot-password', { identifier: id });
-        UI.toast(r.message || 'If that account exists, a link is on its way.', 'success');
+        // The server answers the same for every account (no hint which ones exist); only a
+        // sandbox workspace says why nothing is sent.
+        UI.toast(r.reason ? 'Could not send: ' + r.reason
+          : (r.message || 'If that account exists, a link is on its way.'), r.reason ? 'error' : 'success');
       },
     });
   }
@@ -479,12 +598,12 @@ const App = (() => {
     UI.modal({
       title: 'Set a new password',
       bodyHTML: `<label>New password</label>
-        <input data-f="pw" type="password" autocomplete="new-password" placeholder="at least 6 characters" />`,
+        <input data-f="pw" type="password" autocomplete="new-password" placeholder="at least 8 characters" />`,
       confirmText: 'Save & sign in',
       cancelText: 'Cancel',
       onConfirm: async (ov, showErr) => {
         const pw = ov.querySelector('[data-f="pw"]').value;
-        if ((pw || '').length < 6) { showErr('Password must be at least 6 characters.'); return false; }
+        if ((pw || '').length < 8) { showErr('Password must be at least 8 characters.'); return false; }
         try {
           await API.post('/auth/reset-password', { token, new_password: pw });
         } catch (e) { showErr(e.message); return false; }
@@ -535,9 +654,8 @@ const App = (() => {
       railNotif.insertAdjacentHTML('afterbegin', UI.icon('bell'));
       railNotif.addEventListener('click', openNotifications);
     }
-    const railAcct = document.getElementById('rail-account');
-    railAcct.innerHTML = UI.icon('user'); // default profile image icon
-    railAcct.addEventListener('click', () => navigate('account'));
+    // The header profile is the entry point for My Account.
+    document.getElementById('account-btn').addEventListener('click', () => navigate('account'));
     const logoutBtn = document.getElementById('logout-btn');
     logoutBtn.innerHTML = UI.icon('logout');
     logoutBtn.addEventListener('click', logout);
@@ -548,15 +666,18 @@ const App = (() => {
     window.addEventListener('hashchange', () => {
       if (suppressHash || !me) return;
       const parsed = parseHash();
+      if (renderedLocation && parsed.route === renderedLocation.name && filtersEqual(parsed.filter, renderedLocation.filter)) return;
       if (routes[parsed.route]) navigate(parsed.route, parsed.filter);
     });
 
     // Resume session if token present.
     if (API.hasSession()) {
+      const departmentsReq = API.get('/users/departments/list');
+      departmentsReq.catch(() => {}); // awaited (and its failure handled) in showApp
       try {
         const { user } = await API.get('/auth/me');
         me = user;
-        await showApp();
+        await showApp(departmentsReq);
         return;
       } catch { API.clearToken(); }
     }
@@ -573,10 +694,14 @@ const App = (() => {
   }
 
   return {
-    register, navigate, getMe, getDepartments, isAdmin, hasPermission, hasModule, showLogin, refreshUnread,
+    register, navigate, replaceFilters, canAccessRoute, getMe, getDepartments, isAdmin, hasPermission, hasModule, showLogin, refreshUnread,
     logout, boot, reloadDepartments, setMe, currentLocation,
     _routeNames: () => Object.keys(routes), // test/debug seam
   };
 })();
+
+// Consumers such as Help and API intentionally probe window.App before using it.
+// A top-level const is visible to scripts but is not a property of window.
+window.App = App;
 
 document.addEventListener('DOMContentLoaded', () => App.boot());

@@ -1,12 +1,27 @@
-/* Timekeeping — Figma node 46:577.
-   The employee selects/reviews the next valid action; the server remains authoritative
-   for punch classification, QR validity, GPS/geofence, duplicate and final-out rules. */
+/* Timekeeping — Figma node 46:577 (adapted 2026-10-10: slot tiles instead of the action
+   dropdown + review screen, approved by Kyle; the Figma frame still shows the old flow).
+   The employee picks what they're recording — the kiosk's four slots: Time in, Afternoon out,
+   Afternoon in, Time out — and the rest runs by itself: scan the office QR (GPS is fetched
+   meanwhile), an auto-captured selfie, done. Re-doing a slot replaces its time and photo.
+   The server stays authoritative for QR validity, GPS/geofence and where the punch lands
+   (src/modules/hr/punch-holds.ts, clock.ts setSlotPunch). */
 (function () {
   var ticker = null;
+  var SLOTS = [
+    { key: 'in', label: 'Time in', kind: 'in' },
+    { key: 'lunchOut', label: 'Afternoon out', kind: 'out' },
+    { key: 'lunchIn', label: 'Afternoon in', kind: 'in' },
+    { key: 'out', label: 'Time out', kind: 'out' }
+  ];
   var SEG_LABEL = {
-    morning_in: 'Morning time-in', lunch_out: 'Lunch out', afternoon_in: 'Back from lunch',
-    afternoon_out: 'Time-out', other_in: 'Time-in', other_out: 'Time-out'
+    morning_in: 'Time in', lunch_out: 'Afternoon out', afternoon_in: 'Afternoon in',
+    afternoon_out: 'Time out', other_in: 'Time in', other_out: 'Time out'
   };
+  var WHERE_KEY = 'vds_m_clock_where'; // clock_anywhere staff: 'office' (scan QR) | 'outside'
+  var SELFIE_SECONDS = 2;
+  var AUTO_HOME_MS = 2500;
+
+  function slotDef(key) { return SLOTS.filter(function (x) { return x.key === key; })[0]; }
 
   function chime(kind) {
     try {
@@ -29,34 +44,18 @@
   function timeText(d) {
     return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d);
   }
-  function nextAction(s) {
-    var punches = s.punches || [];
-    var last = punches[punches.length - 1];
-    if (punches.some(function (p) { return p.segment === 'afternoon_out'; })) return { value: 'complete', label: 'Day completed', disabled: true };
-    if (!last) return { value: 'punch', label: 'Clock in' };
-    if (last.kind === 'in') {
-      var hasAfternoon = punches.some(function (p) { return p.segment === 'afternoon_in'; });
-      return { value: 'punch', label: hasAfternoon ? 'Clock out' : 'Start lunch / Clock out' };
-    }
-    return { value: 'punch', label: 'Return from lunch / Clock in' };
-  }
   function stateText(s) {
-    if ((s.punches || []).some(function (p) { return p.segment === 'afternoon_out'; })) return 'Completed today';
+    if (s.slots && s.slots.out) return 'Completed today';
     return s.clocked_in ? 'Clocked in' : 'Not clocked in';
   }
-  function locationNotice(s) {
-    if (s.can_clock_anywhere) return {
-      title: 'Location will be recorded',
-      copy: 'Your current GPS location and device time will be retained for HR.'
-    };
-    if (s.location_required) return {
-      title: 'Location confirmation required',
-      copy: 'Scan the current office QR. Your location is checked — time-in only works at the office.'
-    };
-    return {
-      title: 'Office QR confirmation required',
-      copy: 'Scan the current office code. It changes every minute and device time is retained.'
-    };
+  function getWhere() {
+    try { return localStorage.getItem(WHERE_KEY) === 'outside' ? 'outside' : 'office'; } catch (e) { return 'office'; }
+  }
+  function setWhere(v) { try { localStorage.setItem(WHERE_KEY, v); } catch (e) {} }
+  function noticeText(s, remote) {
+    if (remote) return 'Outside the office: your GPS location and a selfie are kept for HR.';
+    if (s.location_required) return 'Scan the office QR, then a selfie is taken. Your location is checked — time-in only works at the office.';
+    return 'Scan the office QR, then a selfie is taken. Your time is the moment you scan.';
   }
   function startLiveClock(root) {
     if (ticker) clearInterval(ticker);
@@ -92,143 +91,182 @@
 
   function draw(view, s) {
     view.innerHTML = '';
-    var action = nextAction(s);
-    var notice = locationNotice(s);
+    var slots = s.slots || {};
     var page = mEl('<section class="v2-clock" data-figma-node="46:577"></section>');
-    page.appendChild(mEl('<header class="v2-clock-heading"><h1>Timekeeping</h1><p>Select an action before confirming</p></header>'));
+    page.appendChild(mEl('<header class="v2-clock-heading"><h1>Timekeeping</h1><p>Tap what you’re recording — then scan and smile</p></header>'));
     page.appendChild(mEl(
       '<section class="v2-live-time"><strong data-live-time>--:--:--</strong>' +
       '<p data-live-date></p><span>' + mEsc(stateText(s)) + '</span></section>'
     ));
 
-    page.appendChild(mEl('<h2>Choose action</h2>'));
-    var selector = mEl(
-      '<label class="v2-clock-select"><select aria-label="Timekeeping action">' +
-      '<option value="' + action.value + '"' + (action.disabled ? ' disabled' : '') + '>' + mEsc(action.label) + '</option>' +
-      '<option value="correct">Fix a missed or incorrect punch</option>' +
-      '</select><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></label>'
-    );
-    page.appendChild(selector);
-    page.appendChild(mEl(
-      '<section class="v2-clock-notice"><b>' + mEsc(notice.title) + '</b><p>' + mEsc(notice.copy) + '</p></section>'
-    ));
-    var review = mEl('<button type="button" class="v2-clock-primary"' + (action.disabled ? ' disabled' : '') + '>Review &amp; confirm</button>');
-    page.appendChild(review);
+    var where = s.can_clock_anywhere ? getWhere() : 'office';
+    if (s.can_clock_anywhere) {
+      var toggle = mEl(
+        '<div class="v2-clock-where" role="radiogroup" aria-label="Where are you?">' +
+        '<button type="button" role="radio" data-where="office">At the office</button>' +
+        '<button type="button" role="radio" data-where="outside">Outside the office</button></div>'
+      );
+      page.appendChild(toggle);
+    }
+
+    page.appendChild(mEl('<h2>Record</h2>'));
+    var grid = mEl('<div class="v2-clock-slots"></div>');
+    SLOTS.forEach(function (d) {
+      var at = slots[d.key];
+      var isNext = s.next_slot === d.key;
+      var tile = mEl(
+        '<button type="button" class="v2-clock-slot' + (at ? ' is-filled' : '') + (isNext ? ' is-next' : '') + '" data-slot="' + d.key + '">' +
+        '<span>' + mEsc(d.label) + (isNext ? ' <i>Next</i>' : '') + '</span>' +
+        '<b>' + (at ? mEsc(at) : '–') + '</b></button>'
+      );
+      grid.appendChild(tile);
+    });
+    page.appendChild(grid);
+    var replaceBar = mEl('<div class="v2-clock-replace" role="alert" hidden></div>');
+    page.appendChild(replaceBar);
+    var notice = mEl('<section class="v2-clock-notice"><p></p></section>');
+    page.appendChild(notice);
+    var fix = mEl('<button type="button" class="v2-clock-fix">Fix a missed or incorrect punch on another day</button>');
+    fix.onclick = function () { MApp.go('time-fix'); };
+    page.appendChild(fix);
 
     page.appendChild(mEl('<h2 class="v2-clock-log-title">Today’s log</h2>'));
     var punches = s.punches || [];
-    if (punches.length) {
-      page.appendChild(mEl('<ul class="v2-clock-log">' + punches.map(logRow).join('') + '</ul>'));
-    } else {
-      var empty = mEl(
-        '<button type="button" class="v2-clock-empty"><span><b>No entries yet</b><small>Clock in to begin today’s record</small></span>' +
-        '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button>'
-      );
-      empty.onclick = function () { selector.querySelector('select').focus(); };
-      page.appendChild(empty);
-    }
+    page.appendChild(punches.length
+      ? mEl('<ul class="v2-clock-log">' + punches.map(logRow).join('') + '</ul>')
+      : mEl('<div class="v2-clock-empty"><span><b>No entries yet</b><small>Tap Time in to begin today’s record</small></span></div>'));
 
-    review.onclick = function () {
-      var selected = selector.querySelector('select').value;
-      if (selected === 'correct') { MApp.go('time-fix'); return; }
-      confirmAction(view, s, action);
-    };
-    selector.querySelector('select').onchange = function () {
-      review.disabled = this.value === 'complete';
-      review.textContent = this.value === 'correct' ? 'Continue to correction' : 'Review & confirm';
-    };
+    function paintWhere() {
+      notice.querySelector('p').textContent = noticeText(s, where === 'outside');
+      Array.prototype.forEach.call(page.querySelectorAll('[data-where]'), function (b) {
+        var on = b.getAttribute('data-where') === where;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
+    }
+    Array.prototype.forEach.call(page.querySelectorAll('[data-where]'), function (b) {
+      b.onclick = function () { where = b.getAttribute('data-where'); setWhere(where); paintWhere(); };
+    });
+    paintWhere();
+
+    Array.prototype.forEach.call(grid.querySelectorAll('[data-slot]'), function (tile) {
+      tile.onclick = function () {
+        var d = slotDef(tile.getAttribute('data-slot'));
+        var at = slots[d.key];
+        if (!at) { start(view, s, d, where === 'outside'); return; }
+        // Re-doing a slot replaces its time and selfie — one explicit step so a stray tap can't.
+        replaceBar.hidden = false;
+        replaceBar.innerHTML = '<p>Replace your <b>' + mEsc(d.label.toLowerCase()) + '</b> at ' + mEsc(at) +
+          '? The new time and selfie replace the old ones.</p>' +
+          '<div><button type="button" class="m-btn" data-replace>Replace</button>' +
+          '<button type="button" class="m-btn m-btn-secondary" data-keep>Keep ' + mEsc(at) + '</button></div>';
+        replaceBar.querySelector('[data-replace]').onclick = function () { start(view, s, d, where === 'outside'); };
+        replaceBar.querySelector('[data-keep]').onclick = function () { replaceBar.hidden = true; };
+      };
+    });
+
     view.appendChild(page);
     startLiveClock(page);
   }
 
-  function confirmAction(view, s, action) {
+  /** The phone's GPS position — resolves { location } or { error } (never rejects, so it can be
+      started early and awaited only if needed). */
+  function locate() {
+    return new Promise(function (resolve) {
+      if (!navigator.geolocation) { resolve({ error: 'This phone can’t share its location' }); return; }
+      navigator.geolocation.getCurrentPosition(function (p) {
+        resolve({ location: { lat: p.coords.latitude, lng: p.coords.longitude, accuracy_m: p.coords.accuracy } });
+      }, function (err) {
+        resolve({ error: err && err.code === 1
+          ? 'Location is blocked — allow location for this site, then try again'
+          : 'Could not get your location — turn on GPS and try again' });
+      }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+    });
+  }
+
+  /* From the slot tap, everything runs by itself: the office QR scan (GPS fetched meanwhile), or —
+     outside the office — just the GPS; then the selfie. */
+  function start(view, s, d, remote) {
     if (ticker) clearInterval(ticker);
-    view.innerHTML = '';
-    var notice = locationNotice(s);
-    var page = mEl(
-      '<section class="v2-clock-confirm"><span class="v2-role-chip">Confirm timekeeping</span>' +
-      '<h1>' + mEsc(action.label) + '</h1><p>Review the action and required verification before recording it.</p>' +
-      '<dl><div><dt>Employee</dt><dd>' + mEsc(s.employee_name || '') + '</dd></div>' +
-      '<div><dt>Action</dt><dd>' + mEsc(action.label) + '</dd></div>' +
-      '<div><dt>Verification</dt><dd>' + mEsc(notice.title) + '</dd></div></dl>' +
-      '<div class="v2-clock-confirm-actions"></div></section>'
-    );
-    var actions = page.querySelector('.v2-clock-confirm-actions');
-    var scan = mEl('<button type="button" class="m-btn">Scan office QR & confirm</button>');
-    scan.onclick = function () {
-      mScanner.open({
-        title: 'Scan the time-in screen',
-        onResult: function (code) {
-          code = String(code || '').trim();
-          if (!code) return;
-          if (s.location_required) withLocation(view, function (loc) { punch(view, { code: code, location: loc }); });
-          else punch(view, { code: code });
-        }
+    function withLoc(loc, body) {
+      view.innerHTML = '<div class="m-hint">Checking your location…</div>';
+      loc.then(function (r) {
+        if (r.error) { mToast(r.error, 'err'); load(view); return; }
+        body.location = r.location;
+        punch(view, body, d);
       });
-    };
-    actions.appendChild(scan);
-
-    if (s.can_clock_anywhere) {
-      var here = mEl('<button type="button" class="m-btn m-btn-secondary">Clock ' +
-        (s.clocked_in ? 'out' : 'in') + ' here</button>');
-      here.onclick = function () { withLocation(view, function (loc) { punch(view, { location: loc }); }); };
-      actions.appendChild(here);
     }
-    var back = mEl('<button type="button" class="m-btn m-btn-secondary">Back</button>');
-    back.onclick = function () { draw(view, s); };
-    actions.appendChild(back);
-    view.appendChild(page);
+    if (remote) { withLoc(locate(), {}); return; }
+    var loc = s.location_required ? locate() : null;
+    mScanner.open({
+      title: 'Scan the office screen — ' + d.label,
+      onResult: function (code) {
+        code = String(code || '').trim();
+        if (!code) return;
+        if (loc) withLoc(loc, { code: code });
+        else punch(view, { code: code }, d);
+      }
+    });
   }
 
-  function withLocation(view, done) {
-    if (!navigator.geolocation) { mToast('This phone can’t share its location', 'err'); return; }
-    view.innerHTML = '<div class="m-hint">Getting your location…</div>';
-    navigator.geolocation.getCurrentPosition(function (p) {
-      done({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy_m: p.coords.accuracy });
-    }, function (err) {
-      mToast(err && err.code === 1
-        ? 'Location is blocked — allow location for this site, then try again'
-        : 'Could not get your location — turn on GPS and try again', 'err');
-      load(view);
-    }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
-  }
-
-  function punch(view, body) {
-    view.innerHTML = '<div class="m-hint">Recording timekeeping…</div>';
-    API.post('/hr/clock/punch', body)
+  /* Two steps (server: src/modules/hr/punch-holds.ts). The scan is checked and held at its own
+     time; the selfie then records the chosen slot at that time, so the camera step never makes
+     anyone late. No selfie, no punch. */
+  function punch(view, body, d) {
+    view.innerHTML = '<div class="m-hint">Checking your scan…</div>';
+    API.post('/hr/clock/punch/scan', body)
+      .then(function (hold) {
+        view.innerHTML = '<div class="m-hint">Look at the camera…</div>';
+        return mSelfie.take({ title: d.label + ' — selfie', note: 'Look at the camera — the photo takes itself.', auto: SELFIE_SECONDS })
+          .then(function (photo) {
+            view.innerHTML = '<div class="m-hint">Recording ' + mEsc(d.label.toLowerCase()) + '…</div>';
+            var fd = new FormData();
+            fd.append('hold_id', String(hold.hold_id));
+            fd.append('slot', d.key);
+            fd.append('photo', photo, 'selfie.jpg');
+            return API.upload('/hr/clock/punch/selfie', fd);
+          });
+      })
       .then(function (r) {
-        chime(r.kind);
-        var actions = [
-          { label: 'Done', onClick: function () { load(view); } },
-          { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } }
-        ];
-        var d = new Date();
-        var localToday = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-        // Before today's time-in time, a punch closes yesterday's still-open shift (server-side
+        chime(d.kind);
+        var d0 = new Date();
+        var localToday = d0.getFullYear() + '-' + String(d0.getMonth() + 1).padStart(2, '0') + '-' + String(d0.getDate()).padStart(2, '0');
+        // Before today's time-in time, a Time out closes yesterday's still-open shift (server-side
         // openShiftToClose in src/modules/hr/clock.ts) — the hours are that shift's, not today's.
         var prevShift = r.work_date && r.work_date !== localToday;
+        var title = d.label + (r.replaced ? ' updated' : ' recorded');
         var lines = [
-          (SEG_LABEL[r.segment] || r.segment) + ' · ' + r.at,
-          r.hours_today + (prevShift ? ' h — closes your ' + r.work_date + ' shift' : ' h today') + (r.duplicate ? ' (already recorded)' : '')
+          d.label + ' · ' + r.at,
+          r.hours_today + (prevShift ? ' h — closes your ' + r.work_date + ' shift' : ' h today')
         ];
-        if (r.kind !== 'out') {
-          mSuccess(view, { title: 'Clocked IN', lines: lines, actions: actions });
-          return;
+        var actions = [
+          { label: 'Done', onClick: function () { MApp.go('home'); } },
+          { label: 'Today’s log', secondary: true, onClick: function () { load(view); } }
+        ];
+        function show(autoHome) {
+          if (autoHome) lines.push('Back to Home in a moment');
+          mSuccess(view, { title: title, lines: lines, actions: actions });
+          if (!autoHome) return;
+          var box = view.querySelector('.m-success');
+          setTimeout(function () { if (box && box.isConnected) MApp.go('home'); }, AUTO_HOME_MS);
         }
-        var today = r.work_date;
+        if (d.key !== 'out') { show(true); return; }
+        var day = r.work_date;
         API.get('/me/unrecorded-ot').then(function (rows) {
-          var mine = (rows || []).filter(function (d) { return d.work_date === today; })[0];
-          if (mine) {
-            lines.push(Math.round(mine.ot_minutes / 60 * 10) / 10 + ' h unrecorded overtime');
-            actions.unshift({ label: 'Request OT', onClick: function () {
-              MApp.go('requests', { type: 'overtime_request', date: today });
-            } });
-          }
-          mSuccess(view, { title: 'Clocked OUT', lines: lines, actions: actions });
-        }).catch(function () { mSuccess(view, { title: 'Clocked OUT', lines: lines, actions: actions }); });
+          var mine = (rows || []).filter(function (x) { return x.work_date === day; })[0];
+          if (!mine) { show(true); return; }
+          // Overtime to request: stay on this screen so the button can be used.
+          lines.push(Math.round(mine.ot_minutes / 60 * 10) / 10 + ' h unrecorded overtime');
+          actions.unshift({ label: 'Request OT', onClick: function () {
+            MApp.go('requests', { type: 'overtime_request', date: day });
+          } });
+          show(false);
+        }).catch(function () { show(true); });
       })
       .catch(function (ex) {
-        mToast(ex && ex.offline ? 'You’re offline — connect to record timekeeping' : (ex.message || 'Punch failed'), 'err');
+        mToast(ex && ex.offline ? 'You’re offline — connect to record timekeeping'
+          : ex && ex.message === 'cancelled' ? 'Not recorded — a selfie is needed to finish'
+          : ((ex && ex.message) || 'Punch failed'), 'err');
         load(view);
       });
   }

@@ -74,3 +74,11 @@ The Notifications route leads with the durable notification history (`GET /api/n
 8. Render at 390×844 and compare with the Figma screenshot.
 
 Do not describe planned behavior as implemented. Record unresolved backend/design dependencies explicitly.
+
+## Document editor UX
+
+For document-editor UI/interaction work, read `.agents/skills/editor-ux/SKILL.md` first.
+It adapts the evaluated UI UX Pro Max reference to our existing tokens and vanilla JS stack,
+with NN/g, Fluent and W3C guidance. Run `npm run test:editor:ux` for actual-app Playwright
+and axe coverage; its temporary database, reports and traces are isolated under `work/`.
+Automated results do not replace manual keyboard/assistive-technology and real-user checks.

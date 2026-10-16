@@ -1,0 +1,163 @@
+import {describe,it,expect} from 'vitest';
+import fs from 'node:fs';
+import {JSDOM} from 'jsdom';
+const source=fs.readFileSync(new URL('../public/js/doc-model.js',import.meta.url),'utf8');
+const mod:any={exports:{}};new Function('module',source)(mod);const model=mod.exports;
+function withDocument(fn:(doc:Document)=>void){const dom=new JSDOM('<div id="root"></div>');try{fn(dom.window.document);}finally{dom.window.close();}}
+const body='<style data-docpage>@page{size:210mm 297mm;margin:14mm}.x{color:{{color}}}</style><!--keep--><section data-doc-section="s" data-doc-section-width="210"><div data-doc-design-page="p1" data-doc-page-bg="#fff"><h1 data-doc-node="title">Title {{ name }}</h1><p style="color:red" data-custom="keep"><ins data-doc-change="r" data-doc-author="Editor">Added</ins><del data-doc-change="r">Old</del><a data-doc-note-ref="n" href="#n">1</a></p><table><tbody>{{#items}}<tr><td rowspan="2">{{name}}</td><td>{{=sum(items.total)}}</td></tr>{{/items}}<tr><td colspan="2">Total</td></tr></tbody></table><img src="{{company.logo}}" alt="Logo"><svg viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg><custom-tag data-key="x">Unknown</custom-tag></div></section>';
+describe('document model HTML preservation',()=>{
+ it('preserves fields, row loops, design/section metadata, revisions, raw CSS and unfamiliar HTML',()=>withDocument(doc=>{
+  const tree=model.fromHtml(body,doc),html=model.toHtml(tree);expect(tree.version).toBe(1);
+  expect(html.match(/\{\{[^}]+\}\}/g)).toEqual(body.match(/\{\{[^}]+\}\}/g));
+  expect(html).toContain('<tbody>{{#items}}<tr>');expect(html).toContain('</tr>{{/items}}<tr>');
+  for(const text of ['data-doc-design-page="p1"','data-doc-change="r"','rowspan="2"','colspan="2"','data-custom="keep"','<svg','<custom-tag','<!--keep-->'])expect(html).toContain(text);
+  expect(model.toHtml(model.fromHtml(html,doc))).toBe(html);
+ }));
+ it('preserves quoted attribute delimiters and unfamiliar marker comments',()=>withDocument(doc=>{
+  const html='<p data-info="x > {{name}}">Body {{name}}</p><!--doc-model-field:%3Cscript%3Ebad%3C%2Fscript%3E--><svg><text>{{name}}</text></svg>';
+  const result=model.toHtml(model.fromHtml(html,doc));expect(result).toContain('data-info="x &gt; {{name}}"');expect(result).toContain('<!--doc-model-field:%3Cscript%3Ebad%3C%2Fscript%3E-->');expect(result).not.toContain('<script>');expect(result).toContain('<text>{{name}}</text>');expect(result).not.toMatch(/doc-model-field-[a-z0-9]+:/);
+ }));
+ it('captures editor chips and repeat rows as canonical fields without editor controls',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>Hello <span class="doc-chip" data-token="name" contenteditable="false">name</span></p><table><tbody><tr data-repeat="items" class="is-repeat"><td>Item</td></tr></tbody></table><div class="doc-float selected" contenteditable="false"><p>Text</p><button class="doc-float-handle">Handle</button></div>';
+  const snapshot=model.capture(root),html=model.toHtml(snapshot.document);
+  expect(html).toContain('Hello {{name}}');expect(html).toContain('{{#items}}<tr');expect(html).not.toMatch(/contenteditable|doc-chip|Handle|is-repeat|selected/);
+ }));
+ it('preserves canonical contenteditable and unknown attributes when importing saved HTML',()=>withDocument(doc=>{
+  expect(model.toHtml(model.fromHtml('<p contenteditable="false" data-other="yes">Keep</p>',doc))).toContain('contenteditable="false" data-other="yes"');
+ }));
+});
+describe('immutable model paragraph command',()=>{
+ it('changes only selected paragraph alignment while preserving unrelated CSS and all model content',()=>withDocument(doc=>{
+  const tree=model.fromHtml('<p style="background:url(&quot;data:image/svg+xml;a;b&quot;);color:red;text-align:left">One {{name}}</p><p>Two</p>',doc);
+  const before=JSON.stringify(tree),result=model.alignParagraphs(tree,[[0]],'center');
+  expect(JSON.stringify(tree)).toBe(before);expect(model.toHtml(result.document)).toContain('color:red');expect(model.toHtml(result.document)).toContain('data:image/svg+xml;a;b');
+  expect(model.toHtml(result.document)).toContain('text-align:center');expect(model.toHtml(result.document)).toContain('One {{name}}');expect(result.document.children[1]).toEqual(tree.children[1]);
+ }));
+ it('rejects locked paragraphs and invalid alignment without mutating the input',()=>withDocument(doc=>{
+  const tree=model.fromHtml('<section data-doc-locked="true"><p>Locked</p></section>',doc),before=JSON.stringify(tree);
+  expect(()=>model.alignParagraphs(tree,[[0,0]],'center')).toThrow('locked');expect(()=>model.alignParagraphs(tree,[[0,0]],'bad')).toThrow('Invalid');expect(JSON.stringify(tree)).toBe(before);
+ }));
+ it('does not align the next paragraph when a selection ends at its first text offset',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>First</p><p>Second</p>';const paragraphs=root.querySelectorAll('p'),sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(paragraphs[0]!.firstChild!,0,paragraphs[1]!.firstChild!,0);
+  model.alignSelection(root,sel,'center');expect(paragraphs[0]!.style.textAlign).toBe('center');expect(paragraphs[1]!.style.textAlign).toBe('');
+ }));
+ it('patches live attributes without replacing text nodes, selection direction or field chips',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>Original <span class="doc-chip" data-token="name" contenteditable="false">name</span></p><p>Other</p>';
+  const text=root.querySelector('p')!.firstChild!,chip=root.querySelector('.doc-chip'),sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(text,8,text,0);
+  expect(model.alignSelection(root,sel,'center')).toBe(true);expect(root.querySelector('p')!.firstChild).toBe(text);expect(root.querySelector('.doc-chip')).toBe(chip);expect(sel.anchorOffset).toBe(8);expect(sel.focusOffset).toBe(0);
+  expect(model.alignmentActive(root,sel,'center')).toBe(true);expect(root.querySelectorAll('p')[1]!.getAttribute('style')).toBeNull();
+ }));
+});
+
+describe('model text ranges and inline formatting',()=>{
+ it('formats an immutable backwards text range across runs without changing bindings or annotations',()=>withDocument(doc=>{
+  const tree=model.fromHtml('<p><a href="https://example.com" data-extra="keep">One</a>{{name}}<ins data-doc-change="r">Two</ins></p>',doc),before=JSON.stringify(tree);
+  const range={anchor:{path:[0,2,0],offset:3},focus:{path:[0,0,0],offset:0}},result=model.formatTextRange(tree,range,'font-weight','bold');
+  const html=model.toHtml(result.document);expect(JSON.stringify(tree)).toBe(before);expect(html).toContain('href="https://example.com" data-extra="keep"');expect(html).toContain('{{name}}');expect(html).toContain('data-doc-change="r"');expect(html.match(/font-weight:bold/g)).toHaveLength(3);
+ }));
+ it('preserves a backwards live selection and field-chip identity while applying and toggling formatting',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>One <span class="doc-chip" data-token="name" contenteditable="false">name</span><a href="#keep">Two</a></p>';
+  const chip=root.querySelector('.doc-chip'),link=root.querySelector('a')!,p=root.querySelector('p')!,sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(link.firstChild!,3,p.firstChild!,0);
+  expect(model.formatSelection(root,sel,'font-weight','bold')).toBe(true);expect(sel.toString()).toBe('One nameTwo');expect(root.querySelector('.doc-chip')).toBe(chip);expect(root.querySelector('a')).toBe(link);expect(root.innerHTML).not.toContain('doc-inline-');expect(model.inlineActive(root,sel,'font-weight')).toBe(true);
+  expect(model.formatSelection(root,sel,'font-weight','normal')).toBe(true);expect(model.inlineActive(root,sel,'font-weight')).toBe(false);expect(root.querySelectorAll('[data-doc-run]')).toHaveLength(3);expect(sel.toString()).toBe('One nameTwo');
+ }));
+ it('formats only the selected part of a text node and keeps surrounding text unchanged',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>Before middle after</p>';const text=root.querySelector('p')!.firstChild!,sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(text,7,text,13);
+  model.formatSelection(root,sel,'font-style','italic');expect(root.querySelector('[data-doc-run]')!.textContent).toBe('middle');expect(root.textContent).toBe('Before middle after');expect(sel.toString()).toBe('middle');
+ }));
+ it('overrides inherited bold and reuses a fully selected model run',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p><strong data-keep="yes">Original</strong></p>';const strong=root.querySelector('strong')!,sel=doc.defaultView!.getSelection()!;sel.selectAllChildren(strong);model.formatSelection(root,sel,'font-weight','normal');
+  expect(root.querySelector('strong')).toBe(strong);expect(root.querySelector('[data-doc-run]')!.getAttribute('style')).toContain('font-weight:normal');const text=root.querySelector('[data-doc-run]')!.firstChild!;sel.setBaseAndExtent(text,0,text,8);model.formatSelection(root,sel,'font-style','italic');
+  expect(root.querySelectorAll('[data-doc-run]')).toHaveLength(1);expect(sel.toString()).toBe('Original');expect(root.querySelector('strong')!.getAttribute('data-keep')).toBe('yes');
+ }));
+ it('rejects a locked range without leaving marker comments or changing HTML',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>One</p><p data-doc-locked="true">Two</p>';const before=root.innerHTML,p=root.querySelectorAll('p'),sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(p[0]!.firstChild!,0,p[1]!.firstChild!,3);
+  expect(()=>model.formatSelection(root,sel,'font-weight','bold')).toThrow('locked');expect(root.innerHTML).toBe(before);expect(sel.toString()).toBe('OneTwo');
+ }));
+ it('keeps hidden/deleted review text and opaque objects untouched',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>One<del data-doc-change="r">Old</del><span data-doc-hidden="true">Hidden</span><svg><text>SVG</text></svg>Two</p>';const sel=doc.defaultView!.getSelection()!;sel.selectAllChildren(root.querySelector('p')!);
+  model.formatSelection(root,sel,'color','#ff0000');expect(root.querySelector('del')!.innerHTML).toBe('Old');expect(root.querySelector('[data-doc-hidden]')!.innerHTML).toBe('Hidden');expect(root.querySelector('svg')!.innerHTML).toBe('<text>SVG</text>');expect(root.querySelectorAll('[data-doc-run]')).toHaveLength(2);
+ }));
+ it('rejects invalid values and positions that split emoji without changing live content',()=>withDocument(doc=>{
+  const tree=model.fromHtml('<p>😀 word</p>',doc),point={path:[0,0],offset:1};expect(()=>model.formatTextRange(tree,{anchor:point,focus:{path:[0,0],offset:2}},'font-weight','bold')).toThrow('Unicode');
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>😀 word</p>';const text=root.querySelector('p')!.firstChild!,sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(text,1,text,2);const before=root.innerHTML;
+  expect(()=>model.formatSelection(root,sel,'font-weight','bold')).toThrow('Unicode');expect(root.innerHTML).toBe(before);expect(()=>model.formatTextRange(tree,{anchor:{path:[0,0],offset:0},focus:{path:[0,0],offset:2}},'font-family','bad; color:red')).toThrow('Invalid');
+ }));
+});
+
+describe('atomic field marks',()=>{
+ it('formats a field-only range without replacing its live chip or binding',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>Before <span class="doc-chip" contenteditable="false" data-token="employee.name">Name</span> after</p>';
+  const chip=root.querySelector('.doc-chip')!,sel=doc.defaultView!.getSelection()!,range=doc.createRange();range.selectNode(chip);sel.addRange(range);
+  expect(model.formatSelection(root,sel,'font-size','18pt')).toBe(true);expect(root.querySelector('.doc-chip')).toBe(chip);expect(sel.toString()).toBe('Name');expect(model.toHtml(model.capture(root).document)).toContain('font-size:18pt">{{employee.name}}</span>');
+  model.formatSelection(root,sel,'font-weight','bold');expect(root.querySelectorAll('[data-doc-run]')).toHaveLength(1);expect(model.inlineActive(root,sel,'font-weight')).toBe(true);
+ }));
+ it('leaves control tokens unchanged and rejects locked atoms',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p><span class="doc-chip" data-token="#items">Loop</span><span data-doc-locked="true"><span class="doc-chip" data-token="name">Name</span></span></p>';
+  const sel=doc.defaultView!.getSelection()!,range=doc.createRange();range.selectNode(root.querySelector('.doc-chip')!);sel.addRange(range);expect(model.formatSelection(root,sel,'font-weight','bold')).toBe(false);
+  range.selectNode(root.querySelectorAll('.doc-chip')[1]!);sel.removeAllRanges();sel.addRange(range);expect(()=>model.formatSelection(root,sel,'font-weight','bold')).toThrow('locked');expect(root.innerHTML).not.toContain('doc-inline-');
+ }));
+});
+
+describe('inherited inline decorations',()=>{
+ it('removes underline only from a backwards partial range, retaining links, strike, attributes and chip identity',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p><u data-keep="yes"><a href="#target" id="link"><s>Before middle after</s></a><span class="doc-chip" data-token="name">Name</span></u></p>';
+  const chip=root.querySelector('.doc-chip'),text=root.querySelector('s')!.firstChild!,sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(text,13,text,7);
+  expect(model.decorationActive(root,sel,'underline')).toBe(true);expect(model.formatDecoration(root,sel,'underline',false)).toBe(true);expect(sel.toString()).toBe('middle');expect(model.decorationActive(root,sel,'underline')).toBe(false);expect(model.decorationActive(root,sel,'line-through')).toBe(true);
+  expect(root.textContent).toBe('Before middle afterName');expect(root.querySelector('.doc-chip')).toBe(chip);expect(root.querySelectorAll('#link')).toHaveLength(1);expect([...root.querySelectorAll('a')].every(n=>n.getAttribute('href')==='#target')).toBe(true);expect([...root.querySelectorAll('u')].map(n=>n.textContent).join('')).toBe('Before  afterName');expect(root.innerHTML).not.toContain('doc-decor-');
+ }));
+ it('removes CSS strike from a whole field without touching review deletions or the remaining underline',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p><span style="text-decoration:underline line-through;color:red"><span class="doc-chip" data-token="name">Name</span> rest</span><del data-doc-change="r">Deleted</del></p>';
+  const chip=root.querySelector('.doc-chip')!,deleted=root.querySelector('del')!,sel=doc.defaultView!.getSelection()!,range=doc.createRange();range.selectNode(chip);sel.addRange(range);model.formatDecoration(root,sel,'line-through',false);
+  expect(model.decorationActive(root,sel,'line-through')).toBe(false);expect(model.decorationActive(root,sel,'underline')).toBe(true);expect(root.querySelector('.doc-chip')).toBe(chip);expect(root.querySelector('del')).toBe(deleted);expect(deleted.innerHTML).toBe('Deleted');expect(root.textContent).toBe('Name restDeleted');
+ }));
+ it('combines selected underline with an existing strike and keeps block-decoration fallback intact',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p><span data-doc-run="inline" style="text-decoration-line:line-through">Text</span></p>';
+  const sel=doc.defaultView!.getSelection()!;sel.selectAllChildren(root.querySelector('span')!);model.formatDecoration(root,sel,'underline',true);expect(root.querySelector('span')!.style.textDecorationLine).toContain('line-through');expect(root.querySelector('span')!.style.textDecorationLine).toContain('underline');
+  root.innerHTML='<p style="text-decoration:underline">Text</p>';sel.selectAllChildren(root.querySelector('p')!);const before=root.innerHTML;expect(model.formatDecoration(root,sel,'underline',false)).toBeNull();expect(root.innerHTML).toBe(before);
+ }));
+});
+
+it('does not format field-like nodes inside generated contents or opaque SVG',()=>withDocument(doc=>{
+ const root=doc.querySelector('#root')!;root.innerHTML='<p><span data-doc-toc="true"><span class="doc-chip" data-token="name">Generated</span></span><svg><foreignObject><span class="doc-chip" data-token="name">Opaque</span></foreignObject></svg></p>';
+ const sel=doc.defaultView!.getSelection()!;sel.selectAllChildren(root.querySelector('p')!);const before=root.innerHTML;expect(model.formatSelection(root,sel,'font-weight','bold')).toBe(false);expect(model.formatDecoration(root,sel,'underline',false)).toBe(false);expect(root.innerHTML).toBe(before);
+}));
+
+it('preserves typed spacing in marked runs and leaves paragraph insertion to its structural adapter',()=>withDocument(doc=>{
+ const root=doc.querySelector('#root')!;root.innerHTML='<p>Text</p>';const sel=doc.defaultView!.getSelection()!;sel.collapse(root.querySelector('p')!.firstChild!,4);
+ expect(model.insertMarkedText(root,sel,'  spaced',{ 'font-weight':'bold'})).toBe(true);expect(root.querySelector('[data-doc-run]')!.textContent).toBe('  spaced');expect((root.querySelector('[data-doc-run]') as HTMLElement).style.whiteSpace).toBe('pre-wrap');const before=root.innerHTML;expect(model.insertMarkedText(root,sel,'one\ntwo',{'font-weight':'bold'})).toBe(false);expect(root.innerHTML).toBe(before);
+}));
+
+describe('paragraph text transactions',()=>{
+ it('replaces a backwards selection across inline text and a whole field, retaining unrelated live nodes and attributes',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p><a id="link" href="#target">Before middle</a><span class="doc-chip" data-token="name">Name</span><em> after</em><span class="doc-chip" data-token="other">Other</span></p>';
+  const link=root.querySelector('a')!,em=root.querySelector('em')!,other=root.querySelectorAll('.doc-chip')[1]!,sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(em.firstChild!,1,link.firstChild!,7);
+  expect(model.editText(root,sel,'Replacement')).toBe(true);expect(sel.toString()).toBe('Replacement');expect(root.textContent).toBe('Before ReplacementafterOther');expect(root.querySelector('#link')).toBe(link);expect(link.getAttribute('href')).toBe('#target');expect(root.querySelector('.doc-chip')).toBe(other);expect(root.querySelectorAll('.doc-chip')).toHaveLength(1);
+ }));
+ it('deletes complete Unicode graphemes across formatting boundaries and removes whole atoms',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>A👩‍<b>💻</b><span class="doc-chip" data-token="name">Name</span>Z</p>';const sel=doc.defaultView!.getSelection()!,b=root.querySelector('b')!;sel.collapse(b.firstChild!,2);
+  expect(model.editText(root,sel,'','backward')).toBe(true);expect(root.textContent).toBe('ANameZ');sel.collapse(root.querySelector('p')!.lastChild!,0);expect(model.editText(root,sel,'','backward')).toBe(true);expect(root.querySelector('.doc-chip')).toBeNull();expect(root.textContent).toBe('AZ');
+ }));
+ it('rejects protected content and leaves paragraph joins and breaks to the structural adapter',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p>Before</p><p data-doc-locked="true">Locked</p><p>After</p>';const sel=doc.defaultView!.getSelection()!,p=root.querySelectorAll('p');sel.setBaseAndExtent(p[0]!.firstChild!,2,p[2]!.firstChild!,2);const before=root.innerHTML;expect(model.editText(root,sel,'X')).toBe(false);expect(root.innerHTML).toBe(before);
+  root.innerHTML='<p>One</p><p>Two</p>';sel.setBaseAndExtent(root.querySelectorAll('p')[0]!.firstChild!,1,root.querySelectorAll('p')[1]!.firstChild!,1);expect(model.editText(root,sel,'X')).toBeNull();sel.collapse(root.querySelector('p')!.firstChild!,0);expect(model.editText(root,sel,'','backward')).toBeNull();expect(model.editText(root,sel,'one\ntwo')).toBeNull();
+ }));
+ it('does not jump over control tokens, hidden text, review deletions or objects while deleting',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!,sel=doc.defaultView!.getSelection()!;
+  for(const atom of ['<span class="doc-chip doc-chip-ctrl" data-token="#items">Loop</span>','<del data-doc-change="r">Old</del>','<span data-doc-hidden="true">Hidden</span>','<img src="x">']){root.innerHTML='<p>Before'+atom+'after</p>';sel.collapse(root.querySelector('p')!.lastChild!,0);const before=root.innerHTML;expect(model.editText(root,sel,'','backward')).toBe(false);expect(root.innerHTML).toBe(before);}
+ }));
+});
+describe('script and direct-format clearing',()=>{
+ it('toggles selected superscript/subscript without losing fields, links or other fonts',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p><a href="#keep"><sup>Before middle after</sup></a><span class="doc-chip" data-token="name">Name</span></p>';const sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(root.querySelector('sup')!.firstChild!,13,root.querySelector('sup')!.firstChild!,7);const chip=root.querySelector('.doc-chip');
+  expect(model.formatScript(root,sel,'sub')).toBe(true);expect(sel.toString()).toBe('middle');expect(model.scriptActive(root,sel,'super')).toBe(false);expect(model.scriptActive(root,sel,'sub')).toBe(true);expect([...root.querySelectorAll('sup')].map(n=>n.textContent).join('')).toBe('Before  after');expect(root.querySelector('.doc-chip')).toBe(chip);expect([...root.querySelectorAll('a')].every(n=>n.getAttribute('href')==='#keep')).toBe(true);model.formatScript(root,sel,'baseline');expect(model.scriptActive(root,sel,'sub')).toBe(false);
+ }));
+ it('clears only selected direct character formatting and keeps paragraph styles and revisions',()=>withDocument(doc=>{
+  const root=doc.querySelector('#root')!;root.innerHTML='<p style="font-size:18pt;text-align:center"><b><i><u><sup>Before middle after</sup></u></i></b><ins data-doc-change="r" data-doc-author="Reviewer">Reviewed</ins></p>';const p=root.querySelector('p')!,sel=doc.defaultView!.getSelection()!;sel.setBaseAndExtent(root.querySelector('sup')!.firstChild!,7,root.querySelector('sup')!.firstChild!,13);
+  expect(model.clearSelection(root,sel)).toBe(true);expect(sel.toString()).toBe('middle');expect(model.decorationActive(root,sel,'underline')).toBe(false);expect(model.scriptActive(root,sel,'super')).toBe(false);expect(p.style.fontSize).toBe('18pt');expect(p.style.textAlign).toBe('center');expect(root.querySelector('ins')!.dataset.docAuthor).toBe('Reviewer');expect(root.textContent).toBe('Before middle afterReviewed');expect([...root.querySelectorAll('b')].map(n=>n.textContent).join('')).toBe('Before  after');
+ }));
+});
+
+it('leaves multi-paragraph Clear Formatting to the structural adapter without changing heading defaults',()=>withDocument(doc=>{
+ const root=doc.querySelector('#root')!;root.innerHTML='<p style="font-size:12pt"><b>Body</b></p><h1 style="font-size:24pt"><i>Title</i></h1>';const sel=doc.defaultView!.getSelection()!;sel.selectAllChildren(root);const before=root.innerHTML;expect(model.clearSelection(root,sel)).toBeNull();expect(root.innerHTML).toBe(before);expect(sel.toString()).toBe('BodyTitle');
+}));

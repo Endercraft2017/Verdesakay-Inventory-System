@@ -1,3 +1,4 @@
+import { batchBalances } from '../inventory/batch-stock';
 /** Production — repair / rework parts requests.
  *
  *  When a QA/QC inspector fails a unit with disposition = 'repair', the unit goes to
@@ -77,12 +78,14 @@ const REQUEST_SELECT = `
          u.identifier AS unit_identifier,
          jo.number    AS job_order_number,
          jo.product_name AS product_name,
+         sr.number AS sales_return_number,
          fl.name      AS from_location_name
   FROM repair_part_requests r
   LEFT JOIN users rb ON rb.id = r.requested_by
   LEFT JOIN users db_ ON db_.id = r.decided_by
   LEFT JOIN job_order_units u ON u.id = r.unit_id
   LEFT JOIN job_orders jo ON jo.id = r.job_order_id
+  LEFT JOIN sales_returns sr ON sr.id = r.sales_return_id
   LEFT JOIN locations fl ON fl.id = r.from_location_id
 `;
 
@@ -131,7 +134,10 @@ router.post('/units/:unitId/repairs', inspectGate, syncClass('merge'), (req, res
   const unitId = Number(req.params.unitId);
   const unit = queryOne<JobOrderUnit>('SELECT * FROM job_order_units WHERE id = ?', unitId);
   if (!unit) { res.status(404).json({ error: 'Unit not found' }); return; }
-  if (unit.status !== 'rework') {
+  const salesReturn = unit.status === 'returned_rework' ? queryOne<{ id: number }>(
+    `SELECT r.id FROM sales_returns r JOIN sales_return_dispositions d ON d.return_id = r.id
+     WHERE r.unit_id = ? AND r.status = 'rejected' AND d.state = 'repair'`, unitId) : null;
+  if (unit.status !== 'rework' && !salesReturn) {
     res.status(409).json({ error: 'Only a unit sent back for repair can request parts' });
     return;
   }
@@ -142,12 +148,13 @@ router.post('/units/:unitId/repairs', inspectGate, syncClass('merge'), (req, res
   const number = nextSequence('rpr_seq', 'RPR');
   const info = run(
     `INSERT INTO repair_part_requests
-       (number, unit_id, job_order_id, kind, component_item_id, component_name, quantity,
+       (number, unit_id, job_order_id, sales_return_id, kind, component_item_id, component_name, quantity,
         fault, return_to_damage, status, requested_by, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?)`,
     number,
     unitId,
     unit.job_order_id,
+    salesReturn?.id ?? null,
     input.kind,
     input.component_item_id,
     comp.name,
@@ -840,6 +847,9 @@ router.get('/record', recordRead, (req, res) => {
     const b = loadBatch(batchId!);
     if (!b) { res.status(404).json({ error: 'Batch not found' }); return; }
     out.batch = b;
+    out.batch_stock = batchBalances(b.id);
+    out.batch_allocations = queryAll(`SELECT a.quantity,a.state,o.number AS order_number FROM production_batch_allocations a JOIN orders o ON o.id=a.order_id WHERE a.batch_id=?`,b.id);
+    out.batch_counts = queryAll('SELECT location_id,before_quantity,counted_quantity,reason,created_at FROM production_batch_counts WHERE batch_id=? ORDER BY id DESC',b.id);
     productId = b.product_item_id;
     joId = b.job_order_id;
     out.units = queryAll<JobOrderUnit>('SELECT * FROM job_order_units WHERE batch_id = ? ORDER BY id', batchId);
@@ -851,6 +861,7 @@ router.get('/record', recordRead, (req, res) => {
       'SELECT id, name, sku, unit, product_group, attributes FROM inventory_items WHERE id = ?', productId
     );
     if (p) {
+      out.stock = queryAll(`SELECT s.build_mode,SUM(s.quantity) AS quantity FROM inventory_variant_stock s WHERE s.item_id=? GROUP BY s.build_mode`,p.id);
       let spec: unknown = null;
       try { spec = p.attributes ? (JSON.parse(p.attributes) as Record<string, unknown>).spec : null; } catch { spec = null; }
       out.product = { id: p.id, name: p.name, sku: p.sku, unit: p.unit, model: p.product_group, variant: spec ?? null };
@@ -858,7 +869,7 @@ router.get('/record', recordRead, (req, res) => {
   }
   if (joId) {
     out.job_order = queryOne(
-      `SELECT j.id, j.number, j.product_name, j.status, j.planned_start, j.due_date, j.accepted_at,
+      `SELECT j.id, j.number, j.product_name, j.build_mode, j.status, j.planned_start, j.due_date, j.accepted_at,
               t.name AS team_name, cb.full_name AS created_by_name, rb.full_name AS released_by_name, ab.full_name AS accepted_by_name,
               sl.name AS source_location_name, ol.name AS output_location_name
        FROM job_orders j

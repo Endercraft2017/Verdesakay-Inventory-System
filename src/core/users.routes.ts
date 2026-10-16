@@ -1,7 +1,7 @@
 /** User-account and department management. Listing is open to all; mutations require users.manage. */
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { queryOne, queryAll, run } from '../shared/db';
+import { db, queryOne, queryAll, run } from '../shared/db';
 import {
   requireAuth, requirePermission, requireAnyPermission, endUserSessions, endSessionBySid, listUserSessions,
 } from '../shared/auth';
@@ -19,6 +19,8 @@ import { ALL_PERMISSIONS, STAFF_PERMISSIONS } from '../shared/permissions';
 import { listRoles, getRole } from '../shared/roles';
 import type { UserRow, Department, Role } from '../shared/types';
 import { syncClass } from '../sync';
+import { z } from 'zod';
+import { mfaApplies, mfaEnabled, mfaUserIds, securityPolicy, setSecurityPolicy, disableMfa } from '../shared/mfa';
 
 const router = Router();
 router.use(requireAuth);
@@ -61,7 +63,36 @@ router.get('/', (req, res) => {
     );
     return;
   }
-  res.json(rows);
+  const withMfa = mfaUserIds();
+  res.json(rows.map((u) => ({ ...u, mfa_enabled: withMfa.has(u.id) })));
+});
+
+// GET /api/users/security-policy — workspace sign-in rules (shared/mfa.ts).
+router.get('/security-policy', requirePermission('users.manage'), (req, res) => {
+  res.json({ ...securityPolicy(), available: mfaApplies(), you_have_mfa: mfaEnabled(req.user!.id) });
+});
+
+// PUT /api/users/security-policy — { require_mfa_privileged }. Switching the requirement on is
+// refused until the person doing it uses two-step sign-in themselves, so the workspace can't be
+// locked out by its own admin.
+router.put('/security-policy', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+  const { require_mfa_privileged } = parseBody(z.object({ require_mfa_privileged: z.boolean() }), req.body);
+  if (require_mfa_privileged && !mfaEnabled(req.user!.id)) {
+    res.status(409).json({ error: 'Turn on two-step sign-in for your own account first (Account → Two-step sign-in).' });
+    return;
+  }
+  setSecurityPolicy({ require_mfa_privileged });
+  res.json({ ok: true, require_mfa_privileged });
+});
+
+// POST /api/users/:id/mfa/reset — someone lost their phone: remove their two-step sign-in so
+// they can set it up again (and sign them out everywhere).
+router.post('/:id/mfa/reset', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!queryOne('SELECT 1 AS x FROM users WHERE id = ?', id)) { res.status(404).json({ error: 'User not found' }); return; }
+  disableMfa(id);
+  endUserSessions(id, 'revoked');
+  res.json({ ok: true });
 });
 
 // POST /api/users — create an account. hr.manage (without users.manage) may also create one —
@@ -83,19 +114,30 @@ router.post('/', requireAnyPermission(['users.manage', 'hr.manage']), syncClass(
     res.status(409).json({ error: 'Username already taken' });
     return;
   }
+  if (input.employee_id) {
+    if (!req.user!.permissions.includes('hr.manage')) { res.status(403).json({ error: 'HR authority is required to link an employee account.' }); return; }
+    const employee = queryOne<{ user_id: number | null }>('SELECT user_id FROM employees WHERE id = ?', input.employee_id);
+    if (!employee) { res.status(404).json({ error: 'Save the employee record before creating its account.' }); return; }
+    if (employee.user_id != null) { res.status(409).json({ error: 'This employee already has an account. Unlink and save before creating another.' }); return; }
+  }
   enforceQuota('users');
   const hash = bcrypt.hashSync(input.password, 10);
-  const info = run(
-    `INSERT INTO users (username, full_name, email, password_hash, role, department_id)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    input.username,
-    input.full_name,
-    input.email || null,
-    hash,
-    input.role,
-    input.department_id
-  );
-  res.status(201).json({ id: info.lastInsertRowid });
+  db.exec('BEGIN');
+  try {
+    const info = run(
+      `INSERT INTO users (username, full_name, email, password_hash, role, department_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      input.username,
+      input.full_name,
+      input.email || null,
+      hash,
+      input.role,
+      input.department_id
+    );
+    if (input.employee_id) run("UPDATE employees SET user_id = ? WHERE id = ?", Number(info.lastInsertRowid), input.employee_id);
+    db.exec('COMMIT');
+    res.status(201).json({ id: info.lastInsertRowid });
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
 });
 
 // PUT /api/users/:id — update account details
@@ -116,6 +158,8 @@ router.put('/:id', requirePermission('users.manage'), syncClass('online'), (req,
   }
   const department_id = input.department_id !== undefined ? input.department_id : user.department_id;
   const active = input.active !== undefined ? (input.active ? 1 : 0) : user.active;
+
+  if (user.active !== 1 && active === 1) enforceQuota('users');
 
   // Never strip the last active administrator.
   const demoting = user.role === 'admin' && role !== 'admin';
@@ -156,7 +200,7 @@ router.post('/:id/reset-password', requirePermission('users.manage'), syncClass(
     return;
   }
   const hash = bcrypt.hashSync(new_password, 10);
-  run('UPDATE users SET password_hash = ? WHERE id = ?', hash, id);
+  run('UPDATE users SET password_hash = ?, password_change_required = 0, temporary_password_expires_at = NULL WHERE id = ?', hash, id);
   endUserSessions(id, 'password');
   run('UPDATE password_resets SET used = 1 WHERE user_id = ?', id);
   res.json({ ok: true });

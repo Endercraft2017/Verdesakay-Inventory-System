@@ -25,20 +25,21 @@
 
   function roleAction() {
     if (!window.MApp) return null;
-    if (MApp.can('production.inspect_qc') || MApp.can('production.inspect_qa')) return ACTIONS.qc;
-    if (MApp.can('production.repairs')) return ACTIONS.repairs;
-    if (MApp.can('production.record')) return ACTIONS.jobs;
-    if (MApp.can('production.receive')) return ACTIONS.receiving;
-    if (MApp.can('orders.release')) return ACTIONS.release;
+    if ((MApp.can('production.inspect_qc') || MApp.can('production.inspect_qa')) && MApp.canOpen(ACTIONS.qc.route)) return ACTIONS.qc;
+    if ((MApp.can('production.repairs')) && MApp.canOpen(ACTIONS.repairs.route)) return ACTIONS.repairs;
+    if ((MApp.can('production.record')) && MApp.canOpen(ACTIONS.jobs.route)) return ACTIONS.jobs;
+    if ((MApp.can('production.receive')) && MApp.canOpen(ACTIONS.receiving.route)) return ACTIONS.receiving;
+    if ((MApp.can('orders.release')) && MApp.canOpen(ACTIONS.release.route)) return ACTIONS.release;
     // Warehouse: Figma 62:372 — the job-order scan shortcut into kit release.
-    if (MApp.can('inventory.adjust')) return ACTIONS.kitscan;
-    if (MApp.can('inventory.mobile')) return ACTIONS.scan;
+    if ((MApp.can('inventory.adjust')) && MApp.canOpen(ACTIONS.kitscan.route)) return ACTIONS.kitscan;
+    if ((MApp.can('inventory.mobile')) && MApp.canOpen(ACTIONS.scan.route)) return ACTIONS.scan;
     return null;
   }
 
   function renderActions() {
     if (!orbit || !window.MApp) return;
-    var actions = [ACTIONS.request, ACTIONS.report, ACTIONS.message];
+    var actions = [ACTIONS.request, ACTIONS.report];
+    if (MApp.can('messages.send')) actions.push(ACTIONS.message);
     var role = roleAction();
     if (role) actions.push(role);
     orbit.querySelector('.v2-orbit-menu').innerHTML = actions.map(function (a) {

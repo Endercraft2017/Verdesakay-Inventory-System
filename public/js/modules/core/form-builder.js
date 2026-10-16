@@ -2,10 +2,10 @@
    entry (HR/Inventory/Admin/Accounting → Form Builder) opens this same route scoped to its own
    section via filter.scope — forms.manage.<scope> gates which sections a given user can reach.
    Route: form-builder. Tab driven: Forms | Global Variables. */
-const FORM_SCOPE_LABELS = { hr: 'HR', inventory: 'Inventory', admin: 'Admin', accounting: 'Accounting' };
+const FORM_SCOPE_LABELS = DataForms.labels;
 App.register('form-builder', async (view, filter) => {
   const scope = filter && filter.scope;
-  if (!scope || !App.hasPermission('forms.manage.' + scope)) {
+  if (!scope || !DataForms.canManage(scope === 'general' ? null : scope)) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
     return;
   }
@@ -98,7 +98,7 @@ App.register('form-builder', async (view, filter) => {
         req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
         req('holiday_name', 'Holiday Name', 'text'),
-        req('date', 'Date', 'date'),
+        req('work_date', 'Date', 'date'),
         req('holiday_type', 'Holiday Type', 'select', ['Regular Holiday', 'Special Non-Working Holiday']),
         req('hours_worked', 'Hours Worked', 'number'),
         opt('approved_by', 'Approved By', 'text'),
@@ -110,7 +110,7 @@ App.register('form-builder', async (view, filter) => {
       fields: [
         req('employee_name', 'Employee Name', 'employee'),
         opt('department', 'Department', 'text'),
-        req('date', 'Date', 'date'),
+        req('work_date', 'Date', 'date'),
         req('time_start', 'Time Start', 'text'),
         req('time_end', 'Time End', 'text'),
         req('hours', 'Total Hours', 'number'),
@@ -236,14 +236,14 @@ App.register('form-builder', async (view, filter) => {
         <p class="muted" style="margin-top:0">Pick a starting point — you'll still review and confirm the fields before it's created.</p>
         <div class="form-card-grid">${FORM_TEMPLATES.map((t) => {
           const already = usedSlugs.has(t.slug);
-          return `<div class="form-card ${already ? '' : 'clickable'}" data-tpl="${t.key}" style="${already ? 'opacity:.5' : ''}">
+          return `<button type="button" ${already ? 'disabled' : ''} class="form-card ${already ? '' : 'clickable'}" data-tpl="${t.key}" style="${already ? 'opacity:.5' : ''}">
             <div class="form-card-icon">${UI.icon(t.icon, 32)}</div>
             <div class="form-card-info">
               <div class="form-card-name">${UI.esc(t.label)}</div>
               <div class="form-card-meta">${t.fields.length} fields</div>
               ${already ? `<div class="muted" style="font-size:12px">Slug already taken</div>` : ''}
             </div>
-          </div>`;
+          </button>`;
         }).join('')}</div>`,
       cancelText: 'Close',
       onOpen: (ov) => {
@@ -259,13 +259,16 @@ App.register('form-builder', async (view, filter) => {
   view.innerHTML = `
     <div class="topbar">
       <h2>Form Builder — ${UI.esc(FORM_SCOPE_LABELS[scope])}</h2>
+      <div class="grow"></div>
+      <button class="btn secondary" id="fb-open-records">${UI.icon('file')} Data Forms</button>
     </div>
     <div class="subnav-tabs" id="fb-tabs">
       <button class="subtab active" data-tab="forms">Form Definitions</button>
-      <button class="subtab" data-tab="globals">Global Variables</button>
+      <button class="subtab" data-tab="globals">Shared Template Values</button>
     </div>
     <div id="fb-content"></div>`;
 
+  view.querySelector('#fb-open-records').onclick = () => App.navigate('form-records', { scope });
   const content = view.querySelector('#fb-content');
 
   view.querySelectorAll('#fb-tabs .subtab').forEach((btn) =>
@@ -282,12 +285,14 @@ App.register('form-builder', async (view, filter) => {
     content.innerHTML = `
       <div class="topbar" style="padding:12px 20px">
         <span class="grow"></span>
-        <button class="btn secondary" id="fb-quick-add">${UI.icon('calendar', 14)} Quick Add (Common HR Forms)</button>
+        ${scope === 'inventory' ? `<button type="button" class="btn secondary" id="fb-invoice-starter">${UI.icon('file',14)} Sales invoice starter</button>`:''}
+        ${scope === 'hr' ? `<button class="btn secondary" id="fb-quick-add">${UI.icon('calendar', 14)} Quick Add (Common HR Forms)</button>` : ''}
         <button class="btn" id="fb-new-form">${UI.icon('plus')} New Form</button>
       </div>
       <div class="panel"><div id="fb-forms-table"></div></div>`;
     content.querySelector('#fb-new-form').onclick = () => formModal(null);
-    content.querySelector('#fb-quick-add').onclick = () => quickAddModal();
+    content.querySelector('#fb-invoice-starter')?.addEventListener('click',()=>formModal(null,invoiceStarter()));
+    if (content.querySelector('#fb-quick-add')) content.querySelector('#fb-quick-add').onclick = () => quickAddModal();
     await loadForms();
   }
 
@@ -295,7 +300,7 @@ App.register('form-builder', async (view, filter) => {
     const el = content.querySelector('#fb-forms-table');
     if (!el) return;
     el.innerHTML = '<div class="empty">Loading…</div>';
-    const forms = (await API.get('/form-definitions')).filter((f) => f.scope === scope);
+    const forms = (await API.get('/form-definitions')).filter((f) => f.scope === (scope === 'general' ? null : scope));
     if (!forms.length) {
       el.innerHTML = UI.emptyState({
         icon: 'file',
@@ -311,33 +316,43 @@ App.register('form-builder', async (view, filter) => {
       <thead><tr><th>Name</th><th>Slug</th><th>Prefix</th><th>Fields</th><th>Records</th><th></th></tr></thead>
       <tbody>${forms.map((f) => `
         <tr class="clickable" data-open="${f.id}">
-          <td><strong>${UI.esc(f.name)}</strong></td>
+          <td><strong>${UI.esc(f.name)}</strong> <span class="muted">v${f.version || 1}${f.archived_at ? ' · Archived' : ''}</span></td>
           <td><span class="mono muted">${UI.esc(f.slug)}</span></td>
           <td><span class="mono">${UI.esc(f.number_prefix)}-#####</span></td>
           <td>${f.fields.length} field${f.fields.length !== 1 ? 's' : ''}</td>
           <td>${f.record_count}</td>
           <td class="actions">
             <button class="btn secondary small" data-records="${f.id}" title="View Records">${UI.icon('forms', 14)} Records</button>
-            <button class="icon-btn" data-tpl="${f.id}" title="${f.template_id ? 'Edit print template' : 'Design print template'}">${UI.icon(f.template_id ? 'file' : 'plus', 16)}</button>
+            <button class="btn secondary small" data-tpl="${f.id}" title="Manage print templates">${UI.icon('file', 14)} Templates</button>
             <button class="icon-btn" data-edit="${f.id}" title="Edit">${UI.icon('edit')}</button>
-            <button class="icon-btn danger" data-del="${f.id}" title="Delete">${UI.icon('trash')}</button>
+            ${scope==='inventory'?`<button class="btn secondary small" data-access="${f.id}">Access</button>`:''}
+            <button class="btn secondary small" data-versions="${f.id}">Versions</button><button class="btn secondary small" data-del="${f.id}" title="${f.archived_at ? 'Restore' : 'Archive'} form">${f.archived_at ? 'Restore' : 'Archive'}</button>
           </td>
         </tr>`).join('')}
       </tbody></table>`;
 
     el.querySelectorAll('[data-edit]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); openForm(b.dataset.edit, forms); });
+    el.querySelectorAll('[data-access]').forEach(button=>button.onclick=event=>{event.stopPropagation();formAccess(button.dataset.access).catch(error=>UI.toast(error.message,'error'));});
+    el.querySelectorAll('[data-versions]').forEach(button => button.onclick = event => { event.stopPropagation(); DataForms.definitionHistory(forms.find(form => String(form.id) === button.dataset.versions)).catch(error => UI.toast(error.message, 'error')); });
     el.querySelectorAll('[data-del]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); delForm(b.dataset.del, forms); });
     el.querySelectorAll('[data-records]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); App.navigate('form-records', { form_id: b.dataset.records }); });
     el.querySelectorAll('[data-tpl]').forEach((b) =>
-      b.onclick = (e) => { e.stopPropagation(); openFormTemplate(forms.find((f) => String(f.id) === String(b.dataset.tpl))); });
+      b.onclick = async (e) => { e.stopPropagation(); try{await manageFormTemplates(forms.find((f) => String(f.id) === String(b.dataset.tpl)));}catch(err){UI.toast(err.message,'error');} });
     el.querySelectorAll('tr[data-open]').forEach((tr) =>
       tr.onclick = (e) => {
         if (e.target.closest('.actions')) return;
         openForm(tr.dataset.open, forms);
       });
+  }
+
+  async function formAccess(id) {
+    const settings=await API.get('/form-definitions/'+id+'/access');
+    UI.modal({title:'Form access',protectChanges:true,size:'lg',confirmText:'Save access',bodyHTML:`<p>Allowed roles and employee accounts can view all records on this form, create drafts, and edit or submit active drafts. Form managers retain their existing access.</p><p class="muted">These accounts also need Enter Inventory forms in account permissions. Product, customer and sales-order permissions still apply. No selection means managers only.</p><label for="fb-access-search">Find a role or employee</label><input id="fb-access-search" type="search"><fieldset><legend>Allowed roles</legend>${settings.roles.map(role=>`<label class="form-column-choice" data-access-choice><input type="checkbox" data-access-role="${UI.esc(role.key)}" ${settings.access.roles?.includes(role.key)?'checked':''}> ${UI.esc(role.label)}</label>`).join('')}</fieldset><fieldset><legend>Allowed employee accounts</legend>${settings.users.map(user=>`<label class="form-column-choice" data-access-choice><input type="checkbox" data-access-user="${user.id}" ${settings.access.users?.includes(user.id)?'checked':''}> ${UI.esc(user.full_name)} (${UI.esc(user.username)})</label>`).join('')}</fieldset>`,onOpen:overlay=>{overlay.querySelector('#fb-access-search').oninput=event=>{const query=event.target.value.toLowerCase();overlay.querySelectorAll('[data-access-choice]').forEach(label=>label.hidden=!label.textContent.toLowerCase().includes(query));};},onConfirm:async(overlay,showError)=>{
+      try{await API.put('/form-definitions/'+id+'/access',{expected_revision:settings.revision,roles:[...overlay.querySelectorAll('[data-access-role]:checked')].map(input=>input.dataset.accessRole),users:[...overlay.querySelectorAll('[data-access-user]:checked')].map(input=>Number(input.dataset.accessUser))});UI.toast('Form access saved');return true;}catch(error){showError(error.message);return false;}
+    }});
   }
 
   function openForm(id, forms) {
@@ -348,22 +363,18 @@ App.register('form-builder', async (view, filter) => {
   async function delForm(id, forms) {
     const form = forms.find((f) => String(f.id) === String(id));
     if (!form) return;
-    const hasRecords = form.record_count > 0;
-    const msg = hasRecords
-      ? `Delete "${form.name}"? This will also delete all ${form.record_count} record(s). Cannot be undone.`
-      : `Delete "${form.name}"? Cannot be undone.`;
-    if (!await UI.confirmDialog(msg, 'Delete')) return;
-    await API.del('/form-definitions/' + id);
-    UI.toast('Form deleted');
-    loadForms();
+    UI.modal({title: `${form.archived_at ? 'Restore' : 'Archive'} ${form.name}`,bodyHTML:`<p>${form.archived_at ? 'This form will accept new records again.' : 'New records and imports will stop. Existing records, versions and print layouts stay available. Authorized corrections require a reason.'}</p><label for="fb-archive-reason">Reason (optional)</label><textarea id="fb-archive-reason" maxlength="1000"></textarea>`,confirmText:form.archived_at?'Restore form':'Archive form',onConfirm:async overlay=>{
+      await API.put('/form-definitions/'+form.id+'/archive',{archived:!form.archived_at,reason:overlay.querySelector('textarea').value});
+      UI.toast(form.archived_at?'Form restored':'Form archived'); await loadForms();
+    }});
   }
 
   // ── Print template link (Design/Edit print template) ────────────────────────
   // Opens (creating on first use) the doc_template linked to this form, with its own fields
   // exposed as {{variables}} — the same DocEditor used for Sale/Job/Purchase order templates.
 
-  function formTemplateVariables(form) {
-    const vars = form.fields.map((f) => ({ category: 'Form Fields', label: f.label, token: `{{${f.key}}}` }));
+  function formTemplateVariables(form,catalog=[]) {
+    const vars = FormConnections.variables(form,catalog);
     vars.push(
       { category: 'Record', label: 'Record Number', token: '{{record.number}}' },
       { category: 'Record', label: 'Status', token: '{{record.status}}' },
@@ -378,8 +389,12 @@ App.register('form-builder', async (view, filter) => {
   function sampleFieldValue(field) {
     if (field.default) return field.default;
     switch (field.type) {
+      case 'reference': return {id:1,name:'Sample '+field.label,number:'SO-00001'};
+      case 'line_items': return [{name:'Sample product',quantity:2,unit:'unit',unit_price:100,line_total:200}];
+      case 'calculated': return 200;
       case 'number': return 1;
       case 'date': return new Date().toLocaleDateString();
+      case 'time': return '09:00';
       case 'checkbox': return true;
       case 'select': return (field.options && field.options[0]) || '';
       default: return field.label || 'Sample';
@@ -389,8 +404,9 @@ App.register('form-builder', async (view, filter) => {
   function sampleContextFor(form) {
     const ctx = {};
     form.fields.forEach((f) => { ctx[f.key] = sampleFieldValue(f); });
+    ctx.fields={...ctx};
     ctx.record = { number: form.number_prefix + '-00001', status: 'submitted', created_at: new Date().toLocaleDateString() };
-    ctx.company = { name: 'Verdesakay Inc.', address: '123 Main St, Cebu City', phone: '(032) 555-1234' };
+    ctx.company = { name: 'Example Company', address: '123 Main St, Cebu City', phone: '(032) 555-1234' };
     return ctx;
   }
 
@@ -401,8 +417,8 @@ App.register('form-builder', async (view, filter) => {
   // point when someone clicks "Design print template" on a hand-built form, and stamped
   // automatically onto every Quick Add form the moment it's created.
   function defaultFormTemplateBody(form) {
-    const rows = form.fields.map((f) => `
-      <div class="ff-row"><span class="ff-label">${UI.esc(f.label)}</span><span class="ff-value">{{${f.key}}}</span></div>`).join('');
+    if(form.invoice_layout)return FormPrint.invoice(form);
+    const rows = form.fields.map(FormConnections.printField).join('');
     return `<style>
   .ff-card { border: 1px solid #222; padding: 14px 18px; font-size: 12.5px; }
   .ff-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 10px; margin-bottom: 12px; }
@@ -424,8 +440,8 @@ App.register('form-builder', async (view, filter) => {
   </div>
   <div class="ff-fields">${rows}</div>
   <div class="ff-sig">
-    <div>Requested By</div>
-    <div>Approved By</div>
+    <div>Issued by</div>
+    <div>Received by</div>
   </div>
 </div>`;
   }
@@ -435,14 +451,44 @@ App.register('form-builder', async (view, filter) => {
   // stays reserved for the hand-authored Sale/Job/Purchase Order etc. templates. Creation is
   // deferred to Save (not eagerly POSTed the moment the button is clicked), so opening the
   // editor and just closing it doesn't leave an orphan template behind.
-  async function openFormTemplate(form) {
+  async function manageFormTemplates(form) {
+    if(!form)return;
+    const [linked,available]=await Promise.all([API.get(`/form-definitions/${form.id}/templates`),API.get('/templates')]);
+    UI.modal({title:`${form.name} — Print templates`,size:'lg',cancelText:'Close',bodyHTML:`
+      <p class="muted">The default layout is used for printing and automated documents. Choose another layout when printing without changing the default. Editing a shared template affects every form linked to it; duplicate it for an independent copy.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"><button type="button" class="btn" data-new-layout>${UI.icon('plus')} Create template</button><select data-link-layout aria-label="Existing template"><option value="">Choose an existing template…</option>${available.filter(t=>!linked.some(l=>l.id===t.id)).map(t=>`<option value="${t.id}">${UI.esc(t.name)}</option>`).join('')}</select><button type="button" class="btn secondary" data-link-existing>Link selected</button></div>
+      <p class="muted">Templates from another form need matching field variables. Use the form's variable picker in the editor to map fields.</p>
+      ${linked.length?`<table><thead><tr><th>Layout</th><th>Default</th><th>Actions</th></tr></thead><tbody>${linked.map(t=>`<tr><td><strong>${UI.esc(t.name)}</strong>${t.linked_forms>1?`<div class="muted">Shared by ${t.linked_forms} forms</div>`:''}</td><td>${t.is_default?'Default':`<button type="button" class="btn secondary small" data-default="${t.id}">Make default</button>`}</td><td class="actions"><button type="button" class="btn secondary small" data-layout-edit="${t.id}">Edit</button><button type="button" class="btn secondary small" data-layout-copy="${t.id}">Duplicate</button><button type="button" class="btn secondary small" data-layout-unlink="${t.id}">Unlink</button></td></tr>`).join('')}</tbody></table>`:'<p>No templates linked. Create a layout or link an existing one.</p>'}`,
+      onOpen:ov=>{
+        const refresh=async()=>{const latest=await API.get('/form-definitions/'+form.id);Object.assign(form,latest);ov.remove();await loadForms();await manageFormTemplates(form);};
+        const action=fn=>async()=>{try{await fn();}catch(err){UI.toast(err.message,'error');}};
+        ov.querySelector('[data-new-layout]').onclick=action(async()=>{ov.remove();await openFormTemplate(form,null);});
+        ov.querySelector('[data-link-existing]').onclick=action(async()=>{const id=Number(ov.querySelector('[data-link-layout]').value);if(!id){UI.toast('Choose a template first','error');return;}await API.post(`/form-definitions/${form.id}/templates`,{template_id:id});await refresh();});
+        ov.querySelectorAll('[data-default]').forEach(b=>b.onclick=action(async()=>{await API.put(`/form-definitions/${form.id}/template`,{template_id:Number(b.dataset.default)});await refresh();}));
+        ov.querySelectorAll('[data-layout-edit]').forEach(b=>b.onclick=action(async()=>{ov.remove();await openFormTemplate(form,Number(b.dataset.layoutEdit));}));
+        ov.querySelectorAll('[data-layout-copy]').forEach(b=>b.onclick=action(async()=>{const source=await API.get('/templates/'+b.dataset.layoutCopy);ov.remove();await openFormTemplate(form,null,source);}));
+        ov.querySelectorAll('[data-layout-unlink]').forEach(b=>b.onclick=action(async()=>{if(!await UI.confirmDialog('Unlink this layout? Its template remains in Document Templates. Removing the default selects another linked layout when available.','Unlink'))return;await API.del(`/form-definitions/${form.id}/templates/${b.dataset.layoutUnlink}`);await refresh();}));
+      }
+    });
+  }
+
+  async function openFormTemplate(form, templateId = form?.template_id, source = null) {
     if (!form) return;
     if (!window.DocEditor) { UI.toast('Editor failed to load', 'error'); return; }
-    const existingTpl = form.template_id ? await API.get('/templates/' + form.template_id).catch(() => null) : null;
+    const existingTpl = templateId ? await API.get('/templates/' + templateId) : null;
     const isNew = !existingTpl;
-    const tpl = existingTpl || { name: `${form.name} Template`, type: 'generic', body: defaultFormTemplateBody(form) };
-    const sample = sampleContextFor(form);
+    const tpl = existingTpl || (source ? {...source,name:source.name+' (copy)'} : { name: `${form.name} Template`, type: 'generic', body: defaultFormTemplateBody(form) });
+    let savedId=existingTpl?.id||null;
+    const draftKey='new-template:form-'+form.id+'-'+FormConnections.key();
+    const [custom,sourceCatalog]=await Promise.all([API.get('/templates/variables'+(tpl.id?'?template_id='+tpl.id:'')),API.get('/data-forms/sources').catch(()=>[])]);
+    const sample = applyVariables(sampleContextFor(form),custom);
     window.DocEditor.open({
+      getTemplateId: () => savedId,
+      sharedStudio: true,
+      getSavedRevision: () => tpl.revision,
+      onSharedRevision: revision => { tpl.revision=revision; },
+      documentKey: savedId?'template:'+savedId:draftKey,
+      getDocumentKey:()=>savedId?'template:'+savedId:draftKey,
       title: isNew ? 'New Print Template' : 'Edit Print Template',
       name: tpl.name,
       type: tpl.type,
@@ -450,20 +496,29 @@ App.register('form-builder', async (view, filter) => {
       body: tpl.body,
       copiesPerRecord: tpl.copies_per_record || 1,
       recordsPerPage: tpl.records_per_page || 1,
+      gapXmm: tpl.grid_gap_x_mm ?? 6, gapYmm: tpl.grid_gap_y_mm ?? 6,
       tileFill: tpl.tile_fill || 'blank',
       continuous: !!tpl.tile_continuous,
       repeatCount: tpl.repeat_count || 1,
-      getVariables: () => formTemplateVariables(form),
+      getVariables: () => [...formTemplateVariables(form,sourceCatalog),...custom.map(v=>({category:v.category||'Custom variables',label:v.label,token:'{{'+v.key+'}}'}))],
       sampleContext: sample,
+      loadPreviewRecord: async (id) => {
+        const [record, company] = await Promise.all([API.get('/form-records/' + id), API.get('/templates/company')]);
+        if (Number(record.form_def_id) !== Number(form.id)) throw new Error('Choose a record from this form');
+        return { ...record.data, fields:record.data, record: { number: record.number, status: record.status, created_at: record.created_at }, company };
+      },
       renderPreview: (body) => UI.printableHtml(renderTemplate(body, sample), 'Preview'),
-      onSave: async ({ name, type, body, copiesPerRecord, recordsPerPage, tileFill, continuous, repeatCount }) => {
+      onSave: async ({ name, type, body, copiesPerRecord, recordsPerPage, tileFill, continuous, repeatCount, gapXmm, gapYmm, studioVersion }) => {
         if (!name.trim()) return 'Template name is required';
         if (!body.trim()) return 'Template body cannot be empty';
         const res = await API.put(`/form-definitions/${form.id}/template-body`, {
-          name: name.trim(), type, body, copies_per_record: copiesPerRecord, records_per_page: recordsPerPage, tile_fill: tileFill,
-          tile_continuous: continuous, repeat_count: repeatCount,
+          template_id:savedId, source_template_id:!savedId?source?.id:undefined, source_revision:!savedId?source?.revision:undefined,
+          expected_revision: savedId?tpl.revision:undefined, period:tpl.period||undefined, name: name.trim(), type, body, copies_per_record: copiesPerRecord, records_per_page: recordsPerPage, tile_fill: tileFill,
+          grid_gap_x_mm: gapXmm, grid_gap_y_mm: gapYmm, tile_continuous: continuous, repeat_count: repeatCount, studio_version: studioVersion,
         });
-        form.template_id = res.id; // keep the in-memory row in sync until the next loadForms()
+        tpl.revision = res.revision;
+        savedId=res.id;
+        if(!form.template_id)form.template_id=res.id;
         UI.toast('Template saved');
         loadForms();
         return true;
@@ -476,55 +531,53 @@ App.register('form-builder', async (view, filter) => {
   // `prefill` (no .id) seeds a brand-new form from a Quick Add template — still POSTs on save
   // like any new form, just pre-populated for review instead of blank. `existing` (has .id) is
   // a real edit and always wins if somehow both were passed.
+  function invoiceStarter(){
+    const field=(key,label,type,extra={})=>({key,label,type,required:false,options:[],default:'',...extra});
+    const amount=(key,label,operator,operands)=>field(key,label,'calculated',{format:'currency',currency:'PHP',calculation:{operator,operands}});
+    return {name:'Sales Invoice',slug:'sales_invoice',number_prefix:'INV',icon:'file',invoice_layout:true,fields:[
+      field('company_name','Company','system',{source:'company',property:'name'}),field('company_address','Company address','system',{source:'company',property:'address'}),field('company_tin','Company TIN','system',{source:'company',property:'tin'}),
+      field('customer','Customer','reference',{source:'customer',required:true}),field('billing_address','Billing address','textarea',{binding:{field:'customer',property:'address',editable:true}}),field('customer_tin','Customer TIN','text',{binding:{field:'customer',property:'tin',editable:false}}),
+      field('invoice_date','Invoice date','date',{required:true}),field('due_date','Due date','date'),field('items','Products','line_items',{required:true,currency:'PHP',price_editable:true}),
+      amount('subtotal','Subtotal','sum',['items.line_total']),field('tax_rate','Tax percentage','number',{default:'0'}),amount('tax','Tax amount','percent',['subtotal','tax_rate']),amount('total','Total due','sum',['subtotal','tax']),
+      field('payment_terms','Payment terms','textarea',{default:'Due on receipt'}),field('prepared_by','Prepared by','system',{source:'user',property:'name'})
+    ],actions:[{type:'create_sales_draft',run_on:'submitted',customer_field:'customer',items_field:'items',tax_field:'tax_rate',total_field:'total',date_field:'invoice_date',due_field:'due_date',notes_field:'payment_terms',currency:'PHP'}]};
+  }
+
   function formModal(existing, prefill) {
     const editing = !!existing;
     const seed = existing || prefill || null;
     const fields = seed ? JSON.parse(JSON.stringify(seed.fields)) : [];
     const actions = seed && seed.actions ? JSON.parse(JSON.stringify(seed.actions)) : [];
 
-    UI.modal({
+    const builderModal = UI.modal({
+      protectChanges: true,
       title: editing ? `Edit: ${existing.name}` : 'New Form',
+      helpTopic: 'form-builder',
       size: 'lg',
       bodyHTML: `
-        <div class="field-row">
-          <div style="flex:2">
-            <label>Form name</label>
-            <input data-f="name" value="${UI.esc(seed ? seed.name : '')}" placeholder="e.g. Leave Request" />
-          </div>
-          <div>
-            <label>Slug <span class="muted">(unique ID)</span></label>
-            <input data-f="slug" value="${UI.esc(seed ? seed.slug : '')}" placeholder="leave_request" class="mono" />
-          </div>
-        </div>
-        <div class="field-row">
-          <div>
-            <label>Number prefix</label>
-            <input data-f="number_prefix" value="${UI.esc(seed ? seed.number_prefix : 'FM')}" placeholder="FM" class="mono" style="width:90px" />
-          </div>
-          <div>
-            <label>Icon</label>
-            <input data-f="icon" value="${UI.esc(seed ? seed.icon : 'file')}" placeholder="file" style="width:100px" />
-          </div>
-        </div>
-        <div style="margin-top:16px;display:flex;align-items:center;gap:12px;margin-bottom:8px">
-          <strong>Fields</strong>
-          <button type="button" class="btn secondary small" id="fb-add-field">${UI.icon('plus', 14)} Add field</button>
-        </div>
-        <div id="fb-fields-list"></div>
-        <p class="muted" style="font-size:12px;margin-top:8px">
-          Each field becomes a template variable: <span class="mono">{{field_key}}</span> —
-          this form belongs to <strong>${UI.esc(FORM_SCOPE_LABELS[scope])}</strong>.
-        </p>
-        <div style="margin-top:18px;display:flex;align-items:center;gap:12px;margin-bottom:8px">
-          <strong>Automated actions</strong>
-          <button type="button" class="btn secondary small" id="fb-add-action">${UI.icon('plus', 14)} Add action</button>
-        </div>
-        <div id="fb-actions-list"></div>
-        <p class="muted" style="font-size:12px;margin-top:8px">
-          Actions run when a record is saved (or reaches <em>approved</em>). "Notify"/"File to 201"/"Email"
-          use the field of type <span class="mono">employee</span> to find who the record is about.
-          Message text may use <span class="mono">{number} {form} {employee} {field:key}</span>.
-        </p>`,
+        <div class="fb-editor">
+          <section class="fb-section fb-basics">
+            <div class="fb-section-title"><h3>Form details</h3><span class="fb-scope">${UI.esc(FORM_SCOPE_LABELS[scope])}</span></div>
+            <label for="fb-name">Form name *</label>
+            <input id="fb-name" aria-required="true" maxlength="120" data-f="name" value="${UI.esc(seed ? seed.name : '')}" placeholder="e.g. Leave Request" />
+            <label for="fb-version-reason">Reason for this form change${existing?.archived_at ? ' *' : ' (optional)'}</label><textarea ${existing?.archived_at ? 'aria-required="true"' : ''} id="fb-version-reason" data-f="change_reason" maxlength="1000" rows="2"></textarea>
+            <details class="fb-advanced"><summary>Advanced settings</summary><p class="muted">The form ID is generated from its name. Change the ID, numbering prefix, or icon only when needed.</p>
+              <div class="fb-settings-grid">
+                <div><label for="fb-slug">Form ID ${UI.helpIcon('A unique ID using lowercase letters, numbers, and underscores. Templates and workflows may refer to this ID, so take care when changing an existing form.')}</label><input id="fb-slug" aria-required="true" maxlength="60" data-f="slug" value="${UI.esc(seed ? seed.slug : '')}" placeholder="leave_request" class="mono" /></div>
+                <div><label for="fb-prefix">Number prefix ${UI.helpIcon('The letters at the start of issued record numbers, such as LV in LV-00001. Use uppercase letters or numbers.')}</label><input id="fb-prefix" aria-required="true" maxlength="10" data-f="number_prefix" value="${UI.esc(seed ? seed.number_prefix : 'FM')}" placeholder="FM" class="mono" /></div>
+                <div><label for="fb-icon">Icon ${UI.helpIcon('The icon name used for this form in menus, for example file, calendar, or users.')}</label><input id="fb-icon" maxlength="40" data-f="icon" value="${UI.esc(seed ? seed.icon : 'file')}" placeholder="file" /></div>
+              </div>
+            </details>
+          </section>
+          <section class="fb-section">
+            <div class="fb-section-title"><h3>Fields ${UI.helpIcon('Choose the information people must provide. Each field key can be used in a print template as {{field_key}}.')}</h3><button type="button" class="btn secondary small" id="fb-add-field">${UI.icon('plus', 14)} Add field</button></div>
+            <div id="fb-fields-list"></div>
+          </section>
+          <details class="fb-section fb-actions" ${actions.length ? 'open' : ''}>
+            <summary>Automated actions <span class="fb-optional">${actions.length ? actions.length + ' configured' : 'Optional'}</span></summary><p class="muted">Actions run on creation, submission or approval. Employee actions use an employee field. Sales draft actions use the selected customer and product rows.</p>
+            <div class="fb-actions-content"><div class="fb-section-title"><span class="muted">What happens after submission</span><button type="button" class="btn secondary small" id="fb-add-action">${UI.icon('plus', 14)} Add action</button></div><div id="fb-actions-list"></div></div>
+          </details>
+        </div>`,
       confirmText: editing ? 'Save form' : 'Create form',
       onOpen: (ov) => {
         const nameEl = ov.querySelector('[data-f="name"]');
@@ -536,7 +589,7 @@ App.register('form-builder', async (view, filter) => {
         if (!editing && !prefill) {
           nameEl.addEventListener('input', () => {
             slugEl.value = nameEl.value.toLowerCase()
-              .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+              .replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 60);
           });
         }
 
@@ -551,38 +604,83 @@ App.register('form-builder', async (view, filter) => {
           renderActions(ov, actions);
         };
         renderActions(ov, actions);
+        const body = ov.querySelector('.modal-body');
+        const editor = document.createElement('div');
+        editor.className = 'fb-workspace';
+        const originalEditor = body.querySelector(':scope > .fb-editor');
+        const sections = { details: originalEditor.querySelector('.fb-basics'), fields: originalEditor.querySelector('#fb-fields-list').closest('.fb-section'), automation: originalEditor.querySelector('.fb-actions') };
+        editor.innerHTML = `<div class="fb-editor"><div role="tablist" aria-label="Form setup" class="subnav-tabs">${['Details','Fields','Printing','Automation'].map((name, index) => `<button type="button" role="tab" id="fb-tab-${name.toLowerCase()}" aria-controls="fb-panel-${name.toLowerCase()}" aria-selected="${index === 0}" tabindex="${index === 0 ? 0 : -1}" data-setup-tab="${name.toLowerCase()}" class="subtab ${index === 0 ? 'active' : ''}">${name}</button>`).join('')}</div>${['details','fields','printing','automation'].map((name,index) => `<section id="fb-panel-${name}" role="tabpanel" aria-labelledby="fb-tab-${name}" ${index ? 'hidden' : ''}></section>`).join('')}</div><aside class="fb-preview"><h4>Live form preview</h4><p class="muted">Example only; changes here are not submissions.</p><div id="fb-live-preview"></div></aside>`;
+        body.appendChild(editor);
+        Object.entries(sections).forEach(([name, section]) => editor.querySelector(`#fb-panel-${name}`).appendChild(section));
+        sections.automation.open = true;
+        originalEditor.remove();
+        const printing = editor.querySelector('#fb-panel-printing');
+        printing.innerHTML = `<p>Records print through a linked document template. Field keys become template variables.</p><label><input type="checkbox" data-f="create_template" ${prefill ? 'checked' : ''} ${existing?.template_id ? 'disabled checked' : ''}> ${existing?.template_id ? 'Print template linked' : 'Create a starter print template when saving'}</label>${existing?.template_id ? '<button class="btn secondary" type="button" id="fb-design-print">Edit print template</button><p class="muted">The template editor uses saved fields. Save field changes first.</p>' : '<p class="muted">You can design the layout from the form list after saving.</p>'}`;
+        printing.querySelector('#fb-design-print')?.addEventListener('click', () => openFormTemplate(existing));
+        function switchSetup(name) {
+          editor.querySelectorAll('[data-setup-tab]').forEach(tab => { const selected = tab.dataset.setupTab === name; tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1; tab.classList.toggle('active', selected); });
+          editor.querySelectorAll('[role=tabpanel]').forEach(panel => { panel.hidden = panel.id !== `fb-panel-${name}`; });
+        }
+        ov.addEventListener('validationfocus', event => { const panel = event.target.closest('[role=tabpanel]'); if (panel) switchSetup(panel.id.replace('fb-panel-', '')); });
+        editor.querySelectorAll('[data-setup-tab]').forEach(tab => tab.onclick = () => switchSetup(tab.dataset.setupTab));
+        editor.querySelector('[role=tablist]').addEventListener('keydown', event => {
+          if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+          const tabs = [...editor.querySelectorAll('[data-setup-tab]')]; const index = tabs.indexOf(document.activeElement);
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+          event.preventDefault(); switchSetup(tabs[next].dataset.setupTab); tabs[next].focus();
+        });
+        function preview() {
+          const previewFields = fields.map(field => {
+            let control;
+            if (['select','employee','reference'].includes(field.type)) control = `<select disabled><option>${field.type === 'employee' ? 'Choose employee' : 'Choose an option'}</option>${(field.options || []).map(option => `<option>${UI.esc(option)}</option>`).join('')}</select>`;
+            else if (field.type === 'textarea') control = '<textarea disabled rows="2"></textarea>';
+            else control = `<input disabled type="${['number','date','time','checkbox'].includes(field.type) ? field.type : 'text'}" value="${UI.esc(field.default || '')}">`;
+            return `<label class="fb-preview-field"><span>${UI.esc(field.label || 'Untitled field')}${field.required ? ' *' : ''}</span>${control}</label>`;
+          }).join('');
+          const missingEmployee = actions.some(action => ['notify_employee','email_employee','save_to_201'].includes(action.type)) && !fields.some(field => field.type === 'employee' || (field.type==='reference'&&field.source==='employee') || field.key === 'employee_name');
+          editor.querySelector('#fb-live-preview').innerHTML = `<h4>${UI.esc(nameEl.value || 'New form')}</h4>${previewFields || '<p class="muted">Add fields to preview the form.</p>'}<p class="muted">${actions.length} automated action(s)</p>${missingEmployee ? '<p class="form-error">Employee actions need an Employee field or employee_name field.</p>' : ''}`;
+        }
+        ov.addEventListener('input', preview); ov.addEventListener('change', preview);
+        ov.addEventListener('click', () => queueMicrotask(preview)); preview();
       },
       onConfirm: async (ov, showErr) => {
         const f = (k) => ov.querySelector(`[data-f="${k}"]`).value.trim();
-        if (!f('name')) { showErr('Form name is required'); return false; }
-        if (!f('slug')) { showErr('Slug is required'); return false; }
-        if (!/^[a-z0-9_]+$/.test(f('slug'))) { showErr('Slug must be lowercase letters, numbers, or underscores'); return false; }
-        if (!f('number_prefix') || !/^[A-Z0-9]+$/.test(f('number_prefix'))) {
-          showErr('Prefix must be uppercase letters or numbers (e.g. FM, LR)'); return false;
-        }
-        for (const field of fields) {
-          if (!field.key) { showErr('All fields must have a key'); return false; }
-          if (!field.label) { showErr(`Field "${field.key}" is missing a label`); return false; }
-        }
-        const keys = fields.map((f) => f.key);
-        if (new Set(keys).size !== keys.length) { showErr('Field keys must be unique'); return false; }
+        const errors = [];
+        const addError = (selector, message, isValid) => errors.push({ control: ov.querySelector(selector), message, isValid });
+        if (existing?.archived_at && !f('change_reason')) addError('[data-f=change_reason]', 'A reason is required for changes to this archived form.');
+        if (!f('name')) addError('[data-f="name"]', 'Form name is required');
+        if (!f('slug') || !/^[a-z0-9_]+$/.test(f('slug'))) addError('[data-f="slug"]', 'Form ID must use lowercase letters, numbers, or underscores', () => /^[a-z0-9_]+$/.test(f('slug')));
+        if (!f('number_prefix') || !/^[A-Z0-9]+$/.test(f('number_prefix'))) addError('[data-f="number_prefix"]', 'Prefix must be uppercase letters or numbers (e.g. FM, LR)', () => /^[A-Z0-9]+$/.test(f('number_prefix')));
+        fields.forEach((field, index) => {
+          if (!field.key) addError(`[data-fi="${index}"] [data-k=key]`, `Field ${index + 1} needs a key`);
+          else if (!/^[a-z0-9_]+$/.test(field.key)) addError(`[data-fi="${index}"] [data-k=key]`, `Field ${index + 1} key must use lowercase letters, numbers, or underscores`, () => /^[a-z0-9_]+$/.test(field.key));
+          else if (fields.filter(candidate => candidate.key === field.key).length > 1) addError(`[data-fi="${index}"] [data-k=key]`, `Field key "${field.key}" must be unique`, () => fields.filter(candidate => candidate.key === field.key).length === 1);
+          if (!field.label) addError(`[data-fi="${index}"] [data-k=label]`, `Field ${index + 1} needs a label`);
+        });
+        try{FormMath.validate(fields);}catch(error){showErr(error.message);return false;}
+        if (!FormValidation.show(ov, errors, ov.querySelector('[data-modal-error]'))) return false;
 
         const body = {
+          expected_version: existing?.version, change_reason: ov.querySelector('[data-f=change_reason]').value.trim(),
           name: f('name'), slug: f('slug'),
           number_prefix: f('number_prefix'), icon: f('icon') || 'file',
-          fields, actions, scope,
+          fields, actions, scope: scope === 'general' ? null : scope,
         };
+        let savedId = existing?.id;
         if (editing) {
           await API.put('/form-definitions/' + existing.id, body);
         } else {
           const created = await API.post('/form-definitions', body);
+          savedId = created.id;
           // Quick Add forms come with a ready-made print template already, not just field
           // defaults — no separate "Design template" click required before it's printable.
-          if (prefill) {
-            await API.put(`/form-definitions/${created.id}/template-body`,
-              { name: `${body.name} Template`, type: 'generic', body: defaultFormTemplateBody(body) })
-              .catch(() => { /* form itself still created fine; template can be designed later */ });
+        }
+        if (ov.querySelector('[data-f="create_template"]').checked && !existing?.template_id) {
+          try {
+            const saved=await API.get('/form-definitions/'+savedId),template=saved.template_id?await API.get('/templates/'+saved.template_id):null;
+            await API.put(`/form-definitions/${savedId}/template-body`, {name:`${body.name} Template`,type:'generic',body:defaultFormTemplateBody({...body,invoice_layout:!!seed?.invoice_layout}),expected_revision:template?.revision});
           }
+          catch (error) { UI.toast('Form saved, but print template setup failed: ' + error.message, 'error'); }
         }
         UI.toast(editing ? 'Form saved' : 'Form created');
         loadForms();
@@ -591,39 +689,86 @@ App.register('form-builder', async (view, filter) => {
   }
 
   function renderFields(ov, fields) {
+    FormValidation.clear(ov.closest('.modal-overlay') || ov);
     const el = ov.querySelector('#fb-fields-list');
     if (!fields.length) {
-      el.innerHTML = `<div class="muted" style="text-align:center;padding:12px">No fields yet — add one above.</div>`;
+      el.innerHTML = `<div class="fb-empty muted">No fields yet — add one above.</div>`;
       return;
     }
-    const typeOptions = ['text', 'number', 'date', 'select', 'textarea', 'checkbox', 'employee']
-      .map((t) => `<option value="${t}">${t === 'employee' ? 'employee (dropdown)' : t}</option>`).join('');
+    const typeOptions = ['text', 'number', 'currency', 'date', 'time', 'select', 'textarea', 'checkbox', 'employee','reference:product','reference:customer','reference:employee','reference:sales_order','reference:supplier','reference:location','reference:account','reference:tax_code','system:company','system:user','line_items','calculated']
+      .map((t) => `<option value="${t}">${t === 'currency' ? 'Currency amount' : t === 'employee' ? 'employee (dropdown)' : t.startsWith('reference:') ? FormConnections.names[t.split(':')[1]]+' (connected)' : t.startsWith('system:')?FormConnections.names[t.split(':')[1]]+' value':t==='line_items'?'Product line items':t==='calculated'?'Calculated number':t}</option>`).join('');
 
     el.innerHTML = `<table class="line-table"><thead><tr>
       <th>Key <span class="muted">(variable name)</span></th>
       <th>Label</th><th>Type</th><th>Required</th><th>Default / Options</th><th></th>
     </tr></thead><tbody id="fb-field-rows">${fields.map((f, i) => `
       <tr data-fi="${i}">
-        <td><input class="mono" data-k="key" value="${UI.esc(f.key)}" placeholder="field_key" style="width:120px" /></td>
-        <td><input data-k="label" value="${UI.esc(f.label)}" placeholder="Field Label" /></td>
-        <td><select data-k="type">${typeOptions.replace(`"${f.type}"`, `"${f.type}" selected`)}</select></td>
+        <td><input class="mono" data-k="key" aria-required="true" maxlength="64" value="${UI.esc(f.key)}" placeholder="field_key" style="width:120px" /></td>
+        <td><input data-k="label" aria-required="true" maxlength="120" value="${UI.esc(f.label)}" placeholder="Field Label" /></td>
+        <td><select data-k="type">${typeOptions.replace(`"${f.type==='number'&&f.format==='currency'?'currency':['reference','system'].includes(f.type)?f.type+':'+f.source:f.type}"`, `"${f.type==='number'&&f.format==='currency'?'currency':['reference','system'].includes(f.type)?f.type+':'+f.source:f.type}" selected`)}</select></td>
         <td style="text-align:center"><input type="checkbox" data-k="required" ${f.required ? 'checked' : ''} /></td>
-        <td>${f.type === 'select'
+        <td>${['line_items','calculated'].includes(f.type)?`<button type="button" class="btn secondary small" data-configure-math="${i}">${f.type==='line_items'?'Configure items':'Configure calculation'}</button><small>${UI.esc(f.calculation?.operands?.join(', ')||'')}</small>`:['reference','system'].includes(f.type) ? `<button type="button" class="btn secondary small" data-connect="${i}">${f.type==='system'?'Choose property':'Connected source'}</button><small>${UI.esc(f.property||f.source||'')}</small>` : f.type === 'select'
           ? `<input data-k="options" value="${UI.esc((f.options || []).join(', '))}" placeholder="Option 1, Option 2, …" />`
           : f.type === 'employee'
             ? `<span class="muted" style="font-size:12px">Live employee list — no options needed</span>`
-            : `<input data-k="default" value="${UI.esc(f.default || '')}" placeholder="default value" />`}
+            : `<input data-k="default" maxlength="500" value="${UI.esc(f.default || '')}" placeholder="default value" />${f.format==='currency'?`<button type="button" class="btn secondary small" data-money="${i}">Currency: ${UI.esc(f.currency||'PHP')}</button>`:''}${['text','textarea','number'].includes(f.type)?`<button type="button" class="btn secondary small" data-connect="${i}">${f.binding?'Connected: '+UI.esc(f.binding.field)+'.'+UI.esc(f.binding.property):'Connect value'}</button>`:''}`}
         </td>
-        <td><button type="button" class="icon-btn danger" data-rm="${i}" title="Remove">${UI.icon('trash', 14)}</button></td>
+        <td><button type="button" class="icon-btn" data-move-field="${i}" data-direction="-1" title="Move field up" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="icon-btn" data-move-field="${i}" data-direction="1" title="Move field down" ${i === fields.length - 1 ? 'disabled' : ''}>↓</button><button type="button" class="icon-btn danger" data-rm="${i}" title="Remove">${UI.icon('trash', 14)}</button></td>
       </tr>`).join('')}
     </tbody></table>`;
 
     el.querySelectorAll('input[data-k], select[data-k]').forEach((inp) => {
       inp.addEventListener('change', () => syncField(inp, fields));
-      if (inp.type !== 'checkbox') inp.addEventListener('input', () => syncField(inp, fields));
+      if (inp.type !== 'checkbox' && inp.tagName !== 'SELECT') inp.addEventListener('input', () => syncField(inp, fields));
+    });
+    el.querySelectorAll('[data-money]').forEach(button=>button.onclick=()=>configureCurrency(fields,Number(button.dataset.money),ov));
+    el.querySelectorAll('[data-configure-math]').forEach(button=>button.onclick=()=>configureMath(fields,Number(button.dataset.configureMath),ov));
+    el.querySelectorAll('[data-connect]').forEach(button=>button.onclick=()=>connectField(fields,Number(button.dataset.connect),ov));
+    el.querySelectorAll('[data-move-field]').forEach(button => button.onclick = () => {
+      const index = Number(button.dataset.moveField), next = index + Number(button.dataset.direction);
+      if (next < 0 || next >= fields.length) return;
+      const [field] = fields.splice(index, 1); fields.splice(next, 0, field); renderFields(ov, fields);
     });
     el.querySelectorAll('[data-rm]').forEach((b) =>
       b.onclick = () => { fields.splice(Number(b.dataset.rm), 1); renderFields(ov, fields); });
+  }
+
+  function applyFieldSettings(owner,fields,index,control){
+    owner.closest('.modal-overlay')?.__markDirty?.();renderFields(owner,fields);
+    setTimeout(()=>owner.querySelector(`[${control}="${index}"]`)?.focus(),0);
+  }
+  function configureCurrency(fields,index,owner){
+    const field=fields[index];UI.modal({title:'Currency for '+field.label,bodyHTML:`<label for="fc-currency">Currency code</label><input id="fc-currency" maxlength="3" value="${UI.esc(field.currency||'PHP')}"><p class="muted">Three-letter code, for example PHP or USD. Values remain numeric; this does not convert currencies.</p>`,confirmText:'Apply',onConfirm:(overlay,error)=>{const code=overlay.querySelector('#fc-currency').value.trim().toUpperCase();if(!/^[A-Z]{3}$/.test(code)){error('Use a three-letter currency code');return false;}field.currency=code;applyFieldSettings(owner,fields,index,'data-money');}});
+  }
+  function configureMath(fields,index,owner){
+    const field=fields[index];
+    if(field.type==='line_items'){UI.modal({title:'Configure '+field.label,bodyHTML:`<p>Rows contain a connected product, quantity, unit, unit price, discount percentage and calculated line total.</p><label for="fc-currency">Currency code</label><input id="fc-currency" maxlength="3" value="${UI.esc(field.currency||'PHP')}"><label><input type="checkbox" id="fc-price-editable" ${field.price_editable!==false?'checked':''}> Allow editing the product sale price</label>`,confirmText:'Apply',onConfirm:(overlay,error)=>{const code=overlay.querySelector('#fc-currency').value.trim().toUpperCase();if(!/^[A-Z]{3}$/.test(code)){error('Use a three-letter currency code');return false;}field.currency=code;field.price_editable=overlay.querySelector('#fc-price-editable').checked;applyFieldSettings(owner,fields,index,'data-configure-math');}});return;}
+    const choices=fields.filter(other=>other.key!==field.key).flatMap(other=>other.type==='line_items'?[{key:other.key+'.line_total',label:other.label+' → Line totals'},{key:other.key+'.quantity',label:other.label+' → Quantities'},{key:other.key+'.discount_amount',label:other.label+' → Discount amounts'}]:['number','calculated'].includes(other.type)?[{key:other.key,label:other.label}]:[]);
+    UI.modal({title:'Calculate '+field.label,bodyHTML:`<label for="fc-operation">Calculation</label><select id="fc-operation">${['sum','multiply','subtract','percent'].map(op=>`<option ${op===field.calculation?.operator?'selected':''}>${op}</option>`).join('')}</select><p class="muted">Percentage uses an amount followed by a rate. Subtraction and percentage use the field order shown below. Item columns support sum.</p><label><input id="fc-money" type="checkbox" ${field.format==='currency'?'checked':''}> Print as a currency amount</label><label for="fc-currency">Currency code</label><input id="fc-currency" maxlength="3" value="${UI.esc(field.currency||'PHP')}"><div id="fc-operands">${choices.map(choice=>`<label class="form-column-choice"><input type="checkbox" value="${choice.key}" ${field.calculation?.operands.includes(choice.key)?'checked':''}> ${UI.esc(choice.label)}</label>`).join('')}</div>`,confirmText:'Apply calculation',onConfirm:(overlay,error)=>{
+      const code=overlay.querySelector('#fc-currency').value.trim().toUpperCase();if(overlay.querySelector('#fc-money').checked&&!/^[A-Z]{3}$/.test(code)){error('Use a three-letter currency code');return false;}
+      const previous=field.calculation;field.calculation={operator:overlay.querySelector('#fc-operation').value,operands:[...overlay.querySelectorAll('#fc-operands input:checked')].map(input=>input.value)};
+      try{FormMath.validate(fields.map(candidate=>candidate.type==='calculated'&&!candidate.calculation?{...candidate,type:'number'}:candidate));}catch(problem){field.calculation=previous;error(problem.message);return false;}if(overlay.querySelector('#fc-money').checked){field.format='currency';field.currency=code;}else{delete field.format;delete field.currency;}applyFieldSettings(owner,fields,index,'data-configure-math');
+    }});
+  }
+
+  async function connectField(fields,index,owner) {
+    const field=fields[index];
+    try {
+      const catalog=await API.get('/data-forms/sources');
+      const selectors=field.type==='system'?[field]:fields.filter(other=>other.type==='reference');
+      if(field.type==='reference'){const source=catalog.find(s=>s.key===field.source);UI.modal({title:'Connected '+field.label,cancelText:'Close',bodyHTML:`<p>Source: ${UI.esc(source?.label||field.source)}. The selected record ID and its values are saved with this form.</p><p>${source?.available?'You have access to this source.':'You need the source module and its read permission to select records.'}</p><p>Available properties: ${UI.esc(source?.fields.join(', ')||'')}</p>`});return;}
+      UI.modal({title:'Connect '+field.label,bodyHTML:`<label for="fc-source">Get value from</label><select id="fc-source"><option value="">Manual input</option>${selectors.map(selector=>`<option value="${selector.key}">${UI.esc(selector.label)}</option>`).join('')}</select><label for="fc-property">Property</label><select id="fc-property"></select>${field.type!=='system'?'<label><input type="checkbox" id="fc-editable"> Allow editing the filled value</label>':''}<p class="muted">Saved values remain unchanged when the source record changes later.</p>`,confirmText:'Apply connection',onOpen:overlay=>{
+        const select=overlay.querySelector('#fc-source'),property=overlay.querySelector('#fc-property');
+        function properties(){const selector=selectors.find(s=>s.key===select.value),source=catalog.find(s=>s.key===selector?.source);property.innerHTML=(field.type==='number'?source?.numeric_fields||[]:source?.fields||[]).map(key=>`<option>${UI.esc(key)}</option>`).join('');property.disabled=!selector;}
+        select.value=field.type==='system'?field.key:field.binding?.field||'';select.onchange=properties;properties();property.value=field.property||field.binding?.property||property.value;
+        if(overlay.querySelector('#fc-editable'))overlay.querySelector('#fc-editable').checked=field.binding?!!field.binding.editable:field.type==='number';
+      },onConfirm:(overlay,error)=>{
+        const source=overlay.querySelector('#fc-source').value,property=overlay.querySelector('#fc-property').value;
+        if(field.type==='system'){if(!source||!property){error('Choose a property.');return false;}field.property=property;}
+        else if(source)field.binding={field:source,property,editable:overlay.querySelector('#fc-editable').checked};else delete field.binding;
+        applyFieldSettings(owner,fields,index,'data-connect');
+      }});
+    }catch(error){UI.toast(error.message,'error');}
   }
 
   function syncField(inp, fields) {
@@ -635,7 +780,12 @@ App.register('form-builder', async (view, filter) => {
     if (k === 'options') {
       fields[i].options = inp.value.split(',').map((s) => s.trim()).filter(Boolean);
     } else if (k === 'type') {
-      fields[i].type = inp.value;
+      const [type,source]=inp.value.split(':');fields[i].type=type==='currency'?'number':type;
+      delete fields[i].format;delete fields[i].currency;
+      if(type==='currency'){fields[i].format='currency';fields[i].currency='PHP';}
+      delete fields[i].binding;delete fields[i].property;
+      if(source)fields[i].source=source;else delete fields[i].source;
+      if(type==='system')fields[i].property='name';
       // Re-render so the last cell switches between options/default input.
       const ov = inp.closest('.modal-body');
       renderFields(ov, fields);
@@ -645,6 +795,7 @@ App.register('form-builder', async (view, filter) => {
   }
 
   const ACTION_TYPES = [
+    ['create_sales_draft','Create a draft sales order on submission'],
     ['notify_employee', 'Send notice to employee (login account)'],
     ['save_to_201', 'File rendered form into employee 201'],
     ['email_employee', 'Email the employee (company SMTP)'],
@@ -656,19 +807,23 @@ App.register('form-builder', async (view, filter) => {
   function renderActions(ov, actions) {
     const el = ov.querySelector('#fb-actions-list');
     if (!actions.length) {
-      el.innerHTML = `<div class="muted" style="text-align:center;padding:12px">No actions — this form just stores records.</div>`;
+      el.innerHTML = `<div class="fb-empty muted">No actions — this form just stores records.</div>`;
       return;
     }
     const typeOpts = (sel) => ACTION_TYPES
       .map(([v, label]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${UI.esc(label)}</option>`).join('');
-    const runOpts = (sel) => ['create', 'approved']
+    const runOpts = (sel) => ['create', 'approved', 'submitted']
       .map((v) => `<option value="${v}" ${v === (sel || 'create') ? 'selected' : ''}>on ${v}</option>`).join('');
 
     el.innerHTML = `<table class="line-table"><thead><tr>
       <th>Action</th><th>When</th><th>Details</th><th></th>
     </tr></thead><tbody>${actions.map((a, i) => {
       let details = '';
-      if (a.type === 'notify_employee') {
+      if(a.type==='create_sales_draft'){
+        const available=[...ov.querySelectorAll('[data-fi]')].map(row=>({key:row.querySelector('[data-k=key]').value,label:row.querySelector('[data-k=label]').value,type:row.querySelector('[data-k=type]').value}));
+        const picker=(key,type)=>`<select data-ak="${key}"><option value="">Choose a field…</option>${available.filter(field=>[].concat(type).includes(field.type)).map(field=>`<option value="${field.key}" ${a[key]===field.key?'selected':''}>${UI.esc(field.label)}</option>`).join('')}</select>`;
+        details=`<label>Customer field${picker('customer_field','reference:customer')}</label><label>Product items field${picker('items_field','line_items')}</label><label>Currency code<input data-ak="currency" maxlength="3" value="${UI.esc(a.currency||'PHP')}"></label><label>Invoice date field (optional)${picker('date_field','date')}</label><label>Due date field (optional)${picker('due_field','date')}</label><label>Payment terms field (optional)${picker('notes_field',['textarea','text'])}</label><label>Tax percentage field (optional)${picker('tax_field','number')}</label><label>Calculated final total field (optional)${picker('total_field','calculated')}</label><p class="muted">Runs when submitted. Creates an open sales order for review; approval and stock release remain separate.</p>`;
+      } else if (a.type === 'notify_employee') {
         details = `<input data-ak="subject" value="${UI.esc(a.subject || '')}" placeholder="Subject (optional)" style="margin-bottom:4px" />
           <textarea data-ak="body" rows="2" placeholder="Message body (optional)">${UI.esc(a.body || '')}</textarea>`;
       } else if (a.type === 'email_employee') {
@@ -680,8 +835,8 @@ App.register('form-builder', async (view, filter) => {
         details = `<span class="muted" style="font-size:12px">No extra settings</span>`;
       }
       return `<tr data-ai="${i}">
-        <td><select data-ak="type">${typeOpts(a.type)}</select></td>
-        <td><select data-ak="run_on">${runOpts(a.run_on)}</select></td>
+        <td><select aria-label="Action ${i+1}" data-ak="type">${typeOpts(a.type)}</select></td>
+        <td><select aria-label="When action ${i+1} runs" ${a.type==='create_sales_draft'?'disabled':''} data-ak="run_on">${runOpts(a.type==='create_sales_draft'?'submitted':a.run_on)}</select></td>
         <td>${details}</td>
         <td><button type="button" class="icon-btn danger" data-arm="${i}" title="Remove">${UI.icon('trash', 14)}</button></td>
       </tr>`;
@@ -701,11 +856,12 @@ App.register('form-builder', async (view, filter) => {
     const i = Number(row.dataset.ai);
     const k = inp.dataset.ak;
     if (k === 'type') {
-      actions[i] = { type: inp.value, run_on: actions[i].run_on || 'create' };
+      actions[i] = { type: inp.value, run_on: inp.value==='create_sales_draft'?'submitted':actions[i].run_on || 'create' };
+      if(inp.value==='create_sales_draft'){const fields=inp.closest('.modal-overlay').querySelectorAll('[data-fi]');for(const row of fields){const type=row.querySelector('[data-k=type]').value,key=row.querySelector('[data-k=key]').value;if(type==='reference:customer')actions[i].customer_field=key;if(type==='line_items')actions[i].items_field=key;}}
       renderActions(inp.closest('.modal-body'), actions);
       return;
     }
-    actions[i][k] = inp.value;
+    if(['customer_field','items_field','tax_field','total_field','date_field','due_field','notes_field'].includes(k)&&!inp.value.trim())delete actions[i][k];else actions[i][k] = k==='currency'?inp.value.toUpperCase():inp.value;
   }
 
   // ── Global Variables tab ───────────────────────────────────────────────────
@@ -714,7 +870,7 @@ App.register('form-builder', async (view, filter) => {
     content.innerHTML = `
       <div class="topbar" style="padding:12px 20px">
         <div>
-          <div>Variables usable in <em>any</em> template as <span class="mono">{{global.key}}</span></div>
+          <div>Shared across every section: changes affect <em>all</em> templates using this value as <span class="mono">{{global.key}}</span></div>
         </div>
         <span class="grow"></span>
         <button class="btn" id="fb-new-var">${UI.icon('plus')} New Variable</button>
@@ -767,6 +923,7 @@ App.register('form-builder', async (view, filter) => {
   function varModal(existing) {
     const editing = !!existing;
     UI.modal({
+      protectChanges: true,
       title: editing ? `Edit: ${existing.key}` : 'New Global Variable',
       bodyHTML: `
         <label>Key <span class="muted">(used in templates as <span class="mono">{{global.key}}</span>)</span></label>

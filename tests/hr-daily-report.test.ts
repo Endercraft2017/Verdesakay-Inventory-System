@@ -4,7 +4,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { classifyDailyStatus, type DailyStatusInput } from '../src/modules/hr/hr-daily-report';
 import { computeAttendanceForEmployee } from '../src/modules/payroll/hr-payroll-compute';
 import type { PayrollPolicy } from '../src/shared/types';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, phonePunch, type TestContext } from './helpers';
 
 // Same fixed-basis policy tests/hr-payroll-compute.test.ts uses (lunch 60, grace 10).
 const PAYROLL_POLICY: PayrollPolicy = {
@@ -301,13 +301,13 @@ describe('GET /api/hr/daily-report', () => {
     const emp = await ctx.api.post('/api/hr/employees').set(hdr()).send({ employee_no: 'DR-3', name: 'Puncher Only' });
     // Link a login so we can punch in via the mobile clock endpoint.
     const acct = await ctx.api.post('/api/users').set(hdr())
-      .send({ username: 'dr_puncher', full_name: 'Puncher Only', password: 'secret1', role: 'admin_staff' });
+      .send({ username: 'dr_puncher', full_name: 'Puncher Only', password: 'secret123', role: 'admin_staff' });
     await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
       .send({ employee_no: 'DR-3', name: 'Puncher Only', user_id: acct.body.id });
     await addToRoster(emp.body.id);
-    const punchToken = await login(ctx.api, 'dr_puncher', 'secret1');
+    const punchToken = await login(ctx.api, 'dr_puncher', 'secret123');
     const { code } = (await ctx.api.get('/api/hr/clock/code').set(hdr())).body;
-    const punch = await ctx.api.post('/api/hr/clock/punch').set({ Authorization: `Bearer ${punchToken}` }).send({ code });
+    const punch = await phonePunch(ctx.api, { Authorization: `Bearer ${punchToken}` }, { code });
     expect(punch.status).toBe(200);
 
     const res = await ctx.api.get('/api/hr/daily-report').set(hdr());

@@ -9,6 +9,8 @@ import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import bcrypt from 'bcryptjs';
 import { withTenant, run, DATA_DIR, UPLOAD_DIR } from '../shared/db';
+import { PASSWORD_MIN, isCommonPassword } from '../shared/password-policy';
+import { removeUploadFolder } from '../shared/file-store';
 import {
   createTenantRow, getTenant, isValidSlug, logProvisioning, setTenantStatus,
   retiredDefaultTenant,
@@ -21,6 +23,7 @@ export interface CreateTenantInput {
   admin_username: string;
   admin_password: string;
   admin_email?: string;
+  is_sandbox?: boolean;
   plan?: string;
   status?: TenantStatus;
 }
@@ -38,15 +41,19 @@ export function createTenant(input: CreateTenantInput): { slug: string } {
   if (getTenant(slug)) throw httpError(409, 'That workspace name is already taken.');
   const username = String(input.admin_username || '').toLowerCase().trim();
   if (!/^[a-z0-9._-]{3,30}$/.test(username)) throw httpError(400, 'Admin username must be 3–30 chars: letters, numbers, dot, underscore, hyphen.');
-  if (String(input.admin_password || '').length < 6) throw httpError(400, 'Admin password must be at least 6 characters.');
+  const adminPassword = String(input.admin_password || '');
+  if (adminPassword.length < PASSWORD_MIN) throw httpError(400, `Admin password must be at least ${PASSWORD_MIN} characters.`);
+  if (isCommonPassword(adminPassword)) throw httpError(400, 'Admin password is one of the most common passwords — choose one that is harder to guess.');
 
-  createTenantRow({ slug, name: input.name.trim() || slug, plan: input.plan, status: input.status });
+  createTenantRow({ slug, name: input.name.trim() || slug, plan: input.plan, status: input.status, is_sandbox: input.is_sandbox });
 
   // withTenant opens + creates + migrates + seeds <DATA_DIR>/<slug>.db (seed() makes a
   // default 'admin' account); adopt the caller's chosen credentials onto it.
   withTenant(slug, () => {
     const hash = bcrypt.hashSync(input.admin_password, 10);
-    run("UPDATE users SET username = ?, password_hash = ? WHERE username = 'admin'", username, hash);
+    // The operator chose this password for the owner, so the seed's "change the default
+    // password" flag no longer applies.
+    run("UPDATE users SET username = ?, password_hash = ?, email = ?, password_change_required = 0 WHERE username = 'admin'", username, hash, input.is_sandbox ? null : (input.admin_email?.trim().toLowerCase() || null));
   });
 
   logProvisioning(slug, 'create', JSON.stringify({ name: input.name, plan: input.plan ?? 'starter', admin: username }));
@@ -140,10 +147,7 @@ export function purgeTenant(slug: string): boolean {
     const f = path.join(DATA_DIR, `${slug}.db${suffix}`);
     try { if (fs.existsSync(f)) fs.rmSync(f); } catch { /* best effort */ }
   }
-  try {
-    const up = path.join(UPLOAD_DIR, slug);
-    if (fs.existsSync(up)) fs.rmSync(up, { recursive: true, force: true });
-  } catch { /* best effort */ }
+  void removeUploadFolder(path.join(UPLOAD_DIR, slug)); // and its copies in the file bucket
   logProvisioning(slug, 'purge');
   return true;
 }

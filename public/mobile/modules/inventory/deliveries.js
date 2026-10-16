@@ -9,12 +9,20 @@
     cancelled: { label: 'Cancelled', cls: '' },
   };
 
+  function courier(d) { return d.delivery_mode === 'courier'; }
+  function state(d) {
+    if (courier(d) && d.status === 'delivered') return { label: 'Picked up by courier', cls: 'ok' };
+    if (courier(d) && d.status === 'pending') return { label: 'Awaiting courier pickup', cls: '' };
+    return STATUS[d.status] || { label: d.status, cls: '' };
+  }
+
   function list(view) {
     MApp.setTitle('Deliveries');
     var canAll = MApp.can('delivery.manage');
     view.innerHTML =
       (canAll ? '<div class="m-seg" id="d-scope"><button data-s="mine" class="on">Mine</button><button data-s="all">All</button></div>' : '') +
-      '<div id="d-list"><div class="m-hint">Loading…</div></div>';
+      '<div data-delivery-saved></div><div id="d-list"><div class="m-hint">Loading…</div></div>';
+    mDeliveryRecovery.cards(view.querySelector('[data-delivery-saved]'));
     var scope = 'mine';
     var host = view.querySelector('#d-list');
     if (canAll) {
@@ -47,31 +55,39 @@
       host.appendChild(mEl('<div class="m-sectitle">' + g[0] + '</div>'));
       var ul = mEl('<ul class="m-list"></ul>');
       g[1].forEach(function (d) {
-        var st = STATUS[d.status] || { label: d.status, cls: '' };
+        var st = state(d);
         var li = mEl(
           '<li class="m-list-row"><div><b>' + mEsc(d.customer_name || d.number) + '</b>' +
-          '<span>' + mEsc(d.number) + (d.address ? ' · ' + mEsc(d.address.slice(0, 40)) : '') +
+          '<span>' + mEsc(d.number) + (courier(d) ? ' · Courier: ' + mEsc(d.courier_name || 'Courier') : '') + (d.address ? ' · ' + mEsc(d.address.slice(0, 40)) : '') +
           (d.item_count ? ' · ' + d.item_count + ' line(s)' : '') + '</span></div>' +
           '<div class="m-list-qty"><span class="m-jo-status ' + st.cls + '">' + mEsc(st.label) + '</span></div></li>'
         );
-        li.onclick = function () { detail(view, d.id); };
+        li.onclick = function () { MApp.go('deliveries', { id: d.id }); };
         ul.appendChild(li);
       });
       host.appendChild(ul);
     });
   }
 
-  function detail(view, id) {
+  async function detail(view, id, step) {
     view.innerHTML = '<div class="m-hint">Loading…</div>';
-    API.get('/deliveries/' + id)
-      .then(function (d) { drawDetail(view, d); })
-      .catch(function (ex) { view.innerHTML = '<div class="m-error">' + mEsc(ex.message) + '</div>'; });
+    var hash = location.hash, owner = mProductionDrafts.key('delivery-owner');
+    function visible() { return view.isConnected && hash === location.hash && owner === mProductionDrafts.key('delivery-owner'); }
+    try {
+      var saved = await mDeliveryRecovery.load(Number(id));
+      if (!visible()) return;
+      if (saved && saved.operation.state !== 'draft') { mDeliveryRecovery.paint(view,saved); return; }
+      var d = await API.get('/deliveries/' + id);
+      if (!visible()) return;
+      if (step === 'proof' && (d.status === 'out_for_delivery' || courier(d) && d.status === 'pending')) await podSheet(view,d);
+      else drawDetail(view,d);
+    } catch (err) { if (visible()) { view.innerHTML = ''; view.appendChild(RoleUI.error(err,function () { detail(view,id,step); })); } }
   }
 
   function drawDetail(view, d) {
     MApp.setTitle(d.number);
     view.innerHTML = '';
-    var st = STATUS[d.status] || { label: d.status, cls: '' };
+    var st = state(d);
     view.appendChild(mEl(
       '<div class="m-panel"><div style="display:flex;justify-content:space-between;align-items:center">' +
       '<b style="font-size:16px">' + mEsc(d.customer_name || d.number) + '</b>' +
@@ -80,6 +96,7 @@
         encodeURIComponent(d.address) + '">📍 ' + mEsc(d.address) + '</a></div>' : '') +
       (d.contact_phone ? '<div style="margin-top:4px"><a class="m-link" href="tel:' + mEsc(d.contact_phone) + '">📞 ' + mEsc(d.contact_phone) + '</a></div>' : '') +
       (d.order_number ? '<div class="m-hint">Order ' + mEsc(d.order_number) + '</div>' : '') +
+      (courier(d) ? '<div class="m-hint">Courier: ' + mEsc(d.courier_name || 'Courier') + (d.tracking_number ? ' · Tracking: ' + mEsc(d.tracking_number) : '') + '</div>' : '') +
       (d.notes ? '<div class="m-hint">' + mEsc(d.notes) + '</div>' : '') +
       '</div>'
     ));
@@ -91,24 +108,27 @@
       }).join('') + '</ul>'));
     }
 
-    if (d.status === 'pending') {
+    if (courier(d) && d.status === 'pending') {
+      view.appendChild(mEl(RoleUI.note('info', 'Record pickup only after the courier physically collects the released goods. This is not customer delivery.')));
+      view.appendChild(actions([{ label: 'Record courier pickup', fn: function () { MApp.go('deliveries', { id: d.id, step: 'proof' }); } }]));
+    } else if (d.status === 'pending') {
       var start = mEl('<div class="m-actions"><button class="m-btn">Start delivery</button></div>');
       start.querySelector('button').onclick = function () {
         start.querySelector('button').disabled = true;
-        API.post('/deliveries/' + d.id + '/status', { status: 'out_for_delivery' })
-          .then(function () { detail(view, d.id); })
+        mDeliveryRecovery.draft(d).then(function (s) { return mDeliveryRecovery.start(d,s,'status',{ status: 'out_for_delivery' }); })
+          .then(function (s) { mDeliveryRecovery.paint(view,s); })
           .catch(function (ex) { mToast(ex.message || 'Failed', 'err'); start.querySelector('button').disabled = false; });
       };
       view.appendChild(start);
     } else if (d.status === 'out_for_delivery') {
       var go = mEl('<div class="m-actions"><button class="m-btn">Complete delivery</button></div>');
-      go.querySelector('button').onclick = function () { podSheet(view, d); };
+      go.querySelector('button').onclick = function () { MApp.go('deliveries', { id: d.id, step: 'proof' }); };
       view.appendChild(go);
     } else {
       // POD summary
-      view.appendChild(mEl('<div class="m-sectitle">Proof of delivery</div>'));
+      view.appendChild(mEl('<div class="m-sectitle">' + (courier(d) ? 'Courier pickup record' : 'Proof of delivery') + '</div>'));
       var kv = '<li><span>Outcome</span><b>' + mEsc(st.label) + '</b></li>' +
-        (d.pod_recipient ? '<li><span>Received by</span><b>' + mEsc(d.pod_recipient) + '</b></li>' : '') +
+        (d.pod_recipient ? '<li><span>' + (courier(d) ? 'Collected by' : 'Received by') + '</span><b>' + mEsc(d.pod_recipient) + '</b></li>' : '') +
         (d.delivered_at ? '<li><span>When</span><b>' + mEsc(d.delivered_at.slice(0, 16).replace('T', ' ')) + '</b></li>' : '') +
         (d.delivered_by_name ? '<li><span>By</span><b>' + mEsc(d.delivered_by_name) + '</b></li>' : '') +
         (d.pod_note ? '<li><span>Note</span><b>' + mEsc(d.pod_note) + '</b></li>' : '');
@@ -128,30 +148,54 @@
     view.appendChild(actions([{ label: 'Back to list', fn: function () { list(view); }, secondary: true }]));
   }
 
-  function podSheet(view, d) {
-    MApp.setTitle('Complete · ' + d.number);
+  async function podSheet(view, d) {
+    var owner = mProductionDrafts.key('delivery-owner'), hash = location.hash;
+    var saved = await mDeliveryRecovery.draft(d);
+    if (owner !== mProductionDrafts.key('delivery-owner') || hash !== location.hash) return;
+    if (saved.operation.state !== 'draft') { mDeliveryRecovery.paint(view,saved); return; }
+    var data = saved.batch;
+    function persist() {
+      var status = view.querySelector('[data-draft-status]'); if (status) status.textContent = 'Saving on this phone…';
+      return mDeliveryRecovery.save(saved).then(function () { if (status && status.isConnected) status.textContent = 'Saved on this phone'; }).catch(function (err) { if (status && status.isConnected) status.textContent = 'Not saved — ' + err.message; mToast(err.message,'err'); throw err; });
+    }
+    MApp.setTitle((courier(d) ? 'Courier pickup · ' : 'Complete · ') + d.number);
     view.innerHTML = '';
-    var geo = { lat: null, lng: null };
+    var geo = data.geo;
 
     var box = mEl(
       '<div class="m-panel">' +
-      '<label class="m-field"><span class="m-label">Received by</span>' +
+      '<p class="m-hint" data-draft-status role="status">Changes are saved on this phone</p>' +
+      '<p class="m-hint">' + (courier(d) ? 'Courier: ' + mEsc(d.courier_name || 'Courier') + '. This records collection, not customer delivery. ' : '') + 'Name, signature, photos and location are optional.</p>' +
+      (courier(d) ? '<label class="m-field"><span class="m-label">Tracking / waybill (optional)</span><input class="m-input" data-tracking maxlength="160" /></label>' : '') +
+      '<label class="m-field"><span class="m-label">' + (courier(d) ? 'Courier collector (optional)' : 'Received by') + '</span>' +
       '<input class="m-input" data-recip maxlength="160" placeholder="name of who accepted" /></label>' +
       '<div class="m-label" style="margin-top:6px">Signature</div><div data-sig></div>' +
-      '<div class="m-label" style="margin-top:10px">Photos of the delivery</div><div data-photos></div>' +
+      '<div class="m-label" style="margin-top:10px">' + (courier(d) ? 'Photos of courier pickup (optional)' : 'Photos of the delivery') + '</div><div data-photos></div>' +
       '<div class="m-actions" style="margin-top:8px"><button class="m-btn m-btn-secondary" data-geo>📍 Capture location</button></div>' +
       '<label class="m-field"><span class="m-label">Note</span><textarea class="m-input" data-note rows="2"></textarea></label>' +
       '</div>'
     );
-    var sig = mSignature();
+    var sig = mSignature({ onChange: function () {
+      if (sig.isEmpty()) { data.sign = null; persist().catch(function () {}); }
+      else sig.toBlob(function (blob) { data.sign = blob; persist().catch(function () {}); });
+    } });
+    if (data.sign) box.querySelector('[data-sig]').appendChild(mEl('<p class="m-hint">Saved signature retained. Draw again to replace or Clear to remove.</p>'));
     box.querySelector('[data-sig]').appendChild(sig.el);
-    box.querySelector('[data-photos]').appendChild(mPhoto.thumbs('delivery', d.id, { editable: true }));
+    var preparing = false;
+    var picker = mPhoto.picker({ max: 10, initial: data.photos, onBusy: function (busy) { preparing = busy; }, onChange: function (files) { data.photos = files.slice(); persist().catch(function () {}); } });
+    box.querySelector('[data-photos]').appendChild(picker);
+    box.querySelector('[data-recip]').value = data.recipient || '';
+    box.querySelector('[data-note]').value = data.note || '';
+    var tracking = box.querySelector('[data-tracking]');
+    if (tracking) tracking.value = data.tracking != null ? data.tracking : d.tracking_number || '';
+    box.querySelectorAll('[data-recip], [data-note], [data-tracking]').forEach(function (input) { input.oninput = function () { data.recipient = box.querySelector('[data-recip]').value; data.note = box.querySelector('[data-note]').value; if (tracking) data.tracking = tracking.value; persist().catch(function () {}); }; });
     var geoBtn = box.querySelector('[data-geo]');
+    if (geo.lat != null) geoBtn.textContent = '📍 Saved location captured';
     geoBtn.onclick = function () {
       if (!navigator.geolocation) { mToast('No location on this device', 'err'); return; }
       geoBtn.disabled = true; geoBtn.textContent = 'Getting location…';
       navigator.geolocation.getCurrentPosition(function (p) {
-        geo.lat = p.coords.latitude; geo.lng = p.coords.longitude;
+        geo.lat = p.coords.latitude; geo.lng = p.coords.longitude; persist().catch(function () {});
         geoBtn.textContent = '📍 Location captured (±' + Math.round(p.coords.accuracy) + 'm)';
         geoBtn.disabled = false;
       }, function () {
@@ -162,14 +206,15 @@
     view.appendChild(box);
 
     var acts = mEl('<div class="m-actions">' +
-      '<button class="m-btn" data-ok>Delivered</button>' +
-      '<button class="m-btn m-btn-warn" data-fail>Couldn’t deliver</button></div>');
+      '<button class="m-btn" data-ok>' + (courier(d) ? 'Confirm courier pickup' : 'Delivered') + '</button>' +
+      (courier(d) ? '' : '<button class="m-btn m-btn-warn" data-fail>Couldn’t deliver</button>') + '</div>');
     var back = mEl('<div class="m-actions"><button class="m-btn m-btn-secondary" data-back>Cancel</button></div>');
-    back.querySelector('[data-back]').onclick = function () { detail(view, d.id); };
+    back.querySelector('[data-back]').onclick = function () { MApp.go('deliveries', { id: d.id }); };
     view.appendChild(acts);
     view.appendChild(back);
 
-    function submit(outcome) {
+    async function submit(outcome) {
+      if (preparing) { mToast('Wait for photos to finish preparing.', 'err'); return; }
       var note = box.querySelector('[data-note]').value.trim();
       if (outcome === 'failed' && note.length < 3) { mToast('Say why it couldn’t be delivered', 'err'); return; }
       var btns = acts.querySelectorAll('button'); btns.forEach(function (b) { b.disabled = true; });
@@ -179,75 +224,20 @@
         note: note || null,
         lat: geo.lat, lng: geo.lng,
       };
-      var chain = Promise.resolve(null);
-      if (!sig.isEmpty()) {
-        chain = new Promise(function (resolve) { sig.toBlob(resolve); })
-          .then(function (blob) { return mPhoto.attachBlob('signature', d.id, blob, 'signature.png'); })
-          .then(function (r) { payload.signature_attachment_id = r.id; });
+      if (tracking) { payload.tracking_number = tracking.value.trim() || null; data.tracking = tracking.value; }
+      try {
+        data.recipient = payload.recipient; data.note = payload.note; data.photos = picker.files();
+        if (!sig.isEmpty()) data.sign = await new Promise(function (resolve) { sig.toBlob(resolve); });
+        await persist();
+        await mDeliveryRecovery.start(d,saved,'complete',payload);
+        if (hash === location.hash && owner === mProductionDrafts.key('delivery-owner')) mDeliveryRecovery.paint(view,saved);
+      } catch (ex) {
+        mToast(ex.message || 'Could not save delivery.', 'err');
+        btns.forEach(function (b) { b.disabled = false; });
       }
-      chain
-        .then(function () { return API.post('/deliveries/' + d.id + '/complete', payload); })
-        .then(function (r) {
-          var lines = [d.number + (d.customer_name ? ' · ' + d.customer_name : '')];
-          var acts = [
-            { label: 'Back to list', onClick: function () { list(view); } },
-            { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },
-          ];
-          var ord = r && r.order;
-          if (ord) {
-            lines.push('Sale order ' + ord.number + ' is still ' + ord.status + '.');
-            acts.unshift({
-              label: 'Mark ' + ord.number + ' completed',
-              onClick: function () { completeOrder(view, ord, d); },
-            });
-          }
-          mSuccess(view, {
-            title: outcome === 'delivered' ? 'Delivered' : 'Marked not delivered',
-            lines: lines,
-            actions: acts,
-          });
-        })
-        .catch(function (ex) {
-          mToast(ex && ex.offline ? 'Connect to record the delivery' : (ex.message || 'Failed'), 'err');
-          btns.forEach(function (b) { b.disabled = false; });
-        });
     }
-    acts.querySelector('[data-ok]').onclick = function () { submit('delivered'); };
-    acts.querySelector('[data-fail]').onclick = function () { submit('failed'); };
-  }
-
-  // Post-delivery: mark the dropped sale order completed (ships remaining stock via the
-  // server's fulfil hook). A stock shortfall comes back 409 — offer to force a backorder.
-  function completeOrder(view, ord, d, force) {
-    view.innerHTML = '<div class="m-hint">Completing ' + mEsc(ord.number) + '…</div>';
-    API.post('/orders/' + ord.id + '/status', force ? { status: 'completed', force: true } : { status: 'completed' })
-      .then(function () {
-        mSuccess(view, {
-          title: ord.number + ' completed',
-          lines: [(d.customer_name || '') + ' · delivery ' + d.number + ' done'],
-          actions: [
-            { label: 'Back to list', onClick: function () { list(view); } },
-            { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },
-          ],
-        });
-      })
-      .catch(function (ex) {
-        if (ex && ex.status === 409 && ex.data && ex.data.availability) {
-          var n = ex.data.availability.short_lines || 0;
-          mSuccess(view, {
-            title: 'Stock is short',
-            lines: [n + ' line(s) on ' + ord.number + " aren't covered by stock.",
-              'Complete anyway to ship as a backorder (stock may go negative).'],
-            actions: [
-              { label: 'Complete as backorder', onClick: function () { completeOrder(view, ord, d, true); } },
-              { label: 'Leave it for now', secondary: true, onClick: function () { list(view); } },
-            ],
-          });
-          return;
-        }
-        mToast((ex && ex.message) || 'Could not complete the order', 'err');
-        list(view);
-      });
+    acts.querySelector('[data-ok]').onclick = function () { submit(courier(d) ? 'courier_handoff' : 'delivered'); };
+    var fail = acts.querySelector('[data-fail]'); if (fail) fail.onclick = function () { submit('failed'); };
   }
 
   function actions(items) {
@@ -261,7 +251,8 @@
   }
 
   MApp.route('deliveries', function (view, params) {
-    if (params && params.id) detail(view, params.id);
+    if (!MApp.can('delivery.run') && !MApp.can('delivery.manage')) { view.innerHTML = '<div class="m-error">You do not have delivery permission.</div>'; return; }
+    if (params && params.id) detail(view, params.id, params.step);
     else list(view);
   });
 })();

@@ -1,11 +1,11 @@
 {
   "date": "2026-10-16",
-  "source_commit": "ab1b682aa372dce1fae3c6af904116edded34c4a",
+  "source_commit": "d3d54aa3c72579e36664e1cf2fd2c8fb3a249428",
   "counts": {
     "UNVERIFIED": 127,
-    "PASS": 33,
-    "FAIL": 55,
-    "N/A": 18
+    "FAIL": 57,
+    "PASS": 36,
+    "N/A": 13
   },
   "checks": [
     {
@@ -21,10 +21,10 @@
       "id": "FRAME-02",
       "severity": "High",
       "requirement": "Development, staging, and production are fully separated: different databases, different API keys, different configuration.",
-      "status": "UNVERIFIED",
-      "evidence": "Tests use disposable SQLite/data/upload paths. No live development/staging/production configuration or credential separation evidence was supplied.",
-      "scenario": "",
-      "fix": "Compare environment configuration per environment; confirm production credentials appear in no non-production config; look for test data in production tables."
+      "status": "FAIL",
+      "evidence": "Read-only Railway environment inventory on 2026-10-16 shows production only; tests use disposable local data, not a separate hosted staging environment.",
+      "scenario": "A deployment or migration test reaches the sole live environment without a representative rehearsal.",
+      "fix": "Create isolated staging with different credentials/data and rehearse migration, restore, rollback and browser acceptance there before release."
     },
     {
       "id": "FRAME-03",
@@ -94,7 +94,7 @@
       "severity": "Medium",
       "requirement": "Security-sensitive changes get an adversarial review, preferably from a different model or person than the author, before merging.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Check PR history for review evidence on auth, payment, and data-deletion changes."
     },
@@ -103,7 +103,7 @@
       "severity": "Medium",
       "requirement": "Security-questionnaire answers are prepared: encryption at rest and in transit, scan cadence, last pen-test date, incident response plan, data location, and a public security/vulnerability-disclosure page.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Request the documents; check the website for a security page."
     },
@@ -112,7 +112,7 @@
       "severity": "Medium",
       "requirement": "Every AI-generated change gets a short security pass before production (secret scan, auth review, permissions review).",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Check the contribution process and PR templates for this step."
     },
@@ -229,18 +229,18 @@
       "severity": "High",
       "requirement": "Password change, password reset, and reported compromise revoke all of the user's active sessions and tokens immediately.",
       "status": "PASS",
-      "evidence": "Tenant password changes now end every session and clear browser cookies; resets revoke sessions/sibling reset links; operator password reset revokes sessions. Existing device/session revocation endpoints support compromise response. tests/sessions-devices.test.ts and production-security.test.ts.",
-      "scenario": "A shared or compromised current session remains valid after a password change, contrary to the strict all-session handbook requirement.",
-      "fix": "Revoke all sessions and return the user through a deliberate reauthentication flow; update desktop, mobile and offline UX together."
+      "evidence": "src/core/auth.routes.ts revokes every session on password change/reset, clears browser cookies, and uses hashed single-use fifteen-minute reset tokens. tests/auth-reset.test.ts, sessions-devices.test.ts, account-credentials.test.ts and platform-console.test.ts exercise replacement/revocation. Recovery has IP and identifier budgets; missing trusted origin suppresses delivery without exposing account existence.",
+      "scenario": "",
+      "fix": "Keep revocation, expiry, replay and trusted-origin regression tests."
     },
     {
       "id": "AUTH-08",
       "severity": "High",
       "requirement": "Password-reset tokens expire within about 15 minutes, are single-use, and reset requests are rate-limited per email and per IP.",
       "status": "PASS",
-      "evidence": "src/core/auth.routes.ts:26; tests/auth-reset.test.ts verifies 15-minute lifetime, sibling invalidation, single use and three requests/account/hour; tests/production-security.test.ts verifies IP throttling.",
+      "evidence": "src/core/auth.routes.ts revokes every session on password change/reset, clears browser cookies, and uses hashed single-use fifteen-minute reset tokens. tests/auth-reset.test.ts, sessions-devices.test.ts, account-credentials.test.ts and platform-console.test.ts exercise replacement/revocation. Recovery has IP and identifier budgets; missing trusted origin suppresses delivery without exposing account existence.",
       "scenario": "",
-      "fix": "Maintain this control and its tests."
+      "fix": "Keep revocation, expiry, replay and trusted-origin regression tests."
     },
     {
       "id": "AUTH-09",
@@ -274,9 +274,9 @@
       "severity": "High",
       "requirement": "Login, registration, and reset endpoints have brute-force protection (per-IP and per-account throttling, preferably at the edge).",
       "status": "FAIL",
-      "evidence": "src/app.ts:204 adds login account/IP and recovery IP limits; signup has only IP throttling; reset token consumption has only IP throttling.",
-      "scenario": "A distributed attacker can probe signup/reset attempts across many IPs without an account-wide attempt budget.",
-      "fix": "Add persistent account/identifier throttles and abuse controls covering signup and reset consumption, with careful lockout policy and alerts."
+      "evidence": "src/app.ts has IP/account login limits, short-lived bounded MFA challenges, and IP/identifier recovery limits; signup is IP-limited and limit state is process-local.",
+      "scenario": "A distributed signup campaign or repeated server restarts can evade a complete account/edge abuse policy.",
+      "fix": "Add staging-tested persistent/edge abuse limits for public signup and expensive reads/uploads; preserve shared-office NAT usability."
     },
     {
       "id": "AUTH-13",
@@ -427,9 +427,9 @@
       "severity": "Medium",
       "requirement": "High-risk actions use step-up authentication or contextual signals (new device, unusual location, impossible travel).",
       "status": "FAIL",
-      "evidence": "src/core/auth.routes.ts:1 and src/platform/platform-users.ts:1 accept a current bearer session without MFA or fresh-password challenge for privileged operations.",
-      "scenario": "A stolen admin session can change accounts, permissions or exports without a second authentication step.",
-      "fix": "Add step-up authentication and MFA for platform operators and high-value tenant actions."
+      "evidence": "src/shared/mfa.ts supports required MFA enrollment for privileged tenant users and password confirmation for enrollment/removal. A fresh factor is not required for every high-risk operation; owner-console MFA is absent.",
+      "scenario": "An attacker with an already authenticated privileged session can change sensitive data without a fresh factor.",
+      "fix": "Require fresh password/factor proof on privilege changes, bulk deletion and operator recovery; add independently verified owner-console MFA or an MFA-protected access gateway."
     },
     {
       "id": "SECRET-01",
@@ -471,10 +471,10 @@
       "id": "SECRET-05",
       "severity": "High",
       "requirement": "Secret scanning runs before code reaches the remote (pre-commit hook) and at the remote (push protection or CI).",
-      "status": "FAIL",
-      "evidence": ".github/workflows/production-checks.yml adds remote Gitleaks scanning; no repository pre-commit secret hook exists and push-protection settings were not inspected.",
-      "scenario": "A developer can commit a new credential locally; remote scanning catches it only after the push has already disclosed it.",
-      "fix": "Add a documented local staged-file secret hook and enable provider push protection; verify it blocks a synthetic secret."
+      "status": "UNVERIFIED",
+      "evidence": ".githooks/pre-commit now fails closed and scans staged changes; it is enabled in this clone. CI scans history. Enforcement in every developer clone and GitHub push protection is not established.",
+      "scenario": "",
+      "fix": "Install Gitleaks and enable the hook per clone; configure and verify remote enforcement."
     },
     {
       "id": "SECRET-06",
@@ -490,7 +490,7 @@
       "severity": "Medium",
       "requirement": "Production secrets are held in a secrets manager or platform secret store with access control and audit logging, not in committed files or shared documents.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Inspect deployment configuration and how secrets reach runtime."
     },
@@ -499,7 +499,7 @@
       "severity": "Medium",
       "requirement": "Keys are scoped to least privilege (restricted keys, IP or domain restrictions, per-service database users), and a rotation schedule exists.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Review provider key settings and database roles; ask for the last rotation date of each critical secret."
     },
@@ -571,18 +571,18 @@
       "severity": "High",
       "requirement": "Production error responses are generic (no stack traces, SQL, file paths, or versions), and full details are logged server-side with a correlation ID.",
       "status": "FAIL",
-      "evidence": "src/modules/ai/ai.routes.ts:40 directly returns an exception message on reindex failure. Central handler is generic for unexposed 5xx, but no correlation ID exists.",
-      "scenario": "A reindex filesystem/SQL error can reveal paths or schema details to an authorized caller and cannot be correlated with one request ID.",
-      "fix": "Return a stable generic error code; redact server details and add generated request IDs to logs and response headers."
+      "evidence": "src/app.ts now supplies generated request IDs and generic 500 responses, including route-local res.json failures; AI provider response bodies are withheld. Some route-local 400/503 exception paths and legacy diagnostic logging still require individual review.",
+      "scenario": "An upstream or malformed-file failure classified as 400/503 may still expose provider/internal text.",
+      "fix": "Replace remaining raw exception responses with typed public business errors and private redacted diagnostics, then fault-inject each adapter."
     },
     {
       "id": "API-07",
       "severity": "Medium",
       "requirement": "Custom error pages exist for 404, 500, and timeouts, giving users a next step without revealing internals.",
-      "status": "FAIL",
-      "evidence": "src/app.ts:356 returns the shell for unknown non-API paths; unknown API paths can use framework 404 handling.",
-      "scenario": "A typo or missing route appears as a successful shell or generic framework page with no clear recovery action.",
-      "fix": "Define explicit API JSON 404 and useful app not-found/timeout views without breaking legitimate SPA deep links."
+      "status": "PASS",
+      "evidence": "src/app.ts returns JSON 404 with request_id for unknown APIs and a helpful HTML 404 for unknown pages; central 500 responses are generic and local clients expose network/offline retry states. tests/browser-session-security.test.ts and production-security.test.ts cover malformed cookies, missing routes and metadata paths.",
+      "scenario": "",
+      "fix": "Retain missing-route/error regression tests; broader all-screen resilience remains under UX-01."
     },
     {
       "id": "API-08",
@@ -634,7 +634,7 @@
       "severity": "Medium",
       "requirement": "Each endpoint allows only the HTTP methods and headers it needs.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Send `OPTIONS` and unexpected methods (PUT/DELETE) to read-only endpoints."
     },
@@ -697,7 +697,7 @@
       "severity": "High",
       "requirement": "A WAF filters traffic before the application (managed rules or ModSecurity + OWASP CRS in blocking mode), with bot management on high-value routes.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Inspect CDN/WAF configuration; send benign test payloads (for example `' OR 1=1--`) to staging and confirm blocking."
     },
@@ -706,7 +706,7 @@
       "severity": "High",
       "requirement": "The origin accepts traffic only from the CDN/WAF, the origin IP is not discoverable, and CDN-to-origin TLS is end-to-end (Full/strict).",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Check firewall rules; look up DNS history and email headers for the origin IP; inspect the TLS mode."
     },
@@ -715,7 +715,7 @@
       "severity": "Medium",
       "requirement": "A DDoS/abuse response playbook exists, and alerts fire on spikes in WAF blocks or rate-limit hits.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Request the playbook; inspect alert rules."
     },
@@ -724,7 +724,7 @@
       "severity": "Critical",
       "requirement": "Object storage is private by default; public assets are separated; private files use expiring pre-signed URLs; no backups, exports, or configs are publicly readable; access logging is on.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "List bucket policies and ACLs; try anonymous access to sample private objects; check logging configuration."
     },
@@ -733,7 +733,7 @@
       "severity": "High",
       "requirement": "Self-managed servers enforce SSH key-only auth, no root login, default-deny inbound firewall (no public database ports), and automatic security updates.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Inspect `sshd_config`, firewall rules (`ufw status`/`iptables`), and the unattended-upgrades configuration."
     },
@@ -742,7 +742,7 @@
       "severity": "Critical",
       "requirement": "Server and database management panels are not reachable from the public internet (IP/VPN-restricted), require 2FA, and do not sit on default paths and ports.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Scan the public IPs for panel ports (for example 8443, 2083, 5050, 8080) from outside; inspect access rules."
     },
@@ -760,7 +760,7 @@
       "severity": "High",
       "requirement": "Services are network-segmented, authenticate to each other (tokens or mTLS), and run with least-privilege credentials and egress.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Review network policies, security groups, and service credentials; confirm a compromised low-value service cannot reach the database."
     },
@@ -778,7 +778,7 @@
       "severity": "Medium",
       "requirement": "DNS records are audited for dangling targets, and cookie domain scope is no broader than needed.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Enumerate DNS records and resolve CNAME targets; inspect `Set-Cookie` `Domain` attributes."
     },
@@ -787,7 +787,7 @@
       "severity": "Medium",
       "requirement": "If the organization uses Microsoft 365/Entra or similar workforce identity, conditional access requires device compliance, uses sign-in risk policies, and tiers policies by application sensitivity.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Review conditional access policies."
     },
@@ -841,9 +841,9 @@
       "severity": "Medium",
       "requirement": "Infrastructure versions (database, cache, base images, runtimes) are pinned and updated on a deliberate schedule, and infrastructure clients sit behind an adapter.",
       "status": "FAIL",
-      "evidence": ".node-version:1 is a major-only 22 and package.json permits >=22.13; CI pins versions but hosting runtime/installable artifacts are not fully pinned.",
-      "scenario": "A rebuild can silently pick a different major runtime and change SQLite/native behavior.",
-      "fix": "Pin and record supported production runtime versions and maintain a scheduled upgrade policy; verify Node 22, Node 24 and Electron separately."
+      "evidence": ".node-version now pins 24.19.0 and CI tests explicit Node 22/24 versions; actual hosted runtime and distributed desktop/native patch provenance remain unverified.",
+      "scenario": "A hosting/build runtime can drift or receive no reviewed security updates despite a pinned local version.",
+      "fix": "Verify effective hosted/runtime versions and document an update owner/cadence across cloud and native installers."
     },
     {
       "id": "SUPPLY-06",
@@ -868,7 +868,7 @@
       "severity": "Medium",
       "requirement": "Third-party prompts, skills, MCP servers, agent configs, and copied instructions are reviewed before use and never run with production access unvetted.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Inventory AI-tooling content in the repo and CI; check provenance and review history."
     },
@@ -940,9 +940,9 @@
       "severity": "High",
       "requirement": "Every agent tool call is recorded in an append-only audit log with inputs, outputs, actor, and timestamp.",
       "status": "FAIL",
-      "evidence": "Independent structured start/completion events now record tenant, actor, tool, request ID, time and hashes of arguments/results without raw sensitive content. Durable centralized append-only retention and complete outcomes for interrupted calls still need implementation/verification.",
-      "scenario": "A destructive tool action can occur and its detailed tool transcript can subsequently be removed with chat history.",
-      "fix": "Write redacted tool audit events before/after execution to an append-only store with actor, tenant, request ID, approval ID and retention controls."
+      "evidence": "src/modules/ai/ai-audit.ts records separate start/completion events with actor, tool, request ID, timestamp and SHA-256 payload hashes. SQLite triggers reject ordinary UPDATE/DELETE; rows survive clearing chat and never sync to installed nodes. Interrupted calls, raw replay evidence and external tamper resistance remain incomplete.",
+      "scenario": "A host/database administrator can bypass local protections, or an interrupted call leaves only a start event and no reconstruction of its private result.",
+      "fix": "Choose an approved encrypted evidence/retention design, record interrupted outcomes and ship redacted events to a separately controlled append-only archive."
     },
     {
       "id": "AISEC-09",
@@ -1030,9 +1030,9 @@
       "severity": "High",
       "requirement": "Every outbound call (HTTP, database, payment, AI provider) has a timeout, error handling, and a defined fallback; idempotent calls retry with exponential backoff and jitter.",
       "status": "FAIL",
-      "evidence": "AI/QBO/SMTP/S3 now have bounded timeouts; src/modules/ai/ai.routes.ts still allows up to 12 sequential model calls, with no shared request budget/circuit breaker or generalized 429 backoff.",
-      "scenario": "An upstream outage occupies request slots for many sequential timeouts and can repeatedly trigger expensive retries by users.",
-      "fix": "Set an overall request deadline, per-provider concurrency/circuit-breaker controls and bounded jittered retries for idempotent calls; queue unsafe retries."
+      "evidence": "src/modules/ai/ai.routes.ts enforces a 30-second provider request limit, bounded body/schema, and a 120-second shared chat deadline. QBO/SMTP/S3 have timeouts. General circuit breaking, queued retries and adapter-wide backoff are not complete.",
+      "scenario": "A sustained provider outage still ties up concurrent requests or causes synchronized retries despite bounded individual calls.",
+      "fix": "Define per-adapter concurrency, backoff, circuit-breaker and operator recovery policy; verify with sustained outage tests."
     },
     {
       "id": "BACK-03",
@@ -1057,9 +1057,9 @@
       "severity": "Medium",
       "requirement": "Failure isolation exists for critical dependencies: circuit breakers, per-dependency connection pools (bulkheads), and an overall request timeout budget.",
       "status": "FAIL",
-      "evidence": "AI/QBO/SMTP/S3 now have bounded timeouts; src/modules/ai/ai.routes.ts still allows up to 12 sequential model calls, with no shared request budget/circuit breaker or generalized 429 backoff.",
-      "scenario": "An upstream outage occupies request slots for many sequential timeouts and can repeatedly trigger expensive retries by users.",
-      "fix": "Set an overall request deadline, per-provider concurrency/circuit-breaker controls and bounded jittered retries for idempotent calls; queue unsafe retries."
+      "evidence": "src/modules/ai/ai.routes.ts enforces a 30-second provider request limit, bounded body/schema, and a 120-second shared chat deadline. QBO/SMTP/S3 have timeouts. General circuit breaking, queued retries and adapter-wide backoff are not complete.",
+      "scenario": "A sustained provider outage still ties up concurrent requests or causes synchronized retries despite bounded individual calls.",
+      "fix": "Define per-adapter concurrency, backoff, circuit-breaker and operator recovery policy; verify with sustained outage tests."
     },
     {
       "id": "BACK-06",
@@ -1084,16 +1084,16 @@
       "severity": "Medium",
       "requirement": "Provider rate limits (429) are handled with backoff, queuing for non-urgent work, and caching.",
       "status": "FAIL",
-      "evidence": "AI/QBO/SMTP/S3 now have bounded timeouts; src/modules/ai/ai.routes.ts still allows up to 12 sequential model calls, with no shared request budget/circuit breaker or generalized 429 backoff.",
-      "scenario": "An upstream outage occupies request slots for many sequential timeouts and can repeatedly trigger expensive retries by users.",
-      "fix": "Set an overall request deadline, per-provider concurrency/circuit-breaker controls and bounded jittered retries for idempotent calls; queue unsafe retries."
+      "evidence": "src/modules/ai/ai.routes.ts enforces a 30-second provider request limit, bounded body/schema, and a 120-second shared chat deadline. QBO/SMTP/S3 have timeouts. General circuit breaking, queued retries and adapter-wide backoff are not complete.",
+      "scenario": "A sustained provider outage still ties up concurrent requests or causes synchronized retries despite bounded individual calls.",
+      "fix": "Define per-adapter concurrency, backoff, circuit-breaker and operator recovery policy; verify with sustained outage tests."
     },
     {
       "id": "BACK-09",
       "severity": "Medium",
       "requirement": "The public or partner API has a written contract, a version in the path or header, a changelog, and a deprecation policy with sunset headers.",
       "status": "FAIL",
-      "evidence": "src/app.ts:1 exposes unversioned /api routes; no OpenAPI contract or formal deprecation/sunset policy is present.",
+      "evidence": "docs/operations/api-contract.md defines compatibility/deprecation requirements for the existing /api protocol; per-module references and registered-route inventory exist, but a complete versioned OpenAPI contract is absent.",
       "scenario": "A response or route change breaks installed clients without a parallel compatibility version.",
       "fix": "Document the existing REST contract, introduce backward-compatible API versioning and a client upgrade/deprecation policy."
     },
@@ -1218,10 +1218,10 @@
       "id": "DATA-11",
       "severity": "Medium",
       "requirement": "Uploaded files live in object storage (served through a CDN), with only keys or URLs in the database.",
-      "status": "FAIL",
-      "evidence": "src/shared/db.ts uploadDir and diskStorage upload handlers use local files; DBs store paths, but serving is authenticated local disk rather than object storage/CDN.",
-      "scenario": "A single application volume is a storage and scaling bottleneck; losing it requires restoring both databases and uploads.",
-      "fix": "For cloud scale, add a private object-storage adapter and authorized expiring downloads; keep deliberate offline/local storage for installed PCs."
+      "status": "UNVERIFIED",
+      "evidence": "src/shared/upload-offload.ts and durable-uploads.ts implement private S3 file offload plus recoverable DB/local copies. Railway FILES_S3_FROM is present; values, bucket access policy and CDN/private-access behavior were not inspected. tests/upload-offload.test.ts exercises local adapter behavior.",
+      "scenario": "",
+      "fix": "Verify private object ACL/policy, encrypted retention, authenticated retrieval and restore coverage for offloaded bytes."
     },
     {
       "id": "DATA-12",
@@ -1237,7 +1237,7 @@
       "severity": "Low",
       "requirement": "There is a documented, evidence-driven scaling path (indexes \u2192 partitioning \u2192 sharding / platform change) tied to monitoring thresholds.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Ask for capacity notes and current table sizes and growth rates."
     },
@@ -1272,10 +1272,10 @@
       "id": "CACHE-04",
       "severity": "Medium",
       "requirement": "Static assets are fingerprinted and served with long-lived cache headers through a CDN; safe public responses are edge-cached.",
-      "status": "FAIL",
-      "evidence": "src/app.ts:314 applies no-cache to unversioned assets; service worker uses a manually versioned shell.",
-      "scenario": "Large clients revalidate many assets and depend on manual cache-version bumps after updates.",
-      "fix": "Fingerprint immutable assets and deploy matching HTML/worker manifests; keep private API responses no-store."
+      "status": "UNVERIFIED",
+      "evidence": "src/shared/asset-version.ts fingerprints desktop assets and applies immutable caching only to matching content hashes; PWA shell v107 controls offline assets. CDN deployment/cache behavior was not inspected.",
+      "scenario": "",
+      "fix": "Verify versioned assets through the edge; keep private APIs no-store and user/tenant caches isolated."
     },
     {
       "id": "CACHE-05",
@@ -1291,7 +1291,7 @@
       "severity": "High",
       "requirement": "A load test at realistic and peak concurrency has been run against a production-like environment, and the first bottleneck is known and addressed.",
       "status": "FAIL",
-      "evidence": "scripts/audit-load.mjs performed 450 local read requests at 5/15/30 clients over 100 items with no failures; no target peak or production-like dataset/hardware supplied.",
+      "evidence": "scripts/audit-load.mjs: 450 synthetic mixed read requests over 100 inventory items at 5/15/30 clients, zero failures. p95 about 43/98/381 ms on this shared local host. No representative production-sized workload or agreed peak was tested.",
       "scenario": "Payroll/export/stock workloads on real office data can saturate the single SQLite process even though a tiny local read probe passes.",
       "fix": "Agree peak concurrent users and dataset sizes, seed representative staging data, run mixed reads/writes/exports and establish latency/error/resource thresholds."
     },
@@ -1300,7 +1300,7 @@
       "severity": "Medium",
       "requirement": "Scaling changes are made in order, on evidence (connections \u2192 queries \u2192 read/write split), with a written rationale.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Review recent scaling decisions and supporting metrics."
     },
@@ -1354,7 +1354,7 @@
       "severity": "High",
       "requirement": "Restores are tested on a schedule (monthly to quarterly) into a clean environment, with data verification, an app smoke test, and a recorded duration.",
       "status": "FAIL",
-      "evidence": "tests/backup.test.ts verifies snapshot integrity and restore mechanics; docs/SAAS-OPERATIONS.md asks operators to test occasionally, but no dated production-size restore drill record/schedule is present.",
+      "evidence": "Backup, migration snapshot and synthetic isolated restore tests run locally. No dated full live-size restore (tenant/platform DBs, durable/offloaded files, config and keys) with observed recovery duration is evidenced.",
       "scenario": "A real disaster can expose missing upload/config/key recovery despite unit-level restore passing.",
       "fix": "Run and time a clean staging restore of DBs, uploads, configuration and keys, verify the app, record duration and schedule recurring drills."
     },
@@ -1363,8 +1363,8 @@
       "severity": "Medium",
       "requirement": "RTO and RPO are defined, documented, and consistent with the backup and failover design.",
       "status": "FAIL",
-      "evidence": "docs/SAAS-OPERATIONS.md:162 describes daily backups but no business-approved RTO/RPO.",
-      "scenario": "Daily snapshots may lose nearly 24 hours of work even if the business assumes minutes.",
+      "evidence": "Backup frequency is documented as hourly in newer source operations notes, but no business-approved RPO/RTO and verified full recovery duration are evidenced.",
+      "scenario": "An operator assumes an outage/data-loss limit that has never been measured against a complete recovery.",
       "fix": "Obtain explicit acceptable outage/data-loss targets and configure/test backup frequency and failover against those targets."
     },
     {
@@ -1380,28 +1380,28 @@
       "id": "DEPLOY-01",
       "severity": "High",
       "requirement": "The production branch is protected: no direct pushes, required PR review, and required status checks.",
-      "status": "UNVERIFIED",
-      "evidence": "Production-checks.yml adds typecheck, Vitest, Playwright/axe, npm audit and Gitleaks jobs. New remote production branch/protection and required-check enforcement must be verified after push; writing YAML does not establish enforced controls.",
-      "scenario": "",
-      "fix": "Inspect branch protection or ruleset settings and recent commit history for direct pushes."
+      "status": "FAIL",
+      "evidence": "GitHub GET branches/production reports protected=false, required_status_checks.enforcement_level=off and empty contexts. Protection details require unavailable administration access; rulesets API says private-repository plan upgrade is required.",
+      "scenario": "A direct push can bypass review and failing security tests.",
+      "fix": "Choose an appropriate private-repository GitHub plan, protect production with required reviews/checks, and verify enforcement; do not make private code public to enable the feature."
     },
     {
       "id": "DEPLOY-02",
       "severity": "High",
       "requirement": "CI runs build, tests, lint, and security scans on every PR, and failures block merge and deploy.",
-      "status": "UNVERIFIED",
-      "evidence": "Production-checks.yml adds typecheck, Vitest, Playwright/axe, npm audit and Gitleaks jobs. New remote production branch/protection and required-check enforcement must be verified after push; writing YAML does not establish enforced controls.",
-      "scenario": "",
-      "fix": "Inspect CI workflows and required checks; find a recent failing run and confirm it blocked."
+      "status": "FAIL",
+      "evidence": "production-checks.yml runs typecheck, tests, Playwright, npm audit and Gitleaks. Railway service source reports branch restructure/module-architecture and checkSuites=false.",
+      "scenario": "Railway can deploy a source commit while tests or security scans are failing.",
+      "fix": "Require CI before deployment, validate the exact audited commit on staging, then approve the production source/cutover. Do not change the live service automatically."
     },
     {
       "id": "DEPLOY-03",
       "severity": "High",
       "requirement": "A staging environment mirrors production's shape (schema, services, config keys) with separate data and credentials; PRs get preview deployments or staging verification before production.",
-      "status": "UNVERIFIED",
-      "evidence": "Tests use disposable SQLite/data/upload paths. No live development/staging/production configuration or credential separation evidence was supplied.",
-      "scenario": "",
-      "fix": "Compare environment configurations; confirm staging uses a different database and keys."
+      "status": "FAIL",
+      "evidence": "Read-only Railway environment inventory on 2026-10-16 shows production only; tests use disposable local data, not a separate hosted staging environment.",
+      "scenario": "A deployment or migration test reaches the sole live environment without a representative rehearsal.",
+      "fix": "Create isolated staging with different credentials/data and rehearse migration, restore, rollback and browser acceptance there before release."
     },
     {
       "id": "DEPLOY-04",
@@ -1426,7 +1426,7 @@
       "severity": "Medium",
       "requirement": "Changes ship in small, scoped PRs; large multi-concern commits to production are rare.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Sample recent merges for size and scope."
     },
@@ -1444,7 +1444,7 @@
       "severity": "Medium",
       "requirement": "A pre-deploy checklist (secrets, fallbacks, cost caps, validation, error handling, CORS/rate limits, rollback, logging) is used for production releases.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Look for the checklist in PR templates or release docs."
     },
@@ -1534,7 +1534,7 @@
       "severity": "High",
       "requirement": "Errors are captured by an error-tracking service with alerting, release tags, and request/user context (without leaking secrets or PII beyond policy).",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Inspect the SDK setup and alert rules; trigger a test error in staging."
     },
@@ -1543,7 +1543,7 @@
       "severity": "High",
       "requirement": "External uptime checks from more than one region alert a human (not just a dashboard) within minutes of an outage.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Inspect the uptime monitor configuration and notification routing."
     },
@@ -1552,7 +1552,7 @@
       "severity": "High",
       "requirement": "Business metrics (payments, signups, checkout completions, key job outcomes) are monitored against baselines, and drops trigger alerts.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Look for business-metric dashboards and alert rules."
     },
@@ -1561,7 +1561,7 @@
       "severity": "Medium",
       "requirement": "Synthetic transactions exercise the critical path on a schedule.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Inspect synthetic monitor definitions."
     },
@@ -1570,16 +1570,16 @@
       "severity": "Medium",
       "requirement": "Requests carry a correlation ID across services and logs; distributed tracing (OpenTelemetry or equivalent) is in place for multi-service paths.",
       "status": "FAIL",
-      "evidence": "Generated X-Request-ID correlates local HTTP/error/AI tool logs; no full cross-service propagation or distributed tracing implementation exists.",
-      "scenario": "Operators cannot connect one failed action across requests, provider calls and sync replay quickly.",
-      "fix": "Add generated request IDs, structured redacted JSON logs, tenant/actor context and trace propagation; connect to an approved central sink."
+      "evidence": "Generated X-Request-ID ties local HTTP/error/tool evidence together. Read-only Railway service metadata reports tracing and auto-instrumentation disabled.",
+      "scenario": "A cross-service failure cannot be followed through SMTP/AI/S3 and the edge from one trace.",
+      "fix": "Add redacted correlation propagation and tracing suited to the actual adapters, then verify retention and alert ownership."
     },
     {
       "id": "OBS-07",
       "severity": "Medium",
       "requirement": "SLOs and error budgets exist for critical endpoints, with burn-rate alerts and a policy for slowing releases when budgets burn.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Request SLO definitions and alert rules."
     },
@@ -1588,7 +1588,7 @@
       "severity": "Medium",
       "requirement": "A status page runs on separate infrastructure, and there is a defined incident and maintenance communication workflow.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Check the status page host and the communication runbook."
     },
@@ -1597,7 +1597,7 @@
       "severity": "Medium",
       "requirement": "Incidents get blameless post-mortems within about 48 hours using a standard template, stored in a searchable incident library.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Request recent post-mortems."
     },
@@ -1606,7 +1606,7 @@
       "severity": "Medium",
       "requirement": "Support tickets are categorized by root cause and reviewed regularly, with repeated causes turned into engineering work.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Ask for the categorization scheme and a recent review."
     },
@@ -1615,7 +1615,7 @@
       "severity": "Low",
       "requirement": "Session replay or equivalent UX telemetry is linked to errors, with sensitive fields masked.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Inspect replay configuration and masking rules."
     },
@@ -1624,7 +1624,7 @@
       "severity": "Low",
       "requirement": "Operators have an admin view of key metrics, recent errors, logs, and system health.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Check for an operations dashboard."
     },
@@ -1633,7 +1633,7 @@
       "severity": "High",
       "requirement": "The workload fits the platform's documented limits (execution timeout, request/response size, concurrency, memory); long or large operations run on suitable compute.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "List the platform's limits; compare with the longest request durations, largest uploads, and peak concurrency."
     },
@@ -1642,7 +1642,7 @@
       "severity": "Medium",
       "requirement": "Workloads are split by type: request/response on serverless or web instances; long jobs, queue workers, websockets, and cron on persistent compute.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Map workloads to where they run."
     },
@@ -1651,7 +1651,7 @@
       "severity": "Medium",
       "requirement": "Production does not run on hobby or free tiers that lack required limits, SLAs, backups, or support.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Check plan levels for hosting, database, and critical SaaS."
     },
@@ -1660,7 +1660,7 @@
       "severity": "Medium",
       "requirement": "Cloud costs are monitored with budgets and alerts; idle resources are cleaned up; instances are right-sized; egress is understood.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Review billing dashboards, budget alerts, and the resource inventory."
     },
@@ -1669,7 +1669,7 @@
       "severity": "Medium",
       "requirement": "Data platform choice matches the data shape and workload, and lock-in or exit cost is documented.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Review the architecture decision record for the database."
     },
@@ -1678,7 +1678,7 @@
       "severity": "Medium",
       "requirement": "The business knows its \"customer ceiling\": which enterprise requirements (SSO, SOC 2, data residency, VPC deployment, DPAs/BAAs) the current stack can and cannot meet.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Ask for the documented ceiling or compare the stack against a standard security questionnaire."
     },
@@ -1687,7 +1687,7 @@
       "severity": "Low",
       "requirement": "Any self-hosted component has a named owner for patching, monitoring, backups, and uptime.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "List self-hosted components and their operational owners."
     },
@@ -1749,46 +1749,46 @@
       "id": "PAY-01",
       "severity": "Critical",
       "requirement": "Checkout sessions are created server-side from server-side or provider-side prices (Price IDs); no client-supplied amount, currency, or discount is trusted.",
-      "status": "N/A",
-      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "status": "PASS",
+      "evidence": "Translated to the implemented manual bank-transfer/GCash workflow: platform/billing.ts computes invoices from operator-owned pricing. Customer submissions remain pending; only authenticated platform confirmation settles sufficient funds and clears awaiting_payment. tests/billing.test.ts and billing-flows.test.ts verify tenant scoping and confirmation gates.",
       "scenario": "",
-      "fix": "Reassess if this capability is introduced."
+      "fix": "Operators must reconcile actual bank/GCash receipts before confirming; automated payment providers require separate webhook controls."
     },
     {
       "id": "PAY-02",
       "severity": "Critical",
       "requirement": "Access and entitlements are granted only after a verified payment webhook (with amount and product checked), never from the success redirect.",
-      "status": "N/A",
-      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "status": "PASS",
+      "evidence": "Translated to the implemented manual bank-transfer/GCash workflow: platform/billing.ts computes invoices from operator-owned pricing. Customer submissions remain pending; only authenticated platform confirmation settles sufficient funds and clears awaiting_payment. tests/billing.test.ts and billing-flows.test.ts verify tenant scoping and confirmation gates.",
       "scenario": "",
-      "fix": "Reassess if this capability is introduced."
+      "fix": "Operators must reconcile actual bank/GCash receipts before confirming; automated payment providers require separate webhook controls."
     },
     {
       "id": "PAY-03",
       "severity": "Critical",
       "requirement": "Every incoming webhook (payments, auth provider, email provider, source control, others) has its signature verified against the raw body with the provider's SDK before processing.",
       "status": "N/A",
-      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "evidence": "No automated payment-provider webhook is implemented. Billing is manually confirmed bank/GCash transfer; authenticated internal sync endpoints have separate signature tests.",
       "scenario": "",
-      "fix": "Reassess if this capability is introduced."
+      "fix": "Add provider SDK raw-body signature, deduplication and replay-window tests before introducing automated payments."
     },
     {
       "id": "PAY-04",
       "severity": "High",
       "requirement": "Webhook processing is idempotent: event IDs are persisted before processing, duplicates return 2xx without side effects, and stale events outside a replay window are rejected.",
       "status": "N/A",
-      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "evidence": "No automated payment-provider webhook is implemented. Billing is manually confirmed bank/GCash transfer; authenticated internal sync endpoints have separate signature tests.",
       "scenario": "",
-      "fix": "Reassess if this capability is introduced."
+      "fix": "Add provider SDK raw-body signature, deduplication and replay-window tests before introducing automated payments."
     },
     {
       "id": "PAY-05",
       "severity": "High",
       "requirement": "A successful payment reliably triggers every downstream step (invoice, subscription, access, receipt, CRM), with retries and alerts when a step fails.",
-      "status": "N/A",
-      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "status": "UNVERIFIED",
+      "evidence": "Manual billing ledger, confirmation, entitlement and invoice tests exist; real bank reconciliation, receipt delivery, failure alerting and end-to-end operator practice are not verified.",
       "scenario": "",
-      "fix": "Reassess if this capability is introduced."
+      "fix": "Exercise a staging invoice/payment/rejection/confirmation/cancellation flow and reconcile actual provider receipts under an approved procedure."
     },
     {
       "id": "PAY-06",
@@ -1803,26 +1803,26 @@
       "id": "PAY-07",
       "severity": "Medium",
       "requirement": "Failed subscription payments trigger smart retries, a customer email sequence, and a grace period before cancellation.",
-      "status": "N/A",
-      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
-      "scenario": "",
-      "fix": "Reassess if this capability is introduced."
+      "status": "FAIL",
+      "evidence": "Manual recurring billing and payment status gates exist, but a measured failed-payment reminder/grace/escalation workflow is not evidenced.",
+      "scenario": "A customer payment problem can leave access unresolved until an operator notices.",
+      "fix": "Approve grace rules, add auditable reminder/escalation jobs with retry/alert behavior, and rehearse billing support."
     },
     {
       "id": "PAY-08",
       "severity": "Medium",
       "requirement": "A product-specific refund policy is published and linked at checkout; dispute-rate alerts and a dispute evidence template exist.",
-      "status": "N/A",
-      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
-      "scenario": "",
-      "fix": "Reassess if this capability is introduced."
+      "status": "FAIL",
+      "evidence": "docs/policies/refunds.md is explicitly draft; approved terms, checkout links, dispute monitoring and an adopted evidence process are not established.",
+      "scenario": "A customer dispute has no approved published refund rule or defensible evidence process.",
+      "fix": "Have the owner/legal reviewer approve refund terms, link them beside billing decisions, and adopt dispute evidence/escalation rules."
     },
     {
       "id": "PAY-09",
       "severity": "Medium",
       "requirement": "Sales-tax/VAT obligations are assessed by customer location, and tax is collected and filed where required.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Check tax settings in the payment provider and the existence of a nexus assessment."
     },
@@ -1840,16 +1840,16 @@
       "severity": "Medium",
       "requirement": "Webhook endpoints use non-guessable paths and, where supported, restrict source IPs to the provider's published ranges.",
       "status": "N/A",
-      "evidence": "src/platform/subscription.ts:1 explicitly implements owner-managed PHP quotes without charging a payment method. No hosted card checkout/payment webhook/provider dunning exists. Accounting cash entries and QuickBooks export are not payment processing.",
+      "evidence": "No automated payment-provider webhook is implemented. Billing is manually confirmed bank/GCash transfer; authenticated internal sync endpoints have separate signature tests.",
       "scenario": "",
-      "fix": "Reassess if this capability is introduced."
+      "fix": "Add provider SDK raw-body signature, deduplication and replay-window tests before introducing automated payments."
     },
     {
       "id": "MAIL-01",
       "severity": "High",
       "requirement": "Transactional email is authenticated (SPF, DKIM, DMARC), sent from a domain or subdomain separate from marketing, and monitored for delivery, bounces, and complaints.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Check DNS records for the sending domains; inspect email provider dashboards and bounce/complaint webhooks."
     },
@@ -2002,7 +2002,7 @@
       "severity": "High",
       "requirement": "Provider accounts have billing limits and spend alerts configured.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Check provider dashboard settings (with the owner)."
     },
@@ -2065,7 +2065,7 @@
       "severity": "Medium",
       "requirement": "An activation event is defined and measured (completion within the first session or day), with automated nudges for users who do not activate.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Find the activation definition, its tracking, and the nudge triggers."
     },
@@ -2074,7 +2074,7 @@
       "severity": "Low",
       "requirement": "Drop-off detection compares users against their own activity baseline and triggers personalized re-engagement.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Inspect lifecycle messaging rules."
     },
@@ -2083,7 +2083,7 @@
       "severity": "Medium",
       "requirement": "Support playbooks exist for each core feature, with defined automated, assisted, and incident tiers and human escalation for billing disputes and ambiguous reports.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Request the playbooks and escalation rules."
     },
@@ -2101,10 +2101,11 @@
       "severity": "Low",
       "requirement": "Onboarding delivers the core value quickly (templates or defaults) and discloses complexity progressively.",
       "status": "UNVERIFIED",
-      "evidence": "No live operational evidence was provided; repository/local tests cannot establish this complete control.",
+      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
       "fix": "Time a new-user run-through to first value."
     }
   ],
-  "remediation_date": "2026-10-16"
+  "remediation_date": "2026-10-16",
+  "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation"
 }

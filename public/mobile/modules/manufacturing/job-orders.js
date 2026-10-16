@@ -15,9 +15,15 @@
   var R = window.RoleUI;
   var ICON = '/mobile/icons/v2/';
   var PROBLEM_DRAFT = 'vds_kit_problem_draft_';
-  // Units being entered, per job order: { rows: [{ identifier, file, saved }], batch }. Memory
-  // only — photos are File objects and never touch storage; leaving the app drops unsent rows.
+  // Restorable drafts include photo bytes and each immutable attempted upload.
   var sessions = {};
+  var actions = {};
+  var sessionOwner;
+  function retryKey() { return 'production-' + crypto.randomUUID(); }
+  function draftError(err) { mToast(err.message || 'Could not save this draft', 'err'); }
+  function persist(s) { return mProductionDrafts.save(s); }
+  function locked(r) { return !!(r.attempt && ['sending', 'unknown', 'conflict'].indexOf(r.attempt.state) !== -1); }
+  function responseLabel(r) { return r.local ? 'Saved on site PC — confirmation pending' : 'Confirmed by site authority'; }
 
   var canAdjust = function () { return MApp.can('inventory.adjust'); };
   var canRecord = function () { return canAdjust() || MApp.can('production.record'); };
@@ -56,7 +62,9 @@
     var days = Math.round((new Date(d + 'T00:00:00') - t) / 86400000);
     return days === 0 ? 'Due today' : days === 1 ? 'Due tomorrow' : days < 0 ? 'Overdue ' + (-days) + 'd' : 'Due ' + d;
   }
-  var remaining = function (jo) { return Math.max(0, jo.qty_ordered - jo.qty_done - jo.qty_scrapped); };
+  function unresolved(jo) { var s = jo.units_summary || {}; return (s.pending || 0) + (s.rework || 0) + (s.hold || 0); }
+  var remaining = function (jo) { return Math.max(0, jo.qty_ordered - jo.qty_done - jo.qty_scrapped - unresolved(jo)); };
+  function quantity(value) { var n = Number(value); return String(value).trim() && Number.isSafeInteger(n) && n >= 0 ? n : null; }
 
   // Mirrors job-orders.routes.ts needsAcceptance(): released, not yet accepted, no output yet
   // (job orders that had output before the accept step existed stay exempt).
@@ -71,7 +79,19 @@
 
   function loadInto(view, id, render) {
     view.innerHTML = '<section class="rk-page">' + R.skeleton(2) + '</section>';
-    API.get('/job-orders/' + id).then(function (jo) { render(jo); }).catch(function (err) {
+    var owner = mProductionDrafts.key(id), routeHash = location.hash;
+    if (sessionOwner !== owner) { sessions = {}; actions = {}; sessionOwner = owner; }
+    // Existing routes remain usable without storage, but no new upload may start until
+    // its draft and key have been persisted successfully.
+    Promise.all([API.get('/job-orders/' + id), sessions[id] ? Promise.resolve(sessions[id]) : mProductionDrafts.load(id).catch(function () { return null; }),
+      actions[id] ? Promise.resolve(actions[id]) : mProductionDrafts.loadAction(id).catch(function () { return null; })]).then(function (both) {
+      if (location.hash !== routeHash || !MApp.getMe() || mProductionDrafts.key(id) !== owner) return;
+      if (both[1]) sessions[id] = both[1];
+      if (both[2]) actions[id] = both[2];
+      var step = new URLSearchParams(location.hash.split('?')[1] || '').get('step');
+      if (actions[id] && ['manage', 'pause', 'resume', 'history', 'problem'].indexOf(step) === -1) { actionRecovery(view, both[0]); return; }
+      render(both[0]);
+    }).catch(function (err) {
       view.innerHTML = '';
       view.appendChild(R.error(err, function () { loadInto(view, id, render); }));
     });
@@ -83,6 +103,85 @@
     };
   }
   function busy(btn, text) { btn.disabled = true; btn.textContent = text; }
+  function actionVisible(jo, record) {
+    try { return actions[jo.id] === record && record.key === mProductionDrafts.key(jo.id + ':action') &&
+      location.hash.split('?')[0] === '#/job-orders' && new URLSearchParams(location.hash.split('?')[1] || '').get('id') === String(jo.id); }
+    catch (ignore) { return false; }
+  }
+
+  function sendAction(jo, record) {
+    var a = record.operation;
+    if (record.key !== mProductionDrafts.key(jo.id + ':action')) return Promise.reject(new Error('Reopen this attempt with its original account.'));
+    if (a.state === 'conflict' || Date.now() - a.created >= 7 * 86400000) {
+      a.state = 'conflict'; a.error = 'Ask a manager to reconcile this attempt before recording it again; expired keys cannot be retried safely.';
+      return persist(record).then(function () { throw new Error(a.error); });
+    }
+    var wasUnknown = a.state === 'unknown', sent = false;
+    a.state = 'sending';
+    return persist(record).then(function () {
+      if (record.key !== mProductionDrafts.key(jo.id + ':action')) throw new Error('The signed-in account changed.');
+      sent = true;
+      return API.post(a.path, a.payload, { idempotencyKey: a.key });
+    }).then(function (res) {
+      a.state = 'confirmed'; a.result = res; a.local = API.syncLocal(res); a.error = null;
+      return persist(record).catch(function () { mToast('Saved, but the draft confirmation could not be stored. Recovery will reuse the original key.', 'err'); }).then(function () { return res; });
+    }).catch(function (err) {
+      a.error = err.message || 'Could not confirm this attempt';
+      a.state = !sent ? (wasUnknown ? 'unknown' : 'rejected') : networkLost(err) || err.status >= 500 || err.status === 401 || err.status === 429 ? 'unknown'
+        : err.status === 409 && /save key|different request/i.test(a.error) ? 'conflict' : 'rejected';
+      return persist(record).catch(function () {}).then(function () { throw err; });
+    });
+  }
+  function submitAction(view, jo, kind, payload, button) {
+    if (actions[jo.id]) { actionRecovery(view, jo); return; }
+    var record = { key: mProductionDrafts.key(jo.id + ':action'), rows: [], operation: {
+      kind: kind, path: '/job-orders/' + jo.id + (kind === 'approve' ? '/approve' : kind === 'accept' ? '/accept' : '/progress'),
+      key: retryKey(), payload: JSON.parse(JSON.stringify(payload)), created: Date.now(), state: 'new',
+      review: kind === 'approve' ? { number: jo.number, product_name: jo.product_name, qty_ordered: jo.qty_ordered, build_mode: jo.build_mode, source_location_name: jo.source_location_name || 'Default location',
+        components: (jo.components || []).map(function (c) { return { component_name: c.component_name, qty_planned: c.qty_planned }; }) } : null } };
+    actions[jo.id] = record;
+    bodyLock(button.closest('.rk-body'));
+    sendAction(jo, record).then(function () {
+      if (record.operation.local) { actionRecovery(view, jo); return; }
+      return mProductionDrafts.remove(record).then(function () {
+        var visible = actionVisible(jo, record);
+        if (actions[jo.id] === record) delete actions[jo.id];
+        if (visible) { mToast(kind === 'approve' ? 'Job order approved' : kind === 'accept' ? 'Kit accepted' : 'Production result confirmed'); reopen(jo.id); }
+      });
+    }).catch(function () { actionRecovery(view, jo); });
+  }
+  function bodyLock(body) { body.querySelectorAll('input, textarea, button').forEach(function (el) { el.disabled = true; }); }
+  function actionRecovery(view, jo) {
+    var record = actions[jo.id];
+    if (!record || !actionVisible(jo, record)) return;
+    var a = record.operation;
+    var titles = { approve: 'Job-order approval', accept: 'Kit acceptance', output: 'Production output', scrap: 'Production scrap' };
+    var state = a.state === 'confirmed' ? a.local ? 'Saved on site PC — confirmation pending' : 'Confirmed by site authority'
+      : a.state === 'rejected' ? 'Request refused — review before correcting' : a.state === 'conflict' ? 'Conflict — reconciliation needed' : 'Confirmation unknown';
+    var retryable = ['unknown', 'sending', 'new'].indexOf(a.state) !== -1;
+    var body = a.kind === 'approve' ? managerPage(view, '66:580', titles[a.kind], state) : leadPage(view, a.kind === 'accept' ? '66:79' : a.kind === 'output' ? '66:408' : '66:462', titles[a.kind], state);
+    body.innerHTML = R.field('Job order', jo.number) + R.field('Attempt status', state) +
+      (a.kind === 'approve' ? R.field('Reviewed plan', 'Quantity ' + a.review.qty_ordered + ' · ' + a.review.source_location_name) +
+        R.field('Reviewed build state', a.review.build_mode === 'semi_built' ? 'Semi-built' : 'Fully built') + R.field('Original note', a.payload.notes || '—') +
+        R.lines(a.review.components.map(function (c) { return { name: c.component_name, qty: c.qty_planned, ok: true }; })) : a.kind === 'accept' ? R.field('Original note', a.payload.notes || '—') : R.field('Original quantities', (a.payload.done_delta || 0) + ' finished · ' + (a.payload.scrapped_delta || 0) + ' scrapped') + R.field('Original batch / reason', a.payload.batch_label || a.payload.reason || '—')) +
+      (a.error ? R.note('warn', mEsc(a.error)) : '') +
+      (retryable ? R.note('warn', 'A missing response does not prove failure. This attempt is stored on this device; its original quantities, note and key will be retried unchanged.') : '') +
+      '<div data-action-sync></div>' + R.actions((retryable ? [{ id: 'jo-action-retry', label: 'Retry original', kind: 'primary' }] : []).concat([{ id: 'jo-action-back', label: 'Return to job', kind: 'secondary' }]));
+    if (a.local) body.querySelector('[data-action-sync]').appendChild(R.syncWatch(a.local, function (result) {
+      if (result.state === 'confirmed') { a.local = null; persist(record).then(function () { if (body.isConnected) actionRecovery(view, jo); }).catch(draftError); }
+    }));
+    var retry = body.querySelector('#jo-action-retry');
+    if (retry) retry.onclick = function () {
+      if (offline()) { mToast('Reconnect before checking this attempt.', 'err'); return; }
+      busy(retry, 'Checking…');
+      sendAction(jo, record).then(function () { actionRecovery(view, jo); }).catch(function () { actionRecovery(view, jo); });
+    };
+    body.querySelector('#jo-action-back').onclick = function () {
+      if (a.state === 'rejected' || a.state === 'confirmed' && !a.local) {
+        mProductionDrafts.remove(record).then(function () { delete actions[jo.id]; reopen(jo.id); }).catch(draftError);
+      } else MApp.go('job-orders');
+    };
+  }
 
   /* ── 66:14 Production job orders (lead board) ───────────────────────────── */
   function board(view, tab) {
@@ -141,7 +240,9 @@
   function control(view) {
     var body = managerPage(view, '66:515', 'Production control', 'Exceptions and job-order health');
     body.innerHTML = R.skeleton(3);
-    API.get('/job-orders').then(function (rows) {
+    Promise.all([API.get('/job-orders'), MApp.can('production.approve') ? API.get('/job-orders?stage=awaiting_approval').then(function (rows) { return mProductionDrafts.approvalCount(rows); }).catch(function () { return null; }) : Promise.resolve(null)]).then(function (result) {
+      if (!body.isConnected) return;
+      var rows = result[0], approvals = result[1];
       var open = (rows || []).filter(function (j) { return ['released', 'in_progress', 'paused'].indexOf(j.status) !== -1; });
       var ex = [];
       open.forEach(function (j) {
@@ -154,19 +255,22 @@
         R.hero('Action required', ex.length ? ex.length + ' exception' + (ex.length === 1 ? '' : 's') : 'On track',
           [count('paused') + ' paused', count('overdue') + ' overdue', count('blocked') + ' kit issue' + (count('blocked') === 1 ? '' : 's')].join(' · ')) +
         '<div class="rk-list" data-list></div>' +
-        R.actions([{ id: 'pm-all', label: 'View all production', kind: 'secondary' }]);
+        R.actions((MApp.can('production.approve') ? [{ id: 'pm-approvals', label: 'Awaiting approval' + (approvals != null ? ' · ' + approvals : ''), kind: 'primary' }] : [])
+          .concat([{ id: 'pm-all', label: 'View all production', kind: 'secondary' }]));
       var host = body.querySelector('[data-list]');
       host.innerHTML = ex.length ? ex.map(function (x) {
         var j = x.j;
-        var pill = x.kind === 'paused' ? { text: 'Paused', tone: 'purple' } : x.kind === 'overdue' ? { text: 'Overdue', tone: 'danger' } : { text: 'Blocked', tone: 'warn' };
+        var pill = x.kind === 'paused' ? { text: 'Paused', tone: 'purple' } : x.kind === 'overdue' ? { text: 'Overdue', tone: 'danger' } : { text: 'Open issue', tone: 'warn' };
         var meta = x.kind === 'paused' ? ['Paused ' + time(j.paused_at), j.qty_done + '/' + j.qty_ordered + ' recorded'].join(' · ')
           : x.kind === 'overdue' ? ['Overdue', j.qty_done + '/' + j.qty_ordered + ' recorded'].join(' · ')
           : j.open_issues + ' open issue' + (j.open_issues === 1 ? '' : 's') + ' · awaiting resolution';
         return R.jobCard({ id: j.id, number: j.number, name: j.product_name, pill: pill, meta: meta });
-      }).join('') : '<div class="rk-empty">No paused, overdue or blocked job orders.</div>';
+      }).join('') : '<div class="rk-empty">No paused, overdue or reported issues.</div>';
       Array.prototype.forEach.call(host.querySelectorAll('[data-id]'), function (b) {
         b.onclick = function () { go(b.dataset.id, 'manage'); };
       });
+      var approval = body.querySelector('#pm-approvals');
+      if (approval) approval.onclick = function () { MApp.go('job-orders', { view: 'approval' }); };
       body.querySelector('#pm-all').onclick = function () { MApp.go('job-orders', { view: 'all' }); };
     }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { control(view); })); });
   }
@@ -180,23 +284,72 @@
     });
   }
 
-  // A draft is the warehouse's (kit release) or the approver's business, not the line's.
+  function approvalQueue(view) {
+    var body = managerPage(view, '66:515', 'Awaiting approval', 'Review production demand before warehouse picking');
+    if (!MApp.can('production.approve')) { body.innerHTML = R.note('warn', 'Job-order approval requires production approval permission.'); return; }
+    body.innerHTML = R.skeleton(3);
+    var owner = mProductionDrafts.key('approval-list');
+    Promise.all([API.get('/job-orders?stage=awaiting_approval'), mProductionDrafts.listActions('approve')]).then(function (result) {
+      if (!body.isConnected || !MApp.can('production.approve') || owner !== mProductionDrafts.key('approval-list')) return;
+      var saved = result[1], ids = saved.map(function (a) { return a.jobId; });
+      var rows = result[0].filter(function (j) { return ids.indexOf(j.id) === -1; });
+      body.innerHTML = R.hero('Review needed', rows.length + ' draft' + (rows.length === 1 ? '' : 's'), saved.length + ' saved approval(s) to review') +
+        (saved.length ? R.section('Saved approvals · recovery') + '<div class="rk-list">' + saved.map(function (a) {
+          var op = a.record.operation;
+          return R.jobCard({ id: a.jobId, number: op.review.number, name: op.review.product_name, pill: { text: op.local ? 'Confirmation pending' : 'Review saved approval', tone: 'warn' },
+            meta: 'Original reviewed plan and note retained on this phone' });
+        }).join('') + '</div>' : '') +
+        '<div class="rk-list">' + (rows.length ? rows.map(function (j) {
+          return R.jobCard({ id: j.id, number: j.number, name: j.product_name, pill: { text: 'Awaiting approval', tone: 'muted' },
+            meta: ['Qty ' + j.qty_ordered, j.team_name, dueText(j.due_date), j.source_location_name].filter(Boolean).join(' · ') });
+        }).join('') : '<div class="rk-empty">No draft job orders are awaiting approval.</div>') + '</div>';
+      body.querySelectorAll('[data-id]').forEach(function (b) { b.onclick = function () { MApp.go('job-orders', { id: b.dataset.id }); }; });
+    }).catch(function (err) { if (body.isConnected) { body.innerHTML = ''; body.appendChild(R.error(err, function () { approvalQueue(view); })); } });
+  }
+
   function draftView(view, jo) {
-    var body = leadPage(view, '66:14', jo.number, 'Not released to production yet');
-    body.innerHTML = R.jobHead({ number: jo.number, name: jo.product_name, pill: { text: 'Draft' }, meta: [jo.team_name, dueText(jo.due_date)].filter(Boolean).join(' · ') }) +
-      R.note('info', !jo.approved_at ? 'Waiting for a production manager to approve it.' : 'Approved — the warehouse is preparing and releasing the parts kit.') +
-      '<div data-acts></div>';
-    var acts = [];
-    if (MApp.can('production.approve') && !jo.approved_at) acts.push({ id: 'jo-approve', label: 'Approve', kind: 'primary' });
-    if (canAdjust() && jo.approved_at) acts.push({ id: 'jo-kit', label: 'Open kit release', kind: 'primary' });
-    body.querySelector('[data-acts]').innerHTML = acts.length ? R.actions(acts) : '';
-    var ap = body.querySelector('#jo-approve');
-    if (ap) ap.onclick = function () {
-      busy(ap, 'Approving…');
-      API.post('/job-orders/' + jo.id + '/approve', {}).then(function () { MApp.render(); }).catch(fail(ap, 'Approve'));
-    };
-    var kit = body.querySelector('#jo-kit');
-    if (kit) kit.onclick = function () { MApp.go('kit-release', { id: jo.id }); };
+    var approver = MApp.can('production.approve');
+    var body = approver || isManager() ? managerPage(view, '66:580', 'Review job-order draft', 'Check the plan before warehouse preparation') : leadPage(view, '66:14', jo.number, 'Not released to production yet');
+    body.innerHTML = R.skeleton(2);
+    var owner = mProductionDrafts.key(jo.id), routeHash = location.hash;
+    API.get('/job-orders/' + jo.id + '/availability').then(function (av) { paint(av); }).catch(function () { paint(null); });
+    function paint(av) {
+      if (!body.isConnected || !MApp.getMe() || owner !== mProductionDrafts.key(jo.id) || location.hash !== routeHash) return;
+      var samePlan = av && jo.approval_revision && av.approval_revision === jo.approval_revision;
+      var short = av && av.shortfalls || [];
+      body.innerHTML = R.jobHead({ number: jo.number, name: jo.product_name, pill: { text: jo.approved_at ? 'Approved' : 'Awaiting approval' },
+          meta: ['Qty ' + jo.qty_ordered, jo.team_name, dueText(jo.due_date)].filter(Boolean).join(' · ') }) +
+        R.field('Build state', jo.build_mode === 'semi_built' ? 'Semi-built' : 'Fully built') + R.field('Stock purpose', jo.order_id ? 'Linked sale ' + (jo.order_number || jo.order_id) : 'Independent RTS buffer') + R.field('Parts source', av && av.source_location_name || jo.source_location_name || 'Default location') +
+        R.field('Finished goods location', jo.output_location_name || 'Default location') +
+        R.field('Schedule / linked order', [jo.planned_start, jo.due_date, jo.work_center, jo.order_number].filter(Boolean).join(' · ') || '—') +
+        R.field('Inspection stages', jo.qc_stages === 0 ? 'Bulk output · no serialized inspection' : jo.qc_stages + ' stage(s) · ' +
+          [jo.qc_checklist_qc && jo.qc_checklist_qc.name, jo.qc_checklist_qa && jo.qc_checklist_qa.name].filter(Boolean).join(' · ')) +
+        R.field('Planner notes', jo.notes || '—') + R.section('Planned component snapshot') +
+        ((jo.components || []).length ? R.lines(jo.components.map(function (c) { return { name: c.component_name, qty: 'Need ' + c.qty_planned, detail: c.qty_per_unit + ' per unit', ok: true }; })) : R.note('info', 'No planned stock components.')) +
+        R.section('Current source stock') + (av ? R.lines(av.lines.map(function (l) { return { name: l.component_name, qty: 'Free ' + l.available + ' / ' + l.need,
+          detail: 'On hand ' + l.have + ' · Held ' + l.held_elsewhere + ' · Picked ' + l.picked, ok: l.short <= 0 }; })) : R.note('warn', 'Stock check unavailable. Refresh before approving.')) +
+        (!samePlan && !jo.approved_at ? R.note('warn', av ? 'The plan changed while loading. Refresh and review the latest draft.' : 'Approval is unavailable until the stock review loads.') : '') +
+        R.note(short.length ? 'warn' : 'info', jo.approved_at ? 'Approved — the warehouse prepares and releases the complete kit.' : short.length ?
+          'Parts are short or held elsewhere. Approval can plan this demand; the warehouse must resolve the shortage before releasing a complete kit.' : 'Approval plans demand. Stock is deducted only when the warehouse releases the complete kit.') +
+        (approver && !jo.approved_at && samePlan ? '<label class="rk-card rk-field"><small>Approval note (optional)</small><textarea data-approval-note maxlength="500" rows="2"></textarea></label>' +
+          R.check('jo-plan-reviewed', 'I reviewed the quantity, locations and planned components.') +
+          (short.length ? R.check('jo-shortage-reviewed', 'I understand the shortage needs warehouse follow-up.') : '') +
+          R.actions([{ id: 'jo-approve', label: 'Approve plan', kind: 'primary' }]) : '') +
+        R.actions([{ id: 'jo-refresh-draft', label: 'Refresh review', kind: 'secondary' }].concat(canAdjust() && jo.approved_at ? [{ id: 'jo-kit', label: 'Open kit release', kind: 'primary' }] : []));
+      body.querySelector('#jo-refresh-draft').onclick = function () { reopen(jo.id); };
+      var ap = body.querySelector('#jo-approve');
+      if (ap) {
+        var reviewed = body.querySelector('#jo-plan-reviewed'), shortage = body.querySelector('#jo-shortage-reviewed');
+        function ready() { ap.disabled = !reviewed.checked || shortage && !shortage.checked; }
+        reviewed.onchange = ready; if (shortage) shortage.onchange = ready; ready();
+        ap.onclick = function () {
+          if (offline()) { mToast('Reconnect before approving this plan.', 'err'); return; }
+          if (!reviewed.checked || shortage && !shortage.checked) return;
+          submitAction(view, jo, 'approve', { notes: body.querySelector('[data-approval-note]').value.trim() || null, expected_revision: jo.approval_revision }, ap);
+        };
+      }
+      var kit = body.querySelector('#jo-kit'); if (kit) kit.onclick = function () { MApp.go('kit-release', { id: jo.id }); };
+    }
   }
 
   /* ── 66:79 Accept parts kit ──────────────────────────────────────────────── */
@@ -221,9 +374,7 @@
       if (offline()) { mToast('You’re offline — accepting the kit needs a connection.', 'err'); return; }
       busy(btn, 'Accepting…');
       var note = body.querySelector('[data-note]').value.trim();
-      API.post('/job-orders/' + jo.id + '/accept', { notes: note || null })
-        .then(function () { mToast('Kit accepted — you can record production now'); reopen(jo.id); })
-        .catch(fail(btn, 'Accept job order'));
+      submitAction(view, jo, 'accept', { notes: note || null }, btn);
     };
     body.querySelector('#jo-problem').onclick = function () { go(jo.id, 'problem'); };
   }
@@ -231,7 +382,7 @@
   /* ── 66:133 Report kit problem (tracked production issue) ───────────────── */
   var PROBLEM_TYPES = ['Missing or damaged components', 'Wrong components', 'Quantity mismatch', 'Other kit problem'];
   function problem(view, jo) {
-    var body = leadPage(view, '66:133', 'Report kit problem', 'Production stays blocked until Warehouse resolves it');
+    var body = leadPage(view, '66:133', 'Report kit problem', 'Informational report. Use Pause to stop work.');
     var key = PROBLEM_DRAFT + jo.id, draft = null;
     try { draft = JSON.parse(localStorage.getItem(key) || 'null'); } catch (ignore) {}
     body.innerHTML =
@@ -240,7 +391,7 @@
         return '<option' + (draft && draft.type === t ? ' selected' : '') + '>' + mEsc(t) + '</option>'; }).join('') + '</select></label>' +
       '<label class="rk-card rk-field"><small>Details</small><textarea rows="4" maxlength="3500" data-details placeholder="Be specific: part name, quantity and condition.">' +
         mEsc((draft && draft.details) || '') + '</textarea></label>' +
-      R.note('warn', '<b>Routes to Warehouse + Production Manager</b><br>Recording remains locked until you accept the kit.') +
+      R.note('warn', '<b>Recorded on this job order</b><br>Kit acceptance is still required for output. The report itself does not pause production.') +
       R.actions([{ id: 'jo-send', label: 'Send problem report', kind: 'primary' }, { id: 'jo-draft', label: 'Save draft', kind: 'secondary' }]);
     var typeEl = body.querySelector('[data-type]'), detEl = body.querySelector('[data-details]');
     body.querySelector('#jo-draft').onclick = function () {
@@ -290,9 +441,11 @@
     if (paused && canPause() && !canManage()) acts.push({ id: 'jo-resume', label: 'Resume', kind: 'primary' });
     if (!paused && !closed && canPause() && !canManage()) acts.push({ id: 'jo-pause', label: 'Pause', kind: 'secondary' });
     if (canManage() && !closed) acts.push({ id: 'jo-manage', label: 'Manager actions', kind: acts.length ? 'secondary' : 'primary' });
+    if (canRecord() && sessions[jo.id]) acts.unshift({ id: 'jo-draft', label: 'Review saved draft', kind: 'primary' });
     body.querySelector('[data-acts]').innerHTML = acts.length ? R.actions(acts.slice(0, 2)) + (acts.length > 2 ? R.actions(acts.slice(2)) : '') : '';
     var on = function (sel, fn) { var el = body.querySelector(sel); if (el) el.onclick = fn; };
     on('#jo-record', function () { go(jo.id, serialized ? 'count' : 'output'); });
+    on('#jo-draft', function () { go(jo.id, 'interrupted'); });
     on('#jo-scrap', function () { go(jo.id, 'scrap'); });
     on('#jo-resume', function () { go(jo.id, 'resume'); });
     on('#jo-pause', function () { go(jo.id, 'pause'); });
@@ -315,6 +468,7 @@
 
   /* ── 66:240 Record production (how many) ─────────────────────────────────── */
   function count(view, jo) {
+    if (sessions[jo.id]) { go(jo.id, 'interrupted'); return; }
     var left = remaining(jo);
     var body = leadPage(view, '66:240', 'Record production', 'Choose how many finished units to enter');
     if (left <= 0) { body.innerHTML = R.note('info', 'Every ordered unit is already accounted for.'); return; }
@@ -323,30 +477,58 @@
       '<div class="rk-stepper"><small>Units to record now</small><div class="row"><button type="button" data-dec aria-label="Fewer">−</button>' +
         '<input type="number" inputmode="numeric" min="1" max="' + left + '" value="' + n + '" aria-label="Units to record"><button type="button" data-inc aria-label="More">+</button></div>' +
         '<p>' + left + ' remaining on this job order</p></div>' +
-      R.note('info', '<h3>For each unit you will need:</h3><ul><li>Unique motor or serial identifier</li><li>One clear finished-unit photo</li><li>Optional shared batch/lot label</li></ul>') +
+      R.note('info', '<h3>For each unit you will need:</h3><ul><li>Motor or serial identifier</li><li>One clear finished-unit photo</li><li>Optional shared batch/lot label</li></ul>') +
       '<div class="rk-note danger"><img src="' + ICON + 'alert.svg" alt=""><span>This step requires a connection. Entries are saved one unit at a time.</span></div>' +
       R.actions([{ id: 'jo-continue', label: 'Continue to unit details', kind: 'primary' }, { id: 'jo-cancel', label: 'Cancel', kind: 'secondary' }]);
     var input = body.querySelector('input');
     var clamp = function (v) { return Math.max(1, Math.min(left, v || 1)); };
     body.querySelector('[data-dec]').onclick = function () { input.value = clamp(+input.value - 1); };
     body.querySelector('[data-inc]').onclick = function () { input.value = clamp(+input.value + 1); };
-    input.onchange = function () { input.value = clamp(parseInt(input.value, 10)); };
     body.querySelector('#jo-cancel').onclick = function () { history.back(); };
     body.querySelector('#jo-continue').onclick = function () {
-      var k = clamp(parseInt(input.value, 10));
+      var k = quantity(input.value);
+      if (k === null || k < 1 || k > left) { mToast('Enter a whole quantity within the remaining output.', 'err'); return; }
       var rows = [];
       for (var i = 0; i < k; i++) rows.push({ identifier: '', file: null, saved: false });
-      sessions[jo.id] = { rows: rows, batch: (sessions[jo.id] && sessions[jo.id].batch) || '' };
-      go(jo.id, 'units');
+      var s = { key: mProductionDrafts.key(jo.id), rows: rows, batch: '' };
+      var btn = body.querySelector('#jo-continue'); busy(btn, 'Saving draft…');
+      persist(s).then(function () { sessions[jo.id] = s; go(jo.id, 'units'); }).catch(function (err) { draftError(err); btn.disabled = false; btn.textContent = 'Continue to unit details'; });
     };
   }
 
   function uploadUnit(jo, s, r) {
-    var fd = new FormData();
-    fd.append('identifier', r.identifier.trim());
-    if (s.batch.trim()) fd.append('batch_label', s.batch.trim());
-    fd.append('image', r.file, r.file.name || 'unit.jpg');
-    return API.upload('/job-orders/' + jo.id + '/units', fd).then(function () { r.saved = true; });
+    if (s.key !== mProductionDrafts.key(jo.id)) return Promise.reject(new Error('Sign in with the account that entered this draft.'));
+    if (r.attempt && r.attempt.state === 'conflict') return Promise.reject(new Error('This upload needs reconciliation. Ask a manager to check the unit record before recording it again.'));
+    if (r.attempt && Date.now() - r.attempt.created >= 7 * 86400000) return Promise.reject(new Error('This retry is over seven days old. Ask a manager to reconcile the unit before recording it again.'));
+    var previousAttempt = !!r.attempt;
+    if (!r.attempt) r.attempt = { key: retryKey(), identifier: r.identifier.trim(), batch: s.batch.trim(), file: r.file, created: Date.now(), state: 'sending' };
+    var a = r.attempt;
+    a.state = 'sending';
+    // Persist the exact request BEFORE it can reach the server. Multipart middleware
+    // keys do not hash file bytes, so an uncertain attempt must never be edited.
+    var started = false;
+    return persist(s).then(function () {
+      if (s.key !== mProductionDrafts.key(jo.id)) throw new Error('The signed-in account changed. Reopen the draft with its original account.');
+      var fd = new FormData();
+      fd.append('identifier', a.identifier);
+      if (a.batch) fd.append('batch_label', a.batch);
+      fd.append('image', a.file, a.file.name || 'unit.jpg');
+      started = true;
+      return API.upload('/job-orders/' + jo.id + '/units', fd, { idempotencyKey: a.key });
+    }).then(function (res) {
+      r.identifier = a.identifier; r.file = a.file;
+      r.saved = true; r.unitId = res.id; r.local = API.syncLocal(res); a.state = 'confirmed';
+      return persist(s).catch(function () { mToast('The unit was saved, but its draft confirmation could not be stored. Reopening will retry the original key safely.', 'err'); });
+    }).catch(function (err) {
+      if (r.saved) throw err;
+      if (!started && !previousAttempt) r.attempt = null;
+      else if (!started) a.state = 'unknown';
+      else if (networkLost(err) || err.status >= 500 || err.status === 401) a.state = 'unknown';
+      else if (err.status === 409) a.state = 'conflict';
+      else if (err.status) r.attempt = null; // definitive refusal; editing starts a new request
+      else a.state = 'unknown';
+      return persist(s).catch(function () {}).then(function () { throw err; });
+    });
   }
   var networkLost = function (err) { return !!(err && (err.offline || !err.status)); };
 
@@ -355,7 +537,7 @@
     var s = sessions[jo.id];
     if (!s) { go(jo.id, 'count'); return; }
     var cur = focus != null ? focus : s.rows.findIndex(function (r) { return !r.saved; });
-    if (cur === -1) { delete sessions[jo.id]; mToast('All units recorded'); reopen(jo.id); return; }
+    if (cur === -1) { go(jo.id, 'interrupted'); return; }
     var n = s.rows.length;
     var body = leadPage(view, '66:294', 'Unit details', n + ' unit' + (n === 1 ? '' : 's') + ' · identifiers and photos required');
     var r = s.rows[cur];
@@ -365,7 +547,7 @@
       }).join('') + '</div>' +
       s.rows.map(function (x, i) {
         return x.saved ? '<div class="rk-card rk-unit done"><small>Unit ' + (i + 1) + '</small><img src="' + ICON + 'check-done.svg" alt="Saved">' +
-          '<b>' + mEsc(x.identifier) + '</b><em>✓ Photo attached · saved</em></div>' : '';
+          '<b>' + mEsc(x.identifier) + '</b><em>Unit #' + x.unitId + ' · ' + responseLabel(x) + '</em></div>' : '';
       }).join('') +
       '<div class="rk-card rk-unit"><small>Unit ' + (cur + 1) + ' of ' + n + '</small>' +
         '<label for="jo-ident">Identifier *</label><div class="idrow"><input id="jo-ident" value="' + mEsc(r.identifier) + '" placeholder="Scan or enter serial" autocomplete="off">' +
@@ -377,19 +559,25 @@
         { id: 'jo-review', label: 'Review all', kind: 'secondary' }]) +
       '<div data-review></div>';
     var ident = body.querySelector('#jo-ident');
-    ident.oninput = function () { r.identifier = ident.value; };
-    body.querySelector('[data-batch]').oninput = function (e) { s.batch = e.target.value; };
+    var isLocked = locked(r);
+    ident.disabled = isLocked;
+    body.querySelector('[data-batch]').disabled = isLocked;
+    body.querySelector('[data-scan]').disabled = isLocked;
+    body.querySelector('[data-photo]').disabled = isLocked;
+    if (isLocked) body.insertAdjacentHTML('beforeend', R.note('warn', 'Confirmation unknown — the original identifier, lot and photo are locked. Resolve the original attempt before entering changes.'));
+    ident.oninput = function () { r.identifier = ident.value; persist(s).catch(draftError); };
+    body.querySelector('[data-batch]').oninput = function (e) { s.batch = e.target.value; persist(s).catch(draftError); };
     body.querySelector('[data-scan]').onclick = function () {
-      mScanner.open({ title: 'Scan the unit’s serial / motor tag', onResult: function (c) { r.identifier = String(c || '').trim(); ident.value = r.identifier; } });
+      mScanner.open({ title: 'Scan the unit’s serial / motor tag', onResult: function (c) { r.identifier = String(c || '').trim(); ident.value = r.identifier; persist(s).catch(draftError); } });
     };
     body.querySelector('[data-photo]').onclick = function () {
-      mPhoto.pickFile().then(function (file) { r.file = file; units(view, jo, cur); }).catch(function () {});
+      mPhoto.pickFile().then(function (file) { r.file = file; return persist(s).then(function () { units(view, jo, cur); }); }).catch(draftError);
     };
     body.querySelector('#jo-review').onclick = function () {
       var host = body.querySelector('[data-review]');
       host.innerHTML = '<div class="rk-card rk-status"><small>All units</small>' + s.rows.map(function (x, i) {
         return '<div><button type="button" class="rk-back" data-row="' + i + '" style="padding:0">Unit ' + (i + 1) + '</button><span>' +
-          (x.saved ? 'Saved · ' + mEsc(x.identifier) : x.identifier && x.file ? 'Ready to save' : x.identifier || x.file ? 'Incomplete' : 'Not entered') + '</span></div>';
+          (x.saved ? responseLabel(x) + ' · ' + mEsc(x.identifier) : locked(x) ? 'Confirmation unknown' : x.identifier && x.file ? 'Not started · ready to save' : x.identifier || x.file ? 'Incomplete' : 'Not entered') + '</span></div>';
       }).join('') + '</div>';
       Array.prototype.forEach.call(host.querySelectorAll('[data-row]'), function (b) {
         b.onclick = function () { var i = +b.dataset.row; if (!s.rows[i].saved) units(view, jo, i); };
@@ -397,14 +585,19 @@
     };
     var save = body.querySelector('#jo-save');
     save.onclick = function () {
-      r.identifier = ident.value;
+      if (!isLocked) r.identifier = ident.value;
       if (!r.identifier.trim()) { mToast('Every unit needs an identifier', 'err'); ident.focus(); return; }
       if (!r.file) { mToast('Every unit needs a photo', 'err'); return; }
       if (offline()) { go(jo.id, 'interrupted'); return; }
       busy(save, 'Saving unit ' + (cur + 1) + '…');
+      ident.disabled = true;
+      body.querySelector('[data-batch]').disabled = true;
+      body.querySelector('[data-photo]').disabled = true;
+      body.querySelector('[data-scan]').disabled = true;
       uploadUnit(jo, s, r).then(function () { units(view, jo); }).catch(function (err) {
-        if (networkLost(err)) { go(jo.id, 'interrupted'); return; }
-        fail(save, 'Save & next unit')(err);
+        if (networkLost(err) || locked(r)) { go(jo.id, 'interrupted'); mToast(err.message || 'Confirmation unknown', 'err'); return; }
+        mToast(err.message || 'The upload was refused', 'err');
+        units(view, jo, cur);
       });
     };
   }
@@ -414,24 +607,36 @@
     var s = sessions[jo.id];
     if (!s) { reopen(jo.id); return; }
     var saved = s.rows.filter(function (r) { return r.saved; });
+    var confirmed = saved.filter(function (r) { return !r.local; });
     var pending = s.rows.filter(function (r) { return !r.saved; });
-    var body = leadPage(view, '66:356', 'Connection interrupted', saved.length + ' of ' + s.rows.length + ' units were recorded successfully');
+    var unknown = pending.filter(locked);
+    var untouched = pending.filter(function (r) { return !locked(r); });
+    var localRows = saved.filter(function (r) { return r.local; });
+    var body = leadPage(view, '66:356', pending.length ? 'Connection interrupted' : 'Recording results', confirmed.length + ' confirmed · ' + unknown.length + ' confirmation unknown · ' + untouched.length + ' not started' + (localRows.length ? ' · ' + localRows.length + ' saved on site PC' : ''));
+    var row = function (r, text) { return '<div><span>Unit ' + (s.rows.indexOf(r) + 1) + ' · ' + mEsc(r.identifier || 'Not entered') + '</span><span>' + mEsc(text) + '</span></div>'; };
     body.innerHTML =
-      '<div class="rk-alert"><img src="' + ICON + 'alert.svg" alt=""><b>Recorded ' + saved.length + ' of ' + s.rows.length + '</b>' +
-        '<span>Connection was lost during Unit ' + (saved.length + 1) + '.<br><b style="font-size:10px">Saved units were removed from this form.</b></span></div>' +
-      (saved.length ? '<div class="rk-card rk-status saved"><small>Saved on server</small>' + saved.map(function (r) {
-        return '<div><span>Unit ' + (s.rows.indexOf(r) + 1) + '  ' + mEsc(r.identifier) + '</span><span>✓</span></div>'; }).join('') + '</div>' : '') +
-      '<div class="rk-card rk-status"><small>Still to send</small>' + pending.map(function (r) {
-        return '<div><span>Unit ' + (s.rows.indexOf(r) + 1) + '</span><span>' + (r.identifier && r.file ? 'Identifier + photo kept on this screen' : 'Not entered yet') + '</span></div>';
-      }).join('') + (saved.length ? '<p class="warn">Do not re-enter Unit' + (saved.length === 1 ? ' 1' : 's 1–' + saved.length) + '.</p>' : '') + '</div>' +
-      R.actions([{ id: 'jo-retry', label: 'Retry remaining ' + pending.length, kind: 'primary' }, { id: 'jo-return', label: 'Return to job', kind: 'secondary' }]);
+      '<div class="rk-alert"><img src="' + ICON + 'alert.svg" alt=""><b>Confirmed ' + confirmed.length + ' of ' + s.rows.length + '</b>' +
+        '<span>' + (unknown.length ? 'A missing response does not mean the unit was not saved. Retry the original attempt to check.' : 'Only units with a response are shown as saved.') + '</span></div>' +
+      (saved.length ? '<div class="rk-card rk-status saved"><small>Saved results</small>' + saved.map(function (r) { return row(r, responseLabel(r) + ' · #' + r.unitId); }).join('') + '<div data-sync-results></div></div>' : '') +
+      (unknown.length ? '<div class="rk-card rk-status"><small>Confirmation unknown</small>' + unknown.map(function (r) { return row(r, r.attempt.state === 'conflict' ? 'Conflict — manager reconciliation needed' : 'Original identifier, lot and photo retained'); }).join('') + '</div>' : '') +
+      (untouched.length ? '<div class="rk-card rk-status"><small>Not started</small>' + untouched.map(function (r) { return row(r, r.file ? 'Photo and identifier retained on this device' : 'Photo still needed'); }).join('') + '</div>' : '') +
+      R.note('info', 'Entries and photos are stored for this account on this device. Do not re-enter saved or uncertain units. Clearing site data removes these drafts.') +
+      R.actions((pending.length ? [{ id: 'jo-retry', label: unknown.length ? 'Retry original ' + unknown.length : 'Continue ' + untouched.length, kind: 'primary' }] : []).concat([{ id: 'jo-return', label: 'Return to job', kind: 'secondary' }])) +
+      (untouched.length ? R.actions([{ id: 'jo-discard', label: 'Discard unstarted entries', kind: 'secondary' }]) : '');
+    localRows.forEach(function (r) {
+      body.querySelector('[data-sync-results]').appendChild(R.syncWatch(r.local, function (status) {
+        if (status.state !== 'confirmed' || !r.local) return;
+        r.local = null;
+        persist(s).then(function () { if (body.isConnected) interrupted(view, jo); }).catch(draftError);
+      }));
+    });
     var retry = body.querySelector('#jo-retry');
-    retry.onclick = function () {
+    if (retry) retry.onclick = function () {
       if (offline()) { mToast('Still offline — try again once you have a connection', 'err'); return; }
       busy(retry, 'Sending…');
-      // Only rows that are complete; the server never sees a row twice because saved rows are skipped.
+      // Resolve uncertain rows first with their immutable keys; never submit confirmed rows.
       var chain = Promise.resolve();
-      pending.forEach(function (r) {
+      unknown.concat(untouched).forEach(function (r) {
         chain = chain.then(function () { if (r.identifier.trim() && r.file) return uploadUnit(jo, s, r); });
       });
       chain.then(function () { go(jo.id, 'units'); }).catch(function (err) {
@@ -439,7 +644,20 @@
         mToast(err.message || 'Failed', 'err'); go(jo.id, 'units');
       });
     };
-    body.querySelector('#jo-return').onclick = function () { reopen(jo.id); };
+    body.querySelector('#jo-return').onclick = function () {
+      if (pending.length || localRows.some(function (r) { return r.local; })) { reopen(jo.id); return; }
+      mProductionDrafts.remove(s).then(function () { delete sessions[jo.id]; reopen(jo.id); }).catch(draftError);
+    };
+    var discard = body.querySelector('#jo-discard');
+    if (discard) discard.onclick = function () {
+      if (!window.confirm('Discard ' + untouched.length + ' entries that were never submitted, including their photos? Saved and uncertain attempts will be kept.')) return;
+      var next = Object.assign({}, s, { rows: s.rows.filter(function (r) { return r.saved || locked(r); }) });
+      var write = next.rows.length ? persist(next) : mProductionDrafts.remove(s);
+      write.then(function () {
+        if (next.rows.length) { sessions[jo.id] = next; interrupted(view, jo); }
+        else { delete sessions[jo.id]; reopen(jo.id); }
+      }).catch(draftError);
+    };
   }
 
   /* ── 66:408 Record non-serialized output ─────────────────────────────────── */
@@ -454,7 +672,7 @@
       R.actions([{ id: 'jo-save', label: 'Save progress', kind: 'primary' }, { id: 'jo-cancel', label: 'Cancel', kind: 'secondary' }]);
     var d = body.querySelector('[data-done]'), sc = body.querySelector('[data-scrap]'), tally = body.querySelector('[data-tally]');
     function paintTally() {
-      var acc = jo.qty_done + jo.qty_scrapped + (parseInt(d.value, 10) || 0) + (parseInt(sc.value, 10) || 0);
+      var acc = jo.qty_done + jo.qty_scrapped + unresolved(jo) + (quantity(d.value) || 0) + (quantity(sc.value) || 0);
       tally.innerHTML = '<b style="margin:0;display:flex;justify-content:space-between"><span>' + acc + ' accounted for of ' + jo.qty_ordered + ' ordered</span>' +
         '<span style="font-weight:400;color:var(--rk-meta)">' + Math.max(0, jo.qty_ordered - acc) + ' remaining</span></b>';
     }
@@ -462,12 +680,12 @@
     body.querySelector('#jo-cancel').onclick = function () { history.back(); };
     var save = body.querySelector('#jo-save');
     save.onclick = function () {
-      var dn = parseInt(d.value, 10) || 0, sn = parseInt(sc.value, 10) || 0;
+      var dn = quantity(d.value), sn = quantity(sc.value);
+      if (dn === null || sn === null || dn + sn > remaining(jo)) { mToast('Enter whole non-negative quantities within the remaining output.', 'err'); return; }
       if (dn + sn < 1) { mToast('Enter finished and/or scrapped', 'err'); return; }
       if (offline()) { mToast('You’re offline — saving output needs a connection.', 'err'); return; }
       busy(save, 'Saving…');
-      API.post('/job-orders/' + jo.id + '/progress', { done_delta: dn, scrapped_delta: sn, batch_label: body.querySelector('[data-batch]').value.trim() || null })
-        .then(function () { mToast('Progress saved'); reopen(jo.id); }).catch(fail(save, 'Save progress'));
+      submitAction(view, jo, 'output', { done_delta: dn, scrapped_delta: sn, batch_label: body.querySelector('[data-batch]').value.trim() || null }, save);
     };
   }
 
@@ -484,14 +702,13 @@
     body.querySelector('#jo-cancel').onclick = function () { history.back(); };
     var save = body.querySelector('#jo-save');
     save.onclick = function () {
-      var n = parseInt(body.querySelector('[data-n]').value, 10) || 0;
+      var n = quantity(body.querySelector('[data-n]').value);
       var reason = body.querySelector('[data-reason]').value.trim();
-      if (n < 1) { mToast('Enter a scrapped quantity', 'err'); return; }
+      if (n === null || n < 1 || n > remaining(jo)) { mToast('Enter a whole scrapped quantity within the remaining output.', 'err'); return; }
       if (!reason) { mToast('Give the scrap reason', 'err'); body.querySelector('[data-reason]').focus(); return; }
       if (offline()) { mToast('You’re offline — recording scrap needs a connection.', 'err'); return; }
       busy(save, 'Recording…');
-      API.post('/job-orders/' + jo.id + '/progress', { scrapped_delta: n, reason: reason })
-        .then(function () { mToast(n + ' scrapped'); reopen(jo.id); }).catch(fail(save, 'Record scrap'));
+      submitAction(view, jo, 'scrap', { scrapped_delta: n, reason: reason }, save);
     };
   }
 
@@ -546,13 +763,15 @@
   /* ── 66:650 Close job order early ────────────────────────────────────────── */
   function closeEarly(view, jo) {
     var body = managerPage(view, '66:650', 'Close job order early', 'Manager-only irreversible exception');
+    var summary = jo.units_summary || {};
+    var built = (summary.pending || 0) + (summary.rework || 0) + (summary.hold || 0);
     var notMade = remaining(jo);
     body.innerHTML =
       '<div class="rk-alert"><img src="' + ICON + 'alert.svg" alt=""><b>' + notMade + ' unit' + (notMade === 1 ? '' : 's') + ' will not be produced</b>' +
-        '<span>' + jo.qty_done + ' completed · ' + jo.qty_scrapped + ' scrap · ' + jo.qty_ordered + ' ordered<br><br>Unused reserved components will be returned.</span></div>' +
+        '<span>' + jo.qty_done + ' completed · ' + built + ' awaiting inspection/rework · ' + jo.qty_scrapped + ' scrap · ' + jo.qty_ordered + ' ordered<br><br>Unused reserved components will be returned.</span></div>' +
       '<label class="rk-card rk-field"><small>Reason' + (reasonRequired() ? ' *' : ' (optional)') + '</small><input class="rk-input" data-reason maxlength="500" placeholder="e.g. customer reduced the required quantity"></label>' +
       R.note('info', '<h3>Closing early will:</h3><ul><li>Stop further production recording</li><li>Return unused reserved components</li>' +
-        '<li>Preserve all recorded units and audit history</li><li>Leave produced units to continue through QC</li></ul>') +
+        '<li>Preserve all recorded units and audit history</li><li>Keep built units and parts requests for QC/QA, rework and receiving</li></ul>') +
       R.check('jo-reviewed', 'I reviewed the remaining quantity and effects') +
       R.actions([{ id: 'jo-close', label: 'Close job order', kind: 'danger' }, { id: 'jo-cancel', label: 'Cancel', kind: 'secondary' }]);
     var btn = body.querySelector('#jo-close'), chk = body.querySelector('#jo-reviewed');
@@ -590,6 +809,7 @@
 
   MApp.route('job-orders', function (view, params) {
     var id = params && Number(params.id);
+    if (!id && params && params.view === 'approval') { approvalQueue(view); return; }
     if (id && params.step && STEPS[params.step]) { loadInto(view, id, function (jo) { STEPS[params.step](view, jo); }); return; }
     if (id) { open1(view, id); return; }
     // Production Manager lands on exceptions; everyone else (and "View all") on the board.

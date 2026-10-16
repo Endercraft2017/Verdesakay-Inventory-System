@@ -137,7 +137,7 @@ describe('ulid', () => {
 
 describe('what never leaves the cloud', () => {
   it('tables and settings of online-only features, and every credential', () => {
-    for (const t of ['password_resets', 'qbo_links', 'mail_log', 'ai_messages', 'sessions', 'push_subscriptions', 'sync_nodes']) {
+    for (const t of ['doc_studio_drafts', 'doc_studio_rooms', 'doc_studio_presence', 'doc_studio_comments', 'doc_studio_versions', 'password_resets', 'qbo_links', 'mail_log', 'ai_messages', 'sessions', 'push_subscriptions', 'sync_nodes']) {
       expect(isReplicated(t)).toBe(false);
     }
     for (const k of ['_secret_key', 'vapid_keys', 'ai_api_key', 'ai_config', 'mail_settings', 'mail_smtp_pass', 'qbo_tokens', 'qbo_config']) {
@@ -146,7 +146,7 @@ describe('what never leaves the cloud', () => {
     }
     // What an installed PC does need still travels.
     for (const k of ['company_profile', 'clock_hmac_key', 'payroll_policy', 'sync_main_host']) expect(isReplicated('settings', [k])).toBe(true);
-    for (const t of ['users', 'inventory_items', 'kiosk_devices']) expect(isReplicated(t)).toBe(true);
+    for (const t of ['doc_studio_library', 'users', 'inventory_items', 'kiosk_devices']) expect(isReplicated(t)).toBe(true);
   });
 });
 

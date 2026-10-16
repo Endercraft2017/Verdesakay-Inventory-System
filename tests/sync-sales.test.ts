@@ -80,6 +80,24 @@ afterAll(() => {
   cleanup(T.ctx);
 });
 
+describe('revision-checked intake edits at the owning site', () => {
+  it('keeps a validated offline edit when the cloud copy changes before replay', async () => {
+    const order = await newOrder(T.hostHdr(), 1);
+    await T.hostRound();
+    T.cutOff('host');
+    const detail = (await ok(api().get(`/api/orders/${order.id}`).set(T.hostHdr()))).body;
+    T.cloudDb().prepare("UPDATE orders SET notes = 'Cloud changed meanwhile' WHERE id = ?").run(order.id);
+    await ok(api().put(`/api/orders/${order.id}`).set(T.hostHdr()).send({
+      notes: 'Validated at the owning site', expected_revision: detail.revision,
+    }));
+    T.reconnect('host');
+    await T.hostRound();
+    const row = T.cloudDb().prepare('SELECT notes FROM orders WHERE id = ?').get(order.id) as { notes: string };
+    expect(row.notes).toBe('Validated at the owning site');
+    expect((await clashes()).some((c) => c.includes('revision-checked site edit'))).toBe(true);
+  });
+});
+
 describe('a sale while the internet is down', () => {
   let order: { id: number; number: string };
   let slip: number;
@@ -97,6 +115,8 @@ describe('a sale while the internet is down', () => {
     delivery = (await ok(api().post('/api/deliveries').set(T.hostHdr()).send({ order_id: order.id }), 201)).body;
     expect(delivery.number).toMatch(/^DEL-\d{5}$/);
     await ok(api().post(`/api/deliveries/${delivery.id}/status`).set(T.hostHdr()).send({ status: 'out_for_delivery' }));
+    await ok(api().post('/api/attachments').set(T.hostHdr()).field('kind', 'delivery').field('ref_id', String(delivery.id))
+      .attach('image', Buffer.from('delivery-proof'), 'drop.png'), 201);
     await ok(api().post(`/api/deliveries/${delivery.id}/complete`).set(T.hostHdr()).send({ outcome: 'delivered', recipient: 'Ms. Reyes' }));
   });
 
@@ -181,6 +201,9 @@ describe('the cloud changed meanwhile (D6) and goods left beyond stock (D1)', ()
     const d = (await ok(api().post('/api/deliveries').set(T.cloudHdr()).send({ order_id: o.id }), 201)).body as { id: number; number: string };
     await T.hostRound();
     T.cutOff('host');
+    await shipOut(T.hostHdr(), o.id, 1);
+    await ok(api().post('/api/attachments').set(T.hostHdr()).field('kind', 'delivery').field('ref_id', String(d.id))
+      .attach('image', Buffer.from('proof-after-clash'), 'drop.png'), 201);
     await ok(api().post(`/api/deliveries/${d.id}/complete`).set(T.hostHdr()).send({ outcome: 'delivered', recipient: 'Guard on duty' }));
     await ok(api().post(`/api/deliveries/${d.id}/status`).set(T.cloudHdr()).send({ status: 'cancelled' }));
     T.reconnect('host');

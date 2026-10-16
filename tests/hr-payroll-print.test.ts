@@ -21,6 +21,7 @@ function loadModule() {
   const docTemplateExports = loadFile('doc-template.js', requireForDocTemplate);
   const requireForPrint = (p: string) => (p === './doc-template.js' ? docTemplateExports : loadFile(p, requireForPrint));
   return loadFile('hr-payroll-print.js', requireForPrint) as {
+    renderSlip: (data: Record<string, unknown>, templateBody?: string) => string;
     buildPayrollSlipsHtml: (data: unknown[], templateBody?: string) => string;
     buildSlipContext: (d: Record<string, unknown>) => Record<string, string>;
     FALLBACK_BODY: string;
@@ -28,7 +29,7 @@ function loadModule() {
   };
 }
 
-const { buildPayrollSlipsHtml, buildSlipContext, FALLBACK_BODY, _fitScale } = loadModule();
+const { renderSlip, buildPayrollSlipsHtml, buildSlipContext, FALLBACK_BODY, _fitScale } = loadModule();
 
 const CUSTOM_BODY = '<div class="slip">{{employee_name}} | earn {{total_earnings}} | ded {{total_deductions}} | net {{net_pay}}</div>';
 
@@ -44,6 +45,9 @@ const emp = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe('buildSlipContext', () => {
+  it('formats the withholding-tax amount for payslip templates', () => {
+    expect(buildSlipContext(emp({ withholding_tax: 333.5 })).withholding_tax).toBe('333.50');
+  });
   it('formats money fields and computes net pay', () => {
     const ctx = buildSlipContext(emp());
     expect(ctx.daily_rate).toBe('600.00');
@@ -176,3 +180,15 @@ describe('_fitScale', () => {
     expect(_fitScale(200, 0)).toBeNull();
   });
 });
+
+
+describe('single payslip detail preview', () => {
+  it('renders the fallback when the configured template is unavailable', () => {
+    const html = renderSlip(emp());
+    expect(html).toContain('EMPLOYEE PAYROLL SLIP');
+    expect(html).toContain('Dela Cruz, Juan');
+    expect(html).toContain('NET PAY: 7,626.20');
+    expect(html).not.toContain('{{');
+  });
+});
+it('prints multipage payslip layouts as full documents instead of the legacy grid',()=>{const html=buildPayrollSlipsHtml([{employee_name:'Ada'}],'<div data-doc-design-page="a">{{employee_name}}</div><div data-doc-design-page="b">Details</div>');expect(html).toContain('Ada');expect(html).toContain('Details');expect(html).not.toContain('payslip-grid');});

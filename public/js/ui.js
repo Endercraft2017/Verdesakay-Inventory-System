@@ -66,21 +66,52 @@ const UI = (() => {
   }
 
   /* Modal: opts = { title, bodyHTML, confirmText, onConfirm(modalEl)->bool|Promise,
-       size ('lg'|'xl'), headActionHTML (raw HTML placed left of the close button) } */
+       size ('lg'|'xl'), helpTopic? (explicit Help topic for this dialog), headActionHTML (raw HTML placed left of the close button) } */
+  let dialogSequence = 0;
+  function nameControls(container) {
+    container.querySelectorAll('input:not([type="hidden"]), select, textarea, button').forEach((control) => {
+      if (control.getAttribute('aria-label') || control.getAttribute('aria-labelledby') || control.labels?.length) return;
+      if (control.tagName === 'BUTTON') {
+        if (!control.textContent.trim() && control.title) control.setAttribute('aria-label', control.title);
+        return;
+      }
+      const previous = control.previousElementSibling;
+      if (previous?.tagName === 'LABEL' && !previous.htmlFor) {
+        control.id ||= `ui-control-${++dialogSequence}`;
+        previous.htmlFor = control.id;
+        return;
+      }
+      const cell = control.closest('td');
+      const heading = cell?.closest('table')?.querySelectorAll('thead th')[cell.cellIndex]?.textContent.trim();
+      const label = control.title || heading || control.placeholder;
+      if (label) control.setAttribute('aria-label', label);
+    });
+  }
+
   function modal(opts) {
     const root = document.getElementById('modal-root');
+    const previousFocus = document.activeElement;
+    let dirty = false;
+    let saving = false;
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
+    if (opts.guide === false) overlay.dataset.guideOff = 'true';
+    // Keep visual styling attached to the section when dialogs render outside #view.
+    const view = document.getElementById('view');
+    if (view && (view.dataset.section === 'hr' || /^hr(?:-|$)/.test(view.dataset.route || ''))) {
+      overlay.dataset.section = 'hr';
+    }
     overlay.innerHTML = `
-      <div class="modal${opts.size ? ' ' + opts.size : ''}">
+      <div class="modal${opts.size ? ' ' + opts.size : ''}" role="dialog" aria-modal="true" aria-label="${esc(opts.title)}" tabindex="-1">
         <div class="modal-head">
           <h3>${esc(opts.title)}</h3>
           <div class="modal-head-actions">
+            ${opts.helpTopic && window.Help ? '<button type="button" class="btn secondary small" data-modal-help>Guide</button>' : ''}
             ${opts.headActionHTML || ''}
-            <button class="icon-btn close" data-close>${icon('close')}</button>
+            <button type="button" class="icon-btn close" data-close aria-label="Close dialog" title="Close dialog">${icon('close')}</button>
           </div>
         </div>
-        <div class="modal-body">
+        <div class="modal-body" tabindex="0">
           <div class="form-error hidden" data-modal-error></div>
           ${opts.bodyHTML}
         </div>
@@ -91,36 +122,76 @@ const UI = (() => {
       </div>`;
     root.appendChild(overlay);
 
-    const close = () => overlay.remove();
-    overlay.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
-    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+    const helpButton = overlay.querySelector('[data-modal-help]');
+    if (helpButton) helpButton.addEventListener('click', () => Help.open(opts.helpTopic));
+    const beforeUnload = (e) => { if (dirty || opts.isDirty?.()) { e.preventDefault(); e.returnValue = ''; } };
+    const close = (cancelled = false) => {
+      window.removeEventListener('beforeunload', beforeUnload);
+      overlay.remove(); observer?.disconnect();
+      if (cancelled) { opts.onCancel?.(); overlay.dispatchEvent(new CustomEvent('modalcancel')); }
+      if (previousFocus && previousFocus.isConnected) previousFocus.focus();
+      if (opts.onClose) opts.onClose();
+    };
+    const canDismiss = () => !saving && (!(dirty || opts.isDirty?.()) || window.confirm('Discard your unsaved changes?'));
+    overlay.__canDismiss = canDismiss;
+    // Dialog actions outside the primary confirm button share the dismissal guard.
+    overlay.__setSaving = (value) => { saving = !!value; };
+    overlay.__markDirty = () => { dirty = true; };
+    overlay.__close = close;
+    const dismiss = () => { if (canDismiss()) { close(true); return true; } return false; };
+    if ((opts.confirmText || opts.protectChanges) && opts.protectChanges !== false) {
+      overlay.addEventListener('input', () => { dirty = true; });
+      overlay.addEventListener('change', () => { dirty = true; });
+      window.addEventListener('beforeunload', beforeUnload);
+    }
+    overlay.addEventListener('keydown', (e) => {
+      if (overlay !== root.lastElementChild) return;
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); dismiss(); }
+      if (e.key !== 'Tab') return;
+      const elements = [...overlay.querySelectorAll('button,input,select,textarea,a[href],[tabindex="0"]')].filter(el => !el.disabled && !el.closest('.hidden,[hidden]'));
+      const first = elements[0], last = elements[elements.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !overlay.contains(document.activeElement))) { e.preventDefault(); if (last) last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); if (first) first.focus(); }
+    });
+    overlay.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', dismiss));
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) dismiss(); });
 
     const errBox = overlay.querySelector('[data-modal-error]');
-    const showErr = (msg) => { errBox.textContent = msg; errBox.classList.remove('hidden'); };
+    errBox.setAttribute('role', 'alert'); errBox.tabIndex = -1;
+    const showErr = (msg) => { errBox.hidden = false; errBox.textContent = msg; errBox.classList.remove('hidden'); if (!overlay.contains(document.activeElement) || document.activeElement?.getAttribute('aria-invalid') !== 'true') errBox.focus(); };
 
     const confirmBtn = overlay.querySelector('[data-confirm]');
     if (confirmBtn && opts.onConfirm) {
       confirmBtn.addEventListener('click', async () => {
         errBox.classList.add('hidden');
         confirmBtn.disabled = true;
+        saving = true;
+        let finishSave;
+        overlay.__whenSaved = new Promise(resolve => { finishSave = resolve; });
         try {
           const ok = await opts.onConfirm(overlay, showErr);
           if (ok !== false) close();
         } catch (e) {
           showErr(e.message);
         } finally {
-          confirmBtn.disabled = false;
+          confirmBtn.disabled = !!opts.isConfirmDisabled?.();
+          saving = false;
+          overlay.__whenSaved = null;
+          finishSave();
         }
       });
     }
     // Submit on Enter inside single-line inputs.
     overlay.querySelectorAll('input').forEach((inp) => {
-      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && confirmBtn) { e.preventDefault(); confirmBtn.click(); } });
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && confirmBtn && !inp.hasAttribute('data-no-submit')) { e.preventDefault(); confirmBtn.click(); } });
     });
-    if (opts.onOpen) opts.onOpen(overlay);
-    const firstInput = overlay.querySelector('input,select,textarea');
+    nameControls(overlay);
+    const observer = new MutationObserver(() => nameControls(overlay)); observer.observe(overlay, { childList: true, subtree: true });
+    if (opts.onOpen) Promise.resolve(opts.onOpen(overlay)).catch(e => showErr(e.message || 'Could not load dialog details'));
+    const firstInput = [...overlay.querySelectorAll('input,select,textarea')].find(el => !el.disabled && !['hidden', 'file'].includes(el.type) && !el.closest('.hidden,[hidden]'));
     if (firstInput) firstInput.focus();
-    return { overlay, close, showErr };
+    else overlay.querySelector('.modal').focus();
+    return { overlay, close: dismiss, showErr, markSaved: () => { dirty = false; } };
   }
 
   function confirmDialog(message, confirmText = 'Confirm') {
@@ -129,6 +200,8 @@ const UI = (() => {
         title: 'Please confirm',
         bodyHTML: `<p>${esc(message)}</p>`,
         confirmText,
+        protectChanges: false,
+        onClose: () => resolve(false),
         onConfirm: () => { resolve(true); return true; },
       });
       m.overlay.querySelectorAll('[data-close]').forEach((b) =>
@@ -240,14 +313,19 @@ const UI = (() => {
     }
     if (currentDrawer) currentDrawer.close();
 
+    const previousFocus = document.activeElement;
+    const descriptions = { notes: 'Private notes, saved to your account.', email: 'Compose a message or manage your mailbox.', scheduler: 'Plan tasks and keep track of due dates.', bookmarks: 'Quick access to your saved pages.', bug: 'Tell us what happened and how to reproduce it.', help: 'Find guidance for this screen and the rest of the app.' };
     const catcher = document.createElement('div');
     catcher.className = 'drawer-catch';
     const el = document.createElement('aside');
     el.className = 'drawer';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', opts.title);
+    el.setAttribute('tabindex', '-1');
     el.innerHTML = `
       <div class="drawer-head">
         ${opts.icon ? icon(opts.icon, 18) : ''}
-        <h3>${esc(opts.title)}</h3>
+        <div class="drawer-heading"><h3>${esc(opts.title)}</h3>${descriptions[opts.key] ? `<p>${esc(descriptions[opts.key])}</p>` : ''}</div>
         <button class="icon-btn drawer-close" data-close aria-label="Close">${icon('close')}</button>
       </div>
       <div class="drawer-body">${opts.bodyHTML || ''}</div>
@@ -255,19 +333,31 @@ const UI = (() => {
     root.appendChild(catcher);
     root.appendChild(el);
 
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    const onKey = (e) => {
+      if (document.querySelector('.modal-overlay')) return;
+      if (e.key === 'Escape') { e.preventDefault(); close(); }
+      if (e.key === 'Tab') {
+        const items = [...el.querySelectorAll('button, input, select, textarea, a[href], [tabindex="0"]')].filter(x => !x.disabled && !x.closest('[hidden], .hidden'));
+        const first = items[0], last = items[items.length - 1];
+        if (e.shiftKey && (document.activeElement === first || document.activeElement === el)) { e.preventDefault(); last?.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      }
+    };
     function close() {
       el.classList.remove('open');
       catcher.remove();
       document.removeEventListener('keydown', onKey);
       if (currentDrawer && currentDrawer.el === el) currentDrawer = null;
+      el.inert = true;
+      el.querySelectorAll('[id]').forEach(x => x.removeAttribute('id'));
+      if (previousFocus?.isConnected) previousFocus.focus();
       setTimeout(() => el.remove(), 180); // let the slide-out finish
     }
     catcher.addEventListener('mousedown', close);
     el.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', close));
     document.addEventListener('keydown', onKey);
     currentDrawer = { el, key: opts.key, close };
-    requestAnimationFrame(() => el.classList.add('open'));
+    requestAnimationFrame(() => { if (currentDrawer?.el === el) { el.classList.add('open'); el.querySelector('[data-close]').focus(); } });
     if (opts.onOpen) opts.onOpen(el);
     return { el, close };
   }
@@ -312,43 +402,140 @@ const UI = (() => {
 
   /* ---------- Printing ---------- */
   // Fixed black-on-white print stylesheet (independent of the app theme).
-  const PRINT_CSS = `
-    * { box-sizing: border-box; }
-    body { position: relative; isolation: isolate; font-family: 'Segoe UI', system-ui, Arial, sans-serif; color: #111; margin: 0; padding: 24px; font-size: 13px; }
-    img { max-width: 100%; }
-    .doc { max-width: 800px; margin: 0 auto; }
-    .doc-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 12px; margin-bottom: 16px; gap: 20px; }
-    .doc-company h1 { margin: 0 0 4px; font-size: 20px; }
-    .doc-meta { text-align: right; white-space: nowrap; }
-    .doc-meta h2 { margin: 0 0 6px; font-size: 16px; letter-spacing: 0.05em; }
-    .doc-parties { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
-    /* Tables — kept border-collapse for clean page-breaks; palette matches the editor (doc-editor.js). */
-    .doc-table { width: 100%; border-collapse: collapse; margin: 12px 0 14px; font-size: 12.5px; }
-    .doc-table th, .doc-table td { border: 1px solid #d7dee8; padding: 7px 10px; text-align: left; vertical-align: top; }
-    .doc-table th { background: #f4f7fb; font-weight: 600; color: #1a2740; }
-    .doc-table thead th { border-bottom: 2px solid #ccd6e2; }
-    .doc-table.striped tbody tr:nth-child(even) td { background: #f8fafc; }
-    .doc-table.shaded thead th { background: #16243d; color: #fff; border-bottom-color: #16243d; }
-    .doc-table.plain th, .doc-table.plain td { border: 0; }
-    .doc-table.plain thead th { border-bottom: 1px solid #ccd6e2; }
-    .doc-table .r { text-align: right; }
-    /* Floating objects placed in the template editor (position/size are % on the element). */
-    .doc-float { position: absolute; box-sizing: border-box; }
-    .doc-float-shape { width: 100%; height: 100%; box-sizing: border-box; }
-    .doc-float-body { width: 100%; height: 100%; box-sizing: border-box; overflow: hidden; padding: 4px; }
-    .doc-float[data-float-kind="image"] img { width: 100%; height: 100%; object-fit: contain; }
-    .doc-totals { margin-left: auto; width: 280px; text-align: right; }
-    .doc-totals .grand { font-size: 15px; font-weight: 700; border-top: 2px solid #222; margin-top: 6px; padding-top: 6px; }
-    .doc-notes { margin-top: 14px; }
-    .doc-foot { margin-top: 28px; color: #666; font-size: 11px; border-top: 1px solid #ddd; padding-top: 8px; }
-    .muted { color: #777; font-size: 11px; }
-    @page { margin: 14mm; }
+  const documentCss = `
+    .doc-content, .doc-content * { box-sizing: border-box; }
+    .doc-content { position: relative; isolation: isolate; font-family: 'Segoe UI', system-ui, Arial, sans-serif; color: #111; font-size: 13px; line-height: 1.55; }
+    .doc-content img { max-width: 100%; }
+    .doc-content [data-doc-settings]{display:none!important}
+    .doc-content ins[data-doc-change]{text-decoration:none}
+    .doc-content del[data-doc-change]{display:none!important}
+    .doc-content [data-doc-design-page]{position:relative;isolation:isolate;display:flow-root;margin:0;break-inside:avoid}
+    .doc-content [data-doc-design-page]:not(:last-of-type){break-after:page}
+    .doc-content ol[data-doc-numbering="hierarchical"],.doc-content ol[data-doc-numbering="hierarchical"] ol{counter-reset:doc-list;list-style:none}
+    .doc-content ol[data-doc-numbering="hierarchical"] li::before{counter-increment:doc-list;content:counters(doc-list,".") ". ";font-variant-numeric:tabular-nums}
+
+    .doc-content [data-doc-hidden="true"] { display:none !important; }
+    .doc-content thead {display:table-header-group}
+    .doc-content tfoot {display:table-footer-group}
+    .doc-content tr {break-inside:avoid}
+    .doc-content p {orphans:3;widows:3}
+    .doc-content h1,.doc-content h2,.doc-content h3,.doc-content h4,.doc-content h5,.doc-content h6 {break-after:avoid}
+    .doc-content .doc-running-header,.doc-content .doc-running-footer {font-size:11px;color:#666;border-bottom:1px solid #ddd;padding:4px}
+    .doc-content .doc-page-number:after {content:'Page number (print)';font-size:11px;color:#666}
+
+    .doc-content .doc { max-width: 800px; margin: 0 auto; }
+    .doc-content .doc-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #222; padding-bottom: 12px; margin-bottom: 16px; gap: 20px; }
+    .doc-content .doc-company h1 { margin: 0 0 4px; font-size: 20px; }
+    .doc-content .doc-meta { text-align: right; white-space: nowrap; }
+    .doc-content .doc-meta h2 { margin: 0 0 6px; font-size: 16px; letter-spacing: 0.05em; }
+    .doc-content .doc-parties { display: flex; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
+    .doc-content .doc-table { width: 100%; border-collapse: collapse; margin: 12px 0 14px; font-size: 12.5px; }
+    .doc-content .doc-table th, .doc-content .doc-table td { border: 1px solid #d7dee8; padding: 7px 10px; text-align: left; vertical-align: top; }
+    .doc-content .doc-table th { background: #f4f7fb; font-weight: 600; color: #1a2740; }
+    .doc-content .doc-table thead th { border-bottom: 2px solid #ccd6e2; }
+    .doc-content .doc-table.striped tbody tr:nth-child(even) td { background: #f8fafc; }
+    .doc-content .doc-table.shaded thead th { background: #16243d; color: #fff; border-bottom-color: #16243d; }
+    .doc-content .doc-table.plain th, .doc-content .doc-table.plain td { border: 0; }
+    .doc-content .doc-table.plain thead th { border-bottom: 1px solid #ccd6e2; }
+    .doc-content .doc-table .r { text-align: right; }
+    .doc-content .doc-float { position: absolute; box-sizing: border-box; }
+    .doc-content .doc-float-shape { width: 100%; height: 100%; box-sizing: border-box; }
+    .doc-content .doc-float-body { width: 100%; height: 100%; box-sizing: border-box; overflow: hidden; padding: 4px; }
+    .doc-content .doc-float[data-float-kind="image"] img { width: 100%; height: 100%; object-fit: contain; }
+    .doc-content .doc-totals { margin-left: auto; width: 280px; text-align: right; }
+    .doc-content .doc-totals .grand { font-size: 15px; font-weight: 700; border-top: 2px solid #222; margin-top: 6px; padding-top: 6px; }
+    .doc-content .doc-notes { margin-top: 14px; }
+    .doc-content .doc-foot { margin-top: 28px; color: #666; font-size: 11px; border-top: 1px solid #ddd; padding-top: 8px; }
+    .doc-content .muted { color: #777; font-size: 11px; }
+
+
+    .doc-content h1 {font-size:22px;font-weight:700;margin:0 0 4px}
+    .doc-content h2 {font-size:17px;font-weight:700;margin:0 0 6px}
+    .doc-content h3 {font-size:15px;font-weight:700}
+    .doc-content table {width:100%;border-collapse:collapse;margin:12px 0 14px;font-size:12.5px}
+    .doc-content td,.doc-content th {border:1px solid #d7dee8;padding:7px 10px;min-width:34px;vertical-align:top;font-size:inherit;letter-spacing:normal;text-transform:none;color:inherit}
+    .doc-content p {margin:1em 0}
+    .doc-content tbody tr:hover td {background-color:inherit}
+    .doc-content th {text-align:left;font-weight:600;background:#f4f7fb;color:#1a2740}
+`;
+  const PRINT_CSS = documentCss + `
+    html, body { margin:0; padding:0; background:#fff; }
+    @page { margin:14mm; }
+    @media screen { body { padding:24px; background:#eef0f3; } .doc-print-content { background:#fff; margin:0 auto; } }
   `;
 
-  /** Full standalone HTML doc (print stylesheet + body); used for print + preview. */
+  /** Print a pop-up written with document.write() once its images / SVGs have loaded. It is
+      triggered from this page (the opener): a <script> inside the written document would be
+      blocked by the Content-Security-Policy, which about:blank windows inherit. */
+  function printWhenLoaded(w) {
+    let done = false;
+    const go = () => { if (done) return; done = true; try { w.focus(); w.print(); } catch (e) { /* closed */ } };
+    if (w.document.readyState === 'complete') setTimeout(go, 50);
+    else { w.addEventListener('load', go, { once: true }); setTimeout(go, 1500); }
+  }
+
+  /** Same content typography in the editor and standalone output. Saved float
+   * percentages use the full paper as their reference, while print @page margins
+   * leave a smaller content box: translate those coordinates into physical units. */
   function printableHtml(html, title) {
+    const source = String(html || '');
+    const setup = source.match(/<style\b[^>]*\bdata-docpage(?=[\s=>])[^>]*>([\s\S]*?)<\/style>/i);
+    const size = setup && setup[1].match(/size:\s*([\d.]+)mm\s+([\d.]+)mm/i);
+    const margin = setup && setup[1].match(/margin:\s*([\d.]+)mm/i);
+    let content = source, pageCss = '';
+    if (size) {
+      const w = Number(size[1]), h = Number(size[2]), m = margin ? Number(margin[1]) : 14;
+      const container = document.createElement('div'); container.innerHTML = source;
+      if (!/class=["'][^"']*tiled-grid/.test(source)) container.querySelectorAll('.doc-float').forEach((el) => {
+        if (el.parentElement.closest('.doc-float,[data-doc-design-page]')) return;
+        ['left','top','width','height'].forEach((key) => {
+          const value = el.style[key];
+          if (!/^-?[\d.]+%$/.test(value)) return;
+          const length = key === 'left' || key === 'width' ? w : h;
+          const offset = key === 'left' || key === 'top' ? m : 0;
+          el.style[key] = (parseFloat(value) * length / 100 - offset) + 'mm';
+        });
+      });
+      content = `<div class="doc-print-content">${container.innerHTML}</div>`;
+      pageCss = `.doc-print-content{position:relative;isolation:isolate;width:${Math.max(1,w-2*m)}mm;min-height:${Math.max(1,h-2*m)}mm} @media print{.doc-print-content{width:100%;min-height:0}}`;
+    }
+    // Chromium supports paged-media margin boxes. Keep running text in screen
+    // preview; move its text into paper margins when printing, with safe CSS strings.
+    const running = document.createElement('div'); running.innerHTML = source;
+    const cssText = (value) => '"' + String(value).replace(/[\\"<>\n\r\f]/g, c => '\\' + c.charCodeAt(0).toString(16) + ' ') + '"';
+    running.querySelectorAll('[data-doc-section]').forEach((section,i)=>{const w=Number(section.dataset.docSectionWidth),h=Number(section.dataset.docSectionHeight),m=Number(section.dataset.docSectionMargin);if(w>=50&&w<=1000&&h>=50&&h<=1000&&m>=0&&m<=100&&m*2<Math.min(w,h)){const name='docsection'+i;pageCss+=`@page ${name}{size:${w}mm ${h}mm;margin:${m}mm} [data-doc-section="${section.dataset.docSection.replace(/[^a-zA-Z0-9_-]/g,'')}"]{page:${name};width:${w-m*2}mm}`;}});
+    const header = running.querySelector('.doc-running-header')?.textContent || '';
+    const footer = running.querySelector('.doc-running-footer')?.textContent || '';
+    const numbered = !!running.querySelector('.doc-page-number');
+    if (header || footer || numbered) pageCss += `@page { @top-center {content:${cssText(header)};font:10px Arial;color:#666} @bottom-center {content:${cssText(footer)}${numbered ? ' " · Page " counter(page) " of " counter(pages)' : ''};font:10px Arial;color:#666} } @media print { .doc-running-header,.doc-running-footer,.doc-page-number {display:none!important} }`;
     return `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${esc(title || 'Document')}</title>` +
-      `<style>${PRINT_CSS}</style></head><body>${html}</body></html>`;
+      `<style>${PRINT_CSS}${pageCss}</style></head><body class="doc-content">${content}</body></html>`;
+  }
+
+  /** Parent-driven layout also works in script-disabled preview iframes. */
+  function loadPrintFrame(frame, html, fit) {
+    frame._printReady = new Promise((resolve, reject) => {
+      frame.onload = async () => {
+        try {
+          const doc = frame.contentDocument;
+          if (!doc) throw new Error('Print preview could not load');
+          await doc.fonts?.ready;
+          if (fit) await fit(doc);
+          const result = window.DocPagination ? await window.DocPagination.paginate(doc) : {pages:0,warnings:[]};
+          frame.dataset.pageCount = result.pages;
+          frame.dataset.paginationWarning = result.warnings.join(' ');
+          resolve(result);
+        } catch(error) { reject(error); }
+      };
+      frame.srcdoc = html;
+    });
+    frame._printReady.catch(error => toast(error.message, 'error'));
+    return frame._printReady;
+  }
+  async function printFrame(frame) {
+    if (frame._printReady) await frame._printReady;
+    if (!frame.isConnected) return;
+    frame.contentWindow.focus(); frame.contentWindow.print();
   }
 
   /* ---------- Inline SVG icons (Lucide-style, stroke = currentColor) ---------- */
@@ -407,7 +594,7 @@ const UI = (() => {
       a body-level bubble so it never gets clipped by a scrolling modal. */
   function helpIcon(text) {
     if (!text) return '';
-    return `<button type="button" class="help-icon" aria-label="${esc(text)}" data-tip="${esc(text)}">?</button>`;
+    return `<button type="button" class="help-icon" aria-label="Help: ${esc(text)}" aria-expanded="false" data-tip="${esc(text)}">?</button>`;
   }
 
   /* Tooltip controller: hover (mouse) + tap/click (touch) → floating bubble.
@@ -417,39 +604,34 @@ const UI = (() => {
      for touch devices, so its click still opens the tip rather than toggling it
      away like a generic target would. */
   (function initHelpTips() {
-    let tip = null;
-    const hide = () => { if (tip) { tip.remove(); tip = null; } };
-    function show(target) {
-      hide();
-      const text = target.getAttribute('data-tip');
-      if (!text) return;
-      tip = document.createElement('div');
-      tip.className = 'help-tip';
-      tip.textContent = text;
-      document.body.appendChild(tip);
-      const r = target.getBoundingClientRect();
-      const tr = tip.getBoundingClientRect();
-      let top = r.top - tr.height - 8;
-      if (top < 8) top = r.bottom + 8; // flip below if it would clip the top
-      let left = r.left + r.width / 2 - tr.width / 2;
-      left = Math.max(8, Math.min(left, window.innerWidth - tr.width - 8));
-      tip.style.top = `${Math.round(top)}px`;
-      tip.style.left = `${Math.round(left)}px`;
+    let tip = null, target = null, pinned = false, seq = 0, previousDescription = null;
+    const hide = () => {
+      if (target) { if (previousDescription) target.setAttribute('aria-describedby', previousDescription); else target.removeAttribute('aria-describedby'); if (target.classList.contains('help-icon')) target.setAttribute('aria-expanded', 'false'); }
+      if (tip) tip.remove(); tip = null; target = null; pinned = false;
+    };
+    function show(el, pin = false) {
+      hide(); const text = el.getAttribute('data-tip'); if (!text) return;
+      target = el; pinned = pin; previousDescription = el.getAttribute('aria-describedby');
+      tip = document.createElement('div'); tip.className = 'help-tip'; tip.id = 'help-tip-' + (++seq); tip.setAttribute('role', 'tooltip'); tip.textContent = text;
+      document.body.appendChild(tip); el.setAttribute('aria-describedby', [previousDescription, tip.id].filter(Boolean).join(' '));
+      if (el.classList.contains('help-icon')) el.setAttribute('aria-expanded', 'true');
+      const r = el.getBoundingClientRect(), tr = tip.getBoundingClientRect();
+      let top = r.top - tr.height - 8; if (top < 8) top = r.bottom + 8;
+      tip.style.top = Math.max(8, Math.min(top, window.innerHeight - tr.height - 8)) + 'px';
+      tip.style.left = Math.max(8, Math.min(r.left + r.width / 2 - tr.width / 2, window.innerWidth - tr.width - 8)) + 'px';
     }
-    document.addEventListener('mouseover', (e) => {
-      const h = e.target.closest && e.target.closest('[data-tip]');
-      if (h) show(h);
-    });
-    document.addEventListener('mouseout', (e) => {
-      const h = e.target.closest && e.target.closest('[data-tip]');
-      if (h && !(e.relatedTarget && h.contains(e.relatedTarget))) hide();
-    });
-    document.addEventListener('click', (e) => {
-      const h = e.target.closest && e.target.closest('.help-icon');
-      if (h) { e.preventDefault(); e.stopPropagation(); show(h); }
+    document.addEventListener('mouseover', e => { const h = e.target.closest?.('[data-tip]'); if (h && !pinned) show(h); });
+    document.addEventListener('mouseout', e => { const h = e.target.closest?.('[data-tip]'); if (h && !pinned && document.activeElement !== h && !h.contains(e.relatedTarget)) hide(); });
+    document.addEventListener('focusin', e => { const h = e.target.closest?.('[data-tip]'); if (h) show(h); });
+    document.addEventListener('focusout', e => { if (e.target === target) hide(); });
+    document.addEventListener('click', e => {
+      const h = e.target.closest?.('.help-icon');
+      if (h) { e.preventDefault(); e.stopPropagation(); if (target === h && pinned) hide(); else show(h, true); }
       else hide();
     });
-    window.addEventListener('scroll', hide, true);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && tip) { e.preventDefault(); e.stopPropagation(); hide(); } }, true);
+    window.addEventListener('scroll', hide, true); window.addEventListener('resize', hide);
+
   })();
 
   /** Inline SVG icon by name. Inherits text color; size in px (default 18). */
@@ -575,8 +757,8 @@ const UI = (() => {
   }
 
   return {
-    esc, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, confirmDialog, PLACEHOLDER_PHOTO,
-    drawer, contextMenu, closeContextMenu, printableHtml, combo,
+    nameControls, esc, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, confirmDialog, PLACEHOLDER_PHOTO,
+    drawer, contextMenu, closeContextMenu, printableHtml, printWhenLoaded, documentCss, loadPrintFrame, printFrame, combo,
     icon, helpIcon, emptyState, fileIconName, downloadCsv, csvImportModal,
   };
 })();

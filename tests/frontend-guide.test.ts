@@ -21,7 +21,7 @@ function loadClassic<T>(rel: string): T {
 }
 
 const { GUIDE, GUIDE_PIPELINES, GUIDE_ROUTE_MAP } = loadClassic<{
-  GUIDE: { byId: Record<string, Pipeline>; routeMap: Record<string, string>; forRoute(r: string): Pipeline | null };
+  GUIDE: { byId: Record<string, Pipeline>; routeMap: Record<string, string>; forRoute(r: string, filter?: Record<string, string>): Pipeline | null };
   GUIDE_PIPELINES: Pipeline[];
   GUIDE_ROUTE_MAP: Record<string, string>;
 }>('public/js/guide-data.js');
@@ -81,6 +81,10 @@ describe('guide-data: route map', () => {
   it('GUIDE.forRoute resolves a mapped route and shrugs at an unmapped one', () => {
     expect(GUIDE.forRoute('job-orders')?.id).toBe('production');
     expect(GUIDE.forRoute('hr-timekeeping')?.id).toBe('payroll');
+    expect(GUIDE.forRoute('production-overview')?.id).toBe('production');
+    expect(GUIDE.forRoute('orders', { type: 'purchase' })?.id).toBe('purchasing');
+    expect(GUIDE.forRoute('orders', { type: 'job' })).toBeNull();
+    expect(GUIDE.forRoute('form-records', { slug: 'hr_payroll' })?.id).toBe('payroll');
     expect(GUIDE.forRoute('definitely-not-a-route')).toBeNull();
   });
 });

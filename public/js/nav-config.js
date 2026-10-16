@@ -10,7 +10,8 @@
        subtab  { id, label, requiredPermission?, requiredModule?, tree[] }
          leaf    { label, icon, route, filter? }
 
-   `requiredPermission` hides it from accounts without that permission (match the permission the
+   `requiredPermission` hides it from accounts without that permission; `requiredAnyPermission`
+   accepts one of several desk permissions (match the permission the
    screen's own GET endpoint checks — UI hiding never replaces the server check); a primary whose
    subtabs are all hidden is hidden too. The Access editor lists these as the screens each
    permission opens (public/js/lib/access-editor.js).
@@ -22,7 +23,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'confidential-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies'];
+const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'hr-approvals', 'hr-requests', 'confidential-reports', 'identified-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies', 'support', 'billing'];
 
 const NAV = [
   {
@@ -33,12 +34,17 @@ const NAV = [
         tree: [
           { label: 'Dashboard', icon: 'dashboard', route: 'dashboard' },
           { label: 'Reports', icon: 'sheet', route: 'analytics' },
-          { label: 'Help / SOP', icon: 'help', route: 'sop' },
+          { label: 'Guide Center', icon: 'help', route: 'sop' },
           { label: 'Announcements', icon: 'messages', route: 'announcements' },
         ],
       },
+      { id: 'my-hr', label: 'My HR', requiredModule: 'hr', tree: [
+        { label: 'My HR', icon: 'users', route: 'hr-requests' },
+        { label: 'Approvals', icon: 'check', route: 'hr-approvals' },
+      ] },
     ],
   },
+  { id: 'support', label: 'Support', icon: 'help', requiredPermission: 'users.manage', subtabs: [{ id: 'support-tickets', label: 'Bug reports & issues', tree: [{ label: 'Contact OTOM', icon: 'help', route: 'support' }] }] },
   {
     id: 'inventory', label: 'Inventory', icon: 'inventory', requiredModule: 'inventory',
     subtabs: [
@@ -101,15 +107,18 @@ const NAV = [
         ],
       },
       {
-        id: 'form-setup', label: 'Form Builder', requiredPermission: 'forms.manage.inventory',
+        id: 'form-setup', label: 'Forms', requiredPermission: 'forms.manage.inventory',
         tree: [
+          { label: 'Data Forms', icon: 'forms', route: 'form-records', filter: { scope: 'inventory' } },
           { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'inventory' } },
         ],
       },
     ],
   },
   {
-    id: 'production', label: 'Production', icon: 'factory', requiredPermission: 'production.view', requiredModule: 'manufacturing',
+    id: 'production', label: 'Production', icon: 'factory',
+    requiredAnyPermission: ['production.view', 'production.record', 'production.pause', 'production.manage', 'production.approve'],
+    requiredModule: 'manufacturing',
     /* Subtabs are ordered to match the real build pipeline, not alphabetically or by
        feature-add order: overview (home/summary) -> setup (prerequisite) -> schedule/start ->
        scheduling (supporting, monitoring-only) -> QC -> repair branch -> receive ("Products
@@ -117,13 +126,13 @@ const NAV = [
        See docs/guides/production-sop.md. */
     subtabs: [
       {
-        id: 'overview', label: 'Overview',
+        id: 'overview', label: 'Overview', requiredPermission: 'production.view',
         tree: [
           { label: 'Overview', icon: 'dashboard', route: 'production-overview' },
         ],
       },
       {
-        id: 'products', label: 'Product Setup',
+        id: 'products', label: 'Product Setup', requiredPermission: 'production.view',
         tree: [
           { label: 'Products & BOM', icon: 'sparkles', route: 'finished-products' },
         ],
@@ -135,40 +144,41 @@ const NAV = [
         ],
       },
       {
-        id: 'scheduling', label: 'Scheduling',
+        id: 'scheduling', label: 'Scheduling', requiredPermission: 'production.view',
         tree: [
           { label: 'Schedule', icon: 'calendar', route: 'production-schedule' },
           { label: 'Teams', icon: 'users', route: 'production-teams' },
         ],
       },
       {
-        id: 'qc', label: 'QC / QA',
+        id: 'qc', label: 'QC / QA', requiredPermission: 'production.view',
         tree: [
           { label: 'Inspection Queue', icon: 'check', route: 'production-qc', filter: { tab: 'queue' } },
+          { label: 'On Hold', icon: 'alert', route: 'production-qc', filter: { tab: 'holds' } },
           { label: 'Findings & Reports', icon: 'sheet', route: 'production-qc', filter: { tab: 'findings' } },
         ],
       },
       {
-        id: 'repairs', label: 'Repairs & Parts Requests',
+        id: 'repairs', label: 'Repairs & Parts Requests', requiredPermission: 'production.view',
         tree: [
           { label: 'Repairs & Parts Requests', icon: 'inbox', route: 'repairs' },
         ],
       },
       {
-        id: 'products-in', label: 'Products In',
+        id: 'products-in', label: 'Products In', requiredPermission: 'production.view',
         tree: [
           { label: 'Ready to Receive', icon: 'inbox', route: 'production-receiving', filter: { tab: 'queue' } },
           { label: 'Receipt History', icon: 'sheet', route: 'production-receiving', filter: { tab: 'history' } },
         ],
       },
       {
-        id: 'batches', label: 'Batches / Lots',
+        id: 'batches', label: 'Batches / Lots', requiredPermission: 'production.view',
         tree: [
           { label: 'Batches / Lots', icon: 'archive', route: 'production-batches' },
         ],
       },
       {
-        id: 'finished-goods', label: 'Finished Goods',
+        id: 'finished-goods', label: 'Finished Goods', requiredPermission: 'production.view',
         tree: [
           { label: 'Finished Goods', icon: 'sparkles', route: 'finished-goods' },
         ],
@@ -222,12 +232,6 @@ const NAV = [
         ],
       },
       {
-        id: 'memos', label: 'Memos & Notices',
-        tree: [
-          { label: 'Memos & Notices', icon: 'alert', route: 'form-records', filter: { scope: 'hr' } },
-        ],
-      },
-      {
         id: 'timekeeping', label: 'Time Keeping',
         tree: [
           { label: 'Time Keeping', icon: 'calendar', route: 'hr-timekeeping' },
@@ -243,8 +247,13 @@ const NAV = [
         ],
       },
       {
-        id: 'form-setup', label: 'Form Builder', requiredPermission: 'forms.manage.hr',
+        id: 'identified-reports', label: 'Identified Reports',
+        tree: [{ label: 'Identified Reports', icon: 'alert', route: 'identified-reports' }],
+      },
+      {
+        id: 'form-setup', label: 'HR Forms', requiredPermission: 'forms.manage.hr',
         tree: [
+          { label: 'Data Forms', icon: 'forms', route: 'form-records', filter: { scope: 'hr' } },
           { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'hr' } },
         ],
       },
@@ -280,20 +289,10 @@ const NAV = [
         ],
       },
       {
-        id: 'form-setup', label: 'Form Builder', requiredPermission: 'forms.manage.accounting',
+        id: 'form-setup', label: 'Forms', requiredPermission: 'forms.manage.accounting',
         tree: [
+          { label: 'Data Forms', icon: 'forms', route: 'form-records', filter: { scope: 'accounting' } },
           { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'accounting' } },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'messages', label: 'Messages', icon: 'messages', requiredPermission: 'messages.view',
-    subtabs: [
-      {
-        id: 'chat', label: 'Messages',
-        tree: [
-          { label: 'Messages', icon: 'messages', route: 'messages' },
         ],
       },
     ],
@@ -323,20 +322,17 @@ const NAV = [
         ],
       },
       {
-        id: 'form-setup', label: 'Form Builder', requiredPermission: 'forms.manage.admin',
+        id: 'billing', label: 'Billing',
         tree: [
-          { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'admin' } },
+          // Our invoices to this workspace + paying by GCash or bank transfer (docs/SAAS-READINESS.md §12).
+          { label: 'Invoices & payments', icon: 'file', route: 'billing' },
         ],
       },
-    ],
-  },
-  {
-    id: 'account', label: 'My Account', icon: 'settings',
-    subtabs: [
       {
-        id: 'profile', label: 'Profile',
+        id: 'form-setup', label: 'Forms', requiredPermission: 'forms.manage.admin',
         tree: [
-          { label: 'My Account', icon: 'settings', route: 'account' },
+          { label: 'Data Forms', icon: 'forms', route: 'form-records', filter: { scope: 'admin' } },
+          { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'admin' } },
         ],
       },
     ],

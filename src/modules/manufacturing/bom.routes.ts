@@ -37,7 +37,8 @@ const bomRows = (productId: number) =>
 // as standard_cost / purchase_price). Surface them as plain numbers on responses.
 const STD_COST_COLS = `
   COALESCE(CAST(json_extract(i.attributes, '$.std_labor_cost')    AS REAL), 0) AS std_labor_cost,
-  COALESCE(CAST(json_extract(i.attributes, '$.std_overhead_cost') AS REAL), 0) AS std_overhead_cost
+  COALESCE(CAST(json_extract(i.attributes, '$.std_overhead_cost') AS REAL), 0) AS std_overhead_cost,
+  CAST(json_extract(i.attributes, '$.selling_markup_percent') AS REAL) AS selling_markup_percent
 `;
 
 // GET /api/finished-products — every item flagged as a finished product
@@ -118,6 +119,34 @@ router.get('/:id/cost', requirePermission('production.view'), (req, res) => {
   res.json(rollupCost(id, dbBomResolvers()));
 });
 
+// Sales may see the suggested price, but not the internal BOM cost breakdown.
+router.get('/:id/price-suggestion', catalogRead, (req, res) => {
+  const id = Number(req.params.id);
+  const item = queryOne<{ is_finished_product: number; attributes: string | null }>(
+    'SELECT is_finished_product, attributes FROM inventory_items WHERE id = ?', id);
+  if (!item) { res.status(404).json({ error: 'Item not found' }); return; }
+  let attrs: Record<string, unknown> = {};
+  try { attrs = item.attributes ? JSON.parse(item.attributes) : {}; } catch { /* no pricing configuration */ }
+  const markup = attrs.selling_markup_percent;
+  if (!item.is_finished_product || typeof markup !== 'number' || !Number.isFinite(markup) || markup < 0 || markup > 10000) {
+    res.json({ available: false, reason: 'No product markup configured' }); return;
+  }
+  const resolvers = dbBomResolvers();
+  const exploded = explode(id, 1, resolvers);
+  const cost = rollupCost(id, resolvers);
+  if (!exploded.materials.length || exploded.had_cycle || cost.had_cycle ||
+      exploded.materials.some((line) => !Number.isFinite(line.unit_cost) || line.unit_cost <= 0) ||
+      !Number.isFinite(cost.unit_total_cost) || cost.unit_total_cost <= 0) {
+    res.json({ available: false, reason: 'BOM or component standard costs need review' }); return;
+  }
+  const suggested = Math.round((cost.unit_total_cost * (1 + markup / 100) + Number.EPSILON) * 100) / 100;
+  if (!Number.isFinite(suggested) || suggested > 1e12) {
+    res.json({ available: false, reason: 'Calculated price is out of range' }); return;
+  }
+  res.json({ available: true, suggested_unit_price: suggested, markup_percent: markup,
+    currency: String(attrs.currency || 'PHP').toUpperCase() });
+});
+
 // GET /api/finished-products/:id/where-used — products whose BOM consumes this item
 // (directly or through a sub-assembly).
 router.get('/:id/where-used', requirePermission('production.view'), (req, res) => {
@@ -146,7 +175,7 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
     res.status(404).json({ error: 'Item not found' });
     return;
   }
-  const { components, qc_checklist_qa_id, qc_checklist_qc_id, std_labor_cost, std_overhead_cost } = parseBody(saveBomSchema, req.body);
+  const { components, qc_checklist_qa_id, qc_checklist_qc_id, std_labor_cost, std_overhead_cost, selling_markup_percent } = parseBody(saveBomSchema, req.body);
 
   for (const [label, stage, checklistId] of [['QC', 1, qc_checklist_qc_id], ['QA', 2, qc_checklist_qa_id]] as const) {
     if (checklistId === undefined || checklistId === null) continue;
@@ -181,7 +210,7 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
     if (qc_checklist_qc_id !== undefined) {
       run('UPDATE inventory_items SET qc_checklist_qc_id = ? WHERE id = ?', qc_checklist_qc_id, id);
     }
-    if (std_labor_cost !== undefined || std_overhead_cost !== undefined) {
+    if (std_labor_cost !== undefined || std_overhead_cost !== undefined || selling_markup_percent !== undefined) {
       const row = queryOne<{ attributes: string | null }>('SELECT attributes FROM inventory_items WHERE id = ?', id);
       let attrs: Record<string, unknown> = {};
       try { attrs = row?.attributes ? (JSON.parse(row.attributes) as Record<string, unknown>) : {}; } catch { attrs = {}; }
@@ -192,6 +221,7 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
       };
       setOrClear('std_labor_cost', std_labor_cost);
       setOrClear('std_overhead_cost', std_overhead_cost);
+      setOrClear('selling_markup_percent', selling_markup_percent);
       run("UPDATE inventory_items SET attributes = ?, updated_at = datetime('now') WHERE id = ?", JSON.stringify(attrs), id);
     }
     run('DELETE FROM bom_components WHERE product_item_id = ?', id);
@@ -283,7 +313,7 @@ router.get('/:id/units', catalogRead, (req, res) => {
     queryAll<JobOrderUnit>(
       `SELECT u.id, u.identifier, u.status, u.stage, u.location_id, u.order_id,
               u.created_at, u.updated_at,
-              jo.number AS job_order_number, l.name AS location_name, o.number AS order_number
+              jo.number AS job_order_number, jo.build_mode, l.name AS location_name, o.number AS order_number
        FROM job_order_units u
        LEFT JOIN job_orders jo ON jo.id = u.job_order_id
        LEFT JOIN locations l ON l.id = u.location_id
@@ -303,12 +333,24 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncCl
   if (!item) { res.status(404).json({ error: 'Item not found' }); return; }
   const input = parseBody(allocateUnitsSchema, req.body);
 
-  let order: { id: number; number: string } | undefined;
+  let order: { id: number; number: string; type: string } | undefined;
+  let saleLineId: number | null = null;
   if (input.order_id != null) {
     order = queryOne<{ id: number; number: string; type: string }>(
       "SELECT id, number, type FROM orders WHERE id = ?", input.order_id
     );
     if (!order) { res.status(400).json({ error: 'Sales order not found' }); return; }
+    if (input.action === 'sell' && order.type === 'sale') {
+      const lines = queryAll<{ id: number; fulfillment_mode: string }>(`SELECT id,fulfillment_mode FROM order_items
+        WHERE order_id = ? AND item_id = ? AND fulfillment_mode NOT IN ('ckd','ckd_component')`, input.order_id, id);
+      const matching = lines.filter((l) => (l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled') === input.build_mode);
+      const selected = input.order_item_id ? matching.find((l) => l.id === input.order_item_id) : matching.length === 1 ? matching[0] : null;
+      if (!selected && (lines.length || input.order_item_id)) {
+        res.status(409).json({ error: matching.length ? 'Select the exact sale line for these units.' : 'The sale has no line for these units and build state.',
+          code: matching.length ? 'line_required' : 'wrong_build' }); return;
+      }
+      saleLineId = selected?.id ?? null;
+    }
   }
   if (input.action === 'move' && input.to_location_id != null
     && !queryOne('SELECT id FROM locations WHERE id = ?', input.to_location_id)) {
@@ -317,10 +359,11 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncCl
   }
 
   // Resolve the target units — explicit ids, else the first N bulk (no-identifier) in-stock.
-  let units: JobOrderUnit[];
+  let units: Array<JobOrderUnit & { build_mode: 'assembled' | 'semi_built' }>;
   if (input.unit_ids && input.unit_ids.length) {
-    units = queryAll<JobOrderUnit>(
-      `SELECT * FROM job_order_units WHERE product_item_id = ? AND id IN (${input.unit_ids.map(() => '?').join(',')})`,
+    units = queryAll<JobOrderUnit & { build_mode: 'assembled' | 'semi_built' }>(
+      `SELECT u.*, j.build_mode FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
+       WHERE u.product_item_id = ? AND u.id IN (${input.unit_ids.map(() => '?').join(',')})`,
       id, ...input.unit_ids
     );
     if (units.length !== input.unit_ids.length) {
@@ -333,16 +376,19 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncCl
       return;
     }
   } else {
-    units = queryAll<JobOrderUnit>(
-      `SELECT * FROM job_order_units
-       WHERE product_item_id = ? AND status = 'in_stock' AND (identifier IS NULL OR TRIM(identifier) = '')
-       ORDER BY id LIMIT ?`,
-      id, input.quantity
+    units = queryAll<JobOrderUnit & { build_mode: 'assembled' | 'semi_built' }>(
+      `SELECT u.*, j.build_mode FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
+       WHERE u.product_item_id = ? AND j.build_mode = ? AND u.status = 'in_stock' AND (u.identifier IS NULL OR TRIM(u.identifier) = '')
+       ORDER BY u.id LIMIT ?`,
+      id, input.build_mode, input.quantity
     );
     if (units.length < (input.quantity ?? 0)) {
       res.status(400).json({ error: `Only ${units.length} untracked in-stock unit(s) available` });
       return;
     }
+  }
+  if (units.some((u) => u.build_mode !== input.build_mode)) {
+    res.status(409).json({ error: 'Selected units have a different build state. Choose fully built or semi-built units separately.' }); return;
   }
 
   const fallbackLoc = getDefaultLocationId();
@@ -353,16 +399,18 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), syncCl
       if (input.action === 'sell') {
         applyStockChange({
           itemId: id, locationId: from, change: -1, userId: req.user!.id,
+          buildMode: u.build_mode,
           reason: `Sold${order ? ' — ' + order.number : ''}${input.reason ? ' — ' + input.reason : ''}`,
         });
         run(
-          "UPDATE job_order_units SET status = 'sold', order_id = ?, updated_at = datetime('now') WHERE id = ?",
-          order ? order.id : null, u.id
+          "UPDATE job_order_units SET status = 'sold', order_id = ?, order_item_id = ?, updated_at = datetime('now') WHERE id = ?",
+          order ? order.id : null, saleLineId, u.id
         );
       } else {
         if (from !== input.to_location_id) {
           transferStock({
             itemId: id, fromId: from, toId: input.to_location_id as number, amount: 1,
+            buildMode: u.build_mode,
             userId: req.user!.id, reason: input.reason ?? (order ? order.number : null),
           });
         }

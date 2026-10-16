@@ -109,7 +109,7 @@ export class PdfDoc {
     }
     objs[catalog - 1] = `<< /Type /Catalog /Pages ${pagesId} 0 R >>`;
     objs[pagesId - 1] = `<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(' ')}] /Count ${kids.length} >>`;
-    const info = add(`<< /Title (${escapeText(meta.title ?? 'Document')}) /Producer (Verdesakay) >>`);
+    const info = add(`<< /Title (${escapeText(meta.title ?? 'Document')}) /Producer (Otom) >>`);
 
     let out = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
     const offsets: number[] = [];

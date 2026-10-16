@@ -5,7 +5,7 @@ App.register('forms', async (view) => {
       <h2>Forms &amp; Files</h2>
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="forms-search" placeholder="Search title, category…" /></div>
-      <select id="forms-cat" style="width:160px"><option value="">— Category —</option></select>
+      <select id="forms-cat" aria-label="File category" style="width:160px"><option value="">— Category —</option></select>
       <button class="btn" id="forms-upload">${UI.icon('upload')} Upload</button>
     </div>
     <div class="panel"><div id="forms-table"></div></div>`;
@@ -161,6 +161,7 @@ App.register('forms', async (view) => {
     const deptOpts = '<option value="">All staff (shared)</option>' +
       App.getDepartments().map((d) => `<option value="${d.id}">${UI.esc(d.name)} only</option>`).join('');
     UI.modal({
+      protectChanges: true,
       title: 'Upload a form or file',
       bodyHTML: `
         <div><label>File * (max 25 MB)</label><input type="file" data-f="file" /></div>

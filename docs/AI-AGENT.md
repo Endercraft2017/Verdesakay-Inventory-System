@@ -2,7 +2,7 @@
 
 > **Last updated:** 2026-06-29
 
-The AI Assistant is a right-rail tool in the Verdesakay Office System that lets users query data and take actions using natural language. It is powered by any OpenAI-compatible LLM (Gemini Flash-Lite by default) and runs a server-side agentic loop that executes tools against the live SQLite database on the user's behalf.
+The AI Assistant is a right-rail tool in the Otom that lets users query data and take actions using natural language. It is powered by any OpenAI-compatible LLM (Gemini Flash-Lite by default) and runs a server-side agentic loop that executes tools against the live SQLite database on the user's behalf.
 
 ---
 

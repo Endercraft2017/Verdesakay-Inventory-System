@@ -4,6 +4,7 @@
  *  `bug_reports` / `bug_report_attachments`. Mounted at /api/bug-reports. */
 import path from 'node:path';
 import fs from 'node:fs';
+import { storeDurableUpload, resolveDurableUploadAsync } from '../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -87,15 +88,15 @@ router.get('/:id', requirePermission('users.manage'), (req, res) => {
 });
 
 // GET /api/bug-reports/:id/screenshots/:attId — stream a screenshot, admin only
-router.get('/:id/screenshots/:attId', requirePermission('users.manage'), (req, res) => {
+router.get('/:id/screenshots/:attId', requirePermission('users.manage'), async (req, res) => {
   const att = queryOne<{ stored_name: string; original_name: string; mime_type: string | null }>(
     'SELECT stored_name, original_name, mime_type FROM bug_report_attachments WHERE id = ? AND bug_report_id = ?',
     Number(req.params.attId),
     Number(req.params.id)
   );
   if (!att) { res.status(404).json({ error: 'Screenshot not found' }); return; }
-  const filePath = path.join(uploadDir(), att.stored_name);
-  if (!fs.existsSync(filePath)) { res.status(410).json({ error: 'File is missing on disk' }); return; }
+  const filePath = await resolveDurableUploadAsync(att.stored_name);
+  if (!filePath) { res.status(410).json({ error: 'File is no longer available' }); return; }
   if (att.mime_type) res.type(att.mime_type);
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(att.original_name)}"`);
   if (!/\.(?:jpe?g|png|gif|webp)$/i.test(filePath)) { res.attachment(path.basename(filePath)); res.type('application/octet-stream'); }
@@ -115,7 +116,7 @@ router.post('/', syncClass('merge'), syncUpload(upload.array('screenshots', MAX_
   const addingBytes = files.reduce((sum, f) => sum + f.size, 0);
   if (addingBytes > 0) {
     try {
-      enforceQuota('storage_mb', addingBytes);
+      enforceQuota('storage_mb');
     } catch (e) {
       unlinkAll(files);
       throw e;
@@ -139,6 +140,7 @@ router.post('/', syncClass('merge'), syncUpload(upload.array('screenshots', MAX_
       f.mimetype,
       f.size
     );
+    storeDurableUpload(f.filename);
   }
   res.status(201).json({ id: reportId, screenshots: files.length });
 });

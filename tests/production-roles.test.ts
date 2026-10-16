@@ -80,8 +80,12 @@ describe('qc_inspector role', () => {
       .send({ unit_ids: [units[0]], result: 'pass' });
     expect(pass.status).toBe(200);
 
+    const evidence = await ctx.api.post('/api/attachments').set(bearer(qc.token))
+      .field('kind', 'qc_unit').field('ref_id', String(units[1]))
+      .attach('image', Buffer.from('qc-photo'), 'qc.png');
+    expect(evidence.status).toBe(201);
     const fail = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(bearer(qc.token))
-      .send({ unit_ids: [units[1]], result: 'fail', disposition: 'repair', remarks: 'bent frame' });
+      .send({ unit_ids: [units[1]], result: 'fail', disposition: 'repair', remarks: 'bent frame', evidence_ids: [evidence.body.id] });
     expect(fail.status).toBe(200);
     const part = await mkItem('QcRole spare part', 10);
     const rpr = await ctx.api.post(`/api/production/units/${units[1]}/repairs`).set(bearer(qc.token))

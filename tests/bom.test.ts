@@ -114,6 +114,41 @@ describe('finished products + BOM', () => {
     expect(cleared.body.unit_total_cost).toBe(60);
   });
 
+  it('suggests a selling price from complete BOM cost and configured markup without changing catalog price', async () => {
+    const product = await mkItem('Suggested-price FG');
+    const part = await mkCosted('Suggested-price part', 30);
+    const save = await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({
+      components: [{ component_item_id: part, quantity: 2 }],
+      std_labor_cost: 15, std_overhead_cost: 5, selling_markup_percent: 25,
+    });
+    expect(save.status).toBe(200);
+    const price = await ctx.api.get(`/api/finished-products/${product}/price-suggestion`).set(authHdr());
+    expect(price.body).toMatchObject({ available: true, suggested_unit_price: 100, markup_percent: 25, currency: 'PHP' });
+    expect(price.body).not.toHaveProperty('unit_total_cost');
+    const detail = await ctx.api.get(`/api/finished-products/${product}`).set(authHdr());
+    expect(detail.body.selling_markup_percent).toBe(25);
+    expect(detail.body.attributes.sale_price).toBeUndefined();
+
+    const invalid = await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({
+      components: [{ component_item_id: part, quantity: 2 }], selling_markup_percent: -1,
+    });
+    expect(invalid.status).toBe(400);
+    await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({
+      components: [{ component_item_id: part, quantity: 2 }], selling_markup_percent: null,
+    });
+    expect((await ctx.api.get(`/api/finished-products/${product}/price-suggestion`).set(authHdr())).body.available).toBe(false);
+  });
+
+  it('does not suggest a price from a BOM with missing component cost', async () => {
+    const product = await mkItem('Uncosted FG');
+    const part = await mkItem('Uncosted part');
+    await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({
+      components: [{ component_item_id: part, quantity: 1 }], selling_markup_percent: 30,
+    });
+    const price = await ctx.api.get(`/api/finished-products/${product}/price-suggestion`).set(authHdr());
+    expect(price.body).toMatchObject({ available: false, reason: 'BOM or component standard costs need review' });
+  });
+
   it('unflag clears the BOM but keeps the item', async () => {
     const product = await mkItem('Temp Product');
     const c = await mkItem('Temp Part', 3);

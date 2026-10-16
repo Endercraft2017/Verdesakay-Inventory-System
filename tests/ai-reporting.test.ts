@@ -94,6 +94,7 @@ describe('reporting: GET /api/ai/reports/:name', () => {
   it('serves a generated report, rejects junk names, 404s missing, 401s without auth', async () => {
     const r = await exec('create_report_document', { title: 'DL Test', content: MD, format: 'html' }, someUser);
     const name = (r.data as { files: Array<{ name: string }> }).files[0]!.name;
+    fs.unlinkSync(path.join(ctx.tmpDir, 'uploads', name));
 
     const ok = await ctx.api.get(`/api/ai/reports/${name}`).set(authHdr());
     expect(ok.status).toBe(200);

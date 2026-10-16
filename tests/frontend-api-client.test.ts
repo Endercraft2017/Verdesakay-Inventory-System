@@ -46,3 +46,37 @@ describe('api.js 401 handling', () => {
     expect(localStorage.getItem('vds_token')).toBeNull();
   });
 });
+
+/** API.peek: the last response of a GET made with { remember: true }, so a screen can draw it
+    while the fresh copy loads (hr-employees.js). Memory only; any change or sign-out empties it. */
+describe('api.js remembered GETs', () => {
+  type Peekable = ApiClient & {
+    get: (p: string, o?: { remember?: boolean }) => Promise<unknown>;
+    peek: (p: string) => unknown; clearToken: () => void;
+  };
+  let n = 0;
+  beforeEach(() => {
+    localStorage.clear();
+    n = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ n: ++n }), {
+      status: 200, headers: { 'Content-Type': 'application/json' },
+    })));
+  });
+
+  it('keeps only opted-in GETs, and forgets them after any change or on sign-out', async () => {
+    const API = loadApi() as Peekable;
+    await API.get('/hr/employees?');
+    expect(API.peek('/hr/employees?')).toBeNull();
+
+    await API.get('/hr/employees?', { remember: true });
+    expect(API.peek('/hr/employees?')).toEqual({ n: 2 });
+    expect(Object.keys(localStorage)).toEqual(['vds_device_id']); // the response is never stored
+
+    await API.post('/hr/employees', { name: 'x' });
+    expect(API.peek('/hr/employees?')).toBeNull();
+
+    await API.get('/hr/employees?', { remember: true });
+    API.clearToken();
+    expect(API.peek('/hr/employees?')).toBeNull();
+  });
+});

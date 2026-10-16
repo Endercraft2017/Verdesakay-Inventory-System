@@ -38,6 +38,7 @@ afterAll(() => {
 describe('everyday work at a desk PC with no internet', () => {
   let msg: number;
   let note: number;
+  let noteTask: number;
   let bug: number;
   let announcement: number;
   let dept: number;
@@ -47,7 +48,9 @@ describe('everyday work at a desk PC with no internet', () => {
     const lan = T.lanHdr();
     msg = (await ok(api().post('/api/messages').set(lan).field('recipient_id', String(colleague)).field('body', 'Shipment is in bay 3')
       .attach('files', Buffer.from('packing list'), 'packing.txt'), 201)).body.id;
-    note = (await ok(api().post('/api/notes').set(lan).send({ title: 'Reminder', body: 'Count the pallets' }), 201)).body.id;
+    note = (await ok(api().post('/api/notes').set(lan).send({ title: 'Reminder', body: 'Count the pallets', checklist: [{ id: 'pallets', text: 'Count pallets', done: false }] }), 201)).body.id;
+    noteTask = (await ok(api().post(`/api/notes/${note}/schedule`).set(lan).send({ due_date: '2026-12-01T10:00', remind_at: '2026-12-01T01:00:00.000Z' }))).body.id;
+    await ok(api().put(`/api/tasks/${noteTask}`).set(lan).send({ done: true }));
     bug = (await ok(api().post('/api/bug-reports').set(lan).field('title', 'Scanner beeps twice')
       .field('steps_to_reproduce', 'Scan any label').attach('screenshots', Buffer.from('\x89PNG\r\n\x1a\nfake'), { filename: 's.png', contentType: 'image/png' }), 201)).body.id;
     announcement = (await ok(api().post('/api/announcements').set(T.hostHdr()).send({ title: 'Fire drill', body: 'Friday 3 PM' }), 201)).body.id;
@@ -56,7 +59,7 @@ describe('everyday work at a desk PC with no internet', () => {
   });
 
   it('account administration and password changes need the internet', async () => {
-    const add = await api().post('/api/users').set(T.lanHdr()).send({ username: 'nope', full_name: 'Nope', password: 'xxxxxx1', role: 'admin_staff' });
+    const add = await api().post('/api/users').set(T.lanHdr()).send({ username: 'nope', full_name: 'Nope', password: 'xxxxxx12', role: 'admin_staff' });
     expect(add.status).toBe(503);
     expect(add.body.error).toMatch(/internet/i);
     const pw = await api().post('/api/auth/change-password').set(T.lanHdr()).send({ current_password: 'admin123', new_password: 'admin1234' });
@@ -72,6 +75,10 @@ describe('everyday work at a desk PC with no internet', () => {
     const att = c.prepare('SELECT stored_name FROM message_attachments WHERE message_id = ?').get(msg) as { stored_name: string };
     expect(fs.readFileSync(path.join(T.dbmod.uploadDir('default'), att.stored_name), 'utf8')).toBe('packing list');
     expect(c.prepare('SELECT body FROM notes WHERE id = ?').get(note)).toEqual({ body: 'Count the pallets' });
+    const linked = c.prepare('SELECT note_id, done FROM tasks WHERE id = ?').get(noteTask);
+    expect(linked).toEqual({ note_id: note, done: 1 });
+    const list = c.prepare('SELECT checklist FROM notes WHERE id = ?').get(note) as { checklist: string };
+    expect(JSON.parse(list.checklist)[0].done).toBe(true);
     expect(c.prepare('SELECT title FROM bug_reports WHERE id = ?').get(bug)).toEqual({ title: 'Scanner beeps twice' });
     expect(c.prepare('SELECT title FROM announcements WHERE id = ?').get(announcement)).toEqual({ title: 'Fire drill' });
     expect(c.prepare('SELECT name FROM departments WHERE id = ?').get(dept)).toEqual({ name: 'Night shift' });

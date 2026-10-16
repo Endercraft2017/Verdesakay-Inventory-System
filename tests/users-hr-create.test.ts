@@ -18,7 +18,7 @@ describe('POST /api/users by an HR user', () => {
     const hdr = { Authorization: `Bearer ${hr.token}` };
 
     const res = await ctx.api.post('/api/users').set(hdr)
-      .send({ username: 'floor.worker', full_name: 'Floor Worker', password: 'secret1', role: 'warehouse' });
+      .send({ username: 'floor.worker', full_name: 'Floor Worker', password: 'secret123', role: 'warehouse' });
     expect(res.status).toBe(201);
 
     const emp = await ctx.api.post('/api/hr/employees').set(hdr)
@@ -31,7 +31,7 @@ describe('POST /api/users by an HR user', () => {
     const hdr = { Authorization: `Bearer ${hr.token}` };
     for (const role of ['admin', 'admin_staff', 'hr', 'accounting']) {
       const res = await ctx.api.post('/api/users').set(hdr)
-        .send({ username: `priv.${role}`, full_name: 'Nope', password: 'secret1', role });
+        .send({ username: `priv.${role}`, full_name: 'Nope', password: 'secret123', role });
       expect(res.status).toBe(403);
     }
   });
@@ -40,7 +40,7 @@ describe('POST /api/users by an HR user', () => {
     const hr = await createEmployee(ctx.api, adminToken, { username: 'hraccess', role: 'hr' });
     const hdr = { Authorization: `Bearer ${hr.token}` };
     const acct = await ctx.api.post('/api/users').set(hdr)
-      .send({ username: 'multi.role', full_name: 'Multi Role', password: 'secret1', role: 'qc_inspector' });
+      .send({ username: 'multi.role', full_name: 'Multi Role', password: 'secret123', role: 'qc_inspector' });
 
     const cat = await ctx.api.get('/api/users/permissions/catalog').set(hdr);
     expect(cat.status).toBe(200);
@@ -73,7 +73,7 @@ describe('POST /api/users by an HR user', () => {
   it('still refuses users without users.manage or hr.manage', async () => {
     const staff = await createEmployee(ctx.api, adminToken, { username: 'plainstaff', role: 'warehouse' });
     const res = await ctx.api.post('/api/users').set({ Authorization: `Bearer ${staff.token}` })
-      .send({ username: 'sneaky', full_name: 'Nope', password: 'secret1', role: 'warehouse' });
+      .send({ username: 'sneaky', full_name: 'Nope', password: 'secret123', role: 'warehouse' });
     expect(res.status).toBe(403);
   });
 });

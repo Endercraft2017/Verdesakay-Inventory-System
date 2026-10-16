@@ -1,0 +1,25 @@
+/* Shared dropdown chrome. Native option menus and keyboard behavior stay intact. */
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark'] { color-scheme: dark; }
+select:not([multiple]):is(:not([size]), [size='0'], [size='1']) {
+  appearance: none;
+  -webkit-appearance: none;
+  /* Higher priority prevents local background shorthands from restoring the OS arrow. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b819e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 7px center !important;
+  padding-inline-end: 24px !important;
+  color-scheme: inherit;
+}
+select option, select optgroup {
+  background-color: var(--surface, var(--v2-surface, var(--m-surface, var(--panel, Canvas))));
+  color: var(--text, var(--v2-text, var(--m-text, var(--ink, CanvasText))));
+}
+[dir='rtl'] select:not([multiple]):is(:not([size]), [size='0'], [size='1']) { background-position: left 7px center !important; }
+@media (forced-colors: active) {
+  select:not([multiple]):is(:not([size]), [size='0'], [size='1']) {
+    appearance: auto;
+    -webkit-appearance: auto;
+    background-image: none !important;
+  }
+}

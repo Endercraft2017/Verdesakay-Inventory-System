@@ -17,6 +17,7 @@ export type Permission =
   // Purchase orders, goods receipts and vendor bills (split from orders.*; inventory/order-access.ts).
   | 'purchasing.view' | 'purchasing.manage'
   | 'forms.view' | 'forms.upload' | 'forms.delete'
+  | 'forms.fill.inventory'
   | 'forms.manage.hr' | 'forms.manage.inventory' | 'forms.manage.admin' | 'forms.manage.accounting'
   | 'messages.view' | 'messages.send'
   | 'templates.view' | 'templates.edit' | 'templates.company'
@@ -103,6 +104,8 @@ export interface UserRow {
   full_name: string;
   email: string | null;
   password_hash: string;
+  password_change_required: number;
+  temporary_password_expires_at: string | null;
   role: Role;
   department_id: number | null;
   active: number; // 0 | 1
@@ -113,6 +116,8 @@ export interface UserRow {
 
 /** The authenticated user attached to requests (no password hash). */
 export interface AuthUser {
+  password_change_required?: number;
+  temporary_password_expires_at?: string | null;
   id: number;
   username: string;
   full_name: string;
@@ -254,6 +259,9 @@ export interface CreditNote {
 export interface LocationRow {
   id: number;
   name: string;
+  parent_id: number | null;
+  path?: string;
+  depth?: number;
   type: string;
   address: string | null;
   notes: string | null;
@@ -263,6 +271,9 @@ export interface LocationRow {
   /** Joined in by GET /api/locations. */
   total_units?: number;
   item_count?: number;
+  subtree_units?: number;
+  subtree_item_count?: number;
+  child_count?: number;
   /** Room in units of stock (location_capacities), null = no limit. */
   capacity?: number | null;
 }
@@ -288,6 +299,7 @@ export interface InventoryItem {
    *  when a job order posts to the GL (ACCOUNTING-SYSTEM-PLAN Phase 3b). 0 until set. */
   unit_cost: number;
   location: string | null;
+  preferred_location_id: number | null;
   notes: string | null;
   /** Raw JSON string in the DB row; parsed to an object in API responses. */
   attributes: string | Record<string, unknown> | null;
@@ -339,6 +351,14 @@ export interface JobOrder {
   qty_done: number;
   qty_scrapped: number;
   status: JobOrderStatus;
+  build_mode: 'assembled' | 'semi_built';
+  conversion_job_order_id?: number | null;
+  conversion_source_unit_id?: number | null;
+  conversion_source_batch_id?: number | null;
+  conversion_source_batch_number?: string | null;
+  conversion_source_cost?: number | null;
+  conversion_finishing_cost?: number | null;
+  conversion_cancel_reason?: string | null;
   source_location_id: number | null;
   output_location_id: number | null;
   qc_stages: number;
@@ -379,6 +399,8 @@ export interface JobOrder {
   created_by_name?: string | null;
   released_by_name?: string | null;
   approved_by_name?: string | null;
+  /** Content revision of the reviewed plan, excluding changing live stock. */
+  approval_revision?: string;
   warehouse_accepted_by_name?: string | null;
   prepared_by_name?: string | null;
   paused_by_name?: string | null;
@@ -395,6 +417,9 @@ export interface JobOrder {
    *  that stage's default, else null). */
   qc_checklist_qa?: { id: number; name: string; items: QcChecklistItem[] } | null;
   qc_checklist_qc?: { id: number; name: string; items: QcChecklistItem[] } | null;
+  /** JSON captured at release; null on legacy jobs. */
+  qc_checklist_qc_snapshot?: string | null;
+  qc_checklist_qa_snapshot?: string | null;
 }
 
 /** One configurable QA/QC checklist line. */
@@ -527,6 +552,9 @@ export interface Delivery {
   contact_phone: string | null;
   scheduled_date: string | null;
   assigned_to: number | null;
+  delivery_mode: 'own' | 'courier';
+  courier_name: string | null;
+  tracking_number: string | null;
   status: DeliveryStatus;
   notes: string | null;
   pod_recipient: string | null;
@@ -581,11 +609,14 @@ export type JobOrderUnitStatus =
    *  POST /job-orders/:id/products-in. Not sellable/reservable until it becomes 'in_stock'. */
   | 'passed'
   | 'in_stock' | 'failed' | 'scrapped' | 'sold' | 'rework'
+  | 'returned_rejected' | 'returned_rework' | 'returned_salvaged' | 'returned_disposed'
   /** Held by QA for review (final pass); decided by QA / production.qa_review — pass, rectify or fail. */
   | 'hold'
   /** Earmarked for a sale order by a warehouse release; still physical on-hand stock
    *  until the order reaches a confirmed status and `maybeFulfillSale` draws it down. */
-  | 'reserved';
+  | 'reserved'
+  /** Semi-built source after finishing intake; uninspected output cancelled and returned. */
+  | 'converted' | 'cancelled';
 
 /** What the inspector decided for a failed unit. `repair` sends it to rework; the
  *  others are terminal (the unit is counted as scrapped). */
@@ -597,11 +628,15 @@ export interface JobOrderUnit {
   product_item_id: number | null;
   identifier: string | null;
   status: JobOrderUnitStatus;
+  conversion_source_unit_id?: number | null;
+  received_unit_cost?: number | null;
   /** Number of inspection stages this unit has passed so far. */
   stage: number;
   location_id: number | null;
   /** Sales order that sold or relocated this unit (nullable). */
   order_id: number | null;
+  /** Commercial sale line that reserved/sold this unit. */
+  order_item_id: number | null;
   /** Production batch this unit belongs to (nullable — serialized units may be loose). */
   batch_id: number | null;
   /** Set when the unit was failed (see UnitDisposition). */
@@ -706,6 +741,7 @@ export interface RepairPartRequest {
   number: string;
   unit_id: number;
   job_order_id: number | null;
+  sales_return_id?: number | null;
   kind: RepairRequestKind;
   component_item_id: number | null;
   component_name: string;
@@ -881,6 +917,8 @@ export interface BugReport {
 export type OrderType = 'sale' | 'job' | 'purchase';
 
 export interface Order {
+  /** Edit token computed from stored header/lines; optional for legacy integrations. */
+  revision?: string;
   id: number;
   type: OrderType;
   number: string;
@@ -928,6 +966,7 @@ export interface Order {
   job_order_id?: number | null;
   job_order_number?: string | null;
   job_order_status?: string | null;
+  fulfillment_modes?: string | null;
   warehouse_accepted_by_name?: string | null;
   release_slip_id?: number | null;
   release_slip_number?: string | null;
@@ -938,6 +977,8 @@ export interface OrderItem {
   id: number;
   order_id: number;
   item_id: number | null;
+  fulfillment_mode: 'assembled' | 'semi_built' | 'ckd' | 'ckd_component';
+  parent_order_item_id: number | null;
   name: string;
   sku: string | null;
   description: string | null;
@@ -1155,6 +1196,8 @@ export interface DocTemplate {
   // (SCHEMA_VERSION 35) Continuous tiling — see the db.ts version-history comment. Only
   // meaningful when tile_continuous is truthy; otherwise copies_per_record alone is still
   // the repeat count, exactly as before these two fields existed.
+  grid_gap_x_mm: number;
+  grid_gap_y_mm: number;
   repeat_count: number;
   tile_continuous: number; // 0 | 1
   created_by: number | null;
@@ -1437,6 +1480,8 @@ export interface AttendancePeriod {
   created_by: number | null;
   created_at: string;
   employee_count?: number;
+  locked?: boolean;
+  warnings?: string[];
 }
 
 export interface AttendanceRecord {
@@ -1483,7 +1528,14 @@ export interface AttendanceRecord {
 export interface FieldDef {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'date' | 'select' | 'textarea' | 'checkbox' | 'employee';
+  type: 'text' | 'number' | 'date' | 'time' | 'select' | 'textarea' | 'checkbox' | 'employee' | 'reference' | 'system' | 'line_items' | 'calculated';
+  calculation?: {operator:'sum'|'multiply'|'subtract'|'percent';operands:string[]};
+  price_editable?:boolean;
+  format?: 'currency';
+  currency?: string;
+  source?: 'product' | 'customer' | 'employee' | 'sales_order' | 'supplier' | 'location' | 'account' | 'tax_code' | 'company' | 'user';
+  property?: string;
+  binding?: { field: string; property: string; editable: boolean };
   required: boolean;
   options: string[];  // only for type = 'select'
   default: string;
@@ -1498,8 +1550,16 @@ export interface FormAction {
     | 'email_employee'       // email the rendered notice via the company SMTP mailbox
     | 'notify_hr'            // message the employee's dept head, else hr.manage holders
     | 'create_followup_task' // add a task due on `due_field`
-    | 'apply_no_work';       // date_from/date_to/paid range feeds paid/unpaid no-work into payroll
-  run_on?: 'create' | 'approved';
+    | 'apply_no_work'
+    | 'create_sales_draft';       // date_from/date_to/paid range feeds paid/unpaid no-work into payroll
+  run_on?: 'create' | 'approved' | 'submitted';
+  customer_field?:string;
+  items_field?:string;
+  tax_field?:string;
+  total_field?:string;
+  date_field?:string;
+  currency?:string;
+  notes_field?:string;
   subject?: string;          // notify_employee / email_employee — templated
   body?: string;             // notify_employee — templated
   due_field?: string;        // create_followup_task — a date field key on the form
@@ -1508,6 +1568,12 @@ export interface FormAction {
 
 /** A custom form type created by an admin. */
 export interface FormDefinition {
+  entry_access?: string | {roles:string[];users:number[]};
+  access_revision?:number;
+  records_allowed?:boolean;
+  version?: number;
+  archived_at?: string | null;
+  archive_reason?: string | null;
   id: number;
   name: string;
   slug: string;
@@ -1525,6 +1591,8 @@ export interface FormDefinition {
 
 /** A submitted record for a custom form. */
 export interface FormRecord {
+  definition_version?: number;
+  revision?: number;
   id: number;
   form_def_id: number;
   number: string;

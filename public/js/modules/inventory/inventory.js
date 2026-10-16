@@ -58,7 +58,71 @@ async function loadLocations(force) {
 }
 function locationOptions(selected, list) {
   return (list || _locations).map((l) =>
-    `<option value="${l.id}" ${String(l.id) === String(selected) ? 'selected' : ''}>${UI.esc(l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('');
+    `<option value="${l.id}" ${String(l.id) === String(selected) ? 'selected' : ''}>${UI.esc(l.path || l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('');
+}
+
+/** New items start at a root. Each extra level is revealed only when requested.
+ * New child names are sent with the item so the server can save everything atomically. */
+function wireStartingLocationPicker(overlay) {
+  const host = overlay.querySelector('[data-start-location]');
+  if (!host) return () => null;
+  const roots = _locations.filter((l) => !l.parent_id);
+  const root = host.querySelector('[data-root-location]');
+  root.innerHTML = roots.map((l) => `<option value="${l.id}">${UI.esc(l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('');
+  const defaultLoc = _locations.find((l) => l.is_default);
+  let defaultRoot = defaultLoc;
+  while (defaultRoot?.parent_id) defaultRoot = _locations.find((l) => l.id === defaultRoot.parent_id);
+  if (defaultRoot) root.value = String(defaultRoot.id);
+  const levels = host.querySelector('[data-location-levels]');
+  const add = host.querySelector('[data-add-location-level]');
+  const selection = () => {
+    let locationId = Number(root.value) || null;
+    const newLevels = [];
+    let incomplete = false;
+    for (const row of levels.querySelectorAll('[data-location-row]')) {
+      const value = row.querySelector('select').value;
+      if (!value) break;
+      if (value === '__new__') {
+        const name = row.querySelector('input').value.trim();
+        if (!name) { incomplete = true; break; }
+        newLevels.push(name);
+      } else if (!newLevels.length) locationId = Number(value);
+    }
+    return { locationId, newLevels, incomplete };
+  };
+  const refresh = () => {
+    const depth = 1 + levels.querySelectorAll('select').length;
+    const last = [...levels.querySelectorAll('select')].at(-1);
+    add.style.display = depth >= 5 ? 'none' : '';
+    add.disabled = !root.value || !!(last && (!last.value || selection().incomplete));
+  };
+  root.onchange = () => { levels.innerHTML = ''; refresh(); };
+  add.onclick = () => {
+    const current = selection();
+    const children = current.newLevels.length ? [] : _locations.filter((l) => l.parent_id === current.locationId);
+    const level = 2 + levels.querySelectorAll('select').length;
+    const wrap = document.createElement('div');
+    wrap.className = 'form-field';
+    wrap.dataset.locationRow = '';
+    wrap.innerHTML = `<label>Level ${level} (optional)</label><select data-child-location>
+      <option value="">Use level ${level - 1}</option>
+      ${children.map((l) => `<option value="${l.id}">${UI.esc(l.name)}</option>`).join('')}
+      <option value="__new__">+ Create new sublocation…</option></select>
+      <input data-new-location maxlength="120" placeholder="Name for level ${level}" style="display:none;margin-top:8px" />`;
+    levels.appendChild(wrap);
+    const select = wrap.querySelector('select');
+    const name = wrap.querySelector('input');
+    select.onchange = () => {
+      while (wrap.nextElementSibling) wrap.nextElementSibling.remove();
+      name.style.display = select.value === '__new__' ? '' : 'none';
+      if (select.value === '__new__') name.focus();
+      refresh();
+    };
+    name.oninput = refresh;
+    refresh();
+  };
+  refresh();
+  return selection;
 }
 
 /** Current value of a field for an item (or its default for a new item). */
@@ -304,7 +368,7 @@ App.register('inventory', async (view, filter) => {
     const sel = view.querySelector('#inv-location');
     if (!sel) return;
     sel.innerHTML = '<option value="">— Location —</option>' +
-      _locations.map((l) => `<option value="${l.id}" ${String(l.id) === String(state.location_id) ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('');
+      _locations.map((l) => `<option value="${l.id}" ${String(l.id) === String(state.location_id) ? 'selected' : ''}>${UI.esc(l.path || l.name)}</option>`).join('');
   }
 
   async function loadCategories() {
@@ -448,8 +512,9 @@ App.register('inventory', async (view, filter) => {
       .lbl-bc svg{max-width:100%;max-height:100%}
       @media print{.lbl{border-color:#999}}
     </style></head><body><div class="sheet">${cells.join('')}</div>
-    <script nonce="${window.VDS_CSP_NONCE || ''}">window.onload=function(){window.print()}<\/script></body></html>`);
+    </body></html>`);
     w.document.close();
+    UI.printWhenLoaded(w);
     UI.toast(`${cells.length} label${cells.length === 1 ? '' : 's'} ready`);
     return true;
   }
@@ -463,6 +528,7 @@ App.register('inventory', async (view, filter) => {
     }
     UI.modal({
       title: 'Print barcode labels',
+      helpTopic: 'barcode-labels',
       size: 'lg',
       bodyHTML: `
         <p class="muted" style="margin-top:0">${printable.length} item${printable.length === 1 ? '' : 's'} in the current list have a code.${skipped ? ` ${skipped} without a SKU/barcode will be skipped.` : ''} Each label is a Code 128 barcode that this system's scanner reads back.</p>
@@ -601,7 +667,8 @@ App.register('inventory', async (view, filter) => {
     push('Department', it.department_name);
     push('Supplier', it.supplier_name);
     push('Unit', it.unit);
-    push('Location', it.location);
+    push('Preferred storage location', it.preferred_location_name);
+    push('Legacy location note', it.location);
     push('Currency', attrs.currency);
     push('Purchase price', attrs.purchase_price);
     push('Sale price', attrs.sale_price);
@@ -686,19 +753,33 @@ App.register('inventory', async (view, filter) => {
   async function itemModal(it, onCreated) {
     const cfg = await loadItemFormConfig();
     await loadSuppliers(true); // pick list must be current when the form renders
+    await loadLocations(true);
     const canCustomize = App.hasPermission('inventory.configure');
     const editing = !!(it && it.id);
     let imageState = null;
+    let startingLocation = () => null;
     const m = UI.modal({
       title: editing ? 'Edit item' : 'New item',
+      helpTopic: 'new-item',
       size: 'lg',
       headActionHTML: canCustomize ? `<button class="btn secondary small" id="item-option-btn">Option</button>` : '',
-      bodyHTML: `<div id="item-form-host">${renderItemFormBody(_itemFormConfig, it)}</div>`,
+      bodyHTML: `<div id="item-form-host">${renderItemFormBody(_itemFormConfig, it)}</div>${editing ? `
+        <div class="form-field" style="margin-top:14px"><label>Preferred storage location</label>
+          <select data-preferred-location><option value="">No preference</option>${locationOptions(it.preferred_location_id, _locations)}</select>
+          <p class="muted" style="font-size:12px">Changing the preference does not move existing stock. Use Transfer stock for that.</p></div>` : `
+        <div class="form-field" data-start-location style="margin-top:14px">
+          <label>Preferred / starting-stock location <span class="req">*</span></label>
+          <select data-root-location></select>
+          <div data-location-levels></div>
+          <button type="button" class="btn secondary small" data-add-location-level style="margin-top:8px">+ Add level</button>
+          <p class="muted" style="font-size:12px">Extra levels are optional. Choose an existing sublocation or create one here. Starting stock goes to the last selected level.</p>
+        </div>`}`,
       confirmText: editing ? 'Save changes' : 'Create item',
       onOpen: (overlay) => {
         wireItemFormTabs(overlay);
         wireItemComboboxes(overlay);
         imageState = wireItemImageField(overlay, it);
+        startingLocation = wireStartingLocationPicker(overlay);
         const opt = overlay.querySelector('#item-option-btn');
         if (opt) opt.addEventListener('click', () => openItemOptions(overlay, it));
       },
@@ -716,6 +797,13 @@ App.register('inventory', async (view, filter) => {
         }
         const { core, attributes } = collectItemForm(overlay, _itemFormConfig, it);
         const body = { ...core, attributes };
+        if (!editing) {
+          const choice = startingLocation();
+          if (!choice?.locationId) { showErr('Create a stock location before adding an item'); return false; }
+          if (choice.incomplete) { showErr('Enter a name for each new sublocation'); return false; }
+          body.location_id = choice.locationId;
+          body.new_location_levels = choice.newLevels;
+        } else body.preferred_location_id = Number(overlay.querySelector('[data-preferred-location]').value) || null;
         let id;
         if (editing) {
           delete body.quantity; // stock changes go through the adjust modal
@@ -836,7 +924,7 @@ App.register('inventory', async (view, filter) => {
     const it = items.find((x) => x.id == id);
     const breakdown = await API.get(`/inventory/${id}/stock`).catch(() => []);
     const rows = breakdown.map((b) => ({ id: b.location_id, name: b.location_name, is_default: b.is_default }));
-    const qtyAt = (locId) => (breakdown.find((b) => String(b.location_id) === String(locId)) || {}).quantity || 0;
+    const qtyAt = (locId, mode = 'assembled') => (breakdown.find((b) => String(b.location_id) === String(locId)) || {})[mode === 'semi_built' ? 'semi_built_quantity' : 'assembled_quantity'] || 0;
     const top = [...breakdown].filter((b) => b.quantity > 0).sort((a, b) => b.quantity - a.quantity)[0];
     const initial = (top || breakdown.find((b) => b.is_default) || breakdown[0] || {}).location_id;
 
@@ -849,6 +937,7 @@ App.register('inventory', async (view, filter) => {
           <div><label>Action</label><select data-f="dir">
             <option value="in">Stock IN (＋)</option><option value="out">Stock OUT (−)</option></select></div>
         </div>
+        <div><label>Build state</label><select data-f="mode"><option value="assembled">Fully built / standard</option><option value="semi_built">Semi-built</option></select></div>
         <div class="field-row">
           <div><label>Amount</label><input data-f="amount" type="number" min="1" value="1" /></div>
           <div><label>Reason / reference</label><input data-f="reason" placeholder="e.g. Purchase, Released to Dept" /></div>
@@ -857,18 +946,21 @@ App.register('inventory', async (view, filter) => {
       confirmText: 'Apply',
       onOpen: (overlay) => {
         const sel = overlay.querySelector('[data-f="loc"]');
+        const mode = overlay.querySelector('[data-f="mode"]');
         const at = overlay.querySelector('[data-at] strong');
-        sel.addEventListener('change', () => { at.textContent = qtyAt(sel.value); });
+        const refreshQty = () => { at.textContent = qtyAt(sel.value, mode.value); };
+        sel.addEventListener('change', refreshQty); mode.addEventListener('change', refreshQty);
       },
       onConfirm: async (overlay, showErr) => {
         const location_id = overlay.querySelector('[data-f="loc"]').value;
         const dir = overlay.querySelector('[data-f="dir"]').value;
         const amount = parseInt(overlay.querySelector('[data-f="amount"]').value, 10);
         const reason = overlay.querySelector('[data-f="reason"]').value;
+        const build_mode = overlay.querySelector('[data-f="mode"]').value;
         if (!location_id) { showErr('Pick a location'); return false; }
         if (!amount || amount <= 0) { showErr('Enter a positive amount'); return false; }
         const change = dir === 'out' ? -amount : amount;
-        const r = await API.post(`/inventory/${id}/adjust`, { change, reason, location_id });
+        const r = await API.post(`/inventory/${id}/adjust`, { change, reason, location_id, build_mode });
         UI.toast(`Stock updated — ${r.location_quantity} here, ${r.quantity} total`);
         load();
       },
@@ -880,7 +972,7 @@ App.register('inventory', async (view, filter) => {
     const breakdown = await API.get(`/inventory/${id}/stock`).catch(() => []);
     if (breakdown.length < 2) { UI.toast('Add a second location first (Inventory → Locations)', 'error'); return; }
     const rows = breakdown.map((b) => ({ id: b.location_id, name: b.location_name, is_default: b.is_default }));
-    const qtyAt = (locId) => (breakdown.find((b) => String(b.location_id) === String(locId)) || {}).quantity || 0;
+    const qtyAt = (locId, mode = 'assembled') => (breakdown.find((b) => String(b.location_id) === String(locId)) || {})[mode === 'semi_built' ? 'semi_built_quantity' : 'assembled_quantity'] || 0;
     const top = [...breakdown].filter((b) => b.quantity > 0).sort((a, b) => b.quantity - a.quantity)[0];
     const fromInit = (top || breakdown[0]).location_id;
     const toInit = (breakdown.find((b) => b.location_id !== fromInit) || {}).location_id;
@@ -894,6 +986,7 @@ App.register('inventory', async (view, filter) => {
           <div><label>To</label><select data-f="to">${locationOptions(toInit, rows)}</select>
             <p class="muted" data-toat style="margin:4px 0 0;font-size:12px">Currently: <strong>${qtyAt(toInit)}</strong></p></div>
         </div>
+        <div><label>Build state</label><select data-f="mode"><option value="assembled">Fully built / standard</option><option value="semi_built">Semi-built</option></select></div>
         <div class="field-row">
           <div><label>Amount</label><input data-f="amount" type="number" min="1" value="1" /></div>
           <div><label>Reason / reference</label><input data-f="reason" placeholder="e.g. Restock branch" /></div>
@@ -902,17 +995,19 @@ App.register('inventory', async (view, filter) => {
       onOpen: (overlay) => {
         const from = overlay.querySelector('[data-f="from"]');
         const to = overlay.querySelector('[data-f="to"]');
-        from.addEventListener('change', () => { overlay.querySelector('[data-fromat] strong').textContent = qtyAt(from.value); });
-        to.addEventListener('change', () => { overlay.querySelector('[data-toat] strong').textContent = qtyAt(to.value); });
+        const mode = overlay.querySelector('[data-f="mode"]');
+        const refreshQty = () => { overlay.querySelector('[data-fromat] strong').textContent = qtyAt(from.value, mode.value); overlay.querySelector('[data-toat] strong').textContent = qtyAt(to.value, mode.value); };
+        from.addEventListener('change', refreshQty); to.addEventListener('change', refreshQty); mode.addEventListener('change', refreshQty);
       },
       onConfirm: async (overlay, showErr) => {
         const from_location_id = overlay.querySelector('[data-f="from"]').value;
         const to_location_id = overlay.querySelector('[data-f="to"]').value;
         const amount = parseInt(overlay.querySelector('[data-f="amount"]').value, 10);
         const reason = overlay.querySelector('[data-f="reason"]').value;
+        const build_mode = overlay.querySelector('[data-f="mode"]').value;
         if (from_location_id === to_location_id) { showErr('Pick two different locations'); return false; }
         if (!amount || amount <= 0) { showErr('Enter a positive amount'); return false; }
-        const r = await API.post(`/inventory/${id}/transfer`, { from_location_id, to_location_id, amount, reason });
+        const r = await API.post(`/inventory/${id}/transfer`, { from_location_id, to_location_id, amount, reason, build_mode });
         UI.toast(`Transferred — ${r.from} left at source, ${r.to} now at destination`);
         load();
       },

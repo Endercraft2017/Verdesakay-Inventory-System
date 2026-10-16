@@ -6,7 +6,6 @@ App.register('repairs', async (view, filter) => {
   const STATUS = ['requested', 'accepted', 'rejected', 'cancelled', ''];
   const state = { status: (filter && filter.status) || 'requested' };
   let rows = [];
-  let locations = [];
 
   view.innerHTML = `
     <div class="topbar">
@@ -25,10 +24,7 @@ App.register('repairs', async (view, filter) => {
     tableEl.innerHTML = '<div class="empty">Loading…</div>';
     const p = new URLSearchParams();
     if (state.status) p.set('status', state.status);
-    [rows, locations] = await Promise.all([
-      API.get('/production/repairs?' + p.toString()),
-      API.get('/locations').catch(() => []),
-    ]);
+    rows = await API.get('/production/repairs?' + p.toString());
     render();
   }
 
@@ -50,7 +46,7 @@ App.register('repairs', async (view, filter) => {
         <tbody>${rows.map((r) => `
           <tr>
             <td class="mono">${UI.esc(r.number)}</td>
-            <td>${UI.esc(r.job_order_number || '—')}<div class="muted" style="font-size:11px">${UI.esc(r.product_name || '')}</div></td>
+            <td>${UI.esc(r.job_order_number || '—')}${r.sales_return_number ? `<div class="muted">Customer return ${UI.esc(r.sales_return_number)}</div>` : ''}<div class="muted" style="font-size:11px">${UI.esc(r.product_name || '')}</div></td>
             <td>#${r.unit_id}${r.unit_identifier ? `<div class="muted mono" style="font-size:11px">${UI.esc(r.unit_identifier)}</div>` : ''}</td>
             <td>${r.kind === 'replace' ? 'Replace' : 'Add'}${r.kind === 'replace' ? `<div class="muted" style="font-size:11px">${r.return_to_damage ? 'old → damage' : 'old discarded'}</div>` : ''}</td>
             <td>${UI.esc(r.component_name)}</td>
@@ -69,22 +65,38 @@ App.register('repairs', async (view, filter) => {
     tableEl.querySelectorAll('[data-reject]').forEach((b) => b.onclick = () => rejectModal(rows.find((x) => String(x.id) === b.dataset.reject)));
   }
 
-  function acceptModal(r) {
+  async function acceptModal(r) {
     if (!r) return;
-    const locOpts = locations.map((l) => `<option value="${l.id}" ${l.is_default ? 'selected' : ''}>${UI.esc(l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('');
+    let context;
+    try { context = await API.get('/production/repairs/' + r.id + '/context'); }
+    catch (e) { UI.toast(e.message || 'Unable to load the parts request', 'error'); return; }
+    const sources = (context.sources || []).filter((source) => source.approved && source.free >= r.quantity);
+    if (!sources.length) { UI.toast('No approved source has enough free stock for this request', 'error'); return; }
+    const locOpts = sources.map((source) => `<option value="${source.id}">${UI.esc(source.name)} · ${source.free} free</option>`).join('');
     UI.modal({
       title: `Accept ${r.number}`,
       bodyHTML: `
         <p class="muted" style="margin-top:0">Issue <strong>${r.quantity} × ${UI.esc(r.component_name)}</strong> for unit #${r.unit_id}.${r.kind === 'replace' && r.return_to_damage ? ' The removed part is booked into its damage record.' : ''}</p>
-        <div class="form-field"><div class="field-label"><label>Pull from</label></div>
-          <select data-f="loc"><option value="">Job order's source location</option>${locOpts}</select></div>
+        <div class="form-field"><div class="field-label"><label>Pull from <span class="req">*</span></label></div>
+          <select data-f="loc">${locOpts}</select></div>
+        <div class="form-field"><div class="field-label"><label>Scan or enter part SKU / item ID <span class="req">*</span></label></div>
+          <input data-f="scan" autocomplete="off" placeholder="${UI.esc(context.item?.sku || String(r.component_item_id || ''))}" />
+          <div class="muted">Match ${UI.esc(context.item?.sku || 'item #' + r.component_item_id)} before issuing.</div></div>
+        <div class="form-field"><div class="field-label"><label>Quantity counted <span class="req">*</span></label></div>
+          <input data-f="count" type="number" min="1" step="1" placeholder="Requested: ${r.quantity}" /></div>
         <div class="form-field"><div class="field-label"><label>Remarks</label></div>
           <input data-f="remarks" placeholder="e.g. handed 3 pcs to the line" /></div>`,
       confirmText: 'Accept & issue',
-      onConfirm: async (ov) => {
+      onConfirm: async (ov, showErr) => {
         const loc = ov.querySelector('[data-f="loc"]').value;
+        const scannedCode = ov.querySelector('[data-f="scan"]').value.trim();
+        const counted = Number(ov.querySelector('[data-f="count"]').value);
+        if (!scannedCode) { showErr('Scan or enter the part SKU / item ID'); return false; }
+        if (!Number.isInteger(counted) || counted !== r.quantity) { showErr(`Count exactly ${r.quantity} or revise the request`); return false; }
         await API.post('/production/repairs/' + r.id + '/accept', {
-          from_location_id: loc ? Number(loc) : null,
+          from_location_id: Number(loc),
+          scanned_code: scannedCode,
+          picked_quantity: counted,
           warehouse_remarks: ov.querySelector('[data-f="remarks"]').value.trim() || null,
         });
         UI.toast('Part issued');

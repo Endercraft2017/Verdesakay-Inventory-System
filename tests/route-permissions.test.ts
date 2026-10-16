@@ -13,14 +13,19 @@ import { describe, it, expect } from 'vitest';
 
 /** Whole files whose every route is the caller's own data or checks inside its handlers. */
 const FILE_REASONS: Record<string, string> = {
-  'src/core/mfa.routes.ts': 'own MFA only, password/factor verified, sessions revoked after changes',
+  'src/core/data-forms/sources.routes.ts': 'authenticated catalog; source reads enforce their module and permission in sourceRows',
+  'src/core/data-forms/preferences.routes.ts': "the caller's own preferences; every per-form write checks record access",
+  'src/core/doc-studio.routes.ts': 'document handlers resolve template or form-scope edit permissions; drafts are user-owned; company library is shared to authenticated users and writes require templates.company',
   'src/core/me.routes.ts': "the caller's own profile, payslips, requests and schedule; approvals check the approver inside",
   'src/core/notifications.routes.ts': "the caller's own notification history",
   'src/core/personal.routes.ts': "the caller's own notes, tasks and bookmarks",
   'src/core/push.routes.ts': "the caller's own push subscriptions",
   'src/core/auth.routes.ts': 'sign-in / sign-out / own sessions, profile and password',
   'src/core/attachments.routes.ts': 'checks the photo kind\'s read / write permissions inside (READ_PERMS / WRITE_PERMS)',
-  'src/core/form-builder.routes.ts': 'checks forms.manage.<scope> / payroll.view|manage per form inside',
+  'src/core/data-forms/definitions.routes.ts': 'checks forms.manage.<scope> / payroll.view|manage per form inside',
+  'src/core/data-forms/records.routes.ts': 'checks forms.manage.<scope> / payroll.view|manage and request ownership per record inside',
+  'src/core/data-forms/variables.routes.ts': 'shared variable reads require authentication; writes check forms.manage permissions',
+  'src/core/identified-reports.routes.ts': 'each list is scoped to reporter, recipient and assignee; detail, evidence and mutations check case membership and handler authority inside',
 };
 /** Single routes: `file:method path` → why it has no gate in its definition. */
 const ROUTE_REASONS: Record<string, string> = {
@@ -36,7 +41,11 @@ const ROUTE_REASONS: Record<string, string> = {
   'src/modules/ai/ai.routes.ts:get /messages': "the caller's own assistant chat",
   'src/modules/ai/ai.routes.ts:delete /messages': "the caller's own assistant chat",
   'src/modules/ai/ai.routes.ts:post /chat': 'each tool checks its own permission (ai-tools.ts TOOL_PERMISSION)',
-  'src/modules/hr/clock.routes.ts:post /punch': 'Clock is for every employee (their own punch)',
+  'src/modules/ai/ai.routes.ts:post /actions/:id/confirm': "the caller's own prepared action; executeTool re-checks the tool's permission",
+  'src/modules/ai/ai.routes.ts:post /actions/:id/cancel': "the caller's own prepared action",
+  'src/modules/hr/clock.routes.ts:post /punch': 'retired one-step phone punch: always 410, writes nothing',
+  'src/modules/hr/clock.routes.ts:post /punch/scan': 'Clock is for every employee (their own punch)',
+  'src/modules/hr/clock.routes.ts:post /punch/selfie': 'Clock is for every employee (their own punch, their own scan)',
   'src/modules/hr/clock.routes.ts:get /my-status': "the caller's own clock status",
   'src/modules/inventory/orders.routes.ts:get /': 'orders.view / purchasing.view per order type, checked inside (order-access.ts)',
   'src/modules/inventory/orders.routes.ts:get /:id': 'orders.view / purchasing.view per order type, checked inside (order-access.ts)',

@@ -53,66 +53,88 @@ App.register('confidential-reports', async (view) => {
     let r;
     try { r = await API.get(`/confidential-reports/${id}`); }
     catch (e) { UI.toast(e.message, 'error'); return; }
-    // Photo thumbnails (metadata stripped on upload); filled from blob URLs once the modal opens.
-    const photoStrip = (list) => (list && list.length
-      ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${list.map((a) => `
-          <button type="button" class="cr-photo" data-url="${UI.esc(a.url)}" title="Open photo"
-            style="width:84px;height:84px;padding:0;border:1px solid var(--border-strong);border-radius:8px;overflow:hidden;background:var(--surface-2);cursor:pointer">
-            <img alt="Report photo" style="width:100%;height:100%;object-fit:cover;display:block" /></button>`).join('')}</div>`
-      : '');
+    const statusLabel = (value) => value[0].toUpperCase() + value.slice(1);
+    const statusHelp = {
+      new: 'Received and waiting for review.', triaged: 'Reviewed and ready for follow-up.',
+      investigating: 'The concern is being looked into.', resolved: 'The concern has been addressed. The reporter can still reply.',
+      closed: 'The case is closed. The reporter can read replies but cannot send new messages.',
+    };
+    const photoStrip = (list) => list && list.length
+      ? `<div class="cr-photos" aria-label="Attached photos">${list.map((a, index) => `<button type="button" class="cr-photo" data-url="${UI.esc(a.url)}" aria-label="Open attached photo ${index + 1}"><span>Loading photo…</span><img alt="Attached report photo ${index + 1}" hidden /></button>`).join('')}</div>` : '';
     const thread = r.messages.length
-      ? r.messages.map((m) => `
-          <div style="padding:10px 12px;border:1px solid var(--border-strong);border-radius:10px;margin-bottom:8px;${m.author === 'reporter' ? 'background:var(--surface-2)' : ''}">
-            <div class="muted" style="font-size:12px;margin-bottom:4px">${m.author === 'reporter' ? 'Reporter' : UI.esc(m.handler_name || 'Case handler')} · ${UI.esc(m.created_on)}</div>
-            <div style="white-space:pre-wrap">${UI.esc(m.body)}</div>
-            ${photoStrip(m.attachments)}
-          </div>`).join('')
-      : '<p class="muted">No messages yet. The reporter sees replies when they check with their access code.</p>';
+      ? r.messages.map((entry) => `<article class="cr-message ${entry.author === 'reporter' ? 'from-reporter' : 'from-handler'}">
+          <div class="cr-message-meta"><strong>${entry.author === 'reporter' ? 'Anonymous reporter' : UI.esc(entry.handler_name || 'Case handler')}</strong><span>${UI.esc(entry.created_on)}</span></div>
+          <div class="cr-text">${UI.esc(entry.body)}</div>${photoStrip(entry.attachments)}</article>`).join('')
+      : '<p class="cr-empty">No replies yet. Send a message below to start the conversation.</p>';
+    const ownedUrls = [];
     const m = UI.modal({
-      title: `${r.number} — ${r.subject || r.category}`,
-      size: 'lg',
-      cancelText: 'Close',
-      bodyHTML: `
-        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px" class="muted">
-          <span>Category: <b>${UI.esc(r.category)}</b></span>
-          <span>Incident: <b>${UI.esc([r.incident_date, r.location].filter(Boolean).join(' · ') || 'not given')}</b></span>
-          <span>Filed ${UI.esc(r.created_on)} · updated ${UI.esc(r.updated_on)}</span>
-        </div>
-        <div style="white-space:pre-wrap;padding:12px;border:1px solid var(--border-strong);border-radius:10px;margin-bottom:16px">${UI.esc(r.description)}${photoStrip(r.attachments)}</div>
-        <label>Status</label>
-        <div style="display:flex;gap:8px;margin-bottom:16px">
-          <select id="cr-case-status">${STATUSES.map((s) => `<option value="${s}"${s === r.status ? ' selected' : ''}>${s}</option>`).join('')}</select>
-          <button type="button" class="btn secondary small" id="cr-save-status">Update status</button>
-        </div>
-        <h4 style="margin:0 0 8px">Conversation</h4>${thread}
-        ${r.status === 'closed' ? '<p class="muted">Closed — the reporter can no longer add messages.</p>' : ''}
-        <label style="margin-top:12px">Reply to reporter</label>
-        <textarea id="cr-reply" style="min-height:80px" maxlength="3000" placeholder="The reporter sees this as “Case handler”"></textarea>`,
-      headActionHTML: '<button type="button" class="btn small" id="cr-send">Send reply</button>',
+      title: r.subject || r.category,
+      size: 'lg', cancelText: 'Close',
+      bodyHTML: `<div class="cr-case">
+        <div class="cr-case-summary"><span class="cr-reference">${UI.esc(r.number)}</span><span id="cr-current-status">${badge(r.status)}</span><span class="cr-privacy">Anonymous · reporter identity is not stored</span></div>
+        <section class="cr-section" aria-labelledby="cr-report-heading">
+          <h4 id="cr-report-heading">Report details</h4>
+          <dl class="cr-details"><div><dt>Category</dt><dd>${UI.esc(r.category)}</dd></div><div><dt>Incident date</dt><dd>${UI.esc(r.incident_date || 'Not provided')}</dd></div><div><dt>Location</dt><dd>${UI.esc(r.location || 'Not provided')}</dd></div><div><dt>Filed</dt><dd>${UI.esc(r.created_on)}</dd></div></dl>
+          <div class="cr-description cr-text">${UI.esc(r.description)}</div>${photoStrip(r.attachments)}
+        </section>
+        <section class="cr-section cr-status-section" aria-labelledby="cr-status-heading">
+          <div><h4 id="cr-status-heading">Case status</h4><p id="cr-status-help" class="muted">${UI.esc(statusHelp[r.status] || '')}</p></div>
+          <div class="cr-status-controls"><label class="sr-only" for="cr-case-status">Case status</label><select id="cr-case-status" aria-describedby="cr-status-help">${STATUSES.map((value) => `<option value="${value}"${value === r.status ? ' selected' : ''}>${statusLabel(value)}</option>`).join('')}</select><button type="button" class="btn secondary small" id="cr-save-status" disabled>Save status</button></div>
+          <p class="cr-feedback" id="cr-status-feedback" role="status" aria-live="polite"></p>
+        </section>
+        <section class="cr-section" aria-labelledby="cr-conversation-heading"><h4 id="cr-conversation-heading">Conversation <span class="muted">(${r.messages.length})</span></h4><p class="cr-section-hint muted">The reporter sees replies when they check their report using their access code.</p><div class="cr-conversation">${thread}</div></section>
+        <section class="cr-reply-section" aria-labelledby="cr-reply-heading"><h4 id="cr-reply-heading">Reply to reporter</h4><p class="muted cr-section-hint">Your reply appears as “Case handler” to protect your identity.</p>
+          <label class="sr-only" for="cr-reply">Reply to reporter</label><textarea id="cr-reply" maxlength="3000" placeholder="Write a helpful reply or ask for more details…" aria-describedby="cr-reply-count cr-reply-note"></textarea>
+          <p id="cr-reply-note" class="cr-section-hint muted"${r.status === 'closed' ? '' : ' hidden'}>This case is closed. Reopen it if you need a response from the reporter.</p>
+          <div class="cr-reply-actions"><span id="cr-reply-count" class="muted">0 / 3,000</span><button type="button" class="btn" id="cr-send" disabled>Send reply</button></div><p id="cr-reply-feedback" class="cr-feedback" role="alert"></p>
+        </section>
+      </div>`,
+      onClose: () => ownedUrls.forEach((url) => URL.revokeObjectURL(url)),
       onOpen: (ov) => {
-        ov.querySelectorAll('.cr-photo').forEach((b) => {
-          API.blobUrl(b.dataset.url).then((u) => {
-            b.querySelector('img').src = u;
-            b.onclick = () => window.open(u, '_blank', 'noopener');
-          }).catch(() => { b.title = 'Photo could not be loaded'; });
+        ov.querySelector('.modal').classList.add('cr-case-modal');
+        const reply = ov.querySelector('#cr-reply');
+        const send = ov.querySelector('#cr-send');
+        const select = ov.querySelector('#cr-case-status');
+        const saveStatus = ov.querySelector('#cr-save-status');
+        let busy = false;
+        const updateControls = () => { send.disabled = busy || !reply.value.trim(); saveStatus.disabled = busy || select.value === r.status; select.disabled = busy; reply.disabled = busy; };
+        reply.addEventListener('input', () => { ov.__markDirty(); ov.querySelector('#cr-reply-count').textContent = `${reply.value.length.toLocaleString()} / 3,000`; updateControls(); });
+        select.addEventListener('change', () => { ov.querySelector('#cr-status-help').textContent = statusHelp[select.value]; ov.querySelector('#cr-status-feedback').textContent = ''; updateControls(); });
+        ov.querySelectorAll('.cr-photo').forEach((button) => {
+          API.blobUrl(button.dataset.url).then((url) => {
+            if (!ov.isConnected) { URL.revokeObjectURL(url); return; }
+            ownedUrls.push(url);
+            const image = button.querySelector('img');
+            image.onload = () => { image.hidden = false; button.querySelector('span').hidden = true; };
+            image.onerror = () => { button.querySelector('span').textContent = 'Photo unavailable'; button.disabled = true; };
+            image.src = url;
+            button.onclick = () => PhotoViewer.open(url, 'Report photo');
+          }).catch(() => { if (ov.isConnected) { button.querySelector('span').textContent = 'Photo unavailable'; button.disabled = true; } });
         });
-        ov.querySelector('#cr-save-status').onclick = async (e) => {
-          e.target.disabled = true;
+        saveStatus.onclick = async () => {
+          const nextStatus = select.value;
+          busy = true; ov.__setSaving(true); updateControls(); saveStatus.textContent = 'Saving…';
           try {
-            await API.post(`/confidential-reports/${id}/status`, { status: ov.querySelector('#cr-case-status').value });
-            UI.toast('Status updated', 'success');
-            m.close(); load(); openCase(id);
-          } catch (err) { UI.toast(err.message, 'error'); e.target.disabled = false; }
+            await API.post(`/confidential-reports/${id}/status`, { status: nextStatus });
+            r.status = nextStatus;
+            ov.querySelector('#cr-current-status').innerHTML = badge(r.status);
+            ov.querySelector('#cr-status-feedback').textContent = 'Status saved';
+            ov.querySelector('#cr-reply-note').hidden = r.status !== 'closed';
+            load();
+          } catch (error) { ov.querySelector('#cr-status-feedback').textContent = error.message || 'Could not save status. Try again.'; }
+          finally { busy = false; ov.__setSaving(false); saveStatus.textContent = 'Save status'; updateControls(); }
         };
-        ov.querySelector('#cr-send').onclick = async (e) => {
-          const text = ov.querySelector('#cr-reply').value.trim();
-          if (!text) { UI.toast('Write a reply first', 'error'); return; }
-          e.target.disabled = true;
+        send.onclick = async () => {
+          const text = reply.value.trim();
+          if (!text || busy) return;
+          busy = true; ov.__setSaving(true); updateControls(); send.textContent = 'Sending…';
+          ov.querySelector('#cr-reply-feedback').textContent = '';
           try {
             await API.post(`/confidential-reports/${id}/reply`, { body: text });
             UI.toast('Reply sent', 'success');
             m.close(); load(); openCase(id);
-          } catch (err) { UI.toast(err.message, 'error'); e.target.disabled = false; }
+          } catch (error) { ov.querySelector('#cr-reply-feedback').textContent = error.message || 'Could not send reply. Your draft is still here.'; }
+          finally { busy = false; ov.__setSaving(false); send.textContent = 'Send reply'; updateControls(); }
         };
       },
     });

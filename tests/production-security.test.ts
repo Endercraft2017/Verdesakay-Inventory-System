@@ -77,7 +77,7 @@ describe('production security regression', () => {
       const { createApp } = await import('../src/app');
       const supertest = (await import('supertest')).default;
       const api = supertest(createApp());
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 10; i++) {
         expect((await api.post('/api/auth/reset-password').send({ token: 'invalid-token-' + i, new_password: 'secret123' })).status).toBe(400);
       }
       expect((await api.post('/api/auth/reset-password').send({ token: 'invalid-token-last', new_password: 'secret123' })).status).toBe(429);
@@ -85,14 +85,16 @@ describe('production security regression', () => {
   });
 });
 
-it('classifies ZAP metadata alert as the SPA fallback, not a metadata proxy', async () => {
-  const root = await ctx.api.get('/');
+it('rejects unknown metadata paths and protects public policy responses', async () => {
   const probe = await ctx.api.get('/metadata/instance?password=ZAP&username=ZAP').set('Host', '169.254.169.254');
-  expect(probe.status).toBe(200);
-  expect(probe.type).toBe('text/html');
-  const normalize = (html: string) => html.replace(/nonce="[^"]+"/g, 'nonce="NONCE"').replace(/window.VDS_CSP_NONCE="[^"]+"/g, 'window.VDS_CSP_NONCE="NONCE"');
-  expect(normalize(probe.text)).toBe(normalize(root.text));
+  expect(probe.status).toBe(404);
+  expect(probe.text).toContain('Page not found');
   expect(probe.text).not.toMatch(/AccessKeyId|SecretAccessKey|instanceId|compute.*subscriptionId/);
+  const policy = await ctx.api.get('/policies');
+  expect(policy.status).toBe(200);
+  expect(policy.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+  expect(policy.headers['x-frame-options']).toBe('DENY');
+  expect(policy.headers['x-content-type-options']).toBe('nosniff');
 });
 
 it('refuses a fresh production default password and never prints a configured bootstrap password', async () => {

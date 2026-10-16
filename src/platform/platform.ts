@@ -10,12 +10,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import bcrypt from 'bcryptjs';
-import { DEFAULT_TENANT } from '../shared/db';
+import { DEFAULT_TENANT, hashLegacySessionTokens } from '../shared/db';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
 
 export const PLATFORM_DB_PATH = process.env.PLATFORM_DB_PATH || path.join(ROOT, 'db', 'platform.db');
-/** Root domain for tenant subdomains, e.g. `verdesakay.app`. Empty ⇒ single-tenant. */
+/** Root domain for tenant subdomains, e.g. `app.afkcube.com`. Empty ⇒ single-tenant. */
 export const APP_DOMAIN = (process.env.APP_DOMAIN || '').toLowerCase().trim();
 /** Customer entry URL, shared by provisioning responses and the owner console. */
 export function tenantPublicUrl(slug: string): string {
@@ -36,12 +36,12 @@ export function platformHost(): string {
 
 /** Sub-domains that can never be a tenant slug. */
 export const RESERVED_SLUGS = new Set([
-  'www', 'app', 'api', 'admin', 'static', 'assets', 'cdn', 'img', 'files',
+  'www', 'app', 'policies', 'api', 'admin', 'static', 'assets', 'cdn', 'img', 'files',
   'mail', 'smtp', 'imap', 'ftp', 'ns1', 'ns2',
   'platform', '_platform', 'default', 'localhost', 'test', 'tests', 'staging',
   'stage', 'dev', 'demo', 'status', 'health', 'help', 'support', 'docs', 'blog',
-  'signup', 'login', 'auth', 'billing', 'account',
-  'ws', 'm', 'mobile', 'js', 'css', 'images', 'icons', 'fonts', 'vendor', 'policies',
+  'signup', 'login', 'auth', 'billing', 'account', 'contact',
+  'site', 'ws', 'm', 'mobile', 'js', 'css', 'images', 'icons', 'fonts', 'vendor',
 ]);
 
 export type TenantStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'purged';
@@ -49,6 +49,7 @@ export type TenantStatus = 'trial' | 'active' | 'past_due' | 'suspended' | 'purg
 export interface TenantRow {
   id: number;
   slug: string;
+  company_id: string;
   name: string;
   status: TenantStatus;
   plan: string;
@@ -61,6 +62,10 @@ export interface TenantRow {
   photo_retention_days: number | null;
   photo_max_mb: number | null;
   subscription: string | null;
+  is_sandbox: number;
+  /** 1 = signed up on the public website and not yet paid: everything but sign-in and Billing is
+   *  locked (src/app.ts) until an operator confirms the first payment (src/platform/billing.ts). */
+  awaiting_payment: number;
   notes: string | null;
   created_at: string;
 }
@@ -106,14 +111,55 @@ function pdb(): DatabaseSync {
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS platform_durable_files (
+      slug       TEXT NOT NULL,
+      name       TEXT NOT NULL,
+      data       BLOB NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      PRIMARY KEY (slug, name)
+    );
   `);
   ensureColumn(d, 'tenants', 'subscription', 'TEXT');
+  ensureColumn(d, 'tenants', 'is_sandbox', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(d, 'tenants', 'modules', 'TEXT'); // added after the initial control-plane schema
   ensureColumn(d, 'tenants', 'photo_retention_days', 'INTEGER');
   ensureColumn(d, 'tenants', 'photo_max_mb', 'INTEGER');
+  ensureColumn(d, 'tenants', 'awaiting_payment', 'INTEGER NOT NULL DEFAULT 0');
+  ensureCompanyIds(d);
   _db = d;
+  hashLegacySessionTokens(d, 'platform_sessions'); // stored as digests, like tenant sessions
   seedPlatformUserFromEnv();
   return d;
+}
+
+/** Human-facing login ID. Allocation is permanent, including after rename or purge. */
+function allocateCompanyId(d: DatabaseSync, name: string, slug: string): string {
+  const letters = name.normalize('NFKD').toUpperCase().replace(/[^A-Z]/g, '')
+    || slug.toUpperCase().replace(/[^A-Z]/g, '') || 'XX';
+  const pair = letters[0]! + letters.at(-1)!;
+  d.prepare('INSERT OR IGNORE INTO company_id_sequences (pair, next_number) VALUES (?, 0)').run(pair);
+  const { next_number: number } = d.prepare('SELECT next_number FROM company_id_sequences WHERE pair = ?').get(pair) as { next_number: number };
+  if (number > 9999) throw new Error(`Company ID range exhausted for ${pair}. Contact the platform administrator.`);
+  d.prepare('UPDATE company_id_sequences SET next_number = next_number + 1 WHERE pair = ?').run(pair);
+  return `${pair[0]}${String(number).padStart(4, '0')}${pair[1]}`;
+}
+
+function ensureCompanyIds(d: DatabaseSync): void {
+  d.exec('BEGIN IMMEDIATE');
+  try {
+    ensureColumn(d, 'tenants', 'company_id', 'TEXT');
+    d.exec(`CREATE UNIQUE INDEX IF NOT EXISTS tenants_company_id ON tenants(company_id COLLATE NOCASE);
+      CREATE TABLE IF NOT EXISTS company_id_sequences (pair TEXT PRIMARY KEY, next_number INTEGER NOT NULL);`);
+    // Oldest catalog entry gets the first number; existing IDs are never reassigned.
+    const rows = d.prepare('SELECT id, name, slug FROM tenants WHERE company_id IS NULL ORDER BY id').all() as unknown as Array<{ id: number; name: string; slug: string }>;
+    for (const row of rows) d.prepare('UPDATE tenants SET company_id = ? WHERE id = ?').run(allocateCompanyId(d, row.name, row.slug), row.id);
+    d.exec('COMMIT');
+  } catch (error) { d.exec('ROLLBACK'); throw error; }
+}
+
+export function getTenantByCompanyId(value: unknown): TenantRow | null {
+  if (typeof value !== 'string' || !/^[A-Z][0-9]{4}[A-Z]$/i.test(value.trim())) return null;
+  return (pdb().prepare('SELECT * FROM tenants WHERE company_id = ? COLLATE NOCASE').get(value.trim()) as unknown as TenantRow | undefined) ?? null;
 }
 
 /** The control-plane connection — for src/platform-users.ts. Never a tenant DB. */
@@ -122,20 +168,23 @@ export function platformDb(): DatabaseSync {
 }
 
 /** First-run bootstrap: if there are no operators yet and PLATFORM_ADMIN_USERNAME /
- *  PLATFORM_ADMIN_PASSWORD are set, create one. Also lets you reset the password by
- *  restarting with those vars set (it upserts). Safe to call repeatedly. */
+ *  PLATFORM_ADMIN_PASSWORD are set, create one. An existing operator's password (changed in
+ *  the console) is left alone, unless PLATFORM_ADMIN_RESET=true also asks to reset it, which
+ *  also ends their sessions — the recovery path for a forgotten password. Safe to call repeatedly. */
 function seedPlatformUserFromEnv(): void {
   const u = (process.env.PLATFORM_ADMIN_USERNAME || '').toLowerCase().trim();
   const p = process.env.PLATFORM_ADMIN_PASSWORD || '';
   if (!u || p.length < 6) return;
   const count = (_db!.prepare('SELECT COUNT(*) AS c FROM platform_users').get() as { c: number }).c;
-  const exists = _db!.prepare('SELECT 1 FROM platform_users WHERE username = ?').get(u);
-  if (count > 0 && !exists) return; // don't silently add a second operator once set up
+  const existing = _db!.prepare('SELECT id FROM platform_users WHERE username = ?').get(u) as { id: number } | undefined;
+  if (count > 0 && !existing) return; // don't silently add a second operator once set up
+  if (existing && process.env.PLATFORM_ADMIN_RESET !== 'true') return;
   const hash = bcrypt.hashSync(p, 10);
   _db!.prepare(
     `INSERT INTO platform_users (username, password_hash, full_name) VALUES (?, ?, ?)
      ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash`
   ).run(u, hash, process.env.PLATFORM_ADMIN_NAME || 'Owner');
+  if (existing) _db!.prepare('DELETE FROM platform_sessions WHERE user_id = ?').run(existing.id);
 }
 
 /** Add a column to a platform.db table if it isn't there yet (control-plane migrations
@@ -175,14 +224,19 @@ export function retiredDefaultTenant(): string | null {
 }
 
 export function createTenantRow(input: {
-  slug: string; name: string; plan?: string; status?: TenantStatus; trial_ends_at?: string | null;
+  slug: string; name: string; plan?: string; status?: TenantStatus; trial_ends_at?: string | null; is_sandbox?: boolean;
 }): TenantRow {
-  const info = pdb().prepare(
-    `INSERT INTO tenants (slug, name, plan, status, trial_ends_at) VALUES (?, ?, ?, ?, ?)`
-  ).run(
-    input.slug, input.name, input.plan ?? 'starter', input.status ?? 'active', input.trial_ends_at ?? null
-  );
-  return pdb().prepare('SELECT * FROM tenants WHERE id = ?').get(info.lastInsertRowid) as unknown as TenantRow;
+  const d = pdb();
+  d.exec('SAVEPOINT create_tenant_row');
+  try {
+    const companyId = allocateCompanyId(d, input.name, input.slug);
+    const info = d.prepare(
+      `INSERT INTO tenants (slug, name, company_id, plan, status, trial_ends_at, is_sandbox) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(input.slug, input.name, companyId, input.plan ?? 'starter', input.status ?? 'active', input.trial_ends_at ?? null, input.is_sandbox ? 1 : 0);
+    const tenant = d.prepare('SELECT * FROM tenants WHERE id = ?').get(info.lastInsertRowid) as unknown as TenantRow;
+    d.exec('RELEASE create_tenant_row');
+    return tenant;
+  } catch (error) { d.exec('ROLLBACK TO create_tenant_row'); d.exec('RELEASE create_tenant_row'); throw error; }
 }
 
 export function setTenantStatus(slug: string, status: TenantStatus): boolean {
@@ -192,6 +246,11 @@ export function setTenantStatus(slug: string, status: TenantStatus): boolean {
 export function setTenantPlan(slug: string, plan: string): boolean {
   if (getTenant(slug)?.subscription) throw new Error('Use owner subscription settings to change the bundle.');
   return pdb().prepare('UPDATE tenants SET plan = ? WHERE slug = ?').run(plan, slug).changes > 0;
+}
+
+/** Lock (true) or open (false) a self-signed-up workspace pending its first payment. */
+export function setAwaitingPayment(slug: string, awaiting: boolean): boolean {
+  return pdb().prepare('UPDATE tenants SET awaiting_payment = ? WHERE slug = ?').run(awaiting ? 1 : 0, slug).changes > 0;
 }
 
 export function setTenantName(slug: string, name: string): boolean {
@@ -264,6 +323,9 @@ export function resolveTenantSlug(
   const h = String(host || '').toLowerCase().split(':')[0]!.trim();
   if (!h || h === 'localhost' || h === '[::1]' || IPV4.test(h)) return DEFAULT_TENANT;
 
+  // A dedicated console hostname is control-plane traffic, even when its first
+  // label is a valid (but unregistered) tenant slug such as 'console'.
+  if (PLATFORM_CONSOLE && h === platformHost()) return DEFAULT_TENANT;
   const label = h.split('.')[0]!;
   if (APP_DOMAIN) {
     if (h === APP_DOMAIN || h === `www.${APP_DOMAIN}`) return DEFAULT_TENANT;

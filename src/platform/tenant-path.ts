@@ -1,7 +1,7 @@
 /** Optional path tenancy on one explicit host. Subdomain/self-hosted routing is unchanged. */
 import { isValidSlug } from './platform';
 
-const SHARED_PATHS = new Set(['api', 'ws', 'm', 'mobile', 'js', 'css', 'images', 'icons', 'fonts', 'vendor', 'policies', '_platform']);
+const SHARED_PATHS = new Set(['site', 'policies', 'api', 'ws', 'm', 'mobile', 'js', 'css', 'images', 'icons', 'fonts', 'vendor', '_platform']);
 
 export function tenantPath(host: string | undefined, url: string): { slug: string; base: string; url: string } | null {
   const configured = (process.env.TENANT_PATH_HOST || '').toLowerCase().trim();

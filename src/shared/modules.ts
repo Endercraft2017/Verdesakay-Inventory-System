@@ -41,6 +41,7 @@ export type ModuleName = typeof MODULES[number];
 export const MODULE_DEPS: Partial<Record<ModuleName, ModuleName[]>> = {
   manufacturing: ['inventory'],
   purchasing: ['inventory'],
+  quickbooks: ['inventory'],
 };
 
 export function isModuleName(x: string): x is ModuleName {

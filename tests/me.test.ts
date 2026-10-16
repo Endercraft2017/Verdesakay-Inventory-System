@@ -59,8 +59,10 @@ describe('employee self-service', () => {
     const a = await linked();
     const b = await linked();
     const formId = await formBySlug('hr_payroll');
-    await ctx.api.post('/api/form-records').set(A()).send({ form_def_id: formId, data: { employee_name: a.name, net_pay: 9000 } });
-    await ctx.api.post('/api/form-records').set(A()).send({ form_def_id: formId, data: { employee_name: b.name, net_pay: 7000 } });
+    const own = await ctx.api.post('/api/form-records').set(A()).send({ form_def_id: formId, data: { employee_name: a.name, net_pay: 9000 } });
+    const theirs = await ctx.api.post('/api/form-records').set(A()).send({ form_def_id: formId, data: { employee_name: b.name, net_pay: 7000 } });
+    await ctx.api.post(`/api/hr/payroll/${own.body.id}/mark-paid`).set(A());
+    await ctx.api.post(`/api/hr/payroll/${theirs.body.id}/mark-paid`).set(A());
 
     const mine = await ctx.api.get('/api/me/payslips').set({ Authorization: `Bearer ${a.token}` });
     expect(mine.status).toBe(200);
@@ -78,9 +80,9 @@ describe('employee self-service', () => {
     expect(types.body.some((t: { slug: string }) => t.slug === 'leave_request')).toBe(true);
 
     await ctx.api.post('/api/form-records').set({ Authorization: `Bearer ${a.token}` })
-      .send({ form_def_id: leaveId, data: { employee_name: a.name, reason: 'trip' } });
+      .send({ form_def_id: leaveId, data: { employee_name: a.name, reason: 'trip', date_from: '2026-06-01', date_to: '2026-06-01' } });
     await ctx.api.post('/api/form-records').set({ Authorization: `Bearer ${b.token}` })
-      .send({ form_def_id: leaveId, data: { employee_name: b.name, reason: 'sick' } });
+      .send({ form_def_id: leaveId, data: { employee_name: b.name, reason: 'sick', date_from: '2026-06-01', date_to: '2026-06-01' } });
 
     const mine = await ctx.api.get('/api/me/requests').set({ Authorization: `Bearer ${a.token}` });
     expect(mine.body).toHaveLength(1);
@@ -111,7 +113,7 @@ describe('GET /api/me/today', () => {
     await ctx.api.post('/api/tasks').set(h).send({ title: 'Overdue thing', due_date: '2000-01-01' });
     const leaveId = await formBySlug('leave_request');
     await ctx.api.post('/api/form-records').set(h)
-      .send({ form_def_id: leaveId, data: { employee_name: a.name }, status: 'pending' });
+      .send({ form_def_id: leaveId, data: { employee_name: a.name, date_from: '2026-06-01', date_to: '2026-06-01', reason: 'Pending leave' }, status: 'pending' });
 
     const res = await ctx.api.get('/api/me/today').set(h);
     expect(res.status).toBe(200);
@@ -166,7 +168,7 @@ describe('unrecorded OT (mobile prompt + Home reminder)', () => {
     const shiftId = await shiftEndingAt('17:00');
     const otFormId = await formBySlug('overtime_request');
     const otRecord = await ctx.api.post('/api/form-records').set(A())
-      .send({ form_def_id: otFormId, data: { employee_name: a.name, work_date: today() }, status: 'approved' });
+      .send({ form_def_id: otFormId, data: { employee_name: a.name, work_date: today(), reason: 'Overtime coverage' }, status: 'approved' });
     const p = await ctx.api.post('/api/hr/periods').set(A())
       .send({ label: 'OT Linked Cutoff', start_date: today(), end_date: today() });
     run(
@@ -258,7 +260,7 @@ describe('unrecorded OT (mobile prompt + Home reminder)', () => {
     const shiftId = await shiftEndingAt('17:00');
     const otFormId = await formBySlug('overtime_request');
     const otRecord = await ctx.api.post('/api/form-records').set(A())
-      .send({ form_def_id: otFormId, data: { employee_name: a.name, work_date: today() }, status: 'approved' });
+      .send({ form_def_id: otFormId, data: { employee_name: a.name, work_date: today(), reason: 'Overtime coverage' }, status: 'approved' });
     const p = await ctx.api.post('/api/hr/periods').set(A())
       .send({ label: 'OT No-Notify Cutoff', start_date: today(), end_date: today() });
     await ctx.api.post(`/api/hr/periods/${p.body.id}/employees`).set(A()).send({ employee_id: a.id });

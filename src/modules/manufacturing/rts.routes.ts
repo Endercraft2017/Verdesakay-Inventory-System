@@ -1,8 +1,10 @@
+import { batchBalances } from '../inventory/batch-stock';
+import { variantStockAt } from '../inventory/inventory-stock';
 /** /api/rts — the mobile RTS (ready-to-sell) desk (Figma 74:*). Reads only: the posting itself
  *  stays POST /api/job-orders/:id/products-in, which applies the same rules (rts.ts). */
 import { Router } from 'express';
 import { z } from 'zod';
-import { queryAll, queryOne } from '../../shared/db';
+import { db, run, queryAll, queryOne } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { parseBody } from '../../shared/validation';
 import { locationError, unitBlockers, openHolds } from './rts';
@@ -18,11 +20,11 @@ const receiveGate = requireAnyPermission(['inventory.adjust', 'production.receiv
 router.get('/queue', receiveGate, (req, res) => {
   const units = queryAll<{
     id: number; identifier: string | null; updated_at: string; job_order_id: number; job_order_number: string;
-    product_name: string; product_item_id: number | null; sku: string | null; priority: number;
+    product_name: string; build_mode: string; product_item_id: number | null; sku: string | null; priority: number;
     output_location_id: number | null; output_location_name: string | null; order_number: string | null;
     batch_identifier: string | null;
   }>(
-    `SELECT u.id, u.identifier, u.updated_at, j.id AS job_order_id, j.number AS job_order_number, j.product_name,
+    `SELECT u.id, u.identifier, u.updated_at, j.id AS job_order_id, j.number AS job_order_number, j.product_name, j.build_mode,
             COALESCE(u.product_item_id, j.product_item_id) AS product_item_id, i.sku, j.priority,
             j.output_location_id, ol.name AS output_location_name, o.number AS order_number, b.identifier AS batch_identifier
      FROM job_order_units u
@@ -43,9 +45,9 @@ router.get('/queue', receiveGate, (req, res) => {
     );
     return { ...u, final_pass: pass ?? null, hold: holds.get(u.id) ?? null };
   });
-  const batches = queryAll<{ id: number; number: string; job_order_id: number; job_order_number: string; product_name: string;
+  const batches = queryAll<{ id: number; number: string; job_order_id: number; job_order_number: string; product_name: string; build_mode: string;
     sku: string | null; output_location_id: number | null; remaining_qty: number }>(
-    `SELECT pb.id, pb.number, j.id AS job_order_id, j.number AS job_order_number, j.product_name, i.sku, j.output_location_id,
+    `SELECT pb.id, pb.number, j.id AS job_order_id, j.number AS job_order_number, j.product_name, j.build_mode, i.sku, j.output_location_id,
             pb.qty - COALESCE((SELECT SUM(quantity) FROM production_receipt_items WHERE batch_id = pb.id), 0) AS remaining_qty
      FROM production_batches pb
      JOIN job_orders j ON j.id = pb.job_order_id
@@ -54,9 +56,9 @@ router.get('/queue', receiveGate, (req, res) => {
      ORDER BY pb.id`
   ).filter((b) => b.remaining_qty > 0);
   const recorded = queryAll<{ receipt_number: string; created_at: string; unit_id: number | null; identifier: string | null;
-    batch_number: string | null; quantity: number; product_name: string; location_name: string | null }>(
+    batch_number: string | null; quantity: number; product_name: string; build_mode: string; location_name: string | null }>(
     `SELECT r.number AS receipt_number, r.created_at, ri.unit_id, un.identifier, pb.number AS batch_number, ri.quantity,
-            j.product_name, l.name AS location_name
+            j.product_name, j.build_mode, l.name AS location_name
      FROM production_receipt_items ri
      JOIN production_receipts r ON r.id = ri.receipt_id
      JOIN job_orders j ON j.id = r.job_order_id
@@ -68,6 +70,30 @@ router.get('/queue', receiveGate, (req, res) => {
     req.user!.id
   );
   res.json({ units: out, batches, recorded });
+});
+
+/** Establish a counted lot balance for older stock whose lot provenance was never tracked.
+ * This partitions existing stock; it never adds warehouse stock or guesses old sales. */
+router.post('/batches/:id/count', requirePermission('inventory.adjust'), syncClass('claim', {home:(req)=>({location:Number(req.body?.location_id)||null})}), (req,res)=>{
+ const input=parseBody(z.object({location_id:z.coerce.number().int().positive(),quantity:z.coerce.number().nonnegative(),expected_quantity:z.coerce.number().nonnegative(),reason:z.string().trim().min(5).max(500)}),req.body);
+ const id=Number(req.params.id),batch=queryOne<{item_id:number;build_mode:'assembled'|'semi_built'}>(`SELECT COALESCE(pb.product_item_id,j.product_item_id) AS item_id,j.build_mode FROM production_batches pb JOIN job_orders j ON j.id=pb.job_order_id WHERE pb.id=? AND NOT EXISTS(SELECT 1 FROM job_order_units WHERE batch_id=pb.id)`,id);
+ if(!batch){res.status(404).json({error:'Non-serialized batch not found.'});return;}
+ const balance=batchBalances(id).find(x=>x.location_id===input.location_id);
+ if(input.expected_quantity!==(balance?.on_hand??0)){res.status(409).json({error:'This batch balance changed. Reload and recount before saving.'});return;}
+ const provenance=queryOne<{received:number;shipped:number;returned:number;elsewhere:number}>(`SELECT
+   (SELECT COALESCE(SUM(quantity),0) FROM production_receipt_items WHERE batch_id=?) AS received,
+   (SELECT COALESCE(SUM(quantity),0) FROM production_batch_allocations WHERE batch_id=? AND state='shipped') AS shipped,
+   (SELECT COALESCE(SUM(r.quantity),0) FROM production_batch_return_links l JOIN sales_returns r ON r.id=l.return_id WHERE l.batch_id=? AND r.status='restocked') AS returned,
+   (SELECT COALESCE(SUM(quantity),0) FROM production_batch_stock WHERE batch_id=? AND location_id!=?) AS elsewhere`,id,id,id,id,input.location_id)!;
+ if(input.quantity+provenance.elsewhere>provenance.received-provenance.shipped+provenance.returned+1e-9){res.status(409).json({error:'This count exceeds the quantity received from this batch after its known shipments and returns.'});return;}
+ const other=queryOne<{n:number}>(`SELECT COALESCE(SUM(s.quantity),0) AS n FROM production_batch_stock s JOIN production_batches pb ON pb.id=s.batch_id JOIN job_orders j ON j.id=pb.job_order_id WHERE s.location_id=? AND s.batch_id!=? AND COALESCE(pb.product_item_id,j.product_item_id)=? AND j.build_mode=?`,input.location_id,id,batch.item_id,batch.build_mode)?.n??0;
+ if(input.quantity<(balance?.reserved??0)||input.quantity+other>variantStockAt(batch.item_id,input.location_id,batch.build_mode)+1e-9){res.status(409).json({error:'Count must cover existing reservations and fit within the warehouse build-state stock after other batches.'});return;}
+ if(!queryOne('SELECT 1 FROM locations WHERE id=?',input.location_id)){res.status(400).json({error:'Location not found.'});return;}
+ db.exec('BEGIN');try{
+ run(`INSERT INTO production_batch_stock(batch_id,location_id,quantity,received) VALUES(?,?,?,0) ON CONFLICT(batch_id,location_id) DO UPDATE SET quantity=excluded.quantity`,id,input.location_id,input.quantity);
+ run('INSERT INTO production_batch_counts(batch_id,location_id,before_quantity,counted_quantity,reason,counted_by) VALUES(?,?,?,?,?,?)',id,input.location_id,balance?.on_hand??0,input.quantity,input.reason,req.user!.id);
+ db.exec('COMMIT');res.json({balances:batchBalances(id)});
+ }catch(err){db.exec('ROLLBACK');throw err;}
 });
 
 const checkSchema = z.object({
@@ -93,7 +119,7 @@ router.get('/lookup', requireAnyPermission(['inventory.view', 'production.view',
   const rows = queryAll<{ id: number; identifier: string | null; status: string; sku: string | null; product_name: string;
     location_name: string | null; order_number: string | null; receipt_number: string | null; received_at: string | null;
     job_order_id: number; held: number }>(
-    `SELECT u.id, u.identifier, u.status, i.sku, j.product_name, l.name AS location_name, o.number AS order_number,
+    `SELECT u.id, u.identifier, u.status, i.sku, j.product_name, j.build_mode, l.name AS location_name, o.number AS order_number,
             (SELECT r.number FROM production_receipt_items ri JOIN production_receipts r ON r.id = ri.receipt_id
               WHERE ri.unit_id = u.id ORDER BY ri.id DESC LIMIT 1) AS receipt_number,
             (SELECT r.created_at FROM production_receipt_items ri JOIN production_receipts r ON r.id = ri.receipt_id

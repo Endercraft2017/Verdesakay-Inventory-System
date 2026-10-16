@@ -8,8 +8,11 @@
  * see. Indexing is lazy: `retrieve()` rebuilds if the index is older than 5 min.
  */
 import fs from 'node:fs';
+import { resolveDurableUpload } from '../../shared/durable-uploads';
+// Plain-text uploads the index reads; the file bucket keeps exactly these on disk.
+import { TEXT_EXT } from '../../shared/file-store';
 import path from 'node:path';
-import { db, run, queryAll, queryOne, getSetting, setSetting, uploadDir } from '../../shared/db';
+import { db, run, queryAll, queryOne, getSetting, setSetting } from '../../shared/db';
 import type { AuthUser } from '../../shared/types';
 import { PAYROLL_FORM_SLUG } from '../payroll/pay-access';
 
@@ -18,7 +21,6 @@ const KB_FILES = [
   'README.md', 'docs/README.md', 'docs/DECISIONS.md', 'docs/AI-AGENT.md', 'docs/ARCHITECTURE.md',
   'docs/guides/production-sop.md',
 ];
-const TEXT_EXT = new Set(['.txt', '.md', '.csv', '.json', '.log']);
 
 interface ChunkRow {
   body: string; ref_label: string; source_type: string; source_id: string;
@@ -71,7 +73,7 @@ export function reindex(): number {
       let body = [f.title, f.category, f.description, f.original_name].filter(Boolean).join('\n');
       const ext = path.extname(f.original_name || '').toLowerCase();
       if (TEXT_EXT.has(ext)) {
-        try { body += '\n' + fs.readFileSync(path.join(uploadDir(), f.stored_name), 'utf8').slice(0, 20000); } catch { /* unreadable */ }
+        try { const file = resolveDurableUpload(f.stored_name); if (file) body += '\n' + fs.readFileSync(file, 'utf8').slice(0, 20000); } catch { /* unreadable */ }
       }
       push(rows, { ref_label: `File · ${f.title || f.original_name}`, source_type: 'form', source_id: String(f.id), acl: 'forms.view', dept_id: f.department_id ?? null }, body);
     }

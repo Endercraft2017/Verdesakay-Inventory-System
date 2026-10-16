@@ -174,38 +174,124 @@
     });
   }
 
+  function holdId(id) { return 'hold:' + id; }
+  function loadHolds() {
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () { reject(new Error('Hold list timed out. Retry the current check.')); }, 20000);
+      API.get('/qc/holds').then(function (rows) { clearTimeout(timer); resolve(rows); }, function (err) { clearTimeout(timer); reject(err); });
+    });
+  }
+  function holdVisible(view, record) {
+    try { return view.isConnected && record.key === mProductionDrafts.key(holdId(record.operation.context.id) + ':action') &&
+      location.hash.split('?')[0] === '#/qc' && Number(new URLSearchParams(location.hash.split('?')[1] || '').get('unit')) === record.operation.context.id &&
+      new URLSearchParams(location.hash.split('?')[1] || '').get('step') === 'hold'; }
+    catch (ignore) { return false; }
+  }
+  function sendHold(record) {
+    var op = record.operation, sent = false, previous = op.state;
+    if (record.key !== mProductionDrafts.key(holdId(op.context.id) + ':action')) return Promise.reject(new Error('Recover this decision using its original account.'));
+    if (op.state === 'conflict' || Date.now() - op.created >= 7 * 86400000) {
+      op.state = 'conflict'; op.error = 'Ask a supervisor to reconcile this attempt. Its expired or conflicting key must not be replaced to bypass recovery.';
+      return mProductionDrafts.save(record);
+    }
+    op.state = 'sending'; op.error = null;
+    return mProductionDrafts.save(record).then(function () {
+      if (record.key !== mProductionDrafts.key(holdId(op.context.id) + ':action')) throw new Error('The signed-in account changed.');
+      sent = true; return API.post(op.path, op.payload, { idempotencyKey: op.key });
+    }).then(function (result) {
+      op.state = 'confirmed'; op.local = API.syncLocal(result); op.result = result;
+      return mProductionDrafts.save(record);
+    }).catch(function (err) {
+      op.state = !sent ? previous : (!err.status || err.status >= 500 || err.status === 429 ? 'unknown' :
+        err.status === 409 && /save key|different request/i.test(err.message) ? 'conflict' : 'rejected');
+      op.error = err.message;
+      return mProductionDrafts.save(record).catch(function () { throw err; });
+    });
+  }
+  function holdRecovery(view, desk, record) {
+    if (!holdVisible(view, record)) return;
+    var op = record.operation, h = op.context;
+    var final = op.state === 'confirmed' && !op.local;
+    var body = page(view, desk, final ? desk.nodes.done : desk.nodes.fail, final ? desk.doneTitle : 'Review held-unit decision', final ? 'Confirmed by site authority' : op.local ? 'Saved on site PC — confirmation pending' : 'Review the original attempt');
+    body.innerHTML = (final ? R.result(op.payload.outcome === 'pass' ? 'Passed to Products In' : op.payload.outcome === 'rectify' ? 'Sent for rectification' : 'Unit failed', label(h), op.payload.outcome === 'pass' ? '' : op.payload.outcome === 'rectify' ? 'warn' : 'bad', op.payload.outcome === 'pass' ? '✓' : op.payload.outcome === 'rectify' ? '↻' : '!') : R.jobHead({ number: label(h), name: h.product_name, meta: h.job_order_number })) +
+      R.field('Original decision', op.payload.outcome) + R.field('Original reason', op.payload.remarks) +
+      (op.payload.disposition ? R.field('Disposition', op.payload.disposition) : '') +
+      (op.payload.repair ? R.field('Rectification station', op.payload.repair.station || '—') : '') +
+      R.note(final ? 'info' : 'warn', final ? op.payload.outcome === 'pass' ? 'Passed for Products In. Stock is added only when receiving confirms the unit.' :
+        op.payload.outcome === 'rectify' ? 'Sent for correction and recheck.' : 'Failed; this unit cannot enter RTS.' :
+        op.local ? 'The original decision is saved on the site PC and awaits confirmation. Do not record another decision.' :
+        op.state === 'rejected' ? 'The request was refused. Reload and review the current hold before making a corrected decision.' :
+        op.state === 'conflict' ? 'This attempt needs supervisor reconciliation; the original decision is retained.' :
+        'A missing response does not prove failure. Retry sends the original decision, reason and key unchanged.') +
+      (op.error ? R.note('warn', mEsc(op.error)) : '') +
+      R.actions((!op.local && ['new', 'unknown'].indexOf(op.state) !== -1 ? [{ id: 'qc-hold-retry', label: 'Retry original', kind: 'primary' }] : [])
+        .concat([{ id: 'qc-hold-back', label: op.state === 'rejected' ? 'Review current hold' : 'Back to hold queue', kind: 'secondary' }])) + '<div data-hold-sync></div>';
+    var retry = body.querySelector('#qc-hold-retry');
+    if (retry) retry.onclick = function () {
+      if (offline()) { mToast('Reconnect before checking this decision.', 'err'); return; }
+      retry.disabled = true;
+      sendHold(record).then(function () { holdRecovery(view, desk, record); }).catch(function (err) { if (holdVisible(view, record)) { mToast(err.message, 'err'); holdRecovery(view, desk, record); } });
+    };
+    body.querySelector('#qc-hold-back').onclick = function () {
+      if (final || op.state === 'rejected') {
+        mProductionDrafts.remove(record).then(function () {
+          if (!holdVisible(view, record)) return;
+          delete cache[desk.role];
+          if (op.state === 'rejected') holdDecision(view, desk, h.id); else go(desk, { tab: 'hold' });
+        }).catch(function (err) { mToast(err.message, 'err'); });
+      } else go(desk, { tab: 'hold' });
+    };
+    if (op.local) body.querySelector('[data-hold-sync]').appendChild(R.syncWatch(op.local, function (r) {
+      if (!holdVisible(view, record)) return;
+      if (r.state === 'confirmed') { op.local = null; op.state = 'confirmed'; mProductionDrafts.save(record).then(function () { holdRecovery(view, desk, record); }).catch(function (err) { mToast(err.message, 'err'); }); }
+    }));
+  }
+
   /* ── Queue (69:16 / 72:16) ──────────────────────────────────────────────── */
   function queue(view, desk, tab, joFilter) {
     var body = page(view, desk, desk.nodes.queue, desk.queueTitle, desk.queueSub);
     body.innerHTML = R.skeleton(3);
+    var owner = mProductionDrafts.key('qa-hold-queue');
     var decide = desk.role === 'qa' && canDecideHolds();
     // Someone who only decides holds (production.qa_review) has no inspection queue of their own.
     var inspects = desk.role !== 'qa' || canAdjust() || can('production.inspect_qa');
     Promise.all([inspects ? loadQueue(desk, true) : Promise.resolve({ units: [], completed: [] }),
-      decide ? API.get('/qc/holds').catch(function () { return []; }) : Promise.resolve([])]).then(function (both) {
-      var q = both[0], holds = both[1] || [];
+      decide ? Promise.all([loadHolds().then(function (rows) { return { rows: rows }; }).catch(function (err) { return { rows: [], error: err }; }),
+        mProductionDrafts.listActions('hold-decision', 'hold').then(function (saved) { return { saved: saved }; }).catch(function (err) { return { saved: [], error: err }; })]) : Promise.resolve([{ rows: [] }, { saved: [] }])]).then(function (both) {
+      if (!body.isConnected || !MApp.getMe() || owner !== mProductionDrafts.key('qa-hold-queue')) return;
+      var q = both[0], holds = both[1][0].rows.filter(function (h) { return !joFilter || h.job_order_id === Number(joFilter); });
+      var saved = both[1][1].saved.filter(function (a) { return !joFilter || a.record.operation.context.job_order_id === Number(joFilter); });
+      var holdError = both[1][0].error || both[1][1].error;
+      var holdCount = holdError ? '?' : new Set(holds.map(function (h) { return h.id; }).concat(saved.map(function (a) { return a.id; }))).size;
       var units = q.units.filter(function (u) { return !joFilter || u.job_order_id === Number(joFilter); });
       var ready = units.filter(function (u) { return u.status === 'pending'; });
       var re = units.filter(function (u) { return u.status === 'rework'; });
       var prio = ready.filter(function (u) { return u.priority > 0; }).length;
       tab = tab || 'ready';
       body.innerHTML =
-        R.hero(desk.heroLabel, ready.length + ' unit' + (ready.length === 1 ? '' : 's'), prio + ' priority · ' + re.length + ' ' + (desk.role === 'qa' ? 'recheck' : 'reinspection')) +
+        R.hero(inspects ? desk.heroLabel : 'QA hold review', inspects ? ready.length + ' unit' + (ready.length === 1 ? '' : 's') : holdError ? 'Count unknown' : holdCount + ' item(s) to review',
+          inspects ? prio + ' priority · ' + re.length + ' ' + (desk.role === 'qa' ? 'recheck' : 'reinspection') : 'Review decisions before Products In') +
+        (holdError ? R.note('warn', 'Unable to load holds. The hold count is unknown; open On hold to retry.') : '') +
         '<div class="rk-segs" role="tablist">' +
           '<button type="button" data-tab="ready"' + (tab === 'ready' ? ' class="on"' : '') + '>Ready<b>' + ready.length + '</b></button>' +
           '<button type="button" data-tab="re" class="re' + (tab === 're' ? ' on' : '') + '">' + desk.reLabel + '<b>' + re.length + '</b></button>' +
-          (decide ? '<button type="button" data-tab="hold" class="warn' + (tab === 'hold' ? ' on' : '') + '">On hold<b>' + holds.length + '</b></button>' : '') +
+          (decide ? '<button type="button" data-tab="hold" class="warn' + (tab === 'hold' ? ' on' : '') + '">On hold<b>' + holdCount + '</b></button>' : '') +
           '<button type="button" data-tab="done"' + (tab === 'done' ? ' class="on"' : '') + '>Completed</button></div>' +
         '<div class="rk-list" data-list></div>' +
         (joFilter ? R.note('info', 'Showing one job order only. <button type="button" class="rk-back" data-all style="padding:0">Show all</button>') : '') +
-        R.actions([{ id: 'qc-scan', label: 'Scan or select unit', kind: 'primary' }].concat(ready.length > 1 ? [{ id: 'qc-bulk', label: 'Pass several', kind: 'secondary' }] : []));
+        (inspects ? R.actions([{ id: 'qc-scan', label: 'Scan or select unit', kind: 'primary' }].concat(ready.length > 1 ? [{ id: 'qc-bulk', label: 'Pass several', kind: 'secondary' }] : [])) : '');
       function paint(which) {
         var host = body.querySelector('[data-list]');
         if (which === 'hold') {
-          host.innerHTML = holds.length ? holds.map(function (h) {
-            return '<button type="button" class="rk-card rk-unitcard" data-hold="' + h.id + '"><b>' + mEsc(label(h)) + '</b>' +
-              '<span>' + mEsc(h.product_name + ' · ' + h.job_order_number) + '</span><small class="warn">' + mEsc('Held by ' + (h.held_by_name || '—') + ' · ' + ago(h.held_at) + ' ago') + '</small><i aria-hidden="true">›</i></button>';
-          }).join('') : '<div class="rk-empty">No units on hold.</div>';
+          var savedIds = saved.map(function (a) { return a.id; });
+          var current = holds.filter(function (h) { return savedIds.indexOf(h.id) === -1; });
+          host.innerHTML = (holdError ? R.note('warn', 'Unable to load holds: ' + mEsc(holdError.message) + '. Count unknown.') + R.actions([{ id: 'qc-holds-refresh', label: 'Retry hold check', kind: 'secondary' }]) : '') +
+            saved.map(function (a) { var h = a.record.operation.context; return '<button type="button" class="rk-card rk-unitcard" data-hold="' + a.id + '"><b>' + mEsc(label(h)) + '</b><span>' + mEsc(h.product_name + ' · ' + h.job_order_number) + '</span><small class="warn">Review saved decision' + (a.record.operation.local ? ' · confirmation pending' : '') + '</small><i aria-hidden="true">›</i></button>'; }).join('') +
+            current.map(function (h) {
+              return '<button type="button" class="rk-card rk-unitcard" data-hold="' + h.id + '"><b>' + mEsc(label(h)) + '</b>' +
+                '<span>' + mEsc(h.product_name + ' · ' + h.job_order_number) + '</span><small class="warn">' + mEsc('Held by ' + (h.held_by_name || '—') + ' · ' + ago(h.held_at) + ' ago') + '</small><i aria-hidden="true">›</i></button>';
+            }).join('') + (!holdError && !saved.length && !current.length ? '<div class="rk-empty">No units on hold.</div>' : '');
+          var refresh = host.querySelector('#qc-holds-refresh'); if (refresh) refresh.onclick = function () { queue(view, desk, 'hold', joFilter); };
           Array.prototype.forEach.call(host.querySelectorAll('[data-hold]'), function (b) { b.onclick = function () { go(desk, { unit: b.dataset.hold, step: 'hold' }); }; });
           return;
         }
@@ -231,7 +317,7 @@
         b.onclick = function () { Array.prototype.forEach.call(body.querySelectorAll('.rk-segs button'), function (x) { x.classList.toggle('on', x === b); }); paint(b.dataset.tab); };
       });
       paint(tab);
-      body.querySelector('#qc-scan').onclick = function () { go(desk, { step: 'identify' }); };
+      var scanButton = body.querySelector('#qc-scan'); if (scanButton) scanButton.onclick = function () { go(desk, { step: 'identify' }); };
       var bulk = body.querySelector('#qc-bulk'); if (bulk) bulk.onclick = function () { go(desk, { step: 'bulk', jo: joFilter || undefined }); };
       var all = body.querySelector('[data-all]'); if (all) all.onclick = function () { go(desk); };
     }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { queue(view, desk, tab, joFilter); })); });
@@ -250,7 +336,7 @@
       var t = String(code || '').trim().toLowerCase();
       if (!t) { mToast('Enter or scan a serial', 'err'); return; }
       loadQueue(desk, true).then(function (q) {
-        var hit = q.units.filter(function (u) { return String(u.identifier || '').toLowerCase() === t || String(u.id) === t.replace(/^#/, ''); })[0]
+        var hit = q.units.filter(function (u) { return ('vds:unit:'+u.id) === t || String(u.identifier || '').toLowerCase() === t || String(u.id) === t.replace(/^#/, ''); })[0]
           || q.units.filter(function (u) { return u.identifier && String(u.identifier).toLowerCase().indexOf(t) !== -1; })[0];
         if (hit) go(desk, { unit: hit.id });
         else mToast('No unit in your ' + desk.role.toUpperCase() + ' queue matches ' + code, 'err');
@@ -262,6 +348,12 @@
     };
     body.querySelector('#qc-find').onclick = function () { find(body.querySelector('[data-q]').value); };
     body.querySelector('#qc-cancel').onclick = function () { history.back(); };
+  }
+
+  function issueAccess(body, desk, u) {
+    var b = mEl(R.actions([{ id: 'qc-issues', label: 'Issues and photos', kind: 'secondary' }]));
+    b.querySelector('#qc-issues').onclick = function () { MApp.go('unit-issues', { unit: u.id, role: desk.role }); };
+    body.appendChild(b);
   }
 
   /* ── Verify (69:104 / 72:104) or recheck (69:478 / 72:477) ──────────────── */
@@ -281,6 +373,7 @@
       (can('qc.configure') ? '<div class="rk-card rk-field"><small>Checklist</small><b style="display:flex;justify-content:space-between;align-items:center">' +
         mEsc(cl ? cl.name : 'Default (none set)') + '<button type="button" class="rk-back" data-change style="padding:0">Change</button></b></div>' : '') +
       R.actions([{ id: 'qc-start', label: desk.start, kind: 'primary' }, { id: 'qc-wrong', label: 'Wrong unit', kind: 'secondary' }]);
+    issueAccess(body, desk, u);
     body.querySelector('#qc-start').onclick = function () { go(desk, { unit: u.id, step: 'check', g: 0 }); };
     body.querySelector('#qc-wrong').onclick = function () { go(desk, { step: 'identify' }); };
     var ch = body.querySelector('[data-change]'); if (ch) ch.onclick = function () { go(desk, { unit: u.id, step: 'checklist' }); };
@@ -303,6 +396,7 @@
       (blocked ? R.note('warn', '<b>Waiting on the warehouse for ' + u.open_part_requests + ' part request' + (u.open_part_requests === 1 ? '' : 's') + '</b><br>Reinspection can start once the parts are issued.') : '') +
       R.actions([{ id: 'qc-start', label: desk.recheckStart, kind: 'primary' }, { id: 'qc-hist', label: 'View history', kind: 'secondary' }]) +
       R.actions([{ id: 'qc-parts', label: 'Request a part', kind: 'secondary' }]);
+    issueAccess(body, desk, u);
     var start = body.querySelector('#qc-start');
     start.disabled = blocked;
     start.onclick = function () { go(desk, { unit: u.id, step: 'check', g: 0 }); };
@@ -420,6 +514,7 @@
       (s.bulk ? '' :
         '<button type="button" class="rk-disp repair" data-d="repair"><i>' + desk.repairOpt[0] + '</i><b>' + desk.repairOpt[1] + '</b><span>' + desk.repairOpt[2] + '</span></button>' +
         '<button type="button" class="rk-disp fail" data-d="fail"><i>' + desk.failOpt[0] + '</i><b>' + desk.failOpt[1] + '</b><span>' + desk.failOpt[2] + '</span></button>');
+    if (!s.bulk) issueAccess(body, desk, u);
     var rem = body.querySelector('[data-remarks]');
     rem.oninput = function () { s.remarks = rem.value; };
     Array.prototype.forEach.call(body.querySelectorAll('[data-d]'), function (b) {
@@ -525,6 +620,15 @@
         go(desk, { unit: u.id, step: then || 'fail' });
       }).catch(function (err) { if (err) mToast(err.message || 'Could not attach the photo', 'err'); });
     }
+    body.appendChild(mEl(R.actions([{ id: 'qc-report-evidence', label: 'Use issue-report photos', kind: 'secondary' }])));
+    body.querySelector('#qc-report-evidence').onclick = function () {
+      mUnitIssues.inspectionEvidence(u.id).then(function (ids) {
+        if (!body.isConnected) return;
+        if (!ids.length) { mToast('No unused photos uploaded by you on this unit’s issue reports.', 'err'); return; }
+        s.evidence = Array.from(new Set(s.evidence.concat(ids))); s.photos = s.evidence.length;
+        go(desk, { unit: u.id, step: then || 'fail' });
+      }).catch(fail());
+    };
     body.querySelector('[data-cap]').onclick = take;
     body.querySelector('#qc-cap').onclick = take;
     body.querySelector('#qc-pick').onclick = s.photos ? function () { go(desk, { unit: u.id, step: then || 'fail' }); } : take;
@@ -715,10 +819,18 @@
   function holdDecision(view, desk, unitId) {
     var body = page(view, desk, desk.nodes.fail, 'Decide held unit', 'Pass, rectify or fail — with the reason');
     body.innerHTML = R.skeleton(2);
-    API.get('/qc/holds').then(function (rows) {
+    var owner = mProductionDrafts.key(holdId(unitId) + ':action'), routeHash = location.hash;
+    mProductionDrafts.loadAction(holdId(unitId)).then(function (record) {
+      if (!body.isConnected || !MApp.getMe() || owner !== mProductionDrafts.key(holdId(unitId) + ':action') || location.hash !== routeHash) return;
+      if (record) { holdRecovery(view, desk, record); return; }
+      return loadHolds().then(function (rows) {
+      if (!body.isConnected || !MApp.getMe() || owner !== mProductionDrafts.key(holdId(unitId) + ':action') || location.hash !== routeHash) return;
       var h = rows.filter(function (x) { return x.id === unitId; })[0];
       if (!h) { body.innerHTML = R.note('info', 'This unit is no longer on hold.') + R.actions([{ id: 'qc-back', label: 'Back to queue', kind: 'secondary' }]); body.querySelector('#qc-back').onclick = function () { go(desk, { tab: 'hold' }); }; return; }
-      var out = 'pass';
+      var out = 'pass', checks = h.checks || [], answers = checks.map(function (it) {
+        var old = (h.checklist || []).find(function (a) { return a.label.trim().toLocaleLowerCase() === it.label.trim().toLocaleLowerCase(); }) || {};
+        return { label: it.label, status: old.status || (old.ok === true ? 'pass' : old.ok === false ? 'issue' : ''), value: old.value || '', note: old.note || null };
+      });
       function paint() {
         body.innerHTML =
           R.jobHead({ tone: 'warn', number: label(h), pill: { text: 'On hold', tone: 'warn' }, name: h.product_name, meta: h.job_order_number }) +
@@ -732,31 +844,42 @@
           }).join('') + '</div>' +
           (out === 'fail' ? '<label class="rk-card rk-field"><small>Disposition</small><select data-disp><option value="scrap">Scrap</option><option value="dispose">Dispose</option><option value="recycle">Recycle</option></select></label>' : '') +
           (out === 'rectify' ? '<label class="rk-card rk-field"><small>Route to</small><select data-station>' + desk.stations.map(function (x) { return '<option>' + mEsc(x) + '</option>'; }).join('') + '</select></label>' : '') +
+          (out === 'pass' && checks.length ? R.section('Review final-pass checklist') + checks.map(function (it,i) {
+            return '<label class="rk-card rk-field"><small>' + mEsc(it.label) + (it.required ? ' *' : '') + '</small><select data-hold-check="' + i + '">' + ['','pass','issue','na'].map(function (v) { return '<option value="' + v + '"' + (answers[i].status === v ? ' selected' : '') + '>' + (v || 'Review check') + '</option>'; }).join('') + '</select>' + (it.measure ? '<input data-hold-reading="' + i + '" maxlength="200" placeholder="' + mEsc(it.measure) + '" value="' + mEsc(answers[i].value) + '">' : '') + '</label>';
+          }).join('') : '') +
           '<label class="rk-card rk-field"><small>Decision reason *</small><textarea rows="3" maxlength="2000" data-why></textarea></label>' +
           R.actions([{ id: 'qc-decide', label: out === 'pass' ? 'Pass unit' : out === 'rectify' ? 'Send to rectification' : 'Fail unit', kind: out === 'fail' ? 'danger' : 'primary' },
             { id: 'qc-back', label: 'Back', kind: 'secondary' }]);
         if (window.mPhoto && mPhoto.thumbs) body.querySelector('[data-photos]').appendChild(mPhoto.thumbs('qc_unit', h.id, {}));
         Array.prototype.forEach.call(body.querySelectorAll('[data-o]'), function (b) { b.onclick = function () { var w = body.querySelector('[data-why]').value; out = b.dataset.o; paint(); body.querySelector('[data-why]').value = w; }; });
         body.querySelector('#qc-back').onclick = function () { go(desk, { tab: 'hold' }); };
+        body.querySelectorAll('[data-hold-check]').forEach(function (el) { el.onchange = function () { answers[Number(el.dataset.holdCheck)].status = el.value; checkReady(); }; });
+        body.querySelectorAll('[data-hold-reading]').forEach(function (el) { el.oninput = function () { answers[Number(el.dataset.holdReading)].value = el.value.trim(); checkReady(); }; });
         var btn = body.querySelector('#qc-decide');
+        function checkReady() { btn.disabled = out === 'pass' && (new Set(checks.map(function (it) { return it.label.trim().toLocaleLowerCase(); })).size !== checks.length || checks.some(function (it,i) { return it.required && answers[i].status !== 'pass' || it.measure && answers[i].status === 'pass' && !answers[i].value; })); }
+        checkReady();
         btn.onclick = function () {
           var why = body.querySelector('[data-why]').value.trim();
           if (why.length < 3) { mToast('Give the reason for the decision', 'err'); return; }
           if (offline()) { mToast('You’re offline — the decision needs a connection. Nothing was recorded.', 'err'); return; }
-          btn.disabled = true; btn.textContent = 'Recording…';
           var d = body.querySelector('[data-disp]'), st = body.querySelector('[data-station]');
-          API.post('/job-orders/' + h.job_order_id + '/units/' + h.id + '/hold-decision', {
-            outcome: out, remarks: why, disposition: d ? d.value : undefined,
-            repair: st ? { category: 'QA hold', station: st.value, priority: 'Before release' } : undefined,
-          }, { idempotencyKey: 'hold-' + h.record_id }).then(function (res) {
-            mToast((out === 'pass' ? 'Passed' : out === 'rectify' ? 'Sent to rectification' : 'Failed') + (API.syncLocal(res) ? ' — saved on the site PC, not final until it syncs' : ''));
-            delete cache[desk.role];
-            go(desk, { tab: 'hold' });
-          }).catch(fail(btn, 'Record decision'));
+          if (out === 'pass' && (new Set(checks.map(function (it) { return it.label.trim().toLocaleLowerCase(); })).size !== checks.length || checks.some(function (it,i) { return it.required && answers[i].status !== 'pass' || it.measure && answers[i].status === 'pass' && !answers[i].value; }))) { mToast('Complete the required checks and readings before passing. Duplicate labels need a manager to correct the checklist.', 'err'); return; }
+          var payload = { outcome: out, remarks: why, expected_hold_record_id: h.record_id };
+          if (out === 'pass' && Array.isArray(h.checks)) payload.checklist = answers.map(function (a) { return { label: a.label, status: a.status || undefined, ok: a.status === 'pass' || a.status === 'na', value: a.value || null, note: a.note }; });
+          if (d) payload.disposition = d.value;
+          if (st) payload.repair = { category: 'QA hold', station: st.value, priority: 'Before release' };
+          var record = { key: owner, rows: [], operation: { kind: 'hold-decision', context: JSON.parse(JSON.stringify(h)), payload: payload,
+            path: '/job-orders/' + h.job_order_id + '/units/' + h.id + '/hold-decision', key: 'qa-hold-' + crypto.randomUUID(), created: Date.now(), state: 'new' } };
+          body.querySelectorAll('button,input,textarea,select').forEach(function (el) { el.disabled = true; });
+          sendHold(record).then(function () { holdRecovery(view, desk, record); }).catch(function (err) {
+            if (!holdVisible(view, record)) return;
+            mToast(err.message, 'err'); holdDecision(view, desk, unitId);
+          });
         };
       }
       paint();
-    }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { holdDecision(view, desk, unitId); })); });
+      });
+    }).catch(function (err) { if (!body.isConnected) return; body.innerHTML = ''; body.appendChild(R.error(err, function () { holdDecision(view, desk, unitId); })); });
   }
 
   MApp.route('qc', function (view, params) {

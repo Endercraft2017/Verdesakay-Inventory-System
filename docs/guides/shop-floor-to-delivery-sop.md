@@ -42,7 +42,7 @@ Recording → Ready to Sell → Sold** (side branches: *In Rework*, *Failed / Sc
 
 | # | Stage | Person | App role | Phone app location |
 |---|-------|--------|----------|--------------------|
-| 1 | Release parts to production | Warehouseman | `warehouse` (or any account with broad stock rights) | Production → **Job Orders** → open the job order → **Release to production** |
+| 1 | Release parts to production | Warehouseman | `warehouse` (or any account with broad stock rights) | Work → **Kit releases** |
 | 2 | Accept the job order (sign for the kit), then build and record finished units | Production team lead / manager | `production_lead` | Production → **Job Orders** → open the job order → **Accept job order**, then **Record production** |
 | 3 | QC inspection (first pass) | QC inspector | `qc_inspector` | Production → **QC / QA** |
 | 3b | Repair parts handoff | Warehouse parts clerk | `parts_clerk` | Work → **Parts requests** |
@@ -64,31 +64,58 @@ broad warehouse rights (`warehouse`, `admin`, `admin_staff`, `releasing`) can do
 
 ---
 
+## Before kit release — manager approval
+
+1. Open **Work → Awaiting production approval** (also available under Production
+   and Production control). This action requires `production.approve`; warehouse
+   stock-adjustment permission alone does not grant approval.
+2. Review the quantity, team/schedule, parts source, finished-goods location,
+   inspection stages, planner notes and planned component snapshot. Compare needed
+   parts with on-hand, held elsewhere and free stock at that source.
+3. A short kit can be approved to plan demand. Acknowledge the warehouse follow-up
+   before **Approve plan**; the warehouse still needs a complete kit before release.
+   Approval itself does not deduct stock.
+4. If the plan changes, refresh and review the new plan before signing. An unavailable
+   stock check also requires refresh. Notes are optional.
+5. An interrupted approval stays under **Saved approvals · recovery**, even when
+   the server has already approved the job. **Retry original** checks the original
+   reviewed plan and note using its saved key. A site-PC save stays pending until
+   confirmation; a refused approval needs a fresh review before correction.
+
+---
+
 ## Stage 1 — Warehouseman: release parts to production
 
 **Goal:** Take the parts for a job order out of the warehouse and hand them to the
 production line. This is where parts officially leave warehouse stock.
 
-**You'll see it when:** A planner has created a job order and it is in **draft**.
+**You'll see it when:** A production manager approves a draft job order.
 
 ### Steps
 
-1. Open **Production → Job Orders** and tap the job order. Draft orders are listed with the
-   other open orders.
-2. Check the **Components** list. Each line shows `consumed / planned`. A **⚠** means there
-   isn't enough of that part on hand.
-3. **Physically pick** every component and its planned quantity from the job order's
-   **source location**.
-4. Tap **Release to production**.
-   - **Success:** The job order becomes **released**, and every planned component is
-     deducted from the source location in one step. The app records **your name and the
-     time** as "Released from warehouse by …", and the production lead sees this.
-   - **If a part is short:** The release is **refused as a whole**. It is never partly
-     released. The error lists every short part, for example `Bolt M8: need 40, have 25`.
-     On desktop, you can then create **draft purchase orders** for the missing parts.
-     Tell the planner/supervisor. Don't hand over a partial kit as if it were complete.
-5. Hand the kit to the production team lead. Wait while they count it and tap **Accept job
-   order** (Stage 2.1). Their acceptance is your proof of handover.
+1. Open **Work → Kit releases**. **Ready** contains complete, releasable kits;
+   **Picking** contains accepted or unpicked work; **Blocked** contains shortages;
+   **Review** contains unknown availability and saved attempts that need attention.
+2. Open the job order and check **Pick from** and the component quantities:
+   needed, picked, on-hand, held elsewhere and free. Held stock belongs to another
+   kit or repair request; ask the planner/supervisor to review those commitments.
+3. Tap **Accept for picking**, then **Review kit** after confirmation. Count each
+   physical component and enter its picked quantity. **Save picked counts** supports
+   partial kits and corrections before release. Picking reserves parts; no stock
+   leaves yet. Do not hand a partial kit to production.
+4. Once the full counts are saved, tap **Release to production**. Tick the counted-kit
+   acknowledgement and **Confirm release**. Stock is checked again; the authority
+   issues one numbered parts slip and deducts all planned components together.
+5. If a response is interrupted, reopen the kit under **Review**. Check the current
+   accepted/picked/slip stages, then **Retry original**. The original request is kept
+   across browser restarts. Do not create another attempt to bypass an uncertain one.
+   A refused action requires review before correction. A site-PC save remains pending
+   until confirmed; keep the kit staged while it is pending.
+6. If stock is short, **Report shortage** includes the source location and stock
+   breakdown. Replenish missing physical stock or review existing commitments as
+   appropriate. Desktop can draft purchases for missing parts.
+7. After **Parts released successfully**, hand the full kit to the production lead.
+   Their **Accept job order** (Stage 2.1) records proof of handover.
 
 ### Rules
 
@@ -247,6 +274,34 @@ the other inspection pass."
 Every pass and fail is stamped with **your name and the time**, and you can see it in
 **Inspection history**. Tap **View record** there to open the unit's full dossier.
 
+### Separate findings and photos (QC and QA)
+
+On a unit's verify, recheck or review screen, tap **Issues and photos**. It is also
+available in the unit record. Tap **Add issue report**, choose an affected area,
+write the finding, set severity and add its photos. Send the chassis finding, then
+**Add another issue** for fairings; each report keeps its own photos and status.
+Visible defects require a photo in this form. Clear **Visible defect** for an issue
+that cannot be photographed, such as a sound heard during testing.
+
+You can save several drafts before sending any of them. Text and prepared photo
+bytes stay on this phone across app/browser restart. Open **Saved unit issue
+reports** in Work or the unit's issue list to resume. Saved unit details let you
+edit drafts and add another finding while the authority is disconnected; the live
+report list stays unknown. Reconnect and reopen the unit to submit; draft
+saving is local and does not create a confirmed server report. If confirmation is
+unknown, **Continue original** reuses the retained request and photo keys. Do not
+create a replacement for that uncertain report. A refusal needs review/correction;
+expired or conflicting attempts need a supervisor. A site-PC save stays pending
+until its sync command confirms.
+
+Open a report to view its photo set. The reporter or a manager can edit/add photos
+while open, resolve it with a note, or reopen it. A report does not advance the unit
+or stop production: record the inspection result separately, or use **Pause** to
+stop the line. The special **Product-data mismatch** report still blocks Products
+In until resolved. In the fail/repair/hold evidence step, **Use issue-report photos**
+reuses your own unused photos of this unit. Photos already used in an inspection
+cannot be reused for another result or deleted.
+
 ### Step 3b — Units in rework (repair loop)
 
 Units sent to repair appear under **Reinspect** on your desk.
@@ -331,6 +386,18 @@ order (**Held by QA for review → Decide…**).
    correction) or **Fail** (scrap / dispose / recycle).
 3. Give the **reason** (required) and record the decision. The inspector who held it is
    notified. **Needs a signal.**
+4. A missing response is uncertain. The original decision is stored on this phone;
+   open **Review saved decision** on the hold list and **Retry original**. Do not
+   change the outcome or reason while that attempt is unresolved. It survives restart
+   even when the server has already removed the unit from the hold list.
+5. If refused, **Review current hold** reloads the current finding before a new
+   corrected decision. A unit held again after rectification needs a new review;
+   the previous finding's decision cannot be applied to it. A key conflict or expired
+   attempt needs supervisor reconciliation.
+6. A site-PC save stays pending until confirmed. A confirmed **Pass** makes the unit
+   eligible for Products In; the receiving clerk still has to add it to stock.
+7. If holds cannot load, the count is unknown. **Retry hold check**; treat the list
+   as empty only after a successful check.
 
 ---
 
@@ -353,6 +420,28 @@ works the same way as the Goods Receipt in Purchasing.
    **Ready to Sell**, stock goes up at that location, and a receipt `PI-#####` is logged.
 5. **Print labels** from the result screen and **stick a QR label on every unit.** The
    releasing clerk scans these labels in Stage 6.
+
+### Interrupted stock entry
+
+Each receipt keeps its exact units or batch quantity, location, note and retry key
+on this phone before submitting. If confirmation is unknown, open **Saved stock
+entries** at the top of RTS and tap **Retry original** after reconnecting. Do not
+create another receipt for those goods. Recovery survives browser restart and
+remains accessible even if the live RTS list is unavailable. A group spanning job
+orders shows each one's status; confirmed job orders are skipped on retry.
+
+A **Saved on site PC — confirmation pending** receipt is still pending. Wait for
+its original sync command; the next job order in the group has not started yet.
+After confirmation, use **Retry original** to continue any remaining group entries.
+Only fully confirmed goods are shown as Ready to sell. A failed/conflicting command
+or expired key needs supervisor reconciliation.
+
+If the authority refuses a receipt, **Review remaining entries** reloads the live
+unit or batch before a corrected submission with a fresh key. Already confirmed
+entries stay recorded. An uncertain or pending attempt cannot be discarded for a
+new request. A batch quantity must be a positive whole number within the live
+remaining output. **Record next unit** archives the completed phone recovery record;
+the receipt and stock history remain on the authority.
 
 ### Rules
 
@@ -419,6 +508,23 @@ authorization, or with an open release report, is under **Blocked**.
    recipient sign.
 6. **Review**, tick **Physical handoff is complete**, and **Confirm warehouse-out**. The
    slip `RS-#####` is issued and stock leaves inventory.
+
+### Acceptance and allocation recovery
+
+The release queue separates **To accept**, **Allocating**, **Ready** and **Blocked**.
+Check the ship-from warehouse shown on the order. Bulk quantities are limited to
+free stock at that warehouse and preserve measured quantities such as 2.5. A unit
+at a different warehouse needs a controlled transfer/allocation review.
+
+Acceptance and allocation retain their original requests on this phone before
+submission. If confirmation is unknown after an interruption or restart, open
+**Saved release actions** and **Retry original** after reconnecting. Do not replace
+that action. A site-PC acknowledgement stays pending until its original command
+confirms. **Review current order** then reloads the latest context before continuing.
+A refused action also requires current stock/order review before a corrected key;
+expired/conflicting attempts require a supervisor. Allocation reserves goods; only
+the later release slip records warehouse-out. Final photo/signature/slip recovery
+and mobile allocation undo remain separate implementation steps.
 
 **Partial release:** if Sales allowed it, an incomplete order can go out with what is ready;
 the rest moves to a **new backorder sale order** automatically. Without that permission the
@@ -529,3 +635,63 @@ company has no proof if the customer disputes the delivery.
 - `mobile-warehouse-app.md`: the phone app in general (install, scanner, offline queue).
 - `docs/modules/pipelines.md`: the system's pipeline map (Production run, Sales order
   fulfillment).
+
+### Merged QA and CKD contracts (2026-10-15)
+
+Before passing a held unit, review its frozen final-pass checks. Every required
+check must be Pass, and passed measured checks require a reading. Answers retained
+on the hold are prefilled; the exact reviewed answers accompany original-key
+recovery. Rectify and Fail keep their existing paths.
+
+A CKD sale shows the parent kit as a manifest and allocates its physical component
+lines. Assembled parent stock does not satisfy the kit. Every component is required for each kit leaving. With Sales authorization, whole kits may leave on a partial slip while the rest stay on a backorder. Component returns restore
+components rather than a built unit. Final mobile slip/proof recovery remains open.
+
+### Attached QR stickers at RTS and releasing
+
+Print and attach each unit's QR, or the QR for a non-serialized batch. New QR payloads
+identify the immutable unit/batch record; the sticker also shows its readable serial
+or lot number. The RTS clerk scans every selected attached sticker, verifies the
+physical stock and destination, then confirms the receipt. Printing or finding a
+record manually does not verify the sticker.
+
+Releasing opens the sales order and scans the stock label. A unit must match the
+product, build state and ship-from warehouse. A batch pick also counts a quantity
+from that exact batch: reservation reduces its free quantity, and the final slip
+consumes that batch's stock. The phone retains uncertain requests for exact retry;
+site-PC pending results are not final. Authorized scan lookup is read-only and shows
+stock/dossier information without making a stock movement.
+
+For batches received before lot tracking existed, a supervisor physically counts
+remaining stock and uses the dossier's Reconcile batch stock action. Historical
+receipt quantities must not be treated as current remaining batch quantities.
+
+## Mobile recovery and owner decisions — 2026-10-16
+
+- Final releasing photos and recipient signature are saved on the phone under the
+  original account/company. Both upload before warehouse-out. If confirmation is
+  lost, reopen the saved handoff and retry the original release; do not hand over
+  another set of goods. Confirmed goods leave stock only once.
+- Delivery start/POD drafts and submissions survive restart. Recover saved delivery
+  actions explicitly after reconnect. A site-PC pending result is not final.
+- Owner decision: delivery recipient, signature, photos and GPS remain optional in
+  the app; the evidence standard above remains a manual staff procedure.
+- Owner decision: Start delivery may happen before the sale's warehouse-out slip.
+  This does not authorize another stock deduction or bypass the release-slip rule
+  for completing the sale. Unresolved warehouse work goes to Sales/releasing staff.
+- Basic employees keep personal tools; inventory/production/releasing/delivery and
+  confidential case handling require the account's assigned permissions and the
+  corresponding enabled workspace module, including when opened through a link.
+
+### Courier pickup on mobile (2026-10-16)
+
+Assigned staff or a delivery manager opens Work → Deliveries → a courier booking
+→ Record courier pickup. Check carrier/tracking, optionally enter collector, note,
+photos, signature and location, then Confirm courier pickup after physical
+collection. Tracking and evidence drafts survive restart; unresolved submissions
+reuse the exact request and upload keys. Warehouse-out is required before closing
+courier custody; pickup does not deduct stock again. The server stores compatible
+`status:delivered`, while the phone explicitly says Picked up by courier. This
+records collection rather than customer receipt. Evidence stays optional by owner
+policy for both own-driver and courier flows. Supplied signatures must belong to
+the booking; assignment checks and terminal evidence locks remain. PWA cache v106.

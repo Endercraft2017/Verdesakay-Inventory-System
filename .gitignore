@@ -18,7 +18,5 @@ tests/.tmp/
 dist-desktop/
 certs-desktop/
 
-# Local audit and browser test artifacts
-work/
-playwright-report/
-test-results/
+# Local browser audit reports, traces and downloaded reference material
+/work/

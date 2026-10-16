@@ -2,10 +2,11 @@
     authorizes the rest-day premium when PayrollPolicy.require_rest_day_form is on, and a Change
     of Rest Day moves the rest day for both of its dates. Both count only once APPROVED. */
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 
 let ctx: TestContext;
 let token: string;
+let reviewerToken: string;
 const hdr = () => ({ Authorization: `Bearer ${token}` });
 
 // 2026-08-16 and 2026-08-23 are Sundays; 2026-08-19 is a Wednesday. Company rest day: Sunday.
@@ -16,6 +17,7 @@ const BASE_POLICY = { pay_frequency: 'semi_monthly', auto_statutory: true, defau
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
+  reviewerToken = (await createEmployee(ctx.api, token, { role: 'hr' })).token;
 });
 afterAll(() => cleanup(ctx));
 afterEach(async () => {
@@ -30,9 +32,15 @@ async function formId(slug: string): Promise<number> {
 }
 
 async function fileForm(slug: string, data: Record<string, unknown>, status: 'approved' | 'pending') {
+  const employees = (await ctx.api.get('/api/hr/employees').set(hdr())).body;
+  if (!employees.some((e: any) => e.name === data.employee_name)) await ctx.api.post('/api/hr/employees').set(hdr()).send({ employee_no: 'RD-' + Math.floor(Math.random()*1e8), name: data.employee_name, daily_rate: 800, status: 'regular' });
   const res = await ctx.api.post('/api/form-records').set(hdr())
     .send({ form_def_id: await formId(slug), data, status });
   expect(res.status).toBe(201);
+  if (status === 'approved') {
+    const decision = await ctx.api.post(`/api/me/approvals/requests/${res.body.id}/decide`).set({ Authorization: `Bearer ${reviewerToken}` }).send({ decision: 'approved' });
+    expect(decision.status).toBe(200);
+  }
   return res.body.id as number;
 }
 
@@ -40,7 +48,8 @@ async function fileForm(slug: string, data: Record<string, unknown>, status: 'ap
     linked, Mon/Tue worked, Wednesday left blank. Returns the generated payslip data and the
     Sunday/Wednesday grid rows. */
 async function runCutoff(name: string, sundayForms: number[]) {
-  const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+  const existing = (await ctx.api.get('/api/hr/employees').set(hdr())).body.find((e: any) => e.name === name);
+  const emp = existing ? { status: 201, body: existing } : await ctx.api.post('/api/hr/employees').set(hdr())
     .send({ employee_no: 'RD-' + Math.floor(Math.random() * 1e6), name, daily_rate: 800, status: 'regular' });
   expect(emp.status).toBe(201);
   const period = await ctx.api.post('/api/hr/periods').set(hdr())
@@ -134,8 +143,7 @@ describe('Change of Rest Day', () => {
     const id = await fileForm('rest_day_change', {
       employee_name: 'RD Swap Override Employee', original_rest_day: SUNDAY, new_rest_day: WEDNESDAY, reason: 'x',
     }, 'approved');
-    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
-      .send({ employee_no: 'RD-OVR', name: 'RD Swap Override Employee', daily_rate: 800, status: 'regular' });
+    const emp = { body: (await ctx.api.get('/api/hr/employees').set(hdr())).body.find((e: any) => e.name === 'RD Swap Override Employee') };
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
       .send({ label: 'RD Override Cutoff', start_date: SUNDAY, end_date: SUNDAY });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });

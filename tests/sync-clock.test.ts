@@ -8,7 +8,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { cleanup } from './helpers';
+import { cleanup, phonePunch } from './helpers';
 import { setupSiteTrio, type SiteTrio } from './sync-helpers';
 
 let T: SiteTrio;
@@ -139,12 +139,16 @@ describe('a phone punch on a borrowed phone, through the site host', () => {
     const P = { Authorization: `Bearer ${s.body.token}`, 'X-Tenant': T.lanSlug };
     await T.lanRound();
     const code = (await api().get('/api/hr/clock/code').set(T.lanHdr())).body.code as string;
-    const r = await api().post('/api/hr/clock/punch').set(P).send({ code });
+    const r = await phonePunch(api(), P, { code });
     expect(r.status).toBe(200);
     await T.lanRound();
     await T.hostRound();
     const last = punchesOf(T.cloudDb(), emp.id).at(-1)!;
     expect(last).toMatchObject({ source: 'phone', device_flag: 'borrowed' });
+    // The selfie travelled with it, and the scan's hold is used up on every copy.
+    const photo = T.cloudDb().prepare("SELECT file_name FROM punch_photos WHERE punch_kind = 'attendance' AND punch_id = ?").get(last.id) as { file_name: string } | undefined;
+    expect(photo).toBeTruthy();
+    expect(T.cloudDb().prepare('SELECT COUNT(*) AS n FROM time_punch_holds WHERE employee_id = ?').get(emp.id)).toEqual({ n: 0 });
   });
 });
 

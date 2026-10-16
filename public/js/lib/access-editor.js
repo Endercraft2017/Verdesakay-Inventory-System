@@ -68,6 +68,7 @@ window.AccessEditor = (() => {
       { key: 'templates.edit', label: 'Edit own templates', desc: 'Create and change personal templates' },
       { key: 'templates.company', label: 'Edit company templates', desc: 'Shared, company-wide templates' },
       { key: 'forms.manage.inventory', label: 'Build inventory forms', desc: 'Form Builder for the Inventory section' },
+      { key: 'forms.fill.inventory', label: 'Enter Inventory forms', desc: 'Enter forms assigned to your role or account; view their records and edit/submit active drafts' },
       { key: 'forms.manage.hr', label: 'Build HR forms', desc: 'Form Builder for the HR section (memos, notices)' },
       { key: 'forms.manage.accounting', label: 'Build accounting forms', desc: 'Form Builder for the Accounting section' },
       { key: 'forms.manage.admin', label: 'Build admin forms', desc: 'Form Builder for the Admin section' },

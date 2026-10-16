@@ -146,6 +146,7 @@
 .rk-line em { font-style: normal; font-size: 11px; font-weight: 600; color: var(--rk-qty); text-align: right; }
 .rk-line.short em { color: var(--rk-danger-qty); }
 .rk-line img { width: 18px; height: 18px; }
+.rk-line-detail { grid-column: 1 / -1; color: var(--rk-meta); font-size: 10px; line-height: 1.5; padding-bottom: 6px; }
 .rk-lines .rk-foot { padding: 12px 2px 14px; font-size: 10px; font-weight: 600; color: var(--rk-meta); }
 
 /* Notices */

@@ -24,12 +24,12 @@ company's mailbox, and keep a log of what went out.
 2. Fill in **To**, **Subject**, and the **message**.
 3. Click **Send**.
 4. You'll get a success or failure notice. Either way it's recorded in the log
-   (admins can view it under Email → Settings → log).
+   (staff with users.manage can view it under Email → Sent log).
 
 ## Tips & gotchas
 
-- **One recipient at a time** in the compose box. For a batch, send individually or use
-  the AI Assistant.
+- **One recipient at a time** in the compose box. For multiple recipients, send separate messages; the AI email tool also takes one
+  recipient per send.
 - The **From** address is the company mailbox your admin set up — replies come back there
   (or to the reply-to address they configured), not to your personal inbox.
 - Attachments aren't added from this box yet; the AI Assistant can attach a report it
@@ -43,5 +43,5 @@ company's mailbox, and keep a log of what went out.
 |---|---|
 | "Email is not configured" | Admin hasn't set up the mailbox yet — point them at EMAIL-SETUP.md. |
 | "Invalid login" / auth error in the log | Wrong mailbox password or an app password is needed — admin fixes this in Email → Settings. |
-| Message sent but bounced | Bad recipient address, or the recipient's server rejected it — check the address; the log shows the provider's reason. |
+| Message sent but bounced | Bad recipient address, or the recipient's server rejected it — check the address; a later bounce may arrive in the company mailbox; the sent log records the original send result. |
 | You don't see the Email tool | You lack the Send email permission. |

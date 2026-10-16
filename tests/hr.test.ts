@@ -5,13 +5,22 @@ import { setupApp, cleanup, login, createEmployee, type TestContext } from './he
 
 let ctx: TestContext;
 let token: string;
+let reviewerToken: string;
 const hdr = () => ({ Authorization: `Bearer ${token}` });
 
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
+  await ctx.api.post('/api/users').set(hdr()).send({ username: 'payroll-reviewer', full_name: 'Payroll Reviewer', password: 'payroll-reviewer-pass', role: 'admin' });
+  reviewerToken = await login(ctx.api, 'payroll-reviewer', 'payroll-reviewer-pass');
 });
 afterAll(() => cleanup(ctx));
+
+/** Payroll fixtures use the same explicit approval path as HR rather than creation status. */
+async function approveRequestFixture(id: number) {
+  const r = await ctx.api.post('/api/me/approvals/requests/' + id + '/decide').set({ Authorization: 'Bearer ' + reviewerToken }).send({ decision: 'approved', override_balance: true, note: 'Payroll test fixture reviewed' });
+  expect(r.status).toBe(200);
+}
 
 describe('hr', () => {
   it('requires authentication', async () => {
@@ -251,7 +260,23 @@ describe('hr', () => {
     const detail = (await ctx.api.get('/api/hr/employees').set(hdr())).body.find((e: { id: number }) => e.id === ok.body.id);
     expect(detail.status).toBe('regular');
     expect(detail.sss_no).toBe('01-2345678-9');
-    expect(detail.photo).toMatch(/^data:image\//);
+    // The list carries a fingerprint, not the photo; the photo is its own cacheable image.
+    expect(detail.photo).toBeUndefined();
+    expect(detail.photo_rev).toMatch(/^[0-9a-f]{12}$/);
+    const img = await ctx.api.get(`/api/hr/employees/${ok.body.id}/photo?v=${detail.photo_rev}`).set(hdr());
+    expect(img.status).toBe(200);
+    expect(img.headers['content-type']).toMatch(/^image\/png/);
+    expect(img.headers['cache-control']).toBe('private, max-age=31536000, immutable');
+    expect(Buffer.isBuffer(img.body) && img.body.subarray(1, 4).toString()).toBe('PNG');
+
+    // A save that leaves `photo` out keeps it (the form only sends it when changed); '' removes it.
+    const { photo_rev: _rev, id: _id, ...fields } = detail;
+    const rowOf = async () => (await ctx.api.get('/api/hr/employees').set(hdr())).body.find((e: { id: number }) => e.id === ok.body.id);
+    expect((await ctx.api.put(`/api/hr/employees/${ok.body.id}`).set(hdr()).send({ ...fields, position: 'Lead' })).status).toBe(200);
+    expect((await rowOf()).photo_rev).toBe(detail.photo_rev);
+    expect((await ctx.api.put(`/api/hr/employees/${ok.body.id}`).set(hdr()).send({ ...fields, photo: '' })).status).toBe(200);
+    expect((await rowOf()).photo_rev).toBeNull();
+    expect((await ctx.api.get(`/api/hr/employees/${ok.body.id}/photo`).set(hdr())).status).toBe(404);
 
     const bad = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-BADPHOTO', name: 'Bad Photo', photo: 'not-an-image' });
@@ -308,6 +333,12 @@ describe('hr', () => {
     const list = await ctx.api.get(`/api/hr/employees/${emp.body.id}/documents`).set(hdr());
     expect(list.body).toHaveLength(1);
     expect(list.body[0].title).toBe('Employment Contract');
+
+    const { queryOne } = await import('../src/shared/db');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const stored = queryOne<{ stored_name: string }>('SELECT stored_name FROM employee_documents WHERE id = ?', upload.body.id)!;
+    fs.unlinkSync(path.join(ctx.tmpDir, 'uploads', stored.stored_name));
 
     const dl = await ctx.api.get(`/api/hr/employees/${emp.body.id}/documents/${upload.body.id}/download`).set(hdr());
     expect(dl.status).toBe(200);
@@ -688,7 +719,8 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
 
     const otRecord = await ctx.api.post('/api/form-records').set(hdr())
-      .send({ form_def_id: overtimeFormId, data: { employee_name: 'Compute Test Employee' }, status: 'approved' });
+      .send({ form_def_id: overtimeFormId, data: { employee_name: 'Compute Test Employee', work_date: '2026-08-02', reason: 'Payroll fixture' }, status: 'approved' });
+    await approveRequestFixture(otRecord.body.id);
 
     await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
       employee_id: emp.body.id,
@@ -752,7 +784,8 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
 
     const leaveRecord = await ctx.api.post('/api/form-records').set(hdr())
-      .send({ form_def_id: leaveFormId, data: { employee_name: 'Leave Test Employee', with_pay: 'Yes' }, status: 'approved' });
+      .send({ form_def_id: leaveFormId, data: { employee_name: 'Leave Test Employee', with_pay: 'Yes', date_from: '2026-08-03', date_to: '2026-08-03', reason: 'Payroll fixture' }, status: 'approved' });
+    await approveRequestFixture(leaveRecord.body.id);
 
     await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
       employee_id: emp.body.id,
@@ -836,8 +869,10 @@ describe('generate-payslips computes real numbers from attendance + linked forms
 
     // cash_advance has no computed source, so it's still carried over untouched. rest_day_ot
     // DOES have a computed source now (attendance-derived, see hr-payroll-compute.ts) — a
-    // manual edit to it is overwritten on the next regenerate, same as overtime_pay already was.
-    await ctx.api.put(`/api/form-records/${rec1.id}`).set(hdr()).send({ data: { ...rec1.data, cash_advance: 500, rest_day_ot: 250 } });
+    // manual edits are rejected so saved breakdowns remain consistent. Manual cash advance
+    // remains editable and is preserved on regeneration.
+    expect((await ctx.api.put(`/api/form-records/${rec1.id}`).set(hdr()).send({ data: { ...rec1.data, cash_advance: 500, rest_day_ot: 250 } })).status).toBe(400);
+    expect((await ctx.api.put(`/api/form-records/${rec1.id}`).set(hdr()).send({ data: { ...rec1.data, cash_advance: 500 } })).status).toBe(200);
 
     const gen2 = await ctx.api.post(`/api/hr/periods/${period.body.id}/generate-payslips`).set(hdr())
       .send({ payroll_period: 'Regen Cutoff' });
@@ -952,13 +987,14 @@ describe('generate-payslips computes real numbers from attendance + linked forms
   });
 
   it('a company-wide PAID No Work Memo excuses an absence automatically, with no per-employee linking', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-NOWORK', name: 'No Work Test Employee', daily_rate: 800 });
     await ctx.api.post('/api/form-records').set(hdr()).send({
       form_def_id: noWorkFormId,
       data: { date_from: '2026-08-10', date_to: '2026-08-10', reason: 'Typhoon suspension', paid: 'Yes' },
       status: 'approved',
     });
-    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
-      .send({ employee_no: 'TEST-NOWORK', name: 'No Work Test Employee', daily_rate: 800 });
+
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
       .send({ label: 'No Work Cutoff', start_date: '2026-08-10', end_date: '2026-08-10' });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
@@ -977,13 +1013,14 @@ describe('generate-payslips computes real numbers from attendance + linked forms
   });
 
   it('an UNPAID No Work Memo does not credit the day, but is not counted as an absence either — management\'s call, not an unexplained no-show', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-UNPAIDNOWORK', name: 'Unpaid No Work Employee', daily_rate: 800 });
     await ctx.api.post('/api/form-records').set(hdr()).send({
       form_def_id: noWorkFormId,
       data: { date_from: '2026-08-11', date_to: '2026-08-11', reason: 'Unpaid facility closure', paid: 'No' },
       status: 'approved',
     });
-    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
-      .send({ employee_no: 'TEST-UNPAIDNOWORK', name: 'Unpaid No Work Employee', daily_rate: 800 });
+
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
       .send({ label: 'Unpaid No Work Cutoff', start_date: '2026-08-11', end_date: '2026-08-11' });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
@@ -1293,6 +1330,14 @@ describe('generate-payslips computes real numbers from attendance + linked forms
       .send({ payroll_period: 'Lock Cutoff' });
     expect(gen3.body.skipped_locked).toBe(0);
     expect(gen3.body.updated).toBe(1);
+
+    // Once paid, always part of the payroll record: unmarking reopens editing, never deletion.
+    expect((await ctx.api.delete(`/api/form-records/${recId}`).set(hdr())).status).toBe(423);
+    const { queryAll } = await import('../src/shared/db');
+    expect(queryAll<{ action: string }>('SELECT action FROM payslip_paid_history WHERE record_id = ? ORDER BY id', recId)
+      .map((r) => r.action)).toEqual(['paid', 'unpaid']);
+    // A payslip that was never paid can still be deleted.
+    if (otherRec) expect((await ctx.api.delete(`/api/form-records/${otherRec.id}`).set(hdr())).status).toBe(200);
   });
 
   it('emailing a payslip 400s when the employee has no linked account (or the linked account has no email)', async () => {
@@ -1333,7 +1378,8 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
 
     const otRecord = await ctx.api.post('/api/form-records').set(hdr())
-      .send({ form_def_id: overtimeFormId, data: { employee_name: 'Detail Test Employee' }, status: 'approved' });
+      .send({ form_def_id: overtimeFormId, data: { employee_name: 'Detail Test Employee', work_date: '2026-08-02', reason: 'Payroll fixture' }, status: 'approved' });
+    await approveRequestFixture(otRecord.body.id);
 
     await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(hdr()).send({
       employee_id: emp.body.id,
@@ -1404,7 +1450,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     expect(gen.body.possible_half_day_employees).toBe(1);
   });
 
-  it('the payroll detail route 404s when the employee or the period can\'t be resolved', async () => {
+  it('saved payroll details survive employee metadata edits and cutoff label changes', async () => {
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-DETAIL-404', name: 'Detail 404 Employee', daily_rate: 800 });
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
@@ -1427,22 +1473,21 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     await ctx.api.put(`/api/hr/employees/${emp.body.id}`).set(hdr())
       .send({ employee_no: 'TEST-DETAIL-404', name: 'Detail 404 Employee', daily_rate: 800 }); // restore
 
-    // A payslip whose name matches no current/former employee (and has no employee_id — a hand
-    // edit through Data Forms replaces the whole data object) still 404s.
+    // Saved calculation results are retained even when display metadata is hand-edited.
     const orig = records.body.find((r: { id: number }) => r.id === recId);
     const edited = { ...orig.data, employee_name: 'Nobody By This Name' };
     delete edited.employee_id;
     await ctx.api.put(`/api/form-records/${recId}`).set(hdr()).send({ data: edited });
     const noEmp = await ctx.api.get(`/api/hr/payroll/${recId}/detail`).set(hdr());
-    expect(noEmp.status).toBe(404);
-    expect(noEmp.body.error).toMatch(/no employee record/i);
+    expect(noEmp.status).toBe(200);
+    expect(noEmp.body.source).toBe('saved_calculation');
     await ctx.api.put(`/api/form-records/${recId}`).set(hdr()).send({ data: orig.data }); // restore
 
-    // Renaming the cutoff breaks the period-label link.
+    // A generated slip keeps its stable cutoff id across a label change.
     await ctx.api.put(`/api/hr/periods/${period.body.id}`).set(hdr()).send({ label: 'Renamed Cutoff', start_date: '2026-08-06', end_date: '2026-08-06' });
     const noPeriod = await ctx.api.get(`/api/hr/payroll/${recId}/detail`).set(hdr());
-    expect(noPeriod.status).toBe(404);
-    expect(noPeriod.body.error).toMatch(/no cutoff found/i);
+    expect(noPeriod.status).toBe(200);
+    expect(noPeriod.body.period_label).toBe('Renamed Cutoff');
   });
 
   it('post-payroll-gl books an aggregate payroll journal entry when the ledger is on, 400s otherwise', async () => {
@@ -1534,6 +1579,8 @@ describe('generate-payslips — HR-marked holidays + rest-day pay end to end', (
   });
 
   it('a Regular Holiday ALSO covered by a paid No Work Memo still routes to holiday_pay, is excluded from days_worked, and is not an absence — the statutory entitlement wins over the memo', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-HOL-NOWORK', name: 'Holiday No Work Employee', daily_rate: 1000 });
     const forms = await ctx.api.get('/api/form-definitions').set(hdr());
     const noWorkFormId = forms.body.find((f: { slug: string }) => f.slug === 'no_work_memo').id;
     await ctx.api.post('/api/form-records').set(hdr()).send({
@@ -1541,8 +1588,7 @@ describe('generate-payslips — HR-marked holidays + rest-day pay end to end', (
       data: { date_from: '2026-01-01', date_to: '2026-01-01', reason: 'Suspension, Holiday', paid: 'Yes' },
       status: 'approved',
     });
-    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
-      .send({ employee_no: 'TEST-HOL-NOWORK', name: 'Holiday No Work Employee', daily_rate: 1000 });
+
     // 2026-01-01 is already seeded in the calendar as a Regular Holiday, AND now also covered
     // by the paid No Work Memo above — nobody logged any time (unworked, per the memo).
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
@@ -1713,9 +1759,10 @@ describe('generate-payslips — holiday_adjacency_requirement end to end', () =>
       .send({ employee_no: 'TEST-ADJ-BEFORE-LEAVE', name: 'Adjacency Before Leave Employee', daily_rate: 1000 });
     const leaveForm = await ctx.api.post('/api/form-records').set(hdr()).send({
       form_def_id: leaveFormId,
-      data: { employee_name: 'Adjacency Before Leave Employee', with_pay: 'Yes' },
+      data: { employee_name: 'Adjacency Before Leave Employee', with_pay: 'Yes', date_from: '2025-12-31', date_to: '2025-12-31', reason: 'Payroll fixture' },
       status: 'approved',
     });
+    await approveRequestFixture(leaveForm.body.id);
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
       .send({ label: 'Adjacency Before Leave Cutoff', start_date: '2025-12-31', end_date: '2026-01-01' });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
@@ -2053,6 +2100,41 @@ describe('payroll detail — per-payslip statutory deduction toggles (preview + 
     return records.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Toggle Test ' + label);
   }
 
+  it('previews, saves and restores per-payslip overrides, preserving them on regeneration', async () => {
+    const rec = await genToggleEmployee('Manual Overrides Cutoff', '2026-08-06');
+    const overrides = { sss: 0, philhealth: 111.25, pagibig: 222, withholding_tax: 333.5 };
+    const preview = await ctx.api.post(`/api/hr/payroll/${rec.id}/preview-deductions`).set(hdr()).send({ statutory_overrides: overrides });
+    expect(preview.status).toBe(200);
+    expect(preview.body.sss).toBe(0);
+    expect(preview.body.philhealth).toBe(111.25);
+    expect(preview.body.pagibig).toBe(222);
+    expect(preview.body.withholding_tax).toBe(333.5);
+    expect(preview.body.total_deductions).toBe(666.75);
+    expect(preview.body.net_pay).toBe(rec.data.total_earnings - 666.75);
+    expect((await ctx.api.get(`/api/form-records/${rec.id}`).set(hdr())).body.data.statutory_overrides).toEqual(rec.data.statutory_overrides ?? {});
+    const saved = await ctx.api.put(`/api/hr/payroll/${rec.id}/deductions`).set(hdr()).send({ statutory_overrides: overrides });
+    expect(saved.status).toBe(200);
+    const period = await ctx.api.get('/api/hr/periods').set(hdr());
+    const cutoff = period.body.find((p: { label: string }) => p.label === 'Manual Overrides Cutoff');
+    await ctx.api.post(`/api/hr/periods/${cutoff.id}/generate-payslips`).set(hdr()).send({ payroll_period: cutoff.label });
+    const regenerated = (await ctx.api.get(`/api/form-records/${rec.id}`).set(hdr())).body;
+    expect(regenerated.data.statutory_overrides).toEqual(overrides);
+    expect(regenerated.data.sss).toBe(0);
+    expect(regenerated.data.withholding_tax).toBe(333.5);
+    const restored = await ctx.api.put(`/api/hr/payroll/${rec.id}/deductions`).set(hdr()).send({ statutory_overrides: { sss: null } });
+    expect(restored.body.sss).toBe(rec.data.sss);
+    expect(restored.body.philhealth).toBe(111.25);
+    const disabled = await ctx.api.put(`/api/hr/payroll/${rec.id}/deductions`).set(hdr()).send({ pagibig_applied: false });
+    expect(disabled.body.pagibig).toBe(0);
+    await ctx.api.post(`/api/hr/payroll/${rec.id}/mark-paid`).set(hdr()).send({});
+    expect((await ctx.api.put(`/api/hr/payroll/${rec.id}/deductions`).set(hdr()).send({ statutory_overrides: { sss: 9 } })).status).toBe(400);
+  });
+
+  it.each([-1, 'invalid', 10_000_001, 1.234])('rejects invalid payslip override %s', async amount => {
+    const rec = await genToggleEmployee('Invalid Override ' + amount, '2026-08-06');
+    expect((await ctx.api.post(`/api/hr/payroll/${rec.id}/preview-deductions`).set(hdr()).send({ statutory_overrides: { sss: amount } })).status).toBe(400);
+  });
+
   it('preview-deductions recomputes without saving — turning SSS off zeroes it and lowers total_deductions, but the stored record is untouched', async () => {
     const rec = await genToggleEmployee('Preview Cutoff', '2026-08-06');
     expect(rec.data.sss).toBeGreaterThan(0);
@@ -2153,6 +2235,8 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
   });
 
   it('a linked Half Day (PM) request no longer shows hours of "late" against the full shift\'s 08:00 start (real bug fix)', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-HALFDAY-PM', name: 'Half Day PM Employee', daily_rate: 800 });
     await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
       pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [],
       hours_basis: 'fixed', lunch_break_minutes: 60, min_work_minutes: 0,
@@ -2162,8 +2246,8 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
       data: { employee_name: 'Half Day PM Employee', date: '2026-08-05', session: 'Afternoon (PM)', reason: 'Personal' },
       status: 'approved',
     });
-    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
-      .send({ employee_no: 'TEST-HALFDAY-PM', name: 'Half Day PM Employee', daily_rate: 800 });
+    await approveRequestFixture(halfdayRecord.body.id);
+
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
       .send({ label: 'Half Day PM Cutoff', start_date: '2026-08-05', end_date: '2026-08-05' });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
@@ -2251,13 +2335,15 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
   });
 
   it('a linked Offset form waives the undertime deduction against its own shifted time-out through a real generate-payslips run (but arrival lateness itself is untouched — offset only moves the end)', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-OFFSET', name: 'Offset Employee', daily_rate: 800 });
     const offsetRecord = await ctx.api.post('/api/form-records').set(hdr()).send({
       form_def_id: offsetFormId,
       data: { employee_name: 'Offset Employee', work_date: '2026-08-08', new_time_out: '19:00', reason: 'Arrived late, agreed to stay later' },
       status: 'approved',
     });
-    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
-      .send({ employee_no: 'TEST-OFFSET', name: 'Offset Employee', daily_rate: 800 }); // hourly = 100
+    await approveRequestFixture(offsetRecord.body.id);
+ // hourly = 100
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
       .send({ label: 'Offset Cutoff', start_date: '2026-08-08', end_date: '2026-08-08' });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
@@ -2277,6 +2363,8 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
   });
 
   it('an Offset form with BOTH New Time In and New Time Out shifts the whole day\'s window through a real generate-payslips run: no late deduction for the shifted arrival, and the stretch past the original shift end is not overtime', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-FULLOFFSET', name: 'Full Offset Employee', daily_rate: 800 });
     // require_ot_form off, so any clock-out past the effective end WOULD auto-pay OT if the
     // offset's shifted window weren't being honored — proves the 5-7pm stretch is correctly
     // still "ordinary hours", not silently passing only because OT was gated off anyway.
@@ -2288,8 +2376,8 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
       data: { employee_name: 'Full Offset Employee', work_date: '2026-08-10', new_time_in: '10:00', new_time_out: '19:00', reason: 'Whole shift moved 2hrs later' },
       status: 'approved',
     });
-    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
-      .send({ employee_no: 'TEST-FULLOFFSET', name: 'Full Offset Employee', daily_rate: 800 });
+    await approveRequestFixture(offsetRecord.body.id);
+
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
       .send({ label: 'Full Offset Cutoff', start_date: '2026-08-10', end_date: '2026-08-10' });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
@@ -2313,13 +2401,15 @@ describe('Time Keeping settings: half-day windows, per-hours-basis pay, minimum 
   });
 
   it('a linked Undertime Request with with_pay=Yes waives the undertime deduction through a real generate-payslips run', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-UNDERTIME-PAID', name: 'Undertime Paid Employee', daily_rate: 800 });
     const undertimeRecord = await ctx.api.post('/api/form-records').set(hdr()).send({
       form_def_id: undertimeFormId,
       data: { employee_name: 'Undertime Paid Employee', work_date: '2026-08-09', with_pay: 'Yes', reason: 'Documented emergency' },
       status: 'approved',
     });
-    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
-      .send({ employee_no: 'TEST-UNDERTIME-PAID', name: 'Undertime Paid Employee', daily_rate: 800 });
+    await approveRequestFixture(undertimeRecord.body.id);
+
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
       .send({ label: 'Undertime Paid Cutoff', start_date: '2026-08-09', end_date: '2026-08-09' });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
@@ -2380,6 +2470,8 @@ describe('Whole-day/Undertime Days, max OT, night differential, and Other Deduct
   });
 
   it('a linked Half Day request shows as days_half:1 on the payslip, still 0.5 toward days_worked', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-DAYSHALF', name: 'Days Half Employee', daily_rate: 800 });
     const forms = await ctx.api.get('/api/form-definitions').set(hdr());
     const halfdayFormId = forms.body.find((f: { slug: string }) => f.slug === 'halfday_request').id;
     const halfdayRecord = await ctx.api.post('/api/form-records').set(hdr()).send({
@@ -2387,8 +2479,8 @@ describe('Whole-day/Undertime Days, max OT, night differential, and Other Deduct
       data: { employee_name: 'Days Half Employee', date: '2026-08-12', session: 'Morning (AM)', reason: 'Personal' },
       status: 'approved',
     });
-    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
-      .send({ employee_no: 'TEST-DAYSHALF', name: 'Days Half Employee', daily_rate: 800 });
+    await approveRequestFixture(halfdayRecord.body.id);
+
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
       .send({ label: 'Days Half Cutoff', start_date: '2026-08-12', end_date: '2026-08-12' });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
@@ -2405,6 +2497,8 @@ describe('Whole-day/Undertime Days, max OT, night differential, and Other Deduct
   });
 
   it('a day linked to MULTIPLE forms (form_record_ids): Half Day AM + Overtime both take effect on one generate-payslips run', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-MULTIFORM', name: 'Multi Form Employee', daily_rate: 800 });
     await ctx.api.put('/api/hr/payroll-policy').set(hdr()).send({
       pay_frequency: 'semi_monthly', auto_statutory: true, default_rest_days: [], require_ot_form: true, max_ot_hours: null,
     });
@@ -2416,13 +2510,14 @@ describe('Whole-day/Undertime Days, max OT, night differential, and Other Deduct
       data: { employee_name: 'Multi Form Employee', date: '2026-08-14', session: 'Morning (AM)', reason: 'Personal' },
       status: 'approved',
     });
+    await approveRequestFixture(half.body.id);
     const ot = await ctx.api.post('/api/form-records').set(hdr()).send({
       form_def_id: otFormId,
       data: { employee_name: 'Multi Form Employee', work_date: '2026-08-14', reason: 'Coverage' },
       status: 'approved',
     });
-    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
-      .send({ employee_no: 'TEST-MULTIFORM', name: 'Multi Form Employee', daily_rate: 800 }); // hourly = 100
+    await approveRequestFixture(ot.body.id);
+ // hourly = 100
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
       .send({ label: 'Multi Form Cutoff', start_date: '2026-08-14', end_date: '2026-08-14' });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });
@@ -2454,6 +2549,8 @@ describe('Whole-day/Undertime Days, max OT, night differential, and Other Deduct
   });
 
   it('GET /hr/linked-form-record-ids reports every form record consumed by an attendance day (so the picker can hide them)', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
+      .send({ employee_no: 'TEST-LINKEDIDS', name: 'Linked IDs Employee', daily_rate: 700 });
     const forms = await ctx.api.get('/api/form-definitions').set(hdr());
     const otFormId = forms.body.find((f: { slug: string }) => f.slug === 'overtime_request').id;
     const used = await ctx.api.post('/api/form-records').set(hdr()).send({
@@ -2462,8 +2559,7 @@ describe('Whole-day/Undertime Days, max OT, night differential, and Other Deduct
     const free = await ctx.api.post('/api/form-records').set(hdr()).send({
       form_def_id: otFormId, data: { employee_name: 'Linked IDs Employee', work_date: '2026-08-16', reason: 'x' }, status: 'approved',
     });
-    const emp = await ctx.api.post('/api/hr/employees').set(hdr())
-      .send({ employee_no: 'TEST-LINKEDIDS', name: 'Linked IDs Employee', daily_rate: 700 });
+
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
       .send({ label: 'Linked IDs Cutoff', start_date: '2026-08-15', end_date: '2026-08-16' });
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(hdr()).send({ employee_id: emp.body.id });

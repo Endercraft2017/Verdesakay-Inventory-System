@@ -1,7 +1,6 @@
 /* Dependency-free client-side image shrinker for upload. Draws the picture to a
    <canvas>, downscales to a max dimension and re-encodes as JPEG. Used by Messages
-   (web + mobile) to keep attachment storage down; gated by the company profile's
-   `compress_images` flag.
+   (web + mobile) to keep attachment storage down.
 
    ImageCompress.maybeCompress(file, opts) -> Promise<File>
      Resolves the ORIGINAL file untouched when: it isn't a re-encodable raster

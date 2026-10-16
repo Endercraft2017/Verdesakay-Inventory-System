@@ -5,6 +5,153 @@
 (function () {
   // group -> for the picker's <optgroup>. routes -> which App route auto-selects this.
   const TOPICS = [
+    { id: 'departments', title: 'Departments', group: 'Admin', routes: [],
+      html: `<p><b>Admin → Accounts → Departments</b> opens the department manager.</p><ol><li>Enter a name in <b>Add department</b> and click <b>Add</b>.</li><li>Use a row's <b>Edit</b> action to rename it or assign its Head (approves requests).</li><li>Review the Members, Items and Files counts before deleting a department.</li></ol><p>Department management needs <i>users.manage</i>. Close this dialog to return to the account list.</p>`,
+    },
+    { id: 'payments', title: 'Payments', group: 'Accounting', routes: [], workflow: 'accounting',
+      html: `<p><b>Accounting → Receivables &amp; Payables → Payments</b> lists customer receipts and supplier settlements. Set up <b>Books</b> and a cash/bank account first so Deposit to / Pay from has an account to select.</p><ol><li>Click <b>Record payment</b>, choose whether money is received or paid, select the party, date, amount and cash/bank account.</li><li>For invoice/bill allocations, open the party from AR / AP Aging and use its Record receipt/payment action; tick the open documents and set each Apply amount. The top-level Record payment form records an on-account payment. Click <b>Save payment</b> (needs <i>accounting.manage</i>).</li><li>Open a posted payment to review its allocations. Use <b>Void payment</b> for a mistake; do not post a second payment as a correction.</li></ol><p>View access needs <i>accounting.view</i>.</p>`,
+    },
+    { id: 'credit-notes', title: 'Credit / Debit Notes', group: 'Accounting', routes: [], workflow: 'accounting',
+      html: `<p><b>Accounting → Receivables &amp; Payables → Credit / Debit Notes</b> records returns, allowances and overbilling.</p><ol><li>Click <b>New note</b>, choose Customer credit or Supplier debit, select the party, Date, Subtotal, VAT amount, optional Tax code and Reason.</li><li>Review the values and click <b>Issue note</b> (needs <i>accounting.manage</i>).</li><li>Open an issued note to see its details; use <b>Void note</b> if it was issued incorrectly.</li></ol><p>A note adjusts the financial balance; it is not a general stock-return form.</p>`,
+    },
+    { id: 'qc-findings', title: 'QC / QA Findings & Reports', group: 'Manufacturing', routes: [], workflow: 'production',
+      html: `<p><b>Production → QC / QA → Findings &amp; Reports</b> is the inspection history.</p><ol><li>Filter the result and date range, or search by job order or product.</li><li>Open a finding to see the inspector, remarks, disposition and checklist snapshot.</li><li>Use <b>Export</b> to download the filtered findings.</li></ol><p>Recording a new Pass/Fail belongs to <b>Inspection Queue</b>, not this history view. Reading needs <i>inventory.view</i>.</p>`,
+    },
+    { id: 'low-stock', title: 'Low Stock', group: 'Inventory', routes: [], workflow: 'inventory',
+      html: `<p><b>Inventory → Items → Low Stock</b> opens the inventory list with <b>Low stock</b> ticked.</p><ol><li>Review items at or below their Safety Stock Quantity (reorder level); use other list filters to narrow the result.</li><li>Click <b>Reorder PO</b>, review the target multiplier and draft purchases (needs <i>orders.create</i>).</li><li>Review the drafts under <b>Inventory → Orders → Purchase Orders</b>. Finished products are skipped; build those through Production.</li><li>Untick <b>Low stock</b> or choose All Items to return to the full catalogue.</li></ol>`,
+    },
+
+    {
+      id: 'purchase-orders', title: 'Purchase Orders', group: 'Orders', routes: [], workflow: 'purchasing',
+      html: `<p><b>Inventory → Orders → Purchase Orders</b> is the purchasing document list.</p><ol><li>Click <b>New Purchase Order</b>, choose <b>Supplier (on file)</b>, set Expected delivery, and add the items, quantities and prices.</li><li>Save the order, then review its row details and print it with the appropriate template.</li><li>Use the row's <b>Receiving &amp; bills</b> action to <b>Record receipt</b> for deliveries and enter vendor bills.</li><li>Posting a goods receipt adds stock. Approving a bill checks receipt coverage and PO prices; creating the PO alone does not receive goods.</li></ol><p>This is separate from Sale Orders and production Job Orders.</p>`,
+    },
+    {
+      id: 'job-documents', title: 'Job Order documents', group: 'Orders', routes: [],
+      html: `<p><b>Inventory → Orders → Job Orders</b> stores customer work documents, numbered JO-….</p><ol><li>Click <b>New Job Order</b>, enter the customer, work/items, quantities and prices, and save.</li><li>Open the row to review or print the document.</li><li>For a build, use the row's <b>Start production</b> action, choose the finished product, build quantity, source and output locations, then create the linked production order.</li><li>Manage that build under <b>Production → Job Orders</b>; the JO document and the production order are separate records.</li></ol><p>Stock-kit release, acceptance, inspection and Products In belong to the production order, not this document.</p>`,
+    },
+    {
+      id: 'new-item', title: 'New / Edit item', group: 'Inventory', routes: [],
+      html: `<p>Open <b>Inventory → All Items → New item</b>, or use the row's Edit action.</p><ol><li>On <b>Default</b>, enter <b>Item Name</b> and <b>Item Code</b> (the SKU). A blank code can use the numbering policy; <b>Fn</b> controls its format for accounts with configuration access.</li><li>Choose Unit, Category, Department and Supplier; set Purchase Price, Sale Price and Standard Cost where applicable.</li><li>Use <b>Qty</b> for <b>Safety Stock Quantity</b> (the reorder level) and stock-related fields, and <b>Item Information</b> / <b>Additional Information</b> for other details.</li><li>Click <b>Create item</b> or <b>Save changes</b>. Set opening Inventory Qty when creating; use Stock in / out for later quantity changes.</li></ol><p><b>Option</b> changes which fields and tabs appear (needs <i>inventory.configure</i>). Labels and visibility can be customized, so your company's layout may differ.</p>`,
+    },
+    {
+      id: 'payroll-policy', title: 'Payroll Policy Settings', group: 'HR', routes: [], workflow: 'payroll',
+      html: `<p>Open <b>HR → Time Keeping → Policy Settings</b> (changes need <i>hr.manage</i>).</p><ol><li>In <b>Shifts</b>, use <b>Add Shift</b> for start/end times and the default shift.</li><li>In <b>Payroll Rules</b>, review grace, late/OT blocks and rates, monthly-rate divisor, the OT cap and whether a linked approved OT form is required.</li><li>Review the fixed/per-hours pay mode, minimum-time and half-day rules, lunch deduction and rest-day defaults.</li><li>Set pay frequency, automatic statutory deductions and the cutoff deduction schedule. Use <b>Open rate tables</b> for effective-dated contribution rules.</li><li>Scroll to <b>Save Rules</b>, then check the recalculated attendance before generating payslips.</li></ol><p>Kiosk approval, clock-location and attendance settings are also available here. Policy changes affect later computations; review existing periods before regenerating payroll.</p>`,
+    },
+    {
+      id: 'cutoff', title: 'New / Edit Cutoff', group: 'HR', routes: [], workflow: 'payroll',
+      html: `<p>In <b>HR → Time Keeping</b>, click <b>New Cutoff</b>.</p><ol><li>Enter a Label, Start date and End date; the end must be on or after the start.</li><li>Click <b>Create</b> (or <b>Save</b> when editing), then open the cutoff row.</li><li>Use the employee-picker or <b>Add All</b> controls to build its roster. A new cutoff alone has no attendance or payslips.</li><li>Open an employee's Daily Time record to enter or review attendance. Import Punches backfills earlier punches; punches for rostered staff also update attendance live.</li></ol><p>Creation/roster/attendance changes need <i>hr.manage</i>; reading needs <i>hr.view</i>.</p>`,
+    },
+    {
+      id: 'global-variables', title: 'Template variables', group: 'Documents', routes: [],
+      html: `<p>Use <b>Documents → Templates → Variables</b> for global template variables, or the editor's variable manager for variables local to one template.</p><ol><li>Click <b>New variable</b> and give it a key, label and category.</li><li>Choose a fixed value, bound data field or formula, complete its settings, and save.</li><li>Insert it with <b>Variables → Insert variable</b> or its <code>{{key}}</code> token.</li><li>Check a preview and a real printed record; a field may be empty if that record has no value.</li></ol><p>Changing a global variable affects every template using it. Editing variables requires <i>templates.edit</i>.</p>`,
+    },
+    {
+      id: 'company-profile', title: 'Company profile', group: 'Documents', routes: [],
+      html: `<p>Open <b>Documents → Templates → Company profile</b>.</p><ol><li>Enter the company name, address, phone, email and Logo URL.</li><li>Choose whether to compress large message images before uploading.</li><li>Click <b>Save</b> (needs <i>templates.company</i>), then preview a document that uses <code>{{company.*}}</code>.</li></ol><p>These values are shared across templates; this is different from editing one template. Without company-profile permission the fields are read-only.</p>`,
+    },
+    {
+      id: 'barcode-labels', title: 'Barcode labels', group: 'Inventory', routes: [], workflow: 'inventory',
+      html: `<p>In <b>Inventory</b>, filter the item list first, then click <b>Labels</b>.</p><ol><li>Choose Label size, Copies per item and whether to show the name.</li><li>Tick the items to print; Toggle all changes the selection.</li><li>Click <b>Open print sheet</b>, review the sheet and print it.</li></ol><p>Labels encode the item's Barcode when set, otherwise Item Code/SKU. Items without a code are skipped. These are item barcodes; serialized production units use their own QR labels.</p>`,
+    },
+
+    {
+      id: 'data-forms', title: 'Data Forms', group: 'Documents', routes: ['form-records'],
+      html: `<p>Open <b>Documents → Data Forms → All Forms</b>, then choose a form.</p><ol><li>Use search, status and period filters to find records.</li><li>Use <b>New record</b> to complete the form's fields and save. The record gets an automatic number.</li><li>Open a record to review it; use available edit, approval and print actions for that form.</li></ol><p>Browsing and editing a section's records requires <i>forms.manage.&lt;section&gt;</i>. General unscoped forms require all four section permissions. Uploading a file uses All Files instead.</p>`,
+    },
+    {
+      id: 'payroll-records', title: 'Payroll records', group: 'HR', routes: [],
+      html: `<p><b>HR → Payroll</b> opens the <b>HR Payroll</b> Data Form. Browsing records needs <i>forms.manage.hr</i>.</p><ol><li>Generate payslips from a populated cutoff in <b>HR → Time Keeping</b> first (needs <i>hr.manage</i>).</li><li>Choose the period, expand its employee records, and check earnings and deductions against attendance.</li><li>Print payslips with the linked template. Review manual cash advances and other deductions.</li><li>Use <b>Post to GL</b> after the cutoff is final; it is separate from generating payslips and needs <i>accounting.manage</i>.</li></ol><p>Paid payslips are locked against regeneration. Rest-day overtime is computed from attendance; a manually changed value is overwritten when regenerated.</p>`,
+    },
+    {
+      id: 'hr-forms', title: 'HR request forms and notices', group: 'HR', routes: [],
+      html: `<p><b>HR → HR Forms</b> opens HR Data Forms, including leave, overtime, offset, undertime and notices.</p><ol><li>Choose the form and create or review its records (needs <i>forms.manage.hr</i>).</li><li>Complete the employee, date and request details, then use the available approval actions.</li><li>In <b>Time Keeping</b>, link the approved request to the appropriate attendance day. Saving a form alone does not attach it to attendance.</li></ol>`,
+    },
+    {
+      id: 'stock-movements', title: 'Stock Movements', group: 'Inventory', routes: ['inventory-movements'],
+      html: `<p><b>Inventory → Stock Movements → All Movements</b> is the read-only movement history across items.</p><ol><li>Search by item, SKU or reason; choose Stock IN/OUT, location and date filters.</li><li>Review the change, location balance, total balance, reason and staff member.</li><li>Use Prev/Next to browse history and Export to download the filtered movements.</li></ol><p>Reading requires <i>inventory.view</i>. Make corrections from the item actions in All Items; this log does not edit stock.</p>`,
+    },
+    {
+      id: 'production-record', title: 'Production record', group: 'Manufacturing', routes: ['production-record'],
+      html: `<p>A unit or batch's <b>Production record</b> is its printable traceability history (needs <i>inventory.view</i>).</p><ol><li>Open it from a unit/batch's View record action, or scan its label in the phone app and choose Open production record.</li><li>Review identity, job order, build photo, team, inspection findings, repairs and movements.</li><li>Use Print for the record or Print label where available.</li></ol><p>Opening the route without a unit or batch does not select a record; open it from its source first. A record or label does not receive stock.</p>`,
+    },
+    {
+      id: 'production-teams', title: 'Production Teams', group: 'Manufacturing', routes: ['production-teams'],
+      html: `<p><b>Production → Scheduling → Teams</b> manages crews (read: <i>inventory.view</i>; changes: <i>inventory.adjust</i>).</p><ol><li>Click New team, enter its name and notes, and create it.</li><li>Open the team row, click Add members, select employees and an optional role, then Add selected.</li><li>Assign the team on the job order's New/Edit or Team / schedule form.</li></ol><p>A team referenced by any job order cannot be deleted. Edit it and clear Active instead.</p>`,
+    },
+    {
+      id: 'notes', title: 'Notes', group: 'Tools', routes: [],
+      html: `<p>Open the right-rail <b>Notes</b> tool for your private notes.</p><ol><li>Click New note, enter an optional title and the required note text, then save.</li><li>Open an existing note to edit it; use its delete action to remove it.</li></ol><p>Notes are saved to your account and remain after closing the drawer.</p>`,
+    },
+    {
+      id: 'scheduler', title: 'Scheduler', group: 'Tools', routes: [],
+      html: `<p>Open <b>Scheduler</b> on the right rail for your personal tasks.</p><ol><li>Enter a task title and optional due date, then click Add.</li><li>Tick the task to mark it done, or untick to reopen it.</li><li>Use the delete action to remove a task.</li></ol><p>These are saved tasks; entering a due date does not configure an automatic job.</p>`,
+    },
+    {
+      id: 'bookmarks', title: 'Bookmarks', group: 'Tools', routes: [],
+      html: `<p>Open <b>Bookmarks</b> on the right rail to save shortcuts.</p><ol><li>Navigate to the screen and filter you want to save.</li><li>Open Bookmarks and click Bookmark current page.</li><li>Choose a saved bookmark to return to that location, or delete an unwanted bookmark.</li></ol><p>A shortcut does not grant access to a restricted screen.</p>`,
+    },
+    {
+      id: 'bug-reports', title: 'Report a bug', group: 'Tools', routes: [],
+      html: `<p>Use the right-rail bug button to report a software problem.</p><ol><li>Enter a clear title, describe what you did and what happened, and include reproduction steps.</li><li>Add a screenshot or attachment if available, then submit the report.</li></ol><p>Administrators can use View reports to review reports. For a stock or parts-kit issue, use the phone's Report a problem to message a supervisor.</p>`,
+    },
+
+    {
+      id: 'site-map', title: 'Site Map', group: 'Basics', routes: [],
+      html: `<p>Use the Site Map to find and open a screen.</p><ol><li>Find the area heading, then the subsection and screen name. Scroll inside the map to see the remaining areas.</li><li>Click a screen name to close the map and open that screen. Entries such as Low Stock or Payroll open their own filtered view.</li><li>Only areas available to your account and workspace appear. Ask an administrator about missing access.</li><li>Click Close to return to your current screen. Search Menu is another way to find a screen by name.</li></ol>`,
+    },
+    {
+      id: 'guide-center', title: 'Guide Center', group: 'Basics', routes: ['sop'],
+      html: `<p>Browse the end-to-end workflows from Home → Help / SOP.</p><ol><li>Choose a workflow from the list to read its steps in order.</li><li>Use a screen link to open the screen described by that step.</li><li>Start the walkthrough for guided navigation. Back and Next change steps; Finish ends the walkthrough.</li><li>Use Print to print the selected workflow.</li></ol>`,
+    },
+    {
+      id: 'files', title: 'Files', group: 'Documents', routes: ['forms'],
+      html: `<p>Documents → Files → All Files stores uploaded documents, separate from Data Forms.</p><ol><li>Click Upload, choose a file and complete its details, then save.</li><li>Search or filter the list to find a file. Open a row to preview supported formats.</li><li>Use Download to save a copy, or Print where available. Delete is shown only when you have permission.</li></ol>`,
+    },
+    {
+      id: 'customers', title: 'Customers', group: 'Inventory', routes: ['customers'],
+      html: `<p>Inventory → Customers stores the customer records used by sale orders.</p><ol><li>Click New customer and enter the customer and contact details, then save.</li><li>Search by customer details; open a row to inspect the record.</li><li>Use Edit to update details. Creating and editing customers requires <i>orders.edit</i>; deleting requires <i>orders.delete</i>.</li></ol>`,
+    },
+    {
+      id: 'announcements', title: 'Announcements', group: 'Basics', routes: ['announcements'],
+      html: `<p>Home → Announcements shows notices shared with staff.</p><ol><li>Read the announcement list for current notices.</li><li>With posting access, click New announcement, complete the notice and save.</li><li>Use the row Edit or Delete buttons to manage a notice when your role allows it.</li></ol>`,
+    },
+    {
+      id: 'hr-overview', title: 'Human Resources overview', group: 'HR', routes: ['hr'],
+      html: `<p>HR → Overview summarises employees, attendance and HR work.</p><ol><li>Open an attendance summary to view the matching Daily Report.</li><li>Use Employees for staff records and Time Keeping for cutoff attendance and payroll.</li><li>Payroll and HR Forms open their respective Data Forms.</li></ol>`,
+    },
+    {
+      id: 'kiosk', title: 'Time-in Kiosk', group: 'HR', routes: ['hr-kiosk'],
+      html: `<p>HR → Time Keeping → Time-in Kiosk records live attendance punches on the office monitor.</p><ol><li>If this PC needs approval, ask an HR manager to approve it as an office kiosk.</li><li>Allow camera access. Employees scan the rotating QR from the phone app, or enter their employee number on the kiosk.</li><li>Check the displayed confirmation after each punch.</li><li>Field Work records separate departures and returns; it does not change payroll hours. Import or reconcile attendance in Time Keeping for payroll.</li></ol>`,
+    },
+    {
+      id: 'daily-report', title: 'Daily Report', group: 'HR', routes: ['hr-daily-report'],
+      html: `<p>HR → Time Keeping → Daily Report shows attendance for the selected date.</p><ol><li>Choose a date, or click Today, then Refresh to reload the figures.</li><li>Filter by status or search for an employee; review the department summaries.</li><li>The roster comes from cutoff periods covering that date. If no cutoff covers it, set up the cutoff and its roster in Time Keeping.</li><li>Live kiosk and phone punches supplement attendance that has not been entered or imported into the cutoff grid.</li></ol>`,
+    },
+    {
+      id: 'production-overview', title: 'Production overview', group: 'Manufacturing', routes: ['production-overview'],
+      html: `<p>Production → Overview summarises production work and waiting queues.</p><ol><li>Review overdue job orders, rework and pending inspections or receipts.</li><li>Open a summary row to go to the screen that handles the work.</li><li>Use Product Setup for BOMs, Job Orders for builds, and Products In for receiving finished output.</li></ol>`,
+    },
+    {
+      id: 'production-qc', title: 'QC / QA', group: 'Manufacturing', routes: ['production-qc'],
+      html: `<p>Production → QC / QA handles inspection and its history.</p><ol><li>Open Inspection Queue and choose the job order and unit to inspect.</li><li>Complete the required checklist, then record Pass or Fail with remarks. A failure needs a disposition; repair sends the unit to rework.</li><li>Use Findings & Reports to search, filter and export past inspections.</li><li>Manage Checklists requires checklist configuration access. A final pass queues output for Products In; it does not add stock.</li></ol>`,
+    },
+    {
+      id: 'repairs', title: 'Repairs & Parts Requests', group: 'Manufacturing', routes: ['repairs'],
+      html: `<p>Production → Repairs & Parts Requests handles parts needed for failed units.</p><ol><li>Raise an add or replace request from the repair panel on the job order.</li><li>Warehouse staff review the request and accept it from a stock location, or reject it with a reason.</li><li>Accepting moves the parts; a replacement records the removed part as damage.</li><li>Settle every open request before re-inspecting the unit in QC / QA.</li></ol>`,
+    },
+    {
+      id: 'products-in', title: 'Products In', group: 'Manufacturing', routes: ['production-receiving'],
+      html: `<p>Production → Products In receives built output into stock.</p><ol><li>Open Ready to Receive and choose the job order.</li><li>Select the units or enter the batch quantity actually counted, then choose the destination location and post.</li><li>Use Receipt History to review previous receiving records.</li><li>Only received output becomes stock available to sell or reserve. Posting needs <i>production.receive</i> or <i>inventory.adjust</i>.</li></ol>`,
+    },
+    {
+      id: 'finished-goods', title: 'Finished Goods', group: 'Manufacturing', routes: ['finished-goods'],
+      html: `<p>Production → Finished Goods lists received products currently on hand.</p><ol><li>Search by product name or SKU.</li><li>Open a product row for its details and unit or location breakdown.</li><li>Use Sell / Move for stock on hand (needs <i>inventory.adjust</i>). Sell deducts stock immediately; Release SOs instead reserves it until the order is confirmed/completed. If nothing appears, check that Products In has received the output.</li></ol>`,
+    },
+    {
+      id: 'receivables', title: 'Receivables & Payables', group: 'Accounting', routes: ['accounting-receivables'],
+      html: `<p>Accounting → Receivables & Payables tracks outstanding invoices, bills and settlements.</p><ol><li>Review AR / AP aging for the chosen date and open a party to inspect outstanding balances.</li><li>With accounting manage access, click Record payment and enter the customer receipt or supplier payment and its allocations.</li><li>Use Payments to review posted settlements. Void a mistaken payment rather than editing its history.</li><li>Use Credit / Debit Notes for returns, allowances or overbilling; open a note to inspect or void it when allowed.</li></ol>`,
+    },
+
     {
       id: 'getting-started', title: 'Getting around', group: 'Basics', routes: ['dashboard'],
       html: `
@@ -45,19 +192,21 @@
         rounded for display.</p>`,
     },
     {
-      id: 'inventory', title: 'Inventory — items & stock', group: 'Inventory', routes: ['inventory', 'inventory-movements'],
+      id: 'inventory', title: 'Inventory — items & stock', group: 'Inventory', routes: ['inventory'],
       html: `
-        <p>The item list is your catalogue. Each row is one product or material with a
-        quantity on hand.</p>
+        <p><b>Inventory → Items → All Items</b> is your catalogue. Each row is a product or material
+        with a quantity on hand. Reading needs <i>inventory.view</i>, New/Import <i>inventory.create</i>,
+        Edit <i>inventory.edit</i>, stock actions <i>inventory.adjust</i>, and Reorder PO <i>orders.create</i>.</p>
         <ul>
-          <li><b>New item</b> — add one product. Set a <b>SKU</b> (unique code), unit,
-              and a <b>reorder level</b> so it flags when stock runs low.</li>
+          <li><b>New item</b> — enter Item Name, Item Code (SKU) and Unit on <b>Default</b>.
+              Set <b>Safety Stock Quantity</b> (the reorder level) on <b>Qty</b>, then click <b>Create item</b>.
+              The <b>Option</b> panel can customize fields and tabs.</li>
           <li><b>Stock in / out</b> (row action) — record a delivery, a withdrawal, or a
               correction. Every change is kept in the item's <b>history</b>.</li>
           <li><b>Transfer</b> — move units from one location to another; the grand total
               doesn't change.</li>
           <li><b>Low Stock</b> filter — everything at or below its reorder level.</li>
-          <li><b>Reorder PO</b> — one click drafts purchase orders for everything below its
+          <li><b>Reorder PO</b> — one click drafts purchase orders for everything at or below its
               reorder level, one per preferred supplier, topping each item up to a multiple
               of its reorder level. With the Low Stock filter on it acts on just the
               filtered list. Finished products are skipped (those are produced). Review and
@@ -95,15 +244,18 @@
               <code>quantity</code> column is its opening stock.</li>
           <li><code>department</code> and <code>supplier</code> are matched by name and must
               <b>already exist</b> — create them first.</li>
-          <li>One bad row is skipped with a reason; the good rows in the same file still import.</li>
-          <li>Export → edit in Excel → re-import is safe: it produces all updates, no duplicates.</li>
+          <li>One bad row is skipped with a reason; good rows still import. Review the import report.</li>
+          <li>Keep matching keys intact when exporting and reimporting. An item with a blank SKU is always
+              created as new, so importing it again creates a duplicate. Item price and barcode fields
+              are not supported by the CSV importer.</li>
         </ul>`,
     },
     {
       id: 'suppliers', title: 'Suppliers', group: 'Inventory', routes: ['suppliers'],
       html: `
-        <p>Your vendor list. Link an item to a supplier so reorder reports know who to buy
-        from.</p>
+        <p><b>Inventory → Suppliers</b> is your vendor list. Link an item to a supplier so reorder POs
+        know who to buy from. New/Import needs <i>inventory.create</i>; Edit needs <i>inventory.edit</i>;
+        Delete needs <i>inventory.delete</i>.</p>
         <ul>
           <li><b>New supplier</b> — name, contact person, phone, email, address.</li>
           <li><b>Import</b> — bulk-load from a spreadsheet (matched by name).</li>
@@ -113,31 +265,20 @@
     {
       id: 'locations', title: 'Locations', group: 'Inventory', routes: ['locations'],
       html: `
-        <p>Warehouses, branches, stores, or trucks that hold stock. One is the
-        <b>default</b> — new stock lands there unless you say otherwise.</p>
-        <p>Once you have more than one, each item tracks a quantity <b>per location</b>, and
-        you can <b>Transfer</b> between them.</p>`,
-    },
-    {
-      id: 'stock-discrepancies', title: 'Stock discrepancies', group: 'Inventory',
-      routes: ['stock-discrepancies'], html: `
-        <p>When someone working <b>offline</b> on an installed PC takes out more than the records
-        show, the stock-out is still recorded &mdash; the goods really left &mdash; and the location
-        goes below zero. Each such case opens a <b>discrepancy</b> here.</p>
-        <ul>
-          <li><b>Count</b> the location, and correct the quantity with a normal stock adjustment if
-              it's off.</li>
-          <li>Then <b>Resolve</b> the discrepancy with a note of what you found or did. Resolving
-              moves no stock by itself.</li>
-          <li><b>Now</b> shows the location's current balance; <b>Left after</b> shows it right after
-              the offline stock-out.</li>
-          <li>Someone using the website directly still gets "Not enough stock" &mdash; only offline
-              work can go below zero.</li>
-        </ul>`,
+        <p><b>Inventory → Locations</b> lists warehouses, branches, stores and trucks holding stock.</p>
+        <ol><li>Click <b>New location</b>, enter its name, type, address and notes, then <b>Create location</b>
+        (needs <i>inventory.create</i>).</li><li>Open a location to see its stock. Use <b>Set as default</b> for the normal
+        destination of new stock, or Edit to change its details (needs <i>inventory.edit</i>).</li>
+        <li>Use the item's Transfer action to move stock between locations.</li></ol>
+        <p>Deleting needs <i>inventory.delete</i>. Move all stock out first, and choose another default
+        before deleting the current default when other locations remain.</p>`,
     },
     {
       id: 'finished-products', title: 'Product Setup & BOM', group: 'Manufacturing',
       routes: ['finished-products'], html: `
+        <p>Open <b>Production → Product Setup → Products &amp; BOM</b>, click <b>New finished product</b>,
+        choose an existing inventory item and define its BOM, then save (needs <i>inventory.edit</i>).
+        Add an item in Inventory first if it is missing. <b>QC/QA Checklists</b> needs <i>qc.configure</i>.</p>
         <p>A <b>finished product</b> is something you build rather than buy. Its
         <b>Bill of Materials (BOM)</b> lists the parts and quantities needed to make one
         unit.</p>
@@ -163,7 +304,7 @@
     },
     {
       id: 'job-orders', title: 'Job Orders (production)', group: 'Manufacturing',
-      routes: ['job-orders', 'production-qc', 'repairs', 'production-receiving', 'finished-goods', 'production-overview'], html: `
+      routes: ['job-orders'], html: `
         <p>A Job Order builds N units of a finished product. <b>Production</b>'s tabs run in
         the order a build actually happens: Overview → Product Setup → Job Orders →
         Scheduling → QC / QA → Repairs → Products In → Batches / Lots → Finished Goods.
@@ -173,6 +314,9 @@
           <li><b>Create</b> it: choose the product and quantity. It starts as a draft.</li>
           <li><b>Release</b> it: the BOM parts are consumed from the source location. You
               can still add or remove components manually for one-off builds.</li>
+          <li><b>Accept the parts kit</b>: the production lead counts the released components
+              and clicks <b>Accept job order</b>. Report a problem if the kit is short or damaged;
+              output cannot be recorded until the kit is accepted.</li>
           <li><b>Track</b> progress: mark units done or scrapped. <b>Pause</b> or
               <b>cancel</b> anytime — cancelling returns the <i>unused</i> parts only. This
               doesn't post to stock yet — see Products In below.</li>
@@ -196,14 +340,16 @@
               different warehouse than the job order's default), and post. Mirrors
               Purchasing's Goods Receipt. A unit only becomes sellable/reservable once
               received here.</li>
-          <li>Give each physical unit an <b>identifier</b> (serial / chassis / motor no.) at
-              inspection. Once received, it shows up in <b>Finished Goods</b> and can be
+          <li>Record each serialized unit's <b>identifier</b> (serial / chassis / motor no.)
+              while recording production. The serialized-unit recording form on desktop and phone requires a build photo; this action needs a connection. Once received, it shows up in <b>Finished Goods</b> and can be
               <b>exploded</b> to show every serial.</li>
         </ol>`,
     },
     {
       id: 'production-batches', title: 'Batches / lots & records', group: 'Manufacturing',
-      routes: ['production-batches', 'production-record'], html: `
+      routes: ['production-batches'], html: `
+        <p><b>Production → Batches / Lots</b>: choose a status filter, then open a batch.
+        Reading needs <i>inventory.view</i>; edits need <i>inventory.adjust</i>.</p>
         <p>A <b>batch / lot</b> groups the units off one job order under a
         <code>BATCH-#####</code> number.</p>
         <ul>
@@ -222,7 +368,7 @@
     },
     {
       id: 'production-schedule', title: 'Teams & schedule', group: 'Manufacturing',
-      routes: ['production-schedule', 'production-teams'], html: `
+      routes: ['production-schedule'], html: `
         <p>Assign job orders to a crew and plan them on a calendar.</p>
         <ul>
           <li><b>Teams</b> — make a named production team and add its members. A job order
@@ -240,7 +386,7 @@
       id: 'quickbooks', title: 'QuickBooks Online', group: 'Orders', routes: [],
       html: `
         <p>Push <b>sale / job orders</b> to QuickBooks as <b>Invoices</b> and
-        <b>purchase requests</b> as <b>Bills</b>. One-way, on demand or automatic.</p>
+        <b>purchase orders</b> as <b>Bills</b>. One-way, on demand or automatic.</p>
         <ul>
           <li>Admins: the <b>QuickBooks</b> button on the Orders screen → <b>Connect</b>
               (a popup signs you in to Intuit and picks the company).</li>
@@ -253,29 +399,25 @@
         </ul>`,
     },
     {
-      id: 'orders', title: 'Sale / Job / Purchase orders', group: 'Orders',
-      routes: ['orders'], html: `
-        <p>Three document types share one screen, filtered by tab:</p>
-        <ul>
-          <li><b>Sale Orders</b> — what a customer is buying.</li>
-          <li><b>Job Orders</b> — work to be performed (can link to a production Job Order).</li>
-          <li><b>Purchase Orders</b> — what you're buying from a supplier. Pick the
-              <b>Supplier</b> and an <b>Expected delivery</b> date so Purchasing can
-              track it. The row's <b>Receiving &amp; bills</b> icon opens its receipts
-              and vendor bills.</li>
-        </ul>
-        <p>Numbers (SO-#####, JO-#####, PR-#####) are assigned automatically. Totals and
-        tax are computed for you. Use <b>Templates</b> to control how the printed
-        document looks.</p>
+      id: 'orders', title: 'Sale Orders', group: 'Orders',
+      routes: ['orders'], workflow: 'sales', html: `
+        <p><b>Inventory → Orders → Sale Orders</b> stores customer orders, numbered SO-….</p>
+        <ol><li>Click <b>New Sale Order</b>, choose Customer (on file) or enter walk-in details,
+        set Ship from, and add the line items, quantities and prices.</li><li>Save the order, then open its status control to approve it.
+        A stock shortfall offers trim, production/purchase drafts or backorder approval.</li>
+        <li>Use the phone's <b>Work → Release SOs</b> to reserve the goods; the office confirms/completes
+        the order after delivery to post stock out.</li></ol>
         <h4>Sale-order release</h4>
         <p>A sale order runs <b>open → approved → released → confirmed/completed</b>.
-        <b>Approving is blocked if a line can't be met from stock</b> — you're prompted to
-        <i>trim the order to what's available</i>, <i>create job orders for the shortfall</i>
-        (which also checks whether the components are on hand to build it),
-        <i>draft purchase orders for the shortfall</i> (one per supplier, for the parts that
-        have to be bought), or <i>approve as a backorder</i>. The toolbar's <b>Backorders</b>
-        toggle lists every approved order still waiting on stock, and those rows carry a
-        ⚠ badge. Moving it to <b>approved</b> unlocks the warehouse: on the phone
+        <b>Review stock &amp; approval</b> opens a saved order's stock picture: the ship-from
+        location, other orders, kit/repair holds and shortage quantities. Choosing approved
+        in an open order's editor saves it open first, then opens this review. Stock elsewhere
+        needs a transfer. Draft missing production or purchases with the relevant permission;
+        repeat requests cover only additional demand. Draft supply does not become stock until
+        receipt. Approve for warehouse when covered, or explicitly confirm backorder approval.
+        Approval does not pick or ship goods. The <b>Awaiting release</b> filter lists firm
+        orders with stock lines still unpicked; it does not imply every listed order is short.
+ Moving it to <b>approved</b> unlocks the warehouse: on the phone
         (<i>Work → Release SOs</i>) the releaser opens the order and <b>scans every
         unit's printed QR label</b> to add it (and types a quantity for non-serialized
         lines). Scanned units go to <b>reserved</b> — earmarked for the order but still
@@ -319,15 +461,17 @@
           <li><b>Dispute</b> parks a bill with a reason; editing a disputed bill returns
               it to draft.</li>
         </ul>
-        <p>Match tolerance (default 2% on price) is a workspace setting via
-        <code>PUT /api/purchasing/tolerance</code>.</p>
+        <p>The phone's <b>Work → Receive PR</b> posts stock directly without a GRN. It does not cover
+        billed quantities for the desktop three-way match; avoid posting the same delivery twice.</p>
+        <p>Use the <b>Match tolerance</b> button on Goods Receipts or Vendor Bills to review price percentage,
+        flat-peso and quantity tolerances. Editing and saving require <i>orders.edit</i>; the price percentage defaults to 2%.</p>
         <p><b>Who can do what:</b> receiving needs <i>Adjust inventory</i>; raising and
         approving bills needs <i>Edit orders</i> — so the warehouse receives and
         accounting approves.</p>`,
     },
     {
       id: 'hr-employees', title: 'Employees (201 file)', group: 'HR',
-      routes: ['hr-employees', 'hr'], html: `
+      routes: ['hr-employees'], html: `
         <p>The staff master list. Each record holds the <b>201-file</b> data: employee
         number, department, position, pay rate (daily or monthly), employment status,
         start date, statutory numbers (SSS / PhilHealth / Pag-IBIG / TIN), a photo, and
@@ -342,17 +486,16 @@
           <li><b>Generate ID</b> — prints an ID card from the template.</li>
           <li>You can't delete someone with attendance history — set them to
               resigned / terminated instead.</li>
-          <li><b>Suspended</b> — still employed and still on rosters and payroll, but they
-              can't clock in (kiosk, phone, or field) and drop off production team pickers
-              until you set them back to probationary or regular.</li>
         </ul>`,
     },
     {
       id: 'timekeeping', title: 'Time Keeping & payslips', group: 'HR',
       routes: ['hr-timekeeping'], html: `
-        <p>Attendance is organised into <b>cutoff periods</b>. For each period you record
+        <p>Start at <b>HR → Time Keeping → New Cutoff</b>: enter its label and dates, create it,
+        then open its row and add the employees to the roster. Attendance is organised into <b>cutoff periods</b>. For each period you record
         daily <b>time in / out</b> per employee (and which shift applied that day).</p>
         <ul>
+          <li><b>Policy Settings</b> configures shifts and payroll rules; use <b>Save Rules</b> after changes.</li>
           <li>Lateness is measured against the shift start plus the grace minutes in your
               payroll policy.</li>
           <li>Link a day to an approved OT / Leave / Half-day form so it's treated
@@ -364,8 +507,9 @@
         and leave <b>“Auto-compute SSS / PhilHealth / Pag-IBIG / withholding tax”</b> on —
         Generate Payslips then fills those lines from the current government rate tables
         (the monthly contribution is split across your cutoffs). Turn it off to type them
-        by hand. Cash advance and rest-day OT are always entered manually and are kept when
-        you re-generate.</p>`,
+        by hand. Cash advances and other manual deduction lines are kept when you regenerate.
+        <b>Rest-day overtime is computed from attendance</b> and is recalculated on regeneration.
+        Check the cutoff deduction schedule and each payslip's deduction switches before release.</p>`,
     },
     {
       id: 'bir-alphalist', title: 'BIR 1604-C Alphalist', group: 'Accounting', routes: [],
@@ -426,15 +570,19 @@
       id: 'gov-forms', title: 'Tax & Compliance (BIR + agency forms)', group: 'Accounting',
       routes: ['accounting'],
       html: `
-        <p><b>Accounting → Tax &amp; Compliance</b> builds every statutory return from your
+        <p><b>Accounting → Tax &amp; Compliance</b> builds supported statutory worksheets from your
         payroll, sales and purchase records. All are <b>worksheets</b> — review and adjust
-        before filing in eBIRForms / eFPS or each agency's portal (PH agencies have no
-        direct filing API). Payroll <i>processing</i> (13th-month, final pay) stays under
+        before filing in eBIRForms / eFPS or each agency's portal (the app does not submit filings). Payroll <i>processing</i> (13th-month, final pay) stays under
         <b>HR → Time Keeping → Payroll Worksheets</b>.</p>
         <ul>
-          <li><b>2550M</b> — Monthly VAT declaration: output VAT from the month's sale
-              orders, input VAT from approved vendor bills. Adjust for exempt / zero-rated
-              sales and disallowed input. Deadline: 20th of the following month.</li>
+          <li><b>2550M</b> — monthly VAT worksheet from the sales and purchase journals, including
+              exempt/zero-rated classifications and credit/debit notes. Review disallowed input VAT. Use the current BIR filing requirements; this is the monthly worksheet, not a filing submission.</li>
+          <li><b>2550Q / SLSP</b> — quarterly VAT and summary sales/purchase lists; CSV and DAT exports where offered.</li>
+          <li><b>Withholding register / 1601-EQ + QAP / 1604-E / 2307</b> — supplier withholding register,
+              quarterly and annual worksheets, and printable supplier certificates.</li>
+          <li><b>Tax codes</b> — classifications used on sales and bills.</li>
+          <li><b>1702Q / 1702-RT</b> — corporate income tax worksheet; review the book income and adjustments.</li>
+          <li><b>Books of Accounts / Financial Statements (AFS)</b> — printable ledger books and a draft statement pack.</li>
           <li><b>0619-E</b> — Monthly remittance of expanded / creditable withholding tax.
               Add one line per <b>ATC</b> (type of income payment: rent, professional
               fees, contractors, TWA purchases) with its base and rate; the payee detail
@@ -459,9 +607,8 @@
               <i>Auto-compute statutory</i> policy is still the company-wide master
               switch; this is the per-person override.</li>
         </ul>
-        <p>A full double-entry general ledger (chart of accounts, journals, financial
-        statements, VAT/EWT registers, BIR books of accounts) is planned — see
-        <code>docs/ACCOUNTING-SYSTEM-PLAN.md</code>.</p>`,
+        <p>For journals and financial statements, open <b>Accounting → General Ledger → Books</b>.
+        Use <b>Receivables &amp; Payables</b> to record customer and supplier settlements.</p>`,
     },
     {
       id: 'gl-books', title: 'Books (general ledger)', group: 'Accounting', routes: ['accounting-ledger'],
@@ -484,9 +631,10 @@
               live reports from the posted entries.</li>
           <li><b>Periods</b> — closing a period locks posting into its dates.</li>
         </ul>
-        <p>This is <b>Phase 0</b>. Auto-posting from invoices, bills and payslips, plus
-        the BIR books/SLSP exports, come next — see
-        <code>docs/ACCOUNTING-SYSTEM-PLAN.md</code>.</p>`,
+        <p><b>Posting Rules</b> selects the accounts for automatic sales and purchase entries.
+        Confirmed sale orders and approved vendor bills post to the ledger; reopening or disputing
+        them reverses their entries. Payroll posts only when you use <b>Post to GL</b> on the
+        payroll records screen after reviewing the cutoff.</p>`,
     },
     {
       id: 'petty-cash', title: 'Petty Cash', group: 'Accounting', routes: ['accounting-petty-cash'],
@@ -517,77 +665,49 @@
         uses. Open them from <b>Time Keeping → Policy Settings → Statutory Rate Tables →
         Open rate tables</b> (needs HR manage).</p>
         <ul>
-          <li>The <b>2026</b> schedule is built in — payroll works out of the box.</li>
+          <li>The <b>2026</b> seed tables are built in; verify their figures before using them for payroll.</li>
           <li>Each table is stored with an <b>effective date</b>; a payroll run uses the
               newest one on or before the pay date.</li>
           <li><b>Every January</b>, if SSS / PhilHealth issue a new circular or the BIR a
               new withholding table, paste the new figures and <b>Save as new version</b>
-              dated <code>YYYY-01-01</code>. Don't edit last year's in place — past runs
-              must keep their old numbers.</li>
+              with the circular's actual effective date. Saving the same table kind and date replaces
+              that version; choose a new date to preserve earlier rules. Existing payslips change only if regenerated.</li>
           <li>Always cross-check the first run on a new schedule against the agency's own
               calculator before releasing payslips.</li>
         </ul>`,
     },
     {
-      id: 'form-builder', title: 'Form Builder & Data Forms', group: 'Documents',
-      routes: ['form-builder', 'form-records'], html: `
-        <p><b>Form Builder</b> lets an admin design a custom form type — its fields, an
-        icon, and a number prefix — without a developer. Forms are grouped by section
-        (HR / Inventory / Admin / Accounting) and only that section's managers can edit
-        them.</p>
-        <p><b>Data Forms</b> is where staff fill in and store records of those forms. Each
-        record gets an automatic number and can be printed against a linked template.</p>`,
+      id: 'form-builder', title: 'Form Builder', group: 'Documents',
+      routes: ['form-builder'], html: `
+        <p>Open <b>Form Builder</b> within HR, Inventory, Admin or Accounting.
+        You need that section's <i>forms.manage.&lt;section&gt;</i> permission.</p>
+        <ol><li>Use the <b>Forms</b> tab to create or edit a form definition: name, slug, number prefix and fields.</li>
+        <li>Set each field's type, required flag, choices and default; save the definition.</li>
+        <li>Use <b>Global Variables</b> for reusable values. HR also offers quick starting forms.</li>
+        <li>Open <b>Documents → Data Forms → All Forms</b> to fill in records; definitions and records are separate.</li></ol>
+      `,
     },
     {
       id: 'templates', title: 'Document Templates', group: 'Documents',
       routes: ['templates'], html: `
-        <p>Templates control how printed documents look — orders, payslips, ID cards.
-        They use <code>{{placeholders}}</code> that are filled from the record, the
-        company profile, and today's date.</p>
-        <p>Edit the HTML directly, or drop in variables from the picker. The
-        <b>company profile</b> (name, address, phone) feeds every <code>{{company.*}}</code>
-        placeholder in one place.</p>`,
+        <p><b>Documents → Templates</b> controls printed orders, payslips, IDs and forms.
+        Viewing needs <i>templates.view</i>; editing needs <i>templates.edit</i>.</p>
+        <ol><li>Click <b>New template</b> and choose a starting layout, or open a template to edit it.</li>
+        <li>Use <b>Visual</b> to type and format, or <b>HTML / CSS</b> to edit the source.</li>
+        <li>Use <b>Variables → Insert variable</b> for record fields and <code>{{company.*}}</code> details.
+        Repeating item rows and formulas have their own sections in the editor's <b>?</b> guide.</li>
+        <li>Check <b>Layout → Preview</b> with sample data, then <b>Save</b>. Print a real record to check its actual values.</li></ol>
+        <p><b>Company profile</b> updates shared company details (needs <i>templates.company</i>).
+        The <b>Variables</b> button manages reusable custom values and formulas.</p>
+      `,
     },
     {
       id: 'activity', title: 'Activity Log', group: 'Admin', routes: ['activity'],
       html: `
         <p>An append-only record of every change made in the system — who, what, when,
-        from where. Filter by user, module, action, or date. Admin-only.</p>
+        from where. Filter by user, module, action, or date. Requires <i>audit.view</i>.</p>
         <p>Use it to answer "who changed this?" and as evidence for audits. Entries are
         kept for about a month, then trimmed automatically; "Prune…" clears them sooner.</p>`,
-    },
-    {
-      id: 'offline-pcs', title: 'Working offline (installed PCs)', group: 'Admin',
-      routes: ['sync'], html: `
-        <p>An <b>installed PC</b> keeps its own copy of the workspace, so the warehouse keeps working
-        when the internet is down. What you do there is saved on that PC at once and sent to the
-        cloud when it can be reached.</p>
-        <ul>
-          <li><b>Not final until it syncs.</b> After each save on an installed PC you'll see
-              "Saved on this PC &mdash; it is not final until it syncs". The cloud re-checks it and may
-              reject it (for example, a SKU someone else already used).</li>
-          <li>The <b>pill in the top bar</b> shows where things stand: <i>Synced</i>, <i>Syncing &middot; N
-              waiting</i>, <i>Offline &middot; N saved on this PC</i>, and <i>N need attention</i>. Click it
-              for the Sync page.</li>
-          <li><b>Needs attention</b> lists what the cloud rejected and why. Fix it on the website if
-              needed, then <b>Dismiss</b> it. <b>Sync now</b> tries straight away (it also runs every
-              15 seconds on its own).</li>
-          <li>On an installed PC today only <b>inventory</b> works offline (stock in/out, damage,
-              transfers, and new items, locations, suppliers and customers).</li>
-          <li><b>Edits, deletes and approvals</b> work offline only at the <b>site the record belongs
-              to</b> &mdash; on its host PC, or a PC that can reach that host. Company-wide records
-              (items, suppliers&hellip;) belong to the <b>main site</b>. Otherwise you'll see "needs an
-              internet connection" or "belongs to another site".</li>
-          <li><b>Admins</b>: Admin &rarr; Installed PCs &rarr; <b>Sites</b> sets the main site and which
-              site each location belongs to. If the cloud would have refused a site's offline decision by
-              the time it synced, the decision is kept and listed under <b>Site decision clashes</b> to
-              check.</li>
-          <li><b>Phones at a site</b>: open <b>http://&lt;main PC's address&gt;:3001</b> on the office Wi-Fi
-              and follow the steps once (install the site certificate). Then the app at
-              https://&lt;main PC's address&gt;:3000/m works even when the internet is down.</li>
-          <li><b>Admins</b>: Admin &rarr; Installed PCs lists the PCs set up against this workspace.
-              <b>Revoke</b> a lost or retired one &mdash; it stops syncing at once.</li>
-        </ul>`,
     },
     {
       id: 'admin', title: 'Accounts, roles & permissions', group: 'Admin',
@@ -600,8 +720,8 @@
           <li><b>Departments</b> are managed here (and inline from HR).</li>
           <li>The <b>admin</b> role always has every permission.</li>
           <li>Set each person's <b>email</b> so they can use <b>“Forgot password?”</b> on
-              the sign-in screen (needs email set up under the Email tool). Without an
-              email, only an admin can reset their password here.</li>
+              the sign-in screen (needs the company mailbox configured in Email → Settings). Without an
+              email, a staff member with <i>users.manage</i> must reset the password here.</li>
         </ul>`,
     },
     {
@@ -612,7 +732,9 @@
         <ul>
           <li>Ask like you'd ask a colleague, and <b>give a date range</b>:
               "attendance summary for the last cutoff", "items below reorder level as a table".</li>
-          <li>It only sees and does what <b>your account</b> can. It won't do bulk edits.</li>
+          <li>It only sees and does what <b>your account</b> can. Depending on your permissions,
+              it can create, update or delete inventory, orders, notes and tasks, and send messages or email.
+              State the record and intended change clearly.</li>
           <li>If it made a file, a <b>download</b> button appears under the reply.</li>
           <li><b>Check anything that matters</b> against the real screen — it can be wrong.</li>
           <li>Admins: <b>AI settings</b> (button in the assistant panel) sets the API key,
@@ -622,12 +744,16 @@
     {
       id: 'mobile-app', title: 'Mobile Warehouse App', group: 'Tools', routes: [],
       html: `
-        <p>A phone version at <code>/m</code> for the stockroom: scan an item, move stock,
-        count, fulfil orders, or report damage — and it keeps working <b>offline</b>.</p>
+        <p>A phone version at <code>/m</code> for the stockroom and shop floor: scan items, move stock, count, release orders or receive output.
+        Warehouse tools need <i>inventory.mobile</i> and the permissions for each action;
+        linked employees can also use the phone for their own HR tasks.</p>
         <ul>
           <li>Open the normal system address on a phone; you're sent to the mobile app
               automatically. Needs the <b>mobile warehouse</b> permission.</li>
-          <li>Offline, submissions <b>queue</b> and send themselves when the signal returns.
+          <li>Supported stock moves, counts, QC decisions, parts requests, receipts and release scans
+              <b>queue</b> offline using cached data. They are pending until the server accepts them.
+              Recording a serialized unit with its photo, time punches and delivery proof need a connection.
+              Open <b>Pending sync</b> to check errors and retry.
               Don't clear the browser's site data while the queue has items.</li>
           <li>The camera scanner needs HTTPS; otherwise you get manual code entry.</li>
         </ul>`,
@@ -647,17 +773,84 @@
     {
       id: 'messages', title: 'Internal messages', group: 'Tools', routes: ['messages'],
       html: `
-        <p>Send messages to other staff inside the system — an inbox, a sent box, and an
-        unread badge on the rail. Good for a quick note tied to work, without leaving the
-        app.</p>`,
+        <p><b>Messages → Messages</b> is a conversation list with threaded chat, not an inbox/sent form.</p>
+        <ol><li>Click <b>New</b>, choose a colleague, or select an existing conversation.</li>
+        <li>Type your message and send it. Use the attachment button to add files.</li>
+        <li>Use a message's actions to reply, react, or edit/remove your own message.</li>
+        <li>Use <b>Load earlier messages</b> to see older history. Opening a conversation marks incoming messages read.</li></ol>
+        <p>Reading needs <i>messages.view</i>; sending needs <i>messages.send</i>.
+        Your attachment storage usage is shown in <b>My Account</b>.</p>
+      `,
     },
     {
       id: 'account', title: 'My Account', group: 'Basics', routes: ['account'],
       html: `
-        <p>Update your display name and <b>change your password</b>. If your account is
-        linked to an employee record, your HR profile is shown here too (read-only).</p>`,
+        <p>Open <b>My Account → Profile → My Account</b> for your login details.</p>
+        <ol><li>Edit <b>Display name</b>, then click <b>Save profile</b>.</li>
+        <li>To change your password, enter the current password, a new password of at least six characters,
+        and its confirmation, then click <b>Update password</b>.</li></ol>
+        <p>Username, role and department are managed by an administrator.
+        If you have message access, the page also shows your message attachment storage usage.</p>
+      `,
     },
   ];
+
+  // Task checkpoints shared by the drawer and Guide Center.
+  TOPICS.push(
+    {id:'release-orders',title:'Release Sale Orders',group:'Orders',routes:['releasing'],html:'<p>Review sale orders waiting for release and open an order to check its items, quantities and locations. Confirm the actual release using the available actions. Reserving stock and confirming its release are separate steps.</p>'},
+    {id:'contact-verification',title:'Contact Verification',group:'HR',routes:['hr-contact-verification'],html:'<p>Review employee contact verification status. Open the relevant employee and follow the available verification actions. Check the employee record before correcting contact details.</p>'},
+    {id:'company-assets',title:'Company Assets',group:'HR',routes:['hr-assets'],html:'<p>Review company assets and their employee assignments. Use the available actions to record changes and check the saved assignment before handing over an asset.</p>'},
+    {id:'hr-approvals',title:'HR Approvals',group:'HR',routes:['hr-approvals'],html:'<p>Open a pending request and review its dates, details and attachments before approving or rejecting it. Follow the available actions for your role; a request must complete its approval process before it is treated as approved.</p>'},
+    {id:'sync',title:'Sync',group:'Admin',routes:['sync'],html:'<p>Review synchronization status and connection details. Check reported errors before retrying. Synchronization configuration affects this installation; ask the administrator responsible for its connected systems before changing it.</p>'},
+    {id:'hr-requests',title:'My HR requests',group:'HR',routes:['hr-requests'],html:'<p>Review your HR requests and their approval status. Open the request you need to inspect, or create a request using an available form. Access depends on your linked employee account and the forms enabled for your workspace.</p>'},
+    {id:'confidential-reports',title:'Confidential reports',group:'HR',routes:['confidential-reports'],html:'<p>Use the available filters to find a confidential report and open its details. This screen requires confidential-report access; ask an administrator if you cannot open it.</p>'},
+    {id:'identified-reports',title:'Identified reports',group:'HR',routes:['identified-reports'],html:'<p>Open a case sent or assigned to you to review its number, incident details, evidence and history. The selected recipient or assigned handler can update status, assign another active staff member and reply; the employee sees these updates in My identified reports. Access is limited to the reporter, recipient and assigned handler.</p>'},
+    {id:'stock-discrepancies',title:'Stock discrepancies',group:'Inventory',routes:['stock-discrepancies'],html:'<p>Review stock-count differences before posting an adjustment. Open the relevant discrepancy and check the counted quantity, system quantity and location. Follow the available review actions for your role.</p>'},
+    {id:'support',title:'Contact OTOM',group:'Tools',routes:['support'],html:'<p>Use Contact OTOM to review support requests and contact the service team. Include the affected screen, what you expected and what happened. Review the request before submitting.</p>'},
+    {id:'billing',title:'Workspace billing',group:'Admin',routes:['billing'],html:'<p>Review the invoices and payment instructions for this workspace. Report a payment with the requested reference and supporting receipt. A reported payment must be verified before it is treated as settled. Self-hosted installations may have no workspace billing.</p>'}
+  );
+  const CHECKPOINTS = {
+    'barcode-labels': ['Select the items and confirm the printer label size.', 'Review the print sheet, then print one test label before the full batch.', 'If labels are clipped, match paper size and scale in the print dialog.'],
+    'products-in': ['Confirm QC/QA is complete, or that the order requires no inspection.', 'Posted output appears in Receipt History and stock at the selected location.', 'If output is missing, check inspection status and whether it was already received.'],
+    'cutoff': ['Check the date range and identify the employees to include.', 'The saved cutoff appears in Time Keeping; its roster must be added separately.', 'An empty attendance grid can mean the cutoff has no employees yet.'],
+    'payments': ['Set up Books and the cash/bank account; check the outstanding documents.', 'The saved payment appears in Payments; review allocations and remaining balances.', 'If an invoice is still open, check whether the payment was recorded on account.'],
+    'site-map': ['Use an account with access to the screen you want to open.', 'Selecting a screen closes the map and opens the matching view.', 'If a screen is missing, ask an administrator to check role and workspace access.'],
+    'mobile-app': ['Use HTTPS for scanning and sign in with access to the intended action.', 'A queued action becomes final only after Pending sync confirms server acceptance.', 'Check Pending sync for errors; keep site data until pending actions have synced.'],
+  };
+  TOPICS.forEach(t => {
+    const c = CHECKPOINTS[t.id];
+    if (c) t.html += `<div class="guide-checkpoints"><p><b>Before you start:</b> ${c[0]}</p><p><b>Check the result:</b> ${c[1]}</p><p><b>If it does not work:</b> ${c[2]}</p></div>`;
+  });
+
+  function feedbackHTML() {
+    return `<div class="guide-feedback"><p>Was this guide helpful?</p><button type="button" class="btn secondary small" data-guide-feedback="yes">Yes</button> <button type="button" class="btn secondary small" data-guide-feedback="no">Needs improvement</button></div>`;
+  }
+
+  function wireFeedback(el, topic) {
+    el.querySelectorAll('[data-guide-feedback]').forEach(button => {
+      button.onclick = () => {
+        const helpful = button.dataset.guideFeedback === 'yes';
+        const loc = (window.App && App.currentLocation && App.currentLocation()) || {};
+        // Capture the source screen now, before any later navigation or topic change.
+        const context = `${loc.label || loc.route || 'Guide'} | Guide: ${topic.id}`.slice(0, 200);
+        UI.modal({ title: 'Guide feedback', confirmText: 'Send feedback',
+          onOpen: ov => ov.classList.add('guide-feedback-modal'),
+          bodyHTML: `<p><b>${UI.esc(topic.title)}</b> — ${helpful ? 'Helpful' : 'Needs improvement'}</p><label for="guide-feedback-note">${helpful ? 'What helped? (optional)' : 'What should we improve?'}</label><textarea id="guide-feedback-note" maxlength="3500" placeholder="Describe the unclear step, missing detail, or incorrect instruction."></textarea><p class="muted">Your feedback will be saved for administrators to review in View reports.</p>`,
+          onConfirm: async ov => {
+            const note = ov.querySelector('#guide-feedback-note').value.trim();
+            if (!helpful && !note) throw new Error('Please describe what needs improvement.');
+            const fd = new FormData();
+            fd.append('title', `Guide feedback: ${topic.title}`.slice(0, 200));
+            fd.append('steps_to_reproduce', `Read guide: ${topic.title} (${topic.id}).\nRating: ${helpful ? 'Helpful' : 'Needs improvement'}.`);
+            fd.append('description', note || 'This guide was helpful.');
+            fd.append('page_context', context);
+            await API.upload('/bug-reports', fd);
+            UI.toast('Guide feedback sent — thank you!');
+          },
+        });
+      };
+    });
+  }
 
   const byId = Object.fromEntries(TOPICS.map((t) => [t.id, t]));
   const routeIndex = {};
@@ -677,15 +870,12 @@
     </select>`;
   }
 
-  /** The Guide pipeline (guide-data.js) that best matches a help topic — via the
-      live app route first, then the topic's own routes. */
+  /** Resolve from the selected topic, never an unrelated background screen. */
   function pipelineFor(t) {
     if (!window.GUIDE) return null;
-    try {
-      const r = (window.App && App.currentLocation && App.currentLocation().route) || '';
-      const byRoute = GUIDE.forRoute(r);
-      if (byRoute) return byRoute;
-    } catch (_) { /* ignore */ }
+    if (t.workflow) return GUIDE.byId[t.workflow] || null;
+    if (['payroll-records', 'hr-forms', 'payroll-rate-tables'].includes(t.id)) return GUIDE.byId.payroll;
+    if (['bir-alphalist', 'bir-1601c', 'bir-2316'].includes(t.id)) return GUIDE.byId.accounting;
     for (const r of (t.routes || [])) {
       const g = GUIDE.forRoute(r);
       if (g) return g;
@@ -694,12 +884,12 @@
   }
 
   function renderBody(el, topicId, close) {
-    const t = byId[topicId] || TOPICS[0];
+    const t = byId[topicId] || byId['getting-started'];
     const pipe = pipelineFor(t);
     el.querySelector('.drawer-body').innerHTML = `
       <div class="help-jump">
         <button type="button" class="btn secondary small" id="help-open-guide">${UI.icon('forms', 14)} Open the full Guide</button>
-        ${pipe ? `<button type="button" class="btn small" id="help-walk">${UI.icon('sparkles', 14)} Walk me through this</button>` : ''}
+        ${pipe ? `<button type="button" class="btn small" id="help-walk">${UI.icon('sparkles', 14)} Walk through ${UI.esc(pipe.title)}</button>` : ''}
       </div>
       ${pickerHtml(t.id)}
       <div class="help-content">
@@ -707,15 +897,17 @@
         ${t.html}
         ${pipe ? `<p style="margin-top:10px"><a href="#" id="help-sop">Full workflow — ${UI.esc(pipe.title)}, end to end &rarr;</a></p>` : ''}
       </div>
+      ${feedbackHTML()}
       <p class="muted" style="margin-top:14px;border-top:1px solid var(--border);padding-top:8px">
         Trainers: full written guides are in <code>docs/guides/</code>.
       </p>`;
 
+    wireFeedback(el, t);
     const pick = el.querySelector('#help-pick');
     if (pick) pick.addEventListener('change', () => renderBody(el, pick.value, close));
 
     const gotoGuide = () => {
-      try { window.App && App.navigate('sop', pipe ? { topic: pipe.id } : undefined); } catch (_) {}
+      try { window.App && App.navigate('sop', { helpTopic: t.id }); } catch (_) {}
       if (close) close();
     };
     const openGuide = el.querySelector('#help-open-guide');
@@ -726,17 +918,44 @@
     const walk = el.querySelector('#help-walk');
     if (walk) walk.addEventListener('click', () => {
       if (close) close();
-      try { window.GuideTour && pipe && GuideTour.start(pipe.id, 0); } catch (_) {}
+      try { window.GuideTour && pipe && GuideTour.start(pipe.id, Math.max(0, pipe.steps.findIndex((step) => step.to && (t.routes || []).includes(step.to.route)))); } catch (_) {}
     });
   }
 
-  function open(topicId) {
-    let route = '';
-    try { route = (window.App && App.currentLocation && App.currentLocation().route) || ''; } catch (_) {}
-    const id = topicId || routeIndex[route] || 'getting-started';
-    const d = UI.drawer({ title: 'Help', icon: 'help', key: 'help', bodyHTML: '' });
-    if (d) renderBody(d.el, id, d.close);
+  const formTopics = {};
+  function rememberForm(form) {
+    formTopics[form.id] = form.slug === 'hr_payroll' ? 'payroll-records'
+      : form.scope === 'hr' ? 'hr-forms' : 'data-forms';
   }
 
-  window.Help = { open, topics: TOPICS };
+  function forLocation(route, filter) {
+    if (route === 'admin' && filter && filter.tab === 'departments') return byId.departments;
+    if (route === 'inventory' && filter && filter.low === '1') return byId['low-stock'];
+    if (route === 'production-qc' && filter && filter.tab === 'findings') return byId['qc-findings'];
+    if (route === 'accounting-receivables' && filter && filter.tab === 'payments') return byId.payments;
+    if (route === 'accounting-receivables' && filter && filter.tab === 'credit notes') return byId['credit-notes'];
+    if (route === 'orders' && filter && filter.type === 'purchase') return byId['purchase-orders'];
+    if (route === 'orders' && filter && filter.type === 'job') return byId['job-documents'];
+    if (route === 'form-records' && filter && formTopics[filter.form_id]) return byId[formTopics[filter.form_id]];
+    if (route === 'form-records' && filter && filter.slug === 'hr_payroll') return byId['payroll-records'];
+    if (route === 'form-records' && filter && filter.scope === 'hr') return byId['hr-forms'];
+    return byId[routeIndex[route] || 'getting-started'];
+  }
+
+  function open(topicId) {
+    let loc = {};
+    try { loc = (window.App && App.currentLocation && App.currentLocation()) || {}; } catch (_) {}
+    const id = topicId || forLocation(loc.route, loc.filter).id;
+    // An explicit topic link switches an open Help drawer instead of toggling it shut.
+    const existing = topicId && document.querySelector('.drawer.open #help-pick');
+    if (existing) {
+      const el = existing.closest('.drawer');
+      renderBody(el, id, () => el.querySelector('.drawer-close').click());
+      return;
+    }
+    const d = UI.drawer({ title: 'Help', icon: 'help', key: 'help', bodyHTML: '' });
+    if (d) { d.el.classList.add('help-drawer'); renderBody(d.el, id, d.close); }
+  }
+
+  window.Help = { open, topics: TOPICS, forLocation, rememberForm, feedbackHTML, wireFeedback };
 })();

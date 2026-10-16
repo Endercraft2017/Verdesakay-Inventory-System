@@ -1,6 +1,6 @@
 {
-  "name": "Verdesakay Warehouse",
-  "short_name": "Warehouse",
+  "name": "Otom Warehouse",
+  "short_name": "Otom",
   "description": "Field reporting for warehouse staff — stock in/out, transfers, damage, counts, scanning.",
   "start_url": "/m",
   "scope": "/m",

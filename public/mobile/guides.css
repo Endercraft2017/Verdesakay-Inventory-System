@@ -1,0 +1,21 @@
+/* Shared walkthrough classes adapted to phone tokens and touch targets. */
+#m-guide-start { flex-shrink: 0; font-size: 12px; font-weight: 700; width: auto; padding: 8px; }
+.guide-coach { position: fixed; z-index: 200; width: min(360px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: hidden; display: flex; flex-direction: column; background: var(--v2-surface); color: var(--v2-text); border: 1px solid var(--v2-line); border-radius: 18px; box-shadow: 0 12px 36px #0004; }
+.guide-coach-bar { height: 4px; background: var(--v2-line); }
+.guide-coach-bar span { display: block; height: 100%; background: var(--v2-green); }
+.guide-coach-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--v2-line); }
+.guide-coach-title { flex: 1; min-width: 0; }.guide-coach-count { font-size: 12px; color: var(--v2-muted); }
+.guide-coach .icon-btn { border: 0; background: transparent; color: inherit; min-width: 36px; min-height: 40px; font-size: 20px; }
+.guide-coach-body { padding: 12px 16px; max-height: 30dvh; overflow: auto; font-size: 14px; line-height: 1.5; }.guide-coach-body h4 { margin: 0 0 8px; }.guide-locator,.guide-tip { font-size: 12px; color: var(--v2-muted); }
+.guide-coach-foot { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; }.guide-coach .btn { border: 1px solid var(--v2-line); background: var(--v2-green); color: white; padding: 10px 12px; min-height: 44px; border-radius: 12px; }.guide-coach .btn.secondary { background: var(--v2-surface-soft); color: var(--v2-text); }.guide-coach .btn:disabled { opacity: .45; }
+.guide-coach-keys { margin: 0; padding: 0 14px 10px; color: var(--v2-muted); font-size: 10px; }
+.guide-focus-ring { position: fixed; pointer-events: none; z-index: 199; border: 2px solid var(--v2-green); border-radius: 10px; box-sizing: border-box; box-shadow: 0 0 0 9999px #08181855; }
+.guide-focus-ring::before { content: attr(data-step); position: absolute; top: -12px; left: 8px; min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 999px; background: var(--v2-green); color: white; font-size: 12px; font-weight: 700; }
+.guide-focus-ring[hidden],.guide-coach.minimized :is(.guide-coach-body,.guide-coach-foot,.guide-coach-keys,.guide-coach-bar) { display: none; }
+@media (prefers-reduced-motion: reduce) { .guide-coach { transition: none; } }
+
+.m-guide-reference { margin-bottom: 12px; }.m-guide-reference summary { cursor: pointer; }.m-guide-reference summary small { display: block; padding-top: 4px; color: var(--v2-muted); }.m-guide-reference ol { padding-left: 22px; }.m-guide-reference li { margin: 14px 0; line-height: 1.5; }
+.guide-depth { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-basis: 100%; font-size: 12px; color: var(--v2-muted); }
+.guide-depth select { max-width: 210px; min-height: 36px; border: 1px solid var(--v2-line); background: var(--v2-surface); color: var(--v2-text); border-radius: 10px; font-size: 12px; padding: 5px; }
+.guide-coach-body { max-height: 20dvh; }
+.guide-coach-body { min-height: 0; flex: 1 1 auto; }

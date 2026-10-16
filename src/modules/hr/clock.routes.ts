@@ -8,10 +8,16 @@
  *                            the day's final out already happened.
  *  - POST /photo/:punchId,
  *    GET  /photo/:id        kiosk camera capture per punch -- see src/punch-photos.ts (hr.view)
- *  - POST /punch            an employee scans the kiosk QR from the mobile app (any linked user);
- *                            with the office location lock on, the phone's GPS must be on-site.
- *                            Staff exempt from the lock (clock_anywhere) may omit the QR and punch
- *                            from anywhere, location recorded. See clock-geofence.ts.
+ *  - POST /punch/scan       phone punch step 1: an employee scans the kiosk QR from the mobile app
+ *                            (any linked user); with the office location lock on, the phone's GPS
+ *                            must be on-site. Staff exempt from the lock (clock_anywhere) may omit
+ *                            the QR and punch from anywhere, location recorded. See clock-geofence.ts.
+ *                            Parks a hold stamped with the scan time -- see punch-holds.ts.
+ *  - POST /punch/selfie     phone punch step 2: the selfie (multipart "photo") records the held scan in
+ *                            the slot the employee picked (`slot`: in|lunchOut|lunchIn|out; re-doing
+ *                            a slot replaces its time and photo), at the scan time, with the photo
+ *                            kept beside it -- see setSlotPunch in clock.ts.
+ *  - POST /punch            retired one-step phone punch: 410, tells an outdated app to update.
  *  - GET  /my-status        that employee's clock state today (any linked user)
  *  - GET/PUT /geofence      the office location lock: sites + radius (hr.view / hr.manage)
  *  - GET  /punches          Punch Log: punches in a work-date range with their location (hr.view)
@@ -25,12 +31,14 @@
  *                            applyPunchToAttendance in clock.ts — so this is only needed to
  *                            catch punches that predate the roster row existing at all.
  */
-import { Router, type Request } from 'express';
+import fs from 'node:fs';
+import { cutoffIsPaid } from './workflow';
+import { Router, type Request, type Response } from 'express';
 import { queryOne, queryAll } from '../../shared/db';
 import { requireAuth, requirePermission, deviceUsualUserId } from '../../shared/auth';
 import { deviceIdOf } from '../../shared/device';
 import {
-  parseBody, phonePunchSchema, kioskPunchSchema, kioskCorrectSchema, clockGeofenceSchema, kioskDeviceSchema, kioskLockSchema,
+  parseBody, phonePunchSchema, phoneSelfieSchema, kioskPunchSchema, kioskCorrectSchema, clockGeofenceSchema, kioskDeviceSchema, kioskLockSchema,
   punchLogQuerySchema,
 } from '../../shared/validation';
 import { checkPunchLocation, GeofenceError, geofenceActive, getGeofence, setGeofence } from './clock-geofence';
@@ -40,9 +48,11 @@ import {
 } from './kiosk-devices';
 import {
   currentKioskCode, isValidKioskCode, recordPunch, correctPunch, myClockStatus, recordedBrackets,
-  importPunchesForPeriod, ROTATE_SECONDS, punchBlockedReason, type PunchDevice,
+  importPunchesForPeriod, ROTATE_SECONDS, punchBlockedReason, setSlotPunch, phoneSlots,
+  type PunchDevice, type CorrectionSlot,
 } from './clock';
-import { punchPhotoRoutes } from './punch-photos';
+import { punchPhotoRoutes, punchPhotoUpload, punchPhotoUploadErrors, savePunchPhoto } from './punch-photos';
+import { createPunchHold, takePunchHold, holdGeo } from './punch-holds';
 import { syncClass } from '../../sync';
 
 const router = Router();
@@ -65,10 +75,11 @@ router.get('/punches', requirePermission('hr.view'), (req, res) => {
   if (source) { where.push('p.source = ?'); params.push(source); }
   res.json(queryAll(
     `SELECT p.id, p.ts, p.work_date, p.kind, p.segment, p.source, p.lat, p.lng, p.accuracy_m, p.distance_m, p.geo_site,
-            p.device_flag, du.full_name AS device_user_name,
+            p.device_flag, du.full_name AS device_user_name, ph.id AS photo_id,
             e.name, e.employee_no
      FROM time_punches p JOIN employees e ON e.id = p.employee_id
      LEFT JOIN users du ON du.id = p.device_user_id
+     LEFT JOIN punch_photos ph ON ph.punch_kind = 'attendance' AND ph.punch_id = p.id
      WHERE ${where.join(' AND ')} ORDER BY p.ts DESC, p.id DESC LIMIT 1000`,
     ...params
   ));
@@ -174,21 +185,35 @@ router.use('/photo', punchPhotoRoutes('attendance', (punchId) =>
 
 // --- Employee, from the mobile app ---
 
-// Phone punch. With the kiosk QR (`code`), or — only for employees exempt from the office
-// location lock (clock_anywhere) — without it, from wherever they are. The location rules are
-// in clock-geofence.ts's checkPunchLocation.
-router.post('/punch', syncClass('physical'), (req, res) => {
-  const { code, location } = parseBody(phonePunchSchema, req.body);
+// The employee behind a phone request, or why they can't punch (the response is already sent).
+function phoneEmployee(req: Request, res: Response): EmpRow | undefined {
   const emp = linkedEmployee(req.user!.id);
   if (!emp) {
     res.status(403).json({ error: 'Your account is not linked to an employee record. Ask HR to link it.' });
-    return;
+    return undefined;
   }
   const blockedSelf = punchBlockedReason(emp.status, 'self');
   if (blockedSelf) {
     res.status(403).json({ error: blockedSelf });
-    return;
+    return undefined;
   }
+  return emp;
+}
+
+// A phone punch is two steps (punch-holds.ts): scan, then selfie. The old one-step route answers
+// an out-of-date app with what to do instead of recording a punch with no selfie.
+router.post('/punch', (_req, res) => {
+  res.status(410).json({ error: 'Time-in now needs a selfie. Close and reopen the app to update it, then try again.' });
+});
+
+// Step 1. With the kiosk QR (`code`), or — only for employees exempt from the office location
+// lock (clock_anywhere) — without it, from wherever they are. Every check a punch needs happens
+// here (location rules: clock-geofence.ts's checkPunchLocation); passing them parks a hold
+// stamped with the server's time, which the selfie turns into the punch.
+router.post('/punch/scan', syncClass('physical'), (req, res) => {
+  const { code, location } = parseBody(phonePunchSchema, req.body);
+  const emp = phoneEmployee(req, res);
+  if (!emp) return;
   if (code === undefined && !emp.clock_anywhere) {
     res.status(400).json({ error: 'Scan the code on the office time-in screen.' });
     return;
@@ -204,8 +229,42 @@ router.post('/punch', syncClass('physical'), (req, res) => {
     if (e instanceof GeofenceError) { res.status(e.status).json({ error: e.message }); return; }
     throw e;
   }
-  res.json(recordPunch(emp, code === undefined ? 'remote' : 'phone', req.user!.id, geo, punchDevice(req)));
+  res.json(createPunchHold(emp.id, req.user!.id, code === undefined ? 'remote' : 'phone', geo));
 });
+
+// Step 2. The selfie (multipart "photo", JPEG) records the held scan in the slot the employee
+// picked, at the time of the scan, and keeps the photo with it -- HR sees it beside the punch
+// like a kiosk photo. Re-doing a slot moves that punch and replaces its photo (setSlotPunch).
+router.post('/punch/selfie', syncClass('physical'), punchPhotoUpload, (req, res) => {
+  const discard = () => { if (req.file) fs.promises.unlink(req.file.path).catch(() => { /* ignore */ }); };
+  const emp = phoneEmployee(req, res);
+  if (!emp) { discard(); return; }
+  let hold_id: number;
+  let slot: CorrectionSlot;
+  try { ({ hold_id, slot } = parseBody(phoneSelfieSchema, req.body)); } catch (e) { discard(); throw e; }
+  if (!req.file) {
+    res.status(400).json({ error: 'Take a selfie to finish your time-in.' });
+    return;
+  }
+  const hold = takePunchHold(hold_id, emp.id);
+  if (!hold) {
+    discard();
+    res.status(400).json({ error: 'That scan has expired — scan the office code again.' });
+    return;
+  }
+  let punch;
+  try {
+    punch = setSlotPunch(emp, slot, hold.source, {
+      at: new Date(hold.scanned_ms), userId: req.user!.id, geo: holdGeo(hold), device: punchDevice(req),
+    });
+  } catch (e) {
+    discard();
+    throw e;
+  }
+  const photo = savePunchPhoto('attendance', punch.id, emp.id, req.file.path, req.file.size);
+  res.json({ ...punch, photo_id: photo.id });
+});
+router.use(punchPhotoUploadErrors);
 
 /** Flag a phone punch made on a borrowed phone, or on a device another account usually uses. */
 function punchDevice(req: Request): PunchDevice {
@@ -225,6 +284,7 @@ router.get('/my-status', (req, res) => {
   res.json({
     employee_name: emp.name,
     ...myClockStatus(emp.id),
+    ...phoneSlots(emp.id), // the four slot tiles + the suggested next one
     // The phone asks for GPS before a QR punch when this is on, and offers a no-QR
     // "clock in here" button when the employee may clock in anywhere.
     location_required: geofenceActive() && !emp.clock_anywhere,
@@ -250,6 +310,7 @@ router.post('/import/:periodId', requirePermission('hr.manage'), syncClass('clai
     res.status(404).json({ error: 'Cutoff period not found' });
     return;
   }
+  if (cutoffIsPaid(periodId)) { res.status(423).json({ error: 'This cutoff is locked after payment.' }); return; }
   res.json({ ok: true, ...importPunchesForPeriod(periodId) });
 });
 

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vds-playwright-'));
 Object.assign(process.env, {
-  NODE_ENV: 'test', TZ: 'Asia/Manila',
+  VDS_TEST_ADMIN_PASSWORD: 'admin123', NODE_ENV: 'test', TZ: 'Asia/Manila',
   DB_PATH: path.join(dir, 'app.db'), DATA_DIR: path.join(dir, 'data'),
   PLATFORM_DB_PATH: path.join(dir, 'platform.db'), UPLOAD_DIR: path.join(dir, 'uploads'),
   BACKUP_DIR: path.join(dir, 'backups'),
@@ -14,7 +14,7 @@ const db = await import('../../src/shared/db');
 db.init();
 const { createApp } = await import('../../src/app');
 const { attachWebSocket } = await import('../../src/shared/ws');
-const server = createApp().listen(4173, process.env.E2E_HOST || '127.0.0.1');
+const server = createApp().listen(Number(process.env.E2E_PORT || 4173), process.env.E2E_HOST || '127.0.0.1');
 attachWebSocket(server);
 function stop() {
   server.closeAllConnections();

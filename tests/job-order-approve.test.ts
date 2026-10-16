@@ -30,6 +30,55 @@ async function draftMO(prefix: string, qty: number, partStock: number) {
 }
 
 describe('job-order approval', () => {
+  it('lets a narrow approver review availability without granting broad inventory reads', async () => {
+    const { mo, part } = await draftMO('Narrow approval', 1, 100);
+    const role = await ctx.api.post('/api/roles').set(H()).send({ key: 'approval_review_only', label: 'Approval review only', permissions: ['mobile.access', 'production.approve'] });
+    expect(role.status).toBe(201);
+    const approver = await createEmployee(ctx.api, token, { role: 'approval_review_only' });
+    const headers = bearer(approver.token);
+    expect((await ctx.api.get('/api/job-orders?stage=awaiting_approval').set(headers)).status).toBe(200);
+    const review = await ctx.api.get(`/api/job-orders/${mo}`).set(headers);
+    expect(review.status).toBe(200);
+    expect((await ctx.api.get(`/api/job-orders/${mo}/availability`).set(headers)).status).toBe(200);
+    expect((await ctx.api.get(`/api/inventory/${part}`).set(headers)).status).toBe(403);
+    expect((await ctx.api.post(`/api/job-orders/${mo}/approve`).set(headers).send({ expected_revision: review.body.approval_revision })).status).toBe(200);
+  });
+
+  it('refuses a changed reviewed plan and accepts only its fresh revision', async () => {
+    const { mo } = await draftMO('Review revision', 3, 100);
+    const before = (await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body;
+    const availability = (await ctx.api.get(`/api/job-orders/${mo}/availability`).set(H())).body;
+    expect(availability.approval_revision).toBe(before.approval_revision);
+    await ctx.api.put(`/api/job-orders/${mo}`).set(H()).send({ qty_ordered: 4 });
+    const stale = await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H()).send({ expected_revision: before.approval_revision });
+    expect(stale.status).toBe(409); expect(stale.body.code).toBe('stale_job_order');
+    expect(stale.body.job_order.approved_at).toBeNull();
+    const fresh = (await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body;
+    expect(fresh.approval_revision).not.toBe(before.approval_revision);
+    const first = await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H()).set('Idempotency-Key', 'approval-review-retry-001').send({ expected_revision: fresh.approval_revision, notes: 'Reviewed four' });
+    const retry = await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H()).set('Idempotency-Key', 'approval-review-retry-001').send({ expected_revision: fresh.approval_revision, notes: 'Reviewed four' });
+    expect(first.status).toBe(200); expect(retry.body).toEqual(first.body);
+    expect(retry.headers['idempotency-replayed']).toBe('true');
+  });
+
+  it('detects component corrections without relying on timestamp granularity', async () => {
+    const { mo, part } = await draftMO('Review components', 3, 100);
+    const before = (await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body;
+    await ctx.api.put(`/api/job-orders/${mo}/components`).set(H()).send({ components: [{ component_item_id: part, qty_planned: 7 }] });
+    expect((await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H()).send({ expected_revision: before.approval_revision })).status).toBe(409);
+  });
+
+  it('allows a reviewed plan to be approved despite changing live stock, with a shortage warning', async () => {
+    const { mo, part } = await draftMO('Review shortage', 3, 10);
+    const before = (await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body;
+    await ctx.api.post(`/api/inventory/${part}/adjust`).set(H()).send({ change: -9 });
+    const current = (await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body;
+    expect(current.approval_revision).toBe(before.approval_revision);
+    const result = await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H()).send({ expected_revision: before.approval_revision });
+    expect(result.status).toBe(200); expect(result.body.shortfalls).toHaveLength(1);
+    expect((await ctx.api.get(`/api/inventory/${part}`).set(H())).body.quantity).toBe(1);
+  });
+
   it('refuses release until approved, then releases', async () => {
     const { mo } = await draftMO('Apv', 3, 100);
     const early = await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());

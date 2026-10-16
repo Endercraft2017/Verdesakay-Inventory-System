@@ -7,7 +7,7 @@
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
 var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
 var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
-var CACHE_VERSION = CACHE_PREFIX + 'v71';
+var CACHE_VERSION = CACHE_PREFIX + 'v107';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -19,6 +19,9 @@ var SHELL = [
   '/mobile/icons/icon-512.png',
   '/mobile/mobile.css',
   '/mobile/mobile-v2.css',
+  '/css/photo-viewer.css',
+  '/css/select-controls.css',
+  '/mobile/guides.css',
   '/mobile/role-kit.css',
   '/mobile/icons/v2/role-warehouse.svg',
   '/mobile/icons/v2/check-ok.svg',
@@ -36,13 +39,21 @@ var SHELL = [
   '/mobile/icons/v2/camera.svg',
   '/mobile/icons/v2/check-done.svg',
   '/js/api.js',
-  '/js/lib/mfa-controls.js',
+  '/js/doc-pagination.js',
+  '/js/lib/form-validation.js',
+  '/js/leave-dates.js',
   '/js/lib/image-compress.js',
+  '/js/lib/photo-viewer.js',
   '/js/lib/pdf-pages.js', // pdf.js itself (/js/vendor/pdfjs) loads on first PDF pick, not precached
   '/mobile/vendor/qrcode.js',
   '/mobile/vendor/zxing.js',
   '/mobile/app.js',
   '/mobile/lib/dom.js',
+  '/mobile/lib/personal.js',
+  '/js/personal-ux.js',
+  '/mobile/lib/guides.js',
+  '/js/guide-data.js',
+  '/js/guide-tour.js',
   '/mobile/lib/quick-orbit.js',
   '/mobile/lib/role-ui.js',
   '/mobile/lib/locations.js',
@@ -52,8 +63,10 @@ var SHELL = [
   '/mobile/lib/photo.js',
   '/mobile/lib/signature.js',
   '/mobile/lib/queue.js',
+  '/mobile/lib/production-drafts.js',
   '/mobile/lib/push.js',
   '/mobile/lib/scanner.js',
+  '/mobile/lib/selfie.js',
   '/mobile/lib/item-picker.js',
   '/mobile/modules/core/home.js',
   '/mobile/modules/hr/work.js',
@@ -73,12 +86,17 @@ var SHELL = [
   '/mobile/modules/inventory/batch-move.js',
   '/mobile/modules/manufacturing/job-orders.js',
   '/mobile/modules/manufacturing/kit-release.js',
+  '/mobile/modules/manufacturing/unit-issues.js',
   '/mobile/modules/manufacturing/qc.js',
   '/mobile/modules/manufacturing/repairs.js',
   '/mobile/modules/manufacturing/record.js',
+  '/mobile/modules/manufacturing/rts-recovery.js',
   '/mobile/modules/manufacturing/receiving.js',
   '/mobile/modules/inventory/allocate.js',
+  '/mobile/modules/inventory/release-actions.js',
+  '/mobile/modules/inventory/release-handoff.js',
   '/mobile/modules/inventory/so.js',
+  '/mobile/modules/inventory/delivery-recovery.js',
   '/mobile/modules/inventory/deliveries.js',
   '/mobile/modules/core/report-problem.js',
   '/mobile/modules/core/settings.js',
@@ -92,6 +110,8 @@ var SHELL = [
   '/mobile/modules/hr/schedule.js',
   '/mobile/modules/hr/requests.js',
   '/mobile/modules/core/tasks.js',
+  '/mobile/modules/core/notes.js',
+  '/mobile/modules/core/guides.js',
   '/mobile/modules/core/announcements.js',
   '/mobile/modules/hr/time-fix.js',
   '/mobile/modules/hr/approvals.js',
@@ -122,15 +142,7 @@ self.addEventListener('activate', function (e) {
           .map(function (k) { return caches.delete(k); }));
       })
       .catch(function () { /* CacheStorage unavailable — still take control */ })
-      .then(async function () {
-        // Remove pre-cookie web credentials on upgrade; preserve every queued operation.
-        try {
-          var database = await idb();
-          var legacy = await idbGet(database, 'meta', 'token');
-          if (legacy && legacy.v && !legacy.cookie_auth) await idbDel(database, 'meta', 'token');
-        } catch (err) { /* IDB unavailable; the page will require a fresh sign-in */ }
-        return self.clients.claim();
-      })
+      .then(function () { return self.clients.claim(); })
   );
 });
 
@@ -180,7 +192,7 @@ self.addEventListener('fetch', function (e) {
 self.addEventListener('push', function (e) {
   var data = {};
   try { data = e.data ? e.data.json() : {}; } catch (err) { data = { body: e.data && e.data.text() }; }
-  e.waitUntil(self.registration.showNotification(data.title || 'Verdesakay Warehouse', {
+  e.waitUntil(self.registration.showNotification(data.title || 'Otom Warehouse', {
     body: data.body || '',
     tag: data.tag || 'vds',
     renotify: true,
@@ -260,12 +272,9 @@ async function replayQueue() {
   var token = tokenRow && tokenRow.v;
   var tokenUser = tokenRow ? tokenRow.user_id : null;
   var stillPending = false;
-  if (!token && !(tokenRow && tokenRow.cookie_auth)) return; // signed out — nothing replays until someone signs in (queue.js)
+  if (!token) return; // signed out — nothing replays until someone signs in (queue.js)
 
-  var headers = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = 'Bearer ' + token;
-  if (tokenRow.cookie_auth) { headers['X-Requested-With'] = 'VDS'; headers['X-Session-Mode'] = 'cookie'; }
-  if (tokenUser != null) headers['X-Queue-Actor'] = String(tokenUser);
+  var headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
   if (tokenRow.device_id) headers['X-Device-Id'] = tokenRow.device_id;
 
   for (var i = 0; i < ops.length; i++) {

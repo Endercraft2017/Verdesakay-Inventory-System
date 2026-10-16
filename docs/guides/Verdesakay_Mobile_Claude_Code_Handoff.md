@@ -7,6 +7,23 @@
 **Functional design record:** `Verdesakay_Mobile_Design_Progress.md`  
 **Supporting specifications:** `docs/guides/mobile-role-ux-spec.md` and `docs/guides/shop-floor-to-delivery-sop.md`
 
+## Current-branch reconciliation (2026-10-13)
+
+This handoff was prepared against `main` on 2026-09-26. Its "current" and "gap" tables below
+are historical; check this branch's code and tests before treating an item as unbuilt. The
+five-item dock, notification history, movable Quick Orbit, anonymous channel, profile editor,
+paid-only payslip download, manager permission, separate QC/QA desks, RTS workflow and releasing
+workflow now have implementations. Schedule change is a seeded employee request tied to a future
+published roster date; approval updates that day's shift and rejects a stale or paid cutoff.
+HR requests and attendance corrections can wait in the account-scoped mobile sync queue; approvals
+remain online-only. Chat text is retained as an account-scoped draft on a failed send.
+
+Remaining work from this handoff needs a separate acceptance pass: identified reports still use
+Messages as their follow-up channel rather than a dedicated case lifecycle, and each shop-floor
+exception path needs end-to-end checks on physical phones, including camera, GPS, poor connectivity,
+reconnect, 390×844 layout, accessibility and the precise Figma frames. The planned-vs-built
+details in sections 6–16 should be reconciled per screen during that pass.
+
 ## 1. What this handoff is for
 
 Use this document as the implementation bridge between the approved mobile Figma design and the existing Verdesakay codebase. It tells Claude Code what to inspect, what already exists, what must change, which Figma nodes are canonical, how the permissions map to the product pipeline, and how to verify the result.
@@ -61,7 +78,7 @@ Do not install Tailwind merely because Figma returns React/Tailwind reference co
 3. Work is the execution hub. Home is a short “what matters today” overview.
 4. All configured request types are universal, subject to server validation and approval rules.
 5. Identified and anonymous reports are separate entry points, storage/queues, and management views.
-6. Payslips may be downloaded only after payroll is finalized. Draft/in-progress records may be shown with a clear wait message, but cannot produce a downloadable file.
+6. Employees can view their own draft payslips and current timekeeping as watermarked previews. Draft amounts and punches may change; PDF download is available only after HR marks the payslip Paid (updated 2026-10-14 per owner decision).
 7. Operational directories and role screens do not expose personal phone numbers or unnecessary personal data.
 8. Employees may directly edit only permitted profile/preferences fields. Legal name, birthdate, salary, position, department, employment classification, and other authoritative HR data require an approval request.
 9. One employee may hold multiple permissions and sees the union of authorized queues. Completion does not automatically navigate into the next role’s screen unless the same user has that permission.
@@ -142,7 +159,7 @@ The V2 board contains 17 screens:
 | Inbox | `#/inbox`, `modules/core/inbox.js` | messages/conversations/read/reaction APIs |
 | Payslip viewing | `#/payslips`, `modules/hr/payslips.js` | `/api/me/payslips` |
 | Settings | `#/settings`, `modules/core/settings.js` | theme, push, password, logout |
-| Identified operational report | `#/report-problem` | currently sends `/api/messages` to selected staff |
+| Identified operational report | `#/report-problem` | `/api/identified-reports`: private numbered cases, status, history, evidence and follow-up |
 | Approvals | `#/approvals`, `modules/hr/approvals.js` | `/api/me/approvals` and decision endpoints |
 
 ### Shared gaps that require implementation
@@ -153,7 +170,7 @@ The V2 board contains 17 screens:
 | Dedicated notifications screen | Add a mobile route and UI that consumes existing push/event data or a new scoped notifications endpoint. Inbox remains conversations/broadcasts. Deep-link each event. |
 | Movable Quick Orbit | Add drag, snap-to-edge, safe docking, per-user/device persistence, keyboard collapse, focused-form suppression, labeled arc expansion, and role action prioritization. |
 | Reporting Hub | Separate identified reporting from anonymous reporting. Do not implement anonymity as a checkbox. |
-| Identified case tracking | Current implementation is only an internal message. Add reference/status/history/evidence behavior if no general case endpoint exists. Preserve offline drafts/queue where policy permits. |
+| Identified case tracking | Implemented as private numbered cases with reporter/recipient/assignee access, status, history, evidence and follow-up on mobile and web. Mobile keeps the unfinished report draft. Validate the complete handoff on a real phone and desktop. |
 | Anonymous reporting | New isolated backend model and endpoints are required. Do not store `reported_by`; minimize request metadata; use separate numbering, queues, filters, management view, rate limits, and optional confidential code/passphrase. Warn that attachments can identify the reporter. |
 | Profile editing | Current Settings has theme, notifications, password, and logout but no controlled profile editor. Add permitted direct-edit fields and a separate information-change request for authoritative fields. |
 | Payslip finalization/download | `/api/me/payslips` currently returns payroll form records without enforcing a finalized-only download contract, and the mobile detail has no download action. Add explicit release/finalization state and an authenticated file endpoint. Never infer finalization from mere record existence. Log downloads. |
@@ -439,3 +456,22 @@ For each phase, require:
 - Remaining gaps, explicitly marked as planned rather than implemented.
 
 Do not accept “looks close” as verification for the shell, role queue, primary task screen, confirmation boundary, blocked state, and completion state of each role.
+
+## Follow-up: final release, delivery and mobile access (2026-10-16)
+
+Final release now uses `inventory/release-handoff.js`: scoped persistent evidence,
+keyed uploads before slip issuance, immutable final request and explicit unknown-result
+recovery. Delivery uses `inventory/delivery-recovery.js` for the same persistence and
+authority-state rules on start and POD. Its evidence remains optional and a linked
+delivery may start before the slip, per owner decisions. The driver screen does not
+offer a force-backorder completion action. PWA cache v104 includes both modules.
+
+Operational route access is centralized through `MApp.canOpen`, combining effective
+account permissions and module entitlements. Work/production tiles and Quick Orbit
+use this policy; a basic employee retains personal tools and cannot open operational
+screens by URL. Foreground/focus/reconnect refresh account permissions from the server.
+
+The exact handoff at `6185481` was reconciled against code; see
+`docs/reviews/mobile-handoff-6185481-review.md`. Legacy Pick retirement, semi-built
+finishing intake, returns/disposition, allocation undo, build-state stock movement,
+procurement context and other follow-ups there are separate unfinished work.

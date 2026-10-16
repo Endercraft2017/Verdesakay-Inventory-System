@@ -11,7 +11,8 @@
 import fs from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
-import { getDb } from '../shared/db';
+import { getDb, withTenant } from '../shared/db';
+import { storeDurableUpload, resolveDurableUpload } from '../shared/durable-uploads';
 import { enableSync, syncConfigOf } from './node';
 import { applyConfirmed, lastAuthoritySeq, pendingCommands, SyncDivergenceError, type RebaseSummary } from './rebase';
 import type { CommandResult } from './commands';
@@ -316,11 +317,12 @@ async function pullFiles(conn: DatabaseSync, slug: string, remote: RemoteConfig,
     if (!list.length) return;
     for (const f of list) {
       const target = filePath(slug, f.name);
-      if (target && !fs.existsSync(target)) {
+      if (target && !withTenant(slug, () => resolveDurableUpload(f.name))) {
         const res = await call(`${remote.cloudUrl}/api/sync/files/${f.seq}`, { headers, timeoutMs: 5 * 60_000 });
         if (res.ok) {
           fs.mkdirSync(path.dirname(target), { recursive: true });
           fs.writeFileSync(target, Buffer.from(await res.arrayBuffer()));
+          withTenant(slug, () => storeDurableUpload(f.name));
         } // a file deleted on the authority meanwhile is simply skipped
       }
       if (isHost && target && fs.existsSync(target)) registerFile(conn, f.name, f.size); // pass it on to the LAN

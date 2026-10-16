@@ -76,7 +76,7 @@ describe('DocEditor floating objects', () => {
     });
     const fs_ = document.querySelector('.doc-fs') as HTMLElement;
     const surface = fs_.querySelector('.doc-surface') as HTMLElement;
-    return { fs: fs_, surface, getSaved: () => saved, history: ret._history as any };
+    return { fs: fs_, surface, getSaved: () => saved, history: ret._history as any, close: ret.close };
   }
 
   it('renders a Shapes group with Rectangle/Oval/Line tiles', () => {
@@ -264,6 +264,16 @@ describe('DocEditor floating objects', () => {
     void fs;
   });
 
+  it('dismisses transient promotion chrome when focus leaves the canvas while keeping its own action reachable', () => {
+    const {fs,surface}=openEditor('<p>text <img src="data:image/png;base64,x" alt="pic"></p>');
+    surface.focus();click(surface.querySelector('img')!);
+    const make=surface.querySelector('.doc-promote-bar button') as HTMLButtonElement;
+    make.focus();expect(surface.querySelector('.doc-promote-bar')).toBeTruthy();
+    (fs.querySelector('.doc-fs-name') as HTMLInputElement).focus();
+    expect(surface.querySelector('.doc-promote-bar')).toBeNull();
+    click(surface.querySelector('img')!);expect(surface.querySelector('.doc-promote-bar')).toBeTruthy();
+  });
+
   it('promotes a plain table and keeps it editable via the contenteditable island pattern', () => {
     const { surface } = openEditor('<table class="doc-table"><tbody><tr><td>a</td></tr></tbody></table>');
     const table = surface.querySelector('table')!;
@@ -316,7 +326,7 @@ describe('DocEditor floating objects', () => {
     expect(floatEl.style.width).toBe(w0);      // south handle leaves width alone
   });
 
-  it('first press on a promoted table selects it for moving (no caret); a second press is "edit"', () => {
+  it('first press on a promoted table selects it while allowing the caret immediately', () => {
     const { floatEl, table } = promoteTable();
     // fresh promote leaves it selected — deselect so we test the first-press path
     document.dispatchEvent(new (window as any).KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
@@ -325,12 +335,20 @@ describe('DocEditor floating objects', () => {
     const pd1 = new (window as any).PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerId: 1 });
     table.dispatchEvent(pd1);
     expect(floatEl.classList.contains('selected')).toBe(true); // press 1 -> selected for move
-    expect(pd1.defaultPrevented).toBe(true);                   // ...and the caret was swallowed
+    expect(pd1.defaultPrevented).toBe(false);                  // caret is allowed immediately
 
     const pd2 = new (window as any).PointerEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, pointerId: 1 });
     table.dispatchEvent(pd2);
     expect(pd2.defaultPrevented).toBe(false); // press 2 -> caret allowed through (edit intent)
     expect(floatEl.classList.contains('selected')).toBe(true);
+  });
+
+  it('the explicit Move grip moves an editable object without changing its inner content',()=>{
+    const {floatEl,table}=promoteTable();
+    const left=floatEl.style.left;const content=table.innerHTML;
+    const grip=floatEl.querySelector('[data-float-move]')!;
+    pointerdown(grip,{clientX:100,clientY:100});pointermove(document,{clientX:200,clientY:160});pointerup(document);
+    expect(floatEl.style.left).not.toBe(left);expect(table.innerHTML).toBe(content);
   });
 
   it('Escape is two-stage on an editing islanded float: exit edit -> exit selection', () => {
@@ -443,7 +461,7 @@ describe('DocEditor floating objects', () => {
   });
 
   it('save strips handles/toolbar and reload restores contenteditable on the float wrapper', async () => {
-    const { fs, surface, getSaved } = openEditor();
+    const { fs, surface, getSaved, close } = openEditor();
     click(fs.querySelector('[data-ins="shape-rect"]')!);
     // float is still .selected (handles/toolbar present) at the moment of Save
     expect(surface.querySelector('.doc-float-handle')).toBeTruthy();
@@ -457,7 +475,9 @@ describe('DocEditor floating objects', () => {
     expect(saved).not.toContain('doc-float-toolbar');
     expect(saved).not.toContain('selected');
     expect(saved).not.toContain('contenteditable');
-    expect(document.querySelector('.doc-fs')).toBeFalsy(); // successful save closes the editor
+    expect(document.querySelector('.doc-fs')).toBeTruthy(); // saving keeps the workspace open
+    expect(fs.querySelector('.doc-save-status')?.textContent).toBe('Saved');
+    await close(); // reopen the saved document below
 
     // reopen a fresh editor with the saved body -> normalizeFloats() should restore contenteditable="false"
     const second = openEditor(saved!);
@@ -528,7 +548,7 @@ describe('DocEditor floating objects', () => {
   });
 
   it('serializeEditor drops the editor-only behind-text class (z-index carries the meaning)', async () => {
-    const { fs, surface, getSaved } = openEditor();
+    const { fs, surface, getSaved, close } = openEditor();
     click(fs.querySelector('[data-ins="shape-rect"]')!);
     const el = surface.querySelector('.doc-float')! as HTMLElement;
     click(el.querySelector('[data-float-act="z-down"]') as HTMLElement); // 1 -> 0
@@ -565,7 +585,7 @@ describe('DocEditor floating objects', () => {
     click(fs.querySelector('[data-ins="shape-oval"]')!);
     history.flush(); // commit the pending snapshot now (skip the debounce)
     expect(undoBtn.disabled).toBe(false);
-    undoBtn.dispatchEvent(new (window as any).MouseEvent('mousedown', { bubbles: true }));
+    undoBtn.click();
     expect(surface.querySelectorAll('.doc-float').length).toBe(0);
     expect(redoBtn.disabled).toBe(false);
   });

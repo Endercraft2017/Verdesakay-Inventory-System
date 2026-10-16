@@ -1,6 +1,9 @@
+import { parseProductionLabel } from '../manufacturing/label-code';
+import { batchBalances } from './batch-stock';
 /** Inventory: items, search/filter, stock adjustments with history, dashboard stats. */
 import path from 'node:path';
 import fs from 'node:fs';
+import { storeDurableUpload, resolveDurableUploadAsync, forgetDurableUpload } from '../../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -9,9 +12,10 @@ import { requireAuth, requirePermission, requireAnyPermission } from '../../shar
 import { ITEM_PICKER, UNIT_RECORD } from '../../shared/desk-access';
 import { recordSiteClash, syncClass } from '../../sync';
 import { syncUpload } from '../../sync/files';
-import { siteDecisionStands } from '../../shared/sync-context';
+import { siteDecisionStands, syncContext } from '../../shared/sync-context';
 import {
   parseBody,
+  ValidationError,
   createItemSchema,
   updateItemSchema,
   adjustStockSchema,
@@ -27,7 +31,9 @@ import {
   applyStockChange,
   transferStock,
   stockAt,
+  variantStockAt,
   stockBreakdown,
+  locationName,
   getDefaultLocationId,
   findOrCreateDamageTwin,
   overdrawAllowed,
@@ -58,7 +64,10 @@ const imageUpload = multer({
 
 /** Delete a stored image file, ignoring "already gone". */
 function unlinkImage(name: string | null | undefined): void {
-  if (name) fs.promises.unlink(path.join(uploadDir(), name)).catch(() => {});
+  if (name) {
+    forgetDurableUpload(name);
+    fs.promises.unlink(path.join(uploadDir(), name)).catch(() => {});
+  }
 }
 
 const ITEM_SELECT = `
@@ -293,7 +302,14 @@ router.get('/lookup', lookupGate, (req, res) => {
     res.status(400).json({ error: 'A code is required' });
     return;
   }
-  const item = queryOne<InventoryItem>(
+  const label=parseProductionLabel(code);
+  if(!label){
+    const identities=queryOne<{n:number}>(`SELECT (SELECT COUNT(*) FROM job_order_units WHERE LOWER(COALESCE(NULLIF(TRIM(identifier),''),'UNIT-' || id))=LOWER(?))
+      +(SELECT COUNT(*) FROM production_batches WHERE LOWER(number)=LOWER(?))
+      +(SELECT COUNT(*) FROM inventory_items WHERE LOWER(sku)=LOWER(?) OR LOWER(json_extract(attributes,'$.barcode'))=LOWER(?)) AS n`,code,code,code,code)!.n;
+    if(identities>1){res.status(409).json({error:'Ambiguous older label. Open the exact record and reprint its QR sticker.',code:'ambiguous_label'});return;}
+  }
+  const item = !label && queryOne<InventoryItem>(
     ITEM_SELECT + " WHERE i.sku = ? OR json_extract(i.attributes, '$.barcode') = ? LIMIT 1",
     code,
     code
@@ -308,16 +324,16 @@ router.get('/lookup', lookupGate, (req, res) => {
   const unit = queryOne<{ id: number; identifier: string; status: string; product_item_id: number; job_order_number: string | null }>(
     `SELECT u.id, u.identifier, u.status, u.product_item_id, jo.number AS job_order_number
      FROM job_order_units u LEFT JOIN job_orders jo ON jo.id = u.job_order_id
-     WHERE u.identifier = ? AND u.product_item_id IS NOT NULL
+     WHERE (CASE WHEN ? IS NOT NULL THEN (?='unit' AND u.id=?) ELSE LOWER(COALESCE(NULLIF(TRIM(u.identifier), ''),'UNIT-' || u.id))=LOWER(?) END) AND u.product_item_id IS NOT NULL
      ORDER BY u.id DESC LIMIT 1`,
-    code
+    label?.kind??null,label?.kind??null,label?.id??null,code
   );
   if (unit) {
     const prod = queryOne<InventoryItem>(ITEM_SELECT + ' WHERE i.id = ? LIMIT 1', unit.product_item_id);
     if (prod) {
       res.json({
         ...pickerView(req, prod),
-        unit: { id: unit.id, identifier: unit.identifier, status: unit.status, job_order_number: unit.job_order_number },
+        unit: { id: unit.id, identifier: unit.identifier || ('UNIT-' + unit.id), status: unit.status, job_order_number: unit.job_order_number },
       });
       return;
     }
@@ -327,10 +343,9 @@ router.get('/lookup', lookupGate, (req, res) => {
   const batch = queryOne<{ id: number; number: string; identifier: string | null; status: string; qty: number; product_item_id: number | null; job_order_number: string | null }>(
     `SELECT b.id, b.number, b.identifier, b.status, b.qty, b.product_item_id, jo.number AS job_order_number
      FROM production_batches b LEFT JOIN job_orders jo ON jo.id = b.job_order_id
-     WHERE b.number = ? OR b.identifier = ?
+     WHERE (CASE WHEN ? IS NOT NULL THEN (?='batch' AND b.id=?) ELSE (b.number = ? OR b.identifier = ?) END)
      ORDER BY b.id DESC LIMIT 1`,
-    code,
-    code
+    label?.kind??null,label?.kind??null,label?.id??null,code,code
   );
   if (batch) {
     const prod = batch.product_item_id
@@ -341,6 +356,9 @@ router.get('/lookup', lookupGate, (req, res) => {
       batch: {
         id: batch.id, number: batch.number, identifier: batch.identifier,
         status: batch.status, qty: batch.qty, job_order_number: batch.job_order_number,
+        balances:batchBalances(batch.id),
+        received_quantity:queryOne<{n:number}>('SELECT COALESCE(SUM(quantity),0) AS n FROM production_receipt_items WHERE batch_id=?',batch.id)?.n??0,
+        allocations:queryAll(`SELECT a.quantity,a.state,o.number AS order_number FROM production_batch_allocations a JOIN orders o ON o.id=a.order_id WHERE a.batch_id=?`,batch.id),
       },
     });
     return;
@@ -619,14 +637,17 @@ router.get('/:id', viewGate, (req, res) => {
      ORDER BY t.id DESC LIMIT 50`,
     item.id
   );
-  const stock = queryAll(
+  const stock = queryAll<{ location_id: number; location_name: string; location_type: string; quantity: number }>(
     `SELECT s.location_id, l.name AS location_name, l.type AS location_type, s.quantity
      FROM inventory_stock s JOIN locations l ON l.id = s.location_id
      WHERE s.item_id = ? AND s.quantity <> 0
      ORDER BY s.quantity DESC, l.name COLLATE NOCASE`,
     item.id
   );
-  res.json({ ...withParsedAttributes(item), history, stock });
+  res.json({ ...withParsedAttributes(item),
+    preferred_location_name: item.preferred_location_id ? locationName(item.preferred_location_id) : null,
+    history: history.map((h) => ({ ...h, location_name: h.location_id ? locationName(h.location_id) : null })),
+    stock: stock.map((s) => ({ ...s, location_name: locationName(s.location_id) })) });
 });
 
 // POST /api/inventory — create item
@@ -641,25 +662,45 @@ router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req
     }
   }
 
-  // Where the starting stock lands: an explicit location, or the default one.
-  let startLoc: number | null = null;
-  if (input.quantity !== 0) {
-    startLoc = input.location_id ?? getDefaultLocationId();
-    if (!queryOne('SELECT id FROM locations WHERE id = ?', startLoc)) {
-      res.status(400).json({ error: 'Starting-stock location not found' });
-      return;
-    }
-  }
-
-  // Item is inserted at qty 0; applyStockChange bumps both the total and the
-  // per-location row so the two can never disagree.
+  // Create optional child locations and the item in one transaction: a failed item
+  // save must not leave empty shelves behind. Existing callers can omit location_id.
   db.exec('BEGIN');
   let itemId: number | bigint;
+  let startLoc: number;
   try {
+    if (input.new_location_levels?.length && input.location_id == null) {
+      throw new ValidationError('Choose the parent location before adding sublocations');
+    }
+    startLoc = input.location_id ?? getDefaultLocationId();
+    const parent = queryOne<{ parent_id: number | null }>(
+      'SELECT parent_id FROM locations WHERE id = ?', startLoc
+    );
+    if (!parent) throw new ValidationError('Starting-stock location not found');
+    let depth = 1;
+    let ancestor = parent.parent_id;
+    const seen = new Set([startLoc]);
+    while (ancestor != null) {
+      if (seen.has(ancestor)) throw new ValidationError('Starting-stock location hierarchy is invalid');
+      seen.add(ancestor);
+      const row = queryOne<{ parent_id: number | null }>('SELECT parent_id FROM locations WHERE id = ?', ancestor);
+      if (!row) throw new ValidationError('Starting-stock location hierarchy is invalid');
+      depth++;
+      ancestor = row.parent_id;
+    }
+    if (depth + (input.new_location_levels?.length ?? 0) > 5) throw new ValidationError('A location can have at most five levels');
+    for (const name of input.new_location_levels ?? []) {
+      if (queryOne('SELECT 1 FROM locations WHERE name = ? COLLATE NOCASE AND parent_id = ? LIMIT 1', name, startLoc)) {
+        throw Object.assign(new Error(`Sublocation "${name}" already exists under this location; select it instead.`), { status: 409 });
+      }
+      const child = run(
+        "INSERT INTO locations (name, parent_id, type, is_default) VALUES (?, ?, 'other', 0)", name, startLoc
+      );
+      startLoc = Number(child.lastInsertRowid);
+    }
     const info = run(
       `INSERT INTO inventory_items
-        (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, unit_cost, location, notes, product_group, attributes)
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+        (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, unit_cost, location, preferred_location_id, notes, product_group, attributes)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
       input.name,
       input.sku ?? null,
       input.category ?? null,
@@ -669,13 +710,14 @@ router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req
       input.min_quantity,
       input.unit_cost ?? 0,
       input.location ?? null,
+      startLoc,
       input.notes ?? null,
       input.product_group ?? null,
       input.attributes ? JSON.stringify(input.attributes) : null
     );
     itemId = info.lastInsertRowid;
 
-    if (startLoc !== null) {
+    if (input.quantity !== 0) {
       applyStockChange({
         itemId: Number(itemId),
         locationId: startLoc,
@@ -689,7 +731,7 @@ router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req
     db.exec('ROLLBACK');
     throw e;
   }
-  res.status(201).json({ id: itemId });
+  res.status(201).json({ id: itemId, preferred_location_id: startLoc });
 });
 
 // PUT /api/inventory/:id — update details (not quantity; use /adjust)
@@ -701,6 +743,9 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
     return;
   }
   const input = parseBody(updateItemSchema, req.body);
+  if (input.preferred_location_id != null && !queryOne('SELECT id FROM locations WHERE id = ?', input.preferred_location_id)) {
+    res.status(400).json({ error: 'Preferred location not found' }); return;
+  }
   const sku = input.sku !== undefined ? input.sku : item.sku;
   if (sku) {
     const dupe = queryOne('SELECT id FROM inventory_items WHERE sku = ? AND id != ?', sku, id);
@@ -712,7 +757,7 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
 
   run(
     `UPDATE inventory_items
-     SET name = ?, sku = ?, category = ?, department_id = ?, supplier_id = ?, unit = ?, min_quantity = ?,
+     SET name = ?, sku = ?, category = ?, department_id = ?, supplier_id = ?, preferred_location_id = ?, unit = ?, min_quantity = ?,
          unit_cost = ?, location = ?, notes = ?, product_group = ?, attributes = ?, updated_at = datetime('now')
      WHERE id = ?`,
     input.name ?? item.name,
@@ -720,6 +765,7 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
     input.category !== undefined ? input.category : item.category,
     input.department_id !== undefined ? input.department_id : item.department_id,
     input.supplier_id !== undefined ? input.supplier_id : item.supplier_id,
+    input.preferred_location_id !== undefined ? input.preferred_location_id : item.preferred_location_id,
     input.unit !== undefined ? (input.unit ?? 'pcs') : item.unit,
     input.min_quantity !== undefined ? input.min_quantity : item.min_quantity,
     input.unit_cost !== undefined ? input.unit_cost : item.unit_cost ?? 0,
@@ -742,14 +788,27 @@ router.post('/:id/adjust', requirePermission('inventory.adjust'), syncClass('phy
     res.status(404).json({ error: 'Item not found' });
     return;
   }
-  const { change, reason, location_id } = parseBody(adjustStockSchema, req.body);
+  const { change, reason, location_id, build_mode } = parseBody(adjustStockSchema, req.body);
+  // The legacy phone Pick screen uses this exact adjustment reason for sale/job
+  // fulfilment. A generic adjustment has no order allocation or slip, so accepting
+  // it can deduct the same goods twice. Existing offline commands already recorded
+  // at a site still replay as physical decisions; new Pick requests must use the
+  // order release or production kit workflow.
+  if (change < 0 && /^Picked for order\s+/i.test(reason ?? '')
+    && !['replay', 'rebase'].includes(syncContext()?.mode ?? '')) {
+    res.status(409).json({
+      error: 'Legacy Pick cannot adjust stock for an order. Use its warehouse release or production kit workflow.',
+      code: 'use_release_workflow',
+    });
+    return;
+  }
   const locId = location_id ?? getDefaultLocationId();
   const loc = queryOne<{ name: string }>('SELECT name FROM locations WHERE id = ?', locId);
   if (!loc) {
     res.status(400).json({ error: 'Location not found' });
     return;
   }
-  const atLoc = stockAt(id, locId);
+  const atLoc = variantStockAt(id, locId, build_mode);
   // Offline (D1): the goods left even if the records say they weren't there — accepted and
   // flagged as a stock discrepancy by applyStockChange instead of refused.
   if (atLoc + change < 0 && !overdrawAllowed()) {
@@ -761,7 +820,7 @@ router.post('/:id/adjust', requirePermission('inventory.adjust'), syncClass('phy
   let result;
   try {
     result = applyStockChange({
-      itemId: id, locationId: locId, change, reason: reason ?? null, userId: req.user!.id,
+      itemId: id, locationId: locId, change, reason: reason ?? null, userId: req.user!.id, buildMode: build_mode,
     });
     db.exec('COMMIT');
   } catch (e) {
@@ -790,14 +849,14 @@ router.post('/:id/damage', requirePermission('inventory.adjust'), syncClass('phy
     res.status(400).json({ error: 'That is already a damage record' });
     return;
   }
-  const { quantity, reason, location_id } = parseBody(damageStockSchema, req.body);
+  const { quantity, reason, location_id, build_mode } = parseBody(damageStockSchema, req.body);
   const locId = location_id ?? getDefaultLocationId();
   const loc = queryOne<{ name: string }>('SELECT name FROM locations WHERE id = ?', locId);
   if (!loc) {
     res.status(400).json({ error: 'Location not found' });
     return;
   }
-  const atLoc = stockAt(id, locId);
+  const atLoc = variantStockAt(id, locId, build_mode);
   if (quantity > atLoc && !overdrawAllowed()) { // offline: accepted + flagged (D1)
     res.status(400).json({ error: `Not enough stock at ${loc.name}. Only ${atLoc} available.` });
     return;
@@ -813,7 +872,7 @@ router.post('/:id/damage', requirePermission('inventory.adjust'), syncClass('phy
 
     out = applyStockChange({
       itemId: id, locationId: locId, change: -quantity, userId: req.user!.id,
-      reason: `Damaged${tail}`,
+      reason: `Damaged${tail}`, buildMode: build_mode,
     });
     inn = applyStockChange({
       itemId: twinId, locationId: locId, change: quantity, userId: req.user!.id,
@@ -841,7 +900,7 @@ router.post('/:id/transfer', requirePermission('inventory.adjust'), syncClass('p
     res.status(404).json({ error: 'Item not found' });
     return;
   }
-  const { from_location_id, to_location_id, amount, reason } = parseBody(transferStockSchema, req.body);
+  const { from_location_id, to_location_id, amount, reason, build_mode } = parseBody(transferStockSchema, req.body);
   if (from_location_id === to_location_id) {
     res.status(400).json({ error: 'Pick two different locations' });
     return;
@@ -852,9 +911,16 @@ router.post('/:id/transfer', requirePermission('inventory.adjust'), syncClass('p
     res.status(400).json({ error: 'Location not found' });
     return;
   }
-  const available = stockAt(id, from_location_id);
+  const available = variantStockAt(id, from_location_id, build_mode);
   if (amount > available && !overdrawAllowed()) { // offline: accepted + flagged (D1)
     res.status(400).json({ error: `Only ${available} available at ${from.name} to transfer.` });
+    return;
+  }
+  if (queryOne(`SELECT 1 FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
+    WHERE u.product_item_id = ? AND j.build_mode = ? AND u.status IN ('in_stock', 'reserved')
+      AND COALESCE(u.location_id, j.output_location_id, ?) = ? LIMIT 1`,
+    id, build_mode, getDefaultLocationId(), from_location_id)) {
+    res.status(409).json({ error: 'This build state has tracked units here. Move their unit records from Production → Finished Products so stock and serial locations stay together.', code: 'use_unit_move' });
     return;
   }
 
@@ -863,7 +929,7 @@ router.post('/:id/transfer', requirePermission('inventory.adjust'), syncClass('p
   try {
     result = transferStock({
       itemId: id, fromId: from_location_id, toId: to_location_id, amount,
-      reason: reason ?? null, userId: req.user!.id,
+      reason: reason ?? null, userId: req.user!.id, buildMode: build_mode,
     });
     db.exec('COMMIT');
   } catch (e) {
@@ -899,7 +965,7 @@ router.delete('/:id', requirePermission('inventory.delete'), syncClass('claim'),
 });
 
 // GET /api/inventory/:id/image — stream the item's photo (auth via the shared client)
-router.get('/:id/image', viewGate, (req, res) => {
+router.get('/:id/image', viewGate, async (req, res) => {
   const item = queryOne<InventoryItem>(
     'SELECT image_path FROM inventory_items WHERE id = ?',
     Number(req.params.id)
@@ -908,8 +974,8 @@ router.get('/:id/image', viewGate, (req, res) => {
     res.status(404).json({ error: 'No image for this item' });
     return;
   }
-  const file = path.join(uploadDir(), item.image_path);
-  if (!fs.existsSync(file)) {
+  const file = await resolveDurableUploadAsync(item.image_path);
+  if (!file) {
     res.status(404).json({ error: 'Image file missing' });
     return;
   }
@@ -933,7 +999,7 @@ router.post('/:id/image', requirePermission('inventory.edit'), syncClass('claim'
     return;
   }
   try {
-    enforceQuota('storage_mb', req.file.size);
+    enforceQuota('storage_mb');
   } catch (e) {
     unlinkImage(req.file.filename);
     throw e;
@@ -943,6 +1009,7 @@ router.post('/:id/image', requirePermission('inventory.edit'), syncClass('claim'
     req.file.filename,
     id
   );
+  storeDurableUpload(req.file.filename);
   unlinkImage(item.image_path); // drop the previous file, if any
   res.json({ ok: true, image_path: req.file.filename });
 });

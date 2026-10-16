@@ -7,7 +7,7 @@ rem  it just waits for the server to come up and then opens the browser.
 rem ---------------------------------------------------------------------------
 if /i "%~1"=="__open" goto :open_browser
 
-title Verdesakay Office System
+title Otom
 cd /d "%~dp0"
 
 rem --- Work out the port + scheme the server will use -------------------------
@@ -18,7 +18,7 @@ if exist "%~dp0certs\cert.pem" set "SCHEME=https"
 if /i "%SCHEME%"=="http" ( where openssl >nul 2>&1 && set "SCHEME=https" )
 set "URL=%SCHEME%://localhost:%PORT%/"
 
-echo Starting Verdesakay Office System...
+echo Starting Otom...
 echo.
 
 rem --- Stop any previous instance still holding the ports --------------------
@@ -37,7 +37,7 @@ echo The browser will open at %URL% once the server is ready.
 echo.
 
 rem --- Helper window: waits for the port, then opens the browser ------------
-start "Verdesakay - open browser" /min "%~f0" __open %PORT% "%URL%"
+start "Otom - open browser" /min "%~f0" __open %PORT% "%URL%"
 
 call npm start
 if errorlevel 1 (

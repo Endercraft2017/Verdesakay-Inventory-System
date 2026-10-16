@@ -1,3 +1,4 @@
+import { batchBalances, consumeSemiBatchUnit, receiveBatch, restoreBatchStock } from '../inventory/batch-stock';
 /** Manufacturing job orders (Phase B). Build N units of a finished product by
     consuming its BOM. Lifecycle: draft (→ approved, a sign-off stamp, not a status) →
     released → in_progress → completed,
@@ -5,16 +6,20 @@
     QA/QC gating (qc_stages > 0) and serialized units come in Phase C. */
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
+import { createHash } from 'node:crypto';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { JOB_ORDER_DETAIL, JOB_ORDER_LIST, LINE } from '../../shared/desk-access';
 import {
   parseBody,
   createJobOrderSchema,
+  convertSemiBuiltSchema,
+  cancelSemiConversionSchema,
   updateJobOrderSchema,
   jobOrderComponentsSchema,
   jobOrderProgressSchema,
   acceptJobOrderSchema,
+  approveJobOrderSchema,
   addUnitSchema,
   inspectUnitsSchema,
   setUnitIdentifierSchema,
@@ -30,12 +35,13 @@ import { notifyAnyPermission, notifyUser } from '../../shared/push';
 import { imageUpload, saveAttachment, unlink } from '../../core/attachments.routes';
 import { enforceQuota } from '../../platform/quota';
 import { pickListHtml } from './parts-slip-print';
-import { applyStockChange, stockAt, getDefaultLocationId, overdrawAllowed } from '../inventory/inventory-stock';
+import { applyStockChange, stockAt, variantStockAt, getDefaultLocationId, locationName, overdrawAllowed } from '../inventory/inventory-stock';
 import { postJobOrderMovement, jobOrderWipBalance } from '../accounting/accounting-autopost';
 import { createDraftPurchaseOrders } from '../inventory/orders.routes';
 import { checklistForProduct } from './qc.routes';
 import { kitPickedAt, repairHeld } from './stock-holds';
 import { locationError, unitBlockers } from './rts';
+import { orderAvailability } from '../inventory/order-availability';
 import type { JobOrder, JobOrderComponent, JobOrderUnit, InventoryItem, ProductionReceipt } from '../../shared/types';
 import { recordSiteClash, syncClass } from '../../sync';
 import { syncUpload } from '../../sync/files';
@@ -73,6 +79,7 @@ const receiveGate = requireAnyPermission(['inventory.adjust', 'production.receiv
 // Deliberately NOT satisfied by inventory.adjust: approval is the production manager's
 // sign-off, separate from the warehouse that releases the parts. Admin holds every permission.
 const approveGate = requirePermission('production.approve');
+const conversionGate = requireAnyPermission(['production.approve', 'production.manage']);
 const pauseGate = requireAnyPermission(['inventory.adjust', 'production.pause', 'production.manage']);
 // Close early returns unused components but never releases or cancels — so a Production
 // Manager (production.manage) may do it without the warehouse's broad inventory.adjust.
@@ -107,6 +114,12 @@ const r2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 function componentCostFor(joId: number): {
   released: number; perUnit: number; perUnitTotal: number; addons: number;
 } {
+  const conversion = queryOne<{ source_cost: number; finishing_cost: number }>(
+    'SELECT source_cost, finishing_cost FROM semi_build_conversions WHERE job_order_id = ?', joId);
+  if (conversion) return {
+    released: r2(conversion.source_cost), perUnit: r2(conversion.source_cost),
+    perUnitTotal: r2(conversion.source_cost + conversion.finishing_cost), addons: r2(conversion.finishing_cost),
+  };
   let released = 0, perUnit = 0;
   for (const c of queryAll<{ qty_planned: number; qty_per_unit: number; cost: number }>(
     `SELECT c.qty_planned, c.qty_per_unit, COALESCE(i.unit_cost, 0) AS cost
@@ -164,7 +177,9 @@ function hasReceivable(joId: number): boolean {
 function settleJobOrderGl(joId: number, userId: number | null): void {
   const jo = queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', joId);
   if (!jo || (jo.status !== 'completed' && jo.status !== 'cancelled')) return;
-  if (hasReceivable(joId)) return;
+  // Early close stops new output, but built units still need inspection/rework
+  // before receiving. Their material value must remain in WIP until resolved.
+  if (unresolvedCount(joId) > 0 || hasReceivable(joId)) return;
   const bal = jobOrderWipBalance(joId);
   if (Math.abs(bal) < 0.005) return;
   const scrap = r2((jo.qty_scrapped || 0) * componentCostFor(joId).perUnit);
@@ -173,7 +188,11 @@ function settleJobOrderGl(joId: number, userId: number | null): void {
 
 function loadJobOrder(id: number): JobOrder | null {
   const jo = queryOne<JobOrder>(
-    `SELECT j.*, u.full_name AS created_by_name, rb.full_name AS released_by_name,
+    `SELECT j.*, sc.job_order_id AS conversion_job_order_id, sc.source_unit_id AS conversion_source_unit_id,
+            sc.source_batch_id AS conversion_source_batch_id, cb.number AS conversion_source_batch_number,
+            sc.source_cost AS conversion_source_cost,
+            sc.finishing_cost AS conversion_finishing_cost, sc.cancel_reason AS conversion_cancel_reason,
+            u.full_name AS created_by_name, rb.full_name AS released_by_name,
             ab.full_name AS accepted_by_name, apb.full_name AS approved_by_name,
             wab.full_name AS warehouse_accepted_by_name, prb.full_name AS prepared_by_name,
             pab.full_name AS paused_by_name,
@@ -189,6 +208,8 @@ function loadJobOrder(id: number): JobOrder | null {
      LEFT JOIN users wab ON wab.id = j.warehouse_accepted_by
      LEFT JOIN users prb ON prb.id = j.prepared_by
      LEFT JOIN users pab ON pab.id = j.paused_by
+     LEFT JOIN semi_build_conversions sc ON sc.job_order_id = j.id
+     LEFT JOIN production_batches cb ON cb.id = sc.source_batch_id
      LEFT JOIN parts_release_slips prs ON prs.job_order_id = j.id
      LEFT JOIN orders o ON o.id = j.order_id
      LEFT JOIN production_teams t ON t.id = j.team_id
@@ -198,6 +219,8 @@ function loadJobOrder(id: number): JobOrder | null {
     id
   );
   if (!jo) return null;
+  if (jo.source_location_id) jo.source_location_name = locationName(jo.source_location_id);
+  if (jo.output_location_id) jo.output_location_name = locationName(jo.output_location_id);
   jo.components = queryAll<JobOrderComponent>(
     `SELECT c.*, i.quantity AS component_on_hand
      FROM job_order_components c
@@ -213,10 +236,62 @@ function loadJobOrder(id: number): JobOrder | null {
   const summary: Record<string, number> = { pending: 0, in_stock: 0, failed: 0, scrapped: 0, rework: 0, sold: 0 };
   for (const c of counts) summary[c.status] = c.n;
   (jo as JobOrder & { units_summary: Record<string, number> }).units_summary = summary;
-  jo.qc_checklist_qc = jo.qc_stages > 0 ? checklistForProduct(jo.product_item_id, 1) : null;
-  jo.qc_checklist_qa = jo.qc_stages > 0 ? checklistForProduct(jo.product_item_id, 2) : null;
+  const snapshot = (raw: string | null | undefined) => {
+    try { return raw ? JSON.parse(raw) as NonNullable<JobOrder['qc_checklist_qc']> : null; } catch { return null; }
+  };
+  jo.qc_checklist_qc = jo.qc_stages > 0 ? (jo.qc_checklist_qc_snapshot ? snapshot(jo.qc_checklist_qc_snapshot) : checklistForProduct(jo.product_item_id, 1)) : null;
+  jo.qc_checklist_qa = jo.qc_stages > 0 ? (jo.qc_checklist_qa_snapshot ? snapshot(jo.qc_checklist_qa_snapshot) : checklistForProduct(jo.product_item_id, 2)) : null;
+  jo.approval_revision = createHash('sha256').update(JSON.stringify({
+    product: [jo.product_item_id, jo.product_name], build: jo.build_mode, quantity: jo.qty_ordered,
+    source: jo.source_location_id ?? getDefaultLocationId(), output: jo.output_location_id ?? getDefaultLocationId(),
+    team: jo.team_id, order: jo.order_id, schedule: [jo.planned_start, jo.due_date, jo.priority, jo.work_center], notes: jo.notes,
+    stages: jo.qc_stages, qc: jo.qc_checklist_qc, qa: jo.qc_checklist_qa,
+    components: jo.components.map(c => [c.component_item_id, c.component_name, c.qty_per_unit, c.qty_planned]),
+  })).digest('hex');
   return jo;
 }
+
+// Candidate packages for the manager's explicit CKD-vs-semi planning decision.
+router.get('/convert-semi/options', conversionGate, (req, res) => {
+  const productId = Number(req.query.product_item_id);
+  const locationId = Number(req.query.location_id);
+  if (!Number.isSafeInteger(productId) || !Number.isSafeInteger(locationId) || productId <= 0 || locationId <= 0) {
+    res.status(400).json({ error: 'Choose a product and stock location.' }); return;
+  }
+  const units = queryAll<{ id: number; identifier: string | null }>(`SELECT u.id, u.identifier FROM job_order_units u
+    JOIN job_orders j ON j.id = u.job_order_id WHERE u.product_item_id = ? AND j.build_mode = 'semi_built'
+      AND u.status = 'in_stock' AND COALESCE(u.location_id, j.output_location_id) = ? ORDER BY u.id`, productId, locationId);
+  const tracked = queryOne<{ n: number }>(`SELECT COUNT(*) AS n FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
+    WHERE u.product_item_id = ? AND j.build_mode = 'semi_built' AND u.status IN ('in_stock', 'reserved')
+      AND COALESCE(u.location_id, j.output_location_id) = ?`, productId, locationId)?.n ?? 0;
+  const onHand = variantStockAt(productId, locationId, 'semi_built');
+  const batches = queryAll<{ id: number; number: string }>(`SELECT b.id, b.number FROM production_batches b
+    JOIN job_orders j ON j.id=b.job_order_id WHERE COALESCE(b.product_item_id,j.product_item_id)=?
+    AND j.build_mode='semi_built' ORDER BY b.id`, productId)
+    .map((batch) => ({ ...batch, available: batchBalances(batch.id).find((row) => row.location_id === locationId)?.available ?? 0 }))
+    .filter((batch) => batch.available >= 1);
+  const lotOnHand = queryOne<{ n: number }>(`SELECT COALESCE(SUM(s.quantity),0) AS n FROM production_batch_stock s
+    JOIN production_batches b ON b.id=s.batch_id JOIN job_orders j ON j.id=b.job_order_id
+    WHERE COALESCE(b.product_item_id,j.product_item_id)=? AND j.build_mode='semi_built' AND s.location_id=?`, productId, locationId)?.n ?? 0;
+  res.json({ units, batches, bulk_available: Math.max(0, onHand - tracked - lotOnHand), on_hand: onHand });
+});
+
+// Minimal production-facing demand list: managers can choose a supply path without
+// gaining access to sales prices or customer details.
+router.get('/convert-semi/demand', conversionGate, (_req, res) => {
+  const sales = queryAll<{ id: number; number: string }>(`SELECT id, number FROM orders WHERE type = 'sale'
+    AND fulfilled_at IS NULL AND LOWER(status) IN ('open', 'approved', 'released') ORDER BY id DESC LIMIT 200`);
+  const demand = sales.flatMap((sale) => {
+    const availability = orderAvailability(sale.id);
+    return availability.lines.filter((line) => line.fulfillment_mode === 'assembled' && line.is_finished_product
+      && line.semi_built_available >= 1 && line.shortfall > line.linked_job_orders.reduce((n, job) => n + job.remaining, 0))
+      .map((line) => ({ order_id: sale.id, order_number: sale.number, product_item_id: line.item_id,
+        product_name: line.name, location_id: availability.location_id, location_name: availability.location_name,
+        uncovered: line.shortfall - line.linked_job_orders.reduce((n, job) => n + job.remaining, 0),
+        semi_built_available: line.semi_built_available }));
+  });
+  res.json(demand);
+});
 
 const OPEN_STATES = new Set(['draft', 'released', 'in_progress', 'paused']);
 
@@ -419,6 +494,7 @@ router.get('/pick-list', readGate, (req, res) => {
   type Line = {
     component_item_id: number; component_name: string; sku: string | null; unit: string | null;
     location_id: number; location_name: string | null; need: number; picked: number; on_hand: number;
+    held_elsewhere: number; free_for_list: number;
     job_orders: Array<{ job_order_id: number; number: string; need: number; picked: number }>;
   };
   const lines = new Map<string, Line>();
@@ -433,7 +509,9 @@ router.get('/pick-list', readGate, (req, res) => {
         l = {
           component_item_id: c.component_item_id, component_name: c.component_name, sku: it?.sku ?? null, unit: it?.unit ?? null,
           location_id: loc, location_name: jo.source_location_name ?? null, need: 0, picked: 0,
-          on_hand: stockAt(c.component_item_id, loc), job_orders: [],
+          on_hand: stockAt(c.component_item_id, loc),
+          held_elsewhere: pickedElsewhere(c.component_item_id, loc, ids),
+          free_for_list: 0, job_orders: [],
         };
         lines.set(key, l);
       }
@@ -442,6 +520,7 @@ router.get('/pick-list', readGate, (req, res) => {
       l.job_orders.push({ job_order_id: jo.id, number: jo.number, need: c.qty_planned, picked: c.qty_picked ?? 0 });
     }
   }
+  for (const line of lines.values()) line.free_for_list = Math.max(0, line.on_hand - line.held_elsewhere);
   const out = {
     job_orders: (jos as JobOrder[]).map((j) => ({
       id: j.id, number: j.number, product_name: j.product_name, qty_ordered: j.qty_ordered,
@@ -525,6 +604,7 @@ router.get('/:id', detailGate, (req, res) => {
  *  Caller owns validation; this just writes (its own transaction). */
 export function createDraftJobOrder(opts: {
   productId: number; productName: string; qty: number;
+  buildMode?: 'assembled' | 'semi_built';
   orderId?: number | null; sourceLocationId: number; outputLocationId: number;
   qcStages?: number; teamId?: number | null; plannedStart?: string | null;
   dueDate?: string | null; priority?: number; workCenter?: string | null;
@@ -536,17 +616,18 @@ export function createDraftJobOrder(opts: {
      WHERE b.product_item_id = ? ORDER BY b.sort, b.id`,
     opts.productId
   );
-  db.exec('BEGIN');
+  db.exec('SAVEPOINT draft_job_order');
   let id: number;
   try {
     const number = nextSequence('mo_seq', 'MO');
     const info = run(
       `INSERT INTO job_orders
-        (number, order_id, product_item_id, product_name, qty_ordered, status,
+        (number, order_id, product_item_id, product_name, qty_ordered, status, build_mode,
          source_location_id, output_location_id, qc_stages,
          team_id, planned_start, due_date, priority, work_center, notes, created_by)
-       VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       number, opts.orderId ?? null, opts.productId, opts.productName, opts.qty,
+      opts.buildMode ?? 'assembled',
       opts.sourceLocationId, opts.outputLocationId, opts.qcStages ?? 0,
       opts.teamId ?? null, opts.plannedStart ?? null, opts.dueDate ?? null,
       opts.priority ?? 0, opts.workCenter ?? null, opts.notes ?? null, opts.userId
@@ -560,13 +641,113 @@ export function createDraftJobOrder(opts: {
         id, c.component_item_id, c.component_name, c.quantity, c.quantity * opts.qty
       );
     }
-    db.exec('COMMIT');
+    db.exec('RELEASE draft_job_order');
   } catch (e) {
-    db.exec('ROLLBACK');
+    db.exec('ROLLBACK TO draft_job_order'); db.exec('RELEASE draft_job_order');
     throw e;
   }
   return { id, number: loadJobOrder(id)!.number };
 }
+
+// A semi-built package is a whole unit with its remaining pieces inside. Finishing it
+// is a build-state change, not another BOM build. The manager selects the actual
+// package; production inspects it and Products In posts the finished variant.
+router.post('/convert-semi', conversionGate, syncClass('physical'), syncUpload(imageUpload.single('image')), (req, res) => {
+  const file = req.file;
+  const fail = (status: number, error: string) => { unlink(file?.filename); res.status(status).json({ error }); };
+  if (!file) { fail(400, 'Photograph the semi-built package before moving it into finishing.'); return; }
+  let input: ReturnType<typeof convertSemiBuiltSchema.parse>;
+  try { input = parseBody(convertSemiBuiltSchema, req.body); } catch (e) { unlink(file.filename); throw e; }
+  const product = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', input.product_item_id);
+  if (!product?.is_finished_product) { fail(400, 'Choose a finished product.'); return; }
+  for (const locationId of [input.source_location_id, input.output_location_id]) {
+    if (!queryOne('SELECT id FROM locations WHERE id = ?', locationId)) {
+      fail(400, 'Source or output location no longer exists.'); return;
+    }
+  }
+  if (input.order_id) {
+    const sale = queryOne<{ status: string; type: string; fulfilled_at: string | null }>('SELECT type, status, fulfilled_at FROM orders WHERE id = ?', input.order_id);
+    if (!sale || sale.type !== 'sale' || sale.fulfilled_at || !['open', 'approved', 'released'].includes(String(sale.status).toLowerCase())) {
+      fail(409, 'Choose an open, approved or released unfulfilled sale.'); return;
+    }
+    if (!queryOne(`SELECT id FROM order_items WHERE order_id = ? AND item_id = ? AND fulfillment_mode = 'assembled'`, input.order_id, product.id)) {
+      fail(409, 'The sale needs a matching fully built line.'); return;
+    }
+  }
+  const serial = input.source_unit_id == null ? null : queryOne<{ id: number; identifier: string | null; status: string; location_id: number | null; job_order_id: number; build_mode: string; received_unit_cost: number | null }>(
+    `SELECT u.id, u.identifier, u.status, u.received_unit_cost, COALESCE(u.location_id, j.output_location_id) AS location_id,
+            u.job_order_id, j.build_mode FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
+     WHERE u.id = ? AND u.product_item_id = ?`, input.source_unit_id, product.id);
+  if (input.source_unit_id != null && (!serial || serial.status !== 'in_stock' || serial.build_mode !== 'semi_built' || serial.location_id !== input.source_location_id)) {
+    fail(409, 'The selected semi-built unit is no longer in stock at this source location.'); return;
+  }
+  if (serial?.identifier && serial.identifier.trim() !== input.identifier.trim()) {
+    fail(409, 'Keep the existing identifier for this physical unit.'); return;
+  }
+  if (!serial && queryOne(`SELECT 1 FROM job_order_units WHERE product_item_id = ? AND identifier = ?
+      AND status IN ('pending', 'passed', 'in_stock', 'reserved', 'hold', 'rework')`, product.id, input.identifier)) {
+    fail(409, 'This identifier already belongs to another active unit.'); return;
+  }
+  const onHand = variantStockAt(product.id, input.source_location_id, 'semi_built');
+  const tracked = queryOne<{ n: number }>(`SELECT COUNT(*) AS n FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id
+    WHERE u.product_item_id = ? AND j.build_mode = 'semi_built' AND u.status IN ('in_stock', 'reserved')
+      AND COALESCE(u.location_id, j.output_location_id) = ?`, product.id, input.source_location_id)?.n ?? 0;
+  const lotOnHand = queryOne<{ n: number }>(`SELECT COALESCE(SUM(s.quantity),0) AS n FROM production_batch_stock s
+    JOIN production_batches b ON b.id=s.batch_id JOIN job_orders j ON j.id=b.job_order_id
+    WHERE COALESCE(b.product_item_id,j.product_item_id)=? AND j.build_mode='semi_built' AND s.location_id=?`,
+    product.id, input.source_location_id)?.n ?? 0;
+  const selectedBatch = input.source_batch_id == null ? null : queryOne<{ id: number }>(`SELECT b.id FROM production_batches b
+    JOIN job_orders j ON j.id=b.job_order_id WHERE b.id=? AND COALESCE(b.product_item_id,j.product_item_id)=?
+    AND j.build_mode='semi_built'`, input.source_batch_id, product.id);
+  if (input.source_batch_id != null && (!selectedBatch ||
+    (batchBalances(input.source_batch_id).find((row) => row.location_id === input.source_location_id)?.available ?? 0) < 1)) {
+    fail(409, 'This semi-built batch has no free unit at the source location. Rescan its QR and review stock.'); return;
+  }
+  const firmDemand = queryOne<{ n: number }>(`SELECT COALESCE(SUM(MAX(0, oi.quantity - oi.released_qty)), 0) AS n
+    FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.item_id = ? AND oi.fulfillment_mode = 'semi_built'
+      AND o.type = 'sale' AND o.fulfilled_at IS NULL AND LOWER(o.status) IN ('approved', 'released')
+      AND COALESCE(o.location_id, ?) = ?`, product.id, getDefaultLocationId(), input.source_location_id)?.n ?? 0;
+  if (onHand < 1 || (!serial && !selectedBatch && onHand - tracked - lotOnHand < 1) || onHand - firmDemand < 1) {
+    fail(409, 'No uncommitted semi-built RTS unit is available at this location.'); return;
+  }
+  if (input.order_id) {
+    const line = orderAvailability(input.order_id).lines.find((l) => l.item_id === product.id && l.fulfillment_mode === 'assembled');
+    const planned = line?.linked_job_orders.reduce((n, j) => n + j.remaining, 0) ?? 0;
+    if (!line || line.shortfall - planned < 1) {
+      fail(409, 'This sale has no uncovered fully built shortage. Refresh its stock review.'); return;
+    }
+  }
+  const cost = serial?.received_unit_cost ?? (Number(product.unit_cost) || (serial ? componentCostFor(serial.job_order_id).perUnitTotal : 0));
+  try { enforceQuota('storage_mb'); } catch (e) { unlink(file.filename); throw e; }
+  let jobId!: number;
+  db.exec('BEGIN');
+  try {
+    const number = nextSequence('mo_seq', 'MO');
+    jobId = Number(run(`INSERT INTO job_orders
+      (number, order_id, product_item_id, product_name, qty_ordered, status, build_mode,
+       source_location_id, output_location_id, qc_stages, notes, created_by, approved_by, approved_at,
+       released_by, released_at, accepted_by, accepted_at, qc_checklist_qc_snapshot, qc_checklist_qa_snapshot)
+      VALUES (?, ?, ?, ?, 1, 'released', 'assembled', ?, ?, 1, ?, ?, ?, datetime('now'),
+              ?, datetime('now'), ?, datetime('now'), ?, ?)`,
+      number, input.order_id ?? null, product.id, product.name, input.source_location_id, input.output_location_id,
+      input.notes ?? 'Finish complete semi-built package', req.user!.id, req.user!.id, req.user!.id, req.user!.id,
+      JSON.stringify(checklistForProduct(product.id, 1)), JSON.stringify(checklistForProduct(product.id, 2))).lastInsertRowid);
+    run('INSERT INTO semi_build_conversions (job_order_id, source_unit_id, source_batch_id, source_cost, finishing_cost) VALUES (?, ?, ?, ?, ?)',
+      jobId, serial?.id ?? null, selectedBatch?.id ?? null, cost, input.finishing_cost);
+    if (selectedBatch) consumeSemiBatchUnit(selectedBatch.id, product.id, input.source_location_id);
+    applyStockChange({ itemId: product.id, locationId: input.source_location_id, change: -1,
+      buildMode: 'semi_built', batchHandled: !!selectedBatch,
+      reason: `${number}: semi-built package released for finishing`, userId: req.user!.id });
+    if (serial) run("UPDATE job_order_units SET status = 'converted', updated_at = datetime('now') WHERE id = ?", serial.id);
+    const outputId = Number(run(`INSERT INTO job_order_units (job_order_id, product_item_id, identifier, status, stage, location_id, conversion_source_unit_id)
+      VALUES (?, ?, ?, 'pending', 0, ?, ?)`, jobId, product.id, input.identifier.trim(), input.output_location_id, serial?.id ?? null).lastInsertRowid);
+    saveAttachment('qc_unit', outputId, file.filename, 'Semi-built package at finishing intake', req.user!.id);
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); unlink(file.filename); throw e; }
+  postJobOrderMovement(jobId, queryOne<{ number: string }>('SELECT number FROM job_orders WHERE id = ?', jobId)!.number,
+    today(), 'release', r2(cost), req.user!.id);
+  res.status(201).json({ id: jobId, job_order: loadJobOrder(jobId) });
+});
 
 // POST /api/job-orders — create a draft; snapshots the product's BOM
 router.post('/', writeGate, syncClass('merge'), (req, res) => {
@@ -580,9 +761,14 @@ router.post('/', writeGate, syncClass('merge'), (req, res) => {
     res.status(400).json({ error: 'That item is not a finished product. Define its BOM first.' });
     return;
   }
-  if (input.order_id && !queryOne('SELECT id FROM orders WHERE id = ?', input.order_id)) {
-    res.status(400).json({ error: 'Linked order not found' });
-    return;
+  if (input.order_id) {
+    const linked = queryOne<{ type: string }>('SELECT type FROM orders WHERE id = ?', input.order_id);
+    if (!linked) { res.status(400).json({ error: 'Linked order not found' }); return; }
+    if (linked.type === 'sale' && !queryOne(`SELECT 1 FROM order_items WHERE order_id = ? AND item_id = ?
+      AND fulfillment_mode = ? LIMIT 1`, input.order_id, product.id, input.build_mode)) {
+      res.status(409).json({ error: 'The sale has no matching fully built or semi-built line. Match the job order build state to the sale, or create an independent RTS buffer job.' });
+      return;
+    }
   }
   if (input.team_id && !queryOne('SELECT id FROM production_teams WHERE id = ?', input.team_id)) {
     res.status(400).json({ error: 'Production team not found' });
@@ -602,6 +788,7 @@ router.post('/', writeGate, syncClass('merge'), (req, res) => {
   // built; it just reserves/consumes nothing unless components are added on the draft.
   const created = createDraftJobOrder({
     productId: product.id, productName: product.name, qty: input.qty_ordered,
+    buildMode: input.build_mode,
     orderId: input.order_id ?? null, sourceLocationId: sourceLoc, outputLocationId: outputLoc,
     qcStages: input.qc_stages, teamId: input.team_id ?? null, plannedStart: input.planned_start ?? null,
     dueDate: input.due_date ?? null, priority: input.priority ?? 0, workCenter: input.work_center ?? null,
@@ -794,21 +981,53 @@ function jobOrderComponentShortfalls(joId: number): Array<{
 /** Every planned component vs. what's on hand at the source location, for the pre-release
  *  stock check. `short` is 0 when covered. */
 function jobOrderComponentAvailability(joId: number): Array<{
-  component_item_id: number; component_name: string; need: number; have: number; short: number; picked: number;
+  component_item_id: number; component_name: string; need: number; have: number;
+  held_elsewhere: number; available: number; short: number; picked: number;
 }> {
   const jo = loadJobOrder(joId);
   if (!jo) return [];
   const sourceLoc = jo.source_location_id ?? getDefaultLocationId();
-  const out: Array<{ component_item_id: number; component_name: string; need: number; have: number; short: number; picked: number }> = [];
+  const out: Array<{ component_item_id: number; component_name: string; need: number; have: number;
+    held_elsewhere: number; available: number; short: number; picked: number }> = [];
   for (const c of jo.components ?? []) {
     if (c.qty_planned <= 0 || c.component_item_id == null) continue;
     const have = stockAt(c.component_item_id, sourceLoc);
+    const heldElsewhere = pickedElsewhere(c.component_item_id, sourceLoc, [joId]);
+    const available = Math.max(0, have - heldElsewhere);
     out.push({
       component_item_id: c.component_item_id, component_name: c.component_name,
-      need: c.qty_planned, have, short: Math.max(0, c.qty_planned - have), picked: c.qty_picked ?? 0,
+      need: c.qty_planned, have, held_elsewhere: heldElsewhere, available,
+      short: Math.max(0, c.qty_planned - available), picked: c.qty_picked ?? 0,
     });
   }
   return out;
+}
+
+/** Outstanding linked procurement covers only planning demand; receipts must still put
+ * physical stock at the job's source before its kit can be picked. */
+function jobOrderPurchaseCoverage(joId: number, joNumber: string, shortfalls: ReturnType<typeof jobOrderComponentAvailability>) {
+  const linked = queryAll<{ id: number; number: string; status: string; item_id: number; outstanding: number }>(
+    `SELECT o.id, o.number, o.status, oi.item_id,
+       MAX(0, SUM(oi.quantity) - COALESCE((SELECT SUM(gi.quantity) FROM goods_receipt_items gi
+         JOIN goods_receipts gr ON gr.id = gi.receipt_id WHERE gr.order_id = o.id AND gi.item_id = oi.item_id), 0)) AS outstanding
+     FROM orders o JOIN order_items oi ON oi.order_id = o.id
+     WHERE o.type = 'purchase' AND LOWER(o.status) NOT IN ('cancelled', 'closed') AND oi.item_id IS NOT NULL
+       AND (EXISTS (SELECT 1 FROM job_shortfall_purchases jp WHERE jp.job_order_id = ? AND jp.purchase_order_id = o.id)
+         OR (o.notes = ? AND NOT EXISTS (SELECT 1 FROM job_shortfall_purchases jp WHERE jp.purchase_order_id = o.id)))
+     GROUP BY o.id, oi.item_id ORDER BY o.id`,
+    joId, `Components for ${joNumber}`
+  ).filter((p) => p.outstanding > 0);
+  const requirements = shortfalls.map((s) => {
+    const pending = linked.filter((p) => p.item_id === s.component_item_id).reduce((n, p) => n + p.outstanding, 0);
+    return { ...s, pending_purchase: pending, to_purchase: Math.max(0, Number((s.short - pending).toPrecision(15))) };
+  });
+  return { linked_purchase_orders: linked, purchase_requirements: requirements };
+}
+
+/** Sale-linked jobs share component demand with the sale's aggregate supply plan. */
+function saleSupplyOwner(orderId: number | null | undefined) {
+  if (!orderId) return null;
+  return queryOne<{ id: number; number: string }>("SELECT id, number FROM orders WHERE id = ? AND type = 'sale'", orderId) ?? null;
 }
 
 /** Quantity of `itemId` already set aside at `locationId`: picked for other not-yet-released job
@@ -835,13 +1054,17 @@ router.post('/warehouse-accept', writeGate, syncClass('claim'), (req, res) => {
     const err = warehouseStepError(loadJobOrder(id), false);
     if (err) { res.status(err.status).json({ error: err.error, job_order_id: id }); return; }
   }
-  for (const id of ids) {
-    run(
-      `UPDATE job_orders SET warehouse_accepted_by = ?, warehouse_accepted_at = datetime('now'), updated_at = datetime('now')
-       WHERE id = ? AND warehouse_accepted_at IS NULL`,
-      req.user!.id, id
-    );
-  }
+  db.exec('BEGIN');
+  try {
+    for (const id of ids) {
+      run(
+        `UPDATE job_orders SET warehouse_accepted_by = ?, warehouse_accepted_at = datetime('now'), updated_at = datetime('now')
+         WHERE id = ? AND warehouse_accepted_at IS NULL`,
+        req.user!.id, id
+      );
+    }
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
   res.json({ ok: true, job_orders: ids.map((id) => loadJobOrder(id)) });
 });
 
@@ -866,7 +1089,10 @@ router.post('/prepare', writeGate, syncClass('claim'), (req, res) => {
     if (!req0.lines) {
       for (const c of comps) picks.set(c.component_item_id!, c.qty_planned);
     } else {
+      const seen = new Set<number>();
       for (const l of req0.lines) {
+        if (seen.has(l.component_item_id)) { res.status(400).json({ error: `Component #${l.component_item_id} is listed twice for ${jo!.number}` }); return; }
+        seen.add(l.component_item_id);
         const c = comps.find((x) => x.component_item_id === l.component_item_id);
         if (!c) { res.status(400).json({ error: `Component #${l.component_item_id} is not on ${jo!.number}` }); return; }
         if (l.qty_picked > c.qty_planned) {
@@ -933,22 +1159,29 @@ router.post('/prepare', writeGate, syncClass('claim'), (req, res) => {
 
 // GET /api/job-orders/:id/availability — stock check before release: each planned component's
 // need vs. on-hand at the source location, plus whether the job order can be released now.
-router.get('/:id/availability', readGate, (req, res) => {
+router.get('/:id/availability', requireAnyPermission(['production.view', 'production.approve']), (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
   const lines = jobOrderComponentAvailability(id);
   const shortfalls = lines.filter((l) => l.short > 0);
+  const supply_planning_order = saleSupplyOwner(jo.order_id);
+  const purchasing = supply_planning_order
+    ? { linked_purchase_orders: [], purchase_requirements: [] }
+    : jobOrderPurchaseCoverage(id, jo.number, shortfalls);
   const approved = !!jo.approved_at;
   const warehouseAccepted = !!jo.warehouse_accepted_at;
   const prepared = !!jo.prepared_at;
   res.json({
     job_order_id: id,
+    approval_revision: jo.approval_revision,
     status: jo.status,
     source_location_id: jo.source_location_id ?? getDefaultLocationId(),
     source_location_name: jo.source_location_name ?? null,
     lines,
     shortfalls,
+    ...purchasing,
+    supply_planning_order,
     in_stock: shortfalls.length === 0,
     approved,
     warehouse_accepted: warehouseAccepted,
@@ -969,6 +1202,11 @@ router.post('/:id/approve', approveGate, syncClass('claim', joSite), (req, res) 
     res.status(409).json({ error: `Only a draft job order can be approved (this one is ${jo.status})` });
     return;
   }
+  const { notes, expected_revision } = parseBody(approveJobOrderSchema, req.body ?? {});
+  if (expected_revision && expected_revision !== jo.approval_revision) {
+    res.status(409).json({ code: 'stale_job_order', error: 'The draft plan changed. Refresh and review it before approving.', job_order: jo });
+    return;
+  }
   if (jo.approved_at) {
     // Clash-check (D6): approved elsewhere meanwhile — the site's approval stands (the first
     // approval is kept), flagged for an admin.
@@ -980,7 +1218,6 @@ router.post('/:id/approve', approveGate, syncClass('claim', joSite), (req, res) 
     res.status(409).json({ error: `Already approved by ${jo.approved_by_name ?? 'a manager'}` });
     return;
   }
-  const { notes } = parseBody(acceptJobOrderSchema, req.body);
   run(
     "UPDATE job_orders SET approved_by = ?, approved_at = datetime('now'), approve_notes = ?, updated_at = datetime('now') WHERE id = ?",
     req.user!.id, notes ?? null, id
@@ -1007,16 +1244,27 @@ router.post('/:id/unapprove', approveGate, syncClass('claim', joSite), (req, res
 // this job order can't cover from its source location, grouped by supplier.
 router.post('/:id/purchase-shortfall', writeGate, syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
-  const jo = queryOne<JobOrder>('SELECT number FROM job_orders WHERE id = ?', id);
+  const jo = queryOne<JobOrder>('SELECT number, status, order_id FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
-  const short = jobOrderComponentShortfalls(id);
-  if (!short.length) { res.json({ created: [], note: 'All components are in stock.' }); return; }
-  const created = createDraftPurchaseOrders(
-    short.map((s) => ({ item_id: s.component_item_id, quantity: s.short })),
-    `Components for ${jo.number}`,
-    req.user!.id
-  );
-  res.json({ created, shortfalls: short });
+  if (jo.status !== 'draft') { res.status(409).json({ error: 'Only a draft job order can plan component purchases.' }); return; }
+  const supplyOrder = saleSupplyOwner(jo.order_id);
+  if (supplyOrder) {
+    res.status(409).json({ error: `Plan components from sale ${supplyOrder.number}'s stock review so its jobs share one purchase plan.`,
+      code: 'sale_supply_owner', supply_planning_order: supplyOrder });
+    return;
+  }
+  db.exec('BEGIN');
+  try {
+    const short = jobOrderComponentAvailability(id).filter((line) => line.short > 0);
+    const coverage = jobOrderPurchaseCoverage(id, jo.number, short);
+    const wants = coverage.purchase_requirements.filter((s) => s.to_purchase > 0)
+      .map((s) => ({ item_id: s.component_item_id, quantity: s.to_purchase }));
+    const created = createDraftPurchaseOrders(wants, `Components for ${jo.number}`, req.user!.id);
+    for (const po of created) run('INSERT INTO job_shortfall_purchases (job_order_id, purchase_order_id) VALUES (?, ?)', id, po.id);
+    db.exec('COMMIT');
+    res.json({ created, shortfalls: short, ...jobOrderPurchaseCoverage(id, jo.number, short),
+      note: !short.length ? 'All components are available for this kit.' : wants.length ? undefined : 'Existing purchase orders cover this shortage; receive them into the job source location.' });
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
 });
 
 // POST /api/job-orders/:id/release — issue the parts release slip for a prepared kit: the
@@ -1047,14 +1295,23 @@ router.post('/:id/release', writeGate, syncClass('physical'), (req, res) => {
     res.status(409).json({ error: 'Prepare (pick) the whole parts kit before releasing it', needs_prepare: true });
     return;
   }
+  if (jo.qc_stages === 1) {
+    const checks = [...(jo.qc_checklist_qc?.items ?? []), ...(jo.qc_checklist_qa?.items ?? [])];
+    const labels = checks.map((item) => item.label.trim().toLocaleLowerCase());
+    if (new Set(labels).size !== labels.length) {
+      res.status(409).json({ error: 'QC and QA checklists contain the same check label. Give each check a distinct label before releasing this kit.', blocked: 'checklist' });
+      return;
+    }
+  }
   const input = parseBody(releaseJobOrderSchema, req.body ?? {});
-  const shortfalls = jobOrderComponentShortfalls(id);
+  const shortfalls = jobOrderComponentAvailability(id).filter((line) => line.short > 0);
   // Offline (D1): the kit physically left the warehouse — accepted, and any location that goes
   // below zero is flagged as a stock discrepancy by applyStockChange.
   if (shortfalls.length && !overdrawAllowed()) {
     res.status(400).json({
       error: `Not enough stock at ${jo.source_location_name ?? 'the source location'} — `
-        + shortfalls.map((s) => `${s.component_name}: need ${s.need}, have ${s.have}`).join('; '),
+        + shortfalls.map((s) => `${s.component_name}: need ${s.need}, ${s.available} free (${s.have} on hand, ${s.held_elsewhere} held elsewhere)`).join('; '),
+      blocked: 'components_unavailable',
       shortfalls,
     });
     return;
@@ -1086,8 +1343,8 @@ router.post('/:id/release', writeGate, syncClass('physical'), (req, res) => {
       );
     }
     run(
-      "UPDATE job_orders SET status = 'released', released_by = ?, released_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
-      req.user!.id, id
+      "UPDATE job_orders SET status = 'released', released_by = ?, released_at = datetime('now'), qc_checklist_qc_snapshot = ?, qc_checklist_qa_snapshot = ?, updated_at = datetime('now') WHERE id = ?",
+      req.user!.id, JSON.stringify(jo.qc_checklist_qc), JSON.stringify(jo.qc_checklist_qa), id
     );
     db.exec('COMMIT');
   } catch (e) {
@@ -1136,6 +1393,9 @@ router.post('/:id/progress', recordGate, syncClass('physical'), (req, res) => {
   if (!jo) {
     res.status(404).json({ error: 'Job order not found' });
     return;
+  }
+  if (queryOne('SELECT 1 FROM semi_build_conversions WHERE job_order_id = ?', id)) {
+    res.status(409).json({ error: 'This job finishes one existing semi-built unit. Inspect its linked unit, then record Products In.' }); return;
   }
   if (jo.status !== 'released' && jo.status !== 'in_progress') {
     res.status(409).json({ error: `Job order must be released before recording progress (it is ${jo.status})` });
@@ -1247,6 +1507,9 @@ router.post('/:id/units', recordGate, syncClass('physical'), syncUpload(imageUpl
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) { fail(404, { error: 'Job order not found' }); return; }
+  if (queryOne('SELECT 1 FROM semi_build_conversions WHERE job_order_id = ?', id)) {
+    fail(409, { error: 'The original semi-built package already has a linked unit for inspection. Do not add another unit.' }); return;
+  }
   if (jo.status !== 'released' && jo.status !== 'in_progress') {
     fail(409, { error: `Job order must be released before recording progress (it is ${jo.status})` });
     return;
@@ -1265,7 +1528,7 @@ router.post('/:id/units', recordGate, syncClass('physical'), syncUpload(imageUpl
     fail(400, { error: `That exceeds the ${jo.qty_ordered} ordered (${accounted} already produced).` });
     return;
   }
-  try { enforceQuota('storage_mb', file.size); } catch (e) { unlink(file.filename); throw e; }
+  try { enforceQuota('storage_mb'); } catch (e) { unlink(file.filename); throw e; }
   const outputLoc = jo.output_location_id ?? getDefaultLocationId();
 
   db.exec('BEGIN');
@@ -1314,7 +1577,7 @@ function returnUnused(joId: number, number: string, sourceLocId: number | null, 
   }
 }
 
-/** When a job order is force-closed or cancelled, tidy its loose ends: cancel any parts
+/** When a job order is cancelled, tidy its loose ends: cancel any parts
  *  requests the warehouse never acted on, and treat units still awaiting inspection or
  *  out for repair as scrapped (their components were already consumed → they settle to
  *  Manufacturing Variance). Returns the number of units scrapped. Caller is in a txn. */
@@ -1395,13 +1658,40 @@ router.post('/:id/resume', pauseGate, syncClass('claim', joSite), (req, res) => 
 });
 
 // POST /api/job-orders/:id/cancel — return unconsumed components, close it out
-router.post('/:id/cancel', writeGate, syncClass('claim', joSite), (req, res) => {
+router.post('/:id/cancel', requireAnyPermission(['inventory.adjust', 'production.approve', 'production.manage']), syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
+  if (!req.user!.permissions.includes('inventory.adjust') && !queryOne('SELECT 1 FROM semi_build_conversions WHERE job_order_id = ?', id)) {
+    res.status(403).json({ error: 'Only warehouse inventory staff can cancel a parts-based job order.' }); return;
+  }
   if (!OPEN_STATES.has(jo.status)) {
     res.status(409).json({ error: `Job order is already ${jo.status}` });
     return;
+  }
+  const conversion = queryOne<{ source_unit_id: number | null; source_batch_id: number | null; source_cost: number }>(
+    'SELECT source_unit_id, source_batch_id, source_cost FROM semi_build_conversions WHERE job_order_id = ?', id);
+  if (conversion) {
+    const cancellation = parseBody(cancelSemiConversionSchema, req.body ?? {});
+    const output = queryOne<{ id: number; status: string }>('SELECT id, status FROM job_order_units WHERE job_order_id = ?', id);
+    if (!output || output.status !== 'pending' || queryOne('SELECT 1 FROM qc_records WHERE unit_id = ? LIMIT 1', output.id)) {
+      res.status(409).json({ error: 'This package has entered inspection. Resolve its inspection or rework before closing it; it cannot go back to semi-built RTS automatically.' }); return;
+    }
+    db.exec('BEGIN');
+    try {
+      run("UPDATE job_order_units SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?", output.id);
+      if (conversion.source_unit_id) run("UPDATE job_order_units SET status = 'in_stock', updated_at = datetime('now') WHERE id = ?", conversion.source_unit_id);
+      applyStockChange({ itemId: jo.product_item_id!, locationId: jo.source_location_id!, change: 1,
+        buildMode: 'semi_built', reason: `${jo.number}: finishing cancelled; complete package returned`,
+        userId: req.user!.id, unitCost: conversion.source_cost });
+      if (conversion.source_batch_id) restoreBatchStock(conversion.source_batch_id, jo.source_location_id!, 1);
+      run("UPDATE semi_build_conversions SET cancel_reason = ?, cancelled_by = ?, cancelled_at = datetime('now') WHERE job_order_id = ?",
+        cancellation.reason, req.user!.id, id);
+      run("UPDATE job_orders SET status = 'cancelled', closed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?", id);
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
+    settleJobOrderGl(id, req.user!.id);
+    res.json({ ok: true, job_order: loadJobOrder(id) }); return;
   }
   db.exec('BEGIN');
   try {
@@ -1426,6 +1716,9 @@ router.post('/:id/close', closeEarlyGate, syncClass('claim', joSite), (req, res)
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
+  if (queryOne('SELECT 1 FROM semi_build_conversions WHERE job_order_id = ?', id)) {
+    res.status(409).json({ error: 'Finish this one-unit conversion through inspection and Products In, or cancel it before inspection to return the package.' }); return;
+  }
   if (!['released', 'in_progress', 'paused'].includes(jo.status)) {
     res.status(409).json({ error: `Cannot close a job order that is ${jo.status}` });
     return;
@@ -1435,7 +1728,8 @@ router.post('/:id/close', closeEarlyGate, syncClass('claim', joSite), (req, res)
   db.exec('BEGIN');
   try {
     logLineEvent(id, 'close_early', why.reason, req.user!.id);
-    resolveDanglingUnits(id, `${jo.number} closed early`);
+    // Preserve all built units and their open repair requests. Only cancellation
+    // explicitly writes off unresolved output; closing early stops further builds.
     returnUnused(id, jo.number, jo.source_location_id, req.user!.id);
     maybeCloseBatches(id);
     run(
@@ -1526,6 +1820,9 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
     res.status(400).json({ error: 'One or more units were not found on this job order' });
     return;
   }
+  if (jo.conversion_job_order_id && identifier != null && units.some((u) => identifier !== u.identifier)) {
+    res.status(409).json({ error: 'Inspection cannot change the identity of a unit finished from semi-built RTS.' }); return;
+  }
   // 'pending' = awaiting inspection; 'rework' = a repaired unit coming back for re-inspection.
   const notInspectable = units.filter((u) => u.status !== 'pending' && u.status !== 'rework');
   if (notInspectable.length) {
@@ -1548,6 +1845,11 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
   }
   const outputLoc = jo.output_location_id ?? getDefaultLocationId();
   const stages = Math.max(1, jo.qc_stages || 1);
+  const passStages = new Set(units.map((u) => u.stage + 1));
+  if (passStages.size > 1) {
+    res.status(400).json({ error: 'Inspect units from one QC/QA stage at a time.' });
+    return;
+  }
 
   // Which checklist(s) apply to this pass: the QC checklist on the first pass, the QA
   // checklist on the final one. On a single-stage MO the one inspection is both first
@@ -1576,18 +1878,44 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
 
   // A unit can only become finished stock once its checklist is complete — every
   // configured *required* check that applies to this pass must be ticked OK.
-  if (result === 'pass') {
+  {
     const activeItems = [
-      ...(isFirstPass ? checklistForProduct(jo.product_item_id, 1)?.items ?? [] : []),
-      ...(isFinalPass ? checklistForProduct(jo.product_item_id, 2)?.items ?? [] : []),
+      ...(isFirstPass ? jo.qc_checklist_qc?.items ?? [] : []),
+      ...(isFinalPass ? jo.qc_checklist_qa?.items ?? [] : []),
     ];
-    const required = [...new Map(activeItems.filter((it) => it.required).map((it) => [it.label, it])).values()];
-    if (required.length) {
-      // With a per-item status (mobile V2) only 'pass' satisfies a required check — not N/A.
-      const ticked = new Map((checklist ?? []).map((c) => [c.label, c.status ? c.status === 'pass' : c.ok]));
-      const missing = required.filter((it) => ticked.get(it.label) !== true).map((it) => it.label);
+    const labels = new Set<string>();
+    for (const item of activeItems) {
+      const key = item.label.trim().toLocaleLowerCase();
+      if (labels.has(key)) {
+        res.status(409).json({ error: `Checklist label "${item.label}" appears more than once on this pass. Configure distinct labels before inspecting.`, blocked: 'checklist' });
+        return;
+      }
+      labels.add(key);
+    }
+    const submitted = new Map<string, NonNullable<typeof checklist>[number]>();
+    for (const item of checklist ?? []) {
+      const key = item.label.trim().toLocaleLowerCase();
+      if (submitted.has(key)) {
+        res.status(400).json({ error: `Checklist answer "${item.label}" was submitted twice.` });
+        return;
+      }
+      submitted.set(key, item);
+    }
+    if (result === 'pass') {
+      // A required check needs an explicit pass. Measurements need a recorded reading.
+      const missing = activeItems.filter((it) => it.required && !(submitted.get(it.label.trim().toLocaleLowerCase())?.status
+        ? submitted.get(it.label.trim().toLocaleLowerCase())?.status === 'pass'
+        : submitted.get(it.label.trim().toLocaleLowerCase())?.ok === true)).map((it) => it.label);
       if (missing.length) {
         res.status(400).json({ error: `Complete the required QC/QA checks before passing: ${missing.join(', ')}` });
+        return;
+      }
+      const noReading = activeItems.filter((it) => {
+        const answer = submitted.get(it.label.trim().toLocaleLowerCase());
+        return it.measure && answer && (answer.status ? answer.status === 'pass' : answer.ok === true) && !answer.value?.trim();
+      });
+      if (noReading.length) {
+        res.status(400).json({ error: `Record a reading for: ${noReading.map((it) => it.label).join(', ')}` });
         return;
       }
     }
@@ -1604,12 +1932,18 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
   // this inspector and not already behind an earlier result.
   const evidence = new Map<number, number[]>();
   if (result === 'fail' && (evidence_ids ?? []).length) {
-    for (const a of queryAll<{ id: number; ref_id: number }>(
-      `SELECT id, ref_id FROM attachments WHERE kind = 'qc_unit' AND uploaded_by = ? AND id IN (${evidence_ids!.map(() => '?').join(',')})
-         AND id NOT IN (SELECT attachment_id FROM qc_evidence)`, req.user!.id, ...evidence_ids!
-    )) evidence.set(a.ref_id, [...(evidence.get(a.ref_id) ?? []), a.id]);
+    for (const a of queryAll<{ id: number; unit_id: number }>(
+      `SELECT a.id, CASE WHEN a.kind = 'qc_unit' THEN a.ref_id ELSE pi.unit_id END AS unit_id
+       FROM attachments a LEFT JOIN production_issues pi ON a.kind = 'production_issue' AND pi.id = a.ref_id
+       WHERE (a.kind = 'qc_unit' OR (a.kind = 'production_issue' AND pi.job_order_id = ? AND pi.unit_id IS NOT NULL))
+         AND a.uploaded_by = ? AND a.id IN (${evidence_ids!.map(() => '?').join(',')})
+         AND a.id NOT IN (SELECT attachment_id FROM qc_evidence)`, id, req.user!.id, ...evidence_ids!
+    )) evidence.set(a.unit_id, [...(evidence.get(a.unit_id) ?? []), a.id]);
   }
-  if (result === 'fail' && isAppClient(req) && units.some((u) => !evidence.has(u.id))) {
+  // Inspectors always need evidence, even when a direct API caller omits X-Client.
+  // An inventory.adjust integration without an app header retains the existing
+  // audited import/correction path; desktop and phone users still need photos.
+  if (result === 'fail' && (isAppClient(req) || !req.user!.permissions.includes('inventory.adjust')) && units.some((u) => !evidence.has(u.id))) {
     res.status(409).json({ error: 'Attach at least one evidence photo of the unit before recording this result.', blocked: 'evidence' });
     return;
   }
@@ -1727,10 +2061,45 @@ router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'),
   const u = queryOne<JobOrderUnit>('SELECT * FROM job_order_units WHERE id = ? AND job_order_id = ?', Number(req.params.unitId), id);
   if (!u) { res.status(404).json({ error: 'Unit not found on this job order' }); return; }
   if (u.status !== 'hold') { res.status(409).json({ error: `This unit isn't on hold (it is ${u.status}).` }); return; }
-  const { outcome, disposition, remarks, repair } = parseBody(holdDecisionSchema, req.body);
+  const { outcome, disposition, remarks, repair, checklist, expected_hold_record_id } = parseBody(holdDecisionSchema, req.body);
   const held = queryOne<{ id: number; inspector_id: number | null; checklist: string | null }>(
     "SELECT id, inspector_id, checklist FROM qc_records WHERE unit_id = ? AND result = 'hold' ORDER BY id DESC LIMIT 1", u.id
   );
+  if (expected_hold_record_id && held?.id !== expected_hold_record_id) {
+    res.status(409).json({ code: 'stale_hold', error: 'This unit has a different hold record. Refresh and review the current hold before deciding.' });
+    return;
+  }
+  let heldChecklist: NonNullable<typeof checklist> = [];
+  try { const parsed = held?.checklist ? JSON.parse(held.checklist) : []; heldChecklist = Array.isArray(parsed) ? parsed : []; }
+  catch { /* corrupt historical answer cannot satisfy a pass */ }
+  const decisionChecklist = checklist ?? heldChecklist;
+  if (outcome === 'pass') {
+    const required = [
+      ...(jo.qc_stages <= 1 ? jo.qc_checklist_qc?.items ?? [] : []),
+      ...(jo.qc_checklist_qa?.items ?? []),
+    ];
+    const labels = new Set<string>();
+    for (const item of required) {
+      const key = item.label.trim().toLocaleLowerCase();
+      if (labels.has(key)) { res.status(409).json({ error: `Checklist label "${item.label}" appears more than once on this pass.`, blocked: 'checklist' }); return; }
+      labels.add(key);
+    }
+    const answers = new Map<string, (typeof decisionChecklist)[number]>();
+    for (const answer of decisionChecklist) {
+      const key = answer.label.trim().toLocaleLowerCase();
+      if (answers.has(key)) { res.status(400).json({ error: `Checklist answer "${answer.label}" was submitted twice.` }); return; }
+      answers.set(key, answer);
+    }
+    const missing = required.filter((item) => item.required && !(answers.get(item.label.trim().toLocaleLowerCase())?.status
+      ? answers.get(item.label.trim().toLocaleLowerCase())?.status === 'pass'
+      : answers.get(item.label.trim().toLocaleLowerCase())?.ok === true)).map((item) => item.label);
+    if (missing.length) { res.status(400).json({ error: `Complete the required QA checks before passing: ${missing.join(', ')}`, blocked: 'checklist' }); return; }
+    const noReading = required.filter((item) => {
+      const answer = answers.get(item.label.trim().toLocaleLowerCase());
+      return item.measure && answer && (answer.status ? answer.status === 'pass' : answer.ok === true) && !answer.value?.trim();
+    }).map((item) => item.label);
+    if (noReading.length) { res.status(400).json({ error: `Record a reading for: ${noReading.join(', ')}`, blocked: 'checklist' }); return; }
+  }
   const stage = u.stage + 1;
   const note = `Hold decision: ${remarks}`;
   db.exec('BEGIN');
@@ -1740,7 +2109,7 @@ router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'),
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       id, u.id, stage, outcome === 'pass' ? 'pass' : 'fail',
       outcome === 'pass' ? null : outcome === 'rectify' ? 'repair' : (disposition ?? 'scrap'),
-      note, held?.checklist ?? null, req.user!.id
+      note, outcome === 'pass' && checklist ? JSON.stringify(decisionChecklist) : held?.checklist ?? null, req.user!.id
     ).lastInsertRowid);
     if (outcome === 'pass') {
       run(
@@ -1812,7 +2181,9 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
   const input = parseBody(productsInSchema, req.body);
   // Ready-to-sell storage only (rts.ts): a missing or transit (truck) location, or one without
   // room for what is coming in, is refused.
-  const locErr = locationError(input.location_id, (input.unit_ids ?? []).length || input.quantity || 0);
+  const batchLines = input.batches ?? (input.batch_id == null ? [] : [{ batch_id: input.batch_id, quantity: input.quantity! }]);
+  const receivedQty = (input.unit_ids ?? []).length + batchLines.reduce((sum, line) => sum + line.quantity, 0);
+  const locErr = locationError(input.location_id, receivedQty);
   if (locErr) {
     res.status(400).json({ error: locErr, location_error: true });
     return;
@@ -1843,10 +2214,9 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
     }
   }
 
-  let batch: { id: number; qty: number; remaining_qty: number } | null = null;
-  if (input.batch_id != null) {
+  for (const line of batchLines) {
     const b = queryOne<{ id: number; qty: number; job_order_id: number | null }>(
-      'SELECT * FROM production_batches WHERE id = ?', input.batch_id
+      'SELECT * FROM production_batches WHERE id = ?', line.batch_id
     );
     if (!b || b.job_order_id !== id) { res.status(400).json({ error: 'Batch not found on this job order' }); return; }
     const hasUnits = (queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM job_order_units WHERE batch_id = ?', b.id)?.n ?? 0) > 0;
@@ -1860,17 +2230,12 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
       'SELECT COALESCE(SUM(quantity), 0) AS n FROM production_receipt_items WHERE batch_id = ?', b.id
     )?.n ?? 0;
     const remaining = b.qty - receivedSoFar;
-    const qty = input.quantity ?? 0;
     if (remaining <= 0) { res.status(409).json({ error: 'This batch has already been fully received' }); return; }
-    if (qty > remaining) {
+    if (line.quantity > remaining) {
       res.status(400).json({ error: `Only ${remaining} of this batch remains to receive` });
       return;
     }
-    batch = { id: b.id, qty: b.qty, remaining_qty: remaining };
   }
-
-  const receivedQty = unitIds.length + (input.batch_id != null ? (input.quantity ?? 0) : 0);
-  if (receivedQty <= 0) { res.status(400).json({ error: 'Nothing to receive' }); return; }
 
   db.exec('BEGIN');
   let receiptId: number;
@@ -1887,27 +2252,30 @@ router.post('/:id/products-in', receiveGate, syncClass('physical'), (req, res) =
 
     for (const u of units) {
       run(
-        "UPDATE job_order_units SET status = 'in_stock', location_id = ?, updated_at = datetime('now') WHERE id = ?",
-        input.location_id, u.id
+        "UPDATE job_order_units SET status = 'in_stock', location_id = ?, received_unit_cost = ?, updated_at = datetime('now') WHERE id = ?",
+        input.location_id, unitCost, u.id
       );
       run('INSERT INTO production_receipt_items (receipt_id, unit_id, quantity) VALUES (?, ?, 1)', receiptId, u.id);
       if (jo.product_item_id != null) {
         applyStockChange({
           itemId: jo.product_item_id, locationId: input.location_id, change: 1,
+          buildMode: jo.build_mode,
           // Prefix with the job order number — production.routes.ts GET /record's dossier
           // matches movements with `reason LIKE '${joNumber}%'`.
           reason: `${jo.number}: received (Products In ${number})`, userId: req.user!.id, unitCost,
         });
       }
     }
-    if (batch && input.quantity) {
-      run('INSERT INTO production_receipt_items (receipt_id, batch_id, quantity) VALUES (?, ?, ?)', receiptId, batch.id, input.quantity);
+    for (const line of batchLines) {
+      run('INSERT INTO production_receipt_items (receipt_id, batch_id, quantity) VALUES (?, ?, ?)', receiptId, line.batch_id, line.quantity);
       if (jo.product_item_id != null) {
         applyStockChange({
-          itemId: jo.product_item_id, locationId: input.location_id, change: input.quantity,
+          itemId: jo.product_item_id, locationId: input.location_id, change: line.quantity,
+          buildMode: jo.build_mode,
           reason: `${jo.number}: received (Products In ${number})`, userId: req.user!.id, unitCost,
         });
       }
+      receiveBatch(line.batch_id, input.location_id, line.quantity);
       // Nothing to flip on the batch itself — its `status` is the separate, optional QA
       // sign-off flag (production.routes.ts); "received" is derived from qty vs. this table.
     }
@@ -1935,6 +2303,9 @@ router.put('/:id/units/:unitId/identifier', recordGate, syncClass('claim', joSit
   if (!unit) {
     res.status(404).json({ error: 'Unit not found' });
     return;
+  }
+  if (queryOne('SELECT 1 FROM semi_build_conversions WHERE job_order_id = ?', id)) {
+    res.status(409).json({ error: 'A finished semi-built package keeps its original physical identifier. Correct the source record with a supervisor before conversion.' }); return;
   }
   const { identifier } = parseBody(setUnitIdentifierSchema, req.body);
   run(

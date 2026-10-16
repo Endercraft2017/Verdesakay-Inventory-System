@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#2b7fff" />
-  <title>Verdesakay Office System</title>
+  <title>Otom</title>
   <!-- Apply the saved/system theme before first paint to avoid a flash. -->
   <script>
     (function () {
@@ -18,16 +18,19 @@
     })();
   </script>
   <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/visual-refresh.css" />
+  <link rel="stylesheet" href="/css/photo-viewer.css" />
+  <link rel="stylesheet" href="/css/select-controls.css" />
 </head>
 <body>
   <!-- Login screen -->
   <div id="login-screen" class="login-wrap">
     <form class="login-card" id="login-form">
       <div class="login-brand">
-        <div class="mark">V</div>
+        <div class="mark">O</div>
         <div>
-          <h1>Verdesakay</h1>
-          <div class="brand-sub">Office Management System</div>
+          <h1>Otom</h1>
+          <div class="brand-sub">by AFKcube</div>
         </div>
       </div>
       <div id="login-error" class="form-error hidden"></div>
@@ -35,17 +38,15 @@
       <input id="login-username" name="username" autocomplete="username" required autofocus />
       <label for="login-password">Password</label>
       <input id="login-password" name="password" type="password" autocomplete="current-password" required />
-      <label for="login-mfa">Authenticator or recovery code (if enabled)</label>
-      <input id="login-mfa" name="mfa_code" autocomplete="one-time-code" maxlength="24" />
       <label for="login-shared" style="display:flex;gap:8px;align-items:flex-start;margin-top:12px;font-weight:400;cursor:pointer">
         <input id="login-shared" type="checkbox" style="width:auto;margin:2px 0 0" />
         <span>This is a shared or borrowed computer
           <span class="muted" style="display:block;font-size:12px">Signs you out after 30 minutes idle or when you close the tab.</span></span>
       </label>
       <button class="btn" type="submit" style="width:100%;justify-content:center;margin-top:20px;">Sign in</button>
-      <button type="button" id="forgot-link" class="btn-link" style="display:block;margin:12px auto 0;background:none;border:none;color:var(--accent,#2b7fff);cursor:pointer;font-size:13px">Forgot password?</button>
+      <button type="button" id="forgot-link" class="btn-link" style="display:block;margin:12px auto 0;background:none;border:none;color:var(--accent,#2b7fff);cursor:pointer;font-size:13px">Forgot username or password?</button>
     </form>
-      <p style="font-size:13px;text-align:center"><a href="policies">Privacy, terms and security (drafts)</a></p>
+      <p style="font-size:13px;text-align:center"><a href="/policies">Privacy, terms and security (drafts)</a></p>
   </div>
 
   <!-- Application shell (ECOUNT-style chrome): utility bar, top primary menu,
@@ -65,18 +66,18 @@
     <!-- Top primary menu -->
     <header class="topnav">
       <div class="brand">
-        <div class="mark">V</div>
-        <div class="name">Verdesakay<small>Office System</small></div>
+        <div class="mark">O</div>
+        <div class="name"><span id="tenant-name">Workspace</span><small>Otom</small></div>
       </div>
       <nav class="primary-nav" id="primary-nav"></nav>
       <div class="grow"></div>
-      <div class="topnav-user">
-        <div class="who">
-          <div class="name" id="me-name">—</div>
-          <div class="role"><span id="me-role"></span> · <span id="me-dept"></span></div>
-        </div>
-        <div class="avatar" id="me-avatar">—</div>
-      </div>
+      <button type="button" class="topnav-user" id="account-btn" title="My Account" aria-label="My Account">
+        <span class="who">
+          <span class="name" id="me-name">—</span>
+          <span class="role"><span id="me-role"></span> · <span id="me-dept"></span></span>
+        </span>
+        <span class="avatar" id="me-avatar">—</span>
+      </button>
     </header>
 
     <!-- Secondary sub-tab row -->
@@ -96,7 +97,7 @@
           </button>
           <button class="rail-btn" data-tool="notes" title="Notes" aria-label="Notes"></button>
           <button class="rail-btn" data-tool="email" title="Email" aria-label="Email"></button>
-          <button class="rail-btn" data-tool="scheduler" title="Scheduler" aria-label="Scheduler"></button>
+          <button class="rail-btn" data-tool="scheduler" title="Tasks &amp; reminders" aria-label="Tasks &amp; reminders"></button>
           <button class="rail-btn" data-tool="bookmarks" title="Bookmarks" aria-label="Bookmarks"></button>
           <button class="rail-btn" data-tool="bug" title="Report a Bug" aria-label="Report a Bug">
             <span class="badge hidden" id="bug-badge">0</span>
@@ -104,7 +105,6 @@
         </div>
         <div class="rail-bottom">
           <button class="rail-btn" data-tool="help" title="Help &amp; explainers" aria-label="Help"></button>
-          <button class="rail-btn rail-avatar" id="rail-account" data-route="account" title="My Account" aria-label="My Account"></button>
           <button class="rail-btn" id="theme-btn" title="Toggle theme" aria-label="Toggle theme"></button>
           <button class="rail-btn" id="logout-btn" title="Sign out" aria-label="Sign out"></button>
         </div>
@@ -125,14 +125,17 @@
   <!-- Core (api, ui) then App (defines the router/registry) BEFORE the view modules,
        since each view calls App.register(...) at load time. -->
   <script src="/js/api.js"></script>
-  <script src="/js/lib/mfa-controls.js"></script>
   <script src="/js/ui.js"></script>
+  <script src="/js/lib/form-validation.js"></script>
+  <script src="/js/leave-dates.js"></script>
   <script src="/js/nav-config.js"></script>
   <script src="/js/guide-data.js"></script>
   <script src="/js/currencies.js"></script>
   <script src="/js/item-form-config.js"></script>
+  <script src="/js/lib/mfa.js"></script>
   <script src="/js/lib/barcode.js"></script>
   <script src="/js/lib/image-compress.js"></script>
+  <script src="/js/lib/photo-viewer.js"></script>
   <script src="/js/lib/qc-checklists.js"></script>
   <script src="/js/lib/production-steps.js"></script>
   <script src="/js/lib/chat-ws.js"></script>
@@ -142,16 +145,22 @@
   <script src="/js/vendor/xlsx-style.min.js"></script>
   <script src="/js/hr-payroll-export.js"></script>
   <script src="/js/doc-formula.js"></script>
+  <script src="/js/doc-pagination.js"></script>
   <script src="/js/doc-template.js"></script>
   <script src="/js/doc-context.js"></script>
   <script src="/js/vendor/codemirror-bundle.js"></script>
+  <script src="/js/doc-studio.js"></script>
+  <script src="/js/doc-model.js"></script>
   <script src="/js/doc-editor.js"></script>
   <script src="/js/hr-payroll-print.js"></script>
   <script src="/js/print-tiling.js"></script>
   <script src="/js/help.js"></script>
   <script src="/js/guide-tour.js"></script>
+  <script src="/js/guide-instructions.js"></script>
+  <script src="/js/guide-center.js"></script>
   <script src="/js/app.js"></script>
   <script src="/js/modules/core/dashboard.js"></script>
+  <script src="/js/modules/core/support.js"></script>
   <script src="/js/modules/core/analytics.js"></script>
   <script src="/js/modules/accounting/accounting.js"></script>
   <script src="/js/modules/accounting/accounting-petty-cash.js"></script>
@@ -177,6 +186,7 @@
   <script src="/js/modules/manufacturing/sop.js"></script>
   <script src="/js/modules/core/activity.js"></script>
   <script src="/js/modules/core/sync.js"></script>
+  <script src="/js/modules/core/billing.js"></script>
   <script src="/js/modules/core/forms.js"></script>
   <script src="/js/modules/inventory/orders.js"></script>
   <script src="/js/modules/inventory/releasing.js"></script>
@@ -186,9 +196,16 @@
   <script src="/js/modules/core/messages.js"></script>
   <script src="/js/modules/core/admin.js"></script>
   <script src="/js/modules/core/account.js"></script>
+  <script src="/js/lib/data-forms.js"></script>
+  <script src="/js/lib/form-math.js"></script>
+  <script src="/js/lib/form-print.js"></script>
+  <script src="/js/lib/form-connections.js"></script>
+  <script src="/js/lib/form-items.js"></script>
   <script src="/js/modules/core/form-builder.js"></script>
   <script src="/js/modules/core/form-records.js"></script>
   <script src="/js/modules/hr/hr.js"></script>
+  <script src="/js/modules/hr/hr-approvals.js"></script>
+  <script src="/js/modules/hr/hr-requests.js"></script>
   <script src="/js/modules/hr/hr-employees.js"></script>
   <script src="/js/modules/hr/hr-timekeeping.js"></script>
   <script src="/js/modules/hr/hr-kiosk.js"></script>
@@ -196,7 +213,9 @@
   <script src="/js/modules/hr/hr-contact-verification.js"></script>
   <script src="/js/modules/hr/hr-assets.js"></script>
   <script src="/js/modules/core/confidential-reports.js"></script>
+  <script src="/js/modules/core/identified-reports.js"></script>
   <script src="/js/modules/core/announcements.js"></script>
+  <script src="/js/personal-ux.js"></script>
   <script src="/js/tools.js"></script>
 </body>
 </html>

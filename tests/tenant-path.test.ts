@@ -27,8 +27,9 @@ describe('tenants on one configured domain', () => {
     const desktop = await ctx.api.get('/verdesakay').set('Host', host);
     expect(desktop.status).toBe(200);
     expect(desktop.text).toContain('window.VDS_BASE_PATH="/verdesakay"');
-    expect(desktop.text).toContain('src="/verdesakay/js/tenant-context.js"');
-    expect(desktop.text).toContain('href="/verdesakay/css/styles.css"');
+    // Tenant-prefixed and content-versioned (src/shared/asset-version.ts).
+    expect(desktop.text).toMatch(/src="\/verdesakay\/js\/tenant-context\.js\?v=[0-9a-f]{12}"/);
+    expect(desktop.text).toMatch(/href="\/verdesakay\/css\/styles\.css\?v=[0-9a-f]{12}"/);
     const phone = await ctx.api.get('/verdesakay').set('Host', host).set('User-Agent', 'Android');
     expect(phone.headers.location).toBe('/verdesakay/m');
     const mobile = await ctx.api.get('/verdesakay/m').set('Host', host);
@@ -82,9 +83,12 @@ describe('tenants on one configured domain', () => {
     } finally { delete process.env.PLATFORM_HOST; }
   });
 
-  it('redirects the old company entry and blocks its API after cutover, keeping health checks working', async () => {
+  it('serves the public apex and retires old company API aliases after cutover', async () => {
     process.env.DEFAULT_TENANT_REDIRECT = 'verdesakay';
-    expect((await ctx.api.get('/').set('Host', host)).headers.location).toBe('/verdesakay/');
+    const root = await ctx.api.get('/').set('Host', host);
+    expect(root.status).toBe(200);
+    expect(root.text).toContain('Less busywork.');
+    expect(root.text).not.toContain('window.VDS_BASE_PATH');
     expect((await ctx.api.get('/m').set('Host', host)).headers.location).toBe('/verdesakay/m');
     expect((await ctx.api.post('/api/auth/login').set('Host', host).send({ username: 'admin', password: 'admin123' })).status).toBe(410);
     expect((await ctx.api.get('/api/health').set('Host', host)).body.ok).toBe(true);

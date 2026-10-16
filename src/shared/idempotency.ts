@@ -24,6 +24,7 @@ interface StoredRow {
   method: string;
 }
 
+const LOCAL_RESPONSE_PREFIX = 'vds-local-response-v1:';
 const pending = new WeakMap<object, Set<string>>();
 
 export function idempotency(req: Request, res: Response, next: NextFunction): void {
@@ -58,11 +59,16 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
       .get(scopedKey) as StoredRow | undefined;
     if (existing) {
       if (existing.method !== req.method || existing.path !== requestPath) {
-        res.status(409).json({ error: 'Idempotency-Key was already used for a different request or access scope.' });
+        res.status(409).json({ error: 'Idempotency-Key was already used for a different request body, route or access scope.' });
         return;
       }
       res.set('Idempotency-Replayed', 'true');
-      res.status(existing.status_code).type('application/json').send(existing.response);
+      let response = existing.response;
+      if (response.startsWith(LOCAL_RESPONSE_PREFIX)) {
+        const stored = JSON.parse(response.slice(LOCAL_RESPONSE_PREFIX.length));
+        res.set('X-Sync-State', 'local'); res.set('X-Sync-Command', stored.command); response = stored.response;
+      }
+      res.status(existing.status_code).type('application/json').send(response);
       return;
     }
     const conn = activeDb();
@@ -82,10 +88,12 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
     res.json = (body: unknown) => {
       if (res.statusCode < 500 && !DONT_STORE.has(res.statusCode)) {
         try {
+          let response = JSON.stringify(body);
+          if (res.getHeader('X-Sync-State') === 'local') response = LOCAL_RESPONSE_PREFIX + JSON.stringify({ response, command: String(res.getHeader('X-Sync-Command') || 'local') });
           db.prepare(
             `INSERT OR IGNORE INTO idempotency_keys (key, user_id, method, path, status_code, response)
              VALUES (?, ?, ?, ?, ?, ?)`
-          ).run(scopedKey, user.id, req.method, requestPath, res.statusCode, JSON.stringify(body));
+          ).run(scopedKey, user.id, req.method, requestPath, res.statusCode, response);
         } catch {
           /* never let bookkeeping break the response */
         }

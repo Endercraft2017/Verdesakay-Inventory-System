@@ -26,14 +26,45 @@ describe('templates', () => {
       .send({ name: 'Custom', type: 'generic', body: 'Hi {{order.no}}' });
     expect(c.status).toBe(201);
 
+    const revision = (await ctx.api.get('/api/templates/' + c.body.id).set(hdr(admin))).body.revision;
     const u = await ctx.api.put('/api/templates/' + c.body.id).set(hdr(admin))
-      .send({ name: 'Custom 2', type: 'generic', body: 'Bye {{order.no}}' });
+      .send({ expected_revision: revision, name: 'Custom 2', type: 'generic', body: 'Bye {{order.no}}' });
     expect(u.status).toBe(200);
 
     const got = await ctx.api.get('/api/templates/' + c.body.id).set(hdr(admin));
     expect(got.body.name).toBe('Custom 2');
 
     expect((await ctx.api.delete('/api/templates/' + c.body.id).set(hdr(admin))).status).toBe(200);
+  });
+
+  it('rejects stale or missing revisions without overwriting a newer save', async () => {
+    const created = await ctx.api.post('/api/templates').set(hdr(admin)).send({ name: 'Concurrent', body: '<p>Original</p>' });
+    const opened = await ctx.api.get('/api/templates/' + created.body.id).set(hdr(admin));
+    const fresh = await ctx.api.put('/api/templates/' + created.body.id).set(hdr(admin)).send({ name: 'Concurrent', body: '<p>First save</p>', expected_revision: opened.body.revision });
+    expect(fresh.status).toBe(200); expect(fresh.body.revision).not.toBe(opened.body.revision);
+    const stale = await ctx.api.put('/api/templates/' + created.body.id).set(hdr(admin)).send({ name: 'Concurrent', body: '<p>Stale save</p>', expected_revision: opened.body.revision });
+    expect(stale.status).toBe(409);
+    expect((await ctx.api.put('/api/templates/' + created.body.id).set(hdr(admin)).send({ name: 'Concurrent', body: 'Missing revision' })).status).toBe(428);
+    expect((await ctx.api.get('/api/templates/' + created.body.id).set(hdr(admin))).body.body).toBe('<p>First save</p>');
+  });
+
+  it('copies print configuration and scoped variables on save', async () => {
+    const created = await ctx.api.post('/api/templates').set(hdr(admin)).send({ name: 'Source', period: '2026-10', body: '<p>{{local_note}}</p>', copies_per_record: 2, records_per_page: 3, tile_fill: 'repeat', tile_continuous: true, repeat_count: 7 });
+    await ctx.api.post('/api/templates/variables').set(hdr(admin)).send({ scope: 'template', template_id: created.body.id, key: 'local_note', label: 'Local note', source_type: 'constant', value: 'Keep me' });
+    const source = (await ctx.api.get('/api/templates/' + created.body.id).set(hdr(admin))).body;
+    const copy = await ctx.api.post('/api/templates').set(hdr(admin)).send({ ...source, name: 'Source (copy)', source_template_id: source.id, source_revision: source.revision });
+    expect(copy.status).toBe(201); expect(copy.body.id).not.toBe(source.id);
+    const saved = (await ctx.api.get('/api/templates/' + copy.body.id).set(hdr(admin))).body;
+    expect(saved).toMatchObject({ body: source.body, period: '2026-10', copies_per_record: 2, records_per_page: 3, tile_fill: 'repeat', tile_continuous: 1, repeat_count: 7 });
+    const variables = (await ctx.api.get('/api/templates/variables?template_id=' + copy.body.id).set(hdr(admin))).body;
+    const local = variables.find((v: any) => v.key === 'local_note'); expect(local).toMatchObject({ template_id: copy.body.id, value: 'Keep me' });
+    await ctx.api.delete('/api/templates/' + source.id).set(hdr(admin));
+    expect((await ctx.api.get('/api/templates/variables?template_id=' + copy.body.id).set(hdr(admin))).body.some((v: any) => v.key === 'local_note')).toBe(true);
+  });
+
+  it('rejects style-only empty bodies', async () => {
+    const res = await ctx.api.post('/api/templates').set(hdr(admin)).send({ name: 'Empty', body: '<style data-docpage>@page{size:210mm 297mm;margin:14mm}</style><p><br></p>' });
+    expect(res.status).toBe(400);
   });
 
   it('forbids a non-admin from creating or deleting templates', async () => {
@@ -61,7 +92,7 @@ describe('templates', () => {
     expect(list.body.find((t: { id: number }) => t.id === c.body.id)).toMatchObject({ copies_per_record: 1, records_per_page: 1, tile_fill: 'blank' });
 
     const u = await ctx.api.put('/api/templates/' + c.body.id).set(hdr(admin))
-      .send({ name: 'Tiled', type: 'generic', body: 'Hi {{order.no}}', copies_per_record: 2, records_per_page: 2, tile_fill: 'repeat' });
+      .send({ expected_revision: got.body.revision, name: 'Tiled', type: 'generic', body: 'Hi {{order.no}}', copies_per_record: 2, records_per_page: 2, tile_fill: 'repeat' });
     expect(u.status).toBe(200);
     const got2 = await ctx.api.get('/api/templates/' + c.body.id).set(hdr(admin));
     expect(got2.body.copies_per_record).toBe(2);
@@ -89,6 +120,8 @@ describe('company profile', () => {
     expect(def.body).toHaveProperty('name');
     // image compression defaults on for a fresh workspace
     expect(def.body.compress_images).toBe(true);
+    const workspace = await ctx.api.get('/api/tenant').set(hdr(admin));
+    expect(workspace.body.name).toBe('Workspace');
 
     const put = await ctx.api.put('/api/templates/company').set(hdr(admin))
       .send({ name: 'Verdesakay Inc.', address: 'Cebu', phone: '123', email: 'a@b.c', logo_url: '' });
@@ -96,6 +129,8 @@ describe('company profile', () => {
 
     const got = await ctx.api.get('/api/templates/company').set(hdr(admin));
     expect(got.body.name).toBe('Verdesakay Inc.');
+    const namedWorkspace = await ctx.api.get('/api/tenant').set(hdr(admin));
+    expect(namedWorkspace.body.name).toBe('Verdesakay Inc.');
     // omitting the field on save keeps the default rather than clearing it
     expect(got.body.compress_images).toBe(true);
   });

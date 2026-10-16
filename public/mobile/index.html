@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#1b6b46" />
-  <title>Verdesakay Mobile</title>
+  <title>Otom Mobile</title>
   <link rel="manifest" href="/mobile/manifest.webmanifest" />
   <link rel="apple-touch-icon" href="/mobile/icons/icon-192.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -23,24 +23,25 @@
   </script>
   <link rel="stylesheet" href="/mobile/mobile.css" />
   <link rel="stylesheet" href="/mobile/mobile-v2.css" />
+  <link rel="stylesheet" href="/css/photo-viewer.css" />
+  <link rel="stylesheet" href="/mobile/guides.css" />
   <link rel="stylesheet" href="/mobile/role-kit.css" />
+  <link rel="stylesheet" href="/css/select-controls.css" />
 </head>
 <body>
   <!-- Login -->
   <div id="m-login" class="m-screen m-login hidden">
     <form class="m-card" id="m-login-form">
       <div class="m-brand">
-        <div class="m-mark">V</div>
-        <h1>Verdesakay</h1>
-        <div class="m-sub">Warehouse</div>
+        <div class="m-mark">O</div>
+        <h1>Otom</h1>
+        <div class="m-sub">Warehouse · by AFKcube</div>
       </div>
       <div id="m-login-error" class="m-error hidden"></div>
       <label for="m-username">Username</label>
       <input id="m-username" name="username" autocomplete="username" required autofocus />
       <label for="m-password">Password</label>
       <input id="m-password" name="password" type="password" autocomplete="current-password" required />
-      <label for="m-mfa">Authenticator or recovery code (if enabled)</label>
-      <input id="m-mfa" name="mfa_code" autocomplete="one-time-code" maxlength="24" />
       <label class="m-shared-opt" for="m-shared">
         <input id="m-shared" type="checkbox" />
         <span><b>I'm using someone else's phone</b>
@@ -48,7 +49,7 @@
       </label>
       <button class="m-btn" type="submit">Sign in</button>
     </form>
-      <p style="font-size:13px;text-align:center"><a href="policies">Privacy, terms and security (drafts)</a></p>
+      <p style="font-size:13px;text-align:center"><a href="/policies">Privacy, terms and security (drafts)</a></p>
   </div>
 
   <!-- App -->
@@ -65,6 +66,7 @@
         </div>
         <div class="m-title" id="m-title">Home</div>
       </div>
+      <button type="button" class="m-icbtn" id="m-guide-start" aria-label="Start guide for this screen">Guide</button>
       <button class="m-icbtn m-top-notifications" id="m-notifications-top" aria-label="Notifications">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
         <span class="m-notification-dot hidden" id="m-notification-dot"></span>
@@ -118,16 +120,22 @@
   <div id="m-toasts"></div>
 
   <script src="/js/api.js"></script>
-  <script src="/js/lib/mfa-controls.js"></script>
   <script src="/js/lib/image-compress.js"></script>
+  <script src="/js/lib/photo-viewer.js"></script>
   <script src="/js/lib/pdf-pages.js"></script>
   <script src="/js/lib/production-steps.js"></script>
   <script src="/js/lib/chat-ws.js"></script>
+  <script src="/js/doc-pagination.js"></script>
   <script src="/js/doc-template.js"></script>
   <script src="/mobile/vendor/qrcode.js"></script>
   <script src="/mobile/vendor/zxing.js"></script>
   <script src="/mobile/app.js"></script>
   <script src="/mobile/lib/dom.js"></script>
+  <script src="/js/personal-ux.js"></script>
+  <script src="/mobile/lib/personal.js"></script>
+  <script src="/js/guide-data.js"></script>
+  <script src="/mobile/lib/guides.js"></script>
+  <script src="/js/guide-tour.js"></script>
   <script src="/mobile/lib/quick-orbit.js"></script>
   <script src="/mobile/lib/role-ui.js"></script>
   <script src="/mobile/lib/locations.js"></script>
@@ -137,8 +145,10 @@
   <script src="/mobile/lib/photo.js"></script>
   <script src="/mobile/lib/signature.js"></script>
   <script src="/mobile/lib/queue.js"></script>
+  <script src="/mobile/lib/production-drafts.js"></script>
   <script src="/mobile/lib/push.js"></script>
   <script src="/mobile/lib/scanner.js"></script>
+  <script src="/mobile/lib/selfie.js"></script>
   <script src="/mobile/lib/production-print.js"></script>
   <script src="/mobile/lib/item-picker.js"></script>
   <script src="/mobile/modules/core/home.js"></script>
@@ -159,12 +169,17 @@
   <script src="/mobile/modules/inventory/batch-move.js"></script>
   <script src="/mobile/modules/manufacturing/job-orders.js"></script>
   <script src="/mobile/modules/manufacturing/kit-release.js"></script>
+  <script src="/mobile/modules/manufacturing/unit-issues.js"></script>
   <script src="/mobile/modules/manufacturing/qc.js"></script>
   <script src="/mobile/modules/manufacturing/repairs.js"></script>
   <script src="/mobile/modules/manufacturing/record.js"></script>
+  <script src="/mobile/modules/manufacturing/rts-recovery.js"></script>
   <script src="/mobile/modules/manufacturing/receiving.js"></script>
   <script src="/mobile/modules/inventory/allocate.js"></script>
+  <script src="/mobile/modules/inventory/release-actions.js"></script>
+  <script src="/mobile/modules/inventory/release-handoff.js"></script>
   <script src="/mobile/modules/inventory/so.js"></script>
+  <script src="/mobile/modules/inventory/delivery-recovery.js"></script>
   <script src="/mobile/modules/inventory/deliveries.js"></script>
   <script src="/mobile/modules/core/report-problem.js"></script>
   <script src="/mobile/modules/core/settings.js"></script>
@@ -177,7 +192,11 @@
   <script src="/mobile/modules/hr/payslips.js"></script>
   <script src="/mobile/modules/hr/schedule.js"></script>
   <script src="/mobile/modules/hr/requests.js"></script>
+  <script src="/js/lib/form-validation.js"></script>
+  <script src="/js/leave-dates.js"></script>
   <script src="/mobile/modules/core/tasks.js"></script>
+  <script src="/mobile/modules/core/notes.js"></script>
+  <script src="/mobile/modules/core/guides.js"></script>
   <script src="/mobile/modules/core/announcements.js"></script>
   <script src="/mobile/modules/hr/time-fix.js"></script>
   <script src="/mobile/modules/hr/approvals.js"></script>

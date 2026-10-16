@@ -23,6 +23,7 @@ App.register('hr-kiosk', async (view) => {
   // QR and typed employee numbers — only runs on office PCs an HR manager approved once.
   let kioskInfo = null;
   try { kioskInfo = await API.get('/hr/clock/kiosk-devices'); } catch (e) { /* show the kiosk; the server still guards it */ }
+  if (App.currentLocation().route !== 'hr-kiosk') return;
   if (kioskInfo && kioskInfo.lock_active && !kioskInfo.this_device) {
     const canApprove = App.hasPermission('hr.manage');
     view.innerHTML = `
@@ -68,6 +69,8 @@ App.register('hr-kiosk', async (view) => {
     });
   }
 
+  // Loading the QR script may finish after the walkthrough has left this route.
+  if (App.currentLocation().route !== 'hr-kiosk') return;
   view.innerHTML = `
     <div class="kiosk">
       <div class="kiosk-main">
@@ -88,7 +91,7 @@ App.register('hr-kiosk', async (view) => {
         <div id="kiosk-panel-attendance" class="kiosk-panel">
           <h2>Time In / Time Out</h2>
           <div class="kiosk-count"><span id="kiosk-secs">–</span>s · new code each minute</div>
-          <div class="kiosk-hint">Scan with the Verdesakay app. No phone? Enter your number below.</div>
+          <div class="kiosk-hint">Scan with the Otom app. No phone? Enter your number below.</div>
           <div id="kiosk-correction" class="kiosk-correction hidden"></div>
           <form id="kiosk-form-attendance" class="kiosk-form" autocomplete="off">
             <input id="kiosk-no" placeholder="Employee number" />

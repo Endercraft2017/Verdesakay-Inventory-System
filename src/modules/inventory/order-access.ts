@@ -5,6 +5,7 @@
  * permissions as their goods receipts and vendor bills (modules/purchasing/purchasing.routes.ts).
  * One `orders` table holds all three types, so the routes check this per order.
  */
+import { moduleEnabled } from '../../shared/modules';
 import type { AuthUser, OrderType, Permission } from '../../shared/types';
 
 type OrderAction = 'view' | 'create' | 'edit' | 'delete';
@@ -15,13 +16,13 @@ export function orderPermission(type: OrderType | string, action: OrderAction): 
 }
 
 export function canOnOrder(user: Pick<AuthUser, 'permissions'>, type: OrderType | string, action: OrderAction): boolean {
-  return user.permissions.includes(orderPermission(type, action));
+  return moduleEnabled(type === 'purchase' ? 'purchasing' : 'inventory') && user.permissions.includes(orderPermission(type, action));
 }
 
 /** Order types this user may list. */
 export function visibleOrderTypes(user: Pick<AuthUser, 'permissions'>): OrderType[] {
   const out: OrderType[] = [];
-  if (user.permissions.includes('orders.view')) out.push('sale', 'job');
-  if (user.permissions.includes('purchasing.view')) out.push('purchase');
+  if (moduleEnabled('inventory') && user.permissions.includes('orders.view')) out.push('sale', 'job');
+  if (moduleEnabled('purchasing') && user.permissions.includes('purchasing.view')) out.push('purchase');
   return out;
 }

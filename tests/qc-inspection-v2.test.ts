@@ -13,6 +13,9 @@ let units: number[];
 let product: number;
 const H = () => ({ Authorization: `Bearer ${token}` });
 const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
+const PNG = Buffer.from('fake-png-bytes');
+const photo = async (t: string, unit: number) =>
+  (await ctx.api.post('/api/attachments').set(bearer(t)).field('kind', 'qc_unit').field('ref_id', String(unit)).attach('image', PNG, 'ev.png')).body.id as number;
 
 beforeAll(async () => {
   ctx = await setupApp();
@@ -81,9 +84,25 @@ describe('GET /api/qc/queue', () => {
     expect(done.body.completed.map((r: { unit_id: number }) => r.unit_id)).toContain(units[0]);
   });
 
+  it('requires a reading for a measured check marked passed and refuses mixed-stage units', async () => {
+    const reading = await inspect(qc.token, { unit_ids: [units[2]], result: 'pass', checklist: [
+      { label: 'Frame and fasteners', ok: true, status: 'pass' },
+      { label: 'Battery voltage', ok: true, status: 'pass' },
+    ] });
+    expect(reading.status).toBe(400);
+    expect(reading.body.error).toMatch(/reading/i);
+    const mixed = await inspect(token, { unit_ids: [units[0], units[2]], result: 'pass', checklist: [
+      { label: 'Frame and fasteners', ok: true, status: 'pass' },
+    ] });
+    expect(mixed.status).toBe(400);
+    expect(mixed.body.error).toMatch(/one QC\/QA stage/i);
+  });
+
   it('stores repair details on a repair result and shows them on the reinspection unit', async () => {
+    const evidence = await photo(qc.token, units[1]!);
     const r = await inspect(qc.token, {
       unit_ids: [units[1]], result: 'fail', disposition: 'repair', remarks: 'Check left signal wiring; retest after correction',
+      evidence_ids: [evidence],
       checklist: [{ label: 'Frame and fasteners', ok: true, status: 'pass' }, { label: 'Battery voltage', ok: false, status: 'issue', value: '41.0', note: 'Low' }],
       repair: { category: 'Electrical · signal system', station: 'Wiring', priority: 'Normal' },
     });

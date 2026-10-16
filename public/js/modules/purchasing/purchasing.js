@@ -53,6 +53,7 @@ App.register('purchasing', async (view, filter) => {
     try { t = await API.get('/purchasing/tolerance'); } catch (e) { UI.toast(e.message, 'error'); return; }
     UI.modal({
       title: '3-way match tolerance',
+      helpTopic: 'purchasing',
       bodyHTML: `
         <p class="muted" style="margin-top:0">How far a vendor bill's price/quantity may drift from the
           purchase order + goods receipts before the match panel flags it as an exception. A price line fails
@@ -208,7 +209,7 @@ App.register('purchasing', async (view, filter) => {
         <div class="field-row">
           <div><label>Received date</label><input data-f="date" type="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
           <div style="flex:1"><label>Received into <span class="req">*</span></label>
-            <select data-f="loc">${locations.map((l) => `<option value="${l.id}" ${def && l.id === def.id ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('')}</select></div>
+            <select data-f="loc">${locations.map((l) => `<option value="${l.id}" ${def && l.id === def.id ? 'selected' : ''}>${UI.esc(l.path || l.name)}</option>`).join('')}</select></div>
         </div>
         <div><label>Note</label><input data-f="note" placeholder="Delivery ref, condition…" /></div>
         <h4 style="${LABEL}">Lines received now</h4>

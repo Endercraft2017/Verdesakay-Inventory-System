@@ -71,8 +71,8 @@ describe('request approvals', () => {
 
     const leaveId = await requestFormId('leave_request');
     const filed = await ctx.api.post('/api/form-records').set(bearer(member.token))
-      .send({ form_def_id: leaveId, data: { employee_name: member.name, reason: 'trip' }, status: 'pending' });
-    expect(filed.status).toBe(201);
+      .send({ form_def_id: leaveId, data: { reason: 'Family trip', leave_dates: '2026-11-09', employee_name: member.name }, status: 'pending' });
+    expect(filed.status, JSON.stringify(filed.body)).toBe(201);
 
     // Head sees it; an unrelated employee sees nothing.
     const headInbox = await ctx.api.get('/api/me/approvals').set(bearer(head.token));
@@ -100,7 +100,7 @@ describe('request approvals', () => {
     const filer = await linkedEmployee({});
     const leaveId = await requestFormId('leave_request');
     const filed = await ctx.api.post('/api/form-records').set(bearer(filer.token))
-      .send({ form_def_id: leaveId, data: { employee_name: filer.name }, status: 'pending' });
+      .send({ form_def_id: leaveId, data: { reason: 'Family trip', leave_dates: '2026-11-09', employee_name: filer.name }, status: 'pending' });
 
     // Filer is not an approver at all.
     expect((await ctx.api.post(`/api/me/approvals/requests/${filed.body.id}/decide`)
@@ -123,7 +123,7 @@ describe('request approvals', () => {
     expect(empBefore.leave_days_remaining).toBe(5);
 
     const filed = await ctx.api.post('/api/form-records').set(bearer(filer.token))
-      .send({ form_def_id: leaveId, data: { employee_name: filer.name, with_pay: 'Yes', days: 3 }, status: 'pending' });
+      .send({ form_def_id: leaveId, data: { reason: 'Family trip', employee_name: filer.name, with_pay: 'Yes', days: 3, leave_dates: '2026-11-09,2026-11-10,2026-11-11' }, status: 'pending' });
     const dec = await ctx.api.post(`/api/me/approvals/requests/${filed.body.id}/decide`)
       .set(bearer(hr.token)).send({ decision: 'approved' });
     expect(dec.status).toBe(200);
@@ -134,7 +134,7 @@ describe('request approvals', () => {
 
     // Requesting more than the 2 remaining is blocked...
     const filed2 = await ctx.api.post('/api/form-records').set(bearer(filer.token))
-      .send({ form_def_id: leaveId, data: { employee_name: filer.name, with_pay: 'Yes', days: 4 }, status: 'pending' });
+      .send({ form_def_id: leaveId, data: { reason: 'Family trip', employee_name: filer.name, with_pay: 'Yes', days: 4, leave_dates: '2026-11-16,2026-11-17,2026-11-18,2026-11-19' }, status: 'pending' });
     const blocked = await ctx.api.post(`/api/me/approvals/requests/${filed2.body.id}/decide`)
       .set(bearer(hr.token)).send({ decision: 'approved' });
     expect(blocked.status).toBe(400);
@@ -156,11 +156,11 @@ describe('request approvals', () => {
     const leaveId = await requestFormId('leave_request');
 
     const unpaid = await ctx.api.post('/api/form-records').set(bearer(filer.token))
-      .send({ form_def_id: leaveId, data: { employee_name: filer.name, with_pay: 'No', days: 2 }, status: 'pending' });
+      .send({ form_def_id: leaveId, data: { reason: 'Family trip', leave_dates: '2026-11-09', employee_name: filer.name, with_pay: 'No', days: 2 }, status: 'pending' });
     await ctx.api.post(`/api/me/approvals/requests/${unpaid.body.id}/decide`).set(bearer(hr.token)).send({ decision: 'approved' });
 
     const paidButRejected = await ctx.api.post('/api/form-records').set(bearer(filer.token))
-      .send({ form_def_id: leaveId, data: { employee_name: filer.name, with_pay: 'Yes', days: 2 }, status: 'pending' });
+      .send({ form_def_id: leaveId, data: { reason: 'Family trip', leave_dates: '2026-11-09', employee_name: filer.name, with_pay: 'Yes', days: 2 }, status: 'pending' });
     await ctx.api.post(`/api/me/approvals/requests/${paidButRejected.body.id}/decide`).set(bearer(hr.token)).send({ decision: 'rejected' });
 
     const emp = (await ctx.api.get('/api/hr/employees').set(A())).body.find((e: { id: number }) => e.id === filer.empId);
@@ -171,7 +171,7 @@ describe('request approvals', () => {
     const filer = await linkedEmployee({});
     const leaveId = await requestFormId('leave_request');
     const filed = await ctx.api.post('/api/form-records').set(bearer(filer.token))
-      .send({ form_def_id: leaveId, data: {}, status: 'pending' });
+      .send({ form_def_id: leaveId, data: { reason: 'Family trip', leave_dates: '2026-11-09' }, status: 'pending' });
     const c = await ctx.api.post(`/api/me/requests/${filed.body.id}/cancel`).set(bearer(filer.token));
     expect(c.status).toBe(200);
     expect((await ctx.api.get('/api/me/requests').set(bearer(filer.token))).body[0].status).toBe('cancelled');
@@ -191,7 +191,7 @@ describe('attendance corrections', () => {
 
     const filed = await ctx.api.post('/api/me/time-corrections').set(bearer(emp.token))
       .send({ work_date: wd, requested_in: '08:05', requested_out: '17:00', reason: 'forgot to scan' });
-    expect(filed.status).toBe(201);
+    expect(filed.status, JSON.stringify(filed.body)).toBe(201);
 
     // Shows in the employee's own list, and in HR's approvals.
     expect((await ctx.api.get('/api/me/time-corrections').set(bearer(emp.token))).body[0].status).toBe('pending');
