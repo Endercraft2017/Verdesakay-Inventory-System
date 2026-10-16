@@ -28,7 +28,7 @@ until the require-passkeys policy is enabled.
 - [ ] Approve an outage/data-loss target and witness a full isolated restore with files, keys and configuration; record duration and alert delivery.
 - [ ] Enroll your MFA and enable the privileged-user policy using steps 1–2 below. Enroll and test owner-console passkeys plus a separate backup, then enable the console policy.
 - [ ] Approve the actual privacy/terms/refund/security/AI notices and DPA/MSA/SLA with the correct entity, contacts, vendors, regions, retention and support commitments. Drafts do not authorize regulated-data use.
-- [ ] Assign the unresolved engineering items in [the second audit](audits/second-pass-audit.md): native secure storage, step-up authentication, remaining API/error contracts, privacy lifecycle and AI assurance.
+- [ ] After engineering, help validate the native vault/upgrade on physical devices using [the runbook](operations/native-credential-storage.md). Broader tenant step-up, API/error contracts, privacy lifecycle and AI assurance remain engineering work; they are not tasks for the owner to code.
 - [ ] Review the dependency and historical-secret gate failures; do not bypass them or describe the release as fully green.
 
 No production hosting, data, DNS or deployment changes were made in this audit. Older items marked

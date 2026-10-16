@@ -11,14 +11,13 @@ MApp.route('queue', function (view) {
       var ops = r[0], foreign = r[1];
       if (!active()) { if (off) off(); return; }
       view.innerHTML = '';
-      // Another account's queued actions (shared phone) are never sent as you — see queue.js.
+      // Account/company boundaries and unbound older actions are never silently replayed.
       if (foreign) {
         view.appendChild(mEl('<div class="m-hint">' + foreign + ' unsent action' + (foreign === 1 ? '' : 's') +
-          ' on this phone belong' + (foreign === 1 ? 's' : '') + ' to another account. ' +
-          (foreign === 1 ? 'It sends' : 'They send') + ' when that person signs in here.</div>'));
+          ' on this phone were kept separately. Use the original account and company; older saved actions need administrator review.</div>'));
       }
       if (!ops.length) {
-        view.appendChild(mEl('<div class="m-empty">✅ Everything is synced.</div>'));
+        view.appendChild(mEl('<div class="m-empty">' + (foreign ? 'No pending actions for this account and company.' : '✅ Everything is synced.') + '</div>'));
         return;
       }
       var offline = !navigator.onLine;
@@ -52,6 +51,10 @@ MApp.route('queue', function (view) {
         mQueue.flush().then(draw);
       };
       view.appendChild(bar);
+    }).catch(function () {
+      if (!active()) return;
+      view.innerHTML = '<div class="m-error" role="alert">Could not load saved actions. Their status is unknown. <button class="m-btn" data-retry-queue>Retry</button></div>';
+      view.querySelector('[data-retry-queue]').onclick = draw;
     });
   }
 

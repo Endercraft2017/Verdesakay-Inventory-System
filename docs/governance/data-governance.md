@@ -6,6 +6,7 @@ DRAFT schedule; privacy owner/counsel must approve retention durations and lawfu
 |---|---|---|
 | Accounts and security | tenant/platform DB, IP/device/session history, reset-attempt hashes, logs | Account lifecycle, security-log period, access/export scope |
 | Assisted account recovery | tenant `account_recoveries`, control-plane `platform_recovery_approvals`, existing email processor, security/activity logs; actor IDs, email, reason/reference, nonce/verifier fingerprints and lifecycle times | Approve evidence/log retention, support authority, escalation and access scope; no identity-document copies or raw recovery bearers in these records |
+| Native credentials and local work | OS-vault session token bound to company origin; non-secret signed-out marker; local caches/drafts and account/company-bound IndexedDB queued work | Physical-device extraction/backup/transfer acceptance; review older unbound work. Vault protects credentials, not every cached business/HR file. See operations/native-credential-storage.md |
 | Employee/HR/payroll | employee tables, attendance/location/photos, IDs, forms, uploads, backups | Employment/tax retention, restricted roles, correction and legal holds |
 | Sales/production/accounting | operational/financial tables, exports, QuickBooks, backups | Tax/warranty/audit retention and append-only adjustments |
 | Messages/files/anonymous reports | DB, attachments, search indexes, mail, device caches | Confidential handling, distinct rights review, attachment expiry |

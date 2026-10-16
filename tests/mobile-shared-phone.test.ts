@@ -128,7 +128,7 @@ describe('mobile shared-phone safety', () => {
     expect(ls.getItem('vds_theme')).toBe('dark');
     expect(ls.getItem('vds_device_id')).toBe('dev-keep-me-0001');
     expect(ls.getItem('vds_m_orbit_v2')).toBe('{}');
-    expect(ls.getItem('vds_m_owner')).toBe('9');
+    expect(ls.getItem('vds_m_owner')).toBe('https://localhost|9');
     expect(ls.getItem('vds_token')).toBe('tok-9');
   });
 

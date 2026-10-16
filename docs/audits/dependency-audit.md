@@ -46,3 +46,10 @@ package. Existing node-forge and Mammoth/argparse/sprintf findings and the reach
 above remain. Exact runtime JSON is `evidence/console-passkeys-npm-runtime.json`; the command
 correctly exits nonzero. This increment did not revalidate launcher/mobile lockfiles or clear
 all development-chain findings.
+
+## Native vault dependency follow-up — 2026-10-16
+
+The mobile lockfile now pins SecureStorage 8.0.1 and esbuild 0.28.1. After integration,
+`npm audit --json` reports **0 Critical / 0 High / 0 Moderate / 0 Low** across that lockfile.
+See `evidence/native-vault-npm-audit.json`. This does not clear the separate root/launcher
+findings or attest the compiled native binary; the native bundle includes license notices.

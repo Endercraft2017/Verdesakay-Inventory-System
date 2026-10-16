@@ -18,11 +18,11 @@ function loadApi(): ApiClient {
 }
 
 describe('api.js server address', () => {
-  const w = window as unknown as { VDS_NATIVE?: boolean };
+  const w = window as unknown as { VDS_NATIVE?: boolean; VdsNativeCredentials?: any };
   let fetchMock: ReturnType<typeof vi.fn>;
   beforeEach(() => {
     localStorage.clear();
-    delete w.VDS_NATIVE;
+    delete w.VDS_NATIVE; delete w.VdsNativeCredentials;
     fetchMock = vi.fn(async () => new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -30,6 +30,7 @@ describe('api.js server address', () => {
 
   it('inside the app, calls the saved server and says it is the phone app', async () => {
     w.VDS_NATIVE = true;
+    w.VdsNativeCredentials = { ready:Promise.resolve(), getToken:()=>null };
     localStorage.setItem('vds_api_base', 'https://acme.example.com/');
     const API = loadApi();
     expect(API.base()).toBe('https://acme.example.com');
@@ -63,7 +64,8 @@ describe('native.js', () => {
     expect(N.normalise('acme.example.com')).toBe('https://acme.example.com');
     expect(N.normalise('  https://acme.example.com/m/#/home ')).toBe('https://acme.example.com');
     expect(N.normalise('192.168.1.20:3000')).toBe('https://192.168.1.20:3000');
-    expect(N.normalise('http://192.168.1.20:3000/')).toBe('http://192.168.1.20:3000');
+    expect(N.normalise('http://192.168.1.20:3000/')).toBe('');
+    expect(N.normalise('https://user:pass@example.test')).toBe('');
     expect(N.normalise('')).toBe('');
     expect(N.normalise('https://')).toBe('');
   });

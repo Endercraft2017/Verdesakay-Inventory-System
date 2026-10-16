@@ -167,3 +167,19 @@ This is not described as an uninterrupted green full run. Evidence is retained i
 `evidence/password-policy-{focused,boundaries,regression-initial,tenant-check,typecheck,playwright}.txt`.
 A fresh complete regression is required after the native-storage follow-up before final release
 review. No security rule was relaxed to accommodate a fixture.
+
+## Native vault and replay isolation — 2026-10-16
+
+Final focused client/storage run: **8 files / 171 tests passed**. All **11 Playwright scenarios
+passed** (35.9 seconds). TypeScript, changed JavaScript syntax, Android extraction-rule XML,
+mobile web bundling and Capacitor Android plugin sync passed. The updated mobile dependency
+audit reports zero advisory entries. Evidence is in `evidence/native-vault-*`.
+
+The first full run passed **290 files / 2,918 tests** and found one upload-progress test failure:
+an unconditional await delayed browser XHR initialization. The API now waits for the vault only
+in native mode; the original upload assertion is retained and passes in the focused rerun.
+That initial full log is retained, not described as a green run. A fresh complete regression
+is required before final review. Java 21 is available; no Android SDK/build tools or physical
+device are configured, so APK compilation, actual Keystore/extraction and backup/transfer
+acceptance remain unverified. The bridge tests use a test OS provider; worker/queue tests run
+the actual source with IndexedDB transactions.

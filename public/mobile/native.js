@@ -16,7 +16,9 @@
     if (!s) return '';
     if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
     try {
-      return new URL(s).origin; // scheme + host + port; any path the person typed is dropped
+      var url = new URL(s);
+      if (url.protocol !== 'https:' || url.username || url.password) return '';
+      return url.origin; // scheme + host + port; any path the person typed is dropped
     } catch (e) {
       return '';
     }
@@ -88,6 +90,7 @@
 
   /** Forget the server; the next start asks again. */
   function forgetServer() {
+    if (window.API) API.clearToken();
     try { localStorage.removeItem(KEY); } catch (e) { /* ignore */ }
   }
 

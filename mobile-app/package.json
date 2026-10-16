@@ -9,11 +9,13 @@
     "apk": "node build-web.mjs && cap sync android && node build-apk.mjs"
   },
   "dependencies": {
+    "@aparajita/capacitor-secure-storage": "8.0.1",
     "@capacitor/android": "^8.5.2",
     "@capacitor/core": "^8.5.2"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.5.2"
+    "@capacitor/cli": "^8.5.2",
+    "esbuild": "0.28.1"
   },
   "overrides": {
     "xcode": {

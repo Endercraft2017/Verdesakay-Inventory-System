@@ -137,3 +137,15 @@ The console no longer has only the password control described in the earlier sna
 an operator is enrolled**. Enforcing enrollment for every operator is still a staged rollout
 action. No Windows device or live external-access policy has been verified. Tenant-wide step-up,
 password policy, native secure storage and the other open audit items are not closed by this work.
+
+
+## Native credential and queue follow-up — 2026-10-16
+
+The [native credential runbook](../operations/native-credential-storage.md) supersedes the
+snapshot's statement that no vault adapter exists. A native-only OS-vault bridge, server-bound
+session acceptance, logout-race protection and actor/company-bound queue replay are implemented.
+Older unbound credentials require sign-in; older unbound work is retained for review. HTTP is
+refused; Android app backup/transfer exclusions and plugin wiring are included. Real Keystore,
+APK/device extraction and production/LAN TLS are **unverified**, so MOBILE-01 moves from FAIL to
+UNVERIFIED rather than PASS. The scorecard now has 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A;
+these counts do not close the other release gates or represent complete production approval.

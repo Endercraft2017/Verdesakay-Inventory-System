@@ -1461,3 +1461,19 @@ and evidence limits. Unenrolled accounts are password-only until policy enforcem
 `passwordPolicyError` for non-HTTP writers. Operator CLI/environment bootstrap, default-admin
 bootstrap and direct tenant provisioning use the same bounds/blocklist as account schemas.
 Existing-password verification is unchanged. See `operations/new-password-policy.md`.
+
+
+### Native credential vault and queue scope (2026-10-16)
+
+`mobile-app/native-credentials.mjs` serializes native-only OS-vault/session operations;
+`native-entry.mjs` registers the reviewed plugin and passes raw browser storage (never the
+web client's in-memory storage fallback). `build-web.mjs` bundles the bridge and licenses
+before API startup. `public/js/api.js` waits for initialization, accepts only freshly issued
+same-server sessions and cancels sign-in results after logout/server changes. Native tokens
+are memory-only at request time. Old plaintext tokens are removed and require fresh sign-in.
+
+`mobile/lib/queue.js` binds actor + original company to new operations, removes native bearer
+metadata, and quarantines old unbound work. `mobile/sw.js` enforces the same scope with cookie
+CSRF/actor headers; cache v110. Queue UI distinguishes separate/review work and storage failure.
+Android disables backup/transfer for app data. See `operations/native-credential-storage.md`:
+web bundle/plugin sync and local tests are complete; APK/Keystore/device acceptance is not.

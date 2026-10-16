@@ -7,7 +7,7 @@
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
 var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
 var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
-var CACHE_VERSION = CACHE_PREFIX + 'v109';
+var CACHE_VERSION = CACHE_PREFIX + 'v110';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -272,20 +272,23 @@ async function replayQueue() {
   var token = tokenRow && tokenRow.v;
   var tokenUser = tokenRow ? tokenRow.user_id : null;
   var stillPending = false;
-  if (!token) return; // signed out — nothing replays until someone signs in (queue.js)
+  if (!tokenRow || tokenUser == null || tokenRow.server !== self.location.origin + TENANT_BASE || (!token && !tokenRow.cookie_auth)) { db.close(); return; }
 
-  var headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
+  var headers = { 'Content-Type': 'application/json', 'X-Client': 'mobile' };
+  if (tokenRow.cookie_auth) { headers['X-Session-Mode'] = 'cookie'; headers['X-Requested-With'] = 'VDS'; }
+  else headers.Authorization = 'Bearer ' + token;
   if (tokenRow.device_id) headers['X-Device-Id'] = tokenRow.device_id;
 
   for (var i = 0; i < ops.length; i++) {
     var op = ops[i];
     if (op.error) continue; // needs the user's attention — leave it
-    // Only ever replay an op as the account that queued it (legacy unstamped ops excepted).
-    if (op.user_id != null && op.user_id !== tokenUser) continue;
+    // Legacy unbound operations stay for review; cookie/account switches cannot change their actor.
+    if (op.user_id !== tokenUser || op.server !== tokenRow.server) continue;
     try {
       var res = await fetch(TENANT_BASE + '/api' + op.path, {
         method: op.method || 'POST',
-        headers: Object.assign({ 'Idempotency-Key': op.key }, headers),
+        headers: Object.assign({ 'Idempotency-Key': op.key, 'X-Queue-Actor': String(op.user_id) }, headers),
+        credentials: tokenRow.cookie_auth ? 'same-origin' : 'omit',
         body: JSON.stringify(op.body),
       });
       if (res.ok) {
@@ -305,5 +308,6 @@ async function replayQueue() {
   var clients = await self.clients.matchAll();
   clients.forEach(function (c) { c.postMessage('queue-changed'); });
 
+  db.close();
   if (stillPending) throw new Error('retry'); // ask the browser to fire the sync again later
 }

@@ -9,6 +9,8 @@
    ends when the app/tab is closed; setToken(t, { shared: true }). */
 const API = (() => {
   const TOKEN_KEY = 'vds_token';
+  const issuedSessions = new Map();
+  let sessionEpoch = 0;
   const cookies = () => !!window.VDS_COOKIE_AUTH && !window.VDS_NATIVE;
 
   /* The last response of a GET made with { remember: true }, so a screen can draw what it showed
@@ -22,11 +24,34 @@ const API = (() => {
   const SESSION_KEY = 'vds_browser_session';
   const DEVICE_KEY = 'vds_device_id';
 
+  async function ready() {
+    if (!window.VDS_NATIVE) return;
+    if (!window.VdsNativeCredentials) throw new Error('Secure sign-in storage is unavailable. Reinstall the updated app.');
+    await window.VdsNativeCredentials.ready;
+  }
+
   function getToken() {
+    if (window.VDS_NATIVE) return window.VdsNativeCredentials ? window.VdsNativeCredentials.getToken() : null;
     if (cookies()) return null;
     try { return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
   }
   function setToken(t, opts) {
+    if (window.VDS_NATIVE) {
+      remembered.clear();
+      if (!window.VdsNativeCredentials) return Promise.reject(new Error('Secure sign-in storage is unavailable. Reinstall the updated app.'));
+      var issuedAt = issuedSessions.get(t);
+      issuedSessions.delete(t);
+      if (!issuedAt || issuedAt !== serverScope()) {
+        if (issuedAt) revokeIssued(issuedAt, t);
+        return Promise.reject(new Error('The company server changed. Start sign-in again.'));
+      }
+      ++sessionEpoch;
+      return window.VdsNativeCredentials.set(t, opts).catch(async function (error) {
+        // If persistence fails after sign-in, best-effort revoke that newly issued session.
+        await revokeIssued(issuedAt, t);
+        throw error;
+      });
+    }
     clearToken();
     if (cookies()) {
       try { ((opts && opts.shared) ? sessionStorage : localStorage).setItem(SESSION_KEY, '1'); } catch (e) {}
@@ -39,13 +64,16 @@ const API = (() => {
     try { return !!(sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY)); } catch (e) { return true; }
   }
   function clearToken() {
+    ++sessionEpoch; issuedSessions.clear();
     remembered.clear();
     try { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
     try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
     try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
+    if (window.VDS_NATIVE && window.VdsNativeCredentials) return window.VdsNativeCredentials.clear();
   }
   /** True when the current token is a borrowed-phone (sessionStorage) one. */
   function isSharedSession() {
+    if (window.VDS_NATIVE) return !!(window.VdsNativeCredentials && window.VdsNativeCredentials.isShared());
     try { return !!sessionStorage.getItem(cookies() ? SESSION_KEY : TOKEN_KEY); } catch (e) { return false; }
   }
 
@@ -75,6 +103,24 @@ const API = (() => {
     try { return (localStorage.getItem('vds_api_base') || '').replace(/\/+$/, ''); } catch (e) { return ''; }
   }
 
+  async function revokeIssued(origin, token) {
+    try { await fetch(origin + '/api/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(5000) }); } catch (ignored) {}
+  }
+
+  function checkedBase() {
+    const value = base();
+    if (window.VDS_NATIVE) {
+      var url; try { url = new URL(value); } catch (ignored) {}
+      if (!url || url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('Connect to your company using its secure HTTPS address.');
+    }
+    return value;
+  }
+
+  function serverScope() {
+    var url = new URL(base() || '/', location.origin);
+    return url.origin + url.pathname.replace(/\/+$/, '');
+  }
+
   // fetch has no upload progress events; keep the same response handling for XHR uploads.
   function uploadResponse(url, method, headers, payload, onProgress) {
     return new Promise((resolve, reject) => {
@@ -94,6 +140,9 @@ const API = (() => {
   }
 
   async function request(method, path, body, isForm, opts) {
+    if (window.VDS_NATIVE) await ready();
+    const requestBase = checkedBase(), requestScope = serverScope(), requestEpoch = sessionEpoch;
+    if (opts && opts.expectedServer != null && opts.expectedServer !== serverScope()) throw new Error('This queued action belongs to a different company server.');
     if (method !== 'GET') remembered.clear();
     const headers = cookies() ? { 'X-Session-Mode': 'cookie', 'X-Requested-With': 'VDS' } : {};
     const token = getToken();
@@ -121,7 +170,7 @@ const API = (() => {
 
     let res;
     try {
-      const url = base() + (path.startsWith('/api/') ? path : '/api' + path);
+      const url = requestBase + (path.startsWith('/api/') ? path : '/api' + path);
       res = isForm && opts && opts.onProgress
         ? await uploadResponse(url, method, headers, payload, opts.onProgress)
         : await fetch(url, { method, headers, body: payload, credentials: cookies() ? 'same-origin' : 'omit' });
@@ -163,6 +212,13 @@ const API = (() => {
       err.data = data;   // full parsed body — callers can inspect extra fields (e.g. a 409's details)
       throw err;
     }
+    if (window.VDS_NATIVE && /^\/auth\/login(?:\/mfa)?$/.test(path) && data && typeof data.token === 'string') {
+      if (requestEpoch !== sessionEpoch || requestScope !== serverScope()) {
+        await revokeIssued(requestScope, data.token);
+        throw new Error('Sign-in or company server changed. Start again.');
+      }
+      issuedSessions.clear(); issuedSessions.set(data.token, requestScope);
+    }
     if (method === 'GET' && opts && opts.remember) {
       remembered.delete(path); // re-insert at the end: the Map's order is oldest first
       remembered.set(path, data);
@@ -173,10 +229,12 @@ const API = (() => {
 
   /** Fetch a binary endpoint with auth and return an object URL (caller revokes it). */
   async function blobUrl(path, mimeOverride) {
+    if (window.VDS_NATIVE) await ready();
+    const requestBase = checkedBase();
     const token = getToken();
     const headers = { 'X-Device-Id': deviceId() };
     if (token) headers.Authorization = 'Bearer ' + token;
-    const res = await fetch(base() + (path.startsWith('/api/') ? path : '/api' + path), { headers });
+    const res = await fetch(requestBase + (path.startsWith('/api/') ? path : '/api' + path), { headers });
     if (res.status === 401) {
       clearToken();
       if (window.App) window.App.showLogin();
@@ -203,7 +261,7 @@ const API = (() => {
   }
 
   return {
-    getToken, setToken, clearToken, hasSession, cookieAuth: cookies, isSharedSession, deviceId, base,
+    ready, serverScope, getToken, setToken, clearToken, hasSession, cookieAuth: cookies, isSharedSession, deviceId, base,
     /** opts.remember: keep the response for API.peek(p) (see `remembered`). */
     get: (p, opts) => request('GET', p, undefined, false, opts),
     peek,

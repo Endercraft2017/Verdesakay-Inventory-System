@@ -97,3 +97,13 @@ bootstrap paths and operator CLI. Existing short credentials continue to verify.
 The [policy runbook](../operations/new-password-policy.md) records blocklist, normalization,
 installed-host compatibility and test limits. This resolves the new-password minimum/writer
 consistency increment; synchronous scrypt availability and the other open controls remain.
+
+
+## Native persistence and replay follow-up
+
+A reviewed, pinned Capacitor OS-vault provider is now integrated with fail-closed startup,
+server-bound session acceptance, signed-out tombstones and no native plaintext queue mirror.
+Both replay paths bind actor/company, and web workers now carry cookie CSRF/actor headers.
+The [runbook](../operations/native-credential-storage.md) distinguishes local test/build evidence
+from unperformed APK/Keystore/device/backup validation. It also identifies plaintext personal
+caches outside the credential vault, old draft migration and still-open TLS pinning decisions.

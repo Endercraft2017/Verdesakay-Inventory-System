@@ -1,0 +1,33 @@
+
+> otom@1.0.0 test
+> vitest run --fileParallelism --maxWorkers=2
+
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+(node:106502) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:106502) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+ ❯ tests/frontend-media-api.test.ts (4 tests | 1 failed) 128ms
+     × reports actual bytes and preserves authentication and response handling 12ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend-media-api.test.ts > attachment upload progress > reports actual bytes and preserves authentication and response handling
+TypeError: Cannot read properties of undefined (reading 'upload')
+ ❯ tests/frontend-media-api.test.ts:65:9
+     63|     const progress = vi.fn();
+     64|     const pending = api.upload('/messages', new win.FormData(), { onPr…
+     65|     xhr.upload.onprogress({ loaded: 500, total: 1000, lengthComputable…
+       |         ^
+     66|     expect(progress).toHaveBeenCalledWith({ loaded: 500, total: 1000 }…
+     67|     expect(xhr.headers.Authorization).toBe('Bearer test-token');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 290 passed (291)
+      Tests  1 failed | 2918 passed (2919)
+   Start at  09:38:01
+   Duration  529.50s (transform 6.29s, setup 2.58s, import 37.50s, tests 981.64s, environment 1.78s)
+

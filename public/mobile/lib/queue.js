@@ -9,7 +9,7 @@
    Every queued op is stamped with the account that made it (user_id), and is only ever
    replayed under that same account — here and in the service worker (sw.js replayQueue).
    On a shared phone, one person's unsent action must never be sent as the next person.
-   count()/all() cover the signed-in user's ops (plus pre-stamp legacy ops); foreignCount()
+   count()/all() cover the signed-in user's ops (only scoped operations); foreignCount()
    is how many belong to someone else on this phone — they wait for that person.
 */
 (function () {
@@ -19,9 +19,9 @@
   var dbP = null;
   var currentUser = null; // { id, name } of the signed-in account, set by setToken
 
-  /** Whether an op may be sent by the signed-in account. Legacy ops (queued before ops were
-      stamped) have no user_id and keep the old behaviour. */
-  function mine(op) { return op.user_id == null || (!!currentUser && op.user_id === currentUser.id); }
+  /** Whether an op may be sent by the signed-in account. Legacy unbound operations are retained for review and never automatically replayed. */
+  function scope() { return API.serverScope(); }
+  function mine(op) { return !!currentUser && op.user_id === currentUser.id && op.server === scope(); }
 
   function db() {
     if (dbP) return dbP;
@@ -70,14 +70,15 @@
   }
 
   var mQueue = {
-    /** Mirror the bearer token (and whose it is) into IndexedDB so the service worker can replay. */
+    /** Mirror the bearer token (and whose it is) into IndexedDB for browser replay; native vault credentials stay in memory. */
     setToken: function (t, user) {
       currentUser = user && user.id != null ? { id: user.id, name: user.full_name || user.name || '' } : null;
       emit(); // counts depend on who is signed in
       if (navigator.onLine) setTimeout(function () { mQueue.flush().catch(function () {}); }, 0);
       return tx('readwrite', function (s) {
+        if (window.VDS_NATIVE) { s.delete('token'); return; }
         s.put({
-          k: 'token', v: t, cookie_auth: !!(window.API && API.cookieAuth && API.cookieAuth()), user_id: currentUser ? currentUser.id : null,
+          k: 'token', server: scope(), v: t, cookie_auth: !!(window.API && API.cookieAuth && API.cookieAuth()), user_id: currentUser ? currentUser.id : null,
           device_id: window.API && API.deviceId ? API.deviceId() : null, // sw.js has no localStorage
         });
       }, META).catch(function () {});
@@ -88,6 +89,7 @@
       return tx('readwrite', function (s) { s.delete('token'); }, META).catch(function () {});
     },
     enqueue: function (op) {
+      op.server = scope();
       op.created = op.created || Date.now();
       op.attempts = 0;
       if (currentUser) { op.user_id = currentUser.id; op.user_name = currentUser.name; }
@@ -147,7 +149,7 @@
   /** @returns true if we should stop the flush (still offline). */
   function sendOne(op) {
     if (!mine(op)) return Promise.resolve(false); // someone else's — wait for them
-    return API.post(op.path, op.body, { idempotencyKey: op.key, expectedUserId: op.user_id })
+    return API.post(op.path, op.body, { idempotencyKey: op.key, expectedUserId: op.user_id, expectedServer: op.server })
       .then(function () { return mQueue._remove(op.key).then(function () { return false; }); })
       .catch(function (err) {
         if (err && err.offline) return true; // still no connection — stop, keep the queue

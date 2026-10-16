@@ -255,7 +255,7 @@ window.MApp = (function () {
      Device-level keys survive; every other vds_* key is one person's (cached profile, recent
      items, drafts — including the anonymous-report draft). OWNER_KEY records whose they are, so
      the next different person to sign in here gets them cleared before seeing anything. */
-  var DEVICE_KEYS = { vds_theme: 1, vds_device_id: 1, vds_kiosk_token: 1, vds_token: 1, vds_browser_session: 1, vds_m_seg: 1, vds_m_orbit_v2: 1 };
+  var DEVICE_KEYS = { vds_theme: 1, vds_device_id: 1, vds_kiosk_token: 1, vds_token: 1, vds_browser_session: 1, vds_api_base: 1, vds_m_seg: 1, vds_m_orbit_v2: 1 };
   var OWNER_KEY = 'vds_m_owner';
 
   function clearUserData() {
@@ -288,11 +288,16 @@ window.MApp = (function () {
         var push = window.mPush && mPush.release ? mPush.release().catch(function () {}) : Promise.resolve();
         return push
           .then(function () { return API.post('/auth/logout').catch(function () {}); })
-          .then(function () {
+          .then(async function () {
             if (shared) clearUserData();
             try { localStorage.removeItem(ME_KEY); sessionStorage.removeItem(ME_KEY); } catch (e) { /* ignore */ }
             if (q) q.clearToken();
-            API.clearToken();
+            try { await API.clearToken(); } catch (error) {
+              showLogin();
+              var failure = document.getElementById('m-login-error');
+              failure.textContent = error.message; failure.classList.remove('hidden');
+              return false;
+            }
             if (window.ChatWS) ChatWS.disconnect();
             location.hash = '';
             location.reload();
@@ -362,7 +367,7 @@ window.MApp = (function () {
       button.disabled = true;
       try {
         var res = await API.post('/auth/login/mfa', { mfa_token: mfaToken, code: document.getElementById('m-mfa-code').value.trim() });
-        API.setToken(res.token, { shared: shared });
+        await API.setToken(res.token, { shared: shared });
         enterApp((await API.get('/auth/me')).user);
       } catch (ex) { err.textContent = ex.message; button.disabled = false; }
     };
@@ -433,9 +438,11 @@ window.MApp = (function () {
     var prevOwner = null;
     try { prevOwner = localStorage.getItem(OWNER_KEY); } catch (e) { /* ignore */ }
     if (prevOwner == null && cached) prevOwner = String(cached.id);
-    if (prevOwner !== String(user.id)) clearUserData(); // someone else's leftovers
+    var ownerScope = API.serverScope() + '|' + user.id;
+    var sameBrowserLegacyOwner = !window.VDS_NATIVE && prevOwner === String(user.id);
+    if (prevOwner !== ownerScope && !sameBrowserLegacyOwner) clearUserData(); // someone else's leftovers
     try {
-      localStorage.setItem(OWNER_KEY, String(user.id));
+      localStorage.setItem(OWNER_KEY, ownerScope);
       // A borrowed-phone sign-in keeps its profile cache with its token, in sessionStorage.
       (API.isSharedSession() ? sessionStorage : localStorage).setItem(ME_KEY, JSON.stringify(user));
     } catch (e) { /* ignore */ }
@@ -479,7 +486,13 @@ window.MApp = (function () {
     }).catch(function () {});
   }
 
-  function boot() {
+  async function boot() {
+    try { await API.ready(); } catch (error) {
+      showLogin();
+      var storageError = document.getElementById('m-login-error');
+      storageError.textContent = error.message; storageError.classList.remove('hidden');
+      return;
+    }
     // The installed phone app first needs to know which server to use (mobile/native.js, §29).
     if (window.VDS_NATIVE && window.VdsNative && !API.base()) { window.VdsNative.showConnect(boot); return; }
     document.getElementById('m-back').onclick = back;
@@ -539,9 +552,9 @@ window.MApp = (function () {
       };
       if (shared) body.shared = true;
       API.post('/auth/login', body)
-        .then(function (res) {
+        .then(async function (res) {
           if (res.mfa_required) { if (sharedBox) sharedBox.checked = false; mfaCodeScreen(res.mfa_token, shared); return; }
-          API.setToken(res.token, { shared: shared });
+          await API.setToken(res.token, { shared: shared });
           if (sharedBox) sharedBox.checked = false;
           return API.get('/auth/me').then(function (profile) { enterApp(profile.user); });
         })

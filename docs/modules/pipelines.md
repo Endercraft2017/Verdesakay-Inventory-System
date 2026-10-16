@@ -1288,3 +1288,19 @@ blocklist → versioned password hash → existing session/recovery invalidation
 continues to verify existing short credentials without applying new-password validation.
 Current-password inputs allow the full Unicode range; policy rejects neither spaces nor
 password-manager paste. See `operations/new-password-policy.md`; no live account rewrite.
+
+
+### Native sign-in and replay (2026-10-16)
+
+Native bootstrap → remove plaintext token mirrors / preserve queued business work → require
+actual OS vault → load only a same-company bound credential, or require fresh sign-in. Login
+response → verify original server and unchanged sign-in generation → persist + read back vault
+record → publish memory credential → load account. A failed write best-effort revokes at its
+original issuer. Logout clears memory and marks signed-out before deleting the OS record;
+pending writes/results cannot reopen the session.
+
+New offline operations bind company origin/path and actor. Foreground and worker replay reject
+foreign/unbound rows; cookie replay also carries CSRF and queue-actor headers. Native replay
+uses the foreground memory credential and persists no bearer mirror. Unknown legacy work stays
+for review. Personal cache ownership includes company scope; review native legacy drafts before
+upgrading. Physical-device and real TLS acceptance remain pending; see the native storage runbook.

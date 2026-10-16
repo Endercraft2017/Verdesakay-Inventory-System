@@ -2,8 +2,8 @@
   "date": "2026-10-16",
   "source_commit": "495db101c3efbe4e4546221fed2db3af233b00aa",
   "counts": {
-    "UNVERIFIED": 125,
-    "FAIL": 59,
+    "UNVERIFIED": 126,
+    "FAIL": 58,
     "PASS": 36,
     "N/A": 13
   },
@@ -175,7 +175,7 @@
       "severity": "High",
       "requirement": "Authentication uses a vetted provider or framework; there is no custom password storage, token signing, or session crypto.",
       "status": "FAIL",
-      "evidence": "src/shared/auth.ts:23; custom DB-backed bearer-session implementation using bcryptjs and crypto.randomBytes.",
+      "evidence": "Application-owned opaque sessions remain in shared/auth.ts. Credential hashing now uses shared versioned native scrypt with bounded legacy bcrypt verification; WebAuthn uses maintained SimpleWebAuthn. A full managed identity/session-framework migration has not been performed.",
       "scenario": "A future custom-session lifecycle bug affects every module without a maintained auth framework providing its guardrails.",
       "fix": "Adopt a maintained auth/session framework in a compatibility migration; preserve native/installed-node support and test expiry/recovery/revocation end to end."
     },
@@ -193,8 +193,8 @@
       "severity": "High",
       "requirement": "Access tokens are short-lived (\u226430 minutes); refresh tokens are HttpOnly, expire, rotate on every use, and reuse revokes the token family.",
       "status": "FAIL",
-      "evidence": "Browser tokens moved to tenant-scoped HttpOnly cookies; native bearer compatibility remains. Ordinary sessions still last 12 hours without rotating short-lived access/refresh families.",
-      "scenario": "Any script injection can read a bearer token and reuse it until expiry or revocation.",
+      "evidence": "Web sessions use HttpOnly cookies; native clients now have a server-bound OS-vault bridge and memory-only bearer use. Ordinary sessions still last 12 hours without rotating short-lived access/refresh families. Actual native OS/device validation is pending.",
+      "scenario": "A stolen active bearer or compromised running client can reuse a session until expiry or revocation. At-rest native protection does not shorten server session lifetime.",
       "fix": "Move web sessions to Secure HttpOnly SameSite cookies with CSRF protection and rotation. Use secure platform storage for native clients; explicitly design offline-PC credentials."
     },
     {
@@ -966,10 +966,10 @@
       "id": "MOBILE-01",
       "severity": "High",
       "requirement": "Mobile clients store tokens and credentials only in Keychain/Keystore-backed secure storage.",
-      "status": "FAIL",
-      "evidence": "public/js/api.js:17; native Capacitor shell reuses browser storage, with no Keystore/Keychain storage adapter.",
-      "scenario": "A rooted/forensically accessed device can recover a long-lived bearer token from app storage.",
-      "fix": "Add a platform-backed secure-storage adapter and migration/clear-on-signout tests on real Android/iOS devices."
+      "status": "UNVERIFIED",
+      "evidence": "Capacitor SecureStorage 8.0.1 and a native-only, server-bound credential adapter are integrated. Startup removes plaintext/queue mirrors and requires fresh sign-in for old unbound tokens; shared sessions stay in memory. Local migration/race/failure and queue tests pass, and Android web/plugin sync builds. No compiled APK or physical Keystore/backup/extraction test exists in this workspace; see operations/native-credential-storage.md.",
+      "scenario": "",
+      "fix": "Compile a clean signed staging APK with Android SDK tools; verify installed native plugin, restart/logout/locked storage, extraction, backup/transfer and old-version upgrade on physical devices before distributing."
     },
     {
       "id": "MOBILE-02",
@@ -994,9 +994,9 @@
       "severity": "Medium",
       "requirement": "Transport security is hardened (TLS everywhere; certificate or public-key pinning with a rotation plan where the risk justifies it).",
       "status": "FAIL",
-      "evidence": "mobile-app/android/app/src/main/AndroidManifest.xml and public/mobile/native.js permit configurable local HTTP server addresses; no server pin/rotation policy verified.",
-      "scenario": "An employee configuring an HTTP endpoint can send a bearer session over an unencrypted network.",
-      "fix": "Require TLS for production/native endpoints, retain explicit safe development exceptions, and validate certificate trust/rotation on devices."
+      "evidence": "Native connection normalization and API transport now reject HTTP/userinfo URLs; Android disallows cleartext traffic. Existing system/user-installed CA trust remains for office hosts. Certificate pinning/rotation and real cloud/LAN device acceptance remain unverified.",
+      "scenario": "A trusted but malicious installed CA or an incorrectly configured office certificate can still undermine transport identity if deployment/device controls are wrong.",
+      "fix": "Verify actual cloud/LAN certificate validation and user-CA installation policy on devices; design and test any required site/cloud pinning and safe rotation before distribution."
     },
     {
       "id": "MOBILE-05",
