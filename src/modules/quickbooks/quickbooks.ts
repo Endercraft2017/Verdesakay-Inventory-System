@@ -75,20 +75,22 @@ export function authUrl(state: string): string {
 }
 
 /** Exchange the OAuth code for tokens and record the realm + company name. */
-export async function completeConnect(code: string, realmId: string): Promise<void> {
+export async function completeConnect(code: string, realmId: string, authorizationCurrent: () => boolean = () => true): Promise<void> {
   const t = await tokenRequest(new URLSearchParams({
     grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI,
   }));
+  if (!authorizationCurrent()) throw Object.assign(new Error('QuickBooks authorization changed. Start the connection again.'),{status:403});
   saveTokens(t);
   saveCfg({ realm_id: realmId, connected_at: new Date().toISOString() });
   try {
     const info = await qboRequest('GET', `companyinfo/${realmId}`);
     const name = info?.CompanyInfo?.CompanyName as string | undefined;
-    if (name) saveCfg({ company_name: name });
+    if (name && authorizationCurrent()) saveCfg({ company_name: name });
   } catch { /* company name is nice-to-have */ }
 }
 
 export function disconnect(): void {
+  setSetting('qbo_oauth_state',null);setSetting('qbo_oauth_generation',null);
   setSetting(TOK_KEY, '');
   setSetting(CFG_KEY, { auto_push: !!cfg().auto_push });
 }

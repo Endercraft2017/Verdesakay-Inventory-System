@@ -10,6 +10,8 @@ Start here. This folder has two layers:
 
 ## Production audit
 
+- [Current engineering handoff and owner steps](audits/engineering-handoff.md)
+- [Recent tenant administrative verification](operations/tenant-step-up.md)
 - [Second audit and unresolved release gates](audits/second-pass-audit.md)
 - [All 233 handbook controls](audits/production-scorecard.md)
 - [Validation evidence and limits](audits/validation-results.md)

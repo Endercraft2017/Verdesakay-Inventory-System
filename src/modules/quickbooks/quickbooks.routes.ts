@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { canOnOrder } from '../inventory/order-access';
-import { withTenant, getSetting, setSetting, queryOne, queryAll, DEFAULT_TENANT } from '../../shared/db';
+import { withTenant, getSetting, setSetting, queryOne, queryAll, DEFAULT_TENANT, tokenDigest } from '../../shared/db';
 import { isValidSlug, getTenant, retiredDefaultTenant } from '../../platform/platform';
 import { parseBody } from '../../shared/validation';
 import { z } from 'zod';
@@ -13,10 +13,12 @@ import {
 import { currentSlug } from '../../platform/quota';
 import type { Order, OrderItem } from '../../shared/types';
 import { syncClass } from '../../sync';
+import { requireFreshVerification, stepUpCredentialStamp, isSavedVerificationContextCurrent, type SavedVerificationContext } from '../../shared/step-up';
 
 const router = Router();
 
-const STATE_KEY = 'qbo_oauth_state'; // { nonce, ts }
+const STATE_KEY = 'qbo_oauth_state';
+const GENERATION_KEY = 'qbo_oauth_generation';
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -49,17 +51,18 @@ router.get('/callback', async (req, res, next) => {
     // a database for any name in the query string.
     if (!knownWorkspace(slug)) { done('Unknown workspace.', false); return; }
 
-    const valid = withTenant(slug, () => {
-      const s = getSetting<{ nonce: string; ts: number }>(STATE_KEY);
-      const valid = !!s && s.nonce === nonce && Date.now() - s.ts < 10 * 60_000;
-      if (valid) setSetting(STATE_KEY, null);
-      return valid;
+    const bound = withTenant(slug, () => {
+      const state = getSetting<{nonce:string;ts:number}&Partial<SavedVerificationContext>>(STATE_KEY);
+      const age=state ? Date.now()-state.ts : NaN;
+      const matched=!!state && state.nonce===nonce && age>=0 && age<10*60_000;
+      if (matched) setSetting(STATE_KEY,null); // single-use, even when its actor has been revoked
+      return matched && isSavedVerificationContextCurrent(state!) && getSetting(GENERATION_KEY)===nonce ? state : null;
     });
-    if (!valid) { done('The connection link expired — start again from Settings.', false); return; }
+    if (!bound) { done('The connection link expired — start again from Settings.', false); return; }
 
     await withTenant(slug, async () => {
-      await completeConnect(code, realmId);
-      setSetting(STATE_KEY, null);
+      await completeConnect(code, realmId,()=>isSavedVerificationContextCurrent(bound) && getSetting(GENERATION_KEY)===nonce);
+      if (getSetting(GENERATION_KEY)===nonce) { setSetting(STATE_KEY,null);setSetting(GENERATION_KEY,null); }
     });
     done('Your workspace is now linked. Orders can be pushed to QuickBooks.', true);
   } catch (e) {
@@ -75,25 +78,26 @@ router.get('/status', requirePermission('users.manage'), (_req, res) => {
 });
 
 // GET /api/quickbooks/connect — returns the Intuit authorize URL to open
-router.get('/connect', requirePermission('users.manage'), (_req, res) => {
+router.get('/connect', requirePermission('users.manage'), syncClass('online'), requireFreshVerification, (req, res) => {
   if (!qboConfigured()) {
     res.status(503).json({ error: 'QuickBooks is not set up on this server (QBO_CLIENT_ID / QBO_CLIENT_SECRET / QBO_REDIRECT_URI).' });
     return;
   }
   const nonce = crypto.randomBytes(16).toString('hex');
-  setSetting(STATE_KEY, { nonce, ts: Date.now() });
+  setSetting(STATE_KEY, { nonce, ts: Date.now(), user_id:req.user!.id, session_hash:tokenDigest(req.token!), credential_stamp:stepUpCredentialStamp(req.user!.id) });
+  setSetting(GENERATION_KEY,nonce);
   res.json({ url: authUrl(`${currentSlug()}.${nonce}`) });
 });
 
 // POST /api/quickbooks/disconnect
 // QuickBooks is reached from the cloud only (D8).
-router.post('/disconnect', requirePermission('users.manage'), syncClass('online'), (_req, res) => {
+router.post('/disconnect', requirePermission('users.manage'), syncClass('online'), requireFreshVerification, (_req, res) => {
   disconnect();
   res.json({ ok: true });
 });
 
 // PUT /api/quickbooks/auto-push  { enabled: boolean }
-router.put('/auto-push', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+router.put('/auto-push', requirePermission('users.manage'), syncClass('online'), requireFreshVerification, (req, res) => {
   const { enabled } = parseBody(z.object({ enabled: z.boolean() }), req.body);
   setAutoPush(enabled);
   res.json({ ok: true, auto_push: enabled });

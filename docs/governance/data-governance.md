@@ -21,3 +21,12 @@ For each category record controller/purpose/lawful basis, data fields, source/re
 Use a restricted case register: case ID, receipt, requester/workspace, request type, jurisdiction/deadline, proportionate verification result (not ID document copies), assigned owner, systems searched, third-party/confidential exclusions, legal holds, decision/reason, response date, processor/device/backup follow-up and approval evidence. Confirm authority before export. Redact credentials, other users and anonymous authorship. Encrypt exports, deliver via an authenticated expiring channel, and delete temporary packages. Track escalation before the applicable statutory deadline; deadlines require jurisdiction-specific approval.
 
 For approved erasure, test a scoped plan on a disposable restore, preserve financial/audit duties, review foreign keys and attachment references, obtain independent review, execute against the correct tenant, verify every data location and retain a minimal suppression record. Reapply approved erasures after disaster restoration until backup expiry. Legal holds override routine cleanup with recorded justification. There is no universal automated erasure endpoint in this release.
+
+## Administrative verification metadata (2026-10-16)
+
+Tenant `session_stepups` holds session-token digests, user IDs, credential fingerprints and server
+verification times; no raw passwords, OTPs or recovery codes. Proof older than one day is pruned
+when fresh proof is written; session deletion cascades its row. It is node-local and stripped
+from sanitized node snapshots. QuickBooks pending OAuth state binds digested session + account
+fingerprint for a ten-minute one-use connection transaction. Include these local security records
+in retention/access reviews; they are not a new general legal retention promise.

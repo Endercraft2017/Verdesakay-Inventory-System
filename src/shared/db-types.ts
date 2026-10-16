@@ -1552,6 +1552,13 @@ export interface SemiBuildConversions {
   created_at: Generated<string>;
 }
 
+export interface SessionStepups {
+  token_hash: string;
+  user_id: number;
+  credential_stamp: string;
+  verified_at: string;
+}
+
 export interface Sessions {
   token: string;
   user_id: number;
@@ -1904,6 +1911,7 @@ export interface DB {
   sales_return_dispositions: SalesReturnDispositions;
   sales_returns: SalesReturns;
   semi_build_conversions: SemiBuildConversions;
+  session_stepups: SessionStepups;
   sessions: Sessions;
   settings: Settings;
   shifts: Shifts;

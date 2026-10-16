@@ -1,0 +1,13 @@
+
+> verdesakay-mobile-app@0.1.0 sync
+> node build-web.mjs && cap sync android
+
+www/ ready: 7.7 MB
+✔ Copying web assets from www to android/app/src/main/assets/public in 38.66ms
+✔ Creating capacitor.config.json in android/app/src/main/assets in 923.99μs
+✔ copy android in 65.15ms
+✔ Updating Android plugins in 613.08μs
+[info] Found 1 Capacitor plugin for android:
+       @aparajita/capacitor-secure-storage@8.0.1
+✔ update android in 24.54ms
+[info] Sync finished in 0.11s

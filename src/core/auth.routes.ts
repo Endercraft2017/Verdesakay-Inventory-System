@@ -8,6 +8,7 @@ import { Router, type Request, type Response } from 'express';
 import { hashPassword, verifyPassword, verifyPasswordForLogin } from '../shared/password-hash';
 import rateLimit from 'express-rate-limit';
 import { PasswordWorkBusyError } from '../shared/password-work';
+import { markFreshVerification, stepUpCredentialStamp, hasLiveVerificationSession } from '../shared/step-up';
 import { db, queryOne, queryAll, run, newToken, DEFAULT_TENANT } from '../shared/db';
 import {
   createSession, destroySession, requireAuth, endUserSessions, endSessionBySid, listUserSessions,
@@ -111,6 +112,7 @@ function signIn(user: UserRow, req: Request, shared: boolean, res: Response) {
   let overrides: Record<string, boolean> = {};
   try { overrides = JSON.parse(user.permission_overrides) as Record<string, boolean>; } catch { /* use empty */ }
   const permissions = user.password_change_required ? [] : userPermissions(user.role, overrides);
+  if (!user.password_change_required && !mfaSetupRequired({id:user.id,role:user.role,permissions})) markFreshVerification(user.id,token);
   return {
     ...(browserMode(req) ? { browser_session: true } : { token }),
     user: {
@@ -147,6 +149,27 @@ const mfaChangeLimiter = rateLimit({
   message: { error: 'Too many security verification attempts. Try again in fifteen minutes.' },
 });
 
+// POST /api/auth/step-up — private proof; no factor or session material is returned.
+router.post('/step-up',requireAuth,syncClass('online'),mfaChangeLimiter,async(req,res,next)=>{
+  try {
+    const input=parseBody(passwordAndCode.partial({code:true}).strict(),req.body);
+    if (!req.token) { res.status(403).json({error:'Sign in directly on the cloud to verify account changes.'});return; }
+    const userId=req.user!.id, stamp=stepUpCredentialStamp(userId);
+    const row=queryOne<{password_hash:string;active:number}>('SELECT password_hash,active FROM users WHERE id=?',userId);
+    const checked=row ? await verifyPasswordForLogin(input.password,row.password_hash,false) : {valid:false};
+    const current=queryOne<{password_hash:string;active:number}>('SELECT password_hash,active FROM users WHERE id=?',userId);
+    if (!checked.valid || !current || current.active!==1 || current.password_hash!==row?.password_hash || stepUpCredentialStamp(userId)!==stamp) {
+      res.status(403).json({error:'Password or authenticator code is incorrect.'});return;
+    }
+    if (!hasLiveVerificationSession(userId,req.token)) {res.status(401).json({error:'Session expired. Sign in again.'});return;}
+    if (mfaApplies() && mfaEnabled(userId) && (!input.code || !checkMfaCode(userId,input.code))) {
+      res.status(403).json({error:'Password or authenticator code is incorrect.',mfa_required:true});return;
+    }
+    if (!markFreshVerification(userId,req.token)) {res.status(401).json({error:'Session expired. Sign in again.'});return;}
+    res.set('Cache-Control','no-store').json({ok:true});
+  } catch(error) {if(error instanceof PasswordWorkBusyError)res.set('Retry-After','5');next(error);}
+});
+
 function passwordMatches(userId: number, password: string): boolean {
   const row = queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = ?', userId);
   return !!row && verifyPassword(password, row.password_hash);
@@ -176,6 +199,7 @@ router.post('/mfa/enable', requireAuth, syncClass('online'), mfaChangeLimiter, (
   const codes = enableMfa(req.user!.id, code, req.token!);
   if (!codes) { res.status(400).json({ error: 'That code is not right. Check the time on your phone and try the newest code.' }); return; }
   endUserSessions(req.user!.id, 'revoked', req.token);
+  markFreshVerification(req.user!.id,req.token!);
   res.set('Cache-Control', 'no-store').json({ ok: true, recovery_codes: codes });
 });
 
@@ -192,6 +216,7 @@ router.post('/mfa/disable', requireAuth, syncClass('online'), mfaChangeLimiter, 
   }
   disableMfa(req.user!.id);
   endUserSessions(req.user!.id, 'revoked', req.token);
+  markFreshVerification(req.user!.id,req.token!);
   res.json({ ok: true });
 });
 
@@ -202,7 +227,9 @@ router.post('/mfa/recovery-codes', requireAuth, syncClass('online'), mfaChangeLi
     res.status(400).json({ error: 'Password or code is incorrect' });
     return;
   }
-  res.set('Cache-Control', 'no-store').json({ recovery_codes: regenerateRecoveryCodes(req.user!.id) });
+  const codes = regenerateRecoveryCodes(req.user!.id);
+  markFreshVerification(req.user!.id,req.token!);
+  res.set('Cache-Control', 'no-store').json({ recovery_codes: codes });
 });
 
 // POST /api/auth/logout

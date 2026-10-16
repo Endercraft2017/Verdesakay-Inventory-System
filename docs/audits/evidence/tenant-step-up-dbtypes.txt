@@ -1,0 +1,5 @@
+
+> otom@1.0.0 db:types
+> tsx scripts/gen-db-types.ts
+
+Wrote src/shared/db-types.ts

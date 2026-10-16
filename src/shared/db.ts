@@ -643,6 +643,12 @@ function createSchema(): void {
     -- AI Assistant chat history: persists per user across sessions/reloads until they
     -- clear it (DELETE /api/ai/messages). steps is the tool-call trail for an assistant
     -- turn (JSON), kept so record/report links still work after a reload.
+    CREATE TABLE IF NOT EXISTS session_stepups (
+      token_hash TEXT PRIMARY KEY REFERENCES sessions(token) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      credential_stamp TEXT NOT NULL,
+      verified_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS mfa_enrollments (
       user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       session_hash TEXT NOT NULL,

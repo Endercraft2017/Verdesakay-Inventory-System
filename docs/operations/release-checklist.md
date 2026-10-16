@@ -6,6 +6,7 @@ Release/commit [OWNER]; date/time [OWNER]; operator/reviewer [OWNER]; environmen
 - [ ] Confirm NODE_ENV=production, supported Node version, private environment secrets, fresh bootstrap password and distinct staging/production credentials.
 - [ ] Verify external HTTPS, trusted proxy hops, Secure/HttpOnly/SameSite cookies, CSP/HSTS and blocked direct storage/DB access; test owner-console restrictions.
 - [ ] Verify tenant isolation and least-privilege access with actual supported clients; record MFA/native storage disposition and historical credential revocation.
+- [ ] In staging, verify recent password + enabled-factor confirmation for tenant account/role/policy, office-PC trust and integration settings; cancellation must leave the action unsaved. Verify console passkeys with a separate backup before requiring enrollment. See [tenant-step-up.md](tenant-step-up.md).
 - [ ] Confirm provider billing caps, alerts and approved data-processing terms before enabling AI/integrations; verify production AI cannot mutate business records.
 - [ ] Capture encrypted recoverable backup of every affected DB and uploads; verify offsite copy/key availability and a recent successful full restore drill.
 - [ ] Review schema compatibility, tenant migration plan, write/sync reconciliation and rollback trigger. Record the compatible rollback application/data snapshot.

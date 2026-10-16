@@ -1,0 +1,62 @@
+# Engineering handoff and release hold — 2026-10-16
+
+Work is on `production`, derived from `restructure/module-architecture`; it is not deployed.
+The attached handbook is an audit reference. Current whole-control status remains 36 PASS,
+58 FAIL, 126 UNVERIFIED and 13 N/A across 233 checks. A test pass is not release approval.
+See the [scorecard](production-scorecard.md) for severity, scenarios and resolutions and
+[validation results](validation-results.md) for exact completed checks.
+
+## Delivered in the authentication follow-up
+
+- Controlled assisted recovery suitable for a sole support operator: established-contact checks,
+  advance notice and cancellation, enforced 24-hour wait, expiring one-use link, session revocation
+  and mandatory factor re-enrollment. No master bypass or immediate support impersonation.
+- Owner-console WebAuthn/passkeys and recent proof before console writes. Windows Hello provides
+  a no-phone option; an independent backup authenticator and mandatory-policy rollout remain.
+- Stronger new-password validation, versioned native scrypt and bounded asynchronous public login;
+  stale credential/account results cannot issue sessions after a concurrent reset/deactivation.
+- Native-only OS-vault bridge with fail-closed initialization and logout/server-change protection;
+  company/actor-bound queue replay and no native bearer mirror in queue metadata. Legacy unbound
+  credentials require sign-in and legacy unbound work stays for review. Android backup exclusions
+  and reproducible web/plugin sync are included; an actual APK/device is not validated.
+- Recent password + enabled-factor verification for tenant accounts/roles/permission/security-policy,
+  office-PC trust and mail/AI/accounting configuration. Accessible confirmation cancels safely and
+  retries once under the original company/session. Pending accounting authorization is bound to
+  the initiating live session/account and generation across token exchange.
+- Operational/security runbooks, data inventory and draft policy/contract pack. Drafts require
+  approval; automated and selected browser coverage do not establish all-screen accessibility.
+
+## Engineering work that remains engineering work
+
+The owner is not being asked to implement these. Prioritize from the scorecard and reproduce each
+applicable issue before changing behavior:
+
+| Priority | Work | Completion evidence needed |
+|---|---|---|
+| High | Complete remaining sensitive-business-action verification with the offline authority model | Explicit action inventory, server enforcement and replay/role/race tests; AUTHZ-15 remains open |
+| High | Uniform API validation/error/redaction and privacy export/retention/erasure lifecycle | Route-by-route evidence; tenant-safe restore/copy/integration tests; approved retention scope |
+| High | AI privacy/adversarial evaluation, interrupted audit outcomes and hard spend allocation | Isolation/leakage/abuse/cancellation tests and real provider budget acceptance |
+| High | Native/Electron distribution and supported-client acceptance | APK/installer builds, signed artifacts, actual Windows/Android vault/backup/logout/upgrade checks |
+| High | Integration lifecycle concurrency, including token refresh/disconnect and in-flight accounting exports | Provider sandbox tests with delayed responses, reconnect/disconnect and reconciliation; current tests mock the provider |
+| High | Resolve or explicitly disposition vulnerable dependencies and historical-secret gates | Upstream/compatible fix or approved expiring risk record; verified revocation without exposing the old bearer |
+| Medium–High | Remaining resilience, concurrency, accessibility, observability and handbook requirements | Risk-ordered evidence for applicable controls; architectural/commercial choices agreed explicitly |
+
+These are outstanding limitations, not assertions that all missing engineering is finished.
+Read-only scans and the local test suite cannot prove production operation or independent assurance.
+
+## Owner participation comes last
+
+After engineering/staging preparation, the owner needs to:
+
+1. Enroll Windows Hello plus an independent backup for the console, and the selected authenticator
+   for the tenant administrator; save recovery codes privately and test sign-in before enforcement.
+2. Approve support identity-verification rules, business/privacy/contract details and acceptable
+   downtime/data-loss targets. Have the actual legal terms reviewed for the applicable jurisdiction.
+3. Use the hosting/provider accounts for staging/production separation, credential rotation and
+   verified historical-session revocation; establish branch checks, backup protection and alert access.
+4. Participate in supported-device checks and witness the isolated full restore/rollback and real
+   email/alert tests before a release decision. No passwords, keys or recovery codes belong in chat.
+
+Detailed steps are in [OWNER-ACTIONS.md](../OWNER-ACTIONS.md). Hosting, DNS, live credentials,
+production databases and customer messages were not changed by this code follow-up. Keep release
+on hold until the applicable blockers have evidence or a properly approved, expiring exception.

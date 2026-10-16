@@ -1314,3 +1314,13 @@ MFA/passkey challenge or session. Concurrent credential/status changes refuse th
 A saturated/expired work queue responds 503 with Retry-After and issues no session. The queue
 is shared across console/tenants per process; it never changes tenant scope. Internal synchronous
 writers and real deployment load remain separate availability concerns.
+
+### Tenant administrative verification (2026-10-16)
+
+Permission + online execution check → live session's five-minute credential fingerprint → action,
+or 403 `step_up_required` → shared password/existing-factor dialog → bounded async verification →
+recheck original actor/session/credentials → consume factor → server-stamped proof → retry exact
+action once under unchanged company/session. Cancel/failure does not execute the original action.
+No proof replicates to office PCs. Explicit factor/password recovery requirements still apply.
+QuickBooks connect additionally binds live actor/session + generation across its ten-minute public
+callback and async token exchange. Other business workflows retain their existing authority rules.

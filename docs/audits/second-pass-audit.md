@@ -149,3 +149,13 @@ refused; Android app backup/transfer exclusions and plugin wiring are included. 
 APK/device extraction and production/LAN TLS are **unverified**, so MOBILE-01 moves from FAIL to
 UNVERIFIED rather than PASS. The scorecard now has 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A;
 these counts do not close the other release gates or represent complete production approval.
+
+## Tenant administration follow-up — 2026-10-16
+
+The [tenant verification runbook](../operations/tenant-step-up.md) supersedes the earlier statement
+that accounts/roles, security policy, office-PC trust and integration configuration lack fresh
+verification. These actions now require session-bound recent proof; the browser dialog verifies
+password and an enabled factor without storing either. Pending QuickBooks authorization cannot
+complete after initiating-session/account authorization changes or disconnect. Remaining business
+action coverage, physical-device/staging acceptance and integration lifecycle concurrency are
+still open. AUTHZ-15 remains FAIL; the whole-control scorecard totals are unchanged.

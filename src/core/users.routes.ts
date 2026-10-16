@@ -21,6 +21,7 @@ import { ALL_PERMISSIONS, STAFF_PERMISSIONS } from '../shared/permissions';
 import { listRoles, getRole } from '../shared/roles';
 import type { UserRow, Department, Role } from '../shared/types';
 import { syncClass } from '../sync';
+import { requireFreshVerification, preserveFreshVerification } from '../shared/step-up';
 import { z } from 'zod';
 import { mfaApplies, mfaEnabled, mfaUserIds, securityPolicy, setSecurityPolicy, checkMfaCode } from '../shared/mfa';
 
@@ -77,13 +78,14 @@ router.get('/security-policy', requirePermission('users.manage'), (req, res) => 
 // PUT /api/users/security-policy — { require_mfa_privileged }. Switching the requirement on is
 // refused until the person doing it uses two-step sign-in themselves, so the workspace can't be
 // locked out by its own admin.
-router.put('/security-policy', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+router.put('/security-policy', requirePermission('users.manage'), syncClass('online'), requireFreshVerification, (req, res) => {
   const { require_mfa_privileged } = parseBody(z.object({ require_mfa_privileged: z.boolean() }), req.body);
   if (require_mfa_privileged && !mfaEnabled(req.user!.id)) {
     res.status(409).json({ error: 'Turn on two-step sign-in for your own account first (Account → Two-step sign-in).' });
     return;
   }
   setSecurityPolicy({ require_mfa_privileged });
+  preserveFreshVerification(req.user!.id,req.token!);
   res.json({ ok: true, require_mfa_privileged });
 });
 
@@ -107,7 +109,7 @@ router.post('/:id/mfa/reset', requirePermission('users.manage'), syncClass('onli
 // POST /api/users — create an account. hr.manage (without users.manage) may also create one —
 // the employee form's "create account" shortcut — but only with a staff-level role (one whose
 // permissions are all in STAFF_PERMISSIONS; see shared/roles.ts).
-router.post('/', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('online'), (req, res) => {
+router.post('/', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('online'), requireFreshVerification, (req, res) => {
   const input = parseBody(createUserSchema, req.body);
   const role = getRole(input.role);
   if (!role) {
@@ -150,7 +152,7 @@ router.post('/', requireAnyPermission(['users.manage', 'hr.manage']), syncClass(
 });
 
 // PUT /api/users/:id — update account details
-router.put('/:id', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+router.put('/:id', requirePermission('users.manage'), syncClass('online'), requireFreshVerification, (req, res) => {
   const id = Number(req.params.id);
   const user = queryOne<UserRow>('SELECT * FROM users WHERE id = ?', id);
   if (!user) {
@@ -231,7 +233,7 @@ router.get('/:id/sessions', requirePermission('users.manage'), (req, res) => {
 });
 
 // POST /api/users/:id/sessions/revoke-all — sign this account out on every device.
-router.post('/:id/sessions/revoke-all', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+router.post('/:id/sessions/revoke-all', requirePermission('users.manage'), syncClass('online'), requireFreshVerification, (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM users WHERE id = ?', id)) {
     res.status(404).json({ error: 'User not found' });
@@ -242,7 +244,7 @@ router.post('/:id/sessions/revoke-all', requirePermission('users.manage'), syncC
 });
 
 // POST /api/users/:id/sessions/:sid/revoke — sign this account out of one device.
-router.post('/:id/sessions/:sid/revoke', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+router.post('/:id/sessions/:sid/revoke', requirePermission('users.manage'), syncClass('online'), requireFreshVerification, (req, res) => {
   if (!endSessionBySid(Number(req.params.id), String(req.params.sid), 'revoked')) {
     res.status(404).json({ error: 'Session not found or already ended' });
     return;
@@ -283,7 +285,7 @@ router.get('/:id/access', requireAnyPermission(['users.manage', 'hr.manage']), (
 
 // PUT /api/users/:id/permissions — save sparse permission overrides for a user. An HR-only
 // caller may only edit staff-role accounts, and only change STAFF_PERMISSIONS keys.
-router.put('/:id/permissions', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('online'), (req, res) => {
+router.put('/:id/permissions', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('online'), requireFreshVerification, (req, res) => {
   const id = Number(req.params.id);
   const user = queryOne<{ id: number; role: Role; permission_overrides: string }>(
     'SELECT id, role, permission_overrides FROM users WHERE id = ?', id);

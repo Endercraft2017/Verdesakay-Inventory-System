@@ -427,9 +427,9 @@
       "severity": "Medium",
       "requirement": "High-risk actions use step-up authentication or contextual signals (new device, unusual location, impossible travel).",
       "status": "FAIL",
-      "evidence": "Tenant MFA and controlled assisted recovery exist. Enrolled console operators now require user-verified WebAuthn login and fresh proof within five minutes for console writes. Tenant-wide high-risk step-up is incomplete; console enrollment policy must still be enabled and verified in staging.",
-      "scenario": "An attacker with a tenant privileged session can perform sensitive operations that do not yet require fresh verification. Unenrolled console accounts remain password-only until enforcement is enabled.",
-      "fix": "Complete tenant-sensitive-action verification and enrollment-policy protection; stage console enrollment with independent backup keys and enable the require-passkeys policy. See operations/console-passkeys.md."
+      "evidence": "Tenant account/role/permission/MFA-policy, node-trust and mail/AI/accounting configuration changes now require session-bound verification within five minutes; password and enabled factor are checked. OAuth connection callbacks bind the original live actor/session. Enrolled console operators require user-verified WebAuthn and fresh console-write proof. Other high-risk business flows and real enrollment/staging acceptance remain incomplete. See operations/tenant-step-up.md and operations/console-passkeys.md.",
+      "scenario": "A privileged session can still reach sensitive business actions outside the protected administrative scope. Unenrolled console accounts remain password-only until policy enforcement is enabled.",
+      "fix": "Inventory remaining financial/export/department and other sensitive actions and apply proportionate server-side verification with offline-authority design and regression evidence. Complete real-device enrollment and staging acceptance; enable console passkey and tenant privileged-MFA policies after backup/recovery tests."
     },
     {
       "id": "SECRET-01",

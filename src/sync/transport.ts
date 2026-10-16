@@ -31,6 +31,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { activeDb, tenantStore } from '../shared/db';
 import { requireAuth, requirePermission } from '../shared/auth';
+import { requireFreshVerification } from '../shared/step-up';
 import { acceptCommand, pullFor, snapshotForNode } from './authority';
 import { linkStatusOf } from './client';
 import { enableSync, isAuthority, isCloudOnlySetting, isNodeLocalTable, syncConfigOf } from './node';
@@ -96,7 +97,7 @@ router.use(failoverRoutes(nodeAuth));
 
 // ---- enrolment (admin) ----
 
-router.post('/nodes', requireAuth, requirePermission('users.manage'), (req, res) => {
+router.post('/nodes', requireAuth, requirePermission('users.manage'), requireFreshVerification, (req, res) => {
   const name = String(req.body?.name ?? '').trim();
   if (!name || name.length > 80) {
     res.status(400).json({ error: 'Give the PC a name (up to 80 characters), e.g. "Warehouse desk".' });
@@ -176,7 +177,7 @@ router.get('/nodes', requireAuth, requirePermission('users.manage'), (_req, res)
 });
 
 // Whether a PC votes in its site's host elections (a laptop that comes and goes shouldn't, §31).
-router.put('/nodes/:no/voting', requireAuth, requirePermission('users.manage'), (req, res) => {
+router.put('/nodes/:no/voting', requireAuth, requirePermission('users.manage'), requireFreshVerification, (req, res) => {
   const conn = activeDb();
   if (syncConfigOf(conn)?.role !== 'cloud') {
     res.status(404).json({ error: 'No such PC' });
@@ -190,7 +191,7 @@ router.put('/nodes/:no/voting', requireAuth, requirePermission('users.manage'), 
   res.json({ ok: true });
 });
 
-router.post('/nodes/:no/revoke', requireAuth, requirePermission('users.manage'), (req, res) => {
+router.post('/nodes/:no/revoke', requireAuth, requirePermission('users.manage'), requireFreshVerification, (req, res) => {
   const conn = activeDb();
   if (syncConfigOf(conn)?.role !== 'cloud') {
     res.status(404).json({ error: 'No such PC' });

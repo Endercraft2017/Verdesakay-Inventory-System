@@ -2,7 +2,7 @@
 
 Source cutoff: `restructure/module-architecture` at
 `495db101c3efbe4e4546221fed2db3af233b00aa`, merged into `production` with the audit fixes.
-Earlier reports describe older trees. The verification summary in
+Current delivery scope and remaining work: [engineering-handoff.md](engineering-handoff.md). Earlier reports describe older trees. The verification summary in
 `evidence/second-pass-verification.json` describes the original second-pass run.
 
 ## Assisted recovery follow-up
@@ -197,3 +197,27 @@ passed 2 files / 13 tests. Typecheck and diff/syntax checks passed. Native asset
 mobile npm audit results remain as documented above; no live deployment, physical-device,
 production-capacity or full-history credential-revocation claim follows from these local passes.
 Tenant-wide administrative step-up and the remaining audit controls still need separate evidence.
+
+## Tenant administrative verification — 2026-10-16
+
+A fresh complete regression passed **295 files / 2,950 tests**, with no failures or skips
+(539.75 seconds). All **12 Playwright scenarios passed** (40.5 seconds), including the actual
+security dialog at 390×844, keyboard focus/Escape, cancellation without mutation, failed password
+without recovery-code consumption, successful retry and one-use-code replay rejection. The dialog
+axe scan included WCAG 2.2 AA tags; this does not establish all-screen accessibility.
+
+The final focused account/role/security/integration/OAuth/client boundaries passed **3 files /
+24 tests**. TypeScript, generated schema types, JavaScript syntax, diff checks and staged Gitleaks
+passed. Native web bundling and Capacitor Android plugin sync passed; no APK build or real-device
+Keystore/Windows Hello acceptance was performed. The only source cleanup after the full run began
+was whitespace-only formatting of parameterized SQL, resolving a secret-scanner false positive
+without an ignore rule; final focused checks and TypeScript cover that exact formatting.
+
+Evidence: `evidence/tenant-step-up-{full,playwright,focused,baseline,typecheck,dbtypes,mobile-sync,secrets}.txt`.
+The baseline account/MFA/recovery/role/session suite passed 6 files / 56 tests. OAuth tests use the
+mock provider; they prove actor/session invalidation, disconnect/new-generation cancellation and
+no credential save after authorization changes during exchange, not real Intuit operation or all
+refresh/export concurrency. No new ZAP, live load or dependency scan was needed for this dependency-
+unchanged increment; earlier findings remain open. The [runbook](../operations/tenant-step-up.md)
+and [handoff](engineering-handoff.md) state protected scope and remaining engineering/owner work.
+AUTHZ-15 remains open; passing application tests does not clear release/security gates.

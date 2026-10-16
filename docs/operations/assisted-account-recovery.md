@@ -62,10 +62,12 @@ or weaken MFA to avoid the wait. A failed or expired request requires a new veri
 If the process stops in `notifying` or `issuing`, investigate delivery and audit state before
 starting another case; do not manually mark it approved.
 
-Console fresh verification currently uses passwords; Windows Hello/passkeys for console
-operators are still unfinished. Advance notice, customer cancellation and the waiting period
-reduce risk but do not certify phishing-resistant operator authentication. Console access
-hardening remains a release gate.
+For enrolled console operators, console writes also require a user-verified passkey within
+five minutes; the recovery action still requires its explicit current password and verification
+reference. Windows Hello and a separate backup key are implemented; real-device enrollment and
+mandatory-policy rollout remain pending. Follow [console-passkeys.md](console-passkeys.md).
+Advance notice, cancellation and the waiting period complement those controls; they do not
+prove the human identity check or legal authority.
 
 ## Recovery link and completion
 

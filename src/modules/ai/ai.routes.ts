@@ -31,6 +31,7 @@ import { enforceQuota, recordAiCall } from '../../platform/quota';
 import { parseBody, aiConfigSchema } from '../../shared/validation';
 import type { AuthUser } from '../../shared/types';
 import { syncClass } from '../../sync';
+import { requireFreshVerification } from '../../shared/step-up';
 
 const router = Router();
 router.use(requireAuth);
@@ -153,13 +154,13 @@ router.get('/config', requirePermission('users.manage'), (_req, res) => {
 
 // PUT /api/ai/config — { model?, base_url?, api_key?, token_cap? } (api_key '' clears → env
 // fallback; token_cap 0 = unlimited)
-router.put('/config', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+router.put('/config', requirePermission('users.manage'), syncClass('online'), requireFreshVerification, (req, res) => {
   saveAiConfig(parseBody(aiConfigSchema, req.body));
   res.json(getAiConfig());
 });
 
 // POST /api/ai/reset-usage — zero the running token counter (doesn't touch the cap itself)
-router.post('/reset-usage', requirePermission('users.manage'), syncClass('online'), (_req, res) => {
+router.post('/reset-usage', requirePermission('users.manage'), syncClass('online'), requireFreshVerification, (_req, res) => {
   resetTokenUsage();
   res.json(getAiConfig());
 });

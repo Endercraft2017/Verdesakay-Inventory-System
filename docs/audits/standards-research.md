@@ -116,3 +116,15 @@ queue, stale-credential rechecks and explicit 503/Retry-After backpressure. Exis
 compatibility yields cooperatively. See [the work-budget runbook](../operations/password-work-budget.md)
 for tests and limits: authenticated/CLI synchronous writers, per-process request limits and
 real hardware capacity are not declared resolved by this increment.
+
+## Administrative reauthentication follow-up — 2026-10-16
+
+Rechecked OWASP Authentication (Require Re-authentication for Sensitive Features) and MFA guidance.
+Implemented session-bound recent password + existing-factor verification for account/role/policy,
+node-trust and integration-configuration writes, with a shared accessible confirmation and no
+credential persistence. Five minutes is a local risk decision, not a universal standards interval.
+OAuth state additionally binds the live initiating authorization across token exchange. See
+`operations/tenant-step-up.md` for exact scope. Earlier baseline observations above are historical:
+password bounds, console passkeys, native vault adapter and this administrative scope now have
+code/tests. Deployment enforcement, hardware acceptance, remaining business actions and complete
+ASVS/NIST assurance are still unverified; no certification or complete conformance is claimed.

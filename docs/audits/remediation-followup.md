@@ -1,3 +1,5 @@
+> Historical remediation snapshot. The [current engineering handoff](engineering-handoff.md), [scorecard](production-scorecard.md) and latest [validation section](validation-results.md) supersede the older counts and authentication limitations below.
+
 # Production remediation and handoff — 16 October 2026
 
 The owner authorized implementation after the gap/severity rundown. Changes remain on `production`, based on `restructure/module-architecture`. The uploaded guide is an audit reference; its commentary/transcripts were not treated as user instructions or permission for external deployment. This is conditional readiness: local checks cannot establish the live operating environment or legal approval.

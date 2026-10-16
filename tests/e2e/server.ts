@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+import { stepUpUsername, stepUpPassword, stepUpSessionToken, stepUpRecoveryCode } from './step-up-fixture';
 import { recoveryUsername, recoveryFixtureToken, cancellationId, cancellationNonce } from './recovery-fixture';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vds-playwright-'));
 Object.assign(process.env, {
@@ -20,6 +21,16 @@ const db = await import('../../src/shared/db');
 db.init();
 const { hashPassword } = await import('../../src/shared/password-hash');
 const { credentialStamp } = await import('../../src/shared/account-recovery');
+const { encryptSecret } = await import('../../src/shared/secrets');
+const { newTotpSecret } = await import('../../src/shared/totp');
+const stepUpUser=Number(db.run("INSERT INTO users(username,full_name,role,password_hash) VALUES(?,?,'admin',?)",stepUpUsername,'Browser verification owner',hashPassword(stepUpPassword)).lastInsertRowid);
+db.run("INSERT INTO sessions(token,sid,user_id,expires_at) VALUES(?,?,?,datetime('now','+1 hour'))",db.tokenDigest(stepUpSessionToken),randomUUID(),stepUpUser);
+db.run("INSERT INTO user_mfa(user_id,secret,enabled_at) VALUES(?,?,datetime('now'))",stepUpUser,encryptSecret(newTotpSecret()));
+db.run('INSERT INTO user_mfa_recovery(user_id,code_hash) VALUES(?,?)',stepUpUser,createHash('sha256').update(stepUpRecoveryCode).digest('hex'));
+const { markFreshVerification } = await import('../../src/shared/step-up');
+markFreshVerification(stepUpUser,stepUpSessionToken);
+db.run("UPDATE session_stepups SET verified_at=datetime('now','-6 minutes') WHERE token_hash=?",db.tokenDigest(stepUpSessionToken));
+
 const oldHash = hashPassword(randomUUID());
 const recovered = db.run("INSERT INTO users(username,full_name,password_hash,role,email) VALUES(?,?,?,'warehouse','browser-recovery@example.test')", recoveryUsername, 'Browser recovery', oldHash);
 const recoveredId = Number(recovered.lastInsertRowid);

@@ -1486,3 +1486,14 @@ process with ten-second queue expiry. `password-hash.ts.verifyPasswordForLogin` 
 native scrypt and cooperative legacy bcrypt, with conditional upgrade support. Tenant/console
 public login re-read credential/account state after awaiting and return 503/Retry-After when
 busy. Synchronous internal/authenticated writers remain; see `operations/password-work-budget.md`.
+
+### Tenant administrative verification (2026-10-16)
+
+`shared/step-up.ts` owns live-session proof, five-minute freshness and credential/factor/permission
+fingerprints. `auth.routes.ts` issues proof after completed login or bounded async password +
+enabled-factor verification. Accounts/roles, node trust and mail/AI/QuickBooks configuration use
+the middleware after permission/online checks. `public/js/lib/step-up.js` owns the shared accessible
+confirmation; the API retries once only under the original server/session. The node-local
+`session_stepups` table is excluded from sync/sanitized snapshots; mobile shell cache is v111.
+QuickBooks callbacks bind the original live actor/session and a one-use generation before saving
+exchanged credentials. See `operations/tenant-step-up.md` for exact scope and remaining limitations.

@@ -36,6 +36,7 @@ const API = (() => {
     try { return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
   }
   function setToken(t, opts) {
+    if (window.AuthStepUp) window.AuthStepUp.cancel();
     if (window.VDS_NATIVE) {
       remembered.clear();
       if (!window.VdsNativeCredentials) return Promise.reject(new Error('Secure sign-in storage is unavailable. Reinstall the updated app.'));
@@ -64,6 +65,7 @@ const API = (() => {
     try { return !!(sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY)); } catch (e) { return true; }
   }
   function clearToken() {
+    if (window.AuthStepUp) window.AuthStepUp.cancel();
     ++sessionEpoch; issuedSessions.clear();
     remembered.clear();
     try { localStorage.removeItem(SESSION_KEY); sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
@@ -204,6 +206,14 @@ const API = (() => {
       if (data && typeof data === 'object') {
         try { Object.defineProperty(data, '__syncCommand', { value: res.headers.get('X-Sync-Command') || 'local', enumerable: false }); } catch (e) { /* frozen */ }
       }
+    }
+
+    if (res.status === 403 && data && data.step_up_required && path !== '/auth/step-up' && !(opts && opts.stepUpRetried)) {
+      if (!window.AuthStepUp) throw new Error('Reload the updated app to verify this action.');
+      const stillCurrent = () => sessionEpoch === requestEpoch && serverScope() === requestScope;
+      await window.AuthStepUp.verify({ mfaRequired: !!data.mfa_required, server: requestScope, stillCurrent });
+      if (!stillCurrent()) throw new Error('Sign-in or company changed. Start again.');
+      return request(method, path, body, isForm, Object.assign({}, opts, { stepUpRetried: true, expectedServer: requestScope }));
     }
 
     if (!res.ok) {
