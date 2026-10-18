@@ -41,6 +41,13 @@ db.run("INSERT INTO account_recoveries(token_hash,user_id,requested_by,approved_
 const { platformDb } = await import('../../src/platform/platform');
 platformDb().exec('CREATE TABLE platform_recovery_approvals(id TEXT PRIMARY KEY,cancel_hash TEXT,slug TEXT,state TEXT,expires_at TEXT)');
 platformDb().prepare("INSERT INTO platform_recovery_approvals VALUES(?,?,'default','pending',datetime('now','+48 hours'))").run(cancellationId, credentialStamp(cancellationNonce));
+// A synthetic interrupted/unknown export for the actual administrator status screen.
+const exportOrder=Number(db.run("INSERT INTO orders(number,type,customer_name,total) VALUES('AUTO-E2E-ATTENTION','sale','Synthetic export customer',10)").lastInsertRowid);
+db.run("INSERT INTO qbo_export_jobs(connection_id,company_key,order_id,state,error_code) VALUES(?, 'sandbox:111',?,'blocked','outcome_unknown')",randomUUID(),exportOrder);
+const qbo=await import('../../src/modules/quickbooks/quickbooks');
+await qbo.completeConnect('synthetic-browser-code','111');qbo.setAutoPush(true);
+const safeRetryOrder=Number(db.run("INSERT INTO orders(number,type,customer_name,total) VALUES('AUTO-E2E-SAFE-RETRY','sale','Synthetic retry customer',10)").lastInsertRowid);
+db.run("INSERT INTO qbo_export_jobs(connection_id,company_key,order_id,state,error_code) VALUES(?, 'sandbox:111',?,'blocked','retry_limit')",qbo.qboExportScope()!.connection_id,safeRetryOrder);
 const { createApp } = await import('../../src/app');
 const { attachWebSocket } = await import('../../src/shared/ws');
 const server = createApp().listen(Number(process.env.E2E_PORT || 4173), process.env.E2E_HOST || '127.0.0.1');

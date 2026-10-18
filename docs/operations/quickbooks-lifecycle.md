@@ -55,10 +55,10 @@ receipts support recovery; conflicting/unknown outcomes require reconciliation.
 `qbo_export_locks` protects the entire order operation, including party lookup and link creation,
 so simultaneous different payloads cannot both take the create path. A normal completion/failure
 releases its own lock. A process crash retains it for investigation; age alone does not unlock it.
-The existing accounting mapping/tax/default-account beta limitations still apply. Background
-auto-push is best effort: the order-save response does not confirm remote export, and failures
-(including an active-export conflict) are logged. Durable scheduling/coalescing of later edits,
-user-visible export failure status and operational alert acceptance remain engineering work.
+The existing accounting mapping/tax/default-account beta limitations still apply. The [durable automatic-export follow-up](quickbooks-auto-exports.md) now adds transactional
+intent, version coalescing, bounded safe retries and administrator status. Saving still does not
+confirm remote export. Interrupted/uncertain outcomes, monitoring and provider acceptance remain
+separate obligations.
 
 ## HTTP retry-cache boundary
 

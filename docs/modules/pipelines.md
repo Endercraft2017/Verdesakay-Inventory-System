@@ -1339,3 +1339,12 @@ reconnect invalidates old results. An already submitted provider write cannot be
 The shared HTTP retry-cache fingerprint includes accounting connection/company/environment and
 refuses old-connection replay; temporary accounting 409s are not stored. Financial write receipts
 remain the separate durable authority for ambiguous remote outcomes.
+
+### Durable automatic QuickBooks export (2026-10-18)
+
+Licensed/cloud/connected/auto-enabled order save → business row + versioned intent in one
+transaction → cloud worker atomic claim → captured connection + current order snapshot →
+existing financial-write receipts/locks → exported captured version or persistent safe retry/
+attention code. Edits during an export leave the later version queued. Admin status prioritizes
+attention and distinguishes saved/exported versions. Safe resume requires permission + fresh
+proof + original connection; no unknown-outcome or interrupted-claim bypass is supplied.

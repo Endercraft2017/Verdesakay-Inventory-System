@@ -1042,7 +1042,11 @@ durable write receipts. Unknown outcomes and unbound legacy links require reconc
 new cloud-only tables are excluded from node effects/snapshots. Shared idempotency fingerprints
 also bind the accounting connection/company/environment and never cache accounting 409s.
 See `operations/quickbooks-lifecycle.md`.
-**Owned files:** `quickbooks.ts`, routes: `quickbooks.routes.ts`.
+**Owned files:** `quickbooks.ts`, `export-jobs.ts`, routes: `quickbooks.routes.ts`.
+**Automatic exports (2026-10-18):** order-save transactions persist connection-bound versioned
+intent; the cloud startup/timer worker claims one job per tenant per sequential pass. Later edits
+coalesce; unknown writes stay blocked. Administrator status and fresh-verification safe retry
+are in the desktop Orders view. See `operations/quickbooks-auto-exports.md`.
 **Dependencies:** `shared/` (`mailer.ts`, `secrets.ts` for OAuth token storage).
 **Offline (phase 4i):** `online`: QuickBooks is reached from the cloud only (D8).
 **Status:** working.

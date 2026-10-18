@@ -41,7 +41,7 @@ applicable issue before changing behavior:
 | High | Uniform API validation/error/redaction and privacy export/retention/erasure lifecycle | Route-by-route evidence; tenant-safe restore/copy/integration tests; approved retention scope |
 | High | AI privacy/adversarial evaluation, interrupted audit outcomes and hard spend allocation | Isolation/leakage/abuse/cancellation tests and real provider budget acceptance |
 | High | Native/Electron distribution and supported-client acceptance | APK/installer builds, signed artifacts, actual Windows/Android vault/backup/logout/upgrade checks |
-| High | Integration lifecycle and accounting reconciliation acceptance | Local generation/scoping, refresh admission, export exclusion and durable uncertain-write handling implemented 2026-10-18; actual Intuit sandbox, legacy adoption/repair tooling, durable auto-push scheduling/failure visibility and accountant acceptance remain. See operations/quickbooks-lifecycle.md |
+| High | Integration lifecycle and accounting reconciliation acceptance | Local generation/scoping, refresh admission, export exclusion and durable uncertain-write handling implemented 2026-10-18; actual Intuit sandbox, legacy adoption/repair tooling, interrupted-claim reconciliation, operational alerting and accountant acceptance remain. See operations/quickbooks-lifecycle.md |
 | High | Resolve or explicitly disposition vulnerable dependencies and historical-secret gates | Upstream/compatible fix or approved expiring risk record; verified revocation without exposing the old bearer |
 | Medium–High | Remaining resilience, concurrency, accessibility, observability and handbook requirements | Risk-ordered evidence for applicable controls; architectural/commercial choices agreed explicitly |
 
@@ -74,3 +74,12 @@ blocked for reconciliation. The HTTP retry cache also binds connection/company/e
 does not retain temporary accounting conflicts. No owner action is requested during engineering. This addresses local
 concurrency/data-integrity defects, not every integration release requirement or other audit gap.
 See [the runbook](../operations/quickbooks-lifecycle.md) and latest validation record.
+
+## Durable automatic-export follow-up — 2026-10-18
+
+Transactional intent, version coalescing, a bounded cloud worker, durable retry state and admin
+status are implemented. Fresh-proof safe resume excludes unknown writes and interrupted claims.
+The previous statement that automatic export is only logged best effort is superseded for the
+supported order save paths. Real provider acceptance, automatic reconciliation/legacy adoption,
+alert delivery, capacity/rollout and other app gaps remain. No owner setup is required to run
+local engineering checks. See [the runbook](../operations/quickbooks-auto-exports.md).

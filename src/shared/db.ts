@@ -1814,6 +1814,16 @@ function createSchema(): void {
       synced_at TEXT NOT NULL DEFAULT (datetime('now')),
       PRIMARY KEY(company_key,entity,local_id)
     );
+    CREATE TABLE IF NOT EXISTS qbo_export_jobs (
+      connection_id TEXT NOT NULL, company_key TEXT NOT NULL, order_id INTEGER NOT NULL,
+      version INTEGER NOT NULL DEFAULT 1, completed_version INTEGER NOT NULL DEFAULT 0,
+      state TEXT NOT NULL DEFAULT 'queued' CHECK(state IN ('queued','running','retry','blocked','succeeded')),
+      attempts INTEGER NOT NULL DEFAULT 0, worker_id TEXT, error_code TEXT,
+      next_attempt_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY(connection_id,order_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_qbo_jobs_due ON qbo_export_jobs(state,next_attempt_at);
     CREATE TABLE IF NOT EXISTS qbo_refresh_locks (
       connection_id TEXT PRIMARY KEY, lock_id TEXT NOT NULL,
       started_at TEXT NOT NULL DEFAULT (datetime('now'))

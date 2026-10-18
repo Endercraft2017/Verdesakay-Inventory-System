@@ -33,7 +33,7 @@ export const MAX_NODE_NO = 65535;
 /** Tables of online-only features — they hold credentials or what only the cloud can use, and an
  *  installed PC never needs them (user direction 2026-10-01, OFFLINE-FIRST §7.5): password-reset
  *  tokens (sent by email), QuickBooks links, the email log, AI assistant conversations. */
-const CLOUD_ONLY_TABLES = new Set(['password_resets', 'qbo_links', 'qbo_company_links', 'qbo_write_attempts', 'qbo_export_locks', 'qbo_refresh_locks', 'mail_log', 'ai_messages', 'ai_pending_actions',
+const CLOUD_ONLY_TABLES = new Set(['password_resets', 'qbo_links', 'qbo_company_links', 'qbo_write_attempts', 'qbo_export_locks', 'qbo_refresh_locks', 'qbo_export_jobs', 'mail_log', 'ai_messages', 'ai_pending_actions',
   // Two-step sign-in: secrets are encrypted with the cloud's key, and installed PCs (on-site,
   // on the office network) sign in with the password alone — see src/core/mfa.ts.
   'user_mfa', 'user_mfa_recovery', 'mfa_challenges', 'mfa_enrollments', 'session_stepups', 'account_recoveries', 'ai_tool_audit']);

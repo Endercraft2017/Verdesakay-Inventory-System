@@ -1,0 +1,32 @@
+
+> otom@1.0.0 test:e2e
+> playwright test
+
+[WebServer] (node:13309) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:13322) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:13333) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 13 tests using 1 worker
+
+(node:13399) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:13333) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+[WebServer] (node:13333) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+  ✓   1 tests/e2e/passkeys.spec.ts:3:1 › console verifies real WebAuthn registration and sign-in, rejects replay, and protects the last key (4.8s)
+  ✓   2 tests/e2e/quickbooks-exports.spec.ts:3:1 › administrator sees durable export failures, handles status errors and refreshes safely (3.6s)
+  ✓   3 tests/e2e/readiness.spec.ts:17:1 › desktop: wrong password, keyboard login, stock journey and server logout (3.1s)
+  ✓   4 tests/e2e/readiness.spec.ts:56:1 › mobile: 360px layout, core navigation, offline failure and sign out (2.0s)
+  ✓   5 tests/e2e/readiness.spec.ts:89:1 › login forms: labelled controls, keyboard access and axe scan (1.9s)
+  ✓   6 tests/e2e/readiness.spec.ts:98:1 › API attack surface: injection, oversized inputs, CORS and private caching (18ms)
+  ✓   7 tests/e2e/readiness.spec.ts:110:1 › browser: separate users cannot edit each other’s notes; role changes revoke cookies (3.2s)
+  ✓   8 tests/e2e/readiness.spec.ts:142:1 › browser: message HTML is a non-executable attachment and policy links are usable (2.2s)
+  ✓   9 tests/e2e/readiness.spec.ts:164:1 › browser: uploaded JavaScript cannot execute as a self-hosted script (1.5s)
+  ✓  10 tests/e2e/readiness.spec.ts:182:1 › browser: authenticator enrollment, one-use recovery and mobile factor sign-in (11.1s)
+  ✓  11 tests/e2e/readiness.spec.ts:250:1 › assisted recovery: email-link redemption requires authenticator enrollment before workspace access (3.9s)
+  ✓  12 tests/e2e/readiness.spec.ts:277:1 › recovery cancellation: GET previews are inert and owner confirmation is single-use (1.5s)
+  ✓  13 tests/e2e/step-up.spec.ts:5:1 › stale admin changes require accessible password + factor confirmation and preserve cancelled work (3.6s)
+
+  13 passed (47.9s)

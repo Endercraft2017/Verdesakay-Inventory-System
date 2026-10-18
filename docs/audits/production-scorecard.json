@@ -1030,7 +1030,7 @@
       "severity": "High",
       "requirement": "Every outbound call (HTTP, database, payment, AI provider) has a timeout, error handling, and a defined fallback; idempotent calls retry with exponential backoff and jitter.",
       "status": "FAIL",
-      "evidence": "src/modules/ai/ai.routes.ts enforces a 30-second provider request limit, bounded body/schema, and a 120-second shared chat deadline. QBO/SMTP/S3 have timeouts. General circuit breaking, queued retries and adapter-wide backoff are not complete. QuickBooks now has single-flight and durable refresh admission, stale-response guards and conservative financial-write outcomes; it does not blindly back off/retry uncertain writes. Other adapters and outage/capacity policies remain open.",
+      "evidence": "src/modules/ai/ai.routes.ts enforces a 30-second provider request limit, bounded body/schema, and a 120-second shared chat deadline. QBO/SMTP/S3 have timeouts. General circuit breaking, queued retries and adapter-wide backoff are not complete. QuickBooks now has single-flight and durable refresh admission, stale-response guards and conservative financial-write outcomes; it does not blindly back off/retry uncertain writes. Other adapters and outage/capacity policies remain open. Automatic QBO exports now persist same-transaction intent and bounded jittered retries, with blocked unknown outcomes; startup/timer dispatch and administrator failure status are locally tested. Remaining adapters/capacity still need evidence.",
       "scenario": "A sustained provider outage still ties up concurrent requests or causes synchronized retries despite bounded individual calls.",
       "fix": "Define per-adapter concurrency, backoff, circuit-breaker and operator recovery policy; verify with sustained outage tests."
     },
@@ -1705,7 +1705,7 @@
       "severity": "High",
       "requirement": "Failed payments and other failed external actions show a clear message and a retry path; the UI never freezes or goes blank.",
       "status": "UNVERIFIED",
-      "evidence": "Playwright wrong-password/offline behavior and core navigation pass; existing frontends have loading/error paths. Every route and every upstream outage state was not rendered and inspected.",
+      "evidence": "Playwright wrong-password/offline behavior and core navigation pass; existing frontends have loading/error paths. Every route and every upstream outage state was not rendered and inspected. The QBO automatic-export status screen now displays attention states, safe reasons, refresh/error recovery and guarded safe resume; a real-screen Playwright/axe scenario covers it. This does not establish every external-action failure flow.",
       "scenario": "",
       "fix": "Use test cards that decline; block an API in staging and observe the UI."
     },
@@ -2110,8 +2110,9 @@
   "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
   "latest_follow_up": {
     "date": "2026-10-18",
-    "scope": "Accounting lifecycle/financial-write safety and HTTP retry-cache scope",
-    "verification": "evidence/qbo-lifecycle-verification.json",
+    "scope": "Durable automatic exports, version coalescing, bounded worker and administrator status/safe resume",
+    "base_commit": "1666b8f5f21efd54461b5a236a9f7be68669ea0b",
+    "verification": "evidence/qbo-jobs-verification.json",
     "whole_control_statuses_changed": false
   }
 }

@@ -1,3 +1,4 @@
+import {processOneExport} from './src/modules/quickbooks/export-jobs';
 import { requireProductionTransport } from './src/shared/hosting';
 /** Server entry point: initialize the database, then start listening.
  *
@@ -52,6 +53,21 @@ if (process.env.NODE_ENV === 'production') {
       throw new Error(`Refusing production startup: change the default administrator password for ${slug}.`);
     }
   });
+}
+
+// One global sequential pass: bounded provider concurrency and no overlapping timer passes.
+let exportPassRunning=false;
+async function exportPass(){
+  if(DEPLOY_MODE!=='cloud'||exportPassRunning)return;
+  exportPassRunning=true;
+  try {for(const slug of backgroundTenants()){
+    try {await withTenant(slug,processOneExport);}
+    catch {console.error('[qbo] export worker failed; inspect durable job state');}
+  }} finally {exportPassRunning=false;}
+}
+if(DEPLOY_MODE==='cloud'){
+  setInterval(()=>{void exportPass();},15_000).unref();
+  setImmediate(()=>{void exportPass();});
 }
 
 const housekeeping = () => {

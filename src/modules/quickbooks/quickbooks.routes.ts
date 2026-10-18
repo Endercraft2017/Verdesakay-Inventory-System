@@ -1,5 +1,6 @@
 /** QuickBooks Online: OAuth connect/disconnect + push an order. See src/quickbooks.ts. */
 import crypto from 'node:crypto';
+import {exportJobs,retryExportJob} from './export-jobs';
 import { Router } from 'express';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { canOnOrder } from '../inventory/order-access';
@@ -71,6 +72,12 @@ router.get('/callback', async (req, res, next) => {
 });
 
 router.use(requireAuth);
+
+router.get('/exports',requirePermission('users.manage'),(_req,res)=>{res.set('Cache-Control','no-store').json(exportJobs());});
+router.post('/exports/:connection/:id/retry',requirePermission('users.manage'),syncClass('online'),requireFreshVerification,(req,res)=>{
+  const input=parseBody(z.object({connection:z.string().uuid(),id:z.coerce.number().int().positive()}),req.params);
+  retryExportJob(input.connection,input.id);res.json({ok:true});
+});
 
 // GET /api/quickbooks/status
 router.get('/status', requirePermission('users.manage'), (_req, res) => {

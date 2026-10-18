@@ -252,3 +252,29 @@ The [lifecycle runbook](../operations/quickbooks-lifecycle.md) documents exact g
 remaining live-provider, legacy-adoption/repair, durable auto-push and operational acceptance work.
 Whole-control statuses remain unchanged; this is a guarded accounting increment, not app-wide
 production approval or provider-side exactly-once certification. No live deployment was performed.
+
+## Durable automatic exports — 18 October 2026
+
+The complete final regression passed **297 files / 2,987 tests**, with no failures or
+skips (549.70s). Focused accounting/queue/admin checks passed **4 files / 56 tests**.
+All **13 Playwright scenarios passed** (47.9s), including the actual export-status screen,
+loading/error/refresh recovery, guarded safe resume, unknown-outcome retry refusal and axe checks.
+The screen was visually inspected. A separate `node scripts/test-qbo-worker.mjs` smoke passed: the
+actual disposable server consumed previously committed intent on startup using the test provider.
+
+TypeScript, generated database types, JavaScript syntax, diff checks and staged Gitleaks passed.
+Evidence is `evidence/qbo-jobs-{full,focused,types,dbtypes,playwright,secrets}.txt`,
+`evidence/qbo-worker-startup.txt` and `evidence/qbo-export-status.png`. The added browser-fixture
+positive-retry coverage was verified by its separate final Playwright run; runtime application
+code remained frozen during the full Vitest run.
+
+Transactional queue-failure injection proves the order does not commit without its intent.
+A real edit during a delayed export leaves the later version queued. Tests retain persisted
+backoff/limits, original-company binding, unknown-write blocks, offline-node exclusion, status
+permissions, safe retry and sanitized-snapshot exclusion. No lease stealing, automatic unknown-
+outcome recovery or live Intuit acceptance is claimed. Capacity/alerts, reconciliation/legacy
+adoption tooling and other handbook controls remain open. No dependency was changed; existing
+advisory/history gates are not cleared by application test passes. Nothing was deployed.
+
+See [the automatic-export runbook](../operations/quickbooks-auto-exports.md). Whole-control
+scorecard statuses remain unchanged; these are local engineering results, not release approval.

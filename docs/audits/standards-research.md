@@ -140,3 +140,12 @@ controls; they do not certify provider-side exactly-once behavior. The Intuit de
 pages returned only JavaScript loading content to the research tool. Confirm request-ID semantics,
 actual remote failures and reconciliation in sandbox before release. See the dated lifecycle
 runbook for evidence, upgrade restrictions and remaining acceptance work.
+
+## Durable automatic-export follow-up — 2026-10-18
+
+Reviewed [AWS transactional-outbox guidance](https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html).
+Applied same-transaction business intent plus a separate idempotent consumer, rather than sending
+a financial write after the save had already committed. The SQLite queue coalesces desired
+versions, persists bounded retries and preserves unknown outcomes for reconciliation. A local
+outbox is not an exactly-once remote guarantee. Real provider and operational acceptance remain;
+see operations/quickbooks-auto-exports.md. No AWS messaging service was provisioned.

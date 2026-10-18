@@ -1,0 +1,27 @@
+{
+  "date": "2026-10-18",
+  "base_commit": "1666b8f5f21efd54461b5a236a9f7be68669ea0b",
+  "full_regression": {
+    "status": "PASS",
+    "files": 297,
+    "tests": 2987,
+    "seconds": 549.7
+  },
+  "focused": {
+    "status": "PASS",
+    "files": 4,
+    "tests": 56
+  },
+  "playwright": {
+    "status": "PASS",
+    "tests": 13,
+    "seconds": 47.9
+  },
+  "server_startup_smoke": "PASS, disposable server and simulated provider",
+  "typecheck": "PASS",
+  "db_types": "PASS",
+  "staged_gitleaks": "PASS",
+  "live_provider_verified": false,
+  "deployment_performed": false,
+  "release_decision": "HOLD: remaining engineering, operational and owner gates"
+}

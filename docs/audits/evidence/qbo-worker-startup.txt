@@ -1,0 +1,1 @@
+PASS: actual server startup consumed previously committed export intent using mocked provider responses.

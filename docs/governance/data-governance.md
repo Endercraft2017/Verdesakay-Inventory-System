@@ -40,3 +40,8 @@ minimal accepted receipts and lifecycle times; no raw provider body or token is 
 unscoped links remain quarantined for reconciliation. Retention/rights operations must preserve
 financial reconciliation and duplicate-prevention duties; do not delete journals/locks as routine
 cleanup without an approved scoped procedure. See the QuickBooks operations runbook.
+
+`qbo_export_jobs` additionally retains non-secret connection/company and order IDs, desired/
+completed versions, claim IDs, safe error codes and attempt/scheduling times. No raw payload or
+provider error is stored. It is cloud-only and excluded from node snapshots/effects. Include it
+in accounting retention and scoped rights/reconciliation procedures; do not blindly purge claims.

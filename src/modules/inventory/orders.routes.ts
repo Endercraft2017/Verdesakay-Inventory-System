@@ -12,7 +12,7 @@ import {
   parseBody, ValidationError, createOrderSchema, updateOrderSchema, orderStatusSchema,
   releaseOrderSchema, unreserveOrderSchema, releaseSlipSchema, shortfallActionSchema,
 } from '../../shared/validation';
-import { getQboStatus, pushOrder } from '../quickbooks/quickbooks';
+import { enqueueOrderExport } from '../quickbooks/export-jobs';
 import { fulfillSaleStockInTransaction, maybeAutoPostSale, maybeFulfillSale, postFulfilledSaleCogs, unpostSource } from '../accounting/accounting-autopost';
 import { getDefaultLocationId, locationName, overdrawAllowed, variantStockAt } from './inventory-stock';
 import { createDraftJobOrder } from '../manufacturing/job-orders.routes';
@@ -68,19 +68,6 @@ function shortageStands(req: Request, number: string, shortLines: number): boole
   return true;
 }
 
-/** Best-effort background push after a save when the tenant has QuickBooks auto-push on.
-    Never blocks the response; failures are logged only. */
-function maybeAutoPush(orderId: number): void {
-  try {
-    if (!moduleEnabled('quickbooks')) return;
-    if (!getQboStatus().auto_push || !getQboStatus().connected) return;
-  } catch { return; }
-  const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', orderId);
-  if (!order) return;
-  const items = queryAll<OrderItem>("SELECT * FROM order_items WHERE order_id = ? AND fulfillment_mode != 'ckd_component' ORDER BY sort, id", orderId);
-  Promise.resolve(pushOrder(order, items)).catch((e) =>
-    console.warn(`[qbo] auto-push order ${orderId} failed: ${(e as Error).message}`));
-}
 
 type LineInput = {
   item_id?: number | null; name: string; sku?: string | null; description?: string | null;
@@ -601,6 +588,7 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
     }
     run("UPDATE orders SET status = 'confirmed', updated_at = datetime('now') WHERE id = ?", id);
     stockMoved = fulfillSaleStockInTransaction(id, req.user!.id);
+    enqueueOrderExport(id);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
@@ -609,7 +597,6 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
   // Physical stock and its slip are committed together. Accounting follows that commit.
   maybeAutoPostSale(id, req.user!.id);
   if (stockMoved) postFulfilledSaleCogs(id, req.user!.id);
-  maybeAutoPush(id);
   res.status(201).json({ ok: true, id: slipId, order: orderWithLines(id), backorder });
 });
 
@@ -1055,13 +1042,13 @@ router.post('/', requireAnyPermission(['orders.create', 'purchasing.manage']), c
         return;
       }
     }
+    enqueueOrderExport(Number(info.lastInsertRowid));
     db.exec('COMMIT');
     if (input.type === 'sale') {
       maybeAutoPostSale(newId, req.user!.id);
       maybeFulfillSale(newId, req.user!.id);
     }
     res.status(201).json({ id: info.lastInsertRowid, number });
-    maybeAutoPush(Number(info.lastInsertRowid));
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
@@ -1108,6 +1095,7 @@ router.post('/:id/status', requirePermission('orders.edit'), syncClass('claim', 
     }
     run("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?", next, id);
     recordReview();
+    enqueueOrderExport(id);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
@@ -1120,7 +1108,6 @@ router.post('/:id/status', requirePermission('orders.edit'), syncClass('claim', 
     releaseTeardown(id);
   }
   res.json({ ok: true, status: next });
-  maybeAutoPush(id);
 });
 
 // PUT /api/orders/:id — replace header + items, recompute totals (type/number unchanged)
@@ -1232,6 +1219,7 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
       }
     }
 
+    enqueueOrderExport(id);
     db.exec('COMMIT');
     if (order.type === 'sale') {
       maybeAutoPostSale(id, req.user!.id);
@@ -1243,7 +1231,6 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
       }
     }
     res.json({ ok: true });
-    maybeAutoPush(id);
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;

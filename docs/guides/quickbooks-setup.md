@@ -31,9 +31,11 @@ Until these are set, the QuickBooks button doesn't appear.
 
 - The QuickBooks row action requires **orders.edit** and an available connection. Each order row gets a **QuickBooks** icon. Click it to create (or, if already pushed,
   update) the Invoice / Bill in QuickBooks. A toast confirms with the document number.
-- **"Auto-push orders when saved"** attempts export in the background. Saving the order does
-  not confirm its QuickBooks export. Failures are logged; interrupted or overlapping exports need
-  review. Durable automatic retry/coalescing and user-visible failure status remain unfinished.
+- **"Auto-push orders when saved"** stores pending export work with supported order saves. Saving
+  does not confirm QuickBooks export. **Export status** shows queued, exported and attention states.
+  Safe temporary failures retry automatically; unknown outcomes and interrupted claims need review.
+  A guarded retry action is available for selected resolved failures only. See the
+  [automatic-export guide](../operations/quickbooks-auto-exports.md).
 - Re-pushing a linked order updates its document in the same connected company. If an earlier write has an unknown outcome, export is blocked for engineering reconciliation; do not retry blindly.
 
 ## Notes

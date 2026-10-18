@@ -11,6 +11,7 @@ Start here. This folder has two layers:
 ## Production audit
 
 - [Current engineering handoff and owner steps](audits/engineering-handoff.md)
+- [Durable automatic exports and status](operations/quickbooks-auto-exports.md)
 - [QuickBooks lifecycle and financial-write safety](operations/quickbooks-lifecycle.md)
 - [Recent tenant administrative verification](operations/tenant-step-up.md)
 - [Second audit and unresolved release gates](audits/second-pass-audit.md)

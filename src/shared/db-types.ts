@@ -1301,6 +1301,20 @@ export interface QboCompanyLinks {
   synced_at: Generated<string>;
 }
 
+export interface QboExportJobs {
+  connection_id: string;
+  company_key: string;
+  order_id: number;
+  version: Generated<number>;
+  completed_version: Generated<number>;
+  state: Generated<string>;
+  attempts: Generated<number>;
+  worker_id: string | null;
+  error_code: string | null;
+  next_attempt_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface QboExportLocks {
   company_key: string;
   order_id: number;
@@ -1923,6 +1937,7 @@ export interface DB {
   punch_photos: PunchPhotos;
   push_subscriptions: PushSubscriptions;
   qbo_company_links: QboCompanyLinks;
+  qbo_export_jobs: QboExportJobs;
   qbo_export_locks: QboExportLocks;
   qbo_links: QboLinks;
   qbo_refresh_locks: QboRefreshLocks;

@@ -85,6 +85,12 @@ export function qboConnected(): boolean {
   return !!cfg().realm_id && cfg().environment===ENVIRONMENT && !!tokens().refresh_token;
 }
 
+/** Non-secret scope used to bind durable intent; never return credentials. */
+export function qboExportScope():{connection_id:string;company_key:string}|null {
+  if(!qboConnected())return null;
+  const c=connection();return {connection_id:c.id,company_key:c.company};
+}
+
 export function getQboStatus() {
   const c = cfg();
   return {
@@ -353,8 +359,9 @@ export interface PushResult {
 }
 
 /** Push one order to QuickBooks. `sale`/`job` → Invoice, `purchase` → Bill. */
-export async function pushOrder(order: Order, items: OrderItem[]): Promise<PushResult> {
+export async function pushOrder(order: Order, items: OrderItem[], expectedConnectionId?:string): Promise<PushResult> {
   const c=connection();
+  if(expectedConnectionId&&c.id!==expectedConnectionId)throw conflict();
   const lock=randomUUID();
   const acquired=c.db.prepare('INSERT OR IGNORE INTO qbo_export_locks(company_key,order_id,lock_id) VALUES(?,?,?)').run(c.company,order.id,lock);
   if(Number(acquired.changes)!==1)throw conflict('This order has an active or interrupted QuickBooks export. Reconcile it before retrying.');

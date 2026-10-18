@@ -34,7 +34,7 @@ App.register('orders', async (view, filter) => {
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="ord-search" aria-label="Search orders by number or ${partyLabel.toLowerCase()}" placeholder="Search number, ${partyLabel.toLowerCase()}…" /></div>
       ${type === 'sale' ? `<button class="btn secondary" id="ord-backorder" title="Show firm orders with stock lines still awaiting picking">${UI.icon('alert', 15)} Awaiting release</button>` : ''}
-      ${App.hasPermission('users.manage') && qb.configured ? `<button class="btn secondary" id="ord-qb">${UI.icon('sheet')} QuickBooks${qb.connected ? ' ✓' : ''}</button>` : ''}
+      ${App.hasPermission('users.manage') && qb.configured ? `<button class="btn secondary" id="ord-qb-exports">Export status</button><button class="btn secondary" id="ord-qb">${UI.icon('sheet')} QuickBooks${qb.connected ? ' ✓' : ''}</button>` : ''}
       ${canCreate ? `<button class="btn" id="ord-new">${UI.icon('plus')} New ${noun}</button>` : ''}
     </div>
     <div class="panel"><div id="ord-table"></div></div>`;
@@ -46,6 +46,8 @@ App.register('orders', async (view, filter) => {
     load();
   };
 
+  const exportsBtn=view.querySelector('#ord-qb-exports');
+  if(exportsBtn)exportsBtn.onclick=exportStatusModal;
   const qbBtn = view.querySelector('#ord-qb');
   if (qbBtn) qbBtn.onclick = () => quickbooksModal(() => App.navigate('orders', filter));
 
@@ -847,6 +849,36 @@ App.register('orders', async (view, filter) => {
     <tbody>{{#items}}<tr><td>{{name}}</td><td class="r">{{quantity}}</td><td class="r">{{unit_price}}</td><td class="r">{{line_total}}</td></tr>{{/items}}</tbody></table>
     <div class="doc-totals"><div class="grand">TOTAL: {{order.currency}} {{order.total}}</div></div></div>`;
 
+  function exportStatusModal() {
+    UI.modal({title:'QuickBooks export status',cancelText:'Close',
+      bodyHTML:'<p>Automatic exports are separate from saving an order. Company labels identify the original destination.</p><div id="qb-export-status" aria-live="polite"></div><button type="button" class="btn secondary" id="qb-export-refresh">Refresh status</button>',
+      onOpen:(ov)=>{
+        const target=ov.querySelector('#qb-export-status'),refresh=ov.querySelector('#qb-export-refresh');
+        const states={queued:'Waiting to export',running:'Export active or interrupted',retry:'Waiting to retry',blocked:'Needs attention',succeeded:'Exported'};
+        const reasons={outcome_unknown:'The remote outcome is unknown. Ask support to reconcile it before retrying.',
+          connection_changed:'The connection changed. This export will not be sent to another company.',
+          provider_rejected:'The provider rejected a write. Review the accounting configuration.',
+          automatic_export_disabled:'Automatic exports were disabled.',order_removed:'The order was removed.',
+          retry_limit:'Automatic retries stopped. Ask support to investigate.',temporary_failure:'A temporary failure will be retried.'};
+        async function loadStatus(){
+          refresh.disabled=true;target.innerHTML='<p>Loading export status…</p>';
+          try {
+            const status=await API.get('/quickbooks/exports'),jobs=status.jobs;
+            if(!ov.isConnected)return;
+            target.innerHTML='<p>'+UI.esc(String(status.counts.blocked||0))+' need attention; '+UI.esc(String(status.counts.running||0))+' active or interrupted. Showing up to 100, attention first.</p>'+(jobs.length?'<ul>'+jobs.map(j=>`<li><strong>${UI.esc(j.number||'Order '+j.order_id)}</strong> — ${UI.esc(states[j.state]||'Status unavailable')}<br><span class="muted">${UI.esc(j.company_key)} · saved version ${UI.esc(String(j.version))}, exported version ${UI.esc(String(j.completed_version))}</span>${j.state==='running'?'<p>If this persists, ask support to check for an interrupted export. Do not submit another create.</p>':''}${j.error_code?'<p>'+UI.esc(reasons[j.error_code]||'Ask support to review this export.')+'</p>':''}${j.state==='blocked'&&['automatic_export_disabled','retry_limit','provider_rejected'].includes(j.error_code)?'<button type="button" class="btn secondary" data-export-retry="'+UI.esc(String(j.order_id))+'" data-connection="'+UI.esc(j.connection_id)+'">Retry automatic export</button>':''}</li>`).join('')+'</ul>':'<p>No automatic exports have been queued.</p>');
+            target.querySelectorAll('[data-export-retry]').forEach(button=>{button.onclick=async()=>{
+              button.disabled=true;
+              try{await API.post('/quickbooks/exports/'+encodeURIComponent(button.dataset.connection)+'/'+button.dataset.exportRetry+'/retry');await loadStatus();}
+              catch(e){UI.toast(e.message,'error');}
+              finally{button.disabled=false;}
+            };});
+          } catch(e){if(ov.isConnected)target.innerHTML='<p role="alert">'+UI.esc(e.message)+'</p>';}
+          finally{refresh.disabled=false;}
+        }
+        refresh.onclick=loadStatus;loadStatus();
+      }});
+  }
+
   async function quickbooksModal(onChange) {
     let s;
     try { s = await API.get('/quickbooks/status'); } catch (e) { UI.toast(e.message, 'error'); return; }
@@ -886,7 +918,12 @@ App.register('orders', async (view, filter) => {
             UI.toast('Disconnected'); if (onChange) onChange();
           };
           const auto = ov.querySelector('#qb-auto');
-          if (auto) auto.onchange = () => API.put('/quickbooks/auto-push', { enabled: auto.checked }).catch((e) => UI.toast(e.message, 'error'));
+          if (auto) auto.onchange = async () => {
+            auto.disabled=true;
+            try {await API.put('/quickbooks/auto-push',{enabled:auto.checked});s.auto_push=auto.checked;}
+            catch(e){auto.checked=!!s.auto_push;UI.toast(e.message,'error');}
+            finally{auto.disabled=false;}
+          };
         }
         render();
       },
