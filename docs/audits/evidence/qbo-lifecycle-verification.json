@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-18",
+  "branch": "production",
+  "base_commit": "f3ee7f7d0aa04ee1e6fe62173a8841ee1b243227",
+  "full_regression": {
+    "files": 296,
+    "tests": 2974,
+    "seconds": 509.6,
+    "status": "PASS"
+  },
+  "focused": {
+    "files": 5,
+    "tests": 66,
+    "status": "PASS"
+  },
+  "playwright": {
+    "tests": 12,
+    "seconds": 40.7,
+    "status": "PASS"
+  },
+  "typecheck": "PASS",
+  "generated_db_types": "PASS",
+  "staged_gitleaks": "PASS",
+  "initial_full": {
+    "passed_files": 295,
+    "passed_tests": 2973,
+    "failed_tests": 1,
+    "reason": "Date-dependent schedule fixture assumed +14 days was a working day; fixed fixture and added rest-day rejection without changing application rules."
+  },
+  "runtime_npm_audit": {
+    "critical": 0,
+    "high": 1,
+    "moderate": 3,
+    "exit_code": 1
+  },
+  "release_decision": "HOLD: remaining audit and integration acceptance gates are open",
+  "live_provider_test": false,
+  "deployment_performed": false
+}

@@ -571,7 +571,7 @@
       "severity": "High",
       "requirement": "Production error responses are generic (no stack traces, SQL, file paths, or versions), and full details are logged server-side with a correlation ID.",
       "status": "FAIL",
-      "evidence": "src/app.ts now supplies generated request IDs and generic 500 responses, including route-local res.json failures; AI provider response bodies are withheld. Some route-local 400/503 exception paths and legacy diagnostic logging still require individual review.",
+      "evidence": "src/app.ts now supplies generated request IDs and generic 500 responses, including route-local res.json failures; AI provider response bodies are withheld. Some route-local 400/503 exception paths and legacy diagnostic logging still require individual review. QuickBooks errors were hardened 2026-10-18 to omit raw provider bodies; uniform app-wide error contracts remain incomplete.",
       "scenario": "An upstream or malformed-file failure classified as 400/503 may still expose provider/internal text.",
       "fix": "Replace remaining raw exception responses with typed public business errors and private redacted diagnostics, then fault-inject each adapter."
     },
@@ -1030,7 +1030,7 @@
       "severity": "High",
       "requirement": "Every outbound call (HTTP, database, payment, AI provider) has a timeout, error handling, and a defined fallback; idempotent calls retry with exponential backoff and jitter.",
       "status": "FAIL",
-      "evidence": "src/modules/ai/ai.routes.ts enforces a 30-second provider request limit, bounded body/schema, and a 120-second shared chat deadline. QBO/SMTP/S3 have timeouts. General circuit breaking, queued retries and adapter-wide backoff are not complete.",
+      "evidence": "src/modules/ai/ai.routes.ts enforces a 30-second provider request limit, bounded body/schema, and a 120-second shared chat deadline. QBO/SMTP/S3 have timeouts. General circuit breaking, queued retries and adapter-wide backoff are not complete. QuickBooks now has single-flight and durable refresh admission, stale-response guards and conservative financial-write outcomes; it does not blindly back off/retry uncertain writes. Other adapters and outage/capacity policies remain open.",
       "scenario": "A sustained provider outage still ties up concurrent requests or causes synchronized retries despite bounded individual calls.",
       "fix": "Define per-adapter concurrency, backoff, circuit-breaker and operator recovery policy; verify with sustained outage tests."
     },
@@ -1048,7 +1048,7 @@
       "severity": "High",
       "requirement": "Create, charge, and job-start operations are idempotent (idempotency keys or natural unique constraints), so retries and double-clicks cannot duplicate effects.",
       "status": "UNVERIFIED",
-      "evidence": "Idempotency replay is now authenticated and bound to actor/method/path/JSON/access scope, with per-process in-flight exclusion; tests/idempotency.test.ts. Missing keys, multipart payload identity, persistence-failure atomicity and multiple processes still need a complete business-operation proof.",
+      "evidence": "Idempotency replay is now authenticated and bound to actor/method/path/JSON/access scope, with per-process in-flight exclusion; tests/idempotency.test.ts. Missing keys, multipart payload identity, persistence-failure atomicity and multiple processes still need a complete business-operation proof. QuickBooks follow-up 2026-10-18 adds persistent per-order exclusion, company-bound links and pre-send write receipts; unknown outcomes block retry and accepted receipts recover missing links. Local tests exercise delayed response/company/tenant races. Real provider reconciliation and other business paths remain unverified; see operations/quickbooks-lifecycle.md.",
       "scenario": "",
       "fix": "Fire the same request twice concurrently in staging; inspect resulting records."
     },
@@ -2107,5 +2107,11 @@
     }
   ],
   "remediation_date": "2026-10-16",
-  "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation"
+  "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
+  "latest_follow_up": {
+    "date": "2026-10-18",
+    "scope": "Accounting lifecycle/financial-write safety and HTTP retry-cache scope",
+    "verification": "evidence/qbo-lifecycle-verification.json",
+    "whole_control_statuses_changed": false
+  }
 }

@@ -221,3 +221,34 @@ refresh/export concurrency. No new ZAP, live load or dependency scan was needed 
 unchanged increment; earlier findings remain open. The [runbook](../operations/tenant-step-up.md)
 and [handoff](engineering-handoff.md) state protected scope and remaining engineering/owner work.
 AUTHZ-15 remains open; passing application tests does not clear release/security gates.
+
+## Accounting lifecycle follow-up — 18 October 2026
+
+A clean final complete regression passed **296 files / 2,974 tests**,
+with no failures or skips (509.60s), after the date-sensitive schedule fixture
+correction. This supersedes the initial failure recorded below.
+
+Focused accounting/idempotency/admin/snapshot regression passed **5 files / 66 tests** (23.91s).
+All **12 final Playwright scenarios passed** (40.7s). TypeScript, generated DB types, diff checks
+and staged Gitleaks passed. New lifecycle tests exercise delayed responses, company and tenant
+scope, refresh admission/CAS, atomic connection rollback, durable write outcomes and export locks,
+legacy quarantine, receipt recovery, malformed upstream data and the shared HTTP retry cache.
+Provider responses are simulated; no actual Intuit account, hardware or live host was tested.
+
+A first broad run was deliberately interrupted to address the HTTP-cache interaction and is not
+a completed pass. The next complete run passed **295 files / 2,973 tests** but failed one test
+in `mobile-schedule-change.test.ts` (519.20s). Its +14-day date fell on the default weekend rest
+pattern. The fixture now explicitly publishes a working day and a separate rest day; it retains
+the original approval/stale-approval assertions and adds rest-day rejection. Both isolated tests
+passed (4.27s); no application scheduling/payroll rule was weakened. The initial full and isolated
+failure logs are retained separately, not relabeled as passing evidence.
+
+Evidence is `evidence/qbo-lifecycle-{full,initial-full,focused,playwright,typecheck,dbtypes,secrets}.txt`
+and `evidence/qbo-schedule-{initial,fixed}.txt`. A new runtime npm audit still returns nonzero:
+**0 Critical / 1 High / 3 Moderate**; see the dependency audit and raw dated JSON. No dependency
+was changed, downgraded or suppressed. Staged scanning does not clear historical-secret findings.
+
+The [lifecycle runbook](../operations/quickbooks-lifecycle.md) documents exact guarantees and the
+remaining live-provider, legacy-adoption/repair, durable auto-push and operational acceptance work.
+Whole-control statuses remain unchanged; this is a guarded accounting increment, not app-wide
+production approval or provider-side exactly-once certification. No live deployment was performed.

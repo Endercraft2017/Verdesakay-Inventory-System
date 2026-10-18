@@ -31,18 +31,27 @@ Until these are set, the QuickBooks button doesn't appear.
 
 - The QuickBooks row action requires **orders.edit** and an available connection. Each order row gets a **QuickBooks** icon. Click it to create (or, if already pushed,
   update) the Invoice / Bill in QuickBooks. A toast confirms with the document number.
-- Turn on **"Auto-push orders when saved"** in the QuickBooks window to have every
-  created/edited order pushed in the background.
-- Re-pushing an order **updates** the same QuickBooks document — it never duplicates.
+- **"Auto-push orders when saved"** attempts export in the background. Saving the order does
+  not confirm its QuickBooks export. Failures are logged; interrupted or overlapping exports need
+  review. Durable automatic retry/coalescing and user-visible failure status remain unfinished.
+- Re-pushing a linked order updates its document in the same connected company. If an earlier write has an unknown outcome, export is blocked for engineering reconciliation; do not retry blindly.
 
 ## Notes
 
 - Sale and Job orders → **Invoices**; Purchase Orders → **Bills**.
 - The order's customer/supplier name is matched to (or created as) a QuickBooks
   Customer / Vendor.
-- **Disconnect** in the QuickBooks window clears the link (existing QuickBooks documents
-  stay).
+- **Disconnect** stops local use and clears local credentials. Existing QuickBooks documents,
+  company-scoped record links and write receipts stay for reconciliation.
 - It's per-workspace: connecting one company doesn't touch another.
+
+## Upgrade and interrupted exports
+
+Older connections must reconnect to record their environment. Legacy record links without company
+provenance need engineering reconciliation before affected exports can resume; they are preserved.
+Company changes use separate record links. Interrupted or uncertain exports stay blocked across
+restart/reconnect until reviewed. See the [engineering runbook](../operations/quickbooks-lifecycle.md).
+No passwords, tokens or accounting exports should be sent through chat.
 
 ## If a push fails
 

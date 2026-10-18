@@ -128,3 +128,15 @@ OAuth state additionally binds the live initiating authorization across token ex
 password bounds, console passkeys, native vault adapter and this administrative scope now have
 code/tests. Deployment enforcement, hardware acceptance, remaining business actions and complete
 ASVS/NIST assurance are still unverified; no certification or complete conformance is claimed.
+
+## QuickBooks lifecycle research — 2026-10-18
+
+[Intuit's official OAuth client](https://github.com/intuit/oauth-jsclient#refresh-access_token)
+confirms that callers must persist/use the most recently returned refresh token. Local changes
+add shared refresh admission, SQLite ownership/CAS checks and connection generations so delayed
+work cannot overwrite newer credentials or attach records across companies. Export exclusion and
+durable outcomes block blind duplicates after uncertain remote acceptance. These are local design
+controls; they do not certify provider-side exactly-once behavior. The Intuit developer OAuth/REST
+pages returned only JavaScript loading content to the research tool. Confirm request-ID semantics,
+actual remote failures and reconciliation in sandbox before release. See the dated lifecycle
+runbook for evidence, upgrade restrictions and remaining acceptance work.

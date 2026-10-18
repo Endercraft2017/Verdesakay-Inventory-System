@@ -1324,3 +1324,18 @@ action once under unchanged company/session. Cancel/failure does not execute the
 No proof replicates to office PCs. Explicit factor/password recovery requirements still apply.
 QuickBooks connect additionally binds live actor/session + generation across its ten-minute public
 callback and async token exchange. Other business workflows retain their existing authority rules.
+
+### QuickBooks lifecycle and writes (2026-10-18)
+
+Capture tenant DB + connection ID + environment/realm → acquire persistent per-order lock →
+resolve company-bound link (or recover a known completed receipt; refuse ambiguous legacy IDs) →
+lookup/create party → persist write intent → send to the captured company → recheck generation →
+validate minimal response → commit receipt/link → release own order lock. Unknown sent outcomes
+stay blocked for reconciliation after restart/reconnect; never blindly retry a financial create.
+Token expiry/401 uses one local refresh promise plus durable cross-process admission; re-read
+credentials after admission and conditionally replace inside a writer transaction. Disconnect or
+reconnect invalidates old results. An already submitted provider write cannot be undone locally.
+
+The shared HTTP retry-cache fingerprint includes accounting connection/company/environment and
+refuses old-connection replay; temporary accounting 409s are not stored. Financial write receipts
+remain the separate durable authority for ambiguous remote outcomes.

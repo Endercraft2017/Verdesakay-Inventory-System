@@ -9,6 +9,7 @@ let formId: number;
 let firstShift: number;
 let secondShift: number;
 let workDate: string;
+let restDate: string;
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 beforeAll(async () => {
@@ -27,11 +28,16 @@ beforeAll(async () => {
   firstShift = shift1.body.id;
   secondShift = shift2.body.id;
   workDate = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
-  const period = await ctx.api.post('/api/hr/periods').set(auth(admin)).send({ label: 'Schedule change test', start_date: workDate, end_date: workDate });
+  restDate = new Date(Date.parse(workDate + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10);
+  const period = await ctx.api.post('/api/hr/periods').set(auth(admin)).send({ label: 'Schedule change test', start_date: workDate, end_date: restDate });
   expect(period.status).toBe(201);
   await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(auth(admin)).send({ employee_id: employee.empId });
   const roster = await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(auth(admin)).send({
-    employee_id: employee.empId, days: [{ work_date: workDate, shift_id: firstShift, time_in: '', time_out: '', notes: '' }],
+    // Fix the roster semantics, not the wall clock: +14 days may be a weekend or holiday.
+    employee_id: employee.empId, days: [
+      { work_date: workDate, shift_id: firstShift, time_in: '', time_out: '', notes: '', rest_day: 'no', holiday_type: 'none' },
+      { work_date: restDate, shift_id: firstShift, time_in: '', time_out: '', notes: '', rest_day: 'yes', holiday_type: 'none' },
+    ],
   });
   expect(roster.status).toBe(200);
   const types = await ctx.api.get('/api/me/request-types').set(auth(employee.token));
@@ -54,6 +60,9 @@ describe('mobile schedule-change request', () => {
   it('requires a future published roster date and a valid shift', async () => {
     expect((await file('2020-01-01')).status).toBe(400);
     expect((await file(workDate, 999999)).status).toBe(400);
+    const rest = await file(restDate);
+    expect(rest.status).toBe(400);
+    expect(rest.body.error).toContain('rest-day swap');
   });
 
   it('changes the published shift only after approval; stale approvals cannot overwrite it', async () => {

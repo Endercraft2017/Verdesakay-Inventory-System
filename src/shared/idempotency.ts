@@ -10,7 +10,7 @@
  */
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
-import { db, activeDb } from './db';
+import { db, activeDb, getSetting } from './db';
 import { requireAuth } from './auth';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -50,10 +50,19 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
     }
     const scopedKey = 'v2:' + crypto.createHash('sha256')
       .update(JSON.stringify([user.id, key])).digest('hex');
-    const fingerprint = JSON.stringify([
+    const fingerprintParts:unknown[] = [
       req.originalUrl, req.body, user.role, user.department_id,
       [...user.permissions].sort(),
-    ]);
+    ];
+    const accounting=/\/api\/quickbooks(?:\/|$)/i.test(req.originalUrl.split('?')[0]??'');
+    // A response for an earlier accounting connection is not proof of a write to this one.
+    // Legacy entries lack this binding and fail closed on their existing fingerprint check.
+    if(accounting){
+      const company=getSetting<{realm_id?:string;environment?:string}>('qbo_config');
+      fingerprintParts.push(getSetting('qbo_connection_id'),company?.realm_id,company?.environment,
+        process.env.QBO_ENV==='production'?'production':'sandbox');
+    }
+    const fingerprint = JSON.stringify(fingerprintParts);
     const requestPath = crypto.createHash('sha256').update(fingerprint).digest('hex');
     const existing = db.prepare('SELECT status_code, response, path, method FROM idempotency_keys WHERE key = ?')
       .get(scopedKey) as StoredRow | undefined;
@@ -86,7 +95,7 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
     // Capture the JSON body the handler sends, then persist the outcome.
     const sendJson = res.json.bind(res);
     res.json = (body: unknown) => {
-      if (res.statusCode < 500 && !DONT_STORE.has(res.statusCode)) {
+      if (res.statusCode < 500 && !DONT_STORE.has(res.statusCode) && !(accounting&&res.statusCode===409)) {
         try {
           let response = JSON.stringify(body);
           if (res.getHeader('X-Sync-State') === 'local') response = LOCAL_RESPONSE_PREFIX + JSON.stringify({ response, command: String(res.getHeader('X-Sync-Command') || 'local') });

@@ -30,3 +30,13 @@ when fresh proof is written; session deletion cascades its row. It is node-local
 from sanitized node snapshots. QuickBooks pending OAuth state binds digested session + account
 fingerprint for a ten-minute one-use connection transaction. Include these local security records
 in retention/access reviews; they are not a new general legal retention promise.
+
+## Company-bound integration metadata (2026-10-18)
+
+QuickBooks `qbo_company_links`, `qbo_write_attempts`, `qbo_export_locks` and `qbo_refresh_locks`
+are cloud-local, excluded from replicated effects and sanitized snapshots. They hold company/
+environment scope, local/remote IDs, credential-generation references, request IDs, payload hashes,
+minimal accepted receipts and lifecycle times; no raw provider body or token is added. Legacy
+unscoped links remain quarantined for reconciliation. Retention/rights operations must preserve
+financial reconciliation and duplicate-prevention duties; do not delete journals/locks as routine
+cleanup without an approved scoped procedure. See the QuickBooks operations runbook.

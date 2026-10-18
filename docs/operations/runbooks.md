@@ -7,6 +7,8 @@ Account security procedures: [assisted recovery](assisted-account-recovery.md),
 [native credential storage](native-credential-storage.md), [password migration](password-migration.md)
 and [bounded password work](password-work-budget.md).
 
+Accounting integrations: [QuickBooks lifecycle and reconciliation](quickbooks-lifecycle.md).
+
 ## Preflight and deployment
 
 Use a separate staging host, tenant DBs, uploads, credentials and integrations. Pin supported Node (22.13+; CI 22/24), install from lockfile with `npm ci`, set NODE_ENV=production and a strong private bootstrap ADMIN_PASSWORD for a fresh DB. Configure APP_URL/tenant origins, HTTPS proxy and BEHIND_PROXY according to `docs/DEPLOY-RAILWAY.md`/hosting code, mount persistent DB/upload/data volumes and keep them private. Do not expose SQLite, backup files, .env or owner-console credentials. Verify Secure cookies, HSTS and request IDs from the real external URL.

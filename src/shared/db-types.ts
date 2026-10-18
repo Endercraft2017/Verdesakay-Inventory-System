@@ -1291,6 +1291,23 @@ export interface PushSubscriptions {
   device_id: string | null;
 }
 
+export interface QboCompanyLinks {
+  company_key: string;
+  entity: string;
+  local_id: string;
+  qbo_type: string;
+  qbo_id: string;
+  sync_token: string | null;
+  synced_at: Generated<string>;
+}
+
+export interface QboExportLocks {
+  company_key: string;
+  order_id: number;
+  lock_id: string;
+  started_at: Generated<string>;
+}
+
 export interface QboLinks {
   entity: string;
   local_id: string;
@@ -1298,6 +1315,22 @@ export interface QboLinks {
   qbo_id: string;
   sync_token: string | null;
   synced_at: Generated<string>;
+}
+
+export interface QboRefreshLocks {
+  connection_id: string;
+  lock_id: string;
+  started_at: Generated<string>;
+}
+
+export interface QboWriteAttempts {
+  company_key: string;
+  operation_key: string;
+  request_id: string;
+  payload_hash: string;
+  state: string;
+  response_json: string | null;
+  updated_at: Generated<string>;
 }
 
 export interface QcChecklists {
@@ -1889,7 +1922,11 @@ export interface DB {
   production_teams: ProductionTeams;
   punch_photos: PunchPhotos;
   push_subscriptions: PushSubscriptions;
+  qbo_company_links: QboCompanyLinks;
+  qbo_export_locks: QboExportLocks;
   qbo_links: QboLinks;
+  qbo_refresh_locks: QboRefreshLocks;
+  qbo_write_attempts: QboWriteAttempts;
   qc_checklists: QcChecklists;
   qc_evidence: QcEvidence;
   qc_records: QcRecords;

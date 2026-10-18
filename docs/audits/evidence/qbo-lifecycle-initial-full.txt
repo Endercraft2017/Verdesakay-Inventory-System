@@ -1,0 +1,81 @@
+
+> otom@1.0.0 test
+> vitest run --fileParallelism --maxWorkers=2
+
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+(node:4083) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:4083) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+stdout | tests/mobile-schedule-change.test.ts > mobile schedule-change request > changes the published shift only after approval; stale approvals cannot overwrite it
+{"timestamp":"2026-10-18T13:17:55.377Z","level":"info","event":"http_request","request_id":"c591da26-5faf-4ae1-a212-e20f86cd7682","tenant":"default","method":"POST","path":"/api/form-records","status":400,"duration_ms":3}
+
+stdout | tests/mobile-schedule-change.test.ts > mobile schedule-change request > changes the published shift only after approval; stale approvals cannot overwrite it
+{"timestamp":"2026-10-18T13:17:55.380Z","level":"info","event":"http_request","request_id":"0cc62abe-8775-413c-84e7-ec9c2d27c2d5","tenant":"default","method":"POST","path":"/api/form-records","status":400,"duration_ms":2}
+
+stdout | tests/mobile-schedule-change.test.ts
+{"timestamp":"2026-10-18T13:17:54.057Z","level":"info","event":"http_request","request_id":"f6102978-7541-4ddf-bc3a-3be29869f0d2","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":306}
+
+stdout | tests/mobile-schedule-change.test.ts
+{"timestamp":"2026-10-18T13:17:54.388Z","level":"info","event":"http_request","request_id":"b580cac4-ad12-4d92-bf01-e78eeee7ebb9","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":324}
+
+stdout | tests/mobile-schedule-change.test.ts
+{"timestamp":"2026-10-18T13:17:54.687Z","level":"info","event":"http_request","request_id":"931327ad-d6b6-449e-86e7-62d7d44b3ee4","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":297}
+
+stdout | tests/mobile-schedule-change.test.ts
+{"timestamp":"2026-10-18T13:17:54.997Z","level":"info","event":"http_request","request_id":"42883e43-42c4-4e6a-bc41-6b9e949bd9cd","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":308}
+
+stdout | tests/mobile-schedule-change.test.ts
+{"timestamp":"2026-10-18T13:17:55.310Z","level":"info","event":"http_request","request_id":"cf8b3a2a-d4bd-45f4-b39f-337a58a840e9","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":311}
+
+stdout | tests/mobile-schedule-change.test.ts
+{"timestamp":"2026-10-18T13:17:55.319Z","level":"info","event":"http_request","request_id":"a3a66526-10c7-4f50-8bda-8b5f8384ad33","tenant":"default","method":"POST","path":"/api/hr/employees","status":201,"duration_ms":6}
+
+stdout | tests/mobile-schedule-change.test.ts
+{"timestamp":"2026-10-18T13:17:55.331Z","level":"info","event":"http_request","request_id":"279a3d46-35e3-4742-96f7-9c4b9fb5baca","tenant":"default","method":"POST","path":"/api/hr/shifts","status":201,"duration_ms":10}
+
+stdout | tests/mobile-schedule-change.test.ts
+{"timestamp":"2026-10-18T13:17:55.335Z","level":"info","event":"http_request","request_id":"2878b73d-501a-49c6-904f-b0b8bb9c54d5","tenant":"default","method":"POST","path":"/api/hr/shifts","status":201,"duration_ms":2}
+
+stdout | tests/mobile-schedule-change.test.ts
+{"timestamp":"2026-10-18T13:17:55.341Z","level":"info","event":"http_request","request_id":"8865dd93-0f15-49ec-bb9c-b50f3242ff14","tenant":"default","method":"POST","path":"/api/hr/periods","status":201,"duration_ms":3}
+
+stdout | tests/mobile-schedule-change.test.ts
+{"timestamp":"2026-10-18T13:17:55.347Z","level":"info","event":"http_request","request_id":"d0ca3ce6-9ea9-4bf0-9e93-17cd39c30aa0","tenant":"default","method":"POST","path":"/api/hr/periods/1/employees","status":201,"duration_ms":3}
+
+stdout | tests/mobile-schedule-change.test.ts
+{"timestamp":"2026-10-18T13:17:55.354Z","level":"info","event":"http_request","request_id":"f07a5126-9ff0-4dab-8e3a-6f19945196f1","tenant":"default","method":"PUT","path":"/api/hr/periods/1/attendance","status":200,"duration_ms":4}
+
+stdout | tests/mobile-schedule-change.test.ts
+{"timestamp":"2026-10-18T13:17:55.359Z","level":"info","event":"http_request","request_id":"6b9f944e-2ba2-4da5-b7a0-13e052a94c47","tenant":"default","method":"GET","path":"/api/me/request-types","status":200,"duration_ms":3}
+
+ ❯ tests/mobile-schedule-change.test.ts (2 tests | 1 failed) 2885ms
+     × changes the published shift only after approval; stale approvals cannot overwrite it 13ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/mobile-schedule-change.test.ts > mobile schedule-change request > changes the published shift only after approval; stale approvals cannot overwrite it
+AssertionError: expected 400 to be 201 // Object.is equality
+
+- Expected
++ Received
+
+- 201
++ 400
+
+ ❯ tests/mobile-schedule-change.test.ts:62:26
+     60|   it('requires a future published roster date and a valid shift', asyn…
+     61|     expect((await file('2020-01-01')).status).toBe(400);
+     62|     expect((await file(workDate, 999999)).status).toBe(400);
+       |                          ^
+     63|     const rest = await file(restDate);
+     64|     expect(rest.status).toBe(400);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 295 passed (296)
+      Tests  1 failed | 2973 passed (2974)
+   Start at  13:11:23
+   Duration  519.20s (transform 7.64s, setup 2.42s, import 34.39s, tests 965.75s, environment 2.08s)

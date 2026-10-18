@@ -1,4 +1,8 @@
-# Engineering handoff and release hold — 2026-10-16
+# Engineering handoff and release hold
+
+Latest follow-up: 18 October 2026 — accounting connection races, company-bound records, durable
+write outcomes and HTTP retry-cache scope. Earlier authentication work below was delivered on
+16 October 2026. The complete release is still on hold.
 
 Work is on `production`, derived from `restructure/module-architecture`; it is not deployed.
 The attached handbook is an audit reference. Current whole-control status remains 36 PASS,
@@ -37,7 +41,7 @@ applicable issue before changing behavior:
 | High | Uniform API validation/error/redaction and privacy export/retention/erasure lifecycle | Route-by-route evidence; tenant-safe restore/copy/integration tests; approved retention scope |
 | High | AI privacy/adversarial evaluation, interrupted audit outcomes and hard spend allocation | Isolation/leakage/abuse/cancellation tests and real provider budget acceptance |
 | High | Native/Electron distribution and supported-client acceptance | APK/installer builds, signed artifacts, actual Windows/Android vault/backup/logout/upgrade checks |
-| High | Integration lifecycle concurrency, including token refresh/disconnect and in-flight accounting exports | Provider sandbox tests with delayed responses, reconnect/disconnect and reconciliation; current tests mock the provider |
+| High | Integration lifecycle and accounting reconciliation acceptance | Local generation/scoping, refresh admission, export exclusion and durable uncertain-write handling implemented 2026-10-18; actual Intuit sandbox, legacy adoption/repair tooling, durable auto-push scheduling/failure visibility and accountant acceptance remain. See operations/quickbooks-lifecycle.md |
 | High | Resolve or explicitly disposition vulnerable dependencies and historical-secret gates | Upstream/compatible fix or approved expiring risk record; verified revocation without exposing the old bearer |
 | Medium–High | Remaining resilience, concurrency, accessibility, observability and handbook requirements | Risk-ordered evidence for applicable controls; architectural/commercial choices agreed explicitly |
 
@@ -60,3 +64,13 @@ After engineering/staging preparation, the owner needs to:
 Detailed steps are in [OWNER-ACTIONS.md](../OWNER-ACTIONS.md). Hosting, DNS, live credentials,
 production databases and customer messages were not changed by this code follow-up. Keep release
 on hold until the applicable blockers have evidence or a properly approved, expiring exception.
+
+## Accounting lifecycle follow-up — 2026-10-18
+
+Confirmed refresh/disconnect and cross-company record-ID races are now guarded. Persistent
+refresh/export admission and pre-send write receipts prevent blind retry of unknown financial
+outcomes; scoped receipts recover known accepted links. Legacy unbound IDs remain preserved and
+blocked for reconciliation. The HTTP retry cache also binds connection/company/environment and
+does not retain temporary accounting conflicts. No owner action is requested during engineering. This addresses local
+concurrency/data-integrity defects, not every integration release requirement or other audit gap.
+See [the runbook](../operations/quickbooks-lifecycle.md) and latest validation record.

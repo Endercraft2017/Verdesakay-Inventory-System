@@ -1036,6 +1036,12 @@ installed PC says it needs the internet. The search-index rebuild is per copy (n
 ## modules/quickbooks
 
 **Responsibility:** one-way push of orders to QuickBooks Online (per-tenant OAuth).
+**Lifecycle safety (2026-10-18):** connection generation + environment/realm scoping, atomic token/config
+updates, per-process single-flight and durable refresh admission, per-order export locks and
+durable write receipts. Unknown outcomes and unbound legacy links require reconciliation. Four
+new cloud-only tables are excluded from node effects/snapshots. Shared idempotency fingerprints
+also bind the accounting connection/company/environment and never cache accounting 409s.
+See `operations/quickbooks-lifecycle.md`.
 **Owned files:** `quickbooks.ts`, routes: `quickbooks.routes.ts`.
 **Dependencies:** `shared/` (`mailer.ts`, `secrets.ts` for OAuth token storage).
 **Offline (phase 4i):** `online`: QuickBooks is reached from the cloud only (D8).

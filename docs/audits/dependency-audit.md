@@ -53,3 +53,13 @@ The mobile lockfile now pins SecureStorage 8.0.1 and esbuild 0.28.1. After integ
 `npm audit --json` reports **0 Critical / 0 High / 0 Moderate / 0 Low** across that lockfile.
 See `evidence/native-vault-npm-audit.json`. This does not clear the separate root/launcher
 findings or attest the compiled native binary; the native bundle includes license notices.
+
+## Current runtime recheck — 18 October 2026
+
+A fresh authorized `npm audit --omit=dev --json` still returns **0 Critical / 1 High /
+3 Moderate** vulnerable-package entries and correctly exits nonzero. Registry metadata still
+lists node-forge 1.4.0 as latest with no advisory fix. The proposed Mammoth 0.3.29 replacement
+remains an inappropriate old major-version downgrade; none was applied. No lockfile or dependency
+was changed in the accounting lifecycle increment. Raw evidence is
+`evidence/gaps-2026-10-18-npm-runtime.json`. Reachability limits and release disposition above
+remain open. This does not revalidate launcher/dev/mobile lockfiles or clear historical secrets.

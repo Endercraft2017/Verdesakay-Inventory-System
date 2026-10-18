@@ -42,8 +42,9 @@ QuickBooks authorization state additionally binds the initiating live session, a
 permission fingerprint and one-use generation. It lasts ten minutes, is invalidated by disconnect
 or a newer connect attempt, and is checked again after asynchronous token exchange before tokens
 are saved. Expired/revoked authorization requires starting Connect again. This is not a complete
-provider certification: real Intuit acceptance, concurrent token refresh/connection changes and
-in-flight order export reconciliation still need integration testing and lifecycle hardening.
+provider certification: real Intuit acceptance, real provider concurrency and
+reconciliation acceptance still need integration testing. Local lifecycle hardening was added
+2026-10-18; see [quickbooks-lifecycle.md](quickbooks-lifecycle.md) for tested scope and limitations.
 
 ## Client and operational acceptance
 

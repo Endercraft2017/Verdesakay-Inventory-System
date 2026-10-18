@@ -1806,6 +1806,30 @@ function createSchema(): void {
       PRIMARY KEY (entity, local_id)
     );
 
+    -- Company/environment-bound QuickBooks links and durable financial-write outcomes.
+    -- Legacy qbo_links remain for reconciliation; never guess their company.
+    CREATE TABLE IF NOT EXISTS qbo_company_links (
+      company_key TEXT NOT NULL, entity TEXT NOT NULL, local_id TEXT NOT NULL,
+      qbo_type TEXT NOT NULL, qbo_id TEXT NOT NULL, sync_token TEXT,
+      synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY(company_key,entity,local_id)
+    );
+    CREATE TABLE IF NOT EXISTS qbo_refresh_locks (
+      connection_id TEXT PRIMARY KEY, lock_id TEXT NOT NULL,
+      started_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS qbo_export_locks (
+      company_key TEXT NOT NULL, order_id INTEGER NOT NULL, lock_id TEXT NOT NULL,
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY(company_key,order_id)
+    );
+    CREATE TABLE IF NOT EXISTS qbo_write_attempts (
+      company_key TEXT NOT NULL, operation_key TEXT NOT NULL, request_id TEXT NOT NULL,
+      payload_hash TEXT NOT NULL, state TEXT NOT NULL CHECK(state IN ('pending','uncertain','failed','succeeded')),
+      response_json TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY(company_key,operation_key)
+    );
+
     -- Purchasing: goods receipts against a purchase order + vendor bills + 3-way match.
     -- A purchase order is an orders row with type = 'purchase'.
     CREATE TABLE IF NOT EXISTS goods_receipts (
