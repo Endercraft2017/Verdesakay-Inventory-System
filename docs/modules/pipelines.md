@@ -191,6 +191,22 @@ match) — a known, deliberate shortcut for warehouse speed, not a bug.
 
 **Terminal states:** bill posted (success); PO cancelled before receipt.
 
+## Planned cycle counts
+
+An `inventory.adjust` supervisor can assign one active item/location/build-state
+position to a worker with `inventory.view`, set a due date, instructions, and an
+optional 1–365 day repeat interval. The Planned checks board shows open,
+overdue, completed and cancelled assignments; Coverage shows stocked, planned
+and previously reconciled positions, their latest applied count, and positions
+without a plan, including zero-stock shelves. Only one
+open assignment exists per position. The assigned worker records an observation
+through the normal Physical Counts form. Rejection leaves the task open for a
+fresh count; submission and approval do not count as completion. Applying the
+approved correction or verifying an already corrected observation completes the
+task and, when requested, schedules the next occurrence atomically. The board
+uses the server's UTC date for due and overdue status. Phone implementation is
+specified in the root mobile handoff; desktop is implemented.
+
 ## Physical stock count and variance resolution
 
 **Trigger:** a discrepancy, possible legacy direct-sale double deduction, or

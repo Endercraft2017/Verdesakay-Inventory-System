@@ -1598,6 +1598,26 @@ export interface StockCountMovements {
   batch_id: number | null;
 }
 
+export interface StockCountTasks {
+  id: Generated<number>;
+  item_id: number;
+  location_id: number;
+  build_mode: string;
+  assigned_to: number;
+  due_date: string;
+  repeat_days: number | null;
+  note: Generated<string>;
+  status: Generated<string>;
+  planned_by: number | null;
+  planned_at: Generated<string>;
+  previous_task_id: number | null;
+  completed_by: number | null;
+  completed_at: string | null;
+  cancel_note: string | null;
+  cancelled_by: number | null;
+  cancelled_at: string | null;
+}
+
 export interface StockCounts {
   id: Generated<number>;
   item_id: number;
@@ -1616,6 +1636,7 @@ export interface StockCounts {
   source_closed_by: number | null;
   source_closed_at: string | null;
   source_close_note: string | null;
+  task_id: number | null;
   status: Generated<string>;
   counted_by: number | null;
   counted_at: Generated<string>;
@@ -1938,6 +1959,7 @@ export interface DB {
   shifts: Shifts;
   site_decision_clashes: SiteDecisionClashes;
   stock_count_movements: StockCountMovements;
+  stock_count_tasks: StockCountTasks;
   stock_counts: StockCounts;
   stock_discrepancies: StockDiscrepancies;
   suppliers: Suppliers;

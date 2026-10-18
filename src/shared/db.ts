@@ -69,6 +69,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 90: planned cycle-count assignments, recurrence, and exact-count linkage.
 // 89: bind linked issue closure to an applied count and captured sale-audit evidence.
 // 88: structured location/build-state stock counts and supervised resolution.
 // 87: record human reviews of historical direct-sale stock-out candidates.
@@ -98,7 +99,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 89; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 90; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -1039,6 +1040,28 @@ function createSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_direct_sale_stockout_review_case ON direct_sale_stockout_reviews(order_id,item_id,id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_direct_sale_stockout_review_evidence ON direct_sale_stockout_reviews(order_id,item_id,evidence_hash);
 
+    CREATE TABLE IF NOT EXISTS stock_count_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+      build_mode TEXT NOT NULL CHECK(build_mode IN ('assembled','semi_built')),
+      assigned_to INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      due_date TEXT NOT NULL,
+      repeat_days INTEGER CHECK(repeat_days BETWEEN 1 AND 365),
+      note TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','completed','cancelled')),
+      planned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      planned_at TEXT NOT NULL DEFAULT (datetime('now')),
+      previous_task_id INTEGER REFERENCES stock_count_tasks(id) ON DELETE SET NULL,
+      completed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      completed_at TEXT,
+      cancel_note TEXT,
+      cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      cancelled_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_count_tasks_open_position
+      ON stock_count_tasks(item_id,location_id,build_mode) WHERE status='open';
+    CREATE INDEX IF NOT EXISTS idx_stock_count_tasks_queue ON stock_count_tasks(status,due_date,assigned_to);
     CREATE TABLE IF NOT EXISTS stock_counts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
@@ -1057,6 +1080,7 @@ function createSchema(): void {
       source_closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       source_closed_at TEXT,
       source_close_note TEXT,
+      task_id INTEGER REFERENCES stock_count_tasks(id) ON DELETE SET NULL,
       status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted','approved','applied','rejected')),
       counted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       counted_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -3512,6 +3536,33 @@ function migrate(): void {
     ['source_closed_at','TEXT'],
     ['source_close_note','TEXT'],
   ] as const) if(!countCols.has(name)) db.exec(`ALTER TABLE stock_counts ADD COLUMN ${name} ${type}`);
+
+  // v90: one open assignment per exact item/location/build state; rejected observations
+  // remain in count history while the same assignment can be counted again.
+  db.exec(`CREATE TABLE IF NOT EXISTS stock_count_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+    location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+    build_mode TEXT NOT NULL CHECK(build_mode IN ('assembled','semi_built')),
+    assigned_to INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    due_date TEXT NOT NULL,
+    repeat_days INTEGER CHECK(repeat_days BETWEEN 1 AND 365),
+    note TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','completed','cancelled')),
+    planned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    planned_at TEXT NOT NULL DEFAULT (datetime('now')),
+    previous_task_id INTEGER REFERENCES stock_count_tasks(id) ON DELETE SET NULL,
+    completed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    completed_at TEXT,
+    cancel_note TEXT,
+    cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    cancelled_at TEXT);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_count_tasks_open_position
+      ON stock_count_tasks(item_id,location_id,build_mode) WHERE status='open';
+    CREATE INDEX IF NOT EXISTS idx_stock_count_tasks_queue ON stock_count_tasks(status,due_date,assigned_to)`);
+  const taskLink = (db.prepare('PRAGMA table_info(stock_counts)').all() as {name:string}[]).some(c=>c.name==='task_id');
+  if(!taskLink) db.exec('ALTER TABLE stock_counts ADD COLUMN task_id INTEGER REFERENCES stock_count_tasks(id) ON DELETE SET NULL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_stock_counts_task ON stock_counts(task_id,id)');
 
 }
 

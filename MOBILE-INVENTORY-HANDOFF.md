@@ -1,5 +1,43 @@
 # Inventory and production: mobile integration gaps
 
+## Planned cycle counts and stock-position coverage (2026-10-18)
+
+Schema v90 adds `stock_count_tasks`, with one open task per exact item, location
+and build state. Each task has an assigned worker with `inventory.view`, a due
+date, optional 1–365 day repeat interval, instructions, planner and lifecycle
+audit fields. `GET /api/inventory/stock-counts/tasks?status=open|all|completed|cancelled&mine=1`
+returns the queue with assignee, latest count status and an `overdue` flag.
+`GET .../tasks/coverage` lists stocked, planned and previously reconciled
+positions (including zero-stock shelves) with their last applied count and any
+open assignment. Supervisors use `GET .../tasks/assignees`,
+`POST .../tasks`, `PUT .../tasks/:taskId`, and `POST .../tasks/:taskId/cancel`.
+Create/edit require the exact position, active assignee, real due date, and
+optional repeat interval; cancellation requires a reason of at least 10 characters.
+An assignment with a submitted/approved observation cannot be edited or
+cancelled. Duplicate open assignments for the same position return
+`409 task_exists`.
+
+The assigned employee submits the existing physical-count body with `task_id`
+and `source_kind:'manual'`. Item, location, build state, assignee and open-task
+state must all match. An unlinked manual count for the same position is refused
+with `409 planned_task_required`; another count while its observation is pending
+returns `409 task_in_progress`. A rejected observation leaves the assignment
+open and allows a fresh count. Approval still requires a different user. The
+task completes only when the count is `applied` or `verify` confirms a separately
+corrected observation. A recurring task creates its next due occurrence in the
+same transaction as completion; retrying apply/verify does not create another.
+Due dates and overdue labels currently use the server's UTC calendar date.
+
+Phone owner: surface **My planned checks** and overdue work in Inventory, with
+the exact location path, build state, instructions and latest attempt. Start the
+physical count with the immutable `task_id`; do not allow changing its position
+inside the count form. Preserve the request body and idempotency key on timeout.
+Show rejected attempts as **Recount**, pending counts as **Awaiting review**, and
+completed tasks separately. Supervisor planning/edit/cancel controls should
+follow `inventory.adjust`; avoid claiming completion at submission or approval.
+The desktop board, stock-position coverage and responsive 390px view are in
+place. No mobile source was changed in this step.
+
 ## Linked count → discrepancy / direct-sale audit closure (2026-10-18)
 
 Schema v89 stores `source_evidence_hash`, `source_closed_by`, `source_closed_at`,

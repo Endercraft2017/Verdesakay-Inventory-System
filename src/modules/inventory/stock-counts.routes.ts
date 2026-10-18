@@ -4,7 +4,7 @@
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { db, queryAll, queryOne, run } from '../../shared/db';
-import { requirePermission } from '../../shared/auth';
+import { authUserById, requirePermission } from '../../shared/auth';
 import { parseBody } from '../../shared/validation';
 import { syncClass } from '../../sync';
 import { applyStockChange, getDefaultLocationId, locationName, variantStockAt } from './inventory-stock';
@@ -22,13 +22,14 @@ type Count = { id:number; item_id:number; location_id:number; build_mode:Mode; b
   counted_batches:string; note:string; source_kind:string; source_id:number|null;
   source_evidence_hash:string|null; source_closed_by:number|null; source_closed_at:string|null;
   source_close_note:string|null; status:string;
+  task_id:number|null;
   counted_by:number|null; counted_at:string; reviewed_by:number|null; reviewed_at:string|null;
   review_note:string|null; transaction_id:number|null; completed_at:string|null };
 const quantity = z.number().int().min(0).max(1_000_000);
 const batchEntry = z.object({batch_id:z.number().int().positive(),quantity});
 const submitSchema = z.object({
   item_id:z.number().int().positive(), location_id:z.number().int().positive(),
-  build_mode:z.enum(['assembled','semi_built']), expected_quantity:quantity,
+  build_mode:z.enum(['assembled','semi_built']), expected_quantity:z.number().int().min(-1_000_000).max(1_000_000),
   expected_serial_ids:z.array(z.number().int().positive()).max(500),
   expected_batches:z.array(batchEntry).max(500),
   counted_untracked:quantity,
@@ -37,8 +38,25 @@ const submitSchema = z.object({
   note:z.string().trim().min(10).max(1000),
   source_kind:z.enum(['manual','discrepancy','direct_sale']).default('manual'),
   source_id:z.number().int().positive().nullable().optional(),
+  task_id:z.number().int().positive().nullable().optional(),
 });
 const noteSchema = z.object({note:z.string().trim().min(10).max(1000)});
+const dateString=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>{
+  const parsed=new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime())&&parsed.toISOString().slice(0,10)===v;
+},'Enter a real calendar date');
+const taskSchema=z.object({
+  item_id:z.number().int().positive(),location_id:z.number().int().positive(),
+  build_mode:z.enum(['assembled','semi_built']),assigned_to:z.number().int().positive(),
+  due_date:dateString,repeat_days:z.number().int().min(1).max(365).nullable().optional(),
+  note:z.string().trim().max(1000).default(''),
+});
+const taskEditSchema=taskSchema.pick({assigned_to:true,due_date:true,repeat_days:true,note:true});
+type Task={id:number;item_id:number;location_id:number;build_mode:Mode;assigned_to:number;
+  due_date:string;repeat_days:number|null;note:string;status:'open'|'completed'|'cancelled';
+  planned_by:number|null;planned_at:string;previous_task_id:number|null;completed_by:number|null;
+  completed_at:string|null;cancel_note:string|null;cancelled_by:number|null;cancelled_at:string|null;
+  latest_count_id:number|null;latest_count_status:string|null};
 
 function serialCode(row:{id:number;identifier:string|null}) { return row.identifier?.trim() || `#${row.id}`; }
 function snapshot(itemId:number,locationId:number,mode:Mode):Snapshot|null {
@@ -92,6 +110,7 @@ function detail(c:Count) {
   const movements=queryAll<{transaction_id:number;batch_id:number|null;change:number;reason:string|null}>(
     `SELECT m.transaction_id,m.batch_id,t.change,t.reason FROM stock_count_movements m
       JOIN inventory_transactions t ON t.id=m.transaction_id WHERE m.count_id=? ORDER BY t.id`,c.id);
+  const task=c.task_id?taskById(c.task_id):null;
   return {...c,item_name:item?.name??'(removed)',sku:item?.sku??null,
     location_name:current?.location_name??'(removed)',counted_quantity:countedTotal(c),
     variance:countedTotal(c)-c.book_quantity,current_quantity:current?.book_quantity??null,
@@ -99,7 +118,8 @@ function detail(c:Count) {
     counted_serial_codes:JSON.parse(c.counted_serial_ids),counted_batches:JSON.parse(c.counted_batches),
     current_serials:current?.serials??[],current_batches:current?.batches??[],
     current_untracked:current?.untracked_quantity??null,
-    movements,source_status:sourceState(c),
+    movements,source_status:sourceState(c),task_due_date:task?.due_date??null,
+    task_status:task?.status??null,
     tracked_difference:!same(sortedCodes(current?.serials.map(s=>s.code)??[]),sortedCodes(JSON.parse(c.counted_serial_ids)))
       || !same(current?recordedBatches(current.batches):[],
         (JSON.parse(c.counted_batches) as {batch_id:number;quantity:number}[]).filter(b=>b.quantity>0)),
@@ -110,6 +130,109 @@ function count(req:Request) {return queryOne<Count>('SELECT * FROM stock_counts 
 const countHome={home:(req:Request)=>({location:Number(req.body?.location_id)||null})};
 const existingHome={home:(req:Request)=>({location:queryOne<{location_id:number}>(
   'SELECT location_id FROM stock_counts WHERE id=?',id(req))?.location_id??null})};
+function taskId(req:Request){const n=Number(req.params.taskId);return Number.isSafeInteger(n)&&n>0?n:0;}
+function taskById(taskId:number):Task|undefined{return queryOne<Task>(`SELECT t.*,
+  (SELECT c.id FROM stock_counts c WHERE c.task_id=t.id ORDER BY c.id DESC LIMIT 1) AS latest_count_id,
+  (SELECT c.status FROM stock_counts c WHERE c.task_id=t.id ORDER BY c.id DESC LIMIT 1) AS latest_count_status
+  FROM stock_count_tasks t WHERE t.id=?`,taskId);}
+function taskOutput(t:Task){
+  const item=queryOne<{name:string;sku:string|null}>('SELECT name,sku FROM inventory_items WHERE id=?',t.item_id);
+  const assigned=queryOne<{full_name:string}>('SELECT full_name FROM users WHERE id=?',t.assigned_to);
+  return {...t,item_name:item?.name??'(removed)',sku:item?.sku??null,
+    location_name:locationName(t.location_id),assigned_to_name:assigned?.full_name??'(removed)',
+    overdue:t.status==='open'&&t.due_date<new Date().toISOString().slice(0,10)};
+}
+function validAssignee(userId:number){return authUserById(userId)?.permissions.includes('inventory.view')===true;}
+const taskHome={home:(req:Request)=>({location:Number(req.body?.location_id)||null})};
+const existingTaskHome={home:(req:Request)=>({location:queryOne<{location_id:number}>(
+  'SELECT location_id FROM stock_count_tasks WHERE id=?',taskId(req))?.location_id??null})};
+function completeTask(row:Count,actorId:number){
+  if(!row.task_id)return;
+  const task=taskById(row.task_id);
+  if(!task||task.status!=='open')throw new Error('Count assignment is no longer open');
+  run(`UPDATE stock_count_tasks SET status='completed',completed_by=?,completed_at=datetime('now') WHERE id=?`,actorId,task.id);
+  if(task.repeat_days){
+    run(`INSERT INTO stock_count_tasks(item_id,location_id,build_mode,assigned_to,due_date,repeat_days,note,planned_by,previous_task_id)
+      VALUES(?,?,?,?,date(CASE WHEN ?>date('now') THEN ? ELSE date('now') END,?),?,?,?,?)`,
+      task.item_id,task.location_id,task.build_mode,task.assigned_to,task.due_date,task.due_date,
+      `+${task.repeat_days} day`,task.repeat_days,task.note,task.planned_by,task.id);
+  }
+}
+
+router.get('/tasks',requirePermission('inventory.view'),(req,res)=>{
+  const status=typeof req.query.status==='string'?req.query.status:'open';
+  if(!['open','all','completed','cancelled'].includes(status)){res.status(400).json({error:'Invalid task status'});return;}
+  const mine=req.query.mine==='1';
+  const rows=queryAll<Task>(`SELECT t.*,
+    (SELECT c.id FROM stock_counts c WHERE c.task_id=t.id ORDER BY c.id DESC LIMIT 1) AS latest_count_id,
+    (SELECT c.status FROM stock_counts c WHERE c.task_id=t.id ORDER BY c.id DESC LIMIT 1) AS latest_count_status
+    FROM stock_count_tasks t WHERE (?='all' OR t.status=?) AND (?=0 OR t.assigned_to=?)
+    ORDER BY CASE WHEN t.status='open' THEN 0 ELSE 1 END,t.due_date,t.id`,
+    status,status,mine?1:0,req.user!.id);
+  res.json(rows.map(taskOutput));
+});
+router.get('/tasks/assignees',requirePermission('inventory.adjust'),(_req,res)=>{
+  const users=queryAll<{id:number;full_name:string}>('SELECT id,full_name FROM users WHERE active=1 ORDER BY full_name COLLATE NOCASE');
+  res.json(users.filter(u=>validAssignee(u.id)));
+});
+router.get('/tasks/coverage',requirePermission('inventory.view'),(_req,res)=>{
+  const rows=queryAll<{item_id:number;location_id:number;build_mode:Mode;quantity:number;item_name:string;sku:string|null;
+    last_count_at:string|null;open_task_id:number|null;due_date:string|null}>(`WITH positions AS (
+      SELECT item_id,location_id,build_mode FROM inventory_variant_stock WHERE quantity!=0
+      UNION SELECT s.item_id,s.location_id,'assembled' FROM inventory_stock s WHERE s.quantity!=0
+        AND NOT EXISTS(SELECT 1 FROM inventory_variant_stock v WHERE v.item_id=s.item_id AND v.location_id=s.location_id)
+      UNION SELECT item_id,location_id,build_mode FROM stock_count_tasks
+      UNION SELECT item_id,location_id,build_mode FROM stock_counts WHERE status='applied'
+    ) SELECT p.*,i.name AS item_name,i.sku,
+      COALESCE(v.quantity,CASE WHEN p.build_mode='assembled' THEN s.quantity ELSE 0 END,0) AS quantity,
+      (SELECT MAX(c.completed_at) FROM stock_counts c WHERE c.item_id=p.item_id AND c.location_id=p.location_id
+        AND c.build_mode=p.build_mode AND c.status='applied') AS last_count_at,
+      (SELECT t.id FROM stock_count_tasks t WHERE t.item_id=p.item_id AND t.location_id=p.location_id
+        AND t.build_mode=p.build_mode AND t.status='open') AS open_task_id,
+      (SELECT t.due_date FROM stock_count_tasks t WHERE t.item_id=p.item_id AND t.location_id=p.location_id
+        AND t.build_mode=p.build_mode AND t.status='open') AS due_date
+    FROM positions p JOIN inventory_items i ON i.id=p.item_id
+    LEFT JOIN inventory_variant_stock v ON v.item_id=p.item_id AND v.location_id=p.location_id AND v.build_mode=p.build_mode
+    LEFT JOIN inventory_stock s ON s.item_id=p.item_id AND s.location_id=p.location_id
+    ORDER BY i.name,p.location_id,p.build_mode`);
+  res.json(rows.map(r=>({...r,location_name:locationName(r.location_id),
+    overdue:!!r.due_date&&r.due_date<new Date().toISOString().slice(0,10)})));
+});
+router.post('/tasks',requirePermission('inventory.adjust'),syncClass('claim',taskHome),(req,res)=>{
+  const input=parseBody(taskSchema,req.body);
+  if(!snapshot(input.item_id,input.location_id,input.build_mode)){
+    res.status(404).json({error:'Item or location not found'});return;}
+  if(!validAssignee(input.assigned_to)){
+    res.status(400).json({error:'Assign an active user with inventory.view access'});return;}
+  const existing=queryOne<{id:number}>(`SELECT id FROM stock_count_tasks
+    WHERE item_id=? AND location_id=? AND build_mode=? AND status='open'`,
+    input.item_id,input.location_id,input.build_mode);
+  if(existing){res.status(409).json({error:`An open count assignment already exists (#${existing.id})`,code:'task_exists'});return;}
+  const info=run(`INSERT INTO stock_count_tasks(item_id,location_id,build_mode,assigned_to,due_date,repeat_days,note,planned_by)
+    VALUES(?,?,?,?,?,?,?,?)`,input.item_id,input.location_id,input.build_mode,input.assigned_to,
+    input.due_date,input.repeat_days??null,input.note,req.user!.id);
+  res.status(201).json(taskOutput(taskById(Number(info.lastInsertRowid))!));
+});
+router.put('/tasks/:taskId',requirePermission('inventory.adjust'),syncClass('claim',existingTaskHome),(req,res)=>{
+  const input=parseBody(taskEditSchema,req.body),task=taskById(taskId(req));
+  if(!task){res.status(404).json({error:'Count assignment not found'});return;}
+  if(task.status!=='open'||['submitted','approved'].includes(task.latest_count_status??'')){
+    res.status(409).json({error:'An in-progress or finished count assignment cannot be edited'});return;}
+  if(!validAssignee(input.assigned_to)){
+    res.status(400).json({error:'Assign an active user with inventory.view access'});return;}
+  run(`UPDATE stock_count_tasks SET assigned_to=?,due_date=?,repeat_days=?,note=? WHERE id=?`,
+    input.assigned_to,input.due_date,input.repeat_days??null,input.note,task.id);
+  res.json(taskOutput(taskById(task.id)!));
+});
+router.post('/tasks/:taskId/cancel',requirePermission('inventory.adjust'),syncClass('claim',existingTaskHome),(req,res)=>{
+  const {note}=parseBody(noteSchema,req.body),task=taskById(taskId(req));
+  if(!task){res.status(404).json({error:'Count assignment not found'});return;}
+  if(task.status!=='open'||['submitted','approved'].includes(task.latest_count_status??'')){
+    res.status(409).json({error:'An in-progress or finished count assignment cannot be cancelled'});return;}
+  run(`UPDATE stock_count_tasks SET status='cancelled',cancel_note=?,cancelled_by=?,cancelled_at=datetime('now') WHERE id=?`,
+    note,req.user!.id,task.id);
+  res.json(taskOutput(taskById(task.id)!));
+});
 
 router.get('/context',requirePermission('inventory.view'),(req,res)=>{
   const itemId=Number(req.query.item_id),locationId=Number(req.query.location_id);
@@ -152,6 +275,20 @@ router.post('/',requirePermission('inventory.view'),syncClass('physical',countHo
     res.status(400).json({error:'Enter one count for every displayed batch, in the shown order'});return;
   }
   if(input.source_kind==='manual' && input.source_id!=null){res.status(400).json({error:'Manual count cannot have a source ID'});return;}
+  if(input.task_id){
+    const task=taskById(input.task_id);
+    if(!task||task.status!=='open'||task.item_id!==input.item_id||task.location_id!==input.location_id||
+      task.build_mode!==input.build_mode||task.assigned_to!==req.user!.id||input.source_kind!=='manual'){
+      res.status(409).json({error:'Count assignment is closed, belongs to another worker, or does not match this stock position',code:'task_mismatch'});return;
+    }
+    if(['submitted','approved','applied'].includes(task.latest_count_status??'')){
+      res.status(409).json({error:'This assignment already has a count awaiting review or reconciliation',code:'task_in_progress'});return;
+    }
+  }else if(input.source_kind==='manual'){
+    const planned=queryOne<{id:number}>(`SELECT id FROM stock_count_tasks WHERE item_id=? AND location_id=?
+      AND build_mode=? AND status='open'`,input.item_id,input.location_id,input.build_mode);
+    if(planned){res.status(409).json({error:`Use open count assignment #${planned.id} for this stock position`,code:'planned_task_required'});return;}
+  }
   let sourceEvidenceHash:string|null=null;
   if(input.source_kind!=='manual'){
     if(!input.source_id){res.status(400).json({error:'Source ID is required'});return;}
@@ -169,10 +306,11 @@ router.post('/',requirePermission('inventory.view'),syncClass('physical',countHo
     }
   }
   const info=run(`INSERT INTO stock_counts(item_id,location_id,build_mode,book_quantity,book_serial_ids,book_batches,
-    counted_untracked,counted_serial_ids,counted_batches,note,source_kind,source_id,source_evidence_hash,counted_by)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,input.item_id,input.location_id,input.build_mode,current.book_quantity,
+    counted_untracked,counted_serial_ids,counted_batches,note,source_kind,source_id,source_evidence_hash,task_id,counted_by)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,input.item_id,input.location_id,input.build_mode,current.book_quantity,
     JSON.stringify(current.serials.map(s=>s.id)),JSON.stringify(expectedBatches),input.counted_untracked,
-    JSON.stringify(codes),JSON.stringify(input.counted_batches),input.note,input.source_kind,input.source_id??null,sourceEvidenceHash,req.user!.id);
+    JSON.stringify(codes),JSON.stringify(input.counted_batches),input.note,input.source_kind,input.source_id??null,
+    sourceEvidenceHash,input.task_id??null,req.user!.id);
   res.status(201).json(detail(queryOne<Count>('SELECT * FROM stock_counts WHERE id=?',Number(info.lastInsertRowid))!));
 });
 router.post('/:id/approve',requirePermission('inventory.adjust'),syncClass('claim',existingHome),(req,res)=>{
@@ -252,6 +390,7 @@ router.post('/:id/apply',requirePermission('inventory.adjust'),syncClass('physic
       firstTx??=tx;totalChange+=untrackedChange;
     }
     run(`UPDATE stock_counts SET status='applied',transaction_id=?,completed_at=datetime('now') WHERE id=?`,firstTx,row.id);
+    completeTask(row,req.user!.id);
     db.exec('COMMIT');
   }catch(e){db.exec('ROLLBACK');throw e;}
   if(totalChange<0) notifyLowStockCrossed(item,item.quantity,item.quantity+totalChange);
@@ -266,7 +405,12 @@ router.post('/:id/verify',requirePermission('inventory.adjust'),syncClass('claim
   if(!currentMatchesObservation(row,current)){
     res.status(409).json({error:'Current stock or tracked identities do not match the physical count yet',code:'not_reconciled'});return;
   }
-  run(`UPDATE stock_counts SET status='applied',completed_at=datetime('now'),review_note=review_note||' / '||? WHERE id=?`,note,row.id);
+  db.exec('BEGIN');
+  try{
+    run(`UPDATE stock_counts SET status='applied',completed_at=datetime('now'),review_note=review_note||' / '||? WHERE id=?`,note,row.id);
+    completeTask(row,req.user!.id);
+    db.exec('COMMIT');
+  }catch(e){db.exec('ROLLBACK');throw e;}
   res.json(detail(count(req)!));
 });
 

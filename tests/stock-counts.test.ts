@@ -4,11 +4,13 @@ import { setupApp, cleanup, login, createEmployee, addSerializedUnits, type Test
 let ctx:TestContext;
 let admin:string;
 let warehouse:string;
+let warehouseId:number;
 const H=(token:string)=>({Authorization:`Bearer ${token}`});
 beforeAll(async()=>{
   ctx=await setupApp();
   admin=await login(ctx.api);
-  warehouse=(await createEmployee(ctx.api,admin,{role:'warehouse'})).token;
+  const worker=await createEmployee(ctx.api,admin,{role:'warehouse'});
+  warehouse=worker.token;warehouseId=worker.id;
 });
 afterAll(()=>cleanup(ctx));
 const item=async(name:string,quantity=0)=>(await ctx.api.post('/api/inventory').set(H(admin)).send({name,quantity})).body.id as number;
@@ -25,6 +27,142 @@ const submit=async(c:any,changes:Record<string,unknown>={})=>ctx.api.post('/api/
 });
 
 describe('physical stock count',()=>{
+  it('plans one exact stock position, assigns its count, and creates the next recurring check only after reconciliation',async()=>{
+    const itemId=await item('Cycle count bolts',5);
+    const due=new Date(Date.now()+2*86400000).toISOString().slice(0,10);
+    const plan=()=>ctx.api.post('/api/inventory/stock-counts/tasks').set(H(admin)).send({
+      item_id:itemId,location_id:1,build_mode:'assembled',assigned_to:warehouseId,due_date:due,
+      repeat_days:30,note:'Check the labelled bolts shelf',
+    });
+    const created=await plan();
+    expect(created.status).toBe(201);
+    const taskId=created.body.id;
+    expect(created.body).toMatchObject({status:'open',assigned_to:warehouseId,overdue:false});
+    expect((await plan()).body.code).toBe('task_exists');
+    const coverage=(await ctx.api.get('/api/inventory/stock-counts/tasks/coverage').set(H(admin))).body;
+    expect(coverage).toEqual(expect.arrayContaining([expect.objectContaining({item_id:itemId,location_id:1,
+      open_task_id:taskId,last_count_at:null})]));
+    expect((await submit(await context(itemId),{counted_untracked:4})).body.code).toBe('planned_task_required');
+    const wrongWorker=await ctx.api.post('/api/inventory/stock-counts').set(H(admin)).send({
+      item_id:itemId,location_id:1,build_mode:'assembled',expected_quantity:5,expected_serial_ids:[],expected_batches:[],
+      counted_untracked:4,counted_serial_codes:[],counted_batches:[],note:'I counted this exact stock shelf',task_id:taskId,
+    });
+    expect(wrongWorker.body.code).toBe('task_mismatch');
+    const counted=await submit(await context(itemId),{task_id:taskId,counted_untracked:4});
+    expect(counted.status).toBe(201);
+    expect(counted.body).toMatchObject({task_id:taskId,task_status:'open'});
+    expect((await submit(await context(itemId),{task_id:taskId,counted_untracked:4})).body.code).toBe('task_in_progress');
+    expect((await ctx.api.put(`/api/inventory/stock-counts/tasks/${taskId}`).set(H(admin)).send({
+      assigned_to:warehouseId,due_date:due,repeat_days:30,note:'Trying to edit an active count',
+    })).status).toBe(409);
+    expect((await ctx.api.post(`/api/inventory/stock-counts/tasks/${taskId}/cancel`).set(H(admin))
+      .send({note:'Trying to cancel an active count'})).status).toBe(409);
+    expect((await ctx.api.post(`/api/inventory/stock-counts/${counted.body.id}/approve`).set(H(warehouse))
+      .send({note:'I checked the assigned count'})).status).toBe(409);
+    expect((await ctx.api.post(`/api/inventory/stock-counts/${counted.body.id}/approve`).set(H(admin))
+      .send({note:'Independently approved cycle count'})).status).toBe(200);
+    expect((await ctx.api.get(`/api/inventory/stock-counts/tasks?status=open&mine=1`).set(H(warehouse))).body)
+      .toEqual(expect.arrayContaining([expect.objectContaining({id:taskId,latest_count_status:'approved'})]));
+    const applied=await ctx.api.post(`/api/inventory/stock-counts/${counted.body.id}/apply`).set(H(admin)).send({});
+    expect(applied.status).toBe(200);
+    expect(applied.body).toMatchObject({status:'applied',task_status:'completed',current_quantity:4});
+    expect((await ctx.api.post(`/api/inventory/stock-counts/${counted.body.id}/apply`).set(H(admin)).send({})).status).toBe(200);
+    const tasks=(await ctx.api.get('/api/inventory/stock-counts/tasks?status=all').set(H(admin))).body;
+    expect(tasks.filter((t:any)=>t.item_id===itemId)).toHaveLength(2);
+    expect(tasks).toEqual(expect.arrayContaining([expect.objectContaining({id:taskId,status:'completed'}),
+      expect.objectContaining({previous_task_id:taskId,status:'open',repeat_days:30})]));
+    expect((await ctx.api.get('/api/inventory/stock-counts/tasks/coverage').set(H(admin))).body)
+      .toEqual(expect.arrayContaining([expect.objectContaining({item_id:itemId,last_count_at:expect.any(String)})]));
+    expect((await ctx.api.get(`/api/inventory/${itemId}`).set(H(admin))).body.quantity).toBe(4);
+    const semi=await ctx.api.post('/api/inventory/stock-counts/tasks').set(H(admin)).send({
+      item_id:itemId,location_id:1,build_mode:'semi_built',assigned_to:warehouseId,due_date:due,
+      note:'Check the separate semi-built balance',
+    });
+    expect(semi.status).toBe(201);
+    expect(semi.body.build_mode).toBe('semi_built');
+  });
+
+  it('keeps an overdue assignment open after rejection, allows recount, and supports supervised cancellation',async()=>{
+    const itemId=await item('Overdue shelf checks',3);
+    const due='2020-01-01';
+    const created=await ctx.api.post('/api/inventory/stock-counts/tasks').set(H(admin)).send({
+      item_id:itemId,location_id:1,build_mode:'assembled',assigned_to:warehouseId,due_date:due,
+      repeat_days:null,note:'Count this shelf after the stock discrepancy',
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.overdue).toBe(true);
+    const taskId=created.body.id;
+    const first=await submit(await context(itemId),{task_id:taskId,counted_untracked:2});
+    expect(first.status).toBe(201);
+    await ctx.api.post(`/api/inventory/${itemId}/adjust`).set(H(admin))
+      .send({change:1,reason:'Received another box before review'});
+    const stale=await ctx.api.post(`/api/inventory/stock-counts/${first.body.id}/approve`).set(H(admin))
+      .send({note:'I checked the old shelf snapshot'});
+    expect(stale.body.code).toBe('stale_count');
+    expect((await ctx.api.post(`/api/inventory/stock-counts/${first.body.id}/reject`).set(H(admin))
+      .send({note:'The shelf labels need another check'})).status).toBe(200);
+    const open=(await ctx.api.get('/api/inventory/stock-counts/tasks?status=open').set(H(admin))).body;
+    expect(open).toEqual(expect.arrayContaining([expect.objectContaining({id:taskId,overdue:true,latest_count_status:'rejected'})]));
+    const second=await submit(await context(itemId),{task_id:taskId,counted_untracked:4});
+    expect(second.status).toBe(201);
+    expect(second.body.id).not.toBe(first.body.id);
+    await ctx.api.post(`/api/inventory/stock-counts/${second.body.id}/approve`).set(H(admin))
+      .send({note:'Verified this second shelf observation'});
+    expect((await ctx.api.post(`/api/inventory/stock-counts/${second.body.id}/verify`).set(H(admin))
+      .send({note:'No stock movement needed after recount'})).status).toBe(200);
+    expect((await ctx.api.get('/api/inventory/stock-counts/tasks?status=completed').set(H(admin))).body)
+      .toEqual(expect.arrayContaining([expect.objectContaining({id:taskId,status:'completed'})]));
+    const another=await ctx.api.post('/api/inventory/stock-counts/tasks').set(H(admin)).send({
+      item_id:itemId,location_id:1,build_mode:'assembled',assigned_to:warehouseId,due_date:due,note:'One more shelf check',
+    });
+    expect(another.status).toBe(201);
+    const edited=await ctx.api.put(`/api/inventory/stock-counts/tasks/${another.body.id}`).set(H(admin)).send({
+      assigned_to:warehouseId,due_date:'2020-01-02',repeat_days:14,note:'Updated shelf inspection instructions',
+    });
+    expect(edited.body).toMatchObject({due_date:'2020-01-02',repeat_days:14,note:'Updated shelf inspection instructions'});
+    const cancelled=await ctx.api.post(`/api/inventory/stock-counts/tasks/${another.body.id}/cancel`).set(H(admin))
+      .send({note:'This check was scheduled in error'});
+    expect(cancelled.body).toMatchObject({status:'cancelled',cancel_note:'This check was scheduled in error'});
+    expect((await ctx.api.get('/api/inventory/stock-counts/tasks?status=open').set(H(admin))).body
+      .some((t:any)=>t.id===another.body.id)).toBe(false);
+    const emptyId=await item('Empty shelf position');
+    const nonCounter=await createEmployee(ctx.api,admin,{role:'hr'});
+    expect((await ctx.api.post('/api/inventory/stock-counts/tasks').set(H(admin)).send({
+      item_id:emptyId,location_id:1,build_mode:'assembled',assigned_to:nonCounter.id,due_date:due,
+    })).status).toBe(400);
+    const empty=await ctx.api.post('/api/inventory/stock-counts/tasks').set(H(admin)).send({
+      item_id:emptyId,location_id:1,build_mode:'assembled',assigned_to:warehouseId,due_date:due,
+      note:'Confirm that this shelf is empty',
+    });
+    expect(empty.status).toBe(201);
+    expect((await ctx.api.get('/api/inventory/stock-counts/tasks/coverage').set(H(admin))).body)
+      .toEqual(expect.arrayContaining([expect.objectContaining({item_id:emptyId,quantity:0,open_task_id:empty.body.id})]));
+    expect((await ctx.api.post('/api/inventory/stock-counts/tasks').set(H(admin)).send({
+      item_id:emptyId,location_id:1,build_mode:'semi_built',assigned_to:warehouseId,due_date:'2020-02-30',
+    })).status).toBe(400);
+  });
+
+  it('lets an assigned worker observe and reconcile a negative book balance',async()=>{
+    const itemId=await item('Overdrawn cycle shelf');
+    const {run}=await import('../src/shared/db');
+    // An offline overdraw can persist a negative book position that online stock-out refuses.
+    run('UPDATE inventory_items SET quantity=-1 WHERE id=?',itemId);
+    run('INSERT INTO inventory_stock(item_id,location_id,quantity) VALUES(?,1,-1)',itemId);
+    run("INSERT INTO inventory_variant_stock(item_id,location_id,build_mode,quantity) VALUES(?,1,'assembled',-1)",itemId);
+    const c=await context(itemId);
+    expect(c).toMatchObject({book_quantity:-1,untracked_quantity:-1});
+    const task=(await ctx.api.post('/api/inventory/stock-counts/tasks').set(H(admin)).send({
+      item_id:itemId,location_id:1,build_mode:'assembled',assigned_to:warehouseId,
+      due_date:new Date().toISOString().slice(0,10),note:'Check the overdrawn shelf',
+    })).body;
+    const created=await submit(c,{task_id:task.id,counted_untracked:0});
+    expect(created.status).toBe(201);
+    await ctx.api.post(`/api/inventory/stock-counts/${created.body.id}/approve`).set(H(admin))
+      .send({note:'Verified the shelf really is empty'});
+    const applied=await ctx.api.post(`/api/inventory/stock-counts/${created.body.id}/apply`).set(H(admin)).send({});
+    expect(applied.body).toMatchObject({status:'applied',current_quantity:0,task_status:'completed'});
+  });
+
   it('closes a linked discrepancy only after reconciliation and preserves the count reference on retry',async()=>{
     const itemId=await item('Discrepancy shelf item',5);
     const {run,queryOne}=await import('../src/shared/db');
