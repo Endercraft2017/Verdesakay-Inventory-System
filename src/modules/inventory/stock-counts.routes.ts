@@ -19,7 +19,9 @@ type Snapshot = { item_id:number; item_name:string; sku:string|null; location_id
   build_mode:Mode; book_quantity:number; serials:Serial[]; batches:Batch[]; untracked_quantity:number };
 type Count = { id:number; item_id:number; location_id:number; build_mode:Mode; book_quantity:number;
   book_serial_ids:string; book_batches:string; counted_untracked:number; counted_serial_ids:string;
-  counted_batches:string; note:string; source_kind:string; source_id:number|null; status:string;
+  counted_batches:string; note:string; source_kind:string; source_id:number|null;
+  source_evidence_hash:string|null; source_closed_by:number|null; source_closed_at:string|null;
+  source_close_note:string|null; status:string;
   counted_by:number|null; counted_at:string; reviewed_by:number|null; reviewed_at:string|null;
   review_note:string|null; transaction_id:number|null; completed_at:string|null };
 const quantity = z.number().int().min(0).max(1_000_000);
@@ -72,6 +74,18 @@ function snapshotMatchesCount(c:Count,current:Snapshot|null) {
     same(current.serials.map(s=>s.id),JSON.parse(c.book_serial_ids)) &&
     same(recordedBatches(current.batches),JSON.parse(c.book_batches));
 }
+function currentMatchesObservation(c:Count,current:Snapshot|null) {
+  return !!current && current.book_quantity===countedTotal(c) &&
+    same(sortedCodes(current.serials.map(s=>s.code)),sortedCodes(JSON.parse(c.counted_serial_ids))) &&
+    same(recordedBatches(current.batches),(JSON.parse(c.counted_batches) as {batch_id:number;quantity:number}[]).filter(b=>b.quantity>0));
+}
+function sourceState(c:Count) {
+  if(c.source_kind==='manual'||!c.source_id)return null;
+  if(c.source_kind==='discrepancy') return queryOne<{status:string}>(
+    'SELECT status FROM stock_discrepancies WHERE id=?',c.source_id)?.status??'missing';
+  const candidate=findDirectSaleStockoutCase(c.source_id,c.item_id);
+  return !candidate?'missing':candidate.evidence_hash!==c.source_evidence_hash?'changed':candidate.status;
+}
 function detail(c:Count) {
   const item=queryOne<{name:string;sku:string|null}>('SELECT name,sku FROM inventory_items WHERE id=?',c.item_id);
   const current=snapshot(c.item_id,c.location_id,c.build_mode);
@@ -85,7 +99,7 @@ function detail(c:Count) {
     counted_serial_codes:JSON.parse(c.counted_serial_ids),counted_batches:JSON.parse(c.counted_batches),
     current_serials:current?.serials??[],current_batches:current?.batches??[],
     current_untracked:current?.untracked_quantity??null,
-    movements,
+    movements,source_status:sourceState(c),
     tracked_difference:!same(sortedCodes(current?.serials.map(s=>s.code)??[]),sortedCodes(JSON.parse(c.counted_serial_ids)))
       || !same(current?recordedBatches(current.batches):[],
         (JSON.parse(c.counted_batches) as {batch_id:number;quantity:number}[]).filter(b=>b.quantity>0)),
@@ -126,7 +140,6 @@ router.post('/',requirePermission('inventory.view'),syncClass('physical',countHo
   const input=parseBody(submitSchema,req.body);
   const current=snapshot(input.item_id,input.location_id,input.build_mode);
   if(!current){res.status(404).json({error:'Item or location not found'});return;}
-  if(current.untracked_quantity<0){res.status(409).json({error:'Book stock is below tracked stock; investigate before counting',code:'book_integrity'});return;}
   const expectedBatches=recordedBatches(current.batches);
   if(current.book_quantity!==input.expected_quantity||
     !same(current.serials.map(s=>s.id),input.expected_serial_ids)||!same(expectedBatches,input.expected_batches)){
@@ -139,22 +152,27 @@ router.post('/',requirePermission('inventory.view'),syncClass('physical',countHo
     res.status(400).json({error:'Enter one count for every displayed batch, in the shown order'});return;
   }
   if(input.source_kind==='manual' && input.source_id!=null){res.status(400).json({error:'Manual count cannot have a source ID'});return;}
+  let sourceEvidenceHash:string|null=null;
   if(input.source_kind!=='manual'){
     if(!input.source_id){res.status(400).json({error:'Source ID is required'});return;}
     if(input.source_kind==='discrepancy'){
-      const source=queryOne<{item_id:number;location_id:number|null}>(
-        'SELECT item_id,location_id FROM stock_discrepancies WHERE id=?',input.source_id);
+      const source=queryOne<{item_id:number;location_id:number|null;status:string}>(
+        'SELECT item_id,location_id,status FROM stock_discrepancies WHERE id=?',input.source_id);
       if(!source||source.item_id!==input.item_id||source.location_id!==input.location_id){
         res.status(400).json({error:'Discrepancy does not match this item and location'});return;}
-    }else if(!findDirectSaleStockoutCase(input.source_id,input.item_id)){
-      res.status(400).json({error:'Direct-sale audit case does not match this item'});return;
+      if(source.status!=='open'){res.status(409).json({error:'Discrepancy is already resolved'});return;}
+    }else{
+      const candidate=findDirectSaleStockoutCase(input.source_id,input.item_id);
+      if(!candidate){res.status(400).json({error:'Direct-sale audit case does not match this item'});return;}
+      if(candidate.status!=='open'){res.status(409).json({error:'Direct-sale audit case is already reviewed'});return;}
+      sourceEvidenceHash=candidate.evidence_hash;
     }
   }
   const info=run(`INSERT INTO stock_counts(item_id,location_id,build_mode,book_quantity,book_serial_ids,book_batches,
-    counted_untracked,counted_serial_ids,counted_batches,note,source_kind,source_id,counted_by)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,input.item_id,input.location_id,input.build_mode,current.book_quantity,
+    counted_untracked,counted_serial_ids,counted_batches,note,source_kind,source_id,source_evidence_hash,counted_by)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,input.item_id,input.location_id,input.build_mode,current.book_quantity,
     JSON.stringify(current.serials.map(s=>s.id)),JSON.stringify(expectedBatches),input.counted_untracked,
-    JSON.stringify(codes),JSON.stringify(input.counted_batches),input.note,input.source_kind,input.source_id??null,req.user!.id);
+    JSON.stringify(codes),JSON.stringify(input.counted_batches),input.note,input.source_kind,input.source_id??null,sourceEvidenceHash,req.user!.id);
   res.status(201).json(detail(queryOne<Count>('SELECT * FROM stock_counts WHERE id=?',Number(info.lastInsertRowid))!));
 });
 router.post('/:id/approve',requirePermission('inventory.adjust'),syncClass('claim',existingHome),(req,res)=>{
@@ -245,12 +263,52 @@ router.post('/:id/verify',requirePermission('inventory.adjust'),syncClass('claim
   if(row.status==='applied'){res.json(detail(row));return;}
   if(row.status!=='approved'){res.status(409).json({error:'Count needs approval before verification'});return;}
   const current=snapshot(row.item_id,row.location_id,row.build_mode);
-  if(!current||current.book_quantity!==countedTotal(row)||
-    !same(sortedCodes(current.serials.map(s=>s.code)),sortedCodes(JSON.parse(row.counted_serial_ids)))||
-    !same(recordedBatches(current.batches),(JSON.parse(row.counted_batches) as {batch_id:number;quantity:number}[]).filter(b=>b.quantity>0))){
+  if(!currentMatchesObservation(row,current)){
     res.status(409).json({error:'Current stock or tracked identities do not match the physical count yet',code:'not_reconciled'});return;
   }
   run(`UPDATE stock_counts SET status='applied',completed_at=datetime('now'),review_note=review_note||' / '||? WHERE id=?`,note,row.id);
+  res.json(detail(count(req)!));
+});
+
+// A completed count supplies evidence for closing its original issue. Closure is a separate
+// supervisor decision: it never moves stock and cannot review changed sale-ledger evidence.
+router.post('/:id/close-source',requirePermission('inventory.adjust'),syncClass('claim',existingHome),(req,res)=>{
+  const {note}=parseBody(noteSchema,req.body),row=count(req);
+  if(!row){res.status(404).json({error:'Count not found'});return;}
+  if(row.source_kind==='manual'||!row.source_id){res.status(409).json({error:'This count has no linked issue'});return;}
+  if(row.source_closed_at){
+    if(row.source_close_note===note){res.json(detail(row));return;}
+    res.status(409).json({error:'This count already closed its linked issue with a different note'});return;
+  }
+  if(row.status!=='applied'){res.status(409).json({error:'Reconcile the approved count before closing its linked issue'});return;}
+  if(!currentMatchesObservation(row,snapshot(row.item_id,row.location_id,row.build_mode))){
+    res.status(409).json({error:'Stock changed since the count was reconciled; recount before closing the issue',code:'stale_count'});return;
+  }
+  db.exec('BEGIN');
+  try{
+    if(row.source_kind==='discrepancy'){
+      const source=queryOne<{item_id:number;location_id:number|null;status:string}>(
+        'SELECT item_id,location_id,status FROM stock_discrepancies WHERE id=?',row.source_id);
+      if(!source||source.item_id!==row.item_id||source.location_id!==row.location_id||source.status!=='open'){
+        db.exec('ROLLBACK');res.status(409).json({error:'Linked discrepancy is missing, changed, or already resolved'});return;
+      }
+      run(`UPDATE stock_discrepancies SET status='resolved',resolution_note=?,resolved_by=?,resolved_at=datetime('now') WHERE id=?`,
+        `Physical count #${row.id}: ${note}`,req.user!.id,row.source_id);
+    }else{
+      const candidate=findDirectSaleStockoutCase(row.source_id,row.item_id);
+      if(!row.source_evidence_hash||!candidate||candidate.evidence_hash!==row.source_evidence_hash){
+        db.exec('ROLLBACK');res.status(409).json({error:'Audit evidence changed since the count; refresh and recount',code:'stale_source'});return;
+      }
+      if(candidate.status!=='open'){
+        db.exec('ROLLBACK');res.status(409).json({error:'Linked direct-sale audit is already reviewed'});return;
+      }
+      run(`INSERT INTO direct_sale_stockout_reviews(order_id,item_id,evidence_hash,note,reviewed_by)
+        VALUES(?,?,?,?,?)`,row.source_id,row.item_id,row.source_evidence_hash,`Physical count #${row.id}: ${note}`,req.user!.id);
+    }
+    run(`UPDATE stock_counts SET source_closed_by=?,source_closed_at=datetime('now'),source_close_note=? WHERE id=?`,
+      req.user!.id,note,row.id);
+    db.exec('COMMIT');
+  }catch(e){db.exec('ROLLBACK');throw e;}
   res.json(detail(count(req)!));
 });
 

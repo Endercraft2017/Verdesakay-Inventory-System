@@ -206,7 +206,11 @@ reservations and known receipt/shipment/return provenance. A serial mismatch
 blocks generic correction; resolve exact unit records through their owning
 workflow, then verify that the current balance and tracked identities equal the count.
 The count stores its source issue, counter, reviewer, notes and correction
-transaction. Mobile integration is specified in the root handoff; desktop is
+transaction. A supervisor separately closes a linked discrepancy or direct-sale
+audit after reconciliation, with a note and a current physical-stock check. A
+direct-sale count is bound to the audit evidence hash captured at submission;
+new ledger evidence requires a new count. The closure decision never moves stock.
+Mobile integration is specified in the root handoff; desktop is
 the implemented count UI. Physical phone/camera and printed-label checks
 remain a manual acceptance gate.
 

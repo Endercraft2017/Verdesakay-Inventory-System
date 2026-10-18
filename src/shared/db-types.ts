@@ -1612,6 +1612,10 @@ export interface StockCounts {
   note: string;
   source_kind: string;
   source_id: number | null;
+  source_evidence_hash: string | null;
+  source_closed_by: number | null;
+  source_closed_at: string | null;
+  source_close_note: string | null;
   status: Generated<string>;
   counted_by: number | null;
   counted_at: Generated<string>;

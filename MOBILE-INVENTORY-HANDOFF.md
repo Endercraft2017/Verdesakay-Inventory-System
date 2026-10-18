@@ -1,5 +1,33 @@
 # Inventory and production: mobile integration gaps
 
+## Linked count → discrepancy / direct-sale audit closure (2026-10-18)
+
+Schema v89 stores `source_evidence_hash`, `source_closed_by`, `source_closed_at`,
+and `source_close_note` on a physical count. A source-linked count captures the
+current direct-sale audit evidence hash at submission; linked discrepancies and
+direct-sale audits must still be open. Counts can be submitted when the book's
+untracked balance is negative, so an offline overdraw or legacy double deduction
+can be physically recorded and independently corrected.
+
+After approval and `apply` or `verify`, an `inventory.adjust` supervisor can
+`POST /api/inventory/stock-counts/:id/close-source` with `{note}` (10–1000
+characters). The endpoint checks the current item/location/build-state stock
+still matches the observation, then resolves the linked discrepancy or reviews
+the **same captured** direct-sale ledger evidence. A changed audit hash or
+changed stock returns 409; a rejected, pending, manual or already separately
+closed case cannot be closed through the count. Same-note retry is idempotent.
+Closure moves no stock. `GET .../:id` and list responses expose
+`source_status`, `source_closed_at`, `source_close_note`, and the captured hash.
+The desktop count detail now provides a separate Close linked issue action after
+reconciliation; the All tab retains applied counts for closure.
+
+Phone owner: expose the linked source and its current status in count history,
+then show an explicit **Close linked issue** action only after a count is applied
+and the source remains open. Require a reviewer note and preserve the request's
+idempotency key across retries. On `stale_count` or `stale_source`, refresh the
+stock/audit and start a new observation. Do not auto-close on approval or apply.
+No mobile source was changed.
+
 ## Physical stock counts and variance resolution (2026-10-16)
 
 The new Inventory → Physical Counts desktop workflow counts **one item, exact

@@ -107,6 +107,60 @@ describe('warehouse acceptance', () => {
 });
 
 describe('release slip', () => {
+  it('closes a direct-sale audit from a reconciled count only for the captured ledger evidence', async () => {
+    const {product}=await productWithUnits('AUDIT-COUNT',3);
+    const so=await saleOrder([{name:'AUDIT-COUNT Product',item_id:product,quantity:1,unit_price:50}]);
+    await ctx.api.post(`/api/orders/${so}/accept-release`).set(H());
+    const unit=(await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body[0];
+    expect((await ctx.api.post(`/api/finished-products/${product}/units/allocate`).set(H())
+      .send({action:'sell',unit_ids:[unit.id],order_id:so})).status).toBe(200);
+    expect((await ctx.api.post(`/api/orders/${so}/release-slip`).set(H()).send({collected_by:'Driver'})).status).toBe(201);
+    const {queryOne}=await import('../src/shared/db');
+    const {applyStockChange}=await import('../src/modules/inventory/inventory-stock');
+    const reason=`Sold — ${(await getOrder(so)).number}`;
+    const location=queryOne<{location_id:number}>(`SELECT location_id FROM inventory_transactions
+      WHERE item_id=? AND reason=? ORDER BY id DESC LIMIT 1`,product,reason)!.location_id;
+    applyStockChange({itemId:product,locationId:location,change:-1,reason,userId:null});
+    const counter=(await createEmployee(ctx.api,token,{role:'warehouse'})).token;
+    const countCase=async()=>{
+      const c=(await ctx.api.get(`/api/inventory/stock-counts/context?item_id=${product}&location_id=${location}&build_mode=assembled`)
+        .set(bearer(counter))).body;
+      return ctx.api.post('/api/inventory/stock-counts').set(bearer(counter)).send({
+        item_id:product,location_id:location,build_mode:'assembled',expected_quantity:c.book_quantity,
+        expected_serial_ids:c.serials.map((s:any)=>s.id),expected_batches:c.batches.map((b:any)=>({batch_id:b.batch_id,quantity:b.quantity})),
+        counted_untracked:0,counted_serial_codes:c.serials.map((s:any)=>s.code),
+        counted_batches:c.batches.map((b:any)=>({batch_id:b.batch_id,quantity:b.quantity})),
+        note:'Counted all labelled units on the production shelf',source_kind:'direct_sale',source_id:so,
+      });
+    };
+    const first=await countCase();
+    expect(first.status).toBe(201);
+    expect(first.body.source_evidence_hash).toMatch(/^[a-f0-9]{64}$/);
+    const path=`/api/inventory/stock-counts/${first.body.id}`;
+    expect((await ctx.api.post(`${path}/approve`).set(H()).send({note:'Verified all present serial labels'})).status).toBe(200);
+    expect((await ctx.api.post(`${path}/apply`).set(H()).send({})).status).toBe(200);
+    expect((await onHand(product))).toBe(2);
+    applyStockChange({itemId:product,locationId:location,change:-1,reason,userId:null});
+    applyStockChange({itemId:product,locationId:location,change:1,reason:'Independent stock correction',userId:null});
+    const stale=await ctx.api.post(`${path}/close-source`).set(H())
+      .send({note:'Reviewed the direct-sale count and ledger'});
+    expect(stale.status).toBe(409);
+    expect(stale.body.code).toBe('stale_source');
+    const fresh=await countCase();
+    expect(fresh.status).toBe(201);
+    const freshPath=`/api/inventory/stock-counts/${fresh.body.id}`;
+    await ctx.api.post(`${freshPath}/approve`).set(H()).send({note:'Rechecked labels and changed ledger'});
+    await ctx.api.post(`${freshPath}/apply`).set(H()).send({});
+    const closed=await ctx.api.post(`${freshPath}/close-source`).set(H())
+      .send({note:'Reviewed new ledger and current physical count'});
+    expect(closed.status).toBe(200);
+    expect(closed.body).toMatchObject({source_status:'reviewed',source_close_note:'Reviewed new ledger and current physical count'});
+    expect((await ctx.api.get('/api/inventory/direct-sale-audit').set(H())).body).toEqual([]);
+    expect((await ctx.api.get('/api/inventory/direct-sale-audit?status=reviewed').set(H())).body[0].review.note)
+      .toContain(`Physical count #${fresh.body.id}`);
+    expect(await onHand(product)).toBe(2);
+  });
+
   it('flags an older double stock-out, records a review without adjusting stock, and reopens on new evidence', async () => {
     const { product } = await productWithUnits('AUDIT-DIRECT', 3);
     const so = await saleOrder([{ name: 'AUDIT-DIRECT Product', item_id: product, quantity: 1, unit_price: 50 }]);

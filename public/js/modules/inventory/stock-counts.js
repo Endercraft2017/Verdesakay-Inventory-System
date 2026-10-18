@@ -29,14 +29,15 @@ App.register('stock-counts', async (view, filter = {}) => {
       return;
     }
     list.innerHTML = `<table><thead><tr><th>Count</th><th>Item / location</th><th>Build</th><th class="right">Book</th>
-      <th class="right">Counted</th><th class="right">Variance</th><th>Status</th><th></th></tr></thead><tbody>
+      <th class="right">Counted</th><th class="right">Variance</th><th>Status</th><th>Linked issue</th><th></th></tr></thead><tbody>
       ${rows.map(c => `<tr><td>#${c.id}<div class="muted small">${UI.fmtDate(c.counted_at)}</div></td>
         <td><strong>${UI.esc(c.item_name)}</strong><div class="muted small">${UI.esc(c.location_name)}</div></td>
         <td>${c.build_mode === 'semi_built' ? 'Semi-built' : 'Fully built / standard'}</td>
         <td class="right">${c.book_quantity}</td><td class="right">${c.counted_quantity}</td>
         <td class="right">${c.variance > 0 ? '+' : ''}${c.variance}</td>
         <td><span class="badge-pill ${c.status === 'applied' ? 'ok' : c.status === 'rejected' ? 'low' : ''}">${UI.esc(c.status)}</span></td>
-        <td><button class="btn secondary small" data-open="${c.id}">Review</button></td></tr>`).join('')}</tbody></table>`;
+        <td>${c.source_kind === 'manual' ? '—' : `${UI.esc(c.source_kind.replace('_',' '))} #${c.source_id} · ${c.source_closed_at ? 'closed' : UI.esc(c.source_status)}`}</td>
+        <td><button class="btn secondary small" data-open="${c.id}">${c.status === 'applied' && c.source_status === 'open' ? 'Close issue' : 'Review'}</button></td></tr>`).join('')}</tbody></table>`;
     list.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openCount(Number(b.dataset.open)));
   }
 
@@ -80,6 +81,7 @@ App.register('stock-counts', async (view, filter = {}) => {
         capture.innerHTML=`<hr><h4>${UI.esc(context.item_name)} · ${UI.esc(context.location_name)}</h4>
           <p>Book total: <strong>${context.book_quantity}</strong> · untracked: ${context.untracked_quantity} ·
           serials: ${context.serials.length} · batches: ${context.batches.length}</p>
+          ${context.untracked_quantity < 0 ? '<p class="danger">Book stock is below tracked stock. Count the physical stock; approval will be required before any correction.</p>' : ''}
           <div class="form-field"><label for="pc-untracked">Physically counted untracked quantity</label>
             <input id="pc-untracked" type="number" min="0" step="1" placeholder="Enter count"></div>
           ${context.serials.length ? `<p><strong>Scan/check each serial physically present</strong>. Leave a missing unit unchecked.</p>
@@ -137,7 +139,10 @@ App.register('stock-counts', async (view, filter = {}) => {
        <p>Book ${c.book_quantity} → counted <strong>${c.counted_quantity}</strong> · variance <strong>${c.variance>0?'+':''}${c.variance}</strong> · now ${c.current_quantity}</p>
        <p><strong>Untracked:</strong> ${c.counted_untracked}<br><strong>Serials found:</strong> ${serials}<br><strong>Batches:</strong> ${batches}</p>
        <p><strong>Counter note:</strong> ${UI.esc(c.note)}</p>
-       ${c.source_kind !== 'manual' ? `<p class="muted small">Linked ${UI.esc(c.source_kind.replace('_',' '))} #${c.source_id}</p>` : ''}
+       ${c.source_kind !== 'manual' ? `<p><strong>Linked issue:</strong> ${UI.esc(c.source_kind.replace('_',' '))} #${c.source_id} · ${c.source_closed_at ? 'closed from this count' : UI.esc(c.source_status)}</p>
+         ${c.source_status === 'changed' ? '<p class="danger">Sale audit evidence changed after this count. Refresh the audit and start a new count before closing it.</p>' : ''}
+         ${c.source_status === 'resolved' || c.source_status === 'reviewed' ? '<p class="muted small">This issue has already been closed.</p>' : ''}` : ''}
+       ${c.source_close_note ? `<p><strong>Issue closure:</strong> ${UI.esc(c.source_close_note)}</p>` : ''}
        ${c.review_note ? `<p><strong>Review:</strong> ${UI.esc(c.review_note)}</p>` : ''}
        ${c.status === 'approved' && c.current_serials.map(s=>s.code).sort().join('|') !== c.counted_serial_codes.slice().sort().join('|') ? '<p class="danger">Serialized units differ. Resolve exact unit records first; this screen will not make a generic quantity adjustment.</p>' : ''}
        <div class="form-field"><label for="pc-action-note">Reviewer findings / correction reference</label>
@@ -145,6 +150,7 @@ App.register('stock-counts', async (view, filter = {}) => {
        <div style="display:flex;flex-wrap:wrap;gap:8px">
          ${c.status==='submitted'&&canReview ? '<button class="btn" data-pc-action="approve">Approve</button><button class="btn secondary" data-pc-action="reject">Reject</button>' : ''}
          ${c.status==='approved'&&canReview ? '<button class="btn" data-pc-action="apply">Apply safe correction</button><button class="btn secondary" data-pc-action="verify">Verify separately corrected</button>' : ''}
+         ${c.status==='applied'&&c.source_status==='open'&&!c.source_closed_at&&canReview ? '<button class="btn" data-pc-action="close-source">Close linked issue</button>' : ''}
        </div><div id="pc-action-error" role="alert"></div>`});
     modal.querySelectorAll('[data-pc-action]').forEach(b=>b.onclick=async()=>{
       const action=b.dataset.pcAction, note=modal.querySelector('#pc-action-note').value.trim();
@@ -153,7 +159,11 @@ App.register('stock-counts', async (view, filter = {}) => {
       b.disabled=true;
       try{
         await API.post(`/inventory/stock-counts/${c.id}/${action}`,action==='apply'?{}:{note});
-        modal.__close();UI.toast(action==='approve'?'Count approved':action==='reject'?'Count rejected':'Count reconciled');load();
+        modal.__close();UI.toast(action==='approve'?'Count approved':action==='reject'?'Count rejected':action==='close-source'?'Linked issue closed':'Count reconciled');
+        if((action==='apply'||action==='verify')&&c.source_kind!=='manual'){
+          status='all';view.querySelectorAll('[data-status]').forEach(x=>x.classList.toggle('active',x.dataset.status==='all'));
+          await load();await openCount(c.id);
+        }else await load();
       }catch(e){error.textContent=e.message;b.disabled=false;}
     });
   }

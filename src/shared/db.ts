@@ -69,6 +69,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 89: bind linked issue closure to an applied count and captured sale-audit evidence.
 // 88: structured location/build-state stock counts and supervised resolution.
 // 87: record human reviews of historical direct-sale stock-out candidates.
 // 86: permit a serialized unit to return once per separate sale shipment.
@@ -97,7 +98,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 88; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 89; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -1052,6 +1053,10 @@ function createSchema(): void {
       note TEXT NOT NULL,
       source_kind TEXT NOT NULL CHECK(source_kind IN ('manual','discrepancy','direct_sale')),
       source_id INTEGER,
+      source_evidence_hash TEXT,
+      source_closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      source_closed_at TEXT,
+      source_close_note TEXT,
       status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted','approved','applied','rejected')),
       counted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       counted_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -3498,6 +3503,15 @@ function migrate(): void {
     transaction_id INTEGER NOT NULL REFERENCES inventory_transactions(id) ON DELETE RESTRICT,
     batch_id INTEGER REFERENCES production_batches(id) ON DELETE SET NULL,
     PRIMARY KEY(count_id,transaction_id))`);
+
+  // v89: bind source closure to the observed audit evidence and the applied count.
+  const countCols = new Set((db.prepare('PRAGMA table_info(stock_counts)').all() as {name:string}[]).map(c=>c.name));
+  for(const [name,type] of [
+    ['source_evidence_hash','TEXT'],
+    ['source_closed_by','INTEGER REFERENCES users(id) ON DELETE SET NULL'],
+    ['source_closed_at','TEXT'],
+    ['source_close_note','TEXT'],
+  ] as const) if(!countCols.has(name)) db.exec(`ALTER TABLE stock_counts ADD COLUMN ${name} ${type}`);
 
 }
 

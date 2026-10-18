@@ -25,6 +25,50 @@ const submit=async(c:any,changes:Record<string,unknown>={})=>ctx.api.post('/api/
 });
 
 describe('physical stock count',()=>{
+  it('closes a linked discrepancy only after reconciliation and preserves the count reference on retry',async()=>{
+    const itemId=await item('Discrepancy shelf item',5);
+    const {run,queryOne}=await import('../src/shared/db');
+    const source=Number(run(`INSERT INTO stock_discrepancies(item_id,location_id,change,location_balance_after,reason)
+      VALUES(?,?,?,?,?)`,itemId,1,-1,5,'Offline stock-out needs verification').lastInsertRowid);
+    const c=await context(itemId);
+    const created=await submit(c,{source_kind:'discrepancy',source_id:source,counted_untracked:4});
+    expect(created.status).toBe(201);
+    const path=`/api/inventory/stock-counts/${created.body.id}`;
+    const close=(token:string,note='Verified physical shelf and corrected one missing item')=>
+      ctx.api.post(`${path}/close-source`).set(H(token)).send({note});
+    expect((await close(admin)).status).toBe(409);
+    expect((await ctx.api.post(`${path}/approve`).set(H(admin)).send({note:'Approved exact shelf observation'})).status).toBe(200);
+    expect((await close(admin)).status).toBe(409);
+    expect((await ctx.api.post(`${path}/apply`).set(H(admin)).send({})).status).toBe(200);
+    expect((await ctx.api.post(`${path}/close-source`).send({note:'Verified physical shelf and corrected one missing item'})).status).toBe(401);
+    expect((await close(admin)).body).toMatchObject({source_status:'resolved',source_close_note:'Verified physical shelf and corrected one missing item'});
+    expect((await close(admin)).status).toBe(200);
+    expect((await close(admin,'Different later decision')).status).toBe(409);
+    const resolution=queryOne<{resolution_note:string;status:string}>(
+      'SELECT resolution_note,status FROM stock_discrepancies WHERE id=?',source)!;
+    expect(resolution).toMatchObject({status:'resolved',resolution_note:`Physical count #${created.body.id}: Verified physical shelf and corrected one missing item`});
+    expect((await ctx.api.get(`/api/inventory/${itemId}`).set(H(admin))).body.quantity).toBe(4);
+    expect((await submit(await context(itemId),{source_kind:'discrepancy',source_id:source})).status).toBe(409);
+  });
+
+  it('requires current physical evidence before linked issue closure',async()=>{
+    const itemId=await item('Moving discrepancy item',3);
+    const {run}=await import('../src/shared/db');
+    const source=Number(run(`INSERT INTO stock_discrepancies(item_id,location_id,change,location_balance_after,reason)
+      VALUES(?,?,?,?,?)`,itemId,1,-1,3,'Offline count finding').lastInsertRowid);
+    const created=await submit(await context(itemId),{source_kind:'discrepancy',source_id:source,counted_untracked:2});
+    const path=`/api/inventory/stock-counts/${created.body.id}`;
+    await ctx.api.post(`${path}/approve`).set(H(admin)).send({note:'Approved after physical verification'});
+    await ctx.api.post(`${path}/apply`).set(H(admin)).send({});
+    await ctx.api.post(`/api/inventory/${itemId}/adjust`).set(H(admin)).send({change:1,reason:'A new box arrived'});
+    const blocked=await ctx.api.post(`${path}/close-source`).set(H(admin))
+      .send({note:'I reviewed the corrected shelf count'});
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe('stale_count');
+    expect((await ctx.api.get('/api/inventory/discrepancies').set(H(admin))).body
+      .some((d:any)=>d.id===source)).toBe(true);
+  });
+
   it('records a count, requires an independent reviewer, and applies only its untracked variance once',async()=>{
     const id=await item('Counted bolts',5),c=await context(id);
     expect(c).toMatchObject({book_quantity:5,untracked_quantity:5,serials:[],batches:[]});
