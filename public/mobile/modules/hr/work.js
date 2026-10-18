@@ -3,7 +3,7 @@
 (function () {
   var OPS = [
     { label: 'Receive PR', sub: 'Purchase requests', route: 'receive', permission: 'inventory.adjust', count: function () { return openCount('/orders?type=purchase'); } },
-    { label: 'Release orders', sub: 'Allocated units ready for handoff', route: 'so', permission: 'orders.release',
+    { label: 'Release orders', sub: 'Allocated units ready for handoff', route: 'so', any: ['orders.release','inventory.adjust'],
       count: function () { return API.get('/orders?type=sale').then(function (rows) {
         return (rows || []).filter(function (x) { return ['approved', 'released'].indexOf(String(x.status).toLowerCase()) !== -1; }).length;
       }); } },
@@ -41,6 +41,17 @@
     {label:'Semi-built finishing',sub:'Send a complete semi-built package to finishing',route:'semi-finishing',any:['production.approve','production.manage']}
   );
 
+  var STOCK_TOOLS = [
+    {label:'Inventory stock',sub:'Search items, quantities and locations',route:'item',permission:'inventory.view'},
+    {label:'Low stock',sub:'Items at or below their reorder point',route:'low-stock',permission:'inventory.view'},
+    {label:'Stock movement history',sub:'Review the movements you recorded',route:'my-log',permission:'inventory.view'},
+    {label:'Stock in / out',sub:'Record an authorized stock adjustment',route:'stock-move',permission:'inventory.adjust'},
+    {label:'Transfer stock',sub:'Move stock between locations',route:'transfer',permission:'inventory.adjust'},
+    {label:'Report stock damage',sub:'Record damaged stock with evidence',route:'damage',permission:'inventory.adjust'},
+    {label:'Create inventory item',sub:'Add an item to the catalogue',route:'new-item',permission:'inventory.create'},
+    {label:'Assign QR label',sub:'Link an item to its stock label',route:'assign-qr',permission:'inventory.adjust'}
+  ];
+
   function openCount(path) {
     return API.get(path).then(function (rows) {
       return (rows || []).filter(function (x) {
@@ -65,7 +76,7 @@
   }
   function roleName() {
     var me = MApp.getMe() || {};
-    return String(me.role || 'employee').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+    return String(me.role_label || me.role || 'employee').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
   }
   function opRow(op) {
     var row = mEl(
@@ -117,7 +128,7 @@
   MApp.route('work', function (view,params) {
     MApp.setTitle('Work');
     var me = MApp.getMe() || {};
-    var ops = OPS.filter(allowed);
+    var ops = OPS.filter(allowed), stockTools = STOCK_TOOLS.filter(function(op){return MApp.canOpen(op.route)&&MApp.can(op.permission);});
     view.innerHTML = '';
     var page = mEl('<section class="v2-work" data-figma-node="46:548"></section>');
     page.appendChild(mEl('<header class="v2-work-heading"><h1>Work</h1><p>What do I need to do now?</p></header>'));
@@ -131,7 +142,7 @@
     page.appendChild(taskHead);
     var list = mEl('<div class="v2-work-list"></div>');
     page.appendChild(list);
-    if (ops.length) (params&&params.all?ops:ops.slice(0, 4)).forEach(function (op) { list.appendChild(opRow(op)); });
+    if (ops.length) ops.forEach(function (op) { list.appendChild(opRow(op)); });
     else employeeTasks(list);
 
     var blocker = mEl(
@@ -141,6 +152,10 @@
     );
     blocker.onclick = function () { MApp.go('report-problem'); };
     page.appendChild(blocker);
+    if(stockTools.length){
+      page.appendChild(mEl('<div class="v2-work-title"><h2>Inventory tools</h2><span>From your assigned access</span></div>'));
+      var stockList=mEl('<div class="v2-work-list"></div>');stockTools.forEach(function(op){stockList.appendChild(opRow(op));});page.appendChild(stockList);
+    }
 
     page.appendChild(mEl('<div class="v2-work-title tools"><h2>My tools</h2></div>'));
     var tools = mEl('<div class="v2-work-tools"></div>');
@@ -149,7 +164,6 @@
     tools.appendChild(commonTool('Guides', 'guides'));
     tools.appendChild(commonTool('Schedule', 'schedule'));
     tools.appendChild(commonTool('Announcements', 'announcements'));
-    if(ops.length>4){var all=commonTool(params&&params.all?'Primary role queues':'All role queues','work');all.onclick=function(){MApp.go('work',params&&params.all?{}:{all:'1'});};tools.appendChild(all);}
     // Case handlers for the anonymous channel (HR/admin by default).
     if (MApp.can('reports.confidential')) tools.appendChild(commonTool('Anonymous reports', 'confidential-reports'));
     page.appendChild(tools);
@@ -160,5 +174,6 @@
       page.appendChild(approve);
     }
     view.appendChild(page);
+    MApp.refreshAccess();
   });
 })();

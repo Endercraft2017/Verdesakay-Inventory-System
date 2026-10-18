@@ -1445,3 +1445,29 @@ build state and ship-from, persists its immutable request/key, and distinguishes
 stock-out from trip-slip issuance. Pending direct serials are required in the
 next mobile load. Return restock clears the old direct-sale marker; shipment
 membership and availability checks use the current sale line after resale.
+
+
+### Mobile Work access discovery (2026-10-18)
+
+`modules/hr/work.js` shows every authorized queue on the main Work page instead
+of hiding entries after the fourth behind All role queues. Inventory stock,
+low-stock, own movement history, adjustments, transfers, damage, item creation and
+QR assignment reuse the existing permission-gated routes under Inventory tools.
+Work entry also refreshes the effective `/auth/me` profile; desktop per-person
+permission changes therefore appear without requiring a focus event or logout.
+The incoming inventory-detail action gates are retained so read-only stock users
+receive no mutation controls. Release orders accepts the same `inventory.adjust`
+or `orders.release` alternatives as its backend. No permission grants are inferred
+from a role name. PWA cache v111.
+
+`npm run test:mobile:access` runs the actual desktop Access for this person editor
+against a clerk account, then checks mobile grants, desk navigation, revocations
+and basic-only fallback. It defaults to disposable data. Optional sandbox mode
+requires explicit `MOBILE_WORK_TEST_BASE` and configured test credentials; candidate
+assets are opt-in and are not a deployment. See the Work-access validation review.
+
+The sandbox acceptance also found and fixed a delayed Home response overwriting
+Work after navigation. `home.js` guards both success and error rendering by route,
+request generation and account. Tapping the current Work tab refreshes access too.
+Actual sandbox desktop grants/removals and candidate mobile desks passed five
+Playwright checks; the audit-only accounts were cleared and disabled afterward.

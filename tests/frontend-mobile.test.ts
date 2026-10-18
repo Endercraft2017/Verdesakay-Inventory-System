@@ -209,6 +209,41 @@ describe('mobile bootstrap', () => {
     expect(win.document.querySelector('#m-view [data-no-permission]')).not.toBeNull();
   });
 
+  it('shows every assigned clerk queue without a second hidden queue view', async () => {
+    const win=await bootAs({id:82,role:'employee',employee:true,modules:null,permissions:['mobile.access','production.record','production.repairs','production.receive','production.inspect_qc','production.inspect_qa','orders.release']});
+    win.location.hash='#/work';win.MApp.render();
+    const text=win.document.getElementById('m-view').textContent;
+    for(const label of ['Parts requests','RTS recording','Production job orders','QC technical inspection','QA appearance inspection','Release orders'])expect(text).toContain(label);
+    expect(text).not.toContain('All role queues');expect(text).not.toContain('Inventory tools');win.close();
+  });
+
+  it('makes inventory viewing discoverable without exposing stock mutation controls', async () => {
+    const win=await bootAs({id:83,role:'employee',employee:true,modules:null,permissions:['mobile.access','inventory.view']},(url)=>url==='/api/inventory/8'?{id:8,name:'Read only stock',quantity:3,min_quantity:1}:url==='/api/inventory/8/stock'?[]:undefined);
+    win.location.hash='#/work';win.MApp.render();
+    expect(win.document.getElementById('m-view').textContent).toContain('Inventory stock');
+    expect(win.document.getElementById('m-view').textContent).not.toContain('Stock in / out');
+    win.location.hash='#/item?id=8';win.MApp.render();await new Promise(r=>setTimeout(r,20));
+    expect(win.document.getElementById('m-view').textContent).toContain('Read only stock');expect(win.document.querySelectorAll('.m-arc button')).toHaveLength(0);win.close();
+  });
+
+  it('refreshes desktop grants and removals on Work entry without a browser focus event', async () => {
+    let current={id:84,role:'employee',employee:true,modules:null,permissions:['mobile.access']};
+    const win=await bootAs(current,(url)=>url==='/api/auth/me'?{user:current}:url==='/api/messages/unread-count'?{count:0}:undefined);
+    current={...current,permissions:['mobile.access','production.repairs','production.receive','inventory.view']};
+    win.location.hash='#/work';win.MApp.render();await new Promise(r=>setTimeout(r,30));
+    let text=win.document.getElementById('m-view').textContent;
+    for(const label of ['Parts requests','RTS recording','Inventory stock'])expect(text).toContain(label);
+    current={...current,permissions:['mobile.access']};win.location.hash='#/home';win.MApp.render();win.location.hash='#/work';win.MApp.render();await new Promise(r=>setTimeout(r,30));
+    text=win.document.getElementById('m-view').textContent;for(const label of ['Parts requests','RTS recording','Inventory stock'])expect(text).not.toContain(label);win.close();
+  });
+
+  it('does not replace Work with a late Home response', async () => {
+    let finish:any;const pending=new Promise(resolve=>{finish=resolve;});
+    const win=await bootAs({id:85,role:'employee',employee:true,modules:null,permissions:['mobile.access','production.repairs']},url=>url==='/api/me/today'?pending:undefined);
+    win.location.hash='#/work';win.MApp.render();finish({greeting:{name:'Stale Home'}});await new Promise(r=>setTimeout(r,20));
+    expect(win.document.querySelector('#m-view .v2-work')).not.toBeNull();expect(win.document.getElementById('m-view').textContent).not.toContain('Stale Home');win.close();
+  });
+
   it('a basic employee keeps personal tools and cannot open any operational desk by URL', async () => {
     const asked: string[] = [];
     const win = await bootAs({ id: 52, username: 'basic', full_name: 'Basic Employee', role: 'employee', employee: true, modules: null,

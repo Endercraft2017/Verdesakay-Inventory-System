@@ -490,7 +490,7 @@ window.MApp = (function () {
       t.onclick = function () {
         var tab = t.dataset.tab;
         if (tab === 'home') go('home');
-        else if (tab === 'work') go('work');
+        else if (tab === 'work') { if(parseHash().name==='work')refreshAccess();else go('work'); }
         else if (tab === 'clock') go('clock');
         else if (tab === 'inbox') go('inbox');
         else if (tab === 'profile') go('settings');
@@ -590,6 +590,7 @@ window.MApp = (function () {
     hasProductionAccess: hasProductionAccess, canApprove: canApprove, canOpen: canOpen, routeEnabled: routeEnabled,
     seg: seg, setTitle: setTitle, render: render, currentLocation: parseHash, refreshInboxBadge: refreshInboxBadge,
     signOut: signOut, isSharedSession: function () { return API.isSharedSession(); },
+    refreshAccess: refreshAccess,
     routes: function () { return Object.keys(routes); },
   };
 })();

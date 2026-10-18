@@ -1282,3 +1282,17 @@ Ordinary QC decisions now persist immutable attempts, matching QA-hold recovery.
 Bulk inspection is limited to one job/stage and rejects fractional or excess counts.
 Whole-job issue reports support photographed findings and explicit edit/resolve/reopen;
 reports remain informational, with Pause used to stop production.
+
+
+### Desktop access to mobile Work (2026-10-18)
+
+Role bundle + per-person overrides → effective `/auth/me` permissions → refreshed
+Work queues and Inventory tools → existing route/module gates → backend gates.
+The main Work view exposes all permitted queues, including combined clerk duties;
+it does not substitute role labels for actual permission keys. Removing a desktop
+grant hides the corresponding navigation on Work entry and backend writes remain
+authoritatively protected. Inventory viewing does not imply adjustment access.
+
+Late Home responses cannot replace the current Work screen. Re-entering or
+re-tapping Work refreshes effective access, and custom clerk grants/revocations
+were verified through the actual sandbox desktop editor and candidate mobile UI.

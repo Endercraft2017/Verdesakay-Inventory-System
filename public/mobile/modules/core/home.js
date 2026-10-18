@@ -113,12 +113,16 @@
     view.appendChild(page);
   }
 
+  var homeRender=0;
   MApp.route('home', function (view) {
+    var generation=++homeRender,hash=location.hash,owner=MApp.getMe().id;
+    function current(){return generation===homeRender&&hash===location.hash&&MApp.getMe()&&MApp.getMe().id===owner;}
     MApp.setTitle('Today');
     view.innerHTML = '<div class="m-hint">Loading today…</div>';
     API.get('/me/today')
-      .then(function (t) { render(view, t || {}); })
+      .then(function (t) { if(current())render(view, t || {}); })
       .catch(function (ex) {
+        if(!current())return;
         view.innerHTML = '<div class="m-error">' + mEsc(ex.message || 'Could not load today') +
           '</div><button class="m-btn" data-retry>Retry</button>';
         var retry = view.querySelector('[data-retry]');

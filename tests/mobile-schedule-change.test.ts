@@ -31,7 +31,8 @@ beforeAll(async () => {
   expect(period.status).toBe(201);
   await ctx.api.post(`/api/hr/periods/${period.body.id}/employees`).set(auth(admin)).send({ employee_id: employee.empId });
   const roster = await ctx.api.put(`/api/hr/periods/${period.body.id}/attendance`).set(auth(admin)).send({
-    employee_id: employee.empId, days: [{ work_date: workDate, shift_id: firstShift, time_in: '', time_out: '', notes: '' }],
+    employee_id: employee.empId, // Explicit working-day roster: independent of the execution date's weekend/holiday.
+    days: [{ work_date: workDate, shift_id: firstShift, rest_day: 'no', holiday_type: 'none', time_in: '', time_out: '', notes: '' }],
   });
   expect(roster.status).toBe(200);
   const types = await ctx.api.get('/api/me/request-types').set(auth(employee.token));
@@ -59,7 +60,7 @@ describe('mobile schedule-change request', () => {
   it('changes the published shift only after approval; stale approvals cannot overwrite it', async () => {
     const first = await file();
     const stale = await file();
-    expect(first.status).toBe(201);
+    expect(first.status,JSON.stringify(first.body)).toBe(201);
     expect(stale.status).toBe(201);
     const before = await ctx.api.get('/api/me/schedule').set(auth(employee.token));
     expect(before.body.days.find((d: { work_date: string }) => d.work_date === workDate).shift_name).toBe('Morning');

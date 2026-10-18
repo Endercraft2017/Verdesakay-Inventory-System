@@ -1017,3 +1017,15 @@ Validation: TypeScript passed; 154 focused mobile/backend tests and 15 sync/trip
 checks passed; all 2,832 tests across 278 files passed; all 34 real-backend
 Playwright checks passed at 390×844 with zero page errors. See
 `docs/reviews/mobile-same-order-trips-validation.md` for behavior, upgrade and scope.
+
+
+## Custom clerk access on mobile Work (2026-10-18)
+
+Actual sandbox Playwright reproduced saved custom RTS access missing from Work.
+The candidate shows every authorized queue and direct Inventory tools, refreshes
+permissions on Work entry/re-tap, and prevents delayed Home responses replacing
+Work contents. It uses effective permissions, not role names; no backend grants
+are expanded. Desktop Edit account → Access for this person → mobile grant/revoke
+checks passed against the real sandbox API using browser-local candidate assets.
+Audit accounts were cleared/disabled. Cache v111. Deployment is not implied by
+candidate acceptance; see `docs/reviews/mobile-work-access-validation.md`.
