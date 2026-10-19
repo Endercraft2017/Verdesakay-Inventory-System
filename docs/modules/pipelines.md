@@ -767,6 +767,16 @@ for the internet (it uses the company's mail server, which only the cloud has).
 **Terminal states:** posted + filed (a period, once posted, is not recomputed in
 place — corrections go through a new adjustment, not a rewrite of history).
 
+
+## Owner database export
+
+1. Operator signs in to `/_platform/` and opens a workspace.
+2. **Download database** requests `GET /_platform/api/tenants/:slug/database`
+   using the operator bearer token.
+3. Platform verifies the workspace is not purged, snapshots its existing SQLite
+   database with `VACUUM INTO`, and logs the export.
+4. Browser downloads the `.db` file; the server removes its temporary snapshot
+   after transfer or disconnection. Uploaded files/photos are not included.
 ## Offline operation & sync (record → site → cloud) — partial
 
 Design: `docs/OFFLINE-FIRST.md` (§10–11 = built). **Built (phases 1–2, 2026-09-30):** stages 1, 3

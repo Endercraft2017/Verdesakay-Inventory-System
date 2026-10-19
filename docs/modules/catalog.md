@@ -119,6 +119,10 @@ restore drill every 30 days — newest off-site copy of every DB decrypted into 
 integrity-checked — plus failed/stale-backup checks, alerts to `BACKUP_ALERT_WEBHOOK`, results in
 `status.json` for the owner console; CLI `npm run backup:drill` / `backup:health`), routes: `signup.routes.ts`, `tenant.routes.ts`, `platform.routes.ts`.
 Frontend: `web-console/` (its own mini-app, not under `public/`).
+Owner-only database export: `GET /_platform/api/tenants/:slug/database` creates a
+consistent SQLite snapshot for a non-purged workspace, downloads it with no-store
+headers, logs the export, and removes the temporary file. Workspace details expose
+**Download database**; uploads/photos are separate.
 **Public interface:** `enabledModules()`/`requireModule()` (re-exported from
 `shared/modules.ts`, which reads `platform/plans.ts` + `platform/platform.ts`),
 `getTenant()`, `platformHost()` (the dedicated console host, `PLATFORM_HOST`; gated in

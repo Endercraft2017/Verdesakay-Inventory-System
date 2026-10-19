@@ -2,6 +2,9 @@
     tenant auth, and the console can provision tenants + set plan / status / modules —
     the same primitives as the `tenant:*` CLI. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { setupApp, cleanup, login, type TestContext } from './helpers';
 
 let ctx: TestContext;
@@ -305,6 +308,38 @@ describe('logout', () => {
   });
 });
 
+
+describe('workspace database download', () => {
+  it('requires platform auth and rejects unknown workspaces', async () => {
+    expect((await ctx.api.get('/_platform/api/tenants/consoleco/database')).status).toBe(401);
+    const tenantToken = await login(ctx.api);
+    expect((await ctx.api.get('/_platform/api/tenants/consoleco/database')
+      .set('Authorization', `Bearer ${tenantToken}`)).status).toBe(401);
+    expect((await ctx.api.get('/_platform/api/tenants/missing/database').set(opHdr())).status).toBe(404);
+  });
+
+  it('downloads only the selected workspace as a valid SQLite snapshot', async () => {
+    await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({
+      slug: 'exportco', name: 'Export Co', admin_username: 'exportowner',
+      admin_password: 'exportpass1', plan: 'starter',
+    }).expect(201);
+    const r = await ctx.api.get('/_platform/api/tenants/exportco/database').set(opHdr());
+    expect(r.status).toBe(200);
+    expect(r.headers['cache-control']).toBe('no-store');
+    expect(r.headers['content-disposition']).toContain('exportco-');
+    expect(Buffer.isBuffer(r.body)).toBe(true);
+    const file = path.join(ctx.tmpDir, 'download.db');
+    fs.writeFileSync(file, r.body);
+    const db = new DatabaseSync(file, { readOnly: true });
+    try {
+      expect(Object.values(db.prepare('PRAGMA integrity_check').get()!)[0]).toBe('ok');
+      expect(db.prepare("SELECT username FROM users WHERE username = 'exportowner'").get()).toBeTruthy();
+      expect(db.prepare("SELECT username FROM users WHERE username = 'admin'").get()).toBeUndefined();
+    } finally { db.close(); }
+    const detail = await ctx.api.get('/_platform/api/tenants/exportco').set(opHdr());
+    expect(detail.body.log.some((e: { action: string }) => e.action === 'database_export')).toBe(true);
+  });
+});
 describe('module subscriptions and login seats', () => {
   const settings = {
     mode: 'per_module', bundle: 'starter', modules: ['hr', 'manufacturing'],

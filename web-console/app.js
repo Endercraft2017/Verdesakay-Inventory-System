@@ -342,6 +342,27 @@
       })
     ));
 
+    var downloadButton = el('button', { class: 'btn', onclick: async function () {
+      downloadButton.disabled = true;
+      downloadButton.textContent = 'Preparing download…';
+      try {
+        var response = await fetch(API + '/tenants/' + encodeURIComponent(st.slug) + '/database', {
+          headers: { Authorization: 'Bearer ' + token() }, cache: 'no-store',
+        });
+        if (response.status === 401) { setToken(null); showLogin(); throw new Error('Session expired — sign in again.'); }
+        if (!response.ok) {
+          var error = await response.json();
+          throw new Error(error.error || 'Database download failed.');
+        }
+        var url = URL.createObjectURL(await response.blob());
+        var link = el('a', { href: url, download: st.slug + '-' + new Date().toISOString().slice(0, 10) + '.db' });
+        document.body.appendChild(link); link.click(); link.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+        toast('Database download started');
+      } catch (ex) { toast(ex.message); }
+      finally { downloadButton.disabled = false; downloadButton.textContent = 'Download database'; }
+    } }, ['Download database']);
+
     var body = el('div', { class: 'body' }, [
       el('div', { class: 'field' }, [el('label', { text: 'Tenant link' }), el('a', { href: st.url, target: '_blank', rel: 'noopener', text: st.url })]),
       el('div', { class: 'field' }, [el('label', { text: 'Name' }), el('input', { id: 'd-name', value: st.name || '' })]),
@@ -355,6 +376,11 @@
       el('div', { class: 'muted', text: 'Login seat allowance: ' + (st.subscription && st.subscription.seat_limit != null ? st.subscription.seat_limit : 'Bundle default') }),
       el('div', { class: 'field' }, [el('label', { text: 'Current usage' }), usageBox, el('button', { class: 'btn ghost', style: 'margin-top:12px', onclick: function () { selectTab('overview').catch(function (e) { toast(e.message); }); } }, ['Analytics & support'])]),
       photoField,
+      el('div', { class: 'field' }, [
+        el('label', { text: 'Database export' }),
+        el('p', { class: 'muted', text: 'Download a current copy of this workspace’s records, including employee and payroll data. Uploaded files and photos are separate.' }),
+        downloadButton,
+      ]),
       emailPanel(st.slug),
       recovery,
       logBox,
