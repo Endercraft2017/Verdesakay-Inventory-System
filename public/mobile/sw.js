@@ -7,11 +7,12 @@
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
 var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
 var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
-var CACHE_VERSION = CACHE_PREFIX + 'v116';
+var CACHE_VERSION = CACHE_PREFIX + 'v117';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
   '/js/tenant-context.js',
+  '/js/lib/slow-loading.js',
   '/m',
   '/mobile/index.html',
   '/mobile/manifest.webmanifest',

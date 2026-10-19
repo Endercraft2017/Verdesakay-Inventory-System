@@ -196,6 +196,7 @@ window.MApp = (function () {
     paintChrome(parsed);
     var v = viewEl();
     v.innerHTML = '';
+    window.SlowLoading?.navigation();
     v.scrollTop = 0;
     // Screens tag #m-view (data-figma-node, data-role-screen/-title/-subtitle); the element is
     // reused across routes, so clear every tag or the last screen's role title leaks onward.
@@ -217,6 +218,7 @@ window.MApp = (function () {
 
   /* ---------- auth ---------- */
   function showLogin() {
+    window.SlowLoading?.ready();
     if (authFlow) viewEl().replaceChildren(); // Remove one-time codes and credentials on sign-out/back.
     authFlow = null;
     window.mPersonalDraft?.clear();window.GuideTour?.close();window.PersonalUX?.release();
@@ -257,7 +259,7 @@ window.MApp = (function () {
       var button = this, note = document.getElementById('m-access-status');
       button.disabled = true; button.textContent = 'Checking…'; note.textContent = 'Checking your current access…';
       try {
-        var profile = await API.get('/auth/me');
+        var profile = await API.get('/auth/me', { background: true });
         // Use the normal entry path, including password/MFA and permission checks.
         if (profile.user.password_change_required || profile.user.mfa_setup_required ||
             (profile.user.permissions || []).some(function (p) { return p === 'mobile.access' || p === 'inventory.mobile'; }) || profile.user.employee) {
@@ -579,6 +581,7 @@ window.MApp = (function () {
   }
 
   function enterApp(user) {
+    window.SlowLoading?.ready();
     authFlow = null;
     me = user;
     if (user.password_change_required) {

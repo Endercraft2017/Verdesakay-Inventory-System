@@ -75,3 +75,10 @@ for 60 seconds so the browser has time to start saving.
 `upload(path, formData, { onProgress })` uses authenticated XMLHttpRequest upload
 events to report `{ loaded, total }` (total is null when unknown). Uploads without
 the callback continue using fetch; both share session and response handling.
+
+`slow-loading.js` loads early in desktop/mobile shells. Foreground API reads and
+startup show a dismissible notice after 10 seconds; request completion/failure
+clears it. Unread-count polls and `get(path, { background: true })` stay silent.
+Pending writes disable Retry. Retry is a user-initiated page reload, confirms
+possible draft loss after edits, and retains existing beforeunload protections.
+Navigation drops watches for the previous view. No request is retried automatically.

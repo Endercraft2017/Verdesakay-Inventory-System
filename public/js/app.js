@@ -59,6 +59,7 @@ const App = (() => {
   const appScreen = () => document.getElementById('app-screen');
 
   function showLogin() {
+    window.SlowLoading?.ready();
     me = null;
     document.getElementById('tenant-name').textContent = 'Workspace';
     document.title = 'Otom';
@@ -134,6 +135,7 @@ const App = (() => {
   }
 
   async function showApp(departmentsReq) {
+    window.SlowLoading?.ready();
     if (me && me.password_change_required) { requireNewPassword(); return; }
     if (me && me.mfa_setup_required) { requireMfaSetup(); return; }
     loginScreen().classList.add('hidden');
@@ -501,6 +503,7 @@ const App = (() => {
     const previousView = document.getElementById('view');
     const view = previousView.cloneNode(false);
     previousView.replaceWith(view);
+    window.SlowLoading?.navigation();
     view.dataset.route = name;
     view.dataset.section = activePrimaryId || '';
     view.innerHTML = '<div class="empty">Loading…</div>';

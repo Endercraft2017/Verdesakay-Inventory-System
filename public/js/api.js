@@ -81,6 +81,12 @@ const API = (() => {
   }
 
   async function request(method, path, body, isForm, opts) {
+    const finished = window.SlowLoading?.request(method, path, opts);
+    try { return await performRequest(method, path, body, isForm, opts); }
+    finally { finished?.(); }
+  }
+
+  async function performRequest(method, path, body, isForm, opts) {
     if (method !== 'GET') remembered.clear();
     const headers = {};
     const token = getToken();
