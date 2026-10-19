@@ -8,7 +8,7 @@ import { chromium } from 'playwright';
 import AxeBuilder from '@axe-core/playwright';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const output = path.join(root, 'work/editor-ux');
+const output = path.resolve(root, process.env.EDITOR_UX_OUTPUT || 'work/editor-ux');
 fs.mkdirSync(output, { recursive: true });
 const reportOnly = process.argv.includes('--report-only');
 const filter = process.env.EDITOR_UX_CASE || '';
@@ -74,6 +74,7 @@ try {
   await page.locator('.doc-surface').waitFor();
   await page.waitForFunction(() => document.querySelector('.doc-shared-status')?.textContent.includes('Connected'));
 
+  if(!process.env.EDITOR_UX_LAYERS_ONLY){
   for (const theme of ['light', 'dark']) {
     await page.evaluate(value => document.documentElement.dataset.theme = value, theme);
     for (const tab of ['home','insert','layout']) {
@@ -317,6 +318,24 @@ try {
     assert(await page.locator('.doc-copies').isDisabled());
     assert.equal(await page.locator('.doc-copies').inputValue(), '1');
     await editorButton('data-inspector-close').click();
+  });
+  }
+  await check('Layers support inline naming, drag and keyboard order, exact duplication, locking and saved reopening',async()=>{
+    await editorButton('data-save').click();await page.waitForFunction(()=>document.querySelector('.doc-save-status')?.textContent==='Saved');await editorButton('data-close').click();await page.locator('.doc-fs').waitFor({state:'hidden'});
+    const objects=[['Backdrop',1,10,15],['Approval stamp',2,25,20],['Invoice title',3,10,4]];
+    const body='<style data-docpage>@page{size:210mm 297mm;margin:14mm}</style><p>Layer audit</p>'+objects.map(([name,z,x,y])=>`<div class="doc-float" data-float-kind="shape-rect" data-doc-name="${name}" style="position:absolute;left:${x}%;top:${y}%;width:35%;height:12%;z-index:${z}"><div class="doc-float-shape" style="width:100%;height:100%;background:${z===1?'#e0d8fb':z===2?'#b8e9d6':'#e7eaf1'}">${name}</div></div>`).join('');
+    const layout=await api('POST','/templates',{name:'Layers interaction audit',type:'generic',body});await page.evaluate(()=>App.navigate('templates'));await page.locator(`[data-edit="${layout.id}"]`).click();await page.waitForFunction(()=>document.querySelector('.doc-shared-status')?.textContent.includes('Connected'));await editorButton('data-studio-tab=Layers').click();
+    const names=()=>page.locator('.doc-layer-name').allTextContents();const row=name=>page.locator('[data-layer-row]').filter({has:page.locator('.doc-layer-name',{hasText:new RegExp('^'+name+'$')})});const menu=async(name,action)=>{await row(name).locator('[data-layer-menu]').click();await page.locator(`[data-layer-action="${action}"]`).click();};
+    await row('Approval stamp').locator('.doc-layer-name').dblclick();await page.getByRole('textbox',{name:'Layer name',exact:true}).fill('Reviewed stamp');await page.keyboard.press('Enter');assert((await names()).includes('Reviewed stamp'));await editorButton('data-ex=undo').click();assert((await names()).includes('Approval stamp'));await editorButton('data-ex=redo').click();assert((await names()).includes('Reviewed stamp'));
+    await row('Reviewed stamp').locator('.doc-layer-name').dblclick();await page.getByRole('textbox',{name:'Layer name',exact:true}).fill('Cancel this');await page.keyboard.press('Escape');assert((await names()).includes('Reviewed stamp'));
+    const original=await page.locator('.doc-float[data-doc-name="Reviewed stamp"]').evaluate(n=>({left:n.style.left,top:n.style.top}));await menu('Reviewed stamp','inplace');assert.equal(await page.locator('.doc-surface .doc-float').count(),4);assert.deepEqual(await page.locator('.doc-float[data-doc-name="Reviewed stamp copy"]').evaluate(n=>({left:n.style.left,top:n.style.top})),original);await editorButton('data-ex=undo').click();assert.equal(await page.locator('.doc-surface .doc-float').count(),3);
+    await menu('Reviewed stamp','duplicate');assert.equal(await page.locator('.doc-surface .doc-float').count(),4);assert.notEqual(await page.locator('.doc-float[data-doc-name="Reviewed stamp copy"]').evaluate(n=>n.style.left),original.left);await editorButton('data-ex=undo').click();assert.equal(await page.locator('.doc-surface .doc-float').count(),3);
+    await row('Backdrop').locator('[data-layer-drag]').dragTo(row('Invoice title'),{targetPosition:{x:80,y:4}});assert.equal((await names())[0],'Backdrop');await editorButton('data-ex=undo').click();assert.equal((await names())[0],'Invoice title');await row('Backdrop').locator('[data-layer]').focus();await page.keyboard.press('Alt+ArrowUp');assert.deepEqual(await names(),['Invoice title','Backdrop','Reviewed stamp']);
+    await menu('Backdrop','lock');assert(await row('Backdrop').locator('[data-layer-drag]').isDisabled());await row('Backdrop').locator('[data-layer-menu]').click();assert(await page.locator('[data-layer-action=delete]').isDisabled());assert(await page.locator('[data-layer-action=up]').isDisabled());await page.keyboard.press('Escape');assert.equal(await page.locator('.doc-layer-menu').count(),0);await menu('Backdrop','lock');
+    await menu('Reviewed stamp','visibility');assert.equal(await page.locator('.doc-float[data-doc-name="Reviewed stamp"]').isVisible(),false);await menu('Reviewed stamp','visibility');assert(await page.locator('.doc-float[data-doc-name="Reviewed stamp"]').isVisible());
+    const beforeHighlight=await page.evaluate(()=>serializeEditor(document.querySelector('.doc-surface')));await menu('Reviewed stamp','highlight');await page.locator('.doc-layer-highlight').waitFor();assert.equal(await page.evaluate(()=>serializeEditor(document.querySelector('.doc-surface'))),beforeHighlight);
+    for(const width of [1440,1024,768,390]){await page.setViewportSize({width,height:1000});for(const theme of ['light','dark']){await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);await scan(`layers-${theme}-${width}`);await row('Reviewed stamp').locator('[data-layer-menu]').click();await scan(`layers-menu-${theme}-${width}`);const rect=await page.locator('.doc-layer-menu').boundingBox();assert(rect.x>=0&&rect.x+rect.width<=width+1);await page.keyboard.press('Escape');}}
+    await page.setViewportSize({width:1440,height:1000});const published=page.waitForResponse(r=>r.url()===`${base}/api/templates/${layout.id}`&&r.request().method()==='PUT');await editorButton('data-save').click();assert.equal((await published).status(),200);await page.waitForFunction(()=>document.querySelector('.doc-save-status')?.textContent==='Saved');const saved=await api('GET',`/templates/${layout.id}`);assert(saved.body.includes('data-doc-name="Reviewed stamp"'));assert(!saved.body.includes('doc-layer-highlight'));await editorButton('data-close').click();await page.locator('.doc-fs').waitFor({state:'hidden'});await page.locator(`[data-edit="${layout.id}"]`).click();await page.waitForFunction(()=>document.querySelector('.doc-shared-status')?.textContent.includes('Connected'));await editorButton('data-studio-tab=Layers').click();assert.deepEqual(await names(),['Invoice title','Backdrop','Reviewed stamp']);
   });
 } catch (error) { report.errors.push(error.stack || error.message); console.error(error.message); if(page) await page.screenshot({path:path.join(output,'failure.png')}).catch(()=>{}); }
 finally {

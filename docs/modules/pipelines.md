@@ -1319,3 +1319,5 @@ authoritatively protected. Inventory viewing does not imply adjustment access.
 Late Home responses cannot replace the current Work screen. Re-entering or
 re-tapping Work refreshes effective access, and custom clerk grants/revocations
 were verified through the actual sandbox desktop editor and candidate mobile UI.
+
+The template editor Layers panel supports scoped drag/drop and Alt+Arrow ordering, inline double-click/F2 naming, canvas selection/highlighting, and a keyboard-accessible per-layer action menu. Duplicates either retain exact coordinates or receive a 12 px offset; copies stay in the original parent. Layer edits use discrete editor history transactions and canonical HTML persistence. Locked layers block reordering/deletion; cross-page and cross-group drops are refused. Tests: doc-editor-studio and the Layers scenario in test:editor:ux.
