@@ -56,4 +56,30 @@ it('never exposes a legacy name-only payslip when two employees have used that n
   expect(individual.body.figures.basic_salary).toBe(8000);
   const withholding = await ctx.api.get('/api/accounting/bir-1601c?year=2026').set(auth);
   expect(withholding.body.months[9].employee_count).toBe(3); // two identified employees and one unresolved legacy slip
+
+  const unresolved = await ctx.api.get('/api/hr/payroll/legacy-unresolved').set(auth);
+  expect(unresolved.status).toBe(200);
+  expect(unresolved.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: ambiguous, number: 'PAY-AMBIGUOUS' })]));
+  const choices = await ctx.api.get('/api/hr/payroll/reconciliation-employees').set(auth);
+  expect(choices.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: a.body.id, name: 'Shared Name' })]));
+  expect((await ctx.api.get('/api/hr/payroll/legacy-unresolved').set({ Authorization: `Bearer ${first.token}` })).status).toBe(403);
+  const route = `/api/hr/payroll/${ambiguous}/reconcile-owner`;
+  const correction = { employee_id: a.body.id, record_number: 'PAY-AMBIGUOUS', reason: 'Matched original employee number against signed payroll register' };
+  expect((await ctx.api.post(route).set(auth).send({ ...correction, record_number: 'PAY-WRONG' })).status).toBe(409);
+  expect((await ctx.api.post(route).set(auth).send({ ...correction, reason: 'guess' })).status).toBe(400);
+  expect((await ctx.api.post(route).set({ Authorization: `Bearer ${first.token}` }).send(correction)).status).toBe(403);
+  const assigned = await ctx.api.post(route).set(auth).send(correction);
+  expect(assigned.status).toBe(200);
+  expect((await ctx.api.post(route).set(auth).send(correction)).status).toBe(409);
+  const saved = queryOne<{ data: string; status: string }>('SELECT data, status FROM form_records WHERE id = ?', ambiguous)!;
+  expect(saved.status).toBe('paid');
+  expect(JSON.parse(saved.data)).toMatchObject({ employee_id: a.body.id, employee_name: 'Shared Name', net_pay: 7000, basic_salary: 7000 });
+  expect((await ctx.api.get('/api/hr/payroll/legacy-unresolved').set(auth)).body.map((r: { id: number }) => r.id)).not.toContain(ambiguous);
+  expect((await ctx.api.get('/api/me/payslips').set({ Authorization: `Bearer ${first.token}` })).body.map((r: { id: number }) => r.id)).toContain(ambiguous);
+  expect((await ctx.api.get('/api/me/payslips').set({ Authorization: `Bearer ${second.token}` })).body.map((r: { id: number }) => r.id)).not.toContain(ambiguous);
+  const grouped = await ctx.api.get('/api/hr/thirteenth-month?year=2026').set(auth);
+  expect(grouped.body.rows.find((r: { employee_id: number }) => r.employee_id === a.body.id).basic_total).toBe(15000);
+  expect(grouped.body.rows.some((r: { employee_id: number | null }) => r.employee_id === null)).toBe(false);
+  const revision = queryOne<{ reason: string; source: string }>('SELECT reason, source FROM form_record_revisions WHERE record_id = ? ORDER BY revision DESC LIMIT 1', ambiguous);
+  expect(revision).toMatchObject({ reason: correction.reason, source: 'payroll-owner-reconciliation' });
 });
