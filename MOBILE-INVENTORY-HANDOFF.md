@@ -2,18 +2,16 @@
 
 ## Current source check after branch acceptance (2026-10-19)
 
-**High priority — replace the phone's legacy Cycle count path before relying on
-it for physical inventory.** `public/mobile/modules/inventory/cycle-count.js`
-still posts `/inventory/:id/adjust` for every variance. That bypasses the newer
-`/inventory/stock-counts` observation, independent approval, apply/verify,
-planned-task, serial-exception, and linked-issue closure flow. It also reads a
-combined location quantity and uses `parseInt`, so semi-built versus fully built
-stock and measured quantities are not represented correctly. The route is
-visible to `inventory.adjust` users. The mobile owner should route counting to
-the canonical stock-count workflow with exact location and build state, stable
-attempt identity, serial evidence, and review states; remove or redirect the
-legacy direct-adjustment action. Keep intentional inventory adjustments as a
-separate, permissioned operation. Desktop already has the canonical flow.
+**Legacy count gap resolved by the mobile integration in `5ca324b`.** This
+source check originally found `cycle-count.js` posting generic adjustments. That
+route now redirects to the canonical mobile stock-count observation workflow.
+Physical counts, serial exceptions, independent approval/apply/verify, linked
+issue closure and planned-task scheduling are implemented. Exact shelf/build
+state and immutable recovery are retained. Intentional stock adjustments remain
+separate and permissioned. See the mobile count, closure and planned-check
+entries below and their validation reports. Merged-code verification passed
+217 focused tests and 30 real-backend Playwright scenarios; deployment and
+physical-device acceptance are separate.
 
 Current mobile source **does** include semi-built finishing intake, customer
 return receipt/inspection/disposition, pre-slip allocation correction, build
