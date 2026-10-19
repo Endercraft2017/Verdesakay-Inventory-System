@@ -91,6 +91,15 @@ try{
     for(const label of ['Parts requests','RTS recording','Release orders','Inventory stock'])assert.equal(await phone.locator('#m-view').getByRole('button',{name:new RegExp('^'+label)}).count(),0);
     await phone.locator('#m-view').getByRole('button',{name:/Report a blocker/}).waitFor();await phone.locator('#m-view').getByRole('button',{name:'Guides',exact:true}).waitFor();
   });
+  await check('Revoked operational access blocks bookmarked screens and direct read APIs',async()=>{
+    for(const route of ['receiving','repairs','so','stock-counts','stock-count-tasks','stock-move']){
+      await phone.goto(base+'/m#/'+route);await phone.locator('[data-no-permission]').waitFor();
+    }
+    for(const endpoint of ['/rts/queue','/production/repairs','/release-slips/queue','/inventory/stock-counts?status=all','/inventory/stock-counts/tasks?status=open&mine=1']){
+      const response=await phone.request.get(base+'/api'+endpoint,{headers:{Authorization:'Bearer '+employee}});assert.equal(response.status(),403,endpoint);
+    }
+    await work();
+  });
   assert.deepEqual(report.errors,[]);
 }catch(e){report.checks.push({name:'Acceptance run',passed:false,error:e.stack});console.error(e);try{await phone?.screenshot({path:path.join(output,'failure.png'),fullPage:true});report.effectivePermissions=await phone?.evaluate(()=>MApp.getMe()?.permissions);}catch{}process.exitCode=1;}
 finally{

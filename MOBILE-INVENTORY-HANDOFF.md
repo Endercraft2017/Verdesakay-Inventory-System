@@ -1,5 +1,26 @@
 # Inventory and production: mobile integration gaps
 
+## Mobile pre-sticker identification fix (2026-10-19)
+
+The QA identification action below is implemented locally (candidate cache v123).
+Ready/Recheck cards are the main entry; they show the production identifier and
+job order. Search by identifier/job order shows explicit result cards and never
+silently chooses the first partial match. QR scanning is an optional shortcut
+only when a label is already attached. Verification/recheck requires a physical
+identifier/job-order confirmation; missing identifiers block inspection start.
+Bookmarked checklist/disposition screens return to verification, including after
+restart. Already-submitted immutable attempts still recover without a new
+inspection. Bulk inspection requires a match for every selected unit.
+
+Five real-backend Playwright scenarios passed using two same-product units on
+one job order before stickers exist: distinct cards, ambiguous search/wrong-unit
+exit, bookmark guard and continuation, bulk identity confirmation, and QA
+checklist/pass without camera/QR. QA did not add stock; Products In remained a
+separate transition. The 34-scenario virtual-camera QR suite and ten mobile
+recovery scenarios also passed, including mandatory RTS scanning and QC lost-
+response retry. No deployment or physical-device verification is claimed for
+this candidate. See `scripts/test-mobile-inspection-identity.mjs`.
+
 ## QA identification before the Products In sticker (2026-10-19)
 
 **Confirmed field sequence:** Production records each unit with an internal unit
@@ -1339,3 +1360,34 @@ photo compression was measured before persistence/upload. See
 `docs/reviews/mobile-final-pipeline-validation.md` for environments and evidence.
 Physical phone/printer and actual disconnected site-PC checks remain distinct;
 the candidate v119 deployment is not implied by the deployed v115 probe.
+
+## Post-push mobile sandbox acceptance (2026-10-19)
+
+Confirmed the live sandbox now serves cache v119 and the CKD handoff entry guard.
+Expanded deployed custom-clerk acceptance passed six scenarios: revoked mobile
+bookmarks are denied and five operational read APIs return 403. The temporary
+employee's overrides were cleared and the account disabled. Sandbox stock/orders
+were untouched. Nine local CKD release scenarios, five separate CKD edge
+milestones and four worker-upgrade checks also passed. No new application defect
+was found. This is Chromium coverage for the tested custom role, not proof of
+all-role or cross-browser parity. See `docs/reviews/mobile-final-pipeline-validation.md`.
+
+## Updated handoff mobile role/recovery validation (2026-10-19)
+
+Read Current close-out status and integrated changes through `7d38981`. Seven
+built-in narrow-role mobile cases passed with actual disposable backend data:
+expected Work visibility, own desk entry and unrelated stock-write denial.
+Ten additional mobile recovery scenarios passed, including QC, returns,
+finishing and direct-sale recovery. Updated notification single-flight/error
+controls passed with delayed sample APIs. No new software defect was found.
+The component-override quantity policy remains unchanged pending its operator
+decision. See `docs/reviews/mobile-final-pipeline-validation.md` for coverage
+limits; no desktop-wide, Firefox/WebKit or physical-device pass is implied.
+
+Latest read-only sandbox probe confirmed active worker/cache v120, the deployed CKD
+entry guard, count/planned-check screens, offline shell and reconnect, with zero
+page errors. TypeScript and 24 focused role/modal/loading regressions passed.
+
+Pre-sticker fix validation: TypeScript and all 166 focused mobile/QC/checklist/role
+regression tests passed after adapting inspection tests to confirm physical
+identity. Syntax and whitespace checks passed.

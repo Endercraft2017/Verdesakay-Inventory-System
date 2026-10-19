@@ -108,7 +108,7 @@ try{
 
  await check('Ordinary QC confirmation recovers a committed response loss after restart',async()=>{
   const p=await product('QC durable decision',1,1),fd=new FormData();fd.append('identifier','QC-RETRY-UNIT');fd.append('image',new Blob(['unit-proof'],{type:'image/png'}),'proof.png');const unit=await api('POST','/job-orders/'+p.jo+'/units',fd);
-  await page.goto(base+'/m#/qc?unit='+unit.id+'&role=qc&step=pass');await page.locator('#qc-confirm').waitFor();let requests=[];
+  await page.goto(base+'/m#/qc?unit='+unit.id+'&role=qc&step=pass');await page.locator('#qc-identity').check();await page.locator('#qc-start').click();await page.locator('[data-d=pass]').click();await page.locator('#qc-confirm').waitFor();let requests=[];
   await page.route('**/api/job-orders/'+p.jo+'/units/inspect',async route=>{requests.push({key:route.request().headers()['idempotency-key'],body:route.request().postData()});await route.fetch();await route.abort('connectionreset');});await page.locator('#qc-confirm').click();await page.locator('#wf-retry').waitFor();await launch(admin);page.on('request',r=>{if(r.url().endsWith('/units/inspect'))requests.push({key:r.headers()['idempotency-key'],body:r.postData()});});await page.goto(base+'/m#/qc?role=qc');await page.locator('#wf-retry').click();await page.locator('#wf-review').waitFor();assert.equal(requests[0].key,requests[1].key);assert.equal(requests[0].body,requests[1].body);const units=await api('GET','/job-orders/'+p.jo+'/units');assert.equal(units[0].status,'passed');await page.screenshot({path:path.join(output,'qc-durable-confirmation.png'),fullPage:true});
  });
 

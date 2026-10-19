@@ -1123,6 +1123,9 @@ describe('mobile bootstrap', () => {
       win.location.hash = '#/qc?role=qc&unit=501';
       await wait();
       expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('69:104');
+      expect((doc.getElementById('qc-start') as HTMLButtonElement).disabled).toBe(true);
+      const identity = doc.getElementById('qc-identity') as HTMLInputElement;
+      identity.checked = true; identity.dispatchEvent(new win.Event('change'));
       (doc.getElementById('qc-start') as HTMLButtonElement).click();
       await wait();
       let view = doc.getElementById('m-view');
@@ -1168,6 +1171,9 @@ describe('mobile bootstrap', () => {
       const doc = win.document;
       win.location.hash = '#/qc?role=qc&unit=501&step=check&g=0';
       await wait();
+      const identity = doc.getElementById('qc-identity') as HTMLInputElement;
+      identity.checked = true; identity.dispatchEvent(new win.Event('change'));
+      (doc.getElementById('qc-start') as HTMLButtonElement).click(); await wait();
       let view = doc.getElementById('m-view');
       (view.querySelector('[data-i="0"]') as HTMLButtonElement).click();
       (view.querySelector('[data-set="issue"]') as HTMLButtonElement).click();
@@ -1199,6 +1205,9 @@ describe('mobile bootstrap', () => {
       win.location.hash = '#/qc?role=qa&unit=501';
       await wait();
       expect(doc.getElementById('m-view').textContent).toContain('Ramon Cruz');
+      const identity = doc.getElementById('qc-identity') as HTMLInputElement;
+      identity.checked = true; identity.dispatchEvent(new win.Event('change'));
+      (doc.getElementById('qc-start') as HTMLButtonElement).click(); await wait();
       win.location.hash = '#/qc?role=qa&unit=501&step=fail';
       await wait();
       const view = doc.getElementById('m-view');
@@ -1216,6 +1225,10 @@ describe('mobile bootstrap', () => {
       win.mPhoto.attachBlob = () => Promise.resolve({ id: 91 });
       win.location.hash = '#/qc?role=qa&unit=501&step=evidence&then=fail';
       await wait();
+      const identity = doc.getElementById('qc-identity') as HTMLInputElement;
+      identity.checked = true; identity.dispatchEvent(new win.Event('change'));
+      (doc.getElementById('qc-start') as HTMLButtonElement).click(); await wait();
+      win.location.hash = '#/qc?role=qa&unit=501&step=evidence&then=fail'; await wait();
       (doc.getElementById('qc-cap') as HTMLButtonElement).click();
       await wait(80);
       const view = doc.getElementById('m-view');
@@ -1372,6 +1385,10 @@ describe('mobile bootstrap', () => {
         if (url === '/api/attachments?kind=production_issue&ref_id=82') return [{ id: 93, inspection_available: true }];
         return undefined;
       });
+      win.location.hash = '#/qc?role=qc&unit=501&step=evidence&then=fail'; await wait(80);
+      const identity = win.document.getElementById('qc-identity') as HTMLInputElement;
+      identity.checked = true; identity.dispatchEvent(new win.Event('change'));
+      win.document.getElementById('qc-start').click(); await wait(80);
       win.location.hash = '#/qc?role=qc&unit=501&step=evidence&then=fail'; await wait(80);
       win.document.getElementById('qc-report-evidence').click(); await wait(80);
       expect(win.location.hash).toContain('step=fail'); expect(win.document.getElementById('m-view').textContent).toContain('2 close-up photos');

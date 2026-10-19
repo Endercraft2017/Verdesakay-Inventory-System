@@ -50,12 +50,12 @@
   ],
   "qc:qc": [
     "Perform the technical QC pass for units at your authorized stage.",
-    "Open the waiting unit, verify its identity and complete required checks. Failed/held decisions need evidence.",
+    "Select its Ready/Reinspect card and match the production identifier and job order to the physical unit before checks. QR is optional before Products In; stop if identity is unclear. Failed/held decisions need evidence.",
     "Pass advances to QA when required, otherwise to receiving. Repair or rejection has a separate disposition; a QC pass is not stock-in."
   ],
   "qc:qa": [
     "Perform the appearance/final QA pass for eligible units.",
-    "Review the unit, earlier QC result and required appearance checks. Follow the repair/hold evidence prompts.",
+    "Select its Ready/Recheck card and confirm the production identifier and job order against the physical unit; no QR sticker is required yet. Review QC and complete appearance checks. Follow repair/hold evidence prompts.",
     "A final pass queues RTS recording; it does not add stock. Settle repair requests before rechecking returned units."
   ],
   "qc:qa:hold": [

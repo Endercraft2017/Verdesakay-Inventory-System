@@ -84,7 +84,7 @@
     if (params && (params.role === 'qa' || params.role === 'qc')) return DESKS[params.role];
     return (can('production.inspect_qa') || can('production.qa_review')) && !can('production.inspect_qc') && !canAdjust() ? DESKS.qa : DESKS.qc;
   }
-  function go(desk, extra) { MApp.go('qc', Object.assign({ role: desk.role }, extra || {})); }
+  function go(desk, extra) { var before = location.hash; MApp.go('qc', Object.assign({ role: desk.role }, extra || {})); if (location.hash === before) MApp.render(); }
   function page(view, desk, node, title, sub) { return R.page(view, { role: desk.role, node: node, title: title, subtitle: sub }); }
 
   function ago(ts) {
@@ -279,7 +279,7 @@
           '<button type="button" data-tab="done"' + (tab === 'done' ? ' class="on"' : '') + '>Completed</button></div>' +
         '<div class="rk-list" data-list></div>' +
         (joFilter ? R.note('info', 'Showing one job order only. <button type="button" class="rk-back" data-all style="padding:0">Show all</button>') : '') +
-        (inspects ? R.actions([{ id: 'qc-scan', label: 'Scan or select unit', kind: 'primary' }].concat(ready.length > 1 ? [{ id: 'qc-bulk', label: 'Pass several', kind: 'secondary' }] : [])) : '');
+        (inspects ? R.actions([{ id: 'qc-scan', label: 'Find unit by identifier or job order', kind: 'secondary' }].concat(ready.length > 1 ? [{ id: 'qc-bulk', label: 'Pass several', kind: 'secondary' }] : [])) : '');
       function paint(which) {
         var host = body.querySelector('[data-list]');
         if (which === 'hold') {
@@ -307,7 +307,7 @@
         host.innerHTML = list.length ? list.map(function (u) {
           var meta = which === 're' ? desk.reMeta + (u.open_part_requests ? ' · waiting on parts' : '')
             : (u.priority > 0 ? 'Priority · waiting ' : 'Waiting ') + ago(u.updated_at);
-          var line = u.product_name + ' · ' + (desk.role === 'qa' && u.last_pass ? 'QC passed ' + clock(u.last_pass.created_at).replace('Today, ', '') : u.job_order_number);
+          var line = u.product_name + ' · ' + u.job_order_number + (desk.role === 'qa' && u.last_pass ? ' · QC passed ' + clock(u.last_pass.created_at).replace('Today, ', '') : '');
           return '<button type="button" class="rk-card rk-unitcard" data-unit="' + u.id + '"><b>' + mEsc(label(u)) + '</b><span>' + mEsc(line) + '</span>' +
             '<small' + (which === 're' ? ' class="re"' : '') + '>' + mEsc(meta) + '</small><i aria-hidden="true">›</i></button>';
         }).join('') : '<div class="rk-empty">' + (which === 're' ? 'No units are back for ' + (desk.role === 'qa' ? 'recheck' : 'reinspection') + '.' : 'Nothing waiting for inspection.') + '</div>';
@@ -325,29 +325,57 @@
 
   /* ── Identify (69:68 / 72:68) ───────────────────────────────────────────── */
   function identify(view, desk) {
-    var body = page(view, desk, desk.nodes.identify, desk.identifyTitle, 'Scan the unit label or search manually');
+    var body = page(view, desk, desk.nodes.identify, desk.identifyTitle, 'Select a unit using its production identifier and job order');
     body.innerHTML =
-      '<button type="button" class="rk-identify"><span class="frame" aria-hidden="true"></span><b>Align the QR or serial label</b><small>' + mEsc(desk.identifyNote) + '</small></button>' +
-      '<label class="rk-card rk-field"><small>Manual serial search</small><input class="rk-input" data-q placeholder="Enter serial or scan code" autocomplete="off"></label>' +
-      R.actions([{ id: 'qc-find', label: 'Find unit', kind: 'primary' }, { id: 'qc-cancel', label: 'Cancel', kind: 'secondary' }]) +
+      R.note('info', 'Select the Ready or Recheck card, or search below. QR stickers are normally attached later at Products In.') +
+      '<label class="rk-card rk-field"><small>Production identifier or job order</small><input class="rk-input" data-q placeholder="Enter identifier or job order" autocomplete="off"></label>' +
+      R.actions([{ id: 'qc-find', label: 'Find units', kind: 'primary' }, { id: 'qc-cancel', label: 'Back to queue', kind: 'secondary' }]) +
+      '<div data-matches></div>' +
+      R.actions([{ id: 'qc-optional-scan', label: 'Scan QR if already attached (optional)', kind: 'secondary' }]) +
+      R.note('warn', 'If you cannot distinguish the physical unit, stop and resolve identification with Production before inspecting.') +
       R.note('info', '<h3>' + mEsc(desk.identifyInfo[0]) + '</h3>' + mEsc(desk.identifyInfo[1]));
-    Array.prototype.forEach.call(body.querySelectorAll('.rk-btn'), function (b) { b.classList.add('center'); });
+    var request = 0;
     function find(code) {
-      var t = String(code || '').trim().toLowerCase();
-      if (!t) { mToast('Enter or scan a serial', 'err'); return; }
+      var t = String(code || '').trim().toLowerCase(), current = ++request;
+      if (!t) { mToast('Enter a production identifier or job order', 'err'); return; }
       loadQueue(desk, true).then(function (q) {
-        var hit = q.units.filter(function (u) { return ('vds:unit:'+u.id) === t || String(u.identifier || '').toLowerCase() === t || String(u.id) === t.replace(/^#/, ''); })[0]
-          || q.units.filter(function (u) { return u.identifier && String(u.identifier).toLowerCase().indexOf(t) !== -1; })[0];
-        if (hit) go(desk, { unit: hit.id });
-        else mToast('No unit in your ' + desk.role.toUpperCase() + ' queue matches ' + code, 'err');
+        if (!body.isConnected || current !== request) return;
+        var matches = q.units.filter(function (u) {
+          return ('vds:unit:' + u.id) === t || String(u.id) === t.replace(/^#/, '') ||
+            String(u.identifier || '').toLowerCase().indexOf(t) !== -1 || String(u.job_order_number || '').toLowerCase().indexOf(t) !== -1;
+        });
+        var host = body.querySelector('[data-matches]');
+        host.innerHTML = matches.length ? matches.map(function (u) {
+          return '<button type="button" class="rk-card rk-unitcard" data-match="' + u.id + '"><b>' + mEsc(label(u)) + '</b><span>' + mEsc(u.product_name + ' · ' + u.job_order_number) + '</span><i aria-hidden="true">›</i></button>';
+        }).join('') : R.note('warn', 'No unit in your ' + desk.role.toUpperCase() + ' queue matches this search.');
+        Array.prototype.forEach.call(host.querySelectorAll('[data-match]'), function (button) { button.onclick = function () { go(desk, { unit: button.dataset.match }); }; });
       }).catch(fail());
     }
-    body.querySelector('.rk-identify').onclick = function () {
+    body.querySelector('#qc-optional-scan').onclick = function () {
       if (!window.mScanner) { mToast('Scanner unavailable on this device', 'err'); return; }
-      mScanner.open({ title: 'Scan the unit label', onResult: find });
+      mScanner.open({ title: 'Optional QR shortcut — sticker already attached', onResult: find });
     };
     body.querySelector('#qc-find').onclick = function () { find(body.querySelector('[data-q]').value); };
-    body.querySelector('#qc-cancel').onclick = function () { history.back(); };
+    body.querySelector('#qc-cancel').onclick = function () { go(desk); };
+  }
+
+  function identityKey(desk, u) { return [desk.role, u.id, u.identifier, u.job_order_id, u.stage].join(':'); }
+  function identityFields(u) {
+    return R.field('Production identifier', u.identifier || 'Missing — resolve with Production') +
+      R.field('Job order', u.job_order_number) +
+      R.check('qc-identity', 'I matched this identifier and job order to the physical unit') +
+      R.note('warn', 'No QR sticker is required here. If the unit cannot be distinguished reliably, stop and resolve identification with Production.');
+  }
+  function bindIdentity(body, desk, u, blocked) {
+    var start = body.querySelector('#qc-start'), confirm = body.querySelector('#qc-identity');
+    var allowed = !blocked && !!String(u.identifier || '').trim();
+    start.disabled = true;
+    confirm.onchange = function () { start.disabled = !allowed || !confirm.checked; };
+    start.onclick = function () {
+      if (!allowed || !confirm.checked) return;
+      var s = session(u.id); s.identity = identityKey(desk, u); s.bulk = null; s.bulkIds = null;
+      go(desk, { unit: u.id, step: 'check', g: 0 });
+    };
   }
 
   function issueAccess(body, desk, u) {
@@ -369,12 +397,13 @@
         ? R.field('QC record', (u.last_pass.inspector_name || '—') + ' · Passed ' + clock(u.last_pass.created_at).replace('Today, ', 'today, ')) +
           R.field('Technical result', u.last_pass.items + ' items passed · no open defects')
         : R.field('Production recorded', clock(u.created_at)) + R.field('Batch / lot', u.batch_identifier || u.batch_number || '—')) +
+      identityFields(u) +
       R.note('info', '<h3>' + mEsc(desk.scopeTitle) + '</h3>' + mEsc(desk.scope)) +
       (can('qc.configure') ? '<div class="rk-card rk-field"><small>Checklist</small><b style="display:flex;justify-content:space-between;align-items:center">' +
         mEsc(cl ? cl.name : 'Default (none set)') + '<button type="button" class="rk-back" data-change style="padding:0">Change</button></b></div>' : '') +
       R.actions([{ id: 'qc-start', label: desk.start, kind: 'primary' }, { id: 'qc-wrong', label: 'Wrong unit', kind: 'secondary' }]);
     issueAccess(body, desk, u);
-    body.querySelector('#qc-start').onclick = function () { go(desk, { unit: u.id, step: 'check', g: 0 }); };
+    bindIdentity(body, desk, u, false);
     body.querySelector('#qc-wrong').onclick = function () { go(desk, { step: 'identify' }); };
     var ch = body.querySelector('[data-change]'); if (ch) ch.onclick = function () { go(desk, { unit: u.id, step: 'checklist' }); };
   }
@@ -388,6 +417,7 @@
       '<div class="rk-rehead"><b>' + mEsc(label(u)) + '</b><span class="rk-pill">' + mEsc(desk.recheckPill) + '</span>' +
         '<span>' + mEsc((lf.repair_station ? 'Sent to ' + lf.repair_station : 'Returned for repair') + (lf.created_at ? ' · ' + ago(lf.created_at) + ' ago' : '')) + '</span>' +
         '<small>Original issue: ' + mEsc(lf.remarks || '—') + '</small></div>' +
+      identityFields(u) +
       R.note('info', '<h3>' + mEsc(desk.recheckScope) + '</h3>' + mEsc(desk.recheckScopeText)) +
       (failed.length ? '<div class="rk-checks">' + failed.map(function (c) {
         return '<div class="rk-check-row"><button type="button" disabled><span class="rk-state" aria-hidden="true">○</span><b>' + mEsc(c.label) + '</b>' +
@@ -397,9 +427,7 @@
       R.actions([{ id: 'qc-start', label: desk.recheckStart, kind: 'primary' }, { id: 'qc-hist', label: 'View history', kind: 'secondary' }]) +
       R.actions([{ id: 'qc-parts', label: 'Request a part', kind: 'secondary' }]);
     issueAccess(body, desk, u);
-    var start = body.querySelector('#qc-start');
-    start.disabled = blocked;
-    start.onclick = function () { go(desk, { unit: u.id, step: 'check', g: 0 }); };
+    bindIdentity(body, desk, u, blocked);
     body.querySelector('#qc-hist').onclick = function () { MApp.go('record', { unit: u.id }); };
     body.querySelector('#qc-parts').onclick = function () { go(desk, { unit: u.id, step: 'parts' }); };
   }
@@ -766,21 +794,25 @@
         '<div class="rk-stepper"><small>Units to pass</small><div class="row"><button type="button" data-dec aria-label="Fewer">−</button>' +
           '<input type="number" min="1" max="' + list.length + '" value="' + list.length + '"><button type="button" data-inc aria-label="More">+</button></div>' +
           '<p>' + list.length + ' ready on ' + mEsc(list[0].job_order_number) + '</p></div>' +
+        '<div data-bulk-identities></div>' +
         '<label class="rk-card rk-field"><small>Batch / lot ID (optional, applied to all)</small><div style="display:flex;gap:8px;margin-top:8px">' +
           '<input class="rk-input" style="margin:0" data-bid autocapitalize="characters" placeholder="Leave blank to keep untracked">' +
           '<button type="button" class="rk-back" data-scan style="padding:0">Scan</button></div></label>' +
         R.note('info', 'Every unit gets the same checklist result. Units with an issue must be inspected one by one instead.') +
         R.actions([{ id: 'qc-go', label: 'Continue to checklist', kind: 'primary' }, { id: 'qc-back', label: 'Cancel', kind: 'secondary' }]);
       var input = body.querySelector('.rk-stepper input');
+      function paintIdentities() { body.querySelector('[data-bulk-identities]').innerHTML = list.slice(0,Number(input.value)||0).map(function(u){return R.check('qc-match-'+u.id, 'I matched '+label(u)+' · '+u.job_order_number+' to the physical unit');}).join(''); }
+      paintIdentities(); input.oninput=paintIdentities;
       var clamp = function (v) { return Math.max(1, Math.min(list.length, v || 1)); };
-      body.querySelector('[data-dec]').onclick = function () { input.value = clamp(+input.value - 1); };
-      body.querySelector('[data-inc]').onclick = function () { input.value = clamp(+input.value + 1); };
+      body.querySelector('[data-dec]').onclick = function () { input.value = clamp(+input.value - 1); paintIdentities(); };
+      body.querySelector('[data-inc]').onclick = function () { input.value = clamp(+input.value + 1); paintIdentities(); };
       body.querySelector('[data-scan]').onclick = function () { mScanner.open({ title: 'Scan batch / lot ID', onResult: function (c) { body.querySelector('[data-bid]').value = String(c || '').trim(); } }); };
       body.querySelector('#qc-back').onclick = function () { history.back(); };
       body.querySelector('#qc-go').onclick = function () {
         var n=Number(input.value);if(!input.value.trim()||!Number.isInteger(n)||n<1||n>list.length){mToast('Enter a whole quantity within this inspection stage.','err');return;}
+        if(list.slice(0,n).some(function(u){return !String(u.identifier||'').trim() || !body.querySelector('#qc-match-'+u.id).checked;})){mToast('Match every selected unit identifier and job order before continuing.','err');return;}
         var first = list[0];
-        var s = session(first.id);
+        var s = session(first.id); s.identity = identityKey(desk,first);
         s.bulk = n; s.bulkIds = list.slice(0, n).map(function (u) { return u.id; });
         s.bulkIdentifier = body.querySelector('[data-bid]').value.trim() || null;
         go(desk, { unit: first.id, step: 'check', g: 0 });
@@ -894,6 +926,7 @@
       return withUnit(view, desk, unitId, function (u, jo) {
         var s = session(u.id);
         s.identLabel = label(u); s.dest = destination(u);
+        if (['check','review','pass','repair','evidence','fail'].indexOf(step) !== -1 && s.identity !== identityKey(desk,u)) return verify(view,desk,u,jo);
         if (step === 'check') check(view, desk, u, jo, params.g);
         else if (step === 'review') review(view, desk, u, jo);
         else if (step === 'pass') passView(view, desk, u, jo);

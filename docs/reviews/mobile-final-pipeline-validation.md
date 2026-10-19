@@ -85,3 +85,85 @@ Additional concurrency acceptance: after a complete load is saved, a second cler
 unreserves one required component through the real API. Reopening package, review
 and confirmation blocks the stale load, creates no slip and deducts no stock.
 Restoring the allocation permits the normal release and response-loss retry.
+
+## Post-push sandbox verification (2026-10-19)
+
+A subsequent live probe confirmed deployed cache `vds-m:/sandbox:v119` and the
+actual release module contains both `ckdLoadProblem` and its handoff-entry call.
+This supersedes the earlier v115 deployment observation above. Count/task screens,
+offline shell reload and reconnect passed again without operational writes.
+
+The deployed custom-access suite was extended and passed six scenarios. After
+revocation, bookmarks for receiving, repairs, sales-order release, stock counts,
+planned checks and stock movement all displayed access denied. Direct GETs for
+RTS, repairs, release queue, count list and assigned tasks each returned 403.
+The temporary employee (18) had overrides cleared and was disabled successfully.
+No sandbox stock or orders were changed. These checks cover the custom clerk
+fixture; they do not establish parity for every built-in role.
+
+On disposable local data, all nine CKD release scenarios passed again, including
+stale allocations and committed-response-loss retry. The separate CKD edge suite
+also passed its five milestones, including preventing reuse of a shipped kit on
+an empty second trip. All four worker-upgrade checks passed against v119. Passing
+runs reported zero page errors. No new product defect was found in this pass;
+changes extend the repeatable acceptance scripts. These latest checks used
+Chromium; cross-browser coverage and physical acceptance remain unverified.
+
+## Updated handoff and narrow-role pass (2026-10-19)
+
+Read the new Current close-out status section and integrated remote updates
+through `7d38981`, preserving earlier uncommitted acceptance additions. Older
+dated gaps are implementation history where superseded. The component-override
+quantity policy remains undecided and was not changed.
+
+`node scripts/test-mobile-role-matrix.mjs` passed seven built-in role cases:
+parts_clerk, production_lead, production_manager, qc_inspector, qa_inspector,
+receiving_clerk and releasing_clerk. At 390x844 each had its expected Work queue
+cards, opened its own desk, could not open stock movement, and received 403 for
+a direct stock adjustment request. This is real disposable-backend mobile UI
+coverage; it does not claim all desktop pages or all permissions are covered.
+
+`node scripts/test-mobile-remaining-ux.mjs` passed ten real-backend scenarios
+covering allocation correction response loss, persistent return photos and exact
+serial selection, semi-built intake/transfer, job-issue evidence, committed QC
+response loss, inspector return repair, direct-sale retry and basic-role gates.
+
+`CHROMIUM_PATH=/usr/bin/chromium node scripts/test-mobile-notification-ux.mjs`
+passed delayed repeated-click suppression, read failures, stale navigation,
+notification retry and sign-out controls. This script uses production sources
+with delayed sample APIs, unlike the real-backend role and recovery tests.
+No new application defect was found. Firefox and WebKit browser executables are
+not installed in this workspace, so no cross-browser pass is claimed.
+
+Latest read-only sandbox probe confirmed active worker/cache v120, the deployed CKD
+entry guard, count/planned-check screens, offline shell and reconnect, with zero
+page errors. TypeScript and 24 focused role/modal/loading regressions passed.
+
+## Pre-sticker QC/QA identification fix (2026-10-19)
+
+The updated handoff in `e06005e` confirms QR stickers are attached at Products In,
+after QA. The candidate v123 removes scan-first inspection wording, keeps queue
+cards primary, always shows job order on cards, and presents all matching search
+results. A partial identifier or job-order search cannot silently pick a unit.
+Verification and recheck require an explicit physical identifier/job-order match;
+missing identifiers prevent starting. Fresh checklist/disposition deep links
+return to verification. Matching confirmation can advance even when the URL is
+unchanged. Confirmation is intentionally not saved across a browser restart;
+already-submitted immutable attempts retain their original recovery flow.
+Bulk inspection also requires a match for each chosen identifier. Products In
+scan verification remains unchanged. Work guides now explain the sequence.
+
+`node scripts/test-mobile-inspection-identity.mjs` passed five real-backend phone
+cases with two same-product, same-job-order units: clear cards, ambiguous search
+and wrong-unit exit, deep-link guard/continuation, per-unit bulk confirmation,
+and QA checklist/pass without a camera request or QR label. The exact unit moved
+to Products In while the other stayed in QA; product stock remained zero.
+`node scripts/test-mobile-remaining-ux.mjs` passed ten recovery cases, including
+QC committed-response-loss retry after restart with original key/body.
+`node scripts/test-mobile-qr-ux.mjs` passed 34 cases with zero page errors,
+including real virtual-camera decoding and mandatory RTS scan verification.
+These local tests used disposable data. The candidate has not been deployed.
+
+Pre-sticker fix validation: TypeScript and all 166 focused mobile/QC/checklist/role
+regression tests passed after adapting inspection tests to confirm physical
+identity. Syntax and whitespace checks passed.
