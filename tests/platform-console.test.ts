@@ -321,7 +321,7 @@ describe('workspace database download', () => {
   it('downloads only the selected workspace as a valid SQLite snapshot', async () => {
     await ctx.api.post('/_platform/api/tenants').set(opHdr()).send({
       slug: 'exportco', name: 'Export Co', admin_username: 'exportowner',
-      admin_password: 'exportpass1', plan: 'starter',
+      admin_password: 'exportpass1', admin_email: 'exportowner@example.test', plan: 'starter',
     }).expect(201);
     const r = await ctx.api.get('/_platform/api/tenants/exportco/database').set(opHdr());
     expect(r.status).toBe(200);

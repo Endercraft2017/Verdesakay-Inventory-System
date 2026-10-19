@@ -1,5 +1,59 @@
 # Inventory and production: mobile integration gaps
 
+## Current close-out status (2026-10-19)
+
+The source and browser gaps described in older dated entries below have been
+superseded where a later entry says they were fixed. Treat those entries as an
+implementation history, not a current task list. The current branch includes
+canonical phone counts and planned checks, role-aware Work queues, direct-sale
+recovery, exact trip loads, and a CKD guard on every phone handoff entry. The
+real-backend phone CKD tests cover deep links, another clerk changing a held
+load, mixed spare/kit loads, photo compression and response-loss retry.
+
+Railway production reports successful deployment of `c636bfc` from
+`restructure/module-architecture`; the sandbox and root health endpoints
+responded successfully, and the sandbox served mobile worker cache `v119`.
+This confirms the assets are served. It does not prove an installed phone has
+activated the new worker or that a signed-in employee can complete every
+operation on the deployed tenant.
+
+There is **no currently confirmed software blocker** in the representative
+local inventory/production paths. Remaining acceptance needs actual field
+conditions: a phone with the installed PWA and correct worker version; real
+printed QR labels and camera focus; photo/signature upload under the staff
+roles; and a deliberately disconnected installed site PC followed by a safe
+reconnect/retry. Use non-operational test records or an approved test tenant
+for the full cross-role walk-through. Chromium's virtual camera, offline shell
+and simulated pending responses do not close these physical checks. The
+desktop draft-job component-override reset on quantity edit is documented in
+`docs/reviews/role-based-inventory-production-acceptance.md`; its intended
+policy needs an operator decision if that edit sequence is used.
+
+Local close-out rerun on the merged branch: the two-location, six-role
+purchase-to-kit-to-QC/QA-to-RTS-to-sale scenario passed, including a refused
+wrong-location approval and exact-once receipt/slip retries. Aftersales without
+production and buffer-stock production also passed. The phone CKD deep-link,
+concurrent-pick, mixed-load, large-photo and lost-response scenarios passed, as
+did the old-to-new PWA worker upgrade/offline reload scenario. TypeScript and
+2,887 of 2,888 full-suite tests passed; the sole failure was an unrelated
+platform-console fixture missing the required owner recovery email. The fixture
+was corrected and its entire 27-test file passed on rerun. The full suite was
+not repeated after that one-line fixture correction.
+
+Field acceptance still to record with staff on a non-operational tenant:
+
+| Check | Pass condition |
+| --- | --- |
+| Installed phone PWA | Worker/cache shows `v119` or newer after reopening; count, planned check and release screens load for their assigned roles. |
+| Physical scan and proof | Real printed unit and batch labels scan correctly; wrong labels are refused; camera photo and signature survive a phone restart and submit once. |
+| Actual site-PC outage | Disconnect the installed site host during a count or handoff, restart the phone, reconnect, and verify one durable result and one stock movement at most. |
+| Cross-role trial | Staff complete purchase, kit, build, QC/QA, Products In, RTS and sale/release across two locations; own-driver delivery and courier pickup each close with their required proof. |
+
+Record device model, PWA cache version, tenant, staff role, time, relevant record
+IDs and observed stock/slip totals. Do not use live customer stock for an outage
+drill. A failure should include the exact step and record ID before opening a
+new software task.
+
 ## Current source check after branch acceptance (2026-10-19)
 
 **Legacy count gap resolved by the mobile integration in `5ca324b`.** This
