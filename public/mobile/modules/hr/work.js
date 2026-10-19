@@ -9,7 +9,6 @@
       }); } },
     { label: 'Kit releases', sub: 'Pick and release job-order kits', route: 'kit-release', permission: 'inventory.adjust',
       count: function () { return API.get('/job-orders?stage=awaiting_release').then(function (rows) { return (rows || []).length; }); } },
-    { label: 'Cycle count', sub: 'Spot-check a stock location', route: 'cycle-count', permission: 'inventory.adjust' },
     { label: 'Allocate units', sub: 'Assign passed units to orders', route: 'allocate', permission: 'inventory.adjust' },
     { label: 'Parts requests', sub: 'Issue parts for repair or rework', route: 'repairs', permission: 'production.repairs',
       count: function () { return API.get('/production/repairs?status=requested').then(function (r) { return (r || []).length; }); } },
@@ -41,7 +40,10 @@
     {label:'Semi-built finishing',sub:'Send a complete semi-built package to finishing',route:'semi-finishing',any:['production.approve','production.manage']}
   );
 
+  OPS.push({label:'My planned checks',sub:'Assigned physical counts and overdue shelves',route:'stock-count-tasks',permission:'inventory.view',count:function(){return API.get('/inventory/stock-counts/tasks?status=open&mine=1').then(function(rows){return rows.length;});}});
+
   var STOCK_TOOLS = [
+    {label:'Physical stock counts',sub:'Scan an exact shelf and submit for review',route:'stock-counts',permission:'inventory.view'},
     {label:'Inventory stock',sub:'Search items, quantities and locations',route:'item',permission:'inventory.view'},
     {label:'Low stock',sub:'Items at or below their reorder point',route:'low-stock',permission:'inventory.view'},
     {label:'Stock movement history',sub:'Review the movements you recorded',route:'my-log',permission:'inventory.view'},

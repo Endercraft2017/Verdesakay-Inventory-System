@@ -13,7 +13,7 @@ const ROOT = path.join(import.meta.dirname, '..');
 const PUBLIC = path.join(ROOT, 'public');
 const EXPECTED_ROUTES = [
   'home', 'work', 'production', 'stock-move', 'damage', 'transfer', 'new-item', 'assign-qr', 'scan',
-  'item', 'low-stock', 'location', 'my-log', 'cycle-count', 'receive', 'pick',
+  'item', 'low-stock', 'location', 'my-log', 'cycle-count', 'stock-counts', 'stock-count-tasks', 'receive', 'pick',
   'batch', 'job-orders', 'kit-release', 'unit-issues', 'qc', 'repairs', 'record', 'receiving', 'so', 'report-problem', 'anonymous-report', 'settings', 'queue', 'clock',
   'returns', 'semi-finishing', 'inbox', 'directory', 'payslips', 'schedule', 'requests', 'tasks', 'notes', 'guides',
   'announcements', 'notifications', 'confidential-reports', 'time-fix', 'approvals', 'allocate', 'deliveries',
@@ -311,7 +311,7 @@ describe('mobile bootstrap', () => {
     win.location.hash = '#/home';
     win.MApp.render();
     const text = win.document.getElementById('m-view').textContent;
-    expect(text).toContain('Nothing here for you yet');
+    expect(text).toContain('Phone access isn’t enabled');
     expect(text).toContain('Use the phone app');
   });
 
@@ -330,7 +330,7 @@ describe('mobile bootstrap', () => {
   });
 
   it('a screen the role does not permit says so up front, whatever link or address opened it', async () => {
-    const WAREHOUSE = ['allocate', 'batch', 'cycle-count', 'damage', 'receive', 'stock-move', 'transfer',
+    const WAREHOUSE = ['stock-counts', 'stock-count-tasks', 'allocate', 'batch', 'cycle-count', 'damage', 'receive', 'stock-move', 'transfer',
       'assign-qr', 'new-item', 'item', 'location', 'low-stock'];
     // The shell's background reads (inbox badge, Home summary) answered so neither rejects unhandled;
     // anything else a permitted screen asks for fails like a missing record, which screens handle.
@@ -681,7 +681,7 @@ describe('mobile bootstrap', () => {
       const win = await bootAs(WH, f.respond); await open(win, 'confirm'); ack(win); click(win, 'kr-confirm'); await wait();
       const text = win.document.getElementById('m-view').textContent;
       expect(text).toContain('Free 4'); expect(text).toContain('action was refused'); expect(text).not.toContain('undefined'); expect(text).not.toContain('Parts released successfully');
-      await review(win); expect(win.document.getElementById('kr-save-pick')).toBeTruthy();
+      await review(win); await kitReady(win, '#kr-save-pick'); expect(win.document.getElementById('kr-save-pick')).toBeTruthy();
     });
 
     it('retains a local release and never shows handoff success before confirmation', async () => {

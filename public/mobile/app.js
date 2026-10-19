@@ -74,7 +74,7 @@ window.MApp = (function () {
   // Which stable bottom destination owns each route.
   var TAB_OF = {
     home: 'home',
-    work: 'work', 'stock-move': 'work', transfer: 'work', damage: 'work', 'new-item': 'work',
+    'stock-count-tasks':'work', 'stock-counts': 'work', work: 'work', 'stock-move': 'work', transfer: 'work', damage: 'work', 'new-item': 'work',
     batch: 'work', 'cycle-count': 'work', receive: 'work', pick: 'work',
     allocate: 'work', 'assign-qr': 'work', 'low-stock': 'work', location: 'work',
     returns:'work','semi-finishing':'work','my-log': 'work', item: 'work', scan: 'work', deliveries: 'work', so: 'work',
@@ -147,7 +147,7 @@ window.MApp = (function () {
       same). Routes not listed are for everyone, or check their own desk permission (qc, repairs,
       receiving, so, job-orders, kit-release, scan …). tests/frontend-mobile.test.ts walks every route. */
   var ROUTE_NEEDS = {
-    returns: ['inventory.view','inventory.adjust','orders.release','orders.view','production.inspect_qc','production.inspect_qa'], 'semi-finishing':['production.approve','production.manage'], allocate: ['inventory.adjust'], batch: ['inventory.adjust'], 'cycle-count': ['inventory.adjust'],
+    returns: ['inventory.view','inventory.adjust','orders.release','orders.view','production.inspect_qc','production.inspect_qa'], 'semi-finishing':['production.approve','production.manage'], allocate: ['inventory.adjust'], batch: ['inventory.adjust'], 'cycle-count': ['inventory.view'], 'stock-counts': ['inventory.view'], 'stock-count-tasks':['inventory.view'],
     damage: ['inventory.adjust'], receive: ['inventory.adjust'],
     'stock-move': ['inventory.adjust'], transfer: ['inventory.adjust'], 'assign-qr': ['inventory.adjust'],
     'new-item': ['inventory.create'],
@@ -161,7 +161,7 @@ window.MApp = (function () {
   var ROUTE_MODULES = {
     'semi-finishing':['manufacturing'], returns:['inventory'], allocate: ['manufacturing'], production: ['manufacturing'], 'job-orders': ['manufacturing'], 'kit-release': ['manufacturing'],
     'unit-issues': ['manufacturing'], qc: ['manufacturing'], repairs: ['manufacturing'], record: ['manufacturing'], receiving: ['manufacturing'],
-    batch: ['inventory'], 'cycle-count': ['inventory'], damage: ['inventory'], receive: ['inventory', 'purchasing'],
+    batch: ['inventory'], 'cycle-count': ['inventory'], 'stock-counts': ['inventory'], 'stock-count-tasks':['inventory'], damage: ['inventory'], receive: ['inventory', 'purchasing'],
     'stock-move': ['inventory'], transfer: ['inventory'], 'assign-qr': ['inventory'], 'new-item': ['inventory'],
     'my-log': ['inventory'], item: ['inventory'], location: ['inventory'], 'low-stock': ['inventory'], scan: ['inventory'], so: ['inventory'], deliveries: ['inventory']
   };

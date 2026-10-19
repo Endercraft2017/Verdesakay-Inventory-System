@@ -1096,3 +1096,84 @@ RTS queue, and receiving permission now permits receipt history/detail reads.
 TypeScript, 12 focused tests, and six local real-backend Playwright checks passed.
 See `docs/reviews/mobile-work-access-validation.md` for scope and evidence.
 Local candidate only; sandbox deployment has not been performed for this change.
+
+## Mobile physical counts and serialized exceptions (2026-10-19)
+
+The phone now has **Inventory tools → Physical stock counts** (`stock-counts`),
+requiring `inventory.view` and the Inventory module. Old `cycle-count` bookmarks
+redirect here; the former direct-adjustment count screen is retired. Counting
+submits an observation, never a generic adjustment. Exact location path and build
+state are fixed after loading a fresh snapshot. Untracked and every named batch
+need explicit whole counts, including zero; book serials start uncounted and are
+marked through the scanner/manual scanner fallback. Duplicate scans and labels
+are refused without regard to case. Unexpected labels are separate serial evidence.
+
+Drafts, observed labels, batch counts, snapshot and submitted body/key persist in
+account/server-scoped IndexedDB. Unknown outcomes retain the original attempt;
+retry sends the identical body/key. Saved-on-site-PC responses remain pending
+across restart. A refused observation must load a fresh count before resubmission.
+The shared durable-action Review button also refreshes when returning to the same
+record URL, and only this count workflow opts into clearing refused draft data.
+
+History/detail show counter, untracked amount, counted serials/batches, reviewer
+note, missing book serials and unexpected labels. Only a unique matching unit has
+an exact-record link; ambiguous/unknown labels require investigation. No count
+creates, relocates or writes off a serial. `inventory.adjust` supervisors can
+independently approve/reject and separately apply the guarded correction or
+verify a separately corrected count with a note. Self-approval is hidden and
+remains backend-blocked. Applying uses the saved independent approval note.
+
+This step does not implement planned-task queue/planning controls or Close linked
+issue. Task/source context is preserved when supplied by a link; those discovery
+and closure screens remain next. PWA cache v113. Local validation and limitations
+are in `docs/reviews/mobile-stock-counts-validation.md`; deployment is not implied.
+
+## Mobile linked count issue closure (2026-10-19)
+
+The phone count step now includes explicit **Close linked issue**. History/detail
+show the source type, ID and current status; supervisors can review current
+source evidence, including direct-sale ledger movements. Only an applied count
+with matching current quantity/identities and an open source offers closure.
+Counting, approval and applying a correction never close the issue automatically.
+
+Closure needs `inventory.adjust`, a 10–1000 character reviewer note and explicit
+confirmation. Note drafts and immutable body/retry key survive restart and lost
+responses. Confirmed closure displays reviewer, timestamp and note, without
+moving stock. Changed stock or captured audit evidence requires refreshed
+stock/audit evidence and a new source-linked count; the original source identity
+is preserved. Already separately resolved issues have no close action.
+
+Validation: TypeScript, 175 focused tests and 17 local real-backend Playwright
+scenarios passed, including stale direct-sale evidence, response loss, permissions,
+no automatic closure and no stock movement on closure. The site-PC pending case
+uses simulated response headers as documented in the validation report. No
+sandbox deployment is claimed. PWA cache v114. Planned-check discovery and
+supervisor planning/edit/cancel remain the next step.
+
+## Mobile planned checks and scheduling (2026-10-19)
+
+**My planned checks** is now in Work and count history (`stock-count-tasks`),
+following Inventory view/module access. Open/completed/cancelled queues show
+exact shelf path, build state, assignee, overdue state, due date, instructions,
+repeat interval and latest observation. Dates explicitly follow the server UTC
+calendar. Submitted/approved observations show Awaiting review; rejected ones
+show Recount. Task completion waits for guarded apply/verify, never submission.
+
+Starting a check reloads the worker's open task and uses its authoritative exact
+item/location/build state and immutable task ID. URL-supplied alternatives are
+ignored. Pending tasks open their existing count. Manual counts at planned
+positions open the assignment instead; another worker cannot start it.
+
+Inventory-adjust supervisors have planning, fixed-position editing, reasoned
+cancellation, all-assignment views and stock-position coverage. Coverage retains
+zero-stock shelves and links open checks or prefills a plan. Pending/completed
+checks cannot be edited/cancelled; stale forms remain backend-guarded. Draft
+planning inputs, cancellation reasons and immutable create/edit/cancel attempts
+survive restart and response loss. Backend reconciliation owns recurring-task
+completion and exactly-once successor creation.
+
+Validation: 13 planned-check plus 17 physical-count/source-closure Playwright
+scenarios passed locally against disposable real backend data; TypeScript and
+focused permission/lifecycle regressions passed. See
+`docs/reviews/mobile-planned-counts-validation.md`. PWA cache v115. No sandbox
+deployment or physical-device/printer acceptance is claimed.
