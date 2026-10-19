@@ -83,3 +83,17 @@ The previous statement that automatic export is only logged best effort is super
 supported order save paths. Real provider acceptance, automatic reconciliation/legacy adoption,
 alert delivery, capacity/rollout and other app gaps remain. No owner setup is required to run
 local engineering checks. See [the runbook](../operations/quickbooks-auto-exports.md).
+
+## Conversion error-disclosure follow-up — 2026-10-19
+
+Moderate, authenticated editor scope: Word import/export previously concatenated arbitrary
+converter exception messages into 400 responses, bypassing generic 500 redaction. Conversion
+now distinguishes authored document-limit errors from dependency failures. Unreadable imports
+receive generic 400 feedback; unexpected exports forward a sanitized exception to the central
+500 handler. Request IDs correlate responses without logging raw converter messages.
+
+This is a partial API-06 improvement. Platform/support/CSV catch blocks and the central
+handler's trust in arbitrary numeric status properties still need classification and failure
+injection. Do not mark app-wide error handling complete. Dependency advisories, historical
+credential revocation and hosted/physical-device/owner acceptance gates remain open.
+See the dated validation record for actual tests; no deployment is authorized by this change.

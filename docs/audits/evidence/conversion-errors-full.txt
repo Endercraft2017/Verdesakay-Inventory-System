@@ -1,0 +1,27 @@
+
+> otom@1.0.0 test
+> vitest run --fileParallelism --maxWorkers=2
+
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+ ❯ tests/frontend-mobile.test.ts (130 tests | 1 failed) 27226ms
+       × recovers a lost report response with original keys, bytes and links after restart 137ms
+(node:2822) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:2822) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend-mobile.test.ts > mobile bootstrap > QC and QA inspection (Figma 69:*, 72:*) > recovers a lost report response with original keys, bytes and links after restart
+TypeError: Cannot set properties of null (setting 'value')
+ ❯ tests/frontend-mobile.test.ts:1252:56
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 297 passed (298)
+      Tests  1 failed | 2990 passed (2991)
+   Start at  01:01:48
+   Duration  522.55s (transform 5.54s, setup 2.51s, import 36.13s, tests 970.06s, environment 2.08s)

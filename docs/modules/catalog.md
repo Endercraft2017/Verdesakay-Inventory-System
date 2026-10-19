@@ -1141,6 +1141,10 @@ rooms, presence/comments and conversion operations require the cloud; their work
 state/history is excluded from replication. Browser recovery and normal editor undo
 remain local. Studio library assets/styles replicate as company data.
 
+Word conversion exposes only authored document-limit errors; parser failures receive a generic
+400, unexpected export failures a generic 500. Both carry request IDs; dependency exception
+messages are never concatenated into these conversion responses.
+
 Tests cover template revisions/permissions, form links, premade mappings, conversion,
 pagination/grid guards, private recovery/shared conflicts and editor workflows. See
 `DOCUMENT-STUDIO-CAPABILITIES.md` for delivered tools and remaining fidelity limits.

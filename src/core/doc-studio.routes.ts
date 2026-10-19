@@ -3,7 +3,7 @@ import { isMultiPageDocument, MULTIPAGE_GRID_ERROR } from '../shared/document-la
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
-import { exportDocx, importDocx } from './document-conversion';
+import { exportDocx, importDocx, DocumentInputError } from './document-conversion';
 import { queryAll, queryOne, run } from '../shared/db';
 import { parseBody } from '../shared/validation';
 import type { DocTemplate, Permission } from '../shared/types';
@@ -75,13 +75,13 @@ router.delete('/documents/:key/comments/:id',syncClass('online'),(req,res)=>{con
 
 const conversionSchema=z.object({body:z.string().max(5_000_000),name:z.string().max(120).default('Document'),widthMm:z.number().min(10).max(2000),heightMm:z.number().min(10).max(2000),marginMm:z.number().min(0).max(500)}).refine(v=>v.marginMm*2<Math.min(v.widthMm,v.heightMm),'Margins must leave room for content');
 const documentUpload=multer({storage:multer.memoryStorage(),limits:{fileSize:8*1024*1024,files:1,fields:0}});
-router.post('/documents/:key/export-docx',syncClass('online'),async(req,res)=>{
+router.post('/documents/:key/export-docx',syncClass('online'),async(req,res,next)=>{
  if(!resolve(req,res))return;const input=parseBody(conversionSchema,req.body);
- try{const converted=await exportDocx(input);res.json({data:converted.buffer.toString('base64'),warnings:converted.warnings,filename:(input.name.replace(/[^\p{L}\p{N} _.-]/gu,'_')||'Document')+'.docx'});}catch(err){res.status(400).json({error:'Could not export this document: '+(err as Error).message});}
+ try{const converted=await exportDocx(input);res.json({data:converted.buffer.toString('base64'),warnings:converted.warnings,filename:(input.name.replace(/[^\p{L}\p{N} _.-]/gu,'_')||'Document')+'.docx'});}catch(err){if(err instanceof DocumentInputError){res.status(400).json({error:err.message,request_id:res.locals.requestId});return;}next(new Error('Document export failed'));}
 });
 router.post('/documents/:key/import-docx',syncClass('online'),(req,res,next)=>{if(resolve(req,res))next();},(req,res,next)=>{documentUpload.single('file')(req,res,error=>{if(error){res.status(error instanceof multer.MulterError&&error.code==='LIMIT_FILE_SIZE'?413:400).json({error:'Choose one DOCX file up to 8 MB'});return;}next();});},async(req,res)=>{
  if(!req.file||!req.file.originalname.toLowerCase().endsWith('.docx')){res.status(400).json({error:'Choose a DOCX file up to 8 MB'});return;}
- try{res.json(await importDocx(req.file.buffer));}catch(err){res.status(400).json({error:'Could not import this DOCX: '+(err as Error).message});}
+ try{res.json(await importDocx(req.file.buffer));}catch(err){res.status(400).json({error:err instanceof DocumentInputError?err.message:'Could not read this DOCX. Choose a valid document and try again.',request_id:res.locals.requestId});}
 });
 
 router.get('/library',(_req,res)=>res.json(queryAll<{value:string}>('SELECT l.*,u.full_name FROM doc_studio_library l LEFT JOIN users u ON u.id=l.created_by ORDER BY l.kind,l.name').map(r=>({...r,value:JSON.parse(r.value)}))));

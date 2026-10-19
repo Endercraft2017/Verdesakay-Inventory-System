@@ -1248,12 +1248,12 @@ describe('mobile bootstrap', () => {
         } return undefined;
       };
       function picker(win: any) { win.FormData = globalThis.FormData; win.mPhoto.picker = (opts: any) => { win.issuePicker = opts; return win.document.createElement('div'); }; }
-      let win = await bootAs(QC, respond, factory); picker(win); win.location.hash = '#/unit-issues?unit=501&step=new'; await wait(80);
+      let win = await bootAs(QC, respond, factory); picker(win); win.location.hash = '#/unit-issues?unit=501&step=new'; await waitForIssueElement(win, '[data-description]');
       win.document.querySelector('[data-description]').value = 'Original chassis finding'; win.document.querySelector('[data-description]').dispatchEvent(new win.Event('input'));
-      win.issuePicker.onChange([new Blob(['original-chassis-bytes'], { type: 'image/jpeg' })]); await wait(80); win.document.getElementById('ui-send').click(); await wait(100);
+      win.issuePicker.onChange([new Blob(['original-chassis-bytes'], { type: 'image/jpeg' })]); await wait(80); win.document.getElementById('ui-send').click(); await waitForIssueElement(win, '#ui-retry');
       expect(win.document.getElementById('ui-retry')).toBeTruthy(); expect(win.document.querySelector('[data-description]')).toBeNull(); win.close();
       win = await bootAs(QC, respond, factory); picker(win); win.location.hash = '#/unit-issues?unit=501'; await wait(80); (await waitForIssueElement(win, '[data-saved] [data-id]')).click();
-      (await waitForIssueElement(win, '#ui-retry')).click(); await wait(120);
+      (await waitForIssueElement(win, '#ui-retry')).click(); await waitForIssueElement(win, '#ui-another');
       expect(created.size).toBe(1); expect(uploaded.size).toBe(1);
       const retries = calls.filter(c => c.phase === phase); expect(retries).toHaveLength(2); expect(retries[0].key).toBe(retries[1].key);
       if (phase === 'photo') { expect(retries[0].ref).toBe('81'); expect(await retries[1].image.text()).toBe('original-chassis-bytes'); }

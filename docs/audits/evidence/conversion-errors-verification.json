@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-19",
+  "base_commit": "9782b527d9f01809bfb466c6df1e53f0b09f3252",
+  "full_run": {
+    "files_passed": 297,
+    "files_failed": 1,
+    "tests_passed": 2990,
+    "tests_failed": 1,
+    "duration_seconds": 522.55,
+    "failure": "frontend-mobile fixed-delay DOM rendering race; null description element"
+  },
+  "corrected_file": {
+    "files_passed": 1,
+    "tests_passed": 130,
+    "duration_seconds": 27.6
+  },
+  "focused": {
+    "files_passed": 3,
+    "tests_passed": 33
+  },
+  "playwright": {
+    "passed": 13,
+    "duration_seconds": 44.0
+  },
+  "typecheck": "passed",
+  "whole_control_statuses_changed": false,
+  "deployed": false,
+  "limitations": "No second uninterrupted full-suite pass claimed. Remaining API-06 routes are open; existing advisories and release holds remain."
+}

@@ -4,6 +4,8 @@ import { isTag, type AnyNode, type Element } from 'domhandler';
 import mammoth from 'mammoth';
 import JSZip from 'jszip';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, ImageRun, InsertedTextRun, DeletedTextRun, FootnoteReferenceRun, TableOfContents, Header, Footer, PageNumber, SectionType, ExternalHyperlink, InternalHyperlink, Bookmark, HeadingLevel, AlignmentType, WidthType, BorderStyle, LevelFormat, HeightRule, VerticalAlign, type IRunOptions, type IParagraphOptions, type ISectionOptions } from 'docx';
+/** Messages authored here are safe to show; never expose dependency exceptions. */
+export class DocumentInputError extends Error {}
 type Mutable<T> = {
     -readonly [K in keyof T]: T[K];
 };
@@ -85,7 +87,7 @@ export async function exportDocx(input: {
     function revisionText(list: AnyNode[], inherited: IRunOptions): { text: string; format: IRunOptions }[] {
         const parts: { text: string; format: IRunOptions }[] = [];
         for (const node of list) {
-            if (++nodes > 30000) throw Error('Document has too many elements');
+            if (++nodes > 30000) throw new DocumentInputError('Document has too many elements');
             if (node.type === 'text') { parts.push({ text: node.data, format: inherited }); continue; }
             if (!isTag(node) || ['script', 'style'].includes(node.name) || node.attribs['data-doc-hidden'] === 'true') continue;
             const format = runFormat(node, inherited);
@@ -98,7 +100,7 @@ export async function exportDocx(input: {
         const result: (TextRun | ImageRun | InsertedTextRun | DeletedTextRun | FootnoteReferenceRun | ExternalHyperlink | InternalHyperlink | Bookmark)[] = [];
         for (const n of list) {
             if (++nodes > 30000)
-                throw Error('Document has too many elements');
+                throw new DocumentInputError('Document has too many elements');
             if (n.type === 'text') {
                 result.push(new TextRun({ ...inherited, text: n.data }));
                 continue;
@@ -334,20 +336,20 @@ export async function importDocx(buffer: Buffer) {
         if (file.dir)
             continue;
         if (++count > 2000)
-            throw Error('DOCX contains too many files');
+            throw new DocumentInputError('DOCX contains too many files');
         const size = (file as unknown as {
             _data?: {
                 uncompressedSize?: number;
             };
         })._data?.uncompressedSize;
         if (size == null || size < 0)
-            throw Error('Invalid DOCX archive');
+            throw new DocumentInputError('Invalid DOCX archive');
         expanded += size;
         if (expanded > 30 * 1024 * 1024 || size > 15 * 1024 * 1024)
-            throw Error('DOCX is too large when expanded');
+            throw new DocumentInputError('DOCX is too large when expanded');
     }
     if (!zip.file('word/document.xml'))
-        throw Error('Choose a valid DOCX document');
+        throw new DocumentInputError('Choose a valid DOCX document');
     const result = await mammoth.convertToHtml({ buffer }, { externalFileAccess: false, includeEmbeddedStyleMap: false });
     const root = parseDocument(result.value), allowed = new Set(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'b', 'strong', 'i', 'em', 'u', 's', 'sup', 'sub', 'a', 'br', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'img', 'blockquote']);
     const anchors = new Map<string, string>();
@@ -389,6 +391,6 @@ export async function importDocx(buffer: Buffer) {
     }
     const body = root.children.map(sanitize).join('');
     if (body.length > 5000000)
-        throw Error('Converted document is too large');
+        throw new DocumentInputError('Converted document is too large');
     return { body, warnings: ['DOCX import preserves supported document content. Review fonts, spacing, page layout, drawings, headers and footers against the original. Imported revisions use Word’s proposed text; review history and section/style metadata are not retained.', ...result.messages.map(m => m.message)] };
 }

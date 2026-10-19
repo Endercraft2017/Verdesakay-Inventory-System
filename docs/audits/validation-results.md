@@ -278,3 +278,26 @@ advisory/history gates are not cleared by application test passes. Nothing was d
 
 See [the automatic-export runbook](../operations/quickbooks-auto-exports.md). Whole-control
 scorecard statuses remain unchanged; these are local engineering results, not release approval.
+
+## Document conversion error boundary — 19 October 2026
+
+The full regression completed: **297 files passed / 1 failed; 2,990 tests passed / 1 failed**
+(522.55s). Its sole failure was an existing mobile recovery test accessing a description element
+before rendering completed. The unchanged recovery subset passed on recheck (8 passed,
+122 excluded); the test then replaced short rendering delays with existing bounded DOM waits.
+The complete corrected mobile file passed **130 tests** (27.60s). This is full-run evidence plus
+a verified targeted correction, not a second uninterrupted green full run. Runtime code was
+frozen during the full run; only the mobile test waits were subsequently adjusted.
+
+Focused conversion/studio checks passed **3 files / 33 tests**, including real malformed ZIP input,
+injected dependency exceptions with synthetic sensitive paths, forged status/expose properties,
+request-ID correlation and authored document-limit feedback. **13 Playwright scenarios passed**
+(44.0s). Final TypeScript and diff checks passed. Staged Gitleaks passed with no findings; its redacted report is included.
+No schema, dependencies, mobile assets or live services changed.
+
+Evidence: `evidence/conversion-errors-{full,focused,playwright,mobile-recheck,mobile-fixed,types-final}.txt`,
+`evidence/conversion-errors-verification.json` and `evidence/conversion-errors-scope.md`.
+Research: [OWASP Error Handling Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Error_Handling_Cheat_Sheet.html),
+accessed 19 October 2026. Generic client failures and correlated safe diagnostics are applied to
+this converter boundary. API-06 remains FAIL; other raw exception paths require individual
+classification and injection tests. Whole-control totals and release hold remain unchanged.

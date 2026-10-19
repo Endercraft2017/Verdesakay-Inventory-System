@@ -893,6 +893,8 @@ Trigger: a form manager opens Print templates, or an editor opens the document l
    binds record/company/custom fields and the preview uses the same physical print layout.
 5. Single designs can use configurable grids; explicit multipage designs bypass grids.
    Word conversion reports unsupported visual/template features and retains import originals.
+   Conversion failures preserve authored limit feedback but hide dependency exceptions;
+   generic import failures (400) and unexpected export failures (500) carry request IDs.
 
 Failures: permission/stale-revision/shared-version errors retain local work; retry after
 reviewing the latest document. Server private/shared working tables are cloud-only and
