@@ -133,15 +133,17 @@ const Mfa = (() => {
       <pre class="mono" style="padding:10px;border:1px solid var(--border,#ddd);border-radius:8px;columns:2;user-select:all">${codes.map(UI.esc).join('\n')}</pre>`;
   }
 
-  async function saveSetupCodes(codes) {
+  async function saveRecoveryCodes(codes, { replacement = false } = {}) {
     await ask({
-      title: 'Two-step sign-in is on',
-      bodyHTML: `<p class="muted mfa-step">Step 3 of 3 · Save recovery codes</p>${recoveryCodesHTML(codes)}
+      title: replacement ? 'Your new recovery codes' : 'Two-step sign-in is on',
+      bodyHTML: `${replacement
+        ? '<p class="muted">Your old recovery codes no longer work. Save this new set before leaving.</p>'
+        : '<p class="muted mfa-step">Step 3 of 3 · Save recovery codes</p>'}${recoveryCodesHTML(codes)}
         <div class="mfa-code-actions">
           <button type="button" class="btn secondary" data-copy-codes>Copy codes</button>
           <button type="button" class="btn secondary" data-download-codes>Download .txt</button>
         </div>
-        <label class="mfa-saved-codes"><input type="checkbox" data-saved-codes /><span>I saved these recovery codes somewhere safe.</span></label>
+        <label class="mfa-saved-codes"><input type="checkbox" data-saved-codes /><span>I saved these ${replacement ? 'replacement' : 'recovery'} codes somewhere safe.</span></label>
         <p class="muted auth-help">Keep them private. Each code works once. Two-step sign-in is already on; this checkbox is a reminder, not a security requirement.</p>
         <p role="status" data-save-reminder></p>`,
       confirmText: 'Done', cancelText: 'Close',
@@ -157,7 +159,9 @@ const Mfa = (() => {
       },
     }, async ov => {
       if (!ov.querySelector('[data-saved-codes]').checked) {
-        ov.querySelector('[data-save-reminder]').textContent = 'Save your codes before finishing. You can still close this reminder; two-step sign-in remains on.';
+        ov.querySelector('[data-save-reminder]').textContent = replacement
+          ? 'Save your replacement codes before finishing. Close remains available; the old codes no longer work.'
+          : 'Save your codes before finishing. You can still close this reminder; two-step sign-in remains on.';
         return false;
       }
       return true;
@@ -213,36 +217,86 @@ const Mfa = (() => {
       catch (e) { showErr(AuthControls.errorMessage(e)); return false; }
     });
     if (!codes) return false;
-    await saveSetupCodes(codes);
+    await saveRecoveryCodes(codes);
     return true;
   }
 
-  /** Turn it off (password + a current code). */
+  function credentialFields(prefix) {
+    return `<label for="${prefix}-password">Your current password</label>
+      <input id="${prefix}-password" data-f="pw" type="password" autocomplete="current-password" />
+      <div class="mfa-code-method" role="group" aria-label="Code type">
+        <button type="button" class="btn secondary small" data-method="app" aria-pressed="true">Authenticator app</button>
+        <button type="button" class="btn secondary small" data-method="recovery" aria-pressed="false">Recovery code</button>
+      </div>
+      <label for="${prefix}-code" data-code-label>6-digit code</label>
+      <input id="${prefix}-code" data-f="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" aria-describedby="${prefix}-help" />
+      <p id="${prefix}-help" data-code-help class="muted auth-help">Use the newest code from your app.</p>`;
+  }
+
+  function wireCredentials(ov) {
+    AuthControls.passwords(ov);
+    const input = ov.querySelector('[data-f="code"]');
+    ov.querySelectorAll('[data-method]').forEach(button => button.onclick = () => {
+      const recovery = button.dataset.method === 'recovery';
+      ov.querySelectorAll('[data-method]').forEach(other => other.setAttribute('aria-pressed', String(other === button)));
+      input.dataset.method = button.dataset.method;
+      input.value = '';
+      input.removeAttribute('aria-invalid');
+      input.inputMode = recovery ? 'text' : 'numeric';
+      input.maxLength = recovery ? 11 : 6;
+      input.placeholder = recovery ? 'a1b2c-d3e4f' : '123456';
+      ov.querySelector('[data-code-label]').textContent = recovery ? 'Recovery code' : '6-digit code';
+      ov.querySelector('[data-code-help]').textContent = recovery
+        ? 'Use one unused recovery code. Letters and numbers are allowed. It works only once.'
+        : 'Use the newest code from your app.';
+      input.focus();
+    });
+    input.addEventListener('input', () => input.removeAttribute('aria-invalid'));
+  }
+
+  function readCredentials(ov, showErr) {
+    const password = ov.querySelector('[data-f="pw"]');
+    const input = ov.querySelector('[data-f="code"]');
+    if (!password.value) { showErr('Enter your current password.'); password.focus(); return null; }
+    const code = input.value.trim();
+    const recovery = input.dataset.method === 'recovery';
+    const valid = recovery ? /^[0-9a-f]{5}-?[0-9a-f]{5}$/i.test(code) : /^[0-9]{6}$/.test(code);
+    if (!valid) {
+      input.setAttribute('aria-invalid', 'true');
+      showErr(recovery ? 'Enter a complete recovery code.' : 'Enter a 6-digit code.');
+      input.focus(); return null;
+    }
+    return { password: password.value, code };
+  }
+
+  /** Password + a current authenticator or recovery code; workspace policy stays server-enforced. */
   async function disable() {
     return !!(await ask({
       title: 'Turn off two-step sign-in',
-      bodyHTML: `<label>Your password</label><input data-f="pw" type="password" autocomplete="current-password" />
-        <label>Code from your app (or a recovery code)</label><input data-f="code" autocomplete="one-time-code" maxlength="11" />`,
-      confirmText: 'Turn off',
+      bodyHTML: `<p class="muted" style="margin-top:0">Future sign-ins will use your password without an authenticator code. Your existing recovery codes will stop working.</p>${credentialFields('mfa-disable')}`,
+      confirmText: 'Turn off two-step sign-in', pendingText: 'Turning off…',
+      onOpen: wireCredentials,
     }, async (ov, showErr) => {
-      try { await API.post('/auth/mfa/disable', { password: ov.querySelector('[data-f="pw"]').value, code: ov.querySelector('[data-f="code"]').value.trim() }); return true; }
-      catch (e) { showErr(AuthControls.errorMessage(e)); return false; }
+      const credentials = readCredentials(ov, showErr);
+      if (!credentials) return false;
+      try { await API.post('/auth/mfa/disable', credentials); return true; }
+      catch (error) { showErr(AuthControls.errorMessage(error)); return false; }
     }));
   }
 
-  /** Replace the recovery codes (password + a current code). */
   async function newRecoveryCodes() {
     const codes = await ask({
       title: 'New recovery codes',
-      bodyHTML: `<p class="muted" style="margin-top:0">Your old recovery codes stop working.</p>
-        <label>Your password</label><input data-f="pw" type="password" autocomplete="current-password" />
-        <label>Code from your app</label><input data-f="code" autocomplete="one-time-code" maxlength="11" />`,
-      confirmText: 'Get new codes',
+      bodyHTML: `<p class="muted" style="margin-top:0">Replacing creates a new set immediately. Every old recovery code stops working. Save the new set before leaving.</p>${credentialFields('mfa-replace')}`,
+      confirmText: 'Replace recovery codes', pendingText: 'Replacing…',
+      onOpen: wireCredentials,
     }, async (ov, showErr) => {
-      try { return (await API.post('/auth/mfa/recovery-codes', { password: ov.querySelector('[data-f="pw"]').value, code: ov.querySelector('[data-f="code"]').value.trim() })).recovery_codes; }
-      catch (e) { showErr(AuthControls.errorMessage(e)); return false; }
+      const credentials = readCredentials(ov, showErr);
+      if (!credentials) return false;
+      try { return (await API.post('/auth/mfa/recovery-codes', credentials)).recovery_codes; }
+      catch (error) { showErr(AuthControls.errorMessage(error)); return false; }
     });
-    if (codes) await ask({ title: 'Your new recovery codes', bodyHTML: recoveryCodesHTML(codes), confirmText: 'I saved them', cancelText: 'Close' }, async () => true);
+    if (codes) await saveRecoveryCodes(codes, { replacement: true });
   }
 
   return { askCode, setup, disable, newRecoveryCodes };

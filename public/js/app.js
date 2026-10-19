@@ -73,23 +73,53 @@ const App = (() => {
     appScreen().classList.add('hidden');
     loginScreen().classList.remove('hidden');
     if (window.ChatWS) ChatWS.disconnect();
-    const m = UI.modal({
+    let saved = false, resume = false;
+    UI.modal({
       title: 'Choose your new password', cancelText: 'Sign out', confirmText: 'Save new password',
+      protectChanges: false,
+      // All successful dismissal paths share the modal's saving guard, including Escape.
+      onCancel: logout,
+      onClose: () => {
+        if (resume) showApp().catch(error => UI.toast(AuthControls.errorMessage(error), 'error'));
+      },
       bodyHTML: `<p>Your temporary password must be replaced before you can access the workspace.</p>
-        <label>Temporary password</label><input data-f="current" type="password" autocomplete="current-password" />
-        <label>New password</label><input data-f="new" type="password" autocomplete="new-password" />
-        <label>Confirm new password</label><input data-f="confirm" type="password" autocomplete="new-password" />`,
+        <label for="required-current">Temporary password</label><input id="required-current" data-f="current" data-label="temporary password" type="password" autocomplete="current-password" />
+        <label for="required-new">New password</label><input id="required-new" data-f="new" data-label="new password" type="password" autocomplete="new-password" maxlength="128" aria-describedby="required-policy" />
+        <label for="required-confirm">Confirm new password</label><input id="required-confirm" data-f="confirm" data-label="confirmation password" type="password" autocomplete="new-password" maxlength="128" />
+        <p id="required-policy" class="muted auth-help">Use 8–128 characters. Common passwords are not accepted. Choose a password different from the temporary one.</p>
+        <p class="auth-status" role="status" data-password-status></p>`,
+      onOpen: ov => AuthControls.passwords(ov),
       onConfirm: async (ov, showErr) => {
-        const pw = ov.querySelector('[data-f="new"]').value;
-        if (pw !== ov.querySelector('[data-f="confirm"]').value) { showErr('Passwords do not match.'); return false; }
-        await API.post('/auth/change-password', { current_password: ov.querySelector('[data-f="current"]').value, new_password: pw });
-        ov.querySelectorAll('input').forEach((input) => { input.value = ''; });
-        me = (await API.get('/auth/me')).user;
-        await showApp();
+        const button = ov.querySelector('[data-confirm]');
+        if (!saved) {
+          const current = ov.querySelector('[data-f="current"]');
+          const next = ov.querySelector('[data-f="new"]');
+          const confirm = ov.querySelector('[data-f="confirm"]');
+          if (!current.value) { showErr('Enter your temporary password.'); current.focus(); return false; }
+          if (next.value.length < 8 || next.value.length > 128) { showErr('Use 8–128 characters.'); next.focus(); return false; }
+          if (next.value !== confirm.value) { showErr('Passwords do not match.'); confirm.focus(); return false; }
+          button.textContent = 'Saving…';
+          try {
+            await API.post('/auth/change-password', { current_password: current.value, new_password: next.value });
+            saved = true;
+            ov.querySelectorAll('input').forEach(input => { input.value = ''; input.disabled = true; });
+            ov.querySelector('[data-password-status]').textContent = 'Password saved. Reopening your workspace…';
+          } catch (error) {
+            showErr(AuthControls.errorMessage(error)); button.textContent = 'Save new password'; return false;
+          }
+        }
+        button.textContent = 'Opening…';
+        try {
+          me = (await API.get('/auth/me')).user;
+          resume = true;
+          return true; // Close before showApp can open another required authentication dialog.
+        } catch {
+          showErr('Your password was saved, but the workspace could not be loaded. Retry access or sign out and use your new password.');
+          button.textContent = 'Retry access';
+          return false;
+        }
       },
     });
-    m.overlay.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', logout));
-    m.overlay.addEventListener('mousedown', (e) => { if (e.target === m.overlay) logout(); });
   }
 
   /** The workspace requires two-step sign-in for this account and it isn't set up yet: the

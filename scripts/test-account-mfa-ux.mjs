@@ -12,14 +12,14 @@ const api = `
 window.sample={response:'success',loadError:false,clipboard:'',calls:[],mfa:false};
 window.App={getMe:()=>({username:'sample.staff',full_name:'Sample Staff',role:'employee',department_name:'Operations'}),setMe:()=>{},hasPermission:()=>true,register:(name,render)=>window.renderAccount=render};
 const codes=['a1b2c-d3e4f','b2c3d-e4f5a','c3d4e-f5a6b','d4e5f-a6b7c','e5f6a-b7c8d','f6a7b-c8d9e','a7b8c-d9e0f','b8c9d-e0f1a','c9d0e-f1a2b','d0e1f-a2b3c'];
-const API={get:async p=>{if(sample.loadError&&p!=='/tenant'&&p!=='/messages/quota')throw Error('Could not load this section');if(p==='/tenant')return{company_id:'SAMPLE-001'};if(p==='/auth/mfa')return{available:true,enabled:sample.mfa,required:false,recovery_codes_left:10};if(p.startsWith('/auth/sessions'))return[];return{used_bytes:0,cap_bytes:1000}},post:async(p,body)=>{sample.calls.push(p);await new Promise(r=>setTimeout(r,200));if(sample.response==='offline'){const e=Error('Network unavailable');e.offline=true;throw e}if(sample.response==='expired')throw Error('This sign-in has expired. Enter your password again.');if(sample.response==='invalid')throw Error('That code is not right. Check your authenticator app and try again.');if(p==='/auth/mfa/setup')return{secret:'JBSWY3DPEHPK3PXP',otpauth_url:'otpauth://totp/Otom:sample?secret=JBSWY3DPEHPK3PXP&issuer=Otom'};if(p==='/auth/mfa/enable'){sample.mfa=true;return{recovery_codes:codes}}if(p==='/auth/change-username')return{username:body.new_username};return{ok:true}},put:async(p,body)=>{sample.calls.push(p);await new Promise(r=>setTimeout(r,200));if(sample.response==='offline'){const e=Error('Network unavailable');e.offline=true;throw e}return{ok:true}}};
+const API={get:async p=>{if(sample.loadError&&p!=='/tenant'&&p!=='/messages/quota')throw Error('Could not load this section');if(p==='/tenant')return{company_id:'SAMPLE-001'};if(p==='/auth/mfa')return{available:true,enabled:sample.mfa,required:false,recovery_codes_left:10};if(p.startsWith('/auth/sessions'))return[];return{used_bytes:0,cap_bytes:1000}},post:async(p,body)=>{sample.calls.push(p);await new Promise(r=>setTimeout(r,200));if(sample.response==='offline'){const e=Error('Network unavailable');e.offline=true;throw e}if(sample.response==='expired')throw Error('This sign-in has expired. Enter your password again.');if(sample.response==='invalid')throw Error('That code is not right. Check your authenticator app and try again.');if(p==='/auth/mfa/setup')return{secret:'JBSWY3DPEHPK3PXP',otpauth_url:'otpauth://totp/Otom:sample?secret=JBSWY3DPEHPK3PXP&issuer=Otom'};if(p==='/auth/mfa/recovery-codes')return{recovery_codes:codes};if(p==='/auth/mfa/enable'){sample.mfa=true;return{recovery_codes:codes}}if(p==='/auth/change-username')return{username:body.new_username};return{ok:true}},put:async(p,body)=>{sample.calls.push(p);await new Promise(r=>setTimeout(r,200));if(sample.response==='offline'){const e=Error('Network unavailable');e.offline=true;throw e}return{ok:true}}};
 Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async value=>{sample.clipboard=value}}});
 `;
 const html = '<!doctype html><html data-theme="light"><head><style>' +
   ['css/styles.css', 'css/visual-refresh.css', 'css/select-controls.css'].map(read).join('\n') +
   '</style></head><body><main id="view" style="padding:16px"></main><div id="modal-root"></div><div id="toasts"></div>' +
   script(api) + ['js/ui.js','js/auth-controls.js','mobile/vendor/qrcode.js','js/lib/session-list.js','js/lib/mfa.js','js/modules/core/account.js'].map(name=>script(read(name))).join('') +
-  script('window.TestMfa=Mfa;renderAccount(document.getElementById("view"));') + '</body></html>';
+  script('window.TestMfa=Mfa;window.TestSessions=SessionList;renderAccount(document.getElementById("view"));') + '</body></html>';
 const server = http.createServer((_req,res)=>{res.setHeader('Content-Type','text/html');res.end(html);});
 let browser;
 try {
@@ -119,6 +119,63 @@ try {
   await page.locator('#acc-mfa').getByText('On.',{exact:true}).waitFor();
   await page.locator('[data-session-retry]').click();
   await page.getByText('No sign-ins recorded.',{exact:true}).waitFor();
+  await page.evaluate(()=>{TestMfa.disable().then(result=>window.disabledResult=result)});
+  modal=page.locator('.modal');
+  await modal.getByLabel('Your current password',{exact:true}).fill('Sample-pass-238');
+  await modal.getByRole('button',{name:'Recovery code',exact:true}).click();
+  assert.equal(await modal.locator('[data-f=code]').getAttribute('inputmode'),'text');
+  await modal.locator('[data-f=code]').fill('a1b2c-d3e4f');
+  await page.evaluate(()=>sample.response='invalid');
+  await modal.locator('[data-confirm]').click();
+  await modal.locator('[data-modal-error]').waitFor({state:'visible'});
+  assert.equal(await modal.locator('[data-f=pw]').inputValue(),'Sample-pass-238');
+  await page.evaluate(()=>sample.response='success');
+  await modal.locator('[data-confirm]').click();
+  await modal.waitFor({state:'detached'});
+  assert.equal(await page.evaluate(()=>window.disabledResult),true);
+  await page.evaluate(()=>{TestMfa.newRecoveryCodes().then(()=>window.replacedResult=true)});
+  modal=page.locator('.modal');
+  await modal.getByLabel('Your current password',{exact:true}).fill('Sample-pass-238');
+  await modal.locator('[data-f=code]').fill('123456');
+  await modal.getByRole('button',{name:'Replace recovery codes',exact:true}).click();
+  await page.getByRole('heading',{name:'Your new recovery codes',exact:true}).waitFor();
+  await modal.getByText('Your old recovery codes no longer work. Save this new set before leaving.',{exact:true}).waitFor();
+  await modal.locator('[data-confirm]').click();
+  await modal.locator('[data-save-reminder]').filter({hasText:'replacement codes'}).waitFor();
+  await modal.locator('[data-saved-codes]').check();
+  await modal.locator('[data-confirm]').click();
+  await modal.waitFor({state:'detached'});
+  assert.equal(await page.evaluate(()=>window.replacedResult),true);
+  await page.evaluate(async()=>{
+    sample.response='success';sample.revoked=false;
+    window.renderSampleSessions=()=>TestSessions.render(document.querySelector('#acc-sessions'),{
+      load:async()=>[{id:'current',current:true,device:'Sample current browser'},...(sample.revoked?[]:[{id:'other1',device:'Sample phone'},{id:'other2',device:'Sample PC'}])],
+      revokeAllPreservesCurrent:true,
+      revokeAll:async()=>{await API.post('/auth/sessions/revoke-others');sample.revoked=true;return{ended:2}},
+    });await renderSampleSessions();
+  });
+  await page.locator('[data-end-all]').click();
+  modal=page.locator('.modal');
+  await modal.getByText('2 other active sign-in sessions',{exact:true}).waitFor();
+  await modal.locator('.modal-foot [data-close]').click();
+  await modal.waitFor({state:'detached'});
+  await page.locator('[data-end-all]').click();
+  await page.evaluate(()=>sample.response='offline');
+  await modal.locator('[data-confirm]').click();
+  await modal.locator('[data-modal-error]').waitFor({state:'visible'});
+  await page.evaluate(()=>sample.response='success');
+  await modal.locator('[data-confirm]').click();
+  await modal.getByText('2 other sessions signed out. This browser stays signed in.',{exact:true}).waitFor();
+  assert.equal(await modal.locator('[data-confirm]').isVisible(),false);
+  assert.equal(await page.locator('#acc-sessions tbody tr').count(),1);
+  await modal.locator('.modal-foot [data-close]').click();
+  await page.evaluate(async()=>{
+    window.nativeConfirmCalled=false;window.confirm=()=>{window.nativeConfirmCalled=true;return false};
+    await TestSessions.render(document.querySelector('#acc-sessions'),{load:async()=>[{id:'other',device:'Other user sample device'}],revokeAll:async()=>{throw Error('Must not run after cancellation')}});
+  });
+  await page.locator('[data-end-all]').click();
+  assert.equal(await page.evaluate(()=>window.nativeConfirmCalled),true);
+  assert.equal(await page.locator('.modal').count(),0);
   await page.evaluate(()=>{TestMfa.setup({forced:true}).then(result=>window.forcedResult=result)});
   await page.locator('.modal-foot').getByRole('button',{name:'Sign out',exact:true}).click();
   assert.equal(await page.evaluate(()=>window.forcedResult),false);

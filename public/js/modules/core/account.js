@@ -205,6 +205,7 @@ App.register('account', async (view) => {
     load: () => API.get('/auth/sessions?history=1'),
     revoke: (id) => API.post('/auth/sessions/' + encodeURIComponent(id) + '/revoke'),
     revokeAll: () => API.post('/auth/sessions/revoke-others'),
+    revokeAllPreservesCurrent: true,
   });
 
   // Keep the current session; the server ends every other session after success.
