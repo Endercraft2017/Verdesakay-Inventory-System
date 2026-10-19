@@ -1109,6 +1109,8 @@ describe('mobile bootstrap', () => {
       expect(view.getAttribute('data-figma-node')).toBe('69:16');
       expect(win.document.documentElement.getAttribute('data-role-accent')).toBe('qc');
       expect(view.textContent).toContain('1 unit');
+      expect(view.textContent).toContain('JO-2026-184');
+      (view.querySelector('[data-jo="184"]') as HTMLButtonElement).click(); await wait();
       expect(view.textContent).toContain('EB-2409-018');
       expect(view.textContent).not.toContain('EB-2409-011');
       (view.querySelector('[data-tab="re"]') as HTMLButtonElement).click();
@@ -1124,7 +1126,7 @@ describe('mobile bootstrap', () => {
       await wait();
       expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('69:104');
       expect((doc.getElementById('qc-start') as HTMLButtonElement).disabled).toBe(true);
-      const identity = doc.getElementById('qc-identity') as HTMLInputElement;
+      const identity = await waitForIssueElement(win, '#qc-identity') as HTMLInputElement;
       identity.checked = true; identity.dispatchEvent(new win.Event('change'));
       (doc.getElementById('qc-start') as HTMLButtonElement).click();
       await wait();
@@ -1171,7 +1173,7 @@ describe('mobile bootstrap', () => {
       const doc = win.document;
       win.location.hash = '#/qc?role=qc&unit=501&step=check&g=0';
       await wait();
-      const identity = doc.getElementById('qc-identity') as HTMLInputElement;
+      const identity = await waitForIssueElement(win, '#qc-identity') as HTMLInputElement;
       identity.checked = true; identity.dispatchEvent(new win.Event('change'));
       (doc.getElementById('qc-start') as HTMLButtonElement).click(); await wait();
       let view = doc.getElementById('m-view');
@@ -1201,11 +1203,12 @@ describe('mobile bootstrap', () => {
       const doc = win.document;
       expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('72:16');
       expect(doc.documentElement.getAttribute('data-role-accent')).toBe('qa');
+      (doc.querySelector('[data-jo="184"]') as HTMLButtonElement).click(); await wait();
       expect(doc.getElementById('m-view').textContent).toContain('QC passed');
       win.location.hash = '#/qc?role=qa&unit=501';
       await wait();
       expect(doc.getElementById('m-view').textContent).toContain('Ramon Cruz');
-      const identity = doc.getElementById('qc-identity') as HTMLInputElement;
+      const identity = await waitForIssueElement(win, '#qc-identity') as HTMLInputElement;
       identity.checked = true; identity.dispatchEvent(new win.Event('change'));
       (doc.getElementById('qc-start') as HTMLButtonElement).click(); await wait();
       win.location.hash = '#/qc?role=qa&unit=501&step=fail';
@@ -1225,7 +1228,7 @@ describe('mobile bootstrap', () => {
       win.mPhoto.attachBlob = () => Promise.resolve({ id: 91 });
       win.location.hash = '#/qc?role=qa&unit=501&step=evidence&then=fail';
       await wait();
-      const identity = doc.getElementById('qc-identity') as HTMLInputElement;
+      const identity = await waitForIssueElement(win, '#qc-identity') as HTMLInputElement;
       identity.checked = true; identity.dispatchEvent(new win.Event('change'));
       (doc.getElementById('qc-start') as HTMLButtonElement).click(); await wait();
       win.location.hash = '#/qc?role=qa&unit=501&step=evidence&then=fail'; await wait();
@@ -1386,7 +1389,7 @@ describe('mobile bootstrap', () => {
         return undefined;
       });
       win.location.hash = '#/qc?role=qc&unit=501&step=evidence&then=fail'; await wait(80);
-      const identity = win.document.getElementById('qc-identity') as HTMLInputElement;
+      const identity = await waitForIssueElement(win, '#qc-identity') as HTMLInputElement;
       identity.checked = true; identity.dispatchEvent(new win.Event('change'));
       win.document.getElementById('qc-start').click(); await wait(80);
       win.location.hash = '#/qc?role=qc&unit=501&step=evidence&then=fail'; await wait(80);
@@ -2164,6 +2167,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const view = win.document.getElementById('m-view');
       expect(view.getAttribute('data-figma-node')).toBe('74:16');
       expect(view.textContent).toContain('1 unit');
+      (view.querySelector('[data-jo]') as HTMLButtonElement).click(); await wait();
       expect(view.textContent).toContain('K4-01');
       expect(view.textContent).not.toContain('K4-02');
       (view.querySelector('[data-tab="issues"]') as HTMLButtonElement).click();

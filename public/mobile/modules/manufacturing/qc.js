@@ -34,7 +34,7 @@
     qc: {
       role: 'qc', nodes: { queue: '69:16', identify: '69:68', verify: '69:104', check: ['69:145', '69:197'], review: '69:247', pass: '69:286',
         repair: '69:323', evidence: '69:364', fail: '69:397', done: '69:436', recheck: '69:478' },
-      queueTitle: 'Technical inspection', queueSub: 'Units ready after Production recording', heroLabel: 'Ready for QC', checkTitle: 'Technical checklist',
+      queueTitle: 'Technical inspection', queueSub: 'Units waiting for technical inspection', heroLabel: 'Ready for QC', checkTitle: 'Technical checklist',
       reLabel: 'Reinspect', reMeta: 'Reinspection after repair', identifyTitle: 'Identify unit', identifyNote: 'The unit must be in the QC queue.',
       identifyInfo: ['Why identification matters', 'The serial links this inspection to production, job order, inspector and later QA result.'],
       verifyTitle: 'Verify before inspection', verifySub: 'Confirm identity and production traceability', verifyPill: 'Ready for QC',
@@ -279,7 +279,7 @@
           '<button type="button" data-tab="done"' + (tab === 'done' ? ' class="on"' : '') + '>Completed</button></div>' +
         '<div class="rk-list" data-list></div>' +
         (joFilter ? R.note('info', 'Showing one job order only. <button type="button" class="rk-back" data-all style="padding:0">Show all</button>') : '') +
-        (inspects ? R.actions([{ id: 'qc-scan', label: 'Find unit by identifier or job order', kind: 'secondary' }].concat(ready.length > 1 ? [{ id: 'qc-bulk', label: 'Pass several', kind: 'secondary' }] : [])) : '');
+        (inspects ? R.actions([{ id: 'qc-scan', label: 'Find unit by identifier or job order', kind: 'secondary' }].concat(joFilter && ready.length > 1 ? [{ id: 'qc-bulk', label: 'Pass several', kind: 'secondary' }] : [])) : '');
       function paint(which) {
         var host = body.querySelector('[data-list]');
         if (which === 'hold') {
@@ -296,7 +296,8 @@
           return;
         }
         if (which === 'done') {
-          host.innerHTML = q.completed.length ? q.completed.map(function (r) {
+          var completed=q.completed.filter(function(r){return !joFilter||r.job_order_id===Number(joFilter);});
+          host.innerHTML = completed.length ? completed.map(function (r) {
             return '<div class="rk-card rk-unitcard" style="cursor:default"><b>' + mEsc(r.identifier || 'Unit #' + r.unit_id) + '</b>' +
               '<span>' + mEsc(r.product_name + ' · ' + r.job_order_number) + '</span><small>' + (r.result === 'pass' ? 'Passed' : r.result === 'hold' ? 'Held for review' : 'Failed · ' + mEsc(r.disposition || '')) +
               ' · ' + mEsc(clock(r.created_at)) + '</small><i></i></div>';
@@ -304,6 +305,12 @@
           return;
         }
         var list = which === 're' ? re : ready;
+        if (!joFilter) {
+          var groups={};list.forEach(function(u){var g=groups[u.job_order_id]||(groups[u.job_order_id]={u:u,count:0});g.count++;});
+          host.innerHTML=Object.keys(groups).map(function(id){var g=groups[id],u=g.u;return '<button type="button" class="rk-card rk-unitcard" data-jo="'+id+'"><b>'+mEsc(u.job_order_number)+'</b><span>'+mEsc(u.product_name)+'</span><small>'+g.count+' eligible unit(s)'+(u.intake_origin==='legacy'?' · Pre-system legacy intake':'')+'</small><i aria-hidden="true">›</i></button>';}).join('') || '<div class="rk-empty">No ongoing job orders for this inspection stage.</div>';
+          host.querySelectorAll('[data-jo]').forEach(function(b){b.onclick=function(){go(desk,{jo:b.dataset.jo,tab:which});};});return;
+        }
+
         host.innerHTML = list.length ? list.map(function (u) {
           var meta = which === 're' ? desk.reMeta + (u.open_part_requests ? ' · waiting on parts' : '')
             : (u.priority > 0 ? 'Priority · waiting ' : 'Waiting ') + ago(u.updated_at);
@@ -362,8 +369,9 @@
   function identityKey(desk, u) { return [desk.role, u.id, u.identifier, u.job_order_id, u.stage].join(':'); }
   function identityFields(u) {
     return R.field('Production identifier', u.identifier || 'Missing — resolve with Production') +
-      R.field('Job order', u.job_order_number) +
-      R.check('qc-identity', 'I matched this identifier and job order to the physical unit') +
+      R.field(u.intake_origin==='legacy'?'Legacy intake':'Job order', u.job_order_number) +
+      (u.intake_origin==='legacy'?R.note('info','Pre-system unit — both QC and QA are required before Products In.'): '') +
+      R.check('qc-identity', 'I matched this identifier and '+(u.intake_origin==='legacy'?'legacy intake':'job order')+' to the physical unit') +
       R.note('warn', 'No QR sticker is required here. If the unit cannot be distinguished reliably, stop and resolve identification with Production.');
   }
   function bindIdentity(body, desk, u, blocked) {
@@ -396,7 +404,7 @@
       (desk.role === 'qa' && u.last_pass
         ? R.field('QC record', (u.last_pass.inspector_name || '—') + ' · Passed ' + clock(u.last_pass.created_at).replace('Today, ', 'today, ')) +
           R.field('Technical result', u.last_pass.items + ' items passed · no open defects')
-        : R.field('Production recorded', clock(u.created_at)) + R.field('Batch / lot', u.batch_identifier || u.batch_number || '—')) +
+        : R.field(u.intake_origin==='legacy'?'Legacy intake recorded':'Production recorded', clock(u.created_at)) + R.field('Batch / lot', u.batch_identifier || u.batch_number || '—')) +
       identityFields(u) +
       R.note('info', '<h3>' + mEsc(desk.scopeTitle) + '</h3>' + mEsc(desk.scope)) +
       (can('qc.configure') ? '<div class="rk-card rk-field"><small>Checklist</small><b style="display:flex;justify-content:space-between;align-items:center">' +

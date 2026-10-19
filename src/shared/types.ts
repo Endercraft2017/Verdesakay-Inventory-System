@@ -344,6 +344,8 @@ export interface BomComponent {
 export type JobOrderStatus = 'draft' | 'released' | 'in_progress' | 'paused' | 'completed' | 'cancelled';
 
 export interface JobOrder {
+  intake_origin?: string;
+  legacy_unit_cost?: number | null;
   id: number;
   number: string;
   order_id: number | null;

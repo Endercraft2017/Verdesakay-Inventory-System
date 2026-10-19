@@ -145,3 +145,32 @@ describe('an approval made on both sides (D6)', () => {
     expect(clashes.some((c) => c.summary.includes('approved on the cloud and at the site'))).toBe(true);
   });
 });
+
+describe('legacy intake while the site is disconnected',()=>{
+ it('replays the intake/photo and both inspections without manufacturing consumption or early stock',async()=>{
+  await T.hostRound();
+  const loc=(await ok(api().get('/api/locations').set(T.hostHdr()))).body[0].id;
+  const before=qtyOf(T.hostDb(),product),partsBefore=qtyOf(T.hostDb(),part);
+  T.cutOff('host');
+  const r=await ok(api().post('/api/rts/legacy').set(T.hostHdr())
+    .field('product_item_id',String(product)).field('location_id',String(loc)).field('identifier','OFFLINE-LEGACY-UNIT')
+    .field('unit_cost','75').field('notes','Existing unit before system adoption').field('intake_key','offline-legacy-original-key')
+    .attach('image',Buffer.from('offline-legacy-photo'),'legacy.png'),201);
+  const id=r.body.id,unit=r.body.unit_id;
+  expect(qtyOf(T.hostDb(),product)).toBe(before);
+  await ok(api().post(`/api/job-orders/${id}/units/inspect`).set(T.hostHdr()).send({unit_ids:[unit],result:'pass'}));
+  expect((await api().post(`/api/job-orders/${id}/products-in`).set(T.hostHdr()).send({unit_ids:[unit],location_id:loc})).status).toBe(409);
+  await ok(api().post(`/api/job-orders/${id}/units/inspect`).set(T.hostHdr()).send({unit_ids:[unit],result:'pass'}));
+  expect(qtyOf(T.hostDb(),product)).toBe(before);
+  await ok(api().post(`/api/job-orders/${id}/products-in`).set(T.hostHdr()).send({unit_ids:[unit],location_id:loc}),201);
+  expect(qtyOf(T.hostDb(),product)).toBe(before+1);expect(qtyOf(T.hostDb(),part)).toBe(partsBefore);
+  T.reconnect('host');
+  const round=await T.hostRound();expect(round.pushed.every(p=>p.state==='confirmed')).toBe(true);
+  expect(T.cloudDb().prepare('SELECT intake_origin,qc_stages FROM job_orders WHERE id=?').get(id)).toMatchObject({intake_origin:'legacy',qc_stages:2});
+  expect(qtyOf(T.cloudDb(),product)).toBe(before+1);expect(qtyOf(T.cloudDb(),part)).toBe(partsBefore);
+  expect(T.cloudDb().prepare('SELECT COUNT(*) AS n FROM qc_records WHERE unit_id=?').get(unit)).toMatchObject({n:2});
+  const photo=T.cloudDb().prepare("SELECT image_path FROM attachments WHERE kind='qc_unit' AND ref_id=?").get(unit) as {image_path:string};
+  expect(fs.readFileSync(path.join(T.dbmod.uploadDir('default'),photo.image_path),'utf8')).toBe('offline-legacy-photo');
+  await T.hostRound();expect(qtyOf(T.cloudDb(),product)).toBe(before+1);
+ });
+});

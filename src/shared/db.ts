@@ -99,7 +99,8 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 90; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+// 91: inspection-only legacy unit intake provenance, immutable keys and recorded valuation.
+export const SCHEMA_VERSION = 91; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -3365,6 +3366,12 @@ function migrate(): void {
   for (const col of ['qc_checklist_qc_snapshot', 'qc_checklist_qa_snapshot']) {
     if (!joChecklistCols.some((c) => c.name === col)) db.exec(`ALTER TABLE job_orders ADD COLUMN ${col} TEXT`);
   }
+  // 91: existing physical units enter mandatory QC/QA without a manufacturing kit.
+  const legacyCols = db.prepare('PRAGMA table_info(job_orders)').all() as Array<{ name: string }>;
+  for (const [name, declaration] of Object.entries({ intake_origin: "TEXT NOT NULL DEFAULT 'production'", legacy_intake_key: 'TEXT', legacy_intake_hash: 'TEXT', legacy_unit_cost: 'REAL' })) {
+    if (!legacyCols.some(c => c.name === name)) db.exec(`ALTER TABLE job_orders ADD COLUMN ${name} ${declaration}`);
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_legacy_intake_key ON job_orders(legacy_intake_key) WHERE legacy_intake_key IS NOT NULL');
   const idemCols = db.prepare('PRAGMA table_info(idempotency_keys)').all() as Array<{ name: string }>;
   if (!idemCols.some((c) => c.name === 'request_hash')) db.exec('ALTER TABLE idempotency_keys ADD COLUMN request_hash TEXT');
   // 74: one sale SKU can ship as a built unit or as its frozen CKD component list.

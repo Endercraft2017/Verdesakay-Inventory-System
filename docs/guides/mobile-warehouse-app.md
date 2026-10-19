@@ -134,3 +134,23 @@ visible on your Work screen. Back and Next continue from the selected explanatio
 Stock-related entries start with a **Stock effect** callout, distinguishing reads,
 reservations, physical stock-in/out, location moves and separate reconciliation.
 Selecting an explanation only changes help; it does not open or submit that task.
+
+
+### Job-order selection and units from before the system
+
+QC, QA and RTS receiving start with job-order cards showing eligible-unit counts.
+Choose the job order, then its unit. With no eligible work, the desk says there
+are no ongoing job orders for that stage. Unit links still open the exact record.
+
+For a physical unit that predates the system, the RTS clerk opens **Enter or
+resume pre-system unit**, selects its finished product and location, and records
+a distinct physically marked identifier, photo, intake reason and unit cost.
+This creates an `LI` legacy inspection intake, not a production kit or available
+stock. QC and then QA must inspect the unit. Match its identifier and intake
+number against the physical unit; stop if identity is unclear. Resolve repairs,
+holds or failures through the usual inspection process.
+
+After both passes, the RTS clerk opens its eligible intake, prints and attaches
+the unit QR sticker, scans that sticker, and confirms Products In. Only that
+receipt adds available RTS stock. Recover an interrupted intake through the same
+entry; retry the original saved attempt rather than entering the unit again.

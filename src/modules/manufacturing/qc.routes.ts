@@ -232,7 +232,7 @@ router.get('/queue', requireAnyPermission(['inventory.adjust', 'production.inspe
     team_name: string | null; batch_number: string | null; batch_identifier: string | null;
   }>(
     `SELECT u.id, u.identifier, u.status, u.stage, u.created_at, u.updated_at,
-            j.id AS job_order_id, j.number AS job_order_number, j.product_name, j.qc_stages, j.priority,
+            j.id AS job_order_id, j.number AS job_order_number, j.product_name, j.qc_stages, j.priority, j.intake_origin,
             t.name AS team_name, b.number AS batch_number, b.identifier AS batch_identifier
      FROM job_order_units u
      JOIN job_orders j ON j.id = u.job_order_id
@@ -275,7 +275,7 @@ router.get('/queue', requireAnyPermission(['inventory.adjust', 'production.inspe
   });
   const completed = queryAll<{ id: number; unit_id: number; result: string; disposition: string | null; created_at: string;
     identifier: string | null; job_order_number: string; product_name: string; stage: number; qc_stages: number }>(
-    `SELECT q.id, q.unit_id, q.result, q.disposition, q.created_at, q.stage, un.identifier, j.number AS job_order_number,
+    `SELECT q.id, q.unit_id, q.result, q.disposition, q.created_at, q.stage, un.identifier, j.id AS job_order_id, j.number AS job_order_number,
             j.product_name, j.qc_stages
      FROM qc_records q JOIN job_orders j ON j.id = q.job_order_id LEFT JOIN job_order_units un ON un.id = q.unit_id
      WHERE q.inspector_id = ? AND q.created_at >= datetime('now', 'start of day') ORDER BY q.id DESC LIMIT 40`,

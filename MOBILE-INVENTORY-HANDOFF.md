@@ -1,5 +1,43 @@
 # Inventory and production: mobile integration gaps
 
+## JO-first desks and pre-system units (2026-10-19)
+
+User decision: both QC and QA are mandatory for older units entered by the RTS
+clerk. QC, QA and RTS Ready/Recheck/Issues lists now group eligible output by job
+order first. Selecting a job shows only its eligible units/batches; unit deep
+links still work. Empty desks say no ongoing job orders for that stage. Completed
+inspection/receipt history respects the selected job too.
+
+The receiving clerk can enter/resume a pre-system unit with an existing finished
+product, distinct physical identifier, storage location, photo, intake reason
+and recorded unit cost (prefilled from the product). An `LI` inspection-only
+record is retained in the shared unit/QC/receipt infrastructure, tagged
+`intake_origin=legacy`. It is not a manufactured MO, is excluded from normal
+production job lists, creates no BOM kit, consumes no components and adds no
+stock at intake. Additional production-unit recording against it is refused.
+Its pending QC/QA, repair, hold or failure status remains visible to RTS staff.
+
+Both stage permissions and sequencing are backend-enforced with fixed two-stage
+inspection and frozen checklist snapshots; clients cannot disable either pass.
+QA pass only makes the unit eligible for Products In. The clerk must still print,
+attach and camera-scan the specific immutable QR before final mobile receipt.
+Failed units stay out of RTS. The receipt retains the declared legacy unit cost
+without deriving new manufacturing/BOM costs or posting a fictitious WIP release.
+
+Intake form/photo drafts and immutable multipart attempts use account/server-
+scoped durable storage. Original request/file/key recovery survives browser
+restart and committed response loss. The backend also deduplicates the intake
+key and hashes the parsed input plus photo, refusing changed or foreign reuse
+and duplicate identifiers. Schema 91 adds origin, key/hash and recorded cost to
+job orders; normal records default to production. Candidate PWA cache v124.
+
+Validation passed: seven end-to-end legacy Playwright scenarios, five existing
+pre-sticker identification scenarios, TypeScript and 192 focused regressions,
+including a disconnected-site legacy/photo/inspection/receipt replay. Details:
+`docs/reviews/mobile-legacy-intake-validation.md`. Local browser/sync fixtures
+are disposable. This is not a deployed or physical-device
+acceptance claim.
+
 ## Mobile pre-sticker identification fix (2026-10-19)
 
 The QA identification action below is implemented locally (candidate cache v123).

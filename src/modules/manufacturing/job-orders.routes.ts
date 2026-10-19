@@ -114,6 +114,8 @@ const r2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 function componentCostFor(joId: number): {
   released: number; perUnit: number; perUnitTotal: number; addons: number;
 } {
+  const legacy = queryOne<{legacy_unit_cost:number}>("SELECT legacy_unit_cost FROM job_orders WHERE id=? AND intake_origin='legacy'",joId);
+  if(legacy) return {released:0,perUnit:0,perUnitTotal:r2(legacy.legacy_unit_cost||0),addons:0};
   const conversion = queryOne<{ source_cost: number; finishing_cost: number }>(
     'SELECT source_cost, finishing_cost FROM semi_build_conversions WHERE job_order_id = ?', joId);
   if (conversion) return {
@@ -410,7 +412,7 @@ function maybeComplete(joId: number, userId: number): void {
 // GET /api/job-orders — list, filterable by ?status= / ?order_id= / ?product_item_id= / ?team_id= / ?scheduled=1
 router.get('/', listGate, (req, res) => {
   const { status, order_id, product_item_id, team_id, scheduled, stage } = req.query;
-  const where: string[] = [];
+  const where: string[] = ["j.intake_origin != 'legacy'"];
   const params: unknown[] = [];
   if (typeof status === 'string' && status.trim()) { where.push('j.status = ?'); params.push(status.trim()); }
   if (order_id) { where.push('j.order_id = ?'); params.push(Number(order_id)); }
@@ -1530,6 +1532,7 @@ router.post('/:id/units', recordGate, syncClass('physical'), syncUpload(imageUpl
   try { parsed = parseBody(addUnitSchema, req.body); } catch (e) { unlink(file?.filename); throw e; }
   const { identifier, batch_label } = parsed;
   if (!file) { fail(400, { error: 'A photo of the unit is required (JPG, PNG, GIF or WebP)', needs_photo: true }); return; }
+  if(jo.intake_origin==='legacy'){fail(409,{error:'Legacy intake is inspection-only. Enter another physical unit through RTS legacy intake.'});return;}
   const accounted = jo.qty_done + jo.qty_scrapped + unresolvedCount(id);
   if (accounted + 1 > jo.qty_ordered) {
     fail(400, { error: `That exceeds the ${jo.qty_ordered} ordered (${accounted} already produced).` });

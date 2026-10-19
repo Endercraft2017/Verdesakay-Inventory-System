@@ -29,6 +29,7 @@
   var key = function () { return 'rts-' + (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)); };
   var label = function (u) { return u.identifier || ('UNIT-' + u.id); };
 
+  function legacyStage(u){return u.intake_status==='cancelled'?'Intake cancelled — not RTS':u.status==='scrapped'?'Scrapped — not RTS':u.status==='passed'?'QC and QA passed — ready for receiving':u.status==='hold'?'QA hold':u.status==='failed'?'Failed inspection — not RTS':u.status==='rework'?(u.stage===0?'QC reinspection required':'QA recheck required'):u.stage===0?'Awaiting QC':'Awaiting QA';}
   function when(ts) {
     if (!ts) return null;
     return new Date(String(ts).replace(' ', 'T') + (String(ts).indexOf('Z') === -1 ? 'Z' : ''));
@@ -107,7 +108,8 @@
           '<button type="button" data-tab="done"' + (tab === 'done' ? ' class="on"' : '') + '>Recorded</button></div>' +
         '<div class="rk-list" data-list></div>' +
         (joFilter ? R.note('info', 'Showing one job order only. <button type="button" class="rk-back" data-all style="padding:0">Show all</button>') : '') +
-        R.actions([{ id: 'rts-scan', label: 'Scan unit or batch', kind: 'primary' }, { id: 'rts-look', label: 'Stock lookup', kind: 'secondary' }]);
+        R.actions([{id:'rts-legacy',label:'Enter or resume pre-system unit',kind:'secondary'}, { id: 'rts-scan', label: 'Scan unit or batch', kind: 'primary' }, { id: 'rts-look', label: 'Stock lookup', kind: 'secondary' }]);
+      body.querySelector('#rts-legacy').onclick=function(){go({step:'legacy'});};
       function card(attr, title, line, meta, tone) {
         return '<button type="button" class="rk-card rk-unitcard" ' + attr + '><b>' + mEsc(title) + '</b><span>' + mEsc(line) + '</span>' +
           '<small' + (tone ? ' class="' + tone + '"' : '') + '>' + mEsc(meta) + '</small><i aria-hidden="true">›</i></button>';
@@ -115,11 +117,19 @@
       function paint(which) {
         var host = body.querySelector('[data-list]');
         if (which === 'done') {
-          host.innerHTML = q.recorded.length ? q.recorded.map(function (r) {
+          var recorded=q.recorded.filter(mine);
+          host.innerHTML = recorded.length ? recorded.map(function (r) {
             return '<div class="rk-card rk-unitcard" style="cursor:default"><b>' + mEsc(r.identifier || (r.batch_number + ' · ' + r.quantity + ' pcs')) + '</b>' +
               '<span>' + mEsc(r.product_name + ' · ' + (r.location_name || '—')) + '</span><small>Ready to sell · ' + mEsc(r.receipt_number + ' · ' + time(r.created_at)) + '</small><i></i></div>';
           }).join('') : '<div class="rk-empty">Nothing recorded by you today.</div>';
           return;
+        }
+        if (!joFilter && which !== 'done') {
+          var groups={};(which==='issues'?held:ready).concat(which==='issues'?[]:batches).forEach(function(u){var g=groups[u.job_order_id]||(groups[u.job_order_id]={u:u,count:0});g.count+=u.remaining_qty||1;});
+          host.innerHTML=Object.keys(groups).map(function(id){var g=groups[id];return card('data-jo="'+id+'"',g.u.job_order_number,g.u.product_name,g.count+' eligible unit(s)'+(g.u.intake_origin==='legacy'?' · Pre-system legacy intake':''));}).join('') || '<div class="rk-empty">No ongoing job orders for RTS receiving.</div>';
+          if((q.intakes||[]).length)host.innerHTML+='<h3>Pre-system intakes</h3>'+q.intakes.map(function(u){return card('data-intake="'+u.id+'"',u.number+' · '+u.identifier,u.product_name,legacyStage(u));}).join('');
+          host.querySelectorAll('[data-jo]').forEach(function(b){b.onclick=function(){go({id:b.dataset.jo,tab:which});};});
+          host.querySelectorAll('[data-intake]').forEach(function(b){b.onclick=function(){go({id:b.dataset.intake,step:'legacy-status'});};});return;
         }
         if (which === 'issues') {
           host.innerHTML = held.length ? held.map(function (u) {
@@ -212,7 +222,7 @@
       R.field('Product / SKU', (u.sku ? u.sku + ' · ' : '') + u.product_name) +
       '<button type="button" class="rk-card rk-field rk-pickrow" data-loc><small>Finished-goods location</small><b>' +
         mEsc(loc ? loc.name + ' · ' + cap(loc.type) : 'Choose a location') + '</b></button>' +
-      R.field('Sellable condition', 'New · QA approved') +
+      R.field('Sellable condition', 'QA approved') +
       R.note('info', '<h3>Location validation</h3>The location must be finished-goods storage — not a truck or other transit location.') +
       R.actions([{ id: 'rts-go', label: 'Continue', kind: 'primary' }, { id: 'rts-loc', label: 'Choose location', kind: 'secondary' }]);
     var pick = function () { go({ unit: u.id, step: 'location' }); };
@@ -537,6 +547,33 @@
     }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { batch(view, batchId); })); });
   }
 
+  async function legacyIntake(view) {
+    var hash=location.hash, s=await mWorkflow.draft('legacy-intake');
+    if(hash!==location.hash)return;
+    if(s.operation.state!=='draft'){mWorkflow.paint(view,s);return;}
+    var context=await API.get('/rts/legacy/context');if(hash!==location.hash||!mWorkflow.owns(s))return;
+    var b=s.batch,body=page(view,'74:145','Enter pre-system unit','Existing physical unit — mandatory QC then QA before RTS');
+    body.innerHTML=R.note('info','This inspection intake does not create available stock or consume a production kit. Record one physical unit per intake. After QC and QA pass, print, attach and scan its sticker at Products In.')+
+      '<label class="rk-card rk-field"><small>Finished product</small><select data-legacy-product><option value="">Choose product</option>'+context.products.map(function(p){return '<option value="'+p.id+'">'+mEsc(p.name)+'</option>';}).join('')+'</select></label><div data-legacy-location></div>'+
+      '<label class="rk-card rk-field"><small>Physical unit identifier</small><input data-legacy-identifier maxlength="120" placeholder="Distinct identifier physically marked on this unit"></label>'+
+      '<label class="rk-card rk-field"><small>Recorded unit cost</small><input data-legacy-cost type="number" min="0" step="0.01"></label>'+
+      '<label class="rk-card rk-field"><small>Why this unit predates the system</small><textarea data-legacy-note minlength="5" maxlength="1000"></textarea></label><div data-legacy-photo></div>'+
+      R.check('legacy-confirm','This is an existing physical unit, not already entered in the system')+R.actions([{id:'legacy-submit',label:'Send to QC, then QA',kind:'primary'},{id:'legacy-back',label:'Back to job orders',kind:'secondary'}]);
+    var product=body.querySelector('[data-legacy-product]'),identifier=body.querySelector('[data-legacy-identifier]'),cost=body.querySelector('[data-legacy-cost]'),note=body.querySelector('[data-legacy-note]');
+    var loc=mLocations.select({label:'Physical storage location',locations:context.locations});body.querySelector('[data-legacy-location]').appendChild(loc.el);
+    product.value=b.product_item_id||'';identifier.value=b.identifier||'';cost.value=b.unit_cost==null?'':b.unit_cost;note.value=b.notes||'';if(b.location_id)loc.select.value=b.location_id;
+    if(!b.intake_key)b.intake_key='legacy-'+crypto.randomUUID();
+    function collect(){b.product_item_id=Number(product.value)||null;b.identifier=identifier.value.trim();b.unit_cost=cost.value;b.notes=note.value.trim();b.location_id=Number(loc.select.value)||null;return mWorkflow.save(s);}
+    var saving=Promise.resolve();function persist(){saving=saving.catch(function(){}).then(collect);saving.catch(function(e){mToast(e.message,'err');});return saving;}
+    product.onchange=function(){var item=context.products.find(function(p){return p.id===Number(product.value);});cost.value=item?item.unit_cost||0:'';persist();};identifier.oninput=cost.oninput=note.oninput=loc.select.onchange=persist;
+    var busy=false;var photos=mPhoto.picker({max:1,initial:s.rows.map(function(r){return r.file;}),onBusy:function(v){busy=v;body.querySelector('#legacy-submit').disabled=v;},onChange:function(files){s.rows=files.map(function(file){return {file:file,identifier:'legacy-unit.jpg'};});persist();}});body.querySelector('[data-legacy-photo]').appendChild(photos);
+    body.querySelector('#legacy-back').onclick=function(){go();};
+    body.querySelector('#legacy-submit').onclick=async function(){var btn=this;try{if(busy)return;btn.disabled=true;await persist();if(!b.product_item_id||!b.location_id||!b.identifier||b.notes.length<5||cost.value===''||!Number.isFinite(Number(b.unit_cost))||Number(b.unit_cost)<0)throw new Error('Choose the product and location, enter a distinct identifier, unit cost and intake reason.');if(!s.rows.length)throw new Error('Photograph this physical unit.');if(!body.querySelector('#legacy-confirm').checked)throw new Error('Confirm this unit has not already been entered.');
+      body.querySelectorAll('input,textarea,select,button').forEach(function(el){el.disabled=true;});await mWorkflow.start(s,{path:'/rts/legacy',multipart:true,payload:{product_item_id:b.product_item_id,location_id:b.location_id,identifier:b.identifier,notes:b.notes,unit_cost:Number(b.unit_cost),intake_key:b.intake_key},title:'Legacy unit '+b.identifier+' — awaiting QC and QA',successLabel:'Intake confirmed — not RTS stock',role:'rts',reviewRoute:'receiving',reviewParams:{step:'legacy-status'},resultParam:'id'});mWorkflow.paint(view,s);
+    }catch(e){mToast(e.message,'err');if(body.isConnected)body.querySelectorAll('input,textarea,select,button').forEach(function(el){el.disabled=false;});}};
+  }
+  async function legacyStatus(view,id){var q=await loadQueue();if(!view.isConnected)return;var intake=(q.intakes||[]).find(function(i){return i.id===Number(id);});var body=page(view,'74:16','Pre-system unit intake','Inspection history remains separate from manufacture');body.innerHTML=intake?R.jobHead({number:intake.number,name:intake.product_name,meta:intake.identifier})+R.field('Status',legacyStage(intake))+R.note('info','Stock becomes available only after both inspections and final Products In receipt.')+R.actions((intake.status==='passed'?[{id:'legacy-receive',label:'Open eligible units',kind:'primary'}]:[]).concat([{id:'legacy-list',label:'Back to job orders',kind:'secondary'}])):R.note('info','This intake is no longer pending. Review recorded receipts and stock history.')+R.actions([{id:'legacy-list',label:'Back to job orders',kind:'secondary'}]);body.querySelector('#legacy-list').onclick=function(){go();};var receive=body.querySelector('#legacy-receive');if(receive)receive.onclick=function(){go({id:intake.id});};}
+
   MApp.route('receiving', async function (view, params) {
     var render = ++routeSerial, hash = location.hash;
     params = params || {};
@@ -556,6 +593,7 @@
         if (existing) { mRtsRecovery.go(existing); return; }
       } catch (err) { view.innerHTML = ''; view.appendChild(R.error(err, function () { MApp.render(); })); return; }
     }
+    if (step === 'legacy' || step === 'legacy-status') { try { return await (step==='legacy'?legacyIntake(view):legacyStatus(view,params.id)); } catch(e){view.innerHTML='';view.appendChild(R.error(e,function(){MApp.render();}));return;} }
     if (step === 'identify') return identify(view);
     if (step === 'lookup') return lookup(view, params.q);
     if (step === 'done') return doneView(view);

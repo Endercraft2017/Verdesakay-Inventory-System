@@ -1,10 +1,17 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { imageUpload, saveAttachment, unlink } from '../../core/attachments.routes';
+import { syncUpload } from '../../sync/files';
+import { enforceQuota } from '../../platform/quota';
+import { checklistForProduct } from './qc.routes';
 import { batchBalances } from '../inventory/batch-stock';
 import { variantStockAt } from '../inventory/inventory-stock';
-/** /api/rts — the mobile RTS (ready-to-sell) desk (Figma 74:*). Reads only: the posting itself
+/** /api/rts — mobile RTS desk: scoped reads and legacy inspection intake. Stock receipt itself
  *  stays POST /api/job-orders/:id/products-in, which applies the same rules (rts.ts). */
 import { Router } from 'express';
 import { z } from 'zod';
-import { db, run, queryAll, queryOne } from '../../shared/db';
+import { db, run, queryAll, queryOne, nextSequence, uploadDir } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { parseBody } from '../../shared/validation';
 import { locationError, unitBlockers, openHolds } from './rts';
@@ -13,6 +20,44 @@ import { syncClass } from '../../sync';
 const router = Router();
 router.use(requireAuth);
 const receiveGate = requireAnyPermission(['inventory.adjust', 'production.receive']);
+
+// Dedicated receiving scope: no broad catalogue or production-write grant is added.
+router.get('/legacy/context', receiveGate, (_req, res) => {
+  res.json({products:queryAll('SELECT id,name,sku,unit_cost FROM inventory_items WHERE is_finished_product=1 ORDER BY name'),
+    locations:queryAll("SELECT * FROM locations WHERE type != 'truck' ORDER BY name")});
+});
+router.post('/legacy', receiveGate, syncClass('physical'), syncUpload(imageUpload.single('image')), (req,res) => {
+  const file=req.file;
+  try {
+    const input=parseBody(z.object({product_item_id:z.coerce.number().int().positive(),location_id:z.coerce.number().int().positive(),
+      identifier:z.string().trim().min(1).max(120),notes:z.string().trim().min(5).max(1000),
+      intake_key:z.string().min(8).max(200),unit_cost:z.coerce.number().finite().nonnegative().max(1e9)}),req.body);
+    if(!file){res.status(400).json({error:'Photograph the existing physical unit before submitting intake.'});return;}
+    const hash=createHash('sha256').update(JSON.stringify(input)).update(fs.readFileSync(path.join(uploadDir(),file.filename))).digest('hex');
+    const previous=queryOne<{id:number;created_by:number;legacy_intake_hash:string}>('SELECT id,created_by,legacy_intake_hash FROM job_orders WHERE legacy_intake_key=?',input.intake_key);
+    if(previous){unlink(file.filename);if(previous.created_by!==req.user!.id||previous.legacy_intake_hash!==hash){res.status(409).json({error:'This intake key belongs to a different request. Recover the original intake.'});return;}
+      const unit=queryOne<{id:number}>('SELECT id FROM job_order_units WHERE job_order_id=?',previous.id)!;res.status(201).json({id:previous.id,unit_id:unit.id});return;}
+    const product=queryOne<{id:number;name:string}>('SELECT id,name FROM inventory_items WHERE id=? AND is_finished_product=1',input.product_item_id);
+    if(!product){unlink(file.filename);res.status(400).json({error:'Choose an existing finished product.'});return;}
+    const loc=locationError(input.location_id,0);if(loc){unlink(file.filename);res.status(400).json({error:loc});return;}
+    if(queryOne("SELECT id FROM job_order_units WHERE lower(trim(identifier))=lower(?)",input.identifier)){
+      unlink(file.filename);res.status(409).json({error:'This identifier already has a unit record. Locate that record instead of entering it twice.'});return;}
+    enforceQuota('storage_mb');
+    const qc=checklistForProduct(product.id,1),qa=checklistForProduct(product.id,2);
+    db.exec('BEGIN');
+    try {
+      const number=nextSequence('legacy_intake_seq','LI');
+      const id=Number(run(`INSERT INTO job_orders(number,product_item_id,product_name,qty_ordered,status,source_location_id,output_location_id,qc_stages,
+        qc_checklist_qc_snapshot,qc_checklist_qa_snapshot,notes,created_by,intake_origin,legacy_intake_key,legacy_intake_hash,legacy_unit_cost)
+        VALUES(?,?,?,1,'in_progress',?,?,2,?,?,?,?, 'legacy',?,?,?)`,number,product.id,product.name,input.location_id,input.location_id,
+        JSON.stringify(qc),JSON.stringify(qa),'Pre-system legacy unit — no manufacture or kit consumption. '+input.notes,req.user!.id,input.intake_key,hash,input.unit_cost).lastInsertRowid);
+      const unitId=Number(run("INSERT INTO job_order_units(job_order_id,product_item_id,identifier,status,stage,location_id,remarks) VALUES(?,?,?,'pending',0,?,?)",
+        id,product.id,input.identifier,input.location_id,'Pre-system unit — awaiting QC and QA').lastInsertRowid);
+      saveAttachment('qc_unit',unitId,file.filename,'Pre-system legacy intake',req.user!.id);
+      db.exec('COMMIT');res.status(201).json({id,number,unit_id:unitId});
+    }catch(e){db.exec('ROLLBACK');throw e;}
+  }catch(e){unlink(file?.filename);throw e;}
+});
 
 /* GET /api/rts/queue — serialized units that passed final inspection (status 'passed') across
    open job orders, with their final-pass record, target location and any mismatch hold;
@@ -24,7 +69,7 @@ router.get('/queue', receiveGate, (req, res) => {
     output_location_id: number | null; output_location_name: string | null; order_number: string | null;
     batch_identifier: string | null;
   }>(
-    `SELECT u.id, u.identifier, u.updated_at, j.id AS job_order_id, j.number AS job_order_number, j.product_name, j.build_mode,
+    `SELECT u.id, u.identifier, u.updated_at, j.id AS job_order_id, j.number AS job_order_number, j.product_name, j.build_mode, j.intake_origin,
             COALESCE(u.product_item_id, j.product_item_id) AS product_item_id, i.sku, j.priority,
             j.output_location_id, ol.name AS output_location_name, o.number AS order_number, b.identifier AS batch_identifier
      FROM job_order_units u
@@ -47,7 +92,7 @@ router.get('/queue', receiveGate, (req, res) => {
   });
   const batches = queryAll<{ id: number; number: string; job_order_id: number; job_order_number: string; product_name: string; build_mode: string;
     sku: string | null; output_location_id: number | null; remaining_qty: number }>(
-    `SELECT pb.id, pb.number, j.id AS job_order_id, j.number AS job_order_number, j.product_name, j.build_mode, i.sku, j.output_location_id,
+    `SELECT pb.id, pb.number, j.id AS job_order_id, j.number AS job_order_number, j.product_name, j.build_mode, j.intake_origin, i.sku, j.output_location_id,
             pb.qty - COALESCE((SELECT SUM(quantity) FROM production_receipt_items WHERE batch_id = pb.id), 0) AS remaining_qty
      FROM production_batches pb
      JOIN job_orders j ON j.id = pb.job_order_id
@@ -58,7 +103,7 @@ router.get('/queue', receiveGate, (req, res) => {
   const recorded = queryAll<{ receipt_number: string; created_at: string; unit_id: number | null; identifier: string | null;
     batch_number: string | null; quantity: number; product_name: string; build_mode: string; location_name: string | null }>(
     `SELECT r.number AS receipt_number, r.created_at, ri.unit_id, un.identifier, pb.number AS batch_number, ri.quantity,
-            j.product_name, j.build_mode, l.name AS location_name
+            j.id AS job_order_id, j.product_name, j.build_mode, j.intake_origin, l.name AS location_name
      FROM production_receipt_items ri
      JOIN production_receipts r ON r.id = ri.receipt_id
      JOIN job_orders j ON j.id = r.job_order_id
@@ -69,7 +114,8 @@ router.get('/queue', receiveGate, (req, res) => {
      ORDER BY ri.id DESC LIMIT 60`,
     req.user!.id
   );
-  res.json({ units: out, batches, recorded });
+  res.json({ units: out, batches, recorded, intakes:queryAll(`SELECT j.id,j.number,j.product_name,j.status AS intake_status,u.id AS unit_id,u.identifier,u.stage,u.status
+    FROM job_orders j JOIN job_order_units u ON u.job_order_id=j.id WHERE j.intake_origin='legacy' AND u.status NOT IN ('in_stock','reserved','sold') ORDER BY j.id DESC`) });
 });
 
 /** Establish a counted lot balance for older stock whose lot provenance was never tracked.
@@ -119,7 +165,7 @@ router.get('/lookup', requireAnyPermission(['inventory.view', 'production.view',
   const rows = queryAll<{ id: number; identifier: string | null; status: string; sku: string | null; product_name: string;
     location_name: string | null; order_number: string | null; receipt_number: string | null; received_at: string | null;
     job_order_id: number; held: number }>(
-    `SELECT u.id, u.identifier, u.status, i.sku, j.product_name, j.build_mode, l.name AS location_name, o.number AS order_number,
+    `SELECT u.id, u.identifier, u.status, i.sku, j.id AS job_order_id, j.product_name, j.build_mode, j.intake_origin, l.name AS location_name, o.number AS order_number,
             (SELECT r.number FROM production_receipt_items ri JOIN production_receipts r ON r.id = ri.receipt_id
               WHERE ri.unit_id = u.id ORDER BY ri.id DESC LIMIT 1) AS receipt_number,
             (SELECT r.created_at FROM production_receipt_items ri JOIN production_receipts r ON r.id = ri.receipt_id

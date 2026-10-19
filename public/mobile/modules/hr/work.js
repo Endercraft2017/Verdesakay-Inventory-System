@@ -29,8 +29,8 @@
     "Issuing moves the parts. Settle requests before reinspection; issuing a part does not itself pass the unit or receive finished goods."
   ],
   "receiving": [
-    "Receive final-passed production output into ready-to-sell (RTS) stock.",
-    "Use after required QC/QA has passed, or for eligible no-inspection output. Verify the exact units/batch quantities and storage location.",
+    "Choose a job order and receive its final-passed units into ready-to-sell (RTS) stock.",
+    "For pre-system units, enter a legacy intake with identifier, photo and location; both QC and QA must pass before stock entry. For eligible output, print, attach and scan each sticker and verify storage.",
     "Confirmed Products In adds finished stock. Capacity, duplicate and mismatch checks may block it. This is not Receive PR for supplier deliveries."
   ],
   "job-orders:approval": [
@@ -50,12 +50,12 @@
   ],
   "qc:qc": [
     "Perform the technical QC pass for units at your authorized stage.",
-    "Select its Ready/Reinspect card and match the production identifier and job order to the physical unit before checks. QR is optional before Products In; stop if identity is unclear. Failed/held decisions need evidence.",
+    "Choose the job order, then select its Ready/Reinspect unit card and match the production identifier and job order to the physical unit before checks. QR is optional before Products In; stop if identity is unclear. Failed/held decisions need evidence.",
     "Pass advances to QA when required, otherwise to receiving. Repair or rejection has a separate disposition; a QC pass is not stock-in."
   ],
   "qc:qa": [
     "Perform the appearance/final QA pass for eligible units.",
-    "Select its Ready/Recheck card and confirm the production identifier and job order against the physical unit; no QR sticker is required yet. Review QC and complete appearance checks. Follow repair/hold evidence prompts.",
+    "Choose the job order, then select its Ready/Recheck unit card and confirm the production identifier and job order against the physical unit; no QR sticker is required yet. Review QC and complete appearance checks. Follow repair/hold evidence prompts.",
     "A final pass queues RTS recording; it does not add stock. Settle repair requests before rechecking returned units."
   ],
   "qc:qa:hold": [
