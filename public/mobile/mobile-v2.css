@@ -821,3 +821,24 @@ body.personal-keyboard .m-tabbar { visibility: hidden; }
 body.personal-editor-open .v2-orbit { display: none; }
 :root[data-theme=dark] :is(.personal-form, #m-note-list) { color-scheme: dark; }
 .m-note-card [data-card-task] { margin-top: 8px; min-height: 40px; }
+
+/* Full-screen authentication retains the existing mobile controls and theme. */
+.m-auth-form > label { display: block; margin: 14px 0 6px; font-size: 13px; color: var(--m-muted); }
+.m-auth-form > input, .m-auth-form .auth-password-row input { width: 100%; min-width: 0; padding: 12px 14px; font-size: 16px; border: 1px solid var(--m-border); border-radius: 10px; background: var(--m-bg); color: var(--m-text); }
+.m-auth-form > .m-btn, .m-auth-copy .m-btn { margin-top: 10px; }
+.m-auth-method { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.m-auth-method .m-btn { flex: 1; font-size: 13px; }
+.m-auth-method [aria-pressed='true'] { outline: 2px solid var(--m-accent); outline-offset: -2px; }
+.m-auth-method [hidden] { display: none; }
+.m-auth-error { color: var(--m-danger); font-size: 13px; }
+.m-auth-error:empty { display: none; }
+.m-auth-codes { white-space: pre-wrap; overflow-wrap: anywhere; padding: 14px; border: 1px solid var(--m-border); border-radius: 10px; background: var(--m-surface); }
+.m-auth-form > .m-auth-saved { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; }
+.m-auth-saved input[type='checkbox'] { width: 20px; height: 20px; flex: 0 0 20px; padding: 0; margin: 2px 0 0; }
+.m-auth-copy textarea { display: block; width: 100%; margin-top: 10px; min-height: 100px; font: inherit; color: var(--m-text); background: var(--m-bg); border: 1px solid var(--m-border); }
+
+/* Profile session confirmation uses the existing mobile palette and buttons. */
+.m-profile-dialog { width: min(420px, calc(100% - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 22px; border: 1px solid var(--m-border); border-radius: 18px; background: var(--m-surface); color: var(--m-text); }
+.m-profile-dialog::backdrop { background: rgba(0,0,0,.55); }
+.m-profile-dialog h2 { margin-top: 0; font-size: 19px; }
+.m-profile-dialog [hidden] { display: none; }

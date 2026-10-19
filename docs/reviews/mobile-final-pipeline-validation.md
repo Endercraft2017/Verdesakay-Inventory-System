@@ -30,7 +30,7 @@ review and confirm entry, including recovered drafts. It rejects incomplete kits
 extra selected components, changed held quantities and unauthorized partial
 loads. The chooser uses the same rule. Mixed orders may ship only the spare, or
 one complete kit plus a spare, while extra components remain held on the same
-sales order. Candidate PWA cache v116 picks up this fix; the deployed probe above
+sales order. Candidate PWA cache v119 picks up this fix; the deployed probe above
 verified v115 and is not a claim that the candidate fix has deployed.
 
 ## Local browser acceptance
@@ -79,7 +79,7 @@ Virtual-camera decoding does not test physical print quality, phone optics,
 physical-device storage/permissions or a real installed site-PC network outage.
 Offline browser/restart and pending-header tests are distinct from real hardware
 acceptance. The actual sandbox cache remains the observed v115 until deployment
-of the candidate v116 is confirmed. No user-approved production data was changed.
+of the candidate v119 is confirmed. No user-approved production data was changed.
 
 Additional concurrency acceptance: after a complete load is saved, a second clerk
 unreserves one required component through the real API. Reopening package, review

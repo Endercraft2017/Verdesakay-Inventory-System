@@ -5,6 +5,7 @@ MApp.route('settings', function (view) {
   // preferredName comes from the account (GET /me → employee.preferred_name); it's only a
   // display name and never replaces the legal employee name.
   var profile = { preferredName: employee.preferred_name || '', employee: employee };
+  var currentSection = 'home', profileVersion = 0, activePage = null;
   var NICK_KEY = 'vds_profile_nickname'; // legacy device-only nickname, offered once for carry-over
 
   function esc(v) { return mEsc(v == null || v === '' ? 'Not available' : String(v)); }
@@ -32,6 +33,7 @@ MApp.route('settings', function (view) {
     view.setAttribute('data-figma-node', nodeId || '46:953');
     var page = mEl('<section class="profile-page">' + html + '</section>');
     view.appendChild(page);
+    activePage = page;
     var back = page.querySelector('[data-profile-back]');
     if (back) back.onclick = renderHome;
     return page;
@@ -62,6 +64,7 @@ MApp.route('settings', function (view) {
     });
   }
   function renderHome() {
+    currentSection = 'home';
     var page = mount(
       titleBlock('Profile', 'Personal records and preferences') + identity() +
       '<div class="profile-menu">' +
@@ -89,11 +92,13 @@ MApp.route('settings', function (view) {
       '<input class="m-input" data-pf="' + key + '" value="' + mEsc(value || '') + '" ' + (attrs || '') + ' /></label>';
   }
   function renderPersonal() {
+    currentSection = 'personal';
     var page = mount(
       titleBlock('Personal details', 'Your preferred name, contact details and official record', true) +
       '<div data-personal><div class="m-hint">Loading your details…</div></div>');
     var host = page.querySelector('[data-personal]');
     API.get('/me/profile').then(function (p) { paintPersonal(host, p); }).catch(function (e) {
+      if (!host.isConnected) return;
       host.innerHTML = '';
       var box = mEl('<div class="m-error">' + mEsc(e.offline ? 'You’re offline — your details can’t be loaded right now.' : (e.message || 'Could not load your details')) +
         ' <button class="m-btn m-btn-sm" type="button">Try again</button></div>');
@@ -102,6 +107,7 @@ MApp.route('settings', function (view) {
     });
   }
   function paintPersonal(host, p) {
+    if (!host.isConnected) return;
     var o = p.official || {};
     // One-time carry-over of the old device-only nickname: pre-filled, never saved silently.
     var localNick = '';
@@ -123,6 +129,7 @@ MApp.route('settings', function (view) {
         field('Phone', 'emergency_contact_phone', p.emergency_contact_phone, 'inputmode="tel" placeholder="0917 123 4567"') +
         '<label class="m-field"><span class="m-label">Current password *</span><input class="m-input" type="password" data-pw-confirm autocomplete="current-password" /></label>' +
         '<p class="profile-note">Your password confirms it’s you. Changed contact details go to HR to verify; your preferred name never replaces your legal name.</p>' +
+        '<p data-profile-error class="m-auth-error" role="alert" tabindex="-1"></p><p data-profile-status role="status"></p>' +
         '<button class="m-v2-primary profile-full-button" type="submit">Save changes</button>' +
       '</form>' +
       '<section class="profile-section"><div class="profile-section-head"><div><h2>Official employee record</h2><p>HR-controlled information</p></div><span class="profile-lock">Read only</span></div>' +
@@ -131,32 +138,50 @@ MApp.route('settings', function (view) {
         '<p class="profile-note">Your legal name, government ID numbers, position, department and other official fields change only after HR approves an information-change request.</p>' +
         '<button class="m-v2-secondary profile-full-button" type="button" data-request-change>Request an information change</button></section>';
     var form = host.querySelector('[data-profile-form]');
+    AuthControls.passwords(form);
     form.onsubmit = function (event) {
       event.preventDefault();
+      var button = form.querySelector('button[type=submit]');
+      if (button.disabled) return;
+      var error = form.querySelector('[data-profile-error]'), status = form.querySelector('[data-profile-status]');
+      error.textContent = ''; status.textContent = '';
       var pw = form.querySelector('[data-pw-confirm]');
-      if (!pw.value) { mToast('Enter your current password to save', 'err'); pw.focus(); return; }
-      if (navigator.onLine === false) { mToast('You’re offline — connect to save your details', 'err'); return; }
+      function fail(message, input) {
+        error.textContent = message;
+        if (input) { input.setAttribute('aria-invalid', 'true'); input.focus(); }
+        else error.focus();
+      }
+      if (!pw.value) { fail('Enter your current password to save.', pw); return; }
+      var invalid = Array.prototype.find.call(form.querySelectorAll('[data-pf]'), function (input) { return !input.checkValidity(); });
+      if (invalid) { fail(invalid.validationMessage, invalid); return; }
+      if (navigator.onLine === false) { fail('You’re offline — connect to save your details.'); return; }
       var body = { current_password: pw.value };
       Array.prototype.forEach.call(form.querySelectorAll('[data-pf]'), function (input) { body[input.getAttribute('data-pf')] = input.value.trim(); });
-      var button = form.querySelector('button[type=submit]');
-      button.disabled = true; button.textContent = 'Saving…';
+      button.disabled = true; button.textContent = 'Saving…'; form.setAttribute('aria-busy', 'true');
       API.put('/me/profile', body).then(function (res) {
         try { localStorage.removeItem(NICK_KEY); } catch (ignore) {}
+        profileVersion++;
         profile.preferredName = res.profile.preferred_name || '';
-        mToast(!res.changed.length ? 'No changes to save'
-          : res.changed.some(function (k) { return k !== 'preferred_name'; }) ? 'Saved — HR will verify your contact details' : 'Saved');
+        profile.employee = Object.assign({}, profile.employee, { preferred_name: profile.preferredName });
+        if (!form.isConnected) return;
         paintPersonal(host, Object.assign({}, res.profile, { official: p.official }));
+        host.querySelector('[data-profile-status]').textContent = !res.changed.length ? 'No changes to save.'
+          : res.changed.some(function (key) { return key !== 'preferred_name'; }) ? 'Saved — HR will verify your contact details.' : 'Preferred name saved. Your legal name is unchanged.';
       }).catch(function (e) {
-        mToast(e.message || 'Could not save', 'err');
-        button.disabled = false; button.textContent = 'Save changes';
+        if (!form.isConnected) return;
+        fail(AuthControls.errorMessage(e));
         if (/password/i.test(e.message || '')) { pw.value = ''; pw.focus(); }
+      }).finally(function () {
+        button.disabled = false; button.textContent = 'Save changes'; form.removeAttribute('aria-busy');
       });
     };
+    form.querySelectorAll('input,textarea').forEach(function (input) { input.addEventListener('input', function () { input.removeAttribute('aria-invalid'); }); });
     host.querySelector('[data-request-change]').onclick = function () {
       MApp.go('requests', { type: 'information_change' });
     };
   }
   function renderAppearance() {
+    currentSection = 'appearance';
     var page = mount(
       titleBlock('Appearance & accessibility', 'Make the app comfortable to use', true) +
       '<section class="profile-section profile-setting-list">' +
@@ -210,6 +235,7 @@ MApp.route('settings', function (view) {
     };
   }
   function renderSecurity() {
+    currentSection = 'security';
     var page = mount(
       titleBlock('Account & security', 'Username, password and session controls', true) +
       '<section class="profile-section"><h2>Change username</h2><p data-current-username>Current username: ' + mEsc(MApp.getMe().username) + '</p><form data-username>' +
@@ -218,9 +244,11 @@ MApp.route('settings', function (view) {
       '<label class="m-field"><span class="m-label">Current password</span><input type="password" class="m-input" data-username-password autocomplete="current-password" required /></label>' +
       '<button class="m-btn" type="submit">Update username</button></form></section>' +
       '<section class="profile-section"><h2>Change password</h2><form data-pw>' +
-      '<label class="m-field"><span class="m-label">Current password</span><input type="password" class="m-input" data-cur autocomplete="current-password" /></label>' +
-      '<label class="m-field"><span class="m-label">New password</span><input type="password" class="m-input" data-new autocomplete="new-password" /></label>' +
-      '<label class="m-field"><span class="m-label">Confirm new password</span><input type="password" class="m-input" data-confirm autocomplete="new-password" required /></label>' +
+      '<label class="m-field"><span class="m-label">Current password</span><input type="password" class="m-input" data-cur data-label="current password" autocomplete="current-password" required /></label>' +
+      '<label class="m-field"><span class="m-label">New password</span><input type="password" class="m-input" data-new data-label="new password" autocomplete="new-password" minlength="8" maxlength="128" aria-describedby="m-profile-password-policy" required /></label>' +
+      '<label class="m-field"><span class="m-label">Confirm new password</span><input type="password" class="m-input" data-confirm data-label="confirmation password" autocomplete="new-password" maxlength="128" required /></label>' +
+      '<p id="m-profile-password-policy" class="profile-note">Use 8–128 characters. Common passwords are not accepted. This phone stays signed in; other sessions end after the change.</p>' +
+      '<p data-password-error class="m-auth-error" role="alert" tabindex="-1"></p><p data-password-status role="status"></p>' +
       '<button class="m-btn" type="submit">Update password</button></form></section>' +
       '<section class="profile-section"><h2>Where you’re signed in</h2><div data-sessions><div class="m-hint">Loading…</div></div></section>' +
       '<section class="profile-section"><h2>Other access</h2><a class="m-btn m-btn-secondary profile-full-button" href="' + (window.VDS_BASE_PATH || '') + '/?view=desktop">Switch to the desktop system</a>' +
@@ -239,19 +267,28 @@ MApp.route('settings', function (view) {
         }).catch(function (error) { mToast(error.message || 'Could not update username', 'err'); })
         .finally(function () { button.disabled = false; });
     };
-    page.querySelector('[data-pw]').onsubmit = function (event) {
+    var passwordForm = page.querySelector('[data-pw]');
+    AuthControls.passwords(passwordForm);
+    passwordForm.onsubmit = function (event) {
       event.preventDefault();
-      if (event.target.querySelector('button').disabled) return;
-      var cur = page.querySelector('[data-cur]').value;
-      var next = page.querySelector('[data-new]').value;
-      if (next !== page.querySelector('[data-confirm]').value) { mToast('New passwords do not match', 'err'); return; }
-      if (next.length < 8) { mToast('New password must be at least 8 characters', 'err'); return; }
-      var button = event.target.querySelector('button');
-      button.disabled = true;
-      API.post('/auth/change-password', { current_password: cur, new_password: next })
-        .then(function () { mToast('Password updated'); event.target.reset(); })
-        .catch(function (e) { mToast(e.message || 'Failed', 'err'); })
-        .finally(function () { button.disabled = false; });
+      var button = passwordForm.querySelector('[type=submit]');
+      if (button.disabled) return;
+      var error = passwordForm.querySelector('[data-password-error]'), status = passwordForm.querySelector('[data-password-status]');
+      error.textContent = ''; status.textContent = '';
+      var current = passwordForm.querySelector('[data-cur]'), next = passwordForm.querySelector('[data-new]'), confirm = passwordForm.querySelector('[data-confirm]');
+      function fail(message, input) { error.textContent = message; if (input) input.focus(); else error.focus(); }
+      if (!current.value) { fail('Enter your current password.', current); return; }
+      if (next.value.length < 8 || next.value.length > 128) { fail('Use 8–128 characters.', next); return; }
+      if (next.value !== confirm.value) { fail('New passwords do not match.', confirm); return; }
+      button.disabled = true; button.textContent = 'Updating…'; passwordForm.setAttribute('aria-busy', 'true');
+      API.post('/auth/change-password', { current_password: current.value, new_password: next.value })
+        .then(function () {
+          if (!passwordForm.isConnected) return;
+          passwordForm.reset();
+          status.textContent = 'Password updated. This phone stays signed in; other sessions have ended.';
+          loadSessions(page.querySelector('[data-sessions]'));
+        }).catch(function (e) { if (passwordForm.isConnected) fail(AuthControls.errorMessage(e)); })
+        .finally(function () { button.disabled = false; button.textContent = 'Update password'; passwordForm.removeAttribute('aria-busy'); });
     };
     page.querySelector('[data-out]').onclick = function () { MApp.signOut(); };
     loadSessions(page.querySelector('[data-sessions]'));
@@ -262,42 +299,99 @@ MApp.route('settings', function (view) {
     var d = new Date(ts.replace(' ', 'T') + 'Z');
     return isNaN(d.getTime()) ? ts : d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   }
-  function loadSessions(box) {
-    API.get('/auth/sessions').then(function (list) {
+  function confirmOtherSessions(box, count, trigger) {
+    trigger.disabled = true;
+    var dialog = mEl('<dialog class="m-profile-dialog" aria-labelledby="profile-signout-title">' +
+      '<h2 id="profile-signout-title">Sign out of other devices?</h2><p>End ' + count + ' other active sign-in session' + (count === 1 ? '' : 's') + '. This phone stays signed in.</p>' +
+      '<p class="profile-note">Those devices must sign in again. Files already downloaded to them are not removed.</p>' +
+      '<p data-error class="m-auth-error" role="alert" tabindex="-1"></p><p data-result role="status"></p>' +
+      '<div class="m-actions"><button class="m-btn" type="button" data-confirm>Sign out other devices</button><button class="m-btn m-btn-secondary" type="button" data-close>Cancel</button></div></dialog>');
+    box.appendChild(dialog);
+    var busy = false;
+    var close = dialog.querySelector('[data-close]'), confirm = dialog.querySelector('[data-confirm]');
+    function dismiss() { if (!busy) dialog.close(); }
+    close.onclick = dismiss;
+    dialog.addEventListener('cancel', function (event) { if (busy) event.preventDefault(); });
+    dialog.addEventListener('click', function (event) { if (event.target === dialog) { var r = dialog.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) dismiss(); } });
+    dialog.addEventListener('close', function () { dialog.remove(); if (trigger.isConnected) { trigger.disabled = false; trigger.focus(); } else if (box.isConnected) { box.tabIndex = -1; box.focus(); } });
+    confirm.onclick = async function () {
+      if (busy) return;
+      busy = true; confirm.disabled = true; close.disabled = true; confirm.textContent = 'Signing out…';
+      dialog.querySelector('[data-error]').textContent = '';
+      var result;
+      try { result = await API.post('/auth/sessions/revoke-others'); }
+      catch (error) {
+        dialog.querySelector('[data-error]').textContent = AuthControls.errorMessage(error);
+        dialog.querySelector('[data-error]').focus();
+        confirm.textContent = 'Sign out other devices';
+      }
+      if (result) {
+        dialog.querySelector('[data-result]').textContent = result.ended + ' other session' + (result.ended === 1 ? '' : 's') + ' signed out. This phone stays signed in.';
+        confirm.hidden = true; close.textContent = 'Close';
+        // Keep this dialog mounted while refreshing the list behind it.
+        await loadSessions(box, result.ended + ' other session' + (result.ended === 1 ? '' : 's') + ' signed out. This phone stays signed in.');
+      }
+      busy = false; confirm.disabled = false; close.disabled = false;
+    };
+    dialog.showModal();
+  }
+
+  async function loadSessions(box, message) {
+    if (!box.isConnected || box.dataset.loading === 'true') return;
+    box.dataset.loading = 'true'; box.setAttribute('aria-busy', 'true');
+    var content = box.querySelector('[data-session-content]');
+    if (!content) {
+      content = mEl('<div data-session-content></div>');
+      box.appendChild(content);
+    }
+    var feedback = box.querySelector('[data-session-feedback]');
+    if (!feedback) { feedback = mEl('<div data-session-feedback role="status"></div>'); box.prepend(feedback); }
+    if (message) box.dataset.result = message;
+    feedback.textContent = 'Loading sessions…';
+    try {
+      var list = await API.get('/auth/sessions');
+      if (!box.isConnected) return;
       var others = list.filter(function (x) { return !x.current; });
-      box.innerHTML = list.map(function (x) {
+      content.innerHTML = list.length ? list.map(function (x) {
         return '<div class="m-session-row"><div><b>' + mEsc(x.device) +
           (x.current ? '<span class="m-session-tag">This phone</span>' : '') +
           (x.shared ? '<span class="m-session-tag">Borrowed</span>' : '') + '</b>' +
-          '<small>Signed in ' + mEsc(when(x.created_at)) + ' · last active ' + mEsc(when(x.last_seen_at)) +
+          '<small>Signed in ' + mEsc(when(x.created_at)) + ' · last active ' + mEsc(when(x.last_seen_at || x.created_at)) +
           (x.last_ip || x.ip ? ' · IP ' + mEsc(x.last_ip || x.ip) : '') + '</small></div>' +
-          (x.current ? '' : '<button class="m-btn m-btn-sm m-btn-secondary" type="button" data-end="' + mEsc(x.id) + '">Sign out</button>') +
-          '</div>';
-      }).join('') +
-        (others.length ? '<button class="m-btn m-btn-secondary profile-full-button" type="button" data-end-others>Sign out everywhere else</button>' : '');
-      Array.prototype.forEach.call(box.querySelectorAll('[data-end]'), function (b) {
-        b.onclick = function () {
-          b.disabled = true;
-          API.post('/auth/sessions/' + encodeURIComponent(b.dataset.end) + '/revoke')
-            .then(function () { mToast('Signed out of that device'); loadSessions(box); })
-            .catch(function (e) { b.disabled = false; mToast(e.message || 'Failed', 'err'); });
+          (x.current ? '' : '<button class="m-btn m-btn-sm m-btn-secondary" type="button" data-end="' + mEsc(x.id) + '">Sign out</button>') + '</div>';
+      }).join('') : '<p class="m-hint">No active sign-in sessions found.</p>';
+      if (others.length) content.insertAdjacentHTML('beforeend', '<button class="m-btn m-btn-secondary profile-full-button" type="button" data-end-others>Sign out everywhere else</button>');
+      feedback.textContent = box.dataset.result || '';
+      content.querySelectorAll('[data-end]').forEach(function (button) {
+        button.onclick = async function () {
+          if (button.disabled) return;
+          button.disabled = true; button.textContent = 'Signing out…';
+          try { await API.post('/auth/sessions/' + encodeURIComponent(button.dataset.end) + '/revoke'); await loadSessions(box, 'Signed out of that device.'); }
+          catch (error) { if (box.isConnected) { feedback.textContent = AuthControls.errorMessage(error); button.disabled = false; button.textContent = 'Sign out'; } }
         };
       });
-      var all = box.querySelector('[data-end-others]');
-      if (all) all.onclick = function () {
-        if (!window.confirm('Sign out of every other phone and computer?')) return;
-        all.disabled = true;
-        API.post('/auth/sessions/revoke-others')
-          .then(function (r) { mToast('Signed out of ' + r.ended + ' other session' + (r.ended === 1 ? '' : 's')); loadSessions(box); })
-          .catch(function (e) { all.disabled = false; mToast(e.message || 'Failed', 'err'); });
-      };
-    }).catch(function (e) { box.innerHTML = '<div class="m-hint">' + mEsc(e.message || 'Could not load sessions') + '</div>'; });
+      var all = content.querySelector('[data-end-others]');
+      if (all) all.onclick = function () { if (!all.disabled) confirmOtherSessions(box, others.length, all); };
+    } catch (error) {
+      if (box.isConnected) {
+        feedback.textContent = (box.dataset.result ? box.dataset.result + ' ' : '') + AuthControls.errorMessage(error);
+        var retry = mEl('<button class="m-btn m-btn-sm m-btn-secondary" type="button" data-session-retry>Retry</button>');
+        retry.onclick = function () { loadSessions(box); }; feedback.appendChild(retry);
+      }
+    } finally {
+      box.dataset.loading = 'false'; box.removeAttribute('aria-busy');
+      // Remove the initial placeholder once the explicit load state owns this section.
+      var placeholder = Array.prototype.find.call(box.children, function (node) { return node.classList.contains('m-hint'); });
+      if (placeholder) placeholder.remove();
+    }
   }
 
   renderHome();
   API.get('/me').then(function (data) {
+    if (!activePage || !activePage.isConnected || profileVersion) return;
     profile.employee = data && data.employee ? data.employee : (data || profile.employee);
     profile.preferredName = (profile.employee && profile.employee.preferred_name) || '';
-    renderHome();
+    var card = view.querySelector('.profile-identity');
+    if (currentSection === 'home' && card) card.outerHTML = identity();
   }).catch(function () { /* auth identity remains available */ });
 });

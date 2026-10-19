@@ -16,10 +16,12 @@ physical-device acceptance are separate.
 Current mobile source **does** include semi-built finishing intake, customer
 return receipt/inspection/disposition, pre-slip allocation correction, build
 state transfer, full location paths, and a whole-kit check when choosing a CKD
-trip. Older handoff paragraphs saying these are absent are historical. The CKD
-phone flow still needs a real-backend whole-kit/extra-component browser run and
-physical-device acceptance; the 390 px desktop check does not prove the phone
-PWA. No mobile source was edited for this review.
+trip. Older handoff paragraphs saying these are absent are historical. A
+real-backend phone-PWA browser run now covers lone-frame and extra-component
+refusals, one complete-kit warehouse-out with proof and single stock-out, and
+an empty second trip (`npm run test:mobile:ckd-edge`).
+Physical-device acceptance with real labels/camera still remains. No mobile
+source was edited for this review.
 
 ## Branch acceptance update (2026-10-19)
 
@@ -1236,7 +1238,7 @@ chooser's CKD whole-kit check. The candidate now validates selected held
 quantities, whole CKD kits and partial authority at every package/handoff/proof/
 review/confirmation entry, including restored drafts. Mixed spare-only loads
 and complete-kit-plus-spare loads still work; extra components stay held for a
-later trip. Warehouse-out remains independently backend-guarded. Cache v116.
+later trip. Warehouse-out remains independently backend-guarded. Cache v119.
 
 Acceptance passed: nine CKD/photo/retry/concurrency scenarios, 35 virtual-camera QR and
 pipeline scenarios, five deployed custom-access scenarios, four worker-upgrade
@@ -1245,4 +1247,4 @@ real-backend CKD/mixed/extra-component browser acceptance gap. Large phone-style
 photo compression was measured before persistence/upload. See
 `docs/reviews/mobile-final-pipeline-validation.md` for environments and evidence.
 Physical phone/printer and actual disconnected site-PC checks remain distinct;
-the candidate v116 deployment is not implied by the deployed v115 probe.
+the candidate v119 deployment is not implied by the deployed v115 probe.

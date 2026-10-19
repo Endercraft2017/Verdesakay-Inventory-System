@@ -4,6 +4,7 @@
 window.MApp = (function () {
   var routes = {};
   var me = null;
+  var authFlow = null; // Keep one-time auth screens stable until explicitly completed.
 
   var loginScreen = function () { return document.getElementById('m-login'); };
   var appScreen = function () { return document.getElementById('m-app'); };
@@ -183,6 +184,7 @@ window.MApp = (function () {
   }
 
   function render() {
+    if (authFlow) return;
     if(window.mPersonalDraft && !mPersonalDraft.allow()) return;
     window.GuideTour?.close();window.PersonalUX?.release();
     window.mChatViewport?.release();
@@ -194,6 +196,7 @@ window.MApp = (function () {
     paintChrome(parsed);
     var v = viewEl();
     v.innerHTML = '';
+    window.SlowLoading?.navigation();
     v.scrollTop = 0;
     // Screens tag #m-view (data-figma-node, data-role-screen/-title/-subtitle); the element is
     // reused across routes, so clear every tag or the last screen's role title leaks onward.
@@ -215,6 +218,9 @@ window.MApp = (function () {
 
   /* ---------- auth ---------- */
   function showLogin() {
+    window.SlowLoading?.ready();
+    if (authFlow) viewEl().replaceChildren(); // Remove one-time codes and credentials on sign-out/back.
+    authFlow = null;
     window.mPersonalDraft?.clear();window.GuideTour?.close();window.PersonalUX?.release();
     me = null;
     API.clearToken();
@@ -253,7 +259,7 @@ window.MApp = (function () {
       var button = this, note = document.getElementById('m-access-status');
       button.disabled = true; button.textContent = 'Checking…'; note.textContent = 'Checking your current access…';
       try {
-        var profile = await API.get('/auth/me');
+        var profile = await API.get('/auth/me', { background: true });
         // Use the normal entry path, including password/MFA and permission checks.
         if (profile.user.password_change_required || profile.user.mfa_setup_required ||
             (profile.user.permissions || []).some(function (p) { return p === 'mobile.access' || p === 'inventory.mobile'; }) || profile.user.employee) {
@@ -328,37 +334,84 @@ window.MApp = (function () {
     if (out) out.onclick = signOut;
   }
 
-  function temporaryPasswordScreen() {
-    loginScreen().classList.add('hidden'); appScreen().classList.remove('hidden');
-    ['m-back', 'm-segments', 'm-tabbar'].forEach(function (id) { var element = document.getElementById(id); if (element) element.classList.add('hidden'); });
-    setTitle('Choose a new password');
-    if (window.ChatWS) ChatWS.disconnect();
-    viewEl().innerHTML = '<form id="m-new-password-form">' +
-      '<p>Replace your temporary password before accessing the workspace.</p>' +
-      '<label>Temporary password</label><input id="m-temp-password" type="password" autocomplete="current-password" required />' +
-      '<label>New password</label><input id="m-new-password" type="password" autocomplete="new-password" minlength="8" required />' +
-      '<label>Confirm new password</label><input id="m-confirm-password" type="password" autocomplete="new-password" required />' +
-      '<p id="m-password-error" role="status"></p><button class="m-btn" type="submit">Save new password</button>' +
-      '<button class="m-btn m-btn-secondary" id="m-password-out" type="button">Sign out</button></form>';
-    document.getElementById('m-password-out').onclick = function () { API.post('/auth/logout').catch(function () {}).finally(showLogin); };
-    document.getElementById('m-new-password-form').onsubmit = async function (e) {
-      e.preventDefault();
-      var err = document.getElementById('m-password-error'); var button = e.target.querySelector('[type="submit"]');
-      var pw = document.getElementById('m-new-password').value;
-      if (pw !== document.getElementById('m-confirm-password').value) { err.textContent = 'Passwords do not match.'; return; }
-      button.disabled = true;
-      try {
-        await API.post('/auth/change-password', { current_password: document.getElementById('m-temp-password').value, new_password: pw });
-        e.target.querySelectorAll('input').forEach(function (input) { input.value = ''; });
-        enterApp((await API.get('/auth/me')).user);
-      } catch (ex) { err.textContent = ex.message; }
-      finally { button.disabled = false; }
+  function authError(form, error, input) {
+    var box = form.querySelector('[data-auth-error]');
+    box.textContent = typeof error === 'string' ? error : AuthControls.errorMessage(error);
+    if (input) { input.setAttribute('aria-invalid', 'true'); input.focus(); }
+    else box.focus();
+  }
+
+  function authBusy(form, busy, label) {
+    form.querySelectorAll('button').forEach(function (button) { button.disabled = busy; });
+    form.setAttribute('aria-busy', String(busy));
+    var submit = form.querySelector('[type="submit"]');
+    if (submit) submit.textContent = label;
+  }
+
+  function wireAuthForm(form) {
+    AuthControls.passwords(form);
+    form.querySelectorAll('input').forEach(function (input) {
+      input.addEventListener('input', function () { input.removeAttribute('aria-invalid'); });
+    });
+    var out = form.querySelector('[data-auth-out]');
+    if (out) out.onclick = async function () {
+      if (out.disabled) return;
+      authBusy(form, true, form.querySelector('[type="submit"]')?.textContent);
+      try { await API.post('/auth/logout'); } catch (error) { /* Always clear the local gate/session. */ }
+      if (form.isConnected) showLogin();
     };
   }
 
-  /* Two-step sign-in (server: src/shared/mfa.ts). A full-screen step like the temporary-password
-     screen: hide the chrome, show one small form. */
+  var authOutHTML = '<button class="m-btn m-btn-secondary" data-auth-out type="button">Sign out</button>';
+  var authErrorHTML = '<p class="m-auth-error" data-auth-error role="alert" tabindex="-1"></p>';
+
+  function temporaryPasswordScreen() {
+    bareScreen('Choose a new password', '<form id="m-new-password-form" class="m-auth-form">' +
+      '<p>Replace your temporary password before accessing the workspace.</p>' +
+      '<label for="m-temp-password">Temporary password</label><input id="m-temp-password" data-label="temporary password" type="password" autocomplete="current-password" required />' +
+      '<label for="m-new-password">New password</label><input id="m-new-password" data-label="new password" type="password" autocomplete="new-password" minlength="8" maxlength="128" aria-describedby="m-password-policy" required />' +
+      '<label for="m-confirm-password">Confirm new password</label><input id="m-confirm-password" data-label="confirmation password" type="password" autocomplete="new-password" maxlength="128" required />' +
+      '<p id="m-password-policy" class="m-hint">Use 8–128 characters. Common passwords are not accepted. Choose a password different from the temporary one.</p>' +
+      authErrorHTML + '<p data-auth-status role="status"></p><button class="m-btn" type="submit">Save new password</button>' + authOutHTML + '</form>');
+    var form = document.getElementById('m-new-password-form'), flow = authFlow, saved = false;
+    wireAuthForm(form);
+    form.onsubmit = async function (event) {
+      event.preventDefault();
+      var button = form.querySelector('[type="submit"]');
+      if (button.disabled) return;
+      form.querySelector('[data-auth-error]').textContent = '';
+      if (!saved) {
+        var current = form.querySelector('#m-temp-password'), next = form.querySelector('#m-new-password'), confirm = form.querySelector('#m-confirm-password');
+        if (!current.value) { authError(form, 'Enter your temporary password.', current); return; }
+        if (next.value.length < 8 || next.value.length > 128) { authError(form, 'Use 8–128 characters.', next); return; }
+        if (next.value !== confirm.value) { authError(form, 'Passwords do not match.', confirm); return; }
+        authBusy(form, true, 'Saving…');
+        try {
+          await API.post('/auth/change-password', { current_password: current.value, new_password: next.value });
+          if (authFlow !== flow || !form.isConnected) return;
+          saved = true;
+          form.querySelectorAll('input').forEach(function (input) { input.value = ''; input.disabled = true; input.required = false; });
+          form.querySelector('[data-auth-status]').textContent = 'Password saved. Reopening your workspace…';
+        } catch (error) {
+          if (form.isConnected) { authError(form, error); authBusy(form, false, 'Save new password'); }
+          return;
+        }
+      } else authBusy(form, true, 'Opening…');
+      try {
+        var profile = await API.get('/auth/me');
+        if (authFlow === flow && form.isConnected) enterApp(profile.user);
+      } catch (error) {
+        if (form.isConnected) {
+          authError(form, 'Your password was saved, but the workspace could not be loaded. Retry access or sign out and use your new password.');
+          authBusy(form, false, 'Retry access');
+        }
+      }
+    };
+  }
+
+  // These full-screen auth steps retain their DOM until an explicit completion or sign-out.
   function bareScreen(title, html) {
+    authFlow = {};
     loginScreen().classList.add('hidden'); appScreen().classList.remove('hidden');
     ['m-back', 'm-segments', 'm-tabbar'].forEach(function (id) { var element = document.getElementById(id); if (element) element.classList.add('hidden'); });
     setTitle(title);
@@ -366,72 +419,159 @@ window.MApp = (function () {
     viewEl().innerHTML = html;
   }
 
-  /** After a correct password: the authenticator code (or a recovery code). */
   function mfaCodeScreen(mfaToken, shared) {
-    bareScreen('Two-step sign-in', '<form id="m-mfa-form">' +
-      '<p>Enter the 6-digit code from your authenticator app, or one of your recovery codes.</p>' +
-      '<input id="m-mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="11" required />' +
-      '<p id="m-mfa-error" role="status"></p><button class="m-btn" type="submit">Sign in</button>' +
-      '<button class="m-btn m-btn-secondary" id="m-mfa-back" type="button">Back</button></form>');
-    document.getElementById('m-mfa-back').onclick = showLogin;
-    document.getElementById('m-mfa-form').onsubmit = async function (e) {
-      e.preventDefault();
-      var err = document.getElementById('m-mfa-error'); var button = e.target.querySelector('[type="submit"]');
-      button.disabled = true;
-      try {
-        var res = await API.post('/auth/login/mfa', { mfa_token: mfaToken, code: document.getElementById('m-mfa-code').value.trim() });
-        API.setToken(res.token, { shared: shared });
-        enterApp((await API.get('/auth/me')).user);
-      } catch (ex) { err.textContent = ex.message; button.disabled = false; }
+    bareScreen('Two-step sign-in', '<form id="m-mfa-form" class="m-auth-form">' +
+      '<p>Use the code from your authenticator app or a saved recovery code.</p>' +
+      '<div class="m-auth-method" role="group" aria-label="Code type"><button class="m-btn m-btn-secondary" type="button" data-method="app" aria-pressed="true">Authenticator app</button><button class="m-btn m-btn-secondary" type="button" data-method="recovery" aria-pressed="false">Recovery code</button></div>' +
+      '<label for="m-mfa-code" data-code-label>6-digit code</label><input id="m-mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" aria-describedby="m-code-help" required />' +
+      '<p id="m-code-help" class="m-hint">Use the newest code. You can paste it.</p>' + authErrorHTML +
+      '<button class="m-btn" type="submit">Sign in</button><button class="m-btn m-btn-secondary" id="m-mfa-back" type="button">Back to password</button></form>');
+    var form = document.getElementById('m-mfa-form'), flow = authFlow, signedIn = false;
+    var input = form.querySelector('#m-mfa-code');
+    wireAuthForm(form);
+    form.querySelectorAll('[data-method]').forEach(function (button) {
+      button.onclick = function () {
+        var recovery = button.dataset.method === 'recovery';
+        form.querySelectorAll('[data-method]').forEach(function (other) { other.setAttribute('aria-pressed', String(other === button)); });
+        input.dataset.method = button.dataset.method; input.value = ''; input.removeAttribute('aria-invalid');
+        input.inputMode = recovery ? 'text' : 'numeric'; input.maxLength = recovery ? 11 : 6;
+        form.querySelector('[data-code-label]').textContent = recovery ? 'Recovery code' : '6-digit code';
+        form.querySelector('#m-code-help').textContent = recovery ? 'Use one unused recovery code. Letters and numbers are allowed. It works once.' : 'Use the newest code. You can paste it.';
+        input.focus();
+      };
+    });
+    document.getElementById('m-mfa-back').onclick = async function () {
+      if (signedIn) {
+        authBusy(form, true, 'Returning…');
+        try { await API.post('/auth/logout'); } catch (error) { /* Clear the local session even offline. */ }
+      }
+      if (form.isConnected) showLogin();
     };
-    setTimeout(function () { var c = document.getElementById('m-mfa-code'); if (c) c.focus(); }, 50);
+    form.onsubmit = async function (event) {
+      event.preventDefault();
+      if (form.querySelector('[type="submit"]').disabled) return;
+      form.querySelector('[data-auth-error]').textContent = '';
+      if (!signedIn) {
+        var code = input.value.trim(), recovery = input.dataset.method === 'recovery';
+        if (!(recovery ? /^[0-9a-f]{5}-?[0-9a-f]{5}$/i : /^[0-9]{6}$/).test(code)) {
+          authError(form, recovery ? 'Enter a complete recovery code.' : 'Enter a 6-digit code.', input); return;
+        }
+      }
+      authBusy(form, true, signedIn ? 'Opening…' : 'Verifying…');
+      try {
+        if (!signedIn) {
+          var result = await API.post('/auth/login/mfa', { mfa_token: mfaToken, code: input.value.trim() });
+          if (authFlow !== flow || !form.isConnected) return;
+          API.setToken(result.token, { shared: shared }); signedIn = true;
+          input.value = ''; input.required = false; input.disabled = true;
+          form.querySelectorAll('[data-method]').forEach(function (button) { button.hidden = true; });
+        }
+        var profile = await API.get('/auth/me');
+        if (authFlow === flow && form.isConnected) enterApp(profile.user);
+      } catch (error) {
+        if (!form.isConnected) return;
+        authError(form, signedIn ? 'Your code was accepted, but the workspace could not be loaded. Retry access or return to your password.' : error);
+        if (!signedIn && /sign-in has expired/i.test(error.message)) form.querySelector('#m-code-help').textContent = 'Use Back to password to start a new sign-in.';
+        authBusy(form, false, signedIn ? 'Retry access' : 'Sign in');
+      }
+    };
+    input.focus();
   }
 
-  /** The workspace requires two-step sign-in for this account: set it up before anything else. */
+  async function copyAuthText(text, button) {
+    button.disabled = true;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(text); button.textContent = 'Copied';
+    } catch (error) {
+      var field = button.parentElement.querySelector('[data-copy-fallback]');
+      if (!field) { field = document.createElement('textarea'); field.readOnly = true; field.dataset.copyFallback = ''; field.setAttribute('aria-label', 'Text to copy'); button.parentElement.appendChild(field); }
+      field.value = text; field.focus(); field.select(); button.textContent = 'Select and copy below';
+    } finally { button.disabled = false; }
+  }
+
   function mfaSetupScreen() {
-    var signOutBtn = '<button class="m-btn m-btn-secondary" data-mfa-out type="button">Sign out</button>';
-    var wireOut = function () { var b = viewEl().querySelector('[data-mfa-out]'); if (b) b.onclick = function () { API.post('/auth/logout').catch(function () {}).finally(showLogin); }; };
-    bareScreen('Set up two-step sign-in', '<form id="m-mfa-pw">' +
-      '<p>Your workspace requires two-step sign-in for your account. You need an authenticator app ' +
-      '(Google Authenticator, Microsoft Authenticator, Authy…).</p>' +
-      '<label>Your password</label><input id="m-mfa-password" type="password" autocomplete="current-password" required />' +
-      '<p id="m-mfa-error" role="status"></p><button class="m-btn" type="submit">Continue</button>' + signOutBtn + '</form>');
-    wireOut();
-    document.getElementById('m-mfa-pw').onsubmit = async function (e) {
-      e.preventDefault();
-      var err = document.getElementById('m-mfa-error');
-      var s;
-      try { s = await API.post('/auth/mfa/setup', { password: document.getElementById('m-mfa-password').value }); }
-      catch (ex) { err.textContent = ex.message; return; }
-      var key = String(s.secret).replace(/(.{4})/g, '$1 ').trim();
-      viewEl().innerHTML = '<form id="m-mfa-enable">' +
-        '<p><a class="m-btn" href="' + mEsc(s.otpauth_url) + '">Open in authenticator app</a></p>' +
-        '<p>Or add an account in the app and type this key: <strong style="user-select:all">' + mEsc(key) + '</strong></p>' +
-        '<label>Code the app shows</label><input id="m-mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required />' +
-        '<p id="m-mfa-error" role="status"></p><button class="m-btn" type="submit">Turn on</button>' + signOutBtn + '</form>';
-      wireOut();
-      document.getElementById('m-mfa-enable').onsubmit = async function (ev) {
-        ev.preventDefault();
-        var err2 = document.getElementById('m-mfa-error');
-        var r;
-        try { r = await API.post('/auth/mfa/enable', { code: document.getElementById('m-mfa-code').value.trim() }); }
-        catch (ex) { err2.textContent = ex.message; return; }
-        viewEl().innerHTML = '<p><strong>Two-step sign-in is on.</strong> Save these recovery codes somewhere safe — each signs you in once ' +
-          'if you lose your phone. They won\'t be shown again.</p><pre style="user-select:all">' + r.recovery_codes.map(mEsc).join('\n') + '</pre>' +
-          '<button class="m-btn" id="m-mfa-done" type="button">I saved them</button>';
-        document.getElementById('m-mfa-done').onclick = async function () { enterApp((await API.get('/auth/me')).user); };
-      };
+    bareScreen('Set up two-step sign-in', '<form id="m-mfa-pw" class="m-auth-form">' +
+      '<p class="m-hint">Step 1 of 3 · Confirm your password</p><p>Your workspace requires two-step sign-in. You need an authenticator app such as Google Authenticator, Microsoft Authenticator or Authy.</p>' +
+      '<label for="m-mfa-password">Your password</label><input id="m-mfa-password" type="password" autocomplete="current-password" required />' +
+      '<p class="m-hint">Next: connect your authenticator, verify its code, then save recovery codes. Nothing is enabled until verification succeeds.</p>' +
+      authErrorHTML + '<button class="m-btn" type="submit">Continue</button>' + authOutHTML + '</form>');
+    var form = document.getElementById('m-mfa-pw'), flow = authFlow;
+    wireAuthForm(form);
+    form.onsubmit = async function (event) {
+      event.preventDefault();
+      if (form.querySelector('[type="submit"]').disabled) return;
+      form.querySelector('[data-auth-error]').textContent = '';
+      authBusy(form, true, 'Checking…');
+      try {
+        var setup = await API.post('/auth/mfa/setup', { password: form.querySelector('#m-mfa-password').value });
+        if (authFlow === flow && form.isConnected) mfaConnectScreen(setup);
+      } catch (error) { if (form.isConnected) { authError(form, error); authBusy(form, false, 'Continue'); } }
+    };
+  }
+
+  function mfaConnectScreen(setup) {
+    bareScreen('Set up two-step sign-in', '<form id="m-mfa-enable" class="m-auth-form">' +
+      '<p class="m-hint">Step 2 of 3 · Connect your authenticator</p>' +
+      '<p><a class="m-btn" href="' + mEsc(setup.otpauth_url) + '">Open in authenticator app</a></p>' +
+      '<p>Or add an account in the app and type this key: <strong style="user-select:all">' + mEsc(String(setup.secret).replace(/(.{4})/g, '$1 ').trim()) + '</strong></p>' +
+      '<div class="m-auth-copy"><button class="m-btn m-btn-secondary" type="button" data-copy-key>Copy setup key</button></div>' +
+      '<label for="m-mfa-code">Code the app shows</label><input id="m-mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required />' +
+      authErrorHTML + '<button class="m-btn" type="submit">Turn on</button>' + authOutHTML + '</form>');
+    var form = document.getElementById('m-mfa-enable'), flow = authFlow;
+    wireAuthForm(form);
+    form.querySelector('[data-copy-key]').onclick = function (event) { copyAuthText(setup.secret, event.currentTarget); };
+    form.onsubmit = async function (event) {
+      event.preventDefault();
+      if (form.querySelector('[type="submit"]').disabled) return;
+      var input = form.querySelector('#m-mfa-code');
+      form.querySelector('[data-auth-error]').textContent = '';
+      if (!/^[0-9]{6}$/.test(input.value.trim())) { authError(form, 'Enter a 6-digit code.', input); return; }
+      authBusy(form, true, 'Verifying…');
+      try {
+        var result = await API.post('/auth/mfa/enable', { code: input.value.trim() });
+        if (authFlow === flow && form.isConnected) mfaSaveCodesScreen(result.recovery_codes);
+      } catch (error) { if (form.isConnected) { authError(form, error); authBusy(form, false, 'Turn on'); } }
+    };
+  }
+
+  function mfaSaveCodesScreen(codes) {
+    bareScreen('Save recovery codes', '<form id="m-mfa-codes" class="m-auth-form">' +
+      '<p class="m-hint">Step 3 of 3 · Save recovery codes</p><p><strong>Two-step sign-in is on.</strong> Save these codes somewhere private. Each works once if you lose your phone. They will not be shown again.</p>' +
+      '<pre class="m-auth-codes" style="user-select:all">' + codes.map(mEsc).join('\n') + '</pre>' +
+      '<div class="m-auth-copy"><button class="m-btn m-btn-secondary" type="button" data-copy-codes>Copy codes</button><button class="m-btn m-btn-secondary" type="button" data-download-codes>Download .txt</button></div>' +
+      '<label class="m-auth-saved"><input type="checkbox" data-saved-codes /><span>I saved these recovery codes somewhere safe.</span></label>' +
+      '<p class="m-hint">This checkbox is a reminder, not proof that a backup exists. You can also sign out.</p>' + authErrorHTML +
+      '<button class="m-btn" type="submit" id="m-mfa-done">Done</button>' + authOutHTML + '</form>');
+    var form = document.getElementById('m-mfa-codes'), flow = authFlow;
+    wireAuthForm(form);
+    form.querySelector('[data-copy-codes]').onclick = function (event) { copyAuthText(codes.join('\n'), event.currentTarget); };
+    form.querySelector('[data-download-codes]').onclick = function () {
+      var url = URL.createObjectURL(new Blob(['Otom recovery codes — keep private\n' + codes.join('\n')], { type: 'text/plain;charset=utf-8' }));
+      var link = document.createElement('a'); link.href = url; link.download = 'otom-recovery-codes.txt';
+      document.body.appendChild(link); link.click(); link.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    };
+    form.onsubmit = async function (event) {
+      event.preventDefault();
+      if (form.querySelector('[type="submit"]').disabled) return;
+      form.querySelector('[data-auth-error]').textContent = '';
+      if (!form.querySelector('[data-saved-codes]').checked) { authError(form, 'Save your recovery codes before finishing, or choose Sign out.'); return; }
+      authBusy(form, true, 'Opening…');
+      try {
+        var profile = await API.get('/auth/me');
+        if (authFlow === flow && form.isConnected) enterApp(profile.user);
+      } catch (error) { if (form.isConnected) { authError(form, error); authBusy(form, false, 'Retry access'); } }
     };
   }
 
   var refreshingAccess = false;
   async function refreshAccess() {
-    if (refreshingAccess || !me || !API.getToken() || navigator.onLine === false || document.visibilityState === 'hidden') return;
+    if (refreshingAccess || authFlow || !me || !API.getToken() || navigator.onLine === false || document.visibilityState === 'hidden') return;
     var token = API.getToken(), server = API.base(), userId = me.id;
     refreshingAccess = true;
     try {
       var profile = await API.get('/auth/me');
-      if (token !== API.getToken() || server !== API.base() || !me || me.id !== userId) return;
+      if (authFlow || token !== API.getToken() || server !== API.base() || !me || me.id !== userId) return;
       var current = profile.user;
       if (!current || current.id !== userId) return;
       if (JSON.stringify([me.permissions, me.modules, me.can_approve, me.employee, me.password_change_required, me.mfa_setup_required]) !==
@@ -441,6 +581,8 @@ window.MApp = (function () {
   }
 
   function enterApp(user) {
+    window.SlowLoading?.ready();
+    authFlow = null;
     me = user;
     if (user.password_change_required) {
       try { localStorage.removeItem(ME_KEY); sessionStorage.removeItem(ME_KEY); } catch (e) {}

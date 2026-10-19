@@ -8,6 +8,9 @@
  */
 import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { liveFileFor } from './backups';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
@@ -325,6 +328,36 @@ router.post('/tenants/:slug/reset-owner-password', async (req, res, next) => {
       ...(temporary ? { temporary_password: new_password, expires_at: expiresAt } : {}),
     });
   } catch (e) { next(e); }
+});
+
+// A consistent SQLite snapshot includes committed WAL records, unlike copying the live file.
+router.get('/tenants/:slug/database', (req, res, next) => {
+  const tenant = getTenant(req.params.slug);
+  if (!tenant || tenant.status === 'purged') {
+    res.status(404).json({ error: 'Unknown workspace.' }); return;
+  }
+  const source = liveFileFor(tenant.slug);
+  if (!fs.existsSync(source)) {
+    res.status(404).json({ error: 'Workspace database is unavailable.' }); return;
+  }
+  let dir: string | undefined;
+  const clean = () => { if (dir) fs.rmSync(dir, { recursive: true, force: true }); };
+  try {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vds-export-'));
+    const file = path.join(dir, 'database.db');
+    const conn = new DatabaseSync(source, { readOnly: true });
+    try { conn.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`); }
+    finally { conn.close(); }
+    const by = (req as PlatformAuthedRequest).platformUser?.username || 'operator';
+    logProvisioning(tenant.slug, 'database_export', `${by}: downloaded database snapshot`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.once('close', clean);
+    res.download(file, `${tenant.slug}-${new Date().toISOString().slice(0, 10)}.db`, (err) => {
+      clean();
+      if (err && !res.headersSent) next(err);
+    });
+  } catch (err) { clean(); next(err); }
 });
 
 // Send a forgotten username to the recorded owner email; sandbox recovery stays manual.
