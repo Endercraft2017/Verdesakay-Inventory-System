@@ -1,7 +1,7 @@
 # Job-order selection and legacy unit intake validation
 
 Date: 2026-10-19. Branch: `restructure/module-architecture`.
-Candidate mobile cache: v124. Database schema: 91.
+Candidate mobile cache: v126. Database schema: 91.
 
 ## Implemented behavior
 
@@ -77,4 +77,4 @@ Reports, screenshots and print PDF are under ignored
 `work/mobile-legacy-intake/`; pre-sticker evidence is under
 `work/mobile-inspection-identity/`. No live tenant or customer stock was changed.
 Physical print quality, a physical phone/PWA and an installed site-PC outage
-remain unverified. No commit, push or deployed v124 is claimed by these tests.
+remain unverified. No commit, push or deployed v126 is claimed by these tests.

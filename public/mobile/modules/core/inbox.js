@@ -283,7 +283,7 @@
   function reactionsHTML(reactions) {
     if (!reactions || !reactions.length) return '';
     return '<div class="m-chat-reactions">' + reactions.map(function (r) {
-      return '<span class="m-chat-reaction' + (r.mine ? ' mine' : '') + '" data-emoji="' + r.emoji + '">' + r.emoji + ' ' + r.count + '</span>';
+      return '<button type="button" class="m-chat-reaction' + (r.mine ? ' mine' : '') + '" aria-pressed="' + !!r.mine + '" aria-label="' + mEsc((EMOJI_NAMES[r.emoji] || r.emoji) + ', ' + r.count + (r.mine ? ', your reaction' : '')) + '" data-emoji="' + mEsc(r.emoji) + '">' + mEsc(r.emoji) + ' ' + r.count + '</button>';
     }).join('') + '</div>';
   }
 
@@ -403,7 +403,8 @@
     container.querySelectorAll('.m-chat-reaction:not([data-wired])').forEach(function (el) {
       el.dataset.wired = '1';
       el.addEventListener('click', function () {
-        react(Number(el.closest('.m-chat-row').dataset.id), el.dataset.emoji);
+        var button = el, thread = state; if (button.disabled) return; button.disabled = true;
+        react(Number(el.closest('.m-chat-row').dataset.id), el.dataset.emoji).catch(function () { threadFeedback(thread, 'Could not confirm the reaction. Check its badge before trying again.'); }).finally(function () { button.disabled = false; });
       });
     });
     container.querySelectorAll('.m-chat-row:not([data-wired])').forEach(function (row) {
@@ -414,6 +415,10 @@
 
   function wireSwipeAndLongPress(row) {
     var id = Number(row.dataset.id);
+    row.tabIndex = 0;
+    row.setAttribute('aria-label', 'Message actions: ' + String(row.querySelector('.m-chat-text') ? row.querySelector('.m-chat-text').textContent : 'Attachment').slice(0, 100));
+    row.addEventListener('contextmenu', function (event) { event.preventDefault(); openActionSheet(id); });
+    row.addEventListener('keydown', function (event) { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); openActionSheet(id); } });
     var startX = 0, startY = 0, dx = 0, dragging = false, longPressTimer = null, longPressFired = false;
 
     row.addEventListener('touchstart', function (e) {
@@ -450,67 +455,101 @@
     row.addEventListener('touchcancel', function () { clearTimeout(longPressTimer); row.style.transform = ''; dragging = false; });
   }
 
-  function openActionSheet(messageId) {
-    if (!activeThread(state) || state.sending) return;
-    if (closeActiveSheet) closeActiveSheet();
-    var thread = state;
-    var m = state.messages.filter(function (x) { return x.id === messageId; })[0];
-    if (!m || m.deleted_at) return;
-    var root = overlayRoot();
-    var backdrop = mEl('<div class="m-chat-sheet-backdrop"></div>');
-    var sheet = mEl('<div class="m-chat-sheet"></div>');
-    var rows = [
-      { label: 'React', act: 'react' },
-      { label: 'Reply', act: 'reply' },
-    ];
-    if (m.mine) rows.push({ label: 'Edit', act: 'edit' });
-    if (m.mine) rows.push({ label: 'Remove', act: 'unsend', danger: true });
-    rows.forEach(function (r) {
-      var b = mEl('<button class="m-chat-sheet-row' + (r.danger ? ' danger' : '') + '">' + r.label + '</button>');
-      b.onclick = function () {
-        close();
-        if (!activeThread(thread) || thread.sending) return;
-        if (r.act === 'react') openEmojiSheet(messageId);
-        else if (r.act === 'reply') startReply(messageId);
-        else if (r.act === 'edit') startEdit(messageId);
-        else if (r.act === 'unsend') unsend(messageId);
+  var pendingReactions = Object.create(null), pendingRemovals = Object.create(null);
+  var EMOJI_NAMES = { '👍': 'Like', '❤️': 'Love', '😆': 'Laugh', '😮': 'Wow', '😢': 'Sad', '🙏': 'Thanks' };
+  function operationKey(messageId) { return (MApp.getMe() || {}).id + ':' + messageId; }
+  function messageContext(message) {
+    return '<div class="m-chat-sheet-context"><b>Message actions</b><p>' + mEsc(message.mine ? 'Your message' : state.otherName) + ' · ' + mEsc(mFmtTime(message.created_at)) + '</p><small>' + mEsc(String(message.body || 'Attachment').slice(0, 120)) + '</small></div>';
+  }
+  function makeReactionBar(thread, message, root, close) {
+    var popover = mEl('<div class="m-chat-reaction-popover"><div class="m-chat-reaction-bar" role="group" aria-label="React to message"></div><p data-reaction-status role="status" hidden></p></div>');
+    var bar = popover.querySelector('.m-chat-reaction-bar'), feedback = popover.querySelector('[data-reaction-status]');
+    var key = operationKey(message.id);
+    var scroller = thread.view.querySelector('#m-chat-messages'), oldPadding = scroller.style.paddingBottom, oldScroll = scroller.scrollTop, shifted = false;
+    function position() {
+      var row = thread.view.querySelector('.m-chat-row[data-id="' + message.id + '"] .m-chat-bubble');
+      if (!row || !popover.isConnected) return;
+      var rect = row.getBoundingClientRect(), size = popover.getBoundingClientRect();
+      var vp = window.visualViewport, top = vp ? vp.offsetTop : 0, height = vp ? vp.height : window.innerHeight;
+      var sheetTop = root.querySelector('.m-chat-sheet').getBoundingClientRect().top;
+      var bottom = Math.min(top + height - 12, sheetTop - 12);
+      if (rect.bottom > bottom) {
+        if (!shifted) { shifted = true; scroller.style.paddingBottom = (parseFloat(getComputedStyle(scroller).paddingBottom) + root.querySelector('.m-chat-sheet').offsetHeight + size.height + 32) + 'px'; }
+        scroller.scrollTop += rect.bottom - bottom; rect = row.getBoundingClientRect();
+      }
+      popover.style.left = Math.max(12, Math.min(window.innerWidth - size.width - 12, message.mine ? rect.right - size.width : rect.left)) + 'px';
+      popover.style.top = Math.max(top + 12, Math.min(bottom - size.height, rect.top - size.height - 10)) + 'px';
+    }
+    function paint() {
+      var busy = !!pendingReactions[key];
+      var latest = thread.messages.filter(function (m) { return m.id === message.id; })[0] || message;
+      bar.querySelectorAll('button').forEach(function (button) {
+        var selected = (latest.reactions || []).some(function (r) { return r.mine && r.emoji === button.dataset.emoji; });
+        button.setAttribute('aria-pressed', String(selected)); button.disabled = busy;
+        button.setAttribute('aria-label', (selected ? 'Remove ' : 'React with ') + EMOJI_NAMES[button.dataset.emoji]);
+      });
+      if (busy) { feedback.hidden = false; feedback.textContent = 'Saving reaction…'; }
+      position();
+    }
+    QUICK_EMOJI.forEach(function (emoji) {
+      var button = mEl('<button type="button" data-emoji="' + mEsc(emoji) + '">' + emoji + '</button>');
+      button.onclick = function () {
+        if (!activeThread(thread) || thread.sending || pendingReactions[key]) return;
+        var job = react(message.id, emoji);
+        paint();
+        job.then(function () { close(); }).catch(function () {
+          if (!root.isConnected) return;
+          feedback.hidden = false; feedback.textContent = 'Could not confirm the reaction. Check the current badge before trying again.'; paint();
+        });
       };
-      sheet.appendChild(b);
+      bar.appendChild(button);
     });
-    var cancel = mEl('<button class="m-chat-sheet-row cancel">Cancel</button>');
-    cancel.onclick = close;
-    sheet.appendChild(cancel);
-    function close() { backdrop.remove(); sheet.remove(); if (closeActiveSheet === close) closeActiveSheet = null; }
-    closeActiveSheet = close;
-    backdrop.onclick = close;
-    root.appendChild(backdrop);
-    root.appendChild(sheet);
+    root.appendChild(popover); paint();
+    if (pendingReactions[key]) pendingReactions[key].then(function () { if (root.isConnected) { feedback.hidden = true; paint(); } }, function () { if (root.isConnected) { feedback.hidden = false; feedback.textContent = 'Reaction could not be confirmed. Try again after checking the badge.'; paint(); } });
+    window.addEventListener('resize', position); thread.view.addEventListener('scroll', position, true);
+    if (window.visualViewport) { visualViewport.addEventListener('resize', position); visualViewport.addEventListener('scroll', position); }
+    return function () {
+      window.removeEventListener('resize', position); thread.view.removeEventListener('scroll', position, true);
+      if (shifted) { scroller.style.paddingBottom = oldPadding; scroller.scrollTop = oldScroll; }
+      if (window.visualViewport) { visualViewport.removeEventListener('resize', position); visualViewport.removeEventListener('scroll', position); }
+    };
   }
-
-  function openEmojiSheet(messageId) {
+  function openActionSheet(messageId, reactionsOnly) {
     if (!activeThread(state) || state.sending) return;
     if (closeActiveSheet) closeActiveSheet();
-    var thread = state;
-    var root = overlayRoot();
-    var backdrop = mEl('<div class="m-chat-sheet-backdrop"></div>');
-    var bar = mEl('<div class="m-chat-emoji-sheet"></div>');
-    QUICK_EMOJI.forEach(function (e) {
-      var b = mEl('<button type="button">' + e + '</button>');
-      b.onclick = function () { if (activeThread(thread) && !thread.sending) react(messageId, e); close(); };
-      bar.appendChild(b);
-    });
-    function close() { backdrop.remove(); bar.remove(); if (closeActiveSheet === close) closeActiveSheet = null; }
-    closeActiveSheet = close;
-    backdrop.onclick = close;
-    root.appendChild(backdrop);
-    root.appendChild(bar);
+    var thread = state, message = thread.messages.filter(function (m) { return m.id === messageId; })[0];
+    if (!message || message.deleted_at) return;
+    var invokingRow = thread.view.querySelector('.m-chat-row[data-id="' + messageId + '"]');
+    if (invokingRow) invokingRow.focus({ preventScroll: true });
+    var root = mEl('<div class="m-chat-sheet-backdrop" aria-label="' + (reactionsOnly ? 'React to message' : 'Message actions') + '"></div>');
+    var sheet = mEl('<div class="m-chat-sheet">' + messageContext(message) + '</div>');
+    var control, releaseBar = function () {};
+    function close() { return control && control.close(); }
+    if (!reactionsOnly) {
+      var actions = [{ label: 'Reply', act: function () { startReply(messageId); } }];
+      if (message.mine) { actions.push({ label: 'Edit', act: function () { startEdit(messageId); } }); actions.push({ label: 'Remove', danger: true, act: function () { unsend(messageId); } }); }
+      actions.forEach(function (action) {
+        var button = mEl('<button type="button" class="m-chat-sheet-row' + (action.danger ? ' danger' : '') + '">' + action.label + '</button>');
+        button.onclick = function () { close(); if (activeThread(thread) && !thread.sending) action.act(); };
+        sheet.appendChild(button);
+      });
+    }
+    var cancel = mEl('<button type="button" class="m-chat-sheet-row cancel">Cancel</button>'); cancel.onclick = close; sheet.appendChild(cancel);
+    root.appendChild(sheet); overlayRoot().appendChild(root);
+    releaseBar = makeReactionBar(thread, message, root, close);
+    control = MessageOverlay.mount(root, { initialFocus: '.m-chat-reaction-bar button', onClose: function () { releaseBar(); if (closeActiveSheet === control.close) closeActiveSheet = null; } });
+    closeActiveSheet = control.close;
+    var selected = root.querySelector('.m-chat-reaction-bar button[aria-pressed="true"]'); if (selected && !selected.disabled) selected.focus();
   }
-
+  function openEmojiSheet(messageId) { openActionSheet(messageId, true); }
   function react(messageId, emoji) {
-    var thread = state;
-    API.post('/messages/' + messageId + '/react', { emoji: emoji }).then(function (res) {
-      if (activeThread(thread)) applyReactions(messageId, res.reactions);
-    }).catch(function (e) { mToast(e.message || 'Failed', 'err'); });
+    var thread = state, key = operationKey(messageId);
+    if (pendingReactions[key]) return pendingReactions[key];
+    var job = API.post('/messages/' + messageId + '/react', { emoji: emoji }).then(function (result) {
+      if (activeThread(thread)) applyReactions(messageId, result.reactions);
+    }).finally(function () { delete pendingReactions[key]; });
+    pendingReactions[key] = job;
+    return job;
   }
 
   function applyReactions(messageId, rawReactions) {
@@ -579,11 +618,31 @@
   }
 
   function unsend(messageId) {
-    if (!window.confirm('Remove this message for everyone? This cannot be undone.')) return;
-    var thread = state;
-    API.del('/messages/' + messageId).then(function () {
-      if (activeThread(thread)) applyRemoved(messageId);
-    }).catch(function (e) { mToast(e.message || 'Failed', 'err'); });
+    if (!activeThread(state)) return;
+    if (pendingRemovals[operationKey(messageId)]) { threadFeedback(state, 'This message is already being removed…'); return; }
+    if (closeActiveSheet) closeActiveSheet();
+    var thread = state, message = thread.messages.filter(function (m) { return m.id === messageId; })[0];
+    if (!message || !message.mine || message.deleted_at) return;
+    var root = mEl('<div class="m-chat-sheet-backdrop m-chat-remove-backdrop" aria-label="Remove message for everyone?"><div class="m-chat-remove-dialog"><h2>Remove message for everyone?</h2><p>This cannot be undone. Attached files and reactions will also be removed.</p><blockquote>' + mEsc(String(message.body || 'Attachment').slice(0, 180)) + '</blockquote><p data-remove-error role="alert" tabindex="-1"></p><div class="m-actions"><button class="m-btn m-btn-secondary" type="button" data-cancel>Cancel</button><button class="m-btn m-btn-danger" type="button" data-confirm>Remove for everyone</button></div></div></div>');
+    var busy = false, key = operationKey(messageId);
+    overlayRoot().appendChild(root);
+    var control = MessageOverlay.mount(root, { initialFocus: '[data-cancel]', canClose: function () { return !busy; }, onClose: function () { if (closeActiveSheet === destroy) closeActiveSheet = null; if (activeThread(thread) && !thread.view.querySelector('.m-chat-row[data-id="' + messageId + '"]')) thread.view.querySelector('#m-chat-input').focus(); } });
+    function destroy() { busy = false; control.close(); }
+    closeActiveSheet = destroy;
+    var cancel = root.querySelector('[data-cancel]'), confirm = root.querySelector('[data-confirm]'), error = root.querySelector('[data-remove-error]');
+    cancel.onclick = control.close;
+    confirm.onclick = async function () {
+      if (busy || pendingRemovals[key]) return;
+      busy = true; cancel.disabled = true; confirm.disabled = true; confirm.textContent = 'Removing…'; error.textContent = '';
+      root.setAttribute('aria-busy', 'true');
+      try {
+        var job = API.del('/messages/' + messageId); pendingRemovals[key] = job;
+        await job;
+        if (activeThread(thread)) applyRemoved(messageId);
+        busy = false; control.close();
+      } catch (failure) { if (root.isConnected) { error.textContent = failure.message || 'Could not remove this message. Try again.'; error.focus(); } }
+      finally { delete pendingRemovals[key]; busy = false; cancel.disabled = false; confirm.disabled = false; confirm.textContent = 'Remove for everyone'; root.removeAttribute('aria-busy'); }
+    };
   }
 
   function applyRemoved(messageId) {

@@ -29,7 +29,7 @@ scoped durable storage. Original request/file/key recovery survives browser
 restart and committed response loss. The backend also deduplicates the intake
 key and hashes the parsed input plus photo, refusing changed or foreign reuse
 and duplicate identifiers. Schema 91 adds origin, key/hash and recorded cost to
-job orders; normal records default to production. Candidate PWA cache v124.
+job orders; normal records default to production. Candidate PWA cache v126.
 
 Validation passed: seven end-to-end legacy Playwright scenarios, five existing
 pre-sticker identification scenarios, TypeScript and 192 focused regressions,
