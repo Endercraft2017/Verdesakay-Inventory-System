@@ -155,17 +155,22 @@ App.register('releasing', async (view, filter) => {
       const serialized = new Set((rc && rc.lines || []).filter((l) => l.serialized).map((l) => Number(l.id)));
       const heldTotal = (rc?.lines || []).filter((l) => l.item_id && l.fulfillment_mode !== 'ckd')
         .reduce((sum, l) => sum + Number(l.held_qty || 0), 0);
-      const fullyOut = !!rc?.order?.warehouse_accepted_at && Number(rc?.outstanding || 0) > 0
-        && heldTotal + 1e-9 >= Number(rc.outstanding);
       // Partial release: only with Sales' authorization that allows it, and once something is out.
       const auth = (rc && rc.authorization) || {};
       const ckdParents = items.filter((l) => l.fulfillment_mode === 'ckd');
+      const heldByLine = new Map((rc?.lines || []).map((l) => [Number(l.id), Number(l.held_qty || 0)]));
       const ckdPick = ckdParents.map((parent) => {
         const parts = items.filter((l) => l.parent_order_item_id === parent.id);
-        const kits = parts.length ? Math.min(Number(parent.quantity), ...parts.map((p) => Math.floor((covered(p) + 1e-9) / (Number(p.quantity) / Number(parent.quantity))))) : 0;
-        return { kits, clean: parts.every((p) => covered(p) <= kits * Number(p.quantity) / Number(parent.quantity) + 1e-9) };
+        const kits = parts.length ? Math.min(Number(parent.quantity), ...parts.map((p) => Math.floor(((heldByLine.get(Number(p.id)) || 0) + 1e-9) / (Number(p.quantity) / Number(parent.quantity))))) : 0;
+        return { kits, clean: parts.every((p) => (heldByLine.get(Number(p.id)) || 0) <= kits * Number(p.quantity) / Number(parent.quantity) + 1e-9) };
       });
-      const partialOk = !fullyOut && auth.state === 'valid' && !!auth.partial_allowed && heldTotal > 0;
+      const ckdClean = ckdPick.every((p) => p.clean);
+      const fullyOut = !!rc?.order?.warehouse_accepted_at && Number(rc?.outstanding || 0) > 0
+        && heldTotal + 1e-9 >= Number(rc.outstanding) && ckdClean;
+      const nonCkdHeld = (rc?.lines || []).filter((l) => l.item_id && l.fulfillment_mode !== 'ckd' && l.fulfillment_mode !== 'ckd_component')
+        .reduce((sum, l) => sum + Number(l.held_qty || 0), 0);
+      const partialOk = !fullyOut && ckdClean && auth.state === 'valid' && !!auth.partial_allowed
+        && (nonCkdHeld > 0 || ckdPick.some((p) => p.kits > 0));
       body.innerHTML = `
         <div class="kv">
           <div><span class="muted">Customer</span><div>${UI.esc(order.customer_name || 'Walk-in')}</div></div>

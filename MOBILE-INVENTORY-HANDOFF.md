@@ -1,5 +1,19 @@
 # Inventory and production: mobile integration gaps
 
+## Branch acceptance update (2026-10-19)
+
+The inventory/production branch matrix and evidence are in
+`docs/reviews/inventory-production-branch-acceptance-2026-10-19.md`. Real
+Chromium checks covered desktop and 390 px screens for aftersales, full/semi/CKD
+sales, buffer production, Products In, release, courier pickup, and physical,
+planned, serial, and source-linked counts. The dedicated phone workflow and QR
+suites passed, including retry and handoff cases. Desktop release now keeps the
+partial-slip action disabled for an incomplete CKD kit or an extra picked CKD
+component; it enables when one whole kit is picked. The mobile owner should
+check that the phone release review applies the same whole-kit rule before confirming a slip,
+including a mixed CKD and non-CKD order, and run the scenario on a physical
+device with real printed labels and camera uploads. No mobile source was edited.
+
 ## Role-based pipeline acceptance (2026-10-19)
 
 The cross-role purchase → kit → production → QC/QA → Products In → releasing
