@@ -847,3 +847,16 @@ body.personal-editor-open .v2-orbit { display: none; }
 .m-directory-person{appearance:none;width:100%;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .m-directory-person:focus-visible{outline:2px solid var(--v2-green);outline-offset:-3px;border-radius:var(--m-r-sm)}
 .m-chat-v2 [data-chat-feedback]:empty,.m-chat-v2 [data-history-feedback]:empty,.m-chat-v2 [data-chat-leave]:empty{display:none}
+
+/* Message controls retain the existing bottom sheet; reactions float beside the selected bubble. */
+.m-chat-sheet-context{padding:14px 16px;border-bottom:1px solid var(--m-border);background:var(--m-surface)}
+.m-chat-sheet-context p{font-size:12px;color:var(--m-muted);margin:5px 0}.m-chat-sheet-context small{display:block;overflow-wrap:anywhere;color:var(--m-muted)}
+.m-chat-reaction-popover{position:fixed;z-index:62;max-width:calc(100vw - 24px);padding:6px;border:1px solid var(--m-border);border-radius:26px;background:var(--m-surface);color:var(--m-text);box-shadow:var(--m-shadow-lg)}
+.m-chat-reaction-bar{display:flex;gap:2px}.m-chat-reaction-bar button{appearance:none;min-width:42px;min-height:44px;padding:4px;border:2px solid transparent;border-radius:50%;background:transparent;color:inherit;font-size:25px;cursor:pointer}
+.m-chat-reaction-bar button[aria-pressed=true]{border-color:var(--v2-green);background:var(--v2-surface-soft)}
+.m-chat-reaction-bar button:focus-visible{outline:2px solid var(--v2-green);outline-offset:1px}
+.m-chat-reaction-popover p{max-width:264px;font-size:12px;padding:4px 8px;margin:0;color:var(--m-muted)}
+button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-backdrop{display:grid;place-items:center;padding:20px}
+.m-chat-remove-dialog{width:min(380px,100%);padding:20px;border-radius:var(--m-r);background:var(--m-surface);color:var(--m-text);box-shadow:var(--m-shadow-lg)}
+.m-chat-remove-dialog h2{font-size:20px;margin:0 0 12px}.m-chat-remove-dialog p{font-size:14px}.m-chat-remove-dialog blockquote{margin:12px 0;padding:10px 12px;border-left:3px solid var(--m-border);background:var(--m-surface-2);overflow-wrap:anywhere}
+.m-chat-remove-dialog [data-remove-error]:empty{display:none}.m-chat-remove-dialog [data-remove-error]{color:var(--m-danger)}
