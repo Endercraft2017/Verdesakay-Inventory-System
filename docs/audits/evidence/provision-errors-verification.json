@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-19",
+  "base_commit": "b8e1a8bd6a7cd56f21ebc55f1115ef87f3a60564",
+  "scope": "Typed provisioning errors, preflight validation and atomic settings/audit writes",
+  "full_run": {
+    "files_passed": 299,
+    "tests_passed": 3025,
+    "failed": 0,
+    "duration_seconds": 533.42
+  },
+  "focused": {
+    "files_passed": 4,
+    "tests_passed": 53,
+    "duration_seconds": 41.75
+  },
+  "playwright": {
+    "passed": 15,
+    "duration_seconds": 44.9
+  },
+  "focused_browser": {
+    "passed": 1,
+    "duration_seconds": 7.1
+  },
+  "typecheck": "passed",
+  "whole_control_statuses_changed": false,
+  "deployed": false,
+  "limitations": "Local engineering checks. Cross-database/filesystem provisioning recovery, other API/diagnostic paths, dependency/history and external acceptance gates remain open."
+}

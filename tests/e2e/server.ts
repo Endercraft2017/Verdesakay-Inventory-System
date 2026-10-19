@@ -56,6 +56,9 @@ listSupport('browser-support');
 platformDb().exec(`CREATE TRIGGER browser_support_failure BEFORE INSERT ON tenant_support
   WHEN NEW.slug='browser-support' AND NEW.subject='Browser failure injection'
   BEGIN SELECT RAISE(ABORT, 'synthetic-browser-private-storage-detail'); END`);
+platformDb().exec(`CREATE TRIGGER browser_settings_failure BEFORE UPDATE ON tenants
+  WHEN NEW.slug='browser-support' AND NEW.name='Browser settings failure'
+  BEGIN SELECT RAISE(ABORT, 'module synthetic-private-settings-detail'); END`);
 const { createApp } = await import('../../src/app');
 const { attachWebSocket } = await import('../../src/shared/ws');
 const server = createApp().listen(Number(process.env.E2E_PORT || 4173), process.env.E2E_HOST || '127.0.0.1');

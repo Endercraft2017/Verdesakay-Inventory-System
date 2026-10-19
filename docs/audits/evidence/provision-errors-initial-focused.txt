@@ -1,0 +1,60 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+ ❯ tests/platform-settings-errors.test.ts (16 tests | 6 failed) 2725ms
+     × rejects invalid creation options before creating any workspace 7ms
+     × rejects invalid creation options before creating any workspace 3ms
+     × hides storage failure for create and rolls back catalog writes 4ms
+     × hides storage failure for patch and rolls back catalog writes 3ms
+     × hides storage failure for subscription and rolls back catalog writes 4ms
+     × hides storage failure for audit and rolls back catalog writes 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/platform-settings-errors.test.ts > control-plane settings and provisioning boundaries > rejects invalid creation options before creating any workspace
+ FAIL  tests/platform-settings-errors.test.ts > control-plane settings and provisioning boundaries > rejects invalid creation options before creating any workspace
+AssertionError: expected null to be undefined
+
+- Expected:
+undefined
+
++ Received:
+null
+
+ ❯ tests/platform-settings-errors.test.ts:18:76
+     16|     const { getTenant } = await import('../src/platform/platform');
+     17|     const response = await ctx.api.post('/_platform/api/tenants').set(…
+     18|     expect(response.status).toBe(400); expect(getTenant('must-not-exis…
+       |                                                                            ^
+     19|     expect(response.body.request_id).toBeTruthy();
+     20|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  tests/platform-settings-errors.test.ts > control-plane settings and provisioning boundaries > hides storage failure for create and rolls back catalog writes
+ FAIL  tests/platform-settings-errors.test.ts > control-plane settings and provisioning boundaries > hides storage failure for patch and rolls back catalog writes
+ FAIL  tests/platform-settings-errors.test.ts > control-plane settings and provisioning boundaries > hides storage failure for subscription and rolls back catalog writes
+ FAIL  tests/platform-settings-errors.test.ts > control-plane settings and provisioning boundaries > hides storage failure for audit and rolls back catalog writes
+AssertionError: expected null to be undefined
+
+- Expected:
+undefined
+
++ Received:
+null
+
+ ❯ tests/platform-settings-errors.test.ts:52:97
+     50|       expect(response.body.request_id).toBeTruthy(); expect(JSON.strin…
+     51|       expect(JSON.stringify(log.mock.calls)).toContain(response.body.r…
+     52|       expect(getTenant('guarded-settings')).toEqual(before); expect(ge…
+       |                                                                                                 ^
+     53|       expect(listProvisioningLog('guarded-settings')).toEqual(audit);
+     54|     } finally { database.exec('DROP TRIGGER settings_error_probe'); lo…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  6 failed | 40 passed (46)
+   Start at  02:22:56
+   Duration  31.19s (transform 1.38s, setup 41ms, import 228ms, tests 30.61s, environment 0ms)

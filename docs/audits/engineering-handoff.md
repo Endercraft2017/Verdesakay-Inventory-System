@@ -1,7 +1,7 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 19 October 2026 — conversion and support/owner-detail error boundaries,
-public validation and real database/browser fault tests. Accounting follow-ups were delivered
+Latest follow-up: 19 October 2026 — provisioning/settings error boundaries, complete settings
+validation, atomic catalog/audit writes and real database/browser fault tests. Accounting follow-ups were delivered
 on 18 October and authentication work on 16 October. The complete release is still on hold.
 
 Work is on `production`, derived from `restructure/module-architecture`; it is not deployed.
@@ -115,3 +115,21 @@ routes only. Module/provisioning catches, CSV adapters, central arbitrary status
 503 exceptions and legacy diagnostic logging remain engineering work. Rich protected error
 diagnostics, support write/audit atomicity and duplicate submission semantics are not claimed
 by this fix. API-06 stays FAIL; release totals and external acceptance gates are unchanged.
+
+
+## Provisioning and settings follow-up — 2026-10-19
+
+High scoped integrity gap: a rejected multi-field PATCH could persist earlier catalog changes;
+creation checked explicit module names after creating the workspace. The patch now validates
+the entire request before writes and commits settings/subscription changes with their audit
+entry in one savepoint. Creation preflights modules; create/import reject unknown plans.
+Moderate scoped disclosure: owner create/import/settings/subscription catches trusted arbitrary
+status or message text. Only typed authored errors now retain 400/409 feedback; unexpected
+errors become generic correlated 500s. Import integrity and migration log messages are generic.
+
+See dated validation evidence for SQLite triggers, rollback, validation and actual browser
+corrected-save behavior. This does not make provisioning crash-safe across catalog, tenant DB,
+files and post-create setup/audit operations. Compensating cleanup/restart recovery for those
+steps is still engineering work. CSV adapters, signup/other status/expose/503 trust and legacy
+diagnostics remain open; API-06 and the complete release hold are unchanged. No owner setup or
+live deployment is required for these local engineering checks.

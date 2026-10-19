@@ -333,3 +333,34 @@ and [MITRE CWE-209](https://cwe.mitre.org/data/definitions/209.html), accessed 1
 The fix separates useful public validation from internal failures; it does not certify all
 error paths or rich private diagnostics. API-06 remains FAIL, whole-control totals stay
 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A, and the release hold remains. No deployment occurred.
+
+## Provisioning and atomic owner settings — 19 October 2026
+
+The final uninterrupted full regression passed **299 files / 3,025 tests**, with zero failures
+(533.42s). Runtime code and tests were frozen throughout that run. It includes the mobile wait
+corrections delivered in earlier increments. No initial full-suite failure or targeted-only
+correction is being substituted for this green final run.
+
+Focused provisioning, console/import and billing-signup coverage passed **4 files / 53 tests**
+(41.75s). Real SQLite faults cover create, settings update, subscription update and audit
+failures in both settings flows. Tests prove generic correlated 500s without synthetic private
+markers in captured logs, unchanged catalog/audit state after failures, whole-patch validation,
+no catalog creation for invalid options, typed duplicate conflict/import feedback and normal
+multi-field save/module dependencies. The initial focused run had six null/undefined assertion
+errors in the new tests; these were corrected to the existing getTenant contract, not reported
+as product defects. The raw initial report is retained.
+
+All **15 Playwright scenarios passed** (44.9s), including the actual owner settings screen
+against a disposable SQLite trigger: generic failure, retained edits, enabled save and successful
+corrected save. Its separate focused run passed (7.1s). Final TypeScript and diff checks passed.
+Staged Gitleaks passed with no findings; its redacted report is included. No live tenant, hosting,
+dependency, schema or mobile runtime changes were made.
+
+Evidence: `evidence/provision-errors-{full,focused,initial-focused,playwright,browser-focused,types}.txt`,
+`evidence/provision-errors-verification.json` and `evidence/provision-errors-scope.md`.
+Primary research: [SQLite savepoints](https://www.sqlite.org/lang_savepoint.html), accessed
+19 October 2026, alongside the prior same-day OWASP error-handling and MITRE CWE-209 references.
+The catalog transaction includes settings/audit writes; it does not cover workspace creation
+or import across catalog, tenant DB and files. Compensating cleanup/restart recovery and other
+API/diagnostic reviews remain. API-06 stays FAIL, whole-control totals are unchanged, and the
+complete release remains on hold. Tests passing is not live deployment or release approval.

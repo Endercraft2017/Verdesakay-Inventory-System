@@ -131,6 +131,14 @@ forwarded as generic 500 with request correlation. Support ticket identities are
 before service-level database access. Tenant/company and owner-only ticket scope is retained.
 Tests: `tests/tenant-support.test.ts`, `tests/owner-analytics.test.ts`,
 `tests/e2e/support-errors.spec.ts` (actual SQLite fault, preserved draft, corrected retry).
+Provisioning public errors use an explicit `ControlPlaneError` (400/409), not arbitrary
+exception properties or module-message matching. Creation validates modules before creating
+the account; create/import services reject unknown plans. Full tenant-settings validation runs
+before writes; settings/subscription changes and their audit entries share a SQLite savepoint.
+`tests/platform-settings-errors.test.ts` covers failures/rollback and
+`tests/e2e/control-plane-settings.spec.ts` verifies actual settings draft/corrected-save behavior.
+This transaction does not cover provisioning across catalog, tenant databases and files.
+
 
 **Public interface:** `enabledModules()`/`requireModule()` (re-exported from
 `shared/modules.ts`, which reads `platform/plans.ts` + `platform/platform.ts`),

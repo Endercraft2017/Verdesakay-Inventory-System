@@ -4,6 +4,8 @@
  * See docs/SAAS-READINESS.md §§7, 11.
  */
 import fs from 'node:fs';
+import { ControlPlaneError } from './request-errors';
+import { PLANS } from './plans';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
@@ -28,12 +30,13 @@ export interface CreateTenantInput {
   status?: TenantStatus;
 }
 
-function httpError(status: number, message: string): Error & { status: number } {
-  return Object.assign(new Error(message), { status });
+function httpError(status: 400 | 409, message: string): ControlPlaneError {
+  return new ControlPlaneError(status, message);
 }
 
 /** Create a tenant: catalog row + a fresh tenant DB seeded with the given admin login. */
 export function createTenant(input: CreateTenantInput): { slug: string } {
+  if (input.plan !== undefined && !Object.hasOwn(PLANS, input.plan)) throw httpError(400, 'Unknown plan.');
   const slug = String(input.slug || '').toLowerCase().trim();
   if (!isValidSlug(slug)) {
     throw httpError(400, 'Workspace name must be 2–31 chars: a letter, then letters/numbers/hyphens (no reserved words).');
@@ -74,6 +77,7 @@ export interface ImportTenantInput {
  *  row, then open it once so it migrates to the current schema. Users, passwords and all
  *  records carry over unchanged. Uploaded files are not part of the DB and are not copied. */
 export function importTenant(input: ImportTenantInput): { slug: string; users: number } {
+  if (input.plan !== undefined && !Object.hasOwn(PLANS, input.plan)) throw httpError(400, 'Unknown plan.');
   const slug = String(input.slug || '').toLowerCase().trim();
   if (!isValidSlug(slug)) {
     throw httpError(400, 'Workspace name must be 2–31 chars: a letter, then letters/numbers/hyphens (no reserved words).');
@@ -96,7 +100,7 @@ export function importTenant(input: ImportTenantInput): { slug: string; users: n
     const conn = new DatabaseSync(staging);
     try {
       const ok = (conn.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check;
-      if (ok !== 'ok') throw httpError(400, `The database failed its integrity check (${ok}).`);
+      if (ok !== 'ok') throw httpError(400, 'The database failed its integrity check.');
       const hasUsers = conn.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
       if (!hasUsers) throw httpError(400, 'That database is not a workspace from this app (no users table).');
       users = (conn.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
@@ -119,7 +123,7 @@ export function importTenant(input: ImportTenantInput): { slug: string; users: n
     withTenant(slug, () => {}); // open → pre-migration snapshot → migrate to the current schema
   } catch (e) {
     setTenantStatus(slug, 'suspended');
-    logProvisioning(slug, 'import-failed', (e as Error).message);
+    logProvisioning(slug, 'import-failed', 'Database migration failed; workspace suspended.');
     throw e;
   }
   logProvisioning(slug, 'import', JSON.stringify({ name: input.name, plan: input.plan ?? 'starter', users }));

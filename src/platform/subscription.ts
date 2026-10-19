@@ -1,5 +1,6 @@
 /** Owner-managed monthly quotes. These settings do not charge a payment method. */
 import { z } from 'zod';
+import { parseBody } from '../shared/validation';
 import { getTenant, platformDb, type TenantRow } from './platform';
 import { planModules } from './plans';
 import { MODULES, withDeps } from '../shared/modules';
@@ -50,7 +51,8 @@ export function subscriptionView(t: TenantRow) {
 /** Validate first, then atomically update pricing and the matching entitlements. */
 export function saveSubscription(slug: string, value: unknown): void {
   if (!getTenant(slug)) throw new Error('Unknown tenant.');
-  const s = parseSubscription(value);
+  const s = parseBody(schema, value);
+  s.modules = withDeps(s.modules);
   platformDb().prepare('UPDATE tenants SET subscription = ?, plan = ?, modules = ? WHERE slug = ?')
     .run(JSON.stringify(s), s.mode === 'bundle' ? s.bundle : getTenant(slug)!.plan,
       s.mode === 'bundle' ? null : JSON.stringify(s.modules), slug);

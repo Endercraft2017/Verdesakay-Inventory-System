@@ -1364,3 +1364,17 @@ On failed report submission the existing desktop form retains text and enables r
 browser regression checks this against a real disposable-database trigger failure. Success
 clears the form and reloads the company ticket list. No live support message is sent by tests.
 This does not make all owner-console writes transactional or close all API error-handling gaps.
+
+
+## Owner tenant-settings validation and atomic save (2026-10-19)
+
+The authenticated owner submits a complete PATCH or subscription PUT. PATCH validates every
+provided value before the first mutation, including modules, plan, status, trial date and
+photo retention. Existing subscription restrictions still require the separate subscription
+screen for pricing/entitlements. Catalog changes, audit insertion and response preparation
+run in one synchronous SQLite savepoint: an unexpected update/audit failure rolls them back.
+Authored validation/conflict errors return safe 400/409 feedback; unexpected exceptions become
+generic correlated 500s. The browser retains edited fields and permits corrected retry.
+Creation preflights module names before account creation; create/import validate plan names
+and expose only typed public domain errors. Import integrity/migration diagnostics are generic.
+Multi-database/filesystem provisioning crash recovery is a separate, still-open lifecycle.

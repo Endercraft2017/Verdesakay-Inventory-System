@@ -271,3 +271,8 @@ Further follow-up 19 October 2026: tenant support and owner-console support/deta
 catches now distinguish typed validation from unexpected storage errors. Real database fault
 and browser draft/retry coverage is recorded in validation-results.md. API-06 remains FAIL;
 other routes/503 diagnostics and external release gates remain open. Totals are unchanged.
+
+Provisioning/settings follow-up, 19 October 2026: owner create/import/settings/subscription
+boundaries now use typed public errors; settings validate fully before writes and catalog/audit
+updates share a savepoint. API-06 remains FAIL; multi-database provisioning recovery and other
+route/diagnostic reviews remain open. Whole-control totals and release hold are unchanged.

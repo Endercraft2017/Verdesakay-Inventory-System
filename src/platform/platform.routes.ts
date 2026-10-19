@@ -38,7 +38,7 @@ import { hashPassword, verifyPassword } from '../shared/password-hash';
 import { issueAccountRecovery, recoveryEvidenceSchema, credentialStamp, recoveryLinkBase } from '../shared/account-recovery';
 import { endUserSessions } from '../shared/auth';
 import { getMailSettings, saveMailSettings, mailReady, verifyMailSettings, sendMail } from '../shared/mailer';
-import { parseBody, changeUsernameSchema, mailSettingsSchema, resetPasswordSchema, platformCreateTenantSchema } from '../shared/validation';
+import { parseBody, ValidationError, changeUsernameSchema, mailSettingsSchema, resetPasswordSchema, platformCreateTenantSchema } from '../shared/validation';
 import { PLANS, PLAN_MODULES, planModules } from './plans';
 import { rateLimitKey } from '../shared/device';
 import {
@@ -59,7 +59,7 @@ const TENANT_STATUSES: TenantStatus[] = ['trial', 'active', 'past_due', 'suspend
 function normalizeModules(arr: unknown[]): string[] {
   const names = arr.map(String);
   const unknown = names.filter((m) => !isModuleName(m));
-  if (unknown.length) throw new Error(`Unknown module(s): ${unknown.join(', ')}. Known: ${MODULES.join(', ')}`);
+  if (unknown.length) throw new ValidationError(`Unknown module(s): ${unknown.join(', ')}. Known: ${MODULES.join(', ')}`);
   return withDeps(names);
 }
 
@@ -517,6 +517,7 @@ function availableSlug(name: string): string {
 router.post('/tenants', (req: Request, res: Response, next) => {
   try {
     const b = parseBody(platformCreateTenantSchema, req.body);
+    const modules = b.modules === undefined ? undefined : normalizeModules(b.modules);
     const { slug } = createTenant({
       slug: b.slug || availableSlug(b.name),
       name: String(b.name || ''),
@@ -528,7 +529,7 @@ router.post('/tenants', (req: Request, res: Response, next) => {
     });
     // An explicit module set at creation time (optional).
     if (Array.isArray(b.modules)) {
-      const list = normalizeModules(b.modules);
+      const list = modules!;
       setTenantModules(slug, list);
       logProvisioning(slug, 'modules', JSON.stringify(list));
     }
@@ -545,12 +546,7 @@ router.post('/tenants', (req: Request, res: Response, next) => {
     }
     const t = getTenant(slug)!;
     res.status(201).json(tenantView(t));
-  } catch (e) {
-    const err = e as Error & { status?: number };
-    if (err.status && err.status < 500) { res.status(err.status).json({ error: err.message }); return; }
-    if (err instanceof Error && /module/i.test(err.message)) { res.status(400).json({ error: err.message }); return; }
-    next(e);
-  }
+  } catch (e) { forwardControlPlaneError(e, next); }
 });
 
 // POST /_platform/api/tenants/import — multipart { db: <.db file>, slug, name, plan? }.
@@ -560,7 +556,7 @@ router.post('/tenants/import', importUpload.single('db'), (req: Request, res: Re
   const file = req.file;
   try {
     if (!file) { res.status(400).json({ error: 'Choose a database (.db) file to import.' }); return; }
-    const b = req.body || {};
+    const b = parseBody(z.object({ slug: z.string().min(1).max(31), name: z.string().trim().max(120).default(''), plan: z.string().optional() }), req.body);
     const { slug, users } = importTenant({
       slug: String(b.slug || ''),
       name: String(b.name || ''),
@@ -568,101 +564,75 @@ router.post('/tenants/import', importUpload.single('db'), (req: Request, res: Re
       sourceFile: file.path,
     });
     res.status(201).json({ ...tenantView(getTenant(slug)!), imported_users: users });
-  } catch (e) {
-    const err = e as Error & { status?: number };
-    if (err.status && err.status < 500) { res.status(err.status).json({ error: err.message }); return; }
-    next(e);
+  } catch (e) { forwardControlPlaneError(e, next);
   } finally {
     if (file) fs.rmSync(file.path, { force: true });
   }
 });
 
 // Subscription settings are saved separately from general tenant settings.
-router.put('/tenants/:slug/subscription', (req, res) => {
+/** Synchronous catalog changes and their audit entry succeed or roll back together. */
+function settingsWrite<T>(work: () => T): T {
+  const database = platformDb();
+  database.exec('SAVEPOINT tenant_settings');
+  try { const result = work(); database.exec('RELEASE tenant_settings'); return result; }
+  catch (error) { database.exec('ROLLBACK TO tenant_settings'); database.exec('RELEASE tenant_settings'); throw error; }
+}
+router.put('/tenants/:slug/subscription', (req, res, next) => {
   if (!getTenant(req.params.slug)) { res.status(404).json({ error: 'Unknown tenant.' }); return; }
   try {
-    saveSubscription(req.params.slug, req.body);
-    logProvisioning(req.params.slug, 'subscription', JSON.stringify({
-      by: (req as PlatformAuthedRequest).platformUser?.username,
-      subscription: subscriptionView(getTenant(req.params.slug)!),
-    }));
-    res.json(tenantView(getTenant(req.params.slug)!));
-  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+    const view = settingsWrite(() => {
+      saveSubscription(req.params.slug, req.body);
+      logProvisioning(req.params.slug, 'subscription', JSON.stringify({ by: (req as PlatformAuthedRequest).platformUser?.username,
+        subscription: subscriptionView(getTenant(req.params.slug)!) }));
+      return tenantView(getTenant(req.params.slug)!);
+    });
+    res.json(view);
+  } catch (error) { forwardControlPlaneError(error, next); }
 });
 
-// PATCH /_platform/api/tenants/:slug — { name?, plan?, status?, trial_ends_at?, modules? }
-// `modules`: an array (explicit override, dependencies auto-added) or null (use the plan default).
+const tenantSettingsSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  awaiting_payment: z.boolean().optional(),
+  plan: z.string().refine(value => Object.hasOwn(PLANS, value), 'Unknown plan.').optional(),
+  status: z.enum(['trial', 'active', 'past_due', 'suspended']).optional(),
+  trial_ends_at: z.string().refine(value => Number.isFinite(Date.parse(value)), 'Use an ISO datetime or null.').nullable().optional(),
+  modules: z.array(z.enum(MODULES)).nullable().optional(),
+  photo_retention_days: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable().optional(),
+  photo_max_mb: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable().optional(),
+});
+// Validate the entire patch before the first mutation, including optional fields.
 router.patch('/tenants/:slug', (req, res, next) => {
-  const t = getTenant(req.params.slug);
-  if (!t) { res.status(404).json({ error: 'Unknown workspace.' }); return; }
-  const b = req.body || {};
-  const by = (req as PlatformAuthedRequest).platformUser?.username || 'operator';
-  const changed: string[] = [];
-  if (t.subscription && ('plan' in b || 'modules' in b)) {
-    res.status(400).json({ error: 'Use subscription settings to change this tenant’s bundle or modules.' }); return;
-  }
+  const tenant = getTenant(req.params.slug);
+  if (!tenant) { res.status(404).json({ error: 'Unknown workspace.' }); return; }
   try {
-    if (typeof b.name === 'string' && b.name.trim() && b.name.trim() !== t.name) {
-      setTenantName(t.slug, b.name.trim()); changed.push('name');
+    const b = parseBody(tenantSettingsSchema, req.body);
+    if (tenant.subscription && ('plan' in b || 'modules' in b)) {
+      throw new ValidationError('Use subscription settings to change this tenant’s bundle or modules.');
     }
-    // Open a self-signed-up workspace without waiting for payment (or lock it again).
-    if (typeof b.awaiting_payment === 'boolean' && b.awaiting_payment !== !!t.awaiting_payment) {
-      setAwaitingPayment(t.slug, b.awaiting_payment); changed.push(b.awaiting_payment ? 'locked until paid' : 'opened without payment');
-    }
-    if (typeof b.plan === 'string' && b.plan !== t.plan) {
-      if (!(b.plan in PLANS)) { res.status(400).json({ error: `Unknown plan "${b.plan}".` }); return; }
-      setTenantPlan(t.slug, b.plan); changed.push(`plan=${b.plan}`);
-    }
-    if (typeof b.status === 'string' && b.status !== t.status) {
-      if (!TENANT_STATUSES.includes(b.status as TenantStatus) || b.status === 'purged') {
-        res.status(400).json({ error: `Invalid status "${b.status}".` }); return;
+    const view = settingsWrite(() => {
+      const changed: string[] = [];
+      if (b.name !== undefined && b.name !== tenant.name) { setTenantName(tenant.slug, b.name); changed.push('name'); }
+      if (b.awaiting_payment !== undefined && b.awaiting_payment !== !!tenant.awaiting_payment) {
+        setAwaitingPayment(tenant.slug, b.awaiting_payment); changed.push(b.awaiting_payment ? 'locked until paid' : 'opened without payment');
       }
-      setTenantStatus(t.slug, b.status as TenantStatus); changed.push(`status=${b.status}`);
-    }
-    if ('trial_ends_at' in b) {
-      const v = b.trial_ends_at;
-      if (v !== null && (typeof v !== 'string' || Number.isNaN(Date.parse(v)))) {
-        res.status(400).json({ error: 'trial_ends_at must be an ISO datetime or null.' }); return;
+      if (b.plan !== undefined && b.plan !== tenant.plan) { setTenantPlan(tenant.slug, b.plan); changed.push(`plan=${b.plan}`); }
+      if (b.status !== undefined && b.status !== tenant.status) { setTenantStatus(tenant.slug, b.status); changed.push(`status=${b.status}`); }
+      if ('trial_ends_at' in b) { setTrialEndsAt(tenant.slug, b.trial_ends_at === null ? null : new Date(b.trial_ends_at!).toISOString()); changed.push('trial_ends_at'); }
+      if ('modules' in b) {
+        const modules = b.modules === null ? null : withDeps(b.modules!);
+        setTenantModules(tenant.slug, modules); changed.push(`modules=${modules === null ? 'plan-default' : JSON.stringify(modules)}`);
       }
-      setTrialEndsAt(t.slug, v === null ? null : new Date(v).toISOString());
-      changed.push('trial_ends_at');
-    }
-    if ('modules' in b) {
-      if (b.modules === null) {
-        setTenantModules(t.slug, null); changed.push('modules=plan-default');
-      } else if (Array.isArray(b.modules)) {
-        const list = normalizeModules(b.modules); // throws on an unknown name; deps unioned in
-        setTenantModules(t.slug, list); changed.push(`modules=[${list.join(',')}]`);
-      } else {
-        res.status(400).json({ error: 'modules must be an array or null.' }); return;
+      if ('photo_retention_days' in b || 'photo_max_mb' in b) {
+        setTenantPhotoRetention(tenant.slug, { ...('photo_retention_days' in b ? { days: b.photo_retention_days } : {}),
+          ...('photo_max_mb' in b ? { maxMb: b.photo_max_mb } : {}) });
+        changed.push('photo_retention');
       }
-    }
-    if ('photo_retention_days' in b || 'photo_max_mb' in b) {
-      const nonNegInt = (v: unknown, field: string): number | null => {
-        if (v === null) return null;
-        if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
-          throw new Error(`${field} must be a non-negative integer, or null for the system default.`);
-        }
-        return v;
-      };
-      const patch: { days?: number | null; maxMb?: number | null } = {};
-      const desc: string[] = [];
-      if ('photo_retention_days' in b) {
-        patch.days = nonNegInt(b.photo_retention_days, 'photo_retention_days');
-        desc.push(`days:${patch.days ?? 'default'}`);
-      }
-      if ('photo_max_mb' in b) {
-        patch.maxMb = nonNegInt(b.photo_max_mb, 'photo_max_mb');
-        desc.push(`maxMb:${patch.maxMb ?? 'default'}`);
-      }
-      setTenantPhotoRetention(t.slug, patch);
-      changed.push(`photo_retention=[${desc.join(', ')}]`);
-    }
-  } catch (e) {
-    res.status(400).json({ error: (e as Error).message }); return;
-  }
-  if (changed.length) logProvisioning(t.slug, 'update', `${by}: ${changed.join('; ')}`);
-  res.json(tenantView(getTenant(t.slug)!));
+      if (changed.length) logProvisioning(tenant.slug, 'update', `${(req as PlatformAuthedRequest).platformUser?.username || 'operator'}: ${changed.join('; ')}`);
+      return tenantView(getTenant(tenant.slug)!);
+    });
+    res.json(view);
+  } catch (error) { forwardControlPlaneError(error, next); }
 });
 
 // POST /_platform/api/tenants/:slug/purge — { confirm: "<slug>" }  irreversible.
