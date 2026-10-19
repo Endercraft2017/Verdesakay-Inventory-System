@@ -146,6 +146,16 @@ function pdb(): DatabaseSync {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS business_outbox_due ON platform_business_outbox(state,next_attempt_at);
+    CREATE INDEX IF NOT EXISTS owner_outbox_recent ON platform_owner_outbox(created_at DESC,id DESC);
+    CREATE INDEX IF NOT EXISTS business_outbox_recent ON platform_business_outbox(created_at DESC,id DESC);
+    CREATE TABLE IF NOT EXISTS platform_owner_alert_worker (
+      id INTEGER PRIMARY KEY CHECK(id=1),
+      run_id TEXT NOT NULL,
+      started_at INTEGER NOT NULL,
+      finished_at INTEGER,
+      outcome TEXT CHECK(outcome IN ('idle','processed','failed')),
+      last_success_at INTEGER
+    );
     CREATE TABLE IF NOT EXISTS platform_inquiry_receipts (
       key_hash TEXT PRIMARY KEY,
       verifier TEXT,

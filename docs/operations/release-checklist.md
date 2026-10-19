@@ -55,3 +55,20 @@ See business-alerts.md. These are rollout gates, not completed deployment eviden
   and edge limits; per-process queue/rate checks are not distributed load acceptance.
 - [ ] Approve marker/verifier retention and reconcile before restoring older catalogs/downgrading
   writers. Do not delete markers or blindly resend unknown alerts. See inquiry-retries.md.
+
+
+## Delivery monitoring follow-up — 19 October 2026
+
+Queue-wide counts, filtered keyset history and durable worker observations are implemented.
+The latest-thirty view no longer defines the scope of review. See
+[owner-alert monitoring](owner-alert-monitoring.md) for API parameters, thresholds, redaction, read failures,
+triage and rollback. Unknown delivery remains no-resend; provider reconciliation, reviewed
+recovery, external watchdog/escalation and real-host acceptance remain release gates.
+Monitoring is scoped local evidence, not closure of a whole production control.
+
+- [ ] Verify cloud startup/timer updates the owner-alert heartbeat, fresh vs stale/failed/disabled
+  observations, old warning pagination and failed-refresh evidence retention on the target host.
+- [ ] Establish and test an independent watchdog destination/incident escalation; demonstrate
+  a stopped worker/API outage reaches the responsible operator without relying on queued mail.
+- [ ] Reconcile uncertain/restored delivery records with provider evidence; record the decision
+  before any separately authorized manual recovery. Do not use dashboard counts as inbox proof.

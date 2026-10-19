@@ -76,3 +76,13 @@ earlier no-receipt inquiry limitations for covered keyed requests only.
 Website inquiry attempts additionally abort fetch/body reading on a 20-second application timer.
 The browser retains the key/draft and offers retry; abort never means the server rolled back.
 Browser suspension can delay timers. This does not add deadlines to other public forms.
+
+
+## Delivery monitoring follow-up — 19 October 2026
+
+Queue-wide counts, filtered keyset history and durable worker observations are implemented.
+The latest-thirty view no longer defines the scope of review. See
+[owner-alert monitoring](owner-alert-monitoring.md) for API parameters, thresholds, redaction, read failures,
+triage and rollback. Unknown delivery remains no-resend; provider reconciliation, reviewed
+recovery, external watchdog/escalation and real-host acceptance remain release gates.
+Monitoring is scoped local evidence, not closure of a whole production control.

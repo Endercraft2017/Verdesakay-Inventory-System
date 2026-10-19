@@ -79,6 +79,13 @@ platformDb().prepare(`INSERT INTO platform_owner_outbox
   (id,event_key,tenant_slug,recipients,subject,body,configuration_stamp,state,attempts,next_attempt_at,error_code,created_at,updated_at)
   VALUES('browser-unknown-alert','signup:browser-support','browser-support','["owner@example.test"]',
     'Synthetic private subject','Synthetic private message','synthetic','unknown',1,0,'interrupted_send',?,?)`).run(Date.now(),Date.now());
+// More than one page: old failures must remain discoverable beyond latest thirty.
+const monitorNow=Date.now();
+const monitorSeed=platformDb().prepare(`INSERT INTO platform_owner_outbox
+(id,event_key,tenant_slug,state,attempts,next_attempt_at,created_at,updated_at)
+VALUES(?,?,?, ?,1,0,?,?)`);
+for(let i=1;i<=65;i++) monitorSeed.run('monitor-'+i,'signup:monitor-'+i,'browser-history-'+i,'accepted',monitorNow-i*1000,monitorNow-i*1000);
+monitorSeed.run('browser-old-alert','signup:browser-old-failure','browser-old-failure','blocked',monitorNow-86400000,monitorNow-86400000);
 (await import('../../src/platform/platform-mail')).savePlatformMail({transport:'brevo',from_email:'alerts@example.test',alert_to:'owner@example.test'},'synthetic-browser-business-key');
 platformDb().exec(`CREATE TRIGGER browser_inquiry_alert_failure BEFORE INSERT ON platform_business_outbox
   WHEN NEW.subject='New inquiry: Browser inquiry failure'

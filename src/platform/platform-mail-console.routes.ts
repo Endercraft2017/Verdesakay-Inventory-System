@@ -1,3 +1,4 @@
+import {ownerAlertHealth,ownerAlertHistory} from './owner-alert-monitor';
 import { forwardControlPlaneError } from './request-errors';
 import { ownerAlertStatus } from './owner-alert-outbox';
 /**
@@ -14,8 +15,14 @@ const router = Router();
 const EMAIL = /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/;
 
 // GET /_platform/api/mail — settings (never the secret) + the recent send log
-router.get('/mail', (_req, res) => {
-  res.json({ settings: getPlatformMail(), log: platformMailLog(20), outbox: ownerAlertStatus() });
+router.get('/mail/delivery', (req,res,next) => {
+  try { const history=ownerAlertHistory({filter:req.query.filter,limit:req.query.limit,cursor:req.query.cursor});res.json({health:ownerAlertHealth(),...history}); }
+  catch(error){forwardControlPlaneError(error,next);}
+});
+
+router.get('/mail', (_req, res, next) => {
+  try {res.json({ settings: getPlatformMail(), log: platformMailLog(20), outbox: ownerAlertStatus(), delivery_health: ownerAlertHealth() });}
+  catch(error){forwardControlPlaneError(error,next);}
 });
 
 // PUT /_platform/api/mail — { transport, from_name, from_email, smtp_*, alert_*, secret? }
@@ -59,7 +66,7 @@ router.put('/mail', (req, res, next) => {
   try {
     const settings = savePlatformMail(patch,b.clear_secret ? '' : secret || undefined);
     logProvisioning('_console','platform-mail-settings',`${(req as PlatformAuthedRequest).platformUser!.username}: saved email settings`);
-    const result = {settings,log:platformMailLog(20),outbox:ownerAlertStatus()};
+    const result = {settings,log:platformMailLog(20),outbox:ownerAlertStatus(),delivery_health:ownerAlertHealth()};
     d.exec('RELEASE console_mail_settings');
     res.json(result);
   } catch(error) { d.exec('ROLLBACK TO console_mail_settings');d.exec('RELEASE console_mail_settings');forwardControlPlaneError(error,next); }
@@ -74,7 +81,7 @@ router.post('/mail/test', async (req, res, next) => {
   if (!to.length || to.some((a) => !EMAIL.test(a))) { res.status(400).json({ error: 'Enter who should receive the test email.' }); return; }
   const r = await sendPlatformMail({ to, subject: 'OTOM test email', kind: 'test',
     text: 'This is a test from your OTOM owner console. If you can read this, owner alerts will reach you.' });
-  res.status(r.ok ? 200 : 502).json({ ...r, log: platformMailLog(20), outbox: ownerAlertStatus() });
+  res.status(r.ok ? 200 : 502).json({ ...r, log: platformMailLog(20), outbox: ownerAlertStatus(), delivery_health: ownerAlertHealth() });
   } catch (error) { forwardControlPlaneError(error, next); }
 });
 

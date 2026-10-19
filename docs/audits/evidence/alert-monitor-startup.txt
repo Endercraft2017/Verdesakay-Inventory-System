@@ -1,0 +1,6 @@
+PASS: actual startup/timer persisted a completed worker heartbeat and last-success timestamp.
+PASS: actual server.ts startup/timer processed committed signup, inquiry and payment intent; one synthetic acceptance per category.
+PASS: stale claims in both queue tables became unknown without resend; payment proof bytes remained durable.
+PASS: actual server startup pruned expired payment receipt payload/verifier while retaining its tombstone and proof.
+PASS: actual startup pruned expired inquiry verifier and retained its source/receipt tombstone.
+Disposable databases and NODE_ENV=test transport only; no real email, provider or deployment.

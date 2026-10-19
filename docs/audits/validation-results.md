@@ -742,3 +742,43 @@ expiry retains marker; backups/WAL/source/provider copies have separate policies
 or restored catalogs need reconciliation. No new dependency/advisory snapshot/tenant schema
 bump, exactly-once inbox/provider outcome, CI-green, hosted rollout, production-ready or complete
 control PASS claim. Totals 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A and release hold unchanged.
+
+
+## Owner-alert monitoring and history — 19 October 2026
+
+Base 488d413d780b4b6d754fb9998b784d4d9c47787c. Medium scoped visibility gap addressed:
+queue-wide counts and filtered history find old failures outside recent thirty; durable guarded
+worker observations distinguish idle/running/stale/failure/unobserved. Existing outbox policy
+still forbids blind resend. Health/history are read-only, redacted and authenticated/no-store.
+
+| Check | Completed result |
+|---|---|
+| Full regression | 308 files / 3212 tests passed, 647.88s |
+| Initial focused | 4 files / 77 tests passed, 22.05s |
+| Final focused | 4 files / 78 tests passed, 24.08s; 36 new monitor cases |
+| Initial browser | 25 passed / 1 failed (new assertion label mismatch) |
+| Final Playwright | 26 passed, 70.221s |
+| TypeScript / db:types | Passed; no generated tenant-type diff |
+| Actual server startup/timer | Passed; completed heartbeat and synthetic delivery/receipt safety |
+| Staged secret scan | Clean; final commit hook scans again |
+
+Browser coverage includes old-history traversal, failed filter/refresh retaining evidence and
+selection, held-read twenty-second AbortController deadline and retry. Worker tests cover
+cross-queue equal IDs/timestamps, bounded malformed cursors/queries, auth/redaction, SQLite
+start/finish faults, overlap, reopen and actual synthetic acceptance before failed heartbeat
+finish with no second send. Exact scope and logs are in alert-monitor-* evidence. The initial
+browser test expected raw 'Unobserved', but the screen authored 'Not yet observed'; only the
+assertion changed, and initial output/JSON remain. Transient trace/screenshots named in raw
+logs were not archived. Runtime/tests were frozen before the completed full regression.
+
+No real provider, customer message, bank, deployment or hosted configuration was changed.
+Research: Google SRE monitoring and SQLite scrolling-window queries (primary sources retrieved
+19 October). Updated operations/API/release/privacy documentation, catalog/pipelines, readiness,
+handoff and scorecard metadata retain the distinction between observation and remote delivery.
+External watchdog/escalation, provider reconciliation/reviewed resend, capacity/retention,
+Windows/native/hosting/restore acceptance and the wider scorecard remain open. Totals unchanged:
+36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release hold remains.
+
+The first final commit scan flagged two SHA-256 file checksums stored under artifact names
+containing “secrets”. Separating names/digests in the manifest removed the false positives;
+no credential or scan allowlist changed. Evidence trailing blank lines were normalized.

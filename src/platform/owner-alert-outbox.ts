@@ -64,7 +64,7 @@ export async function processOneOwnerAlert(): Promise<boolean> {
     WHERE id=? AND state IN ('pending','retry') AND next_attempt_at<=? AND attempts<5 RETURNING *`)
     .get(now, now, candidate.id, now) as Job | undefined;
   if (!job) return false;
-  const source = alertSource(job.event_key);
+  const source = ownerAlertSource(job.event_key);
   const tenant = job.tenant_slug ? getTenant(job.tenant_slug) : null;
   let available = false;
   if (source.kind === 'signup') available = !!tenant && tenant.status !== 'purged';
@@ -94,7 +94,7 @@ export async function processOneOwnerAlert(): Promise<boolean> {
   return true;
 }
 
-function alertSource(key: string): { kind: AlertKind | null; id?: number } {
+export function ownerAlertSource(key: string): { kind: AlertKind | null; id?: number } {
   if (/^signup:[a-z0-9][a-z0-9-]*$/.test(key)) return {kind:'signup'};
   const match = /^(inquiry|payment):([1-9][0-9]*)$/.exec(key);
   const id = match ? Number(match[2]) : 0;
@@ -107,7 +107,7 @@ export function ownerAlertStatus() {
       UNION ALL SELECT id,event_key,tenant_slug,state,attempts,error_code,created_at,updated_at FROM platform_business_outbox)
     ORDER BY created_at DESC,id LIMIT 30`).all() as Array<{id:string;event_key:string;tenant_slug:string;state:string;attempts:number;error_code:string|null;created_at:number;updated_at:number}>;
   return rows.map(({event_key,...row}) => {
-    const source = alertSource(String(event_key));
+    const source = ownerAlertSource(String(event_key));
     return {...row,kind:source.kind,source_id:source.id ?? null};
   });
 }

@@ -45,7 +45,7 @@
     setTimeout(function () { t.remove(); }, 2600);
   }
 
-  async function api(method, path, body, retried, idempotencyKey) {
+  async function api(method, path, body, retried, idempotencyKey, signal) {
     var headers = { 'X-Requested-With': 'VDS', 'X-Session-Mode': 'cookie' };
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
     var tk = token();
@@ -53,13 +53,13 @@
     var isForm = typeof FormData !== 'undefined' && body instanceof FormData;
     if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
     var payload = body === undefined ? undefined : (isForm ? body : JSON.stringify(body));
-    var res = await fetch(API + path, { method: method, headers: headers, body: payload });
+    var res = await fetch(API + path, { method: method, headers: headers, body: payload, signal: signal });
     if (res.status === 401) { setToken(null); showLogin(); throw new Error('Session expired — sign in again.'); }
     var data = null;
     if ((res.headers.get('content-type') || '').indexOf('json') !== -1) data = await res.json();
     if (res.status === 403 && data && data.passkey_required && !retried && path.indexOf('/passkeys') !== 0) {
       await verifyConsolePasskey();
-      return api(method, path, body, true, idempotencyKey);
+      return api(method, path, body, true, idempotencyKey, signal);
     }
     if (!res.ok) throw new Error((data && data.error) || ('Request failed (' + res.status + ')'));
     return data;

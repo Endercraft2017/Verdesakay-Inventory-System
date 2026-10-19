@@ -73,7 +73,8 @@ attempt-log transaction and logical payload retention described in owner-alert-o
 The console's Owner alert delivery panel labels inquiries by source ID and payment jobs by
 workspace/payment ID. The authenticated, no-store mail responses add kind and source_id without
 exposing queued message, recipient snapshot or credential binding. The recent view remains
-limited to 30 events across both tables; backlog aggregation/external escalation remains work.
+limited to 30 events across both tables, alongside queue-wide summary and filtered paginated
+history described in owner-alert-monitoring.md. External escalation remains work.
 
 ## Mail configuration and credential pairing
 
@@ -127,7 +128,7 @@ All provider traffic is synthetic/test-only; no real customer email or bank/prov
 
 Remaining: retry receipts for inquiries and other endpoints, reconciliation of legacy, duplicate
 and uncertain outcomes, and reviewed resend,
-backlog monitoring/external alerts, upload-content/security acceptance, financial lifecycle,
+external backlog alerts/escalation, upload-content/security acceptance, financial lifecycle,
 approved retention and live provider/restore/Windows/storage/capacity tests. Full scorecard
 statuses remain unchanged. Exact results/failures are in audit business-alerts-* evidence.
 
@@ -140,3 +141,13 @@ still create distinct reports. Website inquiries and broader reconciliation rema
 Inquiry-request follow-up: inquiry-retries.md now covers updated keyed website submissions,
 including constant acknowledgement and bounded public verifier work. No-key/new-page requests
 and other API actions remain outside that contract; broader delivery reconciliation remains open.
+
+
+## Delivery monitoring follow-up — 19 October 2026
+
+Queue-wide counts, filtered keyset history and durable worker observations are implemented.
+The latest-thirty view no longer defines the scope of review. See
+[owner-alert monitoring](owner-alert-monitoring.md) for API parameters, thresholds, redaction, read failures,
+triage and rollback. Unknown delivery remains no-resend; provider reconciliation, reviewed
+recovery, external watchdog/escalation and real-host acceptance remain release gates.
+Monitoring is scoped local evidence, not closure of a whole production control.

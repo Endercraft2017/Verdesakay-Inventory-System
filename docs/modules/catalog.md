@@ -112,7 +112,7 @@ runbooks; staged enrollment, wider tenant step-up and native credential storage 
 **Responsibility:** tenant provisioning, plans, quotas, and the owner console — sits
 above the tenant-facing app, not one of its features. Single-tenant/self-hosted
 installs never touch this.
-**Owned files:** `inquiry-receipts.ts` (public inquiry binding, constant acknowledgement, expiry/tombstones), `payment-report-receipts.ts` (tenant/actor-scoped payment acknowledgement, attachment binding, expiry/tombstones), `owner-alert-outbox.ts` (signup and separate inquiry/payment intent, guarded claim/worker/status and logical payload expiry), `onboarding-receipts.ts` (durable scoped create/signup responses, salted request verifier, expiry/tombstones), `plans.ts`, `quota.ts`, `provisioning.ts`, `adopt-default.ts` (offline,
+**Owned files:** `owner-alert-monitor.ts` (queue-wide read-only health/history and guarded persistent worker heartbeat), `inquiry-receipts.ts` (public inquiry binding, constant acknowledgement, expiry/tombstones), `payment-report-receipts.ts` (tenant/actor-scoped payment acknowledgement, attachment binding, expiry/tombstones), `owner-alert-outbox.ts` (signup and separate inquiry/payment intent, guarded claim/worker/status and logical payload expiry), `onboarding-receipts.ts` (durable scoped create/signup responses, salted request verifier, expiry/tombstones), `plans.ts`, `quota.ts`, `provisioning.ts`, `adopt-default.ts` (offline,
 verified adoption of the original company, preserving source DB/uploads; CLI
 `scripts/adopt-default-tenant.ts`), `tenant-path.ts` (optional host-bound path routing), `platform.ts` (tenant
 catalog in `platform.db`; permanent company login IDs with pair-scoped counters,

@@ -88,8 +88,8 @@ The source workspace/invoice remains authoritative even if its alert needs atten
 After restoring a catalog backup, keep the worker stopped until previously acknowledged/pending
 operations are reconciled against provider records. An old restored pending row can lose later
 claim/acceptance evidence; the local outbox cannot prove whether it was sent after that backup.
-Monitor worker failures/queue age and review older-than-30 events through restricted operational
-access. External monitoring, backlog aggregation and alert escalation still need acceptance.
+Monitor worker failures/queue age and review older-than-30 events through the authenticated
+filtered history (owner-alert-monitoring.md). External monitoring and escalation still need acceptance.
 
 ## Storage and retention
 
@@ -120,8 +120,8 @@ while durable claims become unknown without replay. Actual server startup drains
 intent and preserves an interrupted claim. Chromium verifies uncertainty/status refresh failure
 without a retry action. No real emails/provider credentials/customer data are used.
 
-Remaining: wider HTTP retry receipts/notification coverage, provider reconciliation/reviewed resend, backlog
-monitoring/alerting, queue capacity/load, approved retention, restore/hosting/Windows acceptance
+Remaining: wider HTTP retry receipts/notification coverage, provider reconciliation/reviewed resend, external backlog
+alerting/escalation, queue capacity/load, approved retention, restore/hosting/Windows acceptance
 and real Brevo/SMTP acceptance. This increment does not establish exactly-once remote delivery,
 all-notification durability, CI-green, complete-control PASS or production rollout verification.
 
@@ -133,3 +133,13 @@ Primary sources reviewed 19 October 2026:
 - https://www.rfc-editor.org/rfc/rfc5321.html
 
 See docs/audits/validation-results.md and owner-outbox-* evidence for exact results and failures.
+
+
+## Delivery monitoring follow-up — 19 October 2026
+
+Queue-wide counts, filtered keyset history and durable worker observations are implemented.
+The latest-thirty view no longer defines the scope of review. See
+[owner-alert monitoring](owner-alert-monitoring.md) for API parameters, thresholds, redaction, read failures,
+triage and rollback. Unknown delivery remains no-resend; provider reconciliation, reviewed
+recovery, external watchdog/escalation and real-host acceptance remain release gates.
+Monitoring is scoped local evidence, not closure of a whole production control.

@@ -1,6 +1,6 @@
 import {pruneInquiryReceipts} from './src/platform/inquiry-receipts';
 import { prunePaymentReportReceipts } from './src/platform/payment-report-receipts';
-import { processOneOwnerAlert } from './src/platform/owner-alert-outbox';
+import { runOwnerAlertPass } from './src/platform/owner-alert-monitor';
 import { pruneCreationReceipts } from './src/platform/onboarding-receipts';
 import {processOneExport} from './src/modules/quickbooks/export-jobs';
 import { requireProductionTransport } from './src/shared/hosting';
@@ -64,7 +64,7 @@ let ownerAlertRunning = false;
 async function ownerAlertPass() {
   if (DEPLOY_MODE !== 'cloud' || ownerAlertRunning) return;
   ownerAlertRunning = true;
-  try { await processOneOwnerAlert(); }
+  try { await runOwnerAlertPass(); }
   catch { console.error('[platform-mail] outbox worker failed; inspect durable delivery state'); }
   finally { ownerAlertRunning = false; }
 }

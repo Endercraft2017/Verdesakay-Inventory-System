@@ -117,3 +117,14 @@ minimal duplicate-prevention markers remain. Browser key stays in page memory, w
 localStorage draft/key. Original inquiries, owner-alert payloads and provider/backup data have
 separate retention. Approve lawful basis/access/marker expiry/holds/backup and scoped erasure;
 nulling is not forensic wiping. Restore/rollback requires reconciliation. See inquiry-retries.md.
+
+
+### Owner-alert observations — 19 October 2026
+
+The platform catalog additionally stores one latest worker run ID, start/finish, outcome and
+last-success timestamp. No payload/recipient or diagnostic text is stored in this heartbeat.
+Authenticated history exposes existing event/source IDs, tenant slug, state, safe error code
+and timestamps; bodies, recipient addresses and configuration stamps are omitted. No new
+external telemetry destination or automatic event-metadata deletion is introduced. Retention
+approval, historic log review and secure catalog backup/restore remain applicable. See
+../operations/owner-alert-monitoring.md for limits and review procedure.

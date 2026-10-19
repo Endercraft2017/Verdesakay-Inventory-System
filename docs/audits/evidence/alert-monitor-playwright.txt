@@ -1,0 +1,41 @@
+[WebServer] (node:69990) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:70003) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:70014) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 26 tests using 1 worker
+
+(node:70048) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/e2e/alert-monitor.spec.ts:7:1 › old delivery failures remain discoverable across pages and failed reads preserve the selected view (1.7s)
+  ✓   2 tests/e2e/alert-monitor.spec.ts:23:1 › stalled delivery reads time out, retain evidence and recover without a write (1.4s)
+  ✓   3 tests/e2e/business-alerts.spec.ts:3:1 › website inquiry retains its draft after durable enqueue fails and saves one source/alert after correction (2.2s)
+  ✓   4 tests/e2e/control-plane-settings.spec.ts:3:1 › owner settings retain edited fields after a real database failure and accept a corrected save (1.5s)
+  ✓   5 tests/e2e/creation-receipts.spec.ts:3:1 › console retries a committed request whose response was lost without creating a second generated slug (2.9s)
+  ✓   6 tests/e2e/creation-receipts.spec.ts:35:1 › website retries a committed signup after a lost response using the same creation key (2.6s)
+  ✓   7 tests/e2e/inquiry-receipts.spec.ts:3:1 › public inquiry retries a lost committed response, rejects changed details and then replays the original without duplication (2.4s)
+  ✓   8 tests/e2e/inquiry-receipts.spec.ts:29:1 › contact form refuses null or HTML success responses and keeps its retry key until a real acknowledgement (1.3s)
+  ✓   9 tests/e2e/inquiry-receipts.spec.ts:50:1 › contact deadline releases a hanging committed send and retries with the same key (1.1s)
+  ✓  10 tests/e2e/mail-outbox.spec.ts:3:1 › owner sees uncertain signup delivery, retains it on refresh failure and sends no retry (1.3s)
+[WebServer] (node:70014) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+[WebServer] (node:70014) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+  ✓  11 tests/e2e/passkeys.spec.ts:3:1 › console verifies real WebAuthn registration and sign-in, rejects replay, and protects the last key (3.2s)
+  ✓  12 tests/e2e/payment-receipts.spec.ts:3:1 › payment form retries a committed report after response loss using its original key and proof (3.0s)
+  ✓  13 tests/e2e/quickbooks-exports.spec.ts:3:1 › administrator sees durable export failures, handles status errors and refreshes safely (2.8s)
+  ✓  14 tests/e2e/readiness.spec.ts:17:1 › desktop: wrong password, keyboard login, stock journey and server logout (2.5s)
+  ✓  15 tests/e2e/readiness.spec.ts:56:1 › mobile: 360px layout, core navigation, offline failure and sign out (1.5s)
+  ✓  16 tests/e2e/readiness.spec.ts:89:1 › login forms: labelled controls, keyboard access and axe scan (1.4s)
+  ✓  17 tests/e2e/readiness.spec.ts:98:1 › API attack surface: injection, oversized inputs, CORS and private caching (18ms)
+  ✓  18 tests/e2e/readiness.spec.ts:110:1 › browser: separate users cannot edit each other’s notes; role changes revoke cookies (3.0s)
+  ✓  19 tests/e2e/readiness.spec.ts:142:1 › browser: message HTML is a non-executable attachment and policy links are usable (2.0s)
+  ✓  20 tests/e2e/readiness.spec.ts:164:1 › browser: uploaded JavaScript cannot execute as a self-hosted script (1.3s)
+  ✓  21 tests/e2e/readiness.spec.ts:182:1 › browser: authenticator enrollment, one-use recovery and mobile factor sign-in (10.1s)
+  ✓  22 tests/e2e/readiness.spec.ts:250:1 › assisted recovery: email-link redemption requires authenticator enrollment before workspace access (3.7s)
+  ✓  23 tests/e2e/readiness.spec.ts:277:1 › recovery cancellation: GET previews are inert and owner confirmation is single-use (1.5s)
+  ✓  24 tests/e2e/signup-atomic.spec.ts:3:1 › website signup retains input after invoice failure and retries the same workspace successfully (3.5s)
+  ✓  25 tests/e2e/step-up.spec.ts:5:1 › stale admin changes require accessible password + factor confirmation and preserve cancelled work (3.2s)
+  ✓  26 tests/e2e/support-errors.spec.ts:3:1 › support submission hides a real storage failure, retains the draft and accepts a corrected retry (1.9s)
+
+  26 passed (1.2m)

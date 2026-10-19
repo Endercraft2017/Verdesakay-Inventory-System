@@ -1,0 +1,125 @@
+{
+  "date": "2026-10-19",
+  "base_commit": "488d413d780b4b6d754fb9998b784d4d9c47787c",
+  "scope": "Queue-wide owner-alert health, filtered redacted history and guarded durable worker heartbeat",
+  "full_run": {
+    "files_passed": 308,
+    "tests_passed": 3212,
+    "failed": 0,
+    "duration_seconds": 647.88
+  },
+  "initial_focused": {
+    "files_passed": 4,
+    "tests_passed": 77,
+    "duration_seconds": 22.05
+  },
+  "final_focused": {
+    "files_passed": 4,
+    "tests_passed": 78,
+    "new_monitor_cases": 36,
+    "duration_seconds": 24.08
+  },
+  "initial_playwright": {
+    "passed": 25,
+    "failed": 1,
+    "reason": "New test expected raw state Unobserved; existing authored label is Not yet observed. Assertion corrected only.",
+    "duration_seconds": 74.388635
+  },
+  "final_playwright": {
+    "passed": 26,
+    "failed": 0,
+    "duration_seconds": 70.22080500000001,
+    "controlled_browser_clock": true
+  },
+  "typecheck": "passed",
+  "db_types": "passed; generated tenant types unchanged",
+  "actual_server_startup": "passed: synthetic signup/inquiry/payment acceptance once, stale claims unknown without resend, durable proof and expired receipt tombstones, persisted completed heartbeat",
+  "secret_scan": "staged increment clean; commit hook scans final staged set again",
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "hosted_rollout_verified": false,
+  "limitations": [
+    "Manual refresh dashboard, not external watchdog/paging; routing/escalation still required",
+    "Worker completion is not provider acceptance or inbox delivery; review count includes historical records",
+    "History membership is live; summary/history are separate statements; cursor is navigation, not authorization",
+    "Summary scans retained metadata; no capacity SLA or per-replica heartbeat certification",
+    "No provider reconciliation, reviewed resend, production load, hosting/restore/native acceptance or whole-control PASS"
+  ],
+  "commit_scan_correction": "Two initial findings were artifact SHA-256 digests under filenames containing secrets; manifest fields separated, no credentials or scan allowlist changes.",
+  "artifact_digests": [
+    {
+      "artifact": "alert-monitor-commit-secrets.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "artifact": "alert-monitor-commit-secrets.txt",
+      "sha256": "bce3aa93d1fb4d0c0fe05088afb29f06ae52b88f34c9dcc2ddd965944b6186e0"
+    },
+    {
+      "artifact": "alert-monitor-db-types.txt",
+      "sha256": "95a6e92b2fe4b24716f2881d542f8421c9f986eb4e48af9846a07d174b99a02c"
+    },
+    {
+      "artifact": "alert-monitor-focused.txt",
+      "sha256": "8af02cc364d25c56af1154c0008323f8cbbc7f6d92c56ccceb79181225e65dd3"
+    },
+    {
+      "artifact": "alert-monitor-full.txt",
+      "sha256": "0a2fa01d55178e66d6116144327c884cc9ab4c2b8399da6dafea445e11abdb87"
+    },
+    {
+      "artifact": "alert-monitor-initial-commit-secrets.json",
+      "sha256": "b6b0dec60752500463702421bd5adc78eec7e87cb34f548bccc8cfc5e67c21f9"
+    },
+    {
+      "artifact": "alert-monitor-initial-commit-secrets.txt",
+      "sha256": "a6f01ddfd76d96597248257a5e8024d8d18570e3144ead52102737913e6c5352"
+    },
+    {
+      "artifact": "alert-monitor-initial-focused.txt",
+      "sha256": "87864200b838e07d71ef80b32fc6149e5d0374de813f4b12d360dc5a402ecdc6"
+    },
+    {
+      "artifact": "alert-monitor-initial-playwright.json",
+      "sha256": "29b0653538b92e030e6697ebdfb873b6e3bd2df360264dddbc46e36dcd3175aa"
+    },
+    {
+      "artifact": "alert-monitor-initial-playwright.txt",
+      "sha256": "9ac2347687ca42caa4bfa70a1512209ff79fb0bc758e2f14df8d9d797bfd5d18"
+    },
+    {
+      "artifact": "alert-monitor-playwright.json",
+      "sha256": "d80408e3da648f3fb3142172166fe2e817ce764da16065268ee75076477392b8"
+    },
+    {
+      "artifact": "alert-monitor-playwright.txt",
+      "sha256": "61fa84cef90059adf9895eab8aa9583ba06e6383ad14200cc9bcdca2c7775c61"
+    },
+    {
+      "artifact": "alert-monitor-scope.md",
+      "sha256": "6585bb853f8bc27d2d90418fe237110cb85c63b89459518837c0db054585ae10"
+    },
+    {
+      "artifact": "alert-monitor-secrets.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "artifact": "alert-monitor-secrets.txt",
+      "sha256": "87754a236c2cf3a12274a6f1595f4a78d9415ba462c2d90a5602a30ad1998986"
+    },
+    {
+      "artifact": "alert-monitor-startup-script.py",
+      "sha256": "b6af77567ea52b8b88eb14dd73c38a633ce226a55d7e6b879e7b2a420b1cf6ff"
+    },
+    {
+      "artifact": "alert-monitor-startup.txt",
+      "sha256": "b05b4fbca8686bedf2722382ca95fc57e6f044a250f58dfd2b184a2afedc1c09"
+    },
+    {
+      "artifact": "alert-monitor-types.txt",
+      "sha256": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95"
+    }
+  ],
+  "final_staged_secret_findings": 0,
+  "initial_final_staged_findings": 2
+}

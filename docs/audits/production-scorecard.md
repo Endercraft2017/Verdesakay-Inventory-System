@@ -332,3 +332,14 @@ commit together; only a constant acknowledgement replays. Bounded async verifier
 rate limits and rechecks live source/expiry after waiting. See operations/inquiry-retries.md and
 evidence/inquiry-receipts-verification.json. This is scoped evidence, not a complete-control
 promotion. Totals 36 PASS/58 FAIL/126 UNVERIFIED/13 N/A and release hold remain unchanged.
+
+
+### Owner-alert monitoring follow-up — 19 October 2026
+
+Medium scoped observability gap addressed: queue-wide counts and filtered history retain
+visibility of failures older than the latest thirty, with durable guarded worker observations.
+Monitoring reads are redacted/read-only and failed/timed-out reads preserve prior evidence.
+See operations/owner-alert-monitoring.md and evidence/alert-monitor-verification.json.
+External watchdog/escalation, provider reconciliation/reviewed resend and hosting acceptance
+remain. Whole-control totals remain 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release hold
+is unchanged. The monitoring dashboard is not inbox verification or operational paging.

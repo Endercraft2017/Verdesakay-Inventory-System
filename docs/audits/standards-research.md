@@ -277,3 +277,20 @@ was also reviewed today: abort covers fetch and response-body consumption. The c
 uses a 20-second application timer, clears it on completion and retains uncertain request
 identity. It does not infer server rollback or claim timer accuracy across browser suspension.
 Controlled Playwright clock advancement follows a real withheld committed HTTP response.
+
+
+### Owner-alert observation — 19 October 2026
+
+Primary sources retrieved today: Google SRE, Monitoring Distributed Systems,
+https://sre.google/sre-book/monitoring-distributed-systems/ and SQLite Row Values,
+https://www.sqlite.org/rowvalue.html . SRE distinguishes internal observations from externally
+visible outcomes and advocates understandable, actionable alerting. This increment displays
+queue symptoms/worker freshness without equating a worker pass with inbox acceptance. A
+manual dashboard does not fulfill paging: external watchdog, routing and escalation remain.
+
+SQLite's scrolling-window discussion informs cursor pagination rather than growing offsets.
+This app uses an explicit comparison predicate to support mixed directions and a queue tie-break
+across two tables. Tests traverse equal timestamps/IDs without loss or duplication. Cursors
+validate navigation values and filter but do not replace authentication or promise snapshots.
+No claim of universal standards compliance or hosted capacity follows from these references.
+The initial search tool request returned an error; direct retrieval of both primary pages succeeded.

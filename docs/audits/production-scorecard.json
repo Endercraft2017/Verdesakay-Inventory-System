@@ -2110,9 +2110,9 @@
   "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
   "latest_follow_up": {
     "date": "2026-10-19",
-    "scope": "Atomic public inquiry receipts, constant acknowledgement, same-page key retention and bounded async verifier admission/live rechecks",
-    "base_commit": "a2a92cc6e49aab8752a923449aaf1a1c5b302d21",
-    "verification": "evidence/inquiry-receipts-verification.json",
+    "scope": "Queue-wide owner-alert health, filtered redacted history and guarded durable worker observations",
+    "base_commit": "488d413d780b4b6d754fb9998b784d4d9c47787c",
+    "verification": "evidence/alert-monitor-verification.json",
     "whole_control_statuses_changed": false
   }
 }

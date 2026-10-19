@@ -509,3 +509,13 @@ Sources: [PayMongo pricing](https://www.paymongo.com/en/pricing),
 All go through `queryOne` / `queryAll` / `run` / `getSetting` / `setSetting` /
 `nextSequence`, so making those six context-aware covers almost everything; the direct
 `db.*` sites (mostly in `db.ts` itself and a few transaction blocks) are the manual part.
+
+
+## Delivery monitoring follow-up — 19 October 2026
+
+Queue-wide counts, filtered keyset history and durable worker observations are implemented.
+The latest-thirty view no longer defines the scope of review. See
+[owner-alert monitoring](operations/owner-alert-monitoring.md) for API parameters, thresholds, redaction, read failures,
+triage and rollback. Unknown delivery remains no-resend; provider reconciliation, reviewed
+recovery, external watchdog/escalation and real-host acceptance remain release gates.
+Monitoring is scoped local evidence, not closure of a whole production control.

@@ -1464,3 +1464,14 @@ No async work/provider send spans that savepoint. Competing receipt uniqueness r
 back; repeat exact request after conflict. Browser keeps one key across edits and failures, so
 changed details cannot silently duplicate an already committed request. Startup/hourly/keyed
 sweeps clear verifier after 24h and retain minimal tombstone. See operations/inquiry-retries.md.
+
+
+## Owner-alert observation and review
+
+Cloud server startup / fifteen-second nonoverlapping pass → `owner-alert-monitor.runOwnerAlertPass`
+persists guarded start → existing outbox processor claims/delivers conservatively → guarded
+finish/outcome. Start persistence failure prevents that pass; finish failure never requeues
+acceptance. Authenticated mail console reads queue-wide counts + heartbeat in one statement,
+and separately paginated redacted history across both queues. Failed/timed-out reads retain
+prior UI evidence. No mutation/resend/resolve or external paging is added. See
+`operations/owner-alert-monitoring.md` for thresholds and release limits.
