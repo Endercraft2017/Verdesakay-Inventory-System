@@ -254,7 +254,10 @@ App.register('stock-counts', async (view, filter = {}) => {
           ${context.serials.length ? `<p><strong>Scan/check each serial physically present</strong>. Leave a missing unit unchecked.</p>
             <div style="max-height:220px;overflow:auto">${context.serials.map(s =>
               `<label class="check-opt" style="display:block"><input type="checkbox" data-pc-serial="${UI.esc(s.code)}"> ${UI.esc(s.code)} <span class="muted small">${UI.esc(s.status)}</span></label>`).join('')}</div>
-            <p class="muted small">For an unexpected serial absent from this list, record its code in the note; do not count it as untracked stock.</p>` : ''}
+            ` : ''}
+          <div class="form-field"><label for="pc-extra-serials">Unexpected serials physically found (one per line)</label>
+            <textarea id="pc-extra-serials" rows="2" placeholder="Only labels absent from the list above"></textarea>
+            <p class="muted small">Record the exact label. Do not include these units in the untracked quantity; a supervisor must investigate their unit records.</p></div>
           ${context.batches.length ? `<p><strong>Count each exact production batch</strong></p>
             <div style="overflow-x:auto"><table><thead><tr><th>Batch</th><th class="right">Book</th><th class="right">Reserved</th><th>Counted</th></tr></thead><tbody>
             ${context.batches.map(b => `<tr><td>${UI.esc(b.number)}</td><td class="right">${b.quantity}</td><td class="right">${b.reserved}</td>
@@ -271,11 +274,19 @@ App.register('stock-counts', async (view, filter = {}) => {
             error.textContent='Enter a whole physical count for untracked stock and every batch.';return;}
           const note=capture.querySelector('#pc-note').value.trim();
           if(note.length<10){error.textContent='Describe the count and any exceptions (at least 10 characters).';return;}
+          const checked=[...capture.querySelectorAll('[data-pc-serial]:checked')].map(e=>e.dataset.pcSerial);
+          const extra=capture.querySelector('#pc-extra-serials').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+          const allSerials=[...checked,...extra];
+          if(allSerials.length>500||allSerials.some(s=>s.length>120)||
+            new Set(allSerials.map(s=>s.toLocaleLowerCase())).size!==allSerials.length ||
+            extra.some(s=>context.serials.some(book=>book.code.toLocaleLowerCase()===s.toLocaleLowerCase()))){
+            error.textContent='Enter each unexpected serial once, one per line (up to 120 characters). Check listed serials above instead of entering them again.';return;
+          }
           const payload={item_id,location_id,build_mode,expected_quantity:context.book_quantity,
             expected_serial_ids:context.serials.map(s=>s.id),
             expected_batches:context.batches.map(b=>({batch_id:b.batch_id,quantity:b.quantity})),
             counted_untracked:Number(untracked),
-            counted_serial_codes:[...capture.querySelectorAll('[data-pc-serial]:checked')].map(e=>e.dataset.pcSerial),
+            counted_serial_codes:allSerials,
             counted_batches:batchInputs.map(e=>({batch_id:Number(e.dataset.pcBatch),quantity:Number(e.value)})),
             note,source_kind:seed.source_kind||'manual',source_id:seed.source_id||null,task_id:seed.task_id||null};
           if(!attempt) attempt={payload,key:'stock-count-'+(window.crypto?.randomUUID?.()||Date.now()+'-'+Math.random())};
@@ -298,6 +309,14 @@ App.register('stock-counts', async (view, filter = {}) => {
   async function openCount(id) {
     const c=await API.get('/inventory/stock-counts/'+id);
     const serials=c.counted_serial_codes.length ? c.counted_serial_codes.map(UI.esc).join(', ') : 'None';
+    const unitLink=(u,label)=>u.job_order_id
+      ? `<button type="button" class="btn secondary small" data-pc-job="${u.job_order_id}">${UI.esc(label)}</button>`
+      : UI.esc(label);
+    const missing=(c.missing_serials||[]).map(u=>`<li>${unitLink(u,u.code)} <span class="muted small">${UI.esc(u.status)} · unit #${u.id}</span></li>`).join('');
+    const unexpected=(c.unexpected_serials||[]).map(entry=>`<li><strong>${UI.esc(entry.code)}</strong> · ${entry.matches.length===1
+      ? `${unitLink(entry.matches[0],'Open unit record')} <span class="muted small">${UI.esc(entry.matches[0].status)} · unit #${entry.matches[0].id}</span>`
+      : entry.matches.length>1 ? 'Multiple matching records; investigate label' : 'No matching unit record; investigate label'}
+      </li>`).join('');
     const batches=c.counted_batches.length ? c.counted_batches.map(b=>{
       const current=c.current_batches.find(x=>x.batch_id===b.batch_id);
       return `${UI.esc(current?.number || '#'+b.batch_id)}: ${b.quantity}`;
@@ -306,6 +325,12 @@ App.register('stock-counts', async (view, filter = {}) => {
       `<p><strong>${UI.esc(c.item_name)}</strong> · ${UI.esc(c.location_name)} · ${c.build_mode === 'semi_built' ? 'Semi-built' : 'Fully built / standard'}</p>
        <p>Book ${c.book_quantity} → counted <strong>${c.counted_quantity}</strong> · variance <strong>${c.variance>0?'+':''}${c.variance}</strong> · now ${c.current_quantity}</p>
        <p><strong>Untracked:</strong> ${c.counted_untracked}<br><strong>Serials found:</strong> ${serials}<br><strong>Batches:</strong> ${batches}</p>
+       ${missing||unexpected ? `<div class="panel" style="margin:12px 0;padding:12px">
+         <strong>Serial exceptions</strong>
+         ${missing?`<p class="small">Missing from this location's book list:</p><ul>${missing}</ul>`:''}
+         ${unexpected?`<p class="small">Found but absent from this location's book list:</p><ul>${unexpected}</ul>`:''}
+         <p class="muted small">Review the exact unit and its location or sales state. Resolve through its owning workflow, then return here to verify. This count does not move serialized stock.</p>
+       </div>`:''}
        <p><strong>Counter note:</strong> ${UI.esc(c.note)}</p>
        ${c.source_kind !== 'manual' ? `<p><strong>Linked issue:</strong> ${UI.esc(c.source_kind.replace('_',' '))} #${c.source_id} · ${c.source_closed_at ? 'closed from this count' : UI.esc(c.source_status)}</p>
          ${c.source_status === 'changed' ? '<p class="danger">Sale audit evidence changed after this count. Refresh the audit and start a new count before closing it.</p>' : ''}
@@ -320,6 +345,9 @@ App.register('stock-counts', async (view, filter = {}) => {
          ${c.status==='approved'&&canReview ? '<button class="btn" data-pc-action="apply">Apply safe correction</button><button class="btn secondary" data-pc-action="verify">Verify separately corrected</button>' : ''}
          ${c.status==='applied'&&c.source_status==='open'&&!c.source_closed_at&&canReview ? '<button class="btn" data-pc-action="close-source">Close linked issue</button>' : ''}
        </div><div id="pc-action-error" role="alert"></div>`});
+    modal.querySelectorAll('[data-pc-job]').forEach(b=>b.onclick=()=>{
+      modal.__close();App.navigate('job-orders',{id:Number(b.dataset.pcJob)});
+    });
     modal.querySelectorAll('[data-pc-action]').forEach(b=>b.onclick=async()=>{
       const action=b.dataset.pcAction, note=modal.querySelector('#pc-action-note').value.trim();
       const error=modal.querySelector('#pc-action-error');error.textContent='';

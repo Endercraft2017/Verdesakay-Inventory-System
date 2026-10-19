@@ -68,6 +68,25 @@ No mobile source was changed.
 
 ## Physical stock counts and variance resolution (2026-10-16)
 
+### Serialized exceptions (2026-10-19)
+
+The desktop count now has a separate **Unexpected serials physically found**
+field (one exact label per line). Send those labels in the existing
+`counted_serial_codes` array alongside checked book serials. Do not add them to
+`counted_untracked`. The API rejects duplicate labels without regard to case.
+`GET /api/inventory/stock-counts/:id` and the submit response now expose
+`book_serials`, `missing_serials` (book units absent from the observation), and
+`unexpected_serials` (`{code,matches}`), where a match contains unit ID, job
+order ID, status and location ID. Show missing and unexpected as separate lists.
+Only link a found label when there is exactly one matching unit; ambiguous or
+unknown labels need investigation. Open that unit's job order and existing
+exact-unit actions; no count action creates, relocates or writes off a serial.
+After the supervised unit movement, reload the count and use the existing
+`POST .../:id/verify` guard. Keep approval independent and require its note.
+Check the phone layout and camera/QR path for duplicate scans, reserved units,
+already-shipped units, ambiguous labels and offline retries. Mobile source is
+owned by the mobile team and was not edited here.
+
 The new Inventory → Physical Counts desktop workflow counts **one item, exact
 location and build state** at a time. Schema v88 records the book snapshot,
 counter, physically found untracked quantity, checked serial codes, quantities

@@ -82,6 +82,26 @@ function snapshot(itemId:number,locationId:number,mode:Mode):Snapshot|null {
 }
 function recordedBatches(batches:Batch[]) {return batches.map(b=>({batch_id:b.batch_id,quantity:b.quantity}));}
 function sortedCodes(codes:string[]) {return [...codes].sort((a,b)=>a.localeCompare(b));}
+type UnitReference={id:number;code:string;status:string;job_order_id:number;location_id:number|null};
+function unitReference(u:{id:number;identifier:string|null;status:string;job_order_id:number;location_id:number|null}):UnitReference {
+  return {id:u.id,code:serialCode(u),status:u.status,job_order_id:u.job_order_id,location_id:u.location_id};
+}
+function serialEvidence(c:Count) {
+  const observed=JSON.parse(c.counted_serial_ids) as string[];
+  const bookIds=JSON.parse(c.book_serial_ids) as number[];
+  const book=bookIds.map(unitId=>queryOne<{id:number;identifier:string|null;status:string;job_order_id:number;location_id:number|null}>(
+    'SELECT id,identifier,status,job_order_id,location_id FROM job_order_units WHERE id=?',unitId))
+    .filter((u):u is NonNullable<typeof u>=>!!u).map(unitReference);
+  const observedCodes=new Set(observed);
+  const bookCodes=new Set(book.map(u=>u.code));
+  const unexpected=observed.filter(code=>!bookCodes.has(code)).map(code=>{
+    const matches=queryAll<{id:number;identifier:string|null;status:string;job_order_id:number;location_id:number|null}>(
+      `SELECT id,identifier,status,job_order_id,location_id FROM job_order_units
+       WHERE LOWER(TRIM(identifier))=LOWER(?) OR ('#'||id)=? ORDER BY id LIMIT 10`,code,code).map(unitReference);
+    return {code,matches};
+  });
+  return {book_serials:book,missing_serials:book.filter(u=>!observedCodes.has(u.code)),unexpected_serials:unexpected};
+}
 function same(a:unknown,b:unknown) {return JSON.stringify(a)===JSON.stringify(b);}
 function countedTotal(c:Count) {
   return c.counted_untracked+(JSON.parse(c.counted_serial_ids) as string[]).length+
@@ -104,14 +124,14 @@ function sourceState(c:Count) {
   const candidate=findDirectSaleStockoutCase(c.source_id,c.item_id);
   return !candidate?'missing':candidate.evidence_hash!==c.source_evidence_hash?'changed':candidate.status;
 }
-function detail(c:Count) {
+function detail(c:Count,includeSerialEvidence=true) {
   const item=queryOne<{name:string;sku:string|null}>('SELECT name,sku FROM inventory_items WHERE id=?',c.item_id);
   const current=snapshot(c.item_id,c.location_id,c.build_mode);
   const movements=queryAll<{transaction_id:number;batch_id:number|null;change:number;reason:string|null}>(
     `SELECT m.transaction_id,m.batch_id,t.change,t.reason FROM stock_count_movements m
       JOIN inventory_transactions t ON t.id=m.transaction_id WHERE m.count_id=? ORDER BY t.id`,c.id);
   const task=c.task_id?taskById(c.task_id):null;
-  return {...c,item_name:item?.name??'(removed)',sku:item?.sku??null,
+  return {...c,...(includeSerialEvidence?serialEvidence(c):{}),item_name:item?.name??'(removed)',sku:item?.sku??null,
     location_name:current?.location_name??'(removed)',counted_quantity:countedTotal(c),
     variance:countedTotal(c)-c.book_quantity,current_quantity:current?.book_quantity??null,
     book_serial_ids:JSON.parse(c.book_serial_ids),book_batches:JSON.parse(c.book_batches),
@@ -252,7 +272,7 @@ router.get('/',requirePermission('inventory.view'),(req,res)=>{
   }
   const rows=queryAll<Count>(`SELECT c.* FROM stock_counts c WHERE ${where} ORDER BY c.id DESC LIMIT 300`,
     ...(status==='all'||status==='open'?[]:[status]));
-  res.json(rows.map(detail));
+  res.json(rows.map(row=>detail(row,false)));
 });
 router.get('/:id',requirePermission('inventory.view'),(req,res)=>{
   const row=count(req);
@@ -269,7 +289,9 @@ router.post('/',requirePermission('inventory.view'),syncClass('physical',countHo
     res.status(409).json({error:'Stock changed since the count screen loaded; refresh and recount',code:'stale_count'});return;
   }
   const codes=input.counted_serial_codes;
-  if(new Set(codes).size!==codes.length){res.status(400).json({error:'A serial was counted more than once'});return;}
+  if(new Set(codes.map(code=>code.toLocaleLowerCase())).size!==codes.length){
+    res.status(400).json({error:'A serial was counted more than once'});return;
+  }
   const batchIds=current.batches.map(b=>b.batch_id);
   if(!same(batchIds,input.counted_batches.map(b=>b.batch_id))){
     res.status(400).json({error:'Enter one count for every displayed batch, in the shown order'});return;

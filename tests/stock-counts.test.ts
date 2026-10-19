@@ -274,6 +274,10 @@ describe('physical stock count',()=>{
     expect(damage.body.code).toBe('use_unit_workflow');
     const created=await submit(c,{counted_serial_codes:[]});
     expect(created.status).toBe(201);
+    expect(created.body.missing_serials).toEqual([expect.objectContaining({
+      id:pending.id,code:'COUNT-SERIAL-1',job_order_id:mo,status:'in_stock',
+    })]);
+    expect(created.body.unexpected_serials).toEqual([]);
     const countId=created.body.id;
     expect((await ctx.api.post(`/api/inventory/stock-counts/${countId}/approve`).set(H(admin))
       .send({note:'Confirmed the serial was absent from the shelf'})).status).toBe(200);
@@ -281,6 +285,22 @@ describe('physical stock count',()=>{
     expect(blocked.status).toBe(409);
     expect(blocked.body.code).toBe('tracked_resolution_required');
     expect((await ctx.api.get(`/api/inventory/${product}`).set(H(admin))).body.quantity).toBe(1);
+
+    const otherMode=await context(product,receivable.output_location_id,'semi_built');
+    const found=await submit(otherMode,{counted_serial_codes:['COUNT-SERIAL-1','UNKNOWN-LABEL']});
+    expect(found.status).toBe(201);
+    expect(found.body).toMatchObject({counted_quantity:2,missing_serials:[],unexpected_serials:[
+      {code:'COUNT-SERIAL-1',matches:[{id:pending.id,job_order_id:mo,status:'in_stock'}]},
+      {code:'UNKNOWN-LABEL',matches:[]},
+    ]});
+    expect((await ctx.api.post(`/api/inventory/stock-counts/${found.body.id}/approve`).set(H(admin))
+      .send({note:'Investigate both unexpected unit labels'})).status).toBe(200);
+    expect((await ctx.api.post(`/api/inventory/stock-counts/${found.body.id}/apply`).set(H(admin)).send({})).body.code)
+      .toBe('tracked_resolution_required');
+    expect((await ctx.api.post(`/api/inventory/stock-counts/${found.body.id}/verify`).set(H(admin))
+      .send({note:'No exact unit movement has reconciled these labels'})).body.code).toBe('not_reconciled');
+    expect((await ctx.api.get(`/api/inventory/${product}`).set(H(admin))).body.quantity).toBe(1);
+    expect((await submit(otherMode,{counted_serial_codes:['LABEL','label']})).status).toBe(400);
   });
 
   it('corrects the exact named batch and links its movement to the approved count',async()=>{

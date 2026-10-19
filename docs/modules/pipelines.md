@@ -219,8 +219,12 @@ An independent `inventory.adjust` holder approves or rejects the observation.
 After approval, an untracked difference and each named batch difference can be
 posted as separate linked inventory movements. Batch correction preserves sale
 reservations and known receipt/shipment/return provenance. A serial mismatch
-blocks generic correction; resolve exact unit records through their owning
-workflow, then verify that the current balance and tracked identities equal the count.
+blocks generic correction. The count explicitly lists missing book serials and
+unexpected physical labels. A uniquely matched unit links to its job order,
+with status and unit ID visible; unknown or ambiguous labels stay investigation
+items. Resolve exact unit records through their owning workflow, then verify
+that the current balance and tracked identities equal the count. Typing an
+unexpected label never creates or moves stock.
 The count stores its source issue, counter, reviewer, notes and correction
 transaction. A supervisor separately closes a linked discrepancy or direct-sale
 audit after reconciliation, with a note and a current physical-stock check. A
