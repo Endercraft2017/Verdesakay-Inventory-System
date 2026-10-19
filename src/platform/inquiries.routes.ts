@@ -11,7 +11,8 @@ import { onTenantPathHost } from './tenant-path';
 import { createInquiry } from './inquiries';
 import { MODULES } from '../shared/modules';
 import { rateLimitKey } from '../shared/device';
-import { notifyOwner } from './platform-mail';
+import { prepareOwnerAlerts, enqueueOwnerAlert } from './owner-alert-outbox';
+import { forwardControlPlaneError } from './request-errors';
 
 const router = Router();
 
@@ -36,7 +37,7 @@ const schema = z.object({
   website: z.string().optional(), // honeypot: people never see it, bots fill it in
 });
 
-router.post('/', limiter, (req, res) => {
+router.post('/', limiter, (req, res, next) => {
   if (!onTenantPathHost(req.headers.host)) { res.status(404).json({ error: 'Not found' }); return; }
   const parsed = schema.safeParse(req.body ?? {});
   if (!parsed.success) {
@@ -46,14 +47,18 @@ router.post('/', limiter, (req, res) => {
   const b = parsed.data;
   // A bot filled the hidden field: answer like a success so it learns nothing, store nothing.
   if (b.website) { res.status(201).json({ ok: true }); return; }
-  createInquiry({ name: b.name, company: b.company, email: b.email, phone: b.phone || null,
-    employees: b.employees || null, modules: b.modules, message: b.message || null });
-  void notifyOwner('inquiry', `New inquiry: ${b.company}`, [
-    `${b.name} from ${b.company} sent the "Talk to us" form.`, '',
-    `Email: ${b.email}`, b.phone ? `Mobile: ${b.phone}` : '', b.employees ? `Employees: ${b.employees}` : '',
-    b.modules?.length ? `Interested in: ${b.modules.join(', ')}` : '', b.message ? `\nMessage:\n${b.message}` : '',
-  ]);
-  res.status(201).json({ ok: true });
+  try {
+    prepareOwnerAlerts();
+    createInquiry({ name: b.name, company: b.company, email: b.email, phone: b.phone || null,
+      employees: b.employees || null, modules: b.modules, message: b.message || null }, inquiry => {
+    enqueueOwnerAlert('inquiry', inquiry.id, '', `New inquiry: ${b.company}`, [
+      `${b.name} from ${b.company} sent the "Talk to us" form.`, '',
+      `Email: ${b.email}`, b.phone ? `Mobile: ${b.phone}` : '', b.employees ? `Employees: ${b.employees}` : '',
+      b.modules?.length ? `Interested in: ${b.modules.join(', ')}` : '', b.message ? `\nMessage:\n${b.message}` : '',
+    ]);
+    });
+    res.status(201).json({ ok: true });
+  } catch (error) { forwardControlPlaneError(error, next); }
 });
 
 export default router;

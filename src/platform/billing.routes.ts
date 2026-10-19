@@ -13,7 +13,8 @@ import { syncClass } from '../sync';
 import { DEFAULT_TENANT } from '../shared/db';
 import { currentSlug } from './quota';
 import { getTenant } from './platform';
-import { notifyOwner } from './platform-mail';
+import { prepareOwnerAlerts, enqueueOwnerAlert } from './owner-alert-outbox';
+import { forwardControlPlaneError } from './request-errors';
 import {
   listInvoices, getInvoice, getPayment, invoiceView, getBillingSettings, submitPayment, paymentInstructions,
   resolveBillingFile, fileType, toCentavos, BillingError, BILLING_FILE_MAX_BYTES, type UploadedFile,
@@ -49,7 +50,7 @@ router.get('/gcash-qr', (_req, res) => {
 
 // POST /api/tenant/billing/invoices/:id/payments — multipart
 // { channel: 'bank'|'gcash', reference_no, amount, paid_on, note?, proof: <file>, form_2307?: <file> }
-router.post('/invoices/:id/payments', syncClass('online'), upload, (req: Request, res) => {
+router.post('/invoices/:id/payments', syncClass('online'), upload, (req: Request, res, next) => {
   const slug = currentSlug();
   if (slug === DEFAULT_TENANT) { res.status(404).json({ error: 'Billing is not used on this installation.' }); return; }
   const files = (req.files || {}) as Record<string, Express.Multer.File[] | undefined>;
@@ -57,6 +58,8 @@ router.post('/invoices/:id/payments', syncClass('online'), upload, (req: Request
     f ? { buffer: f.buffer, originalname: f.originalname, mimetype: f.mimetype } : null;
   try {
     const b = req.body || {};
+    prepareOwnerAlerts();
+    let view: ReturnType<typeof invoiceView> | undefined;
     submitPayment(slug, Number(req.params.id), {
       channel: String(b.channel || 'bank'),
       reference_no: String(b.reference_no || ''),
@@ -65,18 +68,20 @@ router.post('/invoices/:id/payments', syncClass('online'), upload, (req: Request
       note: b.note ? String(b.note) : undefined,
       proof: asUpload(files.proof?.[0]),
       form_2307: asUpload(files.form_2307?.[0]),
-    }, req.user!.username);
-    const inv = invoiceView(getInvoice(Number(req.params.id))!);
-    const channel = String(b.channel || 'bank') === 'gcash' ? 'GCash' : 'bank transfer';
-    void notifyOwner('payment', `Payment to check: ${slug} ${inv.reference}`, [
-      `${getTenant(slug)?.name || slug} reported a ${channel} for invoice ${inv.reference}.`, '',
-      `Amount: ₱${String(b.amount)}`, `Reference no.: ${String(b.reference_no || '')}`, `Paid on: ${String(b.paid_on || '')}`,
-      `Check it in your ${channel === 'GCash' ? 'GCash history' : 'bank app'}, then confirm or reject it in Billing.`,
-    ]);
-    res.status(201).json(inv);
+    }, req.user!.username, (payment, invoice) => {
+      const inv = invoiceView(invoice);
+      const channel = payment.method === 'gcash' ? 'GCash' : 'bank transfer';
+      enqueueOwnerAlert('payment', payment.id, slug, `Payment to check: ${slug} ${inv.reference}`, [
+        `${getTenant(slug)?.name || slug} reported a ${channel} for invoice ${inv.reference}.`, '',
+        `Amount: ₱${(payment.amount_centavos / 100).toFixed(2)}`, `Reference no.: ${payment.reference_no || ''}`, `Paid on: ${payment.paid_on || ''}`,
+        `Check it in your ${channel === 'GCash' ? 'GCash history' : 'bank app'}, then confirm or reject it in Billing.`,
+      ]);
+      view = inv;
+    });
+    res.status(201).json(view);
   } catch (e) {
     if (e instanceof BillingError) { res.status(e.status).json({ error: e.message }); return; }
-    throw e;
+    forwardControlPlaneError(e, next);
   }
 });
 

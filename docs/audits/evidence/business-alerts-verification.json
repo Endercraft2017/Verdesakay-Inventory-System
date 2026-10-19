@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-19",
+  "base_commit": "2c868a5f9c335725ca481e2cedde1b3394d7dc6d",
+  "scope": "Inquiry/payment transactional owner-alert intent, atomic proof/reporting and consistent mail settings/secret snapshots",
+  "full_run": {
+    "files_passed": 305,
+    "tests_passed": 3119,
+    "failed": 0,
+    "duration_seconds": 598.73
+  },
+  "initial_focused": {
+    "passed": 17,
+    "failed": 1,
+    "cause": "Wrong-company fixture issued an invoice to a nonexistent tenant; corrected to an actual other tenant."
+  },
+  "final_focused": {
+    "files_passed": 6,
+    "tests_passed": 91,
+    "duration_seconds": 42.32,
+    "new_business_cases": 22,
+    "new_configuration_cases": 3
+  },
+  "initial_playwright": {
+    "passed": 19,
+    "failed": 1,
+    "cause": "Email locator also matched a module checkbox; use textbox role. Initial text/JSON retained; trace/screenshot overwritten."
+  },
+  "first_corrected_playwright": {
+    "passed": 20,
+    "failed": 0,
+    "duration_seconds": 55.5
+  },
+  "final_playwright": {
+    "passed": 20,
+    "failed": 0,
+    "duration_seconds": 54.7
+  },
+  "actual_server_startup": "passed: one synthetic signup/inquiry/payment accepted each; stale claims in both tables unknown without resend; durable proof retained",
+  "typecheck": "passed; intermediate projection-inference correction compiler output overwritten, not retained",
+  "db_types": "passed; no generated tenant-type diff",
+  "secret_scan": "staged increment clean; commit hook scans again",
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "hosted_rollout_verified": false,
+  "limitations": "No HTTP retry receipts for inquiry/payment; separate POSTs can create distinct sources. Provider/financial/legacy/duplicate reconciliation, reviewed resend, backlog escalation, upload-content and wider financial lifecycle acceptance, retention approval and live provider/hosting/restore/Windows/capacity gates remain. No complete-control PASS, CI-green or production-ready claim."
+}

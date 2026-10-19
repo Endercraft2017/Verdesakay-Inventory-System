@@ -115,8 +115,8 @@ bot defense. Broader signup admission/async work and hosted abuse/capacity accep
 
 - Broader create/import/API retry coverage, signup work admission and distributed abuse/capacity
   acceptance; current receipt protection requires the same key and covered route.
-- Signup has a transactional alert outbox and bounded worker (owner-alert-outbox.md). Inquiry/
-  payment intent, reviewed resend/provider reconciliation, backlog monitoring and broader
+- Signup, inquiry and payment reports have transactional alert intent and a bounded worker
+  (owner-alert-outbox.md, business-alerts.md). Reviewed resend/provider reconciliation, backlog monitoring and broader
   notification acceptance remain. Uncertain sends require review, not automatic replay.
 - Real provider, hosted filesystem, Windows, power-loss and multi-host acceptance, plus review
   of imported schema/credential state and legacy interrupted artifacts.
@@ -136,5 +136,6 @@ https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
 Our contract differs from Stripe: completed successes only, UUID-v4-only keys and permanent
 tombstones. This is an application contract, not a claim that an Idempotency-Key RFC is final.
 
-Signup notification follow-up: owner-alert-outbox.md supersedes earlier best-effort signup
-notification limitations only. Inquiry/payment alerts still send immediately.
+Notification follow-up: owner-alert-outbox.md and business-alerts.md supersede earlier immediate
+signup/inquiry/payment alert limitations for the updated HTTP routes. Inquiry/payment POSTs have
+no durable request receipts; reconcile a lost response before submitting again.

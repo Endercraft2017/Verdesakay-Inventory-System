@@ -1425,5 +1425,19 @@ claim → provider outside transaction → guarded result + attempt-log savepoin
 retries with persisted backoff/Retry-After and five-attempt budget; uncertainty/partial acceptance/
 stale claims never requeue automatically. Configuration change cancels old unsent information.
 Console Email alerts reads redacted recent status and preserves it if refresh fails. Payloads
-logically expire after terminal+24h or creation+7d; event metadata remains. Inquiry/payment paths
-still send immediately. See operations/owner-alert-outbox.md for recovery and acceptance limits.
+logically expire after terminal+24h or creation+7d; event metadata remains. Inquiry/payment paths now use the separate business queue described below. See operations/owner-alert-outbox.md for recovery and acceptance limits.
+
+## Durable inquiry/payment intent (2026-10-19)
+
+Validated public inquiry → warmed schemas → inquiry savepoint → source row + enabled intent
+→ commit → guarded worker claim/provider/result. Authenticated online payment report → validate
+→ catalog writer/recheck invoice → durable proof/2307 bytes + payment/audit/invoice state
+→ prepared response + enabled intent → commit. Proof disk cache materializes only on download.
+Distinct UUID filenames prevent same-millisecond overwrites. Failures roll back local source/
+bytes/intent together. No file cache or external send occurs inside source publication.
+
+New business events use platform_business_outbox so old signup-only workers cannot consume them.
+Current worker selects from both tables and claims with due/state/attempt guards; source checks
+and conservative uncertainty/retry remain. Settings/secret/key are read in one statement; settings/
+secret updates and console audit share savepoints. See operations/business-alerts.md for upgrade/
+rollback, retention, incomplete HTTP idempotency and external acceptance requirements.

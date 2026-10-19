@@ -466,9 +466,9 @@ export function resolveBillingFile(slug: string, name: string): string | null {
   const row = platformDb().prepare('SELECT data FROM platform_durable_files WHERE slug = ? AND name = ?')
     .get(slug, safe) as { data: Uint8Array } | undefined;
   if (!row) return null;
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temp = `${file}.${crypto.randomBytes(6).toString('hex')}.tmp`;
-  try { fs.writeFileSync(temp, Buffer.from(row.data), { flag: 'wx' }); fs.renameSync(temp, file); }
+  try { fs.writeFileSync(temp, Buffer.from(row.data), { flag: 'wx', mode: 0o600 }); fs.renameSync(temp, file); }
   finally { try { fs.unlinkSync(temp); } catch { /* already moved */ } }
   return file;
 }
@@ -483,10 +483,8 @@ export const BILLING_FILE_MAX_BYTES = 10 * 1024 * 1024;
 function saveFile(slug: string, paymentTag: string, kind: FileKind, f: UploadedFile): string {
   const ext = ALLOWED_TYPES[f.mimetype];
   if (!ext) throw new BillingError('Upload a JPG, PNG, WebP or PDF file.');
-  const dir = billingFilesDir(slug);
-  fs.mkdirSync(dir, { recursive: true });
   const name = `${paymentTag}-${kind}${ext}`;
-  fs.writeFileSync(path.join(dir, name), f.buffer);
+  if (!f.buffer.length || f.buffer.length > BILLING_FILE_MAX_BYTES) throw new BillingError('Upload a nonempty file no larger than 10 MB.');
   keepBillingFile(slug, name, f.buffer);
   return name;
 }
@@ -500,7 +498,7 @@ export function fileType(name: string): string {
 export function submitPayment(slug: string, invoiceId: number, input: {
   channel: string; reference_no: string; amount_centavos: number; paid_on: string; note?: string;
   proof: UploadedFile | null; form_2307?: UploadedFile | null;
-}, by: string): PaymentRow {
+}, by: string, setup?: (payment: PaymentRow, invoice: InvoiceRow) => undefined): PaymentRow {
   const channel = input.channel || 'bank';
   if (!(CUSTOMER_CHANNELS as readonly string[]).includes(channel)) throw new BillingError('Choose bank transfer or GCash.');
   const inv = getInvoice(invoiceId);
@@ -512,17 +510,29 @@ export function submitPayment(slug: string, invoiceId: number, input: {
   if (!isDate(input.paid_on) || input.paid_on > today()) throw new BillingError('Enter the date of the transfer.');
   if (!input.proof) throw new BillingError('Attach the transfer receipt or deposit slip.');
 
-  const tag = `${inv.reference}-${Date.now().toString(36)}`;
-  const proof = saveFile(slug, tag, 'proof', input.proof);
-  const f2307 = input.form_2307 ? saveFile(slug, tag, 'form_2307', input.form_2307) : null;
-  const info = db().prepare(
-    `INSERT INTO billing_payments (invoice_id, method, reference_no, amount_centavos, paid_on, proof_file,
-       form_2307_file, note, submitted_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(invoiceId, channel, reference, input.amount_centavos, input.paid_on, proof, f2307, input.note?.trim() || null, by);
-  logProvisioning(slug, 'billing', `${by}: reported a ${channel === 'gcash' ? 'GCash payment' : 'transfer'} for ${inv.reference}`);
-  settle(invoiceId, by);
-  return getPayment(Number(info.lastInsertRowid))!;
+  const d = db();
+  d.exec('SAVEPOINT submit_payment');
+  try {
+    // Admit the catalog writer before rechecking invoice status; another operator may settle it.
+    d.prepare('UPDATE billing_invoices SET id=id WHERE id=? AND tenant_slug=?').run(invoiceId,slug);
+    const current = getInvoice(invoiceId);
+    if (!current || current.tenant_slug !== slug) throw new BillingError('Invoice not found.',404);
+    if (current.status === 'paid' || current.status === 'void') throw new BillingError(`This invoice is already ${current.status}.`,409);
+    const tag = `${inv.reference}-${crypto.randomUUID()}`;
+    const proof = saveFile(slug, tag, 'proof', input.proof);
+    const f2307 = input.form_2307 ? saveFile(slug, tag, 'form_2307', input.form_2307) : null;
+    const info = db().prepare(
+      `INSERT INTO billing_payments (invoice_id, method, reference_no, amount_centavos, paid_on, proof_file,
+         form_2307_file, note, submitted_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(invoiceId, channel, reference, input.amount_centavos, input.paid_on, proof, f2307, input.note?.trim() || null, by);
+    logProvisioning(slug, 'billing', `${by}: reported a ${channel === 'gcash' ? 'GCash payment' : 'transfer'} for ${inv.reference}`);
+    const invoice = settle(invoiceId, by);
+    const payment = getPayment(Number(info.lastInsertRowid))!;
+    setup?.(payment,invoice);
+    d.exec('RELEASE submit_payment');
+    return payment;
+  } catch (error) { d.exec('ROLLBACK TO submit_payment'); d.exec('RELEASE submit_payment'); throw error; }
 }
 
 export function confirmPayment(paymentId: number, by: string, opts: { bir_invoice_no?: string; note?: string } = {}): InvoiceRow {

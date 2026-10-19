@@ -62,13 +62,20 @@ export interface NewInquiry {
   employees?: string | null; modules?: string[]; message?: string | null;
 }
 
-export function createInquiry(input: NewInquiry): InquiryRow {
-  const mods = (input.modules || []).filter((m) => (MODULES as readonly string[]).includes(m));
-  const info = db().prepare(
-    `INSERT INTO inquiries (name, company, email, phone, employees, modules, message) VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(input.name, input.company, input.email, input.phone || null, input.employees || null,
-    mods.length ? JSON.stringify(mods) : null, input.message || null);
-  return getInquiry(Number(info.lastInsertRowid))!;
+export function createInquiry(input: NewInquiry, setup?: (inquiry: InquiryRow) => undefined): InquiryRow {
+  const d = db(); // Initialize schema before the rollbackable transaction.
+  d.exec('SAVEPOINT create_inquiry');
+  try {
+    const mods = (input.modules || []).filter((m) => (MODULES as readonly string[]).includes(m));
+    const info = db().prepare(
+      `INSERT INTO inquiries (name, company, email, phone, employees, modules, message) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(input.name, input.company, input.email, input.phone || null, input.employees || null,
+      mods.length ? JSON.stringify(mods) : null, input.message || null);
+    const row = getInquiry(Number(info.lastInsertRowid))!;
+    setup?.(row);
+    d.exec('RELEASE create_inquiry');
+    return row;
+  } catch (error) { d.exec('ROLLBACK TO create_inquiry'); d.exec('RELEASE create_inquiry'); throw error; }
 }
 
 export function getInquiry(id: number): InquiryRow | null {

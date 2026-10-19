@@ -457,8 +457,10 @@ is encrypted in `platform.db` (with `MAIL_SECRET_KEY` / `APP_SECRET` when set) a
 **Delivery follow-up (2026-10-19):** enabled signup alert intent now commits with workspace/local
 setup and is processed by a durable bounded cloud worker. Console Email alerts shows recent
 delivery state. Unknown sends do not automatically retry; provider acceptance is not inbox
-delivery. Mailbox changes cancel old unsent information. Inquiry/payment alerts still use the
-immediate path. See [signup alert outbox](operations/owner-alert-outbox.md) for exact states,
+delivery. Mailbox changes cancel old unsent information. Inquiry/payment intent now commits
+with its source in a separate business queue; payment proof/report/audit/invoice writes are
+atomic. See [business alerts](operations/business-alerts.md) and
+[owner alert outbox](operations/owner-alert-outbox.md) for exact states,
 retention, restore reconciliation and outstanding provider/operational acceptance.
 
 **First invoice:** the console's price list (per module per month + per login seat) prices the
@@ -475,7 +477,7 @@ opens, a `trial`/`past_due` one becomes `active` (a `suspended` one is left alon
 (`public/js/modules/core/billing.js`), banner link, and the locked shell while awaiting payment.
 
 **Not built:** PayMongo (checkout + webhook, then subscriptions); automatic overdue → `past_due`;
-transactional inquiry/payment alert intent and broader notification reconciliation/monitoring;
+inquiry/payment HTTP retry receipts and broader notification reconciliation/monitoring;
 recurring monthly invoices (the operator issues them).
 
 **Not verified:** the EWT / invoicing rules should be confirmed by the company's accountant.

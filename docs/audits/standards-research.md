@@ -209,3 +209,26 @@ The adapter therefore owns the supported caller-supplied socket, explicitly dest
 completion/deadline and bounds DNS/connection/greeting/idle waits. A real stalled local SMTP
 connection verifies teardown rather than relying solely on a mocked close method. No private
 Nodemailer connection fields or dependency fork were introduced.
+
+
+### Inquiry/payment atomic intent and upload storage — 19 October 2026
+
+Primary sources reviewed today: SQLite savepoints https://www.sqlite.org/lang_savepoint.html ,
+atomic commit https://www.sqlite.org/atomiccommit.html , WAL https://www.sqlite.org/wal.html ,
+AWS transactional outbox guidance
+https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html
+and OWASP File Upload Cheat Sheet
+https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html .
+
+The atomic-commit article describes rollback journaling; this app uses WAL, whose separate
+constraints apply. Tests establish one-catalog local rollback/process-exit behavior, not power-loss
+or network-filesystem/multi-host certification. Savepoints bind source, proof BLOBs, audit and
+event intent; provider I/O is outside the transaction. Source-key uniqueness is not HTTP retry
+idempotency or exactly-once remote delivery. No AWS infrastructure was provisioned.
+
+Random names/private lazy caches and existing MIME/size checks reduce specific storage risks;
+OWASP's layered signature/content/malware/serving controls remain separate acceptance work.
+A client MIME type is not a trusted content verdict. Consistent settings/secret snapshots and
+atomic console configuration/audit updates additionally prevent cross-generation host/password
+pairing and partial settings commits. Tests use a separate SQLite connection and injected faults,
+not a live SMTP/provider configuration change. See business-alerts-* evidence and runbook.

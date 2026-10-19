@@ -8,7 +8,7 @@
  * Two transports, because Railway blocks outgoing SMTP below its Pro plan:
  *  - `brevo` — Brevo's HTTPS email API (works on any host; free tier ~300 emails/day);
  *  - `smtp`  — any SMTP mailbox (e.g. Gmail with an App Password), where the host allows SMTP.
- * Immediate inquiry/payment alerts are best effort. Signup intent commits through the
+ * Signup, inquiry and reported-payment intent commits through the
  * owner-alert outbox; its worker records provider acceptance separately from inbox delivery.
  */
 import crypto from 'node:crypto';
@@ -80,21 +80,35 @@ function keyMaterial(): string {
   return k;
 }
 
+/** One SELECT is one SQLite snapshot: never pair another generation's host and credential. */
+function captureMailConfiguration() {
+  const rows = db().prepare("SELECT key,value FROM platform_mail WHERE key IN ('settings','secret','_key')").all() as Array<{key:string;value:string}>;
+  const values = Object.fromEntries(rows.map(row => [row.key,row.value]));
+  let patch: Partial<PlatformMailSettings> = {};
+  try { patch = JSON.parse(values.settings || '{}'); } catch { /* use defaults */ }
+  const encoded = values.secret || '';
+  return { settings: {...DEFAULTS,...patch,has_secret:!!encoded}, encoded,
+    key: process.env.MAIL_SECRET_KEY || process.env.APP_SECRET || values._key || '' };
+}
+
 export function getPlatformMail(): PlatformMailSettings & { has_secret: boolean } {
-  let s: Partial<PlatformMailSettings> = {};
-  try { s = JSON.parse(getKv('settings') || '{}'); } catch { s = {}; }
-  return { ...DEFAULTS, ...s, has_secret: !!getKv('secret') };
+  return captureMailConfiguration().settings;
 }
 
 /** `secret`: present-but-empty clears it, a value replaces it, undefined leaves it. */
 export function savePlatformMail(input: Partial<PlatformMailSettings>, secret?: string): PlatformMailSettings & { has_secret: boolean } {
-  const { has_secret: _drop, ...cur } = getPlatformMail();
-  setKv('settings', JSON.stringify({ ...cur, ...input }));
-  if (typeof secret === 'string') setKv('secret', secret ? encryptWithKey(keyMaterial(), secret) : '');
-  return getPlatformMail();
+  const d = db(); // Warm schema before the rollbackable write.
+  d.exec('SAVEPOINT platform_mail_update');
+  try {
+    d.prepare("UPDATE platform_mail SET value=value WHERE key='settings'").run(); // Writer before read/merge.
+    const {has_secret:_drop,...cur} = getPlatformMail();
+    setKv('settings',JSON.stringify({...cur,...input}));
+    if (typeof secret === 'string') setKv('secret',secret ? encryptWithKey(keyMaterial(),secret) : '');
+    const result = getPlatformMail();
+    d.exec('RELEASE platform_mail_update');
+    return result;
+  } catch(error) { d.exec('ROLLBACK TO platform_mail_update');d.exec('RELEASE platform_mail_update');throw error; }
 }
-
-function secret(): string { return decryptWithKey(keyMaterial(), getKv('secret') || ''); }
 
 /** Configured enough to try sending? Returns why not, or null. */
 export function mailProblem(s = getPlatformMail()): string | null {
@@ -111,9 +125,13 @@ export const _testOutbox: Array<{ to: string[]; subject: string; text: string }>
 export type PlatformMailMessage = { to: string[]; subject: string; text: string; kind?: string };
 export type MailDelivery = { outcome: 'accepted' | 'retry' | 'blocked' | 'unknown' | 'cancelled'; code: string | null; retryAfterMs?: number };
 
-/** Opaque binding to settings and encrypted credential generation; never exposed to browsers. */
-export function platformMailStamp(): string {
-  return crypto.createHash('sha256').update(JSON.stringify(getPlatformMail())).update(getKv('secret') || '').digest('hex');
+/** Snapshot recipients/policy and their encrypted credential generation in one read. */
+export function platformMailBinding() {
+  const c = captureMailConfiguration();
+  return {settings:c.settings,stamp:configurationStamp(c)};
+}
+function configurationStamp(c: ReturnType<typeof captureMailConfiguration>): string {
+  return crypto.createHash('sha256').update(JSON.stringify(c.settings)).update(c.encoded).digest('hex');
 }
 
 function retryDelay(value: string | null): number {
@@ -125,13 +143,14 @@ function retryDelay(value: string | null): number {
 
 /** No log/queue writes here: the caller records acceptance atomically with its own state. */
 export async function deliverPlatformMail(args: PlatformMailMessage, expectedStamp?: string): Promise<MailDelivery> {
-  const s = getPlatformMail();
-  if (expectedStamp && platformMailStamp() !== expectedStamp) return { outcome: 'cancelled', code: 'configuration_changed' };
+  const captured = captureMailConfiguration();
+  const s = captured.settings;
+  if (expectedStamp && configurationStamp(captured) !== expectedStamp) return { outcome: 'cancelled', code: 'configuration_changed' };
   const to = args.to.map(a => a.trim()).filter(Boolean);
   if (!to.length || mailProblem(s)) return { outcome: 'blocked', code: 'mail_not_ready' };
   // Resolve credentials before transmission. No provider/body/exception diagnostics are public.
   let credential: string;
-  try { credential = secret(); } catch { return { outcome: 'blocked', code: 'credential_unavailable' }; }
+  try { credential = captured.key ? decryptWithKey(captured.key,captured.encoded) : ''; } catch { return { outcome: 'blocked', code: 'credential_unavailable' }; }
   if (!credential) return { outcome: 'blocked', code: 'credential_unavailable' };
   if (process.env.NODE_ENV === 'test') {
     _testOutbox.push({ to, subject: args.subject, text: args.text });
@@ -179,7 +198,7 @@ export function recordPlatformMail(args: PlatformMailMessage, result: MailDelive
     .run(args.to.join(', ') || '(none)', args.subject, args.kind ?? null, result.outcome === 'accepted' ? 'sent' : 'failed', result.code);
 }
 
-/** Legacy immediate inquiry/payment and console test mail. Signup uses the durable outbox. */
+/** Console test mail; business alerts use the durable outbox. */
 export async function sendPlatformMail(args: PlatformMailMessage): Promise<{ ok: boolean; error?: string }> {
   const result = await deliverPlatformMail(args);
   recordPlatformMail(args, result);
@@ -194,19 +213,4 @@ export function platformMailLog(limit = 30) {
 export function consoleUrl(): string {
   const host = platformHost() || (process.env.TENANT_PATH_HOST || '').trim();
   return host ? `https://${host}/_platform/` : '/_platform/';
-}
-
-/** Tell the owner something happened — if that alert is on and email is set up. Never throws. */
-export async function notifyOwner(kind: AlertKind, subject: string, lines: string[]): Promise<void> {
-  try {
-    const s = getPlatformMail();
-    const on = kind === 'inquiry' ? s.alert_inquiry : kind === 'payment' ? s.alert_payment : s.alert_signup;
-    if (!on || s.transport === 'off' || !s.alert_to.trim()) return;
-    await sendPlatformMail({
-      to: s.alert_to.split(','), subject, kind,
-      text: `${lines.filter(Boolean).join('\n')}\n\nOpen the owner console: ${consoleUrl()}\n`,
-    });
-  } catch (e) {
-    console.error(`[platform-mail] ${kind} alert failed; inspect delivery status`);
-  }
 }

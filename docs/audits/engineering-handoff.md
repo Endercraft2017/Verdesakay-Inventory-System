@@ -1,7 +1,7 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 19 October 2026 — signup owner-alert intent now commits with local setup,
-with a bounded cloud worker, conservative uncertain-send handling and console delivery status.
+Latest follow-up: 19 October 2026 — inquiry/payment alerts now join the durable owner-alert
+worker. Payment proof/reporting writes are atomic; mail settings and credentials use one snapshot.
 Creation receipts, accounting and authentication follow-ups remain documented below. The
 complete release is still on hold.
 
@@ -41,7 +41,7 @@ applicable issue before changing behavior:
 | High | Complete remaining sensitive-business-action verification with the offline authority model | Explicit action inventory, server enforcement and replay/role/race tests; AUTHZ-15 remains open |
 | High | Uniform API validation/error/redaction and privacy export/retention/erasure lifecycle | Route-by-route evidence; tenant-safe restore/copy/integration tests; approved retention scope |
 | High | AI privacy/adversarial evaluation, interrupted audit outcomes and hard spend allocation | Isolation/leakage/abuse/cancellation tests and real provider budget acceptance |
-| High | Reliable onboarding notification delivery and broader creation admission/reconciliation | Completed keyed HTTP receipts and signup outbox/worker implemented; inquiry/payment transactional intent, provider reconciliation/reviewed resend, backlog monitoring, signup work budget, legacy/new-key recovery and imported-state acceptance remain. See operations/workspace-onboarding.md |
+| High | Reliable onboarding notification delivery and broader creation admission/reconciliation | Completed keyed HTTP receipts and signup outbox/worker implemented; inquiry/payment HTTP retry receipts, provider reconciliation/reviewed resend, backlog monitoring, signup work budget, legacy/new-key recovery and imported-state acceptance remain. See operations/workspace-onboarding.md |
 | High | Native/Electron distribution and supported-client acceptance | APK/installer builds, signed artifacts, actual Windows/Android vault/backup/logout/upgrade checks |
 | High | Integration lifecycle and accounting reconciliation acceptance | Local generation/scoping, refresh admission, export exclusion and durable uncertain-write handling implemented 2026-10-18; actual Intuit sandbox, legacy adoption/repair tooling, interrupted-claim reconciliation, operational alerting and accountant acceptance remain. See operations/quickbooks-lifecycle.md |
 | High | Resolve or explicitly disposition vulnerable dependencies and historical-secret gates | Upstream/compatible fix or approved expiring risk record; verified revocation without exposing the old bearer |
@@ -223,3 +223,24 @@ See operations/owner-alert-outbox.md and owner-outbox-* evidence. Inquiry/paymen
 send immediately. Reviewed resend/provider reconciliation, backlog aggregation/external alerts,
 capacity, retention approval and live provider/restore/hosting/Windows acceptance remain. No
 owner engineering action is requested now. Whole-control totals and release hold are unchanged.
+
+
+## Inquiry/payment alert follow-up — 2026-10-19
+
+The earlier immediate-alert limitation is superseded for the updated public inquiry and tenant
+payment-report routes. Enabled intent commits with its source. Payment proof/2307 bytes, payment,
+reporting audit, invoice state and prepared response share the catalog transaction. UUID proof
+names and lazy private cache reconstruction replace pre-commit files and timestamp collisions.
+A separate business queue prevents the old signup-only worker from claiming these new categories.
+
+High credential-pairing gap addressed: mailbox settings, encrypted secret and key reference now
+come from one SQLite snapshot. Atomic settings/secret writes nest with console audit/response
+preparation. A separate database connection changes the generation during a test; the sender
+retains the matching old host/password. Secret/audit fault tests restore the old configuration.
+
+See operations/business-alerts.md and business-alerts-* evidence for exact checks and failures.
+Two distinct POSTs still create distinct reports/inquiries; uncertain acknowledgements need
+reconciliation. No automatic reviewed resend, external backlog escalation, upload-content
+certification or broader settlement/refund lifecycle fix is claimed. Compatible worker/restore
+acceptance, approved retention and the existing hosted/device/provider gates remain. No owner
+engineering action is needed for this increment; whole-control totals/release hold are unchanged.

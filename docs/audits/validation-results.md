@@ -546,3 +546,62 @@ hosting/Windows acceptance. Payload pruning is logical, not backup/WAL forensic 
 event metadata remains pending governance approval. No new dependency/advisory snapshot, tenant
 schema version, full notification durability, exactly-once/inbox delivery, CI-green, hosted-rollout
 verification or complete-control PASS is claimed. Whole-control totals and release hold remain.
+
+
+## Inquiry/payment alerts and consistent mail credentials — 19 October 2026
+
+Base 2c868a5f9c335725ca481e2cedde1b3394d7dc6d. High scoped lost-alert gap addressed for
+updated public inquiry and tenant payment-report routes. Enabled event intent commits with its
+source; payment proof/2307 bytes, payment row, reporting audit, derived invoice and prepared
+response share one catalog savepoint. UUID names and lazy private proof caches avoid pre-commit
+orphan files and same-millisecond collisions. A separate business queue protects against old
+signup-only workers; current worker checks sources and retains conservative unknown handling.
+
+A second high scoped credential-pairing gap was found: independent settings/secret reads could
+mix generations. One SQLite SELECT now captures settings/secret/key reference; writes commit
+settings/key/secret together and console changes additionally include audit/response preparation.
+A second database connection changes generation during capture; SMTP retains the consistent old
+host/user/password. Secret-write and console-audit faults restore the whole prior configuration.
+
+| Check | Completed result |
+|---|---|
+| Full `npm test -- --fileParallelism --maxWorkers=2` | 305 files / 3119 tests passed, 598.73s |
+| Final focused Vitest | 6 files / 91 cases passed, 42.32s; includes 22 new business and 3 configuration cases |
+| First corrected Playwright | 20 passed, 55.5s |
+| Final `npm run test:e2e` | 20 passed, 54.7s |
+| `npm run typecheck` | Passed |
+| `npm run db:types` | Passed; generated tenant types unchanged |
+| Actual server startup/timer | All three synthetic categories accepted once; stale claims unknown without resend; proof BLOB retained |
+| Gitleaks staged increment | Clean; final commit hook scans again |
+| Diff/whitespace | Passed |
+
+Focused tests use real isolated SQLite/HTTP faults across inquiry intent and payment blob/row/
+audit/invoice/intent boundaries, invalid second attachment, auth/tenant isolation, disabled and
+reviewed/missing source behavior, legacy-worker isolation and uncertain acknowledgement. Four
+real child exits occur before/after inquiry/payment commit: restart rolls back pre-commit data,
+or retains one source/intent for synthetic acceptance. This is local process-exit evidence,
+not power-loss, simultaneous multi-host, filesystem or financial-policy certification.
+
+Chromium exercises a real inquiry enqueue fault, retains draft, accepts corrected retry and
+checks one source/intent plus redacted console status. Initial focused run had 17 passing and
+one failure from a nonexistent-company fixture, corrected to a real other tenant. Initial
+browser run had 19 passing and one ambiguous Email locator failure, corrected to textbox role.
+Those fixture failures are retained as text/browser JSON; failed traces/screenshots were
+subsequently overwritten. An intermediate compiler error in result-row projection inference
+was corrected with an explicit row type; initial compiler text was overwritten, not retained.
+No partial run is counted as a final pass. Final runtime/tests were frozen before the full run.
+
+Raw or whitespace-normalized output, browser metadata, startup script, scoped findings and
+verification JSON are business-alerts-* under evidence/. Run startup script from repo root with
+work/ and dependencies installed. Synthetic credentials/data and test transport only; no real
+email/provider/bank/customer/deployment action. No dependency/advisory snapshot or tenant schema
+version change. Research and upgrade/rollback/restore/data rules are in standards-research.md,
+operations/business-alerts.md and the updated API/onboarding/release/governance/draft privacy docs.
+
+Remaining: HTTP retry receipts (distinct POSTs still create distinct sources), legacy/duplicate/
+provider reconciliation and reviewed resend, queue escalation, upload-content and broader
+financial lifecycle acceptance, approved retention and real provider/hosting/restore/device/
+capacity gates. Email payload expiry does not delete financial proofs. Old workers ignore the
+new table; older request servers keep immediate behavior until upgraded. No exactly-once inbox,
+CI-green, hosted rollout, production-ready or complete-control PASS claim. Whole-control totals
+remain 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release hold unchanged.

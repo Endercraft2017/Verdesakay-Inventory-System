@@ -1,0 +1,77 @@
+
+> otom@1.0.0 test:e2e
+> playwright test
+
+[WebServer] (node:42604) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:42617) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:42628) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 20 tests using 1 worker
+
+(node:42649) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘   1 tests/e2e/business-alerts.spec.ts:3:1 › website inquiry retains its draft after durable enqueue fails and saves one source/alert after correction (307ms)
+(node:42736) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   2 tests/e2e/control-plane-settings.spec.ts:3:1 › owner settings retain edited fields after a real database failure and accept a corrected save (1.4s)
+  ✓   3 tests/e2e/creation-receipts.spec.ts:3:1 › console retries a committed request whose response was lost without creating a second generated slug (2.9s)
+  ✓   4 tests/e2e/creation-receipts.spec.ts:35:1 › website retries a committed signup after a lost response using the same creation key (2.6s)
+  ✓   5 tests/e2e/mail-outbox.spec.ts:3:1 › owner sees uncertain signup delivery, retains it on refresh failure and sends no retry (1.3s)
+[WebServer] (node:42628) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+[WebServer] (node:42628) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+  ✓   6 tests/e2e/passkeys.spec.ts:3:1 › console verifies real WebAuthn registration and sign-in, rejects replay, and protects the last key (3.2s)
+  ✓   7 tests/e2e/quickbooks-exports.spec.ts:3:1 › administrator sees durable export failures, handles status errors and refreshes safely (2.7s)
+  ✓   8 tests/e2e/readiness.spec.ts:17:1 › desktop: wrong password, keyboard login, stock journey and server logout (2.4s)
+  ✓   9 tests/e2e/readiness.spec.ts:56:1 › mobile: 360px layout, core navigation, offline failure and sign out (1.5s)
+  ✓  10 tests/e2e/readiness.spec.ts:89:1 › login forms: labelled controls, keyboard access and axe scan (1.3s)
+  ✓  11 tests/e2e/readiness.spec.ts:98:1 › API attack surface: injection, oversized inputs, CORS and private caching (16ms)
+  ✓  12 tests/e2e/readiness.spec.ts:110:1 › browser: separate users cannot edit each other’s notes; role changes revoke cookies (2.9s)
+  ✓  13 tests/e2e/readiness.spec.ts:142:1 › browser: message HTML is a non-executable attachment and policy links are usable (1.9s)
+  ✓  14 tests/e2e/readiness.spec.ts:164:1 › browser: uploaded JavaScript cannot execute as a self-hosted script (1.3s)
+  ✓  15 tests/e2e/readiness.spec.ts:182:1 › browser: authenticator enrollment, one-use recovery and mobile factor sign-in (9.6s)
+  ✓  16 tests/e2e/readiness.spec.ts:250:1 › assisted recovery: email-link redemption requires authenticator enrollment before workspace access (3.4s)
+  ✓  17 tests/e2e/readiness.spec.ts:277:1 › recovery cancellation: GET previews are inert and owner confirmation is single-use (1.4s)
+  ✓  18 tests/e2e/signup-atomic.spec.ts:3:1 › website signup retains input after invoice failure and retries the same workspace successfully (3.1s)
+  ✓  19 tests/e2e/step-up.spec.ts:5:1 › stale admin changes require accessible password + factor confirmation and preserve cancelled work (2.9s)
+  ✓  20 tests/e2e/support-errors.spec.ts:3:1 › support submission hides a real storage failure, retains the draft and accepts a corrected retry (1.8s)
+
+
+  1) tests/e2e/business-alerts.spec.ts:3:1 › website inquiry retains its draft after durable enqueue fails and saves one source/alert after correction
+
+    Error: locator.fill: Error: strict mode violation: locator('#contact-form').getByLabel('Email', { exact: true }) resolved to 2 elements:
+        1) <input required="" id="c-email" type="email" autocomplete="email"/> aka getByRole('textbox', { name: 'Email' })
+        2) <input value="email" type="checkbox"/> aka getByRole('checkbox', { name: 'Email' })
+
+    Call log:
+      - waiting for locator('#contact-form').getByLabel('Email', { exact: true })
+
+
+       6 |     await page.goto('/contact');const form=page.locator('#contact-form');
+       7 |     await form.getByLabel('Your name').fill('Synthetic browser contact');await form.getByLabel('Company',{exact:true}).fill('Browser inquiry failure');
+    >  8 |     await form.getByLabel('Email',{exact:true}).fill('inquiry-browser@example.test');await form.locator('#c-message').fill('Synthetic private browser draft');
+         |                                                 ^
+       9 |     const failed=page.waitForResponse(r=>r.url().endsWith('/site/inquiry')&&r.request().method()==='POST');
+      10 |     await form.locator('#contact-submit').click();const response=await failed;expect(response.status()).toBe(500);
+      11 |     expect(await response.json()).toEqual({error:'Internal server error',request_id:response.headers()['x-request-id']});
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/business-alerts.spec.ts:8:49
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/business-alerts-website-in-f9ac0-urce-alert-after-correction/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/business-alerts-website-in-f9ac0-urce-alert-after-correction/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/business-alerts-website-in-f9ac0-urce-alert-after-correction/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/business-alerts-website-in-f9ac0-urce-alert-after-correction/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests/e2e/business-alerts.spec.ts:3:1 › website inquiry retains its draft after durable enqueue fails and saves one source/alert after correction
+  19 passed (54.2s)

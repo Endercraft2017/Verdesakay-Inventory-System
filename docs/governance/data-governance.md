@@ -75,3 +75,22 @@ have separate unchanged retention; old diagnostics are not retroactively scrubbe
 Approve access, lawful basis, payload/metadata/backup/provider periods and scoped erasure/holds.
 Nulling is not a forensic wipe. Restoring an older catalog can resurrect a pending event without
 later send evidence; reconcile provider records before starting the worker. See the outbox runbook.
+
+
+## Inquiry/payment alerts and proofs (2026-10-19)
+
+platform_business_outbox holds inquiry/payment source IDs, the same delivery fields/payload
+policy as platform_owner_outbox, inquiry contact/message or payment reference/invoice text.
+Inquiry tenant_slug is empty because no workspace exists yet. Status exposes kind/source_id
+without queued message, recipient or credential binding. Both tables share logical terminal
+24-hour/all-seven-day payload pruning and retained event metadata; approve the schedule/holds.
+Mail settings/secret/key references are read in one memory snapshot; raw secrets are not API
+fields. This does not add encryption to ordinary queued payloads.
+
+New reported-payment proof and optional 2307 bytes commit in platform_durable_files with the
+payment/audit/invoice/intent. Missing disk caches are rebuilt on download with private POSIX
+creation modes; legacy cache permissions remain unchanged. Financial attachment retention is
+separate from queued-email expiry: pruning messages does not delete proofs. Include catalog/WAL,
+caches, backups and provider copies in scoped rights/hold review. No malware/signature assurance,
+Windows ACL acceptance, legacy orphan cleanup or legal retention approval is inferred.
+See operations/business-alerts.md for upgrade/restore/reconciliation rules.

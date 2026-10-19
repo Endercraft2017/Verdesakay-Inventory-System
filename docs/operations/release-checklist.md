@@ -20,3 +20,18 @@ Release/commit [OWNER]; date/time [OWNER]; operator/reviewer [OWNER]; environmen
 - [ ] Record go/hold decision, known limitations, explicit exceptions, customer/maintenance communication and next verification time.
 
 After deployment: verify health plus authenticated business smoke, request IDs/errors, queue/sync lag, disk growth and backup schedule. Stop/rollback on tenant leakage, credential compromise, financial/stock corruption or unacceptable error/latency; invoke incident lead and preserve accepted writes. Record actual outcome and retrospective actions.
+
+
+### Inquiry/payment queue upgrade acceptance
+
+- [ ] Verify a compatible worker handles platform_business_outbox; older signup-only workers
+  ignore it. Do not downgrade without keeping compatible processing/monitoring or stopping and
+  reconciling the queue. Older request servers keep their immediate behavior until upgraded.
+- [ ] Exercise source/report rollback, pending/reviewed source checks, configuration changes,
+  real provider acceptance and backlog escalation without sending customer test messages.
+- [ ] Restore catalog and durable proof bytes through supported backup operations, reconcile
+  later provider/bank/send evidence before reopening processing, and verify proof downloads.
+- [ ] Approve financial versus email retention; complete upload-content and broader financial
+  lifecycle acceptance. Do not resend unknown jobs or treat separate POSTs as deduplicated.
+
+See business-alerts.md. These are rollout gates, not completed deployment evidence.

@@ -26,9 +26,9 @@
   function outboxRows(rows) {
     var labels = { pending: 'Queued', retry: 'Waiting to retry', inflight: 'Sending', accepted: 'Accepted by provider',
       blocked: 'Needs attention', unknown: 'Delivery uncertain — check provider records before resending', cancelled: 'Cancelled' };
-    if (!rows || !rows.length) return el('p', { class: 'muted', text: 'No queued signup alerts.' });
+    if (!rows || !rows.length) return el('p', { class: 'muted', text: 'No queued owner alerts.' });
     return el('div', {}, rows.map(function (r) {
-      return el('p', { text: r.tenant_slug + ': ' + (labels[r.state] || 'Needs attention') +
+      return el('p', { text: (r.kind === 'inquiry' ? 'Website inquiry #' + r.source_id : r.kind === 'payment' ? r.tenant_slug + ' payment #' + r.source_id : r.tenant_slug) + ': ' + (labels[r.state] || 'Needs attention') +
         ' · attempts ' + r.attempts + (r.error_code ? ' · ' + r.error_code : '') });
     }));
   }
@@ -75,8 +75,8 @@
         el('button', { class: 'btn ghost', id: 'm-test', type: 'button' }, ['Send test email']),
         el('button', { class: 'btn ghost', id: 'm-cancel', type: 'button' }, ['Close']),
       ]),
-      el('div', { class: 'field', style: 'margin-top:16px' }, [el('h3', { text: 'Signup alert delivery' }),
-        el('p', { class: 'muted', text: 'Provider acceptance does not confirm inbox delivery. Inquiries and payment alerts still send immediately.' }),
+      el('div', { class: 'field', style: 'margin-top:16px' }, [el('h3', { text: 'Owner alert delivery' }),
+        el('p', { class: 'muted', text: 'Signup, inquiry and payment alerts are queued durably. Provider acceptance does not confirm inbox delivery.' }),
         queueBox, el('button', { class: 'btn ghost', id: 'm-refresh', type: 'button' }, ['Refresh delivery status'])]),
       el('div', { class: 'field', style: 'margin-top:16px' }, [el('label', { text: 'Recent email attempts' }), logBox]),
     ]);

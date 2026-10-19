@@ -27,12 +27,22 @@ retain the existing behavior and must reconcile uncertain acknowledgements befor
 This is not a general API idempotency/OpenAPI completeness claim. The full storage, password
 verifier, competing-writer, retention and recovery contract is in workspace-onboarding.md.
 
-## Signup alert status (19 October 2026)
+## Owner alert status (19 October 2026)
 
-The authenticated console mail responses add outbox: up to 30 recent signup event IDs, tenant
-slugs, state/attempt counts, safe error codes and timestamps. Queued message/recipient/credential
+The authenticated console mail responses add outbox: up to 30 recent event IDs, kind
+(signup/inquiry/payment), source_id (null for signup), tenant slugs (empty for inquiry),
+state/attempt counts, safe error codes and timestamps. Queued message/recipient/credential
 binding is omitted. Console API responses use Cache-Control: no-store, including errors/auth
 denial. Existing auth/fresh-proof policies apply; no new mutating retry/resend route is added.
 Signup 201 means catalog/local setup/eligible alert intent committed, not provider/inbox delivery.
 An enqueue write failure rolls creation back; notification uncertainty after commit never rolls
 the workspace back. See owner-alert-outbox.md for exact scope, states and limitations.
+
+
+Public inquiry and tenant payment-report 201s commit source and eligible alert intent together.
+Payment proof/2307 bytes, reporting audit, derived invoice state and response preparation are
+included; an enqueue/storage failure rolls everything back and returns the correlated generic
+error. Existing schema/auth/tenant/users.manage/online gates still apply. Disabled/off/recipientless
+alerts do not block a valid source and create no later backlog. Payment reporting is pending
+review, not payment confirmation. These two routes do not implement durable HTTP request receipts:
+separate POSTs can create separate sources; reconcile after a lost response. See business-alerts.md.

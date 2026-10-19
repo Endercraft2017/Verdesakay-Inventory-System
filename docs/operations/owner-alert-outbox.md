@@ -1,7 +1,9 @@
-# Signup owner-alert outbox
+# Owner-alert outbox
 
-Implemented 19 October 2026. Scope: the owner notification from POST /api/signup, not customer
-recovery mail, inquiries, reported-payment alerts, tenant SMTP or every notification in the app.
+Implemented 19 October 2026, initially for POST /api/signup. Inquiry and reported-payment
+alerts now use the same worker through a separate compatible queue; see business-alerts.md for
+their source/proof/configuration transaction and upgrade rules. Customer recovery/tenant SMTP
+and other application notifications remain outside this outbox.
 See workspace-onboarding.md for creation receipts and provisioning-recovery.md for file recovery.
 The complete release remains on hold; local tests are not hosted/provider acceptance.
 
@@ -23,7 +25,8 @@ new recipients. That includes sender/alert-policy changes. In-flight mail cannot
 the adapter uses its original settings snapshot. Purged/missing workspaces are cancelled.
 
 Cloud server.ts runs a nonoverlapping pass at startup and every 15 seconds, one job per pass.
-An atomic UPDATE RETURNING claims eligible work across processes using the same SQLite catalog.
+A guarded UPDATE RETURNING claims a selected due candidate across processes using the same
+SQLite catalog; selection and source checks are described in business-alerts.md.
 No transaction spans network I/O. Provider result and the existing attempt log commit in a short
 savepoint, guarded by job ID/claim time/attempt count. A failed acknowledgement/log write leaves
 the durable claim uncertain; it does not silently return the job to the queue. This is bounded
@@ -64,15 +67,15 @@ while a prior event waits or requires attention; global delivery ordering is not
 
 ## Console and incident procedure
 
-Owner console → Email alerts → Signup alert delivery shows the latest 30 event states and
+Owner console → Email alerts → Owner alert delivery shows the latest 30 event states and
 attempt counts. Refresh preserves the current status if loading fails. GET /_platform/api/mail
-adds an outbox field with ID, tenant slug, state, attempts, safe code and lifecycle times only;
+adds an outbox field with ID, kind/source ID, tenant slug, state, attempts, safe code and lifecycle times only;
 queued message, recipients, credential/configuration binding and raw provider diagnostics are
 not exposed there. Existing console authentication/read policy applies; owner-console API responses, including
 authentication denial, carry Cache-Control: no-store. There is no blind retry
 button or new route that bypasses recent-proof requirements. Unexpected async test-mail database/log failures reach a generic correlated 500; they are not
 left as unhandled promise rejections. Test mail uses the shared console
-API client, including cookie/CSRF/fresh-proof handling; it is separate from queued signup mail.
+API client, including cookie/CSRF/fresh-proof handling; it is separate from queued owner alerts.
 
 For blocked/unknown work, correlate the company and event time with the existing attempt log and
 the configured provider's restricted delivery records. Accepted does not prove inbox receipt;
@@ -90,7 +93,8 @@ access. External monitoring, backlog aggregation and alert escalation still need
 
 ## Storage and retention
 
-platform_owner_outbox is a new control-plane IF NOT EXISTS table/index, outside tenant schema,
+platform_owner_outbox (signup) and platform_business_outbox (inquiry/payment) are control-plane
+IF NOT EXISTS tables/indexes, outside tenant schema,
 replication and offline queues. Payloads contain company/contact/invoice acknowledgement data.
 They are ordinary private catalog data, not newly encrypted application fields; protect the
 catalog, volume, logs, snapshots and provider access. No mailbox bearer/password is copied into
@@ -116,8 +120,7 @@ while durable claims become unknown without replay. Actual server startup drains
 intent and preserves an interrupted claim. Chromium verifies uncertainty/status refresh failure
 without a retry action. No real emails/provider credentials/customer data are used.
 
-Remaining: transactional inquiry/payment intent (including their different transaction/storage
-boundaries), broader notification coverage, provider reconciliation/reviewed resend, backlog
+Remaining: wider HTTP retry receipts/notification coverage, provider reconciliation/reviewed resend, backlog
 monitoring/alerting, queue capacity/load, approved retention, restore/hosting/Windows acceptance
 and real Brevo/SMTP acceptance. This increment does not establish exactly-once remote delivery,
 all-notification durability, CI-green, complete-control PASS or production rollout verification.

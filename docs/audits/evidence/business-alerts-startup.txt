@@ -1,0 +1,3 @@
+PASS: actual server.ts startup/timer processed committed signup, inquiry and payment intent; one synthetic acceptance per category.
+PASS: stale claims in both queue tables became unknown without resend; payment proof bytes remained durable.
+Disposable databases and NODE_ENV=test transport only; no real email, provider or deployment.

@@ -70,7 +70,7 @@ describe('owner alerts', () => {
   it('a website inquiry emails the owner', async () => {
     const before = mail._testOutbox.length;
     await ctx.api.post('/site/inquiry').set('Host', host).send(inquiry);
-    await tick();
+    await (await import('../src/platform/owner-alert-outbox')).processOneOwnerAlert();
     const m = mail._testOutbox.at(-1)!;
     expect(mail._testOutbox.length).toBe(before + 1);
     expect(m.subject).toBe('New inquiry: Cruz Foods');
@@ -93,7 +93,7 @@ describe('owner alerts', () => {
       .field('channel', 'gcash').field('reference_no', '5012345678901').field('amount', '3200').field('paid_on', new Date().toISOString().slice(0, 10))
       .attach('proof', PNG, { filename: 'g.png', contentType: 'image/png' });
     expect(rep.status, JSON.stringify(rep.body)).toBe(201);
-    await tick();
+    await (await import('../src/platform/owner-alert-outbox')).processOneOwnerAlert();
     const m = mail._testOutbox.at(-1)!;
     expect(m.subject).toBe(`Payment to check: cruzfoods ${inv.reference}`);
     expect(m.text).toContain('GCash');

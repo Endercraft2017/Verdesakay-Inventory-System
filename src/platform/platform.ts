@@ -129,6 +129,23 @@ function pdb(): DatabaseSync {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS owner_outbox_due ON platform_owner_outbox(state,next_attempt_at);
+    CREATE TABLE IF NOT EXISTS platform_business_outbox (
+      id TEXT PRIMARY KEY,
+      event_key TEXT NOT NULL UNIQUE,
+      tenant_slug TEXT NOT NULL,
+      recipients TEXT,
+      subject TEXT,
+      body TEXT,
+      configuration_stamp TEXT,
+      state TEXT NOT NULL CHECK(state IN ('pending','retry','inflight','accepted','blocked','unknown','cancelled')),
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at INTEGER NOT NULL,
+      claimed_at INTEGER,
+      error_code TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS business_outbox_due ON platform_business_outbox(state,next_attempt_at);
     CREATE TABLE IF NOT EXISTS platform_creation_receipts (
       scope TEXT NOT NULL,
       key_hash TEXT NOT NULL,

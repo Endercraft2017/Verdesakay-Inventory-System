@@ -76,6 +76,10 @@ platformDb().prepare(`INSERT INTO platform_owner_outbox
   (id,event_key,tenant_slug,recipients,subject,body,configuration_stamp,state,attempts,next_attempt_at,error_code,created_at,updated_at)
   VALUES('browser-unknown-alert','signup:browser-support','browser-support','["owner@example.test"]',
     'Synthetic private subject','Synthetic private message','synthetic','unknown',1,0,'interrupted_send',?,?)`).run(Date.now(),Date.now());
+(await import('../../src/platform/platform-mail')).savePlatformMail({transport:'brevo',from_email:'alerts@example.test',alert_to:'owner@example.test'},'synthetic-browser-business-key');
+platformDb().exec(`CREATE TRIGGER browser_inquiry_alert_failure BEFORE INSERT ON platform_business_outbox
+  WHEN NEW.subject='New inquiry: Browser inquiry failure'
+  BEGIN SELECT RAISE(ABORT,'synthetic-private-inquiry-enqueue-detail'); END`);
 const { createApp } = await import('../../src/app');
 const { attachWebSocket } = await import('../../src/shared/ws');
 const server = createApp().listen(Number(process.env.E2E_PORT || 4173), process.env.E2E_HOST || '127.0.0.1');

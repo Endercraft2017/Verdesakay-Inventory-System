@@ -6,7 +6,7 @@ import { ownerAlertStatus } from './owner-alert-outbox';
  * learns only whether one is saved.
  */
 import { Router } from 'express';
-import { logProvisioning } from './platform';
+import { platformDb, logProvisioning } from './platform';
 import type { PlatformAuthedRequest } from './platform-users';
 import { getPlatformMail, savePlatformMail, sendPlatformMail, platformMailLog, type PlatformMailSettings } from './platform-mail';
 
@@ -19,7 +19,7 @@ router.get('/mail', (_req, res) => {
 });
 
 // PUT /_platform/api/mail — { transport, from_name, from_email, smtp_*, alert_*, secret? }
-router.put('/mail', (req, res) => {
+router.put('/mail', (req, res, next) => {
   const b = req.body || {};
   const patch: Partial<PlatformMailSettings> = {};
   if (b.transport !== undefined) {
@@ -53,9 +53,17 @@ router.put('/mail', (req, res) => {
   if (b.clear_secret && secret) {
     res.status(400).json({ error: 'Choose either a new secret or clear the saved secret.' }); return;
   }
-  const settings = savePlatformMail(patch, b.clear_secret ? '' : secret || undefined);
-  logProvisioning('_console', 'platform-mail-settings', `${(req as PlatformAuthedRequest).platformUser!.username}: saved email settings`);
-  res.json({ settings, log: platformMailLog(20), outbox: ownerAlertStatus() });
+  getPlatformMail(); // Warm mailbox schema before rollbackable configuration/audit.
+  const d = platformDb();
+  d.exec('SAVEPOINT console_mail_settings');
+  try {
+    const settings = savePlatformMail(patch,b.clear_secret ? '' : secret || undefined);
+    logProvisioning('_console','platform-mail-settings',`${(req as PlatformAuthedRequest).platformUser!.username}: saved email settings`);
+    const result = {settings,log:platformMailLog(20),outbox:ownerAlertStatus()};
+    d.exec('RELEASE console_mail_settings');
+    res.json(result);
+  } catch(error) { d.exec('ROLLBACK TO console_mail_settings');d.exec('RELEASE console_mail_settings');forwardControlPlaneError(error,next); }
+
 });
 
 // POST /_platform/api/mail/test — { to? } (defaults to the alert recipients)

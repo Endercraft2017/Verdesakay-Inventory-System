@@ -150,10 +150,13 @@ describe('bank transfer → review', () => {
     paymentId = r.body.payments[0].id;
     expect(r.body.payments[0]).toMatchObject({ status: 'pending', has_proof: true, has_2307: false, submitted_by: 'owner' });
 
-    const { getPayment, billingFilesDir } = await import('../src/platform/billing');
+    const { getPayment, billingFilesDir, resolveBillingFile } = await import('../src/platform/billing');
     const fs = await import('node:fs');
     const path = await import('node:path');
-    fs.unlinkSync(path.join(billingFilesDir('billco'), getPayment(paymentId)!.proof_file!));
+    const proof = getPayment(paymentId)!.proof_file!;
+    expect(fs.existsSync(path.join(billingFilesDir('billco'), proof))).toBe(false);
+    resolveBillingFile('billco', proof);
+    fs.unlinkSync(path.join(billingFilesDir('billco'), proof));
 
     const own = await ctx.api.get(`/api/tenant/billing/payments/${paymentId}/files/proof`).set(tHdr('billco'));
     expect(own.status).toBe(200);

@@ -1,0 +1,32 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/business-alerts.test.ts > rejects unauthorized/wrong-company reports without a durable blob or event
+{"timestamp":"2026-10-19T05:46:00.228Z","level":"info","event":"http_request","request_id":"94d78973-88f9-4173-8be0-08d39fdf6b2a","tenant":"alert-pay","method":"POST","path":"/api/tenant/billing/invoices/9/payments","status":401,"duration_ms":0}
+
+stdout | tests/business-alerts.test.ts
+{"timestamp":"2026-10-19T05:46:00.102Z","level":"info","event":"http_request","request_id":"549b1cd9-bf28-4b83-9b2f-36804cf358a4","tenant":"alert-pay","method":"POST","path":"/api/auth/login","status":200,"duration_ms":319}
+
+ ❯ tests/business-alerts.test.ts (18 tests | 1 failed) 7034ms
+   × rejects unauthorized/wrong-company reports without a durable blob or event 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/business-alerts.test.ts > rejects unauthorized/wrong-company reports without a durable blob or event
+Error: Unknown workspace.
+ ❯ Module.createInvoice src/platform/billing.ts:283:42
+    281| export function createInvoice(slug: string, input: NewInvoice, by: str…
+    282|   const t = getTenant(slug);
+    283|   if (!t || t.status === 'purged') throw new BillingError('Unknown wor…
+       |                                          ^
+    284|   if (!INVOICE_KINDS.includes(input.kind)) throw new BillingError(`kin…
+    285|   const description = String(input.description || '').trim();
+ ❯ tests/business-alerts.test.ts:112:23
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 17 passed (18)
+   Start at  05:45:56
+   Duration  7.26s (transform 1.39s, setup 26ms, import 78ms, tests 7.03s, environment 0ms)

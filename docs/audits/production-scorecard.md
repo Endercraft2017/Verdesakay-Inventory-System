@@ -302,3 +302,14 @@ redacted status and payload cleanup are implemented; inquiry/payment transaction
 other notification acceptance remain. Async console test-mail failures are correlated/redacted
 and console APIs prevent private response caching. See owner-alert-outbox.md and dated evidence.
 These scoped changes do not alter complete-control totals or release hold.
+
+
+### Inquiry/payment follow-up — 19 October 2026
+
+Enabled inquiry/payment alert intent now commits with its source; payment proof bytes, reporting
+audit and invoice state are atomic. A separate business queue shares the conservative worker.
+Mail settings/credentials are captured consistently and settings/secret/audit updates roll back
+together. See operations/business-alerts.md and evidence/business-alerts-verification.json.
+This adds scoped evidence, not a complete-control promotion: 36 PASS / 58 FAIL / 126 UNVERIFIED /
+13 N/A remain. HTTP retry/reconciliation, monitoring, upload-content/financial lifecycle and
+existing hosted/provider/device/governance release gates remain open.
