@@ -45,8 +45,9 @@
     setTimeout(function () { t.remove(); }, 2600);
   }
 
-  async function api(method, path, body, retried) {
+  async function api(method, path, body, retried, idempotencyKey) {
     var headers = { 'X-Requested-With': 'VDS', 'X-Session-Mode': 'cookie' };
+    if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
     var tk = token();
     if (tk) headers['Authorization'] = 'Bearer ' + tk;
     var isForm = typeof FormData !== 'undefined' && body instanceof FormData;
@@ -58,7 +59,7 @@
     if ((res.headers.get('content-type') || '').indexOf('json') !== -1) data = await res.json();
     if (res.status === 403 && data && data.passkey_required && !retried && path.indexOf('/passkeys') !== 0) {
       await verifyConsolePasskey();
-      return api(method, path, body, true);
+      return api(method, path, body, true, idempotencyKey);
     }
     if (!res.ok) throw new Error((data && data.error) || ('Request failed (' + res.status + ')'));
     return data;
@@ -963,6 +964,7 @@
   // `prefill` (from a website inquiry, inquiries.js): { name, email, inquiry_id }.
   $('new-btn').addEventListener('click', function () { openNewTenant(); });
   function openNewTenant(prefill) {
+    var creationKey = crypto.randomUUID();
     prefill = prefill || {};
     var card = el('div', { class: 'card' }, [
       el('h2', { text: 'New tenant' }),
@@ -1019,7 +1021,7 @@
           admin_email: $('n-sandbox').checked ? undefined : $('n-email').value.trim(),
           awaiting_payment: $('n-lock').checked || undefined,
           inquiry_id: prefill.inquiry_id || undefined,
-        });
+        }, false, creationKey);
         close();
         await load();
         toast('Created ' + created.slug);

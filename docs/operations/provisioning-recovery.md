@@ -51,9 +51,9 @@ for local tests. Do not run it against the original/default company or an alread
 
 Signup and console local catalog setup now participates in publication: subscription/modules,
 payment lock, owner contacts, inquiry linkage and applicable first invoice/audits commit or roll
-back together. See workspace-onboarding.md for the exact failure matrix. HTTP response replay
-and reliable notification delivery still need durable receipts/outbox work; a lost acknowledgement
-can follow a committed workspace. External notifications remain outside the local transaction.
+back together. See workspace-onboarding.md for the exact failure matrix. Covered HTTP creation routes now commit scoped completed-response receipts with local setup;
+same-key retry can replay a committed acknowledgement. New/no keys still need reconciliation.
+Reliable notification delivery still needs an outbox/worker. External notifications remain outside the local transaction.
 Existing legacy suspended/orphaned workspaces are not automatically converted or deleted.
 Uploads, private migration snapshots and backup artifacts are preserved, not broadly removed.
 

@@ -435,3 +435,50 @@ handling and reliable outbox delivery remain engineering work. Pricing/calendar/
 policy, imported-state review and external release gates are not certified by these checks.
 Whole-control statuses remain unchanged and the complete release stays on hold. No schema,
 dependency, live customer workspace or hosting change was made. Nothing was deployed.
+
+
+## Durable creation receipts — 19 October 2026
+
+Base cd34ba18f0aeae792f92fe60349c8271e17f5ea0. High scoped lost-acknowledgement/duplicate-workspace
+gap addressed for keyed public signup and authenticated console create. Completed responses
+commit with local setup; same scoped key/details replay the original 201. Strong salted request
+binding includes the password without persisting the request or a cheap password verifier.
+Authentication/fresh proof runs before console replay. Expiry clears payload/verifier and retains
+a tombstone that prevents reapplication. Whole-control statuses and release hold are unchanged.
+
+| Check | Completed result |
+|---|---|
+| Full `npm test -- --fileParallelism --maxWorkers=2` | 302 files / 3062 tests passed, 573.24s |
+| Initial receipt + existing atomic-setup focused run | 2 files / 23 tests passed, 37.62s |
+| Receipt process-focused run before final fresh-proof case | 1 file / 15 tests passed, 29.60s; final full run includes all 16 receipt cases |
+| `npm run test:e2e` | 18 passed, 57.9s; includes real committed responses discarded for both forms |
+| `npm run typecheck` | Passed |
+| `npm run db:types` | Passed; no generated tenant-type change |
+| Actual `server.ts` startup smoke | HTTP health passed; expired receipt payload/verifier pruned and tombstone preserved |
+| Gitleaks | Source tree and staged increment clean; commit hook scans staged changes again |
+| Whitespace/diff check | Passed |
+
+Receipt cases cover changed pricing/catalog reopen, original invoice replay, no second alert,
+changed password/details, route/operator isolation, auth/fresh-proof enforcement, invalid keys,
+legacy clients, real SQLite receipt/publication faults, expiry, purged tenants, ordered stale
+competing candidates and an independent reader. A child exits after commit; a second process
+replays the durable response. The competing-candidate test is not simultaneous multi-host load.
+Browser tests retry the same preserved form/key after an actual committed response is lost and
+verify one workspace/invoice. No real emails, customers or provider calls were used.
+
+Initial corrections: typecheck found the helper's void annotation incompatible with the trusted
+publication callback's undefined contract; the annotation was corrected. The first schema-type
+generator was denied tsx IPC by the filesystem-only sandbox; the authorized local rerun passed.
+Initial outputs are retained. No product production outage or live migration failure is inferred.
+
+Evidence: `evidence/creation-receipts-*`, including scope and verification JSON, full/focused/
+Playwright outputs, initial/final type/generator outputs, startup and secret scans. Runtime
+code/tests were frozen before the full regression run; later edits were documentation/evidence.
+The complete browser run preceded the full suite. Documentation covers module catalog/pipelines,
+API/recovery contract, governance/draft privacy, handoff, scorecard metadata and primary research.
+
+Remaining: notification outbox/worker, signup admission, broader API/import retry coverage and
+new/no-key reconciliation. A reload/new modal loses the in-memory key; old/no-key clients retain
+legacy behavior. Logical pruning is not forensic or backup erasure. No distributed exactly-once,
+real Windows/Android/Intuit/hosting/capacity acceptance, advisory refresh, complete-control PASS,
+CI-green or deployment claim is made.

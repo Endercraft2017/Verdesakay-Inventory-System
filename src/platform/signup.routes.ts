@@ -1,3 +1,4 @@
+import { prepareCreationReceipt, saveCreationReceipt } from './onboarding-receipts';
 /** Self-serve tenant sign-up. Live only when SIGNUPS_OPEN=true; otherwise you provision
     tenants with `npm run tenant:create`. Runs on whatever tenant the request resolved to
     (normally the marketing/default site). See docs/SAAS-READINESS.md §11–12.
@@ -38,13 +39,15 @@ router.post('/', signupLimiter, (req, res, next) => {
   }
   try {
     const input = parseBody(signupSchema, req.body);
+    const receipt = prepareCreationReceipt('signup:v1', req.get('Idempotency-Key'), input);
+    if (receipt?.replay) { res.set('Idempotency-Replayed', 'true').status(201).json(receipt.replay); return; }
     const seats = input.seats ?? 5;
     const prices = getBillingSettings();
     const quote = priceListQuote(input.modules ?? planModules('starter'), seats, prices);
     const modulePrices: Record<string, number> = {};
     for (const m of quote.modules) if (typeof prices.module_prices[m] === 'number') modulePrices[m] = prices.module_prices[m]!;
     prepareOwnerAnalytics();
-    const result: { invoice: ReturnType<typeof invoiceView> | null } = { invoice: null };
+    const result: { invoice: ReturnType<typeof invoiceView> | null; response?: unknown } = { invoice: null };
     const { slug } = createTenant({
       slug: input.slug,
       name: input.company_name,
@@ -70,6 +73,12 @@ router.post('/', signupLimiter, (req, res, next) => {
           due_on: ymd(due), period_start: ymd(start), period_end: ymd(end),
         }, 'signup'));
       }
+      const invoice = result.invoice;
+      result.response = {
+        slug, url: tenantPublicUrl(slug), company_id: getTenant(slug)?.company_id, awaiting_payment: true,
+        invoice: invoice && { reference: invoice.reference, amount: invoice.amount, net_if_withheld: invoice.net_if_withheld, due_on: invoice.due_on },
+      };
+      saveCreationReceipt(receipt, slug, result.response);
     });
     const invoice = result.invoice;
     void notifyOwner('signup', `New sign-up: ${input.company_name}`, [
@@ -77,13 +86,7 @@ router.post('/', signupLimiter, (req, res, next) => {
       input.admin_email ? `Email: ${input.admin_email}` : '',
       invoice ? `First invoice ${invoice.reference}: ₱${invoice.amount}` : 'No invoice yet — issue one in Billing.',
     ]);
-    res.status(201).json({
-      slug,
-      url: tenantPublicUrl(slug),
-      company_id: getTenant(slug)?.company_id,
-      awaiting_payment: true,
-      invoice: invoice && { reference: invoice.reference, amount: invoice.amount, net_if_withheld: invoice.net_if_withheld, due_on: invoice.due_on },
-    });
+    res.status(201).json(result.response);
   } catch (error) { forwardControlPlaneError(error, next); }
 });
 

@@ -1,3 +1,4 @@
+import { prepareCreationReceipt, saveCreationReceipt } from './onboarding-receipts';
 import { z } from 'zod';
 import { forwardControlPlaneError } from './request-errors';
 import { browserMode, browserCsrf } from '../shared/browser-session';
@@ -517,6 +518,8 @@ function availableSlug(name: string): string {
 router.post('/tenants', (req: Request, res: Response, next) => {
   try {
     const b = parseBody(platformCreateTenantSchema, req.body);
+    const receipt = prepareCreationReceipt('console-create:v1:' + (req as PlatformAuthedRequest).platformUser!.id, req.get('Idempotency-Key'), b);
+    if (receipt?.replay) { res.set('Idempotency-Replayed', 'true').status(201).json(receipt.replay); return; }
     const modules = b.modules === undefined ? undefined : normalizeModules(b.modules);
     getBillingSettings(); // Warm cached schema outside the publication savepoint.
     const inquiry = b.inquiry_id ? getInquiry(b.inquiry_id) : null;
@@ -548,6 +551,7 @@ router.post('/tenants', (req: Request, res: Response, next) => {
         logProvisioning(slug, 'inquiry', `created from website inquiry #${b.inquiry_id}`);
       }
       view = tenantView(getTenant(slug)!);
+      saveCreationReceipt(receipt, slug, view);
     });
     res.status(201).json(view);
   } catch (e) { forwardControlPlaneError(e, next); }

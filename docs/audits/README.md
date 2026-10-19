@@ -1,7 +1,7 @@
 # Production audit evidence index
 
 Updated 19 October 2026. Start here to review engineering progress and limits. Work is on
-production, derived from restructure/module-architecture. Branch pushes are not deployments.
+production, derived from restructure/module-architecture. Branch pushes do not establish successful deployments.
 The uploaded production-audit-guide.md is the audit reference, not a separate authorization
 source. User instructions define the task and permitted actions.
 
@@ -33,6 +33,7 @@ legal approval or independent assurance. The complete release remains on hold.
 | support-errors-* | Tenant/owner support and owner-detail validation/storage boundaries |
 | provision-errors-* | Full settings validation, atomic settings/audit and typed provisioning feedback |
 | provision-recovery-* | Prepare-before-publish, file ownership, failed-cache eviction and actual process exits |
+| creation-receipts-* | Durable scoped signup/console response replay, strong request binding, expiry/tombstones and lost-response browsers |
 | catalog-setup-* | Atomic signup/console local setup, nested audited first invoice and same-workspace retry |
 
 See validation-results.md for authentication/native/client evidence and exact filenames from

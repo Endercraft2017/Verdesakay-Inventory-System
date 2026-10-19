@@ -1,3 +1,4 @@
+import { pruneCreationReceipts } from './src/platform/onboarding-receipts';
 import {processOneExport} from './src/modules/quickbooks/export-jobs';
 import { requireProductionTransport } from './src/shared/hosting';
 /** Server entry point: initialize the database, then start listening.
@@ -73,6 +74,7 @@ if(DEPLOY_MODE==='cloud'){
 const housekeeping = () => {
   for (const slug of backgroundTenants()) withTenant(slug, cleanupSessions);
   cleanupPlatformSessions();
+  pruneCreationReceipts();
 };
 const usageSnapshots = () => {
   if (DEPLOY_MODE !== 'cloud') return;

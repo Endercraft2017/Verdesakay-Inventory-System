@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-19",
+  "base_commit": "cd34ba18f0aeae792f92fe60349c8271e17f5ea0",
+  "scope": "Durable scoped completed-response creation receipts, request binding, lifecycle and lost acknowledgements",
+  "full_run": {
+    "files_passed": 302,
+    "tests_passed": 3062,
+    "failed": 0,
+    "duration_seconds": 573.24
+  },
+  "initial_focused": {
+    "files_passed": 2,
+    "tests_passed": 23,
+    "duration_seconds": 37.62
+  },
+  "process_focused_before_final_fresh_proof_case": {
+    "files_passed": 1,
+    "tests_passed": 15,
+    "duration_seconds": 29.6
+  },
+  "new_receipt_cases_in_full_run": 16,
+  "playwright": {
+    "passed": 18,
+    "failed": 0,
+    "duration_seconds": 57.9,
+    "new_dropped_response_cases": 2
+  },
+  "actual_server_startup": "passed: pruned expired response/verifier and retained tombstone",
+  "typecheck": "passed",
+  "db_types": "passed; no generated tenant-type diff",
+  "secret_scans": "passed: src working tree and staged increment; precommit reruns staged scan",
+  "initial_corrections": "Callback void/undefined annotation; db:types sandbox IPC denial rerun with authorized local socket permission. Initial outputs retained.",
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "hosted_rollout_verified": false,
+  "limitations": "Same covered route/scope/key/parsed body only; 24-hour response, permanent tombstone; no protection for new/no keys. Outbox/worker, signup admission, broader retry/import reconciliation, live/provider/device/hosting acceptance and other release gates remain open."
+}

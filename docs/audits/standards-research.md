@@ -163,3 +163,20 @@ prove the tested rollback boundaries. Browser tests verify corrected retry and o
 This is not a distributed transaction, durable HTTP response replay, reliable mail delivery,
 power-loss/hosting certification or a substitute for broader billing policy acceptance. See
 operations/workspace-onboarding.md, catalog-setup evidence and validation-results.md.
+
+### Durable creation retries — 19 October 2026
+
+Primary sources accessed today: Stripe's application idempotency guidance
+https://docs.stripe.com/api/idempotent_requests (random v4 keys, parameter mismatch protection,
+original response replay) and OWASP Password Storage Cheat Sheet
+https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html (slow salted
+password protection, scrypt N=2^17,r=8,p=1). The creation payload includes a password, so a fast
+unkeyed body hash stored in platform.db would introduce a cheap offline password verifier.
+The implementation persists salted scrypt of the canonical request digest, never that digest
+or the raw payload. SQLite savepoints/unique constraints bind the receipt to local publication.
+
+The application contract deliberately differs from Stripe's API-v1 error caching and pruned-key
+reuse: only completed 201s are stored; expired payloads are cleared but tombstones block reuse.
+The documented header is an application API contract; no finalized IETF idempotency standard,
+provider certification, exactly-once notification delivery or complete-control PASS is claimed.
+Real browser response loss and process exit evidence establish only the tested local boundaries.

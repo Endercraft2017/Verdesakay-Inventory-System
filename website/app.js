@@ -3,6 +3,7 @@
   var slug = function (v) { return v.trim().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); };
   var LABELS = { inventory: 'Inventory', manufacturing: 'Manufacturing', purchasing: 'Purchasing', hr: 'HR & Payroll', accounting: 'Accounting', ai: 'AI Assistant', mobile: 'Mobile app', email: 'Email', quickbooks: 'QuickBooks' };
   var signupsOpen = false;
+  var signupKey = null;
   document.querySelectorAll('[data-open]').forEach(function (b) { b.addEventListener('click', function () {
     // Self-service sign-up is off unless the owner opens it; every "sign up" path leads to Talk to us.
     var which = b.dataset.open === 'signup' && !signupsOpen ? 'contact' : b.dataset.open;
@@ -124,8 +125,9 @@
     var error = this.querySelector('.error'), button = document.getElementById('signup-submit');
     error.textContent = ''; button.disabled = true;
     try {
+      if (!signupKey) signupKey = crypto.randomUUID();
       var name = document.getElementById('company').value.trim();
-      var r = await fetch('/api/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slug: slug(name), company_name: name, admin_username: document.getElementById('username').value.trim(), admin_email: document.getElementById('email').value.trim(), admin_password: document.getElementById('password').value, modules: selectedModules(), seats: Number(document.getElementById('seats').value) }) });
+      var r = await fetch('/api/signup', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': signupKey }, body: JSON.stringify({ slug: slug(name), company_name: name, admin_username: document.getElementById('username').value.trim(), admin_email: document.getElementById('email').value.trim(), admin_password: document.getElementById('password').value, modules: selectedModules(), seats: Number(document.getElementById('seats').value) }) });
       var data = await r.json();
       if (!r.ok) throw new Error(data.error || 'Registration failed.');
       window.location.assign('/' + encodeURIComponent(data.slug));

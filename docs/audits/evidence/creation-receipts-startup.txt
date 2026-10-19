@@ -1,0 +1,2 @@
+PASS: actual server.ts startup reached HTTP health and pruned a previously committed expired creation receipt.
+PASS: minimal duplicate-prevention tombstone survived; disposable databases only; no provider or deployment.

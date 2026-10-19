@@ -38,7 +38,9 @@ tables as ready. Stored-subscription parsing remains separate from public-input 
 | First invoice insert or invoice audit fails | Invoice/sequence and outer setup roll back together | Signup and standalone invoice fault tests |
 | Final creation audit fails | All prior local setup and console inquiry linkage roll back | Real SQLite signup/console faults |
 | Process exits after local setup but before publication commits | Restarted catalog has no tenant, invoice, contact or core audit; prepared file stays blocked | Real child process exit test |
-| Successful setup, failed HTTP acknowledgement | Committed workspace remains; exact explicit slug conflicts on another create | No durable response-replay receipt implemented |
+| Successful keyed setup, failed HTTP acknowledgement | Same scope/key/parsed details return the original 201 for 24 hours; no additional workspace, invoice or notification | Receipt tests and actual browser dropped-response tests |
+| Receipt insertion or later publication audit fails | Receipt/workspace/local setup roll back together; same key can retry | Real SQLite faults |
+| Expired key, changed request or missing/purged workspace | Conflict; never reapply an expired key | Receipt lifecycle tests |
 | Notification fails or process exits after commit | Local workspace remains ready; delivery may be lost | Notification delivery is still best effort |
 | File cleanup fails or ownership is uncertain | Preserve artifacts and emit safe cleanup event | Core recovery tests and runbook |
 
@@ -53,26 +55,87 @@ explicit slug after resolving its underlying cause. The browser retains the sign
 the test retries the same company, then verifies one first invoice and the payment lock through
 the tenant billing API. Tests send no real owner email.
 
-A timeout or lost response is an unknown acknowledgement, not proof of rollback. Check the
-catalog/audit and existing invoice before creating another company. Console creation with an
-automatically generated slug can still create another workspace on repeated submissions. Do
-not delete or reissue an existing first invoice merely because the original request timed out.
-Interrupted unregistered files require the stopped-writer review/quarantine procedure in
-provisioning-recovery.md. No automatic adoption or destructive cleanup is provided.
+A timeout or lost response is an unknown acknowledgement, not proof of rollback. The updated
+website keeps a random creation key in page memory; the console keeps one per creation modal,
+including its passkey retry. Retry from that same form with the same details. Successful replay
+returns the original response, not a refreshed billing/subscription view. If details were changed
+after success, the conflict tells the operator to check the existing workspace. Validation or
+rolled-back failures do not consume a key, so correcting those inputs can retry normally.
+
+A reload, closed/reopened console modal or older API client may send a new/no key and lacks this
+protection. Check catalog/audit and invoices before starting a fresh request after uncertainty.
+Do not delete or reissue an existing first invoice merely because a request timed out.
+Interrupted unregistered files still require the stopped-writer review/quarantine procedure in
+provisioning-recovery.md. Receipts never adopt or delete orphan artifacts.
+
+## Durable creation receipt contract (19 October 2026)
+
+Only POST /api/signup and POST /_platform/api/tenants accept this creation contract. Supply an
+Idempotency-Key header formatted as a UUID v4; browser clients generate it with crypto.randomUUID
+in a secure context. No key is permitted for compatibility, but then there is no replay promise.
+Import, CLI provisioning, payment settlement and other routes are outside this contract.
+
+Request validation happens before receipt lookup. Signup remains behind SIGNUPS_OPEN and its
+existing rate limiter. Console lookup stays behind current session authentication, required
+passkey setup and fresh passkey verification; each operator has a distinct scope. Anonymous
+signup has its own versioned scope and requires both the random key and matching parsed request,
+including the password. Possession of a receipt does not authenticate a tenant, reset a password,
+bypass MFA or grant workspace access. Responses contain no session token or recovery bearer.
+
+The platform_creation_receipts table is created with the control-plane schema, not a tenant
+schema migration or replicated tenant table. Its primary key is (scope, SHA256(UUID)). Parsed
+objects are canonicalized with sorted property names; array order and explicit defaults remain
+significant. The canonical request digest is protected by salted scrypt at N=131072,r=8,p=1.
+Neither raw password/request nor a cheap password fingerprint is persisted. Existing password
+hashing helpers provide the work factor; this is not a separate encryption key in platform.db.
+Console receipts contain the original company/subscription/usage response, signup receipts the
+original company/invoice acknowledgement. Protect platform.db and its backups accordingly.
+
+Only completed 201 responses are stored, inside the same publication savepoint as local setup
+and audit. Failed validation/setup stores no receipt. A stale competing candidate cannot commit
+another workspace under the same scope/key: the unique insert conflict rolls publication back
+and cleans its owned prepared file. An in-flight duplicate can encounter a file/catalog conflict
+or transient writer error; retry the same key/details after the first request finishes. This is
+not an in-flight promise queue or a multi-host/shared-filesystem certification.
+
+Responses/verifiers expire 24 hours after creation. Startup/hourly housekeeping and keyed
+requests null expired payloads/verifiers; a stopped server can retain them until its next sweep.
+A minimal scope/key-hash/tenant-slug/expiry tombstone remains and rejects reuse permanently.
+Do not delete tombstones as ordinary cleanup: doing so removes duplicate prevention. Retention,
+legal holds and backup expiry require approved governance; pruning does not erase older backups.
+No response is replayed for a missing or purged workspace. A restored older catalog may also
+restore older receipt state; reconcile acknowledged operations before reopening writes.
+
+The new verifier adds synchronous scrypt work to keyed creation/replay; public signup already
+used synchronous credential hashing. The per-IP signup limiter is not a distributed capacity or
+bot defense. Broader signup admission/async work and hosted abuse/capacity acceptance remain open.
 
 ## Remaining work
 
-- Durable principal-bound idempotency/response receipts for create and signup, including the
-  console's generated slugs, concurrent duplicate submissions and expiration policy.
+- Broader create/import/API retry coverage, signup work admission and distributed abuse/capacity
+  acceptance; current receipt protection requires the same key and covered route.
 - A transactional notification outbox and bounded worker with retry, delivery/unknown state,
   redaction and operational alerting. Current owner notification runs only after local commit
-  and is best effort; it is not part of a database transaction or exactly-once delivery promise.
+  and is best effort; its attempt log is not a queue. Required acceptance: enqueue the local
+  event in publication; claim work durably after commit; bound attempts/timeouts; distinguish
+  safe retry from uncertain provider acceptance; preserve disabled-alert/recipient policy and
+  expose safe operational status. Test interruption before enqueue, after commit, during send
+  and before receipt persistence. No external send belongs inside publication. This remains
+  unimplemented and is not an exactly-once delivery promise.
 - Real provider, hosted filesystem, Windows, power-loss and multi-host acceptance, plus review
   of imported schema/credential state and legacy interrupted artifacts.
 - Broader billing lifecycle acceptance, including commercial renewal/calendar rules; this fix
   does not change pricing policy, period calculation, payment settlement or external charging.
 
-This increment adds no schema or dependency and deploys nothing. Prior release blockers stay
+The receipt follow-up adds one control-plane table/index and no dependencies. No deployment
+command or hosted-rollout acceptance is part of this increment. Prior release blockers stay
 open. Research: SQLite's documented savepoint/nesting and writer transaction semantics:
 https://www.sqlite.org/lang_savepoint.html and https://www.sqlite.org/lang_transaction.html .
 See audit validation-results.md and catalog-setup-* evidence for exact completed tests.
+
+Receipt evidence: tests/onboarding-receipts.test.ts and tests/e2e/creation-receipts.spec.ts;
+creation-receipts-* audit evidence. Research reviewed 19 October 2026: Stripe idempotency practice
+https://docs.stripe.com/api/idempotent_requests and OWASP password storage
+https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html .
+Our contract differs from Stripe: completed successes only, UUID-v4-only keys and permanent
+tombstones. This is an application contract, not a claim that an Idempotency-Key RFC is final.

@@ -1389,8 +1389,8 @@ before publication closes the connection and removes only artifacts whose identi
 owned. Failed initialization is evicted from the database registry. Interrupted processes can
 leave unregistered files, which block retry rather than being adopted or overwritten. Review
 and quarantine follow the provisioning recovery runbook. Covered local signup/console setup
-now participates in publication (see the following pipeline); durable response receipts and
-external notification delivery remain separate engineering work.
+now participates in publication (see the following pipeline); keyed completed response receipts
+also commit there. External notification delivery remains separate engineering work.
 
 
 ## Atomic local signup/console setup (2026-10-19)
@@ -1403,5 +1403,16 @@ Console setup includes modules/default subscription, optional payment lock, inqu
 response preparation. Any local setup/audit error rolls the catalog back and invokes owned-file
 cleanup. A process exit before commit leaves no setup rows and preserves an unregistered file
 for reviewed recovery. Notifications are best effort after commit. Lost HTTP responses and
-concurrent duplicates still require durable response receipts; automatic generated slugs do not
-make duplicate submissions idempotent. See operations/workspace-onboarding.md.
+concurrent duplicates now use durable scoped receipts for the two covered HTTP routes; a new
+or absent key has no duplicate protection. See operations/workspace-onboarding.md.
+
+## Keyed workspace creation replay (2026-10-19)
+
+Current route gates → parsed schema → scope/UUID lookup → strong salted request verification
+→ return original 201, or normal preparation/publication → setup/response/receipt/core audit
+→ commit → notification/HTTP response. Same-key mismatch, expired tombstone or unavailable
+workspace conflicts. Receipt uniqueness rolls back a competing publication. No error receipts
+or tenant sessions are saved. Startup/hourly/keyed-request pruning clears expired response and
+verifier while retaining duplicate-prevention tombstones. Browser keys live only in page/modal
+memory and survive same-form/passkey retry. Reload/new modal/new key is outside replay coverage.
+See operations/workspace-onboarding.md and creation-receipts audit evidence.

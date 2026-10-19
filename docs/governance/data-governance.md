@@ -45,3 +45,17 @@ cleanup without an approved scoped procedure. See the QuickBooks operations runb
 completed versions, claim IDs, safe error codes and attempt/scheduling times. No raw payload or
 provider error is stored. It is cloud-only and excluded from node snapshots/effects. Include it
 in accounting retention and scoped rights/reconciliation procedures; do not blindly purge claims.
+
+## Workspace creation receipts (2026-10-19)
+
+Control-plane platform_creation_receipts contains route/operator scope, hashed random UUID,
+salted scrypt request verifier, original company/invoice or console creation response, tenant
+slug and expiry. No raw request/password, session token or recovery bearer is added. Responses
+and verifiers expire after 24 hours and are nulled by startup/hourly/keyed-request sweeps; they
+can persist while the server is stopped and in retained backups. Nulling is logical cleanup,
+not a forensic wipe of database pages, WAL or snapshots. Minimal scope/key-hash/slug/
+expiry tombstones remain indefinitely to prevent a replay becoming another creation. This is
+a security/duplicate-prevention implementation policy, not a legally approved retention period.
+Approve lawful basis, access, backup expiry, holds and any future scoped tombstone erasure before
+launch. Deleting receipts/tombstones or restoring an older catalog can remove duplicate evidence;
+reconcile before allowing creation writes. See operations/workspace-onboarding.md.

@@ -112,7 +112,7 @@ runbooks; staged enrollment, wider tenant step-up and native credential storage 
 **Responsibility:** tenant provisioning, plans, quotas, and the owner console — sits
 above the tenant-facing app, not one of its features. Single-tenant/self-hosted
 installs never touch this.
-**Owned files:** `plans.ts`, `quota.ts`, `provisioning.ts`, `adopt-default.ts` (offline,
+**Owned files:** `onboarding-receipts.ts` (durable scoped create/signup responses, salted request verifier, expiry/tombstones), `plans.ts`, `quota.ts`, `provisioning.ts`, `adopt-default.ts` (offline,
 verified adoption of the original company, preserving source DB/uploads; CLI
 `scripts/adopt-default-tenant.ts`), `tenant-path.ts` (optional host-bound path routing), `platform.ts` (tenant
 catalog in `platform.db`; permanent company login IDs with pair-scoped counters,
@@ -144,7 +144,8 @@ blocked for review; no automatic adoption/deletion occurs. `tests/provisioning-r
 covers process exits, retry refusal, collisions, owned cleanup and registry recovery. This is
 not a transaction across catalog and tenant databases/files. Signup and console local setup
 now runs synchronously inside catalog publication, including nested audited first invoices;
-notification delivery and durable HTTP response receipts remain separate.
+keyed completed responses now share that publication transaction. Notification delivery remains
+best effort. See `docs/operations/workspace-onboarding.md` for receipt/security/retention limits.
 See `docs/operations/provisioning-recovery.md`.
 
 

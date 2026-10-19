@@ -112,6 +112,16 @@ function pdb(): DatabaseSync {
       expires_at TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS platform_creation_receipts (
+      scope TEXT NOT NULL,
+      key_hash TEXT NOT NULL,
+      verifier TEXT,
+      response TEXT,
+      tenant_slug TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      PRIMARY KEY (scope, key_hash)
+    );
+    CREATE INDEX IF NOT EXISTS creation_receipts_expiry ON platform_creation_receipts(expires_at) WHERE response IS NOT NULL;
     CREATE TABLE IF NOT EXISTS platform_durable_files (
       slug       TEXT NOT NULL,
       name       TEXT NOT NULL,

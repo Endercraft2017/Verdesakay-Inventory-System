@@ -1,10 +1,11 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 19 October 2026 — signup/console local setup now commits with catalog
-publication, including nested audited first invoices and real rollback/crash/browser tests. Accounting follow-ups were delivered
+Latest follow-up: 19 October 2026 — scoped durable creation receipts now commit with signup/console
+setup, protecting same-key retries after a lost response. Real rollback/process/browser tests cover
+the local boundaries. Accounting follow-ups were delivered
 on 18 October and authentication work on 16 October. The complete release is still on hold.
 
-Work is on `production`, derived from `restructure/module-architecture`; it is not deployed.
+Work is on `production`, derived from `restructure/module-architecture`; no deployment command or hosted acceptance was performed for this increment.
 The attached handbook is an audit reference. Current whole-control status remains 36 PASS,
 58 FAIL, 126 UNVERIFIED and 13 N/A across 233 checks. A test pass is not release approval.
 See the [scorecard](production-scorecard.md) for severity, scenarios and resolutions and
@@ -40,6 +41,7 @@ applicable issue before changing behavior:
 | High | Complete remaining sensitive-business-action verification with the offline authority model | Explicit action inventory, server enforcement and replay/role/race tests; AUTHZ-15 remains open |
 | High | Uniform API validation/error/redaction and privacy export/retention/erasure lifecycle | Route-by-route evidence; tenant-safe restore/copy/integration tests; approved retention scope |
 | High | AI privacy/adversarial evaluation, interrupted audit outcomes and hard spend allocation | Isolation/leakage/abuse/cancellation tests and real provider budget acceptance |
+| High | Reliable onboarding notification delivery and broader creation admission/reconciliation | Completed keyed HTTP receipts implemented; transactional outbox/worker, signup work budget, legacy/new-key recovery and imported-state acceptance remain. See operations/workspace-onboarding.md |
 | High | Native/Electron distribution and supported-client acceptance | APK/installer builds, signed artifacts, actual Windows/Android vault/backup/logout/upgrade checks |
 | High | Integration lifecycle and accounting reconciliation acceptance | Local generation/scoping, refresh admission, export exclusion and durable uncertain-write handling implemented 2026-10-18; actual Intuit sandbox, legacy adoption/repair tooling, interrupted-claim reconciliation, operational alerting and accountant acceptance remain. See operations/quickbooks-lifecycle.md |
 | High | Resolve or explicitly disposition vulnerable dependencies and historical-secret gates | Upstream/compatible fix or approved expiring risk record; verified revocation without exposing the old bearer |
@@ -170,3 +172,25 @@ response receipts, generated-slug duplicate submission handling and reliable not
 outbox/worker delivery remain engineering work. Existing post-core setup limitations above are
 superseded for the covered local catalog steps, not for acknowledgements or external delivery.
 Other scorecard work and hosted/owner/legal acceptance gates remain; no deployment occurred.
+
+## Durable creation receipt follow-up — 2026-10-19
+
+High scoped gap: a successful but unacknowledged console create with a generated slug could
+create another workspace on retry; signup could report conflict after successful invoicing.
+Both covered HTTP routes now persist completed responses atomically with local publication.
+Scope/key uniqueness rejects a competing candidate, and same details replay the original 201.
+Anonymous signup binds the full parsed request including password with a salted scrypt verifier;
+console replay requires the current authenticated operator and fresh passkey proof where enabled.
+Expiry clears payload/verifier but retains a tombstone to prevent later reapplication.
+
+The receipt tests cover independent catalog reopen, actual process exit after commit, stale
+competing candidates, real SQLite rollback faults, changed credentials, operator/route isolation,
+authentication/fresh-proof enforcement, legacy clients, purged tenants and expiry. Chromium drops
+real successful responses for both forms, then retries with the same key and verifies one workspace/
+invoice. This supersedes the earlier response-receipt engineering gap for these routes only.
+
+No owner action is needed for this engineering increment. Read operations/workspace-onboarding.md
+for exact behavior and remaining work. Notification outbox/delivery, signup admission, broader
+API/import retry coverage and existing release gates remain open. Keys are in page/modal memory;
+reopening/reloading does not recover them. Hosted/power-loss/shared-filesystem and actual device
+acceptance are not inferred. Whole-control totals and release hold remain unchanged.

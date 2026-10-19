@@ -288,3 +288,10 @@ applicable first invoice and console module/inquiry setup now commit with catalo
 Invoice/audit issuance nests safely. Durable response receipts and notification delivery remain
 open; see operations/workspace-onboarding.md and the audit README. Whole-control totals and
 release hold are unchanged; local helper fixes do not establish complete-control PASS status.
+
+Durable creation receipt follow-up, 19 October 2026: completed signup/console responses now
+commit with local publication and replay for matching scoped keys, including generated slugs.
+Changed details and expired tombstones conflict; console auth/fresh proof still runs. Real SQLite,
+process-exit and browser dropped-response evidence is in creation-receipts-* and validation results.
+This supersedes the earlier receipt gap for covered routes, not notification delivery or new/no-key
+reconciliation. Complete-control totals remain unchanged and release hold remains in effect.
