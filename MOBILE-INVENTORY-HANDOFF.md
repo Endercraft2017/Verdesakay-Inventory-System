@@ -2,6 +2,13 @@
 
 ## Current close-out status (2026-10-19)
 
+Permission close-out: see `docs/reviews/inventory-production-permissions-audit-2026-10-19.md`.
+The desktop account editor, backend and phone Work grant/revoke paths passed on
+disposable data. `production.approve` is a separate grant: a seeded Production
+Manager does not hold it automatically, so the tenant needs a named approver.
+The live tenant's edited roles and individual grants still need an admin check
+with a staff login; no live employee permissions were changed in this audit.
+
 The source and browser gaps described in older dated entries below have been
 superseded where a later entry says they were fixed. Treat those entries as an
 implementation history, not a current task list. The current branch includes

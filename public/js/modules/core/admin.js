@@ -27,6 +27,7 @@ App.register('admin', async (view, filter) => {
   let userQuery = '';
   let tab = filter && filter.tab === 'roles' ? 'roles' : 'accounts';
   let catalog = await AccessEditor.getCatalog(true);
+  if (!view.isConnected) return;
   const { roleLabel } = AccessEditor;
 
   // Role picker for the account modals, with a live line saying what the chosen role covers.
@@ -418,6 +419,7 @@ App.register('admin', async (view, filter) => {
     renderUsers();
   });
   await load();
+  if (!view.isConnected) return;
   setTab(tab);
 
   // Deep-link: the "Departments" tree leaf opens the manager directly.
