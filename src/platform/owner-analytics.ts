@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+import { parseBody } from '../shared/validation';
 import { platformDb, getTenant, listProvisioningLog, type TenantRow } from './platform';
 import { queryOne, queryAll, withTenant, getDb, uploadDir, DATA_DIR } from '../shared/db';
 import { MODULES, enabledModules } from '../shared/modules';
@@ -85,7 +86,7 @@ export function ownerDetails(slug: string) {
   return detailsSchema.parse(row ? JSON.parse(row.details) : {});
 }
 export function saveOwnerDetails(slug: string, input: unknown) {
-  const details = detailsSchema.parse(input);
+  const details = parseBody(detailsSchema, input);
   db().prepare('INSERT INTO tenant_owner_details(slug,details) VALUES(?,?) ON CONFLICT(slug) DO UPDATE SET details=excluded.details')
     .run(slug, JSON.stringify(details));
 }
@@ -96,9 +97,9 @@ export const ticketSchema = z.object({
   priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
 }).strict();
 export function addSupport(slug: string, input: unknown, by: string, source: 'owner' | 'tenant' = 'owner') {
-  const v = source === 'tenant' ? { ...ticketSchema.parse(input), status: 'open' } : ticketSchema.extend({
+  const v = source === 'tenant' ? { ...parseBody(ticketSchema, input), status: 'open' } : parseBody(ticketSchema.extend({
     description: z.string().trim().max(10000).default(''), status: z.enum(['open', 'in_progress', 'resolved']),
-  }).parse(input);
+  }), input);
   const result = db().prepare('INSERT INTO tenant_support(slug,subject,status,by,at,description,category,priority,source) VALUES(?,?,?,?,?,?,?,?,?)')
     .run(slug, v.subject, v.status, by, new Date().toISOString(), v.description, v.category, v.priority, source);
   return Number(result.lastInsertRowid);
@@ -109,8 +110,10 @@ export function listSupport(slug: string, tenantOnly = false) {
   const replies = d.prepare('SELECT * FROM tenant_support_replies WHERE slug=? ORDER BY id').all(slug) as Array<{ticket_id: number; [key: string]: unknown}>;
   return tickets.map(t => ({ ...t, replies: replies.filter(r => r.ticket_id === t.id) }));
 }
+const ticketIdentitySchema = z.object({ id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER) });
 export function replySupport(slug: string, id: number, input: unknown, by: string, source: 'owner' | 'tenant') {
-  const v = z.object({ body: z.string().trim().min(1).max(10000) }).strict().parse(input);
+  parseBody(ticketIdentitySchema, { id });
+  const v = parseBody(z.object({ body: z.string().trim().min(1).max(10000) }).strict(), input);
   const d = db();
   if (!d.prepare(`SELECT 1 FROM tenant_support WHERE slug=? AND id=? ${source === 'tenant' ? "AND source='tenant'" : ''}`).get(slug, id)) return false;
   d.prepare('INSERT INTO tenant_support_replies(ticket_id,slug,body,by,source,at) VALUES(?,?,?,?,?,?)')
@@ -118,7 +121,8 @@ export function replySupport(slug: string, id: number, input: unknown, by: strin
   return true;
 }
 export function updateSupport(slug: string, id: number, input: unknown) {
-  const v = z.object({ status: z.enum(['open', 'in_progress', 'resolved']) }).strict().parse(input);
+  parseBody(ticketIdentitySchema, { id });
+  const v = parseBody(z.object({ status: z.enum(['open', 'in_progress', 'resolved']) }).strict(), input);
   return db().prepare('UPDATE tenant_support SET status=? WHERE slug=? AND id=?').run(v.status, slug, id).changes > 0;
 }
 function backupHealth(slug: string) {

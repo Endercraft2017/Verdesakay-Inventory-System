@@ -1,0 +1,205 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/tenant-support.test.ts > support and owner-details error boundaries > retains useful validation for tenant create without a serialized schema exception
+{"timestamp":"2026-10-19T01:33:43.749Z","level":"info","event":"http_request","request_id":"dbc6ec68-76c4-4e73-9383-fc1bf1052657","tenant":"supportco","method":"POST","path":"/api/support","status":400,"duration_ms":1}
+
+stdout | tests/tenant-support.test.ts > support and owner-details error boundaries > retains useful validation for tenant reply without a serialized schema exception
+{"timestamp":"2026-10-19T01:33:43.754Z","level":"info","event":"http_request","request_id":"7fc0c024-edc7-4c2c-b2c2-d181cfdd9060","tenant":"supportco","method":"POST","path":"/api/support/1/replies","status":400,"duration_ms":1}
+
+stdout | tests/tenant-support.test.ts
+{"timestamp":"2026-10-19T01:33:40.820Z","level":"info","event":"http_request","request_id":"5078a9b8-9e7d-4d49-b72e-f69ca3e050ee","tenant":"supportco","method":"POST","path":"/api/auth/login","status":200,"duration_ms":714}
+
+stdout | tests/tenant-support.test.ts
+{"timestamp":"2026-10-19T01:33:41.492Z","level":"info","event":"http_request","request_id":"c4f24a66-77e7-40a0-8069-107e59435bf5","tenant":"otherco","method":"POST","path":"/api/auth/login","status":200,"duration_ms":664}
+
+stdout | tests/tenant-support.test.ts
+{"timestamp":"2026-10-19T01:33:42.139Z","level":"info","event":"http_request","request_id":"35037b8a-d3f8-4649-a456-9abb0f5d23c0","tenant":"supportco","method":"POST","path":"/api/auth/login","status":200,"duration_ms":561}
+
+ ❯ tests/tenant-support.test.ts (16 tests | 12 failed) 10604ms
+     × hides storage failures for tenant create and preserves stored records 11ms
+     × hides storage failures for owner create and preserves stored records 4ms
+     × hides storage failures for tenant reply and preserves stored records 5ms
+     × hides storage failures for owner reply and preserves stored records 4ms
+     × hides storage failures for owner update and preserves stored records 3ms
+     × hides storage failures for owner details and preserves stored records 3ms
+     × retains useful validation for tenant create without a serialized schema exception 5ms
+     × retains useful validation for tenant reply without a serialized schema exception 3ms
+     × retains useful validation for owner create without a serialized schema exception 2ms
+     × retains useful validation for owner reply without a serialized schema exception 2ms
+     × retains useful validation for owner update without a serialized schema exception 2ms
+     × retains useful validation for owner details without a serialized schema exception 3ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 12 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/tenant-support.test.ts > support and owner-details error boundaries > hides storage failures for tenant create and preserves stored records
+ FAIL  tests/tenant-support.test.ts > support and owner-details error boundaries > hides storage failures for owner create and preserves stored records
+ FAIL  tests/tenant-support.test.ts > support and owner-details error boundaries > hides storage failures for owner reply and preserves stored records
+ FAIL  tests/tenant-support.test.ts > support and owner-details error boundaries > hides storage failures for owner update and preserves stored records
+ FAIL  tests/tenant-support.test.ts > support and owner-details error boundaries > hides storage failures for owner details and preserves stored records
+AssertionError: expected 400 to be 500 // Object.is equality
+
+- Expected
++ Received
+
+- 500
++ 400
+
+ ❯ tests/tenant-support.test.ts:139:31
+    137|         ? await ctx.api.patch(prefix + `/support/${id}`).set(op()).sen…
+    138|         : await ctx.api.put(prefix + '/owner-details').set(op()).send(…
+    139|       expect(response.status).toBe(500);
+       |                               ^
+    140|       expect(response.body).toEqual({ error: 'Internal server error', …
+    141|       expect(response.body.request_id).toBeTruthy();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/12]⎯
+
+ FAIL  tests/tenant-support.test.ts > support and owner-details error boundaries > hides storage failures for tenant reply and preserves stored records
+AssertionError: expected 404 to be 500 // Object.is equality
+
+- Expected
++ Received
+
+- 500
++ 404
+
+ ❯ tests/tenant-support.test.ts:139:31
+    137|         ? await ctx.api.patch(prefix + `/support/${id}`).set(op()).sen…
+    138|         : await ctx.api.put(prefix + '/owner-details').set(op()).send(…
+    139|       expect(response.status).toBe(500);
+       |                               ^
+    140|       expect(response.body).toEqual({ error: 'Internal server error', …
+    141|       expect(response.body.request_id).toBeTruthy();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/12]⎯
+
+ FAIL  tests/tenant-support.test.ts > support and owner-details error boundaries > retains useful validation for tenant create without a serialized schema exception
+ FAIL  tests/tenant-support.test.ts > support and owner-details error boundaries > retains useful validation for owner create without a serialized schema exception
+AssertionError: expected '[\n  {\n    "origin": "string",\n    …' to contain 'subject:'
+
+- Expected
++ Received
+
+- subject:
++ [
++   {
++     "origin": "string",
++     "code": "too_small",
++     "minimum": 1,
++     "inclusive": true,
++     "path": [
++       "subject"
++     ],
++     "message": "Too small: expected string to have >=1 characters"
++   }
++ ]
+
+ ❯ tests/tenant-support.test.ts:161:33
+    159|     const response = await ctx.api[method](path).set(operation.startsW…
+    160|     expect(response.status).toBe(400);
+    161|     expect(response.body.error).toContain(field + ':');
+       |                                 ^
+    162|     expect(response.body.error).not.toContain('"code"');
+    163|     expect(response.body.request_id).toBe(response.headers['x-request-…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/12]⎯
+
+ FAIL  tests/tenant-support.test.ts > support and owner-details error boundaries > retains useful validation for tenant reply without a serialized schema exception
+ FAIL  tests/tenant-support.test.ts > support and owner-details error boundaries > retains useful validation for owner reply without a serialized schema exception
+AssertionError: expected '[\n  {\n    "origin": "string",\n    …' to contain 'body:'
+
+- Expected
++ Received
+
+- body:
++ [
++   {
++     "origin": "string",
++     "code": "too_small",
++     "minimum": 1,
++     "inclusive": true,
++     "path": [
++       "body"
++     ],
++     "message": "Too small: expected string to have >=1 characters"
++   }
++ ]
+
+ ❯ tests/tenant-support.test.ts:161:33
+    159|     const response = await ctx.api[method](path).set(operation.startsW…
+    160|     expect(response.status).toBe(400);
+    161|     expect(response.body.error).toContain(field + ':');
+       |                                 ^
+    162|     expect(response.body.error).not.toContain('"code"');
+    163|     expect(response.body.request_id).toBe(response.headers['x-request-…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/12]⎯
+
+ FAIL  tests/tenant-support.test.ts > support and owner-details error boundaries > retains useful validation for owner update without a serialized schema exception
+AssertionError: expected '[\n  {\n    "code": "invalid_value",\…' to contain 'status:'
+
+- Expected
++ Received
+
+- status:
++ [
++   {
++     "code": "invalid_value",
++     "values": [
++       "open",
++       "in_progress",
++       "resolved"
++     ],
++     "path": [
++       "status"
++     ],
++     "message": "Invalid option: expected one of \"open\"|\"in_progress\"|\"resolved\""
++   }
++ ]
+
+ ❯ tests/tenant-support.test.ts:161:33
+    159|     const response = await ctx.api[method](path).set(operation.startsW…
+    160|     expect(response.status).toBe(400);
+    161|     expect(response.body.error).toContain(field + ':');
+       |                                 ^
+    162|     expect(response.body.error).not.toContain('"code"');
+    163|     expect(response.body.request_id).toBe(response.headers['x-request-…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/12]⎯
+
+ FAIL  tests/tenant-support.test.ts > support and owner-details error boundaries > retains useful validation for owner details without a serialized schema exception
+AssertionError: expected '[\n  {\n    "origin": "string",\n    …' to contain 'contact_email:'
+
+- Expected
++ Received
+
+- contact_email:
++ [
++   {
++     "origin": "string",
++     "code": "invalid_format",
++     "format": "email",
++     "pattern": "/^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$/",
++     "path": [
++       "contact_email"
++     ],
++     "message": "Invalid email address"
++   }
++ ]
+
+ ❯ tests/tenant-support.test.ts:161:33
+    159|     const response = await ctx.api[method](path).set(operation.startsW…
+    160|     expect(response.status).toBe(400);
+    161|     expect(response.body.error).toContain(field + ':');
+       |                                 ^
+    162|     expect(response.body.error).not.toContain('"code"');
+    163|     expect(response.body.request_id).toBe(response.headers['x-request-…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/12]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  12 failed | 4 passed (16)
+   Start at  01:33:32
+   Duration  11.15s (transform 3.28s, setup 90ms, import 293ms, tests 10.60s, environment 0ms)

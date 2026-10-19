@@ -1,0 +1,30 @@
+import { test, expect } from '@playwright/test';
+
+test('support submission hides a real storage failure, retains the draft and accepts a corrected retry', async ({ page }) => {
+  await page.setExtraHTTPHeaders({ 'X-Tenant': 'browser-support' });
+  await page.goto('/');
+  await page.locator('#login-username').fill('owner');
+  await page.locator('#login-password').fill('Synthetic support browser password');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.locator('#app-screen')).toBeVisible();
+  await page.evaluate(() => (window as any).App.navigate('support'));
+  const form = page.locator('#support-form');
+  await form.getByLabel('Subject').fill('Browser failure injection');
+  await form.getByLabel('Description').fill('Preserve the steps I typed before the failure.');
+  const failed = page.waitForResponse(response => response.url().endsWith('/api/support') && response.request().method() === 'POST');
+  await form.getByRole('button', { name: 'Send to OTOM' }).click();
+  const response = await failed;
+  expect(response.status()).toBe(500);
+  const body = await response.json();
+  expect(body).toEqual({ error: 'Internal server error', request_id: response.headers()['x-request-id'] });
+  expect(body.request_id).toBeTruthy();
+  await expect(page.locator('#support-error')).toHaveText('Internal server error');
+  await expect(form.getByLabel('Description')).toHaveValue('Preserve the steps I typed before the failure.');
+  await expect(form.getByRole('button', { name: 'Send to OTOM' })).toBeEnabled();
+  await expect(page.locator('body')).not.toContainText('synthetic-browser-private-storage-detail');
+  await form.getByLabel('Subject').fill('Corrected browser support report');
+  await form.getByRole('button', { name: 'Send to OTOM' }).click();
+  await expect(page.locator('#support-tickets')).toContainText('Corrected browser support report');
+  await expect(page.locator('#support-tickets')).toContainText('Preserve the steps I typed before the failure.');
+  await expect(form.getByLabel('Description')).toHaveValue('');
+});

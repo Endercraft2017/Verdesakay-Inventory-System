@@ -1,8 +1,8 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 18 October 2026 — accounting connection races, company-bound records, durable
-write outcomes and HTTP retry-cache scope. Earlier authentication work below was delivered on
-16 October 2026. The complete release is still on hold.
+Latest follow-up: 19 October 2026 — conversion and support/owner-detail error boundaries,
+public validation and real database/browser fault tests. Accounting follow-ups were delivered
+on 18 October and authentication work on 16 October. The complete release is still on hold.
 
 Work is on `production`, derived from `restructure/module-architecture`; it is not deployed.
 The attached handbook is an audit reference. Current whole-control status remains 36 PASS,
@@ -97,3 +97,21 @@ handler's trust in arbitrary numeric status properties still need classification
 injection. Do not mark app-wide error handling complete. Dependency advisories, historical
 credential revocation and hosted/physical-device/owner acceptance gates remain open.
 See the dated validation record for actual tests; no deployment is authorized by this change.
+
+
+## Support/owner-detail error follow-up — 2026-10-19
+
+Moderate scoped disclosure: tenant support and owner-console support/detail mutations previously
+returned raw database and Zod exception messages as 400 responses. They now preserve authored
+validation feedback and sanitize unexpected failures before generic 500 handling. Ticket IDs
+also receive service-level positive safe-integer validation, including nonnumeric route IDs
+not rejected by the existing numeric-resource middleware. No tenant/owner scope is broadened.
+Real SQLite failure tests cover six mutation paths, unchanged stored records, safe correlated
+responses and absence of injected private error markers from request logs. A browser check
+proves failed support submission retains the draft and a corrected retry can succeed.
+
+The earlier blanket platform/support review lead is partially resolved for these specific
+routes only. Module/provisioning catches, CSV adapters, central arbitrary status/expose trust,
+503 exceptions and legacy diagnostic logging remain engineering work. Rich protected error
+diagnostics, support write/audit atomicity and duplicate submission semantics are not claimed
+by this fix. API-06 stays FAIL; release totals and external acceptance gates are unchanged.

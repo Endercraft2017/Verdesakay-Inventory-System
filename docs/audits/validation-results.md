@@ -301,3 +301,35 @@ Research: [OWASP Error Handling Cheat Sheet](https://cheatsheetseries.owasp.org/
 accessed 19 October 2026. Generic client failures and correlated safe diagnostics are applied to
 this converter boundary. API-06 remains FAIL; other raw exception paths require individual
 classification and injection tests. Whole-control totals and release hold remain unchanged.
+
+## Support and owner-details errors — 19 October 2026
+
+Full regression completed: **297 files passed / 1 failed; 3,006 tests passed / 2 failed**
+(551.15s). Both failures were existing mobile tests observing an incomplete screen after short
+fixed rendering delays (production-manager early close and supervisor release request). Those
+tests now wait for bounded expected screen/request states. The complete corrected mobile file
+passed **130 tests** (27.74s). This is full-run evidence plus verified targeted corrections;
+no second uninterrupted green full run is claimed. Runtime application code remained frozen
+during the full run; the mobile test waits were changed after that file had run.
+
+Focused support and owner analytics passed **2 files / 27 tests** (12.46s). Real SQLite trigger
+failures cover six mutations: tenant/owner ticket creation, tenant/owner reply, owner status
+update and owner details. They verify generic 500 responses, request correlation, unaffected
+stored records and omission of a synthetic private marker from captured logs. Validation and
+bad-ID checks retain useful 400 feedback; existing cross-tenant/private-note cases still pass.
+
+**14 Playwright scenarios passed** (55.1s), including actual support form submission against a
+real disposable SQLite failure: generic response, retained description, enabled retry, then a
+successful corrected report. A separate focused browser run passed (6.4s). Final TypeScript
+and diff checks passed. Staged Gitleaks passed with no findings; its redacted report is included.
+
+Evidence: `evidence/support-errors-{full,focused,mobile,playwright,browser-focused,types,before}.txt`,
+`evidence/support-errors-verification.json` and `evidence/support-errors-scope.md`. Baseline
+fault probes intentionally failed against the old catch behavior; fixture corrections are
+explained in the scope record. No production/customer data or live support messages were used.
+
+Primary references: [OWASP Error Handling](https://cheatsheetseries.owasp.org/cheatsheets/Error_Handling_Cheat_Sheet.html)
+and [MITRE CWE-209](https://cwe.mitre.org/data/definitions/209.html), accessed 19 October 2026.
+The fix separates useful public validation from internal failures; it does not certify all
+error paths or rich private diagnostics. API-06 remains FAIL, whole-control totals stay
+36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A, and the release hold remains. No deployment occurred.

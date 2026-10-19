@@ -571,7 +571,7 @@
       "severity": "High",
       "requirement": "Production error responses are generic (no stack traces, SQL, file paths, or versions), and full details are logged server-side with a correlation ID.",
       "status": "FAIL",
-      "evidence": "src/app.ts now supplies generated request IDs and generic 500 responses, including route-local res.json failures; AI provider response bodies are withheld. Some route-local 400/503 exception paths and legacy diagnostic logging still require individual review. QuickBooks errors were hardened 2026-10-18 to omit raw provider bodies; uniform app-wide error contracts remain incomplete. Word conversion exceptions were hardened 2026-10-19 with authored limit errors, generic dependency failures and correlated request IDs; remaining routes keep this control FAIL.",
+      "evidence": "src/app.ts now supplies generated request IDs and generic 500 responses, including route-local res.json failures; AI provider response bodies are withheld. Some route-local 400/503 exception paths and legacy diagnostic logging still require individual review. QuickBooks errors were hardened 2026-10-18 to omit raw provider bodies; uniform app-wide error contracts remain incomplete. Word conversion exceptions were hardened 2026-10-19 with authored limit errors, generic dependency failures and correlated request IDs; remaining routes keep this control FAIL. Tenant support and owner support/detail mutation errors were hardened 2026-10-19 with typed validation, generic correlated storage failures and real SQLite/browser injection coverage; remaining platform/CSV/503/diagnostic paths keep this control FAIL.",
       "scenario": "An upstream or malformed-file failure classified as 400/503 may still expose provider/internal text.",
       "fix": "Replace remaining raw exception responses with typed public business errors and private redacted diagnostics, then fault-inject each adapter."
     },
@@ -2110,9 +2110,9 @@
   "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
   "latest_follow_up": {
     "date": "2026-10-19",
-    "scope": "Partial API-06: document conversion exception redaction and request correlation",
-    "base_commit": "9782b527d9f01809bfb466c6df1e53f0b09f3252",
-    "verification": "evidence/conversion-errors-verification.json",
+    "scope": "Partial API-06: support and owner-detail storage error redaction, public validation and ticket identities",
+    "base_commit": "d86c3c78e6f730e832d9e2b39f0d7b32dd72f328",
+    "verification": "evidence/support-errors-verification.json",
     "whole_control_statuses_changed": false
   }
 }

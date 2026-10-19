@@ -125,6 +125,13 @@ restore drill every 30 days — newest off-site copy of every DB decrypted into 
 integrity-checked — plus failed/stale-backup checks, alerts to `BACKUP_ALERT_WEBHOOK`, results in
 `status.json` for the owner console; CLI `npm run backup:drill` / `backup:health`), routes: `signup.routes.ts`, `tenant.routes.ts`, `platform.routes.ts`.
 Frontend: `web-console/` (its own mini-app, not under `public/`).
+Support/owner-details mutation failures use `request-errors.ts`: authored `ValidationError`
+feedback remains 400; unexpected storage errors are stripped of message/status/expose and
+forwarded as generic 500 with request correlation. Support ticket identities are validated
+before service-level database access. Tenant/company and owner-only ticket scope is retained.
+Tests: `tests/tenant-support.test.ts`, `tests/owner-analytics.test.ts`,
+`tests/e2e/support-errors.spec.ts` (actual SQLite fault, preserved draft, corrected retry).
+
 **Public interface:** `enabledModules()`/`requireModule()` (re-exported from
 `shared/modules.ts`, which reads `platform/plans.ts` + `platform/platform.ts`),
 `getTenant()`, `platformHost()` (the dedicated console host, `PLATFORM_HOST`; gated in

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { forwardControlPlaneError } from './request-errors';
 import { browserMode, browserCsrf } from '../shared/browser-session';
 import { loginSchema } from '../shared/validation';
 import { BEHIND_PROXY } from '../shared/hosting';
@@ -315,38 +316,38 @@ router.get('/tenants/:slug/analytics/export', (req, res, next) => {
     res.json({ tenant: { slug: t.slug, name: t.name }, analytics: tenantAnalytics(t) });
   } catch (e) { next(e); }
 });
-router.put('/tenants/:slug/owner-details', (req, res) => {
+router.put('/tenants/:slug/owner-details', (req, res, next) => {
   if (!getTenant(req.params.slug)) { res.status(404).json({ error: 'Unknown tenant.' }); return; }
   try {
     saveOwnerDetails(req.params.slug, req.body);
     logProvisioning(req.params.slug, 'owner-details', (req as PlatformAuthedRequest).platformUser?.username ?? 'operator');
     res.json({ ok: true });
-  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+  } catch (e) { forwardControlPlaneError(e, next); }
 });
-router.post('/tenants/:slug/support', (req, res) => {
+router.post('/tenants/:slug/support', (req, res, next) => {
   if (!getTenant(req.params.slug)) { res.status(404).json({ error: 'Unknown tenant.' }); return; }
   try {
     addSupport(req.params.slug, req.body, (req as PlatformAuthedRequest).platformUser?.username ?? 'operator');
     logProvisioning(req.params.slug, 'support', 'Support entry added');
     res.status(201).json({ ok: true });
-  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+  } catch (e) { forwardControlPlaneError(e, next); }
 });
-router.post('/tenants/:slug/support/:id/replies', (req, res) => {
+router.post('/tenants/:slug/support/:id/replies', (req, res, next) => {
   if (!getTenant(req.params.slug)) { res.status(404).json({ error: 'Unknown tenant.' }); return; }
   try {
     if (!replySupport(req.params.slug, Number(req.params.id), req.body, (req as PlatformAuthedRequest).platformUser?.username ?? 'operator', 'owner')) {
       res.status(404).json({ error: 'Unknown ticket.' }); return;
     }
     res.status(201).json({ ok: true });
-  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+  } catch (e) { forwardControlPlaneError(e, next); }
 });
-router.patch('/tenants/:slug/support/:id', (req, res) => {
+router.patch('/tenants/:slug/support/:id', (req, res, next) => {
   if (!getTenant(req.params.slug)) { res.status(404).json({ error: 'Unknown tenant.' }); return; }
   try {
     if (!updateSupport(req.params.slug, Number(req.params.id), req.body)) { res.status(404).json({ error: 'Unknown support entry.' }); return; }
     logProvisioning(req.params.slug, 'support', `Entry ${req.params.id}: ${req.body.status}`);
     res.json({ ok: true });
-  } catch (e) { res.status(400).json({ error: (e as Error).message }); }
+  } catch (e) { forwardControlPlaneError(e, next); }
 });
 
 // POST /_platform/api/tenants/:slug/reset-owner-password — operator-only recovery.

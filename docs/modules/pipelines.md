@@ -1350,3 +1350,17 @@ existing financial-write receipts/locks → exported captured version or persist
 attention code. Edits during an export leave the later version queued. Admin status prioritizes
 attention and distinguishes saved/exported versions. Safe resume requires permission + fresh
 proof + original connection; no unknown-outcome or interrupted-claim bypass is supplied.
+
+
+## Tenant support and owner-detail failure handling (2026-10-19)
+
+Trigger: a tenant administrator sends a support ticket/reply, or an authenticated owner operator
+adds/updates support or saves owner details. Existing permission, online-only and tenant gates
+run first. The service validates the body and ticket identity, then writes the control-plane
+record. Authored validation feedback returns 400 with a request ID. A valid but inaccessible
+or unknown ticket remains 404. Unexpected storage errors become generic 500 responses with
+request correlation; the public boundary discards raw exception messages/status/expose.
+On failed report submission the existing desktop form retains text and enables retry; the
+browser regression checks this against a real disposable-database trigger failure. Success
+clears the form and reloads the company ticket list. No live support message is sent by tests.
+This does not make all owner-console writes transactional or close all API error-handling gaps.

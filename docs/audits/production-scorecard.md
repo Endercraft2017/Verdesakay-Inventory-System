@@ -266,3 +266,8 @@ FRAME-01, FRAME-03, FRAME-04, FRAME-05, AUDIT-02, AUDIT-03, AUDIT-05, AUDIT-06, 
 Follow-up 19 October 2026: document conversion now hides dependency exceptions and preserves
 authored limit feedback with request IDs. API-06 remains FAIL pending other route/diagnostic
 reviews; whole-control totals are unchanged. See validation-results.md for recorded tests.
+
+Further follow-up 19 October 2026: tenant support and owner-console support/detail mutation
+catches now distinguish typed validation from unexpected storage errors. Real database fault
+and browser draft/retry coverage is recorded in validation-results.md. API-06 remains FAIL;
+other routes/503 diagnostics and external release gates remain open. Totals are unchanged.

@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-19",
+  "base_commit": "d86c3c78e6f730e832d9e2b39f0d7b32dd72f328",
+  "scope": "Tenant support and owner support/details error boundaries",
+  "full_run": {
+    "files_passed": 297,
+    "files_failed": 1,
+    "tests_passed": 3006,
+    "tests_failed": 2,
+    "duration_seconds": 551.15,
+    "failures": "Two existing mobile tests observed incomplete rendering after short fixed waits"
+  },
+  "corrected_mobile_file": {
+    "files_passed": 1,
+    "tests_passed": 130,
+    "duration_seconds": 27.74
+  },
+  "focused": {
+    "files_passed": 2,
+    "tests_passed": 27,
+    "duration_seconds": 12.46
+  },
+  "playwright": {
+    "passed": 14,
+    "duration_seconds": 55.1
+  },
+  "typecheck": "passed",
+  "whole_control_statuses_changed": false,
+  "deployed": false,
+  "limitations": "Full initial run plus verified targeted corrections; no second uninterrupted green full run claimed. Remaining API-06 and release gates stay open."
+}

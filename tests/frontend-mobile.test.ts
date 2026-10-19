@@ -1014,12 +1014,12 @@ describe('mobile bootstrap', () => {
         return undefined;
       });
       win.location.hash = '#/job-orders';
-      await wait();
       const doc = win.document;
+      await vi.waitFor(() => expect(doc.getElementById('m-view').textContent).toContain('1 exception'));
       expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:515');
       expect(doc.getElementById('m-view').textContent).toContain('1 exception');
       win.location.hash = '#/job-orders?id=184&step=close';
-      await wait();
+      await vi.waitFor(() => expect(doc.getElementById('jo-close')).not.toBeNull());
       expect(doc.getElementById('m-view').textContent).toContain('13 units will not be produced');
       const close = doc.getElementById('jo-close') as HTMLButtonElement;
       expect(close.disabled).toBe(true);
@@ -1030,8 +1030,7 @@ describe('mobile bootstrap', () => {
       expect(posts).toEqual([]);
       (doc.querySelector('[data-reason]') as HTMLInputElement).value = 'Customer reduced the quantity';
       close.click();
-      await wait();
-      expect(posts).toEqual(['/api/job-orders/184/close']);
+      await vi.waitFor(() => expect(posts).toEqual(['/api/job-orders/184/close']));
     });
   });
 
@@ -1761,9 +1760,9 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const win = await bootAs(REL, fake(posts));
       const doc = win.document;
       win.location.hash = '#/so?id=302&step=handoff';
-      await wait();
+      await vi.waitFor(() => expect(doc.querySelector('[data-notoken]')).not.toBeNull());
       (doc.querySelector('[data-notoken]') as HTMLButtonElement).click();
-      await wait();
+      await vi.waitFor(() => expect(doc.getElementById('rel-ask')).not.toBeNull());
       const view = doc.getElementById('m-view');
       expect(view.textContent).toContain('Release without token');
       expect(doc.getElementById('rel-approve')).toBeNull(); // not a supervisor
@@ -1771,8 +1770,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       expect(posts).toEqual([]); // a reason is required
       (view.querySelector('[data-reason]') as HTMLTextAreaElement).value = 'Recipient lost the token message';
       (doc.getElementById('rel-ask') as HTMLButtonElement).click();
-      await wait();
-      expect(posts[0]).toMatchObject({ url: '/api/release-slips/orders/302/override-request', body: { reason: 'Recipient lost the token message' } });
+      await vi.waitFor(() => expect(posts[0]).toMatchObject({ url: '/api/release-slips/orders/302/override-request', body: { reason: 'Recipient lost the token message' } }));
     });
 
     it('takes an approved supervisor override in place of the token', async () => {

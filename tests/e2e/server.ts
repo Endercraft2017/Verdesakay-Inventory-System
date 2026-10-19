@@ -48,6 +48,14 @@ const qbo=await import('../../src/modules/quickbooks/quickbooks');
 await qbo.completeConnect('synthetic-browser-code','111');qbo.setAutoPush(true);
 const safeRetryOrder=Number(db.run("INSERT INTO orders(number,type,customer_name,total) VALUES('AUTO-E2E-SAFE-RETRY','sale','Synthetic retry customer',10)").lastInsertRowid);
 db.run("INSERT INTO qbo_export_jobs(connection_id,company_key,order_id,state,error_code) VALUES(?, 'sandbox:111',?,'blocked','retry_limit')",qbo.qboExportScope()!.connection_id,safeRetryOrder);
+// Isolated support workspace and a real, narrowly scoped SQLite failure for browser checks.
+const { createTenant } = await import('../../src/platform/provisioning');
+createTenant({ slug: 'browser-support', name: 'Browser support fixture', plan: 'complete', admin_username: 'owner', admin_password: 'Synthetic support browser password' });
+const { listSupport } = await import('../../src/platform/owner-analytics');
+listSupport('browser-support');
+platformDb().exec(`CREATE TRIGGER browser_support_failure BEFORE INSERT ON tenant_support
+  WHEN NEW.slug='browser-support' AND NEW.subject='Browser failure injection'
+  BEGIN SELECT RAISE(ABORT, 'synthetic-browser-private-storage-detail'); END`);
 const { createApp } = await import('../../src/app');
 const { attachWebSocket } = await import('../../src/shared/ws');
 const server = createApp().listen(Number(process.env.E2E_PORT || 4173), process.env.E2E_HOST || '127.0.0.1');
