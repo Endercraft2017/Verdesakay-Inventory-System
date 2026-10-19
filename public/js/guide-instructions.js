@@ -1,5 +1,8 @@
 /* Authored control instructions. Each entry names an action and its result. */
 window.GuideInstructions = [
+  ["#pc-new", "Record a physical count", "Count one item at one exact location/build state. Record untracked, serial and batch observations against the current book snapshot; submission does not move stock."],
+  ["#pc-plan", "Plan an assigned cycle count", "Assign the item/location/build state, worker and due date. Only applied reconciliation or verification completes the task; a repeating plan schedules the next occurrence afterward."],
+  ["#fb-invoice-starter", "Create a connected sales invoice form", "Review the starter fields, currency, terms, access and linked layout. Submission creates an open sales draft; it does not approve, ship or post an accounting invoice."],
   [
     "#ap-search",
     "Find a request",
@@ -213,7 +216,7 @@ window.GuideInstructions = [
   [
     "#fr-new",
     "Create a record for this form",
-    "Press New Record, complete the form’s fields and review the dates and reason before saving. Check the saved status before assuming the record is approved."
+    "Complete the form’s connected fields and product rows, then save Draft or explicitly submit. Review all validation errors. Sales-enabled submission creates one open sales draft, not stock-out or a posted invoice; submitted source values are locked."
   ],
   [
     "#fr-search",
@@ -537,8 +540,8 @@ window.GuideInstructions = [
   ],
   [
     "#ord-backorder",
-    "Review sale-order shortfalls",
-    "Open Backorders to find approved sale orders still short of stock. Open an order to review its missing quantities."
+    "Review orders awaiting release",
+    "Awaiting release shows unpicked firm demand, not only shortages. Open Review stock & approval to inspect exact ship-from stock, holds and linked supply."
   ],
   [
     "#ord-add-inv",
@@ -548,12 +551,12 @@ window.GuideInstructions = [
   [
     "#rl-scan",
     "Reserve the unit for release",
-    "Scan the printed unit QR for the accepted order. Check the scan result; scanning reserves the unit but does not issue the release slip."
+    "Scan the printed unit QR for the accepted order. If multiple sale lines match, select the exact line/build state. Scanning reserves that unit; only its trip release slip records stock-out."
   ],
   [
     "#rl-slip",
     "Issue the release slip",
-    "Check the collected goods, recipient token and required package evidence. Confirm the slip only when the goods are leaving; this records stock-out."
+    "Select this trip’s exact load, recipient token and required package/photo evidence. Confirm only at handover. Only this load leaves stock; remaining demand stays on the same SO for another authorized trip."
   ],
   [
     "#ra-issue",
@@ -603,7 +606,7 @@ window.GuideInstructions = [
   [
     "#jo-progress",
     "Record production output",
-    "Enter finished and scrapped quantities and the batch label, then press Apply. Output still needs inspection if configured and Products In receipt before becoming stock."
+    "For serialized output, save each identifier and photo as one unit. For non-serialized output, record actual whole batch quantities and scrap. Recover an unknown original attempt before adding output again. Inspection and Products In still follow."
   ],
   [
     "#fp-add",

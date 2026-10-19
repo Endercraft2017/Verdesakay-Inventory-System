@@ -75,14 +75,15 @@ App.register('sop', (view, filter) => {
       3: {label:'Parts missing?', body:'Purchase the missing components → receive goods → return to kit picking. A purchase draft alone does not add stock.', target:3, action:'Return to kit picking after receipt', direction:'Replenishment branch'},
       6: {label:'Inspection failed?', body:'Repair → request added / replacement parts → warehouse issues parts → settle requests → re-inspect. Passed output continues down to receiving.', target:6, action:'Return to inspection after repair', direction:'Repair loop'},
     } : {};
+    p.steps.forEach((step,i)=>{if(step.branch) branches[i]=step.branch;});
     return `<section class="workflow-map" aria-label="Workflow roadmap">
       <header class="workflow-map-head"><span class="workflow-eyebrow">WORKFLOW ROADMAP</span><h4>From start to finish</h4><p>Follow the arrows down. Each team hands the result to the next. Dashed branches apply only when needed.</p></header>
       <nav class="pipeline-roadmap" aria-label="Pipeline roadmap">
         <div class="workflow-terminal">START · ${UI.esc(p.steps[0].module)}</div>
         <ol class="workflow-path">${p.steps.map((s,i)=>`<li class="workflow-stop">
-          <div class="workflow-main-stop"><a href="#pipeline-step-${i}" data-pipeline-step="${i}"><span class="workflow-number">${i+1}</span><div><small class="workflow-module">${UI.esc(s.module)}</small><strong>${UI.esc(s.title)}</strong><span class="workflow-owner">${UI.esc(s.role)}</span></div><span class="workflow-detail">Details ↗</span></a>
+          <div class="workflow-main-stop"><a href="#pipeline-step-${i}" data-pipeline-step="${i}"><span class="workflow-number">${i+1}</span><div><small class="workflow-module">${UI.esc(s.module)}</small><strong>${UI.esc(s.title)}</strong><span class="workflow-owner">${UI.esc(s.role)}</span></div><span class="workflow-detail">Details →</span></a>
           ${i<p.steps.length-1 ? `<div class="workflow-connector" aria-label="Next: ${UI.esc(p.steps[i+1].title)}"><span aria-hidden="true">↓</span><small>${s.module===p.steps[i+1].module ? 'Continue' : 'Team handoff'}</small></div>`:''}</div>
-          ${branches[i] ? `<aside class="workflow-branch"><span class="workflow-branch-label">${branches[i].direction}</span><h5>${branches[i].label}</h5><p>${branches[i].body}</p><button type="button" data-pipeline-step="${branches[i].target}">${branches[i].action} ↗</button></aside>`:''}
+          ${branches[i] ? `<aside class="workflow-branch"><span class="workflow-branch-label">${UI.esc(branches[i].direction)}</span><h5>${UI.esc(branches[i].label)}</h5><p>${UI.esc(branches[i].body)}</p><button type="button" data-pipeline-step="${branches[i].target}">${UI.esc(branches[i].action)} →</button></aside>`:''}
         </li>`).join('')}</ol>
         <div class="workflow-terminal workflow-finish">FINISH · ${UI.esc(p.steps.at(-1).title)}</div>
       </nav><p class="workflow-map-note">This is the process sequence, not a live status tracker. Select a checkpoint for its instructions.</p>
@@ -138,6 +139,7 @@ App.register('sop', (view, filter) => {
           </li>`).join('')}
       </ol>
 
+      ${p.related?.length ? `<div class="pipeline-related"><h4>Continue with a related workflow</h4>${p.related.filter(id=>byId[id]).map(id=>`<button type="button" class="btn secondary small" data-related-workflow="${id}">${UI.esc(byId[id].title)}</button>`).join('')}</div>` : ''}
       ${p.gotchas && p.gotchas.length ? `
         <div class="guide-watch">
           <div class="guide-watch-head">${UI.icon('alert', 14)} Watch out</div>
@@ -149,6 +151,7 @@ App.register('sop', (view, filter) => {
         Guide buttons in headers provide help for the current screen or dialog.
       </p>`;
 
+    mainEl.querySelectorAll('[data-related-workflow]').forEach(b=>b.onclick=()=>{active=b.dataset.relatedWorkflow;view.querySelector('#guide-search').value='';view.querySelector('#guide-module').value='';draw();filterGuides();});
     mainEl.querySelectorAll('[data-pipeline-step]').forEach(a => a.onclick = e => { e.preventDefault(); mainEl.querySelector('#pipeline-step-'+a.dataset.pipelineStep).scrollIntoView({behavior:'smooth',block:'start'}); });
     if (window.Help) { mainEl.insertAdjacentHTML('beforeend', Help.feedbackHTML());
     Help.wireFeedback(mainEl, p); }
@@ -174,7 +177,7 @@ App.register('sop', (view, filter) => {
   function filterGuides() {
     view.querySelectorAll('[data-guide-section]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.guideSection===section)));
     const q=view.querySelector('#guide-search').value.trim().toLowerCase(), module=view.querySelector('#guide-module').value;let count=0;
-    navEl.querySelectorAll('.guide-nav-item').forEach(b=>{const p=byId[b.dataset.id];const el=document.createElement('div');el.innerHTML=[p.id,p.title,p.tagline,p.audience,...p.steps.map(s=>(s.body||'')+' '+(s.tip||''))].join(' ');b.hidden=!!((section==='pipelines' && !p.pipeline) || (module && (p.module||'home')!==module) || (q && !el.textContent.toLowerCase().includes(q)));if(!b.hidden)count++;});
+    navEl.querySelectorAll('.guide-nav-item').forEach(b=>{const p=byId[b.dataset.id];const el=document.createElement('div');el.innerHTML=[p.id,p.title,p.tagline,p.audience,p.helpTopic?.html||'',...p.steps.map(s=>[s.title,s.module,s.role,s.before,s.body,s.result,s.tip,s.branch?.label,s.branch?.body].filter(Boolean).join(' '))].join(' ');b.hidden=!!((section==='pipelines' && !p.pipeline) || (module && (p.module||'home')!==module) || (q && !el.textContent.toLowerCase().includes(q)));if(!b.hidden)count++;});
     view.querySelector('#guide-match-count').textContent=count+' matching guide'+(count===1?'':'s');
     const first=[...navEl.querySelectorAll('.guide-nav-item')].find(b=>!b.hidden);if(first){if(!navEl.querySelector('.active:not([hidden])') || mainEl.querySelector('.empty-state')){active=first.dataset.id;draw();}}else mainEl.innerHTML=UI.emptyState({icon:'search',title:'No matching guides',hint:'Try a different task name or module.'});
   }
