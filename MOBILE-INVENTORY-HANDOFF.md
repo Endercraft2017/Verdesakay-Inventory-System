@@ -1,5 +1,17 @@
 # Inventory and production: mobile integration gaps
 
+## Role-based pipeline acceptance (2026-10-19)
+
+The cross-role purchase → kit → production → QC/QA → Products In → releasing
+acceptance passed against a disposable local server. The dedicated phone QC,
+QA, RTS and Sales release queues rendered at 390 px under their narrow roles.
+Desktop Products In recovered one committed receipt after Chromium dropped its
+response, reusing the same retry key. See
+`docs/reviews/role-based-inventory-production-acceptance.md` for the exact
+stock/status and permission checks. Phone **mutations**, physical camera/labels,
+and a disconnected site host still need the mobile owner's device acceptance;
+queue rendering alone does not prove them. No mobile source was edited.
+
 ## Planned cycle counts and stock-position coverage (2026-10-18)
 
 Schema v90 adds `stock_count_tasks`, with one open task per exact item, location
