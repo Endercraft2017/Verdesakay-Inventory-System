@@ -1,0 +1,71 @@
+{
+  "date": "2026-10-19",
+  "base_commit": "e254ae4e7d8e9bdb25f68444d53dcc794f882ce0",
+  "scope": "Atomic tenant/actor-scoped payment report receipts, parsed proof binding, current permission/legacy-cache boundaries and browser lost-response retry",
+  "full_run": {
+    "files_passed": 306,
+    "tests_passed": 3148,
+    "failed": 0,
+    "duration_seconds": 627.7
+  },
+  "initial_focused": {
+    "files": 4,
+    "passed": 59,
+    "failed": 13,
+    "cause": "Ten exposed generic pre-multipart cache interception (eight changed input cases, expiry, source reassignment); three fixture failures (NOT NULL override cleanup, two missing child bootstrap passwords)."
+  },
+  "intermediate_focused": {
+    "files": 5,
+    "passed": 84,
+    "failed": 2,
+    "cause": "Fixtures: fixed admin role ignores permission overrides; restart retained its injected exit trigger. Corrected role downgrade and removal of crash trigger."
+  },
+  "first_corrected_focused": {
+    "files_passed": 5,
+    "tests_passed": 89,
+    "duration_seconds": 49.85,
+    "includes_alias_fix": false
+  },
+  "first_corrected_playwright": {
+    "passed": 21,
+    "failed": 0,
+    "duration_seconds": 58.8,
+    "includes_alias_fix": false
+  },
+  "final_focused": {
+    "files_passed": 5,
+    "tests_passed": 90,
+    "duration_seconds": 46.99,
+    "new_receipt_cases": 27,
+    "new_frontend_cases": 2
+  },
+  "alias_regression": {
+    "initial_failed": 1,
+    "skipped": 26,
+    "cause": "Confirmed generic-cache changed-byte replay on alternate-case/trailing-slash payment URL; case-insensitive exemption fixes it."
+  },
+  "interrupted_full_run": {
+    "exit_code": 130,
+    "counted_as_completed": false,
+    "reason": "Include confirmed Express case-insensitive payment route exemption gap and regression."
+  },
+  "initial_playwright": {
+    "passed": 20,
+    "failed": 1,
+    "duration_seconds": 58.9,
+    "cause": "Final APIRequestContext GET omitted X-Tenant after successful form replay. Initial text/JSON retained; trace/screenshot overwritten."
+  },
+  "final_playwright": {
+    "passed": 21,
+    "failed": 0,
+    "duration_seconds": 58.9
+  },
+  "actual_server_startup": "passed: expired receipt response/verifier pruned; tombstone/proof retained; three synthetic owner-alert categories accepted once and stale claims unknown without resend",
+  "typecheck": "passed",
+  "db_types": "passed; generated tenant types unchanged",
+  "secret_scan": "final staged increment clean; one initial generic-api-key false positive in ordinary runbook prose was reworded without suppression, initial redacted finding retained; commit hook scans again",
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "hosted_rollout_verified": false,
+  "limitations": "Coverage requires same tenant/actor/key and bound details; modal keys are memory-only. No-key/new-key/other-actor/legacy duplicates, inquiry/other API receipts, broader financial lifecycle/reconciliation, reviewed resend/backlog escalation, upload content and live hosting/device/provider/restore/capacity/governance gates remain. No complete-control PASS, CI-green or production-ready claim."
+}

@@ -1441,3 +1441,15 @@ Current worker selects from both tables and claims with due/state/attempt guards
 and conservative uncertainty/retry remain. Settings/secret/key are read in one statement; settings/
 secret updates and console audit share savepoints. See operations/business-alerts.md for upgrade/
 rollback, retention, incomplete HTTP idempotency and external acceptance requirements.
+
+
+## Keyed payment-report acknowledgement (2026-10-19)
+
+Bypass generic pre-multipart cache → tenant authentication/current users.manage/online gate
+→ bounded upload parse → UUID/legacy quarantine → normalized fields + attachment byte binding
+→ matching original 201, or submitPayment savepoint → proof/payment/audit/invoice/response/alert
+→ successful receipt → commit. Uniqueness rolls back a competing candidate; missing source,
+mismatch or expired tombstone conflicts. Desktop retries exact captured FormData/key after
+uncertainty, permits corrected new attempt after explicit 400 and refreshes authoritative Billing
+after success. Startup/hourly/keyed-request pruning clears response/verifier after 24h, retaining
+minimal tombstones. See operations/payment-report-retries.md for legacy/rollback/restore limits.

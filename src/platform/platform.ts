@@ -146,6 +146,17 @@ function pdb(): DatabaseSync {
       updated_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS business_outbox_due ON platform_business_outbox(state,next_attempt_at);
+    CREATE TABLE IF NOT EXISTS platform_payment_report_receipts (
+      tenant_slug TEXT NOT NULL,
+      actor_id INTEGER NOT NULL,
+      key_hash TEXT NOT NULL,
+      verifier TEXT,
+      response TEXT,
+      payment_id INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      PRIMARY KEY(tenant_slug,actor_id,key_hash)
+    );
+    CREATE INDEX IF NOT EXISTS payment_report_receipts_expiry ON platform_payment_report_receipts(expires_at) WHERE response IS NOT NULL;
     CREATE TABLE IF NOT EXISTS platform_creation_receipts (
       scope TEXT NOT NULL,
       key_hash TEXT NOT NULL,

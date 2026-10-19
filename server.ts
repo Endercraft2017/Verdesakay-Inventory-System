@@ -1,3 +1,4 @@
+import { prunePaymentReportReceipts } from './src/platform/payment-report-receipts';
 import { processOneOwnerAlert } from './src/platform/owner-alert-outbox';
 import { pruneCreationReceipts } from './src/platform/onboarding-receipts';
 import {processOneExport} from './src/modules/quickbooks/export-jobs';
@@ -88,6 +89,7 @@ const housekeeping = () => {
   for (const slug of backgroundTenants()) withTenant(slug, cleanupSessions);
   cleanupPlatformSessions();
   pruneCreationReceipts();
+  prunePaymentReportReceipts();
 };
 const usageSnapshots = () => {
   if (DEPLOY_MODE !== 'cloud') return;

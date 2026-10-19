@@ -1,3 +1,4 @@
+import { preparePaymentReportReceipt, savePaymentReportReceipt } from './payment-report-receipts';
 /**
  * The customer's side of workspace billing (docs/SAAS-READINESS.md §12), mounted at
  * `/api/tenant/billing`: a workspace admin sees our invoices and how to pay (bank, GCash), and
@@ -60,7 +61,8 @@ router.post('/invoices/:id/payments', syncClass('online'), upload, (req: Request
     const b = req.body || {};
     prepareOwnerAlerts();
     let view: ReturnType<typeof invoiceView> | undefined;
-    submitPayment(slug, Number(req.params.id), {
+    const invoiceId = Number(req.params.id);
+    const input = {
       channel: String(b.channel || 'bank'),
       reference_no: String(b.reference_no || ''),
       amount_centavos: toCentavos(b.amount),
@@ -68,7 +70,12 @@ router.post('/invoices/:id/payments', syncClass('online'), upload, (req: Request
       note: b.note ? String(b.note) : undefined,
       proof: asUpload(files.proof?.[0]),
       form_2307: asUpload(files.form_2307?.[0]),
-    }, req.user!.username, (payment, invoice) => {
+    };
+    const receipt = preparePaymentReportReceipt(slug,req.user!.id,req.get('Idempotency-Key'),invoiceId,input);
+    if (receipt?.replay !== undefined) {
+      res.set('Cache-Control','no-store').set('Idempotency-Replayed','true').status(201).json(receipt.replay); return;
+    }
+    submitPayment(slug,invoiceId,input,req.user!.username, (payment, invoice) => {
       const inv = invoiceView(invoice);
       const channel = payment.method === 'gcash' ? 'GCash' : 'bank transfer';
       enqueueOwnerAlert('payment', payment.id, slug, `Payment to check: ${slug} ${inv.reference}`, [
@@ -76,9 +83,10 @@ router.post('/invoices/:id/payments', syncClass('online'), upload, (req: Request
         `Amount: ₱${(payment.amount_centavos / 100).toFixed(2)}`, `Reference no.: ${payment.reference_no || ''}`, `Paid on: ${payment.paid_on || ''}`,
         `Check it in your ${channel === 'GCash' ? 'GCash history' : 'bank app'}, then confirm or reject it in Billing.`,
       ]);
+      savePaymentReportReceipt(receipt,payment.id,inv);
       view = inv;
     });
-    res.status(201).json(view);
+    res.set('Cache-Control','no-store').status(201).json(view);
   } catch (e) {
     if (e instanceof BillingError) { res.status(e.status).json({ error: e.message }); return; }
     forwardControlPlaneError(e, next);

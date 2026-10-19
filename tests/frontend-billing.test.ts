@@ -22,11 +22,11 @@ function boot(billing: unknown) {
     { runScripts: 'outside-only', url: 'https://localhost/' });
   const win = dom.window as unknown as Record<string, any>;
   const routes: Record<string, (view: HTMLElement) => Promise<void>> = {};
-  const uploads: Array<[string, FormData]> = [];
+  const uploads: Array<[string, FormData, {idempotencyKey:string}]> = [];
   win.App = { register: (n: string, fn: (v: HTMLElement) => Promise<void>) => { routes[n] = fn; }, hasPermission: () => true };
   win.API = {
     get: () => Promise.resolve(billing),
-    upload: (p: string, fd: FormData) => { uploads.push([p, fd]); return Promise.resolve({}); },
+    upload: (p: string, fd: FormData, opts: {idempotencyKey:string}) => { uploads.push([p, fd, opts]); return Promise.resolve({}); },
     blobUrl: () => Promise.resolve('blob:x'),
   };
   win.eval(`${UI_SRC}\nwindow.__UI = UI;\n${SRC}`);
@@ -95,6 +95,7 @@ describe('desktop Billing view', () => {
     expect(fd.get('amount')).toBe('24500');
     expect((fd.get('proof') as File).name).toBe('receipt.png');
     expect(fd.get('form_2307')).toBeNull();
+    expect(uploads[0]![2].idempotencyKey).toMatch(/^[a-f0-9-]{36}$/);
     expect(fd.get('channel')).toBe('bank'); // only bank details are set, so bank is the one choice
   });
 
@@ -113,6 +114,34 @@ describe('desktop Billing view', () => {
     (modal.querySelector('[data-confirm]') as HTMLElement).click();
     await flush();
     expect(uploads[0]![1].get('channel')).toBe('gcash');
+  });
+
+  it('preserves an uncertain submission and retries the same bytes/key while refusing edits', async () => {
+    const { win, view, routes } = boot({ enabled: true, bank_details: 'BPI', invoices: [INVOICE] });
+    const attempts: Array<{fd:FormData;key:string}> = [];
+    win.API.upload = (_path:string,fd:FormData,opts:{idempotencyKey:string}) => { attempts.push({fd,key:opts.idempotencyKey});return Promise.reject(new Error('Network unavailable')); };
+    await routes.billing!(view); (view.querySelector('[data-pay]') as HTMLElement).click();
+    const modal=win.document.querySelector('.modal-overlay') as HTMLElement;
+    (modal.querySelector('[data-f="reference_no"]') as HTMLInputElement).value='Original reference';
+    Object.defineProperty(modal.querySelector('[data-f="proof"]'),'files',{value:[new win.File(['proof'],'proof.png',{type:'image/png'})]});
+    (modal.querySelector('[data-confirm]') as HTMLElement).click(); await flush();
+    expect(modal.textContent).toContain('Report outcome is unconfirmed');
+    expect((modal.querySelector('[data-f="reference_no"]') as HTMLInputElement).disabled).toBe(true);
+    (modal.querySelector('[data-f="reference_no"]') as HTMLInputElement).value='Programmatic edit';
+    (modal.querySelector('[data-confirm]') as HTMLElement).click(); await flush();
+    expect(attempts).toHaveLength(2); expect(attempts[1]!.fd).toBe(attempts[0]!.fd);expect(attempts[1]!.key).toBe(attempts[0]!.key);
+    expect(attempts[1]!.fd.get('reference_no')).toBe('Original reference');
+  });
+
+  it('allows correction after an explicit 400 without reusing the refused request key', async () => {
+    const { win, view, routes } = boot({ enabled: true, bank_details: 'BPI', invoices: [INVOICE] });
+    const keys:string[]=[];
+    win.API.upload = (_path:string,_fd:FormData,opts:{idempotencyKey:string}) => {keys.push(opts.idempotencyKey);return Promise.reject(Object.assign(new Error('Upload refused'),{status:400}));};
+    await routes.billing!(view);(view.querySelector('[data-pay]') as HTMLElement).click();const modal=win.document.querySelector('.modal-overlay') as HTMLElement;
+    (modal.querySelector('[data-f="reference_no"]') as HTMLInputElement).value='Reference';Object.defineProperty(modal.querySelector('[data-f="proof"]'),'files',{value:[new win.File(['x'],'proof.png',{type:'image/png'})]});
+    (modal.querySelector('[data-confirm]') as HTMLElement).click();await flush();expect(modal.textContent).toContain('Upload refused');
+    expect((modal.querySelector('[data-f="reference_no"]') as HTMLInputElement).disabled).toBe(false);
+    (modal.querySelector('[data-confirm]') as HTMLElement).click();await flush();expect(keys).toHaveLength(2);expect(keys[1]).not.toBe(keys[0]);
   });
 
   it('a workspace awaiting its first payment is told it opens once paid', async () => {

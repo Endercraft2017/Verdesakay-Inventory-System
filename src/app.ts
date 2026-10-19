@@ -397,6 +397,8 @@ export function createApp() {
     if (isAnonymousReportPath(req.originalUrl.split('?')[0] ?? '')) return next();
     // Order saves check authentication + the current mutation permission before replay.
     // Their middleware is mounted directly on POST / and PUT /:id in orders.routes.ts.
+    // Payment reports bind parsed attachment bytes and commit receipts with the catalog source.
+    if (req.method === 'POST' && /^\/tenant\/billing\/invoices\/[^/]+\/payments\/?$/i.test(req.path)) return next();
     if (req.method === 'POST' && /^\/form-records\/?$/.test(req.path)) return next();
     if ((req.method === 'POST' && /^\/orders\/?$/.test(req.path)) || (req.method === 'PUT' && /^\/orders\/[^/]+\/?$/.test(req.path))) return next();
     idempotency(req, res, next);

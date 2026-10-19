@@ -1,7 +1,8 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 19 October 2026 — inquiry/payment alerts now join the durable owner-alert
-worker. Payment proof/reporting writes are atomic; mail settings and credentials use one snapshot.
+Latest follow-up: 19 October 2026 — keyed payment reporting now replays its committed original
+acknowledgement with parsed attachment binding and current permission checks. Desktop Billing
+retains the exact uncertain request for retry. Other alert/proof/mail fixes remain documented.
 Creation receipts, accounting and authentication follow-ups remain documented below. The
 complete release is still on hold.
 
@@ -41,7 +42,7 @@ applicable issue before changing behavior:
 | High | Complete remaining sensitive-business-action verification with the offline authority model | Explicit action inventory, server enforcement and replay/role/race tests; AUTHZ-15 remains open |
 | High | Uniform API validation/error/redaction and privacy export/retention/erasure lifecycle | Route-by-route evidence; tenant-safe restore/copy/integration tests; approved retention scope |
 | High | AI privacy/adversarial evaluation, interrupted audit outcomes and hard spend allocation | Isolation/leakage/abuse/cancellation tests and real provider budget acceptance |
-| High | Reliable onboarding notification delivery and broader creation admission/reconciliation | Completed keyed HTTP receipts and signup outbox/worker implemented; inquiry/payment HTTP retry receipts, provider reconciliation/reviewed resend, backlog monitoring, signup work budget, legacy/new-key recovery and imported-state acceptance remain. See operations/workspace-onboarding.md |
+| High | Reliable onboarding notification delivery and broader creation admission/reconciliation | Completed keyed HTTP receipts and signup outbox/worker implemented; inquiry/other API retry receipts, provider reconciliation/reviewed resend, backlog monitoring, signup work budget, legacy/new-key recovery and imported-state acceptance remain. See operations/workspace-onboarding.md |
 | High | Native/Electron distribution and supported-client acceptance | APK/installer builds, signed artifacts, actual Windows/Android vault/backup/logout/upgrade checks |
 | High | Integration lifecycle and accounting reconciliation acceptance | Local generation/scoping, refresh admission, export exclusion and durable uncertain-write handling implemented 2026-10-18; actual Intuit sandbox, legacy adoption/repair tooling, interrupted-claim reconciliation, operational alerting and accountant acceptance remain. See operations/quickbooks-lifecycle.md |
 | High | Resolve or explicitly disposition vulnerable dependencies and historical-secret gates | Upstream/compatible fix or approved expiring risk record; verified revocation without exposing the old bearer |
@@ -244,3 +245,27 @@ reconciliation. No automatic reviewed resend, external backlog escalation, uploa
 certification or broader settlement/refund lifecycle fix is claimed. Compatible worker/restore
 acceptance, approved retention and the existing hosted/device/provider gates remain. No owner
 engineering action is needed for this increment; whole-control totals/release hold are unchanged.
+
+
+## Payment-report retry follow-up — 2026-10-19
+
+High scoped duplication gap: a committed report with a lost response could be reported again.
+Updated desktop/API keys now bind tenant/actor/invoice/details and proof/2307 bytes; successful
+receipts commit with payment/proof/audit/invoice/alert and replay the original 201 after restart.
+Current Billing GET supplies reviewed financial state. A stale competitor rolls back, while
+expiry retains tombstones. No raw request/key/proof is added to receipt storage.
+
+Testing also exposed the generic tenant cache intercepting multipart retries before parsing and
+route permission checks. This payment POST now bypasses that cache; known legacy entries conflict
+for reconciliation. The new flow respects current auth/users.manage and online authority before
+replay. Role downgrade and byte/method/invoice changes are tested. Browser response loss checks
+one committed report; process exits verify source/receipt rollback or persistence together.
+
+See operations/payment-report-retries.md and payment-receipts-* evidence for failures/results.
+No-key/different-actor/new-modal/legacy reports can still duplicate; other inquiry/API receipts,
+reconciliation, queue escalation, upload-content and wider financial lifecycle/live acceptance
+remain. No owner action is needed now. Complete-control totals and release hold stay unchanged.
+
+The payment middleware exemption also covers Express case-insensitive/trailing-slash aliases.
+A deliberately failing alias test confirmed old-cache interception; a preliminary full run was
+interrupted (130) to include the correction, then verification restarted. See raw evidence.

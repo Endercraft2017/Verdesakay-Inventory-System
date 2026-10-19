@@ -2110,9 +2110,9 @@
   "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
   "latest_follow_up": {
     "date": "2026-10-19",
-    "scope": "Durable inquiry/payment owner alerts, atomic proof/reporting and consistent mail configuration/credential snapshots",
-    "base_commit": "2c868a5f9c335725ca481e2cedde1b3394d7dc6d",
-    "verification": "evidence/business-alerts-verification.json",
+    "scope": "Atomic tenant/actor-scoped payment request receipts, parsed attachment binding, legacy-cache quarantine and browser response-loss retry",
+    "base_commit": "e254ae4e7d8e9bdb25f68444d53dcc794f882ce0",
+    "verification": "evidence/payment-receipts-verification.json",
     "whole_control_statuses_changed": false
   }
 }

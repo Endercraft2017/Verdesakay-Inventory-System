@@ -62,6 +62,9 @@ platformDb().exec(`CREATE TRIGGER browser_settings_failure BEFORE UPDATE ON tena
   WHEN NEW.slug='browser-support' AND NEW.name='Browser settings failure'
   BEGIN SELECT RAISE(ABORT, 'module synthetic-private-settings-detail'); END`);
 const billing = await import('../../src/platform/billing');
+createTenant({slug:'browser-payment',name:'Synthetic payment retry',plan:'complete',admin_username:'owner',admin_password:'Synthetic payment browser password'});
+billing.createInvoice('browser-payment',{kind:'other',description:'Browser lost-response invoice',amount_centavos:10000,due_on:'2099-01-01'},'fixture');
+billing.createInvoice('browser-payment',{kind:'other',description:'Browser validation invoice',amount_centavos:10000,due_on:'2099-01-01'},'fixture');
 const { MODULES } = await import('../../src/shared/modules');
 billing.setBillingSettings({ module_prices: Object.fromEntries(MODULES.map(module => [module, 100])), seat_price: 20 });
 let failSignupOnce = true;

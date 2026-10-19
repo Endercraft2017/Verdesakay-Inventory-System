@@ -35,3 +35,13 @@ After deployment: verify health plus authenticated business smoke, request IDs/e
   lifecycle acceptance. Do not resend unknown jobs or treat separate POSTs as deduplicated.
 
 See business-alerts.md. These are rollout gates, not completed deployment evidence.
+
+
+### Payment-report receipt rollout
+
+- [ ] Verify lost-response replay, current permissions, proof binding, known legacy-cache refusal,
+  expiry and current Billing review state with synthetic data before enabling production writers.
+- [ ] Keep compatible request-serving versions for uncertain keyed retries. Before downgrade or
+  catalog restore, stop reporting and reconcile later payment/receipt/bank/provider evidence.
+- [ ] Approve receipt/tombstone retention and explain no-key/new-modal/different-actor limits to
+  support; never delete duplicate evidence to force a retry. See payment-report-retries.md.

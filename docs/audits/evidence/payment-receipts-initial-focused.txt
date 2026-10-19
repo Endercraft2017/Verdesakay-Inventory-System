@@ -1,0 +1,222 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes reference_no
+{"timestamp":"2026-10-19T06:20:54.778Z","level":"info","event":"http_request","request_id":"739a8951-f397-4aed-a0b6-051c6ae5e069","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/2/payments","status":201,"duration_ms":325}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes reference_no
+{"timestamp":"2026-10-19T06:20:54.783Z","level":"info","event":"http_request","request_id":"031c3768-6a60-4f7b-803b-8193f60af275","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/2/payments","status":201,"duration_ms":1}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes amount
+{"timestamp":"2026-10-19T06:20:55.116Z","level":"info","event":"http_request","request_id":"561d962a-0324-4ac1-9e55-f4b585603c02","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/3/payments","status":201,"duration_ms":327}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes amount
+{"timestamp":"2026-10-19T06:20:55.120Z","level":"info","event":"http_request","request_id":"00ac603f-0dc5-4a72-97f7-d7f10f629c19","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/3/payments","status":201,"duration_ms":1}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes paid_on
+{"timestamp":"2026-10-19T06:20:55.443Z","level":"info","event":"http_request","request_id":"09c0bc6e-823c-406d-81b4-ac20f5032c65","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/4/payments","status":201,"duration_ms":320}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes paid_on
+{"timestamp":"2026-10-19T06:20:55.447Z","level":"info","event":"http_request","request_id":"c51e35a2-9615-4a08-ab4e-3a44fa4946f1","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/4/payments","status":201,"duration_ms":0}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes note
+{"timestamp":"2026-10-19T06:20:55.769Z","level":"info","event":"http_request","request_id":"17dca5e0-9540-40ba-806d-787c4078b6ba","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/5/payments","status":201,"duration_ms":318}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes note
+{"timestamp":"2026-10-19T06:20:55.772Z","level":"info","event":"http_request","request_id":"3c96238e-cf34-4cae-b189-f3770aa371b9","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/5/payments","status":201,"duration_ms":0}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes channel
+{"timestamp":"2026-10-19T06:20:56.098Z","level":"info","event":"http_request","request_id":"733f9bef-1795-4a26-81d7-48e10cff1b22","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/6/payments","status":201,"duration_ms":323}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes channel
+{"timestamp":"2026-10-19T06:20:56.101Z","level":"info","event":"http_request","request_id":"576ac3f5-7e64-487c-9aea-e03a338d4d84","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/6/payments","status":201,"duration_ms":0}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes proof
+{"timestamp":"2026-10-19T06:20:56.427Z","level":"info","event":"http_request","request_id":"dffe4b67-9f18-44be-aecb-88bad01c94f1","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/7/payments","status":201,"duration_ms":323}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes proof
+{"timestamp":"2026-10-19T06:20:56.431Z","level":"info","event":"http_request","request_id":"95b6a34d-86bc-4dba-9d80-4c640b106567","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/7/payments","status":201,"duration_ms":0}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes mime
+{"timestamp":"2026-10-19T06:20:56.751Z","level":"info","event":"http_request","request_id":"566ece8e-27a8-485e-b916-d817d84fbab1","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/8/payments","status":201,"duration_ms":317}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes mime
+{"timestamp":"2026-10-19T06:20:56.754Z","level":"info","event":"http_request","request_id":"3b96f6b8-b96a-47a0-9f5d-c3ad829ad54f","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/8/payments","status":201,"duration_ms":0}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes 2307
+{"timestamp":"2026-10-19T06:20:57.414Z","level":"info","event":"http_request","request_id":"f417a6ad-e183-4ab1-a915-ffe1513f1983","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/11/payments","status":201,"duration_ms":322}
+
+stdout | tests/payment-report-receipts.test.ts > conflicts when the same key changes 2307
+{"timestamp":"2026-10-19T06:20:57.423Z","level":"info","event":"http_request","request_id":"347c241b-7f78-427d-9494-4bb96b85c3e4","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/11/payments","status":201,"duration_ms":0}
+
+stdout | tests/payment-report-receipts.test.ts > enforces current authentication and permission before receipt replay
+{"timestamp":"2026-10-19T06:20:57.748Z","level":"info","event":"http_request","request_id":"dc834a48-f4ab-4130-8d56-8c92269a450f","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/12/payments","status":201,"duration_ms":322}
+
+stdout | tests/payment-report-receipts.test.ts > enforces current authentication and permission before receipt replay
+{"timestamp":"2026-10-19T06:20:57.752Z","level":"info","event":"http_request","request_id":"f05dea53-d2ce-443e-82d5-1b27e5db2fb0","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/12/payments","status":401,"duration_ms":1}
+
+stdout | tests/payment-report-receipts.test.ts > enforces current authentication and permission before receipt replay
+{"timestamp":"2026-10-19T06:20:57.755Z","level":"info","event":"http_request","request_id":"c2e5f4aa-2a0d-49e5-90d0-a0f5152de446","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/12/payments","status":201,"duration_ms":1}
+
+stdout | tests/payment-report-receipts.test.ts > expires sensitive receipt payload but keeps a tombstone that cannot reapply
+{"timestamp":"2026-10-19T06:21:00.402Z","level":"info","event":"http_request","request_id":"679b18b7-bb66-4f84-83de-da5ed262366b","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/21/payments","status":201,"duration_ms":324}
+
+stdout | tests/payment-report-receipts.test.ts > expires sensitive receipt payload but keeps a tombstone that cannot reapply
+{"timestamp":"2026-10-19T06:21:00.404Z","level":"info","event":"http_request","request_id":"fa4806bb-f9f4-44d8-930e-4e10fda359e6","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/21/payments","status":201,"duration_ms":0}
+
+stdout | tests/payment-report-receipts.test.ts > refuses replay if original source ownership changes
+{"timestamp":"2026-10-19T06:21:00.721Z","level":"info","event":"http_request","request_id":"70f24c74-e63c-42f7-a89f-9912a5f997c4","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/22/payments","status":201,"duration_ms":314}
+
+stdout | tests/payment-report-receipts.test.ts > refuses replay if original source ownership changes
+{"timestamp":"2026-10-19T06:21:00.724Z","level":"info","event":"http_request","request_id":"081bec0b-77e3-4a69-b53a-a48bb8a16ea4","tenant":"report-receipts","method":"POST","path":"/api/tenant/billing/invoices/22/payments","status":201,"duration_ms":0}
+
+stdout | tests/payment-report-receipts.test.ts
+{"timestamp":"2026-10-19T06:20:53.456Z","level":"info","event":"http_request","request_id":"8dc8a2db-f59a-4805-b451-2db4da55212a","tenant":"report-receipts","method":"POST","path":"/api/auth/login","status":200,"duration_ms":317}
+
+stdout | tests/payment-report-receipts.test.ts
+{"timestamp":"2026-10-19T06:20:53.785Z","level":"info","event":"http_request","request_id":"bbfb5ba9-8698-49c8-869e-a634572a1dfc","tenant":"report-receipts","method":"POST","path":"/api/auth/login","status":200,"duration_ms":320}
+
+ ❯ tests/payment-report-receipts.test.ts (23 tests | 13 failed) 11768ms
+   × conflicts when the same key changes reference_no 336ms
+   × conflicts when the same key changes amount 334ms
+   × conflicts when the same key changes paid_on 328ms
+   × conflicts when the same key changes note 324ms
+   × conflicts when the same key changes channel 329ms
+   × conflicts when the same key changes proof 330ms
+   × conflicts when the same key changes mime 323ms
+   × conflicts when the same key changes 2307 344ms
+   × enforces current authentication and permission before receipt replay 335ms
+   × expires sensitive receipt payload but keeps a tombstone that cannot reapply 329ms
+   × refuses replay if original source ownership changes 319ms
+   × handles real process exit before receipt commit 823ms
+   × handles real process exit after receipt commit 806ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 13 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payment-report-receipts.test.ts > conflicts when the same key changes reference_no
+ FAIL  tests/payment-report-receipts.test.ts > conflicts when the same key changes amount
+ FAIL  tests/payment-report-receipts.test.ts > conflicts when the same key changes paid_on
+ FAIL  tests/payment-report-receipts.test.ts > conflicts when the same key changes note
+ FAIL  tests/payment-report-receipts.test.ts > conflicts when the same key changes channel
+ FAIL  tests/payment-report-receipts.test.ts > conflicts when the same key changes proof
+ FAIL  tests/payment-report-receipts.test.ts > conflicts when the same key changes mime
+ FAIL  tests/payment-report-receipts.test.ts > conflicts when the same key changes 2307
+AssertionError: expected 201 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 201
+
+ ❯ tests/payment-report-receipts.test.ts:46:32
+     44|   let retry=report(id,key,patch,field==='proof'?Buffer.from('different…
+     45|   if(field==='2307')retry=retry.attach('form_2307',proof,{filename:'ta…
+     46|   expect((await retry).status).toBe(409);expect(billing.invoiceView(bi…
+       |                                ^
+     47| });
+     48| it('enforces current authentication and permission before receipt repl…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/13]⎯
+
+ FAIL  tests/payment-report-receipts.test.ts > enforces current authentication and permission before receipt replay
+Error: NOT NULL constraint failed: users.permission_overrides
+ ❯ Module.run src/shared/db.ts:361:26
+    359| /** Execute an INSERT/UPDATE/DELETE and return the run result. */
+    360| export function run(sql: string, ...params: unknown[]) {
+    361|   return db.prepare(sql).run(...(params as Param[]));
+       |                          ^
+    362| }
+    363|
+ ❯ tests/payment-report-receipts.test.ts:53:98
+ ❯ Module.withTenant src/shared/db.ts:327:22
+ ❯ tests/payment-report-receipts.test.ts:53:75
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/13]⎯
+
+ FAIL  tests/payment-report-receipts.test.ts > expires sensitive receipt payload but keeps a tombstone that cannot reapply
+AssertionError: expected 201 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 201
+
+ ❯ tests/payment-report-receipts.test.ts:89:100
+     87|   platform.platformDb().prepare('UPDATE platform_payment_report_receip…
+     88|   receipts.prunePaymentReportReceipts();const row=platform.platformDb(…
+     89|   expect(row).toEqual({verifier:null,response:null});expect((await rep…
+       |                                                                                                    ^
+     90| });
+     91| it('refuses replay if original source ownership changes',async()=>{
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/13]⎯
+
+ FAIL  tests/payment-report-receipts.test.ts > refuses replay if original source ownership changes
+AssertionError: expected 201 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 201
+
+ ❯ tests/payment-report-receipts.test.ts:94:49
+     92|   const invoice=issue(),key=randomUUID();expect((await report(invoice.…
+     93|   platform.platformDb().prepare("UPDATE billing_invoices SET tenant_sl…
+     94|   expect((await report(invoice.id,key)).status).toBe(409);
+       |                                                 ^
+     95| });
+     96| it.each(['before','after'])('handles real process exit %s receipt comm…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/13]⎯
+
+ FAIL  tests/payment-report-receipts.test.ts > handles real process exit before receipt commit
+ FAIL  tests/payment-report-receipts.test.ts > handles real process exit after receipt commit
+AssertionError: /workspace/Verdesakay-Inventory-System/src/shared/db.ts:3551
+    if (!password || passwordPolicyError(password)) throw new Error('Set ADMIN_PASSWORD to a unique password of 15–128 characters before creating the default admin account');
+                                                          ^
+
+Error: Set ADMIN_PASSWORD to a unique password of 15–128 characters before creating the default admin account
+    at seed (/workspace/Verdesakay-Inventory-System/src/shared/db.ts:3551:59)
+    at <anonymous> (/workspace/Verdesakay-Inventory-System/src/shared/db.ts:279:5)
+    at AsyncLocalStorage.run (node:internal/async_local_storage/async_context_frame:63:14)
+    at getDb (/workspace/Verdesakay-Inventory-System/src/shared/db.ts:266:21)
+    at withTenant (/workspace/Verdesakay-Inventory-System/src/shared/db.ts:327:32)
+    at createTenant (/workspace/Verdesakay-Inventory-System/src/platform/provisioning.ts:104:5)
+    at file:///workspace/Verdesakay-Inventory-System/[eval1]:1:595
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:224:26
+    at async ModuleLoader.executeModuleJob (node:internal/modules/esm/loader:221:20)
+
+Node.js v24.19.0
+: expected 1 to be 73 // Object.is equality
+
+- Expected
++ Received
+
+- 73
++ 1
+
+ ❯ seed src/shared/db.ts:3551:59
+    3549|       .get('Administration') as { id: number } | undefined;
+    3550|     const password = process.env.ADMIN_PASSWORD || (process.env.NODE_E…
+    3551|     if (!password || passwordPolicyError(password)) throw new Error('S…
+       |                                                           ^
+    3552|     const hash = hashPassword(password);
+    3553|     // The configured first-boot password must be replaced at first si…
+ ❯ <anonymous> src/shared/db.ts:279:5
+ ❯ getDb src/shared/db.ts:266:21
+ ❯ withTenant src/shared/db.ts:327:32
+ ❯ createTenant src/platform/provisioning.ts:104:5
+ ❯ [eval1]:1:595
+ ❯ tests/payment-report-receipts.test.ts:100:867
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/13]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  13 failed | 59 passed (72)
+   Start at  06:20:31
+   Duration  32.10s (transform 1.42s, setup 46ms, import 647ms, tests 30.93s, environment 0ms)

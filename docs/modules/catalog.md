@@ -112,7 +112,7 @@ runbooks; staged enrollment, wider tenant step-up and native credential storage 
 **Responsibility:** tenant provisioning, plans, quotas, and the owner console — sits
 above the tenant-facing app, not one of its features. Single-tenant/self-hosted
 installs never touch this.
-**Owned files:** `owner-alert-outbox.ts` (signup and separate inquiry/payment intent, guarded claim/worker/status and logical payload expiry), `onboarding-receipts.ts` (durable scoped create/signup responses, salted request verifier, expiry/tombstones), `plans.ts`, `quota.ts`, `provisioning.ts`, `adopt-default.ts` (offline,
+**Owned files:** `payment-report-receipts.ts` (tenant/actor-scoped payment acknowledgement, attachment binding, expiry/tombstones), `owner-alert-outbox.ts` (signup and separate inquiry/payment intent, guarded claim/worker/status and logical payload expiry), `onboarding-receipts.ts` (durable scoped create/signup responses, salted request verifier, expiry/tombstones), `plans.ts`, `quota.ts`, `provisioning.ts`, `adopt-default.ts` (offline,
 verified adoption of the original company, preserving source DB/uploads; CLI
 `scripts/adopt-default-tenant.ts`), `tenant-path.ts` (optional host-bound path routing), `platform.ts` (tenant
 catalog in `platform.db`; permanent company login IDs with pair-scoped counters,
@@ -173,8 +173,8 @@ the locked shell in `public/js/app.js`. Website inquiries (2026-10-10): `inquiri
 honeypot), `inquiries-console.routes.ts` (operator list / status / notes / contact details); console
 `web-console/inquiries.js`; console tenant creation takes `awaiting_payment` + `inquiry_id`.
 Tests: `tests/inquiries.test.ts`. Owner email alerts (2026-10-12): `platform-mail.ts` (Brevo API or
-SMTP, encrypted secret, `platform_mail` + `platform_mail_log` in `platform.db`, `notifyOwner()` called
-by inquiries / billing / signup routes), `platform-mail-console.routes.ts`, console `web-console/mail.js`.
+SMTP, encrypted secret, `platform_mail` + `platform_mail_log` in `platform.db`, delivery through
+`owner-alert-outbox.ts` for inquiry / billing / signup routes), `platform-mail-console.routes.ts`, console `web-console/mail.js`.
 Tenant-assisted SMTP: operator GET/PUT `/tenants/:slug/mail` and POST `/tenants/:slug/mail/test`
 use the target tenant's existing mailer; console Settings links a locally served guide and
 prefills the existing Billing form for a one-time implementation fee. No parallel invoice store.
@@ -1537,3 +1537,12 @@ confirmation; the API retries once only under the original server/session. The n
 `session_stepups` table is excluded from sync/sanitized snapshots; mobile shell cache is v111.
 QuickBooks callbacks bind the original live actor/session and a one-use generation before saving
 exchanged credentials. See `operations/tenant-step-up.md` for exact scope and remaining limitations.
+
+
+Payment-report retry follow-up (2026-10-19): the online tenant reporting POST bypasses the generic
+pre-multipart cache and checks auth/users.manage before parsed attachment binding. A successful
+response receipt shares the atomic catalog source/proof/audit/intent transaction. Desktop Billing
+retains exact FormData/key after uncertainty, unlocks only on explicit 400 and refreshes current
+state after acknowledgement. Old cache entries are quarantined; no-key/new-modal/different-actor
+legacy duplication remains outside coverage. See operations/payment-report-retries.md and
+payment-report-receipts/frontend-billing/e2e payment-receipts tests.

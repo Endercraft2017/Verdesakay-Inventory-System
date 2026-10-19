@@ -313,3 +313,13 @@ together. See operations/business-alerts.md and evidence/business-alerts-verific
 This adds scoped evidence, not a complete-control promotion: 36 PASS / 58 FAIL / 126 UNVERIFIED /
 13 N/A remain. HTTP retry/reconciliation, monitoring, upload-content/financial lifecycle and
 existing hosted/provider/device/governance release gates remain open.
+
+
+### Payment-report receipts — 19 October 2026
+
+Updated keyed payment reports bind parsed upload bytes and current tenant/actor permissions,
+commit successful response receipts with their source and replay without another payment/alert.
+The generic pre-multipart cache is bypassed for this route and known old entries require review.
+See operations/payment-report-retries.md and evidence/payment-receipts-verification.json.
+This is scoped evidence; 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A and release hold remain.
+No-key/legacy/other-actor requests, other API retries and wider financial/operational gates remain.

@@ -157,6 +157,7 @@ App.register('billing', async (view) => {
     const suggested = inv.paid_total > 0 ? inv.balance : inv.net_if_withheld;
     const channels = [data.gcash ? ['gcash', 'GCash'] : null, data.bank_details ? ['bank', 'Bank transfer'] : null].filter(Boolean);
     if (!channels.length) channels.push(['bank', 'Bank transfer'], ['gcash', 'GCash']);
+    let attempt = null;
     UI.modal({
       title: `Report payment — ${inv.reference}`,
       confirmText: 'Send for verification',
@@ -175,18 +176,36 @@ App.register('billing', async (view) => {
         <div><label>Note <span class="muted">(optional)</span></label><input data-f="note" /></div>`,
       onConfirm: async (overlay, showErr) => {
         const f = (k) => overlay.querySelector(`[data-f="${k}"]`);
-        const proof = f('proof').files[0];
-        if (!f('reference_no').value.trim()) { showErr('Enter the reference number from your receipt.'); return false; }
-        if (!proof) { showErr('Attach the receipt screenshot or deposit slip.'); return false; }
-        const fd = new FormData();
-        fd.append('channel', f('channel').value);
-        fd.append('reference_no', f('reference_no').value.trim());
-        fd.append('amount', f('amount').value);
-        fd.append('paid_on', f('paid_on').value);
-        fd.append('note', f('note').value.trim());
-        fd.append('proof', proof);
-        if (f('form_2307').files[0]) fd.append('form_2307', f('form_2307').files[0]);
-        await API.upload(`/tenant/billing/invoices/${inv.id}/payments`, fd);
+        if (!attempt) {
+          const proof = f('proof').files[0];
+          if (!f('reference_no').value.trim()) { showErr('Enter the reference number from your receipt.'); return false; }
+          if (!proof) { showErr('Attach the receipt screenshot or deposit slip.'); return false; }
+          const fd = new FormData();
+          fd.append('channel', f('channel').value);
+          fd.append('reference_no', f('reference_no').value.trim());
+          fd.append('amount', f('amount').value);
+          fd.append('paid_on', f('paid_on').value);
+          fd.append('note', f('note').value.trim());
+          fd.append('proof', proof);
+          if (f('form_2307').files[0]) fd.append('form_2307', f('form_2307').files[0]);
+          if (!window.crypto?.randomUUID) { showErr('Use a current browser on a secure connection to report payment.'); return false; }
+          attempt = { key: window.crypto.randomUUID(), data: fd };
+        }
+        // Preserve the exact request after an uncertain result; edits need a reviewed new report.
+        const fields = overlay.querySelectorAll('input,select');
+        fields.forEach(field => { field.disabled = true; });
+        try {
+          await API.upload(`/tenant/billing/invoices/${inv.id}/payments`, attempt.data, { idempotencyKey: attempt.key });
+        } catch (error) {
+          if (error.status === 400) {
+            attempt = null;
+            fields.forEach(field => { field.disabled = false; });
+            showErr(error.message);
+          } else {
+            showErr('Report outcome is unconfirmed. Retry this unchanged report, or check Billing before starting another. ' + error.message);
+          }
+          return false;
+        }
         UI.toast('Sent — we will confirm it against our GCash / bank records.');
         await reload();
         return true;

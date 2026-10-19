@@ -232,3 +232,23 @@ A client MIME type is not a trusted content verdict. Consistent settings/secret 
 atomic console configuration/audit updates additionally prevent cross-generation host/password
 pairing and partial settings commits. Tests use a separate SQLite connection and injected faults,
 not a live SMTP/provider configuration change. See business-alerts-* evidence and runbook.
+
+
+### Payment-report request receipts — 19 October 2026
+
+Primary sources reviewed today: Stripe https://docs.stripe.com/api/idempotent_requests and SQLite
+https://www.sqlite.org/lang_savepoint.html . Stripe describes random request keys, matching
+parameters and successful retry without another object; SQLite documents nested/outer commit
+boundaries. This application uses its own contract: completed 201 only, parsed attachment-byte
+binding, tenant/actor scope, current permission checks and retained expired tombstones. It does
+not cache all errors or reuse pruned keys like Stripe API v1, and does not introduce Stripe
+charging. Receipt/source share one catalog transaction, not a distributed transaction. Local
+process-exit/browser evidence is not power-loss/provider/hosting acceptance or complete-control
+PASS. See operations/payment-report-retries.md and payment-receipts-* evidence.
+
+Express 4 API application settings https://expressjs.com/en/4x/api/application/#app.set
+documents case-sensitive and strict routing behavior; both settings are undefined by default.
+The local app test confirms its case-insensitive/non-strict behavior. A local regression reproduced
+changed-proof replay through the old generic cache on a case-variant/trailing-slash payment URL;
+the route exemption now uses matching case-insensitive semantics. This is tested behavior, not
+a claim that every route alias in the app has been audited.

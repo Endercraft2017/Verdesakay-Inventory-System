@@ -463,6 +463,13 @@ atomic. See [business alerts](operations/business-alerts.md) and
 [owner alert outbox](operations/owner-alert-outbox.md) for exact states,
 retention, restore reconciliation and outstanding provider/operational acceptance.
 
+**Payment retry follow-up (2026-10-19):** updated desktop Billing sends scoped UUID keys;
+successful response receipts commit with the payment/proof/audit/invoice/alert. Exact retries
+return the original acknowledgement; current GET shows financial review state. Multipart bytes
+are bound after current permission checks, and known old generic-cache entries require review.
+No-key/new-modal/different-actor requests remain outside this guarantee. See
+[payment-report retries](operations/payment-report-retries.md) for recovery/rollback limits.
+
 **First invoice:** the console's price list (per module per month + per login seat) prices the
 sign-up's quote; when every chosen module and the seat price have a price, the first month's
 invoice is issued automatically (due in 7 days) and the website shows the monthly total before
@@ -477,7 +484,7 @@ opens, a `trial`/`past_due` one becomes `active` (a `suspended` one is left alon
 (`public/js/modules/core/billing.js`), banner link, and the locked shell while awaiting payment.
 
 **Not built:** PayMongo (checkout + webhook, then subscriptions); automatic overdue → `past_due`;
-inquiry/payment HTTP retry receipts and broader notification reconciliation/monitoring;
+inquiry/other API retry receipts and broader notification reconciliation/monitoring;
 recurring monthly invoices (the operator issues them).
 
 **Not verified:** the EWT / invoicing rules should be confirmed by the company's accountant.

@@ -94,3 +94,15 @@ separate from queued-email expiry: pruning messages does not delete proofs. Incl
 caches, backups and provider copies in scoped rights/hold review. No malware/signature assurance,
 Windows ACL acceptance, legacy orphan cleanup or legal retention approval is inferred.
 See operations/business-alerts.md for upgrade/restore/reconciliation rules.
+
+
+## Payment-report receipts (2026-10-19)
+
+platform_payment_report_receipts holds tenant slug, actor ID, hashed random UUID, salted scrypt
+request verifier (normalized financial details plus attachment digests), original invoice response,
+payment ID and expiry. It adds no raw request/key/proof/session token. Response/verifier are
+logically nulled after 24h on startup/hourly/keyed-request sweeps; minimal tombstones remain.
+Receipt responses are ordinary private catalog financial data and backups can retain older
+payloads. The browser keeps FormData/key in modal memory only. Financial proof retention is
+separate. Approve lawful basis, access, holds, metadata expiry and backup handling; no forensic
+erasure/legal approval is implied. See operations/payment-report-retries.md for restore rules.

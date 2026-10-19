@@ -103,8 +103,9 @@ financial records before reopening writes/worker processing. Never reset an unkn
 pending with SQL or infer nondelivery from a timeout. There is no new reviewed business-alert
 resend/provider-reconciliation interface in this increment.
 
-Source identity is not HTTP request idempotency: two separate POSTs can create two inquiries or
-payment reports and therefore two distinct alerts. A timeout after commit requires checking
+Source identity alone is not HTTP request idempotency: two inquiry POSTs, or payment POSTs
+without the same covered key/actor, can create distinct sources and alerts. Updated keyed payment
+reporting now uses payment-report-retries.md; a timeout outside that contract requires checking
 existing inquiry/payment records before resubmitting. This fix does not deduplicate bank charges,
 references or user actions and does not establish exactly-once remote/inbox delivery. Wider
 request receipts/admission and reviewed duplicate financial reconciliation remain engineering.
@@ -124,7 +125,13 @@ alert plus redacted console status. Actual server startup/timer drains committed
 payment intent once per category and leaves stale claims in both tables unknown without sending.
 All provider traffic is synthetic/test-only; no real customer email or bank/provider action.
 
-Remaining: HTTP retry receipts, legacy/duplicate/uncertain reconciliation and reviewed resend,
+Remaining: retry receipts for inquiries and other endpoints, reconciliation of legacy, duplicate
+and uncertain outcomes, and reviewed resend,
 backlog monitoring/external alerts, upload-content/security acceptance, financial lifecycle,
 approved retention and live provider/restore/Windows/storage/capacity tests. Full scorecard
 statuses remain unchanged. Exact results/failures are in audit business-alerts-* evidence.
+
+
+Payment-request follow-up: payment-report-retries.md supersedes the no-HTTP-receipt limitation
+above for updated keyed tenant payment reporting only. Distinct keys/actors and no-key clients
+still create distinct reports. Website inquiries and broader reconciliation remain open.

@@ -44,5 +44,18 @@ Payment proof/2307 bytes, reporting audit, derived invoice state and response pr
 included; an enqueue/storage failure rolls everything back and returns the correlated generic
 error. Existing schema/auth/tenant/users.manage/online gates still apply. Disabled/off/recipientless
 alerts do not block a valid source and create no later backlog. Payment reporting is pending
-review, not payment confirmation. These two routes do not implement durable HTTP request receipts:
-separate POSTs can create separate sources; reconcile after a lost response. See business-alerts.md.
+review, not payment confirmation. Inquiry and no-key/different-key payment POSTs can create
+separate sources; reconcile after a lost response outside the keyed payment contract below.
+See business-alerts.md and payment-report-retries.md.
+
+
+## Keyed tenant payment reports (19 October 2026)
+
+The online payment-report POST optionally accepts a random UUID-v4 Idempotency-Key. After current
+tenant authentication/users.manage and upload parsing, it compares normalized report fields and
+proof/2307 MIME+bytes. Same tenant/actor/key/details returns original 201 with Idempotency-Replayed:
+true and no-store. A successful receipt shares the source/proof/audit/invoice/alert transaction.
+Changed details/invoice, expired tombstone, unavailable source or known old generic cache entry
+returns 409; validation fails without saving a receipt. Replay is the original snapshot; GET
+Billing returns current review/payment state. No-key behavior is unchanged. This supersedes the
+preceding payment no-receipt limitation only for covered keyed requests. See payment-report-retries.md.

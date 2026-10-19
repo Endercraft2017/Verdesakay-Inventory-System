@@ -605,3 +605,69 @@ capacity gates. Email payload expiry does not delete financial proofs. Old worke
 new table; older request servers keep immediate behavior until upgraded. No exactly-once inbox,
 CI-green, hosted rollout, production-ready or complete-control PASS claim. Whole-control totals
 remain 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release hold unchanged.
+
+
+## Payment-report retry receipts — 19 October 2026
+
+Base e254ae4e7d8e9bdb25f68444d53dcc794f882ce0. High scoped duplicate-report gap addressed:
+updated keyed tenant payment reports replay the original 201 after response loss instead of
+creating another payment/proof/audit/alert. Normalized invoice/financial fields and attachment
+MIME/bytes bind tenant/actor/key. Slow salted verifier and successful response commit with the
+source catalog savepoint; failure or competing receipt insertion rolls source writes back.
+
+Testing exposed generic idempotency intercepting multipart requests before parsing and route
+users.manage checks. This POST now bypasses it; current auth/permission/online gates precede
+new receipt lookup. Known old generic keys conflict for reconciliation. Other generic middleware
+routes are unchanged. Desktop freezes exact FormData/key after uncertain results, permits a new
+corrected attempt after explicit 400 and GETs current Billing after acknowledgement.
+
+| Check | Completed result |
+|---|---|
+| Full `npm test -- --fileParallelism --maxWorkers=2` | 306 files / 3148 tests passed, 627.70s |
+| Final focused Vitest | 5 files / 90 passed, 46.99s; 27 new receipt cases and 2 new frontend cases |
+| Final `npm run test:e2e` | 21 passed, 58.9s |
+| `npm run typecheck` | Passed |
+| `npm run db:types` | Passed; generated tenant types unchanged |
+| Actual server startup | Expired receipt payload/verifier cleared; tombstone/proof retained; synthetic alert safety unchanged |
+| Gitleaks staged increment | Clean; final commit hook scans again |
+| Diff/whitespace | Passed |
+
+Focused cases cover replay/catalog reopen, normalized/mismatched financial fields and invoice,
+proof/MIME/2307, current authentication/role downgrade, actor/tenant separation, malformed keys,
+no-key compatibility, old-cache quarantine, validation correction, receipt-write rollback,
+stale competing candidate, reviewed/source ownership and expiry. Two actual child exits verify
+pre-commit source/receipt rollback or committed persistence. Browser drops a real committed 201,
+retries the same request and verifies one report plus current Billing state. Startup script uses
+a private catalog and test transport; no real provider/bank/customer email/deployment action.
+
+Initial four-file run: 59 passed/13 failed. Ten exposed the middleware interception conflict
+(eight changed-input cases plus expiry/source reassignment); three were fixture errors (NOT NULL
+override cleanup and two missing child bootstrap passwords). Intermediate five-file run: 84
+passed/two fixture failures: fixed admin permissions ignore overrides by design, so the test now
+downgrades the role; restart removes its deliberately persistent fault trigger before retry.
+Initial browser run: 20 passed/one failure after successful lost-response UI replay, because the
+final APIRequestContext GET omitted tenant scope. X-Tenant is now explicit. Initial raw text/JSON
+remain; browser traces/screenshots were overwritten. A separate deliberately failing case confirmed alternate-case/trailing-slash URLs
+could still reach generic caching. The exemption now matches Express case-insensitive routing.
+One preliminary full run was deliberately interrupted with exit 130 to include that fix; its
+partial output is retained and is not a completed pass. First corrected focused/browser results
+(89 tests / 21 browser checks) preceded the alias fix; final focused/browser/full results include it.
+A staged scan flagged ordinary runbook wording as a generic-api-key false positive; no
+credential was present. Prose was reworded without scanner suppression and the redacted initial
+finding retained. No failed or interrupted run is counted as a final pass. Runtime/tests were frozen before the full run; documentation/evidence followed.
+
+See payment-receipts-* scope/verification/logs/browser metadata/startup script and
+operations/payment-report-retries.md. Primary research: Stripe application idempotency and
+SQLite savepoints reviewed today, with own-contract differences and local evidence limits in
+standards-research.md. Data governance/draft privacy, release/restore/rollback, API contract,
+module catalog/pipelines, readiness, handoff and scorecard metadata were updated.
+
+Remaining: no-key/new-form/different-actor/legacy duplicates, inquiry/other API receipts, broader
+financial lifecycle and reconciliation, reviewed resend/backlog escalation, upload-content and
+real provider/hosting/restore/Windows/capacity acceptance, approved retention. Same bank reference
+is not globally unique; replay returns original snapshot and GET returns current review state.
+Receipt expiry logically removes payload but keeps minimal tombstone; financial proof retention
+is separate. Older writers need stopped/reconciled reporting or compatible versions. No new
+dependency/advisory snapshot/tenant schema bump, exactly-once remote outcome, CI-green, hosted
+rollout, production-ready or complete-control PASS claim. Complete-control totals remain
+36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release hold stays.
