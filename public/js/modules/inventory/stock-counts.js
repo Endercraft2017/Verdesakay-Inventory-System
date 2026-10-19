@@ -3,26 +3,57 @@ App.register('stock-counts', async (view, filter = {}) => {
   const canReview = App.hasPermission('inventory.adjust');
   const canCount = App.hasPermission('inventory.view');
   let status = 'open';
+  let taskStatus = 'open';
+  let taskMine = false;
+  let section = 'counts';
+  let loadVersion = 0;
   let rows = [];
   view.innerHTML = `<div class="topbar"><h2>Physical Counts</h2><div class="grow"></div>
-    <div class="subnav-inline"><button class="tab active" data-status="open">Open</button>
-    <button class="tab" data-status="all">All</button></div>
+    <div class="subnav-inline"><button class="tab active" data-section="counts">Counts</button>
+    <button class="tab" data-section="tasks">Planned checks</button><button class="tab" data-section="coverage">Coverage</button></div></div>
+    <div class="topbar" id="pc-count-toolbar"><div class="subnav-inline"><button class="tab active" data-status="open">Open</button>
+    <button class="tab" data-status="all">All</button></div><div class="grow"></div>
     ${canCount ? `<button class="btn" id="pc-new">${UI.icon('plus')} New count</button>` : ''}</div>
-    <p class="muted small">Count one item, exact location and build state at a time. A second person reviews the result.
+    <div class="topbar" id="pc-task-toolbar" style="display:none"><div class="subnav-inline">
+      <button class="tab active" data-task-status="open">Open</button><button class="tab" data-task-status="all">All</button></div>
+      <label class="small"><input type="checkbox" id="pc-mine"> My assignments</label><div class="grow"></div>
+      ${canReview ? `<button class="btn" id="pc-plan">${UI.icon('plus')} Plan count</button>` : ''}</div>
+    <p class="muted small" id="pc-intro">Count one item, exact location and build state at a time. A second person reviews the result.
     Untracked and exact-batch differences can be applied after approval. Serialized differences need their unit workflow.</p>
     <div class="panel" style="overflow-x:auto"><div id="pc-list"></div></div>`;
   const list = view.querySelector('#pc-list');
+  async function showSection(next){
+    section=next;
+    view.querySelectorAll('[data-section]').forEach(x=>x.classList.toggle('active',x.dataset.section===section));
+    view.querySelector('#pc-count-toolbar').style.display=section==='counts'?'':'none';
+    view.querySelector('#pc-task-toolbar').style.display=section==='tasks'?'':'none';
+    view.querySelector('#pc-intro').textContent=section==='counts'
+      ? 'Count one item, exact location and build state at a time. A second person reviews the result. Untracked and exact-batch differences can be applied after approval. Serialized differences need their unit workflow.'
+      : section==='tasks' ? 'Assigned checks stay open until an approved count is reconciled. Rejected counts can be repeated. Overdue dates remain visible.'
+        : 'Known stock positions, including planned empty shelves, show their last reconciled count and whether another item check is planned.';
+    if(section==='counts')await load();else if(section==='tasks')await loadTasks();else await loadCoverage();
+  }
+  view.querySelectorAll('[data-section]').forEach(b=>b.onclick=()=>showSection(b.dataset.section));
   view.querySelectorAll('[data-status]').forEach(b => b.onclick = () => {
     status = b.dataset.status;
     view.querySelectorAll('[data-status]').forEach(x => x.classList.toggle('active', x === b));
     load();
   });
   if (canCount) view.querySelector('#pc-new').onclick = () => newCount(filter || {});
+  view.querySelectorAll('[data-task-status]').forEach(b=>b.onclick=()=>{
+    taskStatus=b.dataset.taskStatus;
+    view.querySelectorAll('[data-task-status]').forEach(x=>x.classList.toggle('active',x===b));
+    loadTasks();
+  });
+  view.querySelector('#pc-mine').onchange=e=>{taskMine=e.target.checked;loadTasks();};
+  if(canReview)view.querySelector('#pc-plan').onclick=()=>planTask();
 
   async function load() {
+    const version=++loadVersion;
     list.innerHTML = '<div class="empty">Loading…</div>';
     try { rows = await API.get('/inventory/stock-counts?status=' + status); }
-    catch (e) { list.innerHTML = `<div class="empty">${UI.esc(e.message)}</div>`; return; }
+    catch (e) { if(version===loadVersion)list.innerHTML = `<div class="empty">${UI.esc(e.message)}</div>`; return; }
+    if(version!==loadVersion||section!=='counts')return;
     if (!rows.length) {
       list.innerHTML = UI.emptyState({icon:'check',title: status === 'open' ? 'No open counts' : 'No counts yet',
         hint:'Start a count for one item at a specific shelf or warehouse location.'});
@@ -41,11 +72,144 @@ App.register('stock-counts', async (view, filter = {}) => {
     list.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openCount(Number(b.dataset.open)));
   }
 
+  async function loadTasks() {
+    const version=++loadVersion;
+    list.innerHTML='<div class="empty">Loading planned checks…</div>';
+    let tasks;
+    try{tasks=await API.get(`/inventory/stock-counts/tasks?status=${taskStatus}&mine=${taskMine?'1':'0'}`);}
+    catch(e){if(version===loadVersion)list.innerHTML=`<div class="empty">${UI.esc(e.message)}</div>`;return;}
+    if(version!==loadVersion||section!=='tasks')return;
+    if(!tasks.length){list.innerHTML=UI.emptyState({icon:'check',title:'No planned checks here',
+      hint:taskMine?'Switch off My assignments to see the full queue.':'Plan the first exact item and location check.'});return;}
+    const overdue=tasks.filter(t=>t.overdue).length;
+    list.innerHTML=`<p class="muted small">${tasks.length} ${taskStatus==='open'?'open':'listed'} · ${overdue} overdue</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:12px">
+      ${tasks.map(t=>`<div class="panel" style="margin:0;padding:16px">
+        <div style="display:flex;justify-content:space-between;gap:8px"><strong>${UI.esc(t.item_name)}</strong>
+          <span class="badge-pill ${t.status==='completed'?'ok':t.overdue?'low':''}">${t.status==='open'?(t.overdue?'Overdue':'Due '+UI.esc(t.due_date)):UI.esc(t.status)}</span></div>
+        <p class="muted small">${UI.esc(t.location_name)} · ${t.build_mode==='semi_built'?'Semi-built':'Fully built / standard'}</p>
+        <p class="small">Assigned to <strong>${UI.esc(t.assigned_to_name)}</strong><br>Due ${UI.esc(t.due_date)}
+          ${t.repeat_days?` · repeats every ${t.repeat_days} days`:''}</p>
+        ${t.note?`<p class="small">${UI.esc(t.note)}</p>`:''}
+        <p class="muted small">${t.latest_count_id?`Latest count #${t.latest_count_id}: ${UI.esc(t.latest_count_status)}`:'Awaiting physical count'}
+          ${t.completed_at?` · completed ${UI.esc(t.completed_at)}`:''}</p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          ${t.status==='open'&&t.assigned_to===App.getMe()?.id&&!['submitted','approved'].includes(t.latest_count_status)
+            ? `<button class="btn small" data-task-count="${t.id}">${t.latest_count_status==='rejected'?'Recount':'Count now'}</button>`:''}
+          ${t.latest_count_id?`<button class="btn secondary small" data-task-review="${t.latest_count_id}">View count</button>`:''}
+          ${t.status==='open'&&canReview&&!['submitted','approved'].includes(t.latest_count_status)
+            ? `<button class="btn secondary small" data-task-edit="${t.id}">Edit</button><button class="btn secondary small" data-task-cancel="${t.id}">Cancel</button>`:''}
+        </div></div>`).join('')}</div>`;
+    list.querySelectorAll('[data-task-count]').forEach(b=>b.onclick=()=>{
+      const t=tasks.find(row=>row.id===Number(b.dataset.taskCount));
+      newCount({item_id:t.item_id,location_id:t.location_id,build_mode:t.build_mode,task_id:t.id});
+    });
+    list.querySelectorAll('[data-task-review]').forEach(b=>b.onclick=()=>openCount(Number(b.dataset.taskReview)));
+    list.querySelectorAll('[data-task-edit]').forEach(b=>b.onclick=()=>planTask(tasks.find(t=>t.id===Number(b.dataset.taskEdit))));
+    list.querySelectorAll('[data-task-cancel]').forEach(b=>b.onclick=()=>cancelTask(tasks.find(t=>t.id===Number(b.dataset.taskCancel))));
+  }
+
+  async function loadCoverage(){
+    const version=++loadVersion;
+    list.innerHTML='<div class="empty">Loading stock-position coverage…</div>';
+    let positions;
+    try{positions=await API.get('/inventory/stock-counts/tasks/coverage');}
+    catch(e){if(version===loadVersion)list.innerHTML=`<div class="empty">${UI.esc(e.message)}</div>`;return;}
+    if(version!==loadVersion||section!=='coverage')return;
+    const never=positions.filter(p=>!p.last_count_at).length,unplanned=positions.filter(p=>!p.open_task_id).length;
+    list.innerHTML=`<p class="muted small">${positions.length} known stock positions · ${never} never reconciled by a physical count · ${unplanned} without an open assignment.
+      Completed historical counts remain visible even when the next check is due.</p>
+      ${!positions.length?UI.emptyState({icon:'check',title:'No known stock positions',hint:'Positions appear when stock is received or a check is planned.'}):
+      `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:12px">
+      ${positions.map(p=>`<div class="panel" style="margin:0;padding:16px"><strong>${UI.esc(p.item_name)}</strong>
+        <p class="muted small">${UI.esc(p.location_name)} · ${p.build_mode==='semi_built'?'Semi-built':'Fully built / standard'} · book ${p.quantity}</p>
+        <p class="small">Last reconciled: ${p.last_count_at?UI.esc(p.last_count_at):'<strong>Never</strong>'}<br>
+        ${p.open_task_id?`Check #${p.open_task_id} due ${UI.esc(p.due_date)}${p.overdue?' · overdue':''}`:'No open check planned'}</p>
+        ${canReview&&!p.open_task_id?`<button class="btn secondary small" data-cover-plan="${p.item_id}:${p.location_id}:${p.build_mode}">Plan check</button>`:''}
+      </div>`).join('')}</div>`}`;
+    list.querySelectorAll('[data-cover-plan]').forEach(b=>b.onclick=()=>{
+      const [item_id,location_id,build_mode]=b.dataset.coverPlan.split(':');
+      planTask({item_id:Number(item_id),location_id:Number(location_id),build_mode});
+    });
+  }
+
+  async function planTask(seed={}){
+    const editing=!!seed.id;
+    let locations,assignees,preset;
+    try{[locations,assignees,preset]=await Promise.all([API.get('/locations'),API.get('/inventory/stock-counts/tasks/assignees'),
+      seed.item_id?API.get('/inventory/'+seed.item_id):Promise.resolve(null)]);}
+    catch(e){UI.toast(e.message);return;}
+    const {overlay:modal}=UI.modal({title:editing?`Edit planned check #${seed.id}`:'Plan a cycle count',size:'lg',confirmText:'Close',
+      bodyHTML:`<p class="muted small">Assign one item, exact location and build state. The due date creates a visible queue; stock is captured later by the assigned worker.</p>
+        <div class="form-grid"><div class="form-field span2"><label for="pc-plan-search">Find item by name or SKU</label>
+          <input id="pc-plan-search" ${editing?'disabled':''} value="${UI.esc(preset?.name||'')}" placeholder="Type at least 2 characters"></div>
+          <div class="form-field span2"><label for="pc-plan-item">Item</label><select id="pc-plan-item" ${editing?'disabled':''}>
+            ${preset?`<option value="${preset.id}">${UI.esc(preset.name)}</option>`:'<option value="">Search for an item</option>'}</select></div>
+          <div class="form-field"><label for="pc-plan-location">Exact location</label><select id="pc-plan-location" ${editing?'disabled':''}>
+            <option value="">Choose a location</option>${locations.map(l=>`<option value="${l.id}" ${Number(seed.location_id)===l.id?'selected':''}>${UI.esc(l.path||l.name)}</option>`).join('')}</select></div>
+          <div class="form-field"><label for="pc-plan-mode">Build state</label><select id="pc-plan-mode" ${editing?'disabled':''}>
+            <option value="assembled">Fully built / standard</option><option value="semi_built">Semi-built</option></select></div>
+          <div class="form-field"><label for="pc-plan-assignee">Assigned worker</label><select id="pc-plan-assignee">
+            <option value="">Choose a worker</option>${assignees.map(u=>`<option value="${u.id}" ${Number(seed.assigned_to)===u.id?'selected':''}>${UI.esc(u.full_name)}</option>`).join('')}</select></div>
+          <div class="form-field"><label for="pc-plan-due">Due date</label><input id="pc-plan-due" type="date" value="${UI.esc(seed.due_date||new Date().toISOString().slice(0,10))}"></div>
+          <div class="form-field"><label for="pc-plan-repeat">Repeat every (days, optional)</label>
+            <input id="pc-plan-repeat" type="number" min="1" max="365" step="1" value="${seed.repeat_days||''}" placeholder="One-time check"></div>
+          <div class="form-field span2"><label for="pc-plan-note">Instructions (optional)</label>
+            <textarea id="pc-plan-note" rows="2" maxlength="1000" placeholder="What to check on this shelf">${UI.esc(seed.note||'')}</textarea></div></div>
+          <button class="btn" id="pc-plan-save">${editing?'Save changes':'Create assignment'}</button><div id="pc-plan-error" role="alert"></div>`,onConfirm:()=>true});
+    modal.querySelector('#pc-plan-mode').value=seed.build_mode||'assembled';
+    const search=modal.querySelector('#pc-plan-search'),picker=modal.querySelector('#pc-plan-item');
+    let version=0;
+    if(!editing)search.oninput=async()=>{
+      const v=++version,q=search.value.trim();
+      if(q.length<2){picker.innerHTML='<option value="">Type at least 2 characters</option>';return;}
+      try{const items=await API.get('/inventory?q='+encodeURIComponent(q));
+        if(v!==version||!modal.isConnected)return;
+        picker.innerHTML='<option value="">Choose an item</option>'+items.slice(0,60).map(i=>
+          `<option value="${i.id}">${UI.esc(i.name)}${i.sku?' · '+UI.esc(i.sku):''}</option>`).join('');
+      }catch(e){if(v===version)picker.innerHTML=`<option value="">${UI.esc(e.message)}</option>`;}
+    };
+    modal.querySelector('#pc-plan-save').onclick=async()=>{
+      const error=modal.querySelector('#pc-plan-error');error.textContent='';
+      const repeat=modal.querySelector('#pc-plan-repeat').value.trim();
+      if(repeat&&!/^(?:[1-9]|[1-9]\d|[1-2]\d\d|3[0-5]\d|36[0-5])$/.test(repeat)){
+        error.textContent='Repeat interval must be 1–365 whole days.';return;}
+      const payload={assigned_to:Number(modal.querySelector('#pc-plan-assignee').value),
+        due_date:modal.querySelector('#pc-plan-due').value,repeat_days:repeat?Number(repeat):null,
+        note:modal.querySelector('#pc-plan-note').value.trim()};
+      if(!editing)Object.assign(payload,{item_id:Number(picker.value),location_id:Number(modal.querySelector('#pc-plan-location').value),
+        build_mode:modal.querySelector('#pc-plan-mode').value});
+      if(!payload.assigned_to||!payload.due_date||(!editing&&(!payload.item_id||!payload.location_id))){
+        error.textContent='Choose an item, exact location, worker and due date.';return;}
+      const button=modal.querySelector('#pc-plan-save');button.disabled=true;
+      try{if(editing)await API.put(`/inventory/stock-counts/tasks/${seed.id}`,payload);
+        else await API.post('/inventory/stock-counts/tasks',payload);
+        modal.__close();UI.toast(editing?'Assignment updated':'Cycle count planned');
+        await showSection('tasks');
+      }catch(e){error.textContent=e.message;button.disabled=false;}
+    };
+  }
+
+  function cancelTask(task){
+    const {overlay:modal}=UI.modal({title:`Cancel planned check #${task.id}`,confirmText:'Close',bodyHTML:
+      `<p>Cancel the assignment for <strong>${UI.esc(task.item_name)}</strong> at ${UI.esc(task.location_name)}?</p>
+       <div class="form-field"><label for="pc-cancel-note">Reason</label><textarea id="pc-cancel-note" rows="2" maxlength="1000"></textarea></div>
+       <button class="btn" id="pc-cancel-confirm">Cancel assignment</button><div id="pc-cancel-error" role="alert"></div>`,onConfirm:()=>true});
+    modal.querySelector('#pc-cancel-confirm').onclick=async()=>{
+      const note=modal.querySelector('#pc-cancel-note').value.trim(),error=modal.querySelector('#pc-cancel-error');
+      if(note.length<10){error.textContent='Enter a reason of at least 10 characters.';return;}
+      const b=modal.querySelector('#pc-cancel-confirm');b.disabled=true;
+      try{await API.post(`/inventory/stock-counts/tasks/${task.id}/cancel`,{note});
+        modal.__close();UI.toast('Assignment cancelled');loadTasks();}
+      catch(e){error.textContent=e.message;b.disabled=false;}
+    };
+  }
+
   async function newCount(seed) {
     const locations = await API.get('/locations');
     const preset = seed.item_id ? await API.get('/inventory/' + seed.item_id) : null;
     const {overlay:modal} = UI.modal({title:'New physical count',size:'lg',confirmText:'Close',
-      bodyHTML:`<p class="muted small">Choose the item and the exact shelf/location. Load the live stock before recording what you physically found.</p>
+      bodyHTML:`<p class="muted small">${seed.task_id?`Planned check #${seed.task_id}: count the assigned item and exact location.`:'Choose the item and the exact shelf/location.'} Load the live stock before recording what you physically found.</p>
         <div class="form-grid"><div class="form-field span2"><label for="pc-search">Find item by name or SKU</label>
           <input id="pc-search" value="${UI.esc(preset?.name || '')}" placeholder="Type at least 2 characters"></div>
         <div class="form-field span2"><label for="pc-item">Item</label><select id="pc-item">
@@ -58,6 +222,9 @@ App.register('stock-counts', async (view, filter = {}) => {
         <div id="pc-capture"></div>`,
       onConfirm:()=>true});
     if(seed.build_mode) modal.querySelector('#pc-mode').value=seed.build_mode;
+    if(seed.task_id){
+      ['#pc-search','#pc-item','#pc-location','#pc-mode'].forEach(selector=>modal.querySelector(selector).disabled=true);
+    }
     const search=modal.querySelector('#pc-search'), picker=modal.querySelector('#pc-item');
     let searchVersion=0;
     search.oninput=async () => {
@@ -110,12 +277,13 @@ App.register('stock-counts', async (view, filter = {}) => {
             counted_untracked:Number(untracked),
             counted_serial_codes:[...capture.querySelectorAll('[data-pc-serial]:checked')].map(e=>e.dataset.pcSerial),
             counted_batches:batchInputs.map(e=>({batch_id:Number(e.dataset.pcBatch),quantity:Number(e.value)})),
-            note,source_kind:seed.source_kind||'manual',source_id:seed.source_id||null};
+            note,source_kind:seed.source_kind||'manual',source_id:seed.source_id||null,task_id:seed.task_id||null};
           if(!attempt) attempt={payload,key:'stock-count-'+(window.crypto?.randomUUID?.()||Date.now()+'-'+Math.random())};
           const button=capture.querySelector('#pc-submit');button.disabled=true;
           const controls=[...capture.querySelectorAll('input,textarea,select')];controls.forEach(control=>control.disabled=true);
           try{const saved=await API.post('/inventory/stock-counts',attempt.payload,{idempotencyKey:attempt.key});
-            modal.__close();UI.toast('Count #'+saved.id+' submitted for review');load();}
+            modal.__close();UI.toast('Count #'+saved.id+' submitted for review');
+            if(section==='tasks')loadTasks();else load();}
           catch(e){
             error.textContent=e.offline?'Confirmation unknown. Retry the exact saved count; do not start a second count.':e.message;
             if(e.offline) button.textContent='Retry same count';
@@ -160,10 +328,10 @@ App.register('stock-counts', async (view, filter = {}) => {
       try{
         await API.post(`/inventory/stock-counts/${c.id}/${action}`,action==='apply'?{}:{note});
         modal.__close();UI.toast(action==='approve'?'Count approved':action==='reject'?'Count rejected':action==='close-source'?'Linked issue closed':'Count reconciled');
-        if((action==='apply'||action==='verify')&&c.source_kind!=='manual'){
+        if((action==='apply'||action==='verify')&&c.source_kind!=='manual'&&section==='counts'){
           status='all';view.querySelectorAll('[data-status]').forEach(x=>x.classList.toggle('active',x.dataset.status==='all'));
           await load();await openCount(c.id);
-        }else await load();
+        }else if(section==='tasks')await loadTasks();else await load();
       }catch(e){error.textContent=e.message;b.disabled=false;}
     });
   }
