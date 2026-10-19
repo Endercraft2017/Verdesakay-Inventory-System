@@ -242,11 +242,29 @@ window.MApp = (function () {
     viewEl().innerHTML =
       '<div class="m-blocked">' +
       '<div class="m-blocked-icon">&#128683;</div>' +
-      '<h2>Nothing here for you yet</h2>' +
+      '<h2>Phone access isn’t enabled</h2><p class="auth-account">Signed in as <strong>' + mEsc(me.username || me.full_name) + '</strong></p>' +
       '<p>This account isn\'t set up for the phone app. Ask an administrator to turn on ' +
       '<b>Use the phone app</b> for your role or account, or ask HR to link your account to your employee record.</p>' +
-      '<button class="m-btn m-btn-secondary" id="m-blocked-out">Sign out</button></div>';
+      '<button class="m-btn" id="m-check-access">Check access again</button><p role="status" id="m-access-status"></p>' +
+      '<button class="m-btn m-btn-secondary" id="m-blocked-out">Sign out / use another account</button></div>';
     document.getElementById('m-blocked-out').onclick = signOut;
+    document.getElementById('m-check-access').onclick = async function () {
+      if (this.disabled) return;
+      var button = this, note = document.getElementById('m-access-status');
+      button.disabled = true; button.textContent = 'Checking…'; note.textContent = 'Checking your current access…';
+      try {
+        var profile = await API.get('/auth/me');
+        // Use the normal entry path, including password/MFA and permission checks.
+        if (profile.user.password_change_required || profile.user.mfa_setup_required ||
+            (profile.user.permissions || []).some(function (p) { return p === 'mobile.access' || p === 'inventory.mobile'; }) || profile.user.employee) {
+          enterApp(profile.user);
+        } else {
+          setMe(profile.user);
+          note.textContent = 'Access is still not enabled. Ask your administrator to enable phone access or ask HR to link your employee record.';
+        }
+      } catch (error) { note.textContent = AuthControls.errorMessage(error); }
+      finally { button.disabled = false; button.textContent = 'Check access again'; }
+    };
   }
 
   var ME_KEY = 'vds_m_me';
@@ -525,11 +543,21 @@ window.MApp = (function () {
     window.addEventListener('offline', function () { setOnline(false); refreshQueueBadge(); });
     refreshQueueBadge();
 
+    AuthControls.passwords(document.getElementById('m-login-form'));
+    // Open the shared recovery flow with the workspace query preserved.
+    var recoveryUrl = new URL((window.VDS_BASE_PATH || '') + '/index.html', location.origin);
+    recoveryUrl.search = location.search;
+    recoveryUrl.searchParams.set('recover', '1');
+    document.getElementById('m-recovery').href = recoveryUrl.href;
     document.getElementById('m-login-form').addEventListener('submit', function (e) {
       e.preventDefault();
       var err = document.getElementById('m-login-error');
       err.classList.add('hidden');
-      var btn = e.target.querySelector('button');
+      var btn = e.target.querySelector('button[type=submit]');
+      if (btn.disabled) return;
+      btn.textContent = 'Signing in…';
+      e.target.setAttribute('aria-busy', 'true');
+      document.getElementById('m-login-status').textContent = 'Signing in. Please wait.';
       btn.disabled = true;
       var sharedBox = document.getElementById('m-shared');
       var shared = !!(sharedBox && sharedBox.checked);
@@ -546,10 +574,16 @@ window.MApp = (function () {
           return API.get('/auth/me').then(function (profile) { enterApp(profile.user); });
         })
         .catch(function (ex) {
-          err.textContent = ex.message || 'Sign in failed';
+          err.textContent = AuthControls.errorMessage(ex);
           err.classList.remove('hidden');
+          err.focus();
         })
-        .finally(function () { btn.disabled = false; });
+        .finally(function () {
+          btn.disabled = false;
+          btn.textContent = 'Sign in';
+          document.getElementById('m-login-form').removeAttribute('aria-busy');
+          document.getElementById('m-login-status').textContent = '';
+        });
     });
 
     window.addEventListener('hashchange', render);

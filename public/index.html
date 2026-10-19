@@ -33,7 +33,7 @@
           <div class="brand-sub">by AFKcube</div>
         </div>
       </div>
-      <div id="login-error" class="form-error hidden"></div>
+      <div id="login-error" role="alert" tabindex="-1" class="form-error hidden"></div>
       <label for="login-username">Username</label>
       <input id="login-username" name="username" autocomplete="username" required autofocus />
       <label for="login-password">Password</label>
@@ -44,6 +44,7 @@
           <span class="muted" style="display:block;font-size:12px">Signs you out after 30 minutes idle or when you close the tab.</span></span>
       </label>
       <button class="btn" type="submit" style="width:100%;justify-content:center;margin-top:20px;">Sign in</button>
+      <p id="login-status" class="auth-status" role="status"></p>
       <button type="button" id="forgot-link" class="btn-link" style="display:block;margin:12px auto 0;background:none;border:none;color:var(--accent,#2b7fff);cursor:pointer;font-size:13px">Forgot username or password?</button>
     </form>
   </div>
@@ -157,6 +158,7 @@
   <script src="/js/guide-tour.js"></script>
   <script src="/js/guide-instructions.js"></script>
   <script src="/js/guide-center.js"></script>
+  <script src="/js/auth-controls.js"></script>
   <script src="/js/app.js"></script>
   <script src="/js/modules/core/dashboard.js"></script>
   <script src="/js/modules/core/support.js"></script>
