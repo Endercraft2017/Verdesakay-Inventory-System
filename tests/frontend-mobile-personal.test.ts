@@ -64,3 +64,58 @@ it('shows current workflow handoffs and conditional recovery branches in the pho
  expect(view.querySelector('.m-pipeline-path')).not.toBeNull();
  dom.window.close();
 });
+
+it('Work guide explains only displayed account tasks and distinguishes receipts from release stock effects',async()=>{
+ const {dom,w,view,go,navigations}=await boot({get:async()=>[]});
+ w.MApp.can=(p:string)=>p==='inventory.adjust';
+ w.MApp.canOpen=(r:string)=>['receive','so','allocate','receiving'].includes(r);
+ w.mRtsRecovery={count:()=>0};
+ await go('work');
+ const visible=[...view.querySelectorAll('[data-work-guide]')].map((e:any)=>e.dataset.workGuideTitle);
+ const steps=w.MobileGuide.steps(view);
+ expect(steps.slice(1).map((s:any)=>s.title)).toEqual(visible);
+ const pr=steps.find((s:any)=>s.title==='Receive PR');expect(pr.body).toContain('supplier');expect(pr.body).toContain('vendor bill');
+ const rts=steps.find((s:any)=>s.title==='RTS recording');expect(rts.body).toContain('final-passed');expect(rts.body).toContain('not Receive PR');
+ expect(steps.find((s:any)=>s.title==='Release orders').body).toContain('Picking holds stock');
+ expect(steps.find((s:any)=>s.title==='Allocate units').body).toContain('removes stock immediately');
+ expect(steps.some((s:any)=>s.title==='QC technical inspection')).toBe(false);
+ const before=navigations.length;
+ w.MobileGuide.start();
+ expect(w.document.querySelector('[data-act=depth]')).toBeNull();
+ for(const step of steps){expect(w.document.querySelector('.guide-coach h4').textContent).toBe(step.title);w.document.querySelector('[data-act=next]').click();}
+ expect(navigations).toHaveLength(before);
+ dom.window.close();
+});
+
+it('Work guide separates permission-specific queues that share a route and refreshes after access removal',async()=>{
+ const {dom,w,view,go}=await boot({get:async(p:string)=>p.startsWith('/qc/queue')?{units:[]}:[]});
+ let grants=new Set(['production.inspect_qc']);
+ w.MApp.can=(p:string)=>grants.has(p);w.MApp.canOpen=(r:string)=>r==='qc';
+ await go('work');
+ let steps=w.MobileGuide.steps(view);
+ expect(steps.some((s:any)=>s.title==='QC technical inspection')).toBe(true);
+ expect(steps.some((s:any)=>s.title==='QA appearance inspection')).toBe(false);
+ expect(steps.some((s:any)=>s.title==='QA holds')).toBe(false);
+ w.MobileGuide.start();
+ grants=new Set(['production.qa_review']);w.mProductionDrafts={listActions:async()=>[]};
+ w.MApp.render();await flush();
+ expect(w.document.querySelector('.guide-coach')).toBeNull();
+ steps=w.MobileGuide.steps(view);
+ expect(steps.some((s:any)=>s.title==='QC technical inspection')).toBe(false);
+ expect(steps.find((s:any)=>s.title==='QA holds').body).toContain('QA-review authority');
+ dom.window.close();
+});
+
+it('a personal-only account gets its own task and tools explained without warehouse queues',async()=>{
+ const {dom,w,view,go}=await boot({get:async()=>[{id:92,title:'<Review customer email>',done:false}]});
+ await go('work');
+ const steps=w.MobileGuide.steps(view);
+ expect(steps.some((s:any)=>s.title==='Receive PR')).toBe(false);
+ expect(steps.some((s:any)=>s.title==='Release orders')).toBe(false);
+ const personal=steps.find((s:any)=>s.title==='<Review customer email>');expect(personal.body).toContain('personal task');
+ w.MobileGuide.start();w.document.querySelector('[data-act=next]').click();
+ expect(w.document.querySelector('.guide-coach h4').textContent).toBe('<Review customer email>');
+ expect(w.document.querySelector('.guide-coach h4 review')).toBeNull();
+ expect(steps.some((s:any)=>s.title==='Notes / checklists')).toBe(true);
+ dom.window.close();
+});

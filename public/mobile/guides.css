@@ -25,3 +25,6 @@
 .m-pipeline-path > li:not(:last-child)::after { content:'↓'; position:absolute; bottom:-29px; left:12px; color:var(--v2-green); font-size:22px; }
 .m-pipeline-team { display:block; color:var(--v2-green); margin-bottom:6px; }
 .m-pipeline-branch { border:1px dashed var(--v2-green); padding:10px; border-radius:8px; margin-top:10px; }
+
+/* Work entries explain purpose, timing and effects; allow room for all three. */
+.guide-coach.work-task-guide .guide-coach-body { max-height: 50dvh; }

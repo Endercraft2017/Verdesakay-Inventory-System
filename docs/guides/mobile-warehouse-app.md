@@ -99,3 +99,29 @@ Screen names identify tasks that must be completed on the desktop.
   one inspection unit. Do not repeat BOM picking or Add unit; QC/QA and RTS still follow.
 - **RTS recording** confirms passed output at an exact storage location, checking
   capacity and duplicate receipts. Keep saved receipts until confirmation/reconciliation.
+
+## Understanding your Work tasks
+
+On **Work**, press the header's **Guide** button. It highlights and explains each
+queue and tool currently displayed for your account: what it is, when to use it,
+and its result or next handoff. It follows the actual permission-filtered rows,
+not a fixed role template. A task with no current waiting records can still be
+available and explained; the guide does not enable unavailable tasks.
+
+Important distinctions:
+
+- **Receive PR** receives purchased supplier goods against a purchase request/order.
+  A confirmed goods receipt adds purchased stock; vendor bill approval/payment are later steps.
+- **RTS recording** receives eligible production output after required quality checks.
+- **Kit releases** issues components to Production. **Release orders** handles customer goods.
+- **Allocate units** can directly remove finished stock for sale, whereas ordinary
+  Release orders picking reserves goods until the trip slip records stock-out.
+- **My planned checks** opens assigned counts; **Physical stock counts** captures
+  observations. Submission alone does not complete the reconciliation task.
+
+The introductory step explains WAITING / CLEAR / OPEN queue labels. Next and Back
+only move through explanations; they do not open tasks, save or submit work. Every
+visible task is included without a shortened overview that silently skips entries.
+If access changes while help is open, the old guide closes; reopen Guide to read
+explanations for the refreshed Work screen. **My tools → Guides** remains the
+separate library for broader workflows across modules.

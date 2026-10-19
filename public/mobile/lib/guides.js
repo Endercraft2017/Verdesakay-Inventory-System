@@ -37,8 +37,13 @@
     }else{
       var p=MApp.currentLocation(),route=p.name;
       if(route==='work'){
-        add('.v2-work-list','Open your current work','Tap the selected personal task or authorized queue. Personal tasks open that exact Tasks & reminders record; role queues show the operational work you are allowed to handle.');
-        add('.v2-work-tools','Open personal tools','Choose Tasks & reminders to view your tasks, or Notes / checklists to open a note. Schedule shows your employee work schedule.');
+        add('.v2-work-heading','Your active Work tasks','<p>This guide explains only the tasks and tools currently shown for your account. Access comes from your assigned permissions and enabled modules.</p><p><b>WAITING</b> is the queue count, <b>CLEAR</b> means no work is currently counted, and <b>OPEN</b> means the task is available without a confirmed count. These labels do not mean the task has been completed.</p><p>Next highlights each entry without opening it or submitting anything.</p>');
+        root.querySelectorAll('[data-work-guide]').forEach(function(row){
+          add(row,row.dataset.workGuideTitle,
+            '<p><b>What it is:</b> '+mEsc(row.dataset.workGuidePurpose)+'</p>'+
+            '<p><b>When to use it:</b> '+mEsc(row.dataset.workGuideWhen)+'</p>'+
+            '<p><b>Result / next step:</b> '+mEsc(row.dataset.workGuideResult)+'</p>');
+        });
       }
       if(!result.length){
         var overview={home:'Use the attendance summary and shortcuts to open Clock, employee requests or your current work.',clock:'Choose the punch you are recording, scan the required code and follow the selfie prompt. Check the recorded confirmation before leaving.',requests:'Open a request to inspect its status, or choose New request and complete its type, dates and reason before submitting.',approvals:'Open a pending request, inspect its reason and dates, then choose your decision and enter a note before saving.',schedule:'Review your shift and work dates. Open the relevant request or attendance correction when the schedule and actual work differ.',payslips:'Open a payroll period to inspect your own earnings and deductions. Use Download when a payslip is released and download is available.',notifications:'Tap a notification to open the record or task it refers to. Enable device notifications in Profile if you need push reminders.',inbox:'Open the intended conversation, write your message and check recipients and attachments before sending.',settings:'Review your profile, device notifications and sign-in settings. Confirm the effect of a setting before saving it.',production:'Open the authorized queue for your role to inspect the job, units or parts waiting for action.',scan:'Scan the item or unit code, verify the result and choose the appropriate stock or production action.',queue:'Review pending offline actions and their errors. Reconnect to sync; queued changes are not complete until the server accepts them.'};
@@ -48,7 +53,7 @@
     }
     return result;
   }
-  function start(){var root=document.querySelector('#m-view');if(!root || /Loading…/.test(root.textContent)){mToast('Wait for the screen to load, then press Guide.');return;}var p=MApp.currentLocation(),list=steps(root);if(!list.length){mToast('No controls are available in this view right now.');return;}var id='mobile:'+p.name+':'+(root.querySelector('#m-note-editor')?'note-editor':root.querySelector('[data-due]')?'task-editor':'screen');GuideTour.start({id:id,title:document.querySelector('#m-title').textContent,steps:list,variants:list.length>3?{detailed:list,brief:list.filter((_,i)=>i===0||i===Math.floor(list.length/2)||i===list.length-1)}:null,context:root},0,{root:root});}
+  function start(){var root=document.querySelector('#m-view');if(!root || /Loading…/.test(root.textContent)){mToast('Wait for the screen to load, then press Guide.');return;}var p=MApp.currentLocation();if(p.name==='work')root=root.querySelector('.v2-work')||root;var list=steps(root);if(!list.length){mToast('No controls are available in this view right now.');return;}var id='mobile:'+p.name+':'+(root.querySelector('#m-note-editor')?'note-editor':root.querySelector('[data-due]')?'task-editor':'screen');GuideTour.start({id:id,title:document.querySelector('#m-title').textContent,steps:list,variants:p.name!=='work'&&list.length>3?{detailed:list,brief:list.filter((_,i)=>i===0||i===Math.floor(list.length/2)||i===list.length-1)}:null,context:root},0,{root:root});if(p.name==='work')document.querySelector('.guide-coach')?.classList.add('work-task-guide');}
   window.MobileGuide={start:start,steps:steps};
   function init(){document.querySelector('#m-guide-start')?.addEventListener('click',start);window.addEventListener('hashchange',function(){window.GuideTour?.close();});}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
