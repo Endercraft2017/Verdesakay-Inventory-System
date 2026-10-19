@@ -20,6 +20,7 @@ async function loadDesktopApp() {
     + '\n;window.__App = App;');
   await tick(); // DOMContentLoaded → App.boot() (no token: the sign-in screen)
   const App = win.__App as {
+    canAccessRoute(name: string): boolean;
     register(name: string, fn: () => void): void;
     setMe(patch: Record<string, unknown>): void;
     navigate(name: string, filter?: Record<string, string>): void;
@@ -46,6 +47,24 @@ describe('desktop navigation', () => {
     win.location.hash = 'account'; // what Back to the previous page does
     await tick();
     expect(renders).toEqual(['account', 'messages', 'account']);
+    win.close();
+  });
+});
+
+
+describe('desktop clerk desk isolation', () => {
+  it.each([
+    ['production.repairs', 'repairs', 'production-receiving'],
+    ['production.receive', 'production-receiving', 'repairs'],
+  ])('%s opens only its own desk without broad production access', async (permission, allowed, denied) => {
+    const { App, win } = await loadDesktopApp();
+    App.setMe({ role: 'clerk', permissions: [permission] });
+    expect(App.canAccessRoute(allowed)).toBe(true);
+    for (const route of [denied, 'job-orders', 'production-overview', 'finished-products', 'production-qc', 'production-batches']) {
+      expect(App.canAccessRoute(route), route).toBe(false);
+    }
+    App.setMe({ permissions: [] });
+    expect(App.canAccessRoute(allowed)).toBe(false);
     win.close();
   });
 });

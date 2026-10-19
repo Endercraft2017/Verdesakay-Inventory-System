@@ -118,7 +118,7 @@ const NAV = [
   },
   {
     id: 'production', label: 'Production', icon: 'factory',
-    requiredAnyPermission: ['production.view', 'production.record', 'production.pause', 'production.manage', 'production.approve'],
+    requiredAnyPermission: ['production.view', 'production.record', 'production.pause', 'production.manage', 'production.approve', 'production.repairs', 'production.receive'],
     requiredModule: 'manufacturing',
     /* Subtabs are ordered to match the real build pipeline, not alphabetically or by
        feature-add order: overview (home/summary) -> setup (prerequisite) -> schedule/start ->
@@ -139,7 +139,7 @@ const NAV = [
         ],
       },
       {
-        id: 'shop-floor', label: 'Job Orders',
+        id: 'shop-floor', label: 'Job Orders', requiredAnyPermission: ['production.view', 'production.record', 'production.pause', 'production.manage', 'production.approve'],
         tree: [
           { label: 'Job Orders', icon: 'adjust', route: 'job-orders' },
         ],
@@ -160,13 +160,13 @@ const NAV = [
         ],
       },
       {
-        id: 'repairs', label: 'Repairs & Parts Requests', requiredPermission: 'production.view',
+        id: 'repairs', label: 'Repairs & Parts Requests', requiredAnyPermission: ['production.view', 'production.repairs'],
         tree: [
           { label: 'Repairs & Parts Requests', icon: 'inbox', route: 'repairs' },
         ],
       },
       {
-        id: 'products-in', label: 'Products In', requiredPermission: 'production.view',
+        id: 'products-in', label: 'Products In', requiredAnyPermission: ['production.view', 'production.receive'],
         tree: [
           { label: 'Ready to Receive', icon: 'inbox', route: 'production-receiving', filter: { tab: 'queue' } },
           { label: 'Receipt History', icon: 'sheet', route: 'production-receiving', filter: { tab: 'history' } },

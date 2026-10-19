@@ -83,3 +83,25 @@ The full regression above used baseline `26a54ff` plus the mobile candidate.
 Before publishing, the incoming stock-count review update `b50236b` was retained.
 Its affected stock-count/release files passed 27 tests and final type checking
 passed. No new full-suite pass is claimed after that integration.
+
+## Desktop clerk desk alignment (2026-10-18)
+
+The deployed screenshot audit found a desktop availability gap: Parts Clerk and
+RTS Clerk had their mobile duties but needed the broad `production.view` grant to
+open their desktop desks. Desktop navigation now accepts `production.repairs`
+for Repairs & Parts Requests and `production.receive` for Products In. Job Orders
+has an explicit line/view gate so opening Production does not expose that list.
+
+Narrow receiving accounts load `/rts/queue` rather than the broad `/job-orders`
+list. Receipt history/detail accept the receiving desk permission; other desks
+remain denied. Broad production viewers retain their existing queue behavior.
+
+Validation: TypeScript passed; 12 tests passed across frontend navigation and the
+backend desk access matrix (including receipt list/detail isolation).
+`node scripts/test-desktop-clerk-access.mjs` passed six Playwright checks against
+a disposable real local Express/SQLite backend, with zero page errors: both clerk
+roles open only their desktop desk, mobile Work retains their duties, and an
+explicit per-person denial removes desktop access. RTS receipt history loaded
+successfully too. Captures/report are under
+`work/permission-evidence/desktop-fix/`. These are LOCAL CANDIDATE checks, not a
+claim of deployment to the sandbox. This change has not been deployed.

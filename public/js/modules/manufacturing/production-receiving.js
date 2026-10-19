@@ -20,7 +20,27 @@ App.register('production-receiving', async (view, filter) => {
       <div class="panel"><div id="pi-table"><div class="empty">Loading…</div></div></div>`;
     const tableEl = view.querySelector('#pi-table');
     let rows;
-    try { rows = await API.get('/job-orders'); }
+    try {
+      if (App.hasPermission('production.view')) {
+        rows = await API.get('/job-orders');
+      } else {
+        // Receiving clerks read only receivable output, never the broad job-order list.
+        const queue = await API.get('/rts/queue');
+        const jobs = new Map();
+        for (const [kind, entries] of [['units', queue.units || []], ['batches', queue.batches || []]]) {
+          for (const entry of entries) {
+            let job = jobs.get(entry.job_order_id);
+            if (!job) {
+              job = { id: entry.job_order_id, number: entry.job_order_number, product_name: entry.product_name, units_passed: 0, batches_receivable: 0 };
+              jobs.set(job.id, job);
+            }
+            if (kind === 'units') job.units_passed++;
+            else job.batches_receivable++;
+          }
+        }
+        rows = [...jobs.values()];
+      }
+    }
     catch (e) {
       tableEl.innerHTML = `<div class="empty"><strong>Unable to load Products In</strong><p>${UI.esc(e.message || 'Please try again.')}</p><button class="btn" id="pi-retry">Retry</button></div>`;
       tableEl.querySelector('#pi-retry').onclick = renderQueue;

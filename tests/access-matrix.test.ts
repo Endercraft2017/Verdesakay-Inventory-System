@@ -41,6 +41,8 @@ const AREAS: Record<string, () => string> = {
   'label templates': () => '/api/production/label-templates',
   'production issues': () => '/api/production-issues',
   'RTS queue': () => '/api/rts/queue',
+  'receipt history': () => '/api/job-orders/production-receipts',
+  'receipt detail': () => '/api/job-orders/production-receipts/999999',
   templates: () => '/api/templates',
   employees: () => '/api/hr/employees',
   'payroll tables': () => '/api/hr/payroll-tables',
@@ -60,7 +62,7 @@ const DESKS: Record<string, { permissions: string[]; reads: string[] }> = {
   'production lead': { permissions: ['production.record'],
     reads: ['scan lookup', 'job-order list', 'job-order detail', 'job-order history', 'repairs', 'unit record', 'batches', 'label templates'] },
   'RTS clerk': { permissions: ['production.receive'],
-    reads: ['scan lookup', 'locations', 'job-order detail', 'unit record', 'label templates', 'RTS queue'] },
+    reads: ['scan lookup', 'locations', 'job-order detail', 'unit record', 'label templates', 'RTS queue', 'receipt history', 'receipt detail'] },
   'releasing clerk': { permissions: ['orders.release'],
     reads: ['scan lookup', 'release queue', 'unit record'] },
 };

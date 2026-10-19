@@ -1029,3 +1029,13 @@ are expanded. Desktop Edit account → Access for this person → mobile grant/r
 checks passed against the real sandbox API using browser-local candidate assets.
 Audit accounts were cleared/disabled. Cache v111. Deployment is not implied by
 candidate acceptance; see `docs/reviews/mobile-work-access-validation.md`.
+
+## Desktop clerk access alignment (2026-10-18)
+
+Parts and RTS clerk desktop desks no longer require the broad `production.view`
+grant. The Production menu exposes only the authorized desk; Job Orders stays
+restricted to production viewers/line duties. Narrow RTS users read the existing
+RTS queue, and receiving permission now permits receipt history/detail reads.
+TypeScript, 12 focused tests, and six local real-backend Playwright checks passed.
+See `docs/reviews/mobile-work-access-validation.md` for scope and evidence.
+Local candidate only; sandbox deployment has not been performed for this change.

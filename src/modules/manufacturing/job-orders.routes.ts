@@ -9,7 +9,7 @@ import multer from 'multer';
 import { createHash } from 'node:crypto';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
-import { JOB_ORDER_DETAIL, JOB_ORDER_LIST, LINE } from '../../shared/desk-access';
+import { JOB_ORDER_DETAIL, JOB_ORDER_LIST, LINE, RTS } from '../../shared/desk-access';
 import {
   parseBody,
   createJobOrderSchema,
@@ -542,7 +542,7 @@ router.get('/pick-list', readGate, (req, res) => {
 
 // GET /api/job-orders/production-receipts — Products In history (declared before /:id so
 // "production-receipts" isn't captured as an id)
-router.get('/production-receipts', readGate, (req, res) => {
+router.get('/production-receipts', requireAnyPermission(['production.view', ...RTS]), (req, res) => {
   const { job_order_id } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
@@ -563,7 +563,7 @@ router.get('/production-receipts', readGate, (req, res) => {
 });
 
 // GET /api/job-orders/production-receipts/:receiptId — one receipt + its lines
-router.get('/production-receipts/:receiptId', readGate, (req, res) => {
+router.get('/production-receipts/:receiptId', requireAnyPermission(['production.view', ...RTS]), (req, res) => {
   const receipt = queryOne<ProductionReceipt>(
     `SELECT r.*, j.number AS job_order_number, j.product_name, u.full_name AS received_by_name,
             l.name AS location_name
