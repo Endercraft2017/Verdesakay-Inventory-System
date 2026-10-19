@@ -860,3 +860,14 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 .m-chat-remove-dialog{width:min(380px,100%);padding:20px;border-radius:var(--m-r);background:var(--m-surface);color:var(--m-text);box-shadow:var(--m-shadow-lg)}
 .m-chat-remove-dialog h2{font-size:20px;margin:0 0 12px}.m-chat-remove-dialog p{font-size:14px}.m-chat-remove-dialog blockquote{margin:12px 0;padding:10px 12px;border-left:3px solid var(--m-border);background:var(--m-surface-2);overflow-wrap:anywhere}
 .m-chat-remove-dialog [data-remove-error]:empty{display:none}.m-chat-remove-dialog [data-remove-error]{color:var(--m-danger)}
+
+/* Task feedback and confirmations use the existing personal-tool fields and theme. */
+.m-task-row{display:grid;grid-template-columns:44px minmax(0,1fr)}
+.m-task-row .m-task-feedback{grid-column:1/-1;margin:5px 0 0;font-size:13px}.m-task-feedback button{margin-left:8px}
+.m-task-save-error:empty,.m-task-confirm [data-confirm-error]:empty{display:none}
+.m-task-linked{padding:12px;border:1px solid var(--m-border);border-radius:var(--m-r-sm);background:var(--m-surface-2);font-size:13px;margin-bottom:14px}.m-task-linked p{margin:5px 0 10px}
+.m-task-confirm-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(0,0,0,.4)}
+.m-task-confirm{width:min(380px,100%);max-height:calc(100dvh - 40px);overflow:auto;padding:20px;border-radius:var(--m-r);background:var(--m-surface);color:var(--m-text);box-shadow:var(--m-shadow-lg)}
+.m-task-confirm h2{font-size:20px;margin:0 0 14px}.m-task-confirm blockquote{margin:12px 0;padding:12px;border-left:3px solid var(--m-border);border-radius:8px;background:var(--m-surface-2);overflow-wrap:anywhere}
+
+.m-task-row.done[aria-busy=true],.m-task-row.done:has([role=alert]){opacity:1}
