@@ -278,6 +278,28 @@ try {
     await scan('mobile-request-validation-dark', '#m-view');
     assert.equal(await reason.inputValue(), 'Keep this reason');
   });
+  await check('Payroll managers can review and assign an ambiguous legacy payslip', async () => {
+    const oldData = { ...(await readRecord()).data };
+    delete oldData.employee_id;
+    await api('POST', '/hr/employees', { employee_no: 'UX-PAY-TWIN', name: 'Payroll UX Employee', daily_rate: 1800 });
+    const legacy = await api('POST', '/form-records', { form_def_id: generated.form_id, data: oldData, status: 'draft' });
+    await page.goto(base);
+    await page.waitForSelector('#app-screen:not(.hidden)');
+    await page.evaluate(() => App.navigate('form-records', { slug: 'hr_payroll' }));
+    await page.locator('#fr-reconcile-owner').click();
+    await page.locator(`[data-reconcile="${legacy.id}"]`).click();
+    const dialog = page.locator('.modal-overlay').last();
+    await dialog.locator('summary').click();
+    assert(await dialog.getByText('employee name').count() > 0);
+    await scan('payroll-legacy-owner-review');
+    await dialog.locator('#fr-legacy-employee').selectOption(String(employee.id));
+    await dialog.locator('#fr-legacy-reason').fill('Matched employee number against the signed payroll register');
+    await dialog.locator('[data-confirm]').click();
+    await page.waitForFunction(() => document.querySelectorAll('.modal-overlay').length === 0);
+    const corrected = await api('GET', `/form-records/${legacy.id}`);
+    assert.equal(corrected.data.employee_id, employee.id);
+    assert.equal(corrected.status, 'draft');
+  });
 } catch (error) { report.errors.push(error.stack || error.message); console.error(error); }
 finally {
   clearTimeout(timer);

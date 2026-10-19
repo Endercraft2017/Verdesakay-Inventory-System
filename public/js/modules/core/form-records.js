@@ -375,14 +375,14 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       const listModal = UI.modal({
         title: `Unidentified payslips (${records.length})`, size: 'lg', cancelText: 'Close',
         bodyHTML: `<p class="muted">Review the original payroll record before assigning an employee. The pay amounts stay locked; this correction changes who can see the payslip and how reports group it.</p>
-          <div style="max-height:45vh;overflow:auto">${records.map(r => `<div class="tool-row"><span><strong>${UI.esc(r.number)}</strong> · ${UI.esc(r.employee_name || 'No name')}<br><small>${UI.esc(r.period || 'No period')} · ${UI.esc(r.status)} · Net ${UI.money(r.net_pay)}</small></span><button type="button" class="btn secondary small" data-reconcile="${r.id}">Review &amp; assign</button></div>`).join('')}</div>`,
+          <div style="max-height:45vh;overflow:auto" tabindex="0" role="region" aria-label="Unidentified payslips">${records.map(r => `<div class="tool-row"><span><strong>${UI.esc(r.number)}</strong> · ${UI.esc(r.employee_name || 'No name')}<br><small>${UI.esc(r.period || 'No period')} · ${UI.esc(r.status)} · Net ${UI.money(r.net_pay)}</small></span><button type="button" class="btn secondary small" data-reconcile="${r.id}">Review &amp; assign</button></div>`).join('')}</div>`,
         onOpen: overlay => overlay.querySelectorAll('[data-reconcile]').forEach(button => button.onclick = () => {
           const record = records.find(r => r.id === Number(button.dataset.reconcile));
           if (!record) return;
           UI.modal({
             title: `Assign owner · ${record.number}`, confirmText: 'Assign employee', cancelText: 'Cancel',
             bodyHTML: `<p>Legacy name: <strong>${UI.esc(record.employee_name || '—')}</strong><br>Period: ${UI.esc(record.period || '—')} · Status: ${UI.esc(record.status)} · Net: ${UI.money(record.net_pay)}</p>
-              <details><summary>Review original payslip fields</summary><div style="max-height:28vh;overflow:auto">${Object.entries(record.data || {}).map(([key, value]) => `<div class="tool-row"><strong>${UI.esc(key.replaceAll('_', ' '))}</strong><span>${UI.esc(typeof value === 'object' ? JSON.stringify(value) : String(value ?? '—'))}</span></div>`).join('')}</div></details>
+              <details><summary>Review original payslip fields</summary><div style="max-height:28vh;overflow:auto" tabindex="0" role="region" aria-label="Original payslip fields">${Object.entries(record.data || {}).map(([key, value]) => `<div class="tool-row"><strong>${UI.esc(key.replaceAll('_', ' '))}</strong><span>${UI.esc(typeof value === 'object' ? JSON.stringify(value) : String(value ?? '—'))}</span></div>`).join('')}</div></details>
               <label for="fr-legacy-employee">Verified employee *</label><select id="fr-legacy-employee"><option value="">Select employee…</option>${employees.map(e => `<option value="${e.id}">${UI.esc(e.employee_no || '')} · ${UI.esc(e.name)}</option>`).join('')}</select>
               <label for="fr-legacy-reason">Evidence and reason *</label><textarea id="fr-legacy-reason" maxlength="1000" placeholder="How did you verify this employee owns the payslip?"></textarea>`,
             onConfirm: async (ov, showError) => {

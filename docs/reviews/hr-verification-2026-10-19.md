@@ -13,7 +13,7 @@ Scope: the `restructure/module-architecture` branch, employee self-service, requ
 
 After rebasing onto the latest branch, the combined HR, accounting and mobile run passed 998 tests across 55 files. Three mobile test expectations were updated to match the newer access-screen wording and wait for asynchronously loaded release controls. TypeScript and whitespace checks passed again. These counts overlap with the focused runs above.
 
-The follow-up legacy-owner reconciliation check passed 128 focused payroll/statutory tests and the same 998-test HR/accounting/mobile regression set. The local Playwright forms/payroll UX run passed 14 checks, 28 accessibility scans with zero reported violations, and zero page errors. These browser checks exercised the existing payroll and mobile forms flows; the new reconciliation dialog was verified by its API regression test and code review, not a dedicated browser interaction.
+The follow-up legacy-owner reconciliation check passed 128 focused payroll/statutory tests and the same 998-test HR/accounting/mobile regression set. The local Playwright forms/payroll UX run passed 15 checks, 29 accessibility scans with zero reported violations, and zero page errors. This includes opening the new reconciliation dialog, inspecting the original fields, assigning a verified owner, and checking the saved record. The first browser pass found an unfocusable scrollable details region; it was fixed and the full browser run passed.
 
 ## Fixes from this pass
 
