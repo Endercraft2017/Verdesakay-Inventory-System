@@ -56,6 +56,31 @@ try {
   page.on('pageerror', error => report.errors.push(error.message));
   await page.goto(base);
   await page.waitForSelector('#app-screen:not(.hidden)');
+  await check('HR forms use a column list and Payroll stays under HR', async () => {
+    await page.evaluate(() => App.navigate('form-records', { scope: 'hr' }));
+    await page.locator('.form-explorer tbody tr').first().waitFor();
+    assert.equal(await page.locator('#view').getAttribute('data-section'), 'hr');
+    assert((await page.locator('.form-explorer th').first().textContent()).startsWith('Form name'));
+    assert(await page.locator('.form-explorer th').allTextContents().then(items => items.includes('Records') && items.includes('Updated')));
+    await scan('hr-form-explorer-light-desktop', '#view');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
+    assert(await page.locator('.form-explorer-scroll').evaluate(el => el.scrollWidth > el.clientWidth));
+    await scan('hr-form-explorer-dark-phone', '#view');
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.evaluate(() => document.documentElement.dataset.theme = 'light');
+    await page.evaluate(() => App.navigate('form-records', { slug: 'hr_payroll' }));
+    await page.locator('#fr-back').waitFor();
+    assert.equal(await page.locator('#view').getAttribute('data-section'), 'hr');
+    assert.equal(await page.locator('#primary-nav [data-primary="hr"]').getAttribute('aria-current'), 'page');
+    assert.equal(await page.locator('[data-subtab="payroll"]').getAttribute('aria-current'), 'page');
+    await page.locator('#fr-back').click();
+    await page.locator('.form-explorer').waitFor();
+    assert.equal(await page.locator('#view').getAttribute('data-section'), 'hr');
+    await page.locator('.form-explorer .form-card').filter({ hasText: 'HR Payroll' }).click();
+    await page.locator('#fr-back').waitFor();
+    assert.equal(await page.locator('[data-subtab="payroll"]').getAttribute('aria-current'), 'page');
+  });
   const open = async () => {
     await page.evaluate(filter => App.navigate('form-records', filter), { slug: 'hr_payroll', period: period.label });
     await page.locator(`[data-id="${record.id}"] .hr-row-open`).click();

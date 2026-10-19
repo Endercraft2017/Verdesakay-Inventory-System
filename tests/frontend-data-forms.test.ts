@@ -22,6 +22,21 @@ async function setup(permissions: string[], forms: unknown[], filter = {}) {
 const form = (id: number, scope: string | null, name: string) => ({ id, scope, name, slug: name.toLowerCase(), fields: [], record_count: 0, number_prefix: 'FM' });
 
 describe('Data Forms section workflow', () => {
+  it('lists form metadata in sortable columns', async () => {
+    const dom = await setup(['forms.manage.hr'], [
+      { ...form(1, 'hr', 'Leave'), record_count: 3, fields: [{ key: 'reason' }] },
+      { ...form(2, 'hr', 'Overtime'), record_count: 12, fields: [{ key: 'hours' }, { key: 'reason' }] },
+    ], { scope: 'hr' });
+    const w = dom.window;
+    expect([...w.document.querySelectorAll('.form-explorer th')].map(th => th.textContent?.trim())).toEqual(['Form name ↑', 'Records', 'Fields', 'Number format', 'Updated', 'Favorite']);
+    expect([...w.document.querySelectorAll('.form-explorer tbody .form-card-name')].map(cell => cell.textContent)).toEqual(['Leave', 'Overtime']);
+    w.document.querySelector<HTMLElement>('[data-form-sort="records"]')!.click();
+    expect([...w.document.querySelectorAll('.form-explorer tbody .form-card-name')].map(cell => cell.textContent)).toEqual(['Leave', 'Overtime']);
+    w.document.querySelector<HTMLElement>('[data-form-sort="records"]')!.click();
+    expect([...w.document.querySelectorAll('.form-explorer tbody .form-card-name')].map(cell => cell.textContent)).toEqual(['Overtime', 'Leave']);
+    dom.window.close();
+  });
+
   it('shows accessible sections, searches forms and preserves the section on open', async () => {
     const dom = await setup(['forms.manage.inventory'], [form(1, 'inventory', 'Stock'), form(2, 'hr', 'Leave'), form(3, null, 'General')], { scope: 'inventory' });
     const w = dom.window;
@@ -77,6 +92,8 @@ describe('Data Forms section workflow', () => {
     expect(dom.window.document.querySelector('.form-card-name')?.textContent).toBe('Payroll');
     expect(dom.window.document.querySelector('#fr-goto-builder')).toBeNull();
     expect(dom.window.document.querySelector<HTMLSelectElement>('#fr-index-scope')!.value).toBe('hr');
+    dom.window.document.querySelector<HTMLElement>('.form-card')!.click();
+    expect((dom.window as any).destination.filter).toMatchObject({ form_id: '1', slug: 'hr_payroll', scope: 'hr' });
     dom.window.close();
   });
 

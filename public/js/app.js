@@ -332,8 +332,16 @@ const App = (() => {
 
   /** Find the first {primary, subtab, leaf} matching a route (+ optional filter). */
   function findLeaf(route, filter) {
-    // Section links are shortcuts into the same Documents hub, including deep links.
+    // Form records live in their owning section. Preserve HR chrome for payroll and HR forms,
+    // including filtered/deep-linked record views; other forms retain the Documents hub.
     if (route === 'form-records') {
+      if (hasPermission('hr.view') && (filter?.slug === 'hr_payroll' || filter?.scope === 'hr')) {
+        const primary = NAV.find((item) => item.id === 'hr');
+        const hrTab = filter?.slug === 'hr_payroll' || !hasPermission('forms.manage.hr') ? 'payroll' : 'form-setup';
+        const subtab = primary?.subtabs.find((item) => item.id === hrTab);
+        const leaf = subtab?.tree.find((item) => item.route === route);
+        if (leaf) return { primary, subtab, leaf };
+      }
       const primary = NAV.find((item) => item.id === 'docs');
       const subtab = primary?.subtabs.find((item) => item.id === 'custom-forms');
       const leaf = subtab?.tree.find((item) => item.route === route);

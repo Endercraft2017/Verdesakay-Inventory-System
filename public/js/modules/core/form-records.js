@@ -51,14 +51,16 @@ App.openFormRecordDraft = async function (proposal) {
 };
 
 function formCardHTML(f, favorite = false) {
-  return `<div class="form-card-item"><button type="button" class="form-card clickable" data-id="${f.id}">
-    <div class="form-card-icon">${UI.icon(f.icon || 'file', 32)}</div>
-    <div class="form-card-info">
-      <div class="form-card-name">${UI.esc(f.name)}</div>
-      <div class="form-card-meta">${f.fields.length} field${f.fields.length !== 1 ? 's' : ''} · ${f.record_count} record${f.record_count !== 1 ? 's' : ''}</div>
-      <div class="form-card-prefix muted mono">${UI.esc(f.number_prefix)}-#####</div>
-    </div>
-  </button><button type="button" class="form-favorite icon-btn" data-favorite="${f.id}" aria-pressed="${favorite}" aria-label="${favorite ? 'Remove' : 'Add'} ${UI.esc(f.name)} ${favorite ? 'from' : 'to'} favorites">${favorite ? '★' : '☆'}</button></div>`;
+  return `<tr class="form-card-item">
+    <td><button type="button" class="form-card clickable" data-id="${f.id}" aria-label="Open ${UI.esc(f.name)}">
+      <span class="form-card-icon">${UI.icon(f.icon || 'file', 19)}</span><span class="form-card-name">${UI.esc(f.name)}</span>
+    </button></td>
+    <td class="num">${Number(f.record_count) || 0}</td>
+    <td class="num">${f.fields.length}</td>
+    <td class="mono">${UI.esc(f.number_prefix)}-#####</td>
+    <td>${f.updated_at || f.created_at ? UI.esc(UI.fmtDateShort(f.updated_at || f.created_at)) : '—'}</td>
+    <td><button type="button" class="form-favorite icon-btn" data-favorite="${f.id}" aria-pressed="${favorite}" aria-label="${favorite ? 'Remove' : 'Add'} ${UI.esc(f.name)} ${favorite ? 'from' : 'to'} favorites">${favorite ? '★' : '☆'}</button></td>
+  </tr>`;
 }
 
 /* ── Form index: pick which form to open, grouped by the section that owns it ────── */
@@ -92,6 +94,7 @@ async function renderIndex(view, onlyScope, initialQuery, initialView = 'all') {
   search.value = initialQuery || '';
   section.value = onlyScope || '';
   const collection = view.querySelector('#fr-index-view'); collection.value = initialView;
+  let sortKey = 'name', sortDirection = 1, sortTouched = false;
   if (builder) builder.hidden = !!onlyScope && !DataForms.canManage(onlyScope === 'general' ? null : onlyScope);
   let forms;
   try {
@@ -121,16 +124,28 @@ async function renderIndex(view, onlyScope, initialQuery, initialView = 'all') {
       });
       return;
     }
-    if (collection.value === 'recent') matches.sort((a,b) => personal.recent.findIndex(row=>row.form_id===a.id)-personal.recent.findIndex(row=>row.form_id===b.id));
+    if (collection.value === 'recent' && !sortTouched) matches.sort((a,b) => personal.recent.findIndex(row=>row.form_id===a.id)-personal.recent.findIndex(row=>row.form_id===b.id));
+    else matches.sort((a,b) => {
+      const value = (form) => sortKey === 'records' ? Number(form.record_count) || 0 : sortKey === 'fields' ? form.fields.length : sortKey === 'updated' ? form.updated_at || form.created_at || '' : form.name.toLocaleLowerCase();
+      const aValue = value(a), bValue = value(b);
+      return ((aValue < bValue ? -1 : aValue > bValue ? 1 : 0) * sortDirection) || a.name.localeCompare(b.name);
+    });
     const groups = {};
     matches.forEach((form) => { const key = form.scope || 'general'; (groups[key] = groups[key] || []).push(form); });
     el.innerHTML = FORM_RECORDS_SCOPE_ORDER.map((scope) => scope || 'general')
       .filter((key) => groups[key]).map((key) => `
         <div class="fr-scope-group"><div class="fr-scope-heading">${UI.esc(FORM_RECORDS_SCOPE_LABELS[key])}</div>
-        <div class="form-card-grid">${groups[key].map(form => formCardHTML(form, personal.favorites.includes(form.id))).join('')}</div></div>`).join('');
+        <div class="form-explorer-scroll" role="region" tabindex="0" aria-label="${UI.esc(FORM_RECORDS_SCOPE_LABELS[key])} forms"><table class="form-explorer">
+          <thead><tr>${[['name','Form name'],['records','Records'],['fields','Fields']].map(([key,label]) => `<th ${key !== 'name' ? 'class="num"' : ''} ${sortTouched || collection.value !== 'recent' ? `aria-sort="${sortKey === key ? sortDirection === 1 ? 'ascending' : 'descending' : 'none'}"` : ''}><button type="button" class="form-explorer-sort" data-form-sort="${key}">${label}${sortKey === key && (sortTouched || collection.value !== 'recent') ? sortDirection === 1 ? ' ↑' : ' ↓' : ''}</button></th>`).join('')}<th>Number format</th><th ${sortTouched || collection.value !== 'recent' ? `aria-sort="${sortKey === 'updated' ? sortDirection === 1 ? 'ascending' : 'descending' : 'none'}"` : ''}><button type="button" class="form-explorer-sort" data-form-sort="updated">Updated${sortKey === 'updated' ? sortDirection === 1 ? ' ↑' : ' ↓' : ''}</button></th><th><span class="sr-only">Favorite</span></th></tr></thead>
+          <tbody>${groups[key].map(form => formCardHTML(form, personal.favorites.includes(form.id))).join('')}</tbody>
+        </table></div><p class="form-explorer-hint muted">Swipe the list sideways to see more columns.</p></div>`).join('');
     el.querySelectorAll('.form-card[data-id]').forEach((card) =>
-      card.onclick = () => App.navigate('form-records', { form_id: card.dataset.id, ...(collection.value !== 'all' ? {index_view:collection.value} : {}), ...(section.value ? { scope: section.value } : { index_scope: 'all' }), ...(search.value.trim() ? { index_q: search.value.trim() } : {}) }));
+      card.onclick = () => {
+        const selected = forms.find(form => String(form.id) === card.dataset.id);
+        App.navigate('form-records', { form_id: card.dataset.id, ...(selected?.slug === 'hr_payroll' ? { slug: 'hr_payroll' } : {}), ...(collection.value !== 'all' ? {index_view:collection.value} : {}), ...(section.value ? { scope: section.value } : { index_scope: 'all' }), ...(search.value.trim() ? { index_q: search.value.trim() } : {}) });
+      });
     el.querySelectorAll('[data-favorite]').forEach(button => button.onclick = async () => { button.disabled = true; try { personal = await DataForms.savePreference({action:'favorite',form_id:Number(button.dataset.favorite),enabled:!personal.favorites.includes(Number(button.dataset.favorite))}); render(); } catch(error) { button.disabled = false; UI.toast(error.message,'error'); } });
+    el.querySelectorAll('[data-form-sort]').forEach(button => button.onclick = () => { const key = button.dataset.formSort; sortDirection = sortKey === key && sortTouched ? -sortDirection : 1; sortKey = key; sortTouched = true; render(); el.querySelector(`[data-form-sort="${key}"]`)?.focus(); });
   }
   function refreshIndex() {
     App.replaceFilters?.('form-records', { ...(collection.value !== 'all' ? {view:collection.value} : {}), ...(section.value ? { scope: section.value } : {}), ...(search.value.trim() ? { q: search.value.trim() } : {}) });
@@ -222,7 +237,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   // original single toolbar unchanged.
   const headerHTML = isPayroll ? `
     <div class="topbar">
-      <button type="button" class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} All Forms</button>
+      <button type="button" class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} HR Forms</button>
       <div>
         <h2>${UI.esc(formDef.name)}</h2>
         <div class="sub">Payslips grouped by cutoff — open one to see how its pay was computed.</div>
@@ -327,7 +342,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   tools.querySelector('#fr-remove-filter').onclick=async()=>{if(!savedSelect.value)return;try{await savePersonal({action:'delete_filter',filter_id:savedSelect.value});renderSavedViews();tools.querySelector('#fr-personal-status').textContent='Saved view removed';}catch(error){UI.toast(error.message,'error');}};
   renderSavedViews();
 
-  view.querySelector('#fr-back').onclick = () => App.navigate('form-records', { ...(navigation.index_view && navigation.index_view !== 'all' ? {view:navigation.index_view} : {}), ...(navigation.index_scope === 'all' ? {} : (navigation.scope || formDef.scope) ? { scope: navigation.scope || formDef.scope } : {}), ...(navigation.index_q ? { q: navigation.index_q } : {}) });
+  view.querySelector('#fr-back').onclick = () => App.navigate('form-records', isPayroll ? { scope: 'hr' } : { ...(navigation.index_view && navigation.index_view !== 'all' ? {view:navigation.index_view} : {}), ...(navigation.index_scope === 'all' ? {} : (navigation.scope || formDef.scope) ? { scope: navigation.scope || formDef.scope } : {}), ...(navigation.index_q ? { q: navigation.index_q } : {}) });
   view.querySelector('#fr-search').value = state.q;
   const newBtn = view.querySelector('#fr-new');
   if (formDef.archived_at) { view.querySelectorAll('#fr-new,#fr-import-csv,#fr-del-all,#fr-bulk-del').forEach(button=>button.disabled=true); const notice=document.createElement('p');notice.className='panel';notice.textContent='Archived form — no new entries. Existing records may be corrected with a reason and are kept as revisions.';view.querySelector('#fr-bulk-bar').before(notice); }
