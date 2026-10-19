@@ -34,8 +34,9 @@
   }
   function markRead(n) {
     if (n.read_at) return Promise.resolve();
-    n.read_at = 'now';
-    return API.post('/notifications/' + n.id + '/read', {}).catch(function () {});
+    if (n.readPending) return n.readPending;
+    n.readPending = API.post('/notifications/' + n.id + '/read', {}).then(function () { n.read_at = 'now'; }).finally(function () { n.readPending = null; });
+    return n.readPending;
   }
   /** One stored notification: tap opens its record (or, desktop-only, the notification itself). */
   function ledgerRow(n, view) {
@@ -45,10 +46,24 @@
       '<small>' + mEsc(when(n.created_at)) + (n.read_at ? '' : ' · new') + '</small></button>'
     );
     row.onclick = function () {
+      if (row.disabled) return;
+      row.disabled = true;
       markRead(n).then(function () {
+        if (!row.isConnected) return;
         var phone = n.url && n.url.indexOf('#/notifications') !== 0;
         if (phone) location.hash = n.url;
         else MApp.go('notifications', { id: n.id, t: Date.now() });
+      }).catch(function () {
+        if (!row.isConnected) return;
+        row.disabled = false;
+        var error = mEl('<div class="m-error" role="alert">Could not save read status. Retry or <button type="button" class="m-btn m-btn-sm">open without marking read</button>.</div>');
+        var previous = view.querySelector('[data-read-error]'); if (previous) previous.remove();
+        error.dataset.readError = '';
+        error.querySelector('button').onclick = function () {
+          if (n.url && n.url.indexOf('#/notifications') !== 0) location.hash = n.url;
+          else MApp.go('notifications', { id: n.id });
+        };
+        if (row.isConnected) row.after(error);
       });
     };
     return row;
@@ -69,7 +84,10 @@
   function render(view, params) {
     params = params || {};
     MApp.setTitle('Notifications');
-    view.innerHTML = '<div class="m-hint">Loading updates…</div>';
+    var marker = mEl('<div class="m-hint">Loading updates…</div>');
+    view.replaceChildren(marker);
+    function active() { return view.isConnected && view.__notificationRender === marker && (marker.isConnected || view.dataset.route === 'notifications'); }
+    view.__notificationRender = marker;
     // Each source degrades on its own, but a failure is counted so an offline or failing
     // load never masquerades as "You're all caught up".
     var failed = 0, lastError = null;
@@ -83,13 +101,14 @@
       soft(API.get('/messages/unread-count'), { count: 0 }),
       soft(API.get('/announcements'), [])
     ]).then(function (all) {
+      if (!active()) return;
       if (failed === 5) {
         view.innerHTML = '';
         var box = mEl('<div class="m-error">' + mEsc((lastError && lastError.offline)
           ? 'You’re offline — updates can’t be checked right now.'
           : (lastError && lastError.message) || 'Could not load updates') +
           ' <button type="button" class="m-btn m-btn-sm">Try again</button></div>');
-        box.querySelector('button').onclick = function () { render(view); };
+        box.querySelector('button').onclick = function () { render(view, params); };
         view.appendChild(box);
         return;
       }
@@ -101,7 +120,15 @@
       var announcements = all4[3] || [];
       view.innerHTML = '';
       var focused = params.id ? ledger.filter(function (n) { return String(n.id) === String(params.id); })[0] : null;
-      if (focused) { view.appendChild(focusCard(focused)); markRead(focused); }
+      if (params.id) {
+        var back = mEl('<button type="button" class="m-btn m-btn-sm m-btn-secondary">Back to notifications</button>');
+        back.onclick = function () { MApp.go('notifications'); }; view.appendChild(back);
+        if (!focused) view.appendChild(mEl('<div class="m-error" role="alert">' + (failed ? 'This notification could not be loaded. Retry missing updates below.' : 'This notification is unavailable or no longer accessible.') + '</div>'));
+      }
+      if (focused) {
+        var card = focusCard(focused); view.appendChild(card);
+        markRead(focused).catch(function () { if (card.isConnected) card.appendChild(mEl('<p class="m-error" role="alert">Could not save read status. This notification remains unread. Reopen it to retry.</p>')); });
+      }
 
       var intro = mEl(
         '<div class="m-card v2-notification-intro"><span class="v2-role-chip">Updates</span>' +
@@ -115,7 +142,7 @@
           (ledger.some(function (n) { return !n.read_at; }) ? '<button type="button" class="m-btn m-btn-sm" data-readall style="margin-left:auto">Mark all read</button>' : '') + '</div>');
         view.appendChild(head);
         var ra = head.querySelector('[data-readall]');
-        if (ra) ra.onclick = function () { ra.disabled = true; API.post('/notifications/read-all', {}).then(function () { render(view, params); }).catch(function () { ra.disabled = false; }); };
+        if (ra) ra.onclick = function () { if (ra.disabled) return; ra.disabled = true; API.post('/notifications/read-all', {}).then(function () { if (active()) render(view, params); }).catch(function () { ra.disabled = false; if (head.isConnected) { var error = head.querySelector('[role=alert]'); if (!error) { error = mEl('<span role="alert"></span>'); head.appendChild(error); } error.textContent = 'Could not mark all read. Reconnect and retry.'; } }); };
         ledger.slice(0, 30).forEach(function (n) { count++; view.appendChild(ledgerRow(n, view)); });
       }
       var recentRequests = requests.filter(function (r) {
@@ -176,10 +203,12 @@
       if (failed) {
         view.appendChild(mEl('<div class="m-hint">Some updates couldn’t be loaded' + ((lastError && lastError.offline) ? ' while offline' : '') + ' — this list may be incomplete.</div>'));
       }
+      if (failed) { var retry = mEl('<button type="button" class="m-btn m-btn-sm m-btn-secondary">Retry missing updates</button>'); retry.onclick = function () { render(view, params); }; view.appendChild(retry); }
       if (!count && !failed) {
         view.appendChild(mEl('<div class="m-empty"><b>You’re all caught up</b><br><span>New work and employee updates will appear here.</span></div>'));
       }
     }).catch(function (ex) {
+      if (!active()) return;
       view.innerHTML = '<div class="m-error">' + mEsc(ex.message || 'Could not load notifications') + '</div>';
     });
   }

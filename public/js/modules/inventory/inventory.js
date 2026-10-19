@@ -779,7 +779,10 @@ App.register('inventory', async (view, filter) => {
   // (used by orderModal()'s missing-product prompt) — anything without .id is create mode,
   // its fields just seed the New Item form instead of starting blank. `onCreated(item)` — UI.modal
   // has no return channel of its own, so this is how a caller finds out what got created.
-  async function itemModal(it, onCreated) {
+  function itemModal(it, onCreated) {
+    return UI.modalTask('inventory:item:' + ((it && it.id) || 'new'), () => openItemModal(it, onCreated));
+  }
+  async function openItemModal(it, onCreated) {
     const cfg = await loadItemFormConfig();
     await loadSuppliers(true); // pick list must be current when the form renders
     await loadLocations(true);
@@ -961,7 +964,10 @@ App.register('inventory', async (view, filter) => {
     });
   }
 
-  async function adjustModal(id, items) {
+  function adjustModal(id, items) {
+    return UI.modalTask('inventory:adjust:' + id, () => openAdjustModal(id, items));
+  }
+  async function openAdjustModal(id, items) {
     const it = items.find((x) => x.id == id);
     const breakdown = await API.get(`/inventory/${id}/stock`).catch(() => []);
     const rows = breakdown.map((b) => ({ id: b.location_id, name: b.location_name, is_default: b.is_default }));
@@ -969,7 +975,7 @@ App.register('inventory', async (view, filter) => {
     const top = [...breakdown].filter((b) => b.quantity > 0).sort((a, b) => b.quantity - a.quantity)[0];
     const initial = (top || breakdown.find((b) => b.is_default) || breakdown[0] || {}).location_id;
 
-    UI.modal({
+    return UI.modal({
       title: `Adjust stock — ${it.name}`,
       bodyHTML: `
         <p class="muted">Total on hand: <strong>${it.quantity} ${UI.esc(it.unit || '')}</strong></p>
@@ -1008,7 +1014,10 @@ App.register('inventory', async (view, filter) => {
     });
   }
 
-  async function transferModal(id, items) {
+  function transferModal(id, items) {
+    return UI.modalTask('inventory:transfer:' + id, () => openTransferModal(id, items));
+  }
+  async function openTransferModal(id, items) {
     const it = items.find((x) => x.id == id);
     const breakdown = await API.get(`/inventory/${id}/stock`).catch(() => []);
     if (breakdown.length < 2) { UI.toast('Add a second location first (Inventory → Locations)', 'error'); return; }
@@ -1018,7 +1027,7 @@ App.register('inventory', async (view, filter) => {
     const fromInit = (top || breakdown[0]).location_id;
     const toInit = (breakdown.find((b) => b.location_id !== fromInit) || {}).location_id;
 
-    UI.modal({
+    return UI.modal({
       title: `Transfer stock — ${it.name}`,
       bodyHTML: `
         <div class="field-row">
@@ -1055,7 +1064,10 @@ App.register('inventory', async (view, filter) => {
     });
   }
 
-  async function historyModal(id) {
+  function historyModal(id) {
+    return UI.modalTask('inventory:history:' + id, () => openHistoryModal(id));
+  }
+  async function openHistoryModal(id) {
     const it = await API.get('/inventory/' + id);
     const rows = it.history.map((h) => `
       <tr><td>${UI.fmtDate(h.created_at)}</td>
@@ -1065,7 +1077,7 @@ App.register('inventory', async (view, filter) => {
       <td class="right">${h.balance_after}</td>
       <td>${UI.esc(h.reason || '—')}</td>
       <td>${UI.esc(h.user_name || '—')}</td></tr>`).join('');
-    UI.modal({
+    return UI.modal({
       title: `History — ${it.name}`,
       size: 'lg',
       bodyHTML: it.history.length

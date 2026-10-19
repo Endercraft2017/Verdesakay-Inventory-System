@@ -89,11 +89,27 @@ const UI = (() => {
   }
 
   let modalErrorSequence = 0;
+  const modalTasks = new Map();
+  /** Reserve an opener before its first request, keeping it reserved until its dialog closes. */
+  function modalTask(key, open) {
+    const existing = modalTasks.get(key);
+    if (existing) return existing;
+    const route = location.hash;
+    const task = Promise.resolve().then(open).then(dialog => {
+      if (!dialog || !dialog.overlay?.isConnected) { modalTasks.delete(key); return dialog; }
+      if (location.hash !== route) { dialog.close(); modalTasks.delete(key); return null; }
+      dialog.overlay.addEventListener('modalclosed', () => modalTasks.delete(key), { once: true });
+      return dialog;
+    }).catch(error => { modalTasks.delete(key); toast(error.message || 'Could not open dialog', 'error'); return null; });
+    modalTasks.set(key, task);
+    return task;
+  }
+
   function modal(opts) {
     const root = document.getElementById('modal-root');
     const previousFocus = document.activeElement;
     let dirty = false;
-    let saving = false;
+    let saving = false, closed = false;
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     if (opts.guide === false) overlay.dataset.guideOff = 'true';
@@ -127,9 +143,12 @@ const UI = (() => {
     if (helpButton) helpButton.addEventListener('click', () => Help.open(opts.helpTopic));
     const beforeUnload = (e) => { if (dirty || opts.isDirty?.()) { e.preventDefault(); e.returnValue = ''; } };
     const close = (cancelled = false) => {
+      if (closed) return;
+      closed = true;
       window.removeEventListener('beforeunload', beforeUnload);
       if (currentDrawer && overlay.contains(currentDrawer.el)) currentDrawer.close();
       overlay.remove(); observer?.disconnect();
+      overlay.dispatchEvent(new CustomEvent('modalclosed'));
       if (cancelled) { opts.onCancel?.(); overlay.dispatchEvent(new CustomEvent('modalcancel')); }
       if (previousFocus && previousFocus.isConnected) previousFocus.focus();
       if (opts.onClose) opts.onClose();
@@ -166,6 +185,7 @@ const UI = (() => {
     const confirmBtn = overlay.querySelector('[data-confirm]');
     if (confirmBtn && opts.onConfirm) {
       confirmBtn.addEventListener('click', async () => {
+        if (saving || confirmBtn.disabled) return;
         errBox.classList.add('hidden');
         confirmBtn.disabled = true;
         saving = true;
@@ -764,7 +784,7 @@ const UI = (() => {
   }
 
   return {
-    nameControls, esc, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, confirmDialog, PLACEHOLDER_PHOTO,
+    nameControls, esc, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, modalTask, confirmDialog, PLACEHOLDER_PHOTO,
     drawer, contextMenu, closeContextMenu, printableHtml, printWhenLoaded, documentCss, loadPrintFrame, printFrame, combo,
     icon, helpIcon, emptyState, fileIconName, downloadCsv, csvImportModal,
   };

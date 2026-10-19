@@ -296,33 +296,50 @@ window.MApp = (function () {
 
   /** Sign out of this phone: send (or knowingly leave) this person's queued actions, stop their
       notifications here, end the session, and — on a borrowed phone — leave none of their data. */
+  var signOutPending = null;
+  function confirmUnsent(count, shared) {
+    return new Promise(function (resolve) {
+      var previousFocus = document.activeElement;
+      var dialog = mEl('<dialog class="m-profile-dialog" aria-labelledby="m-unsent-title">' +
+        '<h2 id="m-unsent-title">' + (count === null ? 'Couldn’t verify unsent actions' : 'Unsent actions on this phone') + '</h2><p>' +
+        (count === null ? 'The queue could not be checked. Some actions may not have been sent.' : count + ' action' + (count === 1 ? ' hasn’t' : 's haven’t') + ' been sent yet.') + '</p><p>' +
+        (shared ? 'This is a borrowed phone. These actions only send when you sign in on this phone again.' : 'Unsent actions stay on this phone and send when you sign in here again.') + '</p>' +
+        '<div class="m-actions"><button type="button" class="m-btn m-btn-secondary" data-review>Review queue</button><button type="button" class="m-btn m-btn-danger" data-anyway>Sign out anyway</button><button type="button" class="m-btn m-btn-secondary" data-cancel>Cancel</button></div></dialog>');
+      document.body.appendChild(dialog);
+      var done = false;
+      function finish(value) { if (done) return; done = true; dialog.close(); dialog.remove(); if (previousFocus && previousFocus.isConnected) previousFocus.focus(); resolve(value); }
+      dialog.querySelector('[data-cancel]').onclick = function () { finish(false); };
+      dialog.querySelector('[data-review]').onclick = function () { finish(false); go('queue'); };
+      dialog.querySelector('[data-anyway]').onclick = function () { finish(true); };
+      dialog.addEventListener('cancel', function (event) { event.preventDefault(); finish(false); });
+      dialog.showModal();
+      dialog.querySelector('[data-cancel]').focus();
+    });
+  }
   function signOut() {
-    var q = window.mQueue;
-    var shared = API.isSharedSession();
-    var flushed = q && navigator.onLine ? q.flush().catch(function () {}) : Promise.resolve();
-    return flushed
-      .then(function () { return q ? q.count() : 0; })
-      .catch(function () { return 0; })
-      .then(function (n) {
-        if (n && !window.confirm(
-          n + (n === 1 ? ' of your actions hasn’t' : ' of your actions haven’t') + ' been sent yet. ' +
-          (shared
-            ? 'This is a borrowed phone — they only send if you sign in on it again. Sign out anyway?'
-            : 'They stay on this phone and send the next time you sign in here. Sign out anyway?'))) return false;
-        var push = window.mPush && mPush.release ? mPush.release().catch(function () {}) : Promise.resolve();
-        return push
-          .then(function () { return API.post('/auth/logout').catch(function () {}); })
-          .then(function () {
-            if (shared) clearUserData();
-            try { localStorage.removeItem(ME_KEY); sessionStorage.removeItem(ME_KEY); } catch (e) { /* ignore */ }
-            if (q) q.clearToken();
-            API.clearToken();
-            if (window.ChatWS) ChatWS.disconnect();
-            location.hash = '';
-            location.reload();
-            return true;
-          });
-      });
+    if (signOutPending) return signOutPending;
+    var triggers = Array.prototype.map.call(document.querySelectorAll('[data-out], [data-shared-out], #m-blocked-out'), function (button) { var old = { button: button, text: button.textContent, disabled: button.disabled }; button.disabled = true; button.textContent = 'Signing out…'; return old; });
+    // Lock before touching the queue: repeated taps during slow I/O share this operation.
+    signOutPending = Promise.resolve().then(async function () {
+      var q = window.mQueue, shared = API.isSharedSession(), count = null;
+      if (q && navigator.onLine) { try { await q.flush(); } catch (ignore) {} }
+      try { count = q ? await q.count() : 0; } catch (ignore) {}
+      if ((count === null || count > 0) && !await confirmUnsent(count, shared)) return false;
+      if (window.mPush && mPush.release) { try { await mPush.release(); } catch (ignore) {} }
+      try { await API.post('/auth/logout'); } catch (ignore) {}
+      if (shared) clearUserData();
+      try { localStorage.removeItem(ME_KEY); sessionStorage.removeItem(ME_KEY); } catch (ignore) {}
+      if (q) q.clearToken();
+      API.clearToken();
+      if (window.ChatWS) ChatWS.disconnect();
+      location.hash = '';
+      location.reload();
+      return true;
+    }).finally(function () {
+      signOutPending = null;
+      triggers.forEach(function (old) { if (old.button.isConnected) { old.button.disabled = old.disabled; old.button.textContent = old.text; } });
+    });
+    return signOutPending;
   }
 
   function paintSharedBanner() {

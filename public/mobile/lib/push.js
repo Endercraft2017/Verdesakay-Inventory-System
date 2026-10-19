@@ -36,8 +36,7 @@
           if (!s) return 'off';
           // Subscribed in this browser — but is it registered to the person signed in now?
           return API.get('/push/status?endpoint=' + encodeURIComponent(s.endpoint))
-            .then(function (st) { return st && st.this_device === false ? 'off' : 'on'; })
-            .catch(function () { return 'on'; });
+            .then(function (st) { return st && st.this_device === true ? 'on' : 'off'; });
         });
       });
     },
@@ -66,7 +65,6 @@
         return r.pushManager.getSubscription().then(function (sub) {
           if (!sub) return 'off';
           return API.post('/push/unsubscribe', { endpoint: sub.endpoint })
-            .catch(function () {})
             .then(function () { return sub.unsubscribe(); })
             .then(function () { return 'off'; });
         });
@@ -94,5 +92,15 @@
     test: function () { return API.post('/push/test'); },
   };
 
+  // A second tap (including after reopening Settings) shares the existing permission/setup job.
+  var changePending = null;
+  ['enable', 'disable'].forEach(function (name) {
+    var change = mPush[name];
+    mPush[name] = function () {
+      if (changePending) return changePending;
+      changePending = Promise.resolve().then(change).finally(function () { changePending = null; });
+      return changePending;
+    };
+  });
   window.mPush = mPush;
 })();

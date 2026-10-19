@@ -199,40 +199,58 @@ MApp.route('settings', function (view) {
     };
     var storageBox = page.querySelector('[data-storage]');
     if (storageBox) {
-      API.get('/messages/quota').then(function (q) {
-        var pct = q.cap_bytes > 0 ? Math.min(100, Math.round((q.used_bytes / q.cap_bytes) * 100)) : 0;
-        var stage = pct >= 100 ? 'over' : pct >= 80 ? 'near' : 'ok';
-        storageBox.innerHTML = '<div class="usage-bar"><div class="usage-fill ' + stage + '" style="width:' + pct + '%"></div></div>' +
-          '<div class="m-hint">' + mFmtBytes(q.used_bytes) + ' / ' + mFmtBytes(q.cap_bytes) + ' used (' + pct + '%)' +
-          (pct >= 100 ? ' — limit reached' : '') + '</div>';
-      }).catch(function (e) { storageBox.innerHTML = '<div class="m-hint">' + mEsc(e.message) + '</div>'; });
+      function loadStorage() {
+        if (storageBox.dataset.loading === 'true') return;
+        storageBox.dataset.loading = 'true';
+        storageBox.innerHTML = '<div class="m-hint">Loading…</div>';
+        API.get('/messages/quota').then(function (q) {
+          var pct = q.cap_bytes > 0 ? Math.min(100, Math.round((q.used_bytes / q.cap_bytes) * 100)) : 0;
+          var stage = pct >= 100 ? 'over' : pct >= 80 ? 'near' : 'ok';
+          storageBox.innerHTML = '<div class="usage-bar"><div class="usage-fill ' + stage + '" style="width:' + pct + '%"></div></div>' +
+            '<div class="m-hint">' + mFmtBytes(q.used_bytes) + ' / ' + mFmtBytes(q.cap_bytes) + ' used (' + pct + '%)' +
+            (pct >= 100 ? ' — limit reached' : '') + '</div>';
+        }).catch(function (e) {
+          storageBox.innerHTML = '<div class="m-error" role="alert">' + mEsc(e.message || 'Could not load storage') + '</div><button type="button" class="m-btn m-btn-sm m-btn-secondary">Retry</button>';
+          storageBox.querySelector('button').onclick = loadStorage;
+        }).finally(function () { storageBox.dataset.loading = 'false'; });
+      }
+      loadStorage();
     }
     setupNotifications(page);
   }
   function setupNotifications(page) {
-    var button = page.querySelector('[data-notif]');
-    var hint = page.querySelector('[data-notif-hint]');
-    function paint(state) {
-      var labels = { on: 'On', off: 'Off', denied: 'Blocked', unsupported: 'N/A', 'no-sw': 'Off', shared: 'Off' };
-      button.textContent = labels[state] || 'Off';
-      button.setAttribute('aria-pressed', state === 'on');
-      button.disabled = state === 'unsupported' || state === 'denied' || state === 'shared';
-      hint.textContent = state === 'denied' ? 'Blocked in browser settings' :
-        state === 'unsupported' ? 'Not supported on this device' :
-        state === 'shared' ? 'Off while you’re signed in on a borrowed phone' :
-        state === 'on' ? 'Alerts for messages and important activity' : 'Alerts are off';
-      button.dataset.state = state;
+    var button = page.querySelector('[data-notif]'), hint = page.querySelector('[data-notif-hint]');
+    var state = 'unknown', busy = false;
+    var feedback = mEl('<p class="profile-note" role="status"></p>');
+    var retry = mEl('<button type="button" class="m-btn m-btn-sm m-btn-secondary">Check status</button>');
+    hint.parentElement.appendChild(feedback); feedback.after(retry);
+    function paint(value) {
+      state = value;
+      button.dataset.state = value;
+      button.textContent = { on: 'On', off: 'Off', denied: 'Blocked', shared: 'Off', unsupported: 'N/A', 'no-sw': 'Retry setup', unknown: 'Retry' }[value] || 'Retry';
+      button.setAttribute('aria-pressed', String(value === 'on'));
+      button.disabled = busy || ['shared', 'denied', 'unsupported'].indexOf(value) !== -1;
+      retry.disabled = busy;
+      hint.textContent = { on: 'Notifications are on for this account and device.', off: 'Notifications are off. Turn on to allow browser notifications.', denied: 'Blocked in browser settings. Allow notifications there, then check status.', shared: 'Notifications stay off on a borrowed phone.', unsupported: 'Notifications are not supported on this device.', 'no-sw': 'Notification setup is not ready. Reopen the app or check status again.', unknown: 'Couldn’t verify notification status. Your setting has not been changed.' }[value];
     }
-    if (!window.mPush) { paint('unsupported'); return; }
-    mPush.status().then(paint).catch(function () { paint('off'); });
-    button.onclick = function () {
-      var before = button.dataset.state;
-      button.disabled = true;
-      (before === 'on' ? mPush.disable() : mPush.enable()).then(function (state) {
-        paint(state);
-        if (state === 'on') { mPush.test().catch(function () {}); mToast('Notifications on'); }
-      }).catch(function (e) { mToast(e.message || 'Could not change notifications', 'err'); paint(before); });
-    };
+    async function check() { paint(window.mPush ? await mPush.status() : 'unsupported'); }
+    async function run(change) {
+      if (busy || (change && ['shared', 'denied', 'unsupported'].indexOf(state) !== -1)) return;
+      busy = true; button.disabled = true; retry.disabled = true;
+      feedback.textContent = change ? 'Updating notifications…' : 'Checking status…';
+      try {
+        if (!change || state === 'unknown' || state === 'no-sw') await check();
+        else paint(await (state === 'on' ? mPush.disable() : mPush.enable()));
+        feedback.textContent = 'Status checked.';
+      } catch (error) {
+        if (change) { try { await check(); } catch (ignore) { paint('unknown'); } }
+        else paint('unknown');
+        feedback.textContent = error.message || 'Could not verify status. Reconnect and retry.';
+      } finally { busy = false; paint(state); }
+    }
+    retry.onclick = function () { run(false); };
+    button.onclick = function () { run(true); };
+    run(false);
   }
   function renderSecurity() {
     currentSection = 'security';
@@ -300,6 +318,7 @@ MApp.route('settings', function (view) {
     return isNaN(d.getTime()) ? ts : d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   }
   function confirmOtherSessions(box, count, trigger) {
+    if (trigger.disabled || box.querySelector('dialog')) return;
     trigger.disabled = true;
     var dialog = mEl('<dialog class="m-profile-dialog" aria-labelledby="profile-signout-title">' +
       '<h2 id="profile-signout-title">Sign out of other devices?</h2><p>End ' + count + ' other active sign-in session' + (count === 1 ? '' : 's') + '. This phone stays signed in.</p>' +
