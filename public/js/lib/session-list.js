@@ -43,7 +43,11 @@ const SessionList = (() => {
   async function render(el, opts) {
     el.innerHTML = '<div class="muted">Loading…</div>';
     let rows;
-    try { rows = await opts.load(); } catch (e) { el.innerHTML = `<div class="muted">${UI.esc(e.message)}</div>`; return; }
+    try { rows = await opts.load(); } catch (e) {
+      el.innerHTML = `<div role="alert">${UI.esc(e.message)}</div><button class="btn secondary small" data-session-retry>Retry</button>`;
+      el.querySelector('[data-session-retry]').onclick = () => render(el, opts);
+      return;
+    }
     if (!rows.length) { el.innerHTML = '<div class="muted">No sign-ins recorded.</div>'; return; }
     const others = rows.filter((r) => !r.ended_at && !r.current).length;
     el.innerHTML = `
