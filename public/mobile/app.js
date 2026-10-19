@@ -186,6 +186,8 @@ window.MApp = (function () {
   function render() {
     if (authFlow) return;
     if(window.mPersonalDraft && !mPersonalDraft.allow()) return;
+    if (window.mChatNavigation && !mChatNavigation.allow()) return;
+    window.mChatNavigation?.release();
     window.GuideTour?.close();window.PersonalUX?.release();
     window.mChatViewport?.release();
     if (me && me.password_change_required) return;

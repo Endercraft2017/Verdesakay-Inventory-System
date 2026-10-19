@@ -10,6 +10,7 @@
   // stacking a new set each time (mirrors public/js/modules/core/messages.js).
   var wsHandlers = null;
 
+  var closeActiveSheet = null;
   var state = null; // per-open-thread state, see openThread()
 
   function overlayRoot() { return document.getElementById('m-overlay-root') || document.body; }
@@ -30,10 +31,16 @@
     var host = view.querySelector('#m-inbox-list');
     var search = view.querySelector('#m-inbox-search');
     var activeFilter = 'all';
-    var conversations = [];
+    var conversations = [], loading = false, loadError = null;
     view.querySelector('#m-inbox-new').onclick = function () { newMessage(view); };
 
     function renderList() {
+      if (!host.isConnected) return;
+      if (loading) { host.innerHTML = '<div class="m-hint" role="status">Loading conversations…</div>'; return; }
+      if (loadError) {
+        host.innerHTML = '<div class="m-error" role="alert">' + mEsc(loadError.message || 'Could not load conversations') + '</div><button class="m-v2-secondary" id="m-inbox-retry" type="button">Try again</button>';
+        host.querySelector('button').onclick = load; return;
+      }
       var query = String(search.value || '').trim().toLowerCase();
       var visible = conversations.filter(function (c) {
         if (activeFilter === 'unread' && !c.unread_count) return false;
@@ -69,13 +76,14 @@
       };
     });
 
-    API.get('/messages/conversations').then(function (rows) {
-      conversations = rows || [];
-      renderList();
-    }).catch(function (ex) {
-      host.innerHTML = '<div class="m-error">' + mEsc(ex.message) + '</div><button class="m-v2-secondary" id="m-inbox-retry" type="button">Try again</button>';
-      host.querySelector('#m-inbox-retry').onclick = function () { convoList(view); };
-    });
+    function load() {
+      if (loading || !host.isConnected) return;
+      loading = true; loadError = null; renderList();
+      API.get('/messages/conversations').then(function (rows) { conversations = rows || []; })
+        .catch(function (error) { loadError = error; })
+        .finally(function () { loading = false; renderList(); });
+    }
+    load();
   }
 
   function newMessage(view) {
@@ -83,25 +91,43 @@
     view.setAttribute('data-figma-node', '46:808');
     view.innerHTML = '<section class="m-v2-page m-inbox-v2"><header class="m-v2-heading m-chat-heading">' +
       '<button class="m-chat-back" type="button" aria-label="Back">‹</button><div><h1>New message</h1><p>Choose an employee to start a conversation</p></div></header>' +
-      '<div id="m-new-message"><div class="m-hint">Loading directory…</div></div></section>';
+      '<label class="m-field"><span class="m-label">Filter employees</span><input class="m-input" type="search" data-recipient-search placeholder="Name or department" /></label>' +
+      '<div id="m-new-message"></div></section>';
     view.querySelector('.m-chat-back').onclick = function () { convoList(view); };
-    var host = view.querySelector('#m-new-message');
-    API.get('/users').then(function (users) {
-      var me = MApp.getMe();
-      var available = (users || []).filter(function (u) { return u.id !== me.id; });
+    var host = view.querySelector('#m-new-message'), search = view.querySelector('[data-recipient-search]');
+    var available = [], loading = false, error = null, selected = '';
+    function paint() {
+      if (!host.isConnected) return;
+      if (loading) { host.innerHTML = '<div class="m-hint" role="status">Loading directory…</div>'; return; }
+      if (error) {
+        host.innerHTML = '<div class="m-error" role="alert">' + mEsc(error.message || 'Could not load employees') + '</div><button class="m-v2-secondary" type="button">Try again</button>';
+        host.querySelector('button').onclick = load; return;
+      }
+      var term = search.value.trim().toLowerCase();
+      var visible = available.filter(function (u) { return (String(u.full_name || '') + ' ' + String(u.department_name || '')).toLowerCase().indexOf(term) !== -1; });
       host.innerHTML = '<label class="m-new-recipient"><span>Recipient</span><select data-to><option value="">Choose an employee</option>' +
-        available.map(function (u) { return '<option value="' + u.id + '" data-name="' + mEsc(u.full_name) + '">' +
-          mEsc(u.full_name) + (u.department_name ? ' — ' + mEsc(u.department_name) : '') + '</option>'; }).join('') +
-        '</select></label><button class="m-v2-primary" data-start type="button">Start conversation</button>';
+        visible.map(function (u) { return '<option value="' + mEsc(u.id) + '">' + mEsc(u.full_name) + (u.department_name ? ' — ' + mEsc(u.department_name) : '') + '</option>'; }).join('') +
+        '</select></label>' + (!visible.length ? '<p class="m-hint" role="status">' + (available.length ? 'No employees match. Try another search.' : 'No other employees are available to message.') + '</p>' : '') +
+        '<button class="m-v2-primary" data-start type="button"' + (!visible.length ? ' disabled' : '') + '>Start conversation</button>';
+      var select = host.querySelector('[data-to]'); select.value = selected;
+      select.onchange = function () { selected = select.value; };
       host.querySelector('[data-start]').onclick = function () {
-        var select = host.querySelector('[data-to]');
-        if (!select.value) { mToast('Choose a recipient', 'err'); select.focus(); return; }
-        var option = select.options[select.selectedIndex];
-        MApp.go('inbox', { thread: select.value, name: option.getAttribute('data-name') || option.text });
+        if (this.disabled) return;
+        var person = visible.filter(function (u) { return String(u.id) === select.value; })[0];
+        if (!person) { mToast('Choose a recipient', 'err'); select.focus(); return; }
+        this.disabled = true;
+        MApp.go('inbox', { thread: person.id, name: person.full_name });
       };
-    }).catch(function (ex) {
-      host.innerHTML = '<div class="m-error">' + mEsc(ex.message || 'Failed to load employees') + '</div>';
-    });
+    }
+    function load() {
+      if (loading || !host.isConnected) return;
+      loading = true; error = null; paint();
+      API.get('/users').then(function (users) {
+        var me = MApp.getMe() || {};
+        available = (users || []).filter(function (u) { return String(u.id) !== String(me.id); });
+      }).catch(function (ex) { error = ex; }).finally(function () { loading = false; paint(); });
+    }
+    search.oninput = paint; load();
   }
 
   /* ---------- thread ---------- */
@@ -121,6 +147,8 @@
       '<div id="m-chat-typing" class="m-chat-typing hidden">typing…</div>' +
       '<div id="m-chat-load-older" class="m-chat-load-older hidden"><button class="m-v2-secondary" type="button">Load earlier</button></div>' +
       '<div id="m-chat-messages" class="m-chat-messages"><div class="m-hint">Loading…</div></div>' +
+      '<p class="m-hint" data-history-feedback role="status"></p>' +
+      '<p class="m-hint" data-chat-feedback role="status"></p><div data-chat-leave></div>' +
       '<div id="m-chat-reply-strip" class="m-chat-reply-strip hidden"></div>' +
       '<div id="m-chat-files" class="m-chat-files hidden" aria-live="polite"></div>' +
       '<div class="m-chat-compose">' +
@@ -129,59 +157,97 @@
       '<textarea id="m-chat-input" rows="1" placeholder="Write a message…" aria-label="Message"></textarea>' +
       '<button class="m-chat-send-button" id="m-chat-send" type="button" aria-label="Send message">➤</button>' +
       '</div></section>';
+    state.container = view.querySelector('.m-chat-v2');
     view.querySelector('[data-back]').onclick = function () { MApp.go('inbox'); };
     wireComposer();
     fitThreadToViewport();
     view.querySelector('#m-chat-load-older button').onclick = loadOlder;
 
-    API.get('/messages/with/' + otherId + '?limit=50').then(function (rows) {
-      rows.reverse();
-      state.messages = rows;
+    loadThread(state, true);
+  }
+
+  function activeThread(thread) { return !!thread && state === thread && thread.container && thread.container.isConnected; }
+  function threadFeedback(thread, message, history) {
+    if (!activeThread(thread)) return;
+    thread.view.querySelector(history ? '[data-history-feedback]' : '[data-chat-feedback]').textContent = message;
+  }
+  function mergeMessages(rows, existing) {
+    var ids = Object.create(null);
+    var merged = rows.slice();
+    rows.forEach(function (m) { ids[m.id] = true; });
+    existing.forEach(function (m) { if (!ids[m.id]) { merged.push(m); ids[m.id] = true; } });
+    return merged.sort(function (a, b) { return a.id - b.id; });
+  }
+  function loadThread(thread, initial) {
+    if (!activeThread(thread)) return;
+    if (thread.loading) { if (!initial) thread.refreshAfterLoad = true; return; }
+    thread.loading = true;
+    var container = thread.view.querySelector('#m-chat-messages');
+    var nearBottom = initial || isNearBottom();
+    if (initial) container.innerHTML = '<div class="m-hint" role="status">Loading messages…</div>';
+    API.get('/messages/with/' + thread.otherId + '?limit=' + Math.max(thread.messages.length, 50)).then(function (rows) {
+      if (!activeThread(thread)) return;
+      thread.messages = mergeMessages(rows.slice().reverse(), thread.messages);
       renderMessages();
-      scrollToBottom();
-      view.querySelector('#m-chat-load-older').classList.toggle('hidden', rows.length < 50);
-      API.post('/messages/with/' + otherId + '/read').catch(function () {});
-    }).catch(function (ex) {
-      view.querySelector('#m-chat-messages').innerHTML = '<div class="m-error">' + mEsc(ex.message) + '</div>';
+      if (nearBottom) scrollToBottom();
+      thread.view.querySelector('#m-chat-load-older').classList.toggle('hidden', rows.length < 50);
+      API.post('/messages/with/' + thread.otherId + '/read').catch(function () {});
+    }).catch(function (error) {
+      if (!activeThread(thread)) return;
+      if (initial) {
+        container.innerHTML = '<div class="m-error" role="alert">' + mEsc(error.message || 'Could not load messages') + '</div><button class="m-v2-secondary" type="button">Try again</button>';
+        container.querySelector('button').onclick = function () { loadThread(thread, true); };
+      } else threadFeedback(thread, 'Could not refresh messages. Reopen the conversation to try again.', true);
+    }).finally(function () {
+      thread.loading = false;
+      if (thread.refreshAfterLoad && activeThread(thread)) { thread.refreshAfterLoad = false; loadThread(thread, false); }
     });
   }
 
   function loadOlder() {
-    if (!state || !state.messages.length) return;
-    var before = state.messages[0].id;
-    API.get('/messages/with/' + state.otherId + '?limit=50&before=' + before).then(function (older) {
-      older.reverse();
-      var container = state.view.querySelector('#m-chat-messages');
+    var thread = state;
+    if (!activeThread(thread) || thread.olderPending || !thread.messages.length) return;
+    var before = thread.messages[0].id;
+    var button = thread.view.querySelector('#m-chat-load-older button');
+    thread.olderPending = true; button.disabled = true; button.textContent = 'Loading…';
+    threadFeedback(thread, '', true);
+    API.get('/messages/with/' + thread.otherId + '?limit=50&before=' + before).then(function (older) {
+      if (!activeThread(thread)) return;
+      var container = thread.view.querySelector('#m-chat-messages');
       var prevHeight = container.scrollHeight;
-      state.messages = older.concat(state.messages);
+      thread.messages = mergeMessages(older.slice().reverse(), thread.messages);
       renderMessages();
-      container.scrollTop = container.scrollHeight - prevHeight;
-      state.view.querySelector('#m-chat-load-older').classList.toggle('hidden', older.length < 50);
-    }).catch(function () {});
+      container.scrollTop += container.scrollHeight - prevHeight;
+      thread.view.querySelector('#m-chat-load-older').classList.toggle('hidden', older.length < 50);
+    }).catch(function () { threadFeedback(thread, 'Could not load earlier messages. Tap Load earlier to retry.', true); })
+      .finally(function () { thread.olderPending = false; button.disabled = false; button.textContent = 'Load earlier'; });
   }
 
   function scrollToBottom() {
+    if (!activeThread(state)) return;
     var c = state.view.querySelector('#m-chat-messages');
     if (c) c.scrollTop = c.scrollHeight;
   }
 
   function fitThreadToViewport() {
+    var thread = state, focusTimers = [];
     document.body.classList.add('m-chat-thread-active');
     var viewport = window.visualViewport;
     var input = state.view.querySelector('#m-chat-input');
     function update() {
+      if (!activeThread(thread)) return;
       var height = viewport ? viewport.height : window.innerHeight;
       var top = viewport ? viewport.offsetTop : 0;
       document.documentElement.style.setProperty('--chat-viewport-height', Math.round(height) + 'px');
       document.documentElement.style.setProperty('--chat-viewport-top', Math.round(top) + 'px');
       document.body.classList.toggle('m-chat-keyboard-open', !!viewport && viewport.height < window.innerHeight - 100);
-      if (document.activeElement === input) requestAnimationFrame(scrollToBottom);
+      if (document.activeElement === input) requestAnimationFrame(scroll);
     }
+    function scroll() { if (activeThread(thread)) scrollToBottom(); }
     function focus() {
-      update();
-      scrollToBottom();
-      setTimeout(scrollToBottom, 120);
-      setTimeout(scrollToBottom, 320);
+      update(); scroll();
+      focusTimers.forEach(clearTimeout);
+      focusTimers = [setTimeout(scroll, 120), setTimeout(scroll, 320)];
     }
     input.addEventListener('focus', focus);
     if (viewport) {
@@ -191,6 +257,7 @@
     window.addEventListener('resize', update);
     update();
     window.mChatViewport = { release: function () {
+      focusTimers.forEach(clearTimeout);
       input.removeEventListener('focus', focus);
       if (viewport) {
         viewport.removeEventListener('resize', update);
@@ -205,6 +272,7 @@
   }
 
   function isNearBottom() {
+    if (!activeThread(state)) return false;
     var c = state.view.querySelector('#m-chat-messages');
     if (!c) return true;
     return c.scrollHeight - c.scrollTop - c.clientHeight < 120;
@@ -269,7 +337,8 @@
   }
 
   function hydrateBubbleExtras(m) {
-    var row = state.view.querySelector('.m-chat-row[data-id="' + m.id + '"]');
+    var thread = state;
+    var row = thread.view.querySelector('.m-chat-row[data-id="' + m.id + '"]');
     if (!row) return;
     row.querySelectorAll('.m-chat-attach-img-wrap img').forEach(function (img) {
       var wrap = img.closest('.m-chat-attach-img-wrap');
@@ -292,9 +361,10 @@
       return;
     }
     API.get('/messages/link-preview?url=' + encodeURIComponent(url)).then(function (data) {
-      state.linkPreviewCache[url] = data;
+      if (!activeThread(thread) || !host.isConnected) return;
+      thread.linkPreviewCache[url] = data;
       renderLinkPreview(host, url, data);
-    }).catch(function () { state.linkPreviewCache[url] = null; });
+    }).catch(function () { thread.linkPreviewCache[url] = null; });
   }
 
   function renderLinkPreview(host, url, data) {
@@ -381,6 +451,9 @@
   }
 
   function openActionSheet(messageId) {
+    if (!activeThread(state) || state.sending) return;
+    if (closeActiveSheet) closeActiveSheet();
+    var thread = state;
     var m = state.messages.filter(function (x) { return x.id === messageId; })[0];
     if (!m || m.deleted_at) return;
     var root = overlayRoot();
@@ -396,6 +469,7 @@
       var b = mEl('<button class="m-chat-sheet-row' + (r.danger ? ' danger' : '') + '">' + r.label + '</button>');
       b.onclick = function () {
         close();
+        if (!activeThread(thread) || thread.sending) return;
         if (r.act === 'react') openEmojiSheet(messageId);
         else if (r.act === 'reply') startReply(messageId);
         else if (r.act === 'edit') startEdit(messageId);
@@ -406,30 +480,36 @@
     var cancel = mEl('<button class="m-chat-sheet-row cancel">Cancel</button>');
     cancel.onclick = close;
     sheet.appendChild(cancel);
-    function close() { backdrop.remove(); sheet.remove(); }
+    function close() { backdrop.remove(); sheet.remove(); if (closeActiveSheet === close) closeActiveSheet = null; }
+    closeActiveSheet = close;
     backdrop.onclick = close;
     root.appendChild(backdrop);
     root.appendChild(sheet);
   }
 
   function openEmojiSheet(messageId) {
+    if (!activeThread(state) || state.sending) return;
+    if (closeActiveSheet) closeActiveSheet();
+    var thread = state;
     var root = overlayRoot();
     var backdrop = mEl('<div class="m-chat-sheet-backdrop"></div>');
     var bar = mEl('<div class="m-chat-emoji-sheet"></div>');
     QUICK_EMOJI.forEach(function (e) {
       var b = mEl('<button type="button">' + e + '</button>');
-      b.onclick = function () { react(messageId, e); close(); };
+      b.onclick = function () { if (activeThread(thread) && !thread.sending) react(messageId, e); close(); };
       bar.appendChild(b);
     });
-    function close() { backdrop.remove(); bar.remove(); }
+    function close() { backdrop.remove(); bar.remove(); if (closeActiveSheet === close) closeActiveSheet = null; }
+    closeActiveSheet = close;
     backdrop.onclick = close;
     root.appendChild(backdrop);
     root.appendChild(bar);
   }
 
   function react(messageId, emoji) {
+    var thread = state;
     API.post('/messages/' + messageId + '/react', { emoji: emoji }).then(function (res) {
-      applyReactions(messageId, res.reactions);
+      if (activeThread(thread)) applyReactions(messageId, res.reactions);
     }).catch(function (e) { mToast(e.message || 'Failed', 'err'); });
   }
 
@@ -455,6 +535,7 @@
   }
 
   function startReply(messageId) {
+    if (!activeThread(state) || state.sending) return;
     var me = MApp.getMe();
     var m = state.messages.filter(function (x) { return x.id === messageId; })[0];
     if (!m || m.deleted_at) return;
@@ -466,6 +547,7 @@
   }
 
   function startEdit(messageId) {
+    if (!activeThread(state) || state.sending) return;
     var m = state.messages.filter(function (x) { return x.id === messageId; })[0];
     if (!m || m.deleted_at || !m.mine) return;
     state.replyTo = null;
@@ -482,12 +564,12 @@
     if (state.replyTo) {
       strip.classList.remove('hidden');
       strip.innerHTML = '<div><b>Replying to ' + mEsc(state.replyTo.author) + '</b><br>' + mEsc(state.replyTo.preview) + '</div><button data-cancel>✕</button>';
-      strip.querySelector('[data-cancel]').onclick = function () { state.replyTo = null; renderReplyStrip(); };
+      strip.querySelector('[data-cancel]').onclick = function () { if (state.sending) return; state.replyTo = null; renderReplyStrip(); };
       sendBtn.textContent = 'Send';
     } else if (state.editingId) {
       strip.classList.remove('hidden');
       strip.innerHTML = '<div><b>Editing message</b></div><button data-cancel>✕</button>';
-      strip.querySelector('[data-cancel]').onclick = function () { state.editingId = null; state.view.querySelector('#m-chat-input').value = ''; renderReplyStrip(); };
+      strip.querySelector('[data-cancel]').onclick = function () { if (state.sending) return; state.editingId = null; state.view.querySelector('#m-chat-input').value = ''; renderReplyStrip(); };
       sendBtn.textContent = 'Save';
     } else {
       strip.classList.add('hidden');
@@ -498,8 +580,9 @@
 
   function unsend(messageId) {
     if (!window.confirm('Remove this message for everyone? This cannot be undone.')) return;
+    var thread = state;
     API.del('/messages/' + messageId).then(function () {
-      applyRemoved(messageId);
+      if (activeThread(thread)) applyRemoved(messageId);
     }).catch(function (e) { mToast(e.message || 'Failed', 'err'); });
   }
 
@@ -520,146 +603,155 @@
   /* ---------- composer ---------- */
 
   function wireComposer() {
-    var input = state.view.querySelector('#m-chat-input');
-    var sendBtn = state.view.querySelector('#m-chat-send');
-    var attachBtn = state.view.querySelector('#m-chat-attach');
-    var fileInput = state.view.querySelector('#m-chat-file');
-    var filePreview = state.view.querySelector('#m-chat-files');
+    var thread = state;
+    var input = thread.view.querySelector('#m-chat-input');
+    var sendBtn = thread.view.querySelector('#m-chat-send');
+    var attachBtn = thread.view.querySelector('#m-chat-attach');
+    var fileInput = thread.view.querySelector('#m-chat-file');
+    var filePreview = thread.view.querySelector('#m-chat-files');
     var selectedFiles = [];
     var uploadStatus = MessageUpload.create(filePreview);
-    // Keep an unsent text draft through navigation or a dropped connection. Shared-phone
-    // sessions keep it only in this tab; account and recipient are both part of the key.
+    // Drafts stay scoped to both account and recipient; borrowed-phone drafts stay in this tab.
     var me = MApp.getMe() || {};
-    var draftKey = 'vds-chat-draft:' + me.id + ':' + state.otherId;
+    var draftKey = 'vds-chat-draft:' + me.id + ':' + thread.otherId;
     var draftStore = API.isSharedSession() ? sessionStorage : localStorage;
     try { input.value = draftStore.getItem(draftKey) || ''; } catch (e) {}
-    if (input.value) input.style.height = Math.min(112, Math.max(44, input.scrollHeight)) + 'px';
     function saveDraft() {
       try { if (input.value.trim()) draftStore.setItem(draftKey, input.value); else draftStore.removeItem(draftKey); } catch (e) {}
     }
-
-    function renderFiles() {
-      filePreview.classList.toggle('hidden', !selectedFiles.length);
-      filePreview.innerHTML = selectedFiles.map(function (file, index) {
-        return '<span class="m-chat-file-chip">' + mEsc(file.name) + '<button type="button" data-remove="' + index + '" aria-label="Remove ' + mEsc(file.name) + '">×</button></span>';
-      }).join('');
-      filePreview.querySelectorAll('[data-remove]').forEach(function (button) {
-        button.onclick = function () { selectedFiles.splice(Number(button.dataset.remove), 1); renderFiles(); };
-      });
-    }
-
-    attachBtn.onclick = function () { fileInput.click(); };
-    fileInput.onchange = function () {
-      if (selectedFiles.length + (fileInput.files || []).length > 10) mToast('Up to 10 files per message', 'err');
-      selectedFiles = selectedFiles.concat(Array.prototype.slice.call(fileInput.files || [])).slice(0, 10);
-      fileInput.value = '';
-      renderFiles();
-      if (selectedFiles.length) mToast('Files ready. Tap send when you are ready.');
-    };
-    sendBtn.onclick = sendOrSave;
-
-    var lastTypingSentAt = 0;
     function growInput() {
       input.style.height = 'auto';
       input.style.height = Math.min(112, Math.max(44, input.scrollHeight)) + 'px';
     }
-    input.addEventListener('input', function () {
-      if (!state.editingId) saveDraft();
-      growInput();
-      if (isNearBottom()) requestAnimationFrame(scrollToBottom);
-      var now = Date.now();
-      if (window.ChatWS && state.otherId && now - lastTypingSentAt > 2500) {
-        lastTypingSentAt = now;
-        ChatWS.send({ type: 'typing', to: state.otherId });
-      }
-    });
+    if (input.value) growInput();
+    function renderFiles() {
+      filePreview.classList.toggle('hidden', !selectedFiles.length);
+      filePreview.innerHTML = selectedFiles.map(function (file, index) {
+        return '<span class="m-chat-file-chip">' + mEsc(file.name) + '<button type="button" data-remove="' + index + '" aria-label="Remove ' + mEsc(file.name) + '"' + (thread.sending ? ' disabled' : '') + '>×</button></span>';
+      }).join('');
+      filePreview.querySelectorAll('[data-remove]').forEach(function (button) {
+        button.onclick = function () { if (thread.sending) return; selectedFiles.splice(Number(button.dataset.remove), 1); renderFiles(); threadFeedback(thread, selectedFiles.length ? selectedFiles.length + ' files selected. They are not uploaded yet.' : 'Selected files removed.'); };
+      });
+    }
+    // Protect file selections for every hash navigation (dock, Back, deep links), not just Back.
+    var originalHash = location.hash;
+    var bypass = false;
+    var navigation = {
+      allow: function () {
+        if (bypass || !activeThread(thread) || (!thread.sending && !selectedFiles.length)) return true;
+        var destination = location.hash;
+        history.replaceState(null, '', originalHash);
+        var box = thread.view.querySelector('[data-chat-leave]');
+        box.innerHTML = '<div class="m-hint" role="alert"><b>' + (thread.sending ? 'A message is still being sent.' : 'Selected files will be discarded.') + '</b><p>' +
+          (thread.sending ? 'Wait for it to finish before leaving this conversation.' : 'Text drafts are saved separately. Selected files stay only while this conversation is open.') + '</p>' +
+          '<div class="m-actions"><button class="m-v2-secondary" type="button" data-stay>Stay</button>' + (!thread.sending ? '<button class="m-v2-secondary" type="button" data-discard>Leave and discard files</button>' : '') + '</div></div>';
+        box.querySelector('[data-stay]').onclick = function () { box.innerHTML = ''; input.focus(); };
+        var discard = box.querySelector('[data-discard]');
+        if (discard) discard.onclick = function () {
+          if (thread.sending) return;
+          bypass = true;
+          history.replaceState(null, '', destination);
+          window.dispatchEvent(new HashChangeEvent('hashchange'));
+        };
+        box.querySelector('[data-stay]').focus();
+        return false;
+      },
+      release: function () { if (closeActiveSheet) closeActiveSheet(); window.removeEventListener('beforeunload', beforeUnload); if (window.mChatNavigation === navigation) window.mChatNavigation = null; }
+    };
+    function beforeUnload(event) {
+      if (activeThread(thread) && (thread.sending || selectedFiles.length)) { event.preventDefault(); event.returnValue = ''; }
+    }
+    window.mChatNavigation = navigation;
+    window.addEventListener('beforeunload', beforeUnload);
 
-    function sendOrSave() {
-      if (sendBtn.disabled) return;
-      var recipientId = state.otherId;
-      var body = input.value.trim();
-      var files = selectedFiles.slice();
-      if (state.editingId) {
-        if (!body) { mToast('Message cannot be empty', 'err'); return; }
-        var id = state.editingId;
-        API.patch('/messages/' + id, { body: body }).then(function (res) {
-          applyEdited(id, body, res.edited_at);
-          state.editingId = null;
-          input.value = '';
-          growInput();
-          renderReplyStrip();
-        }).catch(function (e) { mToast(e.message || 'Failed', 'err'); });
-        return;
+    attachBtn.onclick = function () { if (!thread.sending) fileInput.click(); };
+    fileInput.onchange = function () {
+      if (thread.sending) { fileInput.value = ''; return; }
+      var incoming = Array.prototype.slice.call(fileInput.files || []);
+      if (selectedFiles.length + incoming.length > 10) {
+        fileInput.value = '';
+        threadFeedback(thread, 'Up to 10 files per message. Extra files were not added; remove a selected file before adding more.'); return;
       }
+      selectedFiles = selectedFiles.concat(incoming);
+      fileInput.value = ''; renderFiles();
+      threadFeedback(thread, selectedFiles.length ? selectedFiles.length + ' files selected. They are not uploaded yet.' : '');
+    };
+    sendBtn.onclick = sendOrSave;
+    var lastTypingSentAt = 0;
+    input.addEventListener('input', function () {
+      if (!thread.editingId) saveDraft();
+      growInput();
+      if (isNearBottom()) requestAnimationFrame(function () { if (activeThread(thread)) scrollToBottom(); });
+      var now = Date.now();
+      if (window.ChatWS && now - lastTypingSentAt > 2500) { lastTypingSentAt = now; ChatWS.send({ type: 'typing', to: thread.otherId }); }
+    });
+    function setBusy(busy, editing) {
+      thread.sending = busy;
+      sendBtn.disabled = busy; attachBtn.disabled = busy; input.disabled = busy; fileInput.disabled = busy;
+      filePreview.querySelectorAll('button').forEach(function (button) { button.disabled = busy; });
+      thread.view.querySelectorAll('#m-chat-reply-strip button').forEach(function (button) { button.disabled = busy; });
+      sendBtn.setAttribute('aria-label', busy ? (editing ? 'Saving edited message' : 'Sending message') : (thread.editingId ? 'Save edited message' : 'Send message'));
+      thread.container.setAttribute('aria-busy', String(busy));
+    }
+    function sendOrSave() {
+      if (!activeThread(thread) || thread.sending || sendBtn.disabled) return;
+      var body = input.value.trim(), files = selectedFiles.slice(), editingId = thread.editingId;
+      if (editingId && !body) { threadFeedback(thread, 'Message cannot be empty.'); input.focus(); return; }
       if (!body && !files.length) return;
-      sendBtn.disabled = true;
-      attachBtn.disabled = true;
-      sendBtn.setAttribute('aria-label', 'Sending message');
-      input.disabled = true;
-      filePreview.querySelectorAll('button').forEach(function (button) { button.disabled = true; });
-      if (files.length) uploadStatus.start();
-      var replyToId = state.replyTo ? state.replyTo.id : null;
+      setBusy(true, !!editingId);
+      threadFeedback(thread, editingId ? 'Saving message…' : 'Sending message…');
       var send;
-      if (files.length) {
+      if (editingId) {
+        send = API.patch('/messages/' + editingId, { body: body });
+      } else if (files.length) {
+        uploadStatus.start();
         send = Promise.all(files.map(function (file) {
           return window.ImageCompress ? ImageCompress.maybeCompress(file, { thresholdBytes: 0, maxDim: 1600, quality: 0.8 }) : file;
         })).then(function (ready) {
-        var fd = new FormData();
-        fd.append('recipient_id', recipientId);
-        fd.append('body', body);
-        if (replyToId) fd.append('reply_to_id', replyToId);
-        ready.forEach(function (file) { fd.append('files', file, file.name); });
-        return API.upload('/messages', fd, { onProgress: uploadStatus.progress });
+          var fd = new FormData();
+          fd.append('recipient_id', thread.otherId); fd.append('body', body);
+          if (thread.replyTo) fd.append('reply_to_id', thread.replyTo.id);
+          ready.forEach(function (file) { fd.append('files', file, file.name); });
+          return API.upload('/messages', fd, { onProgress: uploadStatus.progress });
         });
       } else {
-        var payload = { recipient_id: state.otherId, body: body };
-        if (replyToId) payload.reply_to_id = replyToId;
+        var payload = { recipient_id: thread.otherId, body: body };
+        if (thread.replyTo) payload.reply_to_id = thread.replyTo.id;
         send = API.post('/messages', payload);
       }
-      send.then(function () {
-        input.value = '';
-        saveDraft();
-        growInput();
-        selectedFiles = [];
-        renderFiles();
-        state.replyTo = null;
-        renderReplyStrip();
-        if (!(window.ChatWS && ChatWS.connected)) reloadThread();
-      }).catch(function (e) {
-        mToast(e.offline ? 'Offline — message not sent. Your text stays as a draft; reconnect and tap Send.' : (e.message || 'Failed'), 'err');
-      }).finally(function () {
-        uploadStatus.stop();
-        input.disabled = false;
-        filePreview.querySelectorAll('button').forEach(function (button) { button.disabled = false; });
-        sendBtn.disabled = false;
-        attachBtn.disabled = false;
-        sendBtn.setAttribute('aria-label', 'Send message');
-      });
+      Promise.resolve(send).then(function (result) {
+        if (!activeThread(thread)) return;
+        if (editingId) {
+          applyEdited(editingId, body, result.edited_at);
+          thread.editingId = null;
+          // Editing does not destroy a separate, unsent text draft.
+          try { input.value = draftStore.getItem(draftKey) || ''; } catch (ignore) { input.value = ''; }
+        } else {
+          input.value = ''; saveDraft(); selectedFiles = []; renderFiles(); thread.replyTo = null;
+          if (!(window.ChatWS && ChatWS.connected)) reloadThread();
+        }
+        growInput(); renderReplyStrip();
+        threadFeedback(thread, editingId ? 'Message updated.' : 'Message sent.');
+      }).catch(function (error) {
+        threadFeedback(thread, editingId ? (error.message || 'Could not save the edit. Your changes are still here; try again.') :
+          (error.offline ? 'Offline — could not confirm sending.' : (error.message || 'Could not confirm sending.')) + ' Your text and selected files remain here. Check the conversation before retrying to avoid a duplicate.');
+      }).finally(function () { uploadStatus.stop(); setBusy(false, !!editingId); });
     }
   }
 
-  function reloadThread() {
-    if (!state) return;
-    var wasNearBottom = isNearBottom();
-    API.get('/messages/with/' + state.otherId + '?limit=' + Math.max(state.messages.length, 50)).then(function (rows) {
-      rows.reverse();
-      state.messages = rows;
-      renderMessages();
-      if (wasNearBottom) scrollToBottom();
-    }).catch(function () {});
-  }
+  function reloadThread() { loadThread(state, false); }
 
   /* ---------- real-time ---------- */
 
   function belongsToActiveThread(data) {
-    return state && data && (data.sender_id === state.otherId || data.recipient_id === state.otherId);
+    return activeThread(state) && data && (data.sender_id === state.otherId || data.recipient_id === state.otherId);
   }
   function inActiveThread(id) {
-    return state && state.messages.some(function (m) { return m.id === id; });
+    return activeThread(state) && state.messages.some(function (m) { return m.id === id; });
   }
 
   function onWsMessageNew(data) {
-    if (!belongsToActiveThread(data)) return;
+    if (!belongsToActiveThread(data) || inActiveThread(data.id)) return;
     var wasNearBottom = isNearBottom();
     data.mine = data.sender_id === MApp.getMe().id;
     state.messages.push(data);
@@ -677,7 +769,7 @@
 
   var typingTimer = null;
   function onWsTyping(data) {
-    if (!state || !data || data.from !== state.otherId) return;
+    if (!activeThread(state) || !data || data.from !== state.otherId) return;
     var el = state.view.querySelector('#m-chat-typing');
     if (!el) return;
     el.classList.remove('hidden');
