@@ -57,3 +57,12 @@ release slips, draft persistence, role access, cycle-count migration and the des
 access matrix. An existing kit refusal test used a fixed delay to assert its
 return screen; it now uses that suite's readiness helper. The mobile suite was
 rerun after this synchronization fix. No full-suite run or deployment is claimed.
+
+## Publication integration
+
+Before publication, the mobile implementation commit `5ca324b` was merged with
+remote branch work through `bb604c0`. On that merged code, TypeScript passed,
+all 217 focused tests across 11 files passed, and both Playwright scripts passed
+again (17 stock-count/source-closure plus 13 planned-check scenarios, zero page
+errors). The focused run also included incoming guide and legacy-payslip owner
+regressions. No new full-suite or deployed-sandbox verification is claimed.
