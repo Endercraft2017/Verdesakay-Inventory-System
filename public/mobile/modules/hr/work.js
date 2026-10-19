@@ -174,10 +174,29 @@
     "Your saved decision affects that request’s approval process; opening the inbox does not approve anything."
   ]
 };
+  var STOCK_EFFECTS = {
+    receive:'Adds purchased stock when the supplier goods receipt is confirmed.',
+    receiving:'Adds finished stock when Products In / RTS receipt is confirmed.',
+    so:'Picking reserves goods; issuing the trip slip deducts its load.',
+    'kit-release':'Picking holds components; issuing the parts slip deducts them.',
+    allocate:'Direct sale deducts units immediately. A move changes their location.',
+    repairs:'Issuing approved repair parts moves stock; viewing a request does not.',
+    returns:'Return receipt alone adds no stock. Restock requires inspection.',
+    'semi-finishing':'Removes one semi-built package; fully built stock returns only after inspection and receipt.',
+    'stock-counts':'Count submission moves no stock. Review and reconciliation are separate.',
+    'stock-count-tasks':'Assignment and submission move no stock; reconciliation completes the check.',
+    'stock-move':'Confirmed stock-in/out changes quantity at the selected location.',
+    transfer:'Changes location balances, not total stock.',
+    damage:'Moves damaged quantity out of sellable stock.',
+    deliveries:'Records delivery or carrier handoff; does not deduct stock again.',
+    item:'Lookup only; no stock change.',
+    'assign-qr':'Label association only; no stock change.'
+  };
   function explain(row, key, title) {
     var help=WORK_HELP[key];
     if(!help) return;
     row.dataset.workGuide=''; row.dataset.workGuideTitle=title;
+    if(STOCK_EFFECTS[key]) row.dataset.workGuideEffect=STOCK_EFFECTS[key];
     row.dataset.workGuidePurpose=help[0]; row.dataset.workGuideWhen=help[1]; row.dataset.workGuideResult=help[2];
   }
   function helpKey(op) {
