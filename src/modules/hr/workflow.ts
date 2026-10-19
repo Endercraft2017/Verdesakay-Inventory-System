@@ -95,6 +95,18 @@ export function payrollWarnings(period: {
      JOIN form_records fr ON fr.id = je.value JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE ar.period_id = ?`, period.id);
   const invalid = links.filter(link => { try { return !requestMatchesDay(link.slug, JSON.parse(link.data), link.employee_id, link.work_date); } catch { return true; } });
   if (invalid.length) warnings.push(`${invalid.length} linked form(s) do not match their employee/date and will not authorize payroll. Review their details.`);
+  const negativeNet = queryOne<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM form_records fr
+     JOIN form_definitions fd ON fd.id = fr.form_def_id
+     JOIN attendance_periods p ON p.id = ?
+     WHERE fd.slug = 'hr_payroll' AND json_valid(fr.data)
+       AND CAST(json_extract(fr.data, '$.net_pay') AS REAL) < -0.005
+       AND (CAST(json_extract(fr.data, '$.cutoff_id') AS INTEGER) = p.id
+         OR (json_extract(fr.data, '$.cutoff_id') IS NULL AND fr.period = p.label))`,
+    period.id,
+  )?.n ?? 0;
+  if (negativeNet)
+    warnings.push(`${negativeNet} payslip(s) have negative net pay. Review deductions and recovery before marking them paid.`);
   return warnings;
 }
 

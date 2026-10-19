@@ -3,12 +3,13 @@ import { beforeAll, afterAll, it, expect } from 'vitest';
 import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 let ctx: TestContext, token: string, leaveId: number;
 let queryOne: typeof import('../src/shared/db').queryOne;
+let run: typeof import('../src/shared/db').run;
 const hdr = (t = token) => ({ Authorization: `Bearer ${t}` });
 let seq = 0;
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
-  ({ queryOne } = await import('../src/shared/db'));
+  ({ queryOne, run } = await import('../src/shared/db'));
   const defs = await ctx.api.get('/api/form-definitions').set(hdr());
   const existing = defs.body.find((f: any) => f.slug === 'leave_request');
   if (existing) leaveId = existing.id;
@@ -240,6 +241,9 @@ it('warnings remain visible but do not block payroll, and custom labels retain c
     .set(hdr());
   const slip = records.body[0];
   expect(slip.data.cutoff_id).toBe(p);
+  run("UPDATE form_records SET data = json_set(data, '$.net_pay', -375) WHERE id = ?", slip.id);
+  const review = await ctx.api.get(`/api/hr/periods/${p}`).set(hdr());
+  expect(review.body.warnings.some((w: string) => w.includes('negative net pay'))).toBe(true);
   const renamed = await ctx.api
     .post(`/api/hr/periods/${p}/generate-payslips`)
     .set(hdr())
