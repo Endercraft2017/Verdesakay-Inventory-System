@@ -1,9 +1,9 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 19 October 2026 — scoped durable creation receipts now commit with signup/console
-setup, protecting same-key retries after a lost response. Real rollback/process/browser tests cover
-the local boundaries. Accounting follow-ups were delivered
-on 18 October and authentication work on 16 October. The complete release is still on hold.
+Latest follow-up: 19 October 2026 — signup owner-alert intent now commits with local setup,
+with a bounded cloud worker, conservative uncertain-send handling and console delivery status.
+Creation receipts, accounting and authentication follow-ups remain documented below. The
+complete release is still on hold.
 
 Work is on `production`, derived from `restructure/module-architecture`; no deployment command or hosted acceptance was performed for this increment.
 The attached handbook is an audit reference. Current whole-control status remains 36 PASS,
@@ -41,7 +41,7 @@ applicable issue before changing behavior:
 | High | Complete remaining sensitive-business-action verification with the offline authority model | Explicit action inventory, server enforcement and replay/role/race tests; AUTHZ-15 remains open |
 | High | Uniform API validation/error/redaction and privacy export/retention/erasure lifecycle | Route-by-route evidence; tenant-safe restore/copy/integration tests; approved retention scope |
 | High | AI privacy/adversarial evaluation, interrupted audit outcomes and hard spend allocation | Isolation/leakage/abuse/cancellation tests and real provider budget acceptance |
-| High | Reliable onboarding notification delivery and broader creation admission/reconciliation | Completed keyed HTTP receipts implemented; transactional outbox/worker, signup work budget, legacy/new-key recovery and imported-state acceptance remain. See operations/workspace-onboarding.md |
+| High | Reliable onboarding notification delivery and broader creation admission/reconciliation | Completed keyed HTTP receipts and signup outbox/worker implemented; inquiry/payment transactional intent, provider reconciliation/reviewed resend, backlog monitoring, signup work budget, legacy/new-key recovery and imported-state acceptance remain. See operations/workspace-onboarding.md |
 | High | Native/Electron distribution and supported-client acceptance | APK/installer builds, signed artifacts, actual Windows/Android vault/backup/logout/upgrade checks |
 | High | Integration lifecycle and accounting reconciliation acceptance | Local generation/scoping, refresh admission, export exclusion and durable uncertain-write handling implemented 2026-10-18; actual Intuit sandbox, legacy adoption/repair tooling, interrupted-claim reconciliation, operational alerting and accountant acceptance remain. See operations/quickbooks-lifecycle.md |
 | High | Resolve or explicitly disposition vulnerable dependencies and historical-secret gates | Upstream/compatible fix or approved expiring risk record; verified revocation without exposing the old bearer |
@@ -194,3 +194,32 @@ for exact behavior and remaining work. Notification outbox/delivery, signup admi
 API/import retry coverage and existing release gates remain open. Keys are in page/modal memory;
 reopening/reloading does not recover them. Hosted/power-loss/shared-filesystem and actual device
 acceptance are not inferred. Whole-control totals and release hold remain unchanged.
+
+## Signup owner-alert follow-up — 2026-10-19
+
+High scoped gap: best-effort signup notification could disappear after successful workspace
+publication. Enabled signup alerts now enqueue inside that same publication savepoint; durable
+intent survives restart. A cloud startup/15-second worker claims one job per pass, outside the
+provider call, then commits guarded result and attempt log together. Explicit Brevo 429 rejects
+retry with persisted backoff/Retry-After and a five-attempt budget. Stale claims, timeouts, partial
+SMTP acceptance and uncertain storage acknowledgement require review, never automatic resend.
+Changed mailbox/recipient/credential generation cancels old unsent private information.
+
+The shared platform-mail adapter now requires SMTP TLS, bounds SMTP duration with an owned
+socket that is destroyed at completion/deadline and stores authored
+error codes instead of raw provider bodies/exceptions. Console test-mail async database failures
+reach the generic correlated error boundary. Owner-console API responses now use no-store,
+including unauthorized responses. No tenant SMTP policy is changed by this platform adapter work.
+
+Email alerts shows redacted recent signup delivery states, with read-only refresh and no blind
+retry. Payloads logically expire while event identities remain. The runbook documents backup/
+provider reconciliation, privacy and disabled-alert behavior. Real SQLite/process faults and
+actual server startup supplement the synthetic provider and Chromium checks. Initial restart
+fixture collisions were corrected; two partial full runs were explicitly interrupted to include
+the discovered async error/cache and active SMTP socket-cancellation fixes, then restarted. A real
+local stalled SMTP connection verifies deadline socket teardown. Those runs are retained as non-final.
+
+See operations/owner-alert-outbox.md and owner-outbox-* evidence. Inquiry/payment alerts still
+send immediately. Reviewed resend/provider reconciliation, backlog aggregation/external alerts,
+capacity, retention approval and live provider/restore/hosting/Windows acceptance remain. No
+owner engineering action is requested now. Whole-control totals and release hold are unchanged.

@@ -295,3 +295,10 @@ Changed details and expired tombstones conflict; console auth/fresh proof still 
 process-exit and browser dropped-response evidence is in creation-receipts-* and validation results.
 This supersedes the earlier receipt gap for covered routes, not notification delivery or new/no-key
 reconciliation. Complete-control totals remain unchanged and release hold remains in effect.
+
+Signup alert follow-up, 19 October 2026: enabled signup intent now commits with publication and
+is processed by a durable bounded worker. Conservative provider outcomes, mailbox binding,
+redacted status and payload cleanup are implemented; inquiry/payment transactional intent and
+other notification acceptance remain. Async console test-mail failures are correlated/redacted
+and console APIs prevent private response caching. See owner-alert-outbox.md and dated evidence.
+These scoped changes do not alter complete-control totals or release hold.

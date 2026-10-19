@@ -59,3 +59,19 @@ a security/duplicate-prevention implementation policy, not a legally approved re
 Approve lawful basis, access, backup expiry, holds and any future scoped tombstone erasure before
 launch. Deleting receipts/tombstones or restoring an older catalog can remove duplicate evidence;
 reconcile before allowing creation writes. See operations/workspace-onboarding.md.
+
+## Signup alert delivery (2026-10-19)
+
+Control-plane platform_owner_outbox holds event/tenant identifiers, recipient snapshot, message
+subject/text with signup contact/invoice acknowledgement, an opaque mailbox-generation binding,
+state/attempts/safe error codes and lifecycle times. It contains no raw mailbox secret or provider
+body. Payloads are ordinary private catalog data, outside tenant replication; encrypted volume/
+backup and provider access require separate acceptance. Worker maintenance nulls terminal
+payloads after 24 hours and all payloads after seven days; a stopped/non-cloud worker retains
+them until a sweep. Minimal event/tenant/state metadata remains indefinitely for operational/
+duplicate prevention, pending approved retention. Existing platform_mail_log and provider logs
+have separate unchanged retention; old diagnostics are not retroactively scrubbed here.
+
+Approve access, lawful basis, payload/metadata/backup/provider periods and scoped erasure/holds.
+Nulling is not a forensic wipe. Restoring an older catalog can resurrect a pending event without
+later send evidence; reconcile provider records before starting the worker. See the outbox runbook.

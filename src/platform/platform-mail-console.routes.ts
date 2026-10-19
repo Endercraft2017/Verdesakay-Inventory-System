@@ -1,3 +1,5 @@
+import { forwardControlPlaneError } from './request-errors';
+import { ownerAlertStatus } from './owner-alert-outbox';
 /**
  * Owner console: the platform mailbox and owner alerts (platform-mail.ts). Mounted inside the
  * console router (platform.routes.ts) after operator auth. The secret is write-only: the console
@@ -13,7 +15,7 @@ const EMAIL = /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/;
 
 // GET /_platform/api/mail — settings (never the secret) + the recent send log
 router.get('/mail', (_req, res) => {
-  res.json({ settings: getPlatformMail(), log: platformMailLog(20) });
+  res.json({ settings: getPlatformMail(), log: platformMailLog(20), outbox: ownerAlertStatus() });
 });
 
 // PUT /_platform/api/mail — { transport, from_name, from_email, smtp_*, alert_*, secret? }
@@ -53,17 +55,19 @@ router.put('/mail', (req, res) => {
   }
   const settings = savePlatformMail(patch, b.clear_secret ? '' : secret || undefined);
   logProvisioning('_console', 'platform-mail-settings', `${(req as PlatformAuthedRequest).platformUser!.username}: saved email settings`);
-  res.json({ settings, log: platformMailLog(20) });
+  res.json({ settings, log: platformMailLog(20), outbox: ownerAlertStatus() });
 });
 
 // POST /_platform/api/mail/test — { to? } (defaults to the alert recipients)
-router.post('/mail/test', async (req, res) => {
+router.post('/mail/test', async (req, res, next) => {
+  try {
   const s = getPlatformMail();
   const to = String(req.body?.to || s.alert_to || '').split(',').map((x) => x.trim()).filter(Boolean);
   if (!to.length || to.some((a) => !EMAIL.test(a))) { res.status(400).json({ error: 'Enter who should receive the test email.' }); return; }
   const r = await sendPlatformMail({ to, subject: 'OTOM test email', kind: 'test',
     text: 'This is a test from your OTOM owner console. If you can read this, owner alerts will reach you.' });
-  res.status(r.ok ? 200 : 502).json({ ...r, log: platformMailLog(20) });
+  res.status(r.ok ? 200 : 502).json({ ...r, log: platformMailLog(20), outbox: ownerAlertStatus() });
+  } catch (error) { forwardControlPlaneError(error, next); }
 });
 
 export default router;

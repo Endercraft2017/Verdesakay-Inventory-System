@@ -1,5 +1,9 @@
 # SaaS / Multi-Tenancy Readiness — Schema Sweep
 
+Current security/recovery procedures and release evidence are maintained in the
+[production audit index](audits/README.md) and operations runbooks. Dated planning sections
+below do not supersede those procedures or establish release acceptance.
+
 > **Status:** Phases 1–8 landed (§10). Connection registry + async context (2026-08-28);
 > `platform.db` catalog + tenant-resolution middleware + provisioning CLI + `/api/signup`
 > (2026-08-29); per-tenant uploads + BYO AI key + `users.email`/password reset + plan
@@ -450,6 +454,13 @@ test-email button and a send log. Transport **Brevo** (HTTPS API) or **SMTP**: R
 outgoing SMTP below its Pro plan, so Brevo is the default recommendation. The API key / password
 is encrypted in `platform.db` (with `MAIL_SECRET_KEY` / `APP_SECRET` when set) and never returned.
 
+**Delivery follow-up (2026-10-19):** enabled signup alert intent now commits with workspace/local
+setup and is processed by a durable bounded cloud worker. Console Email alerts shows recent
+delivery state. Unknown sends do not automatically retry; provider acceptance is not inbox
+delivery. Mailbox changes cancel old unsent information. Inquiry/payment alerts still use the
+immediate path. See [signup alert outbox](operations/owner-alert-outbox.md) for exact states,
+retention, restore reconciliation and outstanding provider/operational acceptance.
+
 **First invoice:** the console's price list (per module per month + per login seat) prices the
 sign-up's quote; when every chosen module and the seat price have a price, the first month's
 invoice is issued automatically (due in 7 days) and the website shows the monthly total before
@@ -464,8 +475,8 @@ opens, a `trial`/`past_due` one becomes `active` (a `suspended` one is left alon
 (`public/js/modules/core/billing.js`), banner link, and the locked shell while awaiting payment.
 
 **Not built:** PayMongo (checkout + webhook, then subscriptions); automatic overdue → `past_due`;
-email/notification to the operator on a new sign-up or reported payment (the console badge counts
-payments to review); recurring monthly invoices (the operator issues them).
+transactional inquiry/payment alert intent and broader notification reconciliation/monitoring;
+recurring monthly invoices (the operator issues them).
 
 **Not verified:** the EWT / invoicing rules should be confirmed by the company's accountant.
 

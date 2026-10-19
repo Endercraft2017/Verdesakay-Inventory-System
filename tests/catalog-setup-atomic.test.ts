@@ -2,18 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest';
+import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { setupApp, cleanup, type TestContext } from './helpers';
-vi.mock('../src/platform/platform-mail', async original => ({ ...await original<typeof import('../src/platform/platform-mail')>(), notifyOwner: vi.fn(async () => {}) }));
 let ctx: TestContext, token: string;
-let notifyOwner: typeof import('../src/platform/platform-mail').notifyOwner;
 let platform: typeof import('../src/platform/platform'), db: typeof import('../src/shared/db'), billing: typeof import('../src/platform/billing');
 const auth = () => ({ Authorization: 'Bearer ' + token });
 const password = 'Synthetic atomic signup password';
 const signup = (slug: string) => ctx.api.post('/api/signup').send({ slug, company_name: slug, admin_username: 'owner', admin_password: password, admin_email: slug + '@example.test', modules: ['hr'], seats: 3 });
 beforeAll(async () => {
   process.env.SIGNUPS_OPEN = 'true'; process.env.PLATFORM_CONSOLE = 'true'; ctx = await setupApp();
-  notifyOwner = (await import('../src/platform/platform-mail')).notifyOwner;
+  (await import('../src/platform/platform-mail')).savePlatformMail({transport:'brevo',from_email:'alerts@example.test',alert_to:'owner@example.test'},'synthetic-outbox-key');
   platform = await import('../src/platform/platform'); db = await import('../src/shared/db'); billing = await import('../src/platform/billing');
   billing.setBillingSettings({ module_prices: { hr: 100 }, seat_price: 20 });
   (await import('../src/platform/owner-analytics')).prepareOwnerAnalytics();
@@ -31,7 +29,7 @@ describe('public signup publication includes local setup', () => {
     ['invoice-audit', 'provisioning_log', 'INSERT', "NEW.action='billing'"],
     ['publication-audit', 'provisioning_log', 'INSERT', "NEW.action='create'"],
   ])('rolls back %s failure, sends no alert and permits one complete retry', async (phase, table, operation, condition) => {
-    const slug = 'atomic-' + phase; vi.mocked(notifyOwner).mockClear();
+    const slug = 'atomic-' + phase;
     const database = platform.platformDb();
     database.exec(`CREATE TRIGGER atomic_setup_failure BEFORE ${operation} ON ${table} WHEN ${condition} BEGIN SELECT RAISE(ABORT,'synthetic private setup failure'); END`);
     try {
@@ -41,12 +39,12 @@ describe('public signup publication includes local setup', () => {
       expect(platform.getTenant(slug)).toBeNull(); expect(fs.existsSync(path.join(db.DATA_DIR, slug + '.db'))).toBe(false);
       expect(rows('billing_invoices', 'tenant_slug', slug)).toEqual([]);
       expect(rows('tenant_owner_details', 'slug', slug)).toEqual([]); expect(platform.listProvisioningLog(slug)).toEqual([]);
-      expect(notifyOwner).not.toHaveBeenCalled();
+      expect(rows('platform_owner_outbox', 'tenant_slug', slug)).toEqual([]);
     } finally { database.exec('DROP TRIGGER atomic_setup_failure'); }
     const response = await signup(slug); expect(response.status, JSON.stringify(response.body)).toBe(201);
     expect(platform.getTenant(slug)).toMatchObject({ awaiting_payment: 1 });
     expect(rows('billing_invoices', 'tenant_slug', slug)).toHaveLength(1);
-    expect(rows('tenant_owner_details', 'slug', slug)).toHaveLength(1); expect(notifyOwner).toHaveBeenCalledTimes(1);
+    expect(rows('tenant_owner_details', 'slug', slug)).toHaveLength(1); expect(rows('platform_owner_outbox', 'tenant_slug', slug)).toHaveLength(1);
   });
 });
 

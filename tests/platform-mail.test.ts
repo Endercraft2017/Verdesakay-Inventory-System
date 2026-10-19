@@ -83,7 +83,7 @@ describe('owner alerts', () => {
     await ctx.api.put('/_platform/api/billing/settings').set(opHdr()).send({ module_prices: { hr: 3000 }, seat_price: 100, gcash_number: '09171234567' });
     const s = await ctx.api.post('/api/signup').set('Host', host).send({ slug: 'cruzfoods', company_name: 'Cruz Foods', admin_username: 'owner', admin_password: 'secret123-test-only', admin_email: 'ana@cruz.test', seats: 2, modules: ['hr'] });
     expect(s.status, JSON.stringify(s.body)).toBe(201);
-    await tick();
+    await (await import('../src/platform/owner-alert-outbox')).processOneOwnerAlert();
     expect(mail._testOutbox.at(-1)!.subject).toBe('New sign-up: Cruz Foods');
 
     const login = await ctx.api.post('/cruzfoods/api/auth/login').set('Host', host).send({ username: 'owner', password: 'secret123-test-only' });

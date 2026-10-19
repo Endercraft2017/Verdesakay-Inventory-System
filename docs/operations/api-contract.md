@@ -26,3 +26,13 @@ workspaces return 409; invalid key format returns 400. Errors are not cached. No
 retain the existing behavior and must reconcile uncertain acknowledgements before creating again.
 This is not a general API idempotency/OpenAPI completeness claim. The full storage, password
 verifier, competing-writer, retention and recovery contract is in workspace-onboarding.md.
+
+## Signup alert status (19 October 2026)
+
+The authenticated console mail responses add outbox: up to 30 recent signup event IDs, tenant
+slugs, state/attempt counts, safe error codes and timestamps. Queued message/recipient/credential
+binding is omitted. Console API responses use Cache-Control: no-store, including errors/auth
+denial. Existing auth/fresh-proof policies apply; no new mutating retry/resend route is added.
+Signup 201 means catalog/local setup/eligible alert intent committed, not provider/inbox delivery.
+An enqueue write failure rolls creation back; notification uncertainty after commit never rolls
+the workspace back. See owner-alert-outbox.md for exact scope, states and limitations.

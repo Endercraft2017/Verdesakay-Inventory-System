@@ -1,0 +1,63 @@
+{
+  "date": "2026-10-19",
+  "base_commit": "fde2dd3d69c4fad2c894f86a1eae68219df419bd",
+  "scope": "Signup owner-alert transactional outbox/worker, conservative transport outcomes, redacted console delivery status and mail error/cache boundaries",
+  "full_run": {
+    "files_passed": 303,
+    "tests_passed": 3094,
+    "failed": 0,
+    "duration_seconds": 590.48
+  },
+  "initial_focused": {
+    "files": 4,
+    "passed": 56,
+    "failed": 2,
+    "cause": "Process fixtures reused one directory (EEXIST); fixture paths corrected, not a product defect."
+  },
+  "intermediate_focused": {
+    "files_passed": 4,
+    "tests_passed": 59,
+    "duration_seconds": 56.59
+  },
+  "final_focused": {
+    "files_passed": 2,
+    "tests_passed": 39,
+    "duration_seconds": 17.15,
+    "new_outbox_cases": 32
+  },
+  "first_playwright": {
+    "passed": 19,
+    "failed": 0,
+    "duration_seconds": 53.8
+  },
+  "final_playwright": {
+    "passed": 19,
+    "failed": 0,
+    "duration_seconds": 52.8
+  },
+  "interrupted_full_runs": [
+    {
+      "exit_code": 130,
+      "counted_as_completed": false,
+      "reason": "Include discovered console async test-mail error and private cache fixes."
+    },
+    {
+      "exit_code": 130,
+      "counted_as_completed": false,
+      "reason": "Fix actual SMTP active-socket cancellation gap; add real stalled-connection test."
+    }
+  ],
+  "console_fix_playwright": {
+    "passed": 19,
+    "failed": 0,
+    "duration_seconds": 53.7
+  },
+  "actual_server_startup": "passed: previously committed synthetic signup accepted once; stale inflight unknown without resend",
+  "typecheck": "passed",
+  "db_types": "passed; generated tenant types unchanged",
+  "secret_scan": "staged increment clean; final commit hook scans again",
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "hosted_rollout_verified": false,
+  "limitations": "Signup only. Inquiry/payment alerts remain immediate; provider reconciliation/reviewed resend, backlog monitoring/alerting, capacity, approved retention and live provider/restore/hosting/device acceptance remain. No exactly-once/inbox or complete-control PASS claim."
+}

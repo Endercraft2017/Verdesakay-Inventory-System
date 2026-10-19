@@ -1,0 +1,38 @@
+
+> otom@1.0.0 test:e2e
+> playwright test
+
+[WebServer] (node:33563) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:33576) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:33587) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 19 tests using 1 worker
+
+(node:33607) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/e2e/control-plane-settings.spec.ts:3:1 › owner settings retain edited fields after a real database failure and accept a corrected save (1.5s)
+  ✓   2 tests/e2e/creation-receipts.spec.ts:3:1 › console retries a committed request whose response was lost without creating a second generated slug (2.9s)
+  ✓   3 tests/e2e/creation-receipts.spec.ts:35:1 › website retries a committed signup after a lost response using the same creation key (2.6s)
+  ✓   4 tests/e2e/mail-outbox.spec.ts:3:1 › owner sees uncertain signup delivery, retains it on refresh failure and sends no retry (1.2s)
+[WebServer] (node:33587) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+[WebServer] (node:33587) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+  ✓   5 tests/e2e/passkeys.spec.ts:3:1 › console verifies real WebAuthn registration and sign-in, rejects replay, and protects the last key (3.2s)
+  ✓   6 tests/e2e/quickbooks-exports.spec.ts:3:1 › administrator sees durable export failures, handles status errors and refreshes safely (2.7s)
+  ✓   7 tests/e2e/readiness.spec.ts:17:1 › desktop: wrong password, keyboard login, stock journey and server logout (2.3s)
+  ✓   8 tests/e2e/readiness.spec.ts:56:1 › mobile: 360px layout, core navigation, offline failure and sign out (1.6s)
+  ✓   9 tests/e2e/readiness.spec.ts:89:1 › login forms: labelled controls, keyboard access and axe scan (1.3s)
+  ✓  10 tests/e2e/readiness.spec.ts:98:1 › API attack surface: injection, oversized inputs, CORS and private caching (18ms)
+  ✓  11 tests/e2e/readiness.spec.ts:110:1 › browser: separate users cannot edit each other’s notes; role changes revoke cookies (2.9s)
+  ✓  12 tests/e2e/readiness.spec.ts:142:1 › browser: message HTML is a non-executable attachment and policy links are usable (1.9s)
+  ✓  13 tests/e2e/readiness.spec.ts:164:1 › browser: uploaded JavaScript cannot execute as a self-hosted script (1.3s)
+  ✓  14 tests/e2e/readiness.spec.ts:182:1 › browser: authenticator enrollment, one-use recovery and mobile factor sign-in (10.0s)
+  ✓  15 tests/e2e/readiness.spec.ts:250:1 › assisted recovery: email-link redemption requires authenticator enrollment before workspace access (3.6s)
+  ✓  16 tests/e2e/readiness.spec.ts:277:1 › recovery cancellation: GET previews are inert and owner confirmation is single-use (1.3s)
+  ✓  17 tests/e2e/signup-atomic.spec.ts:3:1 › website signup retains input after invoice failure and retries the same workspace successfully (3.5s)
+  ✓  18 tests/e2e/step-up.spec.ts:5:1 › stale admin changes require accessible password + factor confirmation and preserve cancelled work (3.1s)
+  ✓  19 tests/e2e/support-errors.spec.ts:3:1 › support submission hides a real storage failure, retains the draft and accepts a corrected retry (1.9s)
+
+  19 passed (53.8s)

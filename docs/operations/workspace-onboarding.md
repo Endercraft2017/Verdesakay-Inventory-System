@@ -9,7 +9,8 @@ Both callers validate their input before provisioning. The core exclusively rese
 prepares the tenant database, including chosen owner credentials. It then starts the catalog
 publication savepoint in platform.db and inserts the tenant/company ID. A trusted synchronous
 setup callback runs on the same catalog connection before the core creation audit and release.
-No await, mail, provider call or tenant/file mutation belongs in that callback. Tenant database
+No await, external mail/provider call or tenant/file mutation belongs in that callback.
+The signup alert intent is a synchronous catalog write inside it; delivery runs separately. Tenant database
 reads used to prepare the console response use the already-prepared connection.
 
 Public signup computes the price quote and initializes billing/owner-contact schema before
@@ -41,7 +42,7 @@ tables as ready. Stored-subscription parsing remains separate from public-input 
 | Successful keyed setup, failed HTTP acknowledgement | Same scope/key/parsed details return the original 201 for 24 hours; no additional workspace, invoice or notification | Receipt tests and actual browser dropped-response tests |
 | Receipt insertion or later publication audit fails | Receipt/workspace/local setup roll back together; same key can retry | Real SQLite faults |
 | Expired key, changed request or missing/purged workspace | Conflict; never reapply an expired key | Receipt lifecycle tests |
-| Notification fails or process exits after commit | Local workspace remains ready; delivery may be lost | Notification delivery is still best effort |
+| Signup notification fails or process exits after commit | Durable intent survives; interrupted/uncertain sends are not blindly retried | owner-alert-outbox.md and worker/process tests |
 | File cleanup fails or ownership is uncertain | Preserve artifacts and emit safe cleanup event | Core recovery tests and runbook |
 
 Signup routes now expose only authored typed validation/conflict errors. Unexpected exceptions
@@ -114,14 +115,9 @@ bot defense. Broader signup admission/async work and hosted abuse/capacity accep
 
 - Broader create/import/API retry coverage, signup work admission and distributed abuse/capacity
   acceptance; current receipt protection requires the same key and covered route.
-- A transactional notification outbox and bounded worker with retry, delivery/unknown state,
-  redaction and operational alerting. Current owner notification runs only after local commit
-  and is best effort; its attempt log is not a queue. Required acceptance: enqueue the local
-  event in publication; claim work durably after commit; bound attempts/timeouts; distinguish
-  safe retry from uncertain provider acceptance; preserve disabled-alert/recipient policy and
-  expose safe operational status. Test interruption before enqueue, after commit, during send
-  and before receipt persistence. No external send belongs inside publication. This remains
-  unimplemented and is not an exactly-once delivery promise.
+- Signup has a transactional alert outbox and bounded worker (owner-alert-outbox.md). Inquiry/
+  payment intent, reviewed resend/provider reconciliation, backlog monitoring and broader
+  notification acceptance remain. Uncertain sends require review, not automatic replay.
 - Real provider, hosted filesystem, Windows, power-loss and multi-host acceptance, plus review
   of imported schema/credential state and legacy interrupted artifacts.
 - Broader billing lifecycle acceptance, including commercial renewal/calendar rules; this fix
@@ -139,3 +135,6 @@ https://docs.stripe.com/api/idempotent_requests and OWASP password storage
 https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html .
 Our contract differs from Stripe: completed successes only, UUID-v4-only keys and permanent
 tombstones. This is an application contract, not a claim that an Idempotency-Key RFC is final.
+
+Signup notification follow-up: owner-alert-outbox.md supersedes earlier best-effort signup
+notification limitations only. Inquiry/payment alerts still send immediately.

@@ -1,3 +1,4 @@
+import { processOneOwnerAlert } from './src/platform/owner-alert-outbox';
 import { pruneCreationReceipts } from './src/platform/onboarding-receipts';
 import {processOneExport} from './src/modules/quickbooks/export-jobs';
 import { requireProductionTransport } from './src/shared/hosting';
@@ -56,7 +57,19 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-// One global sequential pass: bounded provider concurrency and no overlapping timer passes.
+// Independent bounded workers; each prevents overlapping passes within this process.
+let ownerAlertRunning = false;
+async function ownerAlertPass() {
+  if (DEPLOY_MODE !== 'cloud' || ownerAlertRunning) return;
+  ownerAlertRunning = true;
+  try { await processOneOwnerAlert(); }
+  catch { console.error('[platform-mail] outbox worker failed; inspect durable delivery state'); }
+  finally { ownerAlertRunning = false; }
+}
+if (DEPLOY_MODE === 'cloud') {
+  setInterval(() => { void ownerAlertPass(); }, 15_000).unref();
+  setImmediate(() => { void ownerAlertPass(); });
+}
 let exportPassRunning=false;
 async function exportPass(){
   if(DEPLOY_MODE!=='cloud'||exportPassRunning)return;

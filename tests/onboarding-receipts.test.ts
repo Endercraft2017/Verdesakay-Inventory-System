@@ -3,12 +3,10 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
-import { beforeAll, afterAll, expect, it, vi } from 'vitest';
+import { beforeAll, afterAll, expect, it } from 'vitest';
 import { setupApp, cleanup, type TestContext } from './helpers';
-vi.mock('../src/platform/platform-mail', async original => ({ ...await original<typeof import('../src/platform/platform-mail')>(), notifyOwner: vi.fn(async () => {}) }));
 let ctx: TestContext, token: string, otherToken: string;
 let platform: typeof import('../src/platform/platform'), receipts: typeof import('../src/platform/onboarding-receipts'), billing: typeof import('../src/platform/billing');
-let notifyOwner: typeof import('../src/platform/platform-mail').notifyOwner;
 const password = 'Synthetic receipt signup password';
 const input = (slug: string) => ({ slug, company_name: slug, admin_username: 'owner', admin_password: password, admin_email: slug + '@example.test', modules: ['hr'], seats: 3 });
 const signup = (body: object, key?: string) => {
@@ -19,7 +17,7 @@ const consoleInput = { name: 'Receipt sandbox', admin_username: 'owner', admin_p
 beforeAll(async () => {
   process.env.SIGNUPS_OPEN = 'true'; process.env.PLATFORM_CONSOLE = 'true'; ctx = await setupApp();
   platform = await import('../src/platform/platform'); receipts = await import('../src/platform/onboarding-receipts'); billing = await import('../src/platform/billing');
-  notifyOwner = (await import('../src/platform/platform-mail')).notifyOwner;
+  (await import('../src/platform/platform-mail')).savePlatformMail({transport:'brevo',from_email:'alerts@example.test',alert_to:'owner@example.test'},'synthetic-outbox-key');
   billing.setBillingSettings({ module_prices: { hr: 100 }, seat_price: 20 });
   const users = await import('../src/platform/platform-users');
   users.upsertPlatformUser('receipt-operator', password); users.upsertPlatformUser('other-operator', password);
@@ -29,14 +27,14 @@ beforeAll(async () => {
 afterAll(() => { delete process.env.SIGNUPS_OPEN; delete process.env.PLATFORM_CONSOLE; cleanup(ctx); });
 
 it('replays the original signup/invoice across changed prices and a reopened catalog, without another notification', async () => {
-  const key = randomUUID(), body = input('receipt-public'); vi.mocked(notifyOwner).mockClear();
+  const key = randomUUID(), body = input('receipt-public');
   const first = await signup(body, key); expect(first.status).toBe(201);
   billing.setBillingSettings({ module_prices: { hr: 200 }, seat_price: 30 });
   platform._resetPlatformDb();
   const replay = await signup({ ...body, modules: ['hr'] }, key.toUpperCase());
   expect(replay.status).toBe(201); expect(replay.headers['idempotency-replayed']).toBe('true'); expect(replay.body).toEqual(first.body);
   expect(platform.platformDb().prepare('SELECT * FROM billing_invoices WHERE tenant_slug=?').all(body.slug)).toHaveLength(1);
-  expect(notifyOwner).toHaveBeenCalledTimes(1);
+  expect(platform.platformDb().prepare('SELECT * FROM platform_owner_outbox WHERE tenant_slug=?').all(body.slug)).toHaveLength(1);
   const row = platform.platformDb().prepare('SELECT * FROM platform_creation_receipts WHERE tenant_slug=?').get(body.slug)!;
   expect(row.verifier).toMatch(/^scrypt\$v1\$/); expect(JSON.stringify(row)).not.toContain(password);
   expect(JSON.stringify(row)).not.toContain(key); expect(JSON.stringify(row)).not.toContain(body.admin_email);

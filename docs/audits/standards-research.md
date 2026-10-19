@@ -180,3 +180,32 @@ reuse: only completed 201s are stored; expired payloads are cleared but tombston
 The documented header is an application API contract; no finalized IETF idempotency standard,
 provider certification, exactly-once notification delivery or complete-control PASS is claimed.
 Real browser response loss and process exit evidence establish only the tested local boundaries.
+
+### Signup alert outbox and provider uncertainty — 19 October 2026
+
+Primary sources reviewed: AWS Prescriptive Guidance transactional outbox
+https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/transactional-outbox.html
+(same-transaction event intent; duplicate/message-consumer and rollback concerns), Brevo
+https://developers.brevo.com/reference/send-transac-email (HTTP 201 acceptance) and
+https://developers.brevo.com/docs/api-limits (HTTP 429 throttling), Nodemailer
+https://nodemailer.com/smtp (TLS and connection/greeting/idle timeout options), and SMTP RFC 5321
+https://www.rfc-editor.org/rfc/rfc5321.html (acceptance/responsibility, timeouts and duplicate risk).
+No AWS broker or other infrastructure was provisioned. The inaccessible candidate Brevo rate-limit
+headers page was not treated as evidence; generic Retry-After seconds/date is an explicit local
+contract, not a claim that every Brevo response includes it.
+
+The local implementation commits signup intent with catalog setup, claims before network I/O
+and preserves unknown outcomes instead of assuming rejection or exactly-once mail. Explicit 429
+alone has automatic bounded retry. SMTP TLS, deadlines, partial-recipient uncertainty and provider
+diagnostic redaction apply to the shared platform adapter, not all tenant mail. Console privacy/
+async error boundary checks supplement transport tests. Local SQLite faults, actual child exits/
+server startup and Chromium status-failure tests do not establish real inbox delivery, hosted
+operation, supported-device acceptance or complete-control PASS. Other notification paths remain
+outside transactional coverage. See owner-alert-outbox.md and owner-outbox-* evidence.
+
+Installed Nodemailer 10.1.1 source was also reviewed for cancellation: the non-pooled transport's
+close emits a close event/releases auth resources without closing its active SMTP connection.
+The adapter therefore owns the supported caller-supplied socket, explicitly destroys it on
+completion/deadline and bounds DNS/connection/greeting/idle waits. A real stalled local SMTP
+connection verifies teardown rather than relying solely on a mocked close method. No private
+Nodemailer connection fields or dependency fork were introduced.

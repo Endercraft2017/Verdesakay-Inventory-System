@@ -482,3 +482,67 @@ new/no-key reconciliation. A reload/new modal loses the in-memory key; old/no-ke
 legacy behavior. Logical pruning is not forensic or backup erasure. No distributed exactly-once,
 real Windows/Android/Intuit/hosting/capacity acceptance, advisory refresh, complete-control PASS,
 CI-green or deployment claim is made.
+
+
+## Signup owner-alert durability — 19 October 2026
+
+Base fde2dd3d69c4fad2c894f86a1eae68219df419bd. High scoped lost-alert gap addressed for signup:
+enabled alert intent now commits with workspace/local setup/invoice/creation receipt/core audit.
+A bounded cloud worker claims before sending and records guarded acceptance/log together. Brevo
+429 alone retries automatically, with persisted backoff/Retry-After and five total attempts.
+Uncertain/partial/interrupted sends require review; changed configuration cancels old unsent data.
+
+The shared platform adapter now requires SMTP TLS, bounds send duration, refuses Brevo redirects
+and stores authored failure codes. The console test-mail async database/log rejection is caught
+and forwarded to the correlated generic error boundary. Console APIs use no-store even on auth
+denial. A redacted recent signup-status panel refreshes without a blind resend action. These
+changes do not extend transactional durability to inquiry/payment/recovery/tenant-mail paths.
+
+| Check | Completed result |
+|---|---|
+| Full `npm test -- --fileParallelism --maxWorkers=2` | 303 files / 3094 tests passed, 590.48s |
+| Corrected intermediate focused run | 4 files / 59 passed, 56.59s |
+| Final focused outbox + platform mail | 2 files / 39 passed, 17.15s; includes 32 new outbox cases |
+| First complete Playwright run | 19 passed, 53.8s |
+| Final `npm run test:e2e` | 19 passed, 52.8s |
+| `npm run typecheck` | Passed |
+| `npm run db:types` | Passed; no generated tenant-type diff |
+| Actual server startup smoke | Committed synthetic signup alert accepted once; stale claim unknown without resend |
+| Gitleaks staged increment | Clean; final commit hook reruns scan |
+| Diff/whitespace | Passed |
+
+Focused cases cover catalog reopen, one local claim, disabled/configuration/credential/workspace
+changes, retry budget/delay, provider status/exception redaction, SMTP partial acceptance and
+absolute deadline, including real stalled TCP teardown, retention and authenticated/redacted/no-store status. SQLite faults verify
+enqueue rollback plus post-provider acknowledgement/log failure. Three real process exits occur
+before claim commit, after claim and after simulated provider acceptance. Restart processes safe
+pending work once, while durable interrupted claims become unknown without sending again. The
+local concurrency case is not simultaneous multi-process/host load or a hosting certification.
+
+Chromium reads a synthetic unknown event from the real status API, preserves it on refresh 500,
+recovers refresh and performs no send/resend. The actual startup script is retained in evidence;
+run from repository root with work/ present and dependencies installed. It uses a private temp
+catalog, local HTTP health and NODE_ENV=test transport; no real email/provider/customer secrets.
+
+Initial focused run: two failures/56 passes from repeated process-fixture mkdir paths (EEXIST),
+corrected to separate directories. That is a test-fixture correction, not a product failure.
+Two preliminary full runs were deliberately interrupted (exit 130): first to include the console
+error/cache fixes; second after installed Nodemailer source showed that transport.close alone
+does not abort active I/O. The adapter now owns/destroys its socket, verified against a real
+stalled local SMTP connection. Both partial outputs remain and are not completed passes. An
+intermediate typecheck rejected unsupported address-object handling against the installed
+string-list result type; it was removed and the initial compiler output retained. Final runtime/
+tests were frozen before the fresh full run; only documentation/evidence followed.
+The final full/browser results describe the corrected code; no interrupted run is reported green.
+
+See owner-outbox-* scope/verification/logs/browser metadata/startup script and
+operations/owner-alert-outbox.md. Documentation includes exact disabled-alert, mailbox generation,
+retention, backup reconciliation, API/status and failure/incident rules, plus catalog/pipelines,
+governance/draft privacy, release checklist, research, handoff and scorecard metadata.
+
+Remaining: inquiry/payment transactional intent, provider reconciliation/reviewed resend, queue
+backlog monitoring/external alerts, capacity, approved retention and live Brevo/SMTP/restore/
+hosting/Windows acceptance. Payload pruning is logical, not backup/WAL forensic erasure. Minimal
+event metadata remains pending governance approval. No new dependency/advisory snapshot, tenant
+schema version, full notification durability, exactly-once/inbox delivery, CI-green, hosted-rollout
+verification or complete-control PASS is claimed. Whole-control totals and release hold remain.

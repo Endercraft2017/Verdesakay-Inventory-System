@@ -1,0 +1,27 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+ ❯ tests/owner-alert-outbox.test.ts (26 tests | 2 failed) 8523ms
+   × recovers a real process exit at after-claim without blindly resending 2ms
+   × recovers a real process exit at after-provider-acceptance without blindly resending 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/owner-alert-outbox.test.ts > recovers a real process exit at after-claim without blindly resending
+ FAIL  tests/owner-alert-outbox.test.ts > recovers a real process exit at after-provider-acceptance without blindly resending
+Error: EEXIST: file already exists, mkdir '/tmp/vds-test-PhsF5M/outbox-process'
+ ❯ tests/owner-alert-outbox.test.ts:128:57
+    126|
+    127| it.each(['before-claim-commit','after-claim','after-provider-acceptanc…
+    128|   const root=path.join(ctx.tmpDir,'outbox-process'); fs.mkdirSync(root…
+       |                                                         ^
+    129|   const env={PATH:process.env.PATH,NODE_ENV:'test',DEPLOY_MODE:'cloud'…
+    130|     DB_PATH:path.join(root,'default.db'),DATA_DIR:path.join(root,'tena…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  2 failed | 56 passed (58)
+   Start at  05:11:30
+   Duration  54.55s (transform 1.72s, setup 64ms, import 336ms, tests 53.66s, environment 0ms)

@@ -16,7 +16,7 @@ import { createTenant } from './provisioning';
 import { SIGNUPS_OPEN, tenantPublicUrl, getTenant, setAwaitingPayment } from './platform';
 import { getBillingSettings, priceListQuote, createInvoice, invoiceView } from './billing';
 import { rateLimitKey } from '../shared/device';
-import { notifyOwner } from './platform-mail';
+import { prepareOwnerAlerts, enqueueSignupAlert } from './owner-alert-outbox';
 import { forwardControlPlaneError } from './request-errors';
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
@@ -47,8 +47,9 @@ router.post('/', signupLimiter, (req, res, next) => {
     const modulePrices: Record<string, number> = {};
     for (const m of quote.modules) if (typeof prices.module_prices[m] === 'number') modulePrices[m] = prices.module_prices[m]!;
     prepareOwnerAnalytics();
+    prepareOwnerAlerts();
     const result: { invoice: ReturnType<typeof invoiceView> | null; response?: unknown } = { invoice: null };
-    const { slug } = createTenant({
+    createTenant({
       slug: input.slug,
       name: input.company_name,
       admin_username: input.admin_username,
@@ -79,13 +80,12 @@ router.post('/', signupLimiter, (req, res, next) => {
         invoice: invoice && { reference: invoice.reference, amount: invoice.amount, net_if_withheld: invoice.net_if_withheld, due_on: invoice.due_on },
       };
       saveCreationReceipt(receipt, slug, result.response);
+      enqueueSignupAlert(slug, `New sign-up: ${input.company_name}`, [
+        `${input.company_name} signed up on the website (/${slug}) and is waiting to pay.`,
+        input.admin_email ? `Email: ${input.admin_email}` : '',
+        invoice ? `First invoice ${invoice.reference}: ₱${invoice.amount}` : 'No invoice yet — issue one in Billing.',
+      ]);
     });
-    const invoice = result.invoice;
-    void notifyOwner('signup', `New sign-up: ${input.company_name}`, [
-      `${input.company_name} signed up on the website (/${slug}) and is waiting to pay.`,
-      input.admin_email ? `Email: ${input.admin_email}` : '',
-      invoice ? `First invoice ${invoice.reference}: ₱${invoice.amount}` : 'No invoice yet — issue one in Billing.',
-    ]);
     res.status(201).json(result.response);
   } catch (error) { forwardControlPlaneError(error, next); }
 });

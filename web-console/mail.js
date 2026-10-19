@@ -23,6 +23,16 @@
     }));
   }
 
+  function outboxRows(rows) {
+    var labels = { pending: 'Queued', retry: 'Waiting to retry', inflight: 'Sending', accepted: 'Accepted by provider',
+      blocked: 'Needs attention', unknown: 'Delivery uncertain — check provider records before resending', cancelled: 'Cancelled' };
+    if (!rows || !rows.length) return el('p', { class: 'muted', text: 'No queued signup alerts.' });
+    return el('div', {}, rows.map(function (r) {
+      return el('p', { text: r.tenant_slug + ': ' + (labels[r.state] || 'Needs attention') +
+        ' · attempts ' + r.attempts + (r.error_code ? ' · ' + r.error_code : '') });
+    }));
+  }
+
   async function open() {
     var d;
     try { d = await api('GET', '/mail'); } catch (ex) { toast(ex.message); return; }
@@ -41,6 +51,7 @@
     ]);
     var secretLabel = el('label', { id: 'm-secret-label' });
     var logBox = el('div', { id: 'm-log' }, [logRows(d.log)]);
+    var queueBox = el('div', { id: 'm-outbox', role: 'status', 'aria-live': 'polite' }, [outboxRows(d.outbox)]);
     var check = function (id, label, on) { return el('label', { for: id, style: 'font-weight:400' }, [el('input', { id: id, type: 'checkbox', checked: on ? 'checked' : null }), ' ' + label]); };
     var card = el('div', { class: 'card', style: 'max-width:560px;max-height:90vh;overflow-y:auto' }, [
       el('h2', { text: 'Email alerts' }),
@@ -64,7 +75,10 @@
         el('button', { class: 'btn ghost', id: 'm-test', type: 'button' }, ['Send test email']),
         el('button', { class: 'btn ghost', id: 'm-cancel', type: 'button' }, ['Close']),
       ]),
-      el('div', { class: 'field', style: 'margin-top:16px' }, [el('label', { text: 'Recent emails' }), logBox]),
+      el('div', { class: 'field', style: 'margin-top:16px' }, [el('h3', { text: 'Signup alert delivery' }),
+        el('p', { class: 'muted', text: 'Provider acceptance does not confirm inbox delivery. Inquiries and payment alerts still send immediately.' }),
+        queueBox, el('button', { class: 'btn ghost', id: 'm-refresh', type: 'button' }, ['Refresh delivery status'])]),
+      el('div', { class: 'field', style: 'margin-top:16px' }, [el('label', { text: 'Recent email attempts' }), logBox]),
     ]);
     var modal = el('div', { class: 'modal', id: 'modal' }, [card]);
     document.body.appendChild(modal);
@@ -93,8 +107,15 @@
       $('m-clear-secret').checked = false;
       $('m-secret').placeholder = r.settings.has_secret ? 'Saved — leave empty to keep it' : '';
       logBox.replaceChildren(logRows(r.log));
+      queueBox.replaceChildren(outboxRows(r.outbox));
       return r;
     }
+    $('m-refresh').addEventListener('click', async function () {
+      this.disabled = true;
+      try { var r = await api('GET', '/mail'); queueBox.replaceChildren(outboxRows(r.outbox)); $('m-err').textContent = ''; }
+      catch (ex) { $('m-err').textContent = ex.message; }
+      finally { this.disabled = false; }
+    });
     $('m-cancel').addEventListener('click', function () { modal.remove(); });
     $('m-save').addEventListener('click', async function () {
       try { await save(); toast('Email settings saved'); } catch (ex) { $('m-err').textContent = ex.message; }
@@ -104,8 +125,7 @@
       $('m-test').disabled = true; $('m-test').textContent = 'Sending…';
       try {
         await save();
-        var res = await fetch('/_platform/api/mail/test', { method: 'POST', headers: { Authorization: 'Bearer ' + C.token(), 'Content-Type': 'application/json' }, body: '{}' });
-        var r = await res.json();
+        var r = await api('POST', '/mail/test', {});
         if (r.log) logBox.replaceChildren(logRows(r.log));
         if (r.ok) toast('Test email sent — check your inbox (and spam)'); else $('m-err').textContent = r.error || 'The test email failed.';
       } catch (ex) { $('m-err').textContent = ex.message; }

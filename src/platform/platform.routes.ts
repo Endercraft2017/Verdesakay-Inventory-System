@@ -66,6 +66,7 @@ function normalizeModules(arr: unknown[]): string[] {
 
 // The console only exists on the apex / default host — never a tenant sub-domain.
 router.use((_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
   if ((tenantStore.getStore()?.slug ?? DEFAULT_TENANT) !== DEFAULT_TENANT) {
     res.status(404).json({ error: 'Not found' });
     return;

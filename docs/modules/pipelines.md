@@ -1390,7 +1390,7 @@ owned. Failed initialization is evicted from the database registry. Interrupted 
 leave unregistered files, which block retry rather than being adopted or overwritten. Review
 and quarantine follow the provisioning recovery runbook. Covered local signup/console setup
 now participates in publication (see the following pipeline); keyed completed response receipts
-also commit there. External notification delivery remains separate engineering work.
+also commit there. Signup alert intent/worker now uses the outbox below; other notification paths remain separate engineering work.
 
 
 ## Atomic local signup/console setup (2026-10-19)
@@ -1402,7 +1402,7 @@ Invoice numbering/row/audit share a nested savepoint with writer admission befor
 Console setup includes modules/default subscription, optional payment lock, inquiry link and
 response preparation. Any local setup/audit error rolls the catalog back and invokes owned-file
 cleanup. A process exit before commit leaves no setup rows and preserves an unregistered file
-for reviewed recovery. Notifications are best effort after commit. Lost HTTP responses and
+for reviewed recovery. Signup alert intent commits with setup; provider delivery runs afterward in a bounded worker. Lost HTTP responses and
 concurrent duplicates now use durable scoped receipts for the two covered HTTP routes; a new
 or absent key has no duplicate protection. See operations/workspace-onboarding.md.
 
@@ -1416,3 +1416,14 @@ or tenant sessions are saved. Startup/hourly/keyed-request pruning clears expire
 verifier while retaining duplicate-prevention tombstones. Browser keys live only in page/modal
 memory and survive same-form/passkey retry. Reload/new modal/new key is outside replay coverage.
 See operations/workspace-onboarding.md and creation-receipts audit evidence.
+
+## Durable signup owner alert (2026-10-19)
+
+Warm mailbox schema → signup publication/setup/invoice/response receipt → enqueue enabled alert
+with recipient/configuration snapshot → core audit/commit → cloud startup/15s worker → atomic
+claim → provider outside transaction → guarded result + attempt-log savepoint. Brevo 429 alone
+retries with persisted backoff/Retry-After and five-attempt budget; uncertainty/partial acceptance/
+stale claims never requeue automatically. Configuration change cancels old unsent information.
+Console Email alerts reads redacted recent status and preserves it if refresh fails. Payloads
+logically expire after terminal+24h or creation+7d; event metadata remains. Inquiry/payment paths
+still send immediately. See operations/owner-alert-outbox.md for recovery and acceptance limits.

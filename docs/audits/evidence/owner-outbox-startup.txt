@@ -1,0 +1,3 @@
+PASS: actual server.ts startup consumed a previously committed signup alert; one synthetic provider acceptance recorded.
+PASS: a stale inflight claim became unknown and was not resent.
+Disposable databases and NODE_ENV=test transport only; no real email, provider or deployment.

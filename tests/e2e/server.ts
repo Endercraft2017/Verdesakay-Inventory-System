@@ -71,6 +71,11 @@ platformDb().function('browser_signup_fault', () => {
 });
 platformDb().exec(`CREATE TRIGGER browser_signup_failure BEFORE INSERT ON billing_invoices
   WHEN NEW.tenant_slug='browser-atomic-failed' BEGIN SELECT browser_signup_fault(); END`);
+// Synthetic unresolved alert: status UI must never offer a blind resend.
+platformDb().prepare(`INSERT INTO platform_owner_outbox
+  (id,event_key,tenant_slug,recipients,subject,body,configuration_stamp,state,attempts,next_attempt_at,error_code,created_at,updated_at)
+  VALUES('browser-unknown-alert','signup:browser-support','browser-support','["owner@example.test"]',
+    'Synthetic private subject','Synthetic private message','synthetic','unknown',1,0,'interrupted_send',?,?)`).run(Date.now(),Date.now());
 const { createApp } = await import('../../src/app');
 const { attachWebSocket } = await import('../../src/shared/ws');
 const server = createApp().listen(Number(process.env.E2E_PORT || 4173), process.env.E2E_HOST || '127.0.0.1');
