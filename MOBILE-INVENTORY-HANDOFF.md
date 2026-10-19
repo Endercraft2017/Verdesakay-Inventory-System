@@ -1224,3 +1224,25 @@ scenarios passed locally against disposable real backend data; TypeScript and
 focused permission/lifecycle regressions passed. See
 `docs/reviews/mobile-planned-counts-validation.md`. PWA cache v115. No sandbox
 deployment or physical-device/printer acceptance is claimed.
+
+## Mobile deployed acceptance and CKD load entry guard (2026-10-19)
+
+Actual sandbox checks passed for custom permission grant/revoke, count/planned
+screens, PWA v115, offline shell and reconnect. The audit-only account was
+cleared/disabled; no operational sandbox stock/orders/counts were changed.
+
+A real-backend phone test found that a package-step deep link could bypass the
+chooser's CKD whole-kit check. The candidate now validates selected held
+quantities, whole CKD kits and partial authority at every package/handoff/proof/
+review/confirmation entry, including restored drafts. Mixed spare-only loads
+and complete-kit-plus-spare loads still work; extra components stay held for a
+later trip. Warehouse-out remains independently backend-guarded. Cache v116.
+
+Acceptance passed: nine CKD/photo/retry/concurrency scenarios, 35 virtual-camera QR and
+pipeline scenarios, five deployed custom-access scenarios, four worker-upgrade
+checks, TypeScript and 182 focused regression tests. This closes the requested
+real-backend CKD/mixed/extra-component browser acceptance gap. Large phone-style
+photo compression was measured before persistence/upload. See
+`docs/reviews/mobile-final-pipeline-validation.md` for environments and evidence.
+Physical phone/printer and actual disconnected site-PC checks remain distinct;
+the candidate v116 deployment is not implied by the deployed v115 probe.

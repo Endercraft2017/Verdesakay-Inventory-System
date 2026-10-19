@@ -71,6 +71,28 @@
     return c.package.filter(function(p){return items.indexOf(p.item_id)!==-1;});
   }
   function loadCount(c){return loadLines(c).reduce(function(n,l){return n+l.quantity;},0);}
+  // Every handoff entry point checks the chosen load, including bookmarks and restored drafts.
+  // Extra components may stay reserved, but components on this trip must form complete kits.
+  function ckdLoadProblem(c, rows) {
+    var parents=c.lines.filter(function(l){return l.fulfillment_mode==='ckd';});
+    if(!parents.length)return null;
+    rows=rows||loadLines(c);
+    if(!rows.length)return 'Choose at least one reserved unit or quantity.';
+    for(var i=0;i<rows.length;i++){
+      var selected=rows[i],line=c.lines.find(function(l){return l.id===selected.order_item_id&&physical(l);});
+      if(!line||!Number.isFinite(selected.quantity)||selected.quantity<=0||selected.quantity>held(line)+1e-9)return 'The selected load changed. Review the current reserved quantities.';
+    }
+    for(var j=0;j<parents.length;j++){
+      var parent=parents[j],parts=c.lines.filter(function(l){return l.parent_order_item_id===parent.id;}),counts=parts.map(function(l){var r=rows.find(function(r){return r.order_item_id===l.id;});return {ratio:l.quantity/parent.quantity,qty:r?r.quantity:0};});
+      if(!counts.some(function(x){return x.qty>0;}))continue;
+      if(counts.some(function(x){return !Number.isFinite(x.ratio)||x.ratio<=0;}))return 'The CKD component list changed. Refresh the order before releasing.';
+      var kits=Math.min.apply(null,counts.map(function(x){return Math.floor((x.qty+1e-9)/x.ratio);}));
+      if(!kits||counts.some(function(x){return Math.abs(x.qty-kits*x.ratio)>1e-9;}))return 'Choose complete CKD kits with all required components.';
+    }
+    if(rows.reduce(function(n,l){return n+l.quantity;},0)+1e-9<progress(c).need&&!(c.authorization.state==='valid'&&c.authorization.partial_allowed))return 'Sales must authorize this partial trip first.';
+    return null;
+  }
+
   /** Units needed / allocated across the order's stock lines. */
   function progress(c) {
     var need = 0, got = 0;
@@ -628,7 +650,7 @@
       var rows=collect(),total=rows.reduce(function(n,l){return n+l.quantity;},0),p=progress(c);
       if(!total)throw new Error('Choose at least one reserved unit or quantity.');
       if(total+1e-9<p.need&&!(c.authorization.state==='valid'&&c.authorization.partial_allowed))throw new Error('Sales must authorize this partial trip first.');
-      c.lines.filter(function(l){return l.fulfillment_mode==='ckd';}).forEach(function(parent){var parts=c.lines.filter(function(l){return l.parent_order_item_id===parent.id;}),counts=parts.map(function(l){var r=rows.find(function(r){return r.order_item_id===l.id;});return {ratio:l.quantity/parent.quantity,qty:r?r.quantity:0};});if(!counts.some(function(x){return x.qty>0;}))return;var kits=Math.min.apply(null,counts.map(function(x){return Math.floor((x.qty+1e-9)/x.ratio);}));if(!kits||counts.some(function(x){return Math.abs(x.qty-kits*x.ratio)>1e-9;}))throw new Error('Choose complete CKD kits with all required components.');});
+      var problem=ckdLoadProblem(c,rows);if(problem)throw new Error(problem);
       s.trip=rows;s.partial=total+1e-9<p.need;persist(c.order.id,s).then(function(){go({id:c.order.id,step:'package'});}).catch(saveError);
     }catch(e){mToast(e.message,'err');}};
     body.querySelector('#trip-back').onclick=function(){go({id:c.order.id,step:'scan'});};
@@ -697,6 +719,10 @@
       if (!step) return authority(view, c);
       if (authProblem(c.authorization) && step !== 'report') return authority(view, c);
       if (!c.order.warehouse_accepted_at && step !== 'report' && step !== 'receipt') return authority(view,c);
+      if(['package','handoff','override','proof','review','confirm'].indexOf(step)!==-1){
+        var loadError=ckdLoadProblem(c);
+        if(loadError){tripLoad(view,c);view.querySelector('.rk-body').insertAdjacentHTML('afterbegin',R.note('warn',mEsc(loadError)));return;}
+      }
       if(step==='correct')correct(view,c);
       else if(step==='trip')tripLoad(view,c);
       else if (step === 'scan') scan(view, c);
