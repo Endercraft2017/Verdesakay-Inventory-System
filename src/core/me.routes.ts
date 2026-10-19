@@ -130,14 +130,22 @@ const isFinalPayslip = (status: string) => status === 'paid';
 function myPayslips(emp: Emp, id?: number): FormRecord[] {
   const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
   if (!form) return [];
-  const names = [emp.name, ...previousNames(emp.id)];
+  // Old slips have no employee_id. A name that another employee currently uses, or once used,
+  // cannot establish ownership safely; a mistaken match would expose pay and its PDF.
+  const otherNames = new Set(queryAll<{ name: string }>(
+    `SELECT name FROM employees WHERE id != ?
+     UNION SELECT old_value AS name FROM employee_profile_changes
+       WHERE employee_id != ? AND field = 'name' AND old_value IS NOT NULL`, emp.id, emp.id
+  ).map((row) => row.name.trim().toLowerCase()));
+  const names = [...new Set([emp.name, ...previousNames(emp.id)])]
+    .filter((name) => !otherNames.has(name.trim().toLowerCase()));
   return queryAll<FormRecord>(
     `SELECT id, number, period, status, data, created_at, updated_at
      FROM form_records
      WHERE form_def_id = ?
        AND (json_extract(data, '$.employee_id') = ?
-            OR (json_extract(data, '$.employee_id') IS NULL
-                AND json_extract(data, '$.employee_name') IN (${names.map(() => '?').join(',')})))
+            ${names.length ? `OR (json_extract(data, '$.employee_id') IS NULL
+                AND json_extract(data, '$.employee_name') IN (${names.map(() => '?').join(',')}))` : ''})
        ${id != null ? 'AND id = ?' : ''}
      ORDER BY id DESC`,
     form.id, emp.id, ...names, ...(id != null ? [id] : [])

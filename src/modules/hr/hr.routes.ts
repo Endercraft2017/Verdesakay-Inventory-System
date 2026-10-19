@@ -371,7 +371,7 @@ router.get('/thirteenth-month', requirePermission('payroll.view'), (req, res) =>
     'SELECT data, created_at FROM form_records WHERE form_def_id = ?',
     form.id
   );
-  const byEmp = new Map<string, { basic_total: number; payslip_count: number }>();
+  const byEmp = new Map<string, { employee_id: number | null; employee_name: string; basic_total: number; payslip_count: number }>();
   const owner = payslipOwnerResolver(); // a renamed employee's payslips stay one row
   for (const r of records) {
     let d: Record<string, unknown>;
@@ -380,15 +380,16 @@ router.get('/thirteenth-month', requirePermission('payroll.view'), (req, res) =>
     if (String(payDate).slice(0, 4) !== year) continue;
     const name = owner.nameOf(d);
     if (!name) continue;
-    const cur = byEmp.get(name) ?? { basic_total: 0, payslip_count: 0 };
+    const key = owner.keyOf(d);
+    const cur = byEmp.get(key) ?? { employee_id: owner.idOf(d), employee_name: name, basic_total: 0, payslip_count: 0 };
     cur.basic_total += Number(d.basic_salary) || 0;
     cur.payslip_count += 1;
-    byEmp.set(name, cur);
+    byEmp.set(key, cur);
   }
 
-  const rows = [...byEmp.entries()]
-    .map(([employee_name, v]) => ({
-      employee_name,
+  const rows = [...byEmp.values()]
+    .map((v) => ({
+      employee_id: v.employee_id, employee_name: v.employee_name,
       basic_total: round2(v.basic_total),
       payslip_count: v.payslip_count,
       amount: round2(v.basic_total / 12),
@@ -417,7 +418,7 @@ router.get('/final-pay/:employeeId', requirePermission('payroll.view'), (req, re
     ? q.separation_date : new Date().toISOString().slice(0, 10);
   const year = sep.slice(0, 4);
 
-  const slips = yearPayslipRowsByEmployee(year).get(emp.name) ?? [];
+  const slips = yearPayslipRowsByEmployee(year).get(`employee:${emp.id}`)?.rows ?? [];
   const sum = (pick: (r: PayslipYearRow) => number | undefined) =>
     round2(slips.reduce((s, r) => s + (Number(pick(r)) || 0), 0));
 

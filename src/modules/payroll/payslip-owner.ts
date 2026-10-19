@@ -5,8 +5,8 @@
  *  approved information change, or an HR edit) an employee's old payslips would split off as a
  *  different person. This resolver maps a payslip to its employee by, in order:
  *    1. `data.employee_id` (stamped by generate-payslips from now on),
- *    2. the current employees.name,
- *    3. a former name recorded in employee_profile_changes (field 'name').
+ *    2. a name used by exactly one employee, current or former.
+ *  A reused or shared name cannot safely identify an unstamped legacy payslip.
  *  Reads the hr-owned employees / employee_profile_changes tables; no code dependency on hr.
  *  Build one per request/report — it snapshots the tables when created. */
 import { queryAll } from '../../shared/db';
@@ -16,26 +16,33 @@ export interface PayslipOwnerResolver {
   idOf(data: Record<string, unknown>): number | null;
   /** Current legal name for grouping/display; the name on the payslip if unresolvable. */
   nameOf(data: Record<string, unknown>): string;
+  /** Stable grouping key; unresolved legacy slips never merge into a known employee. */
+  keyOf(data: Record<string, unknown>): string;
   /** Every name this employee's payslips may carry (current + former). */
   namesFor(employeeId: number): string[];
 }
 
 export function payslipOwnerResolver(): PayslipOwnerResolver {
   const idToName = new Map<number, string>();
-  const nameToId = new Map<string, number>();
+  const nameToIds = new Map<string, Set<number>>();
+  const remember = (name: string, id: number) => {
+    const key = name.trim().toLowerCase();
+    if (!key) return;
+    const ids = nameToIds.get(key) ?? new Set<number>();
+    ids.add(id);
+    nameToIds.set(key, ids);
+  };
   for (const e of queryAll<{ id: number; name: string }>('SELECT id, name FROM employees')) {
     idToName.set(e.id, e.name);
-    nameToId.set(e.name.trim().toLowerCase(), e.id);
+    remember(e.name, e.id);
   }
-  // Former names. A current name always wins over someone else's former name.
-  const aliasToId = new Map<string, number>();
+  // A former name that another employee has used is ambiguous, even if someone holds it now.
   const formerById = new Map<number, string[]>();
   for (const r of queryAll<{ employee_id: number; old_value: string }>(
     `SELECT employee_id, old_value FROM employee_profile_changes
      WHERE field = 'name' AND old_value IS NOT NULL ORDER BY id`
   )) {
-    const key = r.old_value.trim().toLowerCase();
-    if (!nameToId.has(key)) aliasToId.set(key, r.employee_id);
+    remember(r.old_value, r.employee_id);
     formerById.set(r.employee_id, [...(formerById.get(r.employee_id) ?? []), r.old_value]);
   }
 
@@ -44,10 +51,15 @@ export function payslipOwnerResolver(): PayslipOwnerResolver {
     if (Number.isInteger(stamped) && idToName.has(stamped)) return stamped;
     const key = String(data.employee_name ?? '').trim().toLowerCase();
     if (!key) return null;
-    return nameToId.get(key) ?? aliasToId.get(key) ?? null;
+    const matches = nameToIds.get(key);
+    return matches?.size === 1 ? [...matches][0]! : null;
   };
   return {
     idOf,
+    keyOf(data) {
+      const id = idOf(data);
+      return id != null ? `employee:${id}` : `legacy:${String(data.employee_name ?? '').trim().toLowerCase()}`;
+    },
     nameOf(data) {
       const id = idOf(data);
       return id != null ? idToName.get(id)! : String(data.employee_name ?? '').trim();

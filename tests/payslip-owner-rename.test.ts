@@ -81,14 +81,15 @@ describe('payslip ownership across renames', () => {
     });
   });
 
-  it("never attributes a former name to a different employee who currently holds it", async () => {
+  it("does not guess ownership when a former name is reused by a different employee", async () => {
     const a = await ctx.api.post('/api/hr/employees').set(A()).send({ employee_no: 'RN-A', name: 'Sam Cruz', daily_rate: 600 });
     await rename(a.body.id, 'RN-A', 'Samuel Cruz');
     const b = await ctx.api.post('/api/hr/employees').set(A()).send({ employee_no: 'RN-B', name: 'Sam Cruz', daily_rate: 600 });
     const { payslipOwnerResolver } = await import('../src/modules/payroll/payslip-owner');
     const owner = payslipOwnerResolver();
-    expect(owner.idOf({ employee_name: 'Sam Cruz' })).toBe(b.body.id);        // current holder wins
+    expect(owner.idOf({ employee_name: 'Sam Cruz' })).toBeNull(); // either employee may own a legacy slip
     expect(owner.idOf({ employee_name: 'Sam Cruz', employee_id: a.body.id })).toBe(a.body.id); // stamped id wins
+    expect(owner.idOf({ employee_name: 'Sam Cruz', employee_id: b.body.id })).toBe(b.body.id);
     expect(owner.nameOf({ employee_name: 'Unknown Person' })).toBe('Unknown Person');
   });
 });
