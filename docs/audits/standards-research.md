@@ -149,3 +149,17 @@ a financial write after the save had already committed. The SQLite queue coalesc
 versions, persists bounded retries and preserves unknown outcomes for reconciliation. A local
 outbox is not an exactly-once remote guarantee. Real provider and operational acceptance remain;
 see operations/quickbooks-auto-exports.md. No AWS messaging service was provisioned.
+
+
+### Local onboarding transactions — 19 October 2026
+
+Primary SQLite documentation: https://www.sqlite.org/lang_transaction.html and
+https://www.sqlite.org/lang_savepoint.html (reviewed 19 October 2026). BEGIN/COMMIT does not nest;
+inner savepoint release remains subject to outer rollback. A write statement obtains the
+single catalog writer before invoice reference reads. The implementation uses these properties
+for signup payment/subscription/contact/first-invoice setup and console inquiry/module setup,
+with invoice/audit nested inside publication. Real SQLite faults and a child process exit test
+prove the tested rollback boundaries. Browser tests verify corrected retry and one invoice.
+This is not a distributed transaction, durable HTTP response replay, reliable mail delivery,
+power-loss/hosting certification or a substitute for broader billing policy acceptance. See
+operations/workspace-onboarding.md, catalog-setup evidence and validation-results.md.

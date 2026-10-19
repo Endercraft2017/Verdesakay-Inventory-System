@@ -69,11 +69,12 @@ function discardOwnedDatabase(slug: string, owned: ReturnType<typeof reserveData
     securityLog({ event: 'provisioning_cleanup_failed', tenant: slug });
   }
 }
-function publishTenant(input: Parameters<typeof createTenantRow>[0], action: string, detail: string) {
+function publishTenant(input: Parameters<typeof createTenantRow>[0], action: string, detail: string, setup?: (slug: string) => undefined) {
   const database = platformDb();
   database.exec('SAVEPOINT publish_tenant');
   try {
     createTenantRow(input);
+    setup?.(input.slug);
     logProvisioning(input.slug, action, detail);
     database.exec('RELEASE publish_tenant');
   } catch (error) {
@@ -82,7 +83,8 @@ function publishTenant(input: Parameters<typeof createTenantRow>[0], action: str
 }
 
 /** Create a tenant: catalog row + a fresh tenant DB seeded with the given admin login. */
-export function createTenant(input: CreateTenantInput): { slug: string } {
+/** setup is synchronous catalog-only work; never send mail or write tenant/files here. */
+export function createTenant(input: CreateTenantInput, setup?: (slug: string) => undefined): { slug: string } {
   if (input.plan !== undefined && !Object.hasOwn(PLANS, input.plan)) throw httpError(400, 'Unknown plan.');
   const slug = String(input.slug || '').toLowerCase().trim();
   if (!isValidSlug(slug)) {
@@ -104,7 +106,7 @@ export function createTenant(input: CreateTenantInput): { slug: string } {
       if (changed.changes !== 1) throw new Error('Owner initialization failed');
     });
     publishTenant({ slug, name: input.name.trim() || slug, plan: input.plan, status: input.status, is_sandbox: input.is_sandbox },
-      'create', JSON.stringify({ name: input.name, plan: input.plan ?? 'starter', admin: username }));
+      'create', JSON.stringify({ name: input.name, plan: input.plan ?? 'starter', admin: username }), setup);
   } catch (error) { discardOwnedDatabase(slug, owned); throw error; }
   return { slug };
 }

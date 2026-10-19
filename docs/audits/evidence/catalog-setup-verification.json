@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-19",
+  "base_commit": "a497c029079abe9b6b63386ebd757ae40a2e8e92",
+  "scope": "Atomic signup/console local setup and nested audited first invoices",
+  "full_run": {
+    "files_passed": 301,
+    "tests_passed": 3046,
+    "failed": 0,
+    "duration_seconds": 556.19
+  },
+  "existing_focused": {
+    "files_passed": 5,
+    "tests_passed": 70,
+    "duration_seconds": 66.41
+  },
+  "new_fault_process_tests": {
+    "files_passed": 1,
+    "tests_passed": 9,
+    "duration_seconds": 15.75
+  },
+  "playwright": {
+    "passed": 16,
+    "failed": 0,
+    "duration_seconds": 47.3
+  },
+  "typecheck": "passed",
+  "whole_control_statuses_changed": false,
+  "deployed": false,
+  "limitations": "Durable HTTP response receipts/generated-slug duplicate handling, notification outbox/delivery and other release gates remain open; no live acceptance or exactly-once guarantee."
+}

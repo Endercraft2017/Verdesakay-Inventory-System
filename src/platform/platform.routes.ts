@@ -28,7 +28,7 @@ import billingConsoleRoutes from './billing-console.routes';
 import inquiriesConsoleRoutes from './inquiries-console.routes';
 import platformMailRoutes from './platform-mail-console.routes';
 import { updateInquiry, getInquiry } from './inquiries';
-import { tenantBillingSummary } from './billing';
+import { tenantBillingSummary, getBillingSettings } from './billing';
 import { tenantAnalytics, saveOwnerDetails, addSupport, updateSupport, replySupport } from './owner-analytics';
 import { saveSubscription, subscriptionView } from './subscription';
 import { tenantUsage } from './quota';
@@ -518,7 +518,10 @@ router.post('/tenants', (req: Request, res: Response, next) => {
   try {
     const b = parseBody(platformCreateTenantSchema, req.body);
     const modules = b.modules === undefined ? undefined : normalizeModules(b.modules);
-    const { slug } = createTenant({
+    getBillingSettings(); // Warm cached schema outside the publication savepoint.
+    const inquiry = b.inquiry_id ? getInquiry(b.inquiry_id) : null;
+    let view: ReturnType<typeof tenantView> | undefined;
+    createTenant({
       slug: b.slug || availableSlug(b.name),
       name: String(b.name || ''),
       admin_username: String(b.admin_username || ''),
@@ -526,26 +529,27 @@ router.post('/tenants', (req: Request, res: Response, next) => {
       admin_email: b.admin_email,
       is_sandbox: b.is_sandbox,
       plan: b.plan ? String(b.plan) : undefined,
+    }, slug => {
+      // An explicit module set at creation time (optional).
+      if (Array.isArray(b.modules)) {
+        const list = modules!;
+        setTenantModules(slug, list);
+        logProvisioning(slug, 'modules', JSON.stringify(list));
+      }
+      if (!b.plan && !Array.isArray(b.modules)) {
+        saveSubscription(slug, { mode: 'per_module', bundle: 'starter', modules: [], seat_limit: null,
+          bundle_price: null, module_prices: {}, seat_price: null });
+      }
+      // Optional: keep it on the Billing screen until the first payment is confirmed (billing.ts).
+      if (b.awaiting_payment) { setAwaitingPayment(slug, true); logProvisioning(slug, 'update', 'locked until first payment'); }
+      // Created from a website inquiry: link the two so the inquiry shows its workspace.
+      if (b.inquiry_id && inquiry) {
+        updateInquiry(b.inquiry_id, { tenant_slug: slug });
+        logProvisioning(slug, 'inquiry', `created from website inquiry #${b.inquiry_id}`);
+      }
+      view = tenantView(getTenant(slug)!);
     });
-    // An explicit module set at creation time (optional).
-    if (Array.isArray(b.modules)) {
-      const list = modules!;
-      setTenantModules(slug, list);
-      logProvisioning(slug, 'modules', JSON.stringify(list));
-    }
-    if (!b.plan && !Array.isArray(b.modules)) {
-      saveSubscription(slug, { mode: 'per_module', bundle: 'starter', modules: [], seat_limit: null,
-        bundle_price: null, module_prices: {}, seat_price: null });
-    }
-    // Optional: keep it on the Billing screen until the first payment is confirmed (billing.ts).
-    if (b.awaiting_payment) { setAwaitingPayment(slug, true); logProvisioning(slug, 'update', 'locked until first payment'); }
-    // Created from a website inquiry: link the two so the inquiry shows its workspace.
-    if (b.inquiry_id && getInquiry(b.inquiry_id)) {
-      updateInquiry(b.inquiry_id, { tenant_slug: slug });
-      logProvisioning(slug, 'inquiry', `created from website inquiry #${b.inquiry_id}`);
-    }
-    const t = getTenant(slug)!;
-    res.status(201).json(tenantView(t));
+    res.status(201).json(view);
   } catch (e) { forwardControlPlaneError(e, next); }
 });
 

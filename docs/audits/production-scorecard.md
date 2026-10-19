@@ -282,3 +282,9 @@ before catalog publication; exclusive paths and ownership-checked cleanup protec
 artifacts. Real process exits leave unregistered files blocked for review. See validation and
 the provisioning recovery runbook. Broader orchestration, hosted/Windows acceptance and other
 controls remain open; whole-control totals and release hold are unchanged.
+
+Atomic local onboarding follow-up, 19 October 2026: signup payment lock, subscription/contact,
+applicable first invoice and console module/inquiry setup now commit with catalog publication.
+Invoice/audit issuance nests safely. Durable response receipts and notification delivery remain
+open; see operations/workspace-onboarding.md and the audit README. Whole-control totals and
+release hold are unchanged; local helper fixes do not establish complete-control PASS status.

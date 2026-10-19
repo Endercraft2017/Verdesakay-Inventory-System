@@ -294,8 +294,10 @@ export function createInvoice(slug: string, input: NewInvoice, by: string): Invo
   if (typeof ewt !== 'number' || !Number.isFinite(ewt) || ewt < 0 || ewt > 15) throw new BillingError('ewt_rate must be a percentage from 0 to 15.');
 
   const d = db();
-  d.exec('BEGIN IMMEDIATE');
+  d.exec('SAVEPOINT issue_invoice');
   try {
+    // Acquire the writer before reading the sequence; also works inside signup publication.
+    d.prepare('UPDATE billing_settings SET value = value WHERE key = ?').run('reference_prefix');
     const issued = today();
     const year = issued.slice(0, 4);
     const prefix = `${s.reference_prefix}-${year}-`;
@@ -309,11 +311,12 @@ export function createInvoice(slug: string, input: NewInvoice, by: string): Invo
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(slug, reference, input.kind, description, input.period_start || null, input.period_end || null,
       input.amount_centavos, s.vat_registered ? 12 : 0, ewt, issued, input.due_on, by);
-    d.exec('COMMIT');
     logProvisioning(slug, 'billing', `${by}: issued ${reference}`);
-    return getInvoice(Number(info.lastInsertRowid))!;
+    const invoice = getInvoice(Number(info.lastInsertRowid))!;
+    d.exec('RELEASE issue_invoice');
+    return invoice;
   } catch (e) {
-    d.exec('ROLLBACK');
+    d.exec('ROLLBACK TO issue_invoice'); d.exec('RELEASE issue_invoice');
     throw e;
   }
 }

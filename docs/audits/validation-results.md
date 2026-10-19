@@ -396,3 +396,42 @@ for reviewed quarantine; no automatic adoption or deletion is implemented. Later
 invoicing/notifications and imported schema/credential acceptance need broader reconciliation
 and review. Whole-control totals and release hold remain unchanged. No live deployment,
 customer workspace mutation, dependency or schema change occurred.
+
+## Atomic local signup/console setup — 19 October 2026
+
+Final uninterrupted regression passed **301 files / 3,046 tests**, with zero failures (556.19s).
+Runtime code and tests were frozen throughout. Existing focused billing/signup/console/inquiry/
+core-recovery coverage passed **5 files / 70 tests** (66.41s). The new fault/process file passed
+**9 tests** (15.75s). It covers real SQLite faults in payment lock, subscription, owner contact,
+invoice insert/audit, final publication audit, console inquiry rollback and standalone invoice
+audit rollback/retry. Failures leave no catalog/setup/audit rows, remove only the prepared owned
+DB and send no owner alert; successful same-slug retry has one first invoice.
+
+A real child process exits after subscription, payment lock, owner contact and first-invoice
+setup but before publication commits. Its restarted catalog has no tenant, invoice, contact
+or provisioning log. Its unregistered prepared DB remains for reviewed recovery. This proves
+the tested process-exit boundary, not power-loss/fsync or multi-host deployment behavior.
+
+All **16 Playwright scenarios passed** (47.3s). The new website scenario forces an invoice
+failure, preserves signup fields, retries the same company, follows the successful redirect,
+and verifies payment lock plus exactly one invoice through tenant login/billing. TypeScript
+and diff checks passed. Staged Gitleaks passed with no findings; its redacted report is included.
+
+Initial new unit fixtures imported a mocked module before environment setup and got 404s;
+the fixture ordering was corrected. The first browser draft read response JSON after the app
+navigated, causing a protocol failure after a successful 201; it now verifies persisted billing
+state after navigation. Those are test-fixture/synchronization errors, not claimed product
+fixes. Initial text reports remain in evidence. No trace secrets/customer data are included.
+
+Evidence: `evidence/catalog-setup-{full,focused,initial-failures,failures,initial-browser,playwright,types}.txt`,
+`evidence/catalog-setup-verification.json` and `evidence/catalog-setup-scope.md`.
+Documentation: [audit index](README.md), [onboarding runbook](../operations/workspace-onboarding.md),
+updated core recovery runbook, module catalog/pipelines, handoff and standards research.
+SQLite transaction/savepoint primary references were reviewed 19 October 2026.
+
+Covered local setup is now part of catalog publication. External notification remains best
+effort after commit; durable response receipts, concurrent/generated-slug duplicate submission
+handling and reliable outbox delivery remain engineering work. Pricing/calendar/commercial
+policy, imported-state review and external release gates are not certified by these checks.
+Whole-control statuses remain unchanged and the complete release stays on hold. No schema,
+dependency, live customer workspace or hosting change was made. Nothing was deployed.

@@ -38,6 +38,8 @@ function db() {
   }
   return d;
 }
+/** Initialize cached control-plane schema before entering a rollbackable setup transaction. */
+export function prepareOwnerAnalytics(): void { db(); }
 const isoAgo = (days: number) => new Date(Date.now() - days * 86400000).toISOString();
 let prunedDay = '';
 export function recordTenantRequest(slug: string, userId: number | null, module: string, status: number, durationMs: number, client = 'desktop') {

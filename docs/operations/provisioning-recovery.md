@@ -49,10 +49,11 @@ for local tests. Do not run it against the original/default company or an alread
 
 ## Limits and remaining engineering
 
-Post-create route orchestration (subscription/modules, inquiries, first invoice and notifications)
-occurs after the core primitive returns. A later failure can still leave a correctly initialized,
-registered workspace needing reconciliation. Those steps need a durable orchestration/retry
-contract; this increment does not provide request idempotency or automatic repair for them.
+Signup and console local catalog setup now participates in publication: subscription/modules,
+payment lock, owner contacts, inquiry linkage and applicable first invoice/audits commit or roll
+back together. See workspace-onboarding.md for the exact failure matrix. HTTP response replay
+and reliable notification delivery still need durable receipts/outbox work; a lost acknowledgement
+can follow a committed workspace. External notifications remain outside the local transaction.
 Existing legacy suspended/orphaned workspaces are not automatically converted or deleted.
 Uploads, private migration snapshots and backup artifacts are preserved, not broadly removed.
 

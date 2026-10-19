@@ -142,7 +142,9 @@ catalog publication, and commits registration/audit together. Caught failures cl
 connections and remove only owned artifacts. Process interruption leaves an unregistered slot
 blocked for review; no automatic adoption/deletion occurs. `tests/provisioning-recovery.test.ts`
 covers process exits, retry refusal, collisions, owned cleanup and registry recovery. This is
-not a transaction across catalog, tenant databases/files or later route orchestration.
+not a transaction across catalog and tenant databases/files. Signup and console local setup
+now runs synchronously inside catalog publication, including nested audited first invoices;
+notification delivery and durable HTTP response receipts remain separate.
 See `docs/operations/provisioning-recovery.md`.
 
 

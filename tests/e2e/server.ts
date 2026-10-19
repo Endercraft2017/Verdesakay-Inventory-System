@@ -14,6 +14,8 @@ Object.assign(process.env, {
 });
 for (const key of ['APP_DOMAIN', 'TENANT_PATH_HOST', 'DEFAULT_TENANT_REDIRECT', 'PLATFORM_CONSOLE', 'ADMIN_PASSWORD', 'DEPLOY_MODE']) delete process.env[key];
 process.env.PLATFORM_CONSOLE = 'true';
+process.env.TENANT_PATH_HOST = 'localhost';
+process.env.SIGNUPS_OPEN = 'true';
 process.env.PLATFORM_WEBAUTHN_ORIGIN = 'http://localhost:4173';
 const { upsertPlatformUser } = await import('../../src/platform/platform-users');
 upsertPlatformUser('browser-operator', 'Synthetic browser operator password', 'Browser Operator');
@@ -59,6 +61,16 @@ platformDb().exec(`CREATE TRIGGER browser_support_failure BEFORE INSERT ON tenan
 platformDb().exec(`CREATE TRIGGER browser_settings_failure BEFORE UPDATE ON tenants
   WHEN NEW.slug='browser-support' AND NEW.name='Browser settings failure'
   BEGIN SELECT RAISE(ABORT, 'module synthetic-private-settings-detail'); END`);
+const billing = await import('../../src/platform/billing');
+const { MODULES } = await import('../../src/shared/modules');
+billing.setBillingSettings({ module_prices: Object.fromEntries(MODULES.map(module => [module, 100])), seat_price: 20 });
+let failSignupOnce = true;
+platformDb().function('browser_signup_fault', () => {
+  if (failSignupOnce) { failSignupOnce = false; throw new Error('Synthetic signup invoice failure'); }
+  return 0;
+});
+platformDb().exec(`CREATE TRIGGER browser_signup_failure BEFORE INSERT ON billing_invoices
+  WHEN NEW.tenant_slug='browser-atomic-failed' BEGIN SELECT browser_signup_fault(); END`);
 const { createApp } = await import('../../src/app');
 const { attachWebSocket } = await import('../../src/shared/ws');
 const server = createApp().listen(Number(process.env.E2E_PORT || 4173), process.env.E2E_HOST || '127.0.0.1');

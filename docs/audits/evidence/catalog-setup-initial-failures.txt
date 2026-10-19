@@ -1,0 +1,97 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/catalog-setup-atomic.test.ts > public signup publication includes local setup > rolls back payment-lock failure, sends no alert and permits one complete retry
+{"timestamp":"2026-10-19T03:18:05.858Z","level":"info","event":"http_request","request_id":"8ac2cf45-a5cb-4b52-9ae6-5a2696722913","tenant":"default","method":"POST","path":"/api/signup","status":404,"duration_ms":1}
+
+stdout | tests/catalog-setup-atomic.test.ts > public signup publication includes local setup > rolls back subscription failure, sends no alert and permits one complete retry
+{"timestamp":"2026-10-19T03:18:05.866Z","level":"info","event":"http_request","request_id":"eba80ede-0005-4503-8714-1d81755b76b2","tenant":"default","method":"POST","path":"/api/signup","status":404,"duration_ms":0}
+
+stdout | tests/catalog-setup-atomic.test.ts > public signup publication includes local setup > rolls back owner-details failure, sends no alert and permits one complete retry
+{"timestamp":"2026-10-19T03:18:05.869Z","level":"info","event":"http_request","request_id":"67a7213b-4ddf-447e-b871-70b8888c84d1","tenant":"default","method":"POST","path":"/api/signup","status":404,"duration_ms":0}
+
+stdout | tests/catalog-setup-atomic.test.ts > public signup publication includes local setup > rolls back invoice failure, sends no alert and permits one complete retry
+{"timestamp":"2026-10-19T03:18:05.873Z","level":"info","event":"http_request","request_id":"d464d715-999f-48fd-bdb7-36e8f52edc32","tenant":"default","method":"POST","path":"/api/signup","status":404,"duration_ms":1}
+
+stdout | tests/catalog-setup-atomic.test.ts > public signup publication includes local setup > rolls back invoice-audit failure, sends no alert and permits one complete retry
+{"timestamp":"2026-10-19T03:18:05.875Z","level":"info","event":"http_request","request_id":"865a04f1-e0ef-4888-a238-c897688674d4","tenant":"default","method":"POST","path":"/api/signup","status":404,"duration_ms":0}
+
+stdout | tests/catalog-setup-atomic.test.ts > public signup publication includes local setup > rolls back publication-audit failure, sends no alert and permits one complete retry
+{"timestamp":"2026-10-19T03:18:05.878Z","level":"info","event":"http_request","request_id":"cc1130c8-458c-403c-a9f9-381bf57bccea","tenant":"default","method":"POST","path":"/api/signup","status":404,"duration_ms":0}
+
+ ❯ tests/catalog-setup-atomic.test.ts (8 tests | 8 failed) 3031ms
+     × rolls back payment-lock failure, sends no alert and permits one complete retry 11ms
+     × rolls back subscription failure, sends no alert and permits one complete retry 3ms
+     × rolls back owner-details failure, sends no alert and permits one complete retry 3ms
+     × rolls back invoice failure, sends no alert and permits one complete retry 3ms
+     × rolls back invoice-audit failure, sends no alert and permits one complete retry 3ms
+     × rolls back publication-audit failure, sends no alert and permits one complete retry 3ms
+   × rolls back console modules and inquiry link when final publication audit fails 3ms
+   × standalone invoice audit failure rolls back issuance and keeps the connection usable 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/catalog-setup-atomic.test.ts > public signup publication includes local setup > rolls back payment-lock failure, sends no alert and permits one complete retry
+ FAIL  tests/catalog-setup-atomic.test.ts > public signup publication includes local setup > rolls back subscription failure, sends no alert and permits one complete retry
+ FAIL  tests/catalog-setup-atomic.test.ts > public signup publication includes local setup > rolls back owner-details failure, sends no alert and permits one complete retry
+ FAIL  tests/catalog-setup-atomic.test.ts > public signup publication includes local setup > rolls back invoice failure, sends no alert and permits one complete retry
+ FAIL  tests/catalog-setup-atomic.test.ts > public signup publication includes local setup > rolls back invoice-audit failure, sends no alert and permits one complete retry
+ FAIL  tests/catalog-setup-atomic.test.ts > public signup publication includes local setup > rolls back publication-audit failure, sends no alert and permits one complete retry
+AssertionError: expected 404 to be 500 // Object.is equality
+
+- Expected
++ Received
+
+- 500
++ 404
+
+ ❯ tests/catalog-setup-atomic.test.ts:36:31
+     34|     try {
+     35|       const response = await signup(slug);
+     36|       expect(response.status).toBe(500); expect(response.body.error).t…
+       |                               ^
+     37|       expect(response.body.request_id).toBe(response.headers['x-reques…
+     38|       expect(platform.getTenant(slug)).toBeNull(); expect(fs.existsSyn…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  tests/catalog-setup-atomic.test.ts > rolls back console modules and inquiry link when final publication audit fails
+AssertionError: expected 404 to be 500 // Object.is equality
+
+- Expected
++ Received
+
+- 500
++ 404
+
+ ❯ tests/catalog-setup-atomic.test.ts:58:29
+     56|   try {
+     57|     const response = await ctx.api.post('/_platform/api/tenants').set(…
+     58|     expect(response.status).toBe(500); expect(platform.getTenant(slug)…
+       |                             ^
+     59|     expect(inquiries.getInquiry(inquiry.id)?.tenant_slug).toBeNull(); …
+     60|     expect(fs.existsSync(path.join(db.DATA_DIR, slug + '.db'))).toBe(f…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  tests/catalog-setup-atomic.test.ts > standalone invoice audit failure rolls back issuance and keeps the connection usable
+AssertionError: expected [Function] to throw error including 'synthetic billing audit failure' but got 'Unknown workspace.'
+
+Expected: "synthetic billing audit failure"
+Received: "Unknown workspace."
+
+ ❯ tests/catalog-setup-atomic.test.ts:71:72
+     69|   const invoice = { kind: 'other' as const, description: 'Synthetic in…
+     70|   database.exec("CREATE TRIGGER invoice_audit_failure BEFORE INSERT ON…
+     71|   try { expect(() => billing.createInvoice(slug, invoice, 'operator'))…
+       |                                                                        ^
+     72|   finally { database.exec('DROP TRIGGER invoice_audit_failure'); }
+     73|   expect(rows('billing_invoices', 'tenant_slug', slug)).toEqual(before…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed (8)
+   Start at  03:18:02
+   Duration  3.63s (transform 1.52s, setup 36ms, import 423ms, tests 3.03s, environment 0ms)

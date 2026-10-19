@@ -1,0 +1,44 @@
+[WebServer] (node:22043) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:22056) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:22067) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 1 test using 1 worker
+
+(node:22089) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 tests/e2e/signup-atomic.spec.ts:3:1 › website signup retains input after invoice failure and retries the same workspace successfully (2.5s)
+
+
+  1) tests/e2e/signup-atomic.spec.ts:3:1 › website signup retains input after invoice failure and retries the same workspace successfully
+
+    Error: response.json: Protocol error (Network.getResponseBody): No resource with given identifier found
+    Response body is not available for a response that was navigated away from. Read response.body() before triggering any navigation.
+
+      24 |     await form.locator('#signup-submit').click();
+      25 |     const complete = await succeeded; expect(complete.status()).toBe(201);
+    > 26 |     const result = await complete.json(); expect(result.awaiting_payment).toBe(true); expect(result.invoice.reference).toBeTruthy();
+         |                                   ^
+      27 |     await expect(page).toHaveURL(/\/browser-atomic-failed$/);
+      28 |     await expect(page.locator('#login-username')).toBeVisible();
+      29 |   } finally { await context.close(); }
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/signup-atomic.spec.ts:26:35
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/signup-atomic-website-sign-5a6f7-same-workspace-successfully/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/signup-atomic-website-sign-5a6f7-same-workspace-successfully/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/signup-atomic-website-sign-5a6f7-same-workspace-successfully/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/signup-atomic-website-sign-5a6f7-same-workspace-successfully/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests/e2e/signup-atomic.spec.ts:3:1 › website signup retains input after invoice failure and retries the same workspace successfully

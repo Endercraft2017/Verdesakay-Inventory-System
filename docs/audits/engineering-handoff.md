@@ -1,7 +1,7 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 19 October 2026 — core prepare-before-publish provisioning, exclusive file
-ownership, failed-connection eviction and real process-interruption tests. Accounting follow-ups were delivered
+Latest follow-up: 19 October 2026 — signup/console local setup now commits with catalog
+publication, including nested audited first invoices and real rollback/crash/browser tests. Accounting follow-ups were delivered
 on 18 October and authentication work on 16 October. The complete release is still on hold.
 
 Work is on `production`, derived from `restructure/module-architecture`; it is not deployed.
@@ -149,3 +149,24 @@ This is fail-closed interruption handling, not automatic orphan recovery or powe
 certification. The initial Playwright run had an intermittent MFA input-validation failure;
 its unmodified rerun passed. Root cause remains unconfirmed and is not claimed fixed here.
 Other handbook, dependency/history and external acceptance gaps keep the release on hold.
+
+
+## Atomic local onboarding follow-up — 2026-10-19
+
+High scoped gap: signup previously published an active workspace before payment lock,
+subscription/contact and first-invoice setup. Console modules/payment/inquiry setup followed
+publication too. Both local setup paths now run synchronously inside catalog publication; any
+setup/audit failure rolls back the local catalog and triggers owned-database cleanup. The
+billing helper now nests with savepoints and commits invoice/audit together, including standalone
+issuance. Cached billing/contact schema initializes before rollbackable publication.
+
+Real SQLite faults cover payment lock, subscription, contacts, invoice insert, invoice audit,
+final publication audit and console inquiry linkage. One child exits after local signup setup;
+its restarted catalog has no tenant, invoice, contact or provisioning log. The website test
+retries the same failed signup and verifies exactly one invoice plus the payment lock.
+
+See operations/workspace-onboarding.md, the audit README and dated results. Durable HTTP
+response receipts, generated-slug duplicate submission handling and reliable notification
+outbox/worker delivery remain engineering work. Existing post-core setup limitations above are
+superseded for the covered local catalog steps, not for acknowledgements or external delivery.
+Other scorecard work and hosted/owner/legal acceptance gates remain; no deployment occurred.

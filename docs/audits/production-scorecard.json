@@ -2110,9 +2110,9 @@
   "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
   "latest_follow_up": {
     "date": "2026-10-19",
-    "scope": "Core provisioning prepare-before-publish, exclusive file ownership, caught-failure cleanup and process-exit refusal",
-    "base_commit": "a192f1c6912ddcfe9cbb86885db20c82626f021a",
-    "verification": "evidence/provision-recovery-verification.json",
+    "scope": "Atomic signup/console local setup with nested audited first invoice; documented retry and remaining delivery/receipt gaps",
+    "base_commit": "a497c029079abe9b6b63386ebd757ae40a2e8e92",
+    "verification": "evidence/catalog-setup-verification.json",
     "whole_control_statuses_changed": false
   }
 }

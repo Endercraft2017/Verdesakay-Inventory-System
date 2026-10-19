@@ -1388,5 +1388,20 @@ catalog/company ID/core audit. Only the published workspace is tenant-routable. 
 before publication closes the connection and removes only artifacts whose identity is still
 owned. Failed initialization is evicted from the database registry. Interrupted processes can
 leave unregistered files, which block retry rather than being adopted or overwritten. Review
-and quarantine follow the provisioning recovery runbook. Later HTTP route orchestration is
-outside this core boundary and still needs durable reconciliation/idempotency.
+and quarantine follow the provisioning recovery runbook. Covered local signup/console setup
+now participates in publication (see the following pipeline); durable response receipts and
+external notification delivery remain separate engineering work.
+
+
+## Atomic local signup/console setup (2026-10-19)
+
+Validate/quote and warm cached schemas → prepare tenant DB → publication savepoint → catalog row
+→ synchronous local setup → core audit → commit → owner notification/HTTP acknowledgement.
+Signup setup includes payment lock, subscription, owner contact and applicable first invoice.
+Invoice numbering/row/audit share a nested savepoint with writer admission before sequence read.
+Console setup includes modules/default subscription, optional payment lock, inquiry link and
+response preparation. Any local setup/audit error rolls the catalog back and invokes owned-file
+cleanup. A process exit before commit leaves no setup rows and preserves an unregistered file
+for reviewed recovery. Notifications are best effort after commit. Lost HTTP responses and
+concurrent duplicates still require durable response receipts; automatic generated slugs do not
+make duplicate submissions idempotent. See operations/workspace-onboarding.md.
