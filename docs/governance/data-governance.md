@@ -128,3 +128,14 @@ and timestamps; bodies, recipient addresses and configuration stamps are omitted
 external telemetry destination or automatic event-metadata deletion is introduced. Retention
 approval, historic log review and secure catalog backup/restore remain applicable. See
 ../operations/owner-alert-monitoring.md for limits and review procedure.
+
+
+### Public signup availability (2026-10-19)
+
+Asynchronous signup receipt/owner hashing preserves current signup:v1 scope, salted verifier,
+response, expiry/tombstone and credential formats. No new raw request/password/key, persistent
+queue or telemetry destination is added. One in-memory active signup gate and shared crypto
+counters contain no account identity. Browser keys/password fields remain page-memory only;
+a twenty-second abort does not imply server rollback. Fresh tenant seeding uses the chosen
+owner hash instead of another global bootstrap hash. Existing retention/rights/backup review
+remains unchanged. See ../operations/public-signup-budget.md.

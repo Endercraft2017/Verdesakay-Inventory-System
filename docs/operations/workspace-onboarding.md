@@ -107,13 +107,14 @@ legal holds and backup expiry require approved governance; pruning does not eras
 No response is replayed for a missing or purged workspace. A restored older catalog may also
 restore older receipt state; reconcile acknowledged operations before reopening writes.
 
-The new verifier adds synchronous scrypt work to keyed creation/replay; public signup already
-used synchronous credential hashing. The per-IP signup limiter is not a distributed capacity or
-bot defense. Broader signup admission/async work and hosted abuse/capacity acceptance remain open.
+Public signup now uses bounded asynchronous receipt/owner hashing and one-active/no-backlog
+admission; console/CLI receipt preparation remains synchronous. The per-IP signup limiter is not
+a distributed capacity or bot defense. Synchronous database setup and hosted abuse/capacity
+acceptance remain open. See public-signup-budget.md.
 
 ## Remaining work
 
-- Broader create/import/API retry coverage, signup work admission and distributed abuse/capacity
+- Broader create/import/API retry coverage and distributed abuse/capacity
   acceptance; current receipt protection requires the same key and covered route.
 - Signup, inquiry and payment reports have transactional alert intent and a bounded worker
   (owner-alert-outbox.md, business-alerts.md). Reviewed resend/provider reconciliation, backlog monitoring and broader
@@ -150,3 +151,13 @@ workspace creation receipts to other APIs/imports or certify payment settlement 
 Website inquiries now have their own keyed receipt contract in inquiry-retries.md. This covers
 updated same-page retries/edits and does not expand workspace/import receipts or remove broader
 creation admission, legacy recovery or financial lifecycle gates.
+
+
+## Public signup availability follow-up — 19 October 2026
+
+Public receipt/credential hashing now uses the bounded shared native-crypto budget; one signup
+request per process is admitted and busy requests receive safe 503/Retry-After. Prepared owner
+credentials replace the redundant fresh-DB bootstrap hash. Live replay/catalog state is checked
+after awaits. Browser timeout/invalid acknowledgement retains the draft and same request key.
+See [public signup budget](public-signup-budget.md) for exact limits, support and rollback.
+Database setup is still synchronous; capacity/distributed abuse and wider release gates remain.

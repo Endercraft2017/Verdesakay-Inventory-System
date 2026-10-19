@@ -112,7 +112,7 @@ runbooks; staged enrollment, wider tenant step-up and native credential storage 
 **Responsibility:** tenant provisioning, plans, quotas, and the owner console — sits
 above the tenant-facing app, not one of its features. Single-tenant/self-hosted
 installs never touch this.
-**Owned files:** `owner-alert-monitor.ts` (queue-wide read-only health/history and guarded persistent worker heartbeat), `inquiry-receipts.ts` (public inquiry binding, constant acknowledgement, expiry/tombstones), `payment-report-receipts.ts` (tenant/actor-scoped payment acknowledgement, attachment binding, expiry/tombstones), `owner-alert-outbox.ts` (signup and separate inquiry/payment intent, guarded claim/worker/status and logical payload expiry), `onboarding-receipts.ts` (durable scoped create/signup responses, salted request verifier, expiry/tombstones), `plans.ts`, `quota.ts`, `provisioning.ts`, `adopt-default.ts` (offline,
+**Owned files:** `owner-alert-monitor.ts` (queue-wide read-only health/history and guarded persistent worker heartbeat), `inquiry-receipts.ts` (public inquiry binding, constant acknowledgement, expiry/tombstones), `payment-report-receipts.ts` (tenant/actor-scoped payment acknowledgement, attachment binding, expiry/tombstones), `owner-alert-outbox.ts` (signup and separate inquiry/payment intent, guarded claim/worker/status and logical payload expiry), `onboarding-receipts.ts` (durable scoped create/signup responses, async public signup verifier/live rechecks, expiry/tombstones), `plans.ts`, `quota.ts`, `provisioning.ts`, `adopt-default.ts` (offline,
 verified adoption of the original company, preserving source DB/uploads; CLI
 `scripts/adopt-default-tenant.ts`), `tenant-path.ts` (optional host-bound path routing), `platform.ts` (tenant
 catalog in `platform.db`; permanent company login IDs with pair-scoped counters,
@@ -1559,3 +1559,12 @@ operations/inquiry-retries.md and inquiry-receipts/e2e inquiry-receipts/password
 Contact attempts also use a 20-second abort timer for fetch/body consumption; uncertainty retains
 key/draft and enables retry. E2E clock advancement follows a committed response withheld by
 Playwright; it does not certify hosted network latency or server rollback on abort.
+
+
+Public signup availability (2026-10-19): signup.routes admits one active request/no backlog;
+receipt and owner hashing use shared/password-work native async jobs. provisioning snapshots/
+revalidates after awaits and shares synchronous publication/recovery with CLI creation.
+shared/db.initializeFreshTenant reuses the prepared hash only for empty, uncached non-default
+reservations; password-hash owns format checks. Default bootstrap remains unchanged. Website
+signup uses an abortable twenty-second read and stable same-page key. See
+`docs/operations/public-signup-budget.md`; schema setup/capacity/distributed controls remain.

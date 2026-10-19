@@ -1,4 +1,4 @@
-import { prepareCreationReceipt, saveCreationReceipt } from './onboarding-receipts';
+import { prepareSignupReceipt, saveCreationReceipt } from './onboarding-receipts';
 /** Self-serve tenant sign-up. Live only when SIGNUPS_OPEN=true; otherwise you provision
     tenants with `npm run tenant:create`. Runs on whatever tenant the request resolved to
     (normally the marketing/default site). See docs/SAAS-READINESS.md §11–12.
@@ -12,11 +12,12 @@ import { parseBody, signupSchema } from '../shared/validation';
 import { saveSubscription } from './subscription';
 import { saveOwnerDetails, prepareOwnerAnalytics } from './owner-analytics';
 import { planModules } from './plans';
-import { createTenant } from './provisioning';
+import { createTenantForPublicSignup } from './provisioning';
 import { SIGNUPS_OPEN, tenantPublicUrl, getTenant, setAwaitingPayment } from './platform';
 import { getBillingSettings, priceListQuote, createInvoice, invoiceView } from './billing';
 import { rateLimitKey } from '../shared/device';
 import { prepareOwnerAlerts, enqueueSignupAlert } from './owner-alert-outbox';
+import { PasswordWorkBusyError } from '../shared/password-work';
 import { forwardControlPlaneError } from './request-errors';
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
@@ -32,14 +33,19 @@ const signupLimiter = rateLimit({
   message: { error: 'Too many sign-up attempts. Please try again later.' },
 });
 
-router.post('/', signupLimiter, (req, res, next) => {
+let signupActive=false; // One active public request per process; no signup backlog.
+router.post('/', signupLimiter, async (req, res, next) => {
+  res.set('Cache-Control','no-store');
   if (!SIGNUPS_OPEN) {
     res.status(404).json({ error: 'Sign-ups are not open.' });
     return;
   }
   try {
     const input = parseBody(signupSchema, req.body);
-    const receipt = prepareCreationReceipt('signup:v1', req.get('Idempotency-Key'), input);
+    if(signupActive){res.set('Retry-After','5').status(503).json({error:'Registration is busy. Try again shortly.'});return;}
+    signupActive=true;
+    try {
+    const receipt = await prepareSignupReceipt(req.get('Idempotency-Key'), input);
     if (receipt?.replay) { res.set('Idempotency-Replayed', 'true').status(201).json(receipt.replay); return; }
     const seats = input.seats ?? 5;
     const prices = getBillingSettings();
@@ -49,7 +55,7 @@ router.post('/', signupLimiter, (req, res, next) => {
     prepareOwnerAnalytics();
     prepareOwnerAlerts();
     const result: { invoice: ReturnType<typeof invoiceView> | null; response?: unknown } = { invoice: null };
-    createTenant({
+    await createTenantForPublicSignup({
       slug: input.slug,
       name: input.company_name,
       admin_username: input.admin_username,
@@ -87,7 +93,11 @@ router.post('/', signupLimiter, (req, res, next) => {
       ]);
     });
     res.status(201).json(result.response);
-  } catch (error) { forwardControlPlaneError(error, next); }
+    } finally {signupActive=false;}
+  } catch (error) {
+    if(error instanceof PasswordWorkBusyError){res.set('Retry-After','5').status(503).json({error:'Registration is busy. Try again shortly.'});return;}
+    forwardControlPlaneError(error, next);
+  }
 });
 
 export default router;

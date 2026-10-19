@@ -782,3 +782,54 @@ Windows/native/hosting/restore acceptance and the wider scorecard remain open. T
 The first final commit scan flagged two SHA-256 file checksums stored under artifact names
 containing “secrets”. Separating names/digests in the manifest removed the false positives;
 no credential or scan allowlist changed. Evidence trailing blank lines were normalized.
+
+
+## Public signup work admission and async credentials — 19 October 2026
+
+Base e28a9217082dcc44d96121011262511e3475bd0f. High scoped main-thread hashing gap addressed:
+public receipt/owner hashing uses bounded shared native crypto, with one-active/no-backlog
+signup admission. Trusted fresh initialization reuses the prepared owner hash instead of a
+second global bootstrap hash. Default bootstrap policy, current stored formats and existing
+synchronous CLI/console compatibility remain. Post-await replay/current-catalog checks prevent
+stale acknowledgement/publication. Browser timeout/invalid responses retain fields and key.
+
+| Check | Completed result |
+|---|---|
+| Full regression | 309 files / 3227 tests passed, 638.74s |
+| Initial focused | 5 files / 53 passed, 71.35s |
+| Intermediate focused | 5 files / 55 passed, 79.06s |
+| Final focused | 8 files / 75 passed, 97.85s; 15 new signup cases |
+| Initial Playwright | 29 passed, 74.402s |
+| Final Playwright | 29 passed, 72.992s; 3 new signup cases |
+| TypeScript | Passed |
+| Actual server startup/timer | Signup/replay/owner login; one workspace/receipt/invoice/alert and synthetic acceptance |
+| Schema / db:types | No schema or stored-format change; regeneration not required/run |
+| Secret/diff checks | Staged scan clean; final commit hook scans again; whitespace check passed |
+
+Focused cases exercise real async KDF yielding, correct keyed/no-key owner credentials without
+synchronous hashing, competing/saturated work while health responds, publication/native faults
+and admission release, live replay expiry/verifier/response/source invalidation, catalog races,
+input snapshots, fresh DB guards, production ten/hour replay counting and real process exit/
+old synchronous receipt compatibility. Existing provisioning/receipts/billing/hash/policy/login
+races supplement the new coverage. Initial/intermediate runs passed; central hash-format
+validation was then reused from password-hash rather than duplicated in db.ts. Final checks
+include that runtime. No failed/partial run is counted as a completed pass.
+
+Chromium holds an actual committed HTTP response, advances the twenty-second browser clock,
+retries the same key and verifies one invoice. Busy and null/HTML/wrong-status responses retain
+form identity. Existing passkey/MFA/recovery/mail/payment/accounting/signup journeys also pass.
+All fixture requests use disposable data; actual mail transport remains NODE_ENV=test and sends
+no real email. Native process fixtures use production mode only with private synthetic files.
+No deployment command, hosted mutation, customer/bank/provider action or new dependency.
+
+Exact evidence: signup-budget-* scope/verification/raw or whitespace-normalized logs/browser
+metadata/startup script. Runtime/tests frozen before full regression; subsequent changes are
+documentation/evidence only. Updated operations/API/password-work/onboarding/release/privacy,
+catalog/pipelines, readiness, handoff and scorecard evidence. Primary sources retrieved today:
+Node 24 scrypt, Node event-loop/worker-pool guidance and OWASP DoS guidance; own-contract limits
+are documented in standards-research.md and operations/public-signup-budget.md.
+
+Remaining: synchronous tenant setup, hosted mixed workload/memory/disk acceptance, distributed
+abuse/edge/storage controls, other synchronous writers/retry receipts, provider reconciliation/
+external escalation and wider financial/authz/privacy/AI/native/dependency/hosting/governance
+controls. Whole-control totals remain 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release held.

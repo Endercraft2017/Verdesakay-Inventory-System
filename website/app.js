@@ -123,15 +123,19 @@
   document.getElementById('signup-form').addEventListener('submit', async function (e) {
     e.preventDefault();
     var error = this.querySelector('.error'), button = document.getElementById('signup-submit');
+    if (button.disabled) return;
     error.textContent = ''; button.disabled = true;
+    var controller = new AbortController(), timer = setTimeout(function () { controller.abort(); }, 20000);
     try {
       if (!signupKey) signupKey = crypto.randomUUID();
       var name = document.getElementById('company').value.trim();
-      var r = await fetch('/api/signup', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': signupKey }, body: JSON.stringify({ slug: slug(name), company_name: name, admin_username: document.getElementById('username').value.trim(), admin_email: document.getElementById('email').value.trim(), admin_password: document.getElementById('password').value, modules: selectedModules(), seats: Number(document.getElementById('seats').value) }) });
-      var data = await r.json();
-      if (!r.ok) throw new Error(data.error || 'Registration failed.');
+      var r = await fetch('/api/signup', { method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json', 'Idempotency-Key': signupKey }, body: JSON.stringify({ slug: slug(name), company_name: name, admin_username: document.getElementById('username').value.trim(), admin_email: document.getElementById('email').value.trim(), admin_password: document.getElementById('password').value, modules: selectedModules(), seats: Number(document.getElementById('seats').value) }) });
+      var data = await r.json().catch(function () { return null; });
+      if (!r.ok) throw new Error((data && data.error) || 'Registration failed.');
+      if (r.status !== 201 || !data || typeof data.slug !== 'string' || !/^[a-z][a-z0-9-]{1,30}$/.test(data.slug)) throw new Error('Registration was not confirmed. Retry with the same details.');
       window.location.assign('/' + encodeURIComponent(data.slug));
-    } catch (ex) { error.textContent = ex.message; button.disabled = false; }
+    } catch (ex) { error.textContent = controller.signal.aborted ? 'Registration timed out. Retry with the same details.' : ex.message; button.disabled = false; }
+    finally { clearTimeout(timer); }
   });
   /* The owner's direct contact details (console → Inquiries → Website contact details), when set. */
   function showContact(c) {

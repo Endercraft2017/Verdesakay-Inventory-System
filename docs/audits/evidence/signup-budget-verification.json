@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-19",
+  "base_commit": "e28a9217082dcc44d96121011262511e3475bd0f",
+  "scope": "Public signup admission, bounded async receipt/owner hashing, trusted fresh initialization and uncertain-response browser retry",
+  "full_run": {
+    "files_passed": 309,
+    "tests_passed": 3227,
+    "failed": 0,
+    "duration_seconds": 638.74
+  },
+  "initial_focused": {
+    "files_passed": 5,
+    "tests_passed": 53,
+    "duration_seconds": 71.35
+  },
+  "intermediate_focused_before_format_reuse": {
+    "files_passed": 5,
+    "tests_passed": 55,
+    "duration_seconds": 79.06
+  },
+  "final_focused": {
+    "files_passed": 8,
+    "tests_passed": 75,
+    "duration_seconds": 97.85,
+    "new_signup_cases": 15
+  },
+  "initial_playwright": {
+    "passed": 29,
+    "failed": 0,
+    "duration_seconds": 74.40191300000001
+  },
+  "final_playwright": {
+    "passed": 29,
+    "failed": 0,
+    "duration_seconds": 72.992292,
+    "new_signup_cases": 3,
+    "controlled_browser_clock": true
+  },
+  "typecheck": "passed",
+  "schema": "No schema, migration version or stored-format change; db:types was not required/run for this increment",
+  "actual_server_startup": "passed: HTTP public signup/replay/owner sign-in, exactly one workspace/receipt/invoice/alert, actual timer synthetic acceptance and completed heartbeat",
+  "secret_scan": "staged increment clean; commit hook scans final staged set again",
+  "whole_control_statuses_changed": false,
+  "evidence_rows_updated": [
+    "EDGE-01",
+    "BACK-06",
+    "PLAT-01"
+  ],
+  "deployment_command_run": false,
+  "hosted_rollout_verified": false,
+  "limits": [
+    "Synchronous tenant SQL/schema/file work remains; hosted mixed workload/event-loop/memory/disk acceptance unverified",
+    "One-active signup and shared crypto limits apply per process; not cross-replica or distributed bot/edge/storage quotas",
+    "Native crypto work is not cancelled by browser abort; old/new-key/no-key duplicate and recovery limits remain",
+    "CLI/console and other authenticated synchronous hashing remains; no full-app absence-of-blocking claim",
+    "Provider review/external escalation, financial/privacy/authz/AI/native/dependency/hosting/governance gates remain open"
+  ]
+}

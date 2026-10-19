@@ -27,6 +27,13 @@ export async function hashPasswordForPublicRequest(value: string): Promise<strin
   });
 }
 
+/** Trusted fresh-database initialization may accept only this module's current encoded format. */
+export function isCurrentPasswordHash(encoded: string): boolean {
+  if (!encoded.startsWith(PREFIX)) return false;
+  const parts=encoded.slice(PREFIX.length).split('$');
+  return parts.length===2 && /^[a-f0-9]{32}$/.test(parts[0]!) && /^[a-f0-9]{128}$/.test(parts[1]!);
+}
+
 export function passwordNeedsUpgrade(encoded: string): boolean {
   return LEGACY.test(encoded);
 }
@@ -41,9 +48,8 @@ export function verifyPassword(password: string, encoded: string): boolean {
     if (cost < 4 || cost > 16) return false;
     try { return bcrypt.compareSync(password, encoded); } catch { return false; }
   }
-  if (!encoded.startsWith(PREFIX)) return false;
+  if (!isCurrentPasswordHash(encoded)) return false;
   const parts = encoded.slice(PREFIX.length).split('$');
-  if (parts.length !== 2 || !/^[a-f0-9]{32}$/.test(parts[0]!) || !/^[a-f0-9]{128}$/.test(parts[1]!)) return false;
   const actual = scryptSync(password, Buffer.from(parts[0]!, 'hex'), 64, OPTIONS);
   return timingSafeEqual(actual, Buffer.from(parts[1]!, 'hex'));
 }
@@ -59,7 +65,7 @@ export async function verifyPasswordForLogin(password: string, encoded: string, 
     if (Buffer.byteLength(password, 'utf8') > 72 || cost < 4 || cost > 16) return { valid: false };
   }
   const parts = encoded.startsWith(PREFIX) ? encoded.slice(PREFIX.length).split('$') : [];
-  if (!legacy && (parts.length !== 2 || !/^[a-f0-9]{32}$/.test(parts[0]!) || !/^[a-f0-9]{128}$/.test(parts[1]!))) return { valid: false };
+  if (!legacy && !isCurrentPasswordHash(encoded)) return { valid: false };
   return withPasswordWork(async () => {
     const valid = legacy
       ? await bcrypt.compare(password, encoded)

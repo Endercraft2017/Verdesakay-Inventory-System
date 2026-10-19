@@ -86,3 +86,15 @@ The latest-thirty view no longer defines the scope of review. See
 triage and rollback. Unknown delivery remains no-resend; provider reconciliation, reviewed
 recovery, external watchdog/escalation and real-host acceptance remain release gates.
 Monitoring is scoped local evidence, not closure of a whole production control.
+
+
+## Public signup availability — 19 October 2026
+
+One active public signup per process, with no signup backlog. Busy/full/expired shared crypto
+work returns 503, Retry-After: 5, and safe registration wording. Existing ten/hour/IP controls
+count replays and busy attempts. Receipt and owner hashing are bounded/asynchronous, with
+live state checks after awaits. Signup browser fetch/body timeout is twenty seconds and retains
+its key/draft; navigation requires a valid 201 acknowledgement. See
+[public signup budget](public-signup-budget.md) for exact API, support and rollback limits.
+Synchronous schema/file initialization, mixed workload capacity and distributed abuse remain
+release gates. No complete-control status is promoted by these scoped changes.

@@ -294,3 +294,23 @@ across two tables. Tests traverse equal timestamps/IDs without loss or duplicati
 validate navigation values and filter but do not replace authentication or promise snapshots.
 No claim of universal standards compliance or hosted capacity follows from these references.
 The initial search tool request returned an error; direct retrieval of both primary pages succeeded.
+
+
+### Public signup availability — 19 October 2026
+
+Primary sources retrieved today: Node 24 crypto.scrypt,
+https://nodejs.org/docs/latest-v24.x/api/crypto.html#cryptoscryptpassword-salt-keylen-options-callback ,
+Node event-loop/worker-pool guidance,
+https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop , and OWASP DoS Cheat Sheet,
+https://cheatsheetseries.owasp.org/cheatsheets/Denial_of_Service_Cheat_Sheet.html . The generic
+Node API page also resolved to current v26 documentation; the version-24 source matches the
+supported application API contract. Async crypto alone does not eliminate pool/resource
+exhaustion: public signup reuses bounded native jobs and adds one-active/no-backlog request
+admission rather than creating an unbounded signup queue. Stored scrypt parameters remain.
+
+Receipt and current catalog state are rechecked after awaited work; source/receipt publication
+stays synchronous/atomic. Native jobs are not cancellable and database setup remains on the
+main thread. Local event-loop, saturation, process/replay/fault and browser uncertainty tests
+support this scoped change, not a hosted SLA, distributed abuse defense or standards certification.
+No edge/provider/host policy was provisioned. Existing browser abort/key-retry principles apply;
+abort is not proof of rollback. See public-signup-budget.md and signup-budget-* evidence.

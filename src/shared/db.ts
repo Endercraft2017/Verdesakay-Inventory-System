@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { DatabaseSync } from 'node:sqlite';
-import { hashPassword } from './password-hash';
+import { hashPassword, isCurrentPasswordHash } from './password-hash';
 import { passwordPolicyError } from './password-policy';
 import { SSS_2026, PHILHEALTH_2026, PAGIBIG_2026, RWT_2026 } from '../modules/payroll/ph-statutory';
 import { DEFAULT_COA } from '../modules/accounting/ledger';
@@ -242,6 +242,20 @@ export const SCHEMA_VERSION = 84; // 84: synchronized users.mfa_recovery_require
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
+  return tenantConnection(slug);
+}
+
+/** Trusted provisioning only: reuse the prepared owner hash while seeding an exclusively
+ * reserved, empty non-default database. Existing databases/accounts are never reseeded. */
+export function initializeFreshTenant<T>(slug: string, adminHash: string, fn: () => T): T {
+  if (slug === DEFAULT_TENANT || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(slug) || registry.has(slug)) throw new Error('Workspace initialization requires a fresh reservation');
+  if (!isCurrentPasswordHash(adminHash)) throw new Error('Invalid prepared owner credential');
+  const file = fs.lstatSync(connectionPath(slug));
+  if (!file.isFile() || file.isSymbolicLink() || file.size !== 0) throw new Error('Workspace initialization requires an empty reserved database');
+  return tenantStore.run({db: tenantConnection(slug, adminHash), slug}, fn);
+}
+
+function tenantConnection(slug: string, initialAdminHash?: string): DatabaseSync {
   if (slug !== DEFAULT_TENANT && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(slug)) throw new Error('Invalid workspace identifier');
   const existing = registry.get(slug);
   if (existing) return existing;
@@ -276,7 +290,7 @@ export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
     createDocumentDefaultsSchema(conn);
     ensureUploadDir();
     const previousForms=new Set((conn.prepare('SELECT id FROM form_definitions').all() as Array<{id:number}>).map(f=>f.id));
-    seed();
+    seed(initialAdminHash);
     initializeDocumentDefaults(conn);
     if(!getSetting('payroll_print_grid_initialized')){conn.exec("UPDATE doc_templates SET copies_per_record=2,records_per_page=2 WHERE name='HR Payroll Slip' AND copies_per_record=1 AND records_per_page=1 AND tile_continuous=0 AND repeat_count=1");setSetting('payroll_print_grid_initialized',true);}
     const linksInitialized=!!getSetting('form_template_links_initialized');
@@ -3532,7 +3546,7 @@ function seedRoles(): void {
   }
 }
 
-function seed(): void {
+function seed(initialAdminHash?: string): void {
   seedRoles();
   const deptCount = (db.prepare('SELECT COUNT(*) AS c FROM departments').get() as { c: number }).c;
   if (deptCount === 0) {
@@ -3548,8 +3562,8 @@ function seed(): void {
       .prepare('SELECT id FROM departments WHERE name = ?')
       .get('Administration') as { id: number } | undefined;
     const password = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === 'test' ? process.env.VDS_TEST_ADMIN_PASSWORD : undefined);
-    if (!password || passwordPolicyError(password)) throw new Error('Set ADMIN_PASSWORD to a unique password of 15–128 characters before creating the default admin account');
-    const hash = hashPassword(password);
+    if (!initialAdminHash && (!password || passwordPolicyError(password))) throw new Error('Set ADMIN_PASSWORD to a unique password of 15–128 characters before creating the default admin account');
+    const hash = initialAdminHash ?? hashPassword(password!);
     // The configured first-boot password must be replaced at first sign-in (shared/auth.ts).
     // Tests use a separate fixture variable. Provisioning clears the flag when the operator
     // sets the owner's own password (platform/provisioning.ts).
@@ -3558,7 +3572,7 @@ function seed(): void {
        VALUES (?, ?, ?, 'admin', ?, ?)`
     ).run('admin', 'System Administrator', hash, adminDept ? adminDept.id : null, process.env.NODE_ENV === 'test' ? 0 : 1);
 
-    if (!process.env.DB_PATH) {
+    if (!initialAdminHash && !process.env.DB_PATH) {
       console.log('========================================================');
       console.log('  Default admin account created:');
       console.log('     username: admin');

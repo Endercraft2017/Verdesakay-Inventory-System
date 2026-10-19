@@ -45,4 +45,15 @@ saturation returns authored 503 with Retry-After: 5 and no source write. The exi
 limiter runs before work and counts replays. After awaiting, live receipt/source/expiry are
 rechecked. This avoids introducing a new public synchronous hashing path, but inquiry traffic
 can compete with login and does not establish a measured capacity/SLA or distributed abuse
-defense. Signup and other synchronous writers are unchanged. See inquiry-retries.md.
+defense. Public signup now shares this budget as described below; other synchronous writers remain. See inquiry-retries.md.
+
+
+### Public signup and fresh initialization (2026-10-19)
+
+Signup receipt and owner hashes now share this bounded budget, with an additional one-active/
+no-backlog signup admission gate. Matching replays still count against the ten/hour/IP limiter.
+A trusted fresh tenant initialization reuses the prepared owner hash without a second global
+bootstrap hash. Default installation bootstrap policy remains. Live receipt/catalog state is
+rechecked after awaits; browser timeouts retain the original request key. See
+[public signup budget](public-signup-budget.md). Synchronous schema/file work and representative
+mixed login/inquiry/signup capacity still need acceptance; this is not distributed DoS protection.

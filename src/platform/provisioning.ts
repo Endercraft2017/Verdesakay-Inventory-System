@@ -9,8 +9,8 @@ import { PLANS } from './plans';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { hashPassword } from '../shared/password-hash';
-import { withTenant, run, closeTenantConnection, DATA_DIR, UPLOAD_DIR } from '../shared/db';
+import { hashPassword, hashPasswordForPublicRequest } from '../shared/password-hash';
+import { withTenant, initializeFreshTenant, run, closeTenantConnection, DATA_DIR, UPLOAD_DIR } from '../shared/db';
 import { securityLog } from '../shared/http-hardening';
 import { passwordPolicyError } from '../shared/password-policy';
 import { removeUploadFolder } from '../shared/file-store';
@@ -84,7 +84,7 @@ function publishTenant(input: Parameters<typeof createTenantRow>[0], action: str
 
 /** Create a tenant: catalog row + a fresh tenant DB seeded with the given admin login. */
 /** setup is synchronous catalog-only work; never send mail or write tenant/files here. */
-export function createTenant(input: CreateTenantInput, setup?: (slug: string) => undefined): { slug: string } {
+function validateCreation(input: CreateTenantInput) {
   if (input.plan !== undefined && !Object.hasOwn(PLANS, input.plan)) throw httpError(400, 'Unknown plan.');
   const slug = String(input.slug || '').toLowerCase().trim();
   if (!isValidSlug(slug)) {
@@ -97,11 +97,29 @@ export function createTenant(input: CreateTenantInput, setup?: (slug: string) =>
   const passwordError = passwordPolicyError(adminPassword, 'Admin password');
   if (passwordError) throw httpError(400, passwordError);
 
-  const hash = hashPassword(adminPassword);
+  return {slug, username, adminPassword};
+}
+
+export function createTenant(input: CreateTenantInput, setup?: (slug: string) => undefined): { slug: string } {
+  const prepared=validateCreation(input);
+  return createPreparedTenant(input,prepared,hashPassword(prepared.adminPassword),setup);
+}
+
+/** Public signup hashes through the shared bounded native-crypto budget, before any file or
+ * publication transaction. Revalidate current catalog state after the await. No caller hash input. */
+export async function createTenantForPublicSignup(input: CreateTenantInput, setup?: (slug: string) => undefined): Promise<{slug:string}> {
+  const snapshot={...input};
+  const prepared=validateCreation(snapshot), hash=await hashPasswordForPublicRequest(prepared.adminPassword);
+  validateCreation(snapshot);
+  return createPreparedTenant(snapshot,prepared,hash,setup);
+}
+
+function createPreparedTenant(input:CreateTenantInput, prepared:ReturnType<typeof validateCreation>, hash:string, setup?: (slug:string)=>undefined):{slug:string} {
+  const {slug,username}=prepared;
   const owned = reserveDatabase(slug);
   try {
     // The catalog cannot route requests here until initialization and chosen credentials succeed.
-    withTenant(slug, () => {
+    initializeFreshTenant(slug, hash, () => {
       const changed = run("UPDATE users SET username = ?, password_hash = ?, email = ?, password_change_required = 0 WHERE username = 'admin'", username, hash, input.is_sandbox ? null : (input.admin_email?.trim().toLowerCase() || null));
       if (changed.changes !== 1) throw new Error('Owner initialization failed');
     });

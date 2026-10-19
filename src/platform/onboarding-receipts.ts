@@ -1,7 +1,7 @@
 /** Completed creation receipts live in the control-plane transaction, never tenant sync. */
 import { createHash } from 'node:crypto';
 import { platformDb, getTenant } from './platform';
-import { hashPassword, verifyPassword } from '../shared/password-hash';
+import { hashPassword, verifyPassword, hashPasswordForPublicRequest, verifyPasswordForLogin } from '../shared/password-hash';
 import { ControlPlaneError } from './request-errors';
 
 const TTL_MS = 24 * 60 * 60 * 1000;
@@ -46,6 +46,28 @@ export function prepareCreationReceipt(scope: string, key: string | undefined, i
   // Salted scrypt is deliberate: hashing a payload containing a password with SHA alone would
   // add a cheap offline password oracle to a stolen platform database.
   return { scope, keyHash, verifier: hashPassword(digest) };
+}
+
+/** Same receipt format/scope as synchronous console/CLI preparation, with public bounded work.
+ * Read again after awaiting verification: a stale response/source must never be acknowledged. */
+export async function prepareSignupReceipt(key:string|undefined,input:unknown):Promise<CreationReceipt|null> {
+  if(key===undefined)return null;
+  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(key))throw new ControlPlaneError(400,'Idempotency-Key must be a random UUID v4.');
+  const scope='signup:v1',keyHash=createHash('sha256').update(key.toLowerCase()).digest('hex');
+  const digest=createHash('sha256').update(canonical(input)).digest('hex');
+  pruneCreationReceipts();
+  const lookup=()=>platformDb().prepare('SELECT verifier,response,tenant_slug,expires_at FROM platform_creation_receipts WHERE scope=? AND key_hash=?').get(scope,keyHash) as ReceiptRow|undefined;
+  const row=lookup();
+  if(row){
+    const conflict=()=>new ControlPlaneError(409,'This creation request cannot be repeated with these details. Check the existing workspace before trying again.');
+    if(!row.verifier||!row.response||row.expires_at<=Date.now()||!(await verifyPasswordForLogin(digest,row.verifier,false)).valid)throw conflict();
+    const current=lookup(),tenant=getTenant(row.tenant_slug);
+    if(!current||current.verifier!==row.verifier||current.response!==row.response||current.tenant_slug!==row.tenant_slug||current.expires_at<=Date.now()||!tenant||tenant.status==='purged')throw conflict();
+    return {scope,keyHash,verifier:row.verifier,replay:JSON.parse(row.response)};
+  }
+  const verifier=await hashPasswordForPublicRequest(digest);
+  if(lookup())throw new ControlPlaneError(409,'Another request completed this creation. Retry with the same key and details.');
+  return {scope,keyHash,verifier};
 }
 
 /** Call only within createTenant's publication callback, after the response has been prepared. */

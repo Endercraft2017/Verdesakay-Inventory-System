@@ -72,3 +72,20 @@ Monitoring is scoped local evidence, not closure of a whole production control.
   a stopped worker/API outage reaches the responsible operator without relying on queued mail.
 - [ ] Reconcile uncertain/restored delivery records with provider evidence; record the decision
   before any separately authorized manual recovery. Do not use dashboard counts as inbox proof.
+
+
+## Public signup availability — 19 October 2026
+
+One active public signup per process, with no signup backlog. Busy/full/expired shared crypto
+work returns 503, Retry-After: 5, and safe registration wording. Existing ten/hour/IP controls
+count replays and busy attempts. Receipt and owner hashing are bounded/asynchronous, with
+live state checks after awaits. Signup browser fetch/body timeout is twenty seconds and retains
+its key/draft; navigation requires a valid 201 acknowledgement. See
+[public signup budget](public-signup-budget.md) for exact API, support and rollback limits.
+Synchronous schema/file initialization, mixed workload capacity and distributed abuse remain
+release gates. No complete-control status is promoted by these scoped changes.
+
+- [ ] Verify mixed signup/login/inquiry saturation, safe 503/retry, health during hashing, stale
+  replay rejection, owner login and committed-response timeout retry on the target host.
+- [ ] Measure synchronous tenant setup/event-loop delay and memory/disk growth before selecting
+  supported signup traffic targets; retain independent incident detection and edge controls.

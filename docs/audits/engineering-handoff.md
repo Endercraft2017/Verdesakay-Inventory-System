@@ -1,10 +1,11 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 19 October 2026 — owner alerts now have queue-wide counts, filtered
-history beyond thirty records and a durable worker heartbeat. Failed/timed-out reads retain
-prior evidence; heartbeat failure cannot requeue a completed acceptance. Provider review,
-external escalation and real-host acceptance remain. See
-[monitoring runbook](../operations/owner-alert-monitoring.md). The complete release remains on hold.
+Latest follow-up: 19 October 2026 — public signup now has one-active/no-backlog admission,
+bounded asynchronous receipt/owner hashing and fresh initialization without a redundant
+bootstrap hash. Live replay/catalog state is rechecked after awaits. Browser busy/invalid/
+timeout responses retain the same request identity. See
+[public signup budget](../operations/public-signup-budget.md). Database setup, mixed workload
+capacity, distributed abuse and the wider release gates remain; the complete release is on hold.
 
 Work is on `production`, derived from `restructure/module-architecture`; no deployment command or hosted acceptance was performed for this increment.
 The attached handbook is an audit reference. Current whole-control status remains 36 PASS,
@@ -42,7 +43,7 @@ applicable issue before changing behavior:
 | High | Complete remaining sensitive-business-action verification with the offline authority model | Explicit action inventory, server enforcement and replay/role/race tests; AUTHZ-15 remains open |
 | High | Uniform API validation/error/redaction and privacy export/retention/erasure lifecycle | Route-by-route evidence; tenant-safe restore/copy/integration tests; approved retention scope |
 | High | AI privacy/adversarial evaluation, interrupted audit outcomes and hard spend allocation | Isolation/leakage/abuse/cancellation tests and real provider budget acceptance |
-| High | Reliable onboarding notification delivery and broader creation admission/reconciliation | Completed keyed HTTP receipts and signup outbox/worker implemented; other API/import retry receipts, provider reconciliation/reviewed resend, external backlog escalation, signup work budget, legacy/new-key recovery and imported-state acceptance remain. See operations/workspace-onboarding.md |
+| High | Reliable onboarding notification delivery and broader creation admission/reconciliation | Completed keyed HTTP receipts and signup outbox/worker implemented; other API/import retry receipts, provider reconciliation/reviewed resend, external backlog escalation, mixed signup capacity/storage acceptance, legacy/new-key recovery and imported-state acceptance remain. See operations/workspace-onboarding.md |
 | High | Native/Electron distribution and supported-client acceptance | APK/installer builds, signed artifacts, actual Windows/Android vault/backup/logout/upgrade checks |
 | High | Integration lifecycle and accounting reconciliation acceptance | Local generation/scoping, refresh admission, export exclusion and durable uncertain-write handling implemented 2026-10-18; actual Intuit sandbox, legacy adoption/repair tooling, interrupted-claim reconciliation, operational alerting and accountant acceptance remain. See operations/quickbooks-lifecycle.md |
 | High | Resolve or explicitly disposition vulnerable dependencies and historical-secret gates | Upstream/compatible fix or approved expiring risk record; verified revocation without exposing the old bearer |

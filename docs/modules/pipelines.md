@@ -1475,3 +1475,16 @@ acceptance. Authenticated mail console reads queue-wide counts + heartbeat in on
 and separately paginated redacted history across both queues. Failed/timed-out reads retain
 prior UI evidence. No mutation/resend/resolve or external paging is added. See
 `operations/owner-alert-monitoring.md` for thresholds and release limits.
+
+
+## Public signup work admission (2026-10-19)
+
+Existing signup-open / ten-hourly-per-IP / parsed schema → one-active/no-backlog admission →
+bounded async keyed receipt lookup/hash or verified replay with live checks → quote/schema
+preparation → async owner hash → current catalog revalidation → exclusive fresh file reservation
+→ seed prepared owner hash without redundant bootstrap KDF → shared synchronous local
+publication/invoice/receipt/alert/audit → commit → 201. Admission releases in finally. Competing
+or saturated work returns safe 503/Retry-After; live conflicts retain their authored response.
+Website fetch/body deadline retains draft/key for uncertain retry. No await occurs inside
+publication, and no global password-work slot wraps nested password-work calls. See
+`operations/public-signup-budget.md` for remaining synchronous setup and capacity limits.

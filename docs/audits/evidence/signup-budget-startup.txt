@@ -1,0 +1,3 @@
+PASS: actual server.ts accepted async public signup, replayed its committed acknowledgement and authenticated the chosen owner password.
+PASS: exactly one workspace, creation receipt, invoice and signup alert; actual timer recorded one synthetic acceptance and completed heartbeat.
+Disposable catalogs and NODE_ENV=test transport only; no real provider/customer email or hosting change.

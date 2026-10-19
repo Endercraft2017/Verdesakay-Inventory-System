@@ -688,7 +688,7 @@
       "severity": "Critical",
       "requirement": "Rate limits protect AI/expensive endpoints, auth endpoints, and public data endpoints, per user and per IP.",
       "status": "FAIL",
-      "evidence": "src/app.ts:195 plus AI per-user limiter and signup/confidential-report limiters; no universal API/public-read budget or complete per-user+IP limiter coverage.",
+      "evidence": "Existing API/AI/signup/confidential-report limiters remain incomplete across all endpoints. Public signup now adds one-active/no-backlog admission and shares one-active/eight-waiting native crypto work with login/inquiry; ten/hour/IP still counts replays/busy attempts. Local saturation/race tests do not establish universal per-user/IP coverage, distributed abuse prevention or capacity. See operations/public-signup-budget.md and signup-budget evidence.",
       "scenario": "A bot can hammer expensive read/export or public endpoints without reaching the specific auth/AI limiters.",
       "fix": "Add endpoint-specific and tenant/user/IP budgets plus edge limits; test expected workload so sync and legitimate office traffic are not throttled."
     },
@@ -1066,7 +1066,7 @@
       "severity": "Medium",
       "requirement": "Background queues have monitoring, failure alerts, and a dead-letter queue with replay.",
       "status": "FAIL",
-      "evidence": "server.ts:1 timers and src/platform/offsite.ts have logs/status files but no general dead-letter queue or operator alert/replay mechanism.",
+      "evidence": "Owner-alert queues now have queue-wide state counts, redacted filtered history and guarded durable worker observations; uncertain delivery remains no-resend. General external watchdog/escalation, provider reconciliation and reviewed recovery/dead-letter replay across queues remain incomplete. See operations/owner-alert-monitoring.md; manual dashboards are not paging.",
       "scenario": "Repeated backup, reminder or external-job failures can continue silently between manual checks.",
       "fix": "Persist failed jobs, alert a named operator and provide safe replay with idempotent processing."
     },
@@ -1633,7 +1633,7 @@
       "severity": "High",
       "requirement": "The workload fits the platform's documented limits (execution timeout, request/response size, concurrency, memory); long or large operations run on suitable compute.",
       "status": "UNVERIFIED",
-      "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
+      "evidence": "Local public signup now uses bounded asynchronous native crypto and one-active/no-backlog admission; redundant bootstrap hashing is removed. Tenant SQL/file setup remains synchronous and shares process resources. Hosted mixed signup/login/inquiry load, memory/disk growth, execution limits and supported-client capacity remain unverified. See operations/public-signup-budget.md.",
       "scenario": "",
       "fix": "List the platform's limits; compare with the longest request durations, largest uploads, and peak concurrency."
     },
@@ -2110,9 +2110,9 @@
   "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
   "latest_follow_up": {
     "date": "2026-10-19",
-    "scope": "Queue-wide owner-alert health, filtered redacted history and guarded durable worker observations",
-    "base_commit": "488d413d780b4b6d754fb9998b784d4d9c47787c",
-    "verification": "evidence/alert-monitor-verification.json",
+    "scope": "Public signup admission, bounded async receipt/owner hashing, prepared fresh initialization and uncertain-response browser retries",
+    "base_commit": "e28a9217082dcc44d96121011262511e3475bd0f",
+    "verification": "evidence/signup-budget-verification.json",
     "whole_control_statuses_changed": false
   }
 }

@@ -23,3 +23,10 @@ staged secret scan. Scope and verification distinguish completed checks from liv
 gates. The initial browser label assertion failure is retained; its screenshot/trace paths in
 raw output refer to transient work artifacts, not archived attachments. No deployment or
 provider message was sent. Whole-control totals and release hold remain unchanged.
+
+
+`signup-budget-*` records public signup resource admission, bounded async owner/receipt crypto,
+trusted fresh initialization and browser uncertainty handling. Initial/final focused and browser
+outputs are distinguished, with TypeScript, actual disposable server smoke, full regression
+and redacted staged scan. Exact scope and live limitations are in its verification/runbook.
+No full-control PASS, hosted capacity, provider acceptance or production rollout is inferred.
