@@ -45,3 +45,13 @@ See business-alerts.md. These are rollout gates, not completed deployment eviden
   catalog restore, stop reporting and reconcile later payment/receipt/bank/provider evidence.
 - [ ] Approve receipt/tombstone retention and explain no-key/new-modal/different-actor limits to
   support; never delete duplicate evidence to force a retry. See payment-report-retries.md.
+
+
+### Inquiry receipt rollout
+
+- [ ] Exercise synthetic lost-response/edit/conflict/original replay, source/alert rollback, expiry
+  and site-host/honeypot/rate controls with compatible writers before live rollout.
+- [ ] Measure combined login/inquiry memory/latency and saturation under representative hardware
+  and edge limits; per-process queue/rate checks are not distributed load acceptance.
+- [ ] Approve marker/verifier retention and reconcile before restoring older catalogs/downgrading
+  writers. Do not delete markers or blindly resend unknown alerts. See inquiry-retries.md.

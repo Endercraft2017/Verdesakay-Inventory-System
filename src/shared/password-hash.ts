@@ -18,6 +18,15 @@ export function hashPassword(password: string): string {
   return `${PREFIX}${salt.toString('hex')}$${derived.toString('hex')}`;
 }
 
+/** Public request bindings use the same format and bounded asynchronous work budget as login. */
+export async function hashPasswordForPublicRequest(value: string): Promise<string> {
+  if (!value || Buffer.byteLength(value,'utf8')>MAX_INPUT_BYTES) throw new Error('Invalid verifier input');
+  return withPasswordWork(async () => {
+    const salt=randomBytes(16), derived=await deriveAsync(value,salt);
+    return `${PREFIX}${salt.toString('hex')}$${derived.toString('hex')}`;
+  });
+}
+
 export function passwordNeedsUpgrade(encoded: string): boolean {
   return LEGACY.test(encoded);
 }

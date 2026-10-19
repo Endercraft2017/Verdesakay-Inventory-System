@@ -323,3 +323,12 @@ The generic pre-multipart cache is bypassed for this route and known old entries
 See operations/payment-report-retries.md and evidence/payment-receipts-verification.json.
 This is scoped evidence; 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A and release hold remain.
 No-key/legacy/other-actor requests, other API retries and wider financial/operational gates remain.
+
+
+### Public inquiry retry follow-up — 19 October 2026
+
+Medium scoped duplicate-inquiry gap addressed for updated keyed requests. Receipt/source/alert
+commit together; only a constant acknowledgement replays. Bounded async verifier work retains
+rate limits and rechecks live source/expiry after waiting. See operations/inquiry-retries.md and
+evidence/inquiry-receipts-verification.json. This is scoped evidence, not a complete-control
+promotion. Totals 36 PASS/58 FAIL/126 UNVERIFIED/13 N/A and release hold remain unchanged.

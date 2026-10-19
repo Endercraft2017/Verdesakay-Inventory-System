@@ -252,3 +252,28 @@ The local app test confirms its case-insensitive/non-strict behavior. A local re
 changed-proof replay through the old generic cache on a case-variant/trailing-slash payment URL;
 the route exemption now uses matching case-insensitive semantics. This is tested behavior, not
 a claim that every route alias in the app has been audited.
+
+
+### Public inquiry receipts and verifier admission — 19 October 2026
+
+Primary sources reviewed today: Stripe https://docs.stripe.com/api/idempotent_requests , SQLite
+https://www.sqlite.org/lang_savepoint.html and OWASP DoS Cheat Sheet
+https://cheatsheetseries.owasp.org/cheatsheets/Denial_of_Service_Cheat_Sheet.html . Random stable
+request keys/parameter binding inform retries; nested savepoints bind source/event/receipt.
+Own contract stores only successful intent verification and reconstructs a constant public
+acknowledgement, retaining expired markers instead of allowing pruned-key reuse. No Stripe
+provider/charging integration is added.
+
+The new public path uses the existing salted verifier format through bounded asynchronous
+native crypto, outside catalog transactions. Existing per-IP controls count replays; one-active/
+eight-waiting work bounds memory/backlog and returns authored busy responses. This follows
+resource-budget/backpressure principles without claiming distributed DoS prevention, measured
+login/inquiry SLA or hosting certification. After waiting, source/verifier/expiry are rechecked.
+Tests use isolated HTTP/SQLite faults, process exits and Chromium response loss; power-loss/
+real-host/provider/device acceptance remains separate. See inquiry-retries.md and evidence.
+
+MDN AbortController.abort https://developer.mozilla.org/en-US/docs/Web/API/AbortController/abort
+was also reviewed today: abort covers fetch and response-body consumption. The contact form
+uses a 20-second application timer, clears it on completion and retains uncertain request
+identity. It does not infer server rollback or claim timer accuracy across browser suspension.
+Controlled Playwright clock advancement follows a real withheld committed HTTP response.

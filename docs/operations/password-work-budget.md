@@ -35,3 +35,14 @@ Primary references reviewed 2026-10-16:
 [Node 24 crypto.scrypt](https://nodejs.org/docs/latest-v24.x/api/crypto.html#cryptoscryptpassword-salt-keylen-options-callback),
 [Node event-loop guidance](https://nodejs.org/en/learn/asynchronous-work/dont-block-the-event-loop), and
 [OWASP password storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
+
+
+### Public inquiry binding (2026-10-19)
+
+Inquiry receipt creation/verification now shares this same process budget. The new asynchronous
+hash helper preserves the existing salted format and yields to the event loop. Inquiry queue
+saturation returns authored 503 with Retry-After: 5 and no source write. The existing per-IP
+limiter runs before work and counts replays. After awaiting, live receipt/source/expiry are
+rechecked. This avoids introducing a new public synchronous hashing path, but inquiry traffic
+can compete with login and does not establish a measured capacity/SLA or distributed abuse
+defense. Signup and other synchronous writers are unchanged. See inquiry-retries.md.

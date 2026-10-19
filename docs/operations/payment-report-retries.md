@@ -101,7 +101,10 @@ Initial testing exposed the middleware interception conflict; subsequent fixture
 respect the fixed admin permission model, NOT NULL overrides and required child bootstrap password.
 A dedicated case reproduced generic-cache interception on an alternate-case URL; the exemption
 now handles that alias. A preliminary full run was interrupted with exit 130 to include the fix
-and is not counted as complete. No genuine failure is hidden as a passing run. Remaining engineering: inquiry/other API receipts,
+and is not counted as complete. No genuine failure is hidden as a passing run. Remaining engineering: other API/import receipts,
 legacy/duplicate/financial/provider reconciliation, reviewed resend, backlog escalation, upload
 content/security, broader settlement lifecycle and existing device/hosting/capacity/governance
 release gates. Complete-control totals and release hold remain unchanged.
+
+Keyed website inquiries are now covered separately by inquiry-retries.md; no-key/new-page
+duplicates and wider request recovery remain outside those contracts.

@@ -152,24 +152,32 @@
     }
     box.classList.toggle('hidden', !box.children.length);
   }
+  var inquiryKey = null; // Kept across edits/retries on this page, never silently rotated.
   document.getElementById('contact-form').addEventListener('submit', async function (e) {
     e.preventDefault();
     var form = this, error = form.querySelector('.error'), button = document.getElementById('contact-submit');
+    if (button.disabled) return;
     error.textContent = '';
     var get = function (id) { return document.getElementById(id).value.trim(); };
     if (!get('c-name') || !get('c-company')) { error.textContent = 'Enter your name and company.'; return; }
     if (!document.getElementById('c-email').checkValidity() || !get('c-email')) { error.textContent = 'Enter a valid email address.'; return; }
+    if (!window.crypto || !window.crypto.randomUUID) { error.textContent = 'Use a current browser on a secure connection to send this form.'; return; }
+    if (!inquiryKey) inquiryKey = window.crypto.randomUUID();
     button.disabled = true; button.textContent = 'Sending…';
+    var controller = new AbortController();
+    var deadline = setTimeout(function () { controller.abort(); }, 20000);
     try {
       var modules = Array.prototype.slice.call(document.querySelectorAll('#contact-modules input:checked')).map(function (i) { return i.value; });
-      var r = await fetch('/site/inquiry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+      var r = await fetch('/site/inquiry', { method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json', 'Idempotency-Key': inquiryKey }, body: JSON.stringify({
         name: get('c-name'), company: get('c-company'), email: get('c-email'), phone: get('c-phone'),
         employees: document.getElementById('c-employees').value, modules: modules, message: get('c-message'), website: get('c-website') }) });
       var data = await r.json().catch(function () { return {}; });
-      if (!r.ok) throw new Error(data.error || 'Your message could not be sent. Please try again.');
+      if (!r.ok) throw new Error(data && data.error || 'Your message could not be sent. Please try again.');
+      if (r.status !== 201 || !data || data.ok !== true) throw new Error('Message delivery is unconfirmed. Retry this form on the same page.');
       form.classList.add('hidden');
       document.getElementById('contact-done').classList.remove('hidden');
-    } catch (ex) { error.textContent = ex.message; button.disabled = false; button.textContent = 'Send →'; }
+    } catch (ex) { error.textContent = controller.signal.aborted ? 'Message delivery is unconfirmed. Retry this form on the same page.' : ex.message; button.disabled = false; button.textContent = 'Send →'; }
+    finally { clearTimeout(deadline); }
   });
   var path = window.location.pathname;
   if (path === '/login') document.getElementById('login-dialog').showModal();

@@ -16,6 +16,7 @@ source. User instructions define the task and permitted actions.
 | dependency-audit.md | Runtime advisory findings, disposition and release gates |
 | evidence/ | Raw or whitespace-normalized test/scan output, verification JSON and scoped findings |
 | ../operations/owner-alert-outbox.md | Shared owner-alert worker, uncertainty/retry and payload retention |
+| ../operations/inquiry-retries.md | Public inquiry retries, private intent binding, bounded work and recovery |
 | ../operations/payment-report-retries.md | Payment request replay, attachment binding, legacy-cache quarantine and rollback rules |
 | ../operations/business-alerts.md | Inquiry/payment transactions, proof storage, configuration snapshot and upgrade/recovery |
 | ../operations/workspace-onboarding.md | Local setup transaction, failure matrix, retry and outstanding orchestration work |
@@ -36,6 +37,7 @@ legal approval or independent assurance. The complete release remains on hold.
 | support-errors-* | Tenant/owner support and owner-detail validation/storage boundaries |
 | provision-errors-* | Full settings validation, atomic settings/audit and typed provisioning feedback |
 | provision-recovery-* | Prepare-before-publish, file ownership, failed-cache eviction and actual process exits |
+| inquiry-receipts-* | Atomic inquiry acknowledgements, public work admission, expiry/races and lost-response browser checks |
 | payment-receipts-* | Atomic payment request receipts, byte-bound replay, permission/legacy-cache boundaries and browser response loss |
 | business-alerts-* | Inquiry/payment intent, atomic proof/reporting, consistent mail credentials, browser/process faults |
 | owner-outbox-* | Signup alert intent/worker, mail transport safety, status UI and actual process interruption |

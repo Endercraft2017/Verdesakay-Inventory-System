@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-19",
+  "base_commit": "a2a92cc6e49aab8752a923449aaf1a1c5b302d21",
+  "scope": "Atomic public inquiry receipts, constant acknowledgement, stable same-page key, bounded async verifier admission and live source/expiry rechecks",
+  "full_run": {
+    "files_passed": 307,
+    "tests_passed": 3176,
+    "failed": 0,
+    "duration_seconds": 645.45
+  },
+  "first_focused": {
+    "files_passed": 4,
+    "tests_passed": 53,
+    "duration_seconds": 32.7
+  },
+  "intermediate_focused": {
+    "files_passed": 6,
+    "tests_passed": 67,
+    "duration_seconds": 45.39
+  },
+  "before_deadline_focused": {
+    "files_passed": 6,
+    "tests_passed": 70,
+    "duration_seconds": 44.74
+  },
+  "final_focused": {
+    "files_passed": 6,
+    "tests_passed": 70,
+    "duration_seconds": 44.28,
+    "new_inquiry_cases": 27,
+    "new_shared_helper_cases": 1
+  },
+  "first_playwright": {
+    "passed": 22,
+    "failed": 0,
+    "duration_seconds": 64.49819
+  },
+  "intermediate_playwright": {
+    "passed": 23,
+    "failed": 0,
+    "duration_source": "Text 1.1m; its JSON was overwritten by targeted deadline test"
+  },
+  "deadline_playwright": {
+    "passed": 1,
+    "failed": 0,
+    "duration_seconds": 6.7,
+    "controlled_browser_clock": true
+  },
+  "interrupted_full_run": {
+    "exit_code": 130,
+    "counted_as_completed": false,
+    "reason": "Add missing contact fetch/body deadline and controlled-clock committed-response retry test"
+  },
+  "final_playwright": {
+    "passed": 24,
+    "failed": 0,
+    "duration_seconds": 63.991277
+  },
+  "initial_typecheck": "Fixture generic SQLite result fields inferred as possibly undefined; explicit String/Number parameters corrected; initial compiler output retained",
+  "actual_startup": "passed: expired inquiry verifier pruned with marker/source retained; payment receipt/proof preserved; synthetic owner alerts accepted once and stale claims unknown without resend",
+  "typecheck": "passed",
+  "db_types": "passed; no generated tenant-type diff",
+  "secret_scan": "staged increment clean; commit hook scans again",
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "hosted_rollout_verified": false,
+  "limitations": "Same-page same-key contract only; no-key/new-page/legacy duplicates, other API/import recovery, public signup synchronous work, shared login/inquiry capacity, reconciliation/reviewed resend/backlog escalation and wider financial/security/upload/device/hosting/restore/governance gates remain. No production-ready/CI-green/full-control PASS claim."
+}

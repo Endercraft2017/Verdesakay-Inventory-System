@@ -470,6 +470,12 @@ are bound after current permission checks, and known old generic-cache entries r
 No-key/new-modal/different-actor requests remain outside this guarantee. See
 [payment-report retries](operations/payment-report-retries.md) for recovery/rollback limits.
 
+**Inquiry retry follow-up (2026-10-19):** the website keeps one random request key across same-page
+edits/retries. Source, eligible alert and receipt commit together; matching retries return only
+a constant acknowledgement. Public verifier work is bounded/asynchronous and existing rate
+limits still count replays. No-key/new-page duplicates and real capacity/restore acceptance
+remain. See [inquiry retries](operations/inquiry-retries.md).
+
 **First invoice:** the console's price list (per module per month + per login seat) prices the
 sign-up's quote; when every chosen module and the seat price have a price, the first month's
 invoice is issued automatically (due in 7 days) and the website shows the monthly total before
@@ -484,7 +490,7 @@ opens, a `trial`/`past_due` one becomes `active` (a `suspended` one is left alon
 (`public/js/modules/core/billing.js`), banner link, and the locked shell while awaiting payment.
 
 **Not built:** PayMongo (checkout + webhook, then subscriptions); automatic overdue → `past_due`;
-inquiry/other API retry receipts and broader notification reconciliation/monitoring;
+other API/import retry receipts and broader notification reconciliation/monitoring;
 recurring monthly invoices (the operator issues them).
 
 **Not verified:** the EWT / invoicing rules should be confirmed by the company's accountant.

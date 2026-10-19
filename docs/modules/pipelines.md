@@ -1453,3 +1453,14 @@ mismatch or expired tombstone conflicts. Desktop retries exact captured FormData
 uncertainty, permits corrected new attempt after explicit 400 and refreshes authoritative Billing
 after success. Startup/hourly/keyed-request pruning clears response/verifier after 24h, retaining
 minimal tombstones. See operations/payment-report-retries.md for legacy/rollback/restore limits.
+
+
+## Keyed public inquiry acknowledgement (2026-10-19)
+
+Site-host/rate-limit/schema/honeypot → UUID/normalized intent → bounded async salted binding or
+verification → live receipt/source/expiry recheck and public replay, or createInquiry savepoint
+→ source + enabled owner alert + successful receipt → commit → constant 201 acknowledgement.
+No async work/provider send spans that savepoint. Competing receipt uniqueness rolls source
+back; repeat exact request after conflict. Browser keeps one key across edits and failures, so
+changed details cannot silently duplicate an already committed request. Startup/hourly/keyed
+sweeps clear verifier after 24h and retain minimal tombstone. See operations/inquiry-retries.md.

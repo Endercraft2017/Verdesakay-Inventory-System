@@ -106,3 +106,14 @@ Receipt responses are ordinary private catalog financial data and backups can re
 payloads. The browser keeps FormData/key in modal memory only. Financial proof retention is
 separate. Approve lawful basis, access, holds, metadata expiry and backup handling; no forensic
 erasure/legal approval is implied. See operations/payment-report-retries.md for restore rules.
+
+
+## Public inquiry receipts (2026-10-19)
+
+platform_inquiry_receipts retains hashed random key, salted request verifier, inquiry ID and
+expiry only; it does not add raw contact/message/key or a private response. Constant public
+acknowledgement is reconstructed. Startup/hourly/keyed-request sweeps null verifiers after 24h;
+minimal duplicate-prevention markers remain. Browser key stays in page memory, with no new
+localStorage draft/key. Original inquiries, owner-alert payloads and provider/backup data have
+separate retention. Approve lawful basis/access/marker expiry/holds/backup and scoped erasure;
+nulling is not forensic wiping. Restore/rollback requires reconciliation. See inquiry-retries.md.

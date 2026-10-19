@@ -671,3 +671,74 @@ is separate. Older writers need stopped/reconciled reporting or compatible versi
 dependency/advisory snapshot/tenant schema bump, exactly-once remote outcome, CI-green, hosted
 rollout, production-ready or complete-control PASS claim. Complete-control totals remain
 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release hold stays.
+
+
+## Public inquiry retry receipts and bounded verifier work — 19 October 2026
+
+Base a2a92cc6e49aab8752a923449aaf1a1c5b302d21. Medium scoped duplicate-inquiry/alert gap
+addressed for updated keyed website submissions. The form retains one UUID-v4 key across edits/
+errors; matching committed details replay only 201 {ok:true}. Changed details conflict, while
+failed pre-commit work can be corrected with that same key. Source, eligible alert and receipt
+share one catalog savepoint; competing/receipt/alert failure rolls local source writes back.
+No raw contact/message/key or private response is added to receipt storage.
+
+Review added bounded asynchronous native verifier work through the existing shared login budget,
+avoiding a new public synchronous hashing path. One active/eight waiting jobs and ten-second wait
+return safe 503/Retry-After on saturation. Live source/verifier/expiry are rechecked after await.
+The existing production five/hour per-IP limiter counts replays. Other synchronous signup and
+authenticated helpers are unchanged; distributed abuse/shared capacity acceptance remains open.
+
+| Check | Completed result |
+|---|---|
+| Full `npm test -- --fileParallelism --maxWorkers=2` | 307 files / 3176 tests passed, 645.45s |
+| First focused | 4 files / 53 passed, 32.70s |
+| Intermediate focused after async admission | 6 files / 67 passed, 45.39s |
+| Final focused | 6 files / 70 passed, 44.28s; 27 new inquiry cases plus 1 shared helper case |
+| First Playwright | 22 passed, 64.49819s |
+| Final `npm run test:e2e` | 24 passed, 63.991s |
+| `npm run typecheck` | Passed after fixture SQL parameter typing correction |
+| `npm run db:types` | Passed; generated tenant types unchanged |
+| Actual server startup/timer | Expired inquiry verifier cleared; marker/source retained; synthetic alert/financial proof safety preserved |
+| Gitleaks staged increment | Clean; final commit hook scans again |
+| Diff/whitespace | Passed |
+
+Focused coverage includes normalization/seven changed fields, host/schema/honeypot gates,
+malformed keys, no-key/new-key behavior, URL aliases, receipt/alert faults, stale and actual
+concurrent HTTP candidates, expiry/source deletion and validation correction. Two child exits
+verify pre-commit rollback or committed source/receipt persistence. Saturated shared work returns
+503 without source; source/expiry change during queued verification rejects stale replay. Real
+native crypto yields to the event loop. A dedicated NODE_ENV=production case gets five matching
+201s then 429 with one source; no worker/provider I/O runs in that test.
+
+Chromium loses a real committed response, edits the same request/gets 409, restores original
+message/replays and verifies one source/alert through restricted owner APIs. Another case refuses
+null JSON/HTML fallback successes, retains draft/key and confirms only a real acknowledgement.
+Existing browser source-enqueue fault still accepts corrected retry. All completed focused/browser runs
+passed; no failed run is silently green. An intermediate typecheck rejected possibly-undefined
+SQLite result fields in fixtures; explicit String/Number SQL parameters corrected them. Initial
+compiler output is retained. Final runtime/tests were frozen before the final completed full regression; only
+documentation/evidence followed. One preliminary full run was deliberately interrupted with exit 130 to include the missing
+client deadline. The form now uses a 20-second AbortController timer for fetch/body reading,
+clears it on completion and preserves key/draft for uncertain retry. A targeted browser case
+commits on the real server, withholds response, advances the controlled clock and replays. That
+targeted case passed (6.7s). Earlier 22-/23-case browser outputs and the 70-case pre-deadline
+focused output are retained separately. The 23-case browser JSON was overwritten by the targeted
+timer run; final browser metadata is retained. The partial full output is not a completed pass.
+Browser suspension can delay timers; no network/hosting latency SLA or server rollback on abort
+is claimed. The final complete regression includes the deadline correction.
+
+See inquiry-receipts-* scope/verification/raw or whitespace-normalized output/browser metadata/
+startup script. Run startup script from repository root with work/ and dependencies available;
+private synthetic catalogs and test transport only. No real inquiry/provider/customer email/bank/
+deployment action. Research reviewed today: Stripe idempotency, SQLite savepoints and OWASP DoS
+Cheat Sheet; own-contract and local-evidence limits are in standards-research.md and
+operations/inquiry-retries.md. API/queue-work/onboarding/release/governance/draft privacy,
+module catalog/pipelines, readiness, handoff and scorecard metadata were updated.
+
+Remaining: no-key/new-page/legacy duplicates, other API/import receipts, public signup admission,
+shared login/inquiry capacity, provider/financial reconciliation/reviewed resend/queue escalation,
+upload and wider financial/security/device/hosting/restore/governance gates. Logical verifier
+expiry retains marker; backups/WAL/source/provider copies have separate policies. Old writers
+or restored catalogs need reconciliation. No new dependency/advisory snapshot/tenant schema
+bump, exactly-once inbox/provider outcome, CI-green, hosted rollout, production-ready or complete
+control PASS claim. Totals 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A and release hold unchanged.

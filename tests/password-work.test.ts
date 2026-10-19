@@ -2,7 +2,7 @@ import { it, expect, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { withPasswordWork, passwordWorkState, PasswordWorkBusyError } from '../src/shared/password-work';
-import { hashPassword, verifyPassword, verifyPasswordForLogin } from '../src/shared/password-hash';
+import { hashPassword, hashPasswordForPublicRequest, verifyPassword, verifyPasswordForLogin } from '../src/shared/password-hash';
 it('runs real scrypt asynchronously without weakening its format or blocking the event loop',async()=>{
   const password=randomUUID(),hash=hashPassword(password),work=verifyPasswordForLogin(password,hash);
   expect(await Promise.race([work.then(()=> 'password'),new Promise(resolve=>setImmediate(()=>resolve('event loop')))])).toBe('event loop');
@@ -36,4 +36,10 @@ it('expires queued work instead of keeping an authentication backlog',async()=>{
 it('releases capacity after a failed job',async()=>{
   const first=withPasswordWork(async()=>{throw new Error('synthetic failure');}),next=withPasswordWork(async()=> 'next');
   await expect(first).rejects.toThrow('synthetic failure');expect(await next).toBe('next');expect(passwordWorkState()).toEqual({active:0,queued:0});
+});
+
+it('public request binding yields to the event loop and keeps the existing salted verifier format',async()=>{
+  const value=randomUUID(),pending=hashPasswordForPublicRequest(value);
+  expect(await Promise.race([pending.then(()=> 'binding'),new Promise(resolve=>setImmediate(()=>resolve('event loop')))])).toBe('event loop');
+  const encoded=await pending;expect(encoded).toMatch(/^scrypt\$v1\$/);expect(verifyPassword(value,encoded)).toBe(true);expect(passwordWorkState()).toEqual({active:0,queued:0});
 });

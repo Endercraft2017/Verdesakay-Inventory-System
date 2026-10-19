@@ -1,4 +1,4 @@
-/** Public-login CPU/memory budget. One scrypt job uses about 128 MiB; never create an unbounded backlog. */
+/** Public credential/request-verifier CPU/memory budget. One scrypt job uses about 128 MiB; never create an unbounded backlog. */
 const MAX_QUEUED = 8;
 const MAX_WAIT_MS = 10_000;
 let active = 0;

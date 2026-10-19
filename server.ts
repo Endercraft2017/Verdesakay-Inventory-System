@@ -1,3 +1,4 @@
+import {pruneInquiryReceipts} from './src/platform/inquiry-receipts';
 import { prunePaymentReportReceipts } from './src/platform/payment-report-receipts';
 import { processOneOwnerAlert } from './src/platform/owner-alert-outbox';
 import { pruneCreationReceipts } from './src/platform/onboarding-receipts';
@@ -90,6 +91,7 @@ const housekeeping = () => {
   cleanupPlatformSessions();
   pruneCreationReceipts();
   prunePaymentReportReceipts();
+  pruneInquiryReceipts();
 };
 const usageSnapshots = () => {
   if (DEPLOY_MODE !== 'cloud') return;

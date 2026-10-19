@@ -103,9 +103,9 @@ financial records before reopening writes/worker processing. Never reset an unkn
 pending with SQL or infer nondelivery from a timeout. There is no new reviewed business-alert
 resend/provider-reconciliation interface in this increment.
 
-Source identity alone is not HTTP request idempotency: two inquiry POSTs, or payment POSTs
-without the same covered key/actor, can create distinct sources and alerts. Updated keyed payment
-reporting now uses payment-report-retries.md; a timeout outside that contract requires checking
+Source identity alone is not HTTP request idempotency: inquiry/payment POSTs outside their
+covered same-key contracts can create distinct sources and alerts. Updated keyed requests use
+inquiry-retries.md and payment-report-retries.md; a timeout outside those contracts requires checking
 existing inquiry/payment records before resubmitting. This fix does not deduplicate bank charges,
 references or user actions and does not establish exactly-once remote/inbox delivery. Wider
 request receipts/admission and reviewed duplicate financial reconciliation remain engineering.
@@ -135,3 +135,8 @@ statuses remain unchanged. Exact results/failures are in audit business-alerts-*
 Payment-request follow-up: payment-report-retries.md supersedes the no-HTTP-receipt limitation
 above for updated keyed tenant payment reporting only. Distinct keys/actors and no-key clients
 still create distinct reports. Website inquiries and broader reconciliation remain open.
+
+
+Inquiry-request follow-up: inquiry-retries.md now covers updated keyed website submissions,
+including constant acknowledgement and bounded public verifier work. No-key/new-page requests
+and other API actions remain outside that contract; broader delivery reconciliation remains open.

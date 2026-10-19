@@ -1,8 +1,8 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 19 October 2026 — keyed payment reporting now replays its committed original
-acknowledgement with parsed attachment binding and current permission checks. Desktop Billing
-retains the exact uncertain request for retry. Other alert/proof/mail fixes remain documented.
+Latest follow-up: 19 October 2026 — keyed public inquiries now commit a retry receipt with the
+source/alert and replay only a constant acknowledgement. Website keys survive same-page edits/
+failures; bounded asynchronous verifier work and live rechecks protect the new public path.
 Creation receipts, accounting and authentication follow-ups remain documented below. The
 complete release is still on hold.
 
@@ -42,7 +42,7 @@ applicable issue before changing behavior:
 | High | Complete remaining sensitive-business-action verification with the offline authority model | Explicit action inventory, server enforcement and replay/role/race tests; AUTHZ-15 remains open |
 | High | Uniform API validation/error/redaction and privacy export/retention/erasure lifecycle | Route-by-route evidence; tenant-safe restore/copy/integration tests; approved retention scope |
 | High | AI privacy/adversarial evaluation, interrupted audit outcomes and hard spend allocation | Isolation/leakage/abuse/cancellation tests and real provider budget acceptance |
-| High | Reliable onboarding notification delivery and broader creation admission/reconciliation | Completed keyed HTTP receipts and signup outbox/worker implemented; inquiry/other API retry receipts, provider reconciliation/reviewed resend, backlog monitoring, signup work budget, legacy/new-key recovery and imported-state acceptance remain. See operations/workspace-onboarding.md |
+| High | Reliable onboarding notification delivery and broader creation admission/reconciliation | Completed keyed HTTP receipts and signup outbox/worker implemented; other API/import retry receipts, provider reconciliation/reviewed resend, backlog monitoring, signup work budget, legacy/new-key recovery and imported-state acceptance remain. See operations/workspace-onboarding.md |
 | High | Native/Electron distribution and supported-client acceptance | APK/installer builds, signed artifacts, actual Windows/Android vault/backup/logout/upgrade checks |
 | High | Integration lifecycle and accounting reconciliation acceptance | Local generation/scoping, refresh admission, export exclusion and durable uncertain-write handling implemented 2026-10-18; actual Intuit sandbox, legacy adoption/repair tooling, interrupted-claim reconciliation, operational alerting and accountant acceptance remain. See operations/quickbooks-lifecycle.md |
 | High | Resolve or explicitly disposition vulnerable dependencies and historical-secret gates | Upstream/compatible fix or approved expiring risk record; verified revocation without exposing the old bearer |
@@ -269,3 +269,28 @@ remain. No owner action is needed now. Complete-control totals and release hold 
 The payment middleware exemption also covers Express case-insensitive/trailing-slash aliases.
 A deliberately failing alias test confirmed old-cache interception; a preliminary full run was
 interrupted (130) to include the correction, then verification restarted. See raw evidence.
+
+
+## Public inquiry retry follow-up — 2026-10-19
+
+Medium scoped gap: an inquiry/owner alert could duplicate after a committed response was lost.
+Updated website keeps one random key across edits/retries; normalized request details bind
+source/alert/receipt publication. Matching retries return only {ok:true}. Mismatches, expiry or
+missing source conflict without private data. Failure/competing uniqueness rolls back source.
+
+Public verifier work is asynchronous and shares the existing one-active/eight-waiting bounded
+login budget. Saturation returns safe 503; source/expiry/verifier are rechecked after awaiting.
+The production five/hour limiter still counts replays. Browser tests lose a real committed
+response, edit/conflict, restore/replay and verify one inquiry/alert; SQLite and two child exits
+verify rollback/persistence. An intermediate fixture SQL type error is retained and corrected.
+
+See operations/inquiry-retries.md and inquiry-receipts-* evidence. No-key/new-page/legacy
+duplicates, other API/import retries, public signup admission, shared login/inquiry capacity,
+queue/provider reconciliation/escalation and wider financial/security/device/hosted/governance
+gates remain. No owner action is needed now. Whole-control totals/release hold stay unchanged.
+
+The inquiry form also bounds each fetch/body read with a 20-second abort timer. A browser-clock
+test withholds a real committed response, advances the timer and verifies same-key retry. Abort
+does not imply server rollback. One preliminary full run was interrupted (130) to include this
+fix; only the subsequent complete regression counts. Broader browser/request deadlines remain
+outside this contact form's change.

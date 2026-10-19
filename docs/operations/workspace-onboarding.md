@@ -137,11 +137,16 @@ Our contract differs from Stripe: completed successes only, UUID-v4-only keys an
 tombstones. This is an application contract, not a claim that an Idempotency-Key RFC is final.
 
 Notification follow-up: owner-alert-outbox.md and business-alerts.md supersede earlier immediate
-signup/inquiry/payment alert limitations for the updated HTTP routes. Inquiry POSTs and
-no-key/different-key payment requests still need reconciliation after a lost response. Updated
+signup/inquiry/payment alert limitations for the updated HTTP routes. Inquiry/payment requests
+outside their covered keyed contracts still need reconciliation after a lost response. Updated
 keyed payment reporting has the separate receipt contract linked below.
 
 
 Separate financial follow-up: payment-report-retries.md covers updated keyed tenant payment
 reports, including parsed attachment binding and lost-response replay. This does not extend
 workspace creation receipts to other APIs/imports or certify payment settlement policy.
+
+
+Website inquiries now have their own keyed receipt contract in inquiry-retries.md. This covers
+updated same-page retries/edits and does not expand workspace/import receipts or remove broader
+creation admission, legacy recovery or financial lifecycle gates.
