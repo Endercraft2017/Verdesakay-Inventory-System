@@ -1,5 +1,28 @@
 # Inventory and production: mobile integration gaps
 
+## Current source check after branch acceptance (2026-10-19)
+
+**High priority — replace the phone's legacy Cycle count path before relying on
+it for physical inventory.** `public/mobile/modules/inventory/cycle-count.js`
+still posts `/inventory/:id/adjust` for every variance. That bypasses the newer
+`/inventory/stock-counts` observation, independent approval, apply/verify,
+planned-task, serial-exception, and linked-issue closure flow. It also reads a
+combined location quantity and uses `parseInt`, so semi-built versus fully built
+stock and measured quantities are not represented correctly. The route is
+visible to `inventory.adjust` users. The mobile owner should route counting to
+the canonical stock-count workflow with exact location and build state, stable
+attempt identity, serial evidence, and review states; remove or redirect the
+legacy direct-adjustment action. Keep intentional inventory adjustments as a
+separate, permissioned operation. Desktop already has the canonical flow.
+
+Current mobile source **does** include semi-built finishing intake, customer
+return receipt/inspection/disposition, pre-slip allocation correction, build
+state transfer, full location paths, and a whole-kit check when choosing a CKD
+trip. Older handoff paragraphs saying these are absent are historical. The CKD
+phone flow still needs a real-backend whole-kit/extra-component browser run and
+physical-device acceptance; the 390 px desktop check does not prove the phone
+PWA. No mobile source was edited for this review.
+
 ## Branch acceptance update (2026-10-19)
 
 The inventory/production branch matrix and evidence are in
