@@ -1,5 +1,35 @@
 # Inventory and production: mobile integration gaps
 
+## QA identification before the Products In sticker (2026-10-19)
+
+**Confirmed field sequence:** Production records each unit with an internal unit
+record, a human-readable identifier and a photo. QC and then QA inspect that
+record. The physical QR sticker is printed and attached **after QA, at Products
+In**, immediately before the clerk scans the attached sticker to receive RTS
+stock. QA therefore must not require a QR scan or imply that the sticker is
+already on the unit. A production identifier can be used to match the physical
+unit to its record before the sticker exists; this is not QR verification.
+
+**Mobile owner action:** In the QC/QA inspection queue, make the Ready/Recheck
+unit card the primary way to open an inspection. Rename the current **Scan or
+select unit** button and the identify screen's **Scan the unit label** prompt so
+they do not suggest a pre-QA sticker is required. Offer search by production
+identifier/job order as a fallback, and only offer QR scanning as an optional
+shortcut if a sticker was attached early. Show the recorded identifier and job
+order prominently at verification, and have the inspector confirm them against
+the physical unit. If the physical unit cannot be distinguished reliably,
+stop and resolve identification with Production before recording an inspection.
+Keep Products In's print → attach → scan verification mandatory as it is.
+
+**Acceptance:** A QA inspector can inspect a QC-passed unit with no QR sticker
+by selecting its Ready card, confirming the production identifier and job
+order, completing the checklist, and passing or routing the issue. The unit
+remains out of RTS stock until Products In prints/attaches/scans its sticker and
+posts the receipt. A wrong unit must never be accepted merely because it was
+opened from a list. Test two same-product units on one job order to ensure the
+inspector can distinguish them before either has a sticker. No mobile source
+was edited in this handoff.
+
 ## Current close-out status (2026-10-19)
 
 Permission close-out: see `docs/reviews/inventory-production-permissions-audit-2026-10-19.md`.
