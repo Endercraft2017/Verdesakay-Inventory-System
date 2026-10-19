@@ -25,6 +25,9 @@ try {
  await page.locator('#m-guide-start').click();
  assert.equal(await page.locator('[data-act=depth]').count(),0);
  assert((await page.locator('.guide-coach-text').innerText()).includes('only the tasks and tools currently shown'));
+ const jump=page.locator('[data-act=jump]');assert.equal(await jump.locator('option').count(),visible.length+1);
+ await jump.selectOption(String(visible.indexOf('Release orders')+1));assert.equal(await page.locator('.guide-coach h4').innerText(),'Release orders');assert((await page.locator('.work-guide-effect').innerText()).includes('Picking reserves'));
+ await page.locator('[data-act=jump]').selectOption('0');
  for(const label of visible){await page.locator('[data-act=next]').click();assert.equal(await page.locator('.guide-coach h4').innerText(),label);assert((await page.locator('.guide-coach-text').innerText()).includes('Result / next step:'));if(label==='Receive PR'){assert((await page.locator('.guide-coach-text').innerText()).includes('supplier goods receipt'));await page.screenshot({path:path.join(out,'receive-pr.png')});}if(label==='RTS recording')assert((await page.locator('.guide-coach-text').innerText()).includes('not Receive PR'));}
  await page.locator('[data-act=next]').click();assert.equal(await page.locator('.guide-coach').count(),0);
  assert.equal(await page.evaluate(()=>MApp.currentLocation().name),'work');
@@ -33,6 +36,7 @@ try {
  await page.locator('#m-guide-start').click();
  let steps=await page.evaluate(()=>MobileGuide.steps(document.querySelector('#m-view')).map(s=>s.title));
  assert(steps.includes('QC technical inspection'));assert(!steps.includes('Receive PR'));assert(!steps.includes('QA appearance inspection'));assert(!steps.includes('QA holds'));
+ const options=await page.locator('[data-act=jump] option').allTextContents();assert(!options.some(t=>t.includes('Receive PR')||t.includes('QA holds')));
  report.checks.push('Custom QC account includes only its current displayed queues');
  await api('PUT','/users/'+qc.id+'/permissions',{overrides:{'production.inspect_qc':false,'production.qa_review':true}});
  await page.evaluate(()=>MApp.refreshAccess());

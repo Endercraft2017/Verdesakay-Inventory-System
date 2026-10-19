@@ -125,3 +125,12 @@ visible task is included without a shortened overview that silently skips entrie
 If access changes while help is open, the old guide closes; reopen Guide to read
 explanations for the refreshed Work screen. **My tools → Guides** remains the
 separate library for broader workflows across modules.
+
+### Find an explanation quickly
+
+Inside the Work guide, use **Jump to a task** instead of pressing Next through the
+whole list. The selector contains only the overview and the entries currently
+visible on your Work screen. Back and Next continue from the selected explanation.
+Stock-related entries start with a **Stock effect** callout, distinguishing reads,
+reservations, physical stock-in/out, location moves and separate reconciliation.
+Selecting an explanation only changes help; it does not open or submit that task.

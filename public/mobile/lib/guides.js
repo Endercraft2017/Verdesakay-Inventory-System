@@ -37,10 +37,10 @@
     }else{
       var p=MApp.currentLocation(),route=p.name;
       if(route==='work'){
-        add('.v2-work-heading','Your active Work tasks','<p>This guide explains only the tasks and tools currently shown for your account. Access comes from your assigned permissions and enabled modules.</p><p><b>WAITING</b> is the queue count, <b>CLEAR</b> means no work is currently counted, and <b>OPEN</b> means the task is available without a confirmed count. These labels do not mean the task has been completed.</p><p>Next highlights each entry without opening it or submitting anything.</p>');
+        add('.v2-work-heading','Your active Work tasks','<p>This guide explains only the tasks and tools currently shown for your account. Access comes from your assigned permissions and enabled modules.</p><p><b>WAITING</b> is the queue count, <b>CLEAR</b> means no work is currently counted, and <b>OPEN</b> means the task is available without a confirmed count. These labels do not mean the task has been completed.</p><p>Choose Jump to a task to read one explanation directly, or use Next to highlight each entry. The guide never opens or submits work.</p>');
         root.querySelectorAll('[data-work-guide]').forEach(function(row){
           add(row,row.dataset.workGuideTitle,
-            '<p><b>What it is:</b> '+mEsc(row.dataset.workGuidePurpose)+'</p>'+
+            (row.dataset.workGuideEffect?'<p class="work-guide-effect"><b>Stock effect:</b> '+mEsc(row.dataset.workGuideEffect)+'</p>':'')+'<p><b>What it is:</b> '+mEsc(row.dataset.workGuidePurpose)+'</p>'+
             '<p><b>When to use it:</b> '+mEsc(row.dataset.workGuideWhen)+'</p>'+
             '<p><b>Result / next step:</b> '+mEsc(row.dataset.workGuideResult)+'</p>');
         });
@@ -53,7 +53,7 @@
     }
     return result;
   }
-  function start(){var root=document.querySelector('#m-view');if(!root || /Loading…/.test(root.textContent)){mToast('Wait for the screen to load, then press Guide.');return;}var p=MApp.currentLocation();if(p.name==='work')root=root.querySelector('.v2-work')||root;var list=steps(root);if(!list.length){mToast('No controls are available in this view right now.');return;}var id='mobile:'+p.name+':'+(root.querySelector('#m-note-editor')?'note-editor':root.querySelector('[data-due]')?'task-editor':'screen');GuideTour.start({id:id,title:document.querySelector('#m-title').textContent,steps:list,variants:p.name!=='work'&&list.length>3?{detailed:list,brief:list.filter((_,i)=>i===0||i===Math.floor(list.length/2)||i===list.length-1)}:null,context:root},0,{root:root});if(p.name==='work')document.querySelector('.guide-coach')?.classList.add('work-task-guide');}
+  function start(){var root=document.querySelector('#m-view');if(!root || /Loading…/.test(root.textContent)){mToast('Wait for the screen to load, then press Guide.');return;}var p=MApp.currentLocation();if(p.name==='work')root=root.querySelector('.v2-work')||root;var list=steps(root);if(!list.length){mToast('No controls are available in this view right now.');return;}var id='mobile:'+p.name+':'+(root.querySelector('#m-note-editor')?'note-editor':root.querySelector('[data-due]')?'task-editor':'screen');GuideTour.start({id:id,title:document.querySelector('#m-title').textContent,steps:list,stepPicker:p.name==='work'?'Jump to a task':null,variants:p.name!=='work'&&list.length>3?{detailed:list,brief:list.filter((_,i)=>i===0||i===Math.floor(list.length/2)||i===list.length-1)}:null,context:root},0,{root:root});if(p.name==='work')document.querySelector('.guide-coach')?.classList.add('work-task-guide');}
   window.MobileGuide={start:start,steps:steps};
   function init(){document.querySelector('#m-guide-start')?.addEventListener('click',start);window.addEventListener('hashchange',function(){window.GuideTour?.close();});}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();

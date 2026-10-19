@@ -119,3 +119,23 @@ it('a personal-only account gets its own task and tools explained without wareho
  expect(steps.some((s:any)=>s.title==='Notes / checklists')).toBe(true);
  dom.window.close();
 });
+
+it('jumps directly to a visible Work explanation and highlights stock effects without opening the task',async()=>{
+ const {dom,w,view,go,navigations}=await boot({get:async()=>[]});
+ w.MApp.can=(p:string)=>p==='inventory.adjust';w.MApp.canOpen=(r:string)=>['receive','so','allocate'].includes(r);
+ await go('work');const before=navigations.length;
+ const steps=w.MobileGuide.steps(view);w.MobileGuide.start();
+ let select=w.document.querySelector('[data-act=jump]');
+ expect([...select.options].map((o:any)=>o.textContent)).toEqual(steps.map((s:any,i:number)=>`${i+1}. ${s.title}`));
+ const release=steps.findIndex((s:any)=>s.title==='Release orders');
+ select.value=String(release);select.dispatchEvent(new w.Event('change'));
+ expect(w.document.querySelector('.guide-coach h4').textContent).toBe('Release orders');
+ expect(w.document.querySelector('.work-guide-effect').textContent).toContain('Picking reserves');
+ w.document.querySelector('[data-act=next]').click();
+ expect(w.document.querySelector('.guide-coach h4').textContent).toBe(steps[release+1].title);
+ select=w.document.querySelector('[data-act=jump]');const allocate=steps.findIndex((s:any)=>s.title==='Allocate units');
+ select.value=String(allocate);select.dispatchEvent(new w.Event('change'));
+ expect(w.document.querySelector('.work-guide-effect').textContent).toContain('deducts units immediately');
+ expect(navigations).toHaveLength(before);
+ dom.window.close();
+});

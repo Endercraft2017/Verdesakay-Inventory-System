@@ -28,3 +28,7 @@
 
 /* Work entries explain purpose, timing and effects; allow room for all three. */
 .guide-coach.work-task-guide .guide-coach-body { max-height: 50dvh; }
+
+.guide-step-picker { display:flex; flex-direction:column; gap:5px; width:100%; min-width:0; font-size:12px; color:var(--v2-muted); }
+.guide-step-picker select { width:100%; min-width:0; min-height:44px; border:1px solid var(--v2-line); border-radius:10px; padding:8px; color:var(--v2-text); background:var(--v2-surface); font:inherit; }
+.work-guide-effect { padding:10px 12px; border-left:3px solid var(--v2-green); background:var(--v2-surface-soft); border-radius:8px; }
