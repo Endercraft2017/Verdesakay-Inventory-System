@@ -37,7 +37,7 @@
         <h1>Otom</h1>
         <div class="m-sub">Warehouse · by AFKcube</div>
       </div>
-      <div id="m-login-error" class="m-error hidden"></div>
+      <div id="m-login-error" role="alert" tabindex="-1" class="m-error hidden"></div>
       <label for="m-username">Username</label>
       <input id="m-username" name="username" autocomplete="username" required autofocus />
       <label for="m-password">Password</label>
@@ -48,6 +48,8 @@
           <small>Signs you out after 30 minutes idle or when the app closes. Notifications stay off.</small></span>
       </label>
       <button class="m-btn" type="submit">Sign in</button>
+      <p id="m-login-status" class="auth-status" role="status"></p>
+      <a class="m-recovery" id="m-recovery" href="/index.html?recover=1">Forgot username or password?</a>
     </form>
   </div>
 
@@ -128,6 +130,7 @@
   <script src="/js/doc-template.js"></script>
   <script src="/mobile/vendor/qrcode.js"></script>
   <script src="/mobile/vendor/zxing.js"></script>
+  <script src="/js/auth-controls.js"></script>
   <script src="/mobile/app.js"></script>
   <script src="/mobile/lib/dom.js"></script>
   <script src="/js/personal-ux.js"></script>

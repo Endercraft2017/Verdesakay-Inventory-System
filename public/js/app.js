@@ -580,60 +580,103 @@ const App = (() => {
   }
 
   function forgotPassword() {
-    UI.modal({
-      title: 'Recover your login',
-      bodyHTML: `<p class="muted" style="margin-top:0">Enter your username or email. If we have an
-        address on file and email is set up, you'll get your username and a password reset link.</p>
-        <label>Username or email</label><input data-f="id" autocomplete="username" />`,
-      confirmText: 'Send reset link',
-      onConfirm: async (ov, showErr) => {
-        const id = ov.querySelector('[data-f="id"]').value.trim();
-        if (!id) { showErr('Enter your username or email.'); return false; }
-        const r = await API.post('/auth/forgot-password', { identifier: id });
-        // The server answers the same for every account (no hint which ones exist); only a
-        // sandbox workspace says why nothing is sent.
-        UI.toast(r.reason ? 'Could not send: ' + r.reason
-          : (r.message || 'If that account exists, a link is on its way.'), r.reason ? 'error' : 'success');
-      },
-    });
+      let completed = false;
+      const m = UI.modal({ title: 'Recover your login', confirmText: 'Send reset link', protectChanges: true,
+          bodyHTML: '<p class="muted" style="margin-top:0">Enter your username or email. If we have an address on file and email is set up, you will receive your username and a password reset link.</p><label for="recovery-identifier">Username or email</label><input id="recovery-identifier" data-f="id" autocomplete="username" maxlength="200" required aria-describedby="recovery-help"/><p id="recovery-help" class="muted auth-help">No email on your account? Ask your administrator to help you recover your login.</p>',
+          onClose: () => { if (completed)
+              document.getElementById('login-username')?.focus(); },
+          onConfirm: async (ov, showErr) => { const input = ov.querySelector('[data-f=id]'); const id = input.value.trim(); if (!id) {
+              showErr('Enter your username or email.');
+              input.setAttribute('aria-invalid', 'true');
+              input.focus();
+              return false;
+          } const button = ov.querySelector('[data-confirm]'); button.textContent = 'Sending…'; ov.setAttribute('aria-busy', 'true'); try {
+              const r = await API.post('/auth/forgot-password', { identifier: id });
+              if (r.reason) {
+                  showErr(r.reason);
+                  return false;
+              }
+              completed = true;
+              m.markSaved();
+              ov.querySelector('.modal-body').innerHTML = '<div role="status"><h4>Request received</h4><p>' + UI.esc(r.message || 'If that account exists and has an email address on file, a reset link is on its way. Otherwise ask your administrator to reset your password.') + '</p><p class="muted">Check your inbox and spam folder. Any reset link you receive is valid for one hour. This message does not confirm whether an account or email exists.</p></div>';
+              button.hidden = true;
+              ov.querySelector('.modal-foot [data-close]').textContent = 'Back to sign in';
+              return false;
+          }
+          catch (e) {
+              showErr(AuthControls.errorMessage(e));
+              return false;
+          }
+          finally {
+              button.textContent = 'Send reset link';
+              ov.removeAttribute('aria-busy');
+          } } });
   }
-
   function setNewPassword(token) {
-    UI.modal({
-      title: 'Set a new password',
-      bodyHTML: `<label>New password</label>
-        <input data-f="pw" type="password" autocomplete="new-password" placeholder="at least 8 characters" />`,
-      confirmText: 'Save & sign in',
-      cancelText: 'Cancel',
-      onConfirm: async (ov, showErr) => {
-        const pw = ov.querySelector('[data-f="pw"]').value;
-        if ((pw || '').length < 8) { showErr('Password must be at least 8 characters.'); return false; }
-        try {
-          await API.post('/auth/reset-password', { token, new_password: pw });
-        } catch (e) { showErr(e.message); return false; }
-        history.replaceState(null, '', location.pathname + location.hash);
-        UI.toast('Password updated — please sign in.', 'success');
-      },
-    });
+      let completed = false;
+      const m = UI.modal({ title: 'Set a new password', confirmText: 'Save password', protectChanges: true,
+          bodyHTML: '<p class="muted auth-help" id="password-policy">Use 8–128 characters. Common passwords are not accepted. You will sign in after saving.</p><label for="reset-password">New password</label><input id="reset-password" data-f="pw" data-label="new password" type="password" autocomplete="new-password" aria-describedby="password-policy" minlength="8" maxlength="128" required/><label for="reset-confirm">Confirm new password</label><input id="reset-confirm" data-f="confirm" data-label="confirmation password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required/><button type="button" class="btn secondary small" data-another-link hidden style="margin-top:12px">Request another reset link</button>',
+          onClose: () => { if (completed)
+              document.getElementById('login-username')?.focus(); },
+          onOpen: ov => { AuthControls.passwords(ov); ov.querySelector('[data-another-link]').onclick = () => { m.markSaved(); m.close(); forgotPassword(); }; },
+          onConfirm: async (ov, showErr) => { const input = ov.querySelector('[data-f=pw]'), confirm = ov.querySelector('[data-f=confirm]'); if (input.value.length < 8 || input.value.length > 128) {
+              showErr('Password must be 8–128 characters.');
+              input.setAttribute('aria-invalid', 'true');
+              input.focus();
+              return false;
+          } if (input.value !== confirm.value) {
+              showErr('The passwords do not match.');
+              confirm.setAttribute('aria-invalid', 'true');
+              confirm.focus();
+              return false;
+          } const button = ov.querySelector('[data-confirm]'); button.textContent = 'Saving…'; ov.setAttribute('aria-busy', 'true'); try {
+              await API.post('/auth/reset-password', { token, new_password: input.value });
+              completed = true;
+              m.markSaved();
+              history.replaceState(null, '', location.pathname + location.hash);
+              ov.querySelector('.modal-body').innerHTML = '<div role="status"><h4>Password updated</h4><p>Sign in with your new password. For your account protection, existing sessions have ended.</p></div>';
+              button.hidden = true;
+              ov.querySelector('.modal-foot [data-close]').textContent = 'Back to sign in';
+              return false;
+          }
+          catch (e) {
+              showErr(AuthControls.errorMessage(e));
+              if (/reset link|expired/i.test(e.message))
+                  ov.querySelector('[data-another-link]').hidden = false;
+              return false;
+          }
+          finally {
+              button.textContent = 'Save password';
+              ov.removeAttribute('aria-busy');
+          } } });
   }
 
   async function boot() {
-    // Wire login form
-    document.getElementById('login-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const errEl = document.getElementById('login-error');
-      errEl.classList.add('hidden');
-      const u = document.getElementById('login-username').value.trim();
-      const p = document.getElementById('login-password').value;
-      const sharedBox = document.getElementById('login-shared');
-      try {
-        await login(u, p, !!(sharedBox && sharedBox.checked));
-        if (sharedBox) sharedBox.checked = false;
-      } catch (err) {
-        errEl.textContent = err.message;
+    AuthControls.passwords(document.getElementById("login-form"));
+    let loginPending = false;
+    document.getElementById('login-form').addEventListener('submit', async (e) => { e.preventDefault(); if (loginPending)
+        return; const form = e.target, button = form.querySelector('[type=submit]'), errEl = document.getElementById('login-error'), user = document.getElementById('login-username'), pw = document.getElementById('login-password'), sharedBox = document.getElementById('login-shared'); errEl.classList.add('hidden'); if (!user.value.trim()) {
+        errEl.textContent = 'Enter your username.';
         errEl.classList.remove('hidden');
-      }
-    });
+        user.setAttribute('aria-invalid', 'true');
+        user.focus();
+        return;
+    } loginPending = true; button.disabled = true; button.textContent = 'Signing in…'; form.setAttribute('aria-busy', 'true'); document.getElementById('login-status').textContent = 'Signing in. Please wait.'; try {
+        await login(user.value.trim(), pw.value, !!sharedBox.checked);
+        sharedBox.checked = false;
+    }
+    catch (e) {
+        errEl.textContent = AuthControls.errorMessage(e);
+        errEl.classList.remove('hidden');
+        errEl.focus();
+    }
+    finally {
+        loginPending = false;
+        button.disabled = false;
+        button.textContent = 'Sign in';
+        form.removeAttribute('aria-busy');
+        document.getElementById('login-status').textContent = '';
+    } });
 
     const forgotLink = document.getElementById('forgot-link');
     if (forgotLink) forgotLink.addEventListener('click', forgotPassword);
@@ -641,6 +684,7 @@ const App = (() => {
     // Arriving from a "reset your password" email link.
     const resetToken = new URLSearchParams(location.search).get('reset');
     if (resetToken) setNewPassword(resetToken);
+    else if (new URLSearchParams(location.search).has("recover")) forgotPassword();
 
     // Utility bar: menu search + site map + pin glyph.
     document.getElementById('menu-search')
