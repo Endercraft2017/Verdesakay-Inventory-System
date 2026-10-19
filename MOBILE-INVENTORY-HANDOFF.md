@@ -16,10 +16,12 @@ physical-device acceptance are separate.
 Current mobile source **does** include semi-built finishing intake, customer
 return receipt/inspection/disposition, pre-slip allocation correction, build
 state transfer, full location paths, and a whole-kit check when choosing a CKD
-trip. Older handoff paragraphs saying these are absent are historical. The CKD
-phone flow still needs a real-backend whole-kit/extra-component browser run and
-physical-device acceptance; the 390 px desktop check does not prove the phone
-PWA. No mobile source was edited for this review.
+trip. Older handoff paragraphs saying these are absent are historical. A
+real-backend phone-PWA browser run now covers lone-frame and extra-component
+refusals, one complete-kit warehouse-out with proof and single stock-out, and
+an empty second trip (`npm run test:mobile:ckd-edge`).
+Physical-device acceptance with real labels/camera still remains. No mobile
+source was edited for this review.
 
 ## Branch acceptance update (2026-10-19)
 

@@ -61,7 +61,7 @@ try {
   const wheel = await api('POST', '/inventory', admin, { name: 'Browser CKD wheel', quantity: 6 }, 201);
   await api('PUT', '/finished-products/' + product.id, admin, { components: [{ component_item_id: frame.id, quantity: 1 }, { component_item_id: wheel.id, quantity: 2 }] });
   const kitOrder = await api('POST', '/orders', admin, { type: 'sale', status: 'approved', customer_name: 'Whole kit browser', items: [{ item_id: product.id, name: 'Browser CKD product', quantity: 2, unit_price: 100, fulfillment_mode: 'ckd' }] }, 201);
-  await api('POST', '/release-slips/orders/' + kitOrder.id + '/authorizations', admin, { mode: 'pickup', recipient_name: 'CKD pickup', partial_allowed: true }, 201);
+  const kitAuthorization = await api('POST', '/release-slips/orders/' + kitOrder.id + '/authorizations', admin, { mode: 'pickup', recipient_name: 'CKD pickup', partial_allowed: true }, 201);
   await api('POST', '/orders/' + kitOrder.id + '/accept-release', admin, {});
   await api('POST', '/orders/' + kitOrder.id + '/release', admin, { bulk: [{ item_id: frame.id, quantity: 1 }] });
   const narrow = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
@@ -84,6 +84,17 @@ try {
   await kitPage.getByText('Unreserve extra picked parts or complete another kit', { exact: false }).waitFor();
   await api('POST', '/orders/' + kitOrder.id + '/release/unreserve', admin, { bulk: [{ item_id: frame.id, quantity: 1 }] });
   console.log('Desktop 390: an extra picked CKD component blocks slip until undone');
+  const firstKitSlip = await api('POST', '/orders/' + kitOrder.id + '/release-slip', admin,
+    { collected_by: 'CKD pickup', authorization_token: kitAuthorization.token }, 201);
+  assert(firstKitSlip.id);
+  assert.equal((await api('GET', '/inventory/' + frame.id, admin)).quantity, 2);
+  assert.equal((await api('GET', '/inventory/' + wheel.id, admin)).quantity, 4);
+  await api('POST', '/release-slips/orders/' + kitOrder.id + '/authorizations', admin,
+    { mode: 'pickup', recipient_name: 'CKD second pickup', partial_allowed: true }, 201);
+  await kitPage.evaluate(() => App.navigate('releasing', { tab: 'queue' }));
+  await kitPage.locator('#rl-picking tr[data-open="' + kitOrder.id + '"]').click();
+  assert(await kitPage.locator('#rl-slip').isDisabled());
+  console.log('Desktop 390: shipped first-kit components cannot enable a new empty trip');
   const spare = await api('POST', '/inventory', admin, { name: 'Browser mixed-order spare', quantity: 1 }, 201);
   const mixedOrder = await api('POST', '/orders', admin, { type: 'sale', status: 'approved', customer_name: 'Mixed browser', items: [
     { item_id: product.id, name: 'Browser CKD product', quantity: 1, unit_price: 100, fulfillment_mode: 'ckd' },
