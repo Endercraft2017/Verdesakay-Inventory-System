@@ -1257,7 +1257,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           <td>${isPayroll
             // A real button, so Tab + Enter opens the payslip detail; its click bubbles to the row.
             ? `<button type="button" class="hr-row-open" title="View payslip details">${UI.esc(r.number)}</button>`
-            : `<strong>${UI.esc(r.number)}</strong>`}<small class="muted"> · v${r.definition_version || 1} / r${r.revision || 1}</small></td>
+            : `<strong>${UI.esc(r.number)}</strong>`}<small class="muted"> · v${r.definition_version || 1} / r${r.revision || 1}</small>${isPayroll && Number(r.data.net_pay) < -0.005 ? '<span class="badge-pill low" title="Review deductions and recovery before marking paid">Negative net pay</span>' : ''}</td>
           ${visibleFields.map((f) => `<td>${UI.esc(DataForms.displayValue(r.data[f.key],f))}</td>`).join('')}
           <td><span class="badge-pill status-${UI.esc(r.status)}">${UI.esc(r.status)}</span></td>
           <td>${UI.esc(UI.fmtDateShort(r.created_at))}</td>
@@ -1316,6 +1316,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     return bundles.map((b, i) => {
       const open = expandedBundles.has(b.label);
       const t = payslipTotals(b.records);
+      const negativeNet = b.records.filter(r => Number(r.data.net_pay) < -0.005).length;
       const dateRange = b.meta ? `${UI.esc(b.meta.start_date)} – ${UI.esc(b.meta.end_date)} · ` : '';
       // The caret + label is a real disclosure <button> (keyboard + screen-reader state); a
       // click anywhere else on the header still toggles via [data-bundle-toggle] below.
@@ -1327,6 +1328,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
             <span>
               <strong>${UI.esc(b.label)}</strong>
               <span class="muted payroll-bundle-meta">${dateRange}${b.records.length} payslip${b.records.length === 1 ? '' : 's'}</span>
+              ${negativeNet ? `<span class="badge-pill low" title="Review deductions and recovery before marking paid">${negativeNet} negative net</span>` : ''}
             </span>
           </button>
           <div style="display:flex;gap:22px;flex-wrap:wrap">
