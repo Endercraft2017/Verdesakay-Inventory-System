@@ -50,3 +50,17 @@ it('explains unscheduling and keeps the task when removal is declined',async()=>
 it('preserves date-only deadlines in the editor without silently writing a new schedule',async()=>{
   const calls:any[]=[];const {dom,w,view,go}=await boot({get:async()=>[{id:1,title:'All-day task',due_date:'2026-11-05'}],put:async(...a:any[])=>calls.push(a)});await go('tasks',{id:1});expect(view.querySelector('[data-due]').value).toBe('2026-11-05T09:00');expect(calls).toHaveLength(0);view.querySelector('[data-title]').value='Updated title';view.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await flush();expect(calls[0][1].due_date).toBe('2026-11-05');dom.window.close();
 });
+
+it('shows current workflow handoffs and conditional recovery branches in the phone guide library',async()=>{
+ const {dom,w,view,go}=await boot({get:async()=>[]});
+ await go('guides');
+ const section=view.querySelector('#m-guide-section');section.value='pipelines';section.dispatchEvent(new w.Event('change'));
+ expect(view.querySelectorAll('.m-guide-reference').length).toBe(w.GUIDE.pipelines.filter((p:any)=>p.pipeline).length);
+ const search=view.querySelector('#m-guide-search');search.value='rejected on inspection';search.dispatchEvent(new w.Event('input'));
+ // Search the stage and handoff, not just the compact guide title.
+ search.value='customer return';search.dispatchEvent(new w.Event('input'));
+ expect(view.textContent).toContain('Result / handoff:');
+ expect(view.textContent).toContain('Rejected on inspection?');
+ expect(view.querySelector('.m-pipeline-path')).not.toBeNull();
+ dom.window.close();
+});

@@ -137,3 +137,23 @@ it('renders direction arrows and conditional sales branches without running busi
   expect(navigations).toEqual([]);
   dom.window.close();
 });
+
+it('keeps new roadmap branches and related workflow navigation usable and searchable', async () => {
+  const {dom,w,routes,navigations}=await boot();
+  w.App.hasModule=()=>true;w.App.canAccessRoute=()=>true;
+  const view=w.document.querySelector('#view');
+  routes.sop(view,{topic:'sales-to-cash'});
+  view.querySelector('[data-related-workflow="customer-return"]').click();
+  expect(view.querySelector('.guide-hero h3').textContent).toContain('Customer return');
+  expect(view.querySelector('.workflow-branch').textContent).toContain('Rejected on inspection?');
+  expect(view.querySelector('.workflow-branch button').dataset.pipelineStep).toBe('2');
+  const search=view.querySelector('#guide-search');search.value='independent review';
+  search.dispatchEvent(new w.Event('input'));
+  expect(view.querySelector('[data-id="physical-count"]').hidden).toBe(false);
+  for(const p of w.GUIDE.pipelines) {
+    for(const id of p.related||[]) expect(w.GUIDE.byId[id],p.id+' → '+id).toBeTruthy();
+    for(const step of p.steps) if(step.branch) expect(p.steps[step.branch.target],p.id).toBeTruthy();
+  }
+  expect(navigations).toEqual([]);
+  dom.window.close();
+});

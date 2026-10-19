@@ -19,3 +19,9 @@
 .guide-depth select { max-width: 210px; min-height: 36px; border: 1px solid var(--v2-line); background: var(--v2-surface); color: var(--v2-text); border-radius: 10px; font-size: 12px; padding: 5px; }
 .guide-coach-body { max-height: 20dvh; }
 .guide-coach-body { min-height: 0; flex: 1 1 auto; }
+
+.m-pipeline-path { list-style:decimal; border-left:2px solid var(--v2-green); margin-left:8px; }
+.m-pipeline-path > li { position:relative; border:1px solid var(--v2-line); border-radius:10px; padding:12px; background:var(--v2-surface); margin-bottom:32px; }
+.m-pipeline-path > li:not(:last-child)::after { content:'↓'; position:absolute; bottom:-29px; left:12px; color:var(--v2-green); font-size:22px; }
+.m-pipeline-team { display:block; color:var(--v2-green); margin-bottom:6px; }
+.m-pipeline-branch { border:1px dashed var(--v2-green); padding:10px; border-radius:8px; margin-top:10px; }

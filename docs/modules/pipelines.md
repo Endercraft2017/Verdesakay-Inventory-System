@@ -136,7 +136,10 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
      confirmed on the slip, else 409 with the missing items, zero stock change.
    - **Branch — partial release:** an incomplete order releases only under an authorization
      that allows it. Unloaded/unbuilt quantities stay on the original SO. CKD loads must
-     contain whole kits; extra components remain held. Without authority: 409, nothing moves.
+     contain whole kits; extra components remain held. The desktop partial-slip action is
+     available only when at least one complete CKD kit or a non-CKD held line can ship,
+     with no unmatched CKD components in the load.
+     Without authority: 409, nothing moves.
    - **Customer cancellation:** Sales (`orders.edit`) cancels only the unshipped remainder
      through `/orders/:id/cancel-remainder`, with reason and revision. It frees only remaining
      reservations/demand, preserves shipment history, and adjusts net commercial totals.

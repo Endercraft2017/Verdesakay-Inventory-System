@@ -1715,7 +1715,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       expect(view.textContent).toContain('PICKUP-••••');
       win.location.hash = '#/so?id=302&step=handoff';
       await wait();
-      (doc.getElementById('rel-go') as HTMLButtonElement).click();
+      (await relElement(win, '#rel-go') as HTMLButtonElement).click();
       await wait();
       expect(view.getAttribute('data-figma-node')).toBe('78:240'); // blocked until verified
       (view.querySelector('[data-token]') as HTMLInputElement).value = 'pickup-7f3q';
@@ -1732,7 +1732,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const doc = win.document;
       win.location.hash = '#/so?id=302&step=package';
       await wait();
-      const go = doc.getElementById('rel-go') as HTMLButtonElement;
+      const go = await relElement(win, '#rel-go') as HTMLButtonElement;
       expect(go.disabled).toBe(true);
       (doc.querySelector('[data-p="0"]') as HTMLButtonElement).click();
       expect((doc.getElementById('rel-go') as HTMLButtonElement).disabled).toBe(false);

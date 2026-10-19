@@ -1,8 +1,8 @@
 # The Mobile Warehouse App
 
 A stripped-down phone version of the system for the people on the floor: scan an item,
-move stock, count, receive, or report a problem — and it keeps working when the Wi-Fi
-drops.
+move stock, count, receive, or report a problem. Supported actions can queue offline;
+physical handoffs and photo-backed operations use their own confirmation/recovery flow.
 
 ## What it's for
 
@@ -16,9 +16,10 @@ drops.
 
 - On the phone's browser, open the same address staff use for the system. Phones are
   sent to the mobile app (`/m`) automatically. You can also type `.../m` directly.
-- Log in with your normal account. Warehouse tools need **inventory.mobile**, the inventory
-  module, and the permissions for each action. Linked employees can also use their own
-  HR tools on the phone without warehouse access.
+- Log in with your normal account. Mobile entry accepts mobile.access, legacy inventory.mobile
+  or a linked employee account. Work queues and Inventory tools follow effective action
+  permissions and enabled modules, including desktop per-person overrides. Linked employees
+  can use personal HR tools without warehouse access.
 - For the camera scanner to work the site must be **HTTPS**. If it isn't, you'll get a
   manual code-entry box instead — still fully usable.
 - Add it to your home screen (browser menu → "Add to Home Screen") so it opens like an
@@ -36,12 +37,17 @@ drops.
 
 ## Working offline
 
-- If you lose signal, submissions go into a **queue** (you'll see a counter).
+- If an action supports offline queuing, its submission enters **Pending sync**. Other
+  actions remain saved attempts requiring an explicit confirmation/retry.
 - Previously cached lists and item lookups can be used offline. New data may not be available.
-- Stock moves, transfers, counts, QC decisions, parts requests, production receiving and
-  SO release scans use the queue. They do not take effect on the server until accepted.
-- Recording a serialized unit with its photo, recording delivery proof, and time-clock
-  punches need a connection and do not queue.
+- Supported stock moves, transfers, counts and eligible QC decisions can queue. They
+  do not take effect on the server until accepted. Kit release, final warehouse-out and
+  RTS receipts use online confirmation, not automatic background stock posting.
+- Serialized output/photo, handoff and delivery/courier workflows preserve supported
+  drafts and immutable saved attempts across restart. Review the original attempt after
+  an unknown response; do not recreate the same physical action. Time punches need a connection.
+- A local site-PC acknowledgement is pending until its sync command confirms. A refusal,
+  conflict or expired request requires reconciliation before a corrected attempt.
 - When the connection returns, the queue retries automatically. Check **Pending sync**
   for rejected or failed actions and retry after resolving the reported problem.
 - Each queued action is tagged so it can't be applied twice, even if you retry.
@@ -57,7 +63,8 @@ drops.
 
 **Report a problem** is different: choose a recipient, category and reference, then
 write the problem and send it as an internal message. It is text-only and does not move
-stock. A parts-kit issue belongs here; include the job order, part and quantity.
+stock. For tracked production/kit or unit findings, use the job’s issue action or **Issues and photos**.
+These reports keep their evidence and history; reporting alone does not advance inspection or pause work.
 
 ## Tips & gotchas
 
@@ -75,3 +82,20 @@ stock. A parts-kit issue belongs here; include the job order, part and quantity.
 | Camera does nothing | Site isn't HTTPS, or the browser blocked the camera — allow it in the browser's site settings, or use manual entry. |
 | Queue count won't go down | No connection yet, or a queued item errored — open the queue view to see which one and why. |
 | "Item not found" on scan | The code isn't a known SKU or barcode — check it's the right label, or add the barcode to the item on the desktop. |
+
+## Connected workflows on the phone
+
+Open **Work → Guides → Workflows & Pipelines** to follow the same roadmaps as the
+webapp. Each stage shows the responsible team, prerequisites and result handed on.
+Screen names identify tasks that must be completed on the desktop.
+
+- **Release orders** allocates exact sale lines/build states. **Kit releases** prepares
+  manufacturing components; the retired Pick route performs no stock action.
+- **Deliveries** belongs to a particular trip slip. Several trips retain the same SO.
+  Courier pickup means the carrier collected the goods, not customer receipt.
+- **Returns** starts from a shipped slip and photo-backed receipt. Receipt alone does
+  not restock/refund. Inspection, rejected-goods repair and finance credit are separate.
+- **Semi-finishing** consumes one eligible complete semi-built package and creates
+  one inspection unit. Do not repeat BOM picking or Add unit; QC/QA and RTS still follow.
+- **RTS recording** confirms passed output at an exact storage location, checking
+  capacity and duplicate receipts. Keep saved receipts until confirmation/reconciliation.

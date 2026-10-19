@@ -118,7 +118,7 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
     move. Only received (in-stock) units can be sold or moved; the same Sell / Move action
     used at receiving handles a later transfer too. **Sell / Move → Sell** deducts stock
     immediately and can link the unit to a sale order. This differs from **Release SOs**:
-    that reserves the units, and stock leaves only when the order is confirmed/completed.
+    that reserves the units, and only the goods on each issued trip release slip leave stock; later trips keep the same sales order.
 
 ## Watch out
 

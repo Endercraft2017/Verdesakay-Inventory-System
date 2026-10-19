@@ -371,7 +371,7 @@ router.get('/thirteenth-month', requirePermission('payroll.view'), (req, res) =>
     'SELECT data, created_at FROM form_records WHERE form_def_id = ?',
     form.id
   );
-  const byEmp = new Map<string, { basic_total: number; payslip_count: number }>();
+  const byEmp = new Map<string, { employee_id: number | null; employee_name: string; basic_total: number; payslip_count: number }>();
   const owner = payslipOwnerResolver(); // a renamed employee's payslips stay one row
   for (const r of records) {
     let d: Record<string, unknown>;
@@ -380,15 +380,16 @@ router.get('/thirteenth-month', requirePermission('payroll.view'), (req, res) =>
     if (String(payDate).slice(0, 4) !== year) continue;
     const name = owner.nameOf(d);
     if (!name) continue;
-    const cur = byEmp.get(name) ?? { basic_total: 0, payslip_count: 0 };
+    const key = owner.keyOf(d);
+    const cur = byEmp.get(key) ?? { employee_id: owner.idOf(d), employee_name: name, basic_total: 0, payslip_count: 0 };
     cur.basic_total += Number(d.basic_salary) || 0;
     cur.payslip_count += 1;
-    byEmp.set(name, cur);
+    byEmp.set(key, cur);
   }
 
-  const rows = [...byEmp.entries()]
-    .map(([employee_name, v]) => ({
-      employee_name,
+  const rows = [...byEmp.values()]
+    .map((v) => ({
+      employee_id: v.employee_id, employee_name: v.employee_name,
       basic_total: round2(v.basic_total),
       payslip_count: v.payslip_count,
       amount: round2(v.basic_total / 12),
@@ -417,7 +418,7 @@ router.get('/final-pay/:employeeId', requirePermission('payroll.view'), (req, re
     ? q.separation_date : new Date().toISOString().slice(0, 10);
   const year = sep.slice(0, 4);
 
-  const slips = yearPayslipRowsByEmployee(year).get(emp.name) ?? [];
+  const slips = yearPayslipRowsByEmployee(year).get(`employee:${emp.id}`)?.rows ?? [];
   const sum = (pick: (r: PayslipYearRow) => number | undefined) =>
     round2(slips.reduce((s, r) => s + (Number(pick(r)) || 0), 0));
 
@@ -2517,6 +2518,54 @@ function recomputePayslipsFrom(employeeId: number, from: string): { recomputed: 
   }
   return { recomputed, paid };
 }
+
+// Legacy payslips without an employee ID can become ambiguous after a rename or name reuse.
+// Keep their pay snapshot frozen; the only permitted correction here is its owner identifier.
+router.get('/payroll/reconciliation-employees', requirePermission('payroll.manage'), (_req, res) => {
+  res.json(queryAll<Pick<Employee, 'id' | 'name' | 'employee_no'>>(
+    'SELECT id, name, employee_no FROM employees ORDER BY name, id'
+  ));
+});
+
+router.get('/payroll/legacy-unresolved', requirePermission('payroll.manage'), (_req, res) => {
+  const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
+  if (!form) { res.json([]); return; }
+  const owner = payslipOwnerResolver();
+  const records = queryAll<Pick<FormRecord, 'id' | 'number' | 'period' | 'status' | 'data'>>(
+    'SELECT id, number, period, status, data FROM form_records WHERE form_def_id = ? ORDER BY id DESC', form.id
+  );
+  res.json(records.flatMap((record) => {
+    const data = payslipFields(record as FormRecord);
+    if (owner.idOf(data) != null) return [];
+    return [{ id: record.id, number: record.number, period: record.period, status: record.status,
+      employee_name: String(data.employee_name ?? ''), net_pay: Number(data.net_pay) || 0, data }];
+  }));
+});
+
+router.post('/payroll/:recordId/reconcile-owner', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
+  const recordId = Number(req.params.recordId);
+  if (!Number.isSafeInteger(recordId) || recordId < 1) { res.status(400).json({ error: 'Invalid payslip ID' }); return; }
+  const input = parseBody(z.object({ employee_id: z.number().int().positive(),
+    record_number: z.string().min(1), reason: z.string().trim().min(10).max(1000) }), req.body);
+  const record = queryOne<FormRecord & { slug: string }>(
+    'SELECT r.*, f.slug FROM form_records r JOIN form_definitions f ON f.id = r.form_def_id WHERE r.id = ?', recordId
+  );
+  if (!record || record.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
+  if (record.number !== input.record_number) { res.status(409).json({ error: 'Payslip number changed; review it again' }); return; }
+  const data = payslipFields(record);
+  if (payslipOwnerResolver().idOf(data) != null) { res.status(409).json({ error: 'This payslip already has an unambiguous owner' }); return; }
+  const employee = queryOne<Pick<Employee, 'id' | 'name'>>('SELECT id, name FROM employees WHERE id = ?', input.employee_id);
+  if (!employee) { res.status(404).json({ error: 'Employee not found' }); return; }
+  const corrected = { ...data, employee_id: employee.id };
+  correctRecord(record, req.user!.id, input.reason, 'payroll-owner-reconciliation', () => {
+    const result = run('UPDATE form_records SET data = ?, updated_at = datetime(\'now\') WHERE id = ? AND data = ?',
+      JSON.stringify(corrected), recordId, record.data);
+    if (!result.changes) throw new Error('Payslip changed during review');
+  });
+  logEvent(req, { entity: 'hr', entityId: recordId, action: 'payslip-owner-reconciled',
+    summary: `${record.number}: assigned legacy payslip to ${employee.name} (#${employee.id}). ${input.reason}` });
+  res.json({ id: recordId, number: record.number, employee_id: employee.id, employee_name: employee.name });
+});
 
 // POST /api/hr/periods/:id/generate-payslips
 router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {

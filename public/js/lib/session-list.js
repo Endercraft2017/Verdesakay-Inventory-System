@@ -43,7 +43,11 @@ const SessionList = (() => {
   async function render(el, opts) {
     el.innerHTML = '<div class="muted">Loading…</div>';
     let rows;
-    try { rows = await opts.load(); } catch (e) { el.innerHTML = `<div class="muted">${UI.esc(e.message)}</div>`; return; }
+    try { rows = await opts.load(); } catch (e) {
+      el.innerHTML = `<div role="alert">${UI.esc(e.message)}</div><button class="btn secondary small" data-session-retry>Retry</button>`;
+      el.querySelector('[data-session-retry]').onclick = () => render(el, opts);
+      return;
+    }
     if (!rows.length) { el.innerHTML = '<div class="muted">No sign-ins recorded.</div>'; return; }
     const others = rows.filter((r) => !r.ended_at && !r.current).length;
     el.innerHTML = `
@@ -59,6 +63,34 @@ const SessionList = (() => {
     });
     const all = el.querySelector('[data-end-all]');
     if (all) all.onclick = async () => {
+      if (all.disabled) return;
+      // Only My Account has this contract; administrator revocation ends the target's sessions.
+      if (opts.revokeAllPreservesCurrent) {
+        all.disabled = true;
+        UI.modal({
+          title: 'Sign out of other devices?', confirmText: 'Sign out other devices', cancelText: 'Cancel',
+          protectChanges: false,
+          bodyHTML: `<p>End the <strong>${others} other active sign-in session${others === 1 ? '' : 's'}</strong> for this account. This browser stays signed in.</p>
+            <p class="muted">Those devices will need to sign in again. This does not erase files already downloaded or stored on them.</p>`,
+          onClose: () => { if (all.isConnected) all.disabled = false; },
+          onConfirm: async (ov, showErr) => {
+            const button = ov.querySelector('[data-confirm]');
+            button.textContent = 'Signing out…';
+            try {
+              const result = await opts.revokeAll();
+              ov.querySelector('.modal-body').innerHTML = `<div role="status"><h4>Other sessions ended</h4><p>${UI.esc(result.ended)} other session${result.ended === 1 ? '' : 's'} signed out. This browser stays signed in.</p></div>`;
+              button.hidden = true;
+              ov.querySelector('.modal-foot [data-close]').textContent = 'Close';
+              await render(el, opts);
+            } catch (error) {
+              showErr(error.message || 'Could not sign out other sessions. Try again.');
+              button.textContent = 'Sign out other devices';
+            }
+            return false;
+          },
+        });
+        return;
+      }
       if (!window.confirm('Sign out of every other device?')) return;
       all.disabled = true;
       try {

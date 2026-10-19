@@ -13,10 +13,14 @@
 - `tests/ckd-sales.test.ts`: whole-kit partial and existing full-CKD/RTS/aftersales cases.
 - `tests/deliveries.test.ts`: courier cannot use the own-driver dispatch/completion path, needs the warehouse slip before pickup, and permits optional pickup evidence; any supplied signature is validated and closed evidence is immutable.
 - `tests/courier-migration.test.ts`: a version-80 database upgrades to the courier fields and its existing own-driver booking remains intact. `npm run db:types` regenerated the checked-in query types.
-- `work/courier-ckd-browser.mjs` (local ignored script): real Express/SQLite plus Chromium at 1440px and 390px; books and closes courier pickup, inspects pickup proof, checks a half-picked CKD kit remains blocked and one fully picked kit enables partial release.
+- `npm run test:inventory:ckd-courier`: real Express/SQLite plus Chromium at 1440px and 390px; books and closes courier pickup, inspects pickup proof, checks a half-picked CKD kit remains blocked and one fully picked kit enables partial release.
 - Before integration with the mobile recovery commit, the full suite had 2,784 passing tests and one generated-type drift failure. After regeneration, the drift check and six affected test files passed (52 tests). TypeScript and `git diff --check` passed. The combined branch was then checked with TypeScript, 38 focused tests (including mobile evidence recovery), and real Chromium at both widths.
 - Final combined full suite: **2,799 tests across 274 files passed**. After the active-booking guard was added during that run, delivery, sync-sales and CKD tests were repeated separately (20 passed); the desktop browser scenarios and TypeScript passed again.
 
-## Remaining mixed-order limitation
+## Historical mixed-order limitation (resolved later)
+
+The following was accurate for this 2026-10-16 audit. Later exact sale-line
+allocation work resolved it; see `mobile-sale-line-allocation-validation.md` and
+the current branch acceptance report. Do not treat this paragraph as an open gap.
 
 Sales intake still rejects two commercial lines that reference the same inventory item. That includes a fully built and semi-built line under one SKU, and two lines with different negotiated prices. Removing the guard alone would count the same serialized unit on both lines and could ship a batch twice: unit ownership, release coverage, batch allocation, availability and reversal currently identify many allocations by order and item instead of sales-line ID. This needs a dedicated line-level allocation migration and desktop/mobile picking design, with legacy-order fallback and return/COGS regression coverage. No duplicate-line intake was enabled in this change.

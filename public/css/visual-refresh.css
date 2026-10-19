@@ -436,3 +436,20 @@
   .jo-supply-card dt { color: var(--text-muted); font-size: 12px; }
   .jo-supply-card dd { margin: 2px 0 0; font-weight: 600; }
 }
+
+/* Account and two-step sign-in keep the existing panels and modal chrome. */
+.account-details-grid .panel { min-width: 0; }
+#acc-sessions { overflow-x: auto; }
+.mfa-code-method, .mfa-code-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.mfa-code-method [aria-pressed='true'] { border-color: var(--accent); color: var(--accent); }
+.mfa-step { font-size: 12px; margin-top: 0; }
+.mfa-qr { text-align: center; }
+.mfa-qr svg { max-width: 100%; height: auto; background: #fff; }
+.mfa-key-actions { margin: 12px 0; }
+.mfa-saved-codes { display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; }
+.mfa-saved-codes input[type='checkbox'] { width: 18px; height: 18px; flex: 0 0 18px; margin: 2px 0 0; padding: 0; }
+[data-copy-fallback] { display: block; width: 100%; min-height: 90px; margin-top: 10px; }
+[data-expired][hidden] { display: none; }
+@media (max-width: 700px) {
+  .account-details-grid { grid-template-columns: minmax(0, 1fr) !important; }
+}

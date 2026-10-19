@@ -35,16 +35,18 @@ function payslipsInYear(year: string): RawRecord[] {
   return out;
 }
 
-/** Generated payslips grouped by employee name, for a calendar year. */
-export function yearPayslipRowsByEmployee(year: string): Map<string, PayslipYearRow[]> {
-  const out = new Map<string, PayslipYearRow[]>();
+/** Generated payslips grouped by identity, so employees sharing a name remain separate. */
+export interface PayslipYearGroup { employee_id: number | null; employee_name: string; rows: PayslipYearRow[] }
+export function yearPayslipRowsByEmployee(year: string): Map<string, PayslipYearGroup> {
+  const out = new Map<string, PayslipYearGroup>();
   const owner = payslipOwnerResolver(); // renamed employees stay one person (payslip-owner.ts)
   for (const { data } of payslipsInYear(year)) {
     const name = owner.nameOf(data);
     if (!name) continue;
-    const list = out.get(name) ?? [];
-    list.push(data as PayslipYearRow);
-    out.set(name, list);
+    const key = owner.keyOf(data);
+    const group = out.get(key) ?? { employee_id: owner.idOf(data), employee_name: name, rows: [] };
+    group.rows.push(data as PayslipYearRow);
+    out.set(key, group);
   }
   return out;
 }
@@ -62,9 +64,10 @@ export function yearPayslipRowsByEmployee(year: string): Map<string, PayslipYear
  *  payslip) is remitted on the fixed monthly figures that payslip recorded instead of the sums. */
 export function contributionBasesForMonth(
   month: string
-): Map<string, { sss: number; pagibig: number; philhealth: number }> {
+): Map<string, { employee_id: number | null; employee_name: string; sss: number; pagibig: number; philhealth: number }> {
   const id = payrollFormId();
-  const byName = new Map<string, {
+  const byOwner = new Map<string, {
+    employee_id: number | null; employee_name: string;
     sss: number; pagibig: number; philhealth: number; legacyBasic: number; phEnd: string;
     fixed: { sss: number; pagibig: number } | null;
   }>();
@@ -82,7 +85,8 @@ export function contributionBasesForMonth(
     if (cutoffEnd.slice(0, 7) !== month) continue;
     const name = owner.nameOf(d);
     if (!name) continue;
-    const cur = byName.get(name) ?? { sss: 0, pagibig: 0, philhealth: 0, legacyBasic: 0, phEnd: '', fixed: null };
+    const key = owner.keyOf(d);
+    const cur = byOwner.get(key) ?? { employee_id: owner.idOf(d), employee_name: name, sss: 0, pagibig: 0, philhealth: 0, legacyBasic: 0, phEnd: '', fixed: null };
     cur.sss = round2(cur.sss + sssCompensation(d));
     cur.pagibig = round2(cur.pagibig + pagIbigCompensation(d));
     cur.legacyBasic = round2(cur.legacyBasic + (Number(d.basic_salary) || 0));
@@ -94,10 +98,11 @@ export function contributionBasesForMonth(
         ? { sss: Number(basis.sss_compensation) || 0, pagibig: Number(basis.pagibig_compensation) || 0 }
         : null;
     }
-    byName.set(name, cur);
+    byOwner.set(key, cur);
   }
-  return new Map([...byName].map(([name, v]) => [
-    name, {
+  return new Map([...byOwner].map(([key, v]) => [
+    key, {
+      employee_id: v.employee_id, employee_name: v.employee_name,
       sss: v.fixed ? v.fixed.sss : v.sss,
       pagibig: v.fixed ? v.fixed.pagibig : v.pagibig,
       philhealth: v.phEnd ? v.philhealth : v.legacyBasic,
@@ -117,7 +122,7 @@ export function monthlyWithholdingReport(year: string) {
     if (mi < 0 || mi > 11) continue;
     const m = months[mi]!;
     const name = owner.nameOf(d);
-    if (name) m._names.add(name);
+    if (name) m._names.add(owner.keyOf(d));
     const gross = Number(d.total_earnings) || 0;
     const stat = (Number(d.sss) || 0) + (Number(d.philhealth) || 0) + (Number(d.pagibig) || 0);
     m.gross_compensation = round2(m.gross_compensation + gross);
