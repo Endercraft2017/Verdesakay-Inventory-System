@@ -17,7 +17,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
   'inventory.adjust', 'inventory.configure', 'inventory.mobile',
   'orders.view', 'orders.create', 'orders.edit', 'orders.delete',
-  'purchasing.view', 'purchasing.manage',
+  'purchasing.view', 'purchasing.manage', 'purchasing.request',
   'forms.view', 'forms.upload', 'forms.delete',
   'forms.fill.inventory', 'forms.manage.hr', 'forms.manage.inventory', 'forms.manage.admin', 'forms.manage.accounting',
   'messages.view', 'messages.send',
@@ -51,7 +51,7 @@ export interface RoleSeed {
 
 /** Every account starts with the phone app — Clock, Inbox, payslips and requests are for everyone.
     An administrator can still untick it on a role or one account. */
-const BASELINE: Permission[] = ['mobile.access', 'messages.view', 'messages.send'];
+const BASELINE: Permission[] = ['mobile.access', 'messages.view', 'messages.send', 'purchasing.request'];
 
 /** Seeds for a workspace's roles table (inserted once, when the table is empty — see db.ts seed()).
     Order is the order roles are listed in. */
@@ -164,7 +164,7 @@ export const STAFF_PERMISSIONS: Permission[] = [
   'mobile.access', 'messages.view', 'messages.send',
   'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.adjust', 'inventory.mobile',
   'orders.view', 'orders.create', 'orders.edit', 'orders.release',
-  'purchasing.view', 'purchasing.manage',
+  'purchasing.view', 'purchasing.manage', 'purchasing.request',
   'forms.view', 'forms.upload', 'forms.fill.inventory', 'forms.manage.inventory',
   'templates.view',
   'announce',

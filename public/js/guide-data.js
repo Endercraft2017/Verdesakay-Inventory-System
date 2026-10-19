@@ -230,14 +230,19 @@ const GUIDE_PIPELINES = [
     id: 'purchasing',
     title: 'Purchasing',
     icon: 'inbox',
-    tagline: 'Purchase order → goods receipt → vendor bill (3-way match)',
+    tagline: 'Staff PR → approval → receipts & liquidation; supplier PO → goods receipt → bill',
     audience: 'Purchasing, warehouse, accounting',
-    intro: `A purchase order becomes a controlled <b>PO → Goods Receipt → Vendor Bill</b> flow, with
-      a 3-way match before any bill is approved for payment.`,
+    intro: `An internal PR requests a spending budget, then an assigned buyer uploads receipts and liquidates the actual cost before it closes. Supplier purchase orders are a separate <b>PO → Goods Receipt → Vendor Bill</b> flow with a 3-way match.`,
     steps: [
       {
+        title: 'Request and approve a purchase',
+        role: 'Staff · purchasing.request; authority · purchasing.manage',
+        to: { route: 'purchase-requests', label: 'Inventory → Purchase Requests' },
+        body: `Staff list the items they need, including items not yet in the catalog, with expected unit costs. Purchasing approves an overall budget and either records cash given to the requester or assigns a buyer. The buyer uploads receipts and actual items, including additions within the approved total. Purchasing reconciles any cash change and closes the PR after reviewing liquidation. A PR does not add inventory stock.`,
+      },
+      {
         title: 'Raise the purchase order',
-        role: 'Purchasing · orders.create',
+        role: 'Purchasing · purchasing.manage',
         to: { route: 'orders', filter: { type: 'purchase' }, label: 'Inventory → Orders → Purchase Orders' },
         spot: '.tree-leaf[data-route="orders"]',
         body: `Press New purchase order. Select the supplier, expected delivery date and purchased items, then enter quantities and prices. Review the lines before saving the open order.`,

@@ -365,7 +365,7 @@
     },
     {
       id: 'purchasing', title: 'Purchasing — receiving & vendor bills', group: 'Orders',
-      routes: ['purchasing'], html: `
+      routes: ['purchasing', 'purchase-requests'], html: `
         <p>Purchasing turns a <b>Purchase Order</b> into a controlled flow:</p>
         <p><b>PO → Goods Receipt → Vendor Bill</b>, with a <b>3-way match</b> before any
         bill is approved for payment.</p>
@@ -395,8 +395,11 @@
           <li><b>Dispute</b> parks a bill with a reason; editing a disputed bill returns
               it to draft.</li>
         </ul>
-        <p>The phone's <b>Work → Receive PR</b> posts stock directly without a GRN. It does not cover
-        billed quantities for the desktop three-way match; avoid posting the same delivery twice.</p>
+        <p><b>Internal Purchase Requests</b> are separate: staff propose items and a budget;
+        purchasing approves cash to the requester or assigns a buyer. The buyer uploads receipts
+        and actual purchases, then purchasing checks liquidation and closes the request. A PR
+        does not create a supplier order or post stock. The phone's old <b>Receive PR</b> action
+        handles supplier deliveries, not these internal spending requests.</p>
         <p>Use the <b>Match tolerance</b> button on Goods Receipts or Vendor Bills to review price percentage,
         flat-peso and quantity tolerances. Editing and saving require <i>orders.edit</i>; the price percentage defaults to 2%.</p>
         <p><b>Who can do what:</b> receiving needs <i>Adjust inventory</i>; raising and

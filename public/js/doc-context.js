@@ -65,7 +65,7 @@ function baseDocContext(order, company, user) {
     company: company || {},
     order: {
       no: order.number || '',
-      type: order.type === 'job' ? 'Job Order' : order.type === 'purchase' ? 'Purchase Request' : 'Sale Order',
+      type: order.type === 'job' ? 'Job Order' : order.type === 'purchase' ? 'Supplier Purchase Order' : 'Sale Order',
       date: order.order_date || '', status: order.status || '',
       customer_name: order.customer_name || '', customer_contact: order.customer_contact || '',
       notes: order.notes || '', currency: order.currency || 'PHP',

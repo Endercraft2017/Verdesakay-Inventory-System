@@ -1,5 +1,44 @@
 # Inventory and production: mobile integration gaps
 
+## Internal purchase requests: staff → approval → buyer → liquidation (2026-10-19)
+
+**Current phone gap:** Work → **Receive PR** is the old supplier-order goods receipt
+screen in `public/mobile/modules/inventory/orders-fulfil.js`. It posts delivered
+stock against an existing supplier order. It does **not** let staff make an
+internal PR, authorize a budget, issue cash, or liquidate a purchase. Rename
+that phone action to **Receive supplier delivery** so it cannot be confused
+with the new PR. No mobile source was edited here.
+
+**New backend/desktop workflow:** `POST/GET /api/purchasing/requests` accepts
+freeform item names, quantities and expected unit costs; the sum is the
+requested budget. These can be tools, office/cleaning supplies, new products
+or existing parts, with no catalog or supplier requirement. `purchasing.request`
+lets staff submit and see their own requests. `purchasing.manage` sees the whole
+queue and approves a budget or rejects with a reason. Approval chooses either
+**cash to requester** (the requester buys; authority records cash physically
+issued) or **assigned buyer** (an active employee is chosen). The assigned
+buyer uploads JPG/PNG/WebP/PDF receipts and submits actual purchase lines.
+Additional and substituted items are allowed while the **actual total stays
+within the approved overall budget**. The authority checks the receipts and
+liquidation, records returned change or reimbursement when cash was issued,
+then closes the PR. A returned liquidation can be corrected and resubmitted.
+Neither a PR nor its liquidation posts inventory stock: a stocked item still
+needs the normal item/receiving workflow. This is separate from existing
+supplier purchase orders and vendor bills; there is no automatic PO conversion.
+
+**Mobile owner action:** Add Work entries **Make PR** (staff), **Review PRs**
+(purchasing authority), and **My assigned purchases** (buyer). Show status,
+requested/approved budget, purchase arrangement, buyer, cash issued, actual
+spending and receipt count. The Make PR form must accept arbitrary item names
+without forcing an inventory SKU or supplier. Give the authority clear approve,
+reject, cash-issued, return-liquidation and close actions; show that approval
+alone does not close the request. Give the buyer receipt camera/file upload and
+an editable actual-items list with an Add item button. Make over-budget
+submission visibly blocked. Keep permission and ownership checks on the server.
+Test cash-to-requester, another assigned buyer, added items under budget,
+over-budget refusal, missing-receipt refusal, return/correction and double-close
+retries on an installed phone. The mobile source remains with the mobile owner.
+
 ## JO-first desks and pre-system units (2026-10-19)
 
 User decision: both QC and QA are mandatory for older units entered by the RTS
@@ -113,8 +152,9 @@ This confirms the assets are served. It does not prove an installed phone has
 activated the new worker or that a signed-in employee can complete every
 operation on the deployed tenant.
 
-There is **no currently confirmed software blocker** in the representative
-local inventory/production paths. Remaining acceptance needs actual field
+There is **no currently confirmed software blocker** in the previously audited
+local inventory/production paths; the internal PR mobile integration above is
+new open work. Remaining acceptance for those earlier paths needs actual field
 conditions: a phone with the installed PWA and correct worker version; real
 printed QR labels and camera focus; photo/signature upload under the staff
 roles; and a deliberately disconnected installed site PC followed by a safe

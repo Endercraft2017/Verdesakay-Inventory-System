@@ -15,7 +15,7 @@ export type Permission =
   | 'inventory.adjust' | 'inventory.configure' | 'inventory.mobile'
   | 'orders.view' | 'orders.create' | 'orders.edit' | 'orders.delete'
   // Purchase orders, goods receipts and vendor bills (split from orders.*; inventory/order-access.ts).
-  | 'purchasing.view' | 'purchasing.manage'
+  | 'purchasing.view' | 'purchasing.manage' | 'purchasing.request'
   | 'forms.view' | 'forms.upload' | 'forms.delete'
   | 'forms.fill.inventory'
   | 'forms.manage.hr' | 'forms.manage.inventory' | 'forms.manage.admin' | 'forms.manage.accounting'

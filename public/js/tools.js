@@ -78,7 +78,7 @@
       return { label: 'View item', run: () => App.navigate('inventory', { id: d.id }) };
     }
     if (step.tool === 'create_order' && d.id && d.type) {
-      const noun = d.type === 'job' ? 'job order' : d.type === 'purchase' ? 'purchase request' : 'sale order';
+      const noun = d.type === 'job' ? 'job order' : d.type === 'purchase' ? 'supplier purchase order' : 'sale order';
       return { label: `View ${noun}`, run: () => App.navigate('orders', { type: d.type, id: d.id }) };
     }
     if (step.tool === 'create_user' && d.id) {

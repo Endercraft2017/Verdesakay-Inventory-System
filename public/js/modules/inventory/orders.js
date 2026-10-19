@@ -2,7 +2,7 @@
    One view serves both types; filter.type = 'sale' | 'job'. */
 App.register('orders', async (view, filter) => {
   const type = filter && filter.type === 'job' ? 'job' : filter && filter.type === 'purchase' ? 'purchase' : 'sale';
-  const noun = type === 'sale' ? 'Sale Order' : type === 'job' ? 'Job Order' : 'Purchase Request';
+  const noun = type === 'sale' ? 'Sale Order' : type === 'job' ? 'Job Order' : 'Supplier Purchase Order';
   const state = { q: '', backorder: false };
   const qbDoc = type === 'purchase' ? 'Bill' : 'Invoice';
   let qb = { connected: false };
@@ -866,7 +866,7 @@ App.register('orders', async (view, filter) => {
                <label class="check-opt" style="display:flex;align-items:center;gap:6px;margin:8px 0">
                  <input type="checkbox" id="qb-auto" ${s.auto_push ? 'checked' : ''}> Auto-push orders to QuickBooks when saved</label>
                <button type="button" class="btn secondary" id="qb-disc" style="margin-top:8px">Disconnect</button>
-               <p class="muted" style="font-size:12px;margin-top:10px">Sale &amp; job orders post as Invoices, purchase requests as Bills. Re-pushing an order updates it. If a line won't post, set a default income/expense account in QuickBooks.</p>`
+               <p class="muted" style="font-size:12px;margin-top:10px">Sale &amp; job orders post as Invoices, supplier purchase orders as Bills. Internal purchase requests are budget approvals and are not sent to QuickBooks. Re-pushing an order updates it. If a line won't post, set a default income/expense account in QuickBooks.</p>`
             : `<p>Link this workspace to a QuickBooks Online company to push orders as invoices and bills.</p>
                <button type="button" class="btn" id="qb-conn">${UI.icon('sheet', 15)} Connect QuickBooks</button>`;
           const conn = ov.querySelector('#qb-conn');

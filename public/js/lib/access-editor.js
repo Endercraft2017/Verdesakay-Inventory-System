@@ -40,6 +40,7 @@ window.AccessEditor = (() => {
       { key: 'orders.release', label: 'Release sale orders', desc: 'Scan or enter goods out against an approved sale order', where: ['Phone: Release SOs'] },
     ] },
     { id: 'purchasing', label: 'Purchasing', items: [
+      { key: 'purchasing.request', label: 'Submit purchase requests', desc: 'Request budgeted purchases and track your own request; no approval or stock movement' },
       { key: 'purchasing.view', label: 'See purchasing', desc: 'Purchase orders, goods receipts, vendor bills', where: ['Phone: Receive PR'] },
       { key: 'purchasing.manage', label: 'Run purchasing', desc: 'Create and change purchase orders (incl. reorder / shortfall POs); raise, approve and dispute vendor bills' },
     ] },

@@ -25,9 +25,11 @@ import {
 import type { Order, OrderItem, GoodsReceipt, VendorBill } from '../../shared/types';
 import { recordSiteClash, syncClass } from '../../sync';
 import { now, siteDecisionStands } from '../../shared/sync-context';
+import requestsRoutes from './requests.routes';
 
 const router = Router();
 router.use(requireAuth);
+router.use('/requests', requestsRoutes);
 
 const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
 const withReceiptPath = (receipt: GoodsReceipt): GoodsReceipt => ({

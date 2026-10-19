@@ -69,6 +69,8 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 92: budgeted staff purchase requests, assigned buyers, receipt-backed liquidation.
+// 91: inspection-only legacy unit intake provenance, immutable keys and recorded valuation.
 // 90: planned cycle-count assignments, recurrence, and exact-count linkage.
 // 89: bind linked issue closure to an applied count and captured sale-audit evidence.
 // 88: structured location/build-state stock counts and supervised resolution.
@@ -99,8 +101,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-// 91: inspection-only legacy unit intake provenance, immutable keys and recorded valuation.
-export const SCHEMA_VERSION = 91; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 92; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -717,6 +718,61 @@ function createSchema(): void {
       line_total  REAL NOT NULL DEFAULT 0,
       sort        INTEGER NOT NULL DEFAULT 0
     );
+
+    -- Internal spending requests are not supplier orders and never post stock.
+    CREATE TABLE IF NOT EXISTS purchase_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      number TEXT NOT NULL UNIQUE,
+      requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reason TEXT NOT NULL,
+      needed_by TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','liquidation_submitted','closed')),
+      requested_budget REAL NOT NULL CHECK(requested_budget >= 0),
+      approved_budget REAL,
+      purchase_mode TEXT CHECK(purchase_mode IN ('requester_cash','assigned_buyer')),
+      buyer_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_at TEXT,
+      decision_note TEXT,
+      cash_issued REAL,
+      cash_issued_at TEXT,
+      cash_issued_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      actual_total REAL,
+      liquidation_note TEXT,
+      submitted_at TEXT,
+      closed_at TEXT,
+      closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      close_note TEXT,
+      cash_returned REAL,
+      reimbursed_amount REAL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_purchase_requests_status ON purchase_requests(status, created_at);
+    CREATE TABLE IF NOT EXISTS purchase_request_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL REFERENCES purchase_requests(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      quantity REAL NOT NULL CHECK(quantity > 0),
+      estimated_unit_price REAL NOT NULL CHECK(estimated_unit_price >= 0),
+      note TEXT
+    );
+    CREATE TABLE IF NOT EXISTS purchase_liquidation_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL REFERENCES purchase_requests(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      quantity REAL NOT NULL CHECK(quantity > 0),
+      actual_unit_price REAL NOT NULL CHECK(actual_unit_price >= 0)
+    );
+    CREATE TABLE IF NOT EXISTS purchase_receipt_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL REFERENCES purchase_requests(id) ON DELETE CASCADE,
+      file_name TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_purchase_receipt_request ON purchase_receipt_files(request_id);
 
     -- Durable sales → procurement planning links; drafts are never stock or fulfilment.
     CREATE TABLE IF NOT EXISTS sale_shortfall_purchases (
@@ -3310,6 +3366,7 @@ function migrate(): void {
   grantOnce('migrated_purchasing_split', [
     ['orders.view', 'purchasing.view'], ['orders.create', 'purchasing.manage'], ['orders.edit', 'purchasing.manage'],
   ]);
+  grantOnce('migrated_purchasing_requests', [['mobile.access', 'purchasing.request']]);
 
   // (SCHEMA_VERSION 66) Preserve surviving older uploads before the next filesystem
   // replacement. Only files still referenced by a record enter the durable store.

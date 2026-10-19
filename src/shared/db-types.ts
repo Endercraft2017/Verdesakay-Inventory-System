@@ -825,6 +825,10 @@ export interface JobOrders {
   paused_by: number | null;
   paused_at: string | null;
   pause_reason: string | null;
+  intake_origin: Generated<string>;
+  legacy_intake_key: string | null;
+  legacy_intake_hash: string | null;
+  legacy_unit_cost: number | null;
   build_mode: Generated<string>;
 }
 
@@ -1268,6 +1272,61 @@ export interface PunchPhotos {
   employee_id: number;
   file_name: string;
   file_size: number;
+  created_at: Generated<string>;
+}
+
+export interface PurchaseLiquidationItems {
+  id: Generated<number>;
+  request_id: number;
+  name: string;
+  quantity: number;
+  actual_unit_price: number;
+}
+
+export interface PurchaseReceiptFiles {
+  id: Generated<number>;
+  request_id: number;
+  file_name: string;
+  original_name: string;
+  mime_type: string;
+  uploaded_by: number | null;
+  created_at: Generated<string>;
+}
+
+export interface PurchaseRequestItems {
+  id: Generated<number>;
+  request_id: number;
+  name: string;
+  quantity: number;
+  estimated_unit_price: number;
+  note: string | null;
+}
+
+export interface PurchaseRequests {
+  id: Generated<number>;
+  number: string;
+  requested_by: number | null;
+  reason: string;
+  needed_by: string | null;
+  status: Generated<string>;
+  requested_budget: number;
+  approved_budget: number | null;
+  purchase_mode: string | null;
+  buyer_id: number | null;
+  decided_by: number | null;
+  decided_at: string | null;
+  decision_note: string | null;
+  cash_issued: number | null;
+  cash_issued_at: string | null;
+  cash_issued_by: number | null;
+  actual_total: number | null;
+  liquidation_note: string | null;
+  submitted_at: string | null;
+  closed_at: string | null;
+  closed_by: number | null;
+  close_note: string | null;
+  cash_returned: number | null;
+  reimbursed_amount: number | null;
   created_at: Generated<string>;
 }
 
@@ -1930,6 +1989,10 @@ export interface DB {
   production_team_members: ProductionTeamMembers;
   production_teams: ProductionTeams;
   punch_photos: PunchPhotos;
+  purchase_liquidation_items: PurchaseLiquidationItems;
+  purchase_receipt_files: PurchaseReceiptFiles;
+  purchase_request_items: PurchaseRequestItems;
+  purchase_requests: PurchaseRequests;
   push_subscriptions: PushSubscriptions;
   qbo_links: QboLinks;
   qc_checklists: QcChecklists;

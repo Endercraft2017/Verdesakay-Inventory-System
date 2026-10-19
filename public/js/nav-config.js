@@ -23,7 +23,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'hr-approvals', 'hr-requests', 'confidential-reports', 'identified-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies', 'stock-counts', 'support', 'billing'];
+const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'purchase-requests', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'hr-approvals', 'hr-requests', 'confidential-reports', 'identified-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies', 'stock-counts', 'support', 'billing'];
 
 const NAV = [
   {
@@ -48,6 +48,8 @@ const NAV = [
   {
     id: 'inventory', label: 'Inventory', icon: 'inventory', requiredModule: 'inventory',
     subtabs: [
+      { id: 'purchase-requests', label: 'Purchase Requests', requiredModule: 'purchasing', requiredAnyPermission: ['purchasing.request', 'purchasing.manage'],
+        tree: [{ label: 'Requests & liquidation', icon: 'inbox', route: 'purchase-requests' }] },
       {
         id: 'items', label: 'Items', requiredPermission: 'inventory.view',
         tree: [
