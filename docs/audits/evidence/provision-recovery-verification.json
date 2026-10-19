@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-19",
+  "base_commit": "a192f1c6912ddcfe9cbb86885db20c82626f021a",
+  "scope": "Core provisioning prepare-before-publish, exclusive reservation, owned cleanup and failed connection eviction",
+  "full_run": {
+    "files_passed": 300,
+    "tests_passed": 3037,
+    "failed": 0,
+    "duration_seconds": 542.03
+  },
+  "focused": {
+    "files_passed": 5,
+    "tests_passed": 64,
+    "duration_seconds": 64.32,
+    "note": "Before final dangling-symlink case and bigint identity refinement; final full run covers final source"
+  },
+  "safety": {
+    "files_passed": 1,
+    "tests_passed": 12,
+    "duration_seconds": 25.99
+  },
+  "process_exit_cases": 2,
+  "initial_playwright": {
+    "passed": 14,
+    "failed": 1,
+    "duration_seconds": 50.9,
+    "failure": "Existing MFA disable code-length validation; root cause unconfirmed"
+  },
+  "final_playwright": {
+    "passed": 15,
+    "failed": 0,
+    "duration_seconds": 44.4
+  },
+  "typecheck": "passed",
+  "whole_control_statuses_changed": false,
+  "deployed": false,
+  "limits": "Manual review of interrupted artifacts; later route orchestration, import acceptance, intermittent browser input failure and other release gates remain open."
+}

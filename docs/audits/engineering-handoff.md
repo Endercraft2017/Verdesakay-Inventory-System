@@ -1,7 +1,7 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 19 October 2026 — provisioning/settings error boundaries, complete settings
-validation, atomic catalog/audit writes and real database/browser fault tests. Accounting follow-ups were delivered
+Latest follow-up: 19 October 2026 — core prepare-before-publish provisioning, exclusive file
+ownership, failed-connection eviction and real process-interruption tests. Accounting follow-ups were delivered
 on 18 October and authentication work on 16 October. The complete release is still on hold.
 
 Work is on `production`, derived from `restructure/module-architecture`; it is not deployed.
@@ -133,3 +133,19 @@ files and post-create setup/audit operations. Compensating cleanup/restart recov
 steps is still engineering work. CSV adapters, signup/other status/expose/503 trust and legacy
 diagnostics remain open; API-06 and the complete release hold are unchanged. No owner setup or
 live deployment is required for these local engineering checks.
+
+
+## Core provisioning recovery follow-up — 2026-10-19
+
+High scoped gaps: catalog publication preceded owner setup/migration; creation could adopt an
+unregistered database; import rename could overwrite a raced destination; failed initialization
+could remain cached. Core prepare-before-publish, exclusive reservations, atomic catalog/audit
+publication, ownership-checked cleanup and failed-connection eviction are implemented. Real child
+process exits prove no catalog registration and collision refusal on restart; orphan artifacts
+are preserved for review. See the provisioning recovery runbook and dated validation evidence.
+
+Post-core route setup/invoicing/notifications still needs durable reconciliation and idempotency.
+This is fail-closed interruption handling, not automatic orphan recovery or power-loss/multi-host
+certification. The initial Playwright run had an intermittent MFA input-validation failure;
+its unmodified rerun passed. Root cause remains unconfirmed and is not claimed fixed here.
+Other handbook, dependency/history and external acceptance gaps keep the release on hold.

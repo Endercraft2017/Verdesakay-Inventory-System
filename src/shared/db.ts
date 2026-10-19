@@ -263,7 +263,7 @@ export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
   registry.set(slug, conn);
   // Run schema setup with this connection active so the db.exec / getSetting calls
   // inside createSchema/migrate/seed resolve to it via activeDb().
-  tenantStore.run({ db: conn, slug }, () => {
+  try { tenantStore.run({ db: conn, slug }, () => {
     createSchema();
     if ((getSetting<number>('schema_version') ?? 0) < SCHEMA_VERSION) {
       migrate();
@@ -294,7 +294,11 @@ export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
       conn.exec('INSERT OR IGNORE INTO form_template_links SELECT id,template_id FROM form_definitions WHERE template_id IS NOT NULL');
       setSetting('form_template_links_initialized',true);
     }
-  });
+  }); } catch (error) {
+    registry.delete(slug);
+    try { conn.close(); } catch { /* preserve the initialization failure */ }
+    throw error;
+  }
   return conn;
 }
 
@@ -355,6 +359,14 @@ export function queryAll<T>(sql: string, ...params: unknown[]): T[] {
 /** Execute an INSERT/UPDATE/DELETE and return the run result. */
 export function run(sql: string, ...params: unknown[]) {
   return db.prepare(sql).run(...(params as Param[]));
+}
+
+/** Forget one failed/provisioning connection before its owned files are removed. */
+export function closeTenantConnection(slug: string): void {
+  const conn = registry.get(slug);
+  if (!conn) return;
+  registry.delete(slug);
+  conn.close();
 }
 
 /** Close every open tenant connection and forget it (a later call reopens on demand). For the

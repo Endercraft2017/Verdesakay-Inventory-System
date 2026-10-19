@@ -364,3 +364,35 @@ The catalog transaction includes settings/audit writes; it does not cover worksp
 or import across catalog, tenant DB and files. Compensating cleanup/restart recovery and other
 API/diagnostic reviews remain. API-06 stays FAIL, whole-control totals are unchanged, and the
 complete release remains on hold. Tests passing is not live deployment or release approval.
+
+## Core provisioning failure recovery — 19 October 2026
+
+The final uninterrupted full regression passed **300 files / 3,037 tests**, with no failures
+(542.03s). Code and tests were frozen during that run. Earlier focused checks passed **5 files /
+64 tests** (64.32s); after additional artifact-safety coverage, the recovery file passed all
+**12 tests** (25.99s). The final full suite covers the final bigint file-identity refinement.
+
+Two real child processes exit during catalog publication, one for creation and one for import.
+On restart there is no tenant catalog row; an existing prepared database blocks a new attempt
+and its bytes remain unchanged. Other cases cover existing-file preservation, rollback of
+catalog/audit registration, cleanup and successful retry, owner credentials before publication,
+failed initialization registry eviction, incompatible import/source preservation, replacement
+file preservation, staging cleanup failure and dangling recovery-file symlinks.
+
+The first Playwright run had **14 passed / 1 failed** (50.9s): the existing MFA-disable scenario
+received public code-length validation feedback instead of disabling MFA. The unmodified full
+browser suite rerun passed **15 scenarios** (44.4s). The cause was not reproduced or established;
+no MFA product fix or deterministic reliability is claimed. Both text reports are retained.
+Final TypeScript and diff checks passed. Staged Gitleaks passed with no findings; its redacted report is included.
+
+Evidence: `evidence/provision-recovery-{full,focused,initial-focused,safety,crashes,initial-playwright,playwright,types}.txt`,
+`evidence/provision-recovery-verification.json` and `evidence/provision-recovery-scope.md`.
+See [the recovery runbook](../operations/provisioning-recovery.md). Research used Node's official
+filesystem flags and SQLite savepoint documentation (accessed 19 October 2026).
+
+This implements core prepare-before-publish and caught-failure cleanup. Real process exits do
+not prove power-loss/fsync, Windows or shared-volume behavior. Interrupted files stay blocked
+for reviewed quarantine; no automatic adoption or deletion is implemented. Later route setup,
+invoicing/notifications and imported schema/credential acceptance need broader reconciliation
+and review. Whole-control totals and release hold remain unchanged. No live deployment,
+customer workspace mutation, dependency or schema change occurred.

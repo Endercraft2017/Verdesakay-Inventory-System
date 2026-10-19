@@ -1378,3 +1378,15 @@ generic correlated 500s. The browser retains edited fields and permits corrected
 Creation preflights module names before account creation; create/import validate plan names
 and expose only typed public domain errors. Import integrity/migration diagnostics are generic.
 Multi-database/filesystem provisioning crash recovery is a separate, still-open lifecycle.
+
+
+## Core workspace preparation, publication and interrupted attempts (2026-10-19)
+
+Validate → exclusively reserve a database slot → prepare chosen owner credentials (create)
+or validate a private source copy, strip old sessions and migrate (import) → atomically publish
+catalog/company ID/core audit. Only the published workspace is tenant-routable. A caught failure
+before publication closes the connection and removes only artifacts whose identity is still
+owned. Failed initialization is evicted from the database registry. Interrupted processes can
+leave unregistered files, which block retry rather than being adopted or overwritten. Review
+and quarantine follow the provisioning recovery runbook. Later HTTP route orchestration is
+outside this core boundary and still needs durable reconciliation/idempotency.

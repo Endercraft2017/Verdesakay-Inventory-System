@@ -137,7 +137,13 @@ the account; create/import services reject unknown plans. Full tenant-settings v
 before writes; settings/subscription changes and their audit entries share a SQLite savepoint.
 `tests/platform-settings-errors.test.ts` covers failures/rollback and
 `tests/e2e/control-plane-settings.spec.ts` verifies actual settings draft/corrected-save behavior.
-This transaction does not cover provisioning across catalog, tenant databases and files.
+Core create/import now reserves files exclusively, prepares credentials/migration before
+catalog publication, and commits registration/audit together. Caught failures close/evict
+connections and remove only owned artifacts. Process interruption leaves an unregistered slot
+blocked for review; no automatic adoption/deletion occurs. `tests/provisioning-recovery.test.ts`
+covers process exits, retry refusal, collisions, owned cleanup and registry recovery. This is
+not a transaction across catalog, tenant databases/files or later route orchestration.
+See `docs/operations/provisioning-recovery.md`.
 
 
 **Public interface:** `enabledModules()`/`requireModule()` (re-exported from

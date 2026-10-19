@@ -276,3 +276,9 @@ Provisioning/settings follow-up, 19 October 2026: owner create/import/settings/s
 boundaries now use typed public errors; settings validate fully before writes and catalog/audit
 updates share a savepoint. API-06 remains FAIL; multi-database provisioning recovery and other
 route/diagnostic reviews remain open. Whole-control totals and release hold are unchanged.
+
+Core provisioning recovery follow-up, 19 October 2026: databases/owner credentials are prepared
+before catalog publication; exclusive paths and ownership-checked cleanup protect existing
+artifacts. Real process exits leave unregistered files blocked for review. See validation and
+the provisioning recovery runbook. Broader orchestration, hosted/Windows acceptance and other
+controls remain open; whole-control totals and release hold are unchanged.

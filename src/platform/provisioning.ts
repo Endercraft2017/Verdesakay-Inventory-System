@@ -10,12 +10,13 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { hashPassword } from '../shared/password-hash';
-import { withTenant, run, DATA_DIR, UPLOAD_DIR } from '../shared/db';
+import { withTenant, run, closeTenantConnection, DATA_DIR, UPLOAD_DIR } from '../shared/db';
+import { securityLog } from '../shared/http-hardening';
 import { passwordPolicyError } from '../shared/password-policy';
 import { removeUploadFolder } from '../shared/file-store';
 import {
   createTenantRow, getTenant, isValidSlug, logProvisioning, setTenantStatus,
-  retiredDefaultTenant,
+  retiredDefaultTenant, platformDb,
   type TenantStatus,
 } from './platform';
 
@@ -34,6 +35,52 @@ function httpError(status: 400 | 409, message: string): ControlPlaneError {
   return new ControlPlaneError(status, message);
 }
 
+/** Exclusive ownership of a new database path; never adopt an unregistered existing DB. */
+function reserveDatabase(slug: string) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const file = path.join(DATA_DIR, `${slug}.db`);
+  if (['', '-wal', '-shm', '-journal'].some(suffix => {
+    try { fs.lstatSync(file + suffix); return true; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error; }
+  })) {
+    throw httpError(409, 'A database or recovery file already exists for this workspace. Review it before retrying.');
+  }
+  return reserveFile(file);
+}
+function reserveFile(file: string) {
+  let descriptor: number;
+  try { descriptor = fs.openSync(file, 'wx', 0o600); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw httpError(409, 'That workspace database is already reserved.'); throw error; }
+  const identity = fs.fstatSync(descriptor, { bigint: true }); fs.closeSync(descriptor);
+  return { file, identity };
+}
+function removeOwnedFile(owned: ReturnType<typeof reserveFile>) {
+  const actual = fs.lstatSync(owned.file, { bigint: true });
+  if (actual.isSymbolicLink() || actual.dev !== owned.identity.dev || actual.ino !== owned.identity.ino) throw new Error('Database ownership changed');
+  for (const suffix of ['-wal', '-shm', '-journal', '']) fs.rmSync(owned.file + suffix, { force: true });
+}
+function discardOwnedDatabase(slug: string, owned: ReturnType<typeof reserveDatabase>) {
+  try {
+    if (getTenant(slug)) throw new Error('Catalog publication may have committed');
+    closeTenantConnection(slug);
+    removeOwnedFile(owned);
+  } catch {
+    // Keep uncertain artifacts blocked for review; never delete a replacement database.
+    securityLog({ event: 'provisioning_cleanup_failed', tenant: slug });
+  }
+}
+function publishTenant(input: Parameters<typeof createTenantRow>[0], action: string, detail: string) {
+  const database = platformDb();
+  database.exec('SAVEPOINT publish_tenant');
+  try {
+    createTenantRow(input);
+    logProvisioning(input.slug, action, detail);
+    database.exec('RELEASE publish_tenant');
+  } catch (error) {
+    database.exec('ROLLBACK TO publish_tenant'); database.exec('RELEASE publish_tenant'); throw error;
+  }
+}
+
 /** Create a tenant: catalog row + a fresh tenant DB seeded with the given admin login. */
 export function createTenant(input: CreateTenantInput): { slug: string } {
   if (input.plan !== undefined && !Object.hasOwn(PLANS, input.plan)) throw httpError(400, 'Unknown plan.');
@@ -48,18 +95,17 @@ export function createTenant(input: CreateTenantInput): { slug: string } {
   const passwordError = passwordPolicyError(adminPassword, 'Admin password');
   if (passwordError) throw httpError(400, passwordError);
 
-  createTenantRow({ slug, name: input.name.trim() || slug, plan: input.plan, status: input.status, is_sandbox: input.is_sandbox });
-
-  // withTenant opens + creates + migrates + seeds <DATA_DIR>/<slug>.db (seed() makes a
-  // default 'admin' account); adopt the caller's chosen credentials onto it.
-  withTenant(slug, () => {
-    const hash = hashPassword(input.admin_password);
-    // The operator chose this password for the owner, so the seed's "change the default
-    // password" flag no longer applies.
-    run("UPDATE users SET username = ?, password_hash = ?, email = ?, password_change_required = 0 WHERE username = 'admin'", username, hash, input.is_sandbox ? null : (input.admin_email?.trim().toLowerCase() || null));
-  });
-
-  logProvisioning(slug, 'create', JSON.stringify({ name: input.name, plan: input.plan ?? 'starter', admin: username }));
+  const hash = hashPassword(adminPassword);
+  const owned = reserveDatabase(slug);
+  try {
+    // The catalog cannot route requests here until initialization and chosen credentials succeed.
+    withTenant(slug, () => {
+      const changed = run("UPDATE users SET username = ?, password_hash = ?, email = ?, password_change_required = 0 WHERE username = 'admin'", username, hash, input.is_sandbox ? null : (input.admin_email?.trim().toLowerCase() || null));
+      if (changed.changes !== 1) throw new Error('Owner initialization failed');
+    });
+    publishTenant({ slug, name: input.name.trim() || slug, plan: input.plan, status: input.status, is_sandbox: input.is_sandbox },
+      'create', JSON.stringify({ name: input.name, plan: input.plan ?? 'starter', admin: username }));
+  } catch (error) { discardOwnedDatabase(slug, owned); throw error; }
   return { slug };
 }
 
@@ -83,20 +129,20 @@ export function importTenant(input: ImportTenantInput): { slug: string; users: n
     throw httpError(400, 'Workspace name must be 2–31 chars: a letter, then letters/numbers/hyphens (no reserved words).');
   }
   if (getTenant(slug)) throw httpError(409, 'That workspace name is already taken.');
-  const dest = path.join(DATA_DIR, `${slug}.db`);
-  if (fs.existsSync(dest)) throw httpError(409, `A database file for "${slug}" already exists on disk.`);
-
   const head = Buffer.alloc(16);
   const fd = fs.openSync(input.sourceFile, 'r');
   try { fs.readSync(fd, head, 0, 16, 0); } finally { fs.closeSync(fd); }
   if (head.toString('latin1') !== 'SQLite format 3\0') throw httpError(400, 'That file is not a SQLite database.');
 
-  // Work on a private copy so a rejected import never leaves anything behind.
+  // Validate on a private copy; only exclusively owned artifacts can be cleaned up.
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const staging = path.join(DATA_DIR, `.import-${slug}-${crypto.randomBytes(4).toString('hex')}.db`);
-  fs.copyFileSync(input.sourceFile, staging);
   let users = 0;
+  let owned: ReturnType<typeof reserveDatabase> | undefined;
+  let stageOwned: ReturnType<typeof reserveFile> | undefined;
   try {
+    stageOwned = reserveFile(staging);
+    fs.copyFileSync(input.sourceFile, staging);
     const conn = new DatabaseSync(staging);
     try {
       const ok = (conn.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check;
@@ -112,21 +158,21 @@ export function importTenant(input: ImportTenantInput): { slug: string; users: n
     } finally {
       conn.close();
     }
-    fs.renameSync(staging, dest);
-  } catch (e) {
-    for (const suffix of ['', '-wal', '-shm']) fs.rmSync(staging + suffix, { force: true });
-    throw e;
+    owned = reserveDatabase(slug);
+    fs.copyFileSync(staging, owned.file);
+    withTenant(slug, () => {}); // Complete migration before the catalog can route requests.
+    publishTenant({ slug, name: input.name.trim() || slug, plan: input.plan },
+      'import', JSON.stringify({ name: input.name, plan: input.plan ?? 'starter', users }));
+  } catch (error) {
+    if (owned) discardOwnedDatabase(slug, owned);
+    throw error;
+  } finally {
+    if (stageOwned) {
+      try { removeOwnedFile(stageOwned); }
+      catch { securityLog({ event: 'provisioning_staging_cleanup_failed', tenant: slug }); }
+    }
   }
 
-  createTenantRow({ slug, name: input.name.trim() || slug, plan: input.plan });
-  try {
-    withTenant(slug, () => {}); // open → pre-migration snapshot → migrate to the current schema
-  } catch (e) {
-    setTenantStatus(slug, 'suspended');
-    logProvisioning(slug, 'import-failed', 'Database migration failed; workspace suspended.');
-    throw e;
-  }
-  logProvisioning(slug, 'import', JSON.stringify({ name: input.name, plan: input.plan ?? 'starter', users }));
   return { slug, users };
 }
 
