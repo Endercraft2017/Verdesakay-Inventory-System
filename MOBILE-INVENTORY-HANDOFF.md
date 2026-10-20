@@ -83,6 +83,17 @@ on allocation or report, and no commercial mutation from Releasing or
 warehouse tracking. Phone changes remain for the mobile owner; this handoff
 does not claim those screens are implemented.
 
+**Playwright check (2026-10-20, disposable local tenant):** The desktop CSR
+pipeline and searchable customer-service desk opened the exact sale. A narrow
+Releasing account accepted and allocated an approved sale, while its sale-create
+API was denied; stock stayed at 2 through allocation and became 1 only after
+Sales authorization, photo proof, and a release slip. The 390 px warehouse
+tracking view had no New Sale Order action. Mobile Work opened the existing
+`#/so` release desk for Releasing, and a revoked clerk could not reopen it.
+**Still missing on mobile:** A 390 px CSR Work screen had no Sales pipeline,
+Customer Service desk, or New Sale Order entry. Build and acceptance-test those
+phone screens before treating this Sales workflow as mobile-complete.
+
 ### Subassembly build handoff
 
 A finished product may itself be a component in another product's BOM. The
@@ -117,18 +128,27 @@ retain their combined QC/QA pass. A QA hold still uses the separate hold-review
 queue; Products In remains blocked until hold is resolved and both required
 inspections pass. The QR sticker is still attached at Products In, after both.
 
-**Mobile owner action:** Update `public/mobile/modules/manufacturing/qc.js`
-to remove the `u.stage + 1` gate for two-inspection jobs. Show a unit in both
-Ready lists when neither desk has passed; show each desk's own result and the
-other desk's status on the unit card. Send `inspection_stage` with every phone
-submission, including queued/offline work. A QA inspector must be able to
-open a unit before QC. If another user completes the same desk first, show a
-clear already-inspected state on `409` and reload the queue; do not replay a
-different result as success. Work badges should count the relevant desk's
-open units, not the shared `stage` field. Test QA-first, QC-first, two open
-phones submitting at nearly the same time, stale queues, holds, repair,
-permission revocation, no sticker, and Products In refusal after only one pass.
-Do not infer receipt from either inspection notification.
+**Mobile owner action:** A narrow QA inspector can currently open and pass a
+newly recorded unit before QC on the 390 px phone screen. Keep that behavior.
+For two-inspection jobs, show each desk's own result and the other desk's
+status on the unit card, and use those results for Ready badges and next-step
+copy instead of the shared `u.stage`. Send `inspection_stage: 1` from QC and
+`inspection_stage: 2` from QA with **every** phone submission, including queued
+or offline work. This is a correctness fix: Playwright opened `#/qc?role=qa`
+as a user with both inspection permissions, passed a pending unit, and then
+`GET /api/job-orders/:id/units` reported `qc_result: pass` and
+`qa_result: null`. The phone had sent no stage, so the backend correctly applied its
+default QC-first choice. The same QA phone flow displayed **Pass to QA** even
+though the user was already on the QA desk; its queue copy still claims units
+must pass QC before QA. Update those labels to say the other inspection remains
+pending and RTS receipt waits for both passes. A QA-only Playwright pass first
+left the unit pending and outside Products In, then desktop QC completed it.
+If another user completes the same desk first, show a clear already-inspected
+state on `409` and reload the queue; do not replay a different result as
+success. Test QA-first and QC-first with narrow and dual-permission accounts,
+two open phones submitting at nearly the same time, stale queues, holds,
+repair, permission revocation, no sticker, and Products In refusal after only
+one pass. Do not infer receipt from either inspection notification.
 
 ## Role-based actionable work notifications (2026-10-20)
 
