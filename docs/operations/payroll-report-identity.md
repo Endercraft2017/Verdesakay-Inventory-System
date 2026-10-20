@@ -4,6 +4,11 @@
 [reviewed identity repair](payroll-identity-repair.md). It does not establish that
 all payroll amounts, tax classifications, bank payments or filed returns reconcile.
 
+Follow-up: [source/journal integrity](payroll-reconciliation.md) now holds duplicate slots
+across reports, generation, monthly history and GL. Valid cutoff stamps disambiguate agency
+scope under reused labels. Current payroll-to-journal comparison is implemented; reviewed
+reconstruction and bank/remittance/filing evidence remain separate.
+
 ## Behavior
 
 The shared report reader groups by stable `employees.id`, using the strict
@@ -84,8 +89,10 @@ cloud records have synchronized. No mutation sync classes or schema were changed
 
 ## Remaining engineering and acceptance
 
-High-priority reconciliation still includes duplicate payslips within one employee,
-cancelled/draft/paid eligibility, journal/payment/filing linkage and correction history.
+Duplicate payslip source slots now hold rather than aggregate; reviewed disposition remains.
+High-priority reconciliation still includes cancelled/draft/paid filing eligibility,
+historical source snapshots, payment/filing linkage and reviewed correction history.
+The current source-to-journal comparison is documented in the follow-up above.
 An identity stamp does not establish that the amounts or legal treatment are correct.
 Missing/invalid TINs, agency identifiers and classifications are not a complete filing
 validation; the portal/accountant must still validate the official submission.

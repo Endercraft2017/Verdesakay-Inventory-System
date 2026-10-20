@@ -1,0 +1,78 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+ ❯ tests/payroll-reconciliation.test.ts (6 tests | 6 skipped) 2333ms
+ ❯ tests/hr.test.ts (114 tests | 114 skipped) 1187ms
+ ❯ tests/sync-payroll.test.ts (3 tests | 3 skipped) 1226ms
+ ❯ tests/payroll-report-identity.test.ts (14 tests | 14 skipped) 1151ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/hr.test.ts [ tests/hr.test.ts ]
+ FAIL  tests/payroll-report-identity.test.ts [ tests/payroll-report-identity.test.ts ]
+ FAIL  tests/sync-payroll.test.ts [ tests/sync-payroll.test.ts ]
+Error: Transform failed with 1 error:
+
+[PARSE_ERROR] Expected `}` but found `EOF`
+      ╭─[ src/modules/hr/hr.routes.ts:2953:24 ]
+      │
+ 2458 │ function recomputePayslipsFrom(employeeId: number, from: string): { recomputed: RecomputedPayslip[]; paid: PaidPayslipShortfall[] } {
+      │                                                                                                                                     ┬
+      │                                                                                                                                     ╰── Opened here
+      │
+ 2953 │ export default router;
+      │                        │
+      │                        ╰─ `}` expected
+──────╯
+
+  Plugin: vite:oxc
+  File: /workspace/Verdesakay-Inventory-System/src/modules/hr/hr.routes.ts
+ ❯ transformWithOxc node_modules/vite/dist/node/chunks/node.js:7581:19
+ ❯ TransformPluginContext.transform node_modules/vite/dist/node/chunks/node.js:7653:26
+ ❯ EnvironmentPluginContainer.transform node_modules/vite/dist/node/chunks/node.js:8545:51
+ ❯ loadAndTransform node_modules/vite/dist/node/chunks/node.js:20184:26
+ ❯ fetchModule node_modules/vite/dist/node/chunks/node.js:36165:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/payroll-reconciliation.test.ts [ tests/payroll-reconciliation.test.ts ]
+Error: Transform failed with 1 error:
+
+[PARSE_ERROR] Expected `}` but found `EOF`
+      ╭─[ src/modules/hr/hr.routes.ts:2953:24 ]
+      │
+ 2458 │ function recomputePayslipsFrom(employeeId: number, from: string): { recomputed: RecomputedPayslip[]; paid: PaidPayslipShortfall[] } {
+      │                                                                                                                                     ┬
+      │                                                                                                                                     ╰── Opened here
+      │
+ 2953 │ export default router;
+      │                        │
+      │                        ╰─ `}` expected
+──────╯
+
+  Plugin: vite:oxc
+  File: /workspace/Verdesakay-Inventory-System/src/modules/hr/hr.routes.ts
+ ❯ transformWithOxc node_modules/vite/dist/node/chunks/node.js:7581:19
+ ❯ TransformPluginContext.transform node_modules/vite/dist/node/chunks/node.js:7653:26
+ ❯ EnvironmentPluginContainer.transform node_modules/vite/dist/node/chunks/node.js:8545:51
+ ❯ loadAndTransform node_modules/vite/dist/node/chunks/node.js:20184:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/sync-payroll.test.ts [ tests/sync-payroll.test.ts ]
+TypeError: Cannot read properties of undefined (reading 'ctx')
+ ❯ tests/sync-payroll.test.ts:44:13
+     42| afterAll(() => {
+     43|   T?.close();
+     44|   cleanup(T.ctx);
+       |             ^
+     45| });
+     46|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+
+ Test Files  4 failed (4)
+      Tests  137 skipped (137)
+   Start at  05:30:54
+   Duration  6.90s (transform 1.24s, setup 54ms, import 340ms, tests 5.90s, environment 0ms)

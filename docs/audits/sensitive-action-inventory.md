@@ -51,3 +51,16 @@ it does not claim unique per-transaction authorization, full compliance, or inde
 HTTP RFC 9110 informs conservative handling of uncertain non-idempotent writes. Intuit request-ID
 pages were not retrievable here, so provider guarantees were not broadened. Further offline
 factor/origin and real-provider decisions need dedicated research/prototypes and acceptance.
+
+
+## Payroll source/journal follow-up — 20 October 2026
+
+Shared stable employee/cutoff checks now hold duplicate and uncertain sources before generation,
+rate recomputation, monthly history, scoped reports and GL posting. Payroll journal replacement
+validates first and commits reversal/replacement together; current comparison is read-only and
+separates Paid marks from unlinked settlement/filing evidence. An explicit offline main-host
+post/re-post/cloud-replay test supplements the existing paid-clash checks. See
+[contract](../operations/payroll-reconciliation.md) and [research](payroll-reconcile-research.md).
+These are integrity safeguards; reviewed one-use/source-version-bound approval, retry-safe
+posting, local-factor/command binding, release/email controls and payment/filing receipt models
+remain. Existing company claim classes were retained. No whole AUTHZ control is promoted.

@@ -7,6 +7,7 @@
 import { queryOne, queryAll, getSetting } from '../../shared/db';
 import type { PayslipYearRow, Bir2316Options } from './ph-2316';
 import { payslipOwnerResolver } from './payslip-owner';
+import {payrollSourceIndex} from './payroll-source';
 import { sssCompensation, pagIbigCompensation } from './ph-statutory';
 
 const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -21,7 +22,7 @@ interface RawRecord { employee_id: number; data: Record<string, unknown>; pay_da
 class PayrollReportIdentityError extends Error {
   readonly status = 409;
   constructor(ids: number[]) {
-    super(`Payroll report blocked: ${ids.length} payslip(s) need review. Record IDs: ${ids.slice(0, 10).join(', ')}${ids.length > 10 ? ', …' : ''}. A payroll manager must resolve ownership, unreadable data or ambiguous cutoff labels before retrying.`);
+    super(`Payroll report blocked: ${ids.length} payslip(s) need review. Record IDs: ${ids.slice(0, 10).join(', ')}${ids.length > 10 ? ', …' : ''}. A payroll manager must resolve duplicate payslips, ownership, unreadable data or ambiguous cutoff labels before retrying.`);
     this.name = 'PayrollReportIdentityError';
   }
 }
@@ -32,24 +33,22 @@ function reportPayslips(scope: string, byCutoff = false): RawRecord[] {
   const id = payrollFormId();
   if (id == null) return [];
   const owner = payslipOwnerResolver();
-  const cutoffs = new Map<string, string[]>();
-  if (byCutoff) for (const p of queryAll<{label: string; end_date: string}>('SELECT label, end_date FROM attendance_periods')) {
-    cutoffs.set(p.label, [...(cutoffs.get(p.label) ?? []), p.end_date]);
-  }
+  const index = payrollSourceIndex();
   const out: RawRecord[] = [], blocked: number[] = [];
-  for (const r of queryAll<{id: number; data: string; created_at: string; period: string | null}>(
-    'SELECT id, data, created_at, period FROM form_records WHERE form_def_id = ? ORDER BY id', id
-  )) {
+  for (const source of index.rows) {
+    const r = source.raw;
     let d: Record<string, unknown>;
     try {
-      const parsed: unknown = JSON.parse(r.data);
+      const parsed: unknown = JSON.parse(r.data as string);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid payroll object');
       d = parsed as Record<string, unknown>;
     } catch { blocked.push(r.id); continue; }
     const payDate = typeof d.pay_date === 'string' && d.pay_date ? d.pay_date : r.created_at;
-    const dates = byCutoff && r.period ? cutoffs.get(r.period) ?? [] : [];
-    // Duplicate labels cannot establish which cutoff owns the record. Block any possible
-    // contribution month, even if duplicate cutoffs happen to have the same end date.
+    if (byCutoff && source.issues.includes('invalid_cutoff')) { blocked.push(r.id); continue; }
+    const stamped = d.cutoff_id != null;
+    const matches = index.labels.get(source.label) ?? [];
+    const dates = byCutoff ? (source.cutoff_id != null ? [index.periods.get(source.cutoff_id)!.end_date]
+      : !stamped ? matches.map(id=>index.periods.get(id)!.end_date) : []) : [];
     if (dates.length > 1) {
       if (dates.some(date => !/^\d{4}-(0[1-9]|1[0-2])-/.test(date) || date.slice(0, 7) === scope)) blocked.push(r.id);
       continue;
@@ -61,6 +60,7 @@ function reportPayslips(scope: string, byCutoff = false): RawRecord[] {
     // Legacy names are strings, never objects whose string conversion can fail.
     // A valid authoritative stamp needs no display-name conversion at all.
     if (d.employee_id == null && typeof d.employee_name !== 'string') { blocked.push(r.id); continue; }
+    if (index.duplicate_ids.has(r.id) || source.issues.includes('invalid_cutoff')) { blocked.push(r.id); continue; }
     const employee_id = owner.idOf(d);
     if (employee_id == null) { blocked.push(r.id); continue; }
     out.push({employee_id, data: d, pay_date: payDate, cutoff_end: cutoffEnd});

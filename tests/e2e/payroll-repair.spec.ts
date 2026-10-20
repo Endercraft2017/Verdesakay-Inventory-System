@@ -3,7 +3,8 @@ import {test,expect,type Page} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 async function open(page:Page,number:string){
  await page.goto('/?view=desktop');await page.locator('#login-username').fill('admin');await page.locator('#login-password').fill('admin123-test-only');await page.getByRole('button',{name:'Sign in',exact:true}).click();await expect(page.locator('#app-screen')).toBeVisible();
- await page.evaluate(()=>(window as any).App.navigate('form-records',{slug:'hr_payroll'}));
+ // Search the target explicitly; other fixtures now create collapsible cutoff bundles.
+ await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);
  const button=page.getByRole('button',{name:'Review owner of payslip '+number,exact:true});await button.click();
  const dialog=page.getByRole('dialog',{name:'Review payslip owner',exact:true});await expect(dialog).toBeVisible();return dialog;
 }

@@ -775,6 +775,11 @@ doc_template, SCHEMA_VERSION 43; company-wide register `GET /api/hr/assets` with
 people-who-left filters + CSV, UI `public/js/modules/hr/hr-assets.js` at HR → Employees →
 Company Assets, tests `tests/hr-assets.test.ts`), `clock.routes.ts`, `field.routes.ts`,
 `employee-profile.ts` + `employee-profile.routes.ts` (self-service profile, below).
+**Payroll source reconciliation (20 October 2026):** generation and rate recomputation use
+`payroll/payroll-source.ts` to reject duplicate/ambiguous source slots. Rate-change failures
+roll back employee/rate history. A `payroll.view` read-only comparison route and Cutoff tools
+→ Reconcile payroll show source/journal state with separate payment evidence. See
+[contract](../operations/payroll-reconciliation.md). Existing company claim classes remain.
 **Payroll worksheets:** 13th month and final pay use stable employee-ID groups from `payroll`,
 not name lookups. Unresolved/unreadable source data blocks affected reports with 409. The
 13th-month dialog clears stale results and disables CSV on pending/failed reads. See
@@ -895,7 +900,7 @@ from `hr` and `accounting` specifically because both of those modules depended o
 *and on each other* through it (a two-way `hr` ↔ `accounting` coupling found during
 the reorg's import-graph survey). Owning it as its own module resolves that: both `hr`
 and `accounting` now depend one-directionally on `payroll`, not on each other.
-**Owned files:** `hr-payroll-compute.ts`, `hr-payroll-import.ts`,
+**Owned files:** `payroll-source.ts` (shared stable employee/cutoff identity, recorded legacy aliases and duplicate holds), `hr-payroll-compute.ts`, `hr-payroll-import.ts`,
 `employee-rate-history.ts`, `payroll-tables.ts`, `ph-2316.ts`, `ph-alphalist.ts`,
 `ph-contributions.ts`, `ph-final-pay.ts`, `ph-income-tax.ts`,
 `ph-payroll-report-data.ts`, `ph-statutory.ts`, `ph-vat-ewt.ts`, `statutory-month.ts`
@@ -928,7 +933,12 @@ unreadable data/unscopable dates or relevant duplicate cutoff labels. A one-reco
 multiplication through non-unique attendance labels. Accounting dialogs and HR 13th month clear
 old results, disable pending/blocked export and reject late/context-changed reads. No schema,
 mutation sync class or tax formula changed. See [report contract](../operations/payroll-report-identity.md)
-and [research](../audits/payroll-reports-research.md); duplicate/ledger/payment/filing reconciliation remains.
+and [research](../audits/payroll-reports-research.md).
+**Source integrity follow-up:** generation/rate/month-to-date/GL callers share duplicate
+holds rather than first/newest selection. Reports hold duplicate slots even across pay years.
+Valid cutoff stamps disambiguate custom labels for agency scope; unlinked relevant-month
+history requires review. See [source/journal contract](../operations/payroll-reconciliation.md).
+Reviewed duplicate/cutoff reconstruction and payment/filing acceptance remain.
 **Public interface:** pure computation/rendering functions (no routes of its own — exposed
 through `hr.routes.ts`, `accounting.routes.ts`, and `core/me.routes.ts`'s
 `GET /api/me/payslips/:id/pdf`).
@@ -1046,7 +1056,7 @@ code-organization boundary only, invisible to tenant entitlements.
 
 **Responsibility:** general ledger, AR/AP, petty cash, tax & compliance filings, and
 the auto-posting hook other modules call into.
-**Owned files:** `accounting-autopost.ts`, `accounting-posting.ts`, `ledger.ts`,
+**Owned files:** `accounting-autopost.ts`, `accounting-posting.ts`, `payroll-ledger-source.ts` (deterministic source document/live journal helpers), `payroll-reconciliation.ts` (bounded read snapshot/comparison), `ledger.ts`,
 routes: `accounting.routes.ts`.
 **Public interface:** `accounting-autopost.ts`'s exported posting functions — called
 by `modules/hr`, `modules/manufacturing`, `modules/inventory` (orders), and
@@ -1057,6 +1067,12 @@ accounting's public interface), not a circular dependency.
 journal entry is `merge` (JV numbers from the host's block); a petty-cash entry is `physical`; everything
 else is a company-wide `claim`. Posting, reversing, closing or voiding what the cloud already did keeps the
 outcome, flagged (D6). Posting into a period the cloud closed stays refused (an accounting control).
+**Payroll journal integrity:** re-post validates before an atomic reversal/replacement
+savepoint, including lines/numbering; closed/refused reversal and invalid/multiple live originals
+hold rather than leave partial books. Live-source lookup excludes reversals for all callers;
+shared posting/reversal writes now nest via savepoints. `GET /accounting/payroll-reconciliation/:periodId`
+permits a bounded comparison under `accounting.view`, without general HR fields. See
+[contract](../operations/payroll-reconciliation.md) and [research](../audits/payroll-reconcile-research.md).
 **Payroll tax/agency identity:** BIR 2316/1601-C/1604-C/Alphalist and contribution schedules
 use numeric employee groups, including same-name employees. Identity/settings are read by ID;
 shared source-integrity holds return 409 before JSON rows or CSV. Report dialogs show errors,

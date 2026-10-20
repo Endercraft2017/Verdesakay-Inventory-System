@@ -196,3 +196,14 @@ email, deletion, filing or source correction occurs. See
 [contract](../operations/payroll-report-identity.md) and [primary-source review](../audits/payroll-reports-research.md).
 This supersedes older notes that name aggregation remains unimplemented. Reconciliation,
 recipient/rights procedures, approved retention and independent audit protection remain.
+
+
+## Payroll source/journal integrity — 20 October 2026
+
+Shared source indexing holds duplicate employee/cutoff slots and uncertain linkage; no
+record is deleted, merged or selected by newest timestamp. Atomic journal replacement preserves
+prior books on failure. Read-only comparison returns aggregates/limited identifiers rather
+than employee HR objects and distinguishes Paid marks from unlinked settlement/filing evidence.
+See [contract](../operations/payroll-reconciliation.md) and [primary-source decisions](../audits/payroll-reconcile-research.md).
+These safeguards do not complete reviewed source reconstruction, rights/recipient notification,
+retention/legal holds, independent audit protection or full accounting/operational acceptance.

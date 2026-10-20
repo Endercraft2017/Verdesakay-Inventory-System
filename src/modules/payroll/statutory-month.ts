@@ -10,8 +10,8 @@
  * current month — so a cutoff counts toward the month its LAST day falls in, whatever its pay
  * date (a 16–30 Sep cutoff paid on 5 Oct is September's).
  */
-import { queryAll } from '../../shared/db';
 import { payslipOwnerResolver, type PayslipOwnerResolver } from './payslip-owner';
+import {payrollSourceIndex,cutoffPayrollSources,assertCutoffPayroll,PayrollSourceError} from './payroll-source';
 
 export type CutoffFrequency = 'monthly' | 'semi_monthly' | 'weekly' | 'daily';
 
@@ -39,32 +39,29 @@ export function isLastCutoffOfMonth(period: { start_date: string; end_date: stri
 }
 
 /** Every employee's payslips for the cutoffs of `period`'s contribution month that end before
-    it does, keyed by employee id. One payslip per cutoff (the newest, should a cutoff ever hold
-    duplicates), so nothing is counted twice. */
+    it does, keyed by employee id. Duplicate/ambiguous sources stop the calculation for review; no newest-record choice. */
 export function earlierPayslipsInMonth(
   period: { id: number; end_date: string },
   owner: PayslipOwnerResolver = payslipOwnerResolver()
 ): Map<number, Record<string, unknown>[]> {
-  const rows = queryAll<{ id: number; period: string; data: string }>(
-    `SELECT fr.id, fr.period, fr.data
-       FROM form_records fr
-       JOIN form_definitions fd ON fd.id = fr.form_def_id AND fd.slug = 'hr_payroll'
-       JOIN attendance_periods ap ON ap.label = fr.period
-      WHERE ap.id <> ? AND substr(ap.end_date, 1, 7) = ? AND ap.end_date < ?
-      ORDER BY fr.id DESC`,
-    period.id, contributionMonthOf(period), period.end_date
-  );
-  const seen = new Set<string>();
-  const out = new Map<number, Record<string, unknown>[]>();
-  for (const r of rows) {
-    let data: Record<string, unknown>;
-    try { data = JSON.parse(r.data) as Record<string, unknown>; } catch { continue; }
-    const employeeId = owner.idOf(data);
-    if (employeeId == null) continue;
-    const key = `${employeeId}|${r.period}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.set(employeeId, [...(out.get(employeeId) ?? []), data]);
+  const index=payrollSourceIndex();
+  // An unlinked legacy record in this pay month might be an earlier cutoff. It must
+  // not disappear from the month-to-date deductions just because its label has no match.
+  const unlinked=index.rows.filter(source=>{
+    if(source.cutoff_id!=null)return false;
+    const date=source.data?.pay_date || source.raw.created_at;
+    return typeof date!=='string'||!/^\d{4}-(0[1-9]|1[0-2])-/.test(date)||date.slice(0,7)===contributionMonthOf(period);
+  });
+  if(unlinked.length)throw new PayrollSourceError(['unlinked_month_source'],unlinked.map(s=>s.raw.id));
+  const out=new Map<number,Record<string,unknown>[]>();
+  for(const cutoff of index.periods.values()){
+    if(cutoff.id===period.id||contributionMonthOf(cutoff)!==contributionMonthOf(period)||cutoff.end_date>=period.end_date)continue;
+    if(!cutoffPayrollSources(index,cutoff.id).rows.length)continue;
+    for(const source of assertCutoffPayroll(index,cutoff.id)){
+      const employeeId=owner.idOf(source.data!);
+      if(employeeId==null)continue;
+      out.set(employeeId,[...(out.get(employeeId)??[]),source.data!]);
+    }
   }
   return out;
 }

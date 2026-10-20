@@ -1,0 +1,3 @@
+PASS: real server.ts creates and compares a payroll journal; duplicate sources stop generation/posting without altering journals.
+PASS: SIGKILL after the inner reversal release preserves original entries, lines and sequence on recovery; restart detects changed sources, and explicit repost commits one reversal/replacement pair.
+PASS: private no-store/read-only permission boundary and separate payment-evidence status; no mail, provider write, deployment or real employee modification. Disposable catalogs only.

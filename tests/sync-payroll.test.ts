@@ -27,6 +27,7 @@ const payslips = (conn: DatabaseSync, period: string) =>
 
 beforeAll(async () => {
   T = await setupSiteTrio(async ({ api: a, cloudHdr }) => {
+    await ok(a.post('/api/accounting/ledger/setup').set(cloudHdr()).send({fiscal_year_start:'2026-01-01'}),201);
     emp = (await a.post('/api/hr/employees').set(cloudHdr()).send({
       employee_no: 'P-001', name: 'Ben Cruz', position: 'Assembler', daily_rate: 700, rate_type: 'daily', status: 'regular',
     })).body.id;
@@ -42,6 +43,24 @@ beforeAll(async () => {
 afterAll(() => {
   T?.close();
   cleanup(T.ctx);
+});
+
+it('posts and re-posts payroll offline, then replays the same current journal on the cloud',async()=>{
+  T.cutOff('host');const h=T.hostHdr(),label='Offline GL Oct 5-6, 2026';
+  const period=(await ok(api().post('/api/hr/periods').set(h).send({label,start_date:'2026-10-05',end_date:'2026-10-06'}),201)).body.id;
+  await ok(api().post(`/api/hr/periods/${period}/employees`).set(h).send({employee_id:emp}),201);
+  await ok(api().put(`/api/hr/periods/${period}/attendance`).set(h).send({employee_id:emp,days:[{work_date:'2026-10-05',time_in:'08:00',time_out:'17:00',notes:''},{work_date:'2026-10-06',time_in:'08:00',time_out:'17:00',notes:''}]}));
+  await ok(api().post(`/api/hr/periods/${period}/generate-payslips`).set(h).send({payroll_period:label,pay_date:'2026-10-07'}),201);
+  for(let i=0;i<2;i++)await ok(api().post(`/api/hr/periods/${period}/post-payroll-gl`).set(h).send({payroll_period:label}),201);
+  const local=await ok(api().get(`/api/hr/periods/${period}/payroll-reconciliation`).set(h));expect(local.body.ledger.state).toBe('matches');
+  T.reconnect('host');const round=await T.hostRound();expect(round.pushed.filter(p=>p.state!=='confirmed')).toEqual([]);
+  const cloudId=Number((T.cloudDb().prepare('SELECT id FROM attendance_periods WHERE label=?').get(label) as {id:number}).id);
+  const cloud=await ok(api().get(`/api/hr/periods/${cloudId}/payroll-reconciliation`).set(T.cloudHdr()));
+  expect(cloud.body.ledger.state).toBe('matches');expect(cloud.body.source).toEqual(local.body.source);
+  expect(cloud.body.ledger.expected_debit).toBe(local.body.ledger.expected_debit);
+  expect(cloud.body.ledger.actual_debit).toBe(local.body.ledger.actual_debit);
+  const journals=(conn:DatabaseSync,id:number)=>conn.prepare("SELECT COUNT(*) AS n FROM journal_entries WHERE source_type='payroll_run' AND source_id=?").get(id) as {n:number};
+  expect(journals(T.hostDb(),period).n).toBe(3);expect(journals(T.cloudDb(),cloudId).n).toBe(3);
 });
 
 describe('a payroll cutoff while the internet is down', () => {

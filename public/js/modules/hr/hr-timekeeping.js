@@ -1353,8 +1353,9 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   // viewers keep the roster, daily grids and CSV export without buttons that would only 403.
   const canManage = App.hasPermission('hr.manage') && !period.locked;
   const canPayroll = App.hasPermission('payroll.manage');
+  const canViewPayroll = App.hasPermission('payroll.view');
   const showRate = App.hasPermission('payroll.view');
-  const hasTools = canManage || canPayroll;
+  const hasTools = canManage || canPayroll || canViewPayroll;
 
   view.innerHTML = `
     <div class="topbar tk-cutoff-header">
@@ -1377,9 +1378,10 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
         <button type="button" class="btn secondary small" id="tk-edit-period">${UI.icon('edit', 14)} Edit Cutoff</button>
         <button type="button" class="btn secondary small" id="tk-import-punches" title="Punches fill time-in/out live while someone's on this cutoff's roster — use this to backfill anyone who punched before being added">${UI.icon('calendar', 14)} Import Punches</button>
       </div>` : ''}
-      ${canPayroll ? `<div class="hr-tools-group" role="group" aria-labelledby="tk-more-acct">
+      ${canPayroll || canViewPayroll ? `<div class="hr-tools-group" role="group" aria-labelledby="tk-more-acct">
         <span class="hr-tools-label" id="tk-more-acct">Accounting</span>
-        <button type="button" class="btn secondary small" id="tk-post-gl" title="Post this cutoff's generated payslips to the General Ledger">${UI.icon('building', 14)} Post to GL</button>
+        ${canViewPayroll ? `<button type="button" class="btn secondary small" id="tk-reconcile">${UI.icon('sheet', 14)} Reconcile payroll</button>` : ''}
+        ${canPayroll ? `<button type="button" class="btn secondary small" id="tk-post-gl" title="Post this cutoff's generated payslips to the General Ledger">${UI.icon('building', 14)} Post to GL</button>` : ''}
       </div>` : ''}
     </div>` : ''}
     <div class="panel">
@@ -1443,6 +1445,8 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   if (genBtn) genBtn.onclick = () => generateModal();
   const glBtn = view.querySelector('#tk-post-gl');
   if (glBtn) glBtn.onclick = () => postGlModal();
+  const reconcileBtn = view.querySelector('#tk-reconcile');
+  if (reconcileBtn) reconcileBtn.onclick = () => reconciliationModal();
   const importBtn = view.querySelector('#tk-import-punches'); // hr.manage only
   if (importBtn) importBtn.onclick = async () => {
     const ok = await UI.confirmDialog(
@@ -2724,13 +2728,58 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     });
   }
 
+  function reconciliationModal() {
+    UI.modal({
+      title: 'Payroll reconciliation', size: 'lg', cancelText: 'Close', confirmText: null,
+      bodyHTML: `<label for="pr-label">Payroll period label</label><input id="pr-label" value="${UI.esc(lastPayrollPeriod)}" />
+        <button type="button" class="btn secondary small" id="pr-reload">Refresh comparison</button>
+        <p class="muted">Compare the current payslips with the payroll journal before posting or issuing reports.</p>
+        <div id="pr-content" aria-live="polite"></div>`,
+      onOpen: (ov) => {
+        let generation = 0;
+        const body = ov.querySelector('#pr-content');
+        const states = {matches:'Current payroll matches the journal',differs:'Journal differs from current payroll',missing:'Payroll has not been posted',blocked:'Payroll records need review',ledger_off:'The General Ledger is disabled',empty:'No payslips found',unpostable:'Payroll cannot be posted',multiple_live_journals:'Multiple unreversed payroll journals need accountant review',invalid_journal:'The existing payroll journal needs accountant review'};
+        const issues = {duplicate_employee_cutoff:'More than one payslip belongs to an employee in this cutoff.',unresolved_employee:'A payslip has no verified employee.',unreadable_data:'A payslip contains unreadable data.',invalid_cutoff:'A payslip has an invalid cutoff reference.',ambiguous_cutoff_label:'A payroll label identifies more than one cutoff.',cutoff_label_conflict:'The selected label identifies another cutoff.',foreign_cutoff:'The label includes payroll from another cutoff.',unlinked_cutoff:'A payslip has no verified cutoff link.',unsupported_status:'A payslip status needs review.',invalid_amount:'A payroll amount needs review.',invalid_pay_date:'A pay date needs correction.',mixed_pay_dates:'Payslips have different pay dates; review their posting together.'};
+        async function load() {
+          const current = ++generation, actor = App.user, scope = API.serverScope(), token = API.getToken();
+          const live = () => current === generation && ov.isConnected && App.user === actor && API.serverScope() === scope && API.getToken() === token;
+          body.innerHTML = '<div class="empty">Loading comparison…</div>';
+          try {
+            const r = await API.get(`/hr/periods/${periodId}/payroll-reconciliation?payroll_period=${encodeURIComponent(ov.querySelector('#pr-label').value.trim())}`);
+            if (!live()) return;
+            const source = r.source, ledger = r.ledger;
+            const money = value => value == null ? 'Unavailable pending review' : UI.money(value);
+            body.innerHTML = `<h3>${UI.esc(states[ledger.state] || 'Review required')}</h3>
+              ${r.issues.length ? `<div role="alert"><ul>${r.issues.map(code => `<li>${UI.esc(issues[code] || 'A payroll source needs review.')}</li>`).join('')}</ul>
+                <p>Records for review: ${UI.esc(r.record_ids.join(', ') || 'cutoff label')}${r.issue_record_count > r.record_ids.length ? ' (first records shown)' : ''}</p></div>` : ''}
+              <table class="line-table"><tbody>
+                <tr><th>Payslips</th><td>${source.record_count}</td></tr><tr><th>Draft</th><td>${source.draft_count}</td></tr><tr><th>Marked Paid</th><td>${source.paid_count}</td></tr>
+                <tr><th>Posting date</th><td>${UI.esc(source.pay_date || 'Unavailable pending review')}</td></tr>
+                <tr><th>Gross earnings</th><td>${money(source.gross_total)}</td></tr><tr><th>Net pay</th><td>${money(source.net_pay_total)}</td></tr>
+                <tr><th>Expected journal debits / credits</th><td>${money(ledger.expected_debit)} / ${money(ledger.expected_credit)}</td></tr>
+                <tr><th>Current journal debits / credits</th><td>${money(ledger.actual_debit)} / ${money(ledger.actual_credit)}</td></tr>
+              </tbody></table>
+              <p>Journal: ${UI.esc(ledger.entries.map(e => e.number).join(', ') || 'None')}</p>
+              ${ledger.closed_period ? '<p role="status">A relevant accounting period is closed. Review with your accountant before any correction.</p>' : ''}
+              ${ledger.validation_error ? `<p role="alert">${UI.esc(ledger.validation_error)}</p>` : ''}
+              <p class="muted">The comparison includes the posting date, accounts, debit and credit amounts, and party allocations. Matching totals do not confirm payment.</p>
+              <p role="note">${UI.esc(r.note)}</p>`;
+          } catch (e) { if (live()) body.innerHTML = `<div class="m-error" role="alert">${UI.esc(e.message || 'Comparison could not be loaded. Refresh to retry.')}</div>`; }
+        }
+        ov.querySelector('#pr-reload').onclick = load;
+        ov.querySelector('#pr-label').addEventListener('change',load);
+        load();
+      },
+    });
+  }
+
   function postGlModal() {
     UI.modal({
       title: 'Post payroll to the General Ledger',
       bodyHTML: `
         <p class="muted" style="margin-top:0">Books this cutoff's generated payslips as one aggregate journal entry
           (Salaries & Wages, statutory payables, Net Pay Payable). Posting again after a regenerate reverses the
-          previous entry first and posts fresh with the current numbers — safe to re-run.</p>
+          previous entry and saves its replacement together. If validation or saving fails, the prior journal is preserved.</p>
         <div><label>Payroll period label</label><input data-f="payroll_period" value="${UI.esc(lastPayrollPeriod)}" /></div>`,
       confirmText: 'Post to GL',
       onConfirm: async (ov, showErr) => {

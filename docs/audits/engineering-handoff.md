@@ -1,6 +1,15 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 20 October 2026 — payroll tax/agency/HR reports now group by stable employee
+Latest follow-up: 20 October 2026 — shared employee/cutoff source indexing now holds duplicates
+across generation, rate recomputation, monthly history, GL and scoped reports. Payroll re-post
+validates before an atomic reversal/replacement; closed/refused reversals, invalid/multiple live
+journals and write/process failures preserve prior books. Read-only HR/accounting comparison
+shows source/journal differences and explicitly unlinked bank/remittance/filing evidence.
+See [operator contract](../operations/payroll-reconciliation.md), [research](payroll-reconcile-research.md)
+and [verification](evidence/payroll-reconcile-verification.json). Reviewed source disposition,
+accrual/settlement policy, version/retry-bound posting and full historical acceptance remain.
+
+Previous follow-up: 20 October 2026 — payroll tax/agency/HR reports now group by stable employee
 ID and read identifiers/settings by that ID. Same-name employees remain separate. Unresolved
 identity, corrupt/unscopable data and ambiguous cutoff labels block reports rather than guess or
 omit amounts; dialogs display the hold and disable exports. See [report operator contract](../operations/payroll-report-identity.md),
@@ -73,7 +82,7 @@ applicable issue before changing behavior:
 | High | AI privacy/adversarial evaluation, interrupted audit outcomes and hard spend allocation | Isolation/leakage/abuse/cancellation tests and real provider budget acceptance |
 | High | Reliable onboarding notification delivery and broader creation admission/reconciliation | Completed keyed HTTP receipts and signup outbox/worker implemented; other API/import retry receipts, provider reconciliation/reviewed resend, external backlog escalation, mixed signup capacity/storage acceptance, legacy/new-key recovery and imported-state acceptance remain. See operations/workspace-onboarding.md |
 | High | Native/Electron distribution and supported-client acceptance | APK/installer builds, signed artifacts, actual Windows/Android vault/backup/logout/upgrade checks |
-| High | Payroll source/ledger/payment/filing reconciliation | Stable-ID grouping and ambiguity holds implemented; duplicate source records, eligibility, historical effective settings, reviewed malformed-data/cutoff correction and accountant/portal acceptance remain. See operations/payroll-report-identity.md |
+| High | Payroll source/ledger/payment/filing reconciliation | Stable-ID grouping, duplicate holds, atomic journal replacement and bounded current-source comparison implemented. Reviewed duplicate/malformed/cutoff disposition, eligibility, historical snapshots, accrual/payment dates, retry-safe posting and bank/remittance/filing evidence remain. See operations/payroll-report-identity.md |
 | High | Integration lifecycle and accounting reconciliation acceptance | Local generation/scoping, refresh admission, export exclusion and durable uncertain-write handling implemented 2026-10-18; actual Intuit sandbox, legacy adoption/repair tooling, interrupted-claim reconciliation, operational alerting and accountant acceptance remain. See operations/quickbooks-lifecycle.md |
 | High | Resolve or explicitly disposition vulnerable dependencies and historical-secret gates | Upstream/compatible fix or approved expiring risk record; verified revocation without exposing the old bearer |
 | Medium–High | Remaining resilience, concurrency, accessibility, observability and handbook requirements | Risk-ordered evidence for applicable controls; architectural/commercial choices agreed explicitly |

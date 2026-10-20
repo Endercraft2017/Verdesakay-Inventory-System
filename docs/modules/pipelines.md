@@ -715,7 +715,15 @@ for the internet (it uses the company's mail server, which only the cloud has).
    and Paid at download time and logging each download. Branch: HR un-marks Paid to correct
    it → download hidden (404) until re-marked.
 4. **Ledger posting** (`accounting`) — `hr.routes.ts` calls
-   `accounting-autopost.ts`'s `maybeAutoPostPayroll`.
+   `accounting-autopost.ts`'s `maybeAutoPostPayroll`. Shared source indexing rejects duplicate
+   employee/cutoff slots and foreign-label adoption before writes. Validate the replacement,
+   then commit prior reversal + new entry/lines/numbering together; a failure leaves the old
+   journal. Closed dates, invalid or multiple live originals require accountant review.
+   Live entries exclude reversal rows. Read-only HR/accounting reconciliation compares current
+   expected accounts/parties/date/amounts to the journal; it does not verify bank/remittance/
+   filing evidence. See `docs/operations/payroll-reconciliation.md`.
+   Earlier-month computation also refuses first/newest duplicate selection and holds unlinked
+   relevant-month history. Rate recomputation rolls back its employee/history change on a hold.
 5. **Statutory filing** (`accounting`, under Tax & Compliance) — `payroll`'s
    `ph-2316.ts`/`ph-alphalist.ts`/`ph-contributions.ts`/`ph-vat-ewt.ts` compute the
    filings (2316, 1601-C/1604-C, Alphalist, 0619-E, 2550M, SSS/PhilHealth/Pag-IBIG

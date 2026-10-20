@@ -1,0 +1,150 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payroll-reconciliation.test.ts > refuses duplicate employee/cutoff payroll before regeneration changes anything
+{"timestamp":"2026-10-20T05:27:26.866Z","level":"info","event":"http_request","request_id":"af23b366-6bf6-4bfe-a94f-3e48dc2f94b0","tenant":"default","method":"POST","path":"/api/hr/periods/1/generate-payslips","status":201,"duration_ms":9}
+
+stdout | tests/payroll-reconciliation.test.ts > preserves the prior journal when replacement fails balance validation
+{"timestamp":"2026-10-20T05:27:26.877Z","level":"info","event":"http_request","request_id":"e9a96329-ba04-4afa-b2b4-0ef6faaff1ff","tenant":"default","method":"POST","path":"/api/hr/periods/2/post-payroll-gl","status":201,"duration_ms":4}
+
+stdout | tests/payroll-reconciliation.test.ts > preserves the prior journal when replacement fails balance validation
+{"timestamp":"2026-10-20T05:27:26.882Z","level":"info","event":"http_request","request_id":"b4dbd507-5e42-4962-b887-5b546582b510","tenant":"default","method":"POST","path":"/api/hr/periods/2/post-payroll-gl","status":400,"duration_ms":3}
+
+stdout | tests/payroll-reconciliation.test.ts > rolls reversal and replacement back together on a replacement database failure
+{"timestamp":"2026-10-20T05:27:26.889Z","level":"info","event":"http_request","request_id":"ad18fe4f-0789-4e69-9abc-5b4a6d223d47","tenant":"default","method":"POST","path":"/api/hr/periods/3/post-payroll-gl","status":201,"duration_ms":2}
+
+stderr | tests/payroll-reconciliation.test.ts > rolls reversal and replacement back together on a replacement database failure
+[gl] auto-post payroll period 3 failed: private synthetic write failure
+
+stdout | tests/payroll-reconciliation.test.ts > rolls reversal and replacement back together on a replacement database failure
+{"timestamp":"2026-10-20T05:27:26.894Z","level":"info","event":"http_request","request_id":"998a7394-985f-4161-a859-aec8e11a5c33","tenant":"default","method":"POST","path":"/api/hr/periods/3/post-payroll-gl","status":400,"duration_ms":2}
+
+stdout | tests/payroll-reconciliation.test.ts > refuses posting a different cutoff by supplying its label
+{"timestamp":"2026-10-20T05:27:26.900Z","level":"info","event":"http_request","request_id":"0dd90c95-39d2-4104-941d-a1639f81f252","tenant":"default","method":"POST","path":"/api/hr/periods/4/post-payroll-gl","status":201,"duration_ms":2}
+
+stdout | tests/payroll-reconciliation.test.ts > shows read-only reconciliation and treats paid marks separately from bank confirmation
+{"timestamp":"2026-10-20T05:27:26.913Z","level":"info","event":"http_request","request_id":"7779f929-16ab-4c93-9cbe-c806e824c960","tenant":"default","method":"GET","path":"/api/hr/periods/7/payroll-reconciliation","status":404,"duration_ms":2}
+
+stdout | tests/payroll-reconciliation.test.ts
+{"timestamp":"2026-10-20T05:27:26.841Z","level":"info","event":"http_request","request_id":"fb30f9d2-0dc2-469c-8c6e-d703a03b1968","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":362}
+
+stdout | tests/payroll-reconciliation.test.ts
+{"timestamp":"2026-10-20T05:27:26.853Z","level":"info","event":"http_request","request_id":"3991a60b-b585-41fe-8817-2dd0cc4237cc","tenant":"default","method":"POST","path":"/api/accounting/ledger/setup","status":201,"duration_ms":6}
+
+ ❯ tests/payroll-reconciliation.test.ts (6 tests | 5 failed) 3325ms
+   × refuses duplicate employee/cutoff payroll before regeneration changes anything 16ms
+   × preserves the prior journal when replacement fails balance validation 15ms
+   × rolls reversal and replacement back together on a replacement database failure 11ms
+   × refuses posting a different cutoff by supplying its label 4ms
+   × shows read-only reconciliation and treats paid marks separately from bank confirmation 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payroll-reconciliation.test.ts > refuses duplicate employee/cutoff payroll before regeneration changes anything
+AssertionError: expected 201 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 201
+
+ ❯ tests/payroll-reconciliation.test.ts:21:19
+     19|  const p=cutoff(); slip(p);slip(p,{},'paid'); const before=db.queryAll…
+     20|  const r=await ctx.api.post(`/api/hr/periods/${p.id}/generate-payslips…
+     21|  expect(r.status).toBe(409);expect(db.queryAll('SELECT * FROM form_rec…
+       |                   ^
+     22|  expect((await post(p)).status).toBe(409);expect(rows(p)).toHaveLength…
+     23| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/payroll-reconciliation.test.ts > preserves the prior journal when replacement fails balance validation
+AssertionError: expected [ { id: 1, …(13) }, { id: 2, …(13) } ] to deeply equal [ { id: 1, …(13) } ]
+
+- Expected
++ Received
+
+@@ -13,6 +13,22 @@
+      "reverses_id": null,
+      "source_id": 2,
+      "source_type": "payroll_run",
+      "status": "posted",
+    },
++   {
++     "book": "payroll",
++     "created_at": "2026-10-20 05:27:26",
++     "created_by": 1,
++     "entry_date": "2026-10-20",
++     "id": 2,
++     "memo": "Reversal of JV-000001 — Payroll RECON-4",
++     "number": "JV-000002",
++     "posted_at": "2026-10-20 05:27:26",
++     "posted_by": 1,
++     "reference": "RECON-4",
++     "reverses_id": 1,
++     "source_id": 2,
++     "source_type": "payroll_run",
++     "status": "posted",
++   },
+  ]
+
+ ❯ tests/payroll-reconciliation.test.ts:27:59
+     25|  const p=cutoff(); const id=slip(p);expect((await post(p)).status).toB…
+     26|  const d=JSON.parse(db.queryOne<{data:string}>('SELECT data FROM form_…
+     27|  expect((await post(p)).status).toBe(400);expect(rows(p)).toEqual(befo…
+       |                                                           ^
+     28| });
+     29| it('rolls reversal and replacement back together on a replacement data…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/payroll-reconciliation.test.ts > rolls reversal and replacement back together on a replacement database failure
+AssertionError: expected '{"posted":false,"error":"private synt…' not to contain 'private synthetic write failure'
+
+Expected: "private synthetic write failure"
+Received: "{"posted":false,"error":"private synthetic write failure"}"
+
+ ❯ tests/payroll-reconciliation.test.ts:32:74
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  tests/payroll-reconciliation.test.ts > refuses posting a different cutoff by supplying its label
+AssertionError: expected 201 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 201
+
+ ❯ tests/payroll-reconciliation.test.ts:36:19
+     34| it('refuses posting a different cutoff by supplying its label',async()…
+     35|  const a=cutoff(),b=cutoff();slip(b);const r=await ctx.api.post(`/api/…
+     36|  expect(r.status).toBe(409);expect(rows(a)).toHaveLength(0);expect(row…
+       |                   ^
+     37| });
+     38| it('does not create a second live journal when the original period is …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  tests/payroll-reconciliation.test.ts > shows read-only reconciliation and treats paid marks separately from bank confirmation
+AssertionError: expected 404 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 404
+
+ ❯ tests/payroll-reconciliation.test.ts:45:19
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 1 passed (6)
+   Start at  05:27:23
+   Duration  3.57s (transform 1.46s, setup 27ms, import 90ms, tests 3.32s, environment 0ms)

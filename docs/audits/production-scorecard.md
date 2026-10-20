@@ -378,3 +378,15 @@ accessibility fixed. See operations/payroll-report-identity.md, payroll-reports-
 and evidence/payroll-reports-verification.json. Duplicate payroll, legal classification,
 source/GL/payment/filing reconciliation and hosted/native acceptance remain. No complete
 control promoted: 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release hold remains.
+
+
+### Payroll source/journal integrity follow-up — 20 October 2026
+
+High scoped duplicate-source/foreign-label selection and non-atomic journal replacement gaps
+are addressed with shared employee/cutoff holds, replacement prevalidation and one outer
+savepoint. Live source lookups exclude reversal rows. Read-only comparison exposes current
+source/ledger discrepancies with separate payment evidence. See operations/payroll-reconciliation.md,
+payroll-reconcile-research.md and evidence/payroll-reconcile-verification.json. Reviewed
+reconstruction, date/eligibility policy, historical snapshots, retry-safe authorized posting,
+settlement/remittance/filing and wider acceptance remain. No whole control promoted; 36 PASS /
+58 FAIL / 126 UNVERIFIED / 13 N/A and release hold remain unchanged.

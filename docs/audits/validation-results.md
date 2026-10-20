@@ -1090,3 +1090,47 @@ EOF lines, with pre-normalization and retained-artifact hashes in the manifest. 
 initially mistook a scan-log SHA-256 under a filename containing “secrets” for an API key.
 The exact log digest was verified and its evidence file renamed `payroll-reports-gitleaks.txt`;
 no scanner rule was disabled or allowlist added. The complete staged scan/hook was rerun.
+
+
+## Payroll source, journal replacement and bounded comparison — 20 October 2026
+
+Base `91a66680f659ae3ef940e1de8287528d02ba4e69`. See [operator contract](../operations/payroll-reconciliation.md),
+[seven-source research](payroll-reconcile-research.md) and [manifest](evidence/payroll-reconcile-verification.json).
+
+- Final full suite: **315 files / 3325 tests passed**, 644.99 seconds
+  ([log](evidence/payroll-reconcile-full.txt)). Frozen runtime/test hashes verified afterward.
+- Focused: **11 files / 309 tests passed**, 44.46 seconds
+  ([log](evidence/payroll-reconcile-focused-final.txt)); **22 new API cases** include duplicate/cross-year/custom
+  alias scope, earlier/unlinked monthly history, rate-change rollback, raw cutoff stamp preservation,
+  journal balance/SQL/partial-line failures, sequence rollback, closed original/new/reversal dates,
+  reversal exclusion, invalid/multiple live journals, account/date mismatch, private projections and roles.
+- Explicit installed-office GL regression: offline main-host generate, post/repost, current comparison,
+  confirmed cloud replay, same money and exactly three journal rows. Existing paid D6 checks remain.
+  Separate focused sync run: **4 passed** ([log](evidence/payroll-reconcile-offline-focused.txt)).
+- Complete Playwright: **46 passed**, 115.9924 seconds. Three new actual-app journeys
+  cover read-only comparison, explicit posting, duplicate rejection, error/retry, older response rejection
+  and scoped axe. Existing reviewed-repair tests now search their exact record in the payroll bundle view.
+- Typecheck and delivered JS syntax passed. Actual `server.ts` plus SIGKILL/restart smoke passed
+  ([result](evidence/payroll-reconcile-startup-smoke.txt), [driver](evidence/payroll-reconcile-startup-smoke.py),
+  [fault child](evidence/payroll-reconcile-crash-child.ts)): crash after the inner reversal release
+  preserves the prior entries/lines/counter, restart detects changed source, deliberate repost commits
+  one pair, and duplicate generation/posting holds leave the ledger unchanged. No mail/provider write.
+- Original reproduction: **5 failed / 1 passed**. Initial refactor syntax error prevented four files'
+  setup (137 skipped); compiler/transform evidence retained. Initial full browser: **43 passed / 3 failed**
+  from older repair selectors assuming expanded target rows after new cutoff fixtures. Searching the
+  target fixed those tests; no product grouping was changed. Failure screenshots/contexts/JSON retained.
+- Preliminary full run stopped (exit130) to add the explicit offline GL replay case. It is not counted
+  as completed; the final run above includes it. No browser/full-Vitest overlap in completed verification.
+- Text logs normalize ANSI colors/trailing whitespace with original and retained hashes recorded.
+  Transient authenticated trace ZIPs are not published. Schema/dependencies unchanged; db:types not
+  required/run. Staged secret scanning and mandatory commit hook run before push.
+
+This proves current source/journal integrity within the tested cases, not wage settlement,
+entity-specific accrual/filing policy, historical completeness, retry-safe one-use authorization,
+large-history capacity or actual native/physical-office/provider/hosted restore acceptance.
+Whole controls remain 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release remains on hold.
+
+Final scan hygiene: four generic-key detections were verified original/retained artifact
+SHA-256 values under filenames containing “access.” Both original and saved file digests
+were checked, artifact filenames shortened, and the unchanged scanner rerun. No actual
+credential, scanner-rule relaxation or allowlist was involved.

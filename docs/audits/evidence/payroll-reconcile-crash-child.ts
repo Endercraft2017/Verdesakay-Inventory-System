@@ -1,0 +1,10 @@
+import fs from 'node:fs';
+if(process.env.NODE_ENV!=='test'||!process.env.DB_PATH?.includes('payroll-reconcile-'))throw new Error('Disposable synthetic catalog required');
+const db=await import('../src/shared/db');db.init();
+const record=db.queryOne<{id:number;data:string}>("SELECT id,data FROM form_records WHERE number='RECON-SMOKE'")!;
+const data=JSON.parse(record.data);db.run('UPDATE form_records SET data=? WHERE id=?',JSON.stringify({...data,basic_salary:1200,total_earnings:1200,net_pay:1200}),record.id);
+const real=db.getDb();const exec=real.exec.bind(real);
+real.exec=(sql:string)=>{exec(sql);if(sql==='RELEASE journal_reverse'){fs.writeSync(1,'INJECTED PROCESS TERMINATION AFTER REVERSAL\n');process.kill(process.pid,'SIGKILL');}};
+const {maybeAutoPostPayroll}=await import('../src/modules/accounting/accounting-autopost');
+maybeAutoPostPayroll(data.cutoff_id,'RECON-SMOKE',1);
+throw new Error('Fault boundary was not reached');

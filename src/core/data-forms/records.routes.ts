@@ -288,7 +288,10 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
       }
     }
   }
-  if (existing.slug === 'hr_payroll' && typeof previousData.cutoff_id === 'number') recordData.cutoff_id = previousData.cutoff_id;
+  if (existing.slug === 'hr_payroll') {
+    if (Object.prototype.hasOwnProperty.call(previousData,'cutoff_id')) recordData.cutoff_id = previousData.cutoff_id;
+    else delete recordData.cutoff_id;
+  }
   if (REQUEST_SLUGS.includes(existing.slug)) recordData.employee_id = requestEmployeeId(previousData) || requestEmployeeId(recordData);
   if (REQUEST_SLUGS.includes(existing.slug)) {
     const definition = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', existing.form_def_id)!;

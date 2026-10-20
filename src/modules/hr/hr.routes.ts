@@ -57,6 +57,8 @@ import { earlierPayslipsInMonth, isLastCutoffOfMonth } from '../payroll/statutor
 import type { PayslipYearRow } from '../payroll/ph-2316';
 import { computeFinalPay, type FinalPayInput } from '../payroll/ph-final-pay';
 import { yearPayslipRowsByEmployee, companyProfile } from '../payroll/ph-payroll-report-data';
+import {payrollSourceIndex, cutoffPayrollSources, assertCutoffPayroll} from '../payroll/payroll-source';
+import {payrollReconciliation} from '../accounting/payroll-reconciliation';
 import { payslipOwnerResolver } from '../payroll/payslip-owner';
 import { redactPay, canChangePay, PAY_FIELDS } from '../payroll/pay-access';
 import { enforceQuota } from '../../platform/quota';
@@ -2470,10 +2472,9 @@ function recomputePayslipsFrom(employeeId: number, from: string): { recomputed: 
   );
   if (!emp) return { recomputed, paid };
   const num = (v: unknown): number => Number(v) || 0;
+  const sourceIndex = payrollSourceIndex();
   for (const period of periods) {
-    const owner = payslipOwnerResolver();
-    const slip = queryAll<FormRecord>("SELECT * FROM form_records WHERE form_def_id = ? AND (period = ? OR CASE WHEN json_valid(data) THEN CAST(json_extract(data, '$.cutoff_id') AS INTEGER) END = ?)", form.id, period.label, period.id)
-      .find((r) => owner.idOf(payslipFields(r)) === employeeId);
+    const slip = assertCutoffPayroll(sourceIndex,period.id).find(r=>r.employee_id===employeeId)?.raw;
     if (!slip) continue;
     const prev = payslipFields(slip);
     const payDate = (prev.pay_date as string) || undefined;
@@ -2528,20 +2529,13 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
   // response, not just something HR happens to notice if they open a specific payslip's detail
   // view or the Daily Time grid for that one employee.
   let possibleHalfDayEmployees = 0;
-  const periodSlips = queryAll<FormRecord>(
-    `SELECT * FROM form_records WHERE form_def_id = ? AND (period = ? OR CASE WHEN json_valid(data) THEN CAST(json_extract(data, '$.cutoff_id') AS INTEGER) END = ?)`,
-    form.id, payrollPeriod, periodId
-  );
-  // Never create a second payroll while an existing cutoff slip has unresolved identity.
-  // Review attribution first; this includes paid legacy slips whose name was reused.
-  const unresolved = periodSlips.filter(r => runCtx.owner.idOf(payslipFields(r)) == null);
+  const sourceIndex = payrollSourceIndex();
+  const unresolved = cutoffPayrollSources(sourceIndex,periodId,payrollPeriod).rows.filter(r=>r.employee_id==null);
   if (unresolved.length) {
-    res.status(409).json({
-      error: 'Existing payslip ownership needs payroll review before generating this cutoff.',
-      unresolved_record_ids: unresolved.map(r => r.id),
-    });
+    res.status(409).json({error:'Existing payslip ownership needs payroll review before generating this cutoff.',unresolved_record_ids:unresolved.slice(0,100).map(r=>r.raw.id)});
     return;
   }
+  const periodSlips = assertCutoffPayroll(sourceIndex,periodId,payrollPeriod).map(r=>r.raw);
   db.exec('BEGIN');
   try {
     for (const emp of roster) {
@@ -2580,6 +2574,12 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
     db.exec('ROLLBACK');
     throw e;
   }
+});
+
+// Read-only local snapshot: no bank/payment/filing confirmation is inferred.
+router.get('/periods/:id/payroll-reconciliation', requirePermission('payroll.view'), (req,res)=>{
+  const label=typeof req.query.payroll_period==='string'?req.query.payroll_period:undefined;
+  res.json(payrollReconciliation(Number(req.params.id),label));
 });
 
 // POST /api/hr/periods/:id/post-payroll-gl — books this cutoff's generated payslips as one

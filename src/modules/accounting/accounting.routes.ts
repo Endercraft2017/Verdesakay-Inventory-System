@@ -32,6 +32,7 @@ import type {
 } from '../../shared/types';
 import { effectiveTables } from '../payroll/payroll-tables';
 import { compute2316 } from '../payroll/ph-2316';
+import {payrollReconciliation} from './payroll-reconciliation';
 import {
   alphalistScheduleRow, alphalistRowCells, ALPHALIST_SCHEDULE1_HEADERS,
   splitName, statusCode, separationCode,
@@ -72,6 +73,12 @@ function quarterOf(v: unknown): { year: string; q: number; from: string; to: str
 }
 
 /* ------------------------------------------ BIR — withholding on compensation --- */
+
+// Accounting can compare the payroll journal without general HR access.
+router.get('/payroll-reconciliation/:periodId', (req,res)=>{
+  const label=typeof req.query.payroll_period==='string'?req.query.payroll_period:undefined;
+  res.json(payrollReconciliation(Number(req.params.periodId),label));
+});
 
 // GET /api/accounting/bir-1601c?year= — monthly withholding-tax remittance worksheet.
 router.get('/bir-1601c', (req, res) => {

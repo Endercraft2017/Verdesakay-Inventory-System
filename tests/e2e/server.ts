@@ -27,6 +27,13 @@ const disclosureUsers = ['original', 'reused'].map(kind => Number(db.run("INSERT
 const disclosureEmployees = ['Synthetic Payroll New', 'Synthetic Payroll Old'].map((name,i) => Number(db.run('INSERT INTO employees(employee_no,name,user_id) VALUES(?,?,?)','DISC-BROWSER-'+i,name,disclosureUsers[i]).lastInsertRowid));
 db.run("INSERT INTO employee_profile_changes(employee_id,field,old_value,new_value,source) VALUES(?,'name','Synthetic Payroll Old','Synthetic Payroll New','hr_edit')",disclosureEmployees[0]);
 const disclosureForm = db.queryOne<{id:number}>("SELECT id FROM form_definitions WHERE slug='hr_payroll'")!;
+// Payroll reconciliation fixtures use a separate pay year from tax/disclosure tests.
+for(const kind of ['GOOD','DUP']){
+  const label='RECON-BROWSER-'+kind;
+  const cutoff=Number(db.run("INSERT INTO attendance_periods(label,start_date,end_date) VALUES(?,'2024-06-01','2024-06-15')",label).lastInsertRowid);
+  const employee=Number(db.run('INSERT INTO employees(employee_no,name) VALUES(?,?)',label,'Synthetic Reconciliation '+kind).lastInsertRowid);
+  for(let i=0;i<(kind==='DUP'?2:1);i++)db.run("INSERT INTO form_records(form_def_id,number,data,status,period,created_by) VALUES(?,?,?,'draft',?,1)",disclosureForm.id,label+'-'+i,JSON.stringify({employee_id:employee,employee_name:'Synthetic Reconciliation '+kind,cutoff_id:cutoff,pay_date:'2024-06-15',basic_salary:1000,total_earnings:1000,net_pay:1000}),label);
+}
 // Separate statutory fixtures: identical names, different IDs and pay amounts in a clean year.
 for (const [i, amount] of [12000,24000].entries()) {
   const id = Number(db.run('INSERT INTO employees(employee_no,name,tin_no,sss_no) VALUES(?,?,?,?)', 'REPORT-BROWSER-'+i, 'Synthetic Report Twin', 'REPORT-TIN-'+i, 'REPORT-SSS-'+i).lastInsertRowid);

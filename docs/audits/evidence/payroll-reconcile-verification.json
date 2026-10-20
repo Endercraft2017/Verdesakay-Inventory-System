@@ -1,0 +1,164 @@
+{
+  "date": "2026-10-20",
+  "base_commit": "91a66680f659ae3ef940e1de8287528d02ba4e69",
+  "scope": "Payroll employee/cutoff duplicate and source-linkage holds, atomic payroll journal replacement, bounded current-source comparison, explicit offline GL replay and process-interruption recovery",
+  "research": {
+    "decisions": "../payroll-reconcile-research.md",
+    "sources_retrieved": [
+      "https://www.sqlite.org/lang_savepoint.html",
+      "https://www.sqlite.org/lang_transaction.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html",
+      "https://privacy.gov.ph/data-privacy-act/",
+      "https://www.rfc-editor.org/rfc/rfc9110.html#name-409-conflict",
+      "https://lawphil.net/statutes/presdecs/pd1974/pd_442_1974.html",
+      "https://www.ifrs.org/issued-standards/list-of-standards/ias-19-employee-benefits/"
+    ],
+    "failed_urls_not_used": [
+      "https://www.officialgazette.gov.ph/1974/05/01/presidential-decree-no-442-s-1974/",
+      "https://www.bir.gov.ph/electronic-audited-financial-statements-eafs"
+    ],
+    "certification_or_entity_specific_legal_accounting_approval_inferred": false
+  },
+  "full_run": {
+    "files_passed": 315,
+    "files_failed": 0,
+    "tests_passed": 3325,
+    "tests_failed": 0,
+    "duration_seconds": 644.99
+  },
+  "focused": {
+    "files_passed": 11,
+    "files_failed": 0,
+    "tests_passed": 309,
+    "tests_failed": 0,
+    "duration_seconds": 44.46
+  },
+  "new_api_cases": 22,
+  "new_offline_gl_replay_cases": 1,
+  "offline_focused": {
+    "files_passed": 1,
+    "files_failed": 0,
+    "tests_passed": 4,
+    "tests_failed": 0,
+    "duration_seconds": 5.32
+  },
+  "playwright": {
+    "passed": 46,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "duration_seconds": 115.9924
+  },
+  "new_browser_cases": 3,
+  "scoped_axe": "Passed new read-only reconciliation dialog; existing repair/dialog/login scans also passed within full suite",
+  "actual_server_and_crash": "Passed server.ts initial posting/comparison; SIGKILL after nested reversal release preserved original journals/lines/counter; restart detected changed sources; explicit repost committed one reversal/replacement; duplicate generation/posting holds and no mail",
+  "typecheck": "passed",
+  "delivered_JS_syntax": "passed",
+  "schema_and_dependencies": "unchanged; db:types not required/run",
+  "source_files_sha256": {
+    "public/js/modules/hr/hr-timekeeping.js": "cd70f3f43126b7d6c47a302fe184320f3b55a1e39bdaeaad4b0422336b913e32",
+    "src/core/data-forms/records.routes.ts": "be34eccd00147f90461a92847e22ac81ed3df67721be470fe3acf04f87b4b688",
+    "src/modules/accounting/accounting-autopost.ts": "6277a89b8f3febd885b641eb4c92ec979503ad5671ebd7e48dd478b8000db8b0",
+    "src/modules/accounting/accounting.routes.ts": "26e3cdbb3ddd2a2f4e6a1ecb6714f6d24be90bbdb5ddd67f479639442d92ddcd",
+    "src/modules/accounting/payroll-ledger-source.ts": "32017ecece3bf31bfa1dced090a3c9d697ad22baf22e3cdeca1d5b9c34ec2cfd",
+    "src/modules/accounting/payroll-reconciliation.ts": "59b77ffaea4a60f27f1c2b729f77adc3d765d66e38960d90a348878b89a7d3a2",
+    "src/modules/hr/hr.routes.ts": "15d333b54b9565e5d24c9756b7a3a7622b23b4d307e8ce2ba5513923b01d5d0c",
+    "src/modules/payroll/payroll-source.ts": "03255230fe287de443b0468cb93df56b97dc752a5cb01eca9667a65192c47a95",
+    "src/modules/payroll/ph-payroll-report-data.ts": "e2de17c49db74d14d386fa9f12908179833f222d5e4f88aa27ad60e3e1203f54",
+    "src/modules/payroll/statutory-month.ts": "73f7417b71e5d09790dd6c0b1e73a84c666133dbc416d7eb2ebe34ac71e07772",
+    "tests/e2e/payroll-reconciliation.spec.ts": "bf3af70afd5462c47f494776f0db13c84d065754e14d2032facb750f38957eff",
+    "tests/e2e/payroll-repair.spec.ts": "b9e244e8f584507ff90cbcc8a0d054b41c1ce47f5ad64a86bf7b6a739669bcb2",
+    "tests/e2e/server.ts": "1d294d475b1bebbcc2f21f88931516079c85d59e636041d11f8a646829153867",
+    "tests/payroll-reconciliation.test.ts": "de933362b3e3bb7d6709698a2a17785431bdf70b22a93474e911be74da670bb7",
+    "tests/sync-payroll.test.ts": "30493af342cb40ed90530d3899124538e2b3fbab104aeac05022b774b9cc8115"
+  },
+  "failed_and_interrupted_runs": [
+    {
+      "run": "original API reproduction",
+      "result": "5 failed, 1 passed before implementation; log retained"
+    },
+    {
+      "run": "initial refactor transform",
+      "result": "Missing brace from duplicated loop caused 4 files to fail setup and 137 tests to skip; fixed before real focused runs; compiler/transform logs retained"
+    },
+    {
+      "run": "initial complete browser",
+      "result": "43 passed, 3 failed. New cutoff fixtures activated existing collapsed payroll bundles; older repair tests assumed target rows were visible. Explicit target search fixed test setup; product grouping unchanged"
+    },
+    {
+      "run": "preliminary full suite",
+      "exit_code": 130,
+      "counted_as_completed": false,
+      "reason": "Stopped to add explicit office payroll GL post/repost/cloud replay coverage beyond prior generation/paid-clash checks; completed final suite includes that case"
+    }
+  ],
+  "evidence_formatting": "Text logs normalize ANSI colors/trailing whitespace/blank EOF lines; original-input and retained-file hashes recorded. JSON/images unchanged. Failure screenshots/contexts/JSON retained; authenticated transient trace ZIPs not published.",
+  "artifact_source_sha256_before_text_normalization": {
+    "payroll-reconcile-full.txt": "fd29303d4c347138919d8cf4eeee0073e0f4b84ebd6c8ae8c301d20757b9436b",
+    "payroll-reconcile-focused-final.txt": "2dcdbd774509d5058ab8f16ae8eb5624a55201eb99bb3a197081e4b71e2c6c29",
+    "payroll-reconcile-before.txt": "01a3c658311f7f4f4398228e1e33efd255667145687cac3b51636bd5a81da0fb",
+    "payroll-reconcile-typecheck.txt": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+    "payroll-reconcile-startup-smoke.txt": "3e712c782e7036e3033f46e3a9827d673f69c8498b0097221ed0f54099879a83",
+    "payroll-reconcile-startup-smoke.py": "445b31bb0074731448ad94500d05034919909a7e6c6dd35aa6254ba33f49dc27",
+    "payroll-reconcile-crash-child.ts": "96d2c8695c293c8d6e2e869d6be6d1a15b074d3684449c5e36bb0780e7c7e6d6",
+    "payroll-reconcile-playwright.txt": "dad78d3b750b5795807e98eb6af55c302332b8e800ad3ae808197e0a66e3714f",
+    "payroll-reconcile-playwright.json": "09335bb7f3c75ddb6821754cf2828f5dffa256934be176d231ea76871d2c10e5",
+    "payroll-reconcile-browser-focused.txt": "d2a7088abdbc41258961f558cd0b0a3e870e187534f5a743cc4ebed0c27d6844",
+    "payroll-reconcile-browser-focused.json": "6b940a5ad20b495dde80f13e431fe8fd63cf1df4019b3973bc99f4fc2d57e4bb",
+    "payroll-reconcile-browser-initial.txt": "d154c0a6492c7390e73eeda5a221b503888e57d8bcff7cf0d49f405d6f058e47",
+    "payroll-reconcile-browser-initial.json": "195f7a74c28d3246fceaa5b50e5185fa816582d6657a8f8a6e217bd7a2fe8017",
+    "payroll-reconcile-initial-transform.txt": "ed81daafd39ffe652ef20687f79417a6ce2f207d32ba381320047786334b096e",
+    "payroll-reconcile-initial-typecheck.txt": "1102de37e92c77f3fed28b0d8a4946ed5b17de2174ebd016b433b4140caedcff",
+    "payroll-reconcile-offline-focused.txt": "26c0a65c33fae17af9c7f72ea4e71029835bc7ea19c4c001b7778c94816da345",
+    "payroll-reconcile-interrupted-full.txt": "09a17ba7db881976fed5ad795986a27adc25d1e586e3922d04513f040e1ef50b",
+    "payroll-reconcile-preview.png": "3ac2a402d468d640aefae94ac4d2891dac3ec5a81936c58dec4073f43d9520c3",
+    "payroll-reconcile-initial-payroll-repair-cancelling--2900a-epair-sends-no-confirmation-error-context.md": "0401d9ab304a3a60e7e4c8452c616983d534d63b04cf082f24c252d67e536b08",
+    "payroll-reconcile-initial-payroll-repair-cancelling--2900a-epair-sends-no-confirmation-test-failed-1.png": "c80e1966bf387a93e4e4e05dc3b5c4a65daecc83380b051d80ce917a7c2bbf2c",
+    "payroll-reconcile-initial-payroll-repair-stale-payro-46bdd-essible-error-in-the-review-error-context.md": "561a962167650f157a5960a104588db7501a07e99e1e4fe14f370cdbb9471485",
+    "payroll-reconcile-initial-payroll-repair-stale-payro-46bdd-essible-error-in-the-review-test-failed-1.png": "c80e1966bf387a93e4e4e05dc3b5c4a65daecc83380b051d80ce917a7c2bbf2c",
+    "payroll-reconcile-initial-readiness-desktop-wrong-pa-d58e3-k-journey-and-server-logout-desktop-inventory.png": "fe4e0584a179999eb6cd6e24971d52e37794e0bbe44f280a56d4f9b7f4fd5da6",
+    "payroll-reconcile-initial-readiness-mobile-360px-lay-c4a50-ffline-failure-and-sign-out-mobile-home.png": "0ef22d505ec6219212a6774e9953c5f515aa66e4461d3be43c8633e58105fde5",
+    "payroll-reconcile-initial-repair-review-context.md": "d1bf697fe3bcf40c1160a446c65b4becc00a3af68f751eadcfef5ad2894dab2f",
+    "payroll-reconcile-initial-repair-review-image.png": "c80e1966bf387a93e4e4e05dc3b5c4a65daecc83380b051d80ce917a7c2bbf2c",
+    "payroll-reconcile-gitleaks.txt": "944b484e12c89a29a8423ae29004789a1c0ed95e42bbc24e08e114508db9ec8d"
+  },
+  "artifact_sha256": {
+    "payroll-reconcile-before.txt": "ce413dc02ac7d0abc122b6c6e3a2c42fcb8fb2a508f2707393b1945568763cd8",
+    "payroll-reconcile-browser-focused.json": "6b940a5ad20b495dde80f13e431fe8fd63cf1df4019b3973bc99f4fc2d57e4bb",
+    "payroll-reconcile-browser-focused.txt": "d2a7088abdbc41258961f558cd0b0a3e870e187534f5a743cc4ebed0c27d6844",
+    "payroll-reconcile-browser-initial.json": "195f7a74c28d3246fceaa5b50e5185fa816582d6657a8f8a6e217bd7a2fe8017",
+    "payroll-reconcile-browser-initial.txt": "a8ccc01c3b5865272a9348bb39ca67f4602f9b557cddc8b11eaa8416431b2a7d",
+    "payroll-reconcile-crash-child.ts": "96d2c8695c293c8d6e2e869d6be6d1a15b074d3684449c5e36bb0780e7c7e6d6",
+    "payroll-reconcile-focused-final.txt": "db2c4cd8ac46a811e1d12a9a212db7b94ceaf8484c6e92f74610779eeb9a404c",
+    "payroll-reconcile-full.txt": "69f851b53e4d67c36af66909298da44e6532a3e6fa49eda4173f34cfe4e4a93d",
+    "payroll-reconcile-initial-payroll-repair-cancelling--2900a-epair-sends-no-confirmation-error-context.md": "513d28aa604c4cd4cedf887da8d4091898b1857b35a92e5636bc990c262ac752",
+    "payroll-reconcile-initial-payroll-repair-cancelling--2900a-epair-sends-no-confirmation-test-failed-1.png": "c80e1966bf387a93e4e4e05dc3b5c4a65daecc83380b051d80ce917a7c2bbf2c",
+    "payroll-reconcile-initial-payroll-repair-stale-payro-46bdd-essible-error-in-the-review-error-context.md": "7b6268b03661d29a47a838219b99195891da5b06f28e07c6b1b72b863e7b95bc",
+    "payroll-reconcile-initial-payroll-repair-stale-payro-46bdd-essible-error-in-the-review-test-failed-1.png": "c80e1966bf387a93e4e4e05dc3b5c4a65daecc83380b051d80ce917a7c2bbf2c",
+    "payroll-reconcile-initial-readiness-desktop-wrong-pa-d58e3-k-journey-and-server-logout-desktop-inventory.png": "fe4e0584a179999eb6cd6e24971d52e37794e0bbe44f280a56d4f9b7f4fd5da6",
+    "payroll-reconcile-initial-readiness-mobile-360px-lay-c4a50-ffline-failure-and-sign-out-mobile-home.png": "0ef22d505ec6219212a6774e9953c5f515aa66e4461d3be43c8633e58105fde5",
+    "payroll-reconcile-initial-transform.txt": "ec0ad403794d3354390a3caf83ee0c48f1da3cb01265bad28dee847283612586",
+    "payroll-reconcile-initial-typecheck.txt": "1102de37e92c77f3fed28b0d8a4946ed5b17de2174ebd016b433b4140caedcff",
+    "payroll-reconcile-interrupted-full.txt": "9e9824ea08a5f8443b050154d95095d893c8d6dc0f52f93b46189f2ad130ca87",
+    "payroll-reconcile-offline-focused.txt": "619e9942b056e10979b72f3c765405c9c81593197cc69d234fadeb63d9b0e423",
+    "payroll-reconcile-playwright.json": "09335bb7f3c75ddb6821754cf2828f5dffa256934be176d231ea76871d2c10e5",
+    "payroll-reconcile-playwright.txt": "dad78d3b750b5795807e98eb6af55c302332b8e800ad3ae808197e0a66e3714f",
+    "payroll-reconcile-preview.png": "3ac2a402d468d640aefae94ac4d2891dac3ec5a81936c58dec4073f43d9520c3",
+    "payroll-reconcile-startup-smoke.py": "445b31bb0074731448ad94500d05034919909a7e6c6dd35aa6254ba33f49dc27",
+    "payroll-reconcile-startup-smoke.txt": "3e712c782e7036e3033f46e3a9827d673f69c8498b0097221ed0f54099879a83",
+    "payroll-reconcile-typecheck.txt": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+    "payroll-reconcile-initial-repair-review-context.md": "2bb5f908ca228d2db0daa308c9a7261c2bf3e8494e066ff117e80cb6e5d96c6e",
+    "payroll-reconcile-initial-repair-review-image.png": "c80e1966bf387a93e4e4e05dc3b5c4a65daecc83380b051d80ce917a7c2bbf2c",
+    "payroll-reconcile-gitleaks.txt": "944b484e12c89a29a8423ae29004789a1c0ed95e42bbc24e08e114508db9ec8d"
+  },
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "remaining": [
+    "Reviewed duplicate/cutoff/malformed-data disposition, resolved transfers and issued-copy/finalization/email handling",
+    "Historical source snapshots, status/filing eligibility and accrual/payment date policy",
+    "Version-bound/retry-safe authorized posting and actual payroll settlement/remittance/filing receipt models",
+    "Native/physical-office/hosted restore/provider/large-history acceptance and wider scorecard requirements"
+  ],
+  "commit_scan_false_positives": "Four generic API-key detections were exact original/retained SHA-256 digests for two failure artifacts whose filenames contained access. Verified both saved file digests and original-input digests; shortened artifact filenames. No credential, scanner-rule change or allowlist.",
+  "staged_secret_scan": "Passed complete staged implementation/tests/docs/evidence; mandatory commit hook scans final staged content again"
+}

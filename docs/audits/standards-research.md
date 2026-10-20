@@ -386,3 +386,13 @@ accuracy/proportionality, OWASP server authority/safe failure and RFC 9110 confl
 Reports group by ID and block uncertain attribution; no formula/filing certification,
 automatic reconstruction or universal historical-data acceptance is inferred. Sources
 are separated from project policy and remaining reconciliation work in that document.
+
+
+## Payroll source and journal reconciliation — 20 October 2026
+
+[Seven-source review](payroll-reconcile-research.md) distinguishes SQLite transaction/snapshot
+rules, OWASP execution checks, NPC accuracy/proportionality, RFC conflicts, actual wage-payment
+obligations and IAS 19 recognition versus settlement. Applied source/atomicity/privacy checks
+are distinguished from unfinished accrual-date policy, unique transaction authorization,
+retry-safe commands and real bank/remittance/filing evidence. No accounting/labor compliance
+certificate or entity-specific IFRS applicability is inferred.

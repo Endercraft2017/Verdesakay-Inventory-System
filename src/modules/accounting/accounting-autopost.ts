@@ -13,9 +13,12 @@ import { db, queryOne, queryAll, run, getSetting, setSetting, nextSequence } fro
 import {
   buildSalesEntry, buildPurchaseEntry, buildPaymentEntry, buildCreditNoteEntry, buildPayrollEntry,
   buildJobOrderEntry, buildReceiptEntry, buildCogsEntry, POSTING_RULE_KEYS,
-  type PostingRules, type PostableDoc, type BuiltEntry, type PayrollDoc,
+  type PostingRules, type PostableDoc, type BuiltEntry,
 } from './accounting-posting';
 import { round2 } from './ledger';
+import {now} from '../../shared/sync-context';
+import {payrollSourceIndex, assertCutoffPayroll, PayrollSourceError} from '../payroll/payroll-source';
+import {payrollLedgerDocument,livePayrollEntries,payrollJournalLines,validPayrollJournal} from './payroll-ledger-source';
 import { applyStockChange, getDefaultLocationId } from '../inventory/inventory-stock';
 import type { Order, VendorBill, Payment, CreditNote } from '../../shared/types';
 
@@ -90,7 +93,8 @@ export function postedEntryForSource(
   return queryOne<{ id: number; number: string; status: string }>(
     `SELECT je.id, je.number, je.status FROM journal_entries je
      WHERE je.source_type = ? AND je.source_id = ? AND je.status = 'posted'
-       AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.reverses_id = je.id)
+       AND je.reverses_id IS NULL
+       AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.reverses_id = je.id AND r.status = 'posted')
      ORDER BY je.id DESC LIMIT 1`,
     sourceType, sourceId
   );
@@ -106,7 +110,7 @@ function periodClosedOn(date: string): { name: string } | undefined {
 /** Insert a balanced BuiltEntry straight as a posted journal entry. Assumes the caller
  *  has already checked the ledger is on and the document isn't posted yet. */
 function writePosted(built: BuiltEntry, userId: number | null): { id: number; number: string } {
-  db.exec('BEGIN');
+  db.exec('SAVEPOINT journal_write');
   try {
     const number = nextSequence('je_number', 'JV', 6);
     const info = run(
@@ -124,10 +128,10 @@ function writePosted(built: BuiltEntry, userId: number | null): { id: number; nu
       entryId, l.account_id, round2(Number(l.debit) || 0), round2(Number(l.credit) || 0),
       l.party_type ?? null, l.party_id ?? null, l.memo ?? null, i
     ));
-    db.exec('COMMIT');
+    db.exec('RELEASE journal_write');
     return { id: entryId, number };
   } catch (e) {
-    db.exec('ROLLBACK');
+    db.exec('ROLLBACK TO journal_write; RELEASE journal_write');
     throw e;
   }
 }
@@ -195,11 +199,11 @@ function unpostSourceInner(sourceType: string, sourceId: number, userId: number 
     'SELECT id, book, reference, memo, entry_date FROM journal_entries WHERE id = ?', live.id
   );
   if (!orig) return { posted: false, skipped: 'already_posted' };
-  if (periodClosedOn(orig.entry_date)) return { posted: false, skipped: 'period_closed' };
+  if (periodClosedOn(orig.entry_date) || periodClosedOn(now().toISOString().slice(0,10))) return { posted: false, skipped: 'period_closed' };
   const lines = queryAll<{ account_id: number; debit: number; credit: number; party_type: string | null; party_id: number | null; memo: string | null }>(
     'SELECT account_id, debit, credit, party_type, party_id, memo FROM journal_lines WHERE entry_id = ? ORDER BY sort, id', live.id
   );
-  db.exec('BEGIN');
+  db.exec('SAVEPOINT journal_reverse');
   try {
     const number = nextSequence('je_number', 'JV', 6);
     const info = run(
@@ -207,7 +211,7 @@ function unpostSourceInner(sourceType: string, sourceId: number, userId: number 
          (number, book, entry_date, memo, reference, status, reverses_id, source_type, source_id,
           posted_by, posted_at, created_by)
        VALUES (?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, datetime('now'), ?)`,
-      number, orig.book, new Date().toISOString().slice(0, 10),
+      number, orig.book, now().toISOString().slice(0, 10),
       `Reversal of ${live.number}${orig.memo ? ' — ' + orig.memo : ''}`, orig.reference ?? null,
       orig.id, sourceType, sourceId, userId, userId
     );
@@ -217,10 +221,10 @@ function unpostSourceInner(sourceType: string, sourceId: number, userId: number 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       revId, l.account_id, round2(l.credit), round2(l.debit), l.party_type, l.party_id, l.memo, i
     ));
-    db.exec('COMMIT');
+    db.exec('RELEASE journal_reverse');
     return { posted: false, entry: { id: revId, number } };
   } catch (e) {
-    db.exec('ROLLBACK');
+    db.exec('ROLLBACK TO journal_reverse; RELEASE journal_reverse');
     return { posted: false, error: (e as Error).message };
   }
 }
@@ -541,43 +545,34 @@ export function postJobOrderMovement(
  *  would leave the payroll journal stale). If a live posted entry already exists for this
  *  period, it's reversed first so a re-post always reflects the current numbers. */
 export function maybeAutoPostPayroll(periodId: number, payrollPeriod: string, userId: number | null): AutoPostOutcome {
+  db.exec('SAVEPOINT payroll_post');
   try {
-    if (!ledgerEnabled()) return { posted: false, skipped: 'ledger_off' };
-    const form = queryOne<{ id: number }>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
-    if (!form) return { posted: false, skipped: 'nothing_to_post' };
-    const records = queryAll<{ data: string }>(
-      'SELECT data FROM form_records WHERE form_def_id = ? AND period = ?', form.id, payrollPeriod
-    ).map((r) => { try { return JSON.parse(r.data) as Record<string, unknown>; } catch { return {}; } });
-    if (!records.length) return { posted: false, skipped: 'nothing_to_post' };
-
-    const num = (v: unknown): number => Number(v) || 0;
-    const sum = (fn: (d: Record<string, unknown>) => number) => round2(records.reduce((s, d) => s + fn(d), 0));
-    const er = (d: Record<string, unknown>) => (d.employer_contributions ?? {}) as Record<string, unknown>;
-
-    const doc: PayrollDoc = {
-      number: payrollPeriod,
-      date: (records.find((d) => d.pay_date)?.pay_date as string) || new Date().toISOString().slice(0, 10),
-      gross_total: sum((d) => num(d.total_earnings)),
-      late_total: sum((d) => num(d.late_absences)),
-      er_contrib_total: sum((d) => num(er(d).sss_er) + num(er(d).sss_ec) + num(er(d).philhealth_er) + num(er(d).pagibig_er)),
-      sss_payable_total: sum((d) => num(d.sss) + num(er(d).sss_er) + num(er(d).sss_ec)),
-      philhealth_payable_total: sum((d) => num(d.philhealth) + num(er(d).philhealth_er)),
-      pagibig_payable_total: sum((d) => num(d.pagibig) + num(er(d).pagibig_er)),
-      withholding_tax_total: sum((d) => num(d.withholding_tax)),
-      net_pay_total: sum((d) => num(d.net_pay)),
-      cash_advance_total: sum((d) => num(d.cash_advance)),
-    };
-    if (round2(doc.gross_total - doc.late_total) <= 0) return { posted: false, skipped: 'nothing_to_post' };
-    if (periodClosedOn(doc.date)) return { posted: false, skipped: 'period_closed' };
-
-    if (postedEntryForSource('payroll_run', periodId)) unpostSource('payroll_run', periodId, userId);
-
-    const built = buildPayrollEntry(doc, getPostingRules(), periodId);
-    if (!built.ok) return { posted: false, error: built.error };
-    const entry = writePosted(built.entry, userId);
-    return { posted: true, entry };
+    const finish = (outcome: AutoPostOutcome) => { db.exec('RELEASE payroll_post'); return outcome; };
+    if (!ledgerEnabled()) return finish({posted:false,skipped:'ledger_off'});
+    const index = payrollSourceIndex();
+    const records = assertCutoffPayroll(index,periodId,payrollPeriod);
+    const doc = payrollLedgerDocument(index.periods.get(periodId)!,records);
+    if (!doc || round2(doc.gross_total-doc.late_total)<=0) return finish({posted:false,skipped:'nothing_to_post'});
+    if (periodClosedOn(doc.date)) return finish({posted:false,skipped:'period_closed'});
+    // Validate everything before reversing, then commit both journal writes together.
+    const built = buildPayrollEntry(doc,getPostingRules(),periodId);
+    if (!built.ok) return finish({posted:false,error:built.error});
+    const live = livePayrollEntries(periodId);
+    if (live.length>1) throw new PayrollSourceError(['multiple_live_journals'],[]);
+    if(live.length===1&&!validPayrollJournal(live[0]!.book,payrollJournalLines(live[0]!.id)))throw new PayrollSourceError(['invalid_live_journal'],[]);
+    if (live.length) {
+      const reversed = unpostSource('payroll_run',periodId,userId);
+      if (!reversed.entry || reversed.error || reversed.skipped) {
+        db.exec('ROLLBACK TO payroll_post; RELEASE payroll_post');
+        return {posted:false,error:'The previous payroll journal could not be reversed. Review closed periods and ledger integrity before retrying.'};
+      }
+    }
+    const entry = writePosted(built.entry,userId);
+    return finish({posted:true,entry});
   } catch (e) {
-    console.warn(`[gl] auto-post payroll period ${periodId} failed: ${(e as Error).message}`);
-    return { posted: false, error: (e as Error).message };
+    db.exec('ROLLBACK TO payroll_post; RELEASE payroll_post');
+    if (e instanceof PayrollSourceError || (e && typeof e === 'object' && 'status' in e)) throw e;
+    console.warn('[gl] payroll posting failed; journal replacement rolled back');
+    return {posted:false,error:'Payroll posting failed. The previous journal was preserved. Retry or contact an administrator.'};
   }
 }
