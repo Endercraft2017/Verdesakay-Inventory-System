@@ -67,7 +67,7 @@ it('shows current workflow handoffs and conditional recovery branches in the pho
 
 it('Work guide explains only displayed account tasks and distinguishes receipts from release stock effects',async()=>{
  const {dom,w,view,go,navigations}=await boot({get:async()=>[]});
- w.MApp.can=(p:string)=>p==='inventory.adjust';
+ w.MApp.can=(p:string)=>['inventory.adjust','orders.release','production.receive'].includes(p);
  w.MApp.canOpen=(r:string)=>['receive','so','allocate','receiving'].includes(r);
  w.mRtsRecovery={count:()=>0};
  await go('work');
@@ -122,7 +122,7 @@ it('a personal-only account gets its own task and tools explained without wareho
 
 it('jumps directly to a visible Work explanation and highlights stock effects without opening the task',async()=>{
  const {dom,w,view,go,navigations}=await boot({get:async()=>[]});
- w.MApp.can=(p:string)=>p==='inventory.adjust';w.MApp.canOpen=(r:string)=>['receive','so','allocate'].includes(r);
+ w.MApp.can=(p:string)=>['inventory.adjust','orders.release'].includes(p);w.MApp.canOpen=(r:string)=>['receive','so','allocate'].includes(r);
  await go('work');const before=navigations.length;
  const steps=w.MobileGuide.steps(view);w.MobileGuide.start();
  let select=w.document.querySelector('[data-act=jump]');

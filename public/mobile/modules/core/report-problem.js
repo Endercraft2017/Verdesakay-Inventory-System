@@ -36,6 +36,7 @@
   }
 
   function hub(view) {
+    var ctx = reportContext();
     MApp.setTitle('Help & reporting');
     var host = shell(view, '46:721', 'Help & reporting', 'Choose the correct protected channel');
     host.innerHTML =
@@ -49,17 +50,31 @@
       '<button class="m-report-row" id="m-report-assigned" type="button"><span><b>Reports to handle</b><small>Cases sent or assigned to you</small></span><i aria-hidden="true">›</i></button>' +
       '<button class="m-report-row" id="m-report-guide" type="button"><span><b>Reporting guidance</b><small>Emergencies require immediate procedures</small></span><i aria-hidden="true">›</i></button>' +
       '<div id="m-report-sent"></div>';
-    host.querySelector('#m-report-known').onclick = function () { identified(view); };
+    ctx.active = { kind: 'hub', host: host }; armReport(ctx);
+    if (hasReportDraft(ctx)) {
+      host.querySelector('#m-report-known').textContent = ctx.saved ? 'Continue saved report' : 'Continue report';
+      var hint = mEl('<p class="m-report-draft-state">' + (!ctx.saved ? 'Draft storage is unavailable. Your text and evidence are available only in this open app.' : ctx.files.length ? 'Your text draft and evidence are available in this open app.' : 'Text draft available. Evidence files need reattaching after reopening.') + '</p>');
+      host.querySelector('.identified').appendChild(hint);
+    }
+    host.querySelector('#m-report-known').onclick = function () { MApp.go('report-problem', { mode: 'identified' }); };
     host.querySelector('#m-report-anon').onclick = function () { anonymous(view); };
-    host.querySelector('#m-report-mine').onclick = function () { identifiedList(view); };
-    host.querySelector('#m-report-assigned').onclick = function () { identifiedList(view, true); };
+    host.querySelector('#m-report-mine').onclick = function () { MApp.go('report-problem', { mode: 'mine' }); };
+    host.querySelector('#m-report-assigned').onclick = function () { MApp.go('report-problem', { mode: 'assigned' }); };
     host.querySelector('#m-report-guide').onclick = function () { guidance(view); };
 
-    API.get('/identified-reports').then(function (rows) {
-      var reports = (rows || []).filter(function (row) { return row.reporter_id === (MApp.getMe() || {}).id; });
-      var target = host.querySelector('#m-report-sent');
-      if (target && reports.length) target.innerHTML = '<p class="m-report-count">' + reports.length + ' identified report' + (reports.length === 1 ? '' : 's') + ' sent</p>';
-    }).catch(function () {});
+    var countPending = false, target = host.querySelector('#m-report-sent');
+    async function loadCount() {
+      if (countPending || !host.isConnected || !currentReport(ctx)) return;
+      countPending = true; target.innerHTML = '<p class="m-report-count" role="status">Loading your report count…</p>';
+      try {
+        var rows = await API.get('/identified-reports'); if (!host.isConnected || !currentReport(ctx)) return;
+        var reports = (rows || []).filter(function (row) { return String(row.reporter_id) === ctx.account; });
+        target.innerHTML = '<p class="m-report-count">' + reports.length + ' identified report' + (reports.length === 1 ? '' : 's') + ' sent</p>';
+      } catch (error) {
+        if (host.isConnected && currentReport(ctx)) { target.innerHTML = '<p class="m-hint" role="status">Your report count is unavailable.</p><button class="m-v2-secondary" type="button" data-retry-count>Retry report count</button>'; target.querySelector('button').onclick = loadCount; }
+      } finally { countPending = false; }
+    }
+    loadCount();
   }
 
   function selectOptions(values, current) {
@@ -70,112 +85,225 @@
     }).join('');
   }
 
+  // Files stay in memory, never JSON/localStorage. A new account/sign-in gets a fresh context.
+  var identifiedSession = null;
+  function reportContext() {
+    var account = String((MApp.getMe() || {}).id || 'guest'), token = API.getToken?.() || '', shared = API.isSharedSession();
+    if (!identifiedSession || identifiedSession.account !== account || identifiedSession.token !== token || identifiedSession.shared !== shared) {
+      var data = loadDraft(DRAFT_KEY); if (!data || typeof data !== 'object' || Array.isArray(data)) data = {};
+      identifiedSession = { account: account, token: token, shared: shared, data: data, files: [], missingEvidence: Number(data.evidence_count) || 0, version: 0, pending: null, preparing: false, active: null, restored: !!(data.subject || data.description || data.recipient_id || data.evidence_count), saved: !!(data.subject || data.description || data.recipient_id || data.evidence_count) };
+    }
+    return identifiedSession;
+  }
+  function currentReport(ctx) { return String((MApp.getMe() || {}).id || 'guest') === ctx.account && (API.getToken?.() || '') === ctx.token && API.isSharedSession() === ctx.shared; }
+  function hasReportDraft(ctx) { return !!(ctx.data.subject || ctx.data.description || ctx.data.recipient_id || ctx.data.location || ctx.data.date || ctx.data.time || ctx.files.length || ctx.missingEvidence); }
+  function reportText(ctx) {
+    var data = {}; ['destination', 'recipient_id', 'category', 'subject', 'description', 'date', 'time', 'location'].forEach(function (key) { data[key] = ctx.data[key] || ''; });
+    data.evidence_count = ctx.files.length || ctx.missingEvidence; return JSON.stringify(data);
+  }
+  function persistReport(ctx) {
+    ctx.version++;
+    try { draftStore().setItem(DRAFT_KEY + ':' + ctx.account, reportText(ctx)); ctx.saved = true; }
+    catch (error) { ctx.saved = false; }
+    return ctx.saved;
+  }
+  function armReport(ctx) {
+    // Route changes retain the live draft/files; unloading needs a warning for memory-only work.
+    mPersonalDraft.arm(function () { return false; }, function () { return ctx.preparing || !!ctx.pending; }, { busyText: function () { return ctx.preparing ? 'Please wait for evidence preparation to finish.' : 'Please wait for report sending to finish.'; } });
+  }
+  window.addEventListener('beforeunload', function (event) {
+    var ctx = identifiedSession;
+    if (ctx && currentReport(ctx) && (ctx.pending || ctx.preparing || ctx.files.length || (!ctx.saved && hasReportDraft(ctx)))) { event.preventDefault(); event.returnValue = ''; }
+  });
+
   function identified(view, initial) {
+    var ctx = reportContext();
+    if (initial) { ctx.data = { ...ctx.data, ...initial }; ctx.review = null; persistReport(ctx); }
+    var draft = ctx.data;
     MApp.setTitle('Report an issue');
-    var draft = initial || loadDraft(DRAFT_KEY);
-    var host = shell(view, '46:750', 'Report an issue', 'Your identity supports follow-up', function () { hub(view); });
+    var host = shell(view, '46:750', 'Report an issue', 'Your identity supports follow-up', function () { MApp.go('report-problem'); });
+    ctx.active = { kind: 'form', host: host }; armReport(ctx);
     host.innerHTML =
-      '<form class="m-report-form">' +
+      '<p class="m-report-notice" data-draft-restored' + (ctx.restored || ctx.missingEvidence ? '' : ' hidden') + '>Text draft restored. Evidence files are kept only while this app stays open.' + (ctx.missingEvidence && !ctx.files.length ? ' Reattach your previous evidence if it is still needed.' : '') + '</p>' +
+      '<form class="m-report-form" novalidate>' +
         '<label><span>Destination *</span><select data-field="destination">' + selectOptions(DESTINATIONS, draft.destination || 'hr') + '</select></label>' +
-        '<label><span>Recipient *</span><select data-field="recipient"><option value="">Loading authorized staff…</option></select></label>' +
+        '<label><span>Recipient *</span><select data-field="recipient" required disabled><option value="">Loading authorized staff…</option></select></label><div data-recipient-feedback aria-live="polite"></div>' +
         '<label><span>Category *</span><select data-field="category">' + selectOptions(CATEGORIES, draft.category || CATEGORIES[0]) + '</select></label>' +
-        '<label><span>Subject *</span><input data-field="subject" maxlength="140" value="' + mEsc(draft.subject || '') + '" placeholder="Enter a clear subject"></label>' +
-        '<label class="is-tall"><span>Description *</span><textarea data-field="description" maxlength="3000" rows="4" placeholder="Describe what happened">' + mEsc(draft.description || '') + '</textarea></label>' +
+        '<label><span>Subject *</span><input data-field="subject" maxlength="140" required value="' + mEsc(draft.subject || '') + '" placeholder="Enter a clear subject"></label>' +
+        '<label class="is-tall"><span>Description *</span><textarea data-field="description" maxlength="3000" rows="4" required placeholder="Describe what happened">' + mEsc(draft.description || '') + '</textarea></label>' +
         '<div class="m-report-context-grid"><label><span>Incident date</span><input data-field="date" type="date" value="' + mEsc(draft.date || '') + '"></label>' +
         '<label><span>Time</span><input data-field="time" type="time" value="' + mEsc(draft.time || '') + '"></label></div>' +
         '<label><span>Location</span><input data-field="location" maxlength="160" value="' + mEsc(draft.location || '') + '" placeholder="Optional work location"></label>' +
-        '<label class="m-report-files"><span>Evidence</span><input data-files type="file" multiple accept="image/jpeg,image/png,image/webp,.pdf,.doc,.docx"><small>Up to 4 files, 5 MB each. Remove personal details you do not want shared.' + (draft.files && draft.files.length ? ' ' + draft.files.length + ' file(s) retained from review; choosing new files replaces them.' : '') + '</small></label>' +
+        '<label class="m-report-files"><span>Evidence</span><input data-files type="file" multiple accept="image/jpeg,image/png,image/webp,.pdf,.doc,.docx"><small>Up to 4 files, 5 MB each. Images may be resized before review. Choosing files replaces the current selection. Remove personal details you do not want shared.</small></label><div data-evidence-list></div>' +
+        '<p class="m-error" data-report-error role="alert" tabindex="-1" hidden></p><p class="m-report-draft-state" data-draft-status role="status"></p>' +
         '<button class="m-v2-primary" type="submit">Review report</button></form>';
-    var form = host.querySelector('form');
-    var recipient = form.querySelector('[data-field="recipient"]');
-    var destination = form.querySelector('[data-field="destination"]');
-    var users = [];
-
+    var form = host.querySelector('form'), recipient = form.querySelector('[data-field="recipient"]'), destination = form.querySelector('[data-field="destination"]');
+    var users = [], loadingUsers = false, directoryReady = false, desiredRecipient = String(draft.recipient_id || '');
+    var submit = form.querySelector('[type="submit"]'), evidence = form.querySelector('[data-files]'), feedback = form.querySelector('[data-report-error]');
+    function alive() { return host.isConnected && currentReport(ctx); }
+    function fail(message, field) { feedback.textContent = message; feedback.hidden = false; if (field) { field.setAttribute('aria-invalid', 'true'); field.focus(); } else feedback.focus(); }
+    function collect() {
+      var data = {}; form.querySelectorAll('[data-field]').forEach(function (field) { data[field.dataset.field] = field.value.trim(); });
+      data.recipient_id = recipient.value; delete data.recipient; return data;
+    }
+    function showDraftStatus() { form.querySelector('[data-draft-status]').textContent = ctx.saved ? (ctx.shared ? 'Text draft saved for this session.' : 'Text draft saved on this device.') + (ctx.files.length ? ' Evidence stays in memory until this app closes.' : '') : 'Draft storage is unavailable. Keep this app open to retain your text and evidence.'; }
+    function save(force) {
+      if (!alive() || ctx.preparing) return;
+      var data = collect();
+      // A delayed blur/change event may arrive after evidence preparation. Only
+      // actual edits invalidate the prepared review, not an unchanged field blur.
+      if (!force && Object.keys(data).every(function (key) { return data[key] === (ctx.data[key] || ''); })) return;
+      ctx.data = data; ctx.review = null; persistReport(ctx); showDraftStatus();
+    }
+    function drawFiles() {
+      form.querySelector('[data-evidence-list]').innerHTML = ctx.files.map(function (file, index) { return '<div class="m-report-file-row"><span>' + mEsc(file.name) + '<small>' + mFmtBytes(file.size) + '</small></span><button class="m-v2-secondary" type="button" data-remove-evidence="' + index + '" aria-label="Remove ' + mEsc(file.name) + '">Remove</button></div>'; }).join('');
+      form.querySelectorAll('[data-remove-evidence]').forEach(function (button) { button.onclick = function () { if (!alive() || ctx.preparing || ctx.pending) return; ctx.files.splice(Number(button.dataset.removeEvidence), 1); ctx.missingEvidence = 0; evidence.value = ''; drawFiles(); save(true); }; });
+    }
     function fillRecipients() {
-      var selected = DESTINATIONS.filter(function (d) { return d.value === destination.value; })[0];
-      var ranked = users.filter(function (user) {
-        var haystack = [user.role, user.department_name, user.position, user.full_name].filter(Boolean).join(' ');
-        return selected && selected.match.test(haystack);
-      });
+      var selected = DESTINATIONS.find(function (d) { return d.value === destination.value; });
+      var ranked = users.filter(function (user) { return selected && selected.match.test([user.role, user.department_name, user.position, user.full_name].filter(Boolean).join(' ')); });
+      var fallback = !ranked.length;
       if (!ranked.length) ranked = users.filter(mUsers.isSupervisor);
       if (!ranked.length) ranked = users;
-      recipient.innerHTML = ranked.length ? ranked.map(function (user) {
-        return '<option value="' + user.id + '"' + (String(user.id) === String(draft.recipient_id || '') ? ' selected' : '') + '>' +
-          mEsc(user.full_name) + (user.department_name ? ' — ' + mEsc(user.department_name) : '') + '</option>';
-      }).join('') : '<option value="">No authorized recipient available</option>';
+      recipient.innerHTML = '<option value="">' + (ranked.length ? 'Choose a recipient…' : 'No authorized recipient available') + '</option>' + ranked.map(function (user) { return '<option value="' + mEsc(user.id) + '">' + mEsc(user.full_name) + (user.department_name ? ' — ' + mEsc(user.department_name) : '') + '</option>'; }).join('');
+      recipient.value = ranked.some(function (user) { return String(user.id) === desiredRecipient; }) ? desiredRecipient : '';
+      recipient.disabled = !ranked.length;
+      form.querySelector('[data-recipient-feedback]').innerHTML = '<p class="m-hint">' + (!ranked.length ? 'No recipient is available. Try loading staff again.' : fallback ? 'No department match. Choose the person who should receive this report from the available staff.' : 'Choose the person who should receive this report.') + '</p>' + (!ranked.length ? '<button class="m-v2-secondary" type="button" data-retry-recipients>Retry staff list</button>' : '');
+      form.querySelector('[data-retry-recipients]')?.addEventListener('click', function () { loadRecipients(true); });
     }
-
-    mUsers.load().then(function () { users = mUsers.ranked(); fillRecipients(); })
-      .catch(function () { recipient.innerHTML = '<option value="">Could not load recipients</option>'; });
-    destination.onchange = fillRecipients;
-
-    form.addEventListener('input', function () {
-      var state = {};
-      Array.prototype.forEach.call(form.querySelectorAll('[data-field]'), function (field) { state[field.getAttribute('data-field')] = field.value; });
-      state.recipient_id = recipient.value;
-      saveDraft(DRAFT_KEY, state);
-    });
-
-    form.onsubmit = function (event) {
-      event.preventDefault();
-      var data = {};
-      Array.prototype.forEach.call(form.querySelectorAll('[data-field]'), function (field) { data[field.getAttribute('data-field')] = String(field.value || '').trim(); });
-      data.recipient_id = recipient.value;
-      if (!data.recipient_id) { mToast('Choose who should receive the report', 'err'); recipient.focus(); return; }
-      if (!data.subject) { mToast('Enter a subject', 'err'); form.querySelector('[data-field="subject"]').focus(); return; }
-      if (!data.description) { mToast('Describe the concern', 'err'); form.querySelector('[data-field="description"]').focus(); return; }
-      data.files = form.querySelector('[data-files]').files.length ? form.querySelector('[data-files]').files : (draft.files || []);
-      if (data.files.length > 4) { mToast('Use up to 4 evidence files', 'err'); return; }
-      reviewIdentified(view, data, function () { identified(view, data); });
+    async function loadRecipients(force) {
+      if (loadingUsers || !alive()) return;
+      loadingUsers = true; directoryReady = false; recipient.disabled = true;
+      recipient.innerHTML = '<option value="">Loading authorized staff…</option>'; form.querySelector('[data-recipient-feedback]').innerHTML = '<p class="m-hint" role="status">Loading recipients…</p>';
+      try { await mUsers.load(force === true); if (!alive()) return; users = mUsers.ranked().filter(function (user) { return String(user.id) !== ctx.account && user.active !== false && user.active !== 0; }); directoryReady = true; fillRecipients(); }
+      catch (error) { if (alive()) { recipient.innerHTML = '<option value="">Could not load recipients</option>'; form.querySelector('[data-recipient-feedback]').innerHTML = '<p class="m-error" role="alert">' + mEsc(error.message || 'Could not load recipients.') + '</p><button class="m-v2-secondary" type="button" data-retry-recipients>Retry staff list</button>'; form.querySelector('[data-retry-recipients]').onclick = function () { loadRecipients(true); }; } }
+      finally { loadingUsers = false; }
+    }
+    destination.onchange = function () { desiredRecipient = ''; if (directoryReady) fillRecipients(); save(); };
+    recipient.onchange = function () { desiredRecipient = recipient.value; };
+    form.addEventListener('input', function (event) { event.target.removeAttribute('aria-invalid'); if (event.target !== evidence) save(); });
+    form.addEventListener('change', function (event) { if (event.target !== evidence) save(); });
+    evidence.onchange = function () {
+      if (!alive() || ctx.preparing || ctx.pending) return;
+      var files = Array.from(evidence.files || []), failure = evidenceError(files, false);
+      if (failure) { evidence.value = ''; fail(failure, evidence); return; }
+      ctx.files = files; ctx.missingEvidence = 0; feedback.hidden = true; host.querySelector('[data-draft-restored]').hidden = true; drawFiles(); save(true);
     };
+    form.onsubmit = async function (event) {
+      event.preventDefault(); if (ctx.preparing || ctx.pending) return;
+      feedback.hidden = true;
+      var data = collect();
+      if (!directoryReady || !data.recipient_id) { fail('Choose who should receive the report. Retry loading staff if the list is unavailable.', recipient.disabled ? null : recipient); return; }
+      if (!data.subject) { fail('Enter a subject.', form.querySelector('[data-field="subject"]')); return; }
+      if (!data.description) { fail('Describe the concern.', form.querySelector('[data-field="description"]')); return; }
+      var invalid = Array.from(form.querySelectorAll('[data-field]')).find(function (field) { return !field.checkValidity(); });
+      if (invalid) { fail(invalid.validationMessage, invalid); return; }
+      var failure = evidenceError(ctx.files, false); if (failure) { fail(failure, evidence); return; }
+      var selected = users.find(function (user) { return String(user.id) === data.recipient_id; });
+      if (!selected) { fail('Choose an available recipient.', recipient); return; }
+      ctx.data = data; persistReport(ctx); ctx.preparing = true; form.inert = true; submit.disabled = true; submit.textContent = 'Preparing evidence…';
+      try {
+        var files = await Promise.all(ctx.files.map(function (file) { return window.ImageCompress && /^image\//.test(file.type) ? ImageCompress.maybeCompress(file, { thresholdBytes: 0, maxDim: 1600, quality: 0.8 }) : file; }));
+        failure = evidenceError(files, true); if (failure) throw new Error(failure);
+        if (!alive()) return;
+        ctx.files = files; ctx.data = data; persistReport(ctx);
+        ctx.review = { ...data, recipient_name: selected.full_name + (selected.department_name ? ' — ' + selected.department_name : ''), files: files.slice() }; ctx.sendError = null;
+        ctx.preparing = false; MApp.go('report-problem', { mode: 'review' });
+      } catch (error) { if (alive()) { form.inert = false; fail(error.message || 'Could not prepare evidence. Your files are still here.'); } }
+      finally { ctx.preparing = false; form.inert = false; submit.disabled = false; submit.textContent = 'Review report'; }
+    };
+    drawFiles();
+    if (hasReportDraft(ctx)) { if (!ctx.saved) persistReport(ctx); showDraftStatus(); }
+    else form.querySelector('[data-draft-status]').textContent = 'Text is saved as you edit. Evidence stays only in this open app.';
+    loadRecipients();
+  }
+  function evidenceError(files, prepared) {
+    if (files.length > 4) return 'Use up to 4 evidence files. Your previous selection has been kept.';
+    var allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    for (var file of files) {
+      if (!allowed.includes(file.type)) return 'Use JPEG, PNG, WebP, PDF or Word documents for evidence: ' + file.name;
+      if (file.size > 5 * 1024 * 1024 && (prepared || !/^image\//.test(file.type))) return 'Each evidence file must be 5 MB or less: ' + file.name;
+    }
+    return null;
   }
 
-  function reviewIdentified(view, data, back) {
+  function reviewIdentified(view) {
+    var ctx = reportContext(), data = ctx.review;
+    if (!data) { identified(view); return; }
     MApp.setTitle('Review report');
-    var host = shell(view, '46:750', 'Review report', 'Confirm the destination and details', back);
-    var destination = DESTINATIONS.filter(function (d) { return d.value === data.destination; })[0];
-    host.innerHTML =
-      '<section class="m-report-review">' +
-        '<div><span>Destination</span><b>' + mEsc(destination ? destination.label : data.destination) + '</b></div>' +
-        '<div><span>Category</span><b>' + mEsc(data.category) + '</b></div>' +
-        '<div><span>Subject</span><b>' + mEsc(data.subject) + '</b></div>' +
-        '<div><span>Description</span><b>' + mEsc(data.description) + '</b></div>' +
-        '<div><span>Incident context</span><b>' + mEsc([data.date, data.time, data.location].filter(Boolean).join(' · ') || 'Not provided') + '</b></div>' +
-        '<div><span>Evidence</span><b>' + ((data.files && data.files.length) || 0) + ' file(s)</b></div>' +
-      '</section><aside class="m-report-notice">Your name is visible to the recipient and assigned handler. You can track this case in My identified reports.</aside>' +
-      '<button class="m-v2-primary" id="m-report-send" type="button">Send identified report</button>';
-    host.querySelector('#m-report-send').onclick = function () {
-      var button = this;
-      button.disabled = true;
-      button.textContent = 'Sending…';
-      var formData = new FormData();
-      formData.append('recipient_id', data.recipient_id);
-      ['category', 'subject', 'description', 'location'].forEach(function (key) { formData.append(key, data[key] || ''); });
-      formData.append('incident_date', data.date || '');
-      formData.append('incident_time', data.time || '');
-      var selected = Array.prototype.slice.call(data.files || []);
-      Promise.all(selected.map(function (file) {
-        return window.ImageCompress ? ImageCompress.maybeCompress(file, { thresholdBytes: 0, maxDim: 1600, quality: 0.8 }) : file;
-      })).then(function (files) {
-        if (files.some(function (file) { return file.size > 5 * 1024 * 1024; })) throw new Error('Each file must be 5 MB or less after image compression');
-        files.forEach(function (file) { formData.append('files', file, file.name); });
-        return API.upload('/identified-reports', formData);
-      }).then(function (created) {
-        clearDraft(DRAFT_KEY);
-        mSuccess(view, {
-          title: 'Report ' + created.number + ' sent',
-          lines: ['Your identity was included for follow-up.', 'Track the status and replies in My identified reports.'],
-          actions: [
-            { label: 'Open report', onClick: function () { identifiedDetail(view, created.id); } },
-            { label: 'Reporting hub', secondary: true, onClick: function () { hub(view); } }
-          ]
-        });
-      }).catch(function (error) {
-        mToast(error.message || 'Could not send report', 'err');
-        button.disabled = false;
-        button.textContent = 'Send identified report';
-      });
+    var host = shell(view, '46:750', 'Review report', 'Confirm the recipient and details', function () { MApp.go('report-problem', { mode: 'identified' }); });
+    var destination = DESTINATIONS.find(function (d) { return d.value === data.destination; });
+    host.innerHTML = '<section class="m-report-review">' +
+      '<div><span>Destination</span><b>' + mEsc(destination ? destination.label : data.destination) + '</b></div>' +
+      '<div><span>Recipient</span><b>' + mEsc(data.recipient_name) + '</b></div>' +
+      '<div><span>Category</span><b>' + mEsc(data.category) + '</b></div>' +
+      '<div><span>Subject</span><b>' + mEsc(data.subject) + '</b></div>' +
+      '<div><span>Description</span><b>' + mEsc(data.description) + '</b></div>' +
+      '<div><span>Incident context</span><b>' + mEsc([data.date, data.time, data.location].filter(Boolean).join(' · ') || 'Not provided') + '</b></div>' +
+      '<div><span>Evidence · ' + data.files.length + ' file(s)</span><b>' + (data.files.length ? data.files.map(function (file) { return mEsc(file.name) + ' · ' + mFmtBytes(file.size); }).join('<br>') : 'No evidence attached') + '</b></div></section>' +
+      '<aside class="m-report-notice">Your name is visible to the recipient and assigned handler. You can track this case in My identified reports.</aside>' +
+      '<p class="m-error" data-send-error role="alert" tabindex="-1" hidden></p><p class="m-hint" data-send-status role="status"></p>' +
+      '<button class="m-v2-primary" id="m-report-send" type="button">Send identified report</button><button class="m-v2-secondary m-report-edit-back" type="button" data-edit-report>Back to edit</button>';
+    var send = host.querySelector('#m-report-send'), feedback = host.querySelector('[data-send-error]');
+    function paint() {
+      if (!host.isConnected || !currentReport(ctx)) return;
+      var busy = !!ctx.pending; send.disabled = busy || ctx.review !== data; send.textContent = busy ? 'Sending…' : 'Send identified report'; host.setAttribute('aria-busy', String(busy));
+      host.querySelector('[data-edit-report]').disabled = busy; view.querySelector('.m-report-back').disabled = busy;
+      host.querySelector('[data-send-status]').textContent = busy ? ctx.pending.status : '';
+      feedback.hidden = !ctx.sendError; feedback.textContent = ctx.sendError || '';
+    }
+    ctx.active = { kind: 'review', host: host, paint: paint }; armReport(ctx);
+    host.querySelector('[data-edit-report]').onclick = function () { MApp.go('report-problem', { mode: 'identified' }); };
+    send.onclick = async function () {
+      if (!host.isConnected || ctx.review !== data || ctx.pending || ctx.preparing || !currentReport(ctx)) return;
+      var op = { status: 'Sending report…' }, version = ctx.version, stored = null, store = null;
+      try { store = draftStore(); stored = store.getItem(DRAFT_KEY + ':' + ctx.account); } catch (error) {}
+      ctx.pending = op; ctx.sendError = null; paint();
+      try {
+        var failure = evidenceError(data.files, true); if (failure) throw new Error(failure);
+        var formData = new FormData(); formData.append('recipient_id', data.recipient_id);
+        ['category', 'subject', 'description', 'location'].forEach(function (key) { formData.append(key, data[key] || ''); });
+        formData.append('incident_date', data.date || ''); formData.append('incident_time', data.time || '');
+        data.files.forEach(function (file) { formData.append('files', file, file.name); });
+        var created = await API.upload('/identified-reports', formData, { onProgress: function (event) {
+          if (ctx.pending !== op) return;
+          op.status = event.total ? 'Uploading evidence · ' + Math.min(100, Math.floor(event.loaded / event.total * 100)) + '%' : 'Sending report…';
+          if (currentReport(ctx) && ctx.active?.kind === 'review') ctx.active.paint();
+        } });
+        if (!currentReport(ctx)) return;
+        if (ctx.version === version) {
+          // Another tab may have saved a newer draft under the same key while this request ran.
+          var newer = null;
+          try {
+            var latest = store && store.getItem(DRAFT_KEY + ':' + ctx.account);
+            if (store && latest === stored) store.removeItem(DRAFT_KEY + ':' + ctx.account);
+            else if (latest) { newer = JSON.parse(latest); if (!newer || typeof newer !== 'object' || Array.isArray(newer)) newer = null; }
+          } catch (error) {}
+          ctx.data = newer || {}; ctx.files = []; ctx.missingEvidence = Number(newer?.evidence_count) || 0; ctx.review = null; ctx.saved = !!newer; ctx.restored = !!newer;
+        }
+        ctx.receipt = { id: created.id, number: created.number };
+        var show = ctx.active?.kind === 'review' && ctx.active.host.isConnected;
+        ctx.pending = null;
+        if (show) MApp.go('report-problem', { mode: 'sent' });
+      } catch (error) {
+        ctx.sendError = (error.message || 'Could not send the report.') + ' Your text and evidence are still here. If the connection was lost, check My identified reports before retrying.';
+      } finally {
+        ctx.pending = null;
+        if (currentReport(ctx) && ctx.active?.kind === 'review' && ctx.active.host.isConnected) { ctx.active.paint(); if (ctx.sendError) ctx.active.host.querySelector('[data-send-error]').focus(); }
+      }
     };
+    paint();
+  }
+  function identifiedReceipt(view) {
+    var ctx = reportContext(), receipt = ctx.receipt;
+    if (!receipt) { hub(view); return; }
+    MApp.setTitle('Report sent');
+    var host = shell(view, '46:750', 'Report sent', 'Your report was sent for follow-up'); ctx.active = { kind: 'receipt', host: host }; armReport(ctx);
+    host.innerHTML = '<div class="m-report-receipt"><span class="m-report-success-mark" aria-hidden="true">✓</span><p class="m-report-reference">' + mEsc(receipt.number) + '</p><p>Your identity was included for follow-up. Track the status and replies in My identified reports.</p></div>' +
+      '<button class="m-v2-primary" type="button" data-open-report>Open report</button><button class="m-v2-secondary m-report-edit-back" type="button" data-my-reports>My identified reports</button><button class="m-v2-secondary m-report-edit-back" type="button" data-report-hub>Reporting hub</button>';
+    host.querySelector('[data-open-report]').onclick = function () { MApp.go('report-problem', { id: receipt.id }); };
+    host.querySelector('[data-my-reports]').onclick = function () { MApp.go('report-problem', { mode: 'mine' }); };
+    host.querySelector('[data-report-hub]').onclick = function () { MApp.go('report-problem'); };
   }
 
   /* Identity-free transport for the anonymous channel. Deliberately NOT API.post/API.upload:
@@ -432,21 +560,29 @@
   }
 
   function identifiedList(view, assigned) {
+    var ctx = reportContext();
     MApp.setTitle(assigned ? 'Reports to handle' : 'My identified reports');
-    var host = shell(view, '46:721', assigned ? 'Reports to handle' : 'My identified reports', assigned ? 'Cases sent or assigned to you' : 'Reports sent with your identity', function () { hub(view); });
-    host.innerHTML = '<div class="m-hint">Loading…</div>';
-    API.get('/identified-reports').then(function (rows) {
-      var myId = (MApp.getMe() || {}).id;
-      var reports = (rows || []).filter(function (row) { return assigned ? row.reporter_id !== myId : row.reporter_id === myId; });
-      if (!reports.length) { host.innerHTML = '<div class="m-empty">No reports here yet.</div>'; return; }
-      host.innerHTML = reports.map(function (row) {
-        return '<button class="m-report-row" type="button" data-report="' + row.id + '"><span><b>' + mEsc(row.number + ' · ' + row.subject) + '</b><small>' +
-          mEsc(row.status + ' · ' + (assigned ? row.reporter_name : row.recipient_name)) + '</small></span><i aria-hidden="true">›</i></button>';
-      }).join('');
-      Array.prototype.forEach.call(host.querySelectorAll('[data-report]'), function (button) {
-        button.onclick = function () { identifiedDetail(view, this.getAttribute('data-report')); };
-      });
-    }).catch(function (error) { host.innerHTML = '<div class="m-error">' + mEsc(error.message) + '</div>'; });
+    var host = shell(view, '46:721', assigned ? 'Reports to handle' : 'My identified reports', assigned ? 'Cases sent or assigned to you' : 'Reports sent with your identity', function () { MApp.go('report-problem'); });
+    ctx.active = { kind: 'list', host: host }; armReport(ctx);
+    var loading = false;
+    async function load() {
+      if (loading || !host.isConnected || !currentReport(ctx)) return;
+      var restoreFocus = host.contains(document.activeElement);
+      loading = true; host.setAttribute('aria-busy', 'true'); host.innerHTML = '<div class="m-hint" role="status">Loading reports…</div>';
+      try {
+        var rows = await API.get('/identified-reports'); if (!host.isConnected || !currentReport(ctx)) return;
+        var reports = (rows || []).filter(function (row) { return assigned ? String(row.reporter_id) !== ctx.account : String(row.reporter_id) === ctx.account; });
+        if (!reports.length) { host.innerHTML = '<div class="m-empty">' + (assigned ? 'No reports to handle yet.' : 'No reports here yet.') + '</div>'; return; }
+        host.innerHTML = reports.map(function (row) {
+          var status = String(row.status || 'new'), label = status.charAt(0).toUpperCase() + status.slice(1);
+          return '<button class="m-report-row" type="button" data-report="' + mEsc(row.id) + '"><span><b>' + mEsc(row.number + ' · ' + row.subject) + '</b><small>' + mEsc((assigned ? 'Reporter · ' + row.reporter_name : 'Recipient · ' + row.recipient_name)) + '</small><span class="m-report-status">' + mEsc(label) + '</span></span><i aria-hidden="true">›</i></button>';
+        }).join('');
+        host.querySelectorAll('[data-report]').forEach(function (button) { button.onclick = function () { MApp.go('report-problem', { id: button.dataset.report }); }; });
+      } catch (error) {
+        if (host.isConnected && currentReport(ctx)) { host.innerHTML = '<div class="m-error" role="alert">' + mEsc(error.message || 'Could not load reports.') + '</div><button class="m-v2-secondary" type="button" data-retry-reports>Retry reports</button>'; host.querySelector('button').onclick = load; }
+      } finally { loading = false; host.removeAttribute('aria-busy'); if (restoreFocus && host.isConnected) { host.tabIndex = -1; (host.querySelector('button') || host).focus(); } }
+    }
+    load();
   }
 
   function identifiedDetail(view, id) {
@@ -493,6 +629,10 @@
 
   MApp.route('report-problem', function (view, params) {
     if (params && params.id) { identifiedDetail(view, params.id); return; }
+    if (params && params.mode === 'mine') { identifiedList(view); return; }
+    if (params && params.mode === 'assigned') { identifiedList(view, true); return; }
+    if (params && params.mode === 'review') { reviewIdentified(view); return; }
+    if (params && params.mode === 'sent') { identifiedReceipt(view); return; }
     if (params && params.mode === 'identified') { identified(view, params.about ? { subject: params.about } : null); return; }
     if (params && params.mode === 'anonymous') { anonymous(view); return; }
     hub(view);

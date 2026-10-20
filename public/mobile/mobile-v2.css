@@ -894,3 +894,16 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 .m-ann-confirm .m-actions{gap:10px}
 .m-ann-confirm [data-confirm]{background:var(--m-danger);color:#fff}
 :root[data-theme=dark] .m-ann-confirm [data-confirm]{background:var(--m-error-bg);color:var(--m-error-text);border:1px solid var(--m-danger)}
+
+/* Identified reporting keeps the existing form/choice cards and makes draft/send state explicit. */
+.m-report-draft-state{font-size:12px;line-height:1.5;color:var(--v2-muted);overflow-wrap:anywhere}
+.m-report-file-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--v2-line);border-radius:var(--m-r);background:var(--v2-surface);margin:7px 0}
+.m-report-file-row>span{flex:1;min-width:0;font-size:13px;overflow-wrap:anywhere}.m-report-file-row small{display:block;color:var(--v2-muted);font-size:11px;margin-top:4px}
+.m-report-file-row button{width:auto;flex-shrink:0;min-height:44px;padding:8px 12px}
+.m-report-edit-back{width:100%;margin-top:12px}
+.m-report-status{align-self:flex-start;background:var(--v2-surface-soft);color:var(--v2-green);border-radius:8px;padding:4px 8px;font-size:11px}
+.m-report-receipt{text-align:center;padding:15px 0 22px}.m-report-receipt>p{font-size:13px;line-height:1.6;color:var(--v2-muted)}
+.m-report-receipt .m-report-reference{font-size:24px;font-weight:750;color:var(--v2-green);padding:20px;border:1px solid var(--v2-line);border-radius:var(--m-r);background:var(--v2-surface-soft);overflow-wrap:anywhere}
+.m-report-success-mark{display:grid;place-items:center;width:58px;height:58px;margin:auto;border-radius:50%;background:var(--v2-green);color:white;font-size:30px}
+
+#m-report-send,.m-report-v2 [data-open-report]{width:100%}
