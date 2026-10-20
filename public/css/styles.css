@@ -688,6 +688,18 @@ tr.tk-incomplete input, tr.tk-incomplete select { border-color: var(--warn); }
 .drawer.drawer-wide { width: 600px; }
 .drawer-wide .drawer-foot { display: flex; gap: 8px; }
 .drawer-wide .drawer-foot .btn { width: auto; flex: 1; }
+.drawer.drawer-access { width: 680px; max-width: 96vw; height: 100dvh; }
+.drawer-access .drawer-head { align-items: center; }
+.drawer-access .drawer-body { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: hidden; }
+.drawer-access .pp-intro { flex: 0 1 auto; max-height: 30%; overflow: auto; }
+.drawer-access .pp-intro.pp-rolecard { margin: 0; }
+.pp-intro .pp-rolecard { border: 0; padding: 0; margin: 8px 0 0; background: none; }
+.pp-role-details { margin-top: 8px; font-size: 12px; color: var(--text-muted); }
+.pp-role-details summary { cursor: pointer; }
+.pp-role-details input { margin-top: 6px; }
+.drawer-access [data-picker] { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.drawer-access .pp-list { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; padding-right: 4px; }
+.drawer-access .pp-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* The AI bubble (z-index 120) sits over a drawer's footer buttons — step it aside while one is open. */
 body:has(.drawer.open) .ai-fab { opacity: 0; pointer-events: none; }
 .role-hint { font-size: 12px; margin: 6px 0 0; min-height: 1em; }
@@ -696,24 +708,30 @@ body:has(.drawer.open) .ai-fab { opacity: 0; pointer-events: none; }
   border-radius: var(--radius-sm); background: var(--surface-2); font-size: 13px;
 }
 .pp-rolecard p { margin: 4px 0 0; font-size: 12px; }
-.pp-toolbar { display: flex; gap: 8px; align-items: center; position: sticky; top: -14px; z-index: 2; background: var(--surface); padding: 6px 0; }
-.pp-search { flex: 1; min-width: 0; }
+.pp-toolbar { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 8px; align-items: center; padding-bottom: 10px; }
+.pp-search { flex: 1 1 240px; min-width: 0; }
 .pp-search input { width: 100%; }
 .pp-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 999px; overflow: hidden; flex: 0 0 auto; }
 .pp-seg button { border: none; background: none; padding: 5px 11px; font: inherit; font-size: 12px; color: var(--text-muted); cursor: pointer; }
 .pp-seg button + button { border-left: 1px solid var(--border); }
 .pp-seg button.on { background: var(--accent); color: var(--accent-contrast); }
-.pp-summary { font-size: 12px; color: var(--text-muted); margin: 6px 0 10px; }
+.pp-overview { display: flex; flex-shrink: 0; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.pp-overview select { width: auto; max-width: 100%; font-size: 12px; padding: 7px 28px 7px 9px; }
+.pp-summary { font-size: 12px; color: var(--text-muted); }
+.pp-hint { flex-shrink: 0; font-size: 11.5px; color: var(--text-muted); margin: 8px 0 12px; }
 .pp-summary .pp-added { color: var(--success); }
 .pp-summary .pp-removed { color: var(--danger); }
 .pp-group { border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 10px; overflow: hidden; }
-.pp-group-head { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
-.pp-group-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; color: var(--text-muted); }
+.pp-group-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; padding: 10px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.pp-group-label { font-size: 12px; font-weight: 700; color: var(--text); }
 .pp-count { font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .pp-count.some { color: var(--accent); font-weight: 600; }
-.pp-bulk { border: none; background: none; font: inherit; font-size: 11.5px; color: var(--accent); cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+.pp-bulk { border: none; background: none; font: inherit; font-size: 11.5px; color: var(--accent); cursor: pointer; padding: 5px 4px; border-radius: 4px; }
 .pp-bulk:hover { background: var(--accent-weak); }
-.pp-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 10px; border-top: 1px solid var(--border); }
+.pp-row { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 12px; border-top: 1px solid var(--border); }
+.pp-row:hover { background: var(--surface-2); }
+.pp-row .help-icon { width: 26px; height: 26px; font-size: 12px; }
+.pp-row .help-icon:focus-visible, .pp-bulk:focus-visible, .pp-seg button:focus-visible, .pp-undo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pp-group-head + .pp-row { border-top: none; }
 .pp-row.is-added { box-shadow: inset 3px 0 0 var(--success); }
 .pp-row.is-removed { box-shadow: inset 3px 0 0 var(--danger); }
@@ -721,9 +739,6 @@ body:has(.drawer.open) .ai-fab { opacity: 0; pointer-events: none; }
 .pp-text { flex: 1; min-width: 0; }
 .pp-label { font-size: 13px; font-weight: 600; color: var(--text); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pp-row:not(.is-on) .pp-label { font-weight: 500; color: var(--text-muted); }
-.pp-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
-.pp-where { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-.pp-where span { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: var(--surface-3); color: var(--text-muted); }
 .pp-tag { font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
 .pp-tag.added { background: var(--success-weak); color: var(--success); }
 .pp-tag.removed { background: var(--danger-weak); color: var(--danger); }
@@ -739,6 +754,16 @@ body:has(.drawer.open) .ai-fab { opacity: 0; pointer-events: none; }
 .pp-switch input:focus-visible + .pp-track { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pp-switch input:disabled { cursor: not-allowed; }
 .pp-switch input:disabled + .pp-track { opacity: 0.5; }
+@media (max-width: 480px) {
+  .drawer-access .drawer-head { padding: 12px; gap: 8px; }
+  .drawer-access .drawer-head > .ic { display: none; }
+  .drawer-access .drawer-heading h3 { font-size: 16px; line-height: 1.3; }
+  .drawer-access .drawer-body { padding: 12px; gap: 10px; }
+  .pp-group-head .pp-group-label { flex-basis: 100%; }
+  .pp-row { gap: 8px; padding: 10px; }
+  .pp-row .help-icon { width: 32px; height: 32px; }
+  .pp-search { flex-basis: 100%; }
+}
 
 /* ---------- Context menu ---------- */
 .context-menu {

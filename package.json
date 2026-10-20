@@ -38,6 +38,7 @@
     "test:mobile:qr": "node scripts/test-mobile-qr-ux.mjs",
     "test:mobile:workflow": "node scripts/test-mobile-remaining-ux.mjs",
     "test:mobile:access": "node scripts/test-mobile-work-access.mjs",
+    "test:permissions:ux": "node scripts/test-permission-picker-ux.mjs",
     "test:inventory:ckd-courier": "node scripts/test-inventory-ckd-courier-ux.mjs",
     "test:inventory:count-faults": "node scripts/test-inventory-count-faults-ux.mjs",
     "test:inventory:permissions": "node scripts/test-inventory-permissions-ux.mjs",
