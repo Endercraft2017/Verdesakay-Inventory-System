@@ -920,3 +920,9 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 .m-thumbs[data-anon-own]{height:auto;align-items:flex-start;min-height:5.5rem}.m-anon-photo-cell{flex:0 0 7.5rem;overflow:visible}.m-anon-photo-cell .m-thumb{flex:none;width:100%;height:5rem;min-height:5rem}
 
 #m-anon-send,#m-anon-copy,#m-anon-done{width:100%}
+
+/* Anonymous handler case controls reuse the existing reporting surfaces. */
+.m-cr-status-badge{display:inline-block;margin:0 0 .6rem}.m-cr-case-form{margin-top:1rem}.m-cr-refresh{margin:.6rem 0 1rem;width:100%}
+.m-cr-photo-cell{display:flex;flex-direction:column;gap:.4rem;flex:0 0 7.5rem;max-width:9rem;min-width:0}.m-cr-photo-cell .m-thumb{flex:none;width:100%;height:5rem}.m-cr-photo-cell .m-error{font-size:.7rem;line-height:1.4;margin:0;overflow-wrap:anywhere}.m-cr-photo-cell .m-v2-secondary{font-size:.7rem;padding:.4rem .6rem;min-height:2.3rem;margin:0}.m-cr-page .m-thumbs{align-items:flex-start}
+
+.m-cr-page [data-cr-feedback]:focus-visible,.m-cr-page [data-cr-error]:focus-visible{outline:2px solid var(--v2-green);outline-offset:3px;border-radius:.35rem}
