@@ -39,6 +39,9 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
   // Multipart bodies are parsed later: their key identifies the whole upload; only
   // JSON requests can additionally compare parsed payloads here.
   if (/^\/api\/(auth|signup|sync)(?:\/|$)/i.test(req.originalUrl.split('?')[0] ?? '')) return next();
+  // Ephemeral review credentials must not be persisted in HTTP receipts or replayed
+  // ahead of their fresh-proof gate. Confirmation has its own atomic revision guard.
+  if (/\/api\/hr\/payroll\/[^/]+\/identity(?:\/|$)/i.test(req.originalUrl.split('?')[0] ?? '')) return next();
 
   requireAuth(req, res, () => {
     const user = req.user!;

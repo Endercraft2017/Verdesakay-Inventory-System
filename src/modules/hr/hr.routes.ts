@@ -1,4 +1,5 @@
 import { safeDocumentType } from '../../shared/file-response';
+import payrollIdentityRoutes from './payroll-identity.routes';
 import { correctRecord } from '../../core/data-forms/history';
 import { recordDeductionChange, deductionHistory } from '../payroll/deduction-history';
 import { effectiveHrForm } from './request-policy';
@@ -88,6 +89,7 @@ const EMP_CSV_COLUMNS = [
 
 const router = Router();
 router.use(requireAuth);
+router.use('/payroll/:recordId/identity', payrollIdentityRoutes);
 
 const docStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadDir()),

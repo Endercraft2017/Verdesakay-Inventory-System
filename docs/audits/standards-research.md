@@ -363,3 +363,16 @@ data deletion. Reviewed repair tooling and stable-ID statutory reconciliation re
 See [contract, operations and evidence](../operations/payslip-identity-disclosure.md).
 Research: [OWASP API1:2023](https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/),
 retrieved 20 October 2026; per-object authorization and regression testing.
+
+
+## Reviewed unresolved payroll identity repair — 20 October 2026
+
+New cloud-only payroll-manager review/confirmation changes only employee_id with fresh
+identity proof and an expiring actor/session/company/record/employee-bound review.
+Existing paid amounts/status/finalization time are preserved and revision history is
+mandatory; ordinary record editing cannot change a resolved owner. Evidence references
+are metadata, not uploaded identity documents. No automatic email, payment or deletion.
+See [operator contract](../operations/payroll-identity-repair.md) and [seven-source research](../audits/payroll-repair-research.md).
+Statutory name aggregation, recipient/rights procedures, approved retention, independent
+audit protection, office replay/restore and supported-operator acceptance remain open.
+This scoped implementation does not promote whole handbook controls or release approval.

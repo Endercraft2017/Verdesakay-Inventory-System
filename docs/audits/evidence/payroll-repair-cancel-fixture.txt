@@ -1,0 +1,60 @@
+[WebServer] (node:38897) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:38910) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:38921) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 3 tests using 1 worker
+
+(node:38942) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e/payroll-repair.spec.ts:16:1 › reviewed repair preserves paid state and grants the identified employee access (4.0s)
+  ✘  2 tests/e2e/payroll-repair.spec.ts:25:1 › cancelling a reviewed repair sends no confirmation (7.7s)
+(node:39141) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  3 tests/e2e/payroll-repair.spec.ts:28:1 › stale payroll state is refused and shows an accessible error in the review (2.8s)
+
+
+  1) tests/e2e/payroll-repair.spec.ts:25:1 › cancelling a reviewed repair sends no confirmation ────
+
+    Error: expect(locator).toBeHidden() failed
+
+    Locator:  getByRole('dialog', { name: 'Review payslip owner', exact: true })
+    Expected: hidden
+    Received: visible
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toBeHidden" getByRole('dialog', { name: 'Review payslip owner', exact: true }) with timeout 5000ms
+      - waiting for getByRole('dialog', { name: 'Review payslip owner', exact: true })
+        14 × locator resolved to <div class="modal" role="dialog" tabindex="-1" aria-modal="true" aria-label="Review payslip owner">…</div>
+           - unexpected value "visible"
+
+
+      24 | });
+      25 | test('cancelling a reviewed repair sends no confirmation',async({page})=>{
+    > 26 |  let confirms=0;page.on('request',r=>{if(r.url().endsWith('/identity/confirm'))confirms++;});const dialog=await review(page,'REPAIR-CANCEL');await dialog.getByRole('button',{name:'Cancel',exact:true}).click();await expect(dialog).toBeHidden();expect(confirms).toBe(0);
+         |                                                                                                                                                                                                                                       ^
+      27 | });
+      28 | test('stale payroll state is refused and shows an accessible error in the review',async({page})=>{
+      29 |  const dialog=await review(page,'REPAIR-STALE');
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-repair.spec.ts:26:231
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-repair-cancelling--2900a-epair-sends-no-confirmation/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-repair-cancelling--2900a-epair-sends-no-confirmation/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-repair-cancelling--2900a-epair-sends-no-confirmation/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-repair-cancelling--2900a-epair-sends-no-confirmation/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests/e2e/payroll-repair.spec.ts:25:1 › cancelling a reviewed repair sends no confirmation ─────
+  2 passed (21.9s)

@@ -1,6 +1,14 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 20 October 2026 — employee payslip disclosure now fails closed for reused
+Latest follow-up: 20 October 2026 — reviewed cloud-only repair of unresolved payroll identity
+now requires payroll management, fresh proof, evidence reference and a five-minute actor/session/
+company/record/employee-bound review. Identity-only correction preserves paid amounts, status and
+finalization timestamp, with mandatory atomic revision history. Generic record editing cannot
+change the resolved owner. See [operator contract](../operations/payroll-identity-repair.md) and
+[seven-source research and decisions](payroll-repair-research.md). Name-grouped statutory
+attribution, independent audit protection and operational/privacy acceptance remain open.
+
+Previous follow-up: 20 October 2026 — employee payslip disclosure now fails closed for reused
 or ambiguous names and invalid/missing stamped employee references. Self-service and payroll
 email share the resolver. Generation refuses unresolved cutoff slips before payroll writes.
 See [identity contract and reconciliation limits](../operations/payslip-identity-disclosure.md).

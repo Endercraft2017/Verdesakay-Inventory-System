@@ -310,7 +310,7 @@
       "severity": "Critical",
       "requirement": "Every endpoint that accepts a resource identifier (path, query, body, header) verifies the caller owns or may access that resource.",
       "status": "UNVERIFIED",
-      "evidence": "Database-per-tenant isolation, route-gate source inventory and broad negative tests were reviewed; critical replay and crypto-scope defects were fixed. Every resource/method/owner combination and every external state has not been exhaustively proven. See tests/access-matrix.test.ts, tenant-path.test.ts, production-security.test.ts and idempotency.test.ts. Employee payslip self-service/email now reject ambiguous legacy names and invalid stamped references; scoped negative tests and operations/payslip-identity-disclosure.md document evidence and remaining reconciliation.",
+      "evidence": "Database-per-tenant isolation, route-gate source inventory and broad negative tests were reviewed; critical replay and crypto-scope defects were fixed. Every resource/method/owner combination and every external state has not been exhaustively proven. See tests/access-matrix.test.ts, tenant-path.test.ts, production-security.test.ts and idempotency.test.ts. Employee payslip self-service/email now reject ambiguous legacy names and invalid stamped references; scoped negative tests and operations/payslip-identity-disclosure.md document evidence and remaining reconciliation. New payroll repair tests cover same-actor different sessions, a separate tenant path, office-node refusal and ordinary-editor owner-change prevention; record and candidate fingerprints prevent stale confirmation. Broader object/method coverage remains incomplete.",
       "scenario": "",
       "fix": "List ID-taking endpoints; run the two-account swap test (AUDIT-02); review the handler code for ownership filters."
     },
@@ -427,7 +427,7 @@
       "severity": "Medium",
       "requirement": "High-risk actions use step-up authentication or contextual signals (new device, unusual location, impossible travel).",
       "status": "FAIL",
-      "evidence": "Tenant administrative and enrolled console operator proofs remain. Manual QuickBooks exports now add order-specific authority, recent session proof, mandatory reviewed destination/source-version preconditions and live actor/order checks before provider calls. Accepted-write bookkeeping is retained after revocation. This is not one-use signed transaction approval. Offline financial/payroll/department and wider high-risk actions still need local-authority verification design and device/staging acceptance. See operations/manual-quickbooks-exports.md and sensitive-action-inventory.md.",
+      "evidence": "Tenant administrative and enrolled console operator proofs remain. Manual QuickBooks exports now add order-specific authority, recent session proof, mandatory reviewed destination/source-version preconditions and live actor/order checks before provider calls. Accepted-write bookkeeping is retained after revocation. This is not one-use signed transaction approval. Offline financial/payroll/department and wider high-risk actions still need local-authority verification design and device/staging acceptance. See operations/manual-quickbooks-exports.md and sensitive-action-inventory.md. Unresolved payroll identity repair now uses a new cloud-only fresh-proof workflow, with a five-minute purpose/operator/session/company/record/employee-bound review and atomic revision consumption. Normal payroll claims retain existing classes. See operations/payroll-identity-repair.md.",
       "scenario": "A privileged session can still reach sensitive business actions outside the protected administrative scope. Unenrolled console accounts remain password-only until policy enforcement is enabled.",
       "fix": "Inventory remaining financial/export/department and other sensitive actions and apply proportionate server-side verification with offline-authority design and regression evidence. Complete real-device enrollment and staging acceptance; enable console passkey and tenant privileged-MFA policies after backup/recovery tests."
     },
@@ -2110,9 +2110,9 @@
   "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
   "latest_follow_up": {
     "date": "2026-10-20",
-    "scope": "Fail-closed payroll disclosure ownership and unresolved-cutoff generation safety",
-    "base_commit": "6097973776c521c20d4cbc9d69985481e3b6c85b",
-    "verification": "evidence/payslip-identity-verification.json",
+    "scope": "Reviewed unresolved payroll identity repair; seven-source security/privacy/retention research",
+    "base_commit": "937ef3835386ddf044267152b17ff584ae9fb017",
+    "verification": "evidence/payroll-repair-verification.json",
     "whole_control_statuses_changed": false
   }
 }

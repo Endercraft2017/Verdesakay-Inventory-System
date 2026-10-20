@@ -20,6 +20,7 @@ import {
 } from '../../shared/validation';
 import { parsePayrollSummaryCsv } from '../../modules/payroll/hr-payroll-import';
 import { PAYROLL_FORM_SLUG } from '../../modules/payroll/pay-access';
+import { payslipOwnerResolver } from '../../modules/payroll/payslip-owner';
 import { runFormActions } from '../form-actions';
 import { cutoffIsPaid, notifyApprovers } from '../../modules/hr/workflow';
 import { normalizeRequest, attachLeave, leaveWarnings, requestEmployeeId, scheduledLeaveDates } from '../../modules/hr/request-data';
@@ -269,7 +270,14 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
   if (existing.slug === 'hr_payroll') {
     delete recordData._calculation_snapshot;
     if (previousData._calculation_snapshot) recordData._calculation_snapshot = String(previousData._calculation_snapshot);
-    if (previousData.employee_id) recordData.employee_id = Number(previousData.employee_id);
+    // Identity repair is separate: never coerce an invalid stamp to NaN -> JSON null,
+    // which would accidentally restore legacy name fallback after serialization.
+    if (Object.prototype.hasOwnProperty.call(previousData, 'employee_id')) recordData.employee_id = previousData.employee_id;
+    else delete recordData.employee_id;
+    const owners = payslipOwnerResolver();
+    if (owners.idOf(previousData) !== owners.idOf(JSON.parse(JSON.stringify(recordData)))) {
+      res.status(409).json({ error: 'Use the reviewed payroll identity correction workflow to change payslip ownership.' }); return;
+    }
     if (previousData._calculation_snapshot) {
       for (const key of ['daily_rate','days_worked','days_absent','days_half','days_undertime','ot_hours','ot_rate_hour','basic_salary',
         'overtime_pay','undertime_pay','undertime_day_pay','night_diff_pay','holiday_pay','special_holiday_30','rest_day_ot','total_earnings','late_absences']) {

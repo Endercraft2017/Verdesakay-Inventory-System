@@ -1,5 +1,10 @@
 # Payslip ownership and ambiguous legacy identity
 
+Follow-up: the [reviewed cloud repair workflow](payroll-identity-repair.md) is now implemented
+for unresolved valid-JSON records. Resolved-owner transfers, malformed-data reconstruction,
+stable-ID statutory aggregation and broader operational acceptance remain open. The original
+increment and remaining issues below describe the earlier disclosure fix.
+
 20 October 2026. High-severity scoped privacy fix. Release approval remains on hold.
 
 ## Reproduced gap
@@ -61,9 +66,10 @@ manually, delete the record, or bypass the paid lock. Preserve the evidence and
 withhold disclosure until ownership is established. Payroll-authorized staff retain
 access to the underlying payroll form records under their existing permissions.
 
-This patch does not introduce automatic reassignment or an audited identity-repair
-screen. A reviewed repair workflow with stable employee IDs, change reasons,
-revision checks and appropriate local/offline authority is remaining engineering.
+The original disclosure patch did not include identity-repair tooling. The subsequent
+[reviewed cloud repair workflow](payroll-identity-repair.md) now supports unresolved
+valid-JSON records with stable employee IDs, reasons and attributed revisions.
+Resolved-owner transfers, malformed-data reconstruction and operational reconciliation remain separate work.
 No broad SQL repair is authorized by this document. Owner participation is last.
 Legacy name resolution can only check recorded identity history. Deleted/imported
 history may be incomplete; this is not proof of historical ownership. Reviewed

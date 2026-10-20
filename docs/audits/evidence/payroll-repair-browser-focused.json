@@ -1,0 +1,227 @@
+{
+  "config": {
+    "argv": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+      "/workspace/Verdesakay-Inventory-System/node_modules/.bin/playwright",
+      "test",
+      "tests/e2e/payroll-repair.spec.ts"
+    ],
+    "configFile": "/workspace/Verdesakay-Inventory-System/playwright.config.ts",
+    "rootDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "",
+        "testDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "snapshotDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "testIgnore": [],
+        "testMatch": "**/*.spec.ts",
+        "timeout": 30000,
+        "use": {
+          "baseURL": "http://127.0.0.1:4173",
+          "trace": "retain-on-failure",
+          "screenshot": "only-on-failure",
+          "launchOptions": {}
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": ""
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "html",
+        {
+          "open": "never",
+          "outputFolder": "work/playwright-report"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "work/playwright-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npx tsx tests/e2e/server.ts",
+      "url": "http://127.0.0.1:4173/api/health",
+      "reuseExistingServer": false,
+      "timeout": 30000
+    }
+  },
+  "suites": [
+    {
+      "title": "payroll-repair.spec.ts",
+      "file": "payroll-repair.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "reviewed repair preserves paid state and grants the identified employee access",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 4183,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T03:18:52.648Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1fd431bd4b66113c65a2-34c440bb1ee9330b791c",
+          "file": "payroll-repair.spec.ts",
+          "line": 16,
+          "column": 1
+        },
+        {
+          "title": "cancelling a reviewed repair sends no confirmation",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3081,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T03:18:56.906Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1fd431bd4b66113c65a2-6598bc4ca996ebdfa2e3",
+          "file": "payroll-repair.spec.ts",
+          "line": 25,
+          "column": 1
+        },
+        {
+          "title": "stale payroll state is refused and shows an accessible error in the review",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2869,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T03:19:00.002Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1fd431bd4b66113c65a2-16431ef29f61b1f81626",
+          "file": "payroll-repair.spec.ts",
+          "line": 28,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-20T03:18:46.200Z",
+    "duration": 16812.316,
+    "expected": 3,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

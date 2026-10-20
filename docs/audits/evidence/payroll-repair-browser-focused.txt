@@ -1,0 +1,16 @@
+[WebServer] (node:39510) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:39523) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:39534) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 3 tests using 1 worker
+
+(node:39554) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e/payroll-repair.spec.ts:16:1 › reviewed repair preserves paid state and grants the identified employee access (4.2s)
+  ✓  2 tests/e2e/payroll-repair.spec.ts:25:1 › cancelling a reviewed repair sends no confirmation (3.1s)
+  ✓  3 tests/e2e/payroll-repair.spec.ts:28:1 › stale payroll state is refused and shows an accessible error in the review (2.9s)
+
+  3 passed (16.8s)

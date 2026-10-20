@@ -613,11 +613,18 @@ snapshot). Not linked to Inventory stock — issuing moves no stock.
 
 ## Payroll run
 
+**Exceptional identity repair (20 October 2026):** Payroll records → Review owner → evidence
+reference and explicit employee selection → fresh cloud proof → server-bound review → confirm →
+conditional employee_id-only write plus attributed history. Existing paid state/time/amounts stay;
+normal editor cannot change the resolved owner. New exceptional routes are online-only, refused
+and not queued on an installed node; normal payroll classes remain. See
+`docs/operations/payroll-identity-repair.md`. No automatic email, journal rebuild or filing amendment.
+
 **Ownership/disclosure (20 October 2026):** stamped IDs must identify a current employee;
 legacy names must be unambiguous across current/former names. Self-service lists, PDF and
 timekeeping and payroll email share `payroll/payslip-owner.ts`. Reused names cannot grant
 access to an older person's slip; unresolved email is refused before sending. Generation refuses unresolved existing cutoff slips with 409 before writes. No automatic
-reassignment. Stable-ID aggregate reconciliation and reviewed repair tooling remain; see
+reassignment. Stable-ID aggregate reconciliation, resolved-owner/malformed-data escalation and operational acceptance remain; see
 `docs/operations/payslip-identity-disclosure.md`.
 
 **Trigger:** a payroll period/cutoff is closed (`hr`, `hr.routes.ts`).

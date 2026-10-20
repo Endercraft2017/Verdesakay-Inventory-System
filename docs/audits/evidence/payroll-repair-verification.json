@@ -1,0 +1,73 @@
+{
+  "date": "2026-10-20",
+  "base_commit": "937ef3835386ddf044267152b17ff584ae9fb017",
+  "scope": "Reviewed cloud repair of unresolved valid-JSON payroll identity; generic editor and credential-receipt safeguards",
+  "research": {
+    "sources_retrieved": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html",
+      "https://www.rfc-editor.org/rfc/rfc9110.html#name-if-match",
+      "https://www.sqlite.org/lang_savepoint.html",
+      "https://privacy.gov.ph/data-privacy-act/",
+      "https://lawphil.net/statutes/repacts/ra2024/ra_11976_2024.html"
+    ],
+    "decisions": "../payroll-repair-research.md",
+    "certification_or_legal_approval_inferred": false
+  },
+  "full_run": {
+    "files_passed": 313,
+    "files_failed": 0,
+    "tests_passed": 3288,
+    "tests_failed": 0,
+    "duration_seconds": 629.15
+  },
+  "focused": {
+    "files_passed": 7,
+    "files_failed": 0,
+    "tests_passed": 219,
+    "tests_failed": 0,
+    "duration_seconds": 40.59
+  },
+  "new_api_cases": 16,
+  "final_playwright": {
+    "passed": 40,
+    "failed": 0,
+    "skipped": 0,
+    "new_cases": 3,
+    "duration_seconds": 98.3757,
+    "dialog_axe": "passed"
+  },
+  "actual_server": "passed: fresh proof, retry-key cache exclusion, single-use repair, paid data/time preservation, attributed history and correct self-service access; no mail",
+  "typecheck": "passed",
+  "schema_and_dependencies": "unchanged; db:types not required/run",
+  "legacy_id_reproduction": {
+    "files_passed": 0,
+    "files_failed": 1,
+    "tests_passed": 14,
+    "tests_failed": 1,
+    "duration_seconds": 6.94
+  },
+  "interrupted_full": {
+    "exit_code": 130,
+    "counted_as_completed": false,
+    "reason": "Reproduce and fix normal-editor malformed-ID numeric coercion that stored null and revived name fallback"
+  },
+  "initial_browser_fixture": {
+    "passed": 2,
+    "failed": 1,
+    "reason": "Playwright default-dismissed the native discard-changes prompt; fixture now accepts it to complete cancellation; product confirmation remained unsent",
+    "trace_note": "Failed-run log/JSON/screenshot archived; transient trace ZIP not retained"
+  },
+  "preliminary_typing": "Error helper declaration/required database revision typing corrected before successful typecheck; original compiler log not retained",
+  "staged_secret_scan": "clean; final hook scans complete staged evidence again",
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "remaining": [
+    "Stable-ID statutory aggregation and duplicate/ledger/filing reconciliation",
+    "Resolved-owner transfer and malformed-data reconstruction",
+    "Actual historical evidence, approved rights/recipient notification/retention, independent audit protection",
+    "Supported operator/device, cloud keys/HTTPS and office sync/restore acceptance",
+    "Broader offline high-risk-action verification and wider scorecard gates"
+  ]
+}

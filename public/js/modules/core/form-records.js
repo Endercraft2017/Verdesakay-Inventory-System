@@ -1213,6 +1213,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           <td class="actions"><button type="button" class="icon-btn" data-history="${r.id}" title="Change history" aria-label="Change history for ${UI.esc(r.number)}">${UI.icon('clock')}</button>
             ${isPayroll ? `<button class="icon-btn" data-print="${r.id}" title="Print this slip" aria-label="Print payslip ${UI.esc(r.number)}">${UI.icon('printer')}</button>` : ''}
             ${!isPayroll && formDef.template_id ? `<button class="icon-btn" data-print-tpl="${r.id}" title="Print">${UI.icon('printer')}</button>` : ''}
+            ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-owner="${r.id}" title="Review payslip owner" aria-label="Review owner of payslip ${UI.esc(r.number)}">${UI.icon('user')}</button>` : ''}
             ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-email="${r.id}" title="Email this payslip" aria-label="Email payslip ${UI.esc(r.number)}">${UI.icon('mail')}</button>` : ''}
             ${isPayroll && canManagePayroll ? (r.status === 'paid'
               ? `<button class="icon-btn" data-unpaid="${r.id}" title="Unmark Paid (unlock for editing)" aria-label="Unmark payslip ${UI.esc(r.number)} as paid">${UI.icon('reply', 15)}</button>`
@@ -1408,6 +1409,52 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         const r = records.find((x) => String(x.id) === String(b.dataset.printTpl));
         if (r) printRecordsViaTemplate([r]);
       });
+    el.querySelectorAll('[data-owner]').forEach(button => button.onclick = async event => {
+      event.stopPropagation(); button.disabled = true;
+      const actor=App.getMe(), server=API.serverScope(), token=API.getToken();
+      const opts={expectedServer:server,expectedUserId:actor.id};
+      const context=()=>{if(App.getMe()!==actor||API.serverScope()!==server||API.getToken()!==token||!button.isConnected)throw new Error('Account, company or payroll view changed. Reopen identity review.');};
+      try {
+        let state=await API.get(`/hr/payroll/${button.dataset.owner}/identity`,opts);context();
+        if(state.resolved_employee_id!=null){UI.toast('This payslip already has a resolved owner. It cannot be transferred here.');return;}
+        const options=employees=>'<option value="">Select employee…</option>'+employees.map(e=>`<option value="${e.id}">${UI.esc(e.employee_no||'No employee number')} — ${UI.esc(e.name)} (${UI.esc(e.status)})</option>`).join('');
+        let review=null;
+        UI.modal({title:'Review payslip owner',confirmText:'Review correction',bodyHTML:`<div id="pri-content">
+          <p>${UI.esc(state.record.number)} · ${UI.esc(state.record.employee_name||'No recorded name')} · ${UI.esc(state.record.status)}</p>
+          <p>Verify employment records before selecting an employee. A matching name alone is insufficient. Paid amounts and status will stay unchanged.</p>
+          <label>Find employee by name or number<input id="pri-search" maxlength="100"></label><button type="button" class="btn secondary" id="pri-find">Find employee</button>
+          <label>Employee<select id="pri-employee">${options(state.employees)}</select></label>
+          <label>Reason for correction<input id="pri-reason" minlength="10" maxlength="200"></label>
+          <label>Evidence reference<input id="pri-reference" minlength="3" maxlength="120" placeholder="Internal case or employment-record reference"></label>
+          <p class="muted">Use a reference only. Do not paste IDs, bank details or medical information.</p>
+          <label><input type="checkbox" id="pri-verified"> I verified the employee using employment records.</label></div>`,
+          onOpen:overlay=>{overlay.querySelector('#pri-find').onclick=async()=>{
+            try{context();state=await API.get(`/hr/payroll/${button.dataset.owner}/identity?q=${encodeURIComponent(overlay.querySelector('#pri-search').value)}`,opts);context();overlay.querySelector('#pri-employee').innerHTML=options(state.employees);}
+            catch(error){UI.toast(error.message,'error');}
+          };},
+          onConfirm:async(overlay,showError)=>{
+            try{
+              context();
+              if(!review){
+                review=await API.post(`/hr/payroll/${button.dataset.owner}/identity/review`,{
+                  employee_id:Number(overlay.querySelector('#pri-employee').value),expected_revision:state.record.revision,
+                  reason:overlay.querySelector('#pri-reason').value,evidence_reference:overlay.querySelector('#pri-reference').value,
+                  verified_records:overlay.querySelector('#pri-verified').checked},opts);context();
+                const e=review.employee;
+                overlay.querySelector('#pri-content').innerHTML=`<p><strong>${UI.esc(review.record.number)}</strong> · ${UI.esc(review.record.status)}</p><p>Recorded employee: ${UI.esc(review.record.employee_name||'No recorded name')} · Period: ${UI.esc(review.record.period||'Not recorded')}</p>
+                  <p>Assign access to <strong>${UI.esc(e.employee_no||'No employee number')} — ${UI.esc(e.name)}</strong> (employee ${e.id}).</p>
+                  <p>Linked account: ${UI.esc(e.username||'None')} · ${UI.esc(e.email||'No email')} · ${e.active?'active':'inactive or unlinked'}</p>
+                  <p>Reason: ${UI.esc(review.reason)}</p><p>Evidence reference: ${UI.esc(review.evidence_reference)}</p>
+                  <p>This changes which employee can access the payslip. No email will be sent. Paid status, amounts and payment timestamps will be preserved. This review expires in five minutes.</p>`;
+                overlay.querySelector('[data-confirm]').textContent='Confirm identity repair';overlay.querySelector('[data-confirm]').focus();return false;
+              }
+              await API.post(`/hr/payroll/${button.dataset.owner}/identity/confirm`,{review_token:review.review_token},opts);context();
+              UI.toast('Payslip identity corrected. Review the change history for its audit record.');load();return true;
+            }catch(error){showError(error.message);return false;}
+          }
+        });
+      }catch(error){UI.toast(error.message,'error');}finally{button.disabled=false;}
+    });
     el.querySelectorAll('[data-email]').forEach((b) =>
       b.onclick = async (e) => {
         e.stopPropagation();

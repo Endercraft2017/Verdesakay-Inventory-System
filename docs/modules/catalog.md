@@ -769,7 +769,7 @@ computation itself is `modules/payroll`.
 SCHEMA_VERSION 46), `kiosk-devices.ts` (approved time-in kiosk PCs + the `kiosk_lock`
 setting; locked by default when internet-facing, SCHEMA_VERSION 47), `field.ts`, `hr-daily-report.ts`,
 `hr-employee-numbering.ts`, `punch-photos.ts`, `punch-holds.ts` (phone punch scan → selfie
-holds), routes: `hr.routes.ts` (also owns the
+holds), routes: `payroll-identity.routes.ts` (exceptional online reviewed repair, fresh proof, immutable paid financial state and atomic revision audit), `hr.routes.ts` (also owns the
 `asset_issuances`/`asset_issuance_items` tables and the seeded "Asset Issuance Form"
 doc_template, SCHEMA_VERSION 43; company-wide register `GET /api/hr/assets` with still-out /
 people-who-left filters + CSV, UI `public/js/modules/hr/hr-assets.js` at HR → Employees →
@@ -907,6 +907,10 @@ The BIR 2316 prints the employee's Date of Birth (`employees.birth_date` → `bi
 MM/DD/YYYY, added by `GET /accounting/bir-2316/:employeeId`; template row seeded, and patched
 into existing templates at SCHEMA_VERSION 54). The alphalist has no birth-date column in BIR's
 Schedule 1 layout, so it's unchanged.
+**Reviewed repair:** `hr/payroll-identity.routes.ts` binds an unresolved record to a verified
+stable employee after fresh, cloud-only review. Only employee_id changes; paid status/time/amounts
+remain. Generic record updates refuse ownership changes. See
+[contract](../operations/payroll-identity-repair.md) and [research](../audits/payroll-repair-research.md).
 **Disclosure ownership (20 October 2026):** present IDs must resolve without name fallback;
 legacy names must uniquely identify one employee across current and historical names. Self-service
 list/PDF/timekeeping and email use the shared resolver. Ambiguous slips are withheld, not silently

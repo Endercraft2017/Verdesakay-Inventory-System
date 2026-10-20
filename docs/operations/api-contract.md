@@ -143,3 +143,16 @@ retrieved 20 October 2026; per-object authorization and regression testing.
 Payroll generation also returns 409 with `unresolved_record_ids` before writing
 when an existing cutoff slip has unresolved identity; payroll must reconcile it
 before regeneration. Stored paid records are preserved.
+
+
+## Reviewed unresolved payroll identity repair — 20 October 2026
+
+New cloud-only payroll-manager review/confirmation changes only employee_id with fresh
+identity proof and an expiring actor/session/company/record/employee-bound review.
+Existing paid amounts/status/finalization time are preserved and revision history is
+mandatory; ordinary record editing cannot change a resolved owner. Evidence references
+are metadata, not uploaded identity documents. No automatic email, payment or deletion.
+See [operator contract](../operations/payroll-identity-repair.md) and [seven-source research](../audits/payroll-repair-research.md).
+Statutory name aggregation, recipient/rights procedures, approved retention, independent
+audit protection, office replay/restore and supported-operator acceptance remain open.
+This scoped implementation does not promote whole handbook controls or release approval.

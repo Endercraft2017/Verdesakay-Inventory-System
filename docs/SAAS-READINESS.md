@@ -550,3 +550,16 @@ The desktop reviews the preview total/target and refuses account/company/view ch
 sending. A changed source version after review is rejected before provider work; the stamp is
 a precondition, not a one-use authorization credential. An interrupted preliminary full run
 was stopped to include these confirmation safeguards; only the final completed run counts.
+
+
+## Reviewed unresolved payroll identity repair — 20 October 2026
+
+New cloud-only payroll-manager review/confirmation changes only employee_id with fresh
+identity proof and an expiring actor/session/company/record/employee-bound review.
+Existing paid amounts/status/finalization time are preserved and revision history is
+mandatory; ordinary record editing cannot change a resolved owner. Evidence references
+are metadata, not uploaded identity documents. No automatic email, payment or deletion.
+See [operator contract](operations/payroll-identity-repair.md) and [research](audits/payroll-repair-research.md).
+Statutory name aggregation, recipient/rights procedures, approved retention, independent
+audit protection, office replay/restore and supported-operator acceptance remain open.
+This scoped implementation does not promote whole handbook controls or release approval.

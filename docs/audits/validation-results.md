@@ -994,3 +994,48 @@ negative scenario. Mocked email and disposable catalogs only; no real sends.
 [contract/reconciliation limits](../operations/payslip-identity-disclosure.md).
 Broader ownership/repair, aggregation, export/retention and operational controls
 remain open. Whole-control statuses and release hold are unchanged.
+
+
+## Reviewed payroll identity repair — 20 October 2026
+
+Base 937ef3835386ddf044267152b17ff584ae9fb017. New exceptional cloud-only
+repair binds an unresolved payslip to a verified employee after fresh proof, a
+reason/reference and a five-minute actor/session/company/record/employee-bound
+review. Conditional employee_id-only update and attributed revision succeed
+together; paid financial state/finalization time remain. The ordinary editor
+cannot change ownership or coerce invalid IDs into legacy fallback. Review
+credentials bypass general HTTP receipt storage, even with retry keys.
+
+| Check | Completed result |
+|---|---|
+| Full regression | 313 files / 3288 tests passed, 629.15s |
+| Final focused | 7 files / 219 tests passed, 40.59s; 16 new API cases |
+| Final Playwright | 40 passed, 98.376s; 3 new repair/cancel/stale cases and dialog axe scan |
+| Actual server.ts | Fresh proof, no credential receipts, one repair, paid-state/time preservation, revision audit and employee access |
+| TypeScript | Passed |
+| Schema/dependencies | Unchanged; db:types not required/run |
+| Staged secrets / whitespace | Clean; final commit hook scans full evidence again |
+
+A final caller review found normal-editor numeric coercion could store a malformed
+employee ID as null and revive name fallback. The preliminary full run was stopped
+(exit 130), a regression reproduced 1 failure / 14 passes, and the final edit path
+now preserves the original stamp and checks serialized ownership. The interrupted
+run is not counted as a full pass. Initial typecheck inference errors were fixed
+before successful validation; the original compiler log was not retained.
+
+The first browser run had 2 passes and 1 fixture failure: cancellation encountered
+the shared native discard-changes prompt, which Playwright dismisses by default.
+The fixture now accepts it; no confirmation request is sent. Failed log/JSON and
+screenshot are retained; the transient trace ZIP was not archived. Final browser
+runs completed before the standalone final full regression.
+
+[Verification and source manifest](evidence/payroll-repair-verification.json),
+[seven-source research](payroll-repair-research.md),
+[operator/API contract](../operations/payroll-identity-repair.md),
+[full log](evidence/payroll-repair-full.txt),
+[focused log](evidence/payroll-repair-focused.txt),
+[browser JSON](evidence/payroll-repair-browser.json),
+[confirmation screenshot](evidence/payroll-repair-review.png), and
+[actual startup](evidence/payroll-repair-startup.txt).
+The 233-control counts and release hold are unchanged; no real employee records,
+provider messages or hosted settings were changed.

@@ -1,0 +1,267 @@
+{
+  "config": {
+    "argv": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+      "/workspace/Verdesakay-Inventory-System/node_modules/.bin/playwright",
+      "test",
+      "tests/e2e/payroll-repair.spec.ts"
+    ],
+    "configFile": "/workspace/Verdesakay-Inventory-System/playwright.config.ts",
+    "rootDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "",
+        "testDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "snapshotDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "testIgnore": [],
+        "testMatch": "**/*.spec.ts",
+        "timeout": 30000,
+        "use": {
+          "baseURL": "http://127.0.0.1:4173",
+          "trace": "retain-on-failure",
+          "screenshot": "only-on-failure",
+          "launchOptions": {}
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": ""
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "html",
+        {
+          "open": "never",
+          "outputFolder": "work/playwright-report"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "work/playwright-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npx tsx tests/e2e/server.ts",
+      "url": "http://127.0.0.1:4173/api/health",
+      "reuseExistingServer": false,
+      "timeout": 30000
+    }
+  },
+  "suites": [
+    {
+      "title": "payroll-repair.spec.ts",
+      "file": "payroll-repair.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "reviewed repair preserves paid state and grants the identified employee access",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3952,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T03:14:18.208Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1fd431bd4b66113c65a2-34c440bb1ee9330b791c",
+          "file": "payroll-repair.spec.ts",
+          "line": 16,
+          "column": 1
+        },
+        {
+          "title": "cancelling a reviewed repair sends no confirmation",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 7747,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeHidden\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('dialog', { name: 'Review payslip owner', exact: true })\nExpected: hidden\nReceived: visible\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeHidden\" getByRole('dialog', { name: 'Review payslip owner', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Review payslip owner', exact: true })\u001b[22m\n\u001b[2m    14 × locator resolved to <div class=\"modal\" role=\"dialog\" tabindex=\"-1\" aria-modal=\"true\" aria-label=\"Review payslip owner\">…</div>\u001b[22m\n\u001b[2m       - unexpected value \"visible\"\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeHidden\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('dialog', { name: 'Review payslip owner', exact: true })\nExpected: hidden\nReceived: visible\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeHidden\" getByRole('dialog', { name: 'Review payslip owner', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Review payslip owner', exact: true })\u001b[22m\n\u001b[2m    14 × locator resolved to <div class=\"modal\" role=\"dialog\" tabindex=\"-1\" aria-modal=\"true\" aria-label=\"Review payslip owner\">…</div>\u001b[22m\n\u001b[2m       - unexpected value \"visible\"\u001b[22m\n\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-repair.spec.ts:26:231",
+                    "location": {
+                      "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-repair.spec.ts",
+                      "column": 231,
+                      "line": 26
+                    },
+                    "snippet": "  24 | });\n  25 | test('cancelling a reviewed repair sends no confirmation',async({page})=>{\n> 26 |  let confirms=0;page.on('request',r=>{if(r.url().endsWith('/identity/confirm'))confirms++;});const dialog=await review(page,'REPAIR-CANCEL');await dialog.getByRole('button',{name:'Cancel',exact:true}).click();await expect(dialog).toBeHidden();expect(confirms).toBe(0);\n     |                                                                                                                                                                                                                                       ^\n  27 | });\n  28 | test('stale payroll state is refused and shows an accessible error in the review',async({page})=>{\n  29 |  const dialog=await review(page,'REPAIR-STALE');"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-repair.spec.ts",
+                        "column": 231,
+                        "line": 26
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeHidden\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('dialog', { name: 'Review payslip owner', exact: true })\nExpected: hidden\nReceived: visible\nTimeout:  5000ms\n\nCall log:\n\u001b[2m  - Expect \"toBeHidden\" getByRole('dialog', { name: 'Review payslip owner', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Review payslip owner', exact: true })\u001b[22m\n\u001b[2m    14 × locator resolved to <div class=\"modal\" role=\"dialog\" tabindex=\"-1\" aria-modal=\"true\" aria-label=\"Review payslip owner\">…</div>\u001b[22m\n\u001b[2m       - unexpected value \"visible\"\u001b[22m\n\n\n  24 | });\n  25 | test('cancelling a reviewed repair sends no confirmation',async({page})=>{\n> 26 |  let confirms=0;page.on('request',r=>{if(r.url().endsWith('/identity/confirm'))confirms++;});const dialog=await review(page,'REPAIR-CANCEL');await dialog.getByRole('button',{name:'Cancel',exact:true}).click();await expect(dialog).toBeHidden();expect(confirms).toBe(0);\n     |                                                                                                                                                                                                                                       ^\n  27 | });\n  28 | test('stale payroll state is refused and shows an accessible error in the review',async({page})=>{\n  29 |  const dialog=await review(page,'REPAIR-STALE');\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-repair.spec.ts:26:231"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T03:14:22.262Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-repair-cancelling--2900a-epair-sends-no-confirmation/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-repair-cancelling--2900a-epair-sends-no-confirmation/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-repair-cancelling--2900a-epair-sends-no-confirmation/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-repair.spec.ts",
+                    "column": 231,
+                    "line": 26
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1fd431bd4b66113c65a2-6598bc4ca996ebdfa2e3",
+          "file": "payroll-repair.spec.ts",
+          "line": 25,
+          "column": 1
+        },
+        {
+          "title": "stale payroll state is refused and shows an accessible error in the review",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2819,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T03:14:30.657Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1fd431bd4b66113c65a2-16431ef29f61b1f81626",
+          "file": "payroll-repair.spec.ts",
+          "line": 28,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-20T03:14:11.723Z",
+    "duration": 21895.953999999998,
+    "expected": 2,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}
