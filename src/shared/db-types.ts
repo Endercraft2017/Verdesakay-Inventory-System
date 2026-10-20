@@ -789,6 +789,7 @@ export interface JobOrders {
   id: Generated<number>;
   number: string;
   order_id: number | null;
+  parent_job_order_id: number | null;
   product_item_id: number | null;
   product_name: string;
   qty_ordered: number;

@@ -27,11 +27,11 @@
     },
     {
       id: 'job-documents', title: 'Job Order documents', group: 'Orders', routes: [],
-      html: `<p><b>Inventory → Orders → Job Orders</b> stores customer work documents, numbered JO-….</p><ol><li>Click <b>New Job Order</b>, enter the customer, work/items, quantities and prices, and save.</li><li>Open the row to review or print the document.</li><li>For a build, use the row's <b>Start production</b> action, choose the finished product, build quantity, source and output locations, then create the linked production order.</li><li>Manage that build under <b>Production → Job Orders</b>; the JO document and the production order are separate records.</li></ol><p>Stock-kit release, acceptance, inspection and Products In belong to the production order, not this document.</p>`,
+      html: `<p><b>Sales → Orders → Customer Job Orders</b> stores customer work documents, numbered JO-….</p><ol><li>Click <b>New Job Order</b>, enter the customer, work/items, quantities and prices, and save.</li><li>Open the row to review or print the document.</li><li>For a build, use the row's <b>Start production</b> action, choose the finished product, build quantity, source and output locations, then create the linked production order.</li><li>Manage that build under <b>Production → Job Orders</b>; the JO document and the production order are separate records.</li></ol><p>Stock-kit release, acceptance, inspection and Products In belong to the production order, not this document.</p>`,
     },
     {
       id: 'new-item', title: 'New / Edit item', group: 'Inventory', routes: [],
-      html: `<p>Open <b>Inventory → All Items → New item</b>, or use the row's Edit action.</p><ol><li>On <b>Default</b>, enter <b>Item Name</b> and <b>Item Code</b> (the SKU). A blank code can use the numbering policy; <b>Fn</b> controls its format for accounts with configuration access.</li><li>Choose Unit, Category, Department and Supplier; set Purchase Price, Sale Price and Standard Cost where applicable.</li><li>Use <b>Qty</b> for <b>Safety Stock Quantity</b> (the reorder level) and stock-related fields, and <b>Item Information</b> / <b>Additional Information</b> for other details.</li><li>Click <b>Create item</b> or <b>Save changes</b>. Set opening Inventory Qty when creating; use Stock in / out for later quantity changes.</li></ol><p><b>Option</b> changes which fields and tabs appear (needs <i>inventory.configure</i>). Labels and visibility can be customized, so your company's layout may differ.</p>`,
+      html: `<p>Open <b>Inventory → Items → Parts &amp; supplies</b> or <b>Finished products</b>, then choose an item.</p><ol><li>On <b>Item details</b>, enter its name, code/SKU, unit and classification. <b>Fn</b> controls code format for accounts with configuration access.</li><li>On <b>Pricing</b>, set the default purchase price, sale price and standard cost where applicable. These serve different purposes; individual order prices can change.</li><li>On <b>Stock &amp; location</b>, choose a storage location and safety-stock level. Opening quantity is entered when creating an item; later changes use Stock in/out or Transfer stock.</li><li><b>More details</b> holds the barcode, photo and notes. Save when ready.</li></ol><p><b>Option</b> changes field visibility and defaults (needs <i>inventory.configure</i>). Finished products share the item master with parts but are clearly separated in the list and have their BOM under Production.</p>`,
     },
     {
       id: 'payroll-policy', title: 'Payroll Policy Settings', group: 'HR', routes: [], workflow: 'payroll',
@@ -167,6 +167,10 @@
         </ul>
         <p>Help always opens to the screen you're on. Use the picker above to read any
         other topic.</p>`,
+    },
+    {
+      id: 'sales-overview', title: 'Sales overview', group: 'Orders', routes: ['sales-overview'], workflow: 'sales',
+      html: `<p><b>Sales → Overview</b> shows open sale orders, orders awaiting stock or release, order counts and value by status, and the last eight weeks of sale orders. Values are order totals, not cash received. Open Sales → Orders to create or edit a customer order. Inventory → Order Tracking is read-only; use Inventory → Releasing for warehouse fulfillment.</p>`,
     },
     {
       id: 'analytics', title: 'Reports (operational dashboards)', group: 'Basics', routes: ['analytics'],
@@ -361,7 +365,7 @@
     },
     {
       id: 'orders', title: 'Sale Orders', group: 'Orders',
-      routes: ['orders'], workflow: 'sales', html: `<p><b>Inventory → Sale Orders</b> connects customer demand to stock, production, purchasing and trip releases.</p><ol><li>Save an open order with the exact item, price and build state: Fully built, Semi-built or CKD. Services remain non-stock.</li><li>Open <b>Review stock &amp; approval</b>: check the exact ship-from location, commitments, kit/repair holds and linked supply. <b>Awaiting release</b> is unpicked firm demand, not just shortages.</li><li>Draft only uncovered CKD-parts production/purchases. An eligible complete semi-built package can use <b>Finish a semi-built RTS unit</b>; do not issue its BOM again.</li><li>Approve separately and issue current release authority. Warehouse accepts and allocates exact lines; each vehicle gets its own slip and linked trip.</li><li>Further loads stay on the same SO. Cancel only unshipped remaining demand with a reason; shipped returns use the original slip.</li></ol><p>Drafts and allocations are not stock-out. A trip slip deducts only its physical load.</p>`,
+      routes: ['orders'], workflow: 'sales', html: `<p><b>Sales → Orders → Sale Orders</b> connects customer demand to stock, production, purchasing and trip releases.</p><ol><li>Save an open order with the exact item, price and build state: Fully built, Semi-built or CKD. Services remain non-stock.</li><li>Open <b>Review stock &amp; approval</b>: check the exact ship-from location, commitments, kit/repair holds and linked supply. <b>Awaiting release</b> is unpicked firm demand, not just shortages.</li><li>Draft only uncovered CKD-parts production/purchases. An eligible complete semi-built package can use <b>Finish a semi-built RTS unit</b>; do not issue its BOM again.</li><li>Approve separately and issue current release authority. Warehouse accepts and allocates exact lines; each vehicle gets its own slip and linked trip.</li><li>Further loads stay on the same SO. Cancel only unshipped remaining demand with a reason; shipped returns use the original slip.</li></ol><p>Drafts and allocations are not stock-out. A trip slip deducts only its physical load.</p>`,
     },
     {
       id: 'purchasing', title: 'Purchasing — receiving & vendor bills', group: 'Orders',

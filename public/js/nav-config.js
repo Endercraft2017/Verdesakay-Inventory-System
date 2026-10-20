@@ -23,7 +23,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'purchase-requests', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'hr-approvals', 'hr-requests', 'confidential-reports', 'identified-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies', 'stock-counts', 'support', 'billing'];
+const ROUTE_NAMES = ['dashboard', 'analytics', 'sales-overview', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'purchase-requests', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'hr-approvals', 'hr-requests', 'confidential-reports', 'identified-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies', 'stock-counts', 'support', 'billing'];
 
 const NAV = [
   {
@@ -53,8 +53,10 @@ const NAV = [
       {
         id: 'items', label: 'Items', requiredPermission: 'inventory.view',
         tree: [
-          { label: 'All Items', icon: 'inventory', route: 'inventory' },
-          { label: 'Low Stock', icon: 'alert', route: 'inventory', filter: { low: '1' } },
+          { label: 'Parts & supplies', icon: 'inventory', route: 'inventory', filter: { kind: 'parts' } },
+          { label: 'Finished products', icon: 'archive', route: 'inventory', filter: { kind: 'finished' } },
+          { label: 'All stock items', icon: 'sheet', route: 'inventory', filter: { kind: 'all' } },
+          { label: 'Low stock parts', icon: 'alert', route: 'inventory', filter: { kind: 'parts', low: '1' } },
         ],
       },
       {
@@ -73,22 +75,16 @@ const NAV = [
         ],
       },
       {
-        id: 'customers', label: 'Customers', requiredPermission: 'orders.view',
-        tree: [
-          { label: 'Customers', icon: 'users', route: 'customers' },
-        ],
-      },
-      {
         id: 'locations', label: 'Locations', requiredPermission: 'inventory.view',
         tree: [
           { label: 'Locations', icon: 'building', route: 'locations' },
         ],
       },
       {
-        id: 'orders', label: 'Orders', requiredPermission: 'orders.view',
+        id: 'order-tracking', label: 'Order Tracking', requiredPermission: 'orders.view',
         tree: [
-          { label: 'Sale Orders', icon: 'forms', route: 'orders', filter: { type: 'sale' } },
-          { label: 'Job Orders', icon: 'printer', route: 'orders', filter: { type: 'job' } },
+          { label: 'Sale orders to fulfill', icon: 'forms', route: 'orders', filter: { type: 'sale', mode: 'track' } },
+          { label: 'Customer job orders', icon: 'printer', route: 'orders', filter: { type: 'job', mode: 'track' } },
         ],
       },
       {
@@ -116,6 +112,17 @@ const NAV = [
           { label: 'Form Builder', icon: 'edit', route: 'form-builder', filter: { scope: 'inventory' } },
         ],
       },
+    ],
+  },
+  {
+    id: 'sales', label: 'Sales', icon: 'forms', requiredModule: 'inventory', requiredPermission: 'orders.view',
+    subtabs: [
+      { id: 'sales-overview', label: 'Overview', tree: [{ label: 'Sales overview', icon: 'sheet', route: 'sales-overview' }] },
+      { id: 'sales-orders', label: 'Orders', tree: [
+        { label: 'Sale Orders', icon: 'forms', route: 'orders', filter: { type: 'sale' } },
+        { label: 'Customer Job Orders', icon: 'printer', route: 'orders', filter: { type: 'job' } },
+      ] },
+      { id: 'sales-customers', label: 'Customers', tree: [{ label: 'Customers', icon: 'users', route: 'customers' }] },
     ],
   },
   {

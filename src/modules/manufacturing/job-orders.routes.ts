@@ -5,6 +5,7 @@ import { batchBalances, consumeSemiBatchUnit, receiveBatch, restoreBatchStock } 
     with pause / cancel returning components that weren't consumed.
     QA/QC gating (qc_stages > 0) and serialized units come in Phase C. */
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import { z } from 'zod';
 import multer from 'multer';
 import { createHash } from 'node:crypto';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
@@ -46,6 +47,7 @@ import type { JobOrder, JobOrderComponent, JobOrderUnit, InventoryItem, Producti
 import { recordSiteClash, syncClass } from '../../sync';
 import { syncUpload } from '../../sync/files';
 import { now, siteDecisionStands } from '../../shared/sync-context';
+import { idempotency } from '../../shared/idempotency';
 
 const router = Router();
 router.use(requireAuth);
@@ -200,7 +202,8 @@ function loadJobOrder(id: number): JobOrder | null {
             pab.full_name AS paused_by_name,
             prs.id AS parts_slip_id, prs.number AS parts_slip_number,
             (SELECT COUNT(*) FROM production_issues pi WHERE pi.job_order_id = j.id AND pi.status = 'open') AS open_issues,
-            o.number AS order_number, t.name AS team_name,
+            o.number AS order_number, (SELECT number FROM job_orders WHERE id=j.parent_job_order_id) AS parent_job_order_number,
+            t.name AS team_name,
             sl.name AS source_location_name, ol.name AS output_location_name
      FROM job_orders j
      LEFT JOIN users u ON u.id = j.created_by
@@ -432,7 +435,9 @@ router.get('/', listGate, (req, res) => {
     batches_receivable: number; overdue: number;
     units_first_pass_open: number; units_final_pass_open: number;
   }>(
-    `SELECT j.*, o.number AS order_number, t.name AS team_name,
+    `SELECT j.*, o.number AS order_number,
+            (SELECT number FROM job_orders WHERE id=j.parent_job_order_id) AS parent_job_order_number,
+            t.name AS team_name,
             (j.qty_ordered - j.qty_done - j.qty_scrapped) AS remaining,
             (SELECT COUNT(*) FROM production_issues pi WHERE pi.job_order_id = j.id AND pi.status = 'open') AS open_issues,
             (j.due_date IS NOT NULL AND j.due_date < date('now')
@@ -614,7 +619,7 @@ router.get('/:id', detailGate, (req, res) => {
 export function createDraftJobOrder(opts: {
   productId: number; productName: string; qty: number;
   buildMode?: 'assembled' | 'semi_built';
-  orderId?: number | null; sourceLocationId: number; outputLocationId: number;
+  orderId?: number | null; parentJobOrderId?: number | null; sourceLocationId: number; outputLocationId: number;
   qcStages?: number; teamId?: number | null; plannedStart?: string | null;
   dueDate?: string | null; priority?: number; workCenter?: string | null;
   notes?: string | null; userId: number | null;
@@ -631,11 +636,11 @@ export function createDraftJobOrder(opts: {
     const number = nextSequence('mo_seq', 'MO');
     const info = run(
       `INSERT INTO job_orders
-        (number, order_id, product_item_id, product_name, qty_ordered, status, build_mode,
+        (number, order_id, parent_job_order_id, product_item_id, product_name, qty_ordered, status, build_mode,
          source_location_id, output_location_id, qc_stages,
          team_id, planned_start, due_date, priority, work_center, notes, created_by)
-       VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      number, opts.orderId ?? null, opts.productId, opts.productName, opts.qty,
+       VALUES (?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      number, opts.orderId ?? null, opts.parentJobOrderId ?? null, opts.productId, opts.productName, opts.qty,
       opts.buildMode ?? 'assembled',
       opts.sourceLocationId, opts.outputLocationId, opts.qcStages ?? 0,
       opts.teamId ?? null, opts.plannedStart ?? null, opts.dueDate ?? null,
@@ -1200,6 +1205,69 @@ router.get('/:id/availability', requireAnyPermission(['production.view', 'produc
   });
 });
 
+/** Direct BOM products are kept as one component on the parent kit. When that
+ * component is short, a separate child draft may replenish it after the operator
+ * accepts a suggestion. No raw-material explosion is written into the parent JO. */
+function subassemblySuggestions(parentId: number) {
+  const parent = loadJobOrder(parentId);
+  if (!parent) return null;
+  const source = parent.source_location_id ?? getDefaultLocationId();
+  const shortage = jobOrderComponentAvailability(parentId).filter((line) => line.short > 0);
+  return shortage.flatMap((line) => {
+    const product = queryOne<{ id: number; name: string; is_finished_product: number }>(
+      'SELECT id,name,is_finished_product FROM inventory_items WHERE id=?', line.component_item_id);
+    if (!product?.is_finished_product) return [];
+    const materials = queryAll<{ component_item_id: number; quantity: number; name: string }>(
+      `SELECT b.component_item_id,b.quantity,i.name FROM bom_components b
+       JOIN inventory_items i ON i.id=b.component_item_id WHERE b.product_item_id=? ORDER BY b.sort,b.id`, product.id);
+    if (!materials.length) return [];
+    const linked = queryAll<{ id: number; number: string; status: string; qty_ordered: number; received: number }>(
+      `SELECT j.id,j.number,j.status,j.qty_ordered,
+        COALESCE((SELECT SUM(ri.quantity) FROM production_receipts pr JOIN production_receipt_items ri ON ri.receipt_id=pr.id
+          WHERE pr.job_order_id=j.id),0) AS received
+       FROM job_orders j WHERE j.parent_job_order_id=? AND j.product_item_id=? AND j.status<>'cancelled' ORDER BY j.id`,
+      parentId, product.id);
+    const planned = linked.reduce((sum, child) => sum + Math.max(0, child.qty_ordered - child.received), 0);
+    const uncovered = Math.max(0, line.short - planned);
+    const buildable = Math.max(0, Math.min(...materials.map((material) => {
+      const free = Math.max(0, stockAt(material.component_item_id, source)
+        - pickedElsewhere(material.component_item_id, source, []));
+      return Math.floor((free + 1e-9) / material.quantity);
+    })));
+    return [{ component_item_id: product.id, component_name: product.name, need: line.need,
+      available: line.available, short: line.short, planned, uncovered,
+      buildable_now: buildable, suggested_qty: Math.min(Math.ceil(uncovered), buildable),
+      source_location_id: source, materials: materials.map((material) => ({
+        component_item_id: material.component_item_id, name: material.name, qty_per_unit: material.quantity,
+      })), linked_jobs: linked.map(({ id, number, status, qty_ordered }) => ({ id, number, status, qty_ordered })) }];
+  });
+}
+
+router.get('/:id/subassembly-suggestions', requireAnyPermission(['production.view', 'production.approve', 'inventory.adjust']), (req, res) => {
+  const suggestions = subassemblySuggestions(Number(req.params.id));
+  if (!suggestions) { res.status(404).json({ error: 'Job order not found' }); return; }
+  res.json(suggestions);
+});
+
+router.post('/:id/subassembly-jobs', writeGate, idempotency, syncClass('claim', joSite), (req, res) => {
+  const parentId = Number(req.params.id);
+  const parent = loadJobOrder(parentId);
+  if (!parent) { res.status(404).json({ error: 'Job order not found' }); return; }
+  if (parent.status !== 'draft') { res.status(409).json({ error: 'Only a draft parent job can add a subassembly build plan.' }); return; }
+  const input = parseBody(z.object({ component_item_id: z.number().int().positive(), quantity: z.number().int().positive().max(100000) }), req.body);
+  const suggestion = subassemblySuggestions(parentId)?.find((row) => row.component_item_id === input.component_item_id);
+  if (!suggestion || input.quantity > suggestion.suggested_qty) {
+    res.status(409).json({ error: 'The build suggestion changed or materials are insufficient. Refresh the parent job and review stock.' }); return;
+  }
+  const child = createDraftJobOrder({ productId: suggestion.component_item_id, productName: suggestion.component_name,
+    qty: input.quantity, buildMode: 'assembled', parentJobOrderId: parentId,
+    sourceLocationId: suggestion.source_location_id, outputLocationId: suggestion.source_location_id,
+    qcStages: parent.qc_stages, notes: `Subassembly for ${parent.number}; receive at the parent source location before kit release.`,
+    userId: req.user!.id });
+  res.status(201).json({ ...child, parent_job_order_id: parentId, product_item_id: suggestion.component_item_id,
+    quantity: input.quantity, status: 'draft' });
+});
+
 // POST /api/job-orders/:id/approve — the production manager signs off the draft (quantity,
 // locations, components) so the warehouse may release its parts. Short stock doesn't block
 // approval (purchasing can fill the gap before release); the response lists it as a warning.
@@ -1232,6 +1300,11 @@ router.post('/:id/approve', approveGate, syncClass('claim', joSite), (req, res) 
     req.user!.id, notes ?? null, id
   );
   res.json({ ok: true, job_order: loadJobOrder(id), shortfalls: jobOrderComponentShortfalls(id) });
+  void notifyAnyPermission(['inventory.adjust'], {
+    title: `Job kit ready to prepare — ${jo.number}`,
+    body: `${jo.product_name}: accept, pick and release the approved parts kit.`,
+    url: `#/kit-release?id=${id}`, link: { route: 'job-orders', params: { id } }, tag: `kit-${id}`,
+  }, req.user!.id);
 });
 
 // POST /api/job-orders/:id/unapprove — withdraw the approval of a not-yet-released draft.
@@ -1363,6 +1436,10 @@ router.post('/:id/release', writeGate, syncClass('physical'), (req, res) => {
   // GL: raw materials leave Inventory into Work in Process (best-effort).
   postJobOrderMovement(id, jo.number, today(), 'release', componentCostFor(id).released, req.user!.id);
   res.json({ ok: true, job_order: loadJobOrder(id), slip: { id: slipId, number: slipNumber } });
+  void notifyAnyPermission(['production.record', 'production.manage'], {
+    title: `Parts kit released — ${jo.number}`, body: `Count and accept the kit for ${jo.product_name} before recording output.`,
+    url: `#/job-orders?id=${id}`, link: { route: 'job-orders', params: { id } }, tag: `production-kit-${id}`,
+  }, req.user!.id);
 });
 
 // POST /api/job-orders/:id/accept — the production lead signs for the parts kit the
@@ -1494,6 +1571,10 @@ router.post('/:id/progress', recordGate, syncClass('physical'), (req, res) => {
   // on its own while this job order still has receivable output (hasReceivable()).
   settleJobOrderGl(id, req.user!.id);
   res.json({ ok: true, job_order: loadJobOrder(id) });
+  if (done_delta > 0 && jo.qc_stages <= 0) void notifyAnyPermission(['production.receive'], {
+    title: `Products In ready — ${jo.number}`, body: `${done_delta} completed unit(s) await batch receipt into RTS.`,
+    url: `#/receiving?id=${id}`, link: { route: 'production-receiving' }, tag: `rts-jo-${id}`,
+  }, req.user!.id);
 });
 
 // POST /api/job-orders/:id/units — add ONE serialized (QC-gated) unit "off the line" with
@@ -1565,6 +1646,10 @@ router.post('/:id/units', recordGate, syncClass('physical'), syncUpload(imageUpl
     throw e;
   }
   res.status(201).json({ id: unitId, job_order: loadJobOrder(id) });
+  void notifyAnyPermission(['production.inspect_qc'], {
+    title: `QC inspection ready — ${jo.number}`, body: `${identifier} is off the line and waiting for technical inspection.`,
+    url: `#/qc?role=qc&jo=${id}`, link: { route: 'production-qc' }, tag: `qc-jo-${id}`,
+  }, req.user!.id);
 });
 
 /** Put `qty_planned - qty_consumed` of every component back at the source location.
@@ -2057,6 +2142,14 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
       link: { route: 'job-orders', params: { id } }, tag: `qa-hold-${id}`,
     }, req.user!.id);
   }
+  if (result === 'pass' && isFirstPass && !isFinalPass) void notifyAnyPermission(['production.inspect_qa'], {
+    title: `QA inspection ready — ${jo.number}`, body: `${unit_ids.length} unit(s) passed QC and await final inspection.`,
+    url: `#/qc?role=qa&jo=${id}`, link: { route: 'production-qc' }, tag: `qa-jo-${id}`,
+  }, req.user!.id);
+  if (result === 'pass' && isFinalPass) void notifyAnyPermission(['production.receive'], {
+    title: `Products In ready — ${jo.number}`, body: `${unit_ids.length} unit(s) passed inspection. Verify the QR and receive them into RTS.`,
+    url: `#/receiving?id=${id}`, link: { route: 'production-receiving' }, tag: `rts-jo-${id}`,
+  }, req.user!.id);
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 
@@ -2153,6 +2246,10 @@ router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'),
       url: `#/record?unit=${u.id}`, link: { route: 'job-orders', params: { id } }, tag: `qa-hold-${u.id}`,
     });
   }
+  if (outcome === 'pass') void notifyAnyPermission(['production.receive'], {
+    title: `Products In ready — ${jo.number}`, body: `${u.identifier || 'Unit #' + u.id} passed its QA hold decision and awaits RTS receipt.`,
+    url: `#/receiving?id=${id}`, link: { route: 'production-receiving' }, tag: `rts-jo-${id}`,
+  }, req.user!.id);
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 

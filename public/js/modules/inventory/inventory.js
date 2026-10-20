@@ -208,15 +208,34 @@ function renderItemField(def, value, opts = {}) {
 
 /** Build the tabbed form body from the config for a given item (null = new). */
 function renderItemFormBody(cfg, it) {
-  const tabs = ITEM_FORM_TABS.filter((t) => cfg.some((f) => f.tab === t.id && f.visible));
+  // The location picker is essential even if an administrator hides every optional
+  // stock field in Form Options.
+  const tabs = ITEM_FORM_TABS.filter((t) => t.id === 'qty' || cfg.some((f) => f.tab === t.id && f.visible));
   const bar = tabs.map((t, i) =>
     `<button type="button" class="form-tab ${i === 0 ? 'active' : ''}" data-formtab="${t.id}">${UI.esc(t.label)}</button>`).join('');
   const panels = tabs.map((t, i) => {
     const fields = cfg.filter((f) => f.tab === t.id && f.visible).map((f) => {
       const editLocked = it && it.id && f.key === 'quantity'; // quantity changes go through the adjust modal
-      return renderItemField(f, itemFieldValue(f, it), { disabled: editLocked });
+      const display = f.key === 'quantity' && editLocked ? { ...f, label: 'Current stock (read only)' } : f;
+      return renderItemField(display, itemFieldValue(f, it), { disabled: editLocked });
     }).join('');
-    return `<div data-formpanel="${t.id}" class="form-panel ${i === 0 ? '' : 'hidden'}"><div class="form-grid">${fields}</div></div>`;
+    const intro = {
+      default: 'Identify and classify this item. Only the item name is required.',
+      price: 'Defaults used when buying, selling and valuing this item. Order prices can still be changed on an individual order.',
+      qty: it && it.id ? 'Current stock is changed through Stock in/out or Transfer stock. Set where this item is usually stored below.' : 'Enter opening stock only when creating an item. Choose a starting location; extra sublocation levels are optional.',
+      info: 'Optional barcode, photo and internal notes.',
+    }[t.id];
+    const location = t.id !== 'qty' ? '' : (it && it.id ? `
+      <div class="form-field span2" data-preferred-wrap><label for="item-preferred-location">Preferred storage location</label>
+        <select id="item-preferred-location" data-preferred-location><option value="">No preference</option>${locationOptions(it.preferred_location_id, _locations)}</select>
+        <p class="muted item-field-hint">Changing this preference does not move existing stock. Use Transfer stock for that.</p></div>` : `
+      <div class="form-field span2" data-start-location>
+        <label for="item-root-location">Starting-stock location <span class="req">*</span></label>
+        <select id="item-root-location" data-root-location></select><div data-location-levels></div>
+        <button type="button" class="btn secondary small item-add-location" data-add-location-level>+ Add sublocation level</button>
+        <p class="muted item-field-hint">Stock goes to the last selected level. Add up to four optional levels.</p>
+      </div>`);
+    return `<div data-formpanel="${t.id}" class="form-panel ${i === 0 ? '' : 'hidden'}">${intro ? `<p class="muted item-tab-intro">${intro}</p>` : ''}<div class="form-grid">${fields}${location}</div></div>`;
   }).join('');
   return `<div class="form-tabs">${bar}</div>${panels}`;
 }
@@ -327,7 +346,7 @@ function collectItemForm(overlay, cfg, it) {
 }
 
 App.register('inventory', async (view, filter) => {
-  const state = { q: '', department_id: '', supplier_id: '', location_id: '', category: '', low: !!(filter && filter.low), include_damaged: false };
+  const state = { q: '', department_id: '', supplier_id: '', location_id: '', category: '', kind: filter?.kind || 'parts', low: !!(filter && filter.low), include_damaged: false };
   let lastItems = [];
   let requestVersion = 0;
   let searchTimer;
@@ -340,7 +359,7 @@ App.register('inventory', async (view, filter) => {
 
   view.innerHTML = `
     <div class="topbar">
-      <h2>Inventory</h2>
+      <h2 id="inv-title">Parts &amp; supplies</h2>
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="inv-search" aria-label="Search inventory" placeholder="Search name, SKU, spec, location…" /></div>
       <select id="inv-cat" aria-label="Category" style="width:150px"><option value="">— Category —</option></select>
@@ -355,13 +374,39 @@ App.register('inventory', async (view, filter) => {
       <button class="btn secondary" id="inv-export" title="Export current list to CSV">${UI.icon('download')} Export</button>
       <button class="btn secondary" id="inv-labels" title="Print barcode labels for the current list">${UI.icon('printer')} Labels</button>
       ${App.hasPermission('purchasing.manage') ? `<button class="btn secondary" id="inv-reorder" title="Draft purchase orders to restock everything below its reorder level">${UI.icon('inbox')} Reorder PO</button>` : ''}
-      <button class="btn" id="inv-add" ${App.hasPermission('inventory.create') ? '' : 'hidden'}>${UI.icon('plus')} New item</button>
+      <button class="btn" id="inv-add" ${App.hasPermission('inventory.create') && state.kind !== 'finished' ? '' : 'hidden'}>${UI.icon('plus')} New item</button>
       <span class="muted inventory-result-count" id="inv-count" role="status"></span>
       <button class="btn secondary small" id="inv-clear">Clear filters</button>
     </div>
+    <div class="item-kind-tabs" role="group" aria-label="Inventory item type">
+      <button type="button" data-kind="parts">Parts &amp; supplies</button>
+      <button type="button" data-kind="finished">Finished products</button>
+      <button type="button" data-kind="all">All stock items</button>
+    </div>
+    <p class="muted item-kind-description" id="inv-kind-description"></p>
     <div class="panel"><div id="inv-table"></div></div>`;
 
   const tableEl = view.querySelector('#inv-table');
+
+  function showKind() {
+    const labels = { parts: 'Parts & supplies', finished: 'Finished products', all: 'All stock items' };
+    const descriptions = {
+      parts: 'Loose parts, materials and supplies. Finished products have their own view.',
+      finished: 'Finished-product stock uses the same item record and SKU as its BOM. Production manages the build and individual RTS units.',
+      all: 'Combined catalog. Item type is shown beside each name so parts and finished products remain distinct.',
+    };
+    view.querySelector('#inv-title').textContent = labels[state.kind];
+    view.querySelector('#inv-kind-description').textContent = descriptions[state.kind];
+    view.querySelector('#inv-add').hidden = !App.hasPermission('inventory.create') || state.kind === 'finished';
+    const reorder = view.querySelector('#inv-reorder');
+    if (reorder) reorder.hidden = state.kind === 'finished';
+    view.querySelectorAll('[data-kind]').forEach((button) => {
+      const active = button.dataset.kind === state.kind;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  }
+  showKind();
 
   function fillSupplierFilter() {
     const sel = view.querySelector('#inv-supplier');
@@ -394,6 +439,7 @@ App.register('inventory', async (view, filter) => {
     if (state.supplier_id) params.set('supplier_id', state.supplier_id);
     if (state.location_id) params.set('location_id', state.location_id);
     if (state.category) params.set('category', state.category);
+    params.set('kind', state.kind);
     if (state.low) params.set('low', '1');
     if (state.include_damaged) params.set('include_damaged', '1');
     const version = ++requestVersion;
@@ -607,9 +653,9 @@ App.register('inventory', async (view, filter) => {
       const fresh = !state.q && !state.department_id && !state.supplier_id && !state.location_id && !state.category && !state.low && !state.include_damaged;
       tableEl.innerHTML = UI.emptyState({
         icon: 'inventory',
-        title: fresh ? 'No items yet' : 'No matching items',
-        hint: fresh ? 'Add your first inventory item to start tracking stock.' : 'Try a different search or filter.',
-        action: fresh ? `<button class="btn" id="inv-empty-add">${UI.icon('plus')} New item</button>` : '',
+        title: fresh ? (state.kind === 'finished' ? 'No finished products yet' : 'No items yet') : 'No matching items',
+        hint: fresh ? (state.kind === 'finished' ? 'Create a finished product and BOM under Production → Finished Products.' : 'Add your first item to start tracking stock.') : 'Try a different search or filter.',
+        action: fresh && state.kind !== 'finished' && App.hasPermission('inventory.create') ? `<button class="btn" id="inv-empty-add">${UI.icon('plus')} New item</button>` : '',
       });
       const ea = tableEl.querySelector('#inv-empty-add');
       if (ea) ea.onclick = () => itemModal(null);
@@ -623,7 +669,7 @@ App.register('inventory', async (view, filter) => {
         </tr></thead>
         <tbody>${items.map((i) => `
           <tr class="clickable" data-open="${i.id}">
-            <td><strong>${UI.esc(i.name)}</strong><div class="muted mono">${UI.esc(i.sku || '—')}</div>${groupLineHTML(i)}</td>
+            <td><strong>${UI.esc(i.name)}</strong><div class="muted mono">${UI.esc(i.sku || '—')}</div><span class="item-kind-badge">${i.is_finished_product ? 'Finished product' : 'Part / supply'}</span>${groupLineHTML(i)}</td>
             <td>${UI.esc(i.category || '—')}</td>
             <td>${UI.esc(i.department_name || '—')}</td>
             <td>${UI.esc(i.supplier_name || '—')}</td>
@@ -796,17 +842,7 @@ App.register('inventory', async (view, filter) => {
       helpTopic: 'new-item',
       size: 'lg',
       headActionHTML: canCustomize ? `<button class="btn secondary small" id="item-option-btn">Option</button>` : '',
-      bodyHTML: `<div id="item-form-host">${renderItemFormBody(_itemFormConfig, it)}</div>${editing ? `
-        <div class="form-field" style="margin-top:14px"><label>Preferred storage location</label>
-          <select data-preferred-location><option value="">No preference</option>${locationOptions(it.preferred_location_id, _locations)}</select>
-          <p class="muted" style="font-size:12px">Changing the preference does not move existing stock. Use Transfer stock for that.</p></div>` : `
-        <div class="form-field" data-start-location style="margin-top:14px">
-          <label>Preferred / starting-stock location <span class="req">*</span></label>
-          <select data-root-location></select>
-          <div data-location-levels></div>
-          <button type="button" class="btn secondary small" data-add-location-level style="margin-top:8px">+ Add level</button>
-          <p class="muted" style="font-size:12px">Extra levels are optional. Choose an existing sublocation or create one here. Starting stock goes to the last selected level.</p>
-        </div>`}`,
+      bodyHTML: `<div id="item-form-host">${renderItemFormBody(_itemFormConfig, it)}</div>`,
       confirmText: editing ? 'Save changes' : 'Create item',
       onOpen: (overlay) => {
         wireItemFormTabs(overlay);
@@ -814,7 +850,10 @@ App.register('inventory', async (view, filter) => {
         imageState = wireItemImageField(overlay, it);
         startingLocation = wireStartingLocationPicker(overlay);
         const opt = overlay.querySelector('#item-option-btn');
-        if (opt) opt.addEventListener('click', () => openItemOptions(overlay, it));
+        if (opt) opt.addEventListener('click', () => openItemOptions(overlay, it, () => {
+          refreshItemFormBody(overlay, it);
+          startingLocation = wireStartingLocationPicker(overlay);
+        }));
       },
       onConfirm: async (overlay, showErr) => {
         // Required-field validation (visible fields only).
@@ -842,8 +881,8 @@ App.register('inventory', async (view, filter) => {
         const body = { ...core, attributes };
         if (!editing) {
           const choice = startingLocation();
-          if (!choice?.locationId) { showErr('Create a stock location before adding an item'); return false; }
-          if (choice.incomplete) { showErr('Enter a name for each new sublocation'); return false; }
+          if (!choice?.locationId) { overlay.querySelector('[data-formtab="qty"]')?.click(); showErr('Create a stock location before adding an item'); return false; }
+          if (choice.incomplete) { overlay.querySelector('[data-formtab="qty"]')?.click(); showErr('Enter a name for each new sublocation'); return false; }
           body.location_id = choice.locationId;
           body.new_location_levels = choice.newLevels;
         } else body.preferred_location_id = Number(overlay.querySelector('[data-preferred-location]').value) || null;
@@ -884,7 +923,7 @@ App.register('inventory', async (view, filter) => {
   }
 
   /** Admin "Option" panel: show/hide, required, default per field — saved app-wide. */
-  function openItemOptions(formOverlay, it) {
+  function openItemOptions(formOverlay, it, refreshForm) {
     const tabs = ITEM_FORM_TABS.filter((t) => _itemFormConfig.some((f) => f.tab === t.id));
     const bar = tabs.map((t, i) => {
       const n = _itemFormConfig.filter((f) => f.tab === t.id).length;
@@ -939,7 +978,7 @@ App.register('inventory', async (view, filter) => {
             await API.put('/inventory/form-config', payload);
             _itemFormConfig = mergeFormConfig(null);
             UI.toast('Form layout reset to defaults');
-            refreshItemFormBody(formOverlay, it);
+            refreshForm();
             ov.remove();
           } catch (e) { UI.toast(e.message, 'error'); reset.disabled = false; }
         });
@@ -959,7 +998,7 @@ App.register('inventory', async (view, filter) => {
         await API.put('/inventory/form-config', payload);
         _itemFormConfig = newCfg;
         UI.toast('Form layout saved');
-        refreshItemFormBody(formOverlay, it);
+        refreshForm();
       },
     });
   }
@@ -984,7 +1023,7 @@ App.register('inventory', async (view, filter) => {
           <div><label>Action</label><select data-f="dir">
             <option value="in">Stock IN (＋)</option><option value="out">Stock OUT (−)</option></select></div>
         </div>
-        <div><label>Build state</label><select data-f="mode"><option value="assembled">Fully built / standard</option><option value="semi_built">Semi-built</option></select></div>
+        ${it.is_finished_product ? '<div><label>Product build state</label><select data-f="mode"><option value="assembled">Fully built</option><option value="semi_built">Semi-built package</option></select></div>' : ''}
         <div class="field-row">
           <div><label>Amount</label><input data-f="amount" type="number" min="1" value="1" /></div>
           <div><label>Reason / reference</label><input data-f="reason" placeholder="e.g. Purchase, Released to Dept" /></div>
@@ -995,15 +1034,15 @@ App.register('inventory', async (view, filter) => {
         const sel = overlay.querySelector('[data-f="loc"]');
         const mode = overlay.querySelector('[data-f="mode"]');
         const at = overlay.querySelector('[data-at] strong');
-        const refreshQty = () => { at.textContent = qtyAt(sel.value, mode.value); };
-        sel.addEventListener('change', refreshQty); mode.addEventListener('change', refreshQty);
+        const refreshQty = () => { at.textContent = qtyAt(sel.value, mode?.value || 'assembled'); };
+        sel.addEventListener('change', refreshQty); mode?.addEventListener('change', refreshQty);
       },
       onConfirm: async (overlay, showErr) => {
         const location_id = overlay.querySelector('[data-f="loc"]').value;
         const dir = overlay.querySelector('[data-f="dir"]').value;
         const amount = parseInt(overlay.querySelector('[data-f="amount"]').value, 10);
         const reason = overlay.querySelector('[data-f="reason"]').value;
-        const build_mode = overlay.querySelector('[data-f="mode"]').value;
+        const build_mode = overlay.querySelector('[data-f="mode"]')?.value || 'assembled';
         if (!location_id) { showErr('Pick a location'); return false; }
         if (!amount || amount <= 0) { showErr('Enter a positive amount'); return false; }
         const change = dir === 'out' ? -amount : amount;
@@ -1036,7 +1075,7 @@ App.register('inventory', async (view, filter) => {
           <div><label>To</label><select data-f="to">${locationOptions(toInit, rows)}</select>
             <p class="muted" data-toat style="margin:4px 0 0;font-size:12px">Currently: <strong>${qtyAt(toInit)}</strong></p></div>
         </div>
-        <div><label>Build state</label><select data-f="mode"><option value="assembled">Fully built / standard</option><option value="semi_built">Semi-built</option></select></div>
+        ${it.is_finished_product ? '<div><label>Product build state</label><select data-f="mode"><option value="assembled">Fully built</option><option value="semi_built">Semi-built package</option></select></div>' : ''}
         <div class="field-row">
           <div><label>Amount</label><input data-f="amount" type="number" min="1" value="1" /></div>
           <div><label>Reason / reference</label><input data-f="reason" placeholder="e.g. Restock branch" /></div>
@@ -1046,15 +1085,15 @@ App.register('inventory', async (view, filter) => {
         const from = overlay.querySelector('[data-f="from"]');
         const to = overlay.querySelector('[data-f="to"]');
         const mode = overlay.querySelector('[data-f="mode"]');
-        const refreshQty = () => { overlay.querySelector('[data-fromat] strong').textContent = qtyAt(from.value, mode.value); overlay.querySelector('[data-toat] strong').textContent = qtyAt(to.value, mode.value); };
-        from.addEventListener('change', refreshQty); to.addEventListener('change', refreshQty); mode.addEventListener('change', refreshQty);
+        const refreshQty = () => { overlay.querySelector('[data-fromat] strong').textContent = qtyAt(from.value, mode?.value || 'assembled'); overlay.querySelector('[data-toat] strong').textContent = qtyAt(to.value, mode?.value || 'assembled'); };
+        from.addEventListener('change', refreshQty); to.addEventListener('change', refreshQty); mode?.addEventListener('change', refreshQty);
       },
       onConfirm: async (overlay, showErr) => {
         const from_location_id = overlay.querySelector('[data-f="from"]').value;
         const to_location_id = overlay.querySelector('[data-f="to"]').value;
         const amount = parseInt(overlay.querySelector('[data-f="amount"]').value, 10);
         const reason = overlay.querySelector('[data-f="reason"]').value;
-        const build_mode = overlay.querySelector('[data-f="mode"]').value;
+        const build_mode = overlay.querySelector('[data-f="mode"]')?.value || 'assembled';
         if (from_location_id === to_location_id) { showErr('Pick two different locations'); return false; }
         if (!amount || amount <= 0) { showErr('Enter a positive amount'); return false; }
         const r = await API.post(`/inventory/${id}/transfer`, { from_location_id, to_location_id, amount, reason, build_mode });
@@ -1102,6 +1141,10 @@ App.register('inventory', async (view, filter) => {
   }
 
   // Wire toolbar
+  view.querySelectorAll('[data-kind]').forEach((button) => button.addEventListener('click', () => {
+    if (state.kind === button.dataset.kind) return;
+    App.navigate('inventory', { kind: button.dataset.kind });
+  }));
   view.querySelector('#inv-clear').onclick = () => {
     clearTimeout(searchTimer);
     Object.assign(state, { q: '', department_id: '', supplier_id: '', location_id: '', category: '', low: false, include_damaged: false });

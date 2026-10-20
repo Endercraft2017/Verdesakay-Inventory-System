@@ -128,9 +128,15 @@ const pickerView = (req: Request, item: InventoryItem): object => req.user!.perm
 
 // GET /api/inventory — list with optional search / filters
 router.get('/', pickerGate, (req, res) => {
-  const { q, department_id, supplier_id, category, product_group, low } = req.query;
+  const { q, department_id, supplier_id, category, product_group, low, kind } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
+
+  // Both kinds share inventory_items and stock accounting; the list can focus on
+  // one kind without inventing a second SKU or duplicating a stock balance.
+  if (kind === 'parts') where.push('COALESCE(i.is_finished_product, 0) = 0');
+  else if (kind === 'finished') where.push('i.is_finished_product = 1');
+  else if (kind !== undefined && kind !== 'all') { res.status(400).json({ error: 'Unknown item kind' }); return; }
 
   if (typeof q === 'string' && q.trim()) {
     // `spec` lives in the attributes JSON, not a column — reach it with json_extract.
@@ -845,6 +851,9 @@ router.post('/:id/adjust', requirePermission('inventory.adjust'), syncClass('phy
     return;
   }
   const { change, reason, location_id, build_mode } = parseBody(adjustStockSchema, req.body);
+  if (build_mode === 'semi_built' && !item.is_finished_product) {
+    res.status(400).json({ error: 'Semi-built stock is only for finished products. Parts use standard stock.' }); return;
+  }
   // The legacy phone Pick screen uses this exact adjustment reason for sale/job
   // fulfilment. A generic adjustment has no order allocation or slip, so accepting
   // it can deduct the same goods twice. Existing offline commands already recorded
@@ -911,6 +920,9 @@ router.post('/:id/damage', requirePermission('inventory.adjust'), syncClass('phy
     return;
   }
   const { quantity, reason, location_id, build_mode } = parseBody(damageStockSchema, req.body);
+  if (build_mode === 'semi_built' && !source.is_finished_product) {
+    res.status(400).json({ error: 'Semi-built stock is only for finished products. Parts use standard stock.' }); return;
+  }
   const locId = location_id ?? getDefaultLocationId();
   const loc = queryOne<{ name: string }>('SELECT name FROM locations WHERE id = ?', locId);
   if (!loc) {
@@ -962,11 +974,15 @@ router.post('/:id/damage', requirePermission('inventory.adjust'), syncClass('phy
 // POST /api/inventory/:id/transfer — move stock from one location to another
 router.post('/:id/transfer', requirePermission('inventory.adjust'), syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
-  if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
+  const item = queryOne<InventoryItem>('SELECT id,is_finished_product FROM inventory_items WHERE id = ?', id);
+  if (!item) {
     res.status(404).json({ error: 'Item not found' });
     return;
   }
   const { from_location_id, to_location_id, amount, reason, build_mode } = parseBody(transferStockSchema, req.body);
+  if (build_mode === 'semi_built' && !item.is_finished_product) {
+    res.status(400).json({ error: 'Semi-built stock is only for finished products. Parts use standard stock.' }); return;
+  }
   if (from_location_id === to_location_id) {
     res.status(400).json({ error: 'Pick two different locations' });
     return;

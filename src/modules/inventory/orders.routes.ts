@@ -8,6 +8,7 @@ import { moduleEnabled, requireModule } from '../../shared/modules';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { createHash } from 'node:crypto';
 import { idempotency } from '../../shared/idempotency';
+import { notifyAnyPermission } from '../../shared/push';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import {
@@ -1065,6 +1066,12 @@ router.post('/:id/status', requirePermission('orders.edit'), syncClass('claim', 
     releaseTeardown(id);
   }
   res.json({ ok: true, status: next });
+  const needsWarehouse = queryOne('SELECT 1 FROM order_items WHERE order_id=? AND item_id IS NOT NULL AND quantity > COALESCE(released_qty,0) LIMIT 1', id);
+  if (next === 'approved' && needsWarehouse) void notifyAnyPermission(['orders.release', 'inventory.adjust'], {
+    title: `Sale order ready for warehouse — ${order.number}`,
+    body: 'Review the order lines, accept it, then pick the available stock for release.',
+    url: `#/so?id=${id}`, link: { route: 'releasing', params: { tab: 'queue' } }, tag: `sale-release-${id}`,
+  }, req.user!.id);
   maybeAutoPush(id);
 });
 

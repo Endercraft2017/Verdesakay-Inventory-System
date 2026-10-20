@@ -86,7 +86,7 @@ App.register('job-orders', async (view, filter) => {
           const step = ProductionSteps.jobOrderStep(j);
           return `
           <tr class="clickable" data-open="${j.id}">
-            <td><strong>${UI.esc(j.number)}</strong><div class="muted" style="font-size:11px">${j.order_number ? `For ${UI.esc(j.order_number)}` : 'RTS buffer stock'}</div></td>
+            <td><strong>${UI.esc(j.number)}</strong><div class="muted" style="font-size:11px">${j.parent_job_order_number ? `Subassembly for ${UI.esc(j.parent_job_order_number)}` : j.order_number ? `For ${UI.esc(j.order_number)}` : 'RTS buffer stock'}</div></td>
             <td>${UI.esc(j.product_name)}<div class="muted" style="font-size:11px">${j.build_mode === 'semi_built' ? 'Semi-built' : 'Fully built'}</div></td>
             <td class="muted">${UI.esc(j.team_name || '—')}</td>
             <td class="${j.overdue ? 'danger' : 'muted'}">${j.due_date ? UI.esc(j.due_date) + (j.overdue ? ' ⚠' : '') : '—'}</td>
@@ -105,6 +105,32 @@ App.register('job-orders', async (view, filter) => {
 
   function locOptions(sel) {
     return locations.map((l) => `<option value="${l.id}" ${String(l.id) === String(sel) ? 'selected' : ''}>${UI.esc(l.path || l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('');
+  }
+
+  async function suggestSubassemblies(parentId, quiet = false) {
+    let suggestions;
+    try { suggestions = await API.get(`/job-orders/${parentId}/subassembly-suggestions`); }
+    catch (error) { UI.toast(error.message, 'error'); return; }
+    const needed = suggestions.filter((item) => item.uncovered > 0);
+    if (!needed.length) { if (!quiet) UI.toast('No subassembly shortage on this job order.'); return; }
+    const modal = UI.modal({ title: 'Build missing subassemblies?', size: 'md', confirmText: null, cancelText: 'Close',
+      bodyHTML: `<p class="muted">These products remain separate components in the parent kit. Accepting a suggestion creates a linked draft job order. Finish and receive each subassembly before picking the parent kit.</p>
+        ${needed.map((item) => `<section class="order-notice" style="margin-top:10px"><strong>${UI.esc(item.component_name)}</strong>
+          <p>Short ${item.uncovered}; raw materials can build ${item.buildable_now} now.</p>
+          ${item.suggested_qty && canWrite ? `<button type="button" class="btn secondary small" data-subassembly="${item.component_item_id}">Create draft for ${item.suggested_qty}</button>` : '<span class="muted">Replenish raw materials before creating this build.</span>'}
+          ${item.linked_jobs.length ? `<p class="muted">Already planned: ${item.linked_jobs.map((job) => UI.esc(job.number)).join(', ')}</p>` : ''}</section>`).join('')}`,
+    });
+    modal.overlay.querySelectorAll('[data-subassembly]').forEach((button) => button.onclick = async () => {
+      const item = needed.find((row) => String(row.component_item_id) === button.dataset.subassembly);
+      button.disabled = true;
+      try {
+        const child = await API.post(`/job-orders/${parentId}/subassembly-jobs`,
+          { component_item_id: item.component_item_id, quantity: item.suggested_qty },
+          { idempotencyKey: `subassembly:${parentId}:${item.component_item_id}:${crypto.randomUUID()}` });
+        modal.close(); UI.toast(`${child.number} created as a draft. Approve and receive it before releasing the parent kit.`);
+        load();
+      } catch (error) { UI.toast(error.message, 'error'); button.disabled = false; }
+    });
   }
 
   async function conversionModal() {
@@ -225,7 +251,7 @@ App.register('job-orders', async (view, filter) => {
         const qty = Number(g('qty'));
         if (!g('product')) { showErr('Pick a product'); return false; }
         if (!Number.isInteger(qty) || qty < 1) { showErr('Quantity must be a whole number of at least 1'); return false; }
-        await API.post('/job-orders', {
+        const created = await API.post('/job-orders', {
           product_item_id: Number(g('product')), qty_ordered: qty,
           build_mode: g('mode'),
           source_location_id: Number(g('source')) || null,
@@ -240,6 +266,7 @@ App.register('job-orders', async (view, filter) => {
         });
         UI.toast('Job order created (draft)');
         load();
+        setTimeout(() => suggestSubassemblies(created.id, true), 0);
       },
     });
   }
@@ -427,7 +454,7 @@ App.register('job-orders', async (view, filter) => {
             <strong>${UI.esc(jo.product_name)}</strong>
             <span class="badge-pill">${jo.build_mode === 'semi_built' ? 'Semi-built' : 'Fully built'}</span>
             ${jo.conversion_job_order_id ? '<span class="badge-pill">Finishing existing semi-built unit</span>' : ''}
-            ${jo.order_number ? `<span class="muted">from ${UI.esc(jo.order_number)}</span>` : '<span class="muted">RTS buffer stock</span>'}
+            ${jo.parent_job_order_number ? `<span class="muted">Subassembly for ${UI.esc(jo.parent_job_order_number)}</span>` : jo.order_number ? `<span class="muted">from ${UI.esc(jo.order_number)}</span>` : '<span class="muted">RTS buffer stock</span>'}
           </div>
           <div class="kv" style="margin:10px 0 0">
             <div><span class="muted">Ordered</span><div>${jo.qty_ordered}</div></div>
@@ -626,6 +653,7 @@ App.register('job-orders', async (view, filter) => {
             <td>${UI.esc(e.actor_name || '—')}</td><td class="muted">${UI.esc(e.reason || '')}</td></tr>`).join('')}</tbody></table></details>` : ''}
         ${canWrite ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
           ${jo.status !== 'completed' && jo.status !== 'cancelled' ? `<button type="button" class="btn secondary" id="jo-resched">Team / schedule…</button>` : ''}
+          ${isDraft && comps.length ? '<button type="button" class="btn secondary" id="jo-subassemblies">Check subassemblies</button>' : ''}
           ${isDraft ? `${jo.approved_at && !jo.warehouse_accepted_at ? `<button type="button" class="btn" data-do="_wh_accept">Accept (warehouse)</button>` : ''}
                        ${comps.length ? '<button type="button" class="btn secondary" data-do="_supply">Check component supply</button>' : ''}
                        ${jo.warehouse_accepted_at ? `<button type="button" class="btn secondary" data-do="_prepare">${jo.prepared_at ? 'Review / adjust picked kit' : 'Pick / review kit'}</button>` : ''}
@@ -638,6 +666,7 @@ App.register('job-orders', async (view, filter) => {
         </div>` : ''}`;
 
       const slipPrint = el.querySelector('#jo-slip-print');
+      el.querySelector('#jo-subassemblies')?.addEventListener('click', () => suggestSubassemblies(id));
       if (slipPrint) slipPrint.onclick = () => API.blobUrl('/parts-slips/' + jo.parts_slip_id + '/print')
         .then((u) => window.open(u, '_blank')).catch((e) => UI.toast(e.message, 'error'));
 

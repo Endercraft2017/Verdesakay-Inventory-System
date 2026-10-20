@@ -16,6 +16,7 @@ import { requireAuth, requirePermission, requireAnyPermission } from '../../shar
 import { parseBody } from '../../shared/validation';
 import { locationError, unitBlockers, openHolds } from './rts';
 import { syncClass } from '../../sync';
+import { notifyAnyPermission } from '../../shared/push';
 
 const router = Router();
 router.use(requireAuth);
@@ -55,6 +56,9 @@ router.post('/legacy', receiveGate, syncClass('physical'), syncUpload(imageUploa
         id,product.id,input.identifier,input.location_id,'Pre-system unit — awaiting QC and QA').lastInsertRowid);
       saveAttachment('qc_unit',unitId,file.filename,'Pre-system legacy intake',req.user!.id);
       db.exec('COMMIT');res.status(201).json({id,number,unit_id:unitId});
+      void notifyAnyPermission(['production.inspect_qc'], { title: `QC inspection ready — ${number}`,
+        body: `${input.identifier} was entered as a pre-system unit and needs QC then QA.`,
+        url: `#/qc?role=qc&jo=${id}`, link: { route: 'production-qc' }, tag: `qc-jo-${id}` }, req.user!.id);
     }catch(e){db.exec('ROLLBACK');throw e;}
   }catch(e){unlink(file?.filename);throw e;}
 });

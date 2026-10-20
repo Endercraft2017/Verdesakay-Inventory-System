@@ -69,6 +69,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 94: link optional subassembly job orders to their parent job order.
 // 93: restrict PR budget approval and liquidation closure to designated authorities.
 // 92: budgeted staff purchase requests, assigned buyers, receipt-backed liquidation.
 // 91: inspection-only legacy unit intake provenance, immutable keys and recorded valuation.
@@ -102,7 +103,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 93; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 94; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -788,6 +789,7 @@ function createSchema(): void {
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,
       number             TEXT NOT NULL UNIQUE,
       order_id           INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      parent_job_order_id INTEGER REFERENCES job_orders(id) ON DELETE SET NULL,
       product_item_id    INTEGER REFERENCES inventory_items(id) ON DELETE SET NULL,
       product_name       TEXT NOT NULL,
       qty_ordered        INTEGER NOT NULL,
@@ -3444,6 +3446,11 @@ function migrate(): void {
     if (!legacyCols.some(c => c.name === name)) db.exec(`ALTER TABLE job_orders ADD COLUMN ${name} ${declaration}`);
   }
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_legacy_intake_key ON job_orders(legacy_intake_key) WHERE legacy_intake_key IS NOT NULL');
+  // 94: child builds remain separate drafts, but retain their parent JO for planning
+  // and for avoiding repeated suggestions after an accepted subassembly plan.
+  const parentCols = db.prepare('PRAGMA table_info(job_orders)').all() as Array<{ name: string }>;
+  if (!parentCols.some((c) => c.name === 'parent_job_order_id')) db.exec('ALTER TABLE job_orders ADD COLUMN parent_job_order_id INTEGER REFERENCES job_orders(id) ON DELETE SET NULL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_job_orders_parent ON job_orders(parent_job_order_id)');
   const idemCols = db.prepare('PRAGMA table_info(idempotency_keys)').all() as Array<{ name: string }>;
   if (!idemCols.some((c) => c.name === 'request_hash')) db.exec('ALTER TABLE idempotency_keys ADD COLUMN request_hash TEXT');
   // 74: one sale SKU can ship as a built unit or as its frozen CKD component list.

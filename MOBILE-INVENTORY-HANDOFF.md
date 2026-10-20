@@ -1,5 +1,84 @@
 # Inventory and production: mobile integration gaps
 
+## Sales ownership, warehouse tracking, and subassembly builds (2026-10-20)
+
+Desktop now places commercial Sale Orders and Customer Job Orders under a
+separate **Sales** tab, with a sales-order overview. **Inventory → Order
+Tracking** shows those documents and stock status without create/edit/delete,
+approval, or production-planning controls; **Inventory → Releasing** still
+handles warehouse pick and release. Manufacturing job orders remain under
+**Production → Job Orders**. The Sales overview reports order values and
+statuses; it is not a cash-receipt report.
+
+**Mobile owner action:** Keep the same ownership in Work navigation: create and
+edit customer orders in Sales; give warehouse workers a tracking/fulfillment
+view without commercial document creation. Keep the existing warehouse release
+permission and scan path. Label customer JO documents separately from
+manufacturing JOs. Test an `orders.view`/`orders.release` clerk cannot create an
+order, and a sales creator can create one through the Sales flow. No mobile
+source was changed by this desktop/backend work.
+
+A finished product may itself be a component in another product's BOM. The
+parent manufacturing JO retains that product as one component. If stock is
+short, `GET /api/job-orders/:id/subassembly-suggestions` returns the shortage,
+already linked plans, and immediately buildable quantity from raw materials.
+An authorized user explicitly accepts a suggestion with
+`POST /api/job-orders/:id/subassembly-jobs` (component item ID and quantity),
+creating a linked **draft** JO. The child follows normal approval, kit,
+production, QC/QA and Products In; only receipt of the child product makes
+stock available for the parent kit. No automatic raw-part explosion or parent
+kit release occurs. Show this suggestion after a parent draft is created and
+while reviewing it; do not create the child without acceptance. Test no BOM,
+insufficient raw stock, existing linked child coverage, and stale suggestion
+rejection. A product used in a BOM can still be sold as stock under its one SKU.
+
+## Role-based actionable work notifications (2026-10-20)
+
+**Field requirement:** A push and the Work queue must point to the same live
+task. Tapping should open the correct order, job, unit, or request directly;
+staff should not have to search or scan to discover work. Push is a prompt,
+while the server queue is the source of truth: a task completed by another
+person must disappear or show completed on refresh. One notification per
+meaningful transition is enough; avoid a push for every page visit, retry or
+duplicate sync replay. Respect effective permissions, not role names alone.
+
+| Desk / permission | Work item and expected one-tap destination | Current mobile/backend state and gap |
+| --- | --- | --- |
+| Releasing (`orders.release`, or authorized `inventory.adjust`) | Approved sale needing acceptance, allocation, or release slip; open the exact SO in **Release orders** and show available RTS units, CKD/parts lines, and unshipped remainder. | `#/so?id=…` and `/release-slips/queue` exist. Work's count currently scans *all* approved/released SOs, including completed allocations; use the actual release queue and stage counts. SO approval now emits a release-task push; use the live queue for its current stage. |
+| Warehouse (`inventory.adjust`) | Physical parts on an approved SO and job-order kit to pick/release; open the exact SO/JO and its pick list or kit. | **Kit releases** and `#/kit-release?id=…` exist. The approved JO queue exists, but JO approval now emits a kit-preparation push. Distinguish warehouse stock work from the commercial SO itself. |
+| Parts clerk / warehouse (`production.repairs` or authorized `inventory.adjust`) | Requested replacement/repair parts; open exact request and source shelf. | `#/repairs?id=…` and `/production/repairs?status=requested` exist, but Work hides **Parts requests** from a warehouse account with only `inventory.adjust` because its card requires `production.repairs`. Creating a request now emits a parts-desk push. |
+| Team leader (`production.record`, `production.manage`) | Released kit awaiting acceptance and active JO output; open exact JO. | Production Work queue exists, but its count combines all released/in-progress JOs; narrow it to the user's actionable work/team where applicable and warehouse release now emits a production-lead prompt. |
+| QC (`production.inspect_qc`) | Units waiting for technical inspection, rechecks, and failed units returned from repair; open the JO/unit in `#/qc?role=qc&jo=…`. | `/qc/queue?role=qc` and Work count exist. Production recording a serialized unit and pre-system intake now push QC. Failed/rework units should be surfaced by live queue state, not stale notification count. |
+| QA (`production.inspect_qa`) and hold authority (`production.qa_review`) | QC-passed units waiting for final inspection, QA rechecks, and held units needing decision; open `#/qc?role=qa&jo=…` or its exact hold. | QA Work count and hold queue exist; QA holds already push. QC pass now pushes QA. Keep held units distinct from ready-to-inspect units. |
+| RTS clerk (`production.receive`) | Units/batches passed all required QC/QA, awaiting QR print/attachment, scan verification, and Products In; open `#/receiving?jo=…`. | `/rts/queue` and Work count exist. Final pass now pushes RTS. Passing inspection alone never adds stock. |
+
+**Mobile owner action:** Make Work a compact **My next actions** list with
+separate counts by stage and direct record links, plus a history/notifications
+view. Show zero and failed/offline counts honestly. When opened, fetch live
+state and explain if someone else finished the task. Keep QR scanning only at
+the physical step that requires it; QC/QA identify pre-sticker units from
+their job-order queue and production identifier. The phone notification
+permission is optional; the in-app queue must still work when push is denied.
+Exercise two users acting on one task, offline/replay, a stale push, revoked
+permission, and simultaneous QC/QA/RTS transitions on an installed phone.
+
+## Item catalog clarity: parts vs finished products (2026-10-20)
+
+Desktop Inventory now opens **Parts & supplies** separately from **Finished
+products**, with an optional combined **All stock items** view. The API supports
+`GET /api/inventory?kind=parts|finished|all`; `is_finished_product` is the
+existing classification, so this does not create another SKU or stock balance.
+Item editing groups identity, Pricing, and Stock & location separately. Opening
+quantity is only set on creation; edits still use stock movements.
+
+**Mobile owner action:** Keep any mobile item picker or stock lookup able to find
+both kinds when its task requires them (for example a sales or production
+picker). In browsing screens, label finished products distinctly and offer a
+parts/finished filter where a mixed list would confuse workers. Do not infer
+item type from free-text Category or create duplicate product records. Check
+that a finished product with fully built and semi-built RTS balances remains
+one product/SKU with the existing build-state distinctions.
+
 ## PR approval authority split (2026-10-20)
 
 The backend and desktop now use `purchasing.approve_requests` to see the whole

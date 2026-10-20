@@ -48,7 +48,7 @@ import {
 } from '../inventory/inventory-stock';
 import { checklistForProduct } from './qc.routes';
 import { REPAIR_SOURCE_TYPES, freeFor, holdOf, placeRepairHold, releaseRepairHold } from './stock-holds';
-import { notifyPermission, notifyUser } from '../../shared/push';
+import { notifyAnyPermission, notifyPermission, notifyUser } from '../../shared/push';
 import type {
   JobOrder, JobOrderUnit, ProductionBatch, ProductionTeam, ProductionTeamMember, RepairPartRequest,
 } from '../../shared/types';
@@ -167,6 +167,10 @@ router.post('/units/:unitId/repairs', inspectGate, syncClass('merge'), (req, res
   // Set the part aside at an approved source now; none with enough free stock = a shortage.
   placeRepairHold(Number(info.lastInsertRowid));
   res.status(201).json(loadRequest(Number(info.lastInsertRowid)));
+  void notifyAnyPermission(['production.repairs', 'inventory.adjust'], {
+    title: `Replacement parts requested — ${number}`, body: `${input.quantity} × ${comp.name} for a unit awaiting repair.`,
+    url: `#/repairs?id=${Number(info.lastInsertRowid)}`, link: { route: 'repairs' }, tag: `repair-part-${Number(info.lastInsertRowid)}`,
+  }, req.user!.id);
 });
 
 // POST /api/production/repairs/:id/accept — warehouse issues the part (stock moves now)

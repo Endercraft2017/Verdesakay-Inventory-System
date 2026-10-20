@@ -55,6 +55,34 @@ const createMO = (body: Record<string, unknown>) =>
   ctx.api.post('/api/job-orders').set(authHdr()).send(body);
 
 describe('job orders', () => {
+  it('suggests a separate controller build for a parent BOM and requires acceptance', async () => {
+    const board = await mkItem('Nested board');
+    const chip = await mkItem('Nested chip', 4);
+    const bike = await mkItem('Nested bike');
+    expect((await ctx.api.put(`/api/finished-products/${board}`).set(authHdr()).send({
+      components: [{ component_item_id: chip, quantity: 2 }],
+    })).status).toBe(200);
+    expect((await ctx.api.put(`/api/finished-products/${bike}`).set(authHdr()).send({
+      components: [{ component_item_id: board, quantity: 1 }],
+    })).status).toBe(200);
+    const parent = await createMO({ product_item_id: bike, qty_ordered: 2 });
+    expect(parent.status).toBe(201);
+    let suggestions = (await ctx.api.get(`/api/job-orders/${parent.body.id}/subassembly-suggestions`).set(authHdr())).body;
+    expect(suggestions).toEqual([expect.objectContaining({ component_item_id: board, short: 2, suggested_qty: 2, buildable_now: 2 })]);
+    expect((await ctx.api.get(`/api/job-orders/${parent.body.id}`).set(authHdr())).body.components)
+      .toEqual([expect.objectContaining({ component_item_id: board, qty_planned: 2 })]);
+    expect((await ctx.api.post(`/api/job-orders/${parent.body.id}/subassembly-jobs`).set(authHdr())
+      .send({ component_item_id: board, quantity: 3 })).status).toBe(409);
+    const child = await ctx.api.post(`/api/job-orders/${parent.body.id}/subassembly-jobs`).set(authHdr())
+      .send({ component_item_id: board, quantity: 2 });
+    expect(child.status).toBe(201);
+    expect(child.body.parent_job_order_id).toBe(parent.body.id);
+    expect((await ctx.api.get(`/api/job-orders/${child.body.id}`).set(authHdr())).body.components)
+      .toEqual([expect.objectContaining({ component_item_id: chip, qty_planned: 4 })]);
+    suggestions = (await ctx.api.get(`/api/job-orders/${parent.body.id}/subassembly-suggestions`).set(authHdr())).body;
+    expect(suggestions[0]).toEqual(expect.objectContaining({ planned: 2, uncovered: 0, suggested_qty: 0 }));
+  });
+
   it('creates a draft that snapshots the BOM (planned = per-unit * qty)', async () => {
     const { product } = await setupProduct('Draft');
     const res = await createMO({ product_item_id: product, qty_ordered: 10 });

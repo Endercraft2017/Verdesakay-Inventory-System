@@ -78,7 +78,7 @@ describe('Chunk 1 regression coverage', () => {
     expect(view.querySelector('[data-edit]').hidden).toBe(true);
     expect(view.querySelector('#inv-add').hidden).toBe(true);
     view.querySelector('#inv-clear').click();
-    expect(requests[4]!.url).toBe('/inventory?'); requests[4]!.resolve([]);await tick();
+    expect(requests[4]!.url).toBe('/inventory?kind=parts'); requests[4]!.resolve([]);await tick();
     dom.window.close();
   });
   it('shows zero stock and honest connection status without inviting unauthorized mobile actions', async () => {

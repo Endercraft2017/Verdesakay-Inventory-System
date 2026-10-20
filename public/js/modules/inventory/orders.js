@@ -2,7 +2,8 @@
    One view serves both types; filter.type = 'sale' | 'job'. */
 App.register('orders', async (view, filter) => {
   const type = filter && filter.type === 'job' ? 'job' : filter && filter.type === 'purchase' ? 'purchase' : 'sale';
-  const noun = type === 'sale' ? 'Sale Order' : type === 'job' ? 'Job Order' : 'Supplier Purchase Order';
+  const tracking = filter && filter.mode === 'track' && type !== 'purchase';
+  const noun = type === 'sale' ? 'Sale Order' : type === 'job' ? 'Customer Job Order' : 'Supplier Purchase Order';
   const state = { q: '', backorder: false };
   const qbDoc = type === 'purchase' ? 'Bill' : 'Invoice';
   let qb = { connected: false };
@@ -10,9 +11,9 @@ App.register('orders', async (view, filter) => {
   // Purchase orders are purchasing's (purchasing.manage), sale / job orders the orders module's —
   // the server checks the same per order (src/modules/inventory/order-access.ts).
   const canWrite = (action) => App.hasPermission(type === 'purchase' ? 'purchasing.manage' : 'orders.' + action);
-  const canCreate = canWrite('create');
-  const canEdit = canWrite('edit');
-  const canDelete = canWrite('delete');
+  const canCreate = !tracking && canWrite('create');
+  const canEdit = !tracking && canWrite('edit');
+  const canDelete = !tracking && canWrite('delete');
   const canQbPush = qb.connected && canEdit;
 
   let suppliers = [];
@@ -30,7 +31,7 @@ App.register('orders', async (view, filter) => {
 
   view.innerHTML = `
     <div class="topbar">
-      <h2>${noun}s</h2>
+      <h2>${tracking ? noun + 's · Fulfillment tracking' : noun + 's'}</h2>
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="ord-search" aria-label="Search orders by number or ${partyLabel.toLowerCase()}" placeholder="Search number, ${partyLabel.toLowerCase()}…" /></div>
       ${type === 'sale' ? `<button class="btn secondary" id="ord-backorder" title="Show firm orders with stock lines still awaiting picking">${UI.icon('alert', 15)} Awaiting release</button>` : ''}
@@ -93,13 +94,13 @@ App.register('orders', async (view, filter) => {
             <td class="right">${UI.esc(o.currency || '')} ${money(o.total)}</td>
             <td><span class="badge-pill status-${UI.esc(o.status)}">${UI.esc(o.status)}</span>${o.release_slip_number ? ` <span class="badge-pill" title="Goods left on release slip ${UI.esc(o.release_slip_number)}">Shipped · ${UI.esc(o.release_slip_number)}</span>` : ''}${o.backordered ? ' <span class="badge-pill low" title="Stock lines still await picking">⚠ awaiting pick</span>' : ''}</td>
             <td class="actions">
-              ${type === 'job' && App.hasPermission('inventory.adjust')
+              ${type === 'job' && !tracking && App.hasPermission('inventory.adjust')
                 ? (o.job_order_id
                   ? `<button class="icon-btn" title="View in Production — ${UI.esc(o.job_order_number)}" data-view-jo="${o.job_order_id}">${UI.icon('eye')}</button>`
                   : `<button class="icon-btn" title="Start production" data-produce="${o.id}">${UI.icon('adjust')}</button>`)
                 : ''}
               ${type === 'purchase' ? `<button class="icon-btn" title="Receiving & bills" data-purch="${o.id}">${UI.icon('inbox')}</button>` : ''}
-              ${type === 'sale' && ['approved', 'released'].includes(String(o.status).toLowerCase()) && App.hasPermission('orders.edit') && window.ReleaseAuth
+              ${type === 'sale' && !tracking && ['approved', 'released'].includes(String(o.status).toLowerCase()) && App.hasPermission('orders.edit') && window.ReleaseAuth
                 ? `<button class="icon-btn" title="Release authorization (who may collect)" data-relauth="${o.id}" data-num="${UI.esc(o.number)}">${UI.icon('key')}</button>` : ''}
               ${canQbPush ? `<button class="icon-btn" title="Push to QuickBooks as a ${qbDoc}" data-qbpush="${o.id}">${UI.icon('sheet')}</button>` : ''}
               <button class="icon-btn" title="Print" data-print="${o.id}">${UI.icon('printer')}</button>
@@ -188,8 +189,8 @@ App.register('orders', async (view, filter) => {
       const status = av.order_status || order.status;
       const open = status === 'open';
       const plannable = !order.fulfilled_at && ['open', 'approved', 'released'].includes(status);
-      const make = plannable && App.hasPermission('inventory.adjust') && (!App.hasModule || App.hasModule('manufacturing'));
-      const buy = plannable && App.hasPermission('purchasing.manage') && (!App.hasModule || App.hasModule('purchasing'));
+      const make = !tracking && plannable && App.hasPermission('inventory.adjust') && (!App.hasModule || App.hasModule('manufacturing'));
+      const buy = !tracking && plannable && App.hasPermission('purchasing.manage') && (!App.hasModule || App.hasModule('purchasing'));
       const short = av.lines.filter((l) => l.shortfall > 0);
       const toBuy = (av.purchase_requirements || []).filter((r) => r.to_purchase > 0);
       panel.innerHTML = `
@@ -203,7 +204,7 @@ App.register('orders', async (view, filter) => {
           <dl><div><dt>Ordered</dt><dd>${l.ordered}</dd></div><div><dt>On hand here</dt><dd>${l.on_hand}</dd></div><div><dt>Other orders</dt><dd>${l.committed_orders ?? l.committed_elsewhere}</dd></div><div><dt>Kit / repair holds</dt><dd>${l.kit_held || 0} / ${l.repair_held || 0}</dd></div><div><dt>Picked / shipped here</dt><dd>${l.covered_here}</dd></div><div><dt>Available to order</dt><dd>${l.available}</dd></div></dl>
           ${l.elsewhere_on_hand > 0 ? `<p class="muted">${l.elsewhere_on_hand} on hand at other locations.</p>` : ''}
           ${l.shortfall > 0 && l.is_finished_product ? `<p>${!l.has_bom ? 'No BOM for a new CKD-parts build. Define the recipe first; an existing complete semi-built package may still be finished.' : l.buildable ? 'Outstanding CKD production materials are covered; approval and kit release are still required.' : 'CKD materials short: ' + (l.component_shortfalls || []).map((c) => `${UI.esc(c.name)} (need ${c.need}, free ${c.have})`).join('; ')}</p>` : ''}
-          ${l.shortfall > 0 && l.fulfillment_mode === 'assembled' && l.semi_built_available > 0 ? `<p class="order-notice" role="status">${l.semi_built_available} complete semi-built package(s) available here. A production manager can choose to finish one of these for this fully built order${l.component_shortfalls?.length ? ' even though CKD parts are short' : ' instead of starting from CKD parts'}. Its loose parts are already included; no BOM components are issued again.</p>${plannable && (App.hasPermission('production.approve') || App.hasPermission('production.manage')) ? `<button type="button" class="btn secondary small" data-convert="${l.item_id}">Finish a semi-built RTS unit</button>` : ''}` : ''}
+          ${l.shortfall > 0 && l.fulfillment_mode === 'assembled' && l.semi_built_available > 0 ? `<p class="order-notice" role="status">${l.semi_built_available} complete semi-built package(s) available here. A production manager can choose to finish one of these for this fully built order${l.component_shortfalls?.length ? ' even though CKD parts are short' : ' instead of starting from CKD parts'}. Its loose parts are already included; no BOM components are issued again.</p>${!tracking && plannable && (App.hasPermission('production.approve') || App.hasPermission('production.manage')) ? `<button type="button" class="btn secondary small" data-convert="${l.item_id}">Finish a semi-built RTS unit</button>` : ''}` : ''}
           ${(l.linked_job_orders || []).reduce((n, j) => n + j.remaining, 0) > l.shortfall ? '<p class="order-notice">Planned production exceeds this shortage. Review existing job quantities before buying more materials.</p>' : ''}
           ${(l.linked_job_orders || []).length ? `<p class="muted">Production planned: ${l.linked_job_orders.map((j) => `${UI.esc(j.number)} · ${UI.esc(j.status)} · ${j.remaining} not yet received`).join('; ')}</p>` : ''}
         </article>`).join('') || '<p class="muted">This order has only non-stock lines.</p>'}</div>

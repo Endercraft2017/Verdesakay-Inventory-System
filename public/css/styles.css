@@ -788,6 +788,16 @@ body:has(.drawer.open) .ai-fab { opacity: 0; pointer-events: none; }
 
 /* ---------- Cards / grid ---------- */
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px; margin-bottom: 22px; }
+.sales-dashboard { min-width: 0; }
+.sales-dashboard .panel { padding: 18px; margin-bottom: 18px; }
+.sales-dashboard .panel .cards { margin: 12px 0 0; }
+.sales-dashboard .table-scroll { max-width: 100%; overflow-x: auto; }
+.sales-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 600px) {
+  .sales-dashboard { max-width: calc(100vw - 74px); }
+  .sales-dashboard .cards { grid-template-columns: minmax(0, 1fr); }
+  .sales-dashboard .panel { padding: 14px; }
+}
 .stat-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1029,6 +1039,14 @@ textarea { resize: vertical; min-height: 84px; }
 }
 .form-tab:hover { background: var(--surface-2); color: var(--text); }
 .form-tab.active { color: var(--accent); background: var(--accent-weak); font-weight: 600; }
+.item-tab-intro { margin: 0 0 12px; line-height: 1.45; }
+.item-field-hint { font-size: 12px; margin: 6px 0 0; line-height: 1.4; }
+.item-add-location { align-self: flex-start; margin-top: 8px; }
+.item-kind-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+.item-kind-tabs button { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text-muted); padding: 8px 13px; font: inherit; cursor: pointer; }
+.item-kind-tabs button.active { color: var(--accent); background: var(--accent-weak); border-color: var(--accent); font-weight: 650; }
+.item-kind-description { margin: 0 0 14px; font-size: 12px; }
+.item-kind-badge { display: inline-block; margin-top: 4px; padding: 2px 7px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); font-size: 11px; }
 
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 18px; }
 .form-field { display: flex; flex-direction: column; min-width: 0; }
