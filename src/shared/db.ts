@@ -103,7 +103,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 94; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 95; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -3446,6 +3446,9 @@ function migrate(): void {
     if (!legacyCols.some(c => c.name === name)) db.exec(`ALTER TABLE job_orders ADD COLUMN ${name} ${declaration}`);
   }
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_legacy_intake_key ON job_orders(legacy_intake_key) WHERE legacy_intake_key IS NOT NULL');
+  // 95: preserve deliberate Daily Time unlinks during automatic leave attachment.
+  const unlinkCols = db.prepare('PRAGMA table_info(attendance_records)').all() as Array<{ name: string }>;
+  if (!unlinkCols.some(c => c.name === 'excluded_form_record_ids')) db.exec('ALTER TABLE attendance_records ADD COLUMN excluded_form_record_ids TEXT');
   // 94: child builds remain separate drafts, but retain their parent JO for planning
   // and for avoiding repeated suggestions after an accepted subassembly plan.
   const parentCols = db.prepare('PRAGMA table_info(job_orders)').all() as Array<{ name: string }>;

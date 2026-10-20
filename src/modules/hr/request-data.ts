@@ -167,13 +167,15 @@ export function attachLeave(recordId: number): { linked_dates: string[]; warning
   if (!record || !['pending', 'approved'].includes(record.status)) return { linked_dates: [], warnings: [] };
   const data = safeData(record.data), employeeId = requestEmployeeId(data), dates = leaveDates(data);
   if (!employeeId) throw new ValidationError('This leave has no unambiguous employee. HR must correct the employee before linking.');
-  const rows = queryAll<{ id: number; period_id: number; work_date: string; form_record_id: number | null; form_record_ids: string | null }>(
-    'SELECT id, period_id, work_date, form_record_id, form_record_ids FROM attendance_records WHERE employee_id = ?', employeeId);
+  const rows = queryAll<{ id: number; period_id: number; work_date: string; form_record_id: number | null; form_record_ids: string | null; excluded_form_record_ids: string | null }>(
+    'SELECT id, period_id, work_date, form_record_id, form_record_ids, excluded_form_record_ids FROM attendance_records WHERE employee_id = ?', employeeId);
   const linked = new Set<string>(), locked = new Set<string>();
   for (const row of rows) {
     let ids: number[] = row.form_record_id ? [row.form_record_id] : [];
     try { if (row.form_record_ids) ids = JSON.parse(row.form_record_ids); } catch { /* retain legacy single link */ }
-    const wanted = dates.includes(row.work_date);
+    let excluded: number[] = [];
+    try { excluded = JSON.parse(row.excluded_form_record_ids || '[]'); } catch { /* old row */ }
+    const wanted = dates.includes(row.work_date) && !excluded.includes(recordId);
     if (cutoffIsPaid(row.period_id)) { if (wanted && !ids.includes(recordId)) locked.add(row.work_date); continue; }
     const next = ids.filter(id => id !== recordId); if (wanted) { next.push(recordId); linked.add(row.work_date); }
     if (JSON.stringify(next) !== JSON.stringify(ids)) run("UPDATE attendance_records SET form_record_ids = ?, form_record_id = ?, updated_at = datetime('now') WHERE id = ?", next.length ? JSON.stringify(next) : null, next[0] ?? null, row.id);

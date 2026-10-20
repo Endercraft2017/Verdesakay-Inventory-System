@@ -185,6 +185,7 @@ export interface AttendanceRecords {
   rest_day: string | null;
   min_hours_decision: string | null;
   form_record_ids: string | null;
+  excluded_form_record_ids: string | null;
   half_day_override: string | null;
 }
 

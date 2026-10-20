@@ -223,3 +223,26 @@ it('manual schedule overrides affect the working-day count without losing date c
   preview = await ctx.api.post('/api/me/leave-preview').set(hdr(user.token)).send({ leave_dates: '2026-06-13' });
   expect(preview.body.days).toBe(1);
 });
+
+it('Daily Time unlink survives save, automatic leave attachment and reopening, and can be relinked', async () => {
+  const user = await member(), p = await period(user);
+  const r = await leave(user, { with_pay: 'Yes', date_from: '2026-06-01', date_to: '2026-06-02', reason: 'Unlink persistence' });
+  expect(r.status).toBe(201);
+  expect((await ctx.api.post(`/api/me/approvals/requests/${r.body.id}/decide`).set(hdr()).send({ decision: 'approved' })).status).toBe(200);
+  const save = (ids: number[]) => ctx.api.put(`/api/hr/periods/${p}/attendance`).set(hdr()).send({ employee_id: user.employeeId,
+    days: [{ work_date: '2026-06-01', form_record_ids: ids, form_record_id: r.body.id }, { work_date: '2026-06-02', form_record_ids: [r.body.id] }] });
+  expect((await save([])).status).toBe(200); // explicit [] overrides even a stale legacy id
+  const { attachEmployeeLeaves } = await import('../src/modules/hr/request-data');
+  attachEmployeeLeaves(user.employeeId);
+  const row = () => queryOne<any>('SELECT * FROM attendance_records WHERE period_id = ? AND employee_id = ? AND work_date = ?', p, user.employeeId, '2026-06-01');
+  expect(row().form_record_ids).toBeNull(); expect(row().form_record_id).toBeNull();
+  const reopened = await ctx.api.get(`/api/hr/periods/${p}/attendance`).query({ employee_id: user.employeeId }).set(hdr());
+  expect(reopened.status).toBe(200);
+  expect(reopened.body.find((day: any) => day.work_date === '2026-06-01').form_record_id).toBeNull();
+  expect((await save([])).status).toBe(200);
+  expect(row().form_record_id).toBeNull();
+  expect(queryOne<any>('SELECT form_record_id FROM attendance_records WHERE period_id = ? AND employee_id = ? AND work_date = ?', p, user.employeeId, '2026-06-02').form_record_id).toBe(r.body.id);
+  expect((await ctx.api.get(`/api/form-records/${r.body.id}`).set(hdr())).status).toBe(200);
+  expect((await save([r.body.id])).status).toBe(200);
+  expect(row().form_record_id).toBe(r.body.id); expect(row().excluded_form_record_ids).toBeNull();
+});

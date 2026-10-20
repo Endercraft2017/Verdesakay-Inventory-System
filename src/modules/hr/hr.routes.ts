@@ -1785,7 +1785,7 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), syncClass(
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId)!;
   for (const day of input.days) {
     if (day.work_date < period.start_date || day.work_date > period.end_date) { res.status(400).json({ error: `${day.work_date} is outside this cutoff.` }); return; }
-    const ids = day.form_record_ids?.length ? day.form_record_ids : day.form_record_id ? [day.form_record_id] : [];
+    const ids = day.form_record_ids ?? (day.form_record_id ? [day.form_record_id] : []);
     for (const id of ids) {
       const form = queryOne<{ slug: string; data: string }>('SELECT fd.slug, fr.data FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?', id);
       if (!form || !requestMatchesDay(form.slug, JSON.parse(form.data), input.employee_id, day.work_date)) {
@@ -1798,6 +1798,9 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), syncClass(
   }
   db.exec('BEGIN');
   try {
+    const previous = new Map(queryAll<{ work_date: string; form_record_id: number | null; form_record_ids: string | null; excluded_form_record_ids: string | null }>(
+      'SELECT work_date, form_record_id, form_record_ids, excluded_form_record_ids FROM attendance_records WHERE period_id = ? AND employee_id = ?', periodId, input.employee_id
+    ).map(row => [row.work_date, row]));
     run('DELETE FROM attendance_records WHERE period_id = ? AND employee_id = ?', periodId, input.employee_id);
     const insert = db.prepare(
       `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, lunch_out, lunch_in, time_out, notes, shift_id, form_record_id, form_record_ids, holiday_type, rest_day, min_hours_decision, half_day_override)
@@ -1807,8 +1810,7 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), syncClass(
       // form_record_ids (the new multi-link) wins when present; otherwise fall back to the
       // legacy single form_record_id so an older client still works. form_record_id is always
       // mirrored to the first id so anything still reading that column stays correct.
-      const ids = (d.form_record_ids && d.form_record_ids.length ? d.form_record_ids
-        : d.form_record_id ? [d.form_record_id] : []);
+      const ids = d.form_record_ids ?? (d.form_record_id ? [d.form_record_id] : []);
       insert.run(
         periodId, input.employee_id, d.work_date, d.time_in || null,
         d.lunch_out || null, d.lunch_in || null, d.time_out || null, d.notes || null,
@@ -1816,6 +1818,16 @@ router.put('/periods/:id/attendance', requirePermission('hr.manage'), syncClass(
         d.holiday_type || null, d.rest_day || null, d.min_hours_decision || null,
         d.half_day_override || null
       );
+      const old = previous.get(d.work_date);
+      const excluded = new Set(safeParseIdArray(old?.excluded_form_record_ids ?? null));
+      // Only explicit link selections represent an unlink; legacy omitted fields retain auto-linking.
+      if (d.form_record_ids != null || d.form_record_id != null) {
+        const oldIds = safeParseIdArray(old?.form_record_ids ?? null);
+        if (!oldIds.length && old?.form_record_id) oldIds.push(old.form_record_id);
+        oldIds.filter(id => !ids.includes(id)).forEach(id => excluded.add(id));
+      }
+      ids.forEach(id => excluded.delete(id));
+      if (excluded.size) run('UPDATE attendance_records SET excluded_form_record_ids = ? WHERE period_id = ? AND employee_id = ? AND work_date = ?', JSON.stringify([...excluded]), periodId, input.employee_id, d.work_date);
     }
     attachEmployeeLeaves(input.employee_id);
     db.exec('COMMIT');
