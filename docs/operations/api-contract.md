@@ -98,3 +98,22 @@ its key/draft; navigation requires a valid 201 acknowledgement. See
 [public signup budget](public-signup-budget.md) for exact API, support and rollback limits.
 Synchronous schema/file initialization, mixed workload capacity and distributed abuse remain
 release gates. No complete-control status is promoted by these scoped changes.
+
+
+## Manual export security follow-up — 20 October 2026
+
+Manual exports now require recent identity proof and JSON connection_id from the reviewed
+status response; stale/missing binding fails closed. Export-authorized staff may read target
+metadata but do not acquire administrator settings access. The displayed target/generation
+comes from one SQLite snapshot. Actor/session/credential/order changes during awaited work
+stop further provider calls; already accepted receipts are preserved. Shared adapter excludes
+CKD component rows to avoid duplicate commercial pricing. See
+[manual QuickBooks exports](manual-quickbooks-exports.md) for API, legacy-client update,
+partial-write recovery and rollback limits. Offline financial claims remain unchanged and need
+a dedicated verification design; broader controls and real provider/accountant acceptance remain.
+
+The final contract additionally requires order_stamp from the read-only current-order preview.
+The desktop reviews the preview total/target and refuses account/company/view changes before
+sending. A changed source version after review is rejected before provider work; the stamp is
+a precondition, not a one-use authorization credential. An interrupted preliminary full run
+was stopped to include these confirmation safeguards; only the final completed run counts.

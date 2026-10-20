@@ -833,3 +833,62 @@ Remaining: synchronous tenant setup, hosted mixed workload/memory/disk acceptanc
 abuse/edge/storage controls, other synchronous writers/retry receipts, provider reconciliation/
 external escalation and wider financial/authz/privacy/AI/native/dependency/hosting/governance
 controls. Whole-control totals remain 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release held.
+
+
+## Manual accounting export verification — 20 October 2026
+
+Base affa182adba8ea3b66cd63b484fca7d21a68ae2a. High scoped product gaps reproduced before
+fixes: stale-session export returned success, and a CKD component added a second priced line.
+The final manual contract requires order-type authority, recent identity proof and the current
+preview's destination generation/source hash. Client confirmation binds original actor/server/
+view; provider requests recheck live actor/order state after waits. Known acceptance is kept;
+shared adapter excludes component pricing. Export users gain target metadata without settings
+administration. Scope/action inventory and recovery/rollout limits are documented separately.
+
+| Check | Completed result |
+|---|---|
+| Final full regression | 310 files / 3255 passed, 612.71s |
+| Final focused | 7 files / 93 passed, 37.59s; 28 new manual cases |
+| Final Playwright | 34 passed, 82.781s; 5 manual review/context cases |
+| TypeScript | Passed after malformed-body fixture typing correction |
+| Actual server.ts | Proof/scope refusal, current preview, accepted export/replay and commercial-only payload hash |
+| Schema | No migration/storage-format change; db:types not required/run |
+| Staged secret / whitespace checks | Clean; final commit hook scans again |
+
+Focused coverage uses actual HTTP/SQLite and held synthetic provider responses for session,
+freshness, account/role/password, source/line, refresh/401, tenant and destination races. Valid
+party/invoice acknowledgements after revocation retain minimal receipts and stop subsequent
+calls. Reviewed source/line changes fail before send; a status-read interleaving keeps displayed
+company and generation together. Existing automatic export/cache/MFA/client/offline-accounting
+regressions pass. The action inventory explicitly retains offline local-authority design work.
+
+Evidence distinguishes genuine reproduction failures (2), later changed-contract fixture
+failures (2) and successful stages. The initial compiler rejected a null supertest argument;
+explicit malformed JSON corrected the fixture. Initial complete browser stages passed 30,
+30 and 31 cases. A later run had 33 passed/1 failed: navigation had already cancelled its modal,
+but the test tried to click the removed button. That assertion was corrected. One overlapping
+rerun failed to start because the preceding browser server was still running; it is not a test
+pass. Its shared output was combined with the earlier finishing process and had NUL padding;
+the archived combined text is marked non-standalone. The first failed browser JSON, partial
+original text and overlap output are retained. Transient failure traces/screenshots named in
+raw logs are not archived; a successful synthetic screenshot is retained.
+
+One preliminary full run was deliberately interrupted with exit 130 to add original UI-context
+and current-preview/source guards. A browser startup was also interrupted with exit 130 while
+adding those guards; it has no completed-case claim. The final complete run above is the sole
+final regression result; runtime/tests stayed frozen before it. Only docs/evidence followed.
+
+Actual server smoke uses private catalogs and NODE_ENV=test Intuit transport, and compares the
+stored financial payload hash to one commercial parent without its priced fulfillment component.
+No real provider financial/customer/bank action, deployment or hosted setting changed. Browser
+checks exercise cancellation, reauthentication, stale destination and account/company/view change.
+No native/Windows device or one-use transaction-signing certification is inferred.
+
+Research retrieved OWASP Authentication/Transaction Authorization and HTTP RFC 9110. Intuit
+search/direct pages were unavailable, so provider deduplication promises were not broadened.
+Updated API/step-up/accounting/release/privacy runbooks, action inventory, module catalog/
+pipelines, readiness, handoff and AUTHZ-15 evidence. Whole-control statuses remain unchanged:
+36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A, release held. Remaining work includes offline
+approval design, controlled reconciliation, field minimization, real provider/currency/tax/
+accountant acceptance, native/hosting/restore/capacity/alerts and the wider security/privacy/AI
+and dependency/governance gates. Owner participation remains last.

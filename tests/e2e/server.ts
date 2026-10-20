@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+import {manualUsername,manualPassword,manualToken} from './manual-export-fixture';
 import { stepUpUsername, stepUpPassword, stepUpSessionToken, stepUpRecoveryCode } from './step-up-fixture';
 import { recoveryUsername, recoveryFixtureToken, cancellationId, cancellationNonce } from './recovery-fixture';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vds-playwright-'));
@@ -32,6 +33,14 @@ db.run('INSERT INTO user_mfa_recovery(user_id,code_hash) VALUES(?,?)',stepUpUser
 const { markFreshVerification } = await import('../../src/shared/step-up');
 markFreshVerification(stepUpUser,stepUpSessionToken);
 db.run("UPDATE session_stepups SET verified_at=datetime('now','-6 minutes') WHERE token_hash=?",db.tokenDigest(stepUpSessionToken));
+
+const manualUser=Number(db.run("INSERT INTO users(username,full_name,password_hash,role) VALUES(?,?,?,'admin')",manualUsername,'Synthetic manual export operator',hashPassword(manualPassword)).lastInsertRowid);
+db.run("INSERT INTO sessions(token,sid,user_id,expires_at) VALUES(?,?,?,datetime('now','+1 hour'))",db.tokenDigest(manualToken),randomUUID(),manualUser);
+markFreshVerification(manualUser,manualToken);
+db.run("UPDATE session_stepups SET verified_at=datetime('now','-6 minutes') WHERE token_hash=?",db.tokenDigest(manualToken));
+const manualOrder=Number(db.run("INSERT INTO orders(number,type,customer_name,total) VALUES('MANUAL-E2E-GUARDED','sale','Synthetic manual customer',100)").lastInsertRowid);
+const manualParent=Number(db.run("INSERT INTO order_items(order_id,name,quantity,unit_price,line_total,fulfillment_mode) VALUES(?,'Synthetic CKD commercial parent',1,100,100,'ckd')",manualOrder).lastInsertRowid);
+db.run("INSERT INTO order_items(order_id,name,quantity,unit_price,line_total,fulfillment_mode,parent_order_item_id) VALUES(?,'Synthetic CKD component',1,100,100,'ckd_component',?)",manualOrder,manualParent);
 
 const oldHash = hashPassword(randomUUID());
 const recovered = db.run("INSERT INTO users(username,full_name,password_hash,role,email) VALUES(?,?,?,'warehouse','browser-recovery@example.test')", recoveryUsername, 'Browser recovery', oldHash);

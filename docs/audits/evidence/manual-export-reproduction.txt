@@ -1,0 +1,60 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/quickbooks-manual-security.test.ts > requires recent proof before any provider call
+{"timestamp":"2026-10-20T00:18:30.421Z","level":"info","event":"http_request","request_id":"2da2e6f8-2353-4a36-9b56-4100ad2e47d2","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":337}
+
+stdout | tests/quickbooks-manual-security.test.ts > requires recent proof before any provider call
+{"timestamp":"2026-10-20T00:18:30.432Z","level":"info","event":"http_request","request_id":"91c30c5a-7367-447c-8089-57c2f4aacd97","tenant":"default","method":"POST","path":"/api/orders","status":201,"duration_ms":5}
+
+stdout | tests/quickbooks-manual-security.test.ts > requires recent proof before any provider call
+{"timestamp":"2026-10-20T00:18:30.439Z","level":"info","event":"http_request","request_id":"f6849615-d775-4b76-8a05-2f9f4d19ca47","tenant":"default","method":"POST","path":"/api/quickbooks/push/order/1","status":200,"duration_ms":4}
+
+stdout | tests/quickbooks-manual-security.test.ts > exports CKD commercial parents once without pricing component rows a second time
+{"timestamp":"2026-10-20T00:18:30.740Z","level":"info","event":"http_request","request_id":"6c963dc7-c0fd-4ac2-8d78-7f8ccec37458","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":293}
+
+stdout | tests/quickbooks-manual-security.test.ts > exports CKD commercial parents once without pricing component rows a second time
+{"timestamp":"2026-10-20T00:18:30.746Z","level":"info","event":"http_request","request_id":"70cf58bc-2cc7-404c-95d9-cd61fd0e4d3e","tenant":"default","method":"POST","path":"/api/orders","status":201,"duration_ms":3}
+
+stdout | tests/quickbooks-manual-security.test.ts > exports CKD commercial parents once without pricing component rows a second time
+{"timestamp":"2026-10-20T00:18:30.750Z","level":"info","event":"http_request","request_id":"63367160-8fcb-4966-85c3-c99607186564","tenant":"default","method":"POST","path":"/api/quickbooks/push/order/2","status":200,"duration_ms":2}
+
+ ❯ tests/quickbooks-manual-security.test.ts (2 tests | 2 failed) 3593ms
+   × requires recent proof before any provider call 391ms
+   × exports CKD commercial parents once without pricing component rows a second time 309ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/quickbooks-manual-security.test.ts > requires recent proof before any provider call
+AssertionError: expected 200 to be 403 // Object.is equality
+
+- Expected
++ Received
+
+- 403
++ 200
+
+ ❯ tests/quickbooks-manual-security.test.ts:13:143
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/quickbooks-manual-security.test.ts > exports CKD commercial parents once without pricing component rows a second time
+AssertionError: expected [ { Amount: 100, …(3) }, …(1) ] to have a length of 1 but got 2
+
+- Expected
++ Received
+
+- 1
++ 2
+
+ ❯ tests/quickbooks-manual-security.test.ts:17:136
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  00:18:26
+   Duration  3.83s (transform 1.38s, setup 30ms, import 75ms, tests 3.59s, environment 0ms)

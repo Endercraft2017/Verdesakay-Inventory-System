@@ -118,7 +118,15 @@ App.register('orders', async (view, filter) => {
     tableEl.querySelectorAll('[data-qbpush]').forEach((b) => b.onclick = async () => {
       b.disabled = true;
       try {
-        const r = await API.post(`/quickbooks/push/order/${b.dataset.qbpush}`);
+        const actor=App.getMe(), server=API.serverScope(), originalToken=API.getToken();
+        const selected=list.find(o=>String(o.id)===b.dataset.qbpush);
+        if(!selected)throw new Error('Reload the order list before exporting.');
+        const preview=await API.get(`/quickbooks/order/${b.dataset.qbpush}/preview`,{expectedServer:server,expectedUserId:actor.id});
+        if(App.getMe()!==actor || API.serverScope()!==server || API.getToken()!==originalToken || !b.isConnected)throw new Error('Sign-in, company or order view changed. Review the export again.');
+        const target=(preview.company_name || 'the connected QuickBooks company') + (preview.sandbox ? ' (sandbox)' : ' (production)');
+        if(!await UI.confirmDialog(`Send ${preview.number} as a ${preview.qbo_type} to ${target}? Reviewed order total: ${money(preview.total)}. This can create or update financial records.`, 'Export to QuickBooks'))return;
+        if(!actor || App.getMe()!==actor || API.serverScope()!==server || API.getToken()!==originalToken || !b.isConnected)throw new Error('Sign-in, company or order view changed. Review the export again.');
+        const r = await API.post(`/quickbooks/push/order/${b.dataset.qbpush}`, {connection_id:preview.connection_id,order_stamp:preview.order_stamp}, {expectedServer:server,expectedUserId:actor.id});
         UI.toast(`${r.updated ? 'Updated' : 'Created'} in QuickBooks (${r.qbo_type}${r.doc_number ? ' ' + r.doc_number : ''})`, 'success');
       } catch (e) { UI.toast(e.message, 'error'); }
       finally { b.disabled = false; }

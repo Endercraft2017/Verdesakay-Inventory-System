@@ -1,0 +1,3 @@
+PASS: actual server.ts denied stale manual export and missing destination, accepted fresh proof and generation-bound export, and replayed the same HTTP receipt.
+PASS: stored financial payload hash matches one commercial CKD parent, excluding the priced component; accepted invoice receipt retained and own lock released.
+Disposable catalogs and NODE_ENV=test Intuit transport only; no real provider financial write or hosting change.

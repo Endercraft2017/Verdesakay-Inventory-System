@@ -1,0 +1,43 @@
+Combined output from an overlapping rerun and the earlier finishing run; NUL padding removed. Not a clean standalone run.
+Error: http://127.0.0.1:4173/api/health is already used, make sure that nothing is running on the port/url or set reuseExistingServer:true in config.webServer.
+
+  ✓  31 tests/e2e/signup-budget.spec.ts:22:1 › signup busy response retains fields and the same key for a successful retry (1.6s)
+  ✓  32 tests/e2e/signup-budget.spec.ts:30:1 › signup refuses null, HTML and wrong-status success without losing request identity (2.0s)
+  ✓  33 tests/e2e/step-up.spec.ts:5:1 › stale admin changes require accessible password + factor confirmation and preserve cancelled work (3.1s)
+  ✓  34 tests/e2e/support-errors.spec.ts:3:1 › support submission hides a real storage failure, retains the draft and accepts a corrected retry (1.9s)
+
+
+  1) tests/e2e/manual-export.spec.ts:23:51 › confirmation refuses a changed view before sending ────
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('dialog', { name: 'Please confirm' }).getByRole('button', { name: 'Export to QuickBooks', exact: true })
+
+
+      25 |  const button=page.locator('tr').filter({hasText:'MANUAL-E2E-GUARDED'}).locator('[data-qbpush]');await expect(button).toBeVisible();let posts=0;page.on('request',r=>{if(r.url().includes('/quickbooks/push/order/')&&r.method()==='POST')posts++;});await button.click();const dialog=page.getByRole('dialog',{name:'Please confirm'});await expect(dialog).toBeVisible();
+      26 |  await page.evaluate(async kind=>{const w=window as any;if(kind==='account')w.App.setMe({id:99999,username:'synthetic-other-actor'});if(kind==='company')w.VDS_BASE_PATH='/different-company';if(kind==='view')await w.App.navigate('inventory');},changed);
+    > 27 |  await dialog.getByRole('button',{name:'Export to QuickBooks',exact:true}).click();await expect(page.getByText('Sign-in, company or order view changed. Review the export again.',{exact:true})).toBeVisible();expect(posts).toBe(0);
+         |                                                                            ^
+      28 | });
+      29 |
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/manual-export.spec.ts:27:76
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/manual-export-confirmation-14bea-changed-view-before-sending/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/manual-export-confirmation-14bea-changed-view-before-sending/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/manual-export-confirmation-14bea-changed-view-before-sending/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/manual-export-confirmation-14bea-changed-view-before-sending/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests/e2e/manual-export.spec.ts:23:51 › confirmation refuses a changed view before sending ─────
+  33 passed (1.8m)

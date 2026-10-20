@@ -1,0 +1,130 @@
+{
+  "date": "2026-10-20",
+  "base_commit": "affa182adba8ea3b66cd63b484fca7d21a68ae2a",
+  "scope": "Manual QuickBooks recent proof, source/destination preview preconditions, live actor/order checks, original UI context and CKD commercial projection",
+  "full_run": {
+    "files_passed": 310,
+    "files_failed": 0,
+    "tests_passed": 3255,
+    "tests_failed": 0,
+    "duration_seconds": 612.71
+  },
+  "final_focused": {
+    "files_passed": 7,
+    "files_failed": 0,
+    "tests_passed": 93,
+    "tests_failed": 0,
+    "duration_seconds": 37.59
+  },
+  "new_manual_cases": 28,
+  "focused_evolution": {
+    "reproduction": {
+      "files_passed": 0,
+      "files_failed": 1,
+      "tests_passed": 0,
+      "tests_failed": 2,
+      "duration_seconds": 3.83
+    },
+    "initial-focused": {
+      "files_passed": 5,
+      "files_failed": 0,
+      "tests_passed": 58,
+      "tests_failed": 0,
+      "duration_seconds": 21.17
+    },
+    "intermediate-focused": {
+      "files_passed": 7,
+      "files_failed": 0,
+      "tests_passed": 80,
+      "tests_failed": 0,
+      "duration_seconds": 31.46
+    },
+    "before-binding-focused": {
+      "files_passed": 7,
+      "files_failed": 0,
+      "tests_passed": 82,
+      "tests_failed": 0,
+      "duration_seconds": 33.3
+    },
+    "destination-focused": {
+      "files_passed": 6,
+      "files_failed": 1,
+      "tests_passed": 87,
+      "tests_failed": 2,
+      "duration_seconds": 37.3
+    },
+    "focused": {
+      "files_passed": 7,
+      "files_failed": 0,
+      "tests_passed": 90,
+      "tests_failed": 0,
+      "duration_seconds": 36.52
+    },
+    "final-focused": {
+      "files_passed": 7,
+      "files_failed": 0,
+      "tests_passed": 90,
+      "tests_failed": 0,
+      "duration_seconds": 37.17
+    },
+    "context-focused": {
+      "files_passed": 7,
+      "files_failed": 0,
+      "tests_passed": 90,
+      "tests_failed": 0,
+      "duration_seconds": 36.8
+    },
+    "preview-focused": {
+      "files_passed": 7,
+      "files_failed": 0,
+      "tests_passed": 93,
+      "tests_failed": 0,
+      "duration_seconds": 37.59
+    }
+  },
+  "final_playwright": {
+    "passed": 34,
+    "failed": 0,
+    "duration_seconds": 82.780728,
+    "new_manual_cases": 5
+  },
+  "failed_browser_fixture": {
+    "passed": 33,
+    "failed": 1,
+    "duration_seconds": 110.600766,
+    "reason": "Navigation already closes/cancels the confirmation; test incorrectly tried to click its removed button. Corrected assertion only."
+  },
+  "interrupted_full_run": {
+    "exit_code": 130,
+    "counted_as_completed": false,
+    "reason": "Add missing original actor/server/view confirmation guard and current-order preview/source preconditions"
+  },
+  "interrupted_browser_startup": {
+    "exit_code": 130,
+    "counted_as_completed": false,
+    "reason": "Stopped before tests while adding preview/source preconditions; startup-exited output retained"
+  },
+  "overlapped_browser_attempt": {
+    "exit_code": 1,
+    "counted_as_completed": false,
+    "reason": "Rerun started before previous run released its server; port-already-used error. Combined output has NUL padding removed and is explicitly not a standalone complete log. Failed-run JSON and partial original log retained separately."
+  },
+  "fixture_corrections": "Two old lifecycle HTTP cache requests initially lacked newly required destination body; updated while preserving original reviewed scope. TypeScript rejected null in supertest send; explicit malformed JSON fixed fixture typing.",
+  "typecheck": "passed",
+  "schema": "No schema/version/storage-format change; db:types not required/run",
+  "actual_server": "passed: stale and missing-scope refusal, fresh preview-bound export, exact HTTP receipt replay and commercial-only payload hash",
+  "secret_scan": "staged increment clean; final commit hook scans again",
+  "whole_control_statuses_changed": false,
+  "evidence_rows_updated": [
+    "AUTHZ-15"
+  ],
+  "deployment_command_run": false,
+  "hosted_rollout_verified": false,
+  "limits": [
+    "Five-minute recent proof and version preconditions are not one-use signed transaction authorization",
+    "Provider acceptance already sent cannot be recalled; known receipts retained while subsequent sends stop",
+    "Offline accounting/payroll/department verification still needs local-authority design; classes unchanged",
+    "Controlled reconciliation, currency/tax/company/accountant acceptance, data minimization and wider scorecard gates remain",
+    "Intuit pages/search not retrievable in this session; no new provider request-ID deduplication guarantee adopted"
+  ]
+}

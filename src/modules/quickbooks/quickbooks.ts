@@ -62,7 +62,7 @@ function atomicConnectionWrite<T>(write:()=>T):T {
     db.exec('ROLLBACK TO qbo_connection_write');db.exec('RELEASE qbo_connection_write');throw error;
   }
 }
-interface Connection { db: DatabaseSync; id: string; realm: string; company: string }
+interface Connection { db: DatabaseSync; id: string; realm: string; company: string; authorize?: () => void }
 function connectionId(): string {
   let id=getSetting<string>('qbo_connection_id');
   if (!id) {id=randomUUID();setSetting('qbo_connection_id',id);}
@@ -92,15 +92,18 @@ export function qboExportScope():{connection_id:string;company_key:string}|null 
 }
 
 export function getQboStatus() {
-  const c = cfg();
-  return {
-    configured: qboConfigured(),
-    connected: qboConnected(),
-    realm_id: c.realm_id ?? null,
-    company_name: c.company_name ?? null,
-    auto_push: !!c.auto_push,
-    sandbox: IS_SANDBOX,
-  };
+  // The displayed company and submitted generation must come from the same SQLite snapshot.
+  const row=queryOne<{configuration:string|null;generation:string|null;encrypted_tokens:string|null}>(`SELECT
+    (SELECT value FROM settings WHERE key='qbo_config') AS configuration,
+    (SELECT value FROM settings WHERE key='qbo_connection_id') AS generation,
+    (SELECT value FROM settings WHERE key='qbo_tokens') AS encrypted_tokens`)!;
+  const c=JSON.parse(row.configuration||'{}') as Partial<QboCfg>;
+  const generation=JSON.parse(row.generation||'null') as string|null;
+  let t:Partial<Tokens>={};
+  try{t=JSON.parse(decryptSecret(JSON.parse(row.encrypted_tokens||'""'))||'{}');}catch{/* unavailable credentials are disconnected */}
+  const connected=!!c.realm_id&&c.environment===ENVIRONMENT&&!!t.refresh_token&&typeof generation==='string'&&!!generation;
+  return {configured:qboConfigured(),connected,connection_id:connected?generation:null,
+    realm_id:c.realm_id??null,company_name:c.company_name??null,auto_push:!!c.auto_push,sandbox:IS_SANDBOX};
 }
 
 export function setAutoPush(on: boolean): void { saveCfg({ auto_push: !!on }); }
@@ -234,9 +237,14 @@ export const __qboMock: QboMock = {
   },
 };
 
+function assertAuthorized(c:Connection):void {
+  assertCurrent(c);
+  c.authorize?.();
+}
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 async function qboRequest(c:Connection,method:'GET'|'POST',path:string,body?:unknown,operationKey?:string):Promise<any> {
-  assertCurrent(c);
+  assertAuthorized(c);
   let requestId:string|undefined;
   if(method==='POST'){
     if(!operationKey)throw new Error('Missing accounting operation key');
@@ -256,7 +264,7 @@ async function qboRequest(c:Connection,method:'GET'|'POST',path:string,body?:unk
   let sent=false;
   try {
     const send=async(tok:string)=>{
-      assertCurrent(c);sent=true;
+      assertAuthorized(c);sent=true;
       if(IS_TEST){
         __qboMock.calls.push({method,path,body});
         if(__qboMock.transport)return __qboMock.transport(method,path,body,c.realm,requestId);
@@ -359,13 +367,13 @@ export interface PushResult {
 }
 
 /** Push one order to QuickBooks. `sale`/`job` → Invoice, `purchase` → Bill. */
-export async function pushOrder(order: Order, items: OrderItem[], expectedConnectionId?:string): Promise<PushResult> {
-  const c=connection();
+export async function pushOrder(order: Order, items: OrderItem[], expectedConnectionId?:string, authorize?:()=>void): Promise<PushResult> {
+  const c=connection();c.authorize=authorize;assertAuthorized(c);
   if(expectedConnectionId&&c.id!==expectedConnectionId)throw conflict();
   const lock=randomUUID();
   const acquired=c.db.prepare('INSERT OR IGNORE INTO qbo_export_locks(company_key,order_id,lock_id) VALUES(?,?,?)').run(c.company,order.id,lock);
   if(Number(acquired.changes)!==1)throw conflict('This order has an active or interrupted QuickBooks export. Reconcile it before retrying.');
-  try {return await pushConnectedOrder(c,order,items);}
+  try {return await pushConnectedOrder(c,order,items.filter(item=>item.fulfillment_mode!=='ckd_component'));}
   finally {c.db.prepare('DELETE FROM qbo_export_locks WHERE company_key=? AND order_id=? AND lock_id=?').run(c.company,order.id,lock);}
 }
 

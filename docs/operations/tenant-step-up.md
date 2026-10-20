@@ -18,8 +18,10 @@ only after successful verification. Cancellation leaves the action unsaved.
 Existing password resets, assisted recovery and factor-management endpoints retain their own
 explicit password/factor requirements; a recent-verification marker cannot substitute for those.
 Ordinary inventory, clock, production, order and other offline business work is unchanged.
-Department management, financial approvals, exports and every possible sensitive business action
-are not all covered by this increment. AUTHZ-15 therefore remains open rather than becoming PASS.
+Manual QuickBooks exports now require recent proof, destination binding and live actor/order
+checks before provider calls (20 October follow-up below). Department management, offline
+financial/payroll claims and other sensitive business actions remain outside this scope.
+AUTHZ-15 remains open rather than becoming PASS.
 
 ## Server guarantees
 
@@ -70,3 +72,21 @@ Sources reviewed 2026-10-16:
 [OWASP Authentication — sensitive-feature reauthentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html#require-re-authentication-for-sensitive-features),
 [OWASP MFA — factor changes and recovery](https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html).
 The five-minute window is this application's engineering choice, not a claimed universal mandate.
+
+
+## Manual financial export follow-up — 20 October 2026
+
+The already-online QuickBooks manual export now checks order-specific permissions before fresh
+proof, then requires the reviewed connection generation and rechecks actor/order state before
+new provider calls. Accepted-write bookkeeping survives mid-flight revocation. Shared recent
+identity confirmation remains a five-minute window, not one-use transaction signing. Desktop
+shows a separate order/company/environment/total confirmation before export. See
+[manual exports](manual-quickbooks-exports.md) and the [remaining action inventory](../audits/sensitive-action-inventory.md).
+Offline company-claim accounting/payroll handlers retain their authority rules; a replay cannot
+supply an interactive cloud token. Local-authority verification design is still required.
+
+The final contract additionally requires order_stamp from the read-only current-order preview.
+The desktop reviews the preview total/target and refuses account/company/view changes before
+sending. A changed source version after review is rejected before provider work; the stamp is
+a precondition, not a one-use authorization credential. An interrupted preliminary full run
+was stopped to include these confirmation safeguards; only the final completed run counts.

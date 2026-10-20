@@ -30,3 +30,13 @@ trusted fresh initialization and browser uncertainty handling. Initial/final foc
 outputs are distinguished, with TypeScript, actual disposable server smoke, full regression
 and redacted staged scan. Exact scope and live limitations are in its verification/runbook.
 No full-control PASS, hosted capacity, provider acceptance or production rollout is inferred.
+
+
+`manual-export-*` records manual accounting-export hardening. Reproduced product failures,
+changed-contract fixture failures and compiler correction are retained with final checks.
+Research limits, exact scope and remaining action families are documented. Synthetic provider
+transport and local browser/process checks do not establish real Intuit or release acceptance.
+
+The manual-export combined overlap log is explicitly non-standalone with NUL padding removed;
+failed browser JSON and partial original output remain separate. Final browser/full outputs
+are clean serial runs. Historical intermediate and interrupted outputs are not final passes.

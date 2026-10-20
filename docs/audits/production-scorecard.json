@@ -427,7 +427,7 @@
       "severity": "Medium",
       "requirement": "High-risk actions use step-up authentication or contextual signals (new device, unusual location, impossible travel).",
       "status": "FAIL",
-      "evidence": "Tenant account/role/permission/MFA-policy, node-trust and mail/AI/accounting configuration changes now require session-bound verification within five minutes; password and enabled factor are checked. OAuth connection callbacks bind the original live actor/session. Enrolled console operators require user-verified WebAuthn and fresh console-write proof. Other high-risk business flows and real enrollment/staging acceptance remain incomplete. See operations/tenant-step-up.md and operations/console-passkeys.md.",
+      "evidence": "Tenant administrative and enrolled console operator proofs remain. Manual QuickBooks exports now add order-specific authority, recent session proof, mandatory reviewed destination/source-version preconditions and live actor/order checks before provider calls. Accepted-write bookkeeping is retained after revocation. This is not one-use signed transaction approval. Offline financial/payroll/department and wider high-risk actions still need local-authority verification design and device/staging acceptance. See operations/manual-quickbooks-exports.md and sensitive-action-inventory.md.",
       "scenario": "A privileged session can still reach sensitive business actions outside the protected administrative scope. Unenrolled console accounts remain password-only until policy enforcement is enabled.",
       "fix": "Inventory remaining financial/export/department and other sensitive actions and apply proportionate server-side verification with offline-authority design and regression evidence. Complete real-device enrollment and staging acceptance; enable console passkey and tenant privileged-MFA policies after backup/recovery tests."
     },
@@ -2109,10 +2109,10 @@
   "remediation_date": "2026-10-16",
   "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
   "latest_follow_up": {
-    "date": "2026-10-19",
-    "scope": "Public signup admission, bounded async receipt/owner hashing, prepared fresh initialization and uncertain-response browser retries",
-    "base_commit": "e28a9217082dcc44d96121011262511e3475bd0f",
-    "verification": "evidence/signup-budget-verification.json",
+    "date": "2026-10-20",
+    "scope": "Manual accounting export freshness, reviewed source/destination preconditions, actor/view binding and shared commercial-line projection",
+    "base_commit": "affa182adba8ea3b66cd63b484fca7d21a68ae2a",
+    "verification": "evidence/manual-export-verification.json",
     "whole_control_statuses_changed": false
   }
 }

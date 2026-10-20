@@ -314,3 +314,30 @@ main thread. Local event-loop, saturation, process/replay/fault and browser unce
 support this scoped change, not a hosted SLA, distributed abuse defense or standards certification.
 No edge/provider/host policy was provisioned. Existing browser abort/key-retry principles apply;
 abort is not proof of rollback. See public-signup-budget.md and signup-budget-* evidence.
+
+
+### Manual financial export verification — 20 October 2026
+
+Primary sources retrieved today: OWASP Authentication,
+https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html ; OWASP Transaction
+Authorization, https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html ;
+and HTTP RFC 9110 section 9.2.2, https://httpwg.org/specs/rfc9110.html#idempotent.methods .
+The design uses server-side live checks, recent session proof and significant-data review with
+an explicit destination generation. It is not unique, signed transaction approval. Order/item
+and actor state is rechecked before further sends, while accepted provider receipts are kept.
+HTTP retry guidance supports refusing blind replays of uncertain non-idempotent operations.
+
+Intuit search and direct retrieval of request-ID/error-handling pages failed in this session;
+no new provider deduplication duration or reconciliation guarantee is asserted. Existing
+unknown/no-resend behavior remains. Offline financial claims retain their existing authority:
+cloud-only reauthentication would break accepted site replay, and copying cloud factors would
+create a different risk. Dedicated local-factor/command-binding design remains engineering work.
+See sensitive-action-inventory.md and manual-quickbooks-exports.md for scope and open acceptance.
+
+
+Review strengthened the final manual contract with a current-order/destination preview under
+one SQLite read transaction. The displayed total is refreshed and its non-secret source hash
+is checked before execution; the client captures actor/server/view across confirmation. A
+source-version precondition and short-lived session reauthentication still do not constitute
+a unique one-use transaction credential. Known sent acceptance remains evidence even if the
+actor/source changes afterward. Interrupted runs are retained and replaced by final verification.

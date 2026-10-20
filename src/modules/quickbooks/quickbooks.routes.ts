@@ -4,7 +4,7 @@ import {exportJobs,retryExportJob} from './export-jobs';
 import { Router } from 'express';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { canOnOrder } from '../inventory/order-access';
-import { withTenant, getSetting, setSetting, queryOne, queryAll, DEFAULT_TENANT, tokenDigest } from '../../shared/db';
+import { withTenant, getSetting, setSetting, queryOne, queryAll, activeDb, DEFAULT_TENANT, tokenDigest } from '../../shared/db';
 import { isValidSlug, getTenant, retiredDefaultTenant } from '../../platform/platform';
 import { parseBody } from '../../shared/validation';
 import { z } from 'zod';
@@ -14,7 +14,7 @@ import {
 import { currentSlug } from '../../platform/quota';
 import type { Order, OrderItem } from '../../shared/types';
 import { syncClass } from '../../sync';
-import { requireFreshVerification, stepUpCredentialStamp, isSavedVerificationContextCurrent, type SavedVerificationContext } from '../../shared/step-up';
+import { requireFreshVerification, hasFreshVerification, stepUpCredentialStamp, isSavedVerificationContextCurrent, type SavedVerificationContext } from '../../shared/step-up';
 
 const router = Router();
 
@@ -80,7 +80,7 @@ router.post('/exports/:connection/:id/retry',requirePermission('users.manage'),s
 });
 
 // GET /api/quickbooks/status
-router.get('/status', requirePermission('users.manage'), (_req, res) => {
+router.get('/status', requireAnyPermission(['users.manage','orders.edit','purchasing.manage']), (_req, res) => {
   res.json({ ...getQboStatus(), last_order_link: null });
 });
 
@@ -110,6 +110,25 @@ router.put('/auto-push', requirePermission('users.manage'), syncClass('online'),
   res.json({ ok: true, auto_push: enabled });
 });
 
+function orderStamp(order:Order|undefined,items:OrderItem[]):string {
+  return crypto.createHash('sha256').update(JSON.stringify([order,items])).digest('hex');
+}
+
+// Current review data and source precondition; no provider call or authorization token is minted.
+router.get('/order/:id/preview',requireAnyPermission(['orders.edit','purchasing.manage']),syncClass('online'),(req,res,next)=>{
+  const d=activeDb();d.exec('SAVEPOINT manual_export_preview');
+  try {
+    const id=Number(req.params.id),order=queryOne<Order>('SELECT * FROM orders WHERE id=?',id);
+    if(!order){d.exec('RELEASE manual_export_preview');res.status(404).json({error:'Order not found'});return;}
+    if(!canOnOrder(req.user!,order.type,'edit')){d.exec('RELEASE manual_export_preview');res.status(403).json({error:'Forbidden: insufficient permissions'});return;}
+    const items=queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id=? ORDER BY sort,id',id),status=getQboStatus();
+    if(!status.connected){d.exec('RELEASE manual_export_preview');res.status(409).json({error:'Connect QuickBooks before reviewing an export.'});return;}
+    const preview={connection_id:status.connection_id,order_stamp:orderStamp(order,items),number:order.number,total:order.total,
+      qbo_type:order.type==='purchase'?'Bill':'Invoice',company_name:status.company_name,sandbox:status.sandbox};
+    d.exec('RELEASE manual_export_preview');res.set('Cache-Control','no-store').json(preview);
+  }catch(error){d.exec('ROLLBACK TO manual_export_preview');d.exec('RELEASE manual_export_preview');next(error);}
+});
+
 // POST /api/quickbooks/push/order/:id — push a single order (create or update in QBO)
 router.post('/push/order/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), syncClass('online'), async (req, res, next) => {
   try {
@@ -118,8 +137,24 @@ router.post('/push/order/:id', requireAnyPermission(['orders.edit', 'purchasing.
     if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
     // A purchase order (pushed as a QBO Bill) is purchasing's; a sale order the orders module's.
     if (!canOnOrder(req.user!, order.type, 'edit')) { res.status(403).json({ error: 'Forbidden: insufficient permissions' }); return; }
+    // Object-specific permission precedes reauthentication. The online sync gate already ran.
+    let verified=false;
+    requireFreshVerification(req,res,()=>{verified=true;});
+    if(!verified)return;
+    if(typeof req.body?.connection_id!=='string'){res.status(400).json({error:'Refresh QuickBooks connection status before exporting.'});return;}
+    const {connection_id,order_stamp}=parseBody(z.object({connection_id:z.string().uuid('Refresh QuickBooks connection status before exporting.'),order_stamp:z.string().regex(/^[a-f0-9]{64}$/,'Review the current order before exporting.')}),req.body);
     const items = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', id);
-    const result = await pushOrder(order, items);
+    const stamp=stepUpCredentialStamp(req.user!.id), snapshot=orderStamp(order,items);
+    if(order_stamp!==snapshot){res.status(409).json({error:'Order changed after review. Review the current order before exporting.'});return;}
+    const authorize=()=>{
+      const current=queryOne<Order>('SELECT * FROM orders WHERE id=?',id);
+      const currentItems=queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id=? ORDER BY sort,id',id);
+      if(!req.token||!hasFreshVerification(req.user!.id,req.token)||stepUpCredentialStamp(req.user!.id)!==stamp||
+        orderStamp(current,currentItems)!==snapshot){
+        throw Object.assign(new Error('Export authorization or order changed. Review the order and QuickBooks outcome before starting again.'),{status:409});
+      }
+    };
+    const result = await pushOrder(order, items, connection_id, authorize);
     res.json(result);
   } catch (e) {
     const err = e as Error & { status?: number };

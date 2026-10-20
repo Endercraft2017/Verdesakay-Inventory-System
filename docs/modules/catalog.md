@@ -1069,6 +1069,11 @@ new cloud-only tables are excluded from node effects/snapshots. Shared idempoten
 also bind the accounting connection/company/environment and never cache accounting 409s.
 See `operations/quickbooks-lifecycle.md`.
 **Owned files:** `quickbooks.ts`, `export-jobs.ts`, routes: `quickbooks.routes.ts`.
+Manual exports (2026-10-20) require recent session proof, reviewed connection generation/source version and
+live actor/order checks before provider calls. Accepted receipt bookkeeping remains distinct
+from authorization to send another request. Status target/generation is a single SQLite
+snapshot; export roles may read metadata while configuration remains administrator-only.
+The adapter filters CKD component pricing for every caller. See operations/manual-quickbooks-exports.md.
 **Automatic exports (2026-10-18):** order-save transactions persist connection-bound versioned
 intent; the cloud startup/timer worker claims one job per tenant per sequential pass. Later edits
 coalesce; unknown writes stay blocked. Administrator status and fresh-verification safe retry

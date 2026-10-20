@@ -139,3 +139,13 @@ counters contain no account identity. Browser keys/password fields remain page-m
 a twenty-second abort does not imply server rollback. Fresh tenant seeding uses the chosen
 owner hash instead of another global bootstrap hash. Existing retention/rights/backup review
 remains unchanged. See ../operations/public-signup-budget.md.
+
+
+### Manual accounting export checks (2026-10-20)
+
+Current actor/order snapshot checks are memory-only. No new password, factor, session or raw
+order snapshot is added to durable accounting receipts. Export-authorized roles may read the
+company/environment/generation metadata needed to bind their request; provider credentials
+remain private. Minimal known acceptance receipts/links survive actor revocation because a
+sent provider write cannot be recalled. Unknown outcomes are not cleared or resent. Existing
+accounting retention, confidentiality and reconciliation duties remain. See ../operations/manual-quickbooks-exports.md.

@@ -157,20 +157,20 @@ it('keeps delayed operations and refresh admission isolated between tenant datab
 it('cannot replay an old HTTP success as an export into a newer company connection',async()=>{
  const token=await login(ctx.api),key=randomUUID();
  const created=await ctx.api.post('/api/orders').set('Authorization',`Bearer ${token}`).send({type:'sale',customer_name:'HTTP cache company',items:[{name:'Item',quantity:1,unit_price:10}]});expect(created.status).toBe(201);
- const endpoint=`/api/quickbooks/push/order/${created.body.id}`;
- expect((await ctx.api.post(endpoint).set('Authorization',`Bearer ${token}`).set('Idempotency-Key',key)).status).toBe(200);
+ const endpoint=`/api/quickbooks/push/order/${created.body.id}`,expected=(await ctx.api.get(`/api/quickbooks/order/${created.body.id}/preview`).set('Authorization',`Bearer ${token}`)).body;
+ expect((await ctx.api.post(endpoint).set('Authorization',`Bearer ${token}`).set('Idempotency-Key',key).send(expected)).status).toBe(200);
  qbo.disconnect();await qbo.completeConnect('new-code','222');qbo.__qboMock.reset();
- const replay=await ctx.api.post(endpoint).set('Authorization',`Bearer ${token}`).set('Idempotency-Key',key);
+ const replay=await ctx.api.post(endpoint).set('Authorization',`Bearer ${token}`).set('Idempotency-Key',key).send(expected);
  expect(replay.status).toBe(409);expect(replay.headers['idempotency-replayed']).toBeUndefined();expect(qbo.__qboMock.calls).toEqual([]);
 });
 it('does not cache a temporary accounting conflict after the operation becomes available',async()=>{
  const token=await login(ctx.api),key=randomUUID();
  const created=await ctx.api.post('/api/orders').set('Authorization',`Bearer ${token}`).send({type:'sale',customer_name:'HTTP retry customer',items:[{name:'Item',quantity:1,unit_price:10}]});expect(created.status).toBe(201);
- const id=created.body.id,endpoint=`/api/quickbooks/push/order/${id}`;
+ const id=created.body.id,endpoint=`/api/quickbooks/push/order/${id}`,expected=(await ctx.api.get(`/api/quickbooks/order/${created.body.id}/preview`).set('Authorization',`Bearer ${token}`)).body;
  db.run('INSERT INTO qbo_export_locks(company_key,order_id,lock_id) VALUES(?,?,?)','sandbox:111',id,randomUUID());
- expect((await ctx.api.post(endpoint).set('Authorization',`Bearer ${token}`).set('Idempotency-Key',key)).status).toBe(409);
+ expect((await ctx.api.post(endpoint).set('Authorization',`Bearer ${token}`).set('Idempotency-Key',key).send(expected)).status).toBe(409);
  db.run('DELETE FROM qbo_export_locks WHERE order_id=?',id);
- expect((await ctx.api.post(endpoint).set('Authorization',`Bearer ${token}`).set('Idempotency-Key',key)).status).toBe(200);
+ expect((await ctx.api.post(endpoint).set('Authorization',`Bearer ${token}`).set('Idempotency-Key',key).send(expected)).status).toBe(200);
 });
 it('strips accounting links, attempts and locks from the node snapshot',async()=>{
  await qbo.pushOrder(order(),[]);const sync=await import('../src/sync');sync.enableSync(db.getDb('default'),{role:'cloud',nodeNo:0});

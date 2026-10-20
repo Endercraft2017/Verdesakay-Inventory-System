@@ -1488,3 +1488,14 @@ or saturated work returns safe 503/Retry-After; live conflicts retain their auth
 Website fetch/body deadline retains draft/key for uncertain retry. No await occurs inside
 publication, and no global password-work slot wraps nested password-work calls. See
 `operations/public-signup-budget.md` for remaining synchronous setup and capacity limits.
+
+
+## Manual QuickBooks authorization (2026-10-20)
+
+Read-only current order/destination preview → original actor/server/view-bound confirmation → existing auth/online gate → order-type
+permission → fresh session proof or existing identity dialog → required reviewed connection UUID/source hash
+→ capture actor/credential/order/items → generation-bound adapter lock → authorize before each
+provider request (also after refresh/401 waits) → shared commercial-line projection → persist
+known provider receipt/link → release own lock. Actor/order change stops future calls; acceptance
+already received is retained. Background intents retain their own policy, not a forged session.
+Offline accounting/payroll claim routes are not retagged; see the sensitive-action inventory.

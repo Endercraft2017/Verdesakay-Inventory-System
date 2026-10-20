@@ -28,7 +28,7 @@ async function connect(): Promise<void> {
 }
 
 describe('status + OAuth', () => {
-  it('requires users.manage', async () => {
+  it('requires administration or order-export permission', async () => {
     const wh = await createEmployee(ctx.api, token, { role: 'warehouse' });
     expect((await ctx.api.get('/api/quickbooks/status').set('Authorization', `Bearer ${wh.token}`)).status).toBe(403);
   });
@@ -62,7 +62,7 @@ describe('push order', () => {
     });
     const id = o.body.id;
 
-    const p1 = await ctx.api.post(`/api/quickbooks/push/order/${id}`).set(authHdr());
+    const p1 = await ctx.api.post(`/api/quickbooks/push/order/${id}`).set(authHdr()).send({connection_id:dbmod.getSetting('qbo_connection_id'),order_stamp:(await ctx.api.get(`/api/quickbooks/order/${id}/preview`).set(authHdr())).body.order_stamp});
     expect(p1.status).toBe(200);
     expect(p1.body).toMatchObject({ qbo_type: 'Invoice', updated: false });
     expect(p1.body.qbo_id).toBeTruthy();
@@ -71,7 +71,7 @@ describe('push order', () => {
     expect(paths.some((p) => p.startsWith('customer'))).toBe(true);
     expect(paths.some((p) => p === 'invoice')).toBe(true);
 
-    const p2 = await ctx.api.post(`/api/quickbooks/push/order/${id}`).set(authHdr());
+    const p2 = await ctx.api.post(`/api/quickbooks/push/order/${id}`).set(authHdr()).send({connection_id:dbmod.getSetting('qbo_connection_id'),order_stamp:(await ctx.api.get(`/api/quickbooks/order/${id}/preview`).set(authHdr())).body.order_stamp});
     expect(p2.body.updated).toBe(true);
     const lastInvoiceCall = [...qbo.__qboMock.calls].reverse().find((c) => c.path === 'invoice')!;
     expect(lastInvoiceCall.body).toHaveProperty('Id');
@@ -87,7 +87,7 @@ describe('push order', () => {
       type: 'purchase', customer_name: 'Steel Supplier',
       items: [{ name: 'Steel Plate', quantity: 10, unit_price: 500 }],
     });
-    const p = await ctx.api.post(`/api/quickbooks/push/order/${o.body.id}`).set(authHdr());
+    const p = await ctx.api.post(`/api/quickbooks/push/order/${o.body.id}`).set(authHdr()).send({connection_id:dbmod.getSetting('qbo_connection_id'),order_stamp:(await ctx.api.get(`/api/quickbooks/order/${o.body.id}/preview`).set(authHdr())).body.order_stamp});
     expect(p.body.qbo_type).toBe('Bill');
     expect(qbo.__qboMock.calls.some((c) => c.path.startsWith('vendor'))).toBe(true);
     expect(qbo.__qboMock.calls.some((c) => c.path === 'bill')).toBe(true);
@@ -98,7 +98,7 @@ describe('push order', () => {
     const o = await ctx.api.post('/api/orders').set(authHdr())
       .send({ type: 'sale', customer_name: 'X', items: [{ name: 'Item', quantity: 1, unit_price: 1 }] });
     expect(o.body.id).toBeTruthy();
-    const p = await ctx.api.post(`/api/quickbooks/push/order/${o.body.id}`).set(authHdr());
+    const p = await ctx.api.post(`/api/quickbooks/push/order/${o.body.id}`).set(authHdr()).send({connection_id:dbmod.getSetting('qbo_connection_id'),order_stamp:'0'.repeat(64)});
     expect(p.status).toBe(409);
   });
 });

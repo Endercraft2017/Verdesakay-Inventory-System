@@ -1,0 +1,65 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/quickbooks-lifecycle.test.ts > cannot replay an old HTTP success as an export into a newer company connection
+{"timestamp":"2026-10-20T00:26:18.515Z","level":"info","event":"http_request","request_id":"d33e28b6-5bc2-4481-b169-d60a34749484","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":330}
+
+stdout | tests/quickbooks-lifecycle.test.ts > cannot replay an old HTTP success as an export into a newer company connection
+{"timestamp":"2026-10-20T00:26:18.540Z","level":"info","event":"http_request","request_id":"a4c867dc-f8a2-487d-bfad-1f7668dd2aea","tenant":"default","method":"POST","path":"/api/orders","status":201,"duration_ms":10}
+
+stdout | tests/quickbooks-lifecycle.test.ts > cannot replay an old HTTP success as an export into a newer company connection
+{"timestamp":"2026-10-20T00:26:18.557Z","level":"info","event":"http_request","request_id":"ea641762-628b-4403-97e3-b647c0e1718f","tenant":"default","method":"POST","path":"/api/quickbooks/push/order/1","status":400,"duration_ms":11}
+
+stdout | tests/quickbooks-lifecycle.test.ts > does not cache a temporary accounting conflict after the operation becomes available
+{"timestamp":"2026-10-20T00:26:18.920Z","level":"info","event":"http_request","request_id":"9ddea36d-3314-4d78-b1d0-428358a0b7f5","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":356}
+
+stdout | tests/quickbooks-lifecycle.test.ts > does not cache a temporary accounting conflict after the operation becomes available
+{"timestamp":"2026-10-20T00:26:18.925Z","level":"info","event":"http_request","request_id":"593e26ec-3fb5-4ff9-9aea-6ec5313d2ba5","tenant":"default","method":"POST","path":"/api/orders","status":201,"duration_ms":2}
+
+stdout | tests/quickbooks-lifecycle.test.ts > does not cache a temporary accounting conflict after the operation becomes available
+{"timestamp":"2026-10-20T00:26:18.929Z","level":"info","event":"http_request","request_id":"34ec471b-5e3f-4476-8c36-4c21ba44abeb","tenant":"default","method":"POST","path":"/api/quickbooks/push/order/2","status":400,"duration_ms":2}
+
+ ❯ tests/quickbooks-lifecycle.test.ts (24 tests | 2 failed) 3035ms
+   × cannot replay an old HTTP success as an export into a newer company connection 394ms
+   × does not cache a temporary accounting conflict after the operation becomes available 370ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/quickbooks-lifecycle.test.ts > cannot replay an old HTTP success as an export into a newer company connection
+AssertionError: expected 400 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 400
+
+ ❯ tests/quickbooks-lifecycle.test.ts:161:114
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/quickbooks-lifecycle.test.ts > does not cache a temporary accounting conflict after the operation becomes available
+AssertionError: expected 400 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 400
+
+ ❯ tests/quickbooks-lifecycle.test.ts:171:114
+    169|  const id=created.body.id,endpoint=`/api/quickbooks/push/order/${id}`;
+    170|  db.run('INSERT INTO qbo_export_locks(company_key,order_id,lock_id) VA…
+    171|  expect((await ctx.api.post(endpoint).set('Authorization',`Bearer ${to…
+       |                                                                                                                  ^
+    172|  db.run('DELETE FROM qbo_export_locks WHERE order_id=?',id);
+    173|  expect((await ctx.api.post(endpoint).set('Authorization',`Bearer ${to…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 6 passed (7)
+      Tests  2 failed | 87 passed (89)
+   Start at  00:25:48
+   Duration  37.30s (transform 1.47s, setup 79ms, import 439ms, tests 35.47s, environment 498ms)
