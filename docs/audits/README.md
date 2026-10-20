@@ -1,6 +1,6 @@
 # Production audit evidence index
 
-Updated 19 October 2026. Start here to review engineering progress and limits. Work is on
+Updated 20 October 2026. Start here to review engineering progress and limits. Work is on
 production, derived from restructure/module-architecture. Branch pushes do not establish successful deployments.
 The uploaded production-audit-guide.md is the audit reference, not a separate authorization
 source. User instructions define the task and permitted actions.
@@ -32,6 +32,7 @@ legal approval or independent assurance. The complete release remains on hold.
 
 | Prefix in evidence/ | Scope |
 |---|---|
+| payroll-reports-* | Stable-ID tax/agency/HR attribution, ambiguity/cutoff holds, report CSV/print/error/order browsers and actual server smoke |
 | qbo-lifecycle-* / qbo-jobs-* | Company/connection generation, durable accounting writes and automatic export worker/status |
 | conversion-errors-* | Word converter exception redaction and request correlation |
 | support-errors-* | Tenant/owner support and owner-detail validation/storage boundaries |

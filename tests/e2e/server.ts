@@ -27,6 +27,11 @@ const disclosureUsers = ['original', 'reused'].map(kind => Number(db.run("INSERT
 const disclosureEmployees = ['Synthetic Payroll New', 'Synthetic Payroll Old'].map((name,i) => Number(db.run('INSERT INTO employees(employee_no,name,user_id) VALUES(?,?,?)','DISC-BROWSER-'+i,name,disclosureUsers[i]).lastInsertRowid));
 db.run("INSERT INTO employee_profile_changes(employee_id,field,old_value,new_value,source) VALUES(?,'name','Synthetic Payroll Old','Synthetic Payroll New','hr_edit')",disclosureEmployees[0]);
 const disclosureForm = db.queryOne<{id:number}>("SELECT id FROM form_definitions WHERE slug='hr_payroll'")!;
+// Separate statutory fixtures: identical names, different IDs and pay amounts in a clean year.
+for (const [i, amount] of [12000,24000].entries()) {
+  const id = Number(db.run('INSERT INTO employees(employee_no,name,tin_no,sss_no) VALUES(?,?,?,?)', 'REPORT-BROWSER-'+i, 'Synthetic Report Twin', 'REPORT-TIN-'+i, 'REPORT-SSS-'+i).lastInsertRowid);
+  db.run("INSERT INTO form_records(form_def_id,number,data,status,created_by) VALUES(?,?,?,'paid',1)", disclosureForm.id, 'REPORT-BROWSER-'+i, JSON.stringify({employee_id:id,employee_name:'Synthetic Report Twin',pay_date:'2025-06-15',basic_salary:amount,total_earnings:amount,withholding_tax:100+i}));
+}
 for(const number of ['REPAIR-BROWSER','REPAIR-CANCEL','REPAIR-STALE']) db.run("INSERT INTO form_records(form_def_id,number,data,status,created_by) VALUES(?,?,?,'paid',1)",disclosureForm.id,number,JSON.stringify({employee_name:'Synthetic Payroll Old',net_pay:7654}));
 for (const [number,data] of [['DISC-BROWSER-LEGACY',{employee_name:'Synthetic Payroll Old'}],['DISC-BROWSER-STAMP',{employee_name:'Synthetic Payroll Old',employee_id:disclosureEmployees[0]}],['DISC-BROWSER-TEXT',{employee_name:'Synthetic Payroll Old',employee_id:String(disclosureEmployees[0])}]] as const) db.run("INSERT INTO form_records(form_def_id,number,data,status,created_by) VALUES(?,?,?,'paid',1)",disclosureForm.id,number,JSON.stringify({...data,net_pay:7654}));
 // Synthetic accounting-only identity: verify tax printing without general HR/pay access.

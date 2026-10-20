@@ -1,0 +1,89 @@
+[WebServer] (node:49668) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:49681) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:49692) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 4 tests using 1 worker
+
+(node:49700) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e/accounting-privacy.spec.ts:3:1 › accounting browser receives bounded tax identity and renders the seeded certificate (1.9s)
+  ✘  2 tests/e2e/payroll-reports.spec.ts:11:1 › same-name employees retain separate certificates, print details and CSV identifiers (2.8s)
+(node:49850) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  3 tests/e2e/payroll-reports.spec.ts:29:1 › every payroll report shows the real integrity error and disables export (3.1s)
+  ✓  4 tests/e2e/payroll-reports.spec.ts:43:1 › changing year clears export immediately and ignores a late older response (2.1s)
+
+
+  1) tests/e2e/payroll-reports.spec.ts:11:1 › same-name employees retain separate certificates, print details and CSV identifiers
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  -  1
+    + Received  + 35
+
+    - Array []
+    + Array [
+    +   Object {
+    +     "description": "Ensure table headers have discernible text",
+    +     "help": "Table header text should not be empty",
+    +     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/empty-table-header?application=playwright",
+    +     "id": "empty-table-header",
+    +     "impact": "minor",
+    +     "nodes": Array [
+    +       Object {
+    +         "all": Array [],
+    +         "any": Array [
+    +           Object {
+    +             "data": null,
+    +             "id": "has-visible-text",
+    +             "impact": "minor",
+    +             "message": "Element does not have text that is visible to screen readers",
+    +             "relatedNodes": Array [],
+    +           },
+    +         ],
+    +         "failureSummary": "Fix any of the following:
+    +   Element does not have text that is visible to screen readers",
+    +         "html": "<th></th>",
+    +         "impact": "minor",
+    +         "none": Array [],
+    +         "target": Array [
+    +           "th:nth-child(8)",
+    +         ],
+    +       },
+    +     ],
+    +     "tags": Array [
+    +       "cat.name-role-value",
+    +       "best-practice",
+    +     ],
+    +   },
+    + ]
+
+      19 |   for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+      20 |   const csv = Buffer.concat(chunks).toString(); expect(csv).toContain('REPORT-BROWSER-0'); expect(csv).toContain('REPORT-TIN-1');
+    > 21 |   expect((await new AxeBuilder({page}).include('[role="dialog"]').analyze()).violations).toEqual([]);
+         |                                                                                          ^
+      22 |   await page.screenshot({path:'work/payroll-reports-twins.png'});
+      23 |   await b.getByRole('button',{name:'Print',exact:true}).click();
+      24 |   const frame = page.frameLocator('#b16-frame');
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-reports.spec.ts:21:90
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-reports-same-name--1cf0d-details-and-CSV-identifiers/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-reports-same-name--1cf0d-details-and-CSV-identifiers/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-reports-same-name--1cf0d-details-and-CSV-identifiers/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-reports-same-name--1cf0d-details-and-CSV-identifiers/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests/e2e/payroll-reports.spec.ts:11:1 › same-name employees retain separate certificates, print details and CSV identifiers
+  3 passed (18.6s)

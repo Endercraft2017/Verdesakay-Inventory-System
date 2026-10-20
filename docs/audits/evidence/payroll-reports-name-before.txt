@@ -1,0 +1,58 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payroll-report-identity.test.ts > blocks unknown names, missing ownership and unscopable dates without exposing raw values
+{"timestamp":"2026-10-20T04:03:14.589Z","level":"info","event":"http_request","request_id":"3f249138-52e5-47f0-ab27-c4487a555f15","tenant":"default","method":"GET","path":"/api/accounting/bir-2316","status":409,"duration_ms":2}
+
+stdout | tests/payroll-report-identity.test.ts > blocks unknown names, missing ownership and unscopable dates without exposing raw values
+{"timestamp":"2026-10-20T04:03:14.592Z","level":"info","event":"http_request","request_id":"12a6c3aa-acfb-4f80-a374-ced2e3c431e7","tenant":"default","method":"GET","path":"/api/accounting/bir-2316","status":409,"duration_ms":2}
+
+stdout | tests/payroll-report-identity.test.ts > blocks unknown names, missing ownership and unscopable dates without exposing raw values
+{"timestamp":"2026-10-20T04:03:14.594Z","event":"request_error","request_id":"dad7a546-b0a1-49ac-accb-0d4439f3fd0d","status":500,"error_type":"TypeError"}
+{"timestamp":"2026-10-20T04:03:14.594Z","level":"error","event":"response_error","request_id":"dad7a546-b0a1-49ac-accb-0d4439f3fd0d","status":500}
+{"timestamp":"2026-10-20T04:03:14.594Z","level":"info","event":"http_request","request_id":"dad7a546-b0a1-49ac-accb-0d4439f3fd0d","tenant":"default","method":"GET","path":"/api/accounting/bir-2316","status":500,"duration_ms":1}
+
+stdout | tests/payroll-report-identity.test.ts
+{"timestamp":"2026-10-20T04:03:13.169Z","level":"info","event":"http_request","request_id":"9121be19-3794-4eca-a39d-43f4c2fe4ae4","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":336}
+
+stdout | tests/payroll-report-identity.test.ts
+{"timestamp":"2026-10-20T04:03:13.490Z","level":"info","event":"http_request","request_id":"d359a4e6-8963-4d06-bbc9-29da5114ca95","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":315}
+
+stdout | tests/payroll-report-identity.test.ts
+{"timestamp":"2026-10-20T04:03:13.797Z","level":"info","event":"http_request","request_id":"0d8175c1-ba61-49c1-930e-6201b425ce5b","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":304}
+
+stdout | tests/payroll-report-identity.test.ts
+{"timestamp":"2026-10-20T04:03:14.112Z","level":"info","event":"http_request","request_id":"4a5b5414-7dcc-4ec9-993e-f00e6e480f09","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":312}
+
+stdout | tests/payroll-report-identity.test.ts
+{"timestamp":"2026-10-20T04:03:14.433Z","level":"info","event":"http_request","request_id":"f45b5415-2f71-42b3-b00a-4cd1fae3d10b","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":318}
+
+ ❯ tests/payroll-report-identity.test.ts (14 tests | 1 failed) 4475ms
+   × blocks unknown names, missing ownership and unscopable dates without exposing raw values 12ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payroll-report-identity.test.ts > blocks unknown names, missing ownership and unscopable dates without exposing raw values
+AssertionError: expected 500 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 500
+
+ ❯ tests/payroll-report-identity.test.ts:129:22
+    127|   for (const extra of [{employee_id: null, employee_name: 'PRIVATE UNK…
+    128|     const id = slip(extra); const r = await get('/api/accounting/bir-2…
+    129|     expect(r.status).toBe(409); expect(r.body.error).toContain(String(…
+       |                      ^
+    130|     db.run('DELETE FROM form_records WHERE id=?', id);
+    131|   }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 13 passed (14)
+   Start at  04:03:09
+   Duration  4.70s (transform 1.34s, setup 29ms, import 86ms, tests 4.48s, environment 0ms)

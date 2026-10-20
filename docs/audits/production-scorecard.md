@@ -366,3 +366,15 @@ The shared adapter excludes CKD component pricing. See operations/manual-quickbo
 sensitive-action-inventory.md and evidence/manual-export-verification.json. Offline company
 claims, one-use transaction signing, real provider/currency/tax acceptance and wider controls
 remain. Totals 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A and release hold are unchanged.
+
+
+### Payroll report attribution follow-up — 20 October 2026
+
+High scoped name-aggregation/identifier errors reproduced and addressed using stable
+employee-ID groups. Reports block unresolved/unreadable sources and possible duplicate-cutoff
+months before partial output. Medium silent-error/stale-export gap addressed with visible
+errors, pending/blocked CSV controls and late/context-response rejection; scoped certificate
+accessibility fixed. See operations/payroll-report-identity.md, payroll-reports-research.md
+and evidence/payroll-reports-verification.json. Duplicate payroll, legal classification,
+source/GL/payment/filing reconciliation and hosted/native acceptance remain. No complete
+control promoted: 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release hold remains.

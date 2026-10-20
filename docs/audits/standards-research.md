@@ -376,3 +376,13 @@ See [operator contract](../operations/payroll-identity-repair.md) and [seven-sou
 Statutory name aggregation, recipient/rights procedures, approved retention, independent
 audit protection, office replay/restore and supported-operator acceptance remain open.
 This scoped implementation does not promote whole handbook controls or release approval.
+
+
+## Stable payroll report identity — 20 October 2026
+
+[Seven-source review and decisions](payroll-reports-research.md) covers official BIR
+2316/Alphalist, SSS member-attribution instructions plus current e-CS guidance, NPC
+accuracy/proportionality, OWASP server authority/safe failure and RFC 9110 conflicts.
+Reports group by ID and block uncertain attribution; no formula/filing certification,
+automatic reconstruction or universal historical-data acceptance is inferred. Sources
+are separated from project policy and remaining reconciliation work in that document.

@@ -1,0 +1,163 @@
+{
+  "date": "2026-10-20",
+  "base_commit": "1b394dd2768d1dd58b9b63338ff7f9a6c6cab2e3",
+  "scope": "Stable employee-ID tax/agency/HR grouping; source ambiguity/corruption/cutoff holds; report CSV/print/error/request-order/accessibility handling",
+  "research": {
+    "decisions": "../payroll-reports-research.md",
+    "sources_retrieved": [
+      "https://bir-cdn.bir.gov.ph/local/pdf/2316%20Sep%202021%20ENCS_Final_corrected.pdf",
+      "https://bir-cdn.bir.gov.ph/local/pdf/1604C%20Alphalist%20Format%20-%20final.pdf",
+      "https://www.sss.gov.ph/wp-content/uploads/2022/03/SSSForms_Contribution_Collection_List.pdf",
+      "https://www.sss.gov.ph/pay-contribution/",
+      "https://privacy.gov.ph/data-privacy-act/",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html",
+      "https://www.rfc-editor.org/rfc/rfc9110.html#name-409-conflict"
+    ],
+    "initial_failed_BIR_2018_path": "Not used; official September-2021 PDF retrieved successfully",
+    "certification_or_legal_approval_inferred": false
+  },
+  "full_run": {
+    "files_passed": 314,
+    "files_failed": 0,
+    "tests_passed": 3302,
+    "tests_failed": 0,
+    "duration_seconds": 632.74
+  },
+  "focused": {
+    "files_passed": 8,
+    "files_failed": 0,
+    "tests_passed": 255,
+    "tests_failed": 0,
+    "duration_seconds": 36.91
+  },
+  "new_api_cases": 14,
+  "complete_playwright": {
+    "passed": 43,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "duration_seconds": 107.3014
+  },
+  "final_scoped_playwright": {
+    "passed": 4,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "duration_seconds": 16.5215
+  },
+  "new_browser_cases": 3,
+  "scoped_axe": "Passed certificate dialog after fixing empty Actions header; not an all-screen accessibility claim",
+  "actual_server": "Passed: server.ts startup, separate same-name IDs/amounts/headcount, scoped 409/no-store/CSV holds, other-year usability, anonymous denial and no report writes/mail",
+  "typecheck": "passed",
+  "delivered_JS_syntax": "passed",
+  "schema_and_dependencies": "unchanged; db:types not required/run",
+  "source_files_sha256": {
+    "src/modules/payroll/ph-payroll-report-data.ts": "f24b48d217a0639ab7cde210bc58c3d3757baac5f9c55a61356620467eadf4a6",
+    "src/modules/payroll/payslip-owner.ts": "94a2e27862d2b9e20da3e4bf2702911b830ff359a16473030fc7ef07c3e2e1c3",
+    "src/modules/accounting/accounting.routes.ts": "69b6096ea755fb9448cd10768ff4d9059b8d999a55a9af84abb715f33b923f2a",
+    "src/modules/hr/hr.routes.ts": "277c639e63d24ac2bf75ac0ab220ccc18d2f8596b53de0c06300298f61e2c275",
+    "public/js/modules/accounting/accounting.js": "7abfaa60c4ff8627b59a8a97332f60c8fe30877c280102590269e803c2a289ea",
+    "public/js/modules/hr/hr-timekeeping.js": "f22dce32d76ee8a09dd15365de02d8792242cd69d637c031bb41de5308181797",
+    "tests/payroll-report-identity.test.ts": "b578173a69f495cff843f47cf0897f1899e0a1e1d560ca4c4ca1dc75a8c10980",
+    "tests/e2e/payroll-reports.spec.ts": "b3495d6cbcdb02bfe8563251dcf0bf2daaedef4efba5ae278a265933a867ae1c",
+    "tests/e2e/server.ts": "ec67170116d27cd667a52bf0705b2747f2e2a38b13b045ae39ff88821268e976",
+    "tests/e2e/accounting-privacy.spec.ts": "a95f76a36393279ef7462eac6f5e9dd0d5110ec1637a8452064f41c334e81f67"
+  },
+  "failed_and_interrupted_runs": [
+    {
+      "run": "initial API reproduction",
+      "result": "8 failed, 3 passed before the fix; full log retained"
+    },
+    {
+      "run": "initial browser fixture",
+      "result": "2 failed, 1 passed; locator expected buttons but existing cards are div[data-card]. Corrected selector; no product change required"
+    },
+    {
+      "run": "certificate axe",
+      "result": "1 failed, 3 passed; empty action header found and fixed, not disabled in scan"
+    },
+    {
+      "run": "malformed legacy-name reproduction",
+      "result": "1 failed, 13 passed; object name with shadowed toString produced 500. Final reader rejects non-string legacy names with 409"
+    },
+    {
+      "run": "preliminary full suite",
+      "exit_code": 130,
+      "counted_as_completed": false,
+      "reason": "Stopped for the malformed-name reproduction/guard; final full run completed afterward"
+    },
+    {
+      "run": "initial local HTTP bind",
+      "result": "Sandbox EPERM; no tests executed. Re-run with authorized local-listener permission; original rejected-run log overwritten"
+    },
+    {
+      "run": "initial TypeScript check",
+      "result": "Browser tuple inferred optional names; fixed as const. Original compiler log overwritten; final clean log retained"
+    }
+  ],
+  "browser_evidence_notes": "Complete 43-case suite passed; final four scoped browser cases were run again after final reader guards, before the completed full application suite. No browser/full-Vitest overlap. Failure screenshots/JSON/text retained; transient trace ZIPs not published.",
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "remaining": [
+    "Duplicate payroll sources, draft/paid/void eligibility, full date validation and historical government-ID/fund-setting snapshots",
+    "Reviewed malformed-data/cutoff reconstruction and resolved-owner transfer",
+    "Source-to-ledger/payment/filing reconciliation and accountant/portal acceptance",
+    "Wider export/email verification, uncertain sends, privacy rights/retention/legal holds and independent audit protection",
+    "Hosted HTTPS/restore/office-sync, supported devices, dependency/history, AI and other scorecard controls"
+  ],
+  "artifact_sha256": {
+    "payroll-reports-axe-before-payroll-reports-same-name--1cf0d-details-and-CSV-identifiers-error-context.md": "0bef63523d80ee37acb1273c68e3c4c3ab4ea4134c7e1e1e297a43643784570a",
+    "payroll-reports-axe-before-payroll-reports-same-name--1cf0d-details-and-CSV-identifiers-test-failed-1.png": "d914a0793eb5283ba3a57346743b7f8b67887411585f53ea601a3a932c6100ec",
+    "payroll-reports-before.txt": "aa5b8bb461b8f7abe5ec875014f1a9e5da2ca1258cf6d7d984bc606f71b09145",
+    "payroll-reports-browser-axe-before.json": "50919fa22820f287bf946753358743c75e05241a636bf7be6e8a48a9c6eb0620",
+    "payroll-reports-browser-axe-before.txt": "f9aef2aa8d4f835006521f094d281e0976289e0c686eecbd670fb482124ffba0",
+    "payroll-reports-browser-final.json": "ea09e7c4c597a0e4c64c48775d74c17cd1fa2adb8d905bd67892dcda558d740c",
+    "payroll-reports-browser-final.txt": "92461be84d2f293b792f80474553f5a042519fbf09522d258827ce807218ff03",
+    "payroll-reports-browser-initial.json": "d26eab6b3c3d8a8eaab1985b077ed354a45d9a269f95b70d3b1ac156ef1f3bc1",
+    "payroll-reports-browser-initial.txt": "d1ac348ef0cab9e25712e78c5dfb3bde21c724ed58deea60cbec3f292a688c1a",
+    "payroll-reports-focused.txt": "68150e32d82d0d8773ff5114a044e92107926d62170a0d79070edf20cb832293",
+    "payroll-reports-full.txt": "402f4382a79b0db6ba97dac6e883ae065d5e8dcddf65c91bae65b7f85e763ec4",
+    "payroll-reports-gitleaks.txt": "375d3f279c73abf02c5365781bee75a8c03af8ab72086551c916c3fe8846e936",
+    "payroll-reports-initial-payroll-reports-changing-y-13689-nores-a-late-older-response-error-context.md": "b5fa3ae0694e6b94cb90198325ff327e4e1c0504cb58f862e5388a28d5eb2e9d",
+    "payroll-reports-initial-payroll-reports-changing-y-13689-nores-a-late-older-response-test-failed-1.png": "26b5165e48b8ee09633535997639e742a68b4966baa7fe3bc8c537bd5756ae07",
+    "payroll-reports-initial-payroll-reports-same-name--1cf0d-details-and-CSV-identifiers-error-context.md": "63393963355c565f0716f97288fc7e946c1442cc3f6e794645ea0239d8f35c62",
+    "payroll-reports-initial-payroll-reports-same-name--1cf0d-details-and-CSV-identifiers-test-failed-1.png": "26b5165e48b8ee09633535997639e742a68b4966baa7fe3bc8c537bd5756ae07",
+    "payroll-reports-interrupted-full.txt": "9e9824ea08a5f8443b050154d95095d893c8d6dc0f52f93b46189f2ad130ca87",
+    "payroll-reports-name-before.txt": "7f222f9717e52fdb6d00ade317bb40825f955b9b88f7bd0cefd9696b2d6234e2",
+    "payroll-reports-playwright.json": "789177933aa62a3f311726182e8f7f81d5cb4618221bd2c8c65b24b72e9e4436",
+    "payroll-reports-playwright.txt": "01fcf52bc5d5636854c31b23901146b725168f0f84963d1b846a857d94098422",
+    "payroll-reports-startup-smoke.py": "4889b4443f7f84d6af805192356f5e8a418c9a34f59ffc581aeca8e4033cc122",
+    "payroll-reports-startup-smoke.txt": "61e336891cfa3c9e5add0557a43796566224234ebaa5dbd9ea9d6e40b38837fc",
+    "payroll-reports-twins.png": "7b6748058ce2e81864ed63a22deb86562af4eb15a559c4d8150a113424e65cc6",
+    "payroll-reports-typecheck.txt": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95"
+  },
+  "staged_secret_scan": "Passed complete staged implementation/tests/docs/raw evidence; mandatory commit hook also scans final staged content",
+  "artifact_source_sha256_before_text_normalization": {
+    "payroll-reports-axe-before-payroll-reports-same-name--1cf0d-details-and-CSV-identifiers-error-context.md": "47570456d609672190066807c97ffac4603a9fa51632f5ee0f89640e974b964b",
+    "payroll-reports-axe-before-payroll-reports-same-name--1cf0d-details-and-CSV-identifiers-test-failed-1.png": "d914a0793eb5283ba3a57346743b7f8b67887411585f53ea601a3a932c6100ec",
+    "payroll-reports-before.txt": "956d4d4219365ffbf12157ba12bbf22901ef620ad3851d1702acaa329feba8bb",
+    "payroll-reports-browser-axe-before.json": "50919fa22820f287bf946753358743c75e05241a636bf7be6e8a48a9c6eb0620",
+    "payroll-reports-browser-axe-before.txt": "91a78445f4ae09a1fbc63b030e1b101918b12e0375c9e9b3ac4e6436a7b1d6a3",
+    "payroll-reports-browser-final.json": "ea09e7c4c597a0e4c64c48775d74c17cd1fa2adb8d905bd67892dcda558d740c",
+    "payroll-reports-browser-final.txt": "92461be84d2f293b792f80474553f5a042519fbf09522d258827ce807218ff03",
+    "payroll-reports-browser-initial.json": "d26eab6b3c3d8a8eaab1985b077ed354a45d9a269f95b70d3b1ac156ef1f3bc1",
+    "payroll-reports-browser-initial.txt": "7ae4166c692cf6acc6a1d863bf2645c8a49929bbb7ea4c67f3750a51884004e0",
+    "payroll-reports-focused.txt": "bf0946ef1aaa88ea0b624f2ef5f3e5d9e0b18349998d7adf03dcd403e32cf687",
+    "payroll-reports-full.txt": "99cc4931914df8a7ad6ddab0cf7858a37669a83f0d43959bd01047e8f5679245",
+    "payroll-reports-gitleaks.txt": "375d3f279c73abf02c5365781bee75a8c03af8ab72086551c916c3fe8846e936",
+    "payroll-reports-initial-payroll-reports-changing-y-13689-nores-a-late-older-response-error-context.md": "305f1c276b19f6cd00c375d4fe3f4bdcccc65f1ff418afd4eb1ffd7220db83c2",
+    "payroll-reports-initial-payroll-reports-changing-y-13689-nores-a-late-older-response-test-failed-1.png": "26b5165e48b8ee09633535997639e742a68b4966baa7fe3bc8c537bd5756ae07",
+    "payroll-reports-initial-payroll-reports-same-name--1cf0d-details-and-CSV-identifiers-error-context.md": "0d100b51d5ffc34e55209adbe9b2ead0c6aeb4cca11b32395354461c1196d62d",
+    "payroll-reports-initial-payroll-reports-same-name--1cf0d-details-and-CSV-identifiers-test-failed-1.png": "26b5165e48b8ee09633535997639e742a68b4966baa7fe3bc8c537bd5756ae07",
+    "payroll-reports-interrupted-full.txt": "09a17ba7db881976fed5ad795986a27adc25d1e586e3922d04513f040e1ef50b",
+    "payroll-reports-name-before.txt": "479c2ad14993944fbf884c43b4f79340dfa953ea8da495c5f757a5922b4c97e5",
+    "payroll-reports-playwright.json": "789177933aa62a3f311726182e8f7f81d5cb4618221bd2c8c65b24b72e9e4436",
+    "payroll-reports-playwright.txt": "01fcf52bc5d5636854c31b23901146b725168f0f84963d1b846a857d94098422",
+    "payroll-reports-startup-smoke.py": "4889b4443f7f84d6af805192356f5e8a418c9a34f59ffc581aeca8e4033cc122",
+    "payroll-reports-startup-smoke.txt": "61e336891cfa3c9e5add0557a43796566224234ebaa5dbd9ea9d6e40b38837fc",
+    "payroll-reports-twins.png": "7b6748058ce2e81864ed63a22deb86562af4eb15a559c4d8150a113424e65cc6",
+    "payroll-reports-typecheck.txt": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0"
+  },
+  "evidence_formatting": "Generated text artifacts normalize trailing whitespace and blank EOF lines; original-input and retained-artifact hashes are recorded. JSON/images are unchanged.",
+  "commit_scan_false_positive": "Mandatory hook flagged the SHA-256 of the scan log under a filename containing secrets. Verified exact log digest; renamed to payroll-reports-gitleaks.txt. No scanner rule disabled or allowlist added. Complete staged scan passed afterward; mandatory hook scans final content again."
+}

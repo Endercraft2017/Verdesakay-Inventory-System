@@ -1,0 +1,3 @@
+PASS: actual server.ts keeps same-name certificates, government IDs, contribution bases and monthly headcount separate by stable employee ID.
+PASS: affected annual/monthly/detail/CSV/HR reports return 409 and no-store for ambiguous ownership; another year remains usable; anonymous access denied.
+PASS: report reads do not alter payroll history or send mail. Disposable catalogs only; no deployment/provider/real-employee changes.

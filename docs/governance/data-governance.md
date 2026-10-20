@@ -184,3 +184,15 @@ See [operator contract](../operations/payroll-identity-repair.md) and [seven-sou
 Statutory name aggregation, recipient/rights procedures, approved retention, independent
 audit protection, office replay/restore and supported-operator acceptance remain open.
 This scoped implementation does not promote whole handbook controls or release approval.
+
+
+## Stable payroll report attribution — 20 October 2026
+
+Tax/agency/HR reports now use stable employee IDs for amounts, government identifiers,
+fund settings and monthly counts. Ambiguous ownership and unreadable/unscopable sources
+produce a report hold, not guessed or partial output; diagnostics contain bounded numeric
+record IDs. Existing reviewed identity-only repair preserves money/history. No automatic
+email, deletion, filing or source correction occurs. See
+[contract](../operations/payroll-report-identity.md) and [primary-source review](../audits/payroll-reports-research.md).
+This supersedes older notes that name aggregation remains unimplemented. Reconciliation,
+recipient/rights procedures, approved retention and independent audit protection remain.

@@ -991,13 +991,35 @@ async function slspModal() {
 }
 
 /* ── BIR 1601-C — monthly withholding on compensation ────────────────────── */
+// A report error must not become an empty worksheet or leave an older export enabled.
+function accPayrollReportLoader(ov, bodyId, exportId) {
+  let generation = 0;
+  return async (fetchReport) => {
+    const current = ++generation, actor = App.user, scope = API.serverScope(), token = API.getToken();
+    const body = ov.querySelector(bodyId), button = ov.querySelector(exportId);
+    button.disabled = true;
+    body.innerHTML = '<div class="empty">Loading…</div>';
+    const live = () => current === generation && ov.isConnected && App.user === actor
+      && API.serverScope() === scope && API.getToken() === token;
+    try {
+      const report = await fetchReport();
+      if (!live()) return null;
+      button.disabled = false;
+      return report;
+    } catch (error) {
+      if (live()) body.innerHTML = `<div class="m-error" role="alert">${UI.esc(error.message || 'Report could not be loaded. Please retry.')}</div>`;
+      return null;
+    }
+  };
+}
+
 async function bir1601cModal() {
   const thisYear = new Date().getFullYear();
   UI.modal({
     title: 'BIR Form 1601-C — monthly withholding', size: 'lg', cancelText: 'Close', confirmText: null,
     bodyHTML: `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <label style="margin:0">Year</label>
+        <label for="c16-year" style="margin:0">Year</label>
         <select id="c16-year">${[thisYear, thisYear - 1, thisYear - 2].map((y) => `<option value="${y}">${y}</option>`).join('')}</select>
         <div class="grow"></div>
         <button type="button" class="btn secondary small" id="c16-csv">${UI.icon('download', 14)} Export CSV</button>
@@ -1008,10 +1030,13 @@ async function bir1601cModal() {
       <div id="c16-body"><div class="empty">Loading…</div></div>`,
     onOpen: (ov) => {
       const yearSel = ov.querySelector('#c16-year');
-      let state = { months: [], totals: {}, year: '' };
+      let state = null;
+      const loadReport = accPayrollReportLoader(ov, '#c16-body', '#c16-csv');
       async function load() {
-        ov.querySelector('#c16-body').innerHTML = '<div class="empty">Loading…</div>';
-        state = await API.get('/accounting/bir-1601c?year=' + yearSel.value).catch(() => ({ months: [], totals: {}, year: yearSel.value }));
+        state = null;
+        const result = await loadReport(() => API.get('/accounting/bir-1601c?year=' + yearSel.value));
+        if (!result) return;
+        state = result;
         const b = ov.querySelector('#c16-body');
         if (!state.months.some((m) => m.employee_count || m.gross_compensation)) {
           b.innerHTML = '<div class="empty">No payslips found for ' + UI.esc(yearSel.value) + '.</div>'; return;
@@ -1034,7 +1059,7 @@ async function bir1601cModal() {
       }
       yearSel.addEventListener('change', load);
       ov.querySelector('#c16-csv').onclick = () => {
-        if (!state.months.length) { UI.toast('Nothing to export', 'error'); return; }
+        if (!state || !state.months.length) { UI.toast('Nothing to export', 'error'); return; }
         UI.downloadCsv(`bir-1601c-${state.year}.csv`,
           ['Month', 'Employees', 'Gross compensation', 'Non-taxable', 'Taxable compensation', 'Tax withheld'],
           [...state.months.map((m) => [ACC_MONTHS[m.month - 1], m.employee_count, m.gross_compensation, m.non_taxable, m.taxable_compensation, m.tax_withheld]),
@@ -1052,7 +1077,7 @@ async function bir1604cModal() {
     title: 'BIR Form 1604-C — annual return', size: 'lg', cancelText: 'Close', confirmText: null,
     bodyHTML: `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <label style="margin:0">Year</label>
+        <label for="a4-year" style="margin:0">Year</label>
         <select id="a4-year">${[thisYear, thisYear - 1, thisYear - 2].map((y) => `<option value="${y}">${y}</option>`).join('')}</select>
         <div class="grow"></div>
         <button type="button" class="btn secondary small" id="a4-csv">${UI.icon('download', 14)} Export CSV</button>
@@ -1063,10 +1088,13 @@ async function bir1604cModal() {
       <div id="a4-body"><div class="empty">Loading…</div></div>`,
     onOpen: (ov) => {
       const yearSel = ov.querySelector('#a4-year');
-      let state = { months: [], totals: {}, reconciliation: {}, year: '' };
+      let state = null;
+      const loadReport = accPayrollReportLoader(ov, '#a4-body', '#a4-csv');
       async function load() {
-        ov.querySelector('#a4-body').innerHTML = '<div class="empty">Loading…</div>';
-        state = await API.get('/accounting/bir-1604c?year=' + yearSel.value).catch(() => ({ months: [], totals: {}, reconciliation: {}, year: yearSel.value }));
+        state = null;
+        const result = await loadReport(() => API.get('/accounting/bir-1604c?year=' + yearSel.value));
+        if (!result) return;
+        state = result;
         const b = ov.querySelector('#a4-body');
         if (!state.months.some((m) => m.employee_count || m.gross_compensation)) {
           b.innerHTML = '<div class="empty">No payslips found for ' + UI.esc(yearSel.value) + '.</div>'; return;
@@ -1098,7 +1126,7 @@ async function bir1604cModal() {
       }
       yearSel.addEventListener('change', load);
       ov.querySelector('#a4-csv').onclick = () => {
-        if (!state.months.length) { UI.toast('Nothing to export', 'error'); return; }
+        if (!state || !state.months.length) { UI.toast('Nothing to export', 'error'); return; }
         const rc = state.reconciliation || {};
         UI.downloadCsv(`bir-1604c-${state.year}.csv`,
           ['Month', 'Employees', 'Gross', 'Non-taxable', 'Taxable', 'Tax withheld'],
@@ -1120,7 +1148,7 @@ async function birAlphalistModal() {
     title: 'BIR 1604-C Alphalist (Schedule 1)', size: 'lg', cancelText: 'Close', confirmText: null,
     bodyHTML: `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <label style="margin:0">Year</label>
+        <label for="al-year" style="margin:0">Year</label>
         <select id="al-year">${[thisYear, thisYear - 1, thisYear - 2].map((y) => `<option value="${y}">${y}</option>`).join('')}</select>
         <div class="grow"></div>
         <button type="button" class="btn secondary small" id="al-csv">${UI.icon('download', 14)} Export CSV (BIR layout)</button>
@@ -1129,10 +1157,13 @@ async function birAlphalistModal() {
       <div id="al-body"><div class="empty">Loading…</div></div>`,
     onOpen: (ov) => {
       const yearSel = ov.querySelector('#al-year');
-      let state = { headers: [], rows: [], cells: [], note: '', year: '' };
+      let state = null;
+      const loadReport = accPayrollReportLoader(ov, '#al-body', '#al-csv');
       async function load() {
-        ov.querySelector('#al-body').innerHTML = '<div class="empty">Loading…</div>';
-        state = await API.get('/accounting/bir-alphalist?year=' + yearSel.value).catch(() => ({ headers: [], rows: [], cells: [], note: '', year: yearSel.value }));
+        state = null;
+        const result = await loadReport(() => API.get('/accounting/bir-alphalist?year=' + yearSel.value));
+        if (!result) return;
+        state = result;
         ov.querySelector('#al-note').textContent = state.note || '';
         const b = ov.querySelector('#al-body');
         if (!state.rows.length) { b.innerHTML = '<div class="empty">No payslips found for ' + UI.esc(yearSel.value) + '.</div>'; return; }
@@ -1154,7 +1185,7 @@ async function birAlphalistModal() {
       }
       yearSel.addEventListener('change', load);
       ov.querySelector('#al-csv').onclick = () => {
-        if (!state.cells.length) { UI.toast('Nothing to export', 'error'); return; }
+        if (!state || !state.cells.length) { UI.toast('Nothing to export', 'error'); return; }
         UI.downloadCsv(`bir-1604c-alphalist-schedule1-${state.year}.csv`, state.headers, state.cells);
       };
       load();
@@ -1169,7 +1200,7 @@ async function bir2316Modal() {
     title: 'BIR Form 2316', size: 'lg', cancelText: 'Close', confirmText: null,
     bodyHTML: `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <label style="margin:0">Year</label>
+        <label for="b16-year" style="margin:0">Year</label>
         <select id="b16-year">${[thisYear, thisYear - 1, thisYear - 2].map((y) => `<option value="${y}">${y}</option>`).join('')}</select>
         <div class="grow"></div>
         <button type="button" class="btn secondary small" id="b16-csv">${UI.icon('download', 14)} Export CSV</button>
@@ -1180,21 +1211,20 @@ async function bir2316Modal() {
       <div id="b16-body"><div class="empty">Loading…</div></div>`,
     onOpen: (ov) => {
       const yearSel = ov.querySelector('#b16-year');
-      let state = { rows: [], company: {}, year: '' };
-      let templates = [];
+      let state = null;
+      const loadReport = accPayrollReportLoader(ov, '#b16-body', '#b16-csv');
       async function load() {
-        ov.querySelector('#b16-body').innerHTML = '<div class="empty">Loading…</div>';
-        [state, templates] = await Promise.all([
-          API.get('/accounting/bir-2316?year=' + yearSel.value).catch(() => ({ rows: [], company: {}, year: yearSel.value })),
-          templates.length ? Promise.resolve(templates) : API.get('/templates').catch(() => []),
-        ]);
+        state = null;
+        const result = await loadReport(() => API.get('/accounting/bir-2316?year=' + yearSel.value));
+        if (!result) return;
+        state = result;
         const b = ov.querySelector('#b16-body');
         if (!state.rows.length) { b.innerHTML = '<div class="empty">No payslips found for ' + UI.esc(yearSel.value) + '.</div>'; return; }
         b.innerHTML = `<table class="line-table"><thead><tr>
-            <th>Employee</th><th class="right">Gross comp.</th><th class="right">Taxable</th>
-            <th class="right">Tax due</th><th class="right">Withheld</th><th class="right">Over / (under)</th><th></th>
+            <th>Employee no.</th><th>Employee</th><th class="right">Gross comp.</th><th class="right">Taxable</th>
+            <th class="right">Tax due</th><th class="right">Withheld</th><th class="right">Over / (under)</th><th>Actions</th>
           </tr></thead><tbody>${state.rows.map((r, i) => `
-            <tr><td>${UI.esc(r.employee_name)}</td>
+            <tr><td>${UI.esc(r.employee_no || String(r.employee_id))}</td><td>${UI.esc(r.employee_name)}</td>
               <td class="right">${accPeso(r.figures.gross_compensation)}</td>
               <td class="right">${accPeso(r.figures.gross_taxable_compensation)}</td>
               <td class="right">${accPeso(r.figures.tax_due)}</td>
@@ -1205,10 +1235,13 @@ async function bir2316Modal() {
         b.querySelectorAll('[data-print]').forEach((btn) => btn.onclick = () => printOne(state.rows[Number(btn.dataset.print)]));
       }
       async function printOne(row) {
+        const snapshot = state, actor = App.user, scope = API.serverScope(), token = API.getToken();
+        if (!snapshot || !snapshot.rows.includes(row)) return;
         try {
-          const detail = await API.get(`/accounting/bir-2316/${row.employee_id}?year=${yearSel.value}`);
+          const detail = await API.get(`/accounting/bir-2316/${row.employee_id}?year=${snapshot.year}`);
           const tpl = await API.get('/templates/defaults/bir_2316');
           const variables=await API.get('/templates/variables?template_id='+tpl.id);
+          if (state !== snapshot || !ov.isConnected || App.user !== actor || API.serverScope() !== scope || API.getToken() !== token) return;
           const tplBody = tpl.body;
           const g = detail.figures;
           const f = {};
@@ -1241,10 +1274,10 @@ async function bir2316Modal() {
       }
       yearSel.addEventListener('change', load);
       ov.querySelector('#b16-csv').onclick = () => {
-        if (!state.rows.length) { UI.toast('Nothing to export', 'error'); return; }
+        if (!state || !state.rows.length) { UI.toast('Nothing to export', 'error'); return; }
         UI.downloadCsv(`bir-2316-${state.year}.csv`,
-          ['Employee', 'TIN', 'Gross compensation', 'Total non-taxable', 'Gross taxable', 'Tax due', 'Tax withheld', 'Over/(under) withheld'],
-          state.rows.map((r) => [r.employee_name, r.tin_no || '', r.figures.gross_compensation, r.figures.total_non_taxable,
+          ['Employee no.', 'Employee', 'TIN', 'Gross compensation', 'Total non-taxable', 'Gross taxable', 'Tax due', 'Tax withheld', 'Over/(under) withheld'],
+          state.rows.map((r) => [r.employee_no || r.employee_id, r.employee_name, r.tin_no || '', r.figures.gross_compensation, r.figures.total_non_taxable,
             r.figures.gross_taxable_compensation, r.figures.tax_due, r.figures.total_tax_withheld, r.figures.over_withheld]));
       };
       load();
@@ -1259,8 +1292,8 @@ async function contributionScheduleModal() {
     title: 'Monthly contribution schedule', size: 'lg', cancelText: 'Close', confirmText: null,
     bodyHTML: `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-        <label style="margin:0">Month</label><input id="cs-month" type="month" value="${new Date().toISOString().slice(0, 7)}" />
-        <label style="margin:0">Agency</label>
+        <label for="cs-month" style="margin:0">Month</label><input id="cs-month" type="month" value="${new Date().toISOString().slice(0, 7)}" />
+        <label for="cs-agency" style="margin:0">Agency</label>
         <select id="cs-agency">${Object.entries(AGENCIES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
         <div class="grow"></div>
         <button type="button" class="btn secondary small" id="cs-csv">${UI.icon('download', 14)} Export CSV</button>
@@ -1271,11 +1304,14 @@ async function contributionScheduleModal() {
       <div id="cs-body"><div class="empty">Loading…</div></div>`,
     onOpen: (ov) => {
       let state = null;
+      const loadReport = accPayrollReportLoader(ov, '#cs-body', '#cs-csv');
       async function load() {
-        ov.querySelector('#cs-body').innerHTML = '<div class="empty">Loading…</div>';
+        state = null;
         const month = ov.querySelector('#cs-month').value;
         const agency = ov.querySelector('#cs-agency').value;
-        state = await API.get(`/accounting/contribution-schedule?month=${month}&agency=${agency}`).catch(() => null);
+        const result = await loadReport(() => API.get(`/accounting/contribution-schedule?month=${month}&agency=${agency}`));
+        if (!result) return;
+        state = result;
         const b = ov.querySelector('#cs-body');
         if (!state || !state.rows.length) { b.innerHTML = '<div class="empty">No payslips for that month.</div>'; return; }
         const isSss = agency === 'sss';
@@ -1296,7 +1332,7 @@ async function contributionScheduleModal() {
       ov.querySelector('#cs-agency').addEventListener('change', load);
       ov.querySelector('#cs-csv').onclick = () => {
         if (!state || !state.rows.length) { UI.toast('Nothing to export', 'error'); return; }
-        UI.downloadCsv(`${ov.querySelector('#cs-agency').value}-schedule-${ov.querySelector('#cs-month').value}.csv`,
+        UI.downloadCsv(`${state.agency}-schedule-${state.month}.csv`,
           state.headers, state.cells);
       };
       load();

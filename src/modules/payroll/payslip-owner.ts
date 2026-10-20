@@ -14,7 +14,7 @@ import { queryAll } from '../../shared/db';
 export interface PayslipOwnerResolver {
   /** Employee id for this payslip's data, or null if it matches no employee. */
   idOf(data: Record<string, unknown>): number | null;
-  /** Current legal name for grouping/display; the name on the payslip if unresolvable. */
+  /** Current legal name for display only; historical label if unresolved. Never an identity/grouping key. */
   nameOf(data: Record<string, unknown>): string;
   /** Unambiguous names this employee's legacy payslips may carry (current + former). */
   namesFor(employeeId: number): string[];

@@ -1039,3 +1039,54 @@ runs completed before the standalone final full regression.
 [actual startup](evidence/payroll-repair-startup.txt).
 The 233-control counts and release hold are unchanged; no real employee records,
 provider messages or hosted settings were changed.
+
+
+## Stable-ID statutory and HR report attribution — 20 October 2026
+
+Base `1b394dd2768d1dd58b9b63338ff7f9a6c6cab2e3`. High scoped duplicate-name attribution
+and uncertain-source output gaps, plus medium silent-error/stale-export handling, addressed.
+See [operator contract](../operations/payroll-report-identity.md),
+[seven-source primary research](payroll-reports-research.md) and
+[verification manifest](evidence/payroll-reports-verification.json).
+
+- Final full suite: **314 files / 3302 tests passed**, 632.74 seconds
+  ([log](evidence/payroll-reports-full.txt)). Implementation/test SHA-256 values were frozen
+  before the final run and checked afterward. No browser/full-suite overlap.
+- Focused API/frontend: **8 files / 255 tests passed**, 36.91 seconds
+  ([log](evidence/payroll-reports-focused.txt)), including **14 new API cases** for duplicate
+  names/stamps, identifiers/brackets/headcount, legacy rename, all affected reports/CSV,
+  cutoff/pay-year scope, corruption/non-string names, duplicate labels, fund bases/settings,
+  permission failures and reviewed repair restoring reports without changing money.
+- Complete Playwright: **43 passed**, 107.3014 seconds;
+  **3 new report journeys** cover actual certificate print detail, downloadable CSV, all
+  six blocked report dialogs, disabled/pending exports, late-year responses and scoped axe.
+  The final reader version also passed **4 scoped browser checks**,
+  16.5215 seconds, before the final full application run.
+- Typecheck and delivered JavaScript syntax passed. Actual `server.ts` smoke passed using
+  temporary synthetic cloud catalogs: separate IDs/amounts/counts, 409/no-store holds, another
+  year still usable, unauthorized denial and no source-history/mail mutation
+  ([script](evidence/payroll-reports-startup-smoke.py), [result](evidence/payroll-reports-startup-smoke.txt)).
+- Original API reproduction: **8 failed / 3 passed**. Initial browser selectors caused two
+  timeouts (div cards, not buttons). A subsequent axe scan found an empty table action header;
+  it was fixed and the final scan passed. Logs/JSON/failure screenshots are retained.
+- A later malformed-name reproduction returned 500 instead of 409 (**1 failed / 13 passed**).
+  The reader now rejects non-string legacy names. Preliminary full run was stopped (exit130)
+  for this fix and is not counted as completed. The final suite above replaced it.
+- Initial sandbox listener denial executed no tests; local-listener re-run succeeded.
+  Initial browser tuple typing was corrected before final typecheck. Those original logs were
+  overwritten; this limitation is explicit. Transient browser trace ZIPs are not published.
+- Schema/dependencies unchanged; db:types not required/run. No deployment command, real
+  customer correction, provider write, bank reconciliation or filing was performed.
+
+Old projection browser evidence now uses clean fixture pay year 2025: the 2026 fixture
+intentionally contains unresolved legacy slips and correctly blocks filing. This preserves
+its bounded-identity assertions; the new report cases assert the integrity hold itself.
+Whole controls remain 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release remains on hold.
+Source/GL/payment/filing reconciliation, duplicate/eligibility/historical settings,
+reviewed reconstruction and wider scorecard responsibilities are not declared complete.
+
+Final commit hygiene: generated text evidence was normalized for trailing whitespace/blank
+EOF lines, with pre-normalization and retained-artifact hashes in the manifest. Gitleaks
+initially mistook a scan-log SHA-256 under a filename containing “secrets” for an API key.
+The exact log digest was verified and its evidence file renamed `payroll-reports-gitleaks.txt`;
+no scanner rule was disabled or allowlist added. The complete staged scan/hook was rerun.

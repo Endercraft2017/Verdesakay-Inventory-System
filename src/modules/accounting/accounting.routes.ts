@@ -113,23 +113,23 @@ router.get('/bir-2316', (req, res) => {
   const opts = optsFromQuery(req.query as Record<string, unknown>);
   const rwt = effectiveTables(`${year}-12-31`).rwt;
   const rows = [...yearPayslipRowsByEmployee(year).entries()]
-    .map(([employee_name, list]) => {
-      const e = queryOne<{ id: number; tin_no: string | null; employee_no: string | null }>(
-        'SELECT id, tin_no, employee_no FROM employees WHERE name = ? COLLATE NOCASE', employee_name
+    .map(([employee_id, list]) => {
+      const e = queryOne<{ id: number; name: string; tin_no: string | null; employee_no: string | null }>(
+        'SELECT id, name, tin_no, employee_no FROM employees WHERE id = ?', employee_id
       );
       return {
-        employee_name, employee_id: e?.id ?? null, tin_no: e?.tin_no ?? null,
+        employee_name: e!.name, employee_id, employee_no: e!.employee_no, tin_no: e!.tin_no,
         figures: compute2316(list, rwt, year, opts),
       };
     })
-    .sort((a, b) => a.employee_name.localeCompare(b.employee_name));
+    .sort((a, b) => a.employee_name.localeCompare(b.employee_name) || a.employee_id - b.employee_id);
   res.json({ year, company: companyProfile(), rows });
 });
 
 // GET /api/accounting/bir-2316/:employeeId?year= — figures + bounded tax-template identity.
 router.get('/bir-2316/:employeeId', (req, res) => {
   const year = yearOf(req.query.year);
-  const emp = queryOne<Record<string, unknown> & { name: string }>(
+  const emp = queryOne<Record<string, unknown> & { id: number; name: string }>(
     // accounting.view permits statutory filings, not the employee's full HR/pay record.
     // Keep an explicit projection so future employee columns cannot silently leak here.
     `SELECT e.id, e.employee_no, e.name, e.position, e.tin_no, e.birth_date,
@@ -138,7 +138,7 @@ router.get('/bir-2316/:employeeId', (req, res) => {
     Number(req.params.employeeId)
   );
   if (!emp) { res.status(404).json({ error: 'Employee not found' }); return; }
-  const rows = yearPayslipRowsByEmployee(year).get(emp.name) ?? [];
+  const rows = yearPayslipRowsByEmployee(year).get(emp.id) ?? [];
   const figures = compute2316(rows, effectiveTables(`${year}-12-31`).rwt, year, optsFromQuery(req.query as Record<string, unknown>));
   // BIR prints dates MM/DD/YYYY; blank when HR hasn't recorded one (employees.birth_date, v52).
   const bd = typeof emp.birth_date === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(emp.birth_date) : null;
@@ -153,13 +153,13 @@ router.get('/bir-alphalist', (req, res) => {
   const rwt = effectiveTables(`${year}-12-31`).rwt;
 
   const rows = [...yearPayslipRowsByEmployee(year).entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([name, list], i) => {
-      const e = queryOne<{ tin_no: string | null; status: string | null }>(
-        'SELECT tin_no, status FROM employees WHERE name = ? COLLATE NOCASE', name
-      );
+    .map(([employee_id, list]) => ({employee_id, list, employee: queryOne<{ name: string; tin_no: string | null; status: string | null }>(
+      'SELECT name, tin_no, status FROM employees WHERE id = ?', employee_id
+    )!}))
+    .sort((a, b) => a.employee.name.localeCompare(b.employee.name) || a.employee_id - b.employee_id)
+    .map(({employee: e, list}, i) => {
       return alphalistScheduleRow(i + 1, {
-        ...splitName(name),
+        ...splitName(e.name),
         tin: e?.tin_no ?? '',
         status_code: statusCode(e?.status),
         separation_code: separationCode(e?.status),
@@ -366,17 +366,17 @@ router.get('/contribution-schedule', (req, res) => {
   const flagCol = agency === 'sss' ? 'deduct_sss'
     : agency === 'philhealth' ? 'deduct_philhealth' : 'deduct_pagibig';
   const employees: ContribEmployeeInput[] = [...contributionBasesForMonth(month).entries()]
-    .map(([name, v]): ContribEmployeeInput | null => {
-      const e = queryOne<{ sss_no: string | null; philhealth_no: string | null; pagibig_no: string | null; flag: number }>(
-        `SELECT sss_no, philhealth_no, pagibig_no, COALESCE(${flagCol}, 1) AS flag
-         FROM employees WHERE name = ? COLLATE NOCASE`, name
+    .map(([employee_id, v]): ContribEmployeeInput | null => {
+      const e = queryOne<{ name: string; sss_no: string | null; philhealth_no: string | null; pagibig_no: string | null; flag: number }>(
+        `SELECT name, sss_no, philhealth_no, pagibig_no, COALESCE(${flagCol}, 1) AS flag
+         FROM employees WHERE id = ?`, employee_id
       );
       // An employee switched off for this fund (Accounting → Statutory Deductions) isn't
       // remitted, so they don't belong on this schedule.
       if (e && !e.flag) return null;
       const id_number = agency === 'sss' ? e?.sss_no
         : agency === 'philhealth' ? e?.philhealth_no : e?.pagibig_no;
-      return { name, id_number: id_number ?? null, monthly_comp: v.sss, monthly_basic: v.philhealth, monthly_pagibig: v.pagibig };
+      return { name: e!.name, id_number: id_number ?? null, monthly_comp: v.sss, monthly_basic: v.philhealth, monthly_pagibig: v.pagibig };
     })
     .filter((x): x is ContribEmployeeInput => x !== null);
 

@@ -723,7 +723,13 @@ for the internet (it uses the company's mail server, which only the cloud has).
    `docs/operations/accounting-tax-privacy.md`); base rates, deduction overrides and other HR
    configuration are not included. The gate remains `accounting.view`. 13th-month and final-pay stay under `hr`/`payroll`, not filed as
    compliance forms. Agency schedules count a payslip toward the month its cutoff ends in
-   (SSS IRR), not its pay date.
+   (SSS IRR), not its pay date. All shared payroll report groups and headcounts now use stable
+   employee ID, with tax/agency identity/settings read by that ID. Unresolved source ownership
+   blocks the affected reports/CSV with 409 instead of partial/guessed totals. Unscopable data
+   blocks conservatively; referenced duplicate attendance labels block possible contribution
+   months without multiplying rows. Reviewed repair → rerun → accountant reconciliation is the
+   recovery path; no money/status changes occur during report reads. See
+   `docs/operations/payroll-report-identity.md`.
 
 **Terminal states:** posted + filed (a period, once posted, is not recomputed in
 place — corrections go through a new adjustment, not a rewrite of history).

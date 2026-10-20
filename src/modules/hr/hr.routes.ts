@@ -367,36 +367,11 @@ router.delete('/payroll-tables/:id', requirePermission('payroll.manage'), syncCl
 // dated by its pay_date (falling back to created_at).
 router.get('/thirteenth-month', requirePermission('payroll.view'), (req, res) => {
   const year = /^\d{4}$/.test(String(req.query.year)) ? String(req.query.year) : String(new Date().getFullYear());
-  const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
-  if (!form) { res.json({ year, rows: [], total: 0 }); return; }
-
-  const records = queryAll<{ data: string; created_at: string }>(
-    'SELECT data, created_at FROM form_records WHERE form_def_id = ?',
-    form.id
-  );
-  const byEmp = new Map<string, { basic_total: number; payslip_count: number }>();
-  const owner = payslipOwnerResolver(); // a renamed employee's payslips stay one row
-  for (const r of records) {
-    let d: Record<string, unknown>;
-    try { d = JSON.parse(r.data); } catch { continue; }
-    const payDate = typeof d.pay_date === 'string' && d.pay_date ? d.pay_date : r.created_at;
-    if (String(payDate).slice(0, 4) !== year) continue;
-    const name = owner.nameOf(d);
-    if (!name) continue;
-    const cur = byEmp.get(name) ?? { basic_total: 0, payslip_count: 0 };
-    cur.basic_total += Number(d.basic_salary) || 0;
-    cur.payslip_count += 1;
-    byEmp.set(name, cur);
-  }
-
-  const rows = [...byEmp.entries()]
-    .map(([employee_name, v]) => ({
-      employee_name,
-      basic_total: round2(v.basic_total),
-      payslip_count: v.payslip_count,
-      amount: round2(v.basic_total / 12),
-    }))
-    .sort((a, b) => a.employee_name.localeCompare(b.employee_name));
+  const rows = [...yearPayslipRowsByEmployee(year)].map(([employee_id, slips]) => {
+    const employee_name = queryOne<{name: string}>('SELECT name FROM employees WHERE id=?', employee_id)!.name;
+    const basic_total = round2(slips.reduce((sum, r) => sum + (Number(r.basic_salary) || 0), 0));
+    return {employee_id, employee_name, basic_total, payslip_count: slips.length, amount: round2(basic_total / 12)};
+  }).sort((a, b) => a.employee_name.localeCompare(b.employee_name) || a.employee_id - b.employee_id);
   res.json({ year, rows, total: round2(rows.reduce((s, r) => s + r.amount, 0)) });
 });
 
@@ -420,7 +395,7 @@ router.get('/final-pay/:employeeId', requirePermission('payroll.view'), (req, re
     ? q.separation_date : new Date().toISOString().slice(0, 10);
   const year = sep.slice(0, 4);
 
-  const slips = yearPayslipRowsByEmployee(year).get(emp.name) ?? [];
+  const slips = yearPayslipRowsByEmployee(year).get(emp.id) ?? [];
   const sum = (pick: (r: PayslipYearRow) => number | undefined) =>
     round2(slips.reduce((s, r) => s + (Number(pick(r)) || 0), 0));
 

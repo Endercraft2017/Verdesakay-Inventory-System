@@ -4,6 +4,10 @@
 by this engineering increment. Research and tradeoffs:
 [research record](../audits/payroll-repair-research.md).
 
+Follow-up: [statutory/HR report readers](payroll-report-identity.md) now use stable employee IDs
+and block affected reports until source identity is resolved. Report success still requires
+separate source/ledger/payment/filing reconciliation.
+
 ## Operator procedure
 
 1. Open the cloud workspace's HR Payroll records as an authorized payroll manager.

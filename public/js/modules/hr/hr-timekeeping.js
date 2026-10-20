@@ -888,7 +888,7 @@ async function thirteenthMonthModal() {
     cancelText: 'Close',
     bodyHTML: `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <label style="margin:0">Year</label>
+        <label for="tm-year" style="margin:0">Year</label>
         <select id="tm-year">${[thisYear + 1, thisYear, thisYear - 1, thisYear - 2].map((y) => `<option value="${y}" ${y === thisYear ? 'selected' : ''}>${y}</option>`).join('')}</select>
         <div class="grow"></div>
         <button type="button" class="btn secondary small" id="tm-csv">${UI.icon('download', 14)} Export CSV</button>
@@ -899,28 +899,39 @@ async function thirteenthMonthModal() {
       <div id="tm-body"><div class="empty">Loading…</div></div>`,
     onOpen: (ov) => {
       const yearSel = ov.querySelector('#tm-year');
-      let last = { rows: [], total: 0, year: '' };
+      let last = null, generation = 0;
       async function load() {
+        last = null;
+        const current = ++generation, actor = App.user, scope = API.serverScope(), token = API.getToken();
+        const button = ov.querySelector('#tm-csv');
+        button.disabled = true;
         ov.querySelector('#tm-body').innerHTML = '<div class="empty">Loading…</div>';
-        try { last = await API.get('/hr/thirteenth-month?year=' + yearSel.value); } catch(e) { last={rows:[],total:0,year:yearSel.value}; hrWorkflowLoadError(ov.querySelector('#tm-body'),e,load); return; }
+        const live = () => current === generation && ov.isConnected && App.user === actor
+          && API.serverScope() === scope && API.getToken() === token;
+        try {
+          const result = await API.get('/hr/thirteenth-month?year=' + yearSel.value);
+          if (!live()) return;
+          last = result;
+          button.disabled = false;
+        } catch (e) { if (live()) hrWorkflowLoadError(ov.querySelector('#tm-body'), e, load); return; }
         const b = ov.querySelector('#tm-body');
         if (!last.rows.length) { b.innerHTML = '<div class="empty">No payslips found for ' + UI.esc(yearSel.value) + '.</div>'; return; }
         b.innerHTML = `<table class="line-table"><thead><tr>
-            <th>Employee</th><th class="right">Payslips</th><th class="right">Total basic salary</th><th class="right">13th-month</th>
+            <th>Employee ID</th><th>Employee</th><th class="right">Payslips</th><th class="right">Total basic salary</th><th class="right">13th-month</th>
           </tr></thead><tbody>${last.rows.map((r) => `
-            <tr><td>${UI.esc(r.employee_name)}</td>
+            <tr><td>${r.employee_id}</td><td>${UI.esc(r.employee_name)}</td>
               <td class="right">${r.payslip_count}</td>
               <td class="right">${UI.money ? UI.money(r.basic_total) : r.basic_total.toFixed(2)}</td>
               <td class="right"><strong>${UI.money ? UI.money(r.amount) : r.amount.toFixed(2)}</strong></td></tr>`).join('')}
-          </tbody><tfoot><tr><th colspan="3" class="right">Total</th>
+          </tbody><tfoot><tr><th colspan="4" class="right">Total</th>
             <th class="right">${UI.money ? UI.money(last.total) : last.total.toFixed(2)}</th></tr></tfoot></table>`;
       }
       yearSel.addEventListener('change', load);
       ov.querySelector('#tm-csv').onclick = () => {
-        if (!last.rows.length) { UI.toast('Nothing to export', 'error'); return; }
+        if (!last || !last.rows.length) { UI.toast('Nothing to export', 'error'); return; }
         UI.downloadCsv(`13th-month-${last.year}.csv`,
-          ['Employee', 'Payslips', 'Total basic salary', '13th-month pay'],
-          last.rows.map((r) => [r.employee_name, r.payslip_count, r.basic_total, r.amount]));
+          ['Employee ID', 'Employee', 'Payslips', 'Total basic salary', '13th-month pay'],
+          last.rows.map((r) => [r.employee_id, r.employee_name, r.payslip_count, r.basic_total, r.amount]));
       };
       load();
     },

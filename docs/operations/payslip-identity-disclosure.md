@@ -1,8 +1,9 @@
 # Payslip ownership and ambiguous legacy identity
 
 Follow-up: the [reviewed cloud repair workflow](payroll-identity-repair.md) is now implemented
-for unresolved valid-JSON records. Resolved-owner transfers, malformed-data reconstruction,
-stable-ID statutory aggregation and broader operational acceptance remain open. The original
+for unresolved valid-JSON records. Resolved-owner transfers, malformed-data reconstruction
+and broader operational acceptance remain open. [Stable-ID report grouping](payroll-report-identity.md)
+is now implemented; financial/filing reconciliation remains. The original
 increment and remaining issues below describe the earlier disclosure fix.
 
 20 October 2026. High-severity scoped privacy fix. Release approval remains on hold.
@@ -75,12 +76,10 @@ Legacy name resolution can only check recorded identity history. Deleted/importe
 history may be incomplete; this is not proof of historical ownership. Reviewed
 stable-ID attribution/backfill remains necessary for those records.
 
-`nameOf` retains its historical display-name fallback for payroll aggregates.
-Tax/statutory reports still group some results by name and may need stable-ID
-aggregation and reconciliation when names overlap. Do not treat this disclosure
-fix as complete financial/statutory attribution acceptance. The shared resolver
-changes also affect generation/HR lookup callers; existing regressions are run,
-and unresolved existing cutoff slips now block generation before writes until reconciliation.
+Follow-up: `nameOf` retains its historical fallback for display only. Tax/agency/HR
+reports now group by stable ID and block unresolved ownership rather than using that
+fallback. See [report contract](payroll-report-identity.md). Duplicate/ledger/payment/filing
+reconciliation remains. Generation continues to block unresolved cutoff slips before writes.
 
 Other remaining work includes export/email action verification, reviewed recipient
 changes, retry/uncertain-send handling, template variables, retention/erasure/legal

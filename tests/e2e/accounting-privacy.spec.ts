@@ -13,7 +13,7 @@ test('accounting browser receives bounded tax identity and renders the seeded ce
  await expect(page.locator('#app-screen')).toBeVisible();
  const result=await page.evaluate(async(id)=>{
   const api=(window as any).API;
-  const detail=await api.get(`/accounting/bir-2316/${id}?year=2026`);
+  const detail=await api.get(`/accounting/bir-2316/${id}?year=2025`);
   const template=await api.get('/templates/defaults/bir_2316');
   const html=(window as any).renderTemplate(template.body,{employee:detail.employee,company:detail.company,year:detail.year,f:{}});
   const hrStatus=(await fetch('/api/hr/employees')).status;

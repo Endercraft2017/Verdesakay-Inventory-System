@@ -1,0 +1,86 @@
+[WebServer] (node:49116) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:49129) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:49140) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 3 tests using 1 worker
+
+(node:49181) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 tests/e2e/payroll-reports.spec.ts:11:1 › same-name employees retain separate certificates, print details and CSV identifiers (30.2s)
+(node:49394) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 tests/e2e/payroll-reports.spec.ts:29:1 › every payroll report shows the real integrity error and disables export (3.0s)
+  ✘  3 tests/e2e/payroll-reports.spec.ts:43:1 › changing year clears export immediately and ignores a late older response (30.2s)
+
+
+  1) tests/e2e/payroll-reports.spec.ts:11:1 › same-name employees retain separate certificates, print details and CSV identifiers
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'BIR 2316', exact: true })
+
+
+      10 | }
+      11 | test('same-name employees retain separate certificates, print details and CSV identifiers', async ({page}) => {
+    > 12 |   await login(page); await page.getByRole('button',{name:'BIR 2316',exact:true}).click();
+         |                                                                                  ^
+      13 |   await page.locator('#b16-year').selectOption('2025');
+      14 |   const a = page.locator('#b16-body tr').filter({hasText:'REPORT-BROWSER-0'});
+      15 |   const b = page.locator('#b16-body tr').filter({hasText:'REPORT-BROWSER-1'});
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-reports.spec.ts:12:82
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-reports-same-name--1cf0d-details-and-CSV-identifiers/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-reports-same-name--1cf0d-details-and-CSV-identifiers/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-reports-same-name--1cf0d-details-and-CSV-identifiers/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-reports-same-name--1cf0d-details-and-CSV-identifiers/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) tests/e2e/payroll-reports.spec.ts:43:1 › changing year clears export immediately and ignores a late older response
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('button', { name: 'BIR 2316', exact: true })
+
+
+      42 | });
+      43 | test('changing year clears export immediately and ignores a late older response', async ({page}) => {
+    > 44 |   await login(page); await page.getByRole('button',{name:'BIR 2316',exact:true}).click();
+         |                                                                                  ^
+      45 |   await expect(page.locator('#b16-body')).toContainText('Payroll report blocked');
+      46 |   await page.locator('#b16-year').selectOption('2025');
+      47 |   await expect(page.locator('#b16-body')).toContainText('REPORT-BROWSER-0');
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-reports.spec.ts:44:82
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-reports-changing-y-13689-nores-a-late-older-response/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-reports-changing-y-13689-nores-a-late-older-response/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-reports-changing-y-13689-nores-a-late-older-response/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-reports-changing-y-13689-nores-a-late-older-response/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    tests/e2e/payroll-reports.spec.ts:11:1 › same-name employees retain separate certificates, print details and CSV identifiers
+    tests/e2e/payroll-reports.spec.ts:43:1 › changing year clears export immediately and ignores a late older response
+  1 passed (1.2m)

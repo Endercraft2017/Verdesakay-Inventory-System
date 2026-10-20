@@ -1,0 +1,213 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payroll-report-identity.test.ts > keeps same-name stamped employees separate in certificates, alphalist and headcount
+{"timestamp":"2026-10-20T03:51:35.946Z","level":"info","event":"http_request","request_id":"0a0b52b8-eb90-418f-af69-80a8422ac023","tenant":"default","method":"GET","path":"/api/accounting/bir-2316","status":200,"duration_ms":5}
+
+stdout | tests/payroll-report-identity.test.ts > keeps 13th-month and final-pay YTD amounts bound to employee ID
+{"timestamp":"2026-10-20T03:51:35.957Z","level":"info","event":"http_request","request_id":"e26472b3-0360-4ae3-8ec7-4b71e54d4550","tenant":"default","method":"GET","path":"/api/hr/thirteenth-month","status":200,"duration_ms":3}
+
+stdout | tests/payroll-report-identity.test.ts > keeps agency IDs and fund opt-outs attached to the right same-name employee
+{"timestamp":"2026-10-20T03:51:35.963Z","level":"info","event":"http_request","request_id":"cd6bafc1-4fda-427b-ab77-6d66cf02c9b6","tenant":"default","method":"GET","path":"/api/accounting/contribution-schedule","status":200,"duration_ms":3}
+
+stdout | tests/payroll-report-identity.test.ts > blocks all affected reports and CSV instead of returning partial or guessed figures
+{"timestamp":"2026-10-20T03:51:35.974Z","level":"info","event":"http_request","request_id":"4d47596d-4948-4136-964a-56ec92c46824","tenant":"default","method":"GET","path":"/api/accounting/bir-1601c","status":200,"duration_ms":1}
+
+stdout | tests/payroll-report-identity.test.ts > blocks invalid or dangling authoritative stamps even if the display name is unique
+{"timestamp":"2026-10-20T03:51:35.979Z","level":"info","event":"http_request","request_id":"f272e144-b42e-427d-a809-f0aa06eb199f","tenant":"default","method":"GET","path":"/api/accounting/bir-2316","status":200,"duration_ms":2}
+
+stdout | tests/payroll-report-identity.test.ts > uses cutoff end for agency scope and pay date for annual scope
+{"timestamp":"2026-10-20T03:51:35.990Z","level":"info","event":"http_request","request_id":"1a90465d-8642-403f-adc2-1642d52e3ee0","tenant":"default","method":"GET","path":"/api/accounting/bir-2316","status":200,"duration_ms":2}
+
+stdout | tests/payroll-report-identity.test.ts > blocks unreadable data instead of skipping it or crashing
+{"timestamp":"2026-10-20T03:51:35.994Z","level":"info","event":"http_request","request_id":"f5db63fe-0748-45df-af10-dbe49be59c78","tenant":"default","method":"GET","path":"/api/accounting/bir-2316","status":200,"duration_ms":2}
+
+stdout | tests/payroll-report-identity.test.ts > restores correct reports after the reviewed identity-only repair without changing money
+{"timestamp":"2026-10-20T03:51:35.998Z","level":"info","event":"http_request","request_id":"9988c548-66c5-4429-a68c-eec8a7df8256","tenant":"default","method":"GET","path":"/api/accounting/bir-2316","status":200,"duration_ms":2}
+
+stdout | tests/payroll-report-identity.test.ts
+{"timestamp":"2026-10-20T03:51:34.466Z","level":"info","event":"http_request","request_id":"9ab54d50-d0fe-49cc-a35a-bddb60fa63b2","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":322}
+
+stdout | tests/payroll-report-identity.test.ts
+{"timestamp":"2026-10-20T03:51:34.814Z","level":"info","event":"http_request","request_id":"e74fb320-5ea1-4220-95de-8862b934766c","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":342}
+
+stdout | tests/payroll-report-identity.test.ts
+{"timestamp":"2026-10-20T03:51:35.140Z","level":"info","event":"http_request","request_id":"7eeb0891-1e7f-4e90-ac86-6c3ba69685e2","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":322}
+
+stdout | tests/payroll-report-identity.test.ts
+{"timestamp":"2026-10-20T03:51:35.573Z","level":"info","event":"http_request","request_id":"6bbb01ce-7d2c-4d04-affd-79a4efe031e1","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":430}
+
+stdout | tests/payroll-report-identity.test.ts
+{"timestamp":"2026-10-20T03:51:35.935Z","level":"info","event":"http_request","request_id":"e6554fd8-9dde-47aa-a901-6d189f5ed804","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":359}
+
+ ❯ tests/payroll-report-identity.test.ts (11 tests | 8 failed) 4856ms
+   × keeps same-name stamped employees separate in certificates, alphalist and headcount 15ms
+   × keeps 13th-month and final-pay YTD amounts bound to employee ID 6ms
+   × keeps agency IDs and fund opt-outs attached to the right same-name employee 7ms
+   × blocks all affected reports and CSV instead of returning partial or guessed figures 5ms
+   × blocks invalid or dangling authoritative stamps even if the display name is unique 4ms
+   × uses cutoff end for agency scope and pay date for annual scope 4ms
+   × blocks unreadable data instead of skipping it or crashing 4ms
+   × restores correct reports after the reviewed identity-only repair without changing money 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payroll-report-identity.test.ts > keeps same-name stamped employees separate in certificates, alphalist and headcount
+AssertionError: expected [ { …(4) } ] to have a length of 2 but got 1
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ tests/payroll-report-identity.test.ts:37:57
+     35|   slip(); slip({employee_id: String(b), basic_salary: 24000, total_ear…
+     36|   const list = await get('/api/accounting/bir-2316?year=2040', account…
+     37|   expect(list.status).toBe(200); expect(list.body.rows).toHaveLength(2…
+       |                                                         ^
+     38|   expect(list.body.rows.find((r: any) => r.employee_id === a)).toMatch…
+     39|   expect(list.body.rows.find((r: any) => r.employee_id === b)).toMatch…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  tests/payroll-report-identity.test.ts > keeps 13th-month and final-pay YTD amounts bound to employee ID
+AssertionError: expected [ { …(4) } ] to have a length of 2 but got 1
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ tests/payroll-report-identity.test.ts:52:23
+     50|   slip(); slip({employee_id: b, basic_salary: 24000, total_earnings: 2…
+     51|   const t = await get('/api/hr/thirteenth-month?year=2040');
+     52|   expect(t.body.rows).toHaveLength(2);
+       |                       ^
+     53|   expect(t.body.rows.find((r: any) => r.employee_id === a)).toMatchObj…
+     54|   const f = await get(`/api/hr/final-pay/${b}?separation_date=2040-06-…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  tests/payroll-report-identity.test.ts > keeps agency IDs and fund opt-outs attached to the right same-name employee
+AssertionError: expected [ 'SSS-A' ] to deeply equal [ 'SSS-A', 'SSS-B' ]
+
+- Expected
++ Received
+
+  [
+    "SSS-A",
+-   "SSS-B",
+  ]
+
+ ❯ tests/payroll-report-identity.test.ts:61:61
+     59|   for (const [agency, ids] of [['sss', ['SSS-A', 'SSS-B']], ['philheal…
+     60|     const r = await get(`/api/accounting/contribution-schedule?month=2…
+     61|     expect(r.body.rows.map((v: any) => v.id_number).sort()).toEqual([.…
+       |                                                             ^
+     62|     expect(r.body.rows[0].basis).toBe(12000); expect(r.body.rows[1].ba…
+     63|   }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  tests/payroll-report-identity.test.ts > blocks all affected reports and CSV instead of returning partial or guessed figures
+AssertionError: /api/accounting/bir-1601c?year=2040: expected 200 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 200
+
+ ❯ tests/payroll-report-identity.test.ts:80:55
+     78|   slip(); const bad = slip({employee_id: null});
+     79|   for (const path of routes()) {
+     80|     const r = await get(path); expect(r.status, path).toBe(409);
+       |                                                       ^
+     81|     expect(r.headers['cache-control']).toContain('no-store');
+     82|     expect(r.type).toBe('application/json'); expect(r.body.error).toCo…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  tests/payroll-report-identity.test.ts > blocks invalid or dangling authoritative stamps even if the display name is unique
+AssertionError: expected 200 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 200
+
+ ❯ tests/payroll-report-identity.test.ts:89:81
+     87|   for (const employee_id of ['broken', 999999, 0, {}, true, '01']) {
+     88|     const id = slip({employee_id, employee_name: 'Current Report Name'…
+     89|     const r = await get('/api/accounting/bir-2316?year=2040'); expect(…
+       |                                                                                 ^
+     90|     db.run('DELETE FROM form_records WHERE id=?', id);
+     91|   }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+ FAIL  tests/payroll-report-identity.test.ts > uses cutoff end for agency scope and pay date for annual scope
+AssertionError: expected 200 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 200
+
+ ❯ tests/payroll-report-identity.test.ts:102:70
+    100|   try {
+    101|     slip({employee_id: null, pay_date: '2040-01-05'}, 'REPORT-ID-CUTOF…
+    102|     expect((await get('/api/accounting/bir-2316?year=2040')).status).t…
+       |                                                                      ^
+    103|     expect((await get('/api/accounting/contribution-schedule?month=203…
+    104|     expect((await get('/api/accounting/contribution-schedule?month=204…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/8]⎯
+
+ FAIL  tests/payroll-report-identity.test.ts > blocks unreadable data instead of skipping it or crashing
+AssertionError: expected 200 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 200
+
+ ❯ tests/payroll-report-identity.test.ts:110:81
+    108|   for (const raw of ['{broken', 'null', '[]', '7']) {
+    109|     const id = slip({}, null, raw);
+    110|     const r = await get('/api/accounting/bir-2316?year=2040'); expect(…
+       |                                                                                 ^
+    111|     db.run('DELETE FROM form_records WHERE id=?', id);
+    112|   }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/8]⎯
+
+ FAIL  tests/payroll-report-identity.test.ts > restores correct reports after the reviewed identity-only repair without changing money
+AssertionError: expected 200 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 200
+
+ ❯ tests/payroll-report-identity.test.ts:116:68
+    114| it('restores correct reports after the reviewed identity-only repair w…
+    115|   slip(); const id = slip({employee_id: null});
+    116|   expect((await get('/api/accounting/bir-2316?year=2040')).status).toB…
+       |                                                                    ^
+    117|   (await import('../src/shared/step-up')).markFreshVerification(1, tok…
+    118|   const revision = db.queryOne<{revision: number}>('SELECT revision FR…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 3 passed (11)
+   Start at  03:51:30
+   Duration  5.11s (transform 1.53s, setup 27ms, import 86ms, tests 4.86s, environment 0ms)

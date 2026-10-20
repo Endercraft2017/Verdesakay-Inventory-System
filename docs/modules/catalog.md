@@ -775,6 +775,10 @@ doc_template, SCHEMA_VERSION 43; company-wide register `GET /api/hr/assets` with
 people-who-left filters + CSV, UI `public/js/modules/hr/hr-assets.js` at HR → Employees →
 Company Assets, tests `tests/hr-assets.test.ts`), `clock.routes.ts`, `field.routes.ts`,
 `employee-profile.ts` + `employee-profile.routes.ts` (self-service profile, below).
+**Payroll worksheets:** 13th month and final pay use stable employee-ID groups from `payroll`,
+not name lookups. Unresolved/unreadable source data blocks affected reports with 409. The
+13th-month dialog clears stale results and disables CSV on pending/failed reads. See
+[report contract](../operations/payroll-report-identity.md); source/GL/payment/filing reconciliation remains.
 **Payroll email identity:** `hr.routes.ts` refuses unresolved ownership before mailbox lookup
 or sending. See `docs/operations/payslip-identity-disclosure.md`; permission/sync classes unchanged.
 **Employee photos (2026-10-13):** `GET /api/hr/employees` leaves `employees.photo` (a data URI)
@@ -914,8 +918,17 @@ remain. Generic record updates refuse ownership changes. See
 **Disclosure ownership (20 October 2026):** present IDs must resolve without name fallback;
 legacy names must uniquely identify one employee across current and historical names. Self-service
 list/PDF/timekeeping and email use the shared resolver. Ambiguous slips are withheld, not silently
-assigned to the current name holder. Generation refuses unresolved cutoff slips before writes. Stable-ID aggregate reconciliation remains; see
+assigned to the current name holder. Generation refuses unresolved cutoff slips before writes; see
 [ownership contract](../operations/payslip-identity-disclosure.md).
+**Statutory attribution (20 October 2026):** `yearPayslipRowsByEmployee` and
+`contributionBasesForMonth` return maps keyed by numeric employee ID. All tax/agency/HR
+report callers select identity/settings by that ID; names never group money or monthly headcount.
+The shared reader throws status 409 before producing any partial report for unresolved ownership,
+unreadable data/unscopable dates or relevant duplicate cutoff labels. A one-record read avoids
+multiplication through non-unique attendance labels. Accounting dialogs and HR 13th month clear
+old results, disable pending/blocked export and reject late/context-changed reads. No schema,
+mutation sync class or tax formula changed. See [report contract](../operations/payroll-report-identity.md)
+and [research](../audits/payroll-reports-research.md); duplicate/ledger/payment/filing reconciliation remains.
 **Public interface:** pure computation/rendering functions (no routes of its own — exposed
 through `hr.routes.ts`, `accounting.routes.ts`, and `core/me.routes.ts`'s
 `GET /api/me/payslips/:id/pdf`).
@@ -1044,6 +1057,11 @@ accounting's public interface), not a circular dependency.
 journal entry is `merge` (JV numbers from the host's block); a petty-cash entry is `physical`; everything
 else is a company-wide `claim`. Posting, reversing, closing or voiding what the cloud already did keeps the
 outcome, flagged (D6). Posting into a period the cloud closed stays refused (an accounting control).
+**Payroll tax/agency identity:** BIR 2316/1601-C/1604-C/Alphalist and contribution schedules
+use numeric employee groups, including same-name employees. Identity/settings are read by ID;
+shared source-integrity holds return 409 before JSON rows or CSV. Report dialogs show errors,
+disable pending/blocked exports and reject late/company/session-changed responses. See
+[operator contract](../operations/payroll-report-identity.md).
 **Tax privacy (20 October 2026):** BIR 2316 detail explicitly projects its tax-template employee
 identity; no whole HR/pay row or automatic future-column exposure. `accounting.view` remains
 the statutory-filing gate. See [contract and evidence](../operations/accounting-tax-privacy.md).
