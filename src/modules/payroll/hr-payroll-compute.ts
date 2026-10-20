@@ -749,10 +749,16 @@ export function computeAttendanceForEmployee(
     // both would otherwise apply — an explicit HR decision beats a guess, even a correct one.
     const undocumentedHalfDay = forms.length === 0 && unlinkedHalfSession != null;
     const isHalfDay = hasForm('halfday_request') || undocumentedHalfDay || !!halfDayOverrideSession;
+    // Requests can name the half taken OFF (e.g. PM leave with morning punches).
+    // When the punches clearly identify a half window, use that worked session for
+    // late/undertime. Otherwise retain the request's session as the fallback.
+    const recordedHalfSession = hasForm('halfday_request')
+      ? unlinkedHalfDaySession(shiftStart, shiftEnd, policy.lunch_break_minutes, timeInRel, timeOutRel)
+      : null;
     const halfDaySession = halfDayOverrideSession
       ?? (undocumentedHalfDay
         ? unlinkedHalfSession ?? undefined
-        : (formData('halfday_request')?.session as string | undefined));
+        : recordedHalfSession ?? (formData('halfday_request')?.session as string | undefined));
     if (halfDayOverrideSession) halfDayManual = true;
 
     // A Half Day judges late/undertime against just its own AM/PM window (derived from the

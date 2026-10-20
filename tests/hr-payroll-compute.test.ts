@@ -2,7 +2,7 @@
     exactly the kind of finicky business logic worth pinning down precisely, independent of any
     DB or HTTP concerns (the module itself takes plain data in, plain numbers out). */
 import { describe, it, expect } from 'vitest';
-import { computeAttendanceForEmployee, unrecordedOtMinutes, type AttendanceDay } from '../src/modules/payroll/hr-payroll-compute';
+import { computeAttendanceForEmployee, computeAttendanceMultiRate, unrecordedOtMinutes, type AttendanceDay } from '../src/modules/payroll/hr-payroll-compute';
 import type { PayrollPolicy } from '../src/shared/types';
 
 const POLICY: PayrollPolicy = {
@@ -32,6 +32,50 @@ const POLICY: PayrollPolicy = {
 };
 const DAILY_RATE = 800; // hourly = 100
 const SHIFT = { start_time: '08:00', end_time: '17:00' };
+
+describe('October 1–15 screenshot payroll regression', () => {
+  it('uses afternoon punches for an AM leave request and still deducts a genuine early departure', () => {
+    const r = computeAttendanceForEmployee([day({
+      time_in: '13:00', time_out: '16:00',
+      linkedForm: { slug: 'halfday_request', data: { session: 'Morning (AM)' } },
+    })], 600, { ...POLICY, grace_minutes: 5, late_unit: 'minute' });
+    expect(r.days_worked).toBe(0.5);
+    expect(r.late_deduction).toBe(0);
+    expect(r.undertime_pay).toBe(-75);
+  });
+  it.each(['unlinked', 'request', 'manual', 'pm_leave'] as const)('credits the %s half day once and produces ₱6,882.50 net', (kind) => {
+    const punches = [
+      ['07:46', '17:01'], ['07:39', '17:00'], ['07:32', '12:20'],
+      [null, null], ['07:36', '17:01'], ['07:33', '17:01'],
+      ['07:25', '17:00'], ['07:35', '17:01'], ['07:49', '17:00'],
+      ['08:22', '17:00'], [null, null], ['07:39', '17:00'],
+      ['07:31', '17:00'], ['07:42', '17:00'], ['07:36', '17:00'],
+    ];
+    const attendance = punches.map(([time_in, time_out], i) => day({
+      work_date: `2026-10-${String(i + 1).padStart(2, '0')}`,
+      time_in, time_out, isRestDay: i === 3 || i === 10,
+      ...(i === 2 && kind === 'request' ? { linkedForm: { slug: 'halfday_request', data: { session: 'Morning (AM)' } } } : {}),
+      ...(i === 2 && kind === 'pm_leave' ? { linkedForm: { slug: 'halfday_request', data: { session: 'Afternoon (PM)' } } } : {}),
+      ...(i === 2 && kind === 'manual' ? { halfDayOverride: 'am' as const } : {}),
+    }));
+    const { computed, basicSalary } = computeAttendanceMultiRate(attendance, () => 600, {
+      ...POLICY, grace_minutes: 0, late_unit: 'minute', default_rest_days: [0],
+    });
+    expect(computed.days_worked).toBe(12.5);
+    expect(computed.days_half).toBe(1);
+    expect(basicSalary).toBe(7500);
+    expect(computed.days[2]!.undertime_pay).toBe(0);
+    expect(computed.undertime_pay).toBe(0);
+    expect(computed.late_deduction).toBeCloseTo(27.5, 2);
+    expect(basicSalary + computed.undertime_pay - computed.late_deduction - 390 - 200).toBe(6882.5);
+    const currentPolicy = computeAttendanceMultiRate(attendance, () => 600, {
+      ...POLICY, grace_minutes: 5, late_unit: 'minute', default_rest_days: [0],
+    });
+    expect(currentPolicy.computed.late_deduction).toBeCloseTo(21.25, 2);
+    expect(currentPolicy.computed.undertime_pay).toBe(0);
+    expect(currentPolicy.basicSalary - currentPolicy.computed.late_deduction - 390 - 200).toBe(6888.75);
+  });
+});
 
 function day(overrides: Partial<AttendanceDay>): AttendanceDay {
   return {
