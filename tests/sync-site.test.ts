@@ -63,7 +63,7 @@ beforeAll(async () => {
   url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   itemA = (await ctx.api.post('/api/inventory').set(cloudHdr()).send({ name: 'Site item', quantity: 20 })).body.id;
   const u = await ctx.api.post('/api/users').set(cloudHdr())
-    .send({ username: 'wh-site', full_name: 'Site Clerk', password: 'whsite123', role: 'warehouse' });
+    .send({ username: 'wh-site', full_name: 'Site Clerk', password: 'whsite123', role: 'warehouse_supervisor' });
   expect(u.status).toBe(201);
 });
 afterAll(() => {

@@ -185,8 +185,8 @@ export interface AttendanceRecords {
   rest_day: string | null;
   min_hours_decision: string | null;
   form_record_ids: string | null;
-  excluded_form_record_ids: string | null;
   half_day_override: string | null;
+  excluded_form_record_ids: string | null;
 }
 
 export interface BomComponents {
@@ -744,6 +744,11 @@ export interface InventoryVariantStock {
   location_id: number;
   build_mode: string;
   quantity: Generated<number>;
+}
+
+export interface JobOrderAssignees {
+  job_order_id: Generated<number>;
+  user_id: number;
 }
 
 export interface JobOrderComponents {
@@ -1947,6 +1952,7 @@ export interface DB {
   inventory_stock: InventoryStock;
   inventory_transactions: InventoryTransactions;
   inventory_variant_stock: InventoryVariantStock;
+  job_order_assignees: JobOrderAssignees;
   job_order_components: JobOrderComponents;
   job_order_events: JobOrderEvents;
   job_order_units: JobOrderUnits;

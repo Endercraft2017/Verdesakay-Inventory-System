@@ -12,7 +12,7 @@
    slip as kind 'release' (both apps must send one — the server refuses the slip without). filter.tab = 'queue' | 'slips' */
 App.register('releasing', async (view, filter) => {
   const canRelease = App.hasPermission('orders.release');
-  const canInspectReturn = App.hasPermission('inventory.adjust');
+  const canInspectReturn = App.hasPermission('returns.inspect');
   const canRepairReturn = canInspectReturn || App.hasPermission('production.inspect_qc') || App.hasPermission('production.inspect_qa');
   const canLinkCredit = App.hasPermission('accounting.manage');
   const tab = filter && filter.tab === 'slips' ? 'slips' : 'queue';
@@ -283,7 +283,7 @@ App.register('releasing', async (view, filter) => {
     // A supervisor's approved override stands in for the token; a supervisor can make one here.
     const tov = auth.override || null;
     const ovOk = !!tov && tov.status === 'approved';
-    const canOverride = !ovOk && App.hasPermission('inventory.adjust');
+    const canOverride = !ovOk && App.hasPermission('orders.override_release');
     const authBlock = auth.state === 'valid'
       ? `<div class="panel" style="padding:10px 12px;margin-bottom:10px">
            <div><b>${UI.esc(auth.mode === 'delivery' ? 'Delivery' : 'Customer pickup')}</b> · approved recipient

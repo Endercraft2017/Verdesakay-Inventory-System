@@ -31,7 +31,7 @@
     if ((MApp.can('production.receive')) && MApp.canOpen(ACTIONS.receiving.route)) return ACTIONS.receiving;
     if ((MApp.can('orders.release')) && MApp.canOpen(ACTIONS.release.route)) return ACTIONS.release;
     // Warehouse: Figma 62:372 — the job-order scan shortcut into kit release.
-    if ((MApp.can('inventory.adjust')) && MApp.canOpen(ACTIONS.kitscan.route)) return ACTIONS.kitscan;
+    if ((MApp.can('production.kit_release')) && MApp.canOpen(ACTIONS.kitscan.route)) return ACTIONS.kitscan;
     if ((MApp.can('inventory.mobile')) && MApp.canOpen(ACTIONS.scan.route)) return ACTIONS.scan;
     return null;
   }

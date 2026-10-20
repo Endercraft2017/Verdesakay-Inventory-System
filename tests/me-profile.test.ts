@@ -80,7 +80,8 @@ describe('self-service profile', () => {
     expect(own.body.map((h: { field: string }) => h.field)).toContain('mobile_phone');
 
     const log = queryOne<{ meta: string }>("SELECT meta FROM activity_log WHERE path = '/api/me/profile' AND status_code = 200 ORDER BY id DESC LIMIT 1")!;
-    expect(log.meta).toContain('[redacted]');
+    expect(JSON.parse(log.meta).body.redacted).toBe(true);
+    expect(log.meta).not.toContain('juana@example.com');
     expect(log.meta).not.toContain(emp.password);
   });
 

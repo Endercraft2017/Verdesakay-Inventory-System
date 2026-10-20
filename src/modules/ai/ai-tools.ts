@@ -1,3 +1,4 @@
+import { redactInventoryCosts } from '../../shared/cost-visibility';
 /**
  * AI Agent tool definitions and executor.
  *
@@ -75,8 +76,8 @@ const TOOL_PERMISSION: Record<ToolName, Permission | null> = {
   mark_message_read: 'messages.view',
   get_forms: 'forms.view',
   list_users: 'users.manage',
-  create_user: 'users.manage',
-  update_user: 'users.manage',
+  create_user: 'users.permissions',
+  update_user: 'users.permissions',
   get_notes: null,
   create_note: null,
   update_note: null,
@@ -627,7 +628,7 @@ type LineItem = {
 };
 
 /** Execute one tool call. Always returns a ToolResult — never throws. */
-export async function executeTool(name: string, args: unknown, user: AuthUser): Promise<ToolResult> {
+async function executeToolInternal(name: string, args: unknown, user: AuthUser): Promise<ToolResult> {
   user = entitledUser(user);
   const a = (args ?? {}) as Record<string, unknown>;
 
@@ -705,6 +706,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
 
       case 'create_inventory_item': {
         const input = parseBody(createItemSchema, a);
+        if(input.quantity && !user.permissions.includes('inventory.adjust')) return {success:false,error:'Starting stock requires inventory.adjust'};
         if (input.sku) {
           const dupe = queryOne('SELECT id FROM inventory_items WHERE sku = ?', input.sku);
           if (dupe) return { success: false, error: 'An item with that SKU already exists.' };
@@ -824,6 +826,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       case 'create_order': {
+        if (String(a.type||'sale') !== 'purchase' && a.status && !['open','draft'].includes(String(a.status).toLowerCase()) && !user.permissions.includes('orders.approve')) return {success:false,error:'Sales approval permission is required'};
         const type = String(a.type ?? 'sale');
         if (type !== 'sale' && type !== 'job' && type !== 'purchase')
           return { success: false, error: "type must be 'sale', 'job', or 'purchase'." };
@@ -862,8 +865,10 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       case 'update_order': {
-        const existingOrder = queryOne<{ type: string }>('SELECT type FROM orders WHERE id = ?', a.id);
+        const existingOrder = queryOne<{ type: string; status:string }>('SELECT type,status FROM orders WHERE id = ?', a.id);
         if (!existingOrder) return { success: false, error: 'Order not found.' };
+        if (!['open','draft'].includes(existingOrder.status) || a.status && !['open','draft'].includes(String(a.status))) return {success:false,error:'Use the order review screen for status decisions or changes to approved orders.'};
+        if (queryOne('SELECT 1 FROM goods_receipts WHERE order_id=? LIMIT 1',a.id) || queryOne('SELECT 1 FROM release_slips WHERE order_id=? LIMIT 1',a.id)) return {success:false,error:'Use the order review screen for an order with physical activity.'};
         if (!canOnOrder(user, existingOrder.type, 'edit')) return { success: false, error: 'Permission denied.' };
         const lineItems = (a.items as LineItem[]) ?? [];
         const subtotal = lineItems.reduce((s, i) => s + i.quantity * i.unit_price, 0);
@@ -896,9 +901,10 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       case 'delete_order': {
-        const order = queryOne<{ number: string; type: string }>('SELECT number, type FROM orders WHERE id = ?', a.id);
+        const order = queryOne<{ number: string; type: string; status:string }>('SELECT number,type,status FROM orders WHERE id = ?', a.id);
         if (!order) return { success: false, error: 'Order not found.' };
         if (!canOnOrder(user, order.type, 'delete')) return { success: false, error: 'Permission denied.' };
+        if (!['open','draft'].includes(order.status) || queryOne('SELECT 1 FROM goods_receipts WHERE order_id=? LIMIT 1',a.id) || queryOne('SELECT 1 FROM release_slips WHERE order_id=? LIMIT 1',a.id)) return {success:false,error:'Use the order review screen for an approved order or one with physical activity.'};
         run('DELETE FROM orders WHERE id = ?', a.id);
         return { success: true, data: { deleted: true, number: order.number } };
       }
@@ -986,6 +992,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       case 'create_user': {
+        if (!user.permissions.includes('users.permissions')) return {success:false,error:'Permission-management authority is required to create accounts through the assistant.'};
         const input = parseBody(createUserSchema, a);
         if (!getRole(input.role)) return { success: false, error: `Unknown role "${input.role}".` };
         const exists = queryOne('SELECT id FROM users WHERE username = ?', input.username);
@@ -1000,6 +1007,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       case 'update_user': {
+        if (!user.permissions.includes('users.permissions')) return {success:false,error:'Permission-management authority is required to change accounts through the assistant.'};
         const existing = queryOne<{ role: string; active: number }>('SELECT role, active FROM users WHERE id = ?', a.id);
         if (!existing) return { success: false, error: 'User not found.' };
         const input = parseBody(updateUserSchema, a);
@@ -1101,4 +1109,9 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/** AI results use the same field visibility as HTTP responses. */
+export async function executeTool(name: string, args: unknown, user: AuthUser): Promise<ToolResult> {
+  return redactInventoryCosts(await executeToolInternal(name,args,user),user);
 }

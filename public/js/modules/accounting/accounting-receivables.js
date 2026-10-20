@@ -19,7 +19,7 @@ App.register('accounting-receivables', async (view, filter) => {
 
   view.innerHTML = `
     <div class="topbar"><h2>Receivables &amp; Payables</h2><div class="grow"></div>
-      ${canManage ? `<button class="btn" id="rp-new-pay">${UI.icon('plus')} Record payment</button>` : ''}</div>
+      ${App.hasPermission('accounting.record_payments') ? `<button class="btn" id="rp-new-pay">${UI.icon('plus')} Record payment</button>` : ''}</div>
     <div class="subnav-inline" id="rp-tabs">${tabs.map((t) =>
       `<button class="tab ${t === active ? 'active' : ''}" data-tab="${t}">${t}</button>`).join('')}</div>
     <div class="panel"><div id="rp-body"><div class="empty">Loading…</div></div></div>
@@ -82,7 +82,7 @@ App.register('accounting-receivables', async (view, filter) => {
             <td class="muted">${BUCKET_LABEL[doc.bucket]}</td><td class="right">${money(doc.outstanding)}</td></tr>`).join('')}</tbody></table>`
           : '<p class="muted">No open documents.</p>'}
           ${p.credits ? `<p class="muted">On-account credit: <strong>${money(p.credits)}</strong> — net owed <strong>${money(p.total)}</strong>.</p>` : ''}
-          ${canManage && p.party_id ? `<button class="btn" style="margin-top:12px" id="rp-pay-party">Record ${kind === 'ar' ? 'receipt' : 'payment'}</button>` : ''}`,
+          ${App.hasPermission('accounting.record_payments') && p.party_id ? `<button class="btn" style="margin-top:12px" id="rp-pay-party">Record ${kind === 'ar' ? 'receipt' : 'payment'}</button>` : ''}`,
       });
       const pb = document.getElementById('rp-pay-party');
       if (pb) pb.onclick = () => paymentModal({
@@ -130,7 +130,7 @@ App.register('accounting-receivables', async (view, filter) => {
         ${(p.allocations && p.allocations.length) ? `<table><thead><tr><th>Document</th><th class="right">Amount</th></tr></thead>
           <tbody>${p.allocations.map((a) => `<tr><td class="mono">${UI.esc(a.doc_number || ('#' + a.doc_id))}</td><td class="right">${money(a.amount)}</td></tr>`).join('')}</tbody></table>`
           : '<p class="muted">Unapplied (on account).</p>'}
-        ${canManage && p.status === 'posted' ? `<button class="btn danger" style="margin-top:14px" id="rp-void">Void payment</button>` : ''}`,
+        ${App.hasPermission('accounting.record_payments') && p.status === 'posted' ? `<button class="btn danger" style="margin-top:14px" id="rp-void">Void payment</button>` : ''}`,
     });
     const vb = document.getElementById('rp-void');
     if (vb) vb.onclick = async () => {
@@ -243,7 +243,7 @@ App.register('accounting-receivables', async (view, filter) => {
     const list = await API.get('/accounting/credit-notes');
     body.innerHTML = `
       <div style="display:flex;margin-bottom:8px"><div class="grow"></div>
-        ${canManage ? `<button class="btn secondary small" id="cn-new">${UI.icon('plus')} New note</button>` : ''}</div>
+        ${App.hasPermission('accounting.post') ? `<button class="btn secondary small" id="cn-new">${UI.icon('plus')} New note</button>` : ''}</div>
       ${list.length ? `<table><thead><tr><th>No.</th><th>Date</th><th>Kind</th><th>Party</th><th>Reason</th>
         <th class="right">Total</th><th>Status</th></tr></thead>
         <tbody>${list.map((n) => `<tr class="clickable" data-open="${n.id}">
@@ -274,7 +274,7 @@ App.register('accounting-receivables', async (view, filter) => {
           <div><span class="muted">Status</span><div>${n.status}</div></div>
         </div>
         ${n.reason ? `<p style="margin:8px 0">${UI.esc(n.reason)}</p>` : ''}
-        ${canManage && n.status === 'issued' ? `<button class="btn danger" style="margin-top:14px" id="cn-void">Void note</button>` : ''}`,
+        ${App.hasPermission('accounting.post') && n.status === 'issued' ? `<button class="btn danger" style="margin-top:14px" id="cn-void">Void note</button>` : ''}`,
     });
     const vb = document.getElementById('cn-void');
     if (vb) vb.onclick = async () => {

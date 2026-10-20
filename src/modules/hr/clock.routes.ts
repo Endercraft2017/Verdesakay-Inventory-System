@@ -35,7 +35,7 @@ import fs from 'node:fs';
 import { cutoffIsPaid } from './workflow';
 import { Router, type Request, type Response } from 'express';
 import { queryOne, queryAll } from '../../shared/db';
-import { requireAuth, requirePermission, deviceUsualUserId } from '../../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission, deviceUsualUserId } from '../../shared/auth';
 import { deviceIdOf } from '../../shared/device';
 import {
   parseBody, phonePunchSchema, phoneSelfieSchema, kioskPunchSchema, kioskCorrectSchema, clockGeofenceSchema, kioskDeviceSchema, kioskLockSchema,
@@ -68,7 +68,7 @@ function linkedEmployee(userId: number): EmpRow | undefined {
 
 // Punch Log (Time Keeping → Punch Log): raw punches in a work-date range, with where each phone
 // punch came from — for HR to review remote punches and anything far from the office.
-router.get('/punches', requirePermission('hr.view'), (req, res) => {
+router.get('/punches', requireAnyPermission(['hr.view','hr.timekeeping.view','hr.kiosk']), (req, res) => {
   const { from, to, source } = parseBody(punchLogQuerySchema, req.query);
   const where = ['p.work_date BETWEEN ? AND ?'];
   const params: unknown[] = [from, to];
@@ -88,7 +88,7 @@ router.get('/punches', requirePermission('hr.view'), (req, res) => {
 // --- Approved kiosk devices (see kiosk-devices.ts) ---
 
 // The kiosk screen asks this first: is the lock on, and is THIS browser approved?
-router.get('/kiosk-devices', requirePermission('hr.view'), (req, res) => {
+router.get('/kiosk-devices', requireAnyPermission(['hr.view','hr.timekeeping.view','hr.kiosk']), (req, res) => {
   const current = kioskDeviceFor(req.get('x-kiosk-token'));
   res.json({
     lock_active: kioskLockActive(),
@@ -98,27 +98,27 @@ router.get('/kiosk-devices', requirePermission('hr.view'), (req, res) => {
   });
 });
 
-router.post('/kiosk-devices', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.post('/kiosk-devices', requirePermission('security.manage'), syncClass('claim'), (req, res) => {
   const { name } = parseBody(kioskDeviceSchema, req.body);
   res.status(201).json(approveKioskDevice(name, req.user!.id));
 });
 
-router.delete('/kiosk-devices/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.delete('/kiosk-devices/:id', requirePermission('security.manage'), syncClass('claim'), (req, res) => {
   if (!revokeKioskDevice(Number(req.params.id))) { res.status(404).json({ error: 'Kiosk device not found' }); return; }
   res.json({ ok: true });
 });
 
-router.put('/kiosk-lock', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.put('/kiosk-lock', requirePermission('security.manage'), syncClass('claim'), (req, res) => {
   const { enabled } = parseBody(kioskLockSchema, req.body);
   setKioskLock(enabled);
   res.json({ lock_active: kioskLockActive(), lock_setting: kioskLockSetting() });
 });
 
-router.get('/code', requirePermission('hr.view'), requireKioskDevice, (_req, res) => {
+router.get('/code', requireAnyPermission(['hr.view','hr.timekeeping.view','hr.kiosk']), requireKioskDevice, (_req, res) => {
   res.json({ ...currentKioskCode(), rotate_seconds: ROTATE_SECONDS });
 });
 
-router.get('/recent', requirePermission('hr.view'), (req, res) => {
+router.get('/recent', requireAnyPermission(['hr.view','hr.timekeeping.view','hr.kiosk']), (req, res) => {
   const sinceId = Number(req.query.since_id) || 0;
   const rows = queryAll<{
     id: number; ts: string; kind: string; segment: string; source: string; name: string; employee_no: string | null;
@@ -136,7 +136,7 @@ router.get('/recent', requirePermission('hr.view'), (req, res) => {
   res.json(rows.map(({ employee_id, work_date, ...r }) => ({ ...r, photo_id: photos.get(r.id) ?? null, recorded: recordedBrackets(employee_id, work_date) })));
 });
 
-router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, syncClass('physical'), (req, res) => {
+router.post('/kiosk-punch', requireAnyPermission(['hr.view','hr.timekeeping.view','hr.kiosk']), requireKioskDevice, syncClass('physical'), (req, res) => {
   const { code, employee_no } = parseBody(kioskPunchSchema, req.body);
   if (!isValidKioskCode(code)) {
     res.status(400).json({ error: 'That code is not current. Use the code on the screen.' });
@@ -158,7 +158,7 @@ router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, sy
   res.json(recordPunch(emp, 'kiosk', null));
 });
 
-router.post('/correct', requirePermission('hr.view'), requireKioskDevice, syncClass('physical'), (req, res) => {
+router.post('/correct', requireAnyPermission(['hr.view','hr.timekeeping.view','hr.kiosk']), requireKioskDevice, syncClass('physical'), (req, res) => {
   const { code, employee_no, slot } = parseBody(kioskCorrectSchema, req.body);
   if (!isValidKioskCode(code)) {
     res.status(400).json({ error: 'That code is not current. Use the code on the screen.' });
@@ -295,17 +295,17 @@ router.get('/my-status', (req, res) => {
 
 // --- Office location lock settings (Time Keeping → Policy Settings) ---
 
-router.get('/geofence', requirePermission('hr.view'), (_req, res) => {
+router.get('/geofence', requireAnyPermission(['hr.view','hr.timekeeping.view','hr.kiosk']), (_req, res) => {
   res.json(getGeofence());
 });
 
-router.put('/geofence', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.put('/geofence', requireAnyPermission(['hr.manage','hr.timekeeping.manage']), syncClass('claim'), (req, res) => {
   res.json(setGeofence(parseBody(clockGeofenceSchema, req.body)));
 });
 
 // --- HR reconciliation ---
 
-router.post('/import/:periodId', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.post('/import/:periodId', requireAnyPermission(['hr.manage','hr.timekeeping.manage']), syncClass('claim'), (req, res) => {
   const periodId = Number(req.params.periodId);
   if (!queryOne('SELECT id FROM attendance_periods WHERE id = ?', periodId)) {
     res.status(404).json({ error: 'Cutoff period not found' });

@@ -1,7 +1,8 @@
 /* Accounting → Petty Cash: named cash funds + a running money-in / money-out register. */
 App.register('accounting-petty-cash', async (view) => {
   const money = UI.money;
-  const canManage = App.hasPermission('accounting.manage');
+  const canManage = App.hasPermission('accounting.record_payments');
+  const canConfigure = App.hasPermission('accounting.configure');
   const state = { fundId: null, from: '', to: '' };
   let funds = [];
   let locations = [];
@@ -14,8 +15,8 @@ App.register('accounting-petty-cash', async (view) => {
       <input type="date" id="pc-from" title="From" />
       <input type="date" id="pc-to" title="To" />
       <button class="btn secondary" id="pc-csv" title="Export the shown register to CSV">${UI.icon('download')} Export</button>
-      ${canManage ? `<button class="btn secondary" id="pc-newfund">${UI.icon('building')} Funds</button>
-      <button class="btn" id="pc-in">${UI.icon('plus')} Cash in</button>
+      ${canConfigure ? `<button class="btn secondary" id="pc-newfund">${UI.icon('building')} Funds</button>` : ''}
+      ${canManage ? `<button class="btn" id="pc-in">${UI.icon('plus')} Cash in</button>
       <button class="btn" id="pc-out">${UI.icon('adjust')} Cash out</button>` : ''}
     </div>
     <div id="pc-summary"></div>
@@ -50,7 +51,7 @@ App.register('accounting-petty-cash', async (view) => {
         icon: 'sheet',
         title: 'No petty cash fund yet',
         hint: 'Create a fund (e.g. "Main Petty Cash") with its opening float, then record money in and out.',
-        action: canManage ? `<button class="btn" id="pc-empty-new">${UI.icon('plus')} New fund</button>` : '',
+        action: canConfigure ? `<button class="btn" id="pc-empty-new">${UI.icon('plus')} New fund</button>` : '',
       });
       const b = tableEl.querySelector('#pc-empty-new');
       if (b) b.onclick = () => fundModal(null);

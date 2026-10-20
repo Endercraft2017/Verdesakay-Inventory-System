@@ -17,16 +17,18 @@ afterAll(() => cleanup(ctx));
 
 /** A driver — warehouse role has delivery.run but NOT delivery.manage. */
 async function driver() {
-  return createEmployee(ctx.api, adminToken, { role: 'warehouse' });
+  return createEmployee(ctx.api, adminToken, { role: 'driver' });
 }
 
 describe('delivery permissions', () => {
-  it('run + manage are in the catalog; warehouse=run, releasing=run+manage', () => {
+  it('run + manage are in the catalog; driver runs and dispatcher manages; warehouse and releasing do neither', () => {
     expect(ALL_PERMISSIONS).toContain('delivery.run');
     expect(ALL_PERMISSIONS).toContain('delivery.manage');
-    expect(roleDefaults('warehouse')).toContain('delivery.run');
+    expect(roleDefaults('driver')).toContain('delivery.run');
     expect(roleDefaults('warehouse')).not.toContain('delivery.manage');
-    expect(roleDefaults('releasing')).toEqual(expect.arrayContaining(['delivery.run', 'delivery.manage']));
+    expect(roleDefaults('dispatcher')).toContain('delivery.manage');
+    expect(roleDefaults('warehouse')).not.toContain('delivery.run');
+    expect(roleDefaults('releasing')).not.toContain('delivery.manage');
     expect(roleDefaults('hr')).not.toContain('delivery.run');
   });
 });
@@ -171,8 +173,9 @@ describe('deliveries', () => {
   });
 
   it('completing a delivery for an unfulfilled sale order hands back an `order` hint', async () => {
-    // Office staff can run a delivery and edit the sale; the hint needs orders.edit.
-    const rel = await createEmployee(ctx.api, adminToken, { role: 'admin_staff' });
+    // `releasing` role has delivery.run AND orders.approve — the hint is gated on orders.approve.
+    const rel = await createEmployee(ctx.api, adminToken, { role: 'driver' });
+    await ctx.api.put(`/api/users/${rel.id}/permissions`).set(A()).send({overrides:{'orders.approve':true}});
     const order = await ctx.api.post('/api/orders').set(A()).send({
       type: 'sale', customer_name: 'Fulfil Me', status: 'approved',
       items: [{ name: 'loose widget', quantity: 1, unit_price: 10 }],
@@ -188,9 +191,10 @@ describe('deliveries', () => {
     expect(done.body.order.number).toMatch(/^SO-\d+$/);
   });
 
-  it('no `order` hint for a driver without orders.edit, a failed drop, or a completed order', async () => {
-    const wh = await driver(); // warehouse: delivery.run but NOT orders.edit
-    const rel = await createEmployee(ctx.api, adminToken, { role: 'releasing' });
+  it('no `order` hint for a driver without orders.approve, a failed drop, or a completed order', async () => {
+    const wh = await driver(); // warehouse: delivery.run but NOT orders.approve
+    const rel = await createEmployee(ctx.api, adminToken, { role: 'driver' });
+    await ctx.api.put(`/api/users/${rel.id}/permissions`).set(A()).send({overrides:{'orders.approve':true}});
 
     const approved = (await ctx.api.post('/api/orders').set(A()).send({
       type: 'sale', customer_name: 'No Edit', status: 'approved',

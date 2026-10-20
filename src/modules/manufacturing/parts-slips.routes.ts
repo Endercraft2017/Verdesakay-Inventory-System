@@ -12,7 +12,7 @@ import type { PartsReleaseSlip, PartsReleaseSlipItem } from '../../shared/types'
 const router = Router();
 router.use(requireAuth);
 
-const readGate = requireAnyPermission(['inventory.view', 'production.view']); // stock documents: warehouse or production
+const readGate = requireAnyPermission(['inventory.view','production.view','production.kit_release']); // stock documents: warehouse or production
 
 const SLIP_SELECT = `
   SELECT s.*, j.number AS job_order_number, j.product_name, j.qty_ordered,

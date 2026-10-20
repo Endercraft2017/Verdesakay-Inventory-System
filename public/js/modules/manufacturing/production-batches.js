@@ -3,7 +3,7 @@
    on the progress form. Each batch has its own number, QC/QA sign-off and dossier.
    filter.id deep-links straight into one batch. */
 App.register('production-batches', async (view, filter) => {
-  const canWrite = App.hasPermission('inventory.adjust');
+  const canWrite = App.hasPermission('production.configure');
   const canConfigQc = App.hasPermission('qc.configure');
   const STATUS = ['', 'open', 'released', 'closed'];
   const state = { status: '' };

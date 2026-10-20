@@ -143,6 +143,7 @@ router.put('/form-definitions/:id', syncClass('claim'), (req, res) => {
   validateSalesWorkflow(input.fields,input.actions);
   validateRequestSurface(input.slug,input.fields,input.actions);
   if (!canManageScope(req, res, existing.scope)) return;
+  if (existing.slug === PAYROLL_FORM_SLUG && !req.user!.permissions.includes('payroll.configure')) {res.status(403).json({error:'Payroll form design requires payroll configuration authority'});return;}
   if ((existing.slug === PAYROLL_FORM_SLUG || REQUEST_SLUGS.includes(existing.slug)) && input.slug !== existing.slug) { res.status(400).json({error:'The identity of a payroll or employee-request form cannot be changed.'});return; }
   if (existing.slug === PAYROLL_FORM_SLUG && input.scope !== existing.scope) {res.status(400).json({error:'The payroll form must remain in its original section.'});return;}
   if (input.scope !== existing.scope && !canManageScope(req, res, input.scope)) return;
@@ -197,6 +198,7 @@ router.put('/form-definitions/:id/template', syncClass('claim'), (req, res) => {
   const existing = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', id);
   if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
   if (!canManageScope(req, res, existing.scope)) return;
+  if (existing.slug === PAYROLL_FORM_SLUG && !req.user!.permissions.includes('payroll.configure')) {res.status(403).json({error:'Payroll form design requires payroll configuration authority'});return;}
   const input = parseBody(linkFormTemplateSchema, req.body);
   if (input.template_id !== null && !queryOne('SELECT id FROM doc_templates WHERE id = ?', input.template_id)) {
     res.status(404).json({ error: 'Template not found' }); return;
@@ -217,6 +219,7 @@ router.put('/form-definitions/:id/template-body', syncClass('claim'), (req, res)
     const existing = queryOne<FormDefinition>('SELECT template_id, scope FROM form_definitions WHERE id = ?', id);
     if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
     if (!canManageScope(req, res, existing.scope)) return;
+  if (existing.slug === PAYROLL_FORM_SLUG && !req.user!.permissions.includes('payroll.configure')) {res.status(403).json({error:'Payroll form design requires payroll configuration authority'});return;}
     const input = parseBody(templateSchema.extend({template_id:z.number().int().positive().nullable().optional()}), req.body);
     const targetId=input.template_id===undefined?existing.template_id:input.template_id;
     if(targetId&&!queryOne('SELECT 1 FROM form_template_links WHERE form_id=? AND template_id=?',id,targetId)){res.status(400).json({error:'Link this template to the form before editing it'});return;}
@@ -258,6 +261,7 @@ router.delete('/form-definitions/:id', syncClass('claim'), (req, res) => {
   const existing = queryOne<FormDefinition>('SELECT * FROM form_definitions WHERE id = ?', id);
   if (!existing) { res.status(404).json({ error: 'Form not found' }); return; }
   if (!canManageScope(req, res, existing.scope)) return;
+  if (existing.slug === PAYROLL_FORM_SLUG && !req.user!.permissions.includes('payroll.configure')) {res.status(403).json({error:'Payroll form design requires payroll configuration authority'});return;}
   if (queryOne<{n:number}>('SELECT COUNT(*) AS n FROM form_records WHERE form_def_id=?', id)!.n) { res.status(409).json({error:'Archive this form to preserve its records and layouts.'}); return; }
   run('DELETE FROM form_definitions WHERE id = ?', id);
   res.json({ ok: true });

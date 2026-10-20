@@ -1,3 +1,4 @@
+import { independentApproval } from '../../shared/approval-policy';
 /** Internal PR: request → budget approval → purchase → receipt-backed liquidation → close.
  * This never creates a supplier order or moves stock. */
 import path from 'node:path';
@@ -34,7 +35,7 @@ type Row = { id: number; number: string; requested_by: number | null; buyer_id: 
   requested_budget: number; approved_budget: number | null; purchase_mode: string | null; cash_issued: number | null };
 const cents = (n: number) => Math.round(n * 100);
 function get(id: number) { return queryOne<Row>('SELECT * FROM purchase_requests WHERE id=?', id); }
-function manager(req: Request) { return req.user!.permissions.includes('purchasing.approve_requests'); }
+function manager(req: Request) { return ['purchasing.approve_requests','purchasing.issue_cash','purchasing.settle_requests'].some(p=>req.user!.permissions.includes(p as never)); }
 function visible(req: Request, row: Row) { return manager(req) || row.requested_by === req.user!.id || row.buyer_id === req.user!.id; }
 function buyer(req: Request, row: Row) { return row.buyer_id === req.user!.id; }
 function read(req: Request, res: import('express').Response): Row | null {
@@ -99,6 +100,7 @@ router.post('/:id/approve', requirePermission('purchasing.approve_requests'), id
   const row = get(Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Purchase request not found' }); return; }
   if (row.status !== 'pending') { res.status(409).json({ error: 'This request has already been decided.' }); return; }
+  if (!independentApproval(req,res,row.requested_by,'approve this purchase request')) return;
   const input = parseBody(approveSchema, req.body);
   const buyerId = input.purchase_mode === 'requester_cash' ? row.requested_by : input.buyer_id;
   const buyerAccount = buyerId ? queryOne<{ role: string; permission_overrides: string }>(
@@ -123,7 +125,7 @@ router.post('/:id/reject', requirePermission('purchasing.approve_requests'), ide
   res.json({ ok: true });
 });
 
-router.post('/:id/issue-cash', requirePermission('purchasing.approve_requests'), idempotency, syncClass('claim'), (req, res) => {
+router.post('/:id/issue-cash', requirePermission('purchasing.issue_cash'), idempotency, syncClass('claim'), (req, res) => {
   const row = get(Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Purchase request not found' }); return; }
   if (row.status !== 'approved' || row.purchase_mode !== 'requester_cash' || row.cash_issued != null) {
@@ -199,10 +201,11 @@ router.post('/:id/liquidation', idempotency, syncClass('claim'), (req, res) => {
   } catch (e) { db.exec('ROLLBACK'); throw e; }
 });
 
-router.post('/:id/close', requirePermission('purchasing.approve_requests'), idempotency, syncClass('claim'), (req, res) => {
+router.post('/:id/close', requirePermission('purchasing.settle_requests'), idempotency, syncClass('claim'), (req, res) => {
   const row = get(Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Purchase request not found' }); return; }
   if (row.status !== 'liquidation_submitted') { res.status(409).json({ error: 'Submit liquidation before closing the PR.' }); return; }
+  if (!independentApproval(req,res,row.buyer_id,'review this purchase settlement')) return;
   const closing = parseBody(z.object({ note: z.string().trim().max(2000).nullable().optional(),
     cash_returned: money.optional(), reimbursed_amount: money.optional() }), req.body);
   const detail = queryOne<{ actual_total: number | null }>('SELECT actual_total FROM purchase_requests WHERE id=?', row.id)!;
@@ -216,7 +219,7 @@ router.post('/:id/close', requirePermission('purchasing.approve_requests'), idem
   res.json({ ok: true, status: 'closed' });
 });
 
-router.post('/:id/return-liquidation', requirePermission('purchasing.approve_requests'), idempotency, syncClass('claim'), (req, res) => {
+router.post('/:id/return-liquidation', requirePermission('purchasing.settle_requests'), idempotency, syncClass('claim'), (req, res) => {
   const row = get(Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Purchase request not found' }); return; }
   if (row.status !== 'liquidation_submitted') { res.status(409).json({ error: 'No submitted liquidation to return.' }); return; }

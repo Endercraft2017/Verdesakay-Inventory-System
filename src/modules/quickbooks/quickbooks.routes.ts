@@ -68,12 +68,12 @@ router.get('/callback', async (req, res, next) => {
 router.use(requireAuth);
 
 // GET /api/quickbooks/status
-router.get('/status', requirePermission('users.manage'), (_req, res) => {
+router.get('/status', requirePermission('workspace.manage'), (_req, res) => {
   res.json({ ...getQboStatus(), last_order_link: null });
 });
 
 // GET /api/quickbooks/connect — returns the Intuit authorize URL to open
-router.get('/connect', requirePermission('users.manage'), (_req, res) => {
+router.get('/connect', requirePermission('workspace.manage'), (_req, res) => {
   if (!qboConfigured()) {
     res.status(503).json({ error: 'QuickBooks is not set up on this server (QBO_CLIENT_ID / QBO_CLIENT_SECRET / QBO_REDIRECT_URI).' });
     return;
@@ -85,13 +85,13 @@ router.get('/connect', requirePermission('users.manage'), (_req, res) => {
 
 // POST /api/quickbooks/disconnect
 // QuickBooks is reached from the cloud only (D8).
-router.post('/disconnect', requirePermission('users.manage'), syncClass('online'), (_req, res) => {
+router.post('/disconnect', requirePermission('workspace.manage'), syncClass('online'), (_req, res) => {
   disconnect();
   res.json({ ok: true });
 });
 
 // PUT /api/quickbooks/auto-push  { enabled: boolean }
-router.put('/auto-push', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+router.put('/auto-push', requirePermission('workspace.manage'), syncClass('online'), (req, res) => {
   const { enabled } = parseBody(z.object({ enabled: z.boolean() }), req.body);
   setAutoPush(enabled);
   res.json({ ok: true, auto_push: enabled });

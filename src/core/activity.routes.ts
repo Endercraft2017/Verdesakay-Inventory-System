@@ -1,3 +1,4 @@
+import { safeAuditMeta } from '../shared/audit-privacy';
 /** Activity log (admin-only, `audit.view`): read the app-wide action history. Read-only: rows
  *  are removed only by the retention sweep after ACTIVITY_LOG_RETENTION_DAYS (cleanupSessions). */
 import { Router } from 'express';
@@ -43,7 +44,7 @@ router.get('/', (req, res) => {
     limit,
     offset
   );
-  res.json({ rows, total, limit, offset });
+  res.json({ rows: rows.map(r => ({ ...r, meta: safeAuditMeta(r.meta, r.path) })), total, limit, offset });
 });
 
 // GET /api/activity/options — distinct values for the filter dropdowns

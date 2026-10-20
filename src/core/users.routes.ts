@@ -15,12 +15,19 @@ import {
   updateDepartmentSchema,
   permissionOverridesSchema,
 } from '../shared/validation';
-import { ALL_PERMISSIONS, STAFF_PERMISSIONS } from '../shared/permissions';
-import { listRoles, getRole } from '../shared/roles';
+import { ALL_PERMISSIONS, STAFF_PERMISSIONS, isStaffRole } from '../shared/permissions';
+import { listRoles, getRole, userPermissions } from '../shared/roles';
 import type { UserRow, Department, Role } from '../shared/types';
 import { syncClass } from '../sync';
 import { z } from 'zod';
 import { mfaApplies, mfaEnabled, mfaUserIds, securityPolicy, setSecurityPolicy, disableMfa } from '../shared/mfa';
+
+function supportSafeAccount(id: number): boolean {
+  const target=queryOne<{role:string;permission_overrides:string}>('SELECT role,permission_overrides FROM users WHERE id=?',id);
+  if (!target) return false;
+  let overrides={};try{overrides=JSON.parse(target.permission_overrides||'{}');}catch{return false;}
+  return isStaffRole(target.role,userPermissions(target.role,overrides));
+}
 
 const router = Router();
 router.use(requireAuth);
@@ -68,14 +75,14 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/users/security-policy — workspace sign-in rules (shared/mfa.ts).
-router.get('/security-policy', requirePermission('users.manage'), (req, res) => {
+router.get('/security-policy', requirePermission('security.manage'), (req, res) => {
   res.json({ ...securityPolicy(), available: mfaApplies(), you_have_mfa: mfaEnabled(req.user!.id) });
 });
 
 // PUT /api/users/security-policy — { require_mfa_privileged }. Switching the requirement on is
 // refused until the person doing it uses two-step sign-in themselves, so the workspace can't be
 // locked out by its own admin.
-router.put('/security-policy', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+router.put('/security-policy', requirePermission('security.manage'), syncClass('online'), (req, res) => {
   const { require_mfa_privileged } = parseBody(z.object({ require_mfa_privileged: z.boolean() }), req.body);
   if (require_mfa_privileged && !mfaEnabled(req.user!.id)) {
     res.status(409).json({ error: 'Turn on two-step sign-in for your own account first (Account → Two-step sign-in).' });
@@ -87,7 +94,7 @@ router.put('/security-policy', requirePermission('users.manage'), syncClass('onl
 
 // POST /api/users/:id/mfa/reset — someone lost their phone: remove their two-step sign-in so
 // they can set it up again (and sign them out everywhere).
-router.post('/:id/mfa/reset', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+router.post('/:id/mfa/reset', requirePermission('security.manage'), syncClass('online'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT 1 AS x FROM users WHERE id = ?', id)) { res.status(404).json({ error: 'User not found' }); return; }
   disableMfa(id);
@@ -98,14 +105,14 @@ router.post('/:id/mfa/reset', requirePermission('users.manage'), syncClass('onli
 // POST /api/users — create an account. hr.manage (without users.manage) may also create one —
 // the employee form's "create account" shortcut — but only with a staff-level role (one whose
 // permissions are all in STAFF_PERMISSIONS; see shared/roles.ts).
-router.post('/', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('online'), (req, res) => {
+router.post('/', requireAnyPermission(['users.manage', 'users.permissions', 'hr.manage']), syncClass('online'), (req, res) => {
   const input = parseBody(createUserSchema, req.body);
   const role = getRole(input.role);
   if (!role) {
     res.status(400).json({ error: `Unknown role "${input.role}"` });
     return;
   }
-  if (!req.user!.permissions.includes('users.manage') && !role.staff) {
+  if (!req.user!.permissions.includes('users.permissions') && !role.staff) {
     res.status(403).json({ error: 'HR can only create accounts with a staff role' });
     return;
   }
@@ -149,6 +156,9 @@ router.put('/:id', requirePermission('users.manage'), syncClass('online'), (req,
     return;
   }
   const input = parseBody(updateUserSchema, req.body);
+  if (!req.user!.permissions.includes('users.permissions') && (input.role !== undefined || !supportSafeAccount(user.id))) {
+    res.status(403).json({ error: 'Role assignments and privileged accounts require permission-management authority' }); return;
+  }
   const full_name = input.full_name ?? user.full_name;
   const email = input.email !== undefined ? (input.email || null) : user.email;
   const role = input.role ?? user.role;
@@ -192,6 +202,7 @@ router.put('/:id', requirePermission('users.manage'), syncClass('online'), (req,
 // POST /api/users/:id/reset-password
 router.post('/:id/reset-password', requirePermission('users.manage'), syncClass('online'), (req, res) => {
   const id = Number(req.params.id);
+  if (!req.user!.permissions.includes('security.manage') && !supportSafeAccount(id)) { res.status(403).json({error:'Security administration is required for privileged accounts'}); return; }
   const { new_password } = parseBody(resetPasswordSchema, req.body);
   const user = queryOne('SELECT id FROM users WHERE id = ?', id);
   if (!user) {
@@ -217,6 +228,7 @@ router.get('/:id/sessions', requirePermission('users.manage'), (req, res) => {
 // POST /api/users/:id/sessions/revoke-all — sign this account out on every device.
 router.post('/:id/sessions/revoke-all', requirePermission('users.manage'), syncClass('online'), (req, res) => {
   const id = Number(req.params.id);
+  if (!req.user!.permissions.includes('security.manage') && !supportSafeAccount(id)) { res.status(403).json({error:'Security administration is required for privileged accounts'}); return; }
   if (!queryOne('SELECT id FROM users WHERE id = ?', id)) {
     res.status(404).json({ error: 'User not found' });
     return;
@@ -227,6 +239,8 @@ router.post('/:id/sessions/revoke-all', requirePermission('users.manage'), syncC
 
 // POST /api/users/:id/sessions/:sid/revoke — sign this account out of one device.
 router.post('/:id/sessions/:sid/revoke', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+  const target = queryOne<{role:string}>('SELECT role FROM users WHERE id=?',Number(req.params.id));
+  if (target && !req.user!.permissions.includes('security.manage') && !supportSafeAccount(Number(req.params.id))) { res.status(403).json({error:'Security administration is required for privileged accounts'}); return; }
   if (!endSessionBySid(Number(req.params.id), String(req.params.sid), 'revoked')) {
     res.status(404).json({ error: 'Session not found or already ended' });
     return;
@@ -237,23 +251,23 @@ router.post('/:id/sessions/:sid/revoke', requirePermission('users.manage'), sync
 // GET /api/users/permissions/catalog — canonical permission keys + the workspace's roles, for the
 // account/role editors (public/js/lib/access-editor.js) so the frontend never hand-copies them.
 // `grantable` / `assignableRoles` tell the editor what THIS caller may change: everything for
-// users.manage, the staff-level subset for an HR-only caller.
-router.get('/permissions/catalog', requireAnyPermission(['users.manage', 'hr.manage']), (req, res) => {
-  const full = req.user!.permissions.includes('users.manage');
+// users.permissions; other callers may only assign safe staff roles at account creation.
+router.get('/permissions/catalog', requireAnyPermission(['users.manage', 'users.permissions', 'hr.manage']), (req, res) => {
+  const full = req.user!.permissions.includes('users.permissions');
   const roles = listRoles();
   res.json({
     permissions: ALL_PERMISSIONS,
     staffPermissions: STAFF_PERMISSIONS,
     roles,
     roleDefaults: Object.fromEntries(roles.map((r) => [r.key, r.permissions])),
-    grantable: full ? ALL_PERMISSIONS : STAFF_PERMISSIONS,
+    grantable: full ? ALL_PERMISSIONS : [],
     assignableRoles: roles.filter((r) => full || r.staff).map((r) => r.key),
   });
 });
 
 // GET /api/users/:id/access — role + overrides for one account (the directory listing hides
 // permission_overrides from non-users.manage callers; HR's Access editor needs them).
-router.get('/:id/access', requireAnyPermission(['users.manage', 'hr.manage']), (req, res) => {
+router.get('/:id/access', requireAnyPermission(['users.manage', 'users.permissions', 'hr.manage']), (req, res) => {
   const user = queryOne<Pick<UserRow, 'id' | 'username' | 'full_name' | 'role'> & { permission_overrides: string }>(
     'SELECT id, username, full_name, role, permission_overrides FROM users WHERE id = ?',
     Number(req.params.id)
@@ -265,10 +279,11 @@ router.get('/:id/access', requireAnyPermission(['users.manage', 'hr.manage']), (
   res.json(user);
 });
 
-// PUT /api/users/:id/permissions — save sparse permission overrides for a user. An HR-only
-// caller may only edit staff-role accounts, and only change STAFF_PERMISSIONS keys.
-router.put('/:id/permissions', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('online'), (req, res) => {
+// PUT /api/users/:id/permissions — only permission administrators save sparse account grants.
+// Privileged targets additionally require security authority.
+router.put('/:id/permissions', requirePermission('users.permissions'), syncClass('online'), (req, res) => {
   const id = Number(req.params.id);
+  if (!req.user!.permissions.includes('security.manage') && !supportSafeAccount(id)) { res.status(403).json({error:'Security administration is required for privileged accounts'}); return; }
   const user = queryOne<{ id: number; role: Role; permission_overrides: string }>(
     'SELECT id, role, permission_overrides FROM users WHERE id = ?', id);
   if (!user) {
@@ -281,20 +296,6 @@ router.put('/:id/permissions', requireAnyPermission(['users.manage', 'hr.manage'
   for (const key of ALL_PERMISSIONS) {
     const v = overrides[key];
     if (v !== undefined) clean[key] = v;
-  }
-  if (!req.user!.permissions.includes('users.manage')) {
-    if (!getRole(user.role)?.staff) {
-      res.status(403).json({ error: 'HR can only change access on staff-role accounts' });
-      return;
-    }
-    let current: Record<string, boolean> = {};
-    try { current = JSON.parse(user.permission_overrides || '{}'); } catch { /* treat as none */ }
-    const grantable = new Set<string>(STAFF_PERMISSIONS);
-    const blocked = ALL_PERMISSIONS.filter((k) => !grantable.has(k) && clean[k] !== current[k]);
-    if (blocked.length) {
-      res.status(403).json({ error: `HR can't change these permissions: ${blocked.join(', ')}` });
-      return;
-    }
   }
   run('UPDATE users SET permission_overrides = ? WHERE id = ?', JSON.stringify(clean), id);
   res.json({ ok: true });
@@ -313,7 +314,7 @@ router.get('/departments/list', (_req, res) => {
 // POST /api/users/departments — users.manage (full admin) or hr.manage (HR builds out its own
 // department list without needing full account-management rights). Rename/delete stay
 // users.manage-only below since they touch existing users/items/forms company-wide.
-router.post('/departments', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('claim'), (req, res) => {
+router.post('/departments', requireAnyPermission(['users.manage', 'users.permissions', 'hr.manage']), syncClass('claim'), (req, res) => {
   const { name } = parseBody(createDepartmentSchema, req.body);
   const exists = queryOne('SELECT id FROM departments WHERE name = ? COLLATE NOCASE', name);
   if (exists) {
@@ -369,7 +370,7 @@ router.put('/departments/:id', requirePermission('users.manage'), syncClass('cla
 // department; hr.manage-only callers can delete one only if nothing outside HR's own domain
 // (user accounts, inventory items, files) references it — employees are fine, since that's
 // HR's own domain and just unassigns them, same as a users.manage delete would.
-router.delete('/departments/:id', requireAnyPermission(['users.manage', 'hr.manage']), syncClass('claim'), (req, res) => {
+router.delete('/departments/:id', requireAnyPermission(['users.manage', 'users.permissions', 'hr.manage']), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!req.user!.permissions.includes('users.manage')) {
     const usage = queryOne<{ user_count: number; item_count: number; form_count: number }>(

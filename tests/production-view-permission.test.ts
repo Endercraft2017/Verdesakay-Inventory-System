@@ -27,13 +27,13 @@ describe('production.view', () => {
     }
   });
 
-  it('keeps the product catalog readable with either permission; BOM costing is production-only', async () => {
+  it('keeps the product catalog readable with either permission; BOM costing additionally requires cost authority', async () => {
     for (const t of [stockOnly, prodOnly]) {
       expect((await ctx.api.get('/api/finished-products').set(auth(t))).status).toBe(200);
     }
     // The permission check runs before the product lookup, so no product is needed.
     expect((await ctx.api.get('/api/finished-products/999999/cost').set(auth(stockOnly))).status).toBe(403);
-    expect((await ctx.api.get('/api/finished-products/999999/cost').set(auth(prodOnly))).status).not.toBe(403);
+    expect((await ctx.api.get('/api/finished-products/999999/cost').set(auth(prodOnly))).status).toBe(403);
     // A sales/stock reader may request the price suggestion without BOM cost access.
     expect((await ctx.api.get('/api/finished-products/999999/price-suggestion').set(auth(stockOnly))).status).toBe(404);
   });
@@ -47,12 +47,9 @@ describe('production.view', () => {
     expect(prod.body).not.toHaveProperty('inventory');
   });
 
-  it('keeps production screens separate from CSR and releasing stock reads', async () => {
-    const { BUILTIN_ROLES } = await import('../src/shared/permissions');
-    for (const r of BUILTIN_ROLES) {
-      if (r.permissions.includes('inventory.view') && !['csr', 'releasing'].includes(r.key)) expect(r.permissions, r.key).toContain('production.view');
-    }
-    for (const key of ['csr', 'releasing']) expect(BUILTIN_ROLES.find((r) => r.key === key)?.permissions).not.toContain('production.view');
+  it('stock and sales roles do not inherit broad production visibility', async () => {
+    const {roleDefaults}=await import('../src/shared/permissions');
+    for(const role of ['warehouse','releasing','csr']) expect(roleDefaults(role),role).not.toContain('production.view');
   });
 
   it('the upgrade gives it once to whoever could see inventory', async () => {

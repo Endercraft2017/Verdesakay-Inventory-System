@@ -16,10 +16,10 @@ beforeAll(async () => {
   ctx = await setupApp();
   admin = await login(ctx.api);
   await ctx.api.post('/api/roles').set(auth(admin))
-    .send({ label: 'Timekeeper', permissions: ['mobile.access', 'hr.view', 'hr.manage', 'forms.view', 'forms.manage.hr'] });
+    .send({ key:'hr_clerk_test', label: 'HR Clerk Test', permissions: ['mobile.access', 'hr.view', 'hr.manage', 'forms.view', 'forms.manage.hr'] });
   await ctx.api.post('/api/roles').set(auth(admin))
     .send({ label: 'Pay Viewer', permissions: ['mobile.access', 'payroll.view'] });
-  clerk = (await createEmployee(ctx.api, admin, { username: 'tk.clerk', role: 'timekeeper' })).token;
+  clerk = (await createEmployee(ctx.api, admin, { username: 'tk.clerk', role: 'hr_clerk_test' })).token;
   payViewer = (await createEmployee(ctx.api, admin, { username: 'pay.viewer', role: 'pay_viewer' })).token;
 
   const emp = await ctx.api.post('/api/hr/employees').set(auth(admin))
@@ -115,12 +115,13 @@ describe('payroll.view without HR records', () => {
   });
 });
 
-describe('the HR role keeps payroll', () => {
-  it('HR accounts still see and run pay', async () => {
+describe('HR and payroll roles are separate', () => {
+  it('HR accounts cannot see or run pay', async () => {
     const hr = (await createEmployee(ctx.api, admin, { username: 'hr.full', role: 'hr' })).token;
     const me = await ctx.api.get('/api/auth/me').set(auth(hr));
-    expect(me.body.user.permissions).toEqual(expect.arrayContaining(['payroll.view', 'payroll.manage']));
-    expect((await ctx.api.get('/api/hr/payroll-tables').set(auth(hr))).status).toBe(200);
+    expect(me.body.user.permissions).not.toContain('payroll.view');
+    expect(me.body.user.permissions).not.toContain('payroll.manage');
+    expect((await ctx.api.get('/api/hr/payroll-tables').set(auth(hr))).status).toBe(403);
   });
 
   it('the upgrade gives existing HR access the pay permissions once, and only once', async () => {

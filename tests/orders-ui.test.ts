@@ -9,7 +9,7 @@ const root = path.join(import.meta.dirname, '..', 'public');
 const windows: JSDOM[] = [];
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-async function setup(permissions = ['orders.create', 'orders.edit', 'orders.delete'], order?: Record<string, unknown>, responses: Record<string, unknown> = {}, type = 'sale') {
+async function setup(permissions = ['orders.create', 'orders.edit', 'orders.delete','orders.approve'], order?: Record<string, unknown>, responses: Record<string, unknown> = {}, type = 'sale') {
   const dom = new JSDOM('<div id="view"></div><div id="modal-root"></div><div id="toasts"></div>', { runScripts: 'outside-only', url: 'http://localhost/' });
   windows.push(dom);
   const win = dom.window;
@@ -259,14 +259,14 @@ describe('stock review UI', () => {
     expect(doc.querySelector('[data-approve]')).toBeNull(); expect(doc.querySelector('[data-make]')).toBeNull(); expect(doc.querySelector('[data-buy]')).toBeNull();
   });
   it('shows other-location stock separately and gates production and procurement actions', async () => {
-    const { doc, click } = await setup(['orders.edit'], reviewOrder, { '/orders/1/availability': stockReview(true) });
+    const { doc, click } = await setup(['orders.edit','orders.approve'], reviewOrder, { '/orders/1/availability': stockReview(true) });
     click('.order-editor [data-close]'); click('[data-stock]'); await flush(); await flush();
     expect(doc.querySelector('.order-review')?.textContent).toContain('10 on hand at other locations');
     expect(doc.querySelector('[data-make]')).toBeNull(); expect(doc.querySelector('[data-buy]')).toBeNull();
     expect(doc.querySelector('[data-approve]')?.textContent).toBe('Review backorder approval');
   });
   it('saves proposed approval open first and reviews the saved stock picture', async () => {
-    const { doc, api, click } = await setup(['orders.edit'], reviewOrder, { '/orders/1/availability': stockReview() });
+    const { doc, api, click } = await setup(['orders.edit','orders.approve'], reviewOrder, { '/orders/1/availability': stockReview() });
     (doc.querySelector('[data-f="status"]') as HTMLSelectElement).value = 'approved';
     click('.order-editor [data-confirm]'); await flush(); await flush();
     expect(api.put).toHaveBeenCalledWith('/orders/1', expect.objectContaining({ status: 'open' }), expect.any(Object));
@@ -277,7 +277,7 @@ describe('stock review UI', () => {
     expect(api.post).toHaveBeenCalledWith('/orders/1/status', { status: 'approved', force: false, expected_revision: 'a'.repeat(64) });
   });
   it('requires explicit backorder confirmation and only approves, never completes', async () => {
-    const { doc, api, click } = await setup(['orders.edit'], reviewOrder, { '/orders/1/availability': stockReview(true) });
+    const { doc, api, click } = await setup(['orders.edit','orders.approve'], reviewOrder, { '/orders/1/availability': stockReview(true) });
     click('.order-editor [data-close]'); click('[data-stock]'); await flush(); await flush();
     click('[data-approve]'); await flush(); expect(api.post).not.toHaveBeenCalled();
     expect(doc.querySelector('.modal-overlay:last-child')?.textContent).toContain('warehouse must still accept');
@@ -285,7 +285,7 @@ describe('stock review UI', () => {
     expect(api.post).toHaveBeenCalledWith('/orders/1/status', { status: 'approved', force: true, expected_revision: 'a'.repeat(64) });
   });
   it('holds the review open and freezes actions while a supply request is pending', async () => {
-    const { doc, api, click, win } = await setup(['orders.edit', 'inventory.adjust', 'purchasing.manage'], reviewOrder, { '/orders/1/availability': stockReview(true) });
+    const { doc, api, click, win } = await setup(['orders.edit','orders.approve','production.plan','purchasing.manage'], reviewOrder, { '/orders/1/availability': stockReview(true) });
     click('.order-editor [data-close]'); click('[data-stock]'); await flush(); await flush();
     let resolve!: (r: { id: number; number: string; created: { number: string }[] }) => void;
     api.post.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
@@ -298,13 +298,13 @@ describe('stock review UI', () => {
     expect(doc.querySelector('#stock-review-result')?.textContent).not.toContain('on the production line');
   });
   it('does not offer the completion shortcut on an open sale', async () => {
-    const { doc } = await setup(['orders.edit'], reviewOrder);
+    const { doc } = await setup(['orders.edit','orders.approve'], reviewOrder);
     expect([...doc.querySelectorAll('[data-f="status"] option')].map((o) => (o as HTMLOptionElement).value)).toEqual(['open', 'approved', 'cancelled']);
   });
 });
 
   it('shows sync confirmation pending for a local approval result', async () => {
-    const { doc, api, click } = await setup(['orders.edit'], reviewOrder, { '/orders/1/availability': stockReview() });
+    const { doc, api, click } = await setup(['orders.edit','orders.approve'], reviewOrder, { '/orders/1/availability': stockReview() });
     click('.order-editor [data-close]'); click('[data-stock]'); await flush(); await flush();
     const local = { id: 1, number: 'SO-00001', __syncCommand: 'local-command' };
     api.post.mockResolvedValueOnce(local);

@@ -8,7 +8,7 @@ import { syncClass } from '../../sync';
 const router = Router();
 router.use(requireAuth);
 
-const configGate = requirePermission('users.manage');
+const configGate = requirePermission('workspace.manage');
 
 // GET /api/mail/settings — current config (password never returned; `has_password` flag instead)
 router.get('/settings', configGate, (_req, res) => {

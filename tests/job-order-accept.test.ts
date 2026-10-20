@@ -107,6 +107,7 @@ describe('POST /api/job-orders/:id/accept', () => {
     const lead = await createEmployee(ctx.api, token, { role: 'production_lead' });
     const qc = await createEmployee(ctx.api, token, { role: 'qc_inspector' });
     const mo = await draftMO('AccRole', 2, 1);
+    await ctx.api.put(`/api/job-orders/${mo}/assignees`).set(H()).send({user_ids:[lead.id]});
     await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
     await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
     await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });

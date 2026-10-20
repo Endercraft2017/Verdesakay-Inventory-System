@@ -316,7 +316,7 @@ describe('release slip', () => {
   it('allows early dispatch but blocks delivered and sale completion until physical goods have a release slip', async () => {
     const raw = await mkItem({ name: 'Delivery release guard', quantity: 2 });
     const so = await saleOrder([{ name: 'Delivery release guard', item_id: raw, quantity: 2, unit_price: 20 }]);
-    const rel = await createEmployee(ctx.api, token, { role: 'releasing' });
+    const rel = await createEmployee(ctx.api, token, { role: 'driver' });
     const delivery = (await ctx.api.post('/api/deliveries').set(H())
       .send({ order_id: so, assigned_to: rel.id })).body.id;
     const earlyDispatch = await ctx.api.post(`/api/deliveries/${delivery}/status`).set(bearer(rel.token)).send({ status: 'out_for_delivery' });
@@ -351,7 +351,7 @@ describe('release slip', () => {
   it('records a failed pre-slip trip with a reason and no stock movement', async () => {
     const raw = await mkItem({ name: 'Failed early trip stock', quantity: 1 });
     const so = await saleOrder([{ name: 'Failed early trip stock', item_id: raw, quantity: 1, unit_price: 10 }]);
-    const rel = await createEmployee(ctx.api, token, { role: 'releasing' });
+    const rel = await createEmployee(ctx.api, token, { role: 'driver' });
     const delivery = (await ctx.api.post('/api/deliveries').set(H()).send({ order_id: so, assigned_to: rel.id })).body.id;
     expect((await ctx.api.post(`/api/deliveries/${delivery}/status`).set(bearer(rel.token)).send({ status: 'out_for_delivery' })).status).toBe(200);
     expect((await ctx.api.post(`/api/deliveries/${delivery}/complete`).set(bearer(rel.token)).send({ outcome: 'failed' })).status).toBe(400);

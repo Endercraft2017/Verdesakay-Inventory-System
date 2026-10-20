@@ -9,8 +9,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 type Leaf = { label: string; icon: string; route: string; filter?: Record<string, string> };
-type Subtab = { id: string; label: string; requiredPermission?: string; tree: Leaf[] };
-type Primary = { id: string; label: string; icon: string; adminOnly?: boolean; requiredPermission?: string; subtabs: Subtab[] };
+type Subtab = { id: string; label: string; requiredPermission?: string; requiredAnyPermission?: string[]; tree: Leaf[] };
+type Primary = { id: string; label: string; icon: string; adminOnly?: boolean; requiredPermission?: string; requiredAnyPermission?: string[]; subtabs: Subtab[] };
 
 function loadNavConfig(): { NAV: Primary[]; ROUTE_NAMES: string[] } {
   const file = path.join(import.meta.dirname, '../public/js/nav-config.js');
@@ -84,9 +84,9 @@ describe('nav-config: structure', () => {
     }
   });
 
-  it('the Admin section requires users.manage permission', () => {
+  it('the Admin section admits only its explicit administration duties', () => {
     const adminSection = NAV.find((p) => p.id === 'admin');
-    expect(adminSection?.requiredPermission).toBe('users.manage');
+    expect(adminSection?.requiredAnyPermission).toEqual(expect.arrayContaining(['users.manage','audit.view']));
   });
 
   it('primary and subtab ids are unique', () => {
@@ -97,4 +97,11 @@ describe('nav-config: structure', () => {
       expect(new Set(sids).size, `duplicate subtab id in ${p.label}`).toBe(sids.length);
     }
   });
+});
+
+it('quality navigation keeps inspection, hold decisions and broad findings under their respective duties', () => {
+  const tabs=NAV.find(p=>p.id==='production')!.subtabs;
+  expect(tabs.find(s=>s.id==='qc')?.requiredAnyPermission).toContain('production.inspect_qc');
+  expect(tabs.find(s=>s.id==='qa-holds')?.requiredAnyPermission).toEqual(['production.inspect_qa','production.qa_review']);
+  expect(tabs.find(s=>s.id==='qc-findings')?.requiredPermission).toBe('production.view');
 });

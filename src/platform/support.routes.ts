@@ -7,7 +7,7 @@ import { getTenant } from './platform';
 import { addSupport, listSupport, replySupport } from './owner-analytics';
 import { DEPLOY_MODE, isInstalledCopy, syncClass } from '../sync';
 const router = Router();
-router.use(requireAuth, requirePermission('users.manage'));
+router.use(requireAuth, requirePermission('workspace.manage'));
 router.use((_req, res, next) => {
   if (DEPLOY_MODE === 'node' || isInstalledCopy()) {
     res.status(503).json({ error: 'Open your online tenant workspace to contact OTOM support.' }); return;

@@ -4,7 +4,8 @@
    "View in Production" backlink on a job-type Order, and by the AI assistant's
    created-record links). */
 App.register('job-orders', async (view, filter) => {
-  const canWrite = App.hasPermission('inventory.adjust');
+  const canWrite = App.hasPermission('production.plan');
+  const canReleaseKit = App.hasPermission('production.kit_release');
   // Production execution requires explicit task permissions, separate from stock lifecycle actions.
   const canRecord = App.hasPermission('production.record');
   // Approval is its own permission (production.approve), not implied by inventory.adjust.
@@ -645,20 +646,28 @@ App.register('job-orders', async (view, filter) => {
           <table style="margin-top:6px"><tbody>${events.map((e) => `<tr><td class="muted" style="white-space:nowrap">${UI.esc(UI.fmtDate ? UI.fmtDate(e.created_at) : e.created_at)}</td>
             <td>${UI.esc(({ pause: 'Paused', resume: 'Resumed', close_early: 'Closed early' })[e.action] || e.action)}</td>
             <td>${UI.esc(e.actor_name || '—')}</td><td class="muted">${UI.esc(e.reason || '')}</td></tr>`).join('')}</tbody></table></details>` : ''}
-        ${canWrite ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
-          ${jo.status !== 'completed' && jo.status !== 'cancelled' ? `<button type="button" class="btn secondary" id="jo-resched">Team / schedule…</button>` : ''}
-          ${isDraft && comps.length ? '<button type="button" class="btn secondary" id="jo-subassemblies">Check subassemblies</button>' : ''}
-          ${isDraft ? `${jo.approved_at && !jo.warehouse_accepted_at ? `<button type="button" class="btn" data-do="_wh_accept">Accept (warehouse)</button>` : ''}
-                       ${comps.length ? '<button type="button" class="btn secondary" data-do="_supply">Check component supply</button>' : ''}
-                       ${jo.warehouse_accepted_at ? `<button type="button" class="btn secondary" data-do="_prepare">${jo.prepared_at ? 'Review / adjust picked kit' : 'Pick / review kit'}</button>` : ''}
-                       ${jo.prepared_at ? `<button type="button" class="btn" data-do="_release">Release &amp; issue slip</button>` : ''}
-                       <button type="button" class="btn secondary danger" data-do="_delete">Delete</button>` : ''}
+        ${canWrite || canReleaseKit ? `<div class="jo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+          ${canWrite ? '<button type="button" class="btn secondary" id="jo-assignees">Assign recorders…</button>' : ''}
+          ${canWrite && jo.status !== 'completed' && jo.status !== 'cancelled' ? `<button type="button" class="btn secondary" id="jo-resched">Team / schedule…</button>` : ''}
+          ${canWrite && isDraft && comps.length ? '<button type="button" class="btn secondary" id="jo-subassemblies">Check subassemblies</button>' : ''}
+          ${isDraft ? `${canReleaseKit && jo.approved_at && !jo.warehouse_accepted_at ? `<button type="button" class="btn" data-do="_wh_accept">Accept (warehouse)</button>` : ''}
+                       ${canWrite && comps.length ? '<button type="button" class="btn secondary" data-do="_supply">Check component supply</button>' : ''}
+                       ${canReleaseKit && jo.warehouse_accepted_at ? `<button type="button" class="btn secondary" data-do="_prepare">${jo.prepared_at ? 'Review / adjust picked kit' : 'Pick / review kit'}</button>` : ''}
+                       ${canReleaseKit && jo.prepared_at ? `<button type="button" class="btn" data-do="_release">Release &amp; issue slip</button>` : ''}
+                       ${canWrite ? '<button type="button" class="btn secondary danger" data-do="_delete">Delete</button>' : ''}` : ''}
           ${running && canPauseLine ? `<button type="button" class="btn secondary" data-do="pause">Pause</button>` : ''}
           ${jo.status === 'paused' && canPauseLine ? `<button type="button" class="btn secondary" data-do="resume">Resume</button>` : ''}
-          ${(running || jo.status === 'paused') ? `${jo.conversion_job_order_id || !canCloseEarly ? '' : `<button type="button" class="btn secondary" data-do="close">Close (finish early)</button>`}
+          ${canWrite && (running || jo.status === 'paused') ? `${jo.conversion_job_order_id || !canCloseEarly ? '' : `<button type="button" class="btn secondary" data-do="close">Close (finish early)</button>`}
                        <button type="button" class="btn secondary danger" data-do="cancel">Cancel</button>` : ''}
         </div>` : ''}`;
 
+      el.querySelector('#jo-assignees')?.addEventListener('click',async()=>{
+        try {const access=await API.get('/job-orders/'+id+'/assignees');
+          UI.modal({title:'Assign production recorders',bodyHTML:'<p class="muted">Linked members of the assigned production team can also record this job. These assignments do not change account permissions.</p>'+access.eligible.map(u=>'<label class="form-field"><span><input type="checkbox" data-recorder="'+u.id+'" '+(access.assigned.includes(u.id)?'checked':'')+'> '+UI.esc(u.full_name)+'</span></label>').join(''),confirmText:'Save assignments',onConfirm:async overlay=>{
+            await API.put('/job-orders/'+id+'/assignees',{user_ids:Array.from(overlay.querySelectorAll('[data-recorder]:checked')).map(e=>Number(e.dataset.recorder))});UI.toast('Assignments saved');
+          }});
+        }catch(e){UI.toast(e.message,'error');}
+      });
       const slipPrint = el.querySelector('#jo-slip-print');
       el.querySelector('#jo-subassemblies')?.addEventListener('click', () => suggestSubassemblies(id));
       if (slipPrint) slipPrint.onclick = () => API.blobUrl('/parts-slips/' + jo.parts_slip_id + '/print')
@@ -987,7 +996,7 @@ App.register('job-orders', async (view, filter) => {
       el.querySelectorAll('[data-do]').forEach((b) => b.onclick = () => {
         const d = b.dataset.do;
         // Non-administrators must give a reason for pause / resume / close early.
-        if (!App.isAdmin() && (d === 'pause' || d === 'resume' || d === 'close')) {
+        if ((d === 'pause' || d === 'resume' || d === 'close') && !App.isAdmin()) {
           const what = d === 'close' ? 'close this job order early' : d;
           const reason = window.prompt(`Why ${what}? (required)`, '');
           if (reason === null) return;

@@ -21,8 +21,7 @@ type AnalyticsToolName =
   | 'dead_stock'
   | 'stock_movement_summary'
   | 'job_order_report'
-  | 'qc_report'
-  | 'run_analytics_query';
+  | 'qc_report';
 
 const PERMISSION: Record<AnalyticsToolName, Permission> = {
   attendance_report: 'hr.view',
@@ -37,7 +36,6 @@ const PERMISSION: Record<AnalyticsToolName, Permission> = {
   stock_movement_summary: 'inventory.view',
   job_order_report: 'production.view',
   qc_report: 'production.view',
-  run_analytics_query: 'audit.view', // admin-only escape hatch
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -71,18 +69,6 @@ const ATT_JOINS = `
 function graceMinutes(): number {
   const p = getSetting<{ grace_minutes?: number }>('payroll_policy');
   return typeof p?.grace_minutes === 'number' ? p.grace_minutes : 10;
-}
-
-/** Reject anything that isn't a plain single read. */
-function safeSelect(sqlRaw: unknown): string | null {
-  if (typeof sqlRaw !== 'string') return null;
-  const s = sqlRaw.trim().replace(/;+\s*$/, '');
-  if (!s || !/^(select|with)\b/i.test(s)) return null;
-  if (/;/.test(s)) return null; // no stacked statements
-  if (/\b(insert|update|delete|drop|alter|create|replace|attach|detach|pragma|vacuum|reindex|truncate|grant)\b/i.test(s)) return null;
-  if (/pragma_|sqlite_/i.test(s)) return null; // schema-introspection functions / tables
-  if (/password_hash|\bsessions\b|permission_overrides|\b(from|join)\s+(main\.)?users\b/i.test(s)) return null;
-  return s;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -238,19 +224,7 @@ const SPECS: Record<AnalyticsToolName, CerebrasTool> = {
       parameters: { type: 'object', properties: { ...dateRangeProps } },
     },
   },
-  run_analytics_query: {
-    type: 'function',
-    function: {
-      name: 'run_analytics_query',
-      description:
-        'Run one read-only SQL SELECT against the database for a question no other tool covers. SELECT/WITH only, single statement, always include a LIMIT. Tables include inventory_items, inventory_stock, inventory_transactions, locations, suppliers, bom_components, job_orders, job_order_components, job_order_units, qc_records, orders, order_items, employees, attendance_records, attendance_periods, shifts, form_records, form_definitions, activity_log, departments. (users/sessions are off-limits.)',
-      parameters: {
-        type: 'object',
-        properties: { sql: { type: 'string', description: 'A single SELECT/WITH statement with a LIMIT.' } },
-        required: ['sql'],
-      },
-    },
-  },
+
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -268,6 +242,7 @@ export function isAnalyticsTool(name: string): boolean {
 }
 
 export function executeAnalyticsTool(name: string, args: unknown, user: AuthUser): ToolResult {
+  if (name === 'run_analytics_query') return { success: false, error: 'Custom SQL is disabled. Use the permission-scoped report tools.' };
   const n = name as AnalyticsToolName;
   const perm = PERMISSION[n];
   if (!perm) return { success: false, error: `Unknown tool: ${name}` };
@@ -533,17 +508,6 @@ export function executeAnalyticsTool(name: string, args: unknown, user: AuthUser
         };
       }
 
-      case 'run_analytics_query': {
-        const sql = safeSelect(a.sql);
-        if (!sql) {
-          return { success: false, error: 'Only a single read-only SELECT/WITH statement is allowed (no users/sessions).' };
-        }
-        let rows: unknown[];
-        try { rows = queryAll(sql); }
-        catch (e) { return { success: false, error: `Query failed: ${e instanceof Error ? e.message : String(e)}` }; }
-        const truncated = rows.length > 500;
-        return { success: true, data: { row_count: rows.length, truncated, rows: rows.slice(0, 500) } };
-      }
 
       default:
         return { success: false, error: `Unknown tool: ${name}` };

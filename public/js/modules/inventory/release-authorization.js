@@ -58,7 +58,7 @@
             <td><button type="button" class="btn secondary small" data-resolve="${r.id}">Resolve</button></td></tr>`).join('')}</tbody></table>`
           : '<div class="muted">No open reports.</div>'}
         <label style="display:flex;gap:8px;align-items:center;margin-top:16px;border-top:1px solid var(--border);padding-top:10px">
-          <input type="checkbox" id="ra-policy" ${policy.authorization_required ? 'checked' : ''} />
+          <input type="checkbox" id="ra-policy" ${App.hasPermission('orders.configure') ? '' : 'disabled'} ${policy.authorization_required ? 'checked' : ''} />
           Company policy: require a release authorization for <b>every</b> sale order (on by default)</label>`,
       confirmText: null,
       cancelText: 'Close',

@@ -19,18 +19,18 @@ import { LINE, INSPECT, RTS } from '../../shared/desk-access';
 const router = Router();
 router.use(requireAuth);
 
-const readGate = requireAnyPermission(['production.view', ...LINE, ...INSPECT, ...RTS, 'inventory.adjust']);
+const readGate = requireAnyPermission(['production.view', ...LINE, ...INSPECT, ...RTS, 'production.kit_release']);
 // Anyone working the job order can report: line lead, QC/QA inspectors, the RTS clerk (a
 // product-data mismatch, which holds the unit out of stock — see rts.ts), the warehouse, managers.
 const reportGate = requireAnyPermission([
-  'inventory.adjust', 'production.record', 'production.inspect_qc', 'production.inspect_qa', 'production.approve',
+  'production.kit_release', 'production.record', 'production.inspect_qc', 'production.inspect_qa', 'production.approve',
   'production.receive', 'production.manage',
 ]);
 
 /** Managers may edit / resolve anyone's report; others only their own. */
 function canManage(req: Request, issue: ProductionIssue): boolean {
   const p = req.user!.permissions;
-  return issue.reported_by === req.user!.id || p.includes('inventory.adjust')
+  return issue.reported_by === req.user!.id || p.includes('production.kit_release')
     || p.includes('production.approve') || p.includes('production.manage');
 }
 
@@ -57,7 +57,7 @@ function unitError(jobOrderId: number, unitId: number | null | undefined): strin
 // GET /api/production-issues?job_order_id=&unit_id=&status=open|resolved
 router.get('/', readGate, (req, res) => {
   // Narrow floor desks read reports for a particular unit, not the company-wide feed.
-  if (!req.user!.permissions.includes('production.view') && !(Number.isSafeInteger(Number(req.query.unit_id)) && Number(req.query.unit_id) > 0) && !(req.query.whole_job==='1'&&Number.isSafeInteger(Number(req.query.job_order_id))&&Number(req.query.job_order_id)>0&&req.user!.permissions.some(p=>['production.record','production.manage','production.approve','inventory.adjust'].includes(p)))) {
+  if (!req.user!.permissions.includes('production.view') && !(Number.isSafeInteger(Number(req.query.unit_id)) && Number(req.query.unit_id) > 0) && !(req.query.whole_job==='1'&&Number.isSafeInteger(Number(req.query.job_order_id))&&Number(req.query.job_order_id)>0&&req.user!.permissions.some(p=>['production.record','production.manage','production.approve','production.kit_release'].includes(p)))) {
     res.status(403).json({ error: 'Open a unit to view its issue reports.' }); return;
   }
   const where: string[] = [];

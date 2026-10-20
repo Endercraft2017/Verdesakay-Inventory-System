@@ -3,7 +3,7 @@
    filter.order = <PO id>               (opens that PO's receiving & billing panel) */
 App.register('purchasing', async (view, filter) => {
   const money = UI.money;
-  const canReceive = App.hasPermission('inventory.adjust');
+  const canReceive = App.hasPermission('inventory.receive');
   const canBill = App.hasPermission('purchasing.manage'); // vendor bills: purchasing's own permission
   let taxCodes = [];
   try { taxCodes = await API.get('/accounting/tax-codes?active=1'); } catch { /* needs accounting.view */ }
@@ -393,7 +393,7 @@ App.register('purchasing', async (view, filter) => {
           </tr>`).join('')}</tbody></table>
         ${matchHTML}
         <div class="drawer-actions" style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
-          ${canBill && isOpen ? `<button class="btn" id="bd-approve">${m && m.ok ? 'Approve' : 'Approve…'}</button>` : ''}
+          ${App.hasPermission('purchasing.approve_bills') && isOpen ? `<button class="btn" id="bd-approve">${m && m.ok ? 'Approve' : 'Approve…'}</button>` : ''}
           ${canBill && isOpen ? `<button class="btn secondary" id="bd-edit">Edit</button>` : ''}
           ${canBill && bill.status !== 'disputed' && isOpen ? `<button class="btn secondary" id="bd-dispute">Dispute</button>` : ''}
           ${canBill && bill.status === 'approved' ? `<button class="btn secondary" id="bd-dispute">Dispute (re-open)</button>` : ''}

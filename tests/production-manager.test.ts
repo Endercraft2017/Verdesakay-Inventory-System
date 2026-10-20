@@ -27,6 +27,7 @@ async function mo(prefix: string, release = true) {
   const part = await mkItem(`${prefix} Part`, 100);
   await ctx.api.put(`/api/finished-products/${product}`).set(H()).send({ components: [{ component_item_id: part, quantity: 2 }] });
   const id = (await ctx.api.post('/api/job-orders').set(H()).send({ product_item_id: product, qty_ordered: 2 })).body.id as number;
+  await ctx.api.put(`/api/job-orders/${id}/assignees`).set(H()).send({user_ids:[lead.id]});
   await ctx.api.post(`/api/job-orders/${id}/approve`).set(H());
   if (release) {
     await ctx.api.post('/api/job-orders/warehouse-accept').set(H()).send({ job_order_ids: [id] });
@@ -50,13 +51,14 @@ describe('production_manager role', () => {
       .send({ job_order_id: id, category: 'Material', description: 'Wrong bolts supplied' });
     expect(own.status).toBe(201);
   });
-  it('carries lead + line-decision permissions but not inventory.adjust, and HR may assign it', async () => {
+  it('carries lead + line-decision permissions but not inventory.adjust, and cross-team recording requires permission administration', async () => {
     const { roleDefaults, HR_ASSIGNABLE_ROLES, HR_GRANTABLE_PERMISSIONS } = await import('../src/shared/permissions');
     const perms = roleDefaults('production_manager');
     expect(perms).toEqual(expect.arrayContaining(['production.record', 'production.pause', 'production.manage', 'mobile.access']));
     expect(perms).not.toContain('inventory.adjust');
     expect(perms).not.toContain('inventory.mobile'); // floor desks: no warehouse phone tools (2026-10-06)
-    expect(HR_ASSIGNABLE_ROLES).toContain('production_manager');
+    expect(HR_ASSIGNABLE_ROLES).not.toContain('production_manager');
+    expect(perms).toContain('production.work_all');
     expect(HR_GRANTABLE_PERMISSIONS).toContain('production.manage');
   });
 
@@ -106,10 +108,12 @@ describe('scrap reason (mobile scrap screen, Figma 66:462)', () => {
     const part = await mkItem('SR Part', 100);
     await ctx.api.put(`/api/finished-products/${product}`).set(H()).send({ components: [{ component_item_id: part, quantity: 1 }] });
     const id = (await ctx.api.post('/api/job-orders').set(H()).send({ product_item_id: product, qty_ordered: 5, qc_stages: 2 })).body.id as number;
-    await ctx.api.post(`/api/job-orders/${id}/approve`).set(H());
+    await ctx.api.put(`/api/job-orders/${id}/assignees`).set(H()).send({user_ids:[lead.id]});
+  await ctx.api.post(`/api/job-orders/${id}/approve`).set(H());
     await ctx.api.post('/api/job-orders/warehouse-accept').set(H()).send({ job_order_ids: [id] });
     await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id }] });
     await ctx.api.post(`/api/job-orders/${id}/release`).set(H());
+    await ctx.api.put(`/api/job-orders/${id}/assignees`).set(H()).send({user_ids:[lead.id]});
     await ctx.api.post(`/api/job-orders/${id}/accept`).set(bearer(lead.token)).send({});
     const r = await ctx.api.post(`/api/job-orders/${id}/progress`).set(bearer(lead.token)).send({ scrapped_delta: 2, reason: 'Frame damage during final assembly' });
     expect(r.status).toBe(200);

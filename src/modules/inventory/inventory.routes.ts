@@ -492,6 +492,9 @@ router.post('/import', requirePermission('inventory.create'), syncClass('claim')
           : undefined;
 
         if (existing) {
+          if (!req.user!.permissions.includes('inventory.edit')) {
+            errors.push({ row: rowNo, sku, message: 'Editing an existing item requires inventory.edit' }); return;
+          }
           run(
             `UPDATE inventory_items SET
                name = ?, category = ?, department_id = ?, supplier_id = ?,
@@ -509,6 +512,7 @@ router.post('/import', requirePermission('inventory.create'), syncClass('claim')
           );
           updated++;
         } else {
+          if (data.quantity && !req.user!.permissions.includes('inventory.adjust')) { errors.push({row:rowNo,sku,message:'Starting stock requires inventory.adjust'}); return; }
           const info = run(
             `INSERT INTO inventory_items
                (name, sku, category, department_id, supplier_id, quantity, unit, min_quantity, location, notes)
@@ -716,6 +720,8 @@ router.get('/:id', viewGate, (req, res) => {
 router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req, res) => {
   enforceQuota('inventory_items');
   const input = parseBody(createItemSchema, req.body);
+  if (input.quantity && !req.user!.permissions.includes('inventory.adjust')) { res.status(403).json({error:'Starting stock requires inventory.adjust'}); return; }
+  if (!req.user!.permissions.includes('inventory.costs') && (input.unit_cost || Object.keys(input.attributes || {}).some(k => /cost|purchase_price/.test(k)))) { res.status(403).json({error:'Cost entry requires inventory.costs'}); return; }
   if (input.sku) {
     const dupe = queryOne('SELECT id FROM inventory_items WHERE sku = ?', input.sku);
     if (dupe) {
@@ -805,6 +811,16 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
     return;
   }
   const input = parseBody(updateItemSchema, req.body);
+  if (!req.user!.permissions.includes('inventory.costs')) {
+    if (input.unit_cost !== undefined && input.unit_cost !== (item.unit_cost || 0)) { res.status(403).json({error:'Cost changes require inventory.costs'}); return; }
+    if (input.attributes !== undefined) {
+      let previous: Record<string,string|number|boolean|null> = {}; try {previous=typeof item.attributes === 'string' ? JSON.parse(item.attributes || '{}') : (item.attributes || {});} catch {}
+      for (const k of new Set([...Object.keys(previous),...Object.keys(input.attributes)])) if (/cost|purchase_price/.test(k)) {
+        if (k in input.attributes && input.attributes[k] !== previous[k]) {res.status(403).json({error:'Cost changes require inventory.costs'});return;}
+        if (k in previous) input.attributes[k]=previous[k]!;
+      }
+    }
+  }
   if (input.preferred_location_id != null && !queryOne('SELECT id FROM locations WHERE id = ?', input.preferred_location_id)) {
     res.status(400).json({ error: 'Preferred location not found' }); return;
   }
@@ -972,7 +988,7 @@ router.post('/:id/damage', requirePermission('inventory.adjust'), syncClass('phy
 });
 
 // POST /api/inventory/:id/transfer — move stock from one location to another
-router.post('/:id/transfer', requirePermission('inventory.adjust'), syncClass('physical'), (req, res) => {
+router.post('/:id/transfer', requirePermission('inventory.transfer'), syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT id,is_finished_product FROM inventory_items WHERE id = ?', id);
   if (!item) {

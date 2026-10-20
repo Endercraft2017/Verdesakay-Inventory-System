@@ -15,7 +15,7 @@
  */
 import type { Permission } from './types';
 
-export const LINE: Permission[] = ['production.record', 'production.pause', 'production.manage', 'production.approve'];
+export const LINE: Permission[] = ['production.record', 'production.pause', 'production.manage', 'production.approve', 'production.plan'];
 export const INSPECT: Permission[] = ['production.inspect_qc', 'production.inspect_qa', 'production.qa_review'];
 export const PARTS: Permission[] = ['production.repairs'];
 export const RTS: Permission[] = ['production.receive'];
@@ -26,9 +26,9 @@ export const ITEM_PICKER: Permission[] = [...INSPECT, ...PARTS];
 /** The storage-location list: where ready-to-sell stock goes. */
 export const LOCATION_PICKER: Permission[] = [...RTS];
 /** The job-order list: the line runs its own job orders. */
-export const JOB_ORDER_LIST: Permission[] = [...LINE];
+export const JOB_ORDER_LIST: Permission[] = [...LINE, 'production.kit_release'];
 /** One job order and its units / checklist / receivable output: every production desk works on one. */
-export const JOB_ORDER_DETAIL: Permission[] = [...LINE, ...INSPECT, ...PARTS, ...RTS];
+export const JOB_ORDER_DETAIL: Permission[] = [...LINE, ...INSPECT, ...PARTS, ...RTS, 'production.kit_release'];
 /** Repair-parts requests: raised by inspectors, issued by the parts clerk, worked by the line. */
 export const REPAIRS_READ: Permission[] = [...PARTS, ...INSPECT, ...LINE];
 /** A unit's production record (scan → record): any desk that handles the unit. */

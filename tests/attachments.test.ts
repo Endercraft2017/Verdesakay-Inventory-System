@@ -11,6 +11,10 @@ const PNG = Buffer.from('fake-png-bytes');
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
+  const {run}=await import('../src/shared/db');
+  const product=Number(run("INSERT INTO inventory_items(name) VALUES('Attachment unit')").lastInsertRowid);
+  const job=Number(run("INSERT INTO job_orders(number,product_item_id,product_name,qty_ordered) VALUES('ATTACH-JOB',?,'Attachment unit',1)",product).lastInsertRowid);
+  run("INSERT INTO job_order_units(id,job_order_id,product_item_id,status,stage) VALUES(42,?,?,'pending',0)",job,product);
 });
 afterAll(() => cleanup(ctx));
 
@@ -58,7 +62,7 @@ describe('attachments', () => {
     expect((await ctx.api.get('/api/attachments').set(H())).status).toBe(400);
   });
 
-  it('gates qc_unit / damage on inventory perms, per kind', async () => {
+  it('requires explicit production authority for unit photos and assigned delivery authority for proof', async () => {
     const hr = await createEmployee(ctx.api, token, { role: 'hr' }); // no inventory.*
     const wh = await createEmployee(ctx.api, token, { role: 'warehouse' }); // has inventory.adjust/view
 
@@ -68,10 +72,11 @@ describe('attachments', () => {
 
     const asWh = await ctx.api.post('/api/attachments').set({ Authorization: `Bearer ${wh.token}` })
       .field('kind', 'qc_unit').field('ref_id', '1').attach('image', PNG, 'x.png');
-    expect(asWh.status).toBe(201);
+    expect(asWh.status).toBe(403);
     expect((await ctx.api.get('/api/attachments?kind=qc_unit&ref_id=1')
       .set({ Authorization: `Bearer ${hr.token}` })).status).toBe(403);
 
+    await ctx.api.put(`/api/users/${wh.id}/permissions`).set(H()).send({overrides:{'delivery.run':true}});
     // A delivery photo needs delivery.run and assignment to the exact delivery.
     const del = await ctx.api.post('/api/deliveries').set(H())
       .send({ customer_name: 'Attachment access', assigned_to: wh.id });

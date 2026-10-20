@@ -37,8 +37,8 @@ const READ_PERMS: Record<string, Permission[]> = {
   release: ['inventory.adjust', 'orders.release', 'orders.view'],
   // Handoff photos taken before the slip exists (ref_id = orders.id); the slip takes them over as 'release'.
   release_proof: ['inventory.adjust', 'orders.release', 'orders.view'],
-  sales_return_proof: ['inventory.adjust', 'orders.release', 'orders.view'],
-  sales_return: ['inventory.adjust', 'orders.release', 'orders.view'],
+  sales_return_proof: ['returns.receive','returns.inspect','returns.dispose','orders.release','orders.view'],
+  sales_return: ['returns.receive','returns.inspect','returns.dispose','orders.release','orders.view'],
   // Photos of the parts kit on a job order's parts release slip (ref_id = parts_release_slips.id).
   parts_release: ['inventory.view', 'production.view', ...LINE],
   // Photos on a production issue report (ref_id = production_issues.id).
@@ -47,7 +47,7 @@ const READ_PERMS: Record<string, Permission[]> = {
 // Everyone on the production floor: the line lead photographs each unit off the line, and the
 // QC/QA inspectors photograph defects — none of them hold inventory.adjust.
 const FLOOR_PERMS: Permission[] = [
-  'inventory.adjust', 'production.record', 'production.inspect_qc', 'production.inspect_qa',
+  'production.record', 'production.inspect_qc', 'production.inspect_qa',
 ];
 const WRITE_PERMS: Record<string, Permission[]> = {
   qc_unit: FLOOR_PERMS,
@@ -55,11 +55,11 @@ const WRITE_PERMS: Record<string, Permission[]> = {
   problem: [],
   delivery: ['delivery.run', 'delivery.manage'],
   signature: ['delivery.run', 'delivery.manage'],
-  release: ['inventory.adjust', 'orders.release'],
-  release_proof: ['inventory.adjust', 'orders.release'],
-  sales_return_proof: ['inventory.adjust', 'orders.release'],
-  sales_return: ['inventory.adjust', 'orders.release'],
-  parts_release: ['inventory.adjust'],
+  release: ['orders.release'],
+  release_proof: ['orders.release'],
+  sales_return_proof: ['returns.receive'],
+  sales_return: ['returns.receive', 'returns.inspect'],
+  parts_release: ['production.kit_release'],
   production_issue: [...FLOOR_PERMS, 'production.approve', 'production.manage', 'production.receive'],
 };
 function allows(req: Request, perms: Permission[]): boolean {
@@ -119,8 +119,8 @@ router.get('/', (req, res) => {
   const rows = queryAll<Row>(
     `SELECT a.id, a.kind, a.ref_id, a.caption, a.created_at, a.uploaded_by, u.full_name AS uploaded_by_name
      FROM attachments a LEFT JOIN users u ON u.id = a.uploaded_by
-     WHERE a.kind = ? AND a.ref_id = ? ORDER BY a.id`,
-    kind, refId
+     WHERE a.kind = ? AND a.ref_id = ?${kind === 'problem' && !req.user!.permissions.includes('evidence.manage') ? ' AND a.uploaded_by = ?' : ''} ORDER BY a.id`,
+    kind, refId, ...(kind === 'problem' && !req.user!.permissions.includes('evidence.manage') ? [req.user!.id] : [])
   );
   res.json(rows.map((r) => ({ ...r, url: `/api/attachments/${r.id}/image`,
     ...(kind === 'production_issue' ? { inspection_available: r.uploaded_by === req.user!.id && !queryOne('SELECT 1 FROM qc_evidence WHERE attachment_id = ?', r.id) } : {}) })));
@@ -128,8 +128,9 @@ router.get('/', (req, res) => {
 
 // GET /api/attachments/:id/image — stream the file
 router.get('/:id/image', async (req, res) => {
-  const row = queryOne<Row>('SELECT kind, ref_id, image_path FROM attachments WHERE id = ?', Number(req.params.id));
+  const row = queryOne<Row>('SELECT kind, ref_id, image_path, uploaded_by FROM attachments WHERE id = ?', Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Attachment not found' }); return; }
+  if (row.kind === 'problem' && row.uploaded_by !== req.user!.id && !req.user!.permissions.includes('evidence.manage')) {res.status(403).json({error:'This evidence belongs to another account'});return;}
   if (!allows(req, READ_PERMS[row.kind] ?? ['inventory.view'])) { res.status(403).json({ error: 'Forbidden' }); return; }
   if (deliveryEvidence(row.kind) && !deliveryEvidenceAccess(req, row.ref_id).allowed) {
     res.status(403).json({ error: 'Not your delivery' }); return;
@@ -173,6 +174,8 @@ router.post('/', syncClass('physical'), syncUpload(imageUpload.single('image')),
       res.status(!issue ? 404 : issue.status !== 'open' ? 409 : 403).json({ error: !issue ? 'Issue report not found' : issue.status !== 'open' ? 'Reopen the report before adding photos.' : 'Only the reporter or a manager can add photos to this report.' }); return;
     }
   }
+  if (kind === 'qc_unit' && !queryOne('SELECT 1 FROM job_order_units WHERE id=?',refId)) {if(req.file)unlink(req.file.filename);res.status(404).json({error:'Production unit not found'});return;}
+  if (kind === 'qc_unit' && queryOne("SELECT 1 FROM job_order_units WHERE id=? AND status NOT IN ('pending','rework')",refId)) {if(req.file)unlink(req.file.filename);res.status(409).json({error:'Completed unit evidence is locked'});return;}
   if (!req.file) {
     res.status(400).json({ error: 'An image file is required (JPG, PNG, GIF or WebP)' });
     return;
@@ -201,8 +204,10 @@ export function saveAttachment(kind: string, refId: number, filename: string, ca
 
 // DELETE /api/attachments/:id
 router.delete('/:id', syncClass('claim'), (req, res) => {
-  const row = queryOne<Row>('SELECT kind, ref_id, image_path FROM attachments WHERE id = ?', Number(req.params.id));
+  const row = queryOne<Row>('SELECT kind, ref_id, image_path, uploaded_by FROM attachments WHERE id = ?', Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Attachment not found' }); return; }
+  if (row.kind === 'problem' && row.uploaded_by !== req.user!.id && !req.user!.permissions.includes('evidence.manage')) {res.status(403).json({error:'This evidence belongs to another account'});return;}
+  if (row.uploaded_by !== req.user!.id && !req.user!.permissions.includes('evidence.manage')) {res.status(403).json({error:'Only the uploader or an evidence custodian may remove this photo'});return;}
   if (!allows(req, WRITE_PERMS[row.kind] ?? ['inventory.adjust'])) { res.status(403).json({ error: 'Forbidden' }); return; }
   if (deliveryEvidence(row.kind)) {
     const access = deliveryEvidenceAccess(req, row.ref_id);
@@ -211,6 +216,7 @@ router.delete('/:id', syncClass('claim'), (req, res) => {
       res.status(409).json({ error: 'Completed delivery evidence is locked.' }); return;
     }
   }
+  if (row.kind === 'qc_unit' && queryOne("SELECT 1 FROM job_order_units WHERE id=? AND status NOT IN ('pending','rework')",row.ref_id)) {res.status(409).json({error:'Completed unit evidence is locked'});return;}
   if (row.kind === 'release') {
     res.status(409).json({ error: 'Issued release-slip evidence is locked.' }); return;
   }

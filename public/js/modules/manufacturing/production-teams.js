@@ -1,7 +1,7 @@
 /* Production → Teams: production teams and their member rosters. A job
    order is assigned to a team on its New/Edit form and on the schedule board. */
 App.register('production-teams', async (view) => {
-  const canWrite = App.hasPermission('inventory.adjust');
+  const canWrite = App.hasPermission('production.configure');
   let teams = [];
   let employees = [];
 

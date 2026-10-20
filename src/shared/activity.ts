@@ -1,3 +1,4 @@
+import { auditPayload } from './audit-privacy';
 /**
  * Application activity log. A single middleware (wired in app.ts) records every
  * *mutating* API request — who, when, which endpoint / record, the result, and a
@@ -10,9 +11,6 @@ import { run } from './db';
 import { deviceIdOf, userAgentOf, deviceLabel, clientIpOf } from './device';
 
 const SKIP_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-// Field names whose values never reach the log: credentials and keys of every kind (an AI or
-// payment provider key arrives as `api_key`, a bucket key as `key_id` / `access_key`).
-const REDACT_KEY = /pass|password|token|secret|hash|otp|\bpin\b|api_?key|private_?key|access_?key|key_?id|credential|authorization/i;
 const META_MAX = 4000;
 
 /** Coarse module name for a path, e.g. "/api/inventory/5/adjust" -> "inventory". */
@@ -58,20 +56,6 @@ function deriveEntityId(p: string): string | null {
   return null;
 }
 
-function redact(value: unknown, depth = 0): unknown {
-  if (value == null || depth > 6) return value;
-  if (Array.isArray(value)) return value.slice(0, 50).map((v) => redact(v, depth + 1));
-  if (typeof value === 'object') {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = REDACT_KEY.test(k) ? '[redacted]' : redact(v, depth + 1);
-    }
-    return out;
-  }
-  if (typeof value === 'string' && value.length > 500) return value.slice(0, 500) + '…';
-  return value;
-}
-
 /** What a route may put on `res.locals.activity` to replace the generic "delete hr #3" row with
  *  something readable. `snapshot` lands in meta — use it for records a DELETE is about to erase. */
 export interface ActivityOverride {
@@ -83,12 +67,12 @@ export interface ActivityOverride {
 /** Redacted JSON snapshot of what the request carried (body / query / file). */
 function buildMeta(req: Request, snapshot?: unknown): string | null {
   const payload: Record<string, unknown> = {};
-  if (snapshot !== undefined) payload.snapshot = redact(snapshot);
+  if (snapshot !== undefined) payload.snapshot = auditPayload(snapshot, req.originalUrl.split('?')[0]);
   const body = req.body as unknown;
   if (body && typeof body === 'object' && Object.keys(body as object).length) {
-    payload.body = redact(body);
+    payload.body = auditPayload(body, req.originalUrl.split('?')[0]);
   }
-  if (req.query && Object.keys(req.query).length) payload.query = redact(req.query);
+  if (req.query && Object.keys(req.query).length) payload.query = auditPayload(req.query, req.originalUrl.split('?')[0]);
   const file = (req as Request & { file?: { fieldname: string; originalname: string; size: number } }).file;
   if (file) payload.file = { field: file.fieldname, name: file.originalname, size: file.size };
   if (!Object.keys(payload).length) return null;

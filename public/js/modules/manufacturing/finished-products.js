@@ -2,9 +2,11 @@
    filter.open = <product id> deep-links straight into that product's detail (used by
    Finished Goods to reuse this file's Sell / Move action instead of duplicating it). */
 App.register('finished-products', async (view, filter) => {
-  const canWrite = App.hasPermission('inventory.edit');
+  const canWrite = App.hasPermission('production.configure');
   const canConfigQc = App.hasPermission('qc.configure');
-  const canAdjust = App.hasPermission('inventory.adjust');
+  const canSell = App.hasPermission('orders.direct_sale') && App.hasPermission('orders.release') && (!App.hasModule || App.hasModule('sales'));
+  const canMove = App.hasPermission('inventory.transfer');
+  const canAdjust = canSell || canMove;
   const canCreate = App.hasPermission('inventory.create');
   let list = [];
   let allItems = [];
@@ -198,6 +200,8 @@ App.register('finished-products', async (view, filter) => {
         ${checklistHTML}`,
       confirmText: existing ? 'Save BOM' : 'Create',
       onOpen: (ov) => {
+        if (!App.hasPermission('inventory.costs')) ['labor','overhead','markup'].forEach(k=>{const input=ov.querySelector('[data-f="'+k+'"]');if(input)input.disabled=true;});
+        if (!canConfigQc) ['checklist-qa','checklist-qc'].forEach(k=>{const input=ov.querySelector('[data-f="'+k+'"]');if(input)input.disabled=true;});
         const rowsEl = ov.querySelector('#bom-rows');
         const productHost = ov.querySelector('#fp-product-combo');
         let productCombo = null;
@@ -301,10 +305,10 @@ App.register('finished-products', async (view, filter) => {
         const overheadRaw = ov.querySelector('[data-f="overhead"]').value.trim();
         const markupRaw = ov.querySelector('[data-f="markup"]').value.trim();
         await API.put('/finished-products/' + pid, {
-          components, qc_checklist_qa_id, qc_checklist_qc_id,
-          std_labor_cost: laborRaw === '' ? null : Number(laborRaw),
+          components, ...(canConfigQc ? {qc_checklist_qa_id,qc_checklist_qc_id} : {}),
+          ...(App.hasPermission('inventory.costs') ? {std_labor_cost: laborRaw === '' ? null : Number(laborRaw),
           std_overhead_cost: overheadRaw === '' ? null : Number(overheadRaw),
-          selling_markup_percent: markupRaw === '' ? null : Number(markupRaw),
+          selling_markup_percent: markupRaw === '' ? null : Number(markupRaw)} : {}),
         });
         const pkgLines = ov.querySelector('[data-f="package"]').value.split('\n').map((l) => l.trim()).filter(Boolean);
         if (pkgLines.length || pkgItems.length) {
@@ -600,8 +604,8 @@ App.register('finished-products', async (view, filter) => {
       title: 'Sell / move units — ' + product.name,
       bodyHTML: `
         <div class="field-row">
-          <label class="check"><input type="radio" name="act" value="sell" checked/> Sell (remove from stock)</label>
-          <label class="check"><input type="radio" name="act" value="move"/> Move to another location</label>
+          ${canSell ? '<label class="check"><input type="radio" name="act" value="sell" checked/> Sell (remove from stock)</label>' : ''}
+          ${canMove ? `<label class="check"><input type="radio" name="act" value="move" ${canSell ? '' : 'checked'}/> Move to another location</label>` : ''}
         </div>
         <p class="muted">${pickedUnits.length
           ? `${pickedUnits.length} unit${pickedUnits.length === 1 ? '' : 's'} selected.`

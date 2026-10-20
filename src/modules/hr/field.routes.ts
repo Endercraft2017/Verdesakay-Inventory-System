@@ -6,7 +6,7 @@
  */
 import { Router } from 'express';
 import { queryOne, queryAll } from '../../shared/db';
-import { requireAuth, requirePermission } from '../../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { parseBody, kioskPunchSchema } from '../../shared/validation';
 import { isValidKioskCode, punchBlockedReason } from './clock';
 import { recordFieldPunch } from './field';
@@ -19,7 +19,7 @@ router.use(requireAuth);
 
 interface EmpRow { id: number; name: string; status: string; employee_no: string }
 
-router.get('/recent', requirePermission('hr.view'), (req, res) => {
+router.get('/recent', requireAnyPermission(['hr.view','hr.timekeeping.view','hr.kiosk']), (req, res) => {
   const sinceId = Number(req.query.since_id) || 0;
   const rows = queryAll<{
     id: number; ts: string; kind: string; source: string; name: string; employee_no: string | null;
@@ -33,7 +33,7 @@ router.get('/recent', requirePermission('hr.view'), (req, res) => {
   res.json(rows.map((r) => ({ ...r, photo_id: photos.get(r.id) ?? null })));
 });
 
-router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, syncClass('physical'), (req, res) => {
+router.post('/kiosk-punch', requireAnyPermission(['hr.view','hr.timekeeping.view','hr.kiosk']), requireKioskDevice, syncClass('physical'), (req, res) => {
   const { code, employee_no } = parseBody(kioskPunchSchema, req.body);
   if (!isValidKioskCode(code)) {
     res.status(400).json({ error: 'That code is not current. Use the code on the screen.' });

@@ -39,7 +39,7 @@ router.get('/global-variables', (_req, res) => {
 
 // PUT /api/global-variables/:key — upsert (any forms.manage.* — genuinely global/shared, not
 // owned by one section)
-router.put('/global-variables/:key', requireAnyPermission(ANY_FORMS_MANAGE), syncClass('claim'), (req, res) => {
+router.put('/global-variables/:key', requirePermission('forms.variables'), syncClass('claim'), (req, res) => {
   const key = String(req.params.key ?? '').trim();
   if (!/^[a-z0-9_]+$/.test(key)) {
     res.status(400).json({ error: 'Key must be lowercase letters, numbers, or underscores' });
@@ -61,7 +61,7 @@ router.put('/global-variables/:key', requireAnyPermission(ANY_FORMS_MANAGE), syn
 });
 
 // DELETE /api/global-variables/:key (any forms.manage.*)
-router.delete('/global-variables/:key', requireAnyPermission(ANY_FORMS_MANAGE), syncClass('claim'), (req, res) => {
+router.delete('/global-variables/:key', requirePermission('forms.variables'), syncClass('claim'), (req, res) => {
   const info = run('DELETE FROM global_variables WHERE key = ?', req.params.key);
   if (info.changes === 0) { res.status(404).json({ error: 'Variable not found' }); return; }
   res.json({ ok: true });

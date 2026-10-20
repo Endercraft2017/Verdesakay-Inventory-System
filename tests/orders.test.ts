@@ -104,8 +104,8 @@ describe('orders: RBAC on mutations', () => {
     expect((await ctx.api.delete(`/api/orders/${order.body.id}`).set(hrHdr)).status).toBe(403);
   });
 
-  it('a role with orders.create/edit but not orders.delete (accounting) can create/edit but not delete', async () => {
-    const staff = await createEmployee(ctx.api, token, { username: 'rbac_acct_orders', role: 'accounting' });
+  it('a role with orders.create/edit but not orders.delete (CSR) can create/edit but not delete', async () => {
+    const staff = await createEmployee(ctx.api, token, { username: 'rbac_csr_orders', role: 'csr' });
     const staffHdr = { Authorization: `Bearer ${staff.token}` };
     const created = await ctx.api.post('/api/orders').set(staffHdr)
       .send({ type: 'sale', items: [{ name: 'Acct', quantity: 1, unit_price: 10 }] });

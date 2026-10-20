@@ -25,7 +25,9 @@ async function check(token: string, permissions: readonly string[]) {
   for (const gate of gates) {
     const res = await ctx.api[gate.method](gate.path).set(auth(token)).send({});
     const allowed = gate.permissions.some(p => permissions.includes(p));
-    if (allowed) {
+    if (allowed && gate.path.endsWith('/accept') && gate.permissions.includes('production.record' as never) && !permissions.includes('production.work_all')) {
+      expect(res.status).toBe(403);expect(res.body.code).toBe('job_assignment_required');
+    } else if (allowed) {
       expect(res.status, gate.path).not.toBe(401);
       expect(res.status, gate.path).not.toBe(403);
     } else expect(res.status, gate.path).toBe(403);

@@ -9,6 +9,7 @@
 export type Role = string;
 
 export type Permission =
+  | 'inventory.receive' | 'inventory.transfer' | 'inventory.count' | 'inventory.review_counts' | 'inventory.costs' | 'production.work_all' | 'production.plan' | 'production.kit_release' | 'production.configure' | 'evidence.manage' | 'orders.approve' | 'orders.authorize' | 'orders.configure' | 'orders.override_release' | 'orders.direct_sale' | 'purchasing.approve_bills' | 'purchasing.override_match' | 'purchasing.issue_cash' | 'purchasing.settle_requests' | 'accounting.post' | 'accounting.record_payments' | 'accounting.configure' | 'payroll.approve' | 'payroll.pay' | 'payroll.rates' | 'payroll.configure' | 'users.permissions' | 'security.manage' | 'workspace.manage' | 'returns.receive' | 'returns.inspect' | 'returns.dispose' | 'forms.variables' | 'hr.timekeeping.view' | 'hr.timekeeping.manage' | 'hr.kiosk'
   // Sign in to the phone app (/m). Every role carries it by default — see permissions.ts BASELINE.
   | 'mobile.access'
   | 'inventory.view' | 'inventory.create' | 'inventory.edit' | 'inventory.delete'

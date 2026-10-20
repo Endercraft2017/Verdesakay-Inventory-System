@@ -12,7 +12,7 @@ import { postSalesReturnCogs } from '../accounting/accounting-autopost';
 
 const router = Router();
 router.use(requireAuth);
-const warehouse = requireAnyPermission(['inventory.adjust', 'orders.release']);
+const warehouse = requirePermission('returns.receive');
 const returnSite = { home: (req: Request) => ({ location: queryOne<{ location_id: number | null }>(
   `SELECT o.location_id FROM orders o JOIN release_slips s ON s.order_id = o.id
    ${req.params.id ? 'JOIN sales_returns r ON r.slip_id = s.id WHERE r.id = ?' : 'WHERE s.id = ?'}`,
@@ -36,12 +36,12 @@ const SELECT = `SELECT r.*, (SELECT batch_id FROM production_batch_return_links 
   LEFT JOIN sales_return_dispositions d ON d.return_id = r.id`;
 const getReturn = (id: number) => queryOne<ReturnRow>(`${SELECT} WHERE r.id = ?`, id);
 
-router.get('/', requireAnyPermission(['inventory.view', 'inventory.adjust', 'orders.release', 'orders.view']), (req, res) => {
+router.get('/', requireAnyPermission(['inventory.view', 'orders.release', 'orders.view', 'returns.receive', 'returns.inspect', 'returns.dispose']), (req, res) => {
   const slipId = Number(req.query.slip_id);
   res.json(slipId > 0 ? queryAll<ReturnRow>(`${SELECT} WHERE r.slip_id = ? ORDER BY r.id DESC`, slipId)
     : queryAll<ReturnRow>(`${SELECT} ORDER BY r.id DESC LIMIT 300`));
 });
-router.get('/slips/:slipId/context', requireAnyPermission(['inventory.view', 'inventory.adjust', 'orders.release', 'orders.view']), (req, res) => {
+router.get('/slips/:slipId/context', requireAnyPermission(['inventory.view', 'orders.release', 'orders.view', 'returns.receive', 'returns.inspect', 'returns.dispose']), (req, res) => {
   const slipId = Number(req.params.slipId);
   const slip = queryOne<{ id: number; number: string; order_id: number }>(
     'SELECT id, number, order_id FROM release_slips WHERE id = ?', slipId);
@@ -129,7 +129,7 @@ router.post('/', warehouse, syncClass('physical', returnSite), (req, res) => {
   } catch (e) { db.exec('ROLLBACK'); throw e; }
 });
 
-router.post('/:id/inspect', requirePermission('inventory.adjust'), syncClass('physical', returnSite), (req, res) => {
+router.post('/:id/inspect', requirePermission('returns.inspect'), syncClass('physical', returnSite), (req, res) => {
   const row = getReturn(Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Return not found.' }); return; }
   if (row.status !== 'received') { res.status(409).json({ error: 'This return was already inspected.', code: 'return_inspected' }); return; }
@@ -166,7 +166,7 @@ function event(id: number, action: string, note: string, actor: number) {
   run('INSERT INTO sales_return_disposition_events (return_id, action, note, actor_id) VALUES (?, ?, ?, ?)', id, action, note, actor);
 }
 
-router.post('/:id/disposition', requirePermission('inventory.adjust'), syncClass('physical', returnSite), (req, res) => {
+router.post('/:id/disposition', requirePermission('returns.dispose'), syncClass('physical', returnSite), (req, res) => {
   const row = getReturn(Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Return not found.' }); return; }
   if (row.status !== 'rejected' || row.disposition_state) {
@@ -203,7 +203,7 @@ router.post('/:id/disposition', requirePermission('inventory.adjust'), syncClass
   res.json(getReturn(row.id));
 });
 
-router.post('/:id/repair-complete', requireAnyPermission(['inventory.adjust', 'production.inspect_qc', 'production.inspect_qa']), syncClass('claim', returnSite), (req, res) => {
+router.post('/:id/repair-complete', requireAnyPermission(['returns.inspect', 'production.inspect_qc', 'production.inspect_qa']), syncClass('claim', returnSite), (req, res) => {
   const row = getReturn(Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Return not found.' }); return; }
   if (row.status !== 'rejected' || row.disposition_state !== 'repair' || !row.unit_id) {
@@ -223,7 +223,7 @@ router.post('/:id/repair-complete', requireAnyPermission(['inventory.adjust', 'p
   res.json(getReturn(row.id));
 });
 
-router.post('/:id/reinspect', requirePermission('inventory.adjust'), syncClass('physical', returnSite), (req, res) => {
+router.post('/:id/reinspect', requirePermission('returns.inspect'), syncClass('physical', returnSite), (req, res) => {
   const row = getReturn(Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Return not found.' }); return; }
   if (row.status !== 'rejected' || row.disposition_state !== 'awaiting_inspection' || !row.unit_id) {

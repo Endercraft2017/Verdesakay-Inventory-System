@@ -1,3 +1,4 @@
+import { independentApproval } from '../../shared/approval-policy';
 /**
  * Purchasing depth: goods receipts + vendor bills + 3-way match, all hung off a
  * purchase order (an `orders` row with type = 'purchase').
@@ -209,7 +210,7 @@ router.get('/receipts/:id', requirePermission('purchasing.view'), (req, res) => 
 });
 
 // POST /api/purchasing/orders/:id/receipts — record what arrived + post stock in.
-router.post('/orders/:id/receipts', requirePermission('inventory.adjust'), syncClass('physical', receivingSite), (req, res) => {
+router.post('/orders/:id/receipts', requirePermission('inventory.receive'), syncClass('physical', receivingSite), (req, res) => {
   const order = loadPO(res, Number(req.params.id));
   if (!order) return;
   const input = parseBody(createReceiptSchema, req.body);
@@ -279,7 +280,7 @@ router.post('/orders/:id/receipts', requirePermission('inventory.adjust'), syncC
 });
 
 // DELETE /api/purchasing/receipts/:id — reverse the posted stock and remove the receipt.
-router.delete('/receipts/:id', requirePermission('inventory.adjust'), syncClass('claim', receiptSite), (req, res) => {
+router.delete('/receipts/:id', requirePermission('inventory.receive'), syncClass('claim', receiptSite), (req, res) => {
   const receipt = queryOne<GoodsReceipt>('SELECT * FROM goods_receipts WHERE id = ?', Number(req.params.id));
   if (!receipt) { res.status(404).json({ error: 'Receipt not found' }); return; }
   const lines = queryAll<{ item_id: number | null; quantity: number; name: string }>(
@@ -440,7 +441,7 @@ router.put('/bills/:id', requirePermission('purchasing.manage'), syncClass('clai
 
 // POST /api/purchasing/bills/:id/approve — passes only on a clean 3-way match,
 // unless `force` is set (which records who overrode and why).
-router.post('/bills/:id/approve', requirePermission('purchasing.manage'), syncClass('claim'), (req, res) => {
+router.post('/bills/:id/approve', requirePermission('purchasing.approve_bills'), syncClass('claim'), (req, res) => {
   const bill = queryOne<VendorBill>('SELECT * FROM vendor_bills WHERE id = ?', Number(req.params.id));
   if (!bill) { res.status(404).json({ error: 'Bill not found' }); return; }
   if (bill.status === 'approved') {
@@ -453,6 +454,8 @@ router.post('/bills/:id/approve', requirePermission('purchasing.manage'), syncCl
     res.status(409).json({ error: 'Already approved' });
     return;
   }
+  if (!independentApproval(req,res,bill.created_by,'approve this vendor bill')) return;
+  if (req.body?.force && !req.user!.permissions.includes('purchasing.override_match')) { res.status(403).json({error:'Match override permission is required'}); return; }
   const input = parseBody(approveBillSchema, req.body);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', bill.order_id);
   if (!order) { res.status(404).json({ error: 'Purchase order not found' }); return; }
@@ -513,7 +516,7 @@ router.get('/tolerance', requirePermission('purchasing.view'), (_req, res) => {
   res.json(tolerance());
 });
 
-router.put('/tolerance', requirePermission('purchasing.manage'), syncClass('claim'), (req, res) => {
+router.put('/tolerance', requirePermission('purchasing.override_match'), syncClass('claim'), (req, res) => {
   const input = parseBody(matchToleranceSchema, req.body);
   setSetting(TOL_KEY, input);
   res.json(input);

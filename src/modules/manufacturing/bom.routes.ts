@@ -1,3 +1,5 @@
+import {moduleEnabled} from '../../shared/modules';
+import { authorizationRequired } from '../inventory/release-auth';
 /** Finished products + their bill of materials (bom_components).
     A finished product is an inventory_items row flagged is_finished_product = 1. */
 import { Router } from 'express';
@@ -111,7 +113,7 @@ router.get('/:id/explode', requirePermission('production.view'), (req, res) => {
 
 // GET /api/finished-products/:id/cost — fully-loaded standard material cost for one
 // unit, rolling sub-assembly costs up from their own components.
-router.get('/:id/cost', requirePermission('production.view'), (req, res) => {
+router.get('/:id/cost', requirePermission('production.view'), requirePermission('inventory.costs'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
     res.status(404).json({ error: 'Item not found' });
@@ -169,7 +171,7 @@ router.get('/:id/where-used', requirePermission('production.view'), (req, res) =
 });
 
 // PUT /api/finished-products/:id — mark as a finished product + replace its BOM
-router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req, res) => {
+router.put('/:id', requirePermission('production.configure'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT id FROM inventory_items WHERE id = ?', id);
   if (!item) {
@@ -177,6 +179,8 @@ router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req
     return;
   }
   const { components, qc_checklist_qa_id, qc_checklist_qc_id, std_labor_cost, std_overhead_cost, selling_markup_percent } = parseBody(saveBomSchema, req.body);
+  if (!req.user!.permissions.includes('inventory.costs') && [std_labor_cost,std_overhead_cost,selling_markup_percent].some(v=>v!==undefined)) {res.status(403).json({error:'Cost and markup changes require inventory.costs'});return;}
+  if (!req.user!.permissions.includes('qc.configure') && (qc_checklist_qa_id!==undefined || qc_checklist_qc_id!==undefined)) {res.status(403).json({error:'Checklist assignment requires qc.configure'});return;}
 
   for (const [label, stage, checklistId] of [['QC', 1, qc_checklist_qc_id], ['QA', 2, qc_checklist_qa_id]] as const) {
     if (checklistId === undefined || checklistId === null) continue;
@@ -280,7 +284,7 @@ router.get('/:id/package', requirePermission('production.view'), (req, res) => {
   ).map((r) => ({ ...r, required: !!r.required })));
 });
 
-router.put('/:id/package', requirePermission('inventory.edit'), syncClass('claim'), (req, res) => {
+router.put('/:id/package', requirePermission('production.configure'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
     res.status(404).json({ error: 'Item not found' });
@@ -328,11 +332,17 @@ router.get('/:id/units', catalogRead, (req, res) => {
 
 // POST /api/finished-products/:id/units/allocate — sell or relocate in-stock units.
 // Only units that have passed QA/QC (status = 'in_stock') can be allocated.
-router.post('/:id/units/allocate', requirePermission('inventory.adjust'), idempotency, syncClass('claim'), (req, res) => {
+router.post('/:id/units/allocate', requireAnyPermission(['inventory.transfer','orders.direct_sale']), idempotency, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const item = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', id);
   if (!item) { res.status(404).json({ error: 'Item not found' }); return; }
   const input = parseBody(allocateUnitsSchema, req.body);
+  if (input.action === 'sell') {
+    if (!moduleEnabled('sales')) {res.status(403).json({error:'Sales is not enabled',code:'module_disabled'});return;}
+    if (!req.user!.permissions.includes('orders.direct_sale') || !req.user!.permissions.includes('orders.release')) { res.status(403).json({error:'Direct sale and physical release permissions are required'}); return; }
+    if (authorizationRequired()) { res.status(409).json({error:'Use Release orders to verify the authorization and issue the trip slip before stock leaves.',code:'release_required'}); return; }
+  } else if (!req.user!.permissions.includes('inventory.transfer')) { res.status(403).json({error:'Stock transfer permission is required'}); return; }
+
 
   let order: { id: number; number: string; type: string; status: string; location_id: number | null; fulfilled_at: string | null } | undefined;
   let saleLine: { id: number; quantity: number; released_qty: number; dispatched_qty: number; dispatched_bulk_qty: number; cancelled_qty: number } | null = null;
@@ -346,6 +356,7 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), idempo
       if (order.fulfilled_at) {
         res.status(409).json({ error: 'This sale already has a physical stock-out. Record a return or correction instead.', code: 'already_shipped' }); return;
       }
+      if (!['approved','released'].includes(String(order.status).toLowerCase())) { res.status(409).json({error:'The sales order must be approved before stock can be sold',code:'approval_required'}); return; }
       if (String(order.status).toLowerCase() === 'cancelled') {
         res.status(409).json({ error: 'Cancelled sales cannot receive sold units.' }); return;
       }
@@ -452,7 +463,7 @@ router.post('/:id/units/allocate', requirePermission('inventory.adjust'), idempo
 });
 
 // DELETE /api/finished-products/:id — unflag + drop the BOM (the item itself stays)
-router.delete('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req, res) => {
+router.delete('/:id', requirePermission('production.configure'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM inventory_items WHERE id = ?', id)) {
     res.status(404).json({ error: 'Item not found' });

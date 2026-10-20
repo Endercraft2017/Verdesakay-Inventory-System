@@ -1,3 +1,4 @@
+import { independentApproval } from '../../shared/approval-policy';
 import { orderOutstanding, lineHeld } from './order-trips';
 import { parseProductionLabel } from '../manufacturing/label-code';
 import { batchBalances } from './batch-stock';
@@ -27,9 +28,9 @@ router.use(requireAuth);
 // Same people who release (orders.routes.ts releaseGate), plus anyone who can see orders.
 const viewGate = requireAnyPermission(['inventory.adjust', 'orders.release', 'orders.view']);
 const releaseGate = requirePermission('orders.release');
-const salesGate = requirePermission('orders.edit');
+const salesGate = requirePermission('orders.authorize');
 // A warehouse supervisor: may release without the token the recipient can't present.
-const supervisorGate = requirePermission('inventory.adjust');
+const supervisorGate = requirePermission('orders.override_release');
 /** An order's home for offline decisions: its location's site (as orders.routes.ts). */
 const orderSite = {
   home: (req: Request) => ({
@@ -242,6 +243,7 @@ router.post('/orders/:id/override', supervisorGate, syncClass('claim', orderSite
   if (!auth || state !== 'valid') { res.status(409).json({ error: 'There is no valid release authorization to override — ask Sales to issue one.' }); return; }
   const { approve, reason } = parseBody(releaseOverrideDecisionSchema, req.body);
   const open = latestOverride(auth.id);
+  if (!independentApproval(req,res,open?.requested_by ?? req.user!.id,'approve this release exception')) return;
   if (open?.status === 'approved' && approve) { res.json({ override: publicAuthorization(id).override }); return; }
   if (open?.status === 'requested') {
     run("UPDATE release_token_overrides SET status = ?, decided_by = ?, decided_at = datetime('now'), decision_note = ? WHERE id = ?",
@@ -265,7 +267,7 @@ router.post('/orders/:id/override', supervisorGate, syncClass('claim', orderSite
 /* Sales: list / issue / revoke an order's release authorizations (desktop sale order). */
 router.get('/orders/:id/authorizations', requireAnyPermission(['orders.view', 'orders.edit']), (req, res) => {
   const id = Number(req.params.id);
-  const showToken = req.user!.permissions.includes('orders.edit');
+  const showToken = req.user!.permissions.includes('orders.authorize');
   const rows = queryAll<Record<string, unknown>>(
     `SELECT a.*, u.full_name AS issued_by_name, rv.full_name AS revoked_by_name FROM release_authorizations a
      LEFT JOIN users u ON u.id = a.issued_by LEFT JOIN users rv ON rv.id = a.revoked_by WHERE a.order_id = ? ORDER BY a.id DESC`, id
@@ -347,7 +349,7 @@ router.post('/reports/:rid/resolve', salesGate, syncClass('merge'), (req, res) =
 
 /* Company policy: require a release authorization for every sale order (on unless turned off). */
 router.get('/policy', viewGate, (_req, res) => { res.json({ authorization_required: authorizationRequired() }); });
-router.put('/policy', salesGate, syncClass('claim'), (req, res) => {
+router.put('/policy', requirePermission('orders.configure'), syncClass('claim'), (req, res) => {
   setSetting('release_authorization_required', req.body?.authorization_required === true);
   res.json({ authorization_required: authorizationRequired() });
 });

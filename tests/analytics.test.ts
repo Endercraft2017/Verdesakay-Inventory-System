@@ -82,8 +82,8 @@ describe('analytics overview', () => {
     expect(r.body.generated_at).toBeTruthy();
   });
 
-  it('gives HR the payroll section', async () => {
-    const hr = await createEmployee(ctx.api, token, { role: 'hr', username: 'rep_hr' });
+  it('gives the payroll processor its payroll section', async () => {
+    const hr = await createEmployee(ctx.api, token, { role: 'payroll_processor', username: 'rep_payroll' });
     const r = await ctx.api.get('/api/analytics/overview').set('Authorization', `Bearer ${hr.token}`);
     expect(r.body.payroll).toBeTruthy();
     expect(Array.isArray(r.body.payroll.periods)).toBe(true);

@@ -6,12 +6,14 @@ App.register('admin', async (view, filter) => {
     return;
   }
 
+  const canGrant = App.hasPermission('users.permissions');
+  const canSecurity = App.hasPermission('security.manage');
   view.innerHTML = `
     <div class="topbar">
       <h2>Accounts &amp; Roles</h2>
       <div class="seg-switch" id="acct-tabs">
         <button type="button" data-tab="accounts">Accounts</button>
-        <button type="button" data-tab="roles">Roles</button>
+        ${canGrant ? '<button type="button" data-tab="roles">Roles</button>' : ''}
       </div>
       <div class="grow"></div>
       <div class="search-box search" id="user-search-box">${UI.icon('search', 16)}<input id="user-search" placeholder="Search staff…" /></div>
@@ -23,11 +25,13 @@ App.register('admin', async (view, filter) => {
     </div>
     <div class="panel"><div id="users-table"></div></div>`;
 
+  view.querySelector('#sign-in-security').hidden = !canSecurity;
+  view.querySelector('#add-role').disabled = !canGrant;
   const tableEl = view.querySelector('#users-table');
   let allUsers = [];
   let userQuery = '';
   let roleQuery = '';
-  let tab = filter && filter.tab === 'roles' ? 'roles' : 'accounts';
+  let tab = canGrant && filter && filter.tab === 'roles' ? 'roles' : 'accounts';
   let catalog = await AccessEditor.getCatalog(true);
   if (!view.isConnected) return;
   const { roleLabel } = AccessEditor;
@@ -35,7 +39,7 @@ App.register('admin', async (view, filter) => {
   // Role picker for the account modals, with a live line saying what the chosen role covers.
   function roleSelect(field, selected) {
     return `<select data-f="${field}">${
-      catalog.roles.map((r) =>
+      catalog.roles.filter(r=>canGrant || catalog.assignableRoles.includes(r.key)).map((r) =>
         `<option value="${UI.esc(r.key)}" ${r.key === selected ? 'selected' : ''}>${UI.esc(r.label)}</option>`).join('')
     }</select>`;
   }
@@ -163,7 +167,7 @@ App.register('admin', async (view, filter) => {
             <td class="actions">
               <button class="icon-btn" title="Edit" data-edit="${u.id}">${UI.icon('edit')}</button>
               <button class="icon-btn" title="Reset password" data-pw="${u.id}">${UI.icon('key')}</button>
-              ${u.mfa_enabled ? `<button class="btn secondary small" title="Lost phone: remove their two-step sign-in so they can set it up again" data-mfa-reset="${u.id}">Reset 2-step</button>` : ''}
+              ${canSecurity && u.mfa_enabled ? `<button class="btn secondary small" title="Lost phone: remove their two-step sign-in so they can set it up again" data-mfa-reset="${u.id}">Reset 2-step</button>` : ''}
             </td>
           </tr>`).join('')}
         </tbody>
@@ -209,7 +213,8 @@ App.register('admin', async (view, filter) => {
 
   // Preselect Admin Staff when the workspace still has it, else the first non-admin role.
   function defaultRoleKey() {
-    if (catalog.roles.some((r) => r.key === 'admin_staff')) return 'admin_staff';
+    if (catalog.assignableRoles.includes('employee')) return 'employee';
+    if (catalog.assignableRoles.includes('admin_staff')) return 'admin_staff';
     const r = catalog.roles.find((x) => !x.fixed) || catalog.roles[0];
     return r ? r.key : '';
   }
@@ -273,13 +278,15 @@ App.register('admin', async (view, filter) => {
       confirmText: 'Save',
       onOpen: (overlay) => {
         wireRoleHint(overlay);
+        overlay.querySelector('#edit-perm-btn').hidden = !canGrant;
+        overlay.querySelector('[data-f="role"]').disabled = !canGrant;
         overlay.querySelector('#edit-perm-btn').onclick = () => openPermEditor(u);
         overlay.querySelector('#edit-sessions-btn').onclick = () => openSessions(u);
       },
       onConfirm: async (overlay) => {
         const get = (f) => overlay.querySelector(`[data-f="${f}"]`).value;
         await API.put('/users/' + u.id, {
-          full_name: get('full_name'), email: get('email').trim(), role: get('role'),
+          full_name: get('full_name'), email: get('email').trim(), ...(canGrant ? {role:get('role')} : {}),
           department_id: get('department_id') || null, active: get('active') === '1',
         });
         UI.toast('Account updated');

@@ -82,6 +82,7 @@ beforeAll(async () => {
     const r = await ctx.api.post('/api/roles').set(H()).send({ label: 'Desk ' + desk, key, permissions: [...BASE, ...d.permissions] });
     expect(r.status, desk).toBe(201);
     accounts[desk] = await createEmployee(ctx.api, token, { role: key });
+    if (desk === 'production lead') expect((await ctx.api.put(`/api/job-orders/${jo}/assignees`).set(H()).send({user_ids:[accounts[desk]!.id]})).status).toBe(200);
   }
 });
 afterAll(() => cleanup(ctx));

@@ -1,8 +1,8 @@
 /* Shared account-access UI: the permission catalog (labels, grouping, which screens each one
    opens), the permission picker, the per-account "Access" drawer and the role editor drawer.
-   Used by Admin > Accounts / Roles (users.manage, edits everything) and HR > Employees
-   (hr.manage, edits only what GET /users/permissions/catalog reports as grantable on staff-role
-   accounts — the server enforces the same limit on save).
+   Used by account/role administrators and HR onboarding. Only users.permissions may edit
+   permission grants; account support and HR receive a read-only grant catalog. The server
+   enforces these boundaries independently of the controls.
 
    A role is a named bundle of permissions (src/shared/roles.ts). An account gets its role's
    bundle; the Access drawer then adds or removes single permissions for that one person. */
@@ -28,22 +28,22 @@ window.AccessEditor = (() => {
       { key: 'inventory.create', label: 'Add items', desc: 'Create new inventory items' },
       { key: 'inventory.edit', label: 'Edit items', desc: 'Change existing inventory items' },
       { key: 'inventory.delete', label: 'Delete items', desc: 'Remove inventory items' },
-      { key: 'inventory.adjust', label: 'Move stock', desc: 'Receive, consume, transfer or correct stock; with See production, create job orders and release kits. Job approval is separate.' },
+      { key: 'inventory.adjust', label: 'Correct stock', desc: 'Unrestricted stock corrections and damage. Receiving, transfers, counts, kits and quality checks are separate.' },
       { key: 'inventory.configure', label: 'Inventory form setup', desc: 'Customize fields on the item form' },
       { key: 'inventory.mobile', label: 'Phone warehouse view', desc: 'Show the Warehouse phone segment and scan shortcut; each stock action still needs its own permission', where: ['Phone: Warehouse segment, Scan'] },
     ] },
     { id: 'orders', label: 'Orders & releasing', items: [
       { key: 'orders.view', label: 'See orders', desc: 'Sale orders, customers and releasing' },
       { key: 'orders.create', label: 'Create orders', desc: 'Raise new sale orders' },
-      { key: 'orders.edit', label: 'Edit orders', desc: 'Change and approve sale orders' },
+      { key: 'orders.edit', label: 'Edit orders', desc: 'Change sale-order details; approval and release authorization are separate.' },
       { key: 'orders.delete', label: 'Delete orders', desc: 'Remove sale orders' },
       { key: 'orders.release', label: 'Release sale orders', desc: 'Scan or enter goods out against an approved sale order', where: ['Phone: Release SOs'] },
     ] },
     { id: 'purchasing', label: 'Purchasing', items: [
       { key: 'purchasing.request', label: 'Submit purchase requests', desc: 'Request budgeted purchases and track your own request; no approval or stock movement' },
       { key: 'purchasing.view', label: 'See purchasing', desc: 'Purchase orders, goods receipts, vendor bills', where: ['Phone: Receive PR'] },
-      { key: 'purchasing.manage', label: 'Run purchasing', desc: 'Create and change purchase orders (incl. reorder / shortfall POs); raise, approve and dispute vendor bills' },
-      { key: 'purchasing.approve_requests', label: 'Approve purchase requests', desc: 'See all staff PRs, approve budgets, record cash handoffs, review liquidation and close requests; grant only to designated authorities' },
+      { key: 'purchasing.manage', label: 'Run purchasing', desc: 'Prepare supplier orders and vendor bills; approval and cash handling are separate.' },
+      { key: 'purchasing.approve_requests', label: 'Approve purchase requests', desc: 'Approve independent purchase-request budgets. Cash handoff and settlement are separate.' },
     ] },
     { id: 'production', label: 'Production', items: [
       { key: 'production.view', label: 'See production', desc: 'Job orders, QC, batches, schedule, teams, products & BOM — read only' },
@@ -83,18 +83,204 @@ window.AccessEditor = (() => {
       { key: 'hr.view', label: 'See HR records', desc: 'Employees, timekeeping, daily report, memos — not pay' },
       { key: 'hr.manage', label: 'Manage HR records', desc: 'Add and edit employees, cutoffs and timekeeping; approve requests', where: ['Phone: Approvals'] },
       { key: 'payroll.view', label: 'See pay', desc: 'Rates on the employee record, payslips, 13th month, final pay' },
-      { key: 'payroll.manage', label: 'Run payroll', desc: 'Change rates and pay settings; generate, post, mark paid and email payslips' },
+      { key: 'payroll.manage', label: 'Prepare payroll', desc: 'Prepare, calculate and email payslips. Rates, policy, approval and payment are separate.' },
       { key: 'reports.confidential', label: 'Handle anonymous reports', desc: 'Read, reply to and close anonymous-channel reports' },
     ] },
     { id: 'accounting', label: 'Accounting', items: [
       { key: 'accounting.view', label: 'See the books', desc: 'Ledger, AR/AP, tax filings, petty cash' },
-      { key: 'accounting.manage', label: 'Post to the books', desc: 'Record and post accounting transactions' },
+      { key: 'accounting.manage', label: 'Prepare accounting entries', desc: 'Prepare accounting entries; posting, payments and configuration are separate.' },
     ] },
     { id: 'admin', label: 'Administration', items: [
-      { key: 'users.manage', label: 'Manage accounts & roles', desc: 'Create accounts, edit roles and anyone\'s access, Installed PCs' },
+      { key: 'users.manage', label: 'Support accounts', desc: 'Create and support ordinary staff accounts. Roles, grants, privileged accounts and workspace settings require separate permissions.' },
       { key: 'audit.view', label: 'Activity log', desc: 'The app-wide audit trail' },
     ] },
   ];
+
+  PERMISSION_GROUPS.push({
+    id: 'specific-duties', label: 'Separate duties and approvals',
+    items: [
+      {
+        "key": "inventory.receive",
+        "label": "Receive supplier stock",
+        "desc": "Record and reverse purchase receipts. Does not inspect finished goods."
+      },
+      {
+        "key": "inventory.transfer",
+        "label": "Transfer stock",
+        "desc": "Move existing stock between locations. Does not sell goods or correct totals."
+      },
+      {
+        "key": "inventory.count",
+        "label": "Submit physical counts",
+        "desc": "Count stock and submit discrepancies for independent review."
+      },
+      {
+        "key": "inventory.review_counts",
+        "label": "Review physical counts",
+        "desc": "Plan counts and approve another counter’s corrections."
+      },
+      {
+        "key": "inventory.costs",
+        "label": "See and maintain inventory costs",
+        "desc": "Read valuation and maintain unit, material, labor and overhead costs."
+      },
+      {
+        "key": "production.plan",
+        "label": "Plan job orders",
+        "desc": "Create and schedule job orders and assign production recorders."
+      },
+      {
+        "key": "production.work_all",
+        "label": "Record across production teams",
+        "desc": "Allow a production recorder to work jobs outside their explicit or crew assignments."
+      },
+      {
+        "key": "production.kit_release",
+        "label": "Release production kits",
+        "desc": "Accept, pick and release approved job-order component kits."
+      },
+      {
+        "key": "production.configure",
+        "label": "Configure production",
+        "desc": "Maintain product BOMs, production teams, batches and manufacturing setup."
+      },
+      {
+        "key": "evidence.manage",
+        "label": "Custody of evidence",
+        "desc": "Read problem photos and remove other uploaders’ editable evidence. Signed evidence stays locked."
+      },
+      {
+        "key": "orders.approve",
+        "label": "Approve sales",
+        "desc": "Approve and change sales statuses; does not physically release stock."
+      },
+      {
+        "key": "orders.authorize",
+        "label": "Authorize sales releases",
+        "desc": "Issue commercial release authorization; physical fulfillment is separate."
+      },
+      {
+        "key": "orders.configure",
+        "label": "Configure release policy",
+        "desc": "Change the company-wide release authorization requirement."
+      },
+      {
+        "key": "orders.override_release",
+        "label": "Approve release exceptions",
+        "desc": "Review independently requested release exceptions with a recorded reason."
+      },
+      {
+        "key": "orders.direct_sale",
+        "label": "Direct physical sale",
+        "desc": "Exceptional direct unit stock-out; also requires Release sale orders and respects the release policy."
+      },
+      {
+        "key": "purchasing.approve_bills",
+        "label": "Approve vendor bills",
+        "desc": "Approve a vendor bill prepared by someone else."
+      },
+      {
+        "key": "purchasing.override_match",
+        "label": "Override purchase matching",
+        "desc": "Change matching tolerances and explicitly override bill mismatches."
+      },
+      {
+        "key": "purchasing.issue_cash",
+        "label": "Issue purchase cash",
+        "desc": "Record actual cash handoff for an approved purchase request."
+      },
+      {
+        "key": "purchasing.settle_requests",
+        "label": "Settle purchase requests",
+        "desc": "Review liquidation independently of the buyer and close requests."
+      },
+      {
+        "key": "accounting.post",
+        "label": "Post accounting entries",
+        "desc": "Approve and post independently prepared journals or reverse posted entries."
+      },
+      {
+        "key": "accounting.record_payments",
+        "label": "Record financial payments",
+        "desc": "Record and void receipts and supplier payments."
+      },
+      {
+        "key": "accounting.configure",
+        "label": "Configure the books",
+        "desc": "Maintain ledger setup, chart of accounts, periods and posting rules."
+      },
+      {
+        "key": "payroll.approve",
+        "label": "Approve payroll posting",
+        "desc": "Review independently prepared payroll and post it to the ledger."
+      },
+      {
+        "key": "payroll.pay",
+        "label": "Confirm payroll payment",
+        "desc": "Mark or unmark payslips as paid. Cannot prepare amounts or change rates."
+      },
+      {
+        "key": "payroll.rates",
+        "label": "Maintain pay rates",
+        "desc": "Change employee salary and rate histories."
+      },
+      {
+        "key": "payroll.configure",
+        "label": "Configure payroll",
+        "desc": "Maintain statutory tables, payroll policies and payroll form definitions."
+      },
+      {
+        "key": "users.permissions",
+        "label": "Administer roles and permissions",
+        "desc": "Create role bundles, assign roles and manage account permission exceptions."
+      },
+      {
+        "key": "security.manage",
+        "label": "Administer sign-in security",
+        "desc": "Manage MFA policy, kiosk enrollment and privileged-account recovery."
+      },
+      {
+        "key": "workspace.manage",
+        "label": "Administer the workspace",
+        "desc": "Configure workspace integrations, installed PCs, billing and support."
+      },
+      {
+        "key": "returns.receive",
+        "label": "Receive customer returns",
+        "desc": "Record physical returns against release slips, without approving restock."
+      },
+      {
+        "key": "returns.inspect",
+        "label": "Inspect customer returns",
+        "desc": "Approve restock or rejection and reinspect repaired goods."
+      },
+      {
+        "key": "returns.dispose",
+        "label": "Dispose of rejected returns",
+        "desc": "Choose repair, salvage or disposal for rejected returns."
+      },
+      {
+        "key": "forms.variables",
+        "label": "Maintain shared form variables",
+        "desc": "Change values shared across all form scopes."
+      },
+      {
+        "key": "hr.timekeeping.view",
+        "label": "Read timekeeping",
+        "desc": "Read attendance and a minimal employee roster without personnel or payroll records."
+      },
+      {
+        "key": "hr.timekeeping.manage",
+        "label": "Manage timekeeping",
+        "desc": "Maintain attendance, shifts, rosters and cutoffs without personnel or pay access."
+      },
+      {
+        "key": "hr.kiosk",
+        "label": "Operate time clock kiosk",
+        "desc": "Display the kiosk and capture attendance on an approved device without HR personnel access."
+      }
+    ]
+  });
 
   function humanize(key) {
     const words = String(key || '').split('.').join(' ').replace(/_/g, ' ');

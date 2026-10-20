@@ -20,7 +20,7 @@ import { newTotpSecret, verifyTotp, otpauthUrl } from './totp';
 const CHALLENGE_MINUTES = 5;
 const CHALLENGE_ATTEMPTS = 5;
 const RECOVERY_CODES = 10;
-const PRIVILEGED_PERMISSIONS = ['users.manage', 'payroll.manage', 'accounting.manage'];
+const PRIVILEGED_PERMISSIONS = ['users.manage', 'users.permissions', 'security.manage', 'workspace.manage', 'payroll.manage', 'payroll.approve', 'payroll.pay', 'payroll.rates', 'accounting.manage', 'accounting.post', 'accounting.record_payments', 'purchasing.approve_requests', 'purchasing.approve_bills', 'purchasing.issue_cash', 'purchasing.settle_requests', 'orders.approve', 'orders.authorize', 'orders.override_release', 'orders.configure', 'orders.direct_sale', 'inventory.adjust', 'inventory.review_counts', 'production.approve', 'production.configure', 'payroll.configure', 'accounting.configure', 'purchasing.override_match', 'forms.variables', 'evidence.manage', 'reports.confidential', 'audit.view'];
 
 const sha256 = (s: string) => crypto.createHash('sha256').update(s).digest('hex');
 

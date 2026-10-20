@@ -47,7 +47,7 @@ describe('job-order kit picking on desktop', () => {
     };
     let route!: (view: Element, filter: Record<string, unknown>) => Promise<void>;
     Object.assign(win, { API: api, App: {
-      hasPermission: (permission: string) => permission === 'inventory.adjust',
+      hasPermission: (permission: string) => permission === 'production.kit_release',
       isAdmin: () => false,
       register: (_: string, fn: typeof route) => { route = fn; },
     }, ProductionSteps: { jobOrderStep: () => ({ cls: 'open', label: 'Preparing kit' }) } });

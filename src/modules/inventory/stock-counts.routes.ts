@@ -162,7 +162,7 @@ function taskOutput(t:Task){
     location_name:locationName(t.location_id),assigned_to_name:assigned?.full_name??'(removed)',
     overdue:t.status==='open'&&t.due_date<new Date().toISOString().slice(0,10)};
 }
-function validAssignee(userId:number){return authUserById(userId)?.permissions.includes('inventory.view')===true;}
+function validAssignee(userId:number){const p=authUserById(userId)?.permissions;return p?.includes('inventory.view')===true && p.includes('inventory.count');}
 const taskHome={home:(req:Request)=>({location:Number(req.body?.location_id)||null})};
 const existingTaskHome={home:(req:Request)=>({location:queryOne<{location_id:number}>(
   'SELECT location_id FROM stock_count_tasks WHERE id=?',taskId(req))?.location_id??null})};
@@ -191,7 +191,7 @@ router.get('/tasks',requirePermission('inventory.view'),(req,res)=>{
     status,status,mine?1:0,req.user!.id);
   res.json(rows.map(taskOutput));
 });
-router.get('/tasks/assignees',requirePermission('inventory.adjust'),(_req,res)=>{
+router.get('/tasks/assignees',requirePermission('inventory.review_counts'),(_req,res)=>{
   const users=queryAll<{id:number;full_name:string}>('SELECT id,full_name FROM users WHERE active=1 ORDER BY full_name COLLATE NOCASE');
   res.json(users.filter(u=>validAssignee(u.id)));
 });
@@ -218,7 +218,7 @@ router.get('/tasks/coverage',requirePermission('inventory.view'),(_req,res)=>{
   res.json(rows.map(r=>({...r,location_name:locationName(r.location_id),
     overdue:!!r.due_date&&r.due_date<new Date().toISOString().slice(0,10)})));
 });
-router.post('/tasks',requirePermission('inventory.adjust'),syncClass('claim',taskHome),(req,res)=>{
+router.post('/tasks',requirePermission('inventory.review_counts'),syncClass('claim',taskHome),(req,res)=>{
   const input=parseBody(taskSchema,req.body);
   if(!snapshot(input.item_id,input.location_id,input.build_mode)){
     res.status(404).json({error:'Item or location not found'});return;}
@@ -233,7 +233,7 @@ router.post('/tasks',requirePermission('inventory.adjust'),syncClass('claim',tas
     input.due_date,input.repeat_days??null,input.note,req.user!.id);
   res.status(201).json(taskOutput(taskById(Number(info.lastInsertRowid))!));
 });
-router.put('/tasks/:taskId',requirePermission('inventory.adjust'),syncClass('claim',existingTaskHome),(req,res)=>{
+router.put('/tasks/:taskId',requirePermission('inventory.review_counts'),syncClass('claim',existingTaskHome),(req,res)=>{
   const input=parseBody(taskEditSchema,req.body),task=taskById(taskId(req));
   if(!task){res.status(404).json({error:'Count assignment not found'});return;}
   if(task.status!=='open'||['submitted','approved'].includes(task.latest_count_status??'')){
@@ -244,7 +244,7 @@ router.put('/tasks/:taskId',requirePermission('inventory.adjust'),syncClass('cla
     input.assigned_to,input.due_date,input.repeat_days??null,input.note,task.id);
   res.json(taskOutput(taskById(task.id)!));
 });
-router.post('/tasks/:taskId/cancel',requirePermission('inventory.adjust'),syncClass('claim',existingTaskHome),(req,res)=>{
+router.post('/tasks/:taskId/cancel',requirePermission('inventory.review_counts'),syncClass('claim',existingTaskHome),(req,res)=>{
   const {note}=parseBody(noteSchema,req.body),task=taskById(taskId(req));
   if(!task){res.status(404).json({error:'Count assignment not found'});return;}
   if(task.status!=='open'||['submitted','approved'].includes(task.latest_count_status??'')){
@@ -279,7 +279,7 @@ router.get('/:id',requirePermission('inventory.view'),(req,res)=>{
   if(!row){res.status(404).json({error:'Count not found'});return;}
   res.json(detail(row));
 });
-router.post('/',requirePermission('inventory.view'),syncClass('physical',countHome),(req,res)=>{
+router.post('/',requirePermission('inventory.count'),syncClass('physical',countHome),(req,res)=>{
   const input=parseBody(submitSchema,req.body);
   const current=snapshot(input.item_id,input.location_id,input.build_mode);
   if(!current){res.status(404).json({error:'Item or location not found'});return;}
@@ -335,7 +335,7 @@ router.post('/',requirePermission('inventory.view'),syncClass('physical',countHo
     sourceEvidenceHash,input.task_id??null,req.user!.id);
   res.status(201).json(detail(queryOne<Count>('SELECT * FROM stock_counts WHERE id=?',Number(info.lastInsertRowid))!));
 });
-router.post('/:id/approve',requirePermission('inventory.adjust'),syncClass('claim',existingHome),(req,res)=>{
+router.post('/:id/approve',requirePermission('inventory.review_counts'),syncClass('claim',existingHome),(req,res)=>{
   const {note}=parseBody(noteSchema,req.body),row=count(req);
   if(!row){res.status(404).json({error:'Count not found'});return;}
   if(row.status!=='submitted'){res.status(409).json({error:'Only a submitted count can be approved'});return;}
@@ -346,14 +346,14 @@ router.post('/:id/approve',requirePermission('inventory.adjust'),syncClass('clai
   run(`UPDATE stock_counts SET status='approved',reviewed_by=?,reviewed_at=datetime('now'),review_note=? WHERE id=?`,req.user!.id,note,row.id);
   res.json(detail(count(req)!));
 });
-router.post('/:id/reject',requirePermission('inventory.adjust'),syncClass('claim',existingHome),(req,res)=>{
+router.post('/:id/reject',requirePermission('inventory.review_counts'),syncClass('claim',existingHome),(req,res)=>{
   const {note}=parseBody(noteSchema,req.body),row=count(req);
   if(!row){res.status(404).json({error:'Count not found'});return;}
   if(row.status!=='submitted'){res.status(409).json({error:'Only a submitted count can be rejected'});return;}
   run(`UPDATE stock_counts SET status='rejected',reviewed_by=?,reviewed_at=datetime('now'),review_note=? WHERE id=?`,req.user!.id,note,row.id);
   res.json(detail(count(req)!));
 });
-router.post('/:id/apply',requirePermission('inventory.adjust'),syncClass('physical',existingHome),(req,res)=>{
+router.post('/:id/apply',requirePermission('inventory.review_counts'),syncClass('physical',existingHome),(req,res)=>{
   const row=count(req);
   if(!row){res.status(404).json({error:'Count not found'});return;}
   if(row.status==='applied'){res.json(detail(row));return;}
@@ -418,7 +418,7 @@ router.post('/:id/apply',requirePermission('inventory.adjust'),syncClass('physic
   if(totalChange<0) notifyLowStockCrossed(item,item.quantity,item.quantity+totalChange);
   res.json(detail(count(req)!));
 });
-router.post('/:id/verify',requirePermission('inventory.adjust'),syncClass('claim',existingHome),(req,res)=>{
+router.post('/:id/verify',requirePermission('inventory.review_counts'),syncClass('claim',existingHome),(req,res)=>{
   const {note}=parseBody(noteSchema,req.body),row=count(req);
   if(!row){res.status(404).json({error:'Count not found'});return;}
   if(row.status==='applied'){res.json(detail(row));return;}
@@ -438,7 +438,7 @@ router.post('/:id/verify',requirePermission('inventory.adjust'),syncClass('claim
 
 // A completed count supplies evidence for closing its original issue. Closure is a separate
 // supervisor decision: it never moves stock and cannot review changed sale-ledger evidence.
-router.post('/:id/close-source',requirePermission('inventory.adjust'),syncClass('claim',existingHome),(req,res)=>{
+router.post('/:id/close-source',requirePermission('inventory.review_counts'),syncClass('claim',existingHome),(req,res)=>{
   const {note}=parseBody(noteSchema,req.body),row=count(req);
   if(!row){res.status(404).json({error:'Count not found'});return;}
   if(row.source_kind==='manual'||!row.source_id){res.status(409).json({error:'This count has no linked issue'});return;}

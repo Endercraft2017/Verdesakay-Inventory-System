@@ -296,7 +296,7 @@ router.post('/:id/complete', requireAnyPermission(['delivery.run', 'delivery.man
   // enough to offer "mark SO-xxxx completed?" (which ships the remaining stock).
   let order: { id: number; number: string; status: string } | null = null;
   if (input.outcome === 'delivered' && d.order_id
-      && req.user!.permissions.includes('orders.edit')) {
+      && req.user!.permissions.includes('orders.approve')) {
     const o = queryOne<{ id: number; number: string; status: string; type: string }>(
       'SELECT id, number, status, type FROM orders WHERE id = ?', d.order_id
     );

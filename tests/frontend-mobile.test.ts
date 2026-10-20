@@ -350,7 +350,7 @@ describe('mobile bootstrap', () => {
     expect(WAREHOUSE.filter((r) => !blocked(qc, r))).toEqual([]);
     expect(blocked(qc, 'record')).toBe(false); // a desk that handles the unit may open its record
     const wh = await bootAs({ id: 5, username: 'wh8', full_name: 'Warehouse', role: 'warehouse', employee: true, modules: null,
-      permissions: ['mobile.access', 'inventory.mobile', 'inventory.view', 'inventory.create', 'inventory.adjust', 'messages.view', 'messages.send'] }, quiet);
+      permissions: ['mobile.access','inventory.mobile','inventory.view','inventory.create','inventory.adjust','inventory.receive','inventory.transfer','inventory.count','messages.view','messages.send'] }, quiet);
     expect(WAREHOUSE.filter((r) => blocked(wh, r))).toEqual([]);
   });
 
@@ -366,7 +366,7 @@ describe('mobile bootstrap', () => {
     win.location.hash = '#/work';
     win.MApp.render();
     const text = win.mWorkQueue().textContent;
-    expect(text).toContain('Receive PR');
+    expect(text).not.toContain('Receive PR');
     expect(text).toContain('Parts requests');
     for (const label of ['Production job orders', 'QC technical inspection', 'QA appearance inspection',
       'QA holds', 'RTS recording', 'Release orders', 'Deliveries']) expect(text).not.toContain(label);
@@ -568,7 +568,7 @@ describe('mobile bootstrap', () => {
 
   describe('warehouse kit release (Figma 62:*)', () => {
     const WH = { id: 9, username: 'wh', full_name: 'Ana Alvarez', role: 'warehouse', employee: true, modules: null,
-      permissions: ['inventory.view', 'inventory.adjust', 'inventory.mobile'] };
+      permissions: ['inventory.view','production.kit_release','inventory.mobile'] };
     const BASE = { id: 184, number: 'JO-2026-184', product_name: 'K4 Electric Bike', qty_ordered: 12, status: 'draft',
       approved_at: 'approved', warehouse_accepted_at: null, prepared_at: null, source_location_name: 'Main Parts' };
     const line = { component_item_id: 1, component_name: 'Controller 60 V', need: 12, have: 30, held_elsewhere: 8, available: 22, short: 0, picked: 0 };
@@ -1868,7 +1868,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
 
     it('lets a supervisor approve a requested override on the phone', async () => {
       const posts: { url: string; body: any }[] = [];
-      const SUP = { ...REL, id: 42, role: 'warehouse', permissions: [...REL.permissions, 'inventory.adjust'] };
+      const SUP = { ...REL, id: 42, role: 'warehouse', permissions: [...REL.permissions, 'orders.override_release'] };
       const win = await bootAs(SUP, fake(posts, { authorization: { ...AUTH, override: { id: 3, status: 'requested', reason: 'Lost it', requested_by_name: 'Ana Dela Cruz' } } }));
       const doc = win.document;
       win.location.hash = '#/so?id=302&step=override';

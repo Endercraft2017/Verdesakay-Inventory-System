@@ -24,6 +24,7 @@ beforeAll(async () => {
   adminToken = await login(ctx.api);
   const emp = await createEmployee(ctx.api, adminToken, { role: 'warehouse' });
   empToken = emp.token;
+  await ctx.api.put(`/api/users/${emp.id}/permissions`).set(hdr(adminToken)).send({overrides:{'forms.manage.inventory':true}});
 });
 afterAll(() => cleanup(ctx));
 
@@ -135,7 +136,7 @@ describe('form definition scope-based access control', () => {
     expect(forbidden.status).toBe(403);
   });
 
-  it('warehouse can create an inventory-scoped form; accounting cannot', async () => {
+  it('explicitly delegated inventory form designer can create an inventory-scoped form; accounting cannot', async () => {
     const okRes = await ctx.api.post('/api/form-definitions').set(hdr(empToken)).send(formFor('inventory', 'c'));
     expect(okRes.status).toBe(201);
     const forbidden = await ctx.api.post('/api/form-definitions').set(hdr(accountingToken)).send(formFor('inventory', 'd'));
@@ -477,11 +478,11 @@ describe('global variables', () => {
     expect(res.status).toBe(403);
   });
 
-  it('a role with forms.manage for just one section can still upsert (globals are shared)', async () => {
+  it('a scope-only form designer cannot change shared variables', async () => {
     // empToken = warehouse -> forms.manage.inventory only, but globals aren't scoped
     const res = await ctx.api.put('/api/global-variables/warehouse_note')
       .set(hdr(empToken)).send({ label: 'Warehouse Note', value: 'x' });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 
   it('admin can create a global variable', async () => {

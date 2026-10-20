@@ -58,6 +58,11 @@ describe('production record — unit dossier', () => {
     await addSerializedUnits(ctx.api, token, mo, 1, 'DOSSIER');
     const unit = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body[0];
 
+    // Supporting evidence is captured while this unit is pending inspection.
+    const photo = await ctx.api.post('/api/attachments').set(H())
+      .field('kind', 'qc_unit').field('ref_id', String(unit.id)).attach('image', PNG, 'bike.png');
+    expect(photo.status).toBe(201);
+
     // fail → repair → request a part → accept → re-pass
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: [unit.id], result: 'fail', disposition: 'repair', remarks: 'loose bolt' });
@@ -73,9 +78,6 @@ describe('production record — unit dossier', () => {
       .send({ location_id: receivable.output_location_id, unit_ids: [unit.id] });
     expect(recv.status).toBe(201);
 
-    const photo = await ctx.api.post('/api/attachments').set(H())
-      .field('kind', 'qc_unit').field('ref_id', String(unit.id)).attach('image', PNG, 'bike.png');
-    expect(photo.status).toBe(201);
 
     const rec = await ctx.api.get(`/api/production/record?unit=${unit.id}`).set(H());
     expect(rec.status).toBe(200);

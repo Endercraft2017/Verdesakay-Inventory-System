@@ -1,3 +1,4 @@
+import {canRecordJob,scopedLineReader} from './job-access';
 import { batchBalances } from '../inventory/batch-stock';
 /** Production — repair / rework parts requests.
  *
@@ -63,7 +64,7 @@ const repairsRead = requireAnyPermission(['production.view', ...REPAIRS_READ]);
 const lineRead = requireAnyPermission(['production.view', ...LINE]);
 const labelsRead = requireAnyPermission(['production.view', ...LABEL_TEMPLATES]);
 const recordRead = requireAnyPermission(['production.view', ...UNIT_RECORD]);
-const writeGate = requirePermission('inventory.adjust');
+const writeGate = requirePermission('production.configure');
 // See job-orders.routes.ts for why these exist alongside writeGate: a dedicated
 // qc_inspector/parts_clerk account can act here without full inventory.adjust.
 // Either QC or QA covers these — none of them (parts request, batch sign-off, request
@@ -435,7 +436,7 @@ router.post('/repairs/:id/revision/decide', repairsRead, syncClass('claim'), (re
   );
   if (!r || !v) { res.status(404).json({ error: 'No pending revision for this request' }); return; }
   const perms = req.user!.permissions;
-  const mayDecide = r.requested_by === req.user!.id || perms.includes('production.approve') || perms.includes('inventory.adjust');
+  const mayDecide = r.requested_by === req.user!.id || perms.includes('production.approve');
   if (!mayDecide) { res.status(403).json({ error: 'Only the requester or a supervisor can decide a revision.' }); return; }
   if (v.proposed_by === req.user!.id) { res.status(403).json({ error: 'You proposed this revision — someone else must approve it.' }); return; }
   const { approve, note } = parseBody(repairRevisionDecisionSchema, req.body);
@@ -623,7 +624,7 @@ router.get('/batches', lineRead, (req, res) => {
     queryAll<ProductionBatch>(
       `${BATCH_SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY b.id DESC`,
       ...params
-    )
+    ).filter(b=>!scopedLineReader(req.user!) || b.job_order_id!=null && canRecordJob(req.user!,b.job_order_id))
   );
 });
 
@@ -632,6 +633,7 @@ router.get('/batches/:id', lineRead, (req, res) => {
   const id = Number(req.params.id);
   const batch = loadBatch(id);
   if (!batch) { res.status(404).json({ error: 'Batch not found' }); return; }
+  if (scopedLineReader(req.user!) && (!batch.job_order_id || !canRecordJob(req.user!,batch.job_order_id))) {res.status(403).json({error:'You are not assigned to this job order'});return;}
   const units = queryAll<JobOrderUnit>('SELECT * FROM job_order_units WHERE batch_id = ? ORDER BY id', id);
   const qc = queryAll<{ checklist: string | null }>(
     `SELECT q.*, u.full_name AS inspector_name
@@ -820,6 +822,10 @@ router.get('/record', recordRead, (req, res) => {
   const batchId = req.query.batch ? Number(req.query.batch) : null;
   if (!unitId && !batchId) { res.status(400).json({ error: 'A unit or batch id is required' }); return; }
 
+  if (scopedLineReader(req.user!)) {
+    const record=queryOne<{job_order_id:number}>(unitId?'SELECT job_order_id FROM job_order_units WHERE id=?':'SELECT job_order_id FROM production_batches WHERE id=?',unitId||batchId);
+    if(record && !canRecordJob(req.user!,record.job_order_id)) {res.status(403).json({error:'You are not assigned to this job order'});return;}
+  }
   let productId: number | null = null;
   let joId: number | null = null;
   const out: Record<string, unknown> = { kind: unitId ? 'unit' : 'batch' };

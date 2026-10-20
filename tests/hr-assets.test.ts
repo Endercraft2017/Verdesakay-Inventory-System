@@ -105,7 +105,8 @@ describe('asset activity log', () => {
     await tick();
     const ret = (await activity('asset-returned')).find((r) => r.summary.includes(issuanceNo));
     expect(ret?.summary).toContain('— was damaged');
-    expect(JSON.parse(ret!.meta!).snapshot.previous).toMatchObject({ status: 'damaged', condition_on_return: 'Sole torn' });
+    expect(JSON.parse(ret!.meta!).snapshot.redacted).toBe(true);
+    expect(ret!.meta).not.toContain('Sole torn');
   });
 
   it('keeps a snapshot of a deleted form, since the rows themselves are gone', async () => {
@@ -114,9 +115,7 @@ describe('asset activity log', () => {
     await tick();
     const row = (await activity('asset-issuance-delete')).find((r) => r.summary.includes(issuanceNo));
     expect(row?.summary).toBe(`Deleted ${issuanceNo} (Active Holder): Laptop - ThinkPad (LAP-777) [issued], Safety Boots ×2 [returned]`);
-    const snap = JSON.parse(row!.meta!).snapshot.issuance;
-    expect(snap.number).toBe(issuanceNo);
-    expect(snap.items).toHaveLength(2);
+    expect(JSON.parse(row!.meta!).snapshot.redacted).toBe(true);
     expect((await ctx.api.get(`/api/hr/assets?q=${issuanceNo}&status=all`).set(hdr())).body.rows).toHaveLength(0);
   });
 });

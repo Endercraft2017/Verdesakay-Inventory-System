@@ -206,14 +206,14 @@
   }
 
   var OPS = [
-    { label: 'Receive PR', sub: 'Purchase requests', route: 'receive', permission: 'inventory.adjust', count: function () { return openCount('/orders?type=purchase'); } },
+    { label: 'Receive PR', sub: 'Purchase requests', route: 'receive', permission: 'inventory.receive', count: function () { return openCount('/orders?type=purchase'); } },
     { label: 'Release orders', sub: 'Allocated units ready for handoff', route: 'so', permission: 'orders.release',
       count: function () { return API.get('/orders?type=sale').then(function (rows) {
         return (rows || []).filter(function (x) { return ['approved', 'released'].indexOf(String(x.status).toLowerCase()) !== -1; }).length;
       }); } },
-    { label: 'Kit releases', sub: 'Pick and release job-order kits', route: 'kit-release', permission: 'inventory.adjust',
+    { label: 'Kit releases', sub: 'Pick and release job-order kits', route: 'kit-release', permission: 'production.kit_release',
       count: function () { return API.get('/job-orders?stage=awaiting_release').then(function (rows) { return (rows || []).length; }); } },
-    { label: 'Allocate units', sub: 'Assign passed units to orders', route: 'allocate', permission: 'inventory.adjust' },
+    { label: 'Allocate units', sub: 'Assign passed units to orders', route: 'allocate', any: ['inventory.transfer','orders.direct_sale'] },
     { label: 'Parts requests', sub: 'Issue parts for repair or rework', route: 'repairs', permission: 'production.repairs',
       count: function () { return API.get('/production/repairs?status=requested').then(function (r) { return (r || []).length; }); } },
     { label: 'RTS recording', sub: 'Record QA-passed finished goods', route: 'receiving', permission: 'production.receive',
@@ -240,19 +240,19 @@
   ];
 
   OPS.push(
-    {label:'Customer returns',sub:'Receive, inspect and track returned goods',route:'returns',any:['inventory.view','inventory.adjust','orders.release','orders.view','production.inspect_qc','production.inspect_qa']},
+    {label:'Customer returns',sub:'Receive, inspect and track returned goods',route:'returns',any:['returns.receive','returns.inspect','returns.dispose','inventory.view','orders.release','orders.view','production.inspect_qc','production.inspect_qa']},
     {label:'Semi-built finishing',sub:'Send a complete semi-built package to finishing',route:'semi-finishing',any:['production.approve','production.manage']}
   );
 
-  OPS.push({label:'My planned checks',sub:'Assigned physical counts and overdue shelves',route:'stock-count-tasks',permission:'inventory.view',count:function(){return API.get('/inventory/stock-counts/tasks?status=open&mine=1').then(function(rows){return rows.length;});}});
+  OPS.push({label:'My planned checks',sub:'Assigned physical counts and overdue shelves',route:'stock-count-tasks',permission:'inventory.count',count:function(){return API.get('/inventory/stock-counts/tasks?status=open&mine=1').then(function(rows){return rows.length;});}});
 
   var STOCK_TOOLS = [
-    {label:'Physical stock counts',sub:'Scan an exact shelf and submit for review',route:'stock-counts',permission:'inventory.view'},
+    {label:'Physical stock counts',sub:'Scan an exact shelf and submit for review',route:'stock-counts',permission:'inventory.count'},
     {label:'Inventory stock',sub:'Search items, quantities and locations',route:'item',permission:'inventory.view'},
     {label:'Low stock',sub:'Items at or below their reorder point',route:'low-stock',permission:'inventory.view'},
     {label:'Stock movement history',sub:'Review the movements you recorded',route:'my-log',permission:'inventory.view'},
     {label:'Stock in / out',sub:'Record an authorized stock adjustment',route:'stock-move',permission:'inventory.adjust'},
-    {label:'Transfer stock',sub:'Move stock between locations',route:'transfer',permission:'inventory.adjust'},
+    {label:'Transfer stock',sub:'Move stock between locations',route:'transfer',permission:'inventory.transfer'},
     {label:'Report stock damage',sub:'Record damaged stock with evidence',route:'damage',permission:'inventory.adjust'},
     {label:'Create inventory item',sub:'Add an item to the catalogue',route:'new-item',permission:'inventory.create'},
     {label:'Assign QR label',sub:'Link an item to its stock label',route:'assign-qr',permission:'inventory.adjust'}

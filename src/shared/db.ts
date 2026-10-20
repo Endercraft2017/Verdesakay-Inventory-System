@@ -1,3 +1,4 @@
+import { safeAuditMeta } from './audit-privacy';
 /**
  * Database connection, schema creation, and first-run seeding.
  * Uses Node's built-in SQLite (node:sqlite). The DB file path can be overridden with
@@ -103,7 +104,8 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 95; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+// 96: job recording assignments and the one-time role/CSR/privacy migration.
+export const SCHEMA_VERSION = 96; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -2161,6 +2163,11 @@ function createSchema(): void {
 
 /** Idempotent schema upgrades for databases created before a column existed. */
 function migrate(): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS job_order_assignees (
+    job_order_id INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY(job_order_id,user_id)
+  )`);
   const formCols = new Set((db.prepare('PRAGMA table_info(form_definitions)').all() as {name:string}[]).map(c=>c.name));
   for (const [name, type] of Object.entries({entry_access:"TEXT NOT NULL DEFAULT '{\"roles\":[],\"users\":[]}'",access_revision:'INTEGER NOT NULL DEFAULT 1',version:'INTEGER NOT NULL DEFAULT 1',updated_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',version_reason:'TEXT',archived_at:'TEXT',archived_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',archive_reason:'TEXT'})) {
     if (!formCols.has(name)) db.exec(`ALTER TABLE form_definitions ADD COLUMN ${name} ${type}`);
@@ -3750,6 +3757,32 @@ function seedRoles(): void {
   const count = (db.prepare('SELECT COUNT(*) AS c FROM roles').get() as { c: number }).c;
   const seeds = count === 0 ? BUILTIN_ROLES : BUILTIN_ROLES.filter((r) => r.key === ADMIN_ROLE);
   seeds.forEach((r) => insert.run(r.key, r.label, r.description, JSON.stringify(r.permissions), BUILTIN_ROLES.indexOf(r)));
+  // Apply the reviewed built-in profiles once. Custom role keys and all account overrides stay intact.
+  if (!getSetting('role_audit_profiles_v1')) {
+    db.exec('BEGIN');
+    try {
+      const before = db.prepare('SELECT key,label,description,permissions FROM roles').all();
+      setSetting('role_audit_profiles_before_v1', before);
+      const update = db.prepare("UPDATE roles SET label=?,description=?,permissions=?,updated_at=datetime('now') WHERE key=?");
+      const reviewedExistingKeys = new Set(['admin','admin_staff','accounting','warehouse','releasing','csr','hr','marketing',
+        'parts_clerk','production_lead','production_manager','qc_inspector','qa_inspector','receiving_clerk','releasing_clerk']);
+      for (const profile of BUILTIN_ROLES) {
+        const created=insert.run(profile.key,profile.label,profile.description,JSON.stringify(profile.permissions),BUILTIN_ROLES.indexOf(profile));
+        // A tenant may already use a newly introduced profile key for a custom role.
+        if (reviewedExistingKeys.has(profile.key) || Number(created.changes)>0) {
+          update.run(profile.label,profile.description,JSON.stringify(profile.permissions),profile.key);
+        }
+      }
+      setSetting('role_audit_profiles_v1',true);
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
+  if (!getSetting('audit_metadata_privacy_v1')) {
+    const rows = db.prepare('SELECT id,path,meta FROM activity_log WHERE meta IS NOT NULL').all() as Array<{id:number;path:string;meta:string}>;
+    const update = db.prepare('UPDATE activity_log SET meta=? WHERE id=?');
+    for (const row of rows) update.run(safeAuditMeta(row.meta,row.path),row.id);
+    setSetting('audit_metadata_privacy_v1',true);
+  }
   const orphans = db.prepare(
     'SELECT DISTINCT role FROM users WHERE role NOT IN (SELECT key FROM roles)').all() as Array<{ role: string }>;
   for (const { role } of orphans) {

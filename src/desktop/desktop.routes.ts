@@ -13,7 +13,7 @@ import { Router } from 'express';
 import { requireAuth, requirePermission } from '../shared/auth';
 
 const router = Router();
-router.use(requireAuth, requirePermission('users.manage'));
+router.use(requireAuth, requirePermission('workspace.manage'));
 
 /** The newest installer in DESKTOP_INSTALLER_DIR, or null when none is published. */
 export function publishedInstaller(dir = process.env.DESKTOP_INSTALLER_DIR): { file: string; size: number; mtime: Date } | null {

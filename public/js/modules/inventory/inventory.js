@@ -689,7 +689,7 @@ App.register('inventory', async (view, filter) => {
         </tbody>
       </table>`;
 
-    [['data-adjust', 'inventory.adjust'], ['data-transfer', 'inventory.adjust'], ['data-edit', 'inventory.edit'], ['data-del', 'inventory.delete']].forEach(([attr, permission]) => {
+    [['data-adjust', 'inventory.adjust'], ['data-transfer', 'inventory.transfer'], ['data-edit', 'inventory.edit'], ['data-del', 'inventory.delete']].forEach(([attr, permission]) => {
       if (!App.hasPermission(permission)) tableEl.querySelectorAll('[' + attr + ']').forEach((button) => { button.hidden = true; });
     });
     tableEl.querySelectorAll('button[title]').forEach((button) => button.setAttribute('aria-label', button.title));
@@ -879,6 +879,7 @@ App.register('inventory', async (view, filter) => {
         }
         const { core, attributes } = collectItemForm(overlay, _itemFormConfig, it);
         const body = { ...core, attributes };
+        if (!App.hasPermission('inventory.costs')) delete body.unit_cost;
         if (!editing) {
           const choice = startingLocation();
           if (!choice?.locationId) { overlay.querySelector('[data-formtab="qty"]')?.click(); showErr('Create a stock location before adding an item'); return false; }

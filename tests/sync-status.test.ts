@@ -17,8 +17,9 @@ beforeAll(async () => {
   P = await setupSyncPair('plant-c', 11);
   itemId = (await api().post('/api/inventory').set(P.cloudHdr()).send({ name: 'Status item', quantity: 10 })).body.id;
   const u = await api().post('/api/users').set(P.cloudHdr())
-    .send({ username: 'clerk-s', full_name: 'Clerk S', password: 'clerkpass1', role: 'warehouse' });
+    .send({ username: 'clerk-s', full_name: 'Clerk S', password: 'clerkpass1', role: 'warehouse_supervisor' });
   expect(u.status).toBe(201);
+  await api().put(`/api/users/${u.body.id}/permissions`).set(P.cloudHdr()).send({overrides:{'inventory.create':true}});
   await P.enrol(); // the clerk exists on the PC from its snapshot
   const r = await api().post('/api/auth/login').set('X-Tenant', P.nodeSlug).send({ username: 'clerk-s', password: 'clerkpass1' });
   expect(r.status).toBe(200);
@@ -47,7 +48,7 @@ describe('GET /api/sync/command/:id', () => {
     expect((await api().get(`/api/sync/command/${id}`).set(clerkHdr())).body).toMatchObject({ state: 'local' });
     // Another person can't look at it (admin, users.manage, can).
     const other = await api().post('/api/users').set(P.cloudHdr())
-      .send({ username: 'clerk-t', full_name: 'Clerk T', password: 'clerkpass1', role: 'warehouse' });
+      .send({ username: 'clerk-t', full_name: 'Clerk T', password: 'clerkpass1', role: 'warehouse_supervisor' });
     expect(other.status).toBe(201);
     await P.round();
     expect((await api().get(`/api/sync/command/${id}`).set(clerkHdr())).body.state).toBe('confirmed');
@@ -107,7 +108,7 @@ describe('needs attention', () => {
 
     // Someone else can't dismiss it…
     const u2 = await api().post('/api/users').set(P.cloudHdr())
-      .send({ username: 'clerk-t2', full_name: 'Clerk T2', password: 'clerkpass1', role: 'warehouse' });
+      .send({ username: 'clerk-t2', full_name: 'Clerk T2', password: 'clerkpass1', role: 'warehouse_supervisor' });
     expect(u2.status).toBe(201);
     await P.round();
     const t2 = (await api().post('/api/auth/login').set('X-Tenant', P.nodeSlug).send({ username: 'clerk-t2', password: 'clerkpass1' })).body.token;

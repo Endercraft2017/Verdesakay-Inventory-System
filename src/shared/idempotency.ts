@@ -9,8 +9,10 @@
  * genuine retry after a token refresh or transient failure still runs.
  */
 import type { Request, Response, NextFunction } from 'express';
-import { db } from './db';
-import { userFromToken, getToken } from './auth';
+import { db, queryAll } from './db';
+import { enabledModules } from './modules';
+import { redactInventoryCosts } from './cost-visibility';
+import { userFromToken, getToken, requireAuth } from './auth';
 import { createHash } from 'node:crypto';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -19,6 +21,7 @@ const DONT_STORE = new Set([401, 403, 429]); // retryable without changing the r
 // A local acknowledgement must stay local on retry. The prefix cannot collide
 // with a JSON response; older plain JSON rows remain readable without migration.
 const LOCAL_RESPONSE_PREFIX = 'vds-local-response-v1:';
+const AUTH_RESPONSE_PREFIX = 'vds-authorized-response-v2:';
 
 interface StoredRow {
   status_code: number;
@@ -40,6 +43,13 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
   // Never serve cached private responses before authentication. Public endpoints
   // proceed normally; they do not use authenticated request deduplication.
   if (!user) return next();
+  const assignments = user.permissions.includes('production.record') ? queryAll<{id:number}>(`SELECT j.id FROM job_orders j WHERE
+    EXISTS(SELECT 1 FROM job_order_assignees a WHERE a.job_order_id=j.id AND a.user_id=?) OR
+    EXISTS(SELECT 1 FROM production_team_members m JOIN employees e ON e.id=m.employee_id WHERE m.team_id=j.team_id AND e.user_id=?) ORDER BY j.id`,user.id,user.id).map(r=>r.id) : [];
+  const accessHash = createHash('sha256').update(JSON.stringify([
+    user.role, [...user.permissions].sort(), user.department_id, !!user.password_change_required,
+    [...enabledModules()].sort(),assignments,
+  ])).digest('hex');
   const path = req.originalUrl.split('?')[0]!;
   // Older global middleware stored paths relative to /api; retain those retry keys.
   const apiIndex = path.indexOf('/api/');
@@ -60,15 +70,22 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
       res.status(409).json({ error: 'This save key belongs to a different request body. Review the result and use a new key for a changed decision.' });
       return;
     }
-    res.set('Idempotency-Replayed', 'true');
-    let response = existing.response;
-    if (response.startsWith(LOCAL_RESPONSE_PREFIX)) {
-      const stored = JSON.parse(response.slice(LOCAL_RESPONSE_PREFIX.length)) as { response: string; command: string };
-      res.set('X-Sync-State', 'local');
-      res.set('X-Sync-Command', stored.command);
-      response = stored.response;
-    }
-    res.status(existing.status_code).type('application/json').send(response);
+    requireAuth(req, res, () => {
+      if (!existing.response.startsWith(AUTH_RESPONSE_PREFIX)) {
+        res.status(409).json({ error: 'This saved result predates access verification. Check the existing record before making another save.', code: 'saved_access_changed' }); return;
+      }
+      const saved = JSON.parse(existing.response.slice(AUTH_RESPONSE_PREFIX.length)) as { accessHash: string; response: string };
+      if (saved.accessHash !== accessHash) {
+        res.status(409).json({ error: 'Your access changed since this save. Check the existing record before retrying.', code: 'saved_access_changed' }); return;
+      }
+      res.set('Idempotency-Replayed', 'true');
+      let response = saved.response;
+      if (response.startsWith(LOCAL_RESPONSE_PREFIX)) {
+        const local = JSON.parse(response.slice(LOCAL_RESPONSE_PREFIX.length)) as { response: string; command: string };
+        res.set('X-Sync-State', 'local'); res.set('X-Sync-Command', local.command); response = local.response;
+      }
+      res.status(existing.status_code).type('application/json').send(response);
+    });
     return;
   }
 
@@ -77,10 +94,11 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
   res.json = (body: unknown) => {
     if (res.statusCode < 500 && !DONT_STORE.has(res.statusCode)) {
       try {
-        let response = JSON.stringify(body);
+        let response = JSON.stringify(redactInventoryCosts(body,user,req.originalUrl));
         if (res.getHeader('X-Sync-State') === 'local') {
           response = LOCAL_RESPONSE_PREFIX + JSON.stringify({ response, command: String(res.getHeader('X-Sync-Command') || 'local') });
         }
+        response = AUTH_RESPONSE_PREFIX + JSON.stringify({ accessHash, response });
         db.prepare(
           `INSERT OR IGNORE INTO idempotency_keys (key, user_id, method, path, status_code, response, request_hash)
            VALUES (?, ?, ?, ?, ?, ?, ?)`

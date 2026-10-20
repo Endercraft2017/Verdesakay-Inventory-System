@@ -15,6 +15,7 @@ const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
+  await ctx.api.put('/api/release-slips/policy').set(H()).send({authorization_required:false});
 });
 afterAll(() => cleanup(ctx));
 
@@ -107,7 +108,7 @@ describe('serialized (QC-gated) job orders', () => {
       .send({ unit_ids: [units[0]!.id], result: 'pass' });
 
     const so = (await ctx.api.post('/api/orders').set(H()).send({
-      type: 'sale', customer_name: 'ACME', items: [{ name: 'x', item_id: product, quantity: 1, unit_price: 10 }],
+      type: 'sale', status:'approved', force:true, customer_name: 'ACME', items: [{ name: 'x', item_id: product, quantity: 1, unit_price: 10 }],
     })).body.id;
     const early = await ctx.api.post(`/api/finished-products/${product}/units/allocate`).set(H())
       .send({ action: 'sell', unit_ids: [units[0]!.id], order_id: so });

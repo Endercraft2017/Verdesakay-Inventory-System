@@ -20,7 +20,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import multer from 'multer';
 import { queryOne, queryAll, run, uploadDir, tenantStore, DEFAULT_TENANT } from '../../shared/db';
 import { getTenant } from '../../platform/platform';
-import { requirePermission } from '../../shared/auth';
+import { requirePermission, requireAnyPermission } from '../../shared/auth';
 import { PUNCH_PHOTOS_SUBDIR } from '../../shared/backup';
 import { syncClass } from '../../sync';
 import { syncUpload } from '../../sync/files';
@@ -203,7 +203,7 @@ export function punchPhotoRoutes(
 
   // A punch photo records something that happened at the kiosk: `physical`, and the photo
   // travels with the command (docs/OFFLINE-FIRST.md §18, §20).
-  router.post('/:punchId', requirePermission('hr.view'), syncClass('physical'), punchPhotoUpload, (req, res) => {
+  router.post('/:punchId', requireAnyPermission(['hr.view','hr.timekeeping.view','hr.kiosk']), syncClass('physical'), punchPhotoUpload, (req, res) => {
     const punchId = Number(req.params.punchId);
     const punch = Number.isInteger(punchId) ? lookupPunch(punchId) : undefined;
     if (!punch) {
@@ -218,7 +218,7 @@ export function punchPhotoRoutes(
     res.status(201).json({ id, url: `${req.baseUrl.replace(/^\/api/, '')}/${id}` });
   });
 
-  router.get('/:id', requirePermission('hr.view'), async (req, res) => {
+  router.get('/:id', requireAnyPermission(['hr.view','hr.timekeeping.view','hr.kiosk']), async (req, res) => {
     const row = getPunchPhotoFile(Number(req.params.id));
     if (!row) { res.status(404).json({ error: 'Photo not found.' }); return; }
     const file = await resolveDurableUploadAsync(`${PUNCH_PHOTOS_SUBDIR}/${row.file_name}`);

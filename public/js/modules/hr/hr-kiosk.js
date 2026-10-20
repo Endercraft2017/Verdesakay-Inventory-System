@@ -14,7 +14,7 @@
    On an internet-facing server the kiosk only runs on a PC an HR manager approved
    (src/modules/hr/kiosk-devices.ts); an unapproved browser gets the approval screen instead. */
 App.register('hr-kiosk', async (view) => {
-  if (!App.hasPermission('hr.view')) {
+  if (!['hr.view','hr.timekeeping.view','hr.kiosk'].some(p=>App.hasPermission(p))) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
     return;
   }
@@ -25,7 +25,7 @@ App.register('hr-kiosk', async (view) => {
   try { kioskInfo = await API.get('/hr/clock/kiosk-devices'); } catch (e) { /* show the kiosk; the server still guards it */ }
   if (App.currentLocation().route !== 'hr-kiosk') return;
   if (kioskInfo && kioskInfo.lock_active && !kioskInfo.this_device) {
-    const canApprove = App.hasPermission('hr.manage');
+    const canApprove = App.hasPermission('security.manage');
     view.innerHTML = `
       <div class="panel" style="max-width:600px;margin:40px auto;padding:24px">
         <h2 style="margin-top:0">This screen isn't an approved time-in kiosk</h2>

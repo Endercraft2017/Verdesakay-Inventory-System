@@ -148,9 +148,9 @@ window.MApp = (function () {
       same). Routes not listed are for everyone, or check their own desk permission (qc, repairs,
       receiving, so, job-orders, kit-release, scan …). tests/frontend-mobile.test.ts walks every route. */
   var ROUTE_NEEDS = {
-    returns: ['inventory.view','inventory.adjust','orders.release','orders.view','production.inspect_qc','production.inspect_qa'], 'semi-finishing':['production.approve','production.manage'], allocate: ['inventory.adjust'], batch: ['inventory.adjust'], 'cycle-count': ['inventory.view'], 'stock-counts': ['inventory.view'], 'stock-count-tasks':['inventory.view'],
-    damage: ['inventory.adjust'], receive: ['inventory.adjust'],
-    'stock-move': ['inventory.adjust'], transfer: ['inventory.adjust'], 'assign-qr': ['inventory.adjust'],
+    returns: ['returns.receive','returns.inspect','returns.dispose','inventory.view','orders.release','orders.view','production.inspect_qc','production.inspect_qa'], 'semi-finishing':['production.approve','production.manage'], allocate: ['inventory.transfer','orders.direct_sale'], batch: ['inventory.adjust'], 'cycle-count': ['inventory.count'], 'stock-counts': ['inventory.count'], 'stock-count-tasks':['inventory.count'],
+    damage: ['inventory.adjust'], receive: ['inventory.receive'],
+    'stock-move': ['inventory.adjust'], transfer: ['inventory.transfer'], 'assign-qr': ['inventory.adjust'],
     'new-item': ['inventory.create'],
     'my-log': ['inventory.view'], item: ['inventory.view'], location: ['inventory.view'], 'low-stock': ['inventory.view'],
     // A unit's production record: the broad views, or any desk that handles the unit (src/shared/desk-access.ts).
@@ -160,16 +160,16 @@ window.MApp = (function () {
   };
 
   var ROUTE_MODULES = {
-    'semi-finishing':['manufacturing'], returns:['inventory'], allocate: ['manufacturing'], production: ['manufacturing'], 'job-orders': ['manufacturing'], 'kit-release': ['manufacturing'],
+    'semi-finishing':['manufacturing'], returns:['sales'], allocate: ['manufacturing'], production: ['manufacturing'], 'job-orders': ['manufacturing'], 'kit-release': ['manufacturing'],
     'unit-issues': ['manufacturing'], qc: ['manufacturing'], repairs: ['manufacturing'], record: ['manufacturing'], receiving: ['manufacturing'],
     batch: ['inventory'], 'cycle-count': ['inventory'], 'stock-counts': ['inventory'], 'stock-count-tasks':['inventory'], damage: ['inventory'], receive: ['inventory', 'purchasing'],
     'stock-move': ['inventory'], transfer: ['inventory'], 'assign-qr': ['inventory'], 'new-item': ['inventory'],
-    'my-log': ['inventory'], item: ['inventory'], location: ['inventory'], 'low-stock': ['inventory'], scan: ['inventory'], so: ['inventory'], deliveries: ['inventory']
+    'my-log': ['inventory'], item: ['inventory'], location: ['inventory'], 'low-stock': ['inventory'], scan: ['inventory'], so: ['sales'], deliveries: ['sales']
   };
   var DESK_NEEDS = {
     production: ['production.record', 'production.pause', 'production.manage', 'production.approve', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.repairs', 'production.receive'],
     'job-orders': ['production.record', 'production.pause', 'production.manage', 'production.approve'],
-    'kit-release': ['inventory.adjust'],
+    'kit-release': ['production.kit_release'],
     'unit-issues': ['inventory.adjust', 'production.view', 'production.record', 'production.manage', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.receive', 'production.repairs', 'orders.release'],
     qc: ['production.inspect_qc', 'production.inspect_qa', 'production.qa_review'],
     repairs: ['production.repairs', 'production.inspect_qc', 'production.inspect_qa', 'production.approve'], receiving: ['production.receive'],

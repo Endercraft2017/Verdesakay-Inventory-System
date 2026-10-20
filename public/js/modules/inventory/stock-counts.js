@@ -1,6 +1,6 @@
 /* Inventory → Physical Counts. A count is evidence; approval and correction are separate. */
 App.register('stock-counts', async (view, filter = {}) => {
-  const canReview = App.hasPermission('inventory.adjust');
+  const canReview = App.hasPermission('inventory.review_counts');
   const canCount = App.hasPermission('inventory.view');
   let status = 'open';
   let taskStatus = 'open';

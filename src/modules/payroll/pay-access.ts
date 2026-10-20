@@ -26,7 +26,7 @@ export function canSeePay(user: Pick<AuthUser, 'permissions'> | undefined | null
 }
 
 export function canChangePay(user: Pick<AuthUser, 'permissions'> | undefined | null): boolean {
-  return !!user && user.permissions.includes('payroll.manage');
+  return !!user && user.permissions.includes('payroll.rates');
 }
 
 /** Remove the pay fields from employee rows the caller may not see (in place); marks each row

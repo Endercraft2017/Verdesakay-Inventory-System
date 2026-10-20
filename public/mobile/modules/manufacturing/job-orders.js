@@ -25,7 +25,7 @@
   function locked(r) { return !!(r.attempt && ['sending', 'unknown', 'conflict'].indexOf(r.attempt.state) !== -1); }
   function responseLabel(r) { return r.local ? 'Saved on site PC — confirmation pending' : 'Confirmed by site authority'; }
 
-  var canAdjust = function () { return MApp.can('inventory.adjust'); };
+  var canAdjust = function () { return MApp.can('production.kit_release'); };
   var canRecord = function () { return MApp.can('production.record'); };
   var canManage = function () { return MApp.can('production.manage'); };
   var canPause = function () { return canManage() || MApp.can('production.pause'); };

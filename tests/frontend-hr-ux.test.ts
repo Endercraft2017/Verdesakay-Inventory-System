@@ -216,7 +216,7 @@ describe('Time Keeping cutoff roster', () => {
   });
 
   it('managers get grouped cutoff tools, a primary Generate Payslips, and labelled row controls', async () => {
-    const { view, routes, gets } = boot(TK_SRC, ['hr.view', 'hr.manage', 'payroll.view', 'payroll.manage'], periodGet);
+    const { view, routes, gets } = boot(TK_SRC, ['hr.view','hr.manage','payroll.view','payroll.manage','payroll.approve'], periodGet);
     await routes['hr-timekeeping']!(view, { period_id: 7 });
     await flush();
     expect(q(view, '#tk-period-title')!.textContent).toBe('March 1-15');

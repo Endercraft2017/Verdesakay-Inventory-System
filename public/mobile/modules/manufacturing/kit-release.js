@@ -418,7 +418,7 @@
 
   MApp.route('kit-release', function (view, params) {
     rendering++;
-    if (!MApp.can('inventory.adjust')) {
+    if (!MApp.can('production.kit_release')) {
       view.innerHTML = '<div class="m-error">Releasing kits is for warehouse accounts.</div>';
       return;
     }

@@ -44,13 +44,14 @@ App.register('accounting', async (view) => {
   ];
 
   const card = (c) => {
-    const locked = c[4] && !canManage;
+    const payrollCards=['BIR 1601-C','BIR 1604-C','BIR 1604-C Alphalist','BIR 2316','Contribution schedule','Statutory deductions'];
+    const locked = payrollCards.includes(c[1]) && !App.hasPermission('payroll.view') || c[4] && !App.hasPermission('payroll.rates');
     return `<div class="${locked ? '' : 'clickable'}" data-card="${c[1]}"
         style="border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:16px;background:var(--surface-2)${locked ? ';opacity:.55' : ''}">
         <div style="color:var(--text-faint);margin-bottom:9px">${UI.icon(c[0], 22)}</div>
         <div style="font-weight:600;margin-bottom:3px">${UI.esc(c[1])}</div>
         <div class="muted" style="font-size:12.5px">${UI.esc(c[2])}</div>
-        ${locked ? '<span class="badge-pill muted" style="margin-top:8px;display:inline-block">Needs Accounting: manage</span>' : ''}
+        ${locked ? '<span class="badge-pill muted" style="margin-top:8px;display:inline-block">Needs payroll authority</span>' : ''}
       </div>`;
   };
 
@@ -77,7 +78,7 @@ App.register('accounting', async (view) => {
 
 /* ── Tax codes — VAT / withholding classifications ───────────────────────── */
 async function taxCodesModal() {
-  const canManage = App.hasPermission('accounting.manage');
+  const canManage = App.hasPermission('accounting.configure');
   const KINDS = ['output_vat', 'input_vat', 'exempt', 'zero_rated', 'ewt'];
   const KIND_LABEL = {
     output_vat: 'Output VAT', input_vat: 'Input VAT', exempt: 'VAT-exempt',

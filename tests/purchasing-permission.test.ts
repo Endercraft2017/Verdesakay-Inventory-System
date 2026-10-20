@@ -77,14 +77,12 @@ describe('orders are no longer open to everyone', () => {
   });
 });
 
-describe('nobody loses access', () => {
-  it('built-in roles that could see / make orders keep purchase orders', async () => {
+describe('purchasing is separated from sales', () => {
+  it('only designated purchasing roles prepare supplier orders', async () => {
     const { roleDefaults } = await import('../src/shared/permissions');
-    for (const r of ['admin_staff', 'accounting']) {
-      expect(roleDefaults(r), r).toEqual(expect.arrayContaining(['purchasing.view', 'purchasing.manage']));
-    }
-    for (const r of ['releasing', 'csr']) expect(roleDefaults(r), r).not.toContain('purchasing.manage');
-    const csr = await createEmployee(ctx.api, admin, { username: 'csr.sales.only', role: 'csr' });
+    for (const r of ['admin_staff','accounting','releasing','csr']) expect(roleDefaults(r),r).not.toContain('purchasing.manage');
+    expect(roleDefaults('buyer')).toEqual(expect.arrayContaining(['purchasing.view','purchasing.manage']));
+    const csr = await createEmployee(ctx.api,admin,{username:'csr.sales.only',role:'csr'});
     expect((await ctx.api.get('/api/orders?type=purchase').set(auth(csr.token))).status).toBe(403);
     expect((await ctx.api.get('/api/orders?type=sale').set(auth(csr.token))).status).toBe(200);
     expect(roleDefaults('warehouse')).toContain('purchasing.view'); // receives against POs

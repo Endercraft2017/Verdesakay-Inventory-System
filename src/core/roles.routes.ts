@@ -23,7 +23,7 @@ import { syncClass } from '../sync';
 const router = Router();
 router.use(requireAuth);
 
-router.get('/', requireAnyPermission(['users.manage', 'hr.manage']), (_req, res) => {
+router.get('/', requireAnyPermission(['users.manage', 'users.permissions', 'hr.manage']), (_req, res) => {
   res.json(listRoles());
 });
 
@@ -36,7 +36,7 @@ function keyFromLabel(label: string): string {
   return key;
 }
 
-router.post('/', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+router.post('/', requirePermission('users.permissions'), syncClass('online'), (req, res) => {
   const input = parseBody(createRoleSchema, req.body);
   if (queryOne('SELECT 1 FROM roles WHERE label = ? COLLATE NOCASE', input.label)) {
     res.status(409).json({ error: `A role named "${input.label}" already exists` });
@@ -53,7 +53,7 @@ router.post('/', requirePermission('users.manage'), syncClass('online'), (req, r
   res.status(201).json(getRole(key));
 });
 
-router.put('/:key', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+router.put('/:key', requirePermission('users.permissions'), syncClass('online'), (req, res) => {
   const role = getRole(String(req.params.key));
   if (!role) {
     res.status(404).json({ error: 'Role not found' });
@@ -77,7 +77,7 @@ router.put('/:key', requirePermission('users.manage'), syncClass('online'), (req
   res.json(getRole(role.key));
 });
 
-router.delete('/:key', requirePermission('users.manage'), syncClass('online'), (req, res) => {
+router.delete('/:key', requirePermission('users.permissions'), syncClass('online'), (req, res) => {
   const role = getRole(String(req.params.key));
   if (!role) {
     res.status(404).json({ error: 'Role not found' });

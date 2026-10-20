@@ -73,7 +73,7 @@ App.register('purchase-requests', async (view) => {
   async function detail(id) {
     let r;
     try { r = await API.get(`${base}/${id}`); } catch (e) { UI.toast(e.message,'error'); return; }
-    const isBuyer = canReview || r.buyer_id === App.getMe()?.id;
+    const isBuyer = r.buyer_id === App.getMe()?.id;
     const lineTable = (items, price) => `<div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Total</th></tr></thead><tbody>${items.map((x) => `<tr><td>${esc(x.name)}</td><td>${esc(x.quantity)}</td><td>${pesos(x[price])}</td><td>${pesos(x.quantity*x[price])}</td></tr>`).join('')}</tbody></table></div>`;
     const m = UI.modal({ helpTopic: 'purchase-requests', title: r.number + ' · ' + r.status.replaceAll('_',' '), size:'lg', confirmText:null, cancelText:'Close',
       bodyHTML: `<p>${esc(r.reason)}</p><p class="muted">Needed by ${esc(r.needed_by || 'unspecified')}</p>
@@ -87,9 +87,9 @@ App.register('purchase-requests', async (view) => {
           ${isBuyer && r.status === 'approved' ? `<button type="button" class="btn secondary small" data-remove-receipt="${f.id}" aria-label="Remove ${esc(f.original_name)}">Remove</button>` : ''}</span>`).join(' ')}` : '<p class="muted">No receipts uploaded yet.</p>'}
         <div class="field-row" style="margin-top:16px">
           ${canReview && r.status === 'pending' ? '<button class="btn" data-action="approve">Approve budget</button><button class="btn secondary" data-action="reject">Reject</button>' : ''}
-          ${canReview && r.status === 'approved' && r.purchase_mode === 'requester_cash' && r.cash_issued == null ? '<button class="btn" data-action="cash">Record cash issued</button>' : ''}
+          ${App.hasPermission('purchasing.issue_cash') && r.status === 'approved' && r.purchase_mode === 'requester_cash' && r.cash_issued == null ? '<button class="btn" data-action="cash">Record cash issued</button>' : ''}
           ${isBuyer && r.status === 'approved' ? '<button class="btn secondary" data-action="receipt">Upload receipt</button><button class="btn" data-action="liquidate">Submit liquidation</button>' : ''}
-          ${canReview && r.status === 'liquidation_submitted' ? '<button class="btn" data-action="close">Close after review</button><button class="btn secondary" data-action="return">Return for correction</button>' : ''}
+          ${App.hasPermission('purchasing.settle_requests') && r.status === 'liquidation_submitted' ? '<button class="btn" data-action="close">Close after review</button><button class="btn secondary" data-action="return">Return for correction</button>' : ''}
         </div>`,
       onOpen: (ov) => {
         ov.querySelectorAll('[data-receipt]').forEach((b) => b.onclick = async () => { const f = r.receipts.find((x) => String(x.id) === b.dataset.receipt); try { await API.download(`${base}/${r.id}/receipts/${f.id}`, f.original_name); } catch(e) { UI.toast(e.message,'error'); } });

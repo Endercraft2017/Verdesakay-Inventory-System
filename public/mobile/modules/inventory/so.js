@@ -439,7 +439,7 @@
 
   /* ── Release without the token: supervisor override (extends 78:240) ────── */
   function override(view, c) {
-    var a = c.authorization, ov = a.override, sup = can('inventory.adjust');
+    var a = c.authorization, ov = a.override, sup = can('orders.override_release');
     var status = ov ? ov.status : null;
     var body = page(view, '78:240', 'Release without token', 'A supervisor approves it, with a reason');
     var reasonBox = function (label, ph) {
@@ -591,7 +591,7 @@
         '<div data-photos></div>' +
         R.note('info','Any unshipped remainder stays held on '+mEsc(c.order.number)+'.')+R.actions([{ id: 'rel-back', label: 'Back to queue', kind: 'secondary' }].concat(c.outstanding>0?[{id:'rel-next-trip',label:'Review remaining order',kind:'primary'}]:[]).concat(can('delivery.manage')?[{id:'rel-plan-delivery',label:'Plan delivery for this slip',kind:'secondary'}]:[]));
       if (mPhoto.thumbs) body.querySelector('[data-photos]').appendChild(mPhoto.thumbs('release', sl.id, { editable: false }));
-      body.querySelector('#rel-back').onclick = function () { go({ tab: 'done' }); };var plan=body.querySelector('#rel-plan-delivery');if(plan)plan.onclick=function(){MApp.go('deliveries',{step:'plan',order:c.order.id,slip:sl.id});};if(can('inventory.adjust')||can('orders.release')){var ret=document.createElement('button');ret.className='rk-btn secondary';ret.textContent='Receive customer return';ret.onclick=function(){MApp.go('returns',{slip:sl.id});};body.appendChild(ret);}var next=body.querySelector('#rel-next-trip');if(next)next.onclick=function(){delete S[c.order.id];go({id:c.order.id});};
+      body.querySelector('#rel-back').onclick = function () { go({ tab: 'done' }); };var plan=body.querySelector('#rel-plan-delivery');if(plan)plan.onclick=function(){MApp.go('deliveries',{step:'plan',order:c.order.id,slip:sl.id});};if(can('returns.receive')){var ret=document.createElement('button');ret.className='rk-btn secondary';ret.textContent='Receive customer return';ret.onclick=function(){MApp.go('returns',{slip:sl.id});};body.appendChild(ret);}var next=body.querySelector('#rel-next-trip');if(next)next.onclick=function(){delete S[c.order.id];go({id:c.order.id});};
     }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { receipt(view, c); })); });
   }
 

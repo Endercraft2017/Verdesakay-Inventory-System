@@ -219,12 +219,9 @@ describe('ai-analytics: manufacturing reports', () => {
 });
 
 describe('ai-analytics: run_analytics_query', () => {
-  it('runs a read-only SELECT', () => {
-    const r = exec('run_analytics_query', { sql: 'SELECT COUNT(*) AS n FROM inventory_items LIMIT 1' }, admin()) as {
-      success: boolean; data: { rows: Array<{ n: number }> };
-    };
-    expect(r.success).toBe(true);
-    expect(typeof r.data.rows[0]!.n).toBe('number');
+  it('rejects arbitrary SQL even for an administrator', () => {
+    const r = exec('run_analytics_query', {sql:'SELECT COUNT(*) AS n FROM inventory_items'}, admin());
+    expect(r.success).toBe(false);
   });
 
   it('rejects writes, stacked statements, and users/sessions access', () => {

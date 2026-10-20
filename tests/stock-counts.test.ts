@@ -58,7 +58,7 @@ describe('physical stock count',()=>{
     expect((await ctx.api.post(`/api/inventory/stock-counts/tasks/${taskId}/cancel`).set(H(admin))
       .send({note:'Trying to cancel an active count'})).status).toBe(409);
     expect((await ctx.api.post(`/api/inventory/stock-counts/${counted.body.id}/approve`).set(H(warehouse))
-      .send({note:'I checked the assigned count'})).status).toBe(409);
+      .send({note:'I checked the assigned count'})).status).toBe(403);
     expect((await ctx.api.post(`/api/inventory/stock-counts/${counted.body.id}/approve`).set(H(admin))
       .send({note:'Independently approved cycle count'})).status).toBe(200);
     expect((await ctx.api.get(`/api/inventory/stock-counts/tasks?status=open&mine=1`).set(H(warehouse))).body)
@@ -215,7 +215,7 @@ describe('physical stock count',()=>{
     const countId=created.body.id;
     expect(created.body).toMatchObject({book_quantity:5,counted_quantity:3,variance:-2,status:'submitted'});
     expect((await ctx.api.post(`/api/inventory/stock-counts/${countId}/approve`).set(H(warehouse))
-      .send({note:'Verified the shelf count and signed off'})).status).toBe(409);
+      .send({note:'Verified the shelf count and signed off'})).status).toBe(403);
     expect((await ctx.api.post(`/api/inventory/stock-counts/${countId}/apply`).set(H(admin)).send({})).status).toBe(409);
     expect((await ctx.api.post(`/api/inventory/stock-counts/${countId}/approve`).set(H(admin))
       .send({note:'Verified the shelf count and signed off'})).status).toBe(200);

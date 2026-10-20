@@ -212,6 +212,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   DataForms.savePreference({action:'recent',form_id:formId}).catch(()=>{});
   const isPayroll = formDef.slug === 'hr_payroll';
   const canManagePayroll = isPayroll && App.hasPermission('payroll.manage');
+  const canPay = isPayroll && App.hasPermission('payroll.pay');
+  const canApprovePayroll = isPayroll && App.hasPermission('payroll.approve');
   // Any other form with a linked print template gets the same "Print All"/"Print selected"
   // bulk actions payroll has always had — payroll keeps its own dedicated 2-up slip buttons.
   const canBulkPrint = !isPayroll && !!formDef.template_id;
@@ -294,7 +296,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       ${isPayroll ? `<button class="btn secondary small" id="fr-bulk-print">${UI.icon('printer')} Print selected</button>` : ''}
       ${canBulkPrint ? `<button class="btn secondary small" id="fr-bulk-print-tpl">${UI.icon('printer')} Print selected</button>` : ''}
       ${canWrite && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="btn secondary small" id="fr-bulk-status">${UI.icon('edit', 14)} Change status</button>` : ''}
-      ${isPayroll && canManagePayroll ? `
+      ${canPay ? `
         <button class="btn secondary small" id="fr-bulk-mark-paid">${UI.icon('check')} Mark paid</button>
         <button class="btn secondary small" id="fr-bulk-unmark-paid">${UI.icon('reply', 15)} Unmark paid</button>` : ''}
       ${canWrite && !entryOnly && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="btn secondary small danger" id="fr-bulk-del">${UI.icon('trash')} Delete selected</button>` : ''}
@@ -442,7 +444,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     load();
     view.querySelector('#fr-search').focus();
   }
-  if (isPayroll && canManagePayroll) {
+  if (isPayroll && canPay) {
     view.querySelector('#fr-bulk-mark-paid').onclick = () => bulkSetPaid(true);
     view.querySelector('#fr-bulk-unmark-paid').onclick = () => bulkSetPaid(false);
   }
@@ -1265,7 +1267,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
             ${isPayroll ? `<button class="icon-btn" data-print="${r.id}" title="Print this slip" aria-label="Print payslip ${UI.esc(r.number)}">${UI.icon('printer')}</button>` : ''}
             ${!isPayroll && formDef.template_id ? `<button class="icon-btn" data-print-tpl="${r.id}" title="Print">${UI.icon('printer')}</button>` : ''}
             ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-email="${r.id}" title="Email this payslip" aria-label="Email payslip ${UI.esc(r.number)}">${UI.icon('mail')}</button>` : ''}
-            ${isPayroll && canManagePayroll ? (r.status === 'paid'
+            ${canPay ? (r.status === 'paid'
               ? `<button class="icon-btn" data-unpaid="${r.id}" title="Unmark Paid (unlock for editing)" aria-label="Unmark payslip ${UI.esc(r.number)} as paid">${UI.icon('reply', 15)}</button>`
               : `<button class="icon-btn" data-paid="${r.id}" title="Mark as Paid (locks this payslip)" aria-label="Mark payslip ${UI.esc(r.number)} as paid">${UI.icon('check')}</button>`) : ''}
             ${r.status !== 'paid' && canWrite && (!entryOnly || (r.status==='draft'&&!formDef.archived_at)) ? `<button class="icon-btn" data-edit="${r.id}" title="Edit"${isPayroll ? ` aria-label="Edit payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('edit')}</button>` : ''}
@@ -1341,7 +1343,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
             <button type="button" class="btn secondary small" data-bundle-print="${UI.esc(b.label)}">${UI.icon('printer', 13)} Print visible</button>
             <button type="button" class="btn secondary small" data-bundle-summary="${UI.esc(b.label)}">${UI.icon('printer', 13)} Print Summary</button>
             <button type="button" class="btn secondary small" data-bundle-csv="${UI.esc(b.label)}">${UI.icon('download', 13)} Export Excel</button>
-            ${canManagePayroll && b.meta ? `<button type="button" class="btn secondary small" data-bundle-post-gl="${b.meta.id}" data-bundle-post-gl-label="${UI.esc(b.label)}">${UI.icon('building', 13)} Post to GL</button>` : ''}
+            ${canApprovePayroll && b.meta ? `<button type="button" class="btn secondary small" data-bundle-post-gl="${b.meta.id}" data-bundle-post-gl-label="${UI.esc(b.label)}">${UI.icon('building', 13)} Post to GL</button>` : ''}
           </div>
         </div>
         <div ${open ? '' : 'hidden'} id="fr-bundle-${i}" data-bundle-body="${UI.esc(b.label)}" style="border-top:1px solid var(--border,#dce6f2)">

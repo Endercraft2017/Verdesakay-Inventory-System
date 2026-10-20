@@ -1,3 +1,4 @@
+import { independentApproval } from '../../shared/approval-policy';
 /**
  * Accounting — tax & statutory filings. These draw on payroll, sales and purchase data
  * but are the finance team's to file, so they live here (gated `accounting.view`) rather
@@ -74,13 +75,13 @@ function quarterOf(v: unknown): { year: string; q: number; from: string; to: str
 /* ------------------------------------------ BIR — withholding on compensation --- */
 
 // GET /api/accounting/bir-1601c?year= — monthly withholding-tax remittance worksheet.
-router.get('/bir-1601c', (req, res) => {
+router.get('/bir-1601c', requirePermission('payroll.view'), (req, res) => {
   const year = yearOf(req.query.year);
   res.json({ year, ...monthlyWithholdingReport(year) });
 });
 
 // GET /api/accounting/bir-1604c?year= — annual return face + Alphalist reconciliation.
-router.get('/bir-1604c', (req, res) => {
+router.get('/bir-1604c', requirePermission('payroll.view'), (req, res) => {
   const year = yearOf(req.query.year);
   const { months, totals } = monthlyWithholdingReport(year);
   const rwt = effectiveTables(`${year}-12-31`).rwt;
@@ -108,7 +109,7 @@ router.get('/bir-1604c', (req, res) => {
 });
 
 // GET /api/accounting/bir-2316?year= — one summary line per employee.
-router.get('/bir-2316', (req, res) => {
+router.get('/bir-2316', requirePermission('payroll.view'), (req, res) => {
   const year = yearOf(req.query.year);
   const opts = optsFromQuery(req.query as Record<string, unknown>);
   const rwt = effectiveTables(`${year}-12-31`).rwt;
@@ -127,7 +128,7 @@ router.get('/bir-2316', (req, res) => {
 });
 
 // GET /api/accounting/bir-2316/:employeeId?year= — one employee's full figures + 201 data.
-router.get('/bir-2316/:employeeId', (req, res) => {
+router.get('/bir-2316/:employeeId', requirePermission('payroll.view'), (req, res) => {
   const year = yearOf(req.query.year);
   const emp = queryOne<Record<string, unknown> & { name: string }>(
     `SELECT e.*, d.name AS department_name FROM employees e
@@ -144,7 +145,7 @@ router.get('/bir-2316/:employeeId', (req, res) => {
 });
 
 // GET /api/accounting/bir-alphalist?year= — 1604-C Alphalist Schedule 1, BIR column order.
-router.get('/bir-alphalist', (req, res) => {
+router.get('/bir-alphalist', requirePermission('payroll.view'), (req, res) => {
   const year = yearOf(req.query.year);
   const opts = optsFromQuery(req.query as Record<string, unknown>);
   const rwt = effectiveTables(`${year}-12-31`).rwt;
@@ -355,7 +356,7 @@ router.get('/bir-1702', (req, res) => {
 /* ------------------------------------ SSS / PhilHealth / Pag-IBIG schedules --- */
 
 // GET /api/accounting/contribution-schedule?month=YYYY-MM&agency=&format=csv
-router.get('/contribution-schedule', (req, res) => {
+router.get('/contribution-schedule', requirePermission('payroll.view'), (req, res) => {
   const month = monthOf(req.query.month);
   const agency = (['sss', 'philhealth', 'pagibig'] as const).includes(req.query.agency as Agency)
     ? (req.query.agency as Agency) : 'sss';
@@ -398,7 +399,7 @@ router.get('/contribution-schedule', (req, res) => {
 // GET /api/accounting/statutory-deductions — every employee + the four per-person
 // switches (default on) that `generate-payslips` honours. Accounting decides what is
 // actually deducted / remitted; HR runs the payroll. See docs/ACCOUNTING-SYSTEM-PLAN.md §6.
-router.get('/statutory-deductions', (_req, res) => {
+router.get('/statutory-deductions', requirePermission('payroll.view'), (_req, res) => {
   const rows = queryAll<{
     id: number; name: string; employee_no: string | null; status: string | null;
     department_name: string | null;
@@ -428,7 +429,7 @@ router.get('/statutory-deductions', (_req, res) => {
 });
 
 // PUT /api/accounting/statutory-deductions — { updates: [{ employee_id, deduct_* }] }.
-router.put('/statutory-deductions', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.put('/statutory-deductions', requirePermission('payroll.rates'), syncClass('claim'), (req, res) => {
   const { updates } = parseBody(statutoryDeductionsSchema, req.body);
   const cols = ['deduct_sss', 'deduct_philhealth', 'deduct_pagibig', 'deduct_withholding_tax'] as const;
 
@@ -481,7 +482,7 @@ router.get('/petty-cash/funds', (req, res) => {
 });
 
 // POST /api/accounting/petty-cash/funds
-router.post('/petty-cash/funds', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.post('/petty-cash/funds', requirePermission('accounting.configure'), syncClass('claim'), (req, res) => {
   const b = parseBody(pettyCashFundSchema, req.body);
   if (b.location_id != null && !queryOne('SELECT id FROM locations WHERE id = ?', b.location_id)) {
     res.status(400).json({ error: 'That location does not exist' });
@@ -497,7 +498,7 @@ router.post('/petty-cash/funds', requirePermission('accounting.manage'), syncCla
 });
 
 // PUT /api/accounting/petty-cash/funds/:id
-router.put('/petty-cash/funds/:id', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.put('/petty-cash/funds/:id', requirePermission('accounting.configure'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM petty_cash_funds WHERE id = ?', id)) {
     res.status(404).json({ error: 'Fund not found' });
@@ -514,7 +515,7 @@ router.put('/petty-cash/funds/:id', requirePermission('accounting.manage'), sync
 });
 
 // DELETE /api/accounting/petty-cash/funds/:id — only while it has no entries.
-router.delete('/petty-cash/funds/:id', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.delete('/petty-cash/funds/:id', requirePermission('accounting.configure'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const n = queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM petty_cash_entries WHERE fund_id = ?', id)?.n ?? 0;
   if (n > 0) {
@@ -589,7 +590,7 @@ router.get('/petty-cash/funds/:id/entries', (req, res) => {
 });
 
 // POST /api/accounting/petty-cash/funds/:id/entries
-router.post('/petty-cash/funds/:id/entries', requirePermission('accounting.manage'), syncClass('physical'), (req, res) => {
+router.post('/petty-cash/funds/:id/entries', requirePermission('accounting.record_payments'), syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM petty_cash_funds WHERE id = ?', id)) {
     res.status(404).json({ error: 'Fund not found' });
@@ -606,7 +607,7 @@ router.post('/petty-cash/funds/:id/entries', requirePermission('accounting.manag
 });
 
 // DELETE /api/accounting/petty-cash/entries/:id
-router.delete('/petty-cash/entries/:id', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.delete('/petty-cash/entries/:id', requirePermission('accounting.record_payments'), syncClass('claim'), (req, res) => {
   const info = run('DELETE FROM petty_cash_entries WHERE id = ?', Number(req.params.id));
   if (!info.changes) { res.status(404).json({ error: 'Entry not found' }); return; }
   res.json({ ok: true });
@@ -660,7 +661,7 @@ router.get('/ledger/settings', (_req, res) => {
 });
 
 // POST /api/accounting/ledger/setup — seed the chart of accounts + the fiscal-year period.
-router.post('/ledger/setup', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.post('/ledger/setup', requirePermission('accounting.configure'), syncClass('claim'), (req, res) => {
   const input = parseBody(ledgerSetupSchema, req.body);
   const already = queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM accounts')?.n ?? 0;
 
@@ -732,7 +733,7 @@ router.get('/ledger/accounts', (req, res) => {
 });
 
 // POST /api/accounting/ledger/accounts
-router.post('/ledger/accounts', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.post('/ledger/accounts', requirePermission('accounting.configure'), syncClass('claim'), (req, res) => {
   if (!requireLedger(res)) return;
   const b = parseBody(accountSchema, req.body);
   if (queryOne('SELECT id FROM accounts WHERE code = ?', b.code)) {
@@ -761,7 +762,7 @@ router.post('/ledger/accounts', requirePermission('accounting.manage'), syncClas
 });
 
 // PUT /api/accounting/ledger/accounts/:id  (rename / re-parent / archive; not root_type once used)
-router.put('/ledger/accounts/:id', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.put('/ledger/accounts/:id', requirePermission('accounting.configure'), syncClass('claim'), (req, res) => {
   if (!requireLedger(res)) return;
   const id = Number(req.params.id);
   const cur = queryOne<Account>('SELECT * FROM accounts WHERE id = ?', id);
@@ -792,7 +793,7 @@ router.put('/ledger/accounts/:id', requirePermission('accounting.manage'), syncC
 });
 
 // DELETE /api/accounting/ledger/accounts/:id — only an unused leaf with no children.
-router.delete('/ledger/accounts/:id', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.delete('/ledger/accounts/:id', requirePermission('accounting.configure'), syncClass('claim'), (req, res) => {
   if (!requireLedger(res)) return;
   const id = Number(req.params.id);
   if ((queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM journal_lines WHERE account_id = ?', id)?.n ?? 0) > 0) {
@@ -819,7 +820,7 @@ router.get('/ledger/periods', (_req, res) => {
   ));
 });
 
-router.post('/ledger/periods', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.post('/ledger/periods', requirePermission('accounting.configure'), syncClass('claim'), (req, res) => {
   if (!requireLedger(res)) return;
   const b = parseBody(glPeriodSchema, req.body);
   if (b.end_date < b.start_date) { res.status(400).json({ error: 'End date is before the start date.' }); return; }
@@ -927,7 +928,7 @@ function reverseClosingEntry(entryId: number, endDate: string, userId: number): 
 
 // POST /ledger/periods/:id/(close|reopen) — closing also posts the year-end closing entry
 // (zero income/expense → Retained Earnings); reopening reverses it.
-router.post('/ledger/periods/:id/:action(close|reopen)', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.post('/ledger/periods/:id/:action(close|reopen)', requirePermission('accounting.configure'), syncClass('claim'), (req, res) => {
   if (!requireLedger(res)) return;
   const id = Number(req.params.id);
   const period = queryOne<AccountingPeriod>('SELECT * FROM accounting_periods WHERE id = ?', id);
@@ -1010,7 +1011,7 @@ router.get('/ledger/posting-rules', (_req, res) => {
   res.json(postingRulesPayload());
 });
 
-router.put('/ledger/posting-rules', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.put('/ledger/posting-rules', requirePermission('accounting.configure'), syncClass('claim'), (req, res) => {
   if (!requireLedger(res)) return;
   const b = parseBody(postingRulesSchema, req.body);
   for (const k of POSTING_RULE_KEYS) {
@@ -1125,7 +1126,7 @@ router.put('/ledger/journal-entries/:id', requirePermission('accounting.manage')
 });
 
 // POST .../post — validate + lock into a closed-period check + mark posted.
-router.post('/ledger/journal-entries/:id/post', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.post('/ledger/journal-entries/:id/post', requirePermission('accounting.post'), syncClass('claim'), (req, res) => {
   if (!requireLedger(res)) return;
   const je = queryOne<JournalEntry>('SELECT * FROM journal_entries WHERE id = ?', Number(req.params.id));
   if (!je) { res.status(404).json({ error: 'Entry not found' }); return; }
@@ -1138,6 +1139,7 @@ router.post('/ledger/journal-entries/:id/post', requirePermission('accounting.ma
     }
     res.status(409).json({ error: `Entry is already ${je.status}.` }); return;
   }
+  if (!independentApproval(req,res,je.created_by,'post this journal entry')) return;
   const v = validateJournalLines(loadLines(je.id) as JournalLineInput[], accountRefMap());
   if (!v.ok) { res.status(400).json({ error: v.errors[0], errors: v.errors }); return; }
   const closed = closedPeriodFor(je.entry_date);
@@ -1150,7 +1152,7 @@ router.post('/ledger/journal-entries/:id/post', requirePermission('accounting.ma
 // POST .../void — a posted entry is reversed by an equal-and-opposite *posted* entry.
 // The original stays posted (both entries remain in the ledger and net to zero — CAS
 // rule: nothing is removed); the reversal's `reverses_id` links them.
-router.post('/ledger/journal-entries/:id/void', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.post('/ledger/journal-entries/:id/void', requirePermission('accounting.post'), syncClass('claim'), (req, res) => {
   if (!requireLedger(res)) return;
   const je = queryOne<JournalEntry>('SELECT * FROM journal_entries WHERE id = ?', Number(req.params.id));
   if (!je) { res.status(404).json({ error: 'Entry not found' }); return; }
@@ -1765,7 +1767,7 @@ interface PaymentAllocationRow {
 }
 
 // POST /api/accounting/payments — record a receipt (in) / disbursement (out) + auto-post.
-router.post('/payments', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.post('/payments', requirePermission('accounting.record_payments'), syncClass('claim'), (req, res) => {
   if (!requireLedger(res)) return;
   const b = parseBody(paymentSchema, req.body);
 
@@ -1833,7 +1835,7 @@ router.post('/payments', requirePermission('accounting.manage'), syncClass('clai
 });
 
 // POST /api/accounting/payments/:id/void — reverse the cash-book entry, mark it void.
-router.post('/payments/:id/void', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.post('/payments/:id/void', requirePermission('accounting.record_payments'), syncClass('claim'), (req, res) => {
   if (!requireLedger(res)) return;
   const id = Number(req.params.id);
   const p = queryOne<Payment>('SELECT * FROM payments WHERE id = ?', id);
@@ -1891,7 +1893,7 @@ router.get('/credit-notes/:id', (req, res) => {
 });
 
 // POST /api/accounting/credit-notes — issue a credit / debit note + auto-post.
-router.post('/credit-notes', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.post('/credit-notes', requirePermission('accounting.post'), syncClass('claim'), (req, res) => {
   if (!requireLedger(res)) return;
   const b = parseBody(creditNoteSchema, req.body);
   const total = round2((b.subtotal || 0) + (b.tax_amount || 0));
@@ -1928,7 +1930,7 @@ router.post('/credit-notes', requirePermission('accounting.manage'), syncClass('
 });
 
 // POST /api/accounting/credit-notes/:id/void
-router.post('/credit-notes/:id/void', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.post('/credit-notes/:id/void', requirePermission('accounting.post'), syncClass('claim'), (req, res) => {
   if (!requireLedger(res)) return;
   const id = Number(req.params.id);
   const n = queryOne<CreditNote>('SELECT * FROM credit_notes WHERE id = ?', id);
@@ -2156,7 +2158,7 @@ router.get('/tax-codes', (req, res) => {
     ORDER BY t.kind, t.code`, ...params));
 });
 
-router.post('/tax-codes', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.post('/tax-codes', requirePermission('accounting.configure'), syncClass('claim'), (req, res) => {
   const b = parseBody(taxCodeSchema, req.body);
   if (queryOne('SELECT id FROM tax_codes WHERE code = ?', b.code)) {
     res.status(409).json({ error: `Tax code ${b.code} already exists.` }); return;
@@ -2169,7 +2171,7 @@ router.post('/tax-codes', requirePermission('accounting.manage'), syncClass('cla
   res.status(201).json({ id: Number(info.lastInsertRowid) });
 });
 
-router.put('/tax-codes/:id', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.put('/tax-codes/:id', requirePermission('accounting.configure'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const cur = queryOne<TaxCode>('SELECT * FROM tax_codes WHERE id = ?', id);
   if (!cur) { res.status(404).json({ error: 'Tax code not found' }); return; }
@@ -2184,7 +2186,7 @@ router.put('/tax-codes/:id', requirePermission('accounting.manage'), syncClass('
   res.json({ ok: true });
 });
 
-router.delete('/tax-codes/:id', requirePermission('accounting.manage'), syncClass('claim'), (req, res) => {
+router.delete('/tax-codes/:id', requirePermission('accounting.configure'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const used = (queryOne<{ n: number }>(`
     SELECT (SELECT COUNT(*) FROM orders WHERE tax_code_id = ?)

@@ -11,6 +11,7 @@ const H = () => ({ Authorization: `Bearer ${token}` });
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
+  await ctx.api.put('/api/release-slips/policy').set(H()).send({authorization_required:false});
 });
 afterAll(() => cleanup(ctx));
 
@@ -54,7 +55,7 @@ async function receiveAll(mo: number): Promise<void> {
 
 async function saleOrder(product: number): Promise<number> {
   const r = await ctx.api.post('/api/orders').set(H()).send({
-    type: 'sale', customer_name: 'ACME',
+    type: 'sale', status:'approved', force:true, customer_name: 'ACME',
     items: [{ name: 'widget', item_id: product, quantity: 3, unit_price: 100 }],
   });
   return r.body.id as number;
@@ -123,7 +124,7 @@ describe('sell / move units', () => {
     await receiveAll(mo);
 
     const so = (await ctx.api.post('/api/orders').set(H()).send({
-      type: 'sale', customer_name: 'ACME',
+      type: 'sale', status:'approved', force:true, customer_name: 'ACME',
       items: [{ name: 'ALLOC Product', item_id: product, quantity: 5, unit_price: 200 }],
     })).body.id;
 
@@ -144,7 +145,7 @@ describe('sell / move units', () => {
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: pending.map((u) => u.id), result: 'pass' });
     await receiveAll(mo);
-    const so = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'ACME', items: [
+    const so = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', status:'approved', force:true, customer_name: 'ACME', items: [
       { name: 'DIRECT-LINES Product', item_id: product, quantity: 1, unit_price: 50 },
       { name: 'DIRECT-LINES Product', item_id: product, quantity: 1, unit_price: 60 },
     ] })).body.id;
@@ -168,7 +169,7 @@ describe('sell / move units', () => {
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
       .send({ unit_ids: pending.map((u) => u.id), result: 'pass' });
     await receiveAll(mo);
-    const so = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'ACME', items: [
+    const so = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', status:'approved', force:true, customer_name: 'ACME', items: [
       { name: 'DIRECT-RETRY Product', item_id: product, quantity: 1, unit_price: 50 },
     ] })).body.id;
     const unit = (await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body[0];

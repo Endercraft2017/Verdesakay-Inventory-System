@@ -520,7 +520,7 @@ router.post('/:id/release-slip', requireModule('sales'), releaseGate, syncClass(
 });
 
 // Customer-authorized cancellation releases only goods that have not left the warehouse.
-router.post('/:id/cancel-remainder', requireModule('sales'), requirePermission('orders.edit'), syncClass('claim',orderSite),(req,res)=>{
+router.post('/:id/cancel-remainder', requireModule('sales'), requirePermission('orders.approve'), syncClass('claim',orderSite),(req,res)=>{
   const id=Number(req.params.id), order=queryOne<Order>('SELECT * FROM orders WHERE id=?',id);
   if(!order||order.type!=='sale'){res.status(404).json({error:'Sale order not found'});return;}
   if(queryOne(`SELECT 1 FROM job_order_units u WHERE u.order_id=? AND u.direct_sold_at IS NOT NULL
@@ -942,6 +942,7 @@ router.post('/:id/purchase-shortfall', requireModule('sales'), requireModule('pu
 // POST /api/orders — create with auto number + computed totals
 router.post('/', requireAnyPermission(['orders.create', 'purchasing.manage']), createAccess, idempotency, syncClass('merge'), (req, res) => {
   const input = parseBody(createOrderSchema, req.body);
+  if (input.type !== 'purchase' && !['open','draft'].includes(String(input.status||'open').toLowerCase()) && !req.user!.permissions.includes('orders.approve')) { res.status(403).json({error:'Sales approval permission is required for this status'}); return; }
   if (input.type === 'sale' && input.items.some((line) => line.item_id != null)
       && !['open', 'approved'].includes(String(input.status || 'open').toLowerCase())) {
     res.status(409).json({ error: 'Physical goods must go through warehouse allocation and a release slip.', code: 'release_required' }); return;
@@ -1014,7 +1015,7 @@ router.post('/', requireAnyPermission(['orders.create', 'purchasing.manage']), c
 // POST /api/orders/:id/status — advance a sale order's status only (no line-item body).
 // Same availability gate as PUT, and the same auto-post / fulfil / teardown side effects.
 // Used by the delivery-completed "mark the order completed?" prompt.
-router.post('/:id/status', requireModule('sales'), requirePermission('orders.edit'), syncClass('claim', orderSite), (req, res) => {
+router.post('/:id/status', requireModule('sales'), requirePermission('orders.approve'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -1098,6 +1099,7 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
   const directStockOut = order.type === 'sale' && !!queryOne('SELECT 1 FROM job_order_units WHERE order_id=? AND direct_sold_at IS NOT NULL LIMIT 1',id);
   const lockLines = order.type === 'sale' && (directStockOut || cur !== 'open' && cur !== 'cancelled');
   const input = parseBody(updateOrderSchema, { ...order, ...req.body, ...(lockLines ? { items: undefined } : {}) });
+  if (order.type !== 'purchase' && input.status && input.status !== order.status && !req.user!.permissions.includes('orders.approve')) { res.status(403).json({error:'Sales status decisions require approval permission'}); return; }
   if (input.expected_revision && input.expected_revision !== orderRevision(id) && siteDecisionStands()) {
     recordSiteClash(req, `Order ${order.number} changed on the cloud after a revision-checked site edit; the owning site's decision stands.`);
   } else if (input.expected_revision && input.expected_revision !== orderRevision(id)) {

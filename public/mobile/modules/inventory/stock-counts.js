@@ -73,7 +73,7 @@
     }catch(e){mToast(e.message,'err');btn.disabled=false;}};
   }
   async function detail(view,id,s){
-    var hash=location.hash,r=await API.get(base+'/'+id);if(!live(view,hash,s))return;var body=page(view,'Stock count #'+r.id),can=MApp.can('inventory.adjust');
+    var hash=location.hash,r=await API.get(base+'/'+id);if(!live(view,hash,s))return;var body=page(view,'Stock count #'+r.id),can=MApp.can('inventory.review_counts');
     function unit(u){return R.field(u.code,u.status+' · location '+(u.location_id||'unknown'))+(MApp.canOpen('record')?'<button class="rk-btn secondary" data-record="'+u.id+'">Open exact unit record</button>':'');}
     body.innerHTML=R.field('Item',r.item_name)+R.field('Location',r.location_name)+R.field('Build state',r.build_mode)+R.field('Status',r.status)+R.field('Book / found / variance',r.book_quantity+' / '+r.counted_quantity+' / '+r.variance)+R.field('Counter','#'+r.counted_by)+R.field('Physically found untracked',String(r.counted_untracked))+R.field('Count note',r.note)+R.field('Reviewer note',r.review_note||'Awaiting independent review')+
       (r.source_kind!=='manual'?R.field('Linked issue',sourceLabel(r.source_kind)+' #'+r.source_id+' · '+r.source_status)+(r.source_closed_at?R.field('Source closure',r.source_closed_at+' · reviewer #'+r.source_closed_by)+R.field('Closure note',r.source_close_note):R.note('info','Reconciliation does not close the original issue. A supervisor must review and close it separately.')):'')+

@@ -20,8 +20,8 @@ afterAll(() => cleanup(ctx));
 describe('budgeted internal purchase requests', () => {
   it('limits PR authority to designated roles independently of supplier purchasing', async () => {
     const { roleDefaults } = await import('../src/shared/permissions');
-    expect(roleDefaults('admin_staff')).toContain('purchasing.approve_requests');
-    expect(roleDefaults('accounting')).toContain('purchasing.approve_requests');
+    expect(roleDefaults('admin_staff')).not.toContain('purchasing.approve_requests');
+    expect(roleDefaults('purchase_approver')).toContain('purchasing.approve_requests');
     expect(roleDefaults('csr')).not.toContain('purchasing.manage');
     expect(roleDefaults('csr')).not.toContain('purchasing.approve_requests');
     expect(roleDefaults('releasing')).not.toContain('purchasing.approve_requests');

@@ -14,7 +14,7 @@ App.register('hr-employees', async (view, filter) => {
   // leaves the rates out, so the Rate column and the pay fields are hidden; without
   // payroll.manage the server keeps the stored pay whatever this form sends.
   const canSeePay = App.hasPermission('payroll.view');
-  const canChangePay = App.hasPermission('payroll.manage');
+  const canChangePay = App.hasPermission('payroll.rates');
   const PAY_HIDDEN_NOTE = '<p class="muted" style="font-size:12px;margin:0 0 12px">Pay is shown only to people with the payroll permission.</p>';
   const state = { q: '', department_id: '', status: '' };
   let depts = [];

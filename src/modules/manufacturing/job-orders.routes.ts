@@ -1,10 +1,12 @@
+import { canRecordJob, scopedLineReader } from './job-access';
+import { userPermissions } from '../../shared/roles';
 import { batchBalances, consumeSemiBatchUnit, receiveBatch, restoreBatchStock } from '../inventory/batch-stock';
 /** Manufacturing job orders (Phase B). Build N units of a finished product by
     consuming its BOM. Lifecycle: draft (→ approved, a sign-off stamp, not a status) →
     released → in_progress → completed,
     with pause / cancel returning components that weren't consumed.
     QA/QC gating (qc_stages > 0) and serialized units come in Phase C. */
-import { Router, type Request, type Response, type NextFunction } from 'express';
+import { Router, type Request, type Response, type NextFunction, type RequestHandler } from 'express';
 import { z } from 'zod';
 import multer from 'multer';
 import { createHash } from 'node:crypto';
@@ -56,9 +58,13 @@ const readGate = requirePermission('production.view'); // the production screens
 // Desk-scoped reads (shared/desk-access.ts): the line sees its job orders; every production desk
 // can open the one job order it is working on (its units, checklist, receivable output).
 const listGate = requireAnyPermission(['production.view', ...JOB_ORDER_LIST]);
-const detailGate = requireAnyPermission(['production.view', ...JOB_ORDER_DETAIL]);
-const eventsGate = requireAnyPermission(['production.view', ...LINE]);
-const writeGate = requirePermission('inventory.adjust');
+const assignmentRead = (req:Request,res:Response,next:NextFunction) => {
+  if (scopedLineReader(req.user!) && !canRecordJob(req.user!,Number(req.params.id))) {res.status(403).json({error:'You are not assigned to this job order',code:'job_assignment_required'});return;} next();
+};
+const detailGate: RequestHandler = (req,res,next) => requireAnyPermission(['production.view',...JOB_ORDER_DETAIL])(req,res,()=>assignmentRead(req,res,next));
+const eventsGate: RequestHandler = (req,res,next) => requireAnyPermission(['production.view',...LINE])(req,res,()=>assignmentRead(req,res,next));
+const writeGate = requirePermission('production.plan');
+const kitGate = requirePermission('production.kit_release');
 /** A job order's decisions belong to the site of its source (parts) location; one without one is
  *  company-wide (the main site) — docs/OFFLINE-FIRST.md §16. */
 const joSite = {
@@ -67,7 +73,9 @@ const joSite = {
   }),
 };
 // Stock adjustment is independent of the explicit production task permissions.
-const recordGate = requirePermission('production.record');
+const recordGate: RequestHandler = (req,res,next) => requirePermission('production.record')(req,res,()=>{
+  if (!canRecordJob(req.user!,Number(req.params.id))) {res.status(403).json({error:'You are not assigned to this job order',code:'job_assignment_required'});return;} next();
+});
 // Door-level gate for /:id/units/inspect only — lets a caller with EITHER inspect
 // permission in; which *specific* pass(es) they're actually allowed to record is then
 // checked inside the handler once it knows which stage(s) the requested units are on
@@ -485,14 +493,14 @@ router.get('/', listGate, (req, res) => {
     else if (hasQa) r.units_actionable = r.units_final_pass_open;
     else r.units_actionable = 0;
   }
-  res.json(rows);
+  res.json(scopedLineReader(req.user!) ? rows.filter(r=>canRecordJob(req.user!,r.id)) : rows);
 });
 
 // GET /api/job-orders/pick-list?ids=1,2,3[&format=html] — one consolidated pick list for
 // several job orders the warehouse is preparing together: each component (per source
 // location) with the total needed, already picked, on hand, and the per-job-order split.
 // format=html returns a printable page.
-router.get('/pick-list', readGate, (req, res) => {
+router.get('/pick-list', requireAnyPermission(['production.view','production.kit_release','production.plan']), (req, res) => {
   const ids = [...new Set(String(req.query.ids || '').split(',').map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0))];
   if (!ids.length) { res.status(400).json({ error: 'Pass ?ids= with at least one job order id' }); return; }
   const jos = ids.map((id) => loadJobOrder(id));
@@ -584,6 +592,31 @@ router.get('/production-receipts/:receiptId', requireAnyPermission(['production.
     receipt.id
   );
   res.json(receipt);
+});
+
+// Planner-only assignment picker exposes names and IDs, never account security details.
+router.get('/:id/assignees',writeGate,(req,res)=>{
+  if (!queryOne('SELECT id FROM job_orders WHERE id=?',Number(req.params.id))) {res.status(404).json({error:'Job order not found'});return;}
+  const eligible = queryAll<{id:number;full_name:string;role:string;permission_overrides:string}>('SELECT id,full_name,role,permission_overrides FROM users WHERE active=1')
+    .filter(u=>{let o={};try{o=JSON.parse(u.permission_overrides||'{}');}catch{} return userPermissions(u.role,o).includes('production.record');})
+    .map(u=>({id:u.id,full_name:u.full_name}));
+  res.json({eligible,assigned:queryAll<{user_id:number}>('SELECT user_id FROM job_order_assignees WHERE job_order_id=?',Number(req.params.id)).map(a=>a.user_id)});
+});
+router.put('/:id/assignees',writeGate,syncClass('claim',joSite),(req,res)=>{
+  const id=Number(req.params.id);
+  if (!queryOne('SELECT id FROM job_orders WHERE id=?',id)) {res.status(404).json({error:'Job order not found'});return;}
+  const ids=z.array(z.number().int().positive()).max(200).parse(req.body?.user_ids);
+  for(const userId of ids) {
+    const u=queryOne<{role:string;permission_overrides:string}>('SELECT role,permission_overrides FROM users WHERE id=? AND active=1',userId);
+    let overrides={};try{overrides=JSON.parse(u?.permission_overrides||'{}');}catch{}
+    if(!u || !userPermissions(u.role,overrides).includes('production.record')) {res.status(400).json({error:'Assign active production recorders only'});return;}
+  }
+  db.exec('BEGIN');try {
+    run('DELETE FROM job_order_assignees WHERE job_order_id=?',id);
+    for(const userId of new Set(ids)) run('INSERT INTO job_order_assignees(job_order_id,user_id) VALUES(?,?)',id,userId);
+    db.exec('COMMIT');
+  }catch(e){db.exec('ROLLBACK');throw e;}
+  res.json({ok:true});
 });
 
 // GET /api/job-orders/:id
@@ -1054,7 +1087,7 @@ function warehouseStepError(jo: JobOrder | null, needAccepted: boolean): { statu
 
 // POST /api/job-orders/warehouse-accept — the warehouse takes on one or more approved drafts
 // for preparing. All-or-nothing; already-accepted ones are left as they are.
-router.post('/warehouse-accept', writeGate, syncClass('claim'), (req, res) => {
+router.post('/warehouse-accept', kitGate, syncClass('claim'), (req, res) => {
   const { job_order_ids } = parseBody(jobOrderIdsSchema, req.body);
   const ids = [...new Set(job_order_ids)];
   for (const id of ids) {
@@ -1080,7 +1113,7 @@ router.post('/warehouse-accept', writeGate, syncClass('claim'), (req, res) => {
 // full. A job order whose every line is fully picked is marked prepared (ready to release);
 // a partial pick is saved but leaves it preparing. Picks are checked against on-hand stock
 // minus what other unreleased kits already set aside. All-or-nothing.
-router.post('/prepare', writeGate, syncClass('claim'), (req, res) => {
+router.post('/prepare', kitGate, syncClass('claim'), (req, res) => {
   const { job_orders } = parseBody(prepareJobOrdersSchema, req.body);
   const ids = job_orders.map((j) => j.id);
   if (new Set(ids).size !== ids.length) { res.status(400).json({ error: 'The same job order is listed twice' }); return; }
@@ -1166,7 +1199,7 @@ router.post('/prepare', writeGate, syncClass('claim'), (req, res) => {
 
 // GET /api/job-orders/:id/availability — stock check before release: each planned component's
 // need vs. on-hand at the source location, plus whether the job order can be released now.
-router.get('/:id/availability', requireAnyPermission(['production.view', 'production.approve']), (req, res) => {
+router.get('/:id/availability', requireAnyPermission(['production.view','production.approve','production.plan','production.kit_release']), (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -1236,7 +1269,7 @@ function subassemblySuggestions(parentId: number) {
   });
 }
 
-router.get('/:id/subassembly-suggestions', requireAnyPermission(['production.view', 'production.approve', 'inventory.adjust']), (req, res) => {
+router.get('/:id/subassembly-suggestions', requireAnyPermission(['production.view', 'production.approve', 'production.plan']), (req, res) => {
   const suggestions = subassemblySuggestions(Number(req.params.id));
   if (!suggestions) { res.status(404).json({ error: 'Job order not found' }); return; }
   res.json(suggestions);
@@ -1293,7 +1326,7 @@ router.post('/:id/approve', approveGate, syncClass('claim', joSite), (req, res) 
     req.user!.id, notes ?? null, id
   );
   res.json({ ok: true, job_order: loadJobOrder(id), shortfalls: jobOrderComponentShortfalls(id) });
-  void notifyAnyPermission(['inventory.adjust'], {
+  void notifyAnyPermission(['production.kit_release'], {
     title: `Job kit ready to prepare — ${jo.number}`,
     body: `${jo.product_name}: accept, pick and release the approved parts kit.`,
     url: `#/kit-release?id=${id}`, link: { route: 'job-orders', params: { id } }, tag: `kit-${id}`,
@@ -1317,7 +1350,7 @@ router.post('/:id/unapprove', approveGate, syncClass('claim', joSite), (req, res
 
 // POST /api/job-orders/:id/purchase-shortfall — draft purchase order(s) for the components
 // this job order can't cover from its source location, grouped by supplier.
-router.post('/:id/purchase-shortfall', writeGate, syncClass('claim', joSite), (req, res) => {
+router.post('/:id/purchase-shortfall', requirePermission('purchasing.manage'), syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = queryOne<JobOrder>('SELECT number, status, order_id FROM job_orders WHERE id = ?', id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
@@ -1347,7 +1380,7 @@ router.post('/:id/purchase-shortfall', writeGate, syncClass('claim', joSite), (r
 // lines. Issuing it IS the release — planned components leave the source location here.
 // Needs approval → warehouse acceptance → a fully picked kit. Photos of the kit attach
 // afterwards as `attachments` kind 'parts_release' on the slip id.
-router.post('/:id/release', writeGate, syncClass('physical'), (req, res) => {
+router.post('/:id/release', kitGate, syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) {
@@ -1750,11 +1783,11 @@ router.post('/:id/resume', pauseGate, syncClass('claim', joSite), (req, res) => 
 });
 
 // POST /api/job-orders/:id/cancel — return unconsumed components, close it out
-router.post('/:id/cancel', requireAnyPermission(['inventory.adjust', 'production.approve', 'production.manage']), syncClass('claim', joSite), (req, res) => {
+router.post('/:id/cancel', requireAnyPermission(['production.plan', 'production.approve', 'production.manage']), syncClass('claim', joSite), (req, res) => {
   const id = Number(req.params.id);
   const jo = loadJobOrder(id);
   if (!jo) { res.status(404).json({ error: 'Job order not found' }); return; }
-  if (!req.user!.permissions.includes('inventory.adjust') && !queryOne('SELECT 1 FROM semi_build_conversions WHERE job_order_id = ?', id)) {
+  if (!req.user!.permissions.includes('production.plan') && !queryOne('SELECT 1 FROM semi_build_conversions WHERE job_order_id = ?', id)) {
     res.status(403).json({ error: 'Only warehouse inventory staff can cancel a parts-based job order.' }); return;
   }
   if (!OPEN_STATES.has(jo.status)) {
@@ -2043,7 +2076,7 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
   // Inspectors always need evidence, even when a direct API caller omits X-Client.
   // An inventory.adjust integration without an app header retains the existing
   // audited import/correction path; desktop and phone users still need photos.
-  if (result === 'fail' && (isAppClient(req) || !req.user!.permissions.includes('inventory.adjust')) && units.some((u) => !evidence.has(u.id))) {
+  if (result === 'fail' && (isAppClient(req) || !req.user!.permissions.includes('evidence.manage')) && units.some((u) => !evidence.has(u.id))) {
     res.status(409).json({ error: 'Attach at least one evidence photo of the unit before recording this result.', blocked: 'evidence' });
     return;
   }

@@ -36,7 +36,7 @@ describe('POST /api/users by an HR user', () => {
     }
   });
 
-  it('lets HR add staff-level access on top of the base role, but nothing privileged', async () => {
+  it('HR can onboard staff but only permission administrators change grants', async () => {
     const hr = await createEmployee(ctx.api, adminToken, { username: 'hraccess', role: 'hr' });
     const hdr = { Authorization: `Bearer ${hr.token}` };
     const acct = await ctx.api.post('/api/users').set(hdr)
@@ -44,16 +44,16 @@ describe('POST /api/users by an HR user', () => {
 
     const cat = await ctx.api.get('/api/users/permissions/catalog').set(hdr);
     expect(cat.status).toBe(200);
-    expect(cat.body.grantable).toContain('production.inspect_qa');
+    expect(cat.body.grantable).toEqual([]);
     expect(cat.body.grantable).not.toContain('users.manage');
     expect(cat.body.assignableRoles).not.toContain('admin');
 
     // QC inspector who also does QA and releasing — a staff-level combination.
     const ok = await ctx.api.put(`/api/users/${acct.body.id}/permissions`).set(hdr)
       .send({ overrides: { 'production.inspect_qa': true, 'orders.release': true } });
-    expect(ok.status).toBe(200);
+    expect(ok.status).toBe(403);
     const access = await ctx.api.get(`/api/users/${acct.body.id}/access`).set(hdr);
-    expect(JSON.parse(access.body.permission_overrides)).toEqual({ 'production.inspect_qa': true, 'orders.release': true });
+    expect(JSON.parse(access.body.permission_overrides)).toEqual({});
 
     for (const key of ['users.manage', 'hr.manage', 'accounting.view']) {
       const bad = await ctx.api.put(`/api/users/${acct.body.id}/permissions`).set(hdr)

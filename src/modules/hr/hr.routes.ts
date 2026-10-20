@@ -1,3 +1,4 @@
+import { independentApproval } from '../../shared/approval-policy';
 import { correctRecord } from '../../core/data-forms/history';
 import { recordDeductionChange, deductionHistory } from '../payroll/deduction-history';
 import { effectiveHrForm } from './request-policy';
@@ -18,7 +19,7 @@ import { createRequire } from 'node:module';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { db, queryOne, queryAll, run, nextSequence, nextFormRecordNumber, uploadDir, getSetting, setSetting } from '../../shared/db';
-import { requireAuth, requirePermission } from '../../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import {
   parseBody,
   employeeSchema,
@@ -166,7 +167,7 @@ router.get('/employees/suggest-number', requirePermission('hr.view'), (req, res)
 });
 
 // GET /api/hr/employees?q=&department_id=&status=
-router.get('/employees', requirePermission('hr.view'), (req, res) => {
+router.get('/employees', requireAnyPermission(['hr.view','hr.timekeeping.view']), (req, res) => {
   const { q, department_id, status } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
@@ -198,6 +199,9 @@ router.get('/employees', requirePermission('hr.view'), (req, res) => {
     r.rest_days = r.rest_days ? (() => { try { return JSON.parse(r.rest_days as unknown as string); } catch { return null; } })() : null;
     return { ...r, photo_rev: photoRev(photo) };
   });
+  if (!req.user!.permissions.includes('hr.view')) {
+    res.json(out.map(e => {const row=e as unknown as Record<string,unknown>;return Object.fromEntries(['id','name','employee_no','department_id','department_name','default_shift_id','status','user_id'].map(k=>[k,row[k]]));}));return;
+  }
   res.json(redactPay(out, req.user)); // rates only for payroll.view (payroll/pay-access.ts)
 });
 
@@ -344,14 +348,14 @@ router.get('/payroll-tables', requirePermission('payroll.view'), (req, res) => {
 });
 
 // POST /api/hr/payroll-tables — add/replace a version { kind, effective_from, data, note? }
-router.post('/payroll-tables', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
+router.post('/payroll-tables', requirePermission('payroll.configure'), syncClass('claim'), (req, res) => {
   const input = parseBody(payrollTableSchema, req.body);
   upsertPayrollTable(input.kind, input.effective_from, input.data, input.note ?? null, req.user!.id);
   res.status(201).json({ ok: true });
 });
 
 // DELETE /api/hr/payroll-tables/:id
-router.delete('/payroll-tables/:id', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
+router.delete('/payroll-tables/:id', requirePermission('payroll.configure'), syncClass('claim'), (req, res) => {
   if (!deletePayrollTable(Number(req.params.id))) {
     res.status(404).json({ error: 'Rate table version not found' });
     return;
@@ -645,7 +649,7 @@ router.get('/employees/:id/rate-history', requirePermission('payroll.view'), (re
 // its effective date (today or backdated), then recomputes this employee's payslips for every
 // cutoff ending on or after it. Unpaid payslips are rewritten in place; payslips marked Paid are
 // left as paid and reported with what the new rate would have earned, for HR to settle by hand.
-router.post('/employees/:id/rate-change', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
+router.post('/employees/:id/rate-change', requirePermission('payroll.rates'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const emp = queryOne<{ daily_rate: number; rate_type: 'daily' | 'monthly'; monthly_rate: number | null; start_date: string | null }>(
     'SELECT daily_rate, rate_type, monthly_rate, start_date FROM employees WHERE id = ?', id
@@ -1024,7 +1028,7 @@ router.delete('/assets/:id', requirePermission('hr.manage'), syncClass('claim'),
 // a day just points at whichever shift applied that day, not a fixed per-employee schedule) ────
 
 // GET /api/hr/shifts
-router.get('/shifts', requirePermission('hr.view'), (_req, res) => {
+router.get('/shifts', requireAnyPermission(['hr.view','hr.timekeeping.view']), (_req, res) => {
   const rows = queryAll<Omit<Shift, 'is_default'> & { is_default: number }>('SELECT * FROM shifts ORDER BY start_time');
   res.json(rows.map((r) => ({ ...r, is_default: !!r.is_default })));
 });
@@ -1065,7 +1069,7 @@ router.post('/leave-preview', requirePermission('hr.view'), (req, res) => {
 });
 
 // POST /api/hr/shifts
-router.post('/shifts', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.post('/shifts', requireAnyPermission(['hr.manage','hr.timekeeping.manage']), syncClass('claim'), (req, res) => {
   const input = parseBody(shiftSchema, req.body);
   if (input.is_default) run('UPDATE shifts SET is_default = 0');
   const info = run(
@@ -1076,7 +1080,7 @@ router.post('/shifts', requirePermission('hr.manage'), syncClass('claim'), (req,
 });
 
 // PUT /api/hr/shifts/:id
-router.put('/shifts/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.put('/shifts/:id', requireAnyPermission(['hr.manage','hr.timekeeping.manage']), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM shifts WHERE id = ?', id)) { res.status(404).json({ error: 'Shift not found' }); return; }
   const input = parseBody(shiftSchema, req.body);
@@ -1090,7 +1094,7 @@ router.put('/shifts/:id', requirePermission('hr.manage'), syncClass('claim'), (r
 
 // DELETE /api/hr/shifts/:id — attendance rows / employees.default_shift_id referencing it are
 // gracefully un-linked (ON DELETE SET NULL), not blocked.
-router.delete('/shifts/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.delete('/shifts/:id', requireAnyPermission(['hr.manage','hr.timekeeping.manage']), syncClass('claim'), (req, res) => {
   const info = run('DELETE FROM shifts WHERE id = ?', Number(req.params.id));
   if (info.changes === 0) { res.status(404).json({ error: 'Shift not found' }); return; }
   res.json({ ok: true });
@@ -1187,7 +1191,7 @@ router.get('/payroll-policy', requirePermission('hr.view'), (_req, res) => {
 });
 
 // PUT /api/hr/payroll-policy
-router.put('/payroll-policy', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
+router.put('/payroll-policy', requirePermission('payroll.configure'), syncClass('claim'), (req, res) => {
   const input = parseBody(payrollPolicySchema, req.body);
   setSetting('payroll_policy', input);
   res.json(input);
@@ -1196,7 +1200,7 @@ router.put('/payroll-policy', requirePermission('payroll.manage'), syncClass('cl
 // ─── Cutoff periods ─────────────────────────────────────────────────────────
 
 // GET /api/hr/periods
-router.get('/periods', requirePermission('hr.view'), (_req, res) => {
+router.get('/periods', requireAnyPermission(['hr.view','hr.timekeeping.view']), (_req, res) => {
   const rows = queryAll<AttendancePeriod>(
     `SELECT p.*,
        (SELECT COUNT(DISTINCT employee_id) FROM attendance_records WHERE period_id = p.id) AS employee_count
@@ -1207,7 +1211,7 @@ router.get('/periods', requirePermission('hr.view'), (_req, res) => {
 });
 
 // GET /api/hr/periods/:id — header + roster (employee + days_logged reference count)
-router.get('/periods/:id', requirePermission('hr.view'), (req, res) => {
+router.get('/periods/:id', requireAnyPermission(['hr.view','hr.timekeeping.view']), (req, res) => {
   const id = Number(req.params.id);
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', id);
   if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
@@ -1235,7 +1239,7 @@ router.get('/periods/:id', requirePermission('hr.view'), (req, res) => {
 // time_in/time_out set) in any cutoff ending within the last ~120 days. One row per
 // (employee, cutoff); `user_id` present means they have a login account we can message.
 // Powers the Home "Incomplete timekeeping" drill-down and Time Keeping's "Notify" action.
-router.get('/timekeeping/incomplete', requirePermission('hr.view'), (_req, res) => {
+router.get('/timekeeping/incomplete', requireAnyPermission(['hr.view','hr.timekeeping.view']), (_req, res) => {
   const rows = queryAll<{
     employee_id: number; name: string; user_id: number | null;
     period_id: number; period_label: string; work_date: string;
@@ -1270,7 +1274,7 @@ router.get('/timekeeping/incomplete', requirePermission('hr.view'), (_req, res) 
 });
 
 // POST /api/hr/periods
-router.post('/periods', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.post('/periods', requireAnyPermission(['hr.manage','hr.timekeeping.manage']), syncClass('claim'), (req, res) => {
   const input = parseBody(attendancePeriodSchema, req.body);
   const info = run(
     `INSERT INTO attendance_periods (label, start_date, end_date, created_by) VALUES (?, ?, ?, ?)`,
@@ -1289,7 +1293,7 @@ router.use('/periods/:id', (req, res, next) => {
 });
 
 // PUT /api/hr/periods/:id — update header; extend roster day-rows to cover a widened range
-router.put('/periods/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.put('/periods/:id', requireAnyPermission(['hr.manage','hr.timekeeping.manage']), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM attendance_periods WHERE id = ?', id)) {
     res.status(404).json({ error: 'Cutoff not found' }); return;
@@ -1316,7 +1320,7 @@ router.put('/periods/:id', requirePermission('hr.manage'), syncClass('claim'), (
 });
 
 // DELETE /api/hr/periods/:id (cascades attendance_records)
-router.delete('/periods/:id', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.delete('/periods/:id', requireAnyPermission(['hr.manage','hr.timekeeping.manage']), syncClass('claim'), (req, res) => {
   const info = run('DELETE FROM attendance_periods WHERE id = ?', Number(req.params.id));
   if (info.changes === 0) { res.status(404).json({ error: 'Cutoff not found' }); return; }
   res.json({ ok: true });
@@ -1325,7 +1329,7 @@ router.delete('/periods/:id', requirePermission('hr.manage'), syncClass('claim')
 // ─── Roster + daily attendance ──────────────────────────────────────────────
 
 // POST /api/hr/periods/:id/employees — add an employee to the cutoff roster
-router.post('/periods/:id/employees', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.post('/periods/:id/employees', requireAnyPermission(['hr.manage','hr.timekeeping.manage']), syncClass('claim'), (req, res) => {
   const periodId = Number(req.params.id);
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId);
   if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
@@ -1341,7 +1345,7 @@ router.post('/periods/:id/employees', requirePermission('hr.manage'), syncClass(
 // employee_ids list (checkbox multi-select) or a department/status/name filter ("Add All"),
 // resolved server-side so it always reflects the true matching set. Idempotent per employee
 // (ensureRosterDays uses INSERT OR IGNORE), so re-adding someone already on the roster is a no-op.
-router.post('/periods/:id/employees/bulk', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.post('/periods/:id/employees/bulk', requireAnyPermission(['hr.manage','hr.timekeeping.manage']), syncClass('claim'), (req, res) => {
   const periodId = Number(req.params.id);
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId);
   if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
@@ -1371,7 +1375,7 @@ router.post('/periods/:id/employees/bulk', requirePermission('hr.manage'), syncC
 });
 
 // DELETE /api/hr/periods/:id/employees/:employeeId — remove an employee from the roster
-router.delete('/periods/:id/employees/:employeeId', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.delete('/periods/:id/employees/:employeeId', requireAnyPermission(['hr.manage','hr.timekeeping.manage']), syncClass('claim'), (req, res) => {
   const info = run(
     'DELETE FROM attendance_records WHERE period_id = ? AND employee_id = ?',
     Number(req.params.id), Number(req.params.employeeId)
@@ -1385,7 +1389,7 @@ router.delete('/periods/:id/employees/:employeeId', requirePermission('hr.manage
 // url or null) so the grid can show a camera icon only where the kiosk actually captured one —
 // computed in bulk for the whole period (2 queries total), not per row. See slotPunchIdsForDates
 // in src/clock.ts and photoIdsForPunches in src/punch-photos.ts.
-router.get('/periods/:id/attendance', requirePermission('hr.view'), (req, res) => {
+router.get('/periods/:id/attendance', requireAnyPermission(['hr.view','hr.timekeeping.view']), (req, res) => {
   const periodId = Number(req.params.id);
   const employeeId = Number(req.query.employee_id);
   if (!employeeId) { res.status(400).json({ error: 'employee_id is required' }); return; }
@@ -1418,7 +1422,7 @@ router.get('/periods/:id/attendance', requirePermission('hr.view'), (req, res) =
 // GET /api/hr/periods/:id/attendance/export — the whole cutoff's daily roster as CSV, every
 // employee, one row per work_date (item 1: "download a CSV of the whole timekeeping for that
 // certain payroll period" — the per-employee GET above only ever covers one employee at a time).
-router.get('/periods/:id/attendance/export', requirePermission('hr.view'), (req, res) => {
+router.get('/periods/:id/attendance/export', requireAnyPermission(['hr.view','hr.timekeeping.view']), (req, res) => {
   const periodId = Number(req.params.id);
   const period = queryOne<{ label: string }>('SELECT label FROM attendance_periods WHERE id = ?', periodId);
   if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
@@ -1473,7 +1477,7 @@ router.get('/periods/:id/attendance/export', requirePermission('hr.view'), (req,
 // time_in falls back to a raw, not-yet-reconciled time_punches row when nothing's been typed or
 // imported into attendance_records yet (see src/hr-daily-report.ts for why this can't just
 // reuse computeAttendanceForEmployee).
-router.get('/daily-report', requirePermission('hr.view'), (req, res) => {
+router.get('/daily-report', requireAnyPermission(['hr.view','hr.timekeeping.view']), (req, res) => {
   const requested = typeof req.query.date === 'string' ? req.query.date : '';
   const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : localDateStr();
   const isToday = date === localDateStr();
@@ -1690,7 +1694,7 @@ router.get('/pending-requests', requirePermission('hr.view'), (req, res) => {
 // to this one cutoff). Powers the HR Overview page's "Needs Attention" panel, including its
 // cutoff switcher (?period_id lets HR check any past/future cutoff, not just the current one);
 // nothing here mutates anything.
-router.get('/cutoff-flags', requirePermission('hr.view'), (req, res) => {
+router.get('/cutoff-flags', requireAnyPermission(['hr.view','hr.timekeeping.view']), (req, res) => {
   const requestedId = Number(req.query.period_id);
   const period = requestedId
     ? queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', requestedId)
@@ -1776,7 +1780,7 @@ router.get('/cutoff-flags', requirePermission('hr.view'), (req, res) => {
 });
 
 // PUT /api/hr/periods/:id/attendance — replace one employee's daily rows for this cutoff
-router.put('/periods/:id/attendance', requirePermission('hr.manage'), syncClass('claim'), (req, res) => {
+router.put('/periods/:id/attendance', requireAnyPermission(['hr.manage','hr.timekeeping.manage']), syncClass('claim'), (req, res) => {
   const periodId = Number(req.params.id);
   if (!queryOne('SELECT id FROM attendance_periods WHERE id = ?', periodId)) {
     res.status(404).json({ error: 'Cutoff not found' }); return;
@@ -2658,7 +2662,7 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
 // aggregate journal entry (Payroll Journal). A deliberate, separate action from
 // generate-payslips itself (see src/accounting-autopost.ts's maybeAutoPostPayroll for why) —
 // safe to click again after a regenerate, which reverses the prior entry and posts fresh.
-router.post('/periods/:id/post-payroll-gl', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
+router.post('/periods/:id/post-payroll-gl', requirePermission('payroll.approve'), syncClass('claim'), (req, res) => {
   if (!ledgerEnabled()) { res.status(400).json({ error: 'The General Ledger isn’t enabled — turn it on under Accounting → Books first.' }); return; }
   const periodId = Number(req.params.id);
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId);
@@ -2667,6 +2671,8 @@ router.post('/periods/:id/post-payroll-gl', requirePermission('payroll.manage'),
   // strictly as generatePayslipsSchema (that one requires it non-empty for a *new* generate);
   // here it's optional and just needs to match whatever records are already sitting there.
   const payrollPeriod = (typeof req.body?.payroll_period === 'string' && req.body.payroll_period.trim()) || period.label;
+  const prepared = queryOne<{created_by:number}>(`SELECT fr.created_by FROM form_records fr JOIN form_definitions fd ON fd.id=fr.form_def_id WHERE fd.slug='hr_payroll' AND fr.period=? AND fr.created_by=? LIMIT 1`,payrollPeriod,req.user!.id);
+  if (prepared && !independentApproval(req,res,prepared.created_by,'approve payroll')) return;
   const outcome = maybeAutoPostPayroll(periodId, payrollPeriod, req.user!.id);
   if (outcome.error) { res.status(400).json(outcome); return; }
   if (!outcome.posted) { res.status(400).json({ ...outcome, error: outcome.skipped === 'nothing_to_post' ? 'No payslips to post for this period yet — generate payslips first.' : `Not posted (${outcome.skipped}).` }); return; }
@@ -2676,13 +2682,14 @@ router.post('/periods/:id/post-payroll-gl', requirePermission('payroll.manage'),
 // POST /api/hr/payroll/:recordId/mark-paid — locks a generated payslip: generate-payslips
 // will skip it on future regenerates, and the generic /api/form-records PUT/DELETE routes
 // refuse to touch it (see form-builder.routes.ts) until it's unmarked.
-router.post('/payroll/:recordId/mark-paid', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
-  const rec = queryOne<{ id: number; status: string; slug: string }>(
-    `SELECT fr.id, fr.status, fd.slug FROM form_records fr
+router.post('/payroll/:recordId/mark-paid', requirePermission('payroll.pay'), syncClass('claim'), (req, res) => {
+  const rec = queryOne<{ id: number; status: string; slug: string; created_by:number }>(
+    `SELECT fr.id, fr.status, fr.created_by, fd.slug FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
     Number(req.params.recordId)
   );
   if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
+  if (!independentApproval(req,res,rec.created_by,'confirm payroll payment')) return;
   if (rec.status === 'paid') {
     // Clash-check (D6): marked paid on the cloud too — the same outcome; kept, flagged.
     if (siteDecisionStands()) {
@@ -2713,9 +2720,9 @@ function recordPaidChange(recordId: number, action: 'paid' | 'unpaid', userId: n
 }
 
 // POST /api/hr/payroll/:recordId/unmark-paid — unlocks it again for editing/regeneration.
-router.post('/payroll/:recordId/unmark-paid', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
-  const rec = queryOne<{ id: number; status: string; slug: string }>(
-    `SELECT fr.id, fr.status, fd.slug FROM form_records fr
+router.post('/payroll/:recordId/unmark-paid', requirePermission('payroll.pay'), syncClass('claim'), (req, res) => {
+  const rec = queryOne<{ id: number; status: string; slug: string; created_by:number }>(
+    `SELECT fr.id, fr.status, fr.created_by, fd.slug FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
     Number(req.params.recordId)
   );

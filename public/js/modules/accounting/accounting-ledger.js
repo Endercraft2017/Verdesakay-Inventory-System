@@ -2,7 +2,9 @@
    Chart of accounts · Journal entries · Trial Balance / P&L / Balance Sheet / GL. */
 App.register('accounting-ledger', async (view, filter) => {
   const money = UI.money;
-  const canManage = App.hasPermission('accounting.manage');
+  const canManage = App.hasPermission('accounting.configure');
+  const canPrepare = App.hasPermission('accounting.manage');
+  const canPost = App.hasPermission('accounting.post');
   let settings;
   try { settings = await API.get('/accounting/ledger/settings'); }
   catch (e) { view.innerHTML = `<div class="empty">${UI.esc(e.message)}</div>`; return; }
@@ -295,7 +297,7 @@ App.register('accounting-ledger', async (view, filter) => {
     const list = await API.get('/accounting/ledger/journal-entries');
     body.innerHTML = `
       <div style="display:flex;margin-bottom:8px"><div class="grow"></div>
-        ${canManage ? `<button class="btn secondary small" id="je-new">${UI.icon('plus')} New entry</button>` : ''}</div>
+        ${canPrepare ? `<button class="btn secondary small" id="je-new">${UI.icon('plus')} New entry</button>` : ''}</div>
       ${list.length ? `<table><thead><tr><th>No.</th><th>Date</th><th>Book</th><th>Memo</th><th class="right">Amount</th><th>Status</th></tr></thead>
         <tbody>${list.map((e) => `<tr class="clickable" data-open="${e.id}">
           <td class="mono">${UI.esc(e.number)}</td><td>${UI.esc(e.entry_date)}</td>
@@ -334,8 +336,8 @@ App.register('accounting-ledger', async (view, filter) => {
         <table style="margin-top:8px"><thead><tr><th>Code</th><th>Account</th><th class="right">Debit</th><th class="right">Credit</th><th>Memo</th></tr></thead>
           <tbody>${rows}</tbody></table>
         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-          ${canManage && e.status === 'draft' ? `<button class="btn" id="je-post">Post</button><button class="btn secondary" id="je-edit">Edit</button><button class="btn danger" id="je-del">Delete</button>` : ''}
-          ${canManage && e.status === 'posted' && !e.reversed_by ? `<button class="btn secondary" id="je-void">Reverse</button>` : ''}
+          ${(canPost || canPrepare) && e.status === 'draft' ? `${canPost ? '<button class="btn" id="je-post">Post</button>' : ''}${canPrepare ? '<button class="btn secondary" id="je-edit">Edit</button><button class="btn danger" id="je-del">Delete</button>' : ''}` : ''}
+          ${canPost && e.status === 'posted' && !e.reversed_by ? `<button class="btn secondary" id="je-void">Reverse</button>` : ''}
         </div>`,
     });
     const el = d.el || document;

@@ -44,7 +44,7 @@ const NAV = [
       ] },
     ],
   },
-  { id: 'support', label: 'Support', icon: 'help', requiredPermission: 'users.manage', subtabs: [{ id: 'support-tickets', label: 'Bug reports & issues', tree: [{ label: 'Contact OTOM', icon: 'help', route: 'support' }] }] },
+  { id: 'support', label: 'Support', icon: 'help', requiredPermission: 'workspace.manage', subtabs: [{ id: 'support-tickets', label: 'Bug reports & issues', tree: [{ label: 'Contact OTOM', icon: 'help', route: 'support' }] }] },
   {
     id: 'inventory', label: 'Inventory', icon: 'inventory', requiredModule: 'inventory',
     subtabs: [
@@ -123,7 +123,7 @@ const NAV = [
   },
   {
     id: 'production', label: 'Production', icon: 'factory',
-    requiredAnyPermission: ['production.view', 'production.record', 'production.pause', 'production.manage', 'production.approve', 'production.repairs', 'production.receive'],
+    requiredAnyPermission: ['production.view', 'production.record', 'production.pause', 'production.manage', 'production.approve', 'production.plan', 'production.kit_release', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.repairs', 'production.receive'],
     requiredModule: 'manufacturing',
     /* Subtabs are ordered to match the real build pipeline, not alphabetically or by
        feature-add order: overview (home/summary) -> setup (prerequisite) -> schedule/start ->
@@ -144,7 +144,7 @@ const NAV = [
         ],
       },
       {
-        id: 'shop-floor', label: 'Job Orders', requiredAnyPermission: ['production.view', 'production.record', 'production.pause', 'production.manage', 'production.approve'],
+        id: 'shop-floor', label: 'Job Orders', requiredAnyPermission: ['production.view', 'production.record', 'production.pause', 'production.manage', 'production.approve', 'production.plan', 'production.kit_release'],
         tree: [
           { label: 'Job Orders', icon: 'adjust', route: 'job-orders' },
         ],
@@ -157,12 +157,16 @@ const NAV = [
         ],
       },
       {
-        id: 'qc', label: 'QC / QA', requiredPermission: 'production.view',
-        tree: [
-          { label: 'Inspection Queue', icon: 'check', route: 'production-qc', filter: { tab: 'queue' } },
-          { label: 'On Hold', icon: 'alert', route: 'production-qc', filter: { tab: 'holds' } },
-          { label: 'Findings & Reports', icon: 'sheet', route: 'production-qc', filter: { tab: 'findings' } },
-        ],
+        id: 'qc', label: 'QC / QA', requiredAnyPermission: ['production.view','production.inspect_qc','production.inspect_qa'],
+        tree: [{ label: 'Inspection Queue', icon: 'check', route: 'production-qc', filter: { tab: 'queue' } }],
+      },
+      {
+        id: 'qa-holds', label: 'QA Holds', requiredAnyPermission: ['production.inspect_qa','production.qa_review'],
+        tree: [{ label: 'On Hold', icon: 'alert', route: 'production-qc', filter: { tab: 'holds' } }],
+      },
+      {
+        id: 'qc-findings', label: 'Quality Reports', requiredPermission: 'production.view',
+        tree: [{ label: 'Findings & Reports', icon: 'sheet', route: 'production-qc', filter: { tab: 'findings' } }],
       },
       {
         id: 'repairs', label: 'Repairs & Parts Requests', requiredAnyPermission: ['production.view', 'production.repairs'],
@@ -215,16 +219,16 @@ const NAV = [
     ],
   },
   {
-    id: 'hr', label: 'HR', icon: 'users', requiredPermission: 'hr.view', requiredModule: 'hr',
+    id: 'hr', label: 'HR', icon: 'users', requiredAnyPermission: ['hr.view','hr.timekeeping.view','hr.kiosk','payroll.view','reports.confidential'], requiredModule: 'hr',
     subtabs: [
       {
-        id: 'overview', label: 'Overview',
+        id: 'overview', label: 'Overview', requiredPermission: 'hr.view',
         tree: [
           { label: 'Human Resources', icon: 'users', route: 'hr' },
         ],
       },
       {
-        id: 'employees', label: 'Employees',
+        id: 'employees', label: 'Employees', requiredPermission: 'hr.view',
         tree: [
           { label: 'Employees', icon: 'users', route: 'hr-employees' },
           { label: 'Contact Verification', icon: 'users', route: 'hr-contact-verification' },
@@ -238,13 +242,13 @@ const NAV = [
         ],
       },
       {
-        id: 'timekeeping', label: 'Time Keeping',
+        id: 'timekeeping', label: 'Time Keeping', requiredAnyPermission: ['hr.view','hr.timekeeping.view'],
         tree: [
           { label: 'Time Keeping', icon: 'calendar', route: 'hr-timekeeping' },
-          { label: 'Time-in Kiosk', icon: 'calendar', route: 'hr-kiosk' },
           { label: 'Daily Report', icon: 'sheet', route: 'hr-daily-report' },
         ],
       },
+      {id:'time-clock-kiosk',label:'Time Clock Kiosk',requiredAnyPermission:['hr.view','hr.timekeeping.view','hr.kiosk'],tree:[{label:'Time-in Kiosk',icon:'calendar',route:'hr-kiosk'}]},
       {
         // Anonymous-channel case handling (reports.confidential — HR + admin by default).
         id: 'anonymous-reports', label: 'Anonymous Reports', requiredPermission: 'reports.confidential',
@@ -253,7 +257,7 @@ const NAV = [
         ],
       },
       {
-        id: 'identified-reports', label: 'Identified Reports',
+        id: 'identified-reports', label: 'Identified Reports', requiredPermission: 'hr.view',
         tree: [{ label: 'Identified Reports', icon: 'alert', route: 'identified-reports' }],
       },
       {
@@ -304,10 +308,10 @@ const NAV = [
     ],
   },
   {
-    id: 'admin', label: 'Admin', icon: 'users', requiredPermission: 'users.manage',
+    id: 'admin', label: 'Admin', icon: 'users', requiredAnyPermission: ['users.manage','users.permissions','security.manage','workspace.manage','audit.view','forms.manage.admin'],
     subtabs: [
       {
-        id: 'accounts', label: 'Accounts',
+        id: 'accounts', label: 'Accounts', requiredAnyPermission: ['users.manage','users.permissions'],
         tree: [
           { label: 'User Accounts', icon: 'users', route: 'admin' },
           { label: 'Roles', icon: 'key', route: 'admin', filter: { tab: 'roles' } },
@@ -321,14 +325,14 @@ const NAV = [
         ],
       },
       {
-        id: 'installed-pcs', label: 'Installed PCs',
+        id: 'installed-pcs', label: 'Installed PCs', requiredPermission: 'workspace.manage',
         tree: [
           // Offline-capable PCs enrolled against this workspace (docs/OFFLINE-FIRST.md §13).
           { label: 'Installed PCs', icon: 'building', route: 'sync' },
         ],
       },
       {
-        id: 'billing', label: 'Billing',
+        id: 'billing', label: 'Billing', requiredPermission: 'workspace.manage',
         tree: [
           // Our invoices to this workspace + paying by GCash or bank transfer (docs/SAAS-READINESS.md §12).
           { label: 'Invoices & payments', icon: 'file', route: 'billing' },

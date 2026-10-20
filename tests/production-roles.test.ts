@@ -46,6 +46,7 @@ describe('production_lead role', () => {
   it('can add a unit and record scrap, but cannot release/pause/cancel a job order', async () => {
     const lead = await createEmployee(ctx.api, token, { role: 'production_lead' });
     const { mo } = await releasedMO('LeadRole', 3, 1);
+    await ctx.api.put(`/api/job-orders/${mo}/assignees`).set(H()).send({user_ids:[lead.id]});
 
     const add = await ctx.api.post(`/api/job-orders/${mo}/units`).set(bearer(lead.token)).field('identifier', 'LEAD-1').attach('image', Buffer.from('unit-photo'), 'unit.png');
     expect(add.status).toBe(201);

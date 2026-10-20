@@ -35,7 +35,7 @@ App.register('orders', async (view, filter) => {
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="ord-search" aria-label="Search orders by number or ${partyLabel.toLowerCase()}" placeholder="Search number, ${partyLabel.toLowerCase()}…" value="${UI.esc(state.q)}" /></div>
       ${type === 'sale' ? `<button class="btn secondary" id="ord-backorder" title="Show firm orders with stock lines still awaiting picking">${UI.icon('alert', 15)} Awaiting release</button>` : ''}
-      ${App.hasPermission('users.manage') && qb.configured ? `<button class="btn secondary" id="ord-qb">${UI.icon('sheet')} QuickBooks${qb.connected ? ' ✓' : ''}</button>` : ''}
+      ${App.hasPermission('workspace.manage') && qb.configured ? `<button class="btn secondary" id="ord-qb">${UI.icon('sheet')} QuickBooks${qb.connected ? ' ✓' : ''}</button>` : ''}
       ${canCreate ? `<button class="btn" id="ord-new">${UI.icon('plus')} New ${noun}</button>` : ''}
     </div>
     <div class="panel"><div id="ord-table"></div></div>`;
@@ -94,13 +94,13 @@ App.register('orders', async (view, filter) => {
             ${tracking ? '' : `<td class="right">${UI.esc(o.currency || '')} ${money(o.total)}</td>`}
             <td><span class="badge-pill status-${UI.esc(o.status)}">${UI.esc(o.status)}</span>${o.release_slip_number ? ` <span class="badge-pill" title="Goods left on release slip ${UI.esc(o.release_slip_number)}">Shipped · ${UI.esc(o.release_slip_number)}</span>` : ''}${o.backordered ? ' <span class="badge-pill low" title="Stock lines still await picking">⚠ awaiting pick</span>' : ''}</td>
             <td class="actions">
-              ${type === 'job' && !tracking && App.hasPermission('inventory.adjust')
+              ${type === 'job' && !tracking && App.hasPermission('production.plan')
                 ? (o.job_order_id
                   ? `<button class="icon-btn" title="View in Production — ${UI.esc(o.job_order_number)}" data-view-jo="${o.job_order_id}">${UI.icon('eye')}</button>`
                   : `<button class="icon-btn" title="Start production" data-produce="${o.id}">${UI.icon('adjust')}</button>`)
                 : ''}
               ${type === 'purchase' ? `<button class="icon-btn" title="Receiving & bills" data-purch="${o.id}">${UI.icon('inbox')}</button>` : ''}
-              ${type === 'sale' && !tracking && ['approved', 'released'].includes(String(o.status).toLowerCase()) && App.hasPermission('orders.edit') && window.ReleaseAuth
+              ${type === 'sale' && !tracking && ['approved', 'released'].includes(String(o.status).toLowerCase()) && App.hasPermission('orders.authorize') && window.ReleaseAuth
                 ? `<button class="icon-btn" title="Release authorization (who may collect)" data-relauth="${o.id}" data-num="${UI.esc(o.number)}">${UI.icon('key')}</button>` : ''}
               ${canQbPush ? `<button class="icon-btn" title="Push to QuickBooks as a ${qbDoc}" data-qbpush="${o.id}">${UI.icon('sheet')}</button>` : ''}
               <button class="icon-btn" title="Print" data-print="${o.id}">${UI.icon('printer')}</button>
@@ -189,7 +189,7 @@ App.register('orders', async (view, filter) => {
       const status = av.order_status || order.status;
       const open = status === 'open';
       const plannable = !order.fulfilled_at && ['open', 'approved', 'released'].includes(status);
-      const make = !tracking && plannable && App.hasPermission('inventory.adjust') && (!App.hasModule || App.hasModule('manufacturing'));
+      const make = !tracking && plannable && App.hasPermission('production.plan') && (!App.hasModule || App.hasModule('manufacturing'));
       const buy = !tracking && plannable && App.hasPermission('purchasing.manage') && (!App.hasModule || App.hasModule('purchasing'));
       const short = av.lines.filter((l) => l.shortfall > 0);
       const toBuy = (av.purchase_requirements || []).filter((r) => r.to_purchase > 0);
@@ -216,7 +216,7 @@ App.register('orders', async (view, filter) => {
           ${open && canEdit ? '<button type="button" class="btn secondary" data-edit-order>Edit quantities or ship-from</button>' : ''}
           ${make && short.some((l) => l.is_finished_product && l.has_bom) ? '<button type="button" class="btn secondary" data-make>Draft CKD-parts production</button>' : ''}
           ${buy && toBuy.length ? '<button type="button" class="btn secondary" data-buy>Draft missing purchases</button>' : ''}
-          ${open && canEdit && (av.location_id != null || !av.lines.length) ? `<button type="button" class="btn${av.ok ? '' : ' secondary danger'}" data-approve>${av.ok ? 'Approve for warehouse' : 'Review backorder approval'}</button>` : ''}
+          ${open && App.hasPermission('orders.approve') && (av.location_id != null || !av.lines.length) ? `<button type="button" class="btn${av.ok ? '' : ' secondary danger'}" data-approve>${av.ok ? 'Approve for warehouse' : 'Review backorder approval'}</button>` : ''}
         </div>
         ${open ? '<p class="muted">Approval locks quantities and prices and sends the order to warehouse acceptance. It does not pick or ship goods.</p>' : '<p class="muted">This review does not change an existing approval, release or delivery.</p>'}`;
       panel.querySelector('[data-refresh]').onclick = () => refresh();
@@ -376,7 +376,7 @@ App.register('orders', async (view, filter) => {
 
     // Sale orders get the release lifecycle: open → approved (unlocks warehouse
     // release) → released (auto once fully picked) → confirmed/completed (stock out).
-    const STATUS_VALUES = type === 'sale'
+    const STATUS_VALUES = type === 'sale' && !App.hasPermission('orders.approve') ? [get('status','open')] : type === 'sale'
       ? (editing ? (shipped ? (order.fulfillment&&order.fulfillment.remaining>0?['approved','released']:['confirmed', 'completed', 'fulfilled', 'invoiced', 'paid']) : ['open', 'cancelled'].includes(String(order.status).toLowerCase()) ? ['open', 'approved', 'cancelled'] : ['open', 'approved', 'confirmed', 'completed', 'cancelled']) : ['open'])
       : ['open', 'confirmed', 'completed', 'cancelled'];
     const curStatus = get('status', 'open');
@@ -390,7 +390,7 @@ App.register('orders', async (view, filter) => {
         <div class="order-editor-intro"><strong>${editing ? 'Order details' : '1. Capture the order'}</strong>
           <p>${readOnly ? 'You have view access to this order.' : !editing && type === 'sale' ? 'Save an open order first. Approval checks stock and hands the order to the warehouse.' : 'Review the customer, stock links, quantities, and totals before saving.'}</p></div>
         ${lookupWarnings.length ? `<p class="order-notice" role="status">${lookupWarnings.map(UI.esc).join(' ')}</p>` : ''}
-        ${editing&&type==='sale'&&order.fulfillment ? `<p class="order-notice">Shipped ${order.fulfillment.dispatched} · Customer delivered ${order.fulfillment.delivered} · Held ${order.fulfillment.held} · Still owed ${order.fulfillment.remaining}</p>${!readOnly&&order.fulfillment.remaining>0?'<button type="button" class="btn secondary" id="order-cancel-remainder">Cancel customer remainder</button>':''}`:''}
+        ${editing&&type==='sale'&&order.fulfillment ? `<p class="order-notice">Shipped ${order.fulfillment.dispatched} · Customer delivered ${order.fulfillment.delivered} · Held ${order.fulfillment.held} · Still owed ${order.fulfillment.remaining}</p>${!readOnly&&App.hasPermission('orders.approve')&&order.fulfillment.remaining>0?'<button type="button" class="btn secondary" id="order-cancel-remainder">Cancel customer remainder</button>':''}`:''}
         ${shipped ? `<p class="order-notice" role="status">Goods left on release slip ${UI.esc(order.release_slip_number)}. Reopening, cancelling or deleting this sale cannot restore physical stock. Record a return or correction separately.</p>` : ''}
         <section class="order-section"><h4>${partyLabel} &amp; order details</h4>
         ${type === 'sale' ? `<div class="field-row">

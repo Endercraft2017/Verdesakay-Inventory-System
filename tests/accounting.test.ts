@@ -88,12 +88,12 @@ describe('accounting: 0619-E (expanded withholding)', () => {
 });
 
 describe('accounting: permission gate', () => {
-  it('needs accounting.view (warehouse 403, accounting 200)', async () => {
+  it('needs accounting visibility for books and payroll visibility for employee tax records', async () => {
     const wh = await createEmployee(ctx.api, token, { role: 'warehouse', username: 'acc_wh' });
     const acc = await createEmployee(ctx.api, token, { role: 'accounting', username: 'acc_acc' });
 
     expect((await ctx.api.get('/api/accounting/bir-1601c?year=2026').set('Authorization', `Bearer ${wh.token}`)).status).toBe(403);
-    expect((await ctx.api.get('/api/accounting/bir-1601c?year=2026').set('Authorization', `Bearer ${acc.token}`)).status).toBe(200);
+    expect((await ctx.api.get('/api/accounting/bir-1601c?year=2026').set('Authorization', `Bearer ${acc.token}`)).status).toBe(403);
     expect((await ctx.api.get('/api/accounting/bir-2550m?month=2026-07').set('Authorization', `Bearer ${acc.token}`)).status).toBe(200);
   });
 });

@@ -20,7 +20,7 @@ import {
 } from './billing';
 
 const router = Router();
-router.use(requireAuth, requirePermission('users.manage'));
+router.use(requireAuth, requirePermission('workspace.manage'));
 
 const upload = keepRequestContext(multer({
   storage: multer.memoryStorage(),

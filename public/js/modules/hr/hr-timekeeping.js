@@ -7,7 +7,7 @@
    modal — e.g. the HR Overview "Needs Attention" panel jumping straight to one flagged
    employee's grid instead of just landing on the roster and making HR find them. */
 App.register('hr-timekeeping', async (view, filter) => {
-  if (!App.hasPermission('hr.view')) {
+  if (!App.hasPermission('hr.view') && !App.hasPermission('hr.timekeeping.view')) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
     return;
   }
@@ -22,7 +22,7 @@ App.register('hr-timekeeping', async (view, filter) => {
 async function renderList(view) {
   // Cutoff writes are hr.manage server-side (hr.routes.ts) — a read-only HR viewer gets the
   // list and the calendar/log tools, not create/delete buttons that would only 403.
-  const canManage = App.hasPermission('hr.manage');
+  const canManage = (App.hasPermission('hr.manage') || App.hasPermission('hr.timekeeping.manage'));
   view.innerHTML = `
     <div class="topbar">
       <div>
@@ -421,7 +421,7 @@ function punchLogModal() {
    for this PC); approval stores a token in that browser. */
 async function kioskDevicesModal() {
   let info = await API.get('/hr/clock/kiosk-devices');
-  const canManage = App.hasPermission('hr.manage');
+  const canManage = (App.hasPermission('hr.manage') || App.hasPermission('hr.timekeeping.manage'));
 
   UI.modal({
     title: 'Kiosk Devices',
@@ -737,7 +737,7 @@ async function policySettingsModal() {
       const rateTablesBtn = ov.querySelector('#tk-rate-tables');
       if (App.hasPermission('payroll.view')) rateTablesBtn.onclick = () => rateTablesModal();
       else rateTablesBtn.hidden = true;
-      if (!App.hasPermission('payroll.manage')) {
+      if (!App.hasPermission('payroll.configure')) {
         const save = ov.querySelector('#tk-policy-save');
         save.disabled = true;
         save.title = 'Saving payroll rules needs the Run payroll permission';
@@ -1238,7 +1238,7 @@ async function finalPayModal() {
 const RATE_KIND_LABEL = { sss: 'SSS', philhealth: 'PhilHealth', pagibig: 'Pag-IBIG', rwt: 'BIR withholding tax' };
 
 async function rateTablesModal() {
-  const canWrite=App.hasPermission('payroll.manage');
+  const canWrite=App.hasPermission('payroll.configure');
   async function load() {
     return API.get('/hr/payroll-tables');
   }
@@ -1340,10 +1340,11 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   let lastPayrollPeriod = period.label;
   // Roster/cutoff writes are hr.manage and payslip/GL writes payroll.manage server-side; read-only
   // viewers keep the roster, daily grids and CSV export without buttons that would only 403.
-  const canManage = App.hasPermission('hr.manage') && !period.locked;
+  const canManage = (App.hasPermission('hr.manage') || App.hasPermission('hr.timekeeping.manage')) && !period.locked;
   const canPayroll = App.hasPermission('payroll.manage');
   const showRate = App.hasPermission('payroll.view');
-  const hasTools = canManage || canPayroll;
+  const canPostPayroll = App.hasPermission('payroll.approve');
+  const hasTools = canManage || canPayroll || canPostPayroll;
 
   view.innerHTML = `
     <div class="topbar tk-cutoff-header">
@@ -1366,7 +1367,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
         <button type="button" class="btn secondary small" id="tk-edit-period">${UI.icon('edit', 14)} Edit Cutoff</button>
         <button type="button" class="btn secondary small" id="tk-import-punches" title="Punches fill time-in/out live while someone's on this cutoff's roster — use this to backfill anyone who punched before being added">${UI.icon('calendar', 14)} Import Punches</button>
       </div>` : ''}
-      ${canPayroll ? `<div class="hr-tools-group" role="group" aria-labelledby="tk-more-acct">
+      ${canPostPayroll ? `<div class="hr-tools-group" role="group" aria-labelledby="tk-more-acct">
         <span class="hr-tools-label" id="tk-more-acct">Accounting</span>
         <button type="button" class="btn secondary small" id="tk-post-gl" title="Post this cutoff's generated payslips to the General Ledger">${UI.icon('building', 14)} Post to GL</button>
       </div>` : ''}

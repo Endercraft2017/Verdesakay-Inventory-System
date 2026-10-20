@@ -65,7 +65,7 @@ try{
     assert.equal(await phone.locator('#m-view').getByRole('button',{name:/RTS recording/}).count(),0);assert.equal(await phone.locator('#m-view').getByRole('button',{name:/Stock in \/ out/}).count(),0);
   });
   await check('Desktop per-person grants appear on Work without changing the clerk role or firing focus',async()=>{
-    await edit({'production.receive':true,'orders.release':true,'inventory.view':true,'inventory.adjust':true});await phone.locator('#m-tabbar [data-tab=work]').click();
+    await edit({'production.receive':true,'orders.release':true,'inventory.view':true,'inventory.adjust':true,'inventory.transfer':true,'inventory.count':true});await phone.locator('#m-tabbar [data-tab=work]').click();
     for(const label of ['Parts requests','RTS recording','Release orders','Inventory stock','Transfer stock'])await phone.locator('#m-view').getByRole('button',{name:new RegExp('^'+label)}).waitFor();
     const me=(await api('GET','/auth/me',undefined,employee)).user;assert.equal(me.role,role);assert(me.permissions.includes('production.receive'));
     assert.equal(await phone.locator('#m-view').getByRole('button',{name:'All role queues',exact:true}).count(),0);
@@ -78,7 +78,7 @@ try{
     }
   });
   await check('Desktop removals disappear on Work while retained clerk and read-only inventory rights remain',async()=>{
-    await edit({'production.receive':false,'orders.release':false,'inventory.adjust':false});await work();
+    await edit({'production.receive':false,'orders.release':false,'inventory.adjust':false,'inventory.transfer':false,'inventory.count':false});await work();
     await phone.waitForFunction(()=>!MApp.can('inventory.adjust'));
     for(const label of ['RTS recording','Release orders','Transfer stock','Stock in / out'])assert.equal(await phone.locator('#m-view').getByRole('button',{name:new RegExp('^'+label)}).count(),0);
     for(const label of ['Parts requests','Inventory stock'])await phone.locator('#m-view').getByRole('button',{name:new RegExp('^'+label)}).waitFor();

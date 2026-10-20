@@ -499,7 +499,7 @@ describe('executeTool unit tests', () => {
     const result = await executeTool('update_user', { id: admin.id, role: 'admin_staff' }, {
       id: admin.id, username: 'admin', full_name: 'Admin', role: 'admin',
       department_id: null, active: 1, department_name: null,
-      permissions: ['users.manage'],
+      permissions: ['users.manage','users.permissions'],
     });
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/last active administrator/i);
@@ -514,7 +514,7 @@ describe('executeTool unit tests', () => {
     }, {
       id: admin.id, username: 'admin', full_name: 'Admin', role: 'admin',
       department_id: null, active: 1, department_name: null,
-      permissions: ['users.manage'],
+      permissions: ['users.manage','users.permissions'],
     });
     expect(result.success).toBe(false);
   });

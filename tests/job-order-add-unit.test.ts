@@ -142,6 +142,7 @@ describe('POST /api/job-orders/:id/units', () => {
   it('lets a production lead (no inventory.adjust) add a unit with its photo, and inspectors add defect photos', async () => {
     const { mo } = await releasedMO('AddUnitLeadPhoto', 1, 1);
     const lead = await createEmployee(ctx.api, token, { role: 'production_lead' });
+    await ctx.api.put(`/api/job-orders/${mo}/assignees`).set(H()).send({user_ids:[lead.id]});
     const r = await ctx.api.post(`/api/job-orders/${mo}/units`).set(bearer(lead.token))
       .field('identifier', 'LEADPH-1').attach('image', PNG, 'unit.png');
     expect(r.status).toBe(201);

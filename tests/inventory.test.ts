@@ -509,8 +509,9 @@ describe('inventory: RBAC on mutations', () => {
     expect((await ctx.api.delete(`/api/inventory/${item.body.id}`).set(hdr)).status).toBe(403);
   });
 
-  it('admin_staff (no inventory.delete by default) can create/edit/adjust but not delete', async () => {
+  it('an explicitly delegated stock clerk can create/edit/adjust but not delete', async () => {
     const staff = await createEmployee(ctx.api, token, { username: 'rbac_staff', role: 'admin_staff' });
+    await ctx.api.put('/api/users/'+staff.id+'/permissions').set(authHdr()).send({overrides:{'inventory.create':true,'inventory.edit':true,'inventory.adjust':true}});
     const hdr = { Authorization: `Bearer ${staff.token}` };
     const created = await ctx.api.post('/api/inventory').set(hdr).send({ name: 'Staff Item', quantity: 2, unit: 'pcs', min_quantity: 0 });
     expect(created.status).toBe(201);

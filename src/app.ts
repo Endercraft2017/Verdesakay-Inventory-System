@@ -1,3 +1,4 @@
+import { redactInventoryCosts } from './shared/cost-visibility';
 /**
  * Express application factory. Builds the app with middleware, routes, and error handling
  * but does NOT start listening — so tests can import it via supertest.
@@ -297,6 +298,8 @@ export function createApp() {
 
   // Sync: replay context, the node write guard, and the cloud's effect stream (src/sync/capture.ts).
   app.use(syncRequestMiddleware);
+  // Apply field visibility to every JSON path, including lookups, reports and direct URLs.
+  app.use((req,res,next)=>{const send=res.json.bind(res);res.json=(body:unknown)=>send(redactInventoryCosts(body,req.user,req.originalUrl));next();});
 
   // Throttle login attempts to slow brute-force guessing: per client IP (rateLimitKey — the real
   // visitor, not the proxy), plus per account so guesses spread over many IPs still stop.
