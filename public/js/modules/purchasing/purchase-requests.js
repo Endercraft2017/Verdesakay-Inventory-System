@@ -2,7 +2,7 @@
 App.register('purchase-requests', async (view) => {
   const base = '/purchasing/requests';
   const canRequest = App.hasPermission('purchasing.request');
-  const canReview = App.hasPermission('purchasing.manage');
+  const canReview = App.hasPermission('purchasing.approve_requests');
   const esc = UI.esc;
   const pesos = (n) => 'PHP ' + UI.money(Number(n) || 0);
   view.innerHTML = `<div class="topbar"><h2>Purchase Requests</h2><div class="grow"></div>${canRequest ? '<button class="btn" id="pr-new">New request</button>' : ''}</div>

@@ -1,5 +1,23 @@
 # Inventory and production: mobile integration gaps
 
+## PR approval authority split (2026-10-20)
+
+The backend and desktop now use `purchasing.approve_requests` to see the whole
+internal PR queue, approve/reject budgets, record cash, review liquidation and
+close requests. `purchasing.manage` still governs supplier purchase orders and
+vendor bills, but no longer authorizes internal PR decisions. New and existing
+Admin Staff and Accounting roles get PR approval authority; Administrators
+always have it. Other roles need an explicit grant in Admin → Accounts → Roles.
+HR cannot delegate this financial approval permission through staff-level
+overrides. The assigned buyer alone uploads receipts and submits liquidation;
+an approver cannot act as that buyer merely by holding approval authority.
+
+**Mobile owner action:** Gate the Review PRs entry and all approval/cash/close
+controls on `purchasing.approve_requests`, not `purchasing.manage`. Show My
+assigned purchases to the assigned buyer. Recheck a CSR/releasing account that
+can manage supplier orders but cannot approve PRs, and an approver who cannot
+upload evidence for someone else's purchase. The server enforces both rules.
+
 ## Internal purchase requests: staff → approval → buyer → liquidation (2026-10-19)
 
 **Current phone gap:** Work → **Receive PR** is the old supplier-order goods receipt
@@ -13,7 +31,7 @@ with the new PR. No mobile source was edited here.
 freeform item names, quantities and expected unit costs; the sum is the
 requested budget. These can be tools, office/cleaning supplies, new products
 or existing parts, with no catalog or supplier requirement. `purchasing.request`
-lets staff submit and see their own requests. `purchasing.manage` sees the whole
+lets staff submit and see their own requests. `purchasing.approve_requests` sees the whole
 queue and approves a budget or rejects with a reason. Approval chooses either
 **cash to requester** (the requester buys; authority records cash physically
 issued) or **assigned buyer** (an active employee is chosen). The assigned

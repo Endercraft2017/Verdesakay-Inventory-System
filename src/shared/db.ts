@@ -69,6 +69,7 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
+// 93: restrict PR budget approval and liquidation closure to designated authorities.
 // 92: budgeted staff purchase requests, assigned buyers, receipt-backed liquidation.
 // 91: inspection-only legacy unit intake provenance, immutable keys and recorded valuation.
 // 90: planned cycle-count assignments, recurrence, and exact-count linkage.
@@ -101,7 +102,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 92; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 93; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -3367,6 +3368,20 @@ function migrate(): void {
     ['orders.view', 'purchasing.view'], ['orders.create', 'purchasing.manage'], ['orders.edit', 'purchasing.manage'],
   ]);
   grantOnce('migrated_purchasing_requests', [['mobile.access', 'purchasing.request']]);
+
+  // 93: supplier-order managers are not automatically authorized to approve staff spending.
+  // Preserve the office/admin and accounting desks on existing tenants, once only. Admin
+  // always has every permission; other authorities can be chosen in the role editor.
+  if (!getSetting<boolean>('migrated_pr_approval_authority')) {
+    for (const r of db.prepare("SELECT key,permissions FROM roles WHERE key IN ('admin_staff','accounting')").all() as Array<{ key: string; permissions: string }>) {
+      let permissions: string[];
+      try { permissions = JSON.parse(r.permissions); } catch { continue; }
+      if (permissions.includes('purchasing.manage') && !permissions.includes('purchasing.approve_requests')) {
+        db.prepare('UPDATE roles SET permissions=? WHERE key=?').run(JSON.stringify([...permissions, 'purchasing.approve_requests']), r.key);
+      }
+    }
+    setSetting('migrated_pr_approval_authority', true);
+  }
 
   // (SCHEMA_VERSION 66) Preserve surviving older uploads before the next filesystem
   // replacement. Only files still referenced by a record enter the durable store.

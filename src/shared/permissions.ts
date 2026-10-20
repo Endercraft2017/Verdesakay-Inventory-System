@@ -17,7 +17,7 @@ export const ALL_PERMISSIONS: Permission[] = [
   'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
   'inventory.adjust', 'inventory.configure', 'inventory.mobile',
   'orders.view', 'orders.create', 'orders.edit', 'orders.delete',
-  'purchasing.view', 'purchasing.manage', 'purchasing.request',
+  'purchasing.view', 'purchasing.manage', 'purchasing.request', 'purchasing.approve_requests',
   'forms.view', 'forms.upload', 'forms.delete',
   'forms.fill.inventory', 'forms.manage.hr', 'forms.manage.inventory', 'forms.manage.admin', 'forms.manage.accounting',
   'messages.view', 'messages.send',
@@ -62,7 +62,7 @@ export const BUILTIN_ROLES: RoleSeed[] = [
     permissions: [
       ...BASELINE,
       'inventory.view', 'production.view', 'inventory.create', 'inventory.edit', 'inventory.adjust',
-      'orders.view', 'orders.create', 'orders.edit', 'purchasing.view', 'purchasing.manage',
+      'orders.view', 'orders.create', 'orders.edit', 'purchasing.view', 'purchasing.manage', 'purchasing.approve_requests',
       'forms.view', 'forms.upload', 'forms.delete', 'forms.manage.admin',
       'templates.view',
       'accounting.view',
@@ -74,7 +74,7 @@ export const BUILTIN_ROLES: RoleSeed[] = [
     permissions: [
       ...BASELINE,
       'inventory.view', 'production.view',
-      'orders.view', 'orders.create', 'orders.edit', 'purchasing.view', 'purchasing.manage',
+      'orders.view', 'orders.create', 'orders.edit', 'purchasing.view', 'purchasing.manage', 'purchasing.approve_requests',
       'forms.view', 'forms.upload', 'forms.manage.accounting',
       'templates.view',
       'accounting.view', 'accounting.manage',

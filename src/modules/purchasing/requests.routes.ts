@@ -34,9 +34,9 @@ type Row = { id: number; number: string; requested_by: number | null; buyer_id: 
   requested_budget: number; approved_budget: number | null; purchase_mode: string | null; cash_issued: number | null };
 const cents = (n: number) => Math.round(n * 100);
 function get(id: number) { return queryOne<Row>('SELECT * FROM purchase_requests WHERE id=?', id); }
-function manager(req: Request) { return req.user!.permissions.includes('purchasing.manage'); }
+function manager(req: Request) { return req.user!.permissions.includes('purchasing.approve_requests'); }
 function visible(req: Request, row: Row) { return manager(req) || row.requested_by === req.user!.id || row.buyer_id === req.user!.id; }
-function buyer(req: Request, row: Row) { return manager(req) || row.buyer_id === req.user!.id; }
+function buyer(req: Request, row: Row) { return row.buyer_id === req.user!.id; }
 function read(req: Request, res: import('express').Response): Row | null {
   const row = get(Number(req.params.id));
   if (!row || !visible(req, row)) { res.status(404).json({ error: 'Purchase request not found' }); return null; }
@@ -66,7 +66,7 @@ router.get('/', (req, res) => {
     ...(all ? [] : [req.user!.id, req.user!.id])));
 });
 
-router.get('/buyers', requirePermission('purchasing.manage'), (_req, res) => {
+router.get('/buyers', requirePermission('purchasing.approve_requests'), (_req, res) => {
   const candidates = queryAll<{ id: number; full_name: string; role: string; permission_overrides: string }>(
     `SELECT id,full_name,role,permission_overrides FROM users WHERE active=1 ORDER BY full_name COLLATE NOCASE`);
   res.json(candidates.filter((u) => {
@@ -95,7 +95,7 @@ router.post('/', requirePermission('purchasing.request'), idempotency, syncClass
   } catch (e) { db.exec('ROLLBACK'); throw e; }
 });
 
-router.post('/:id/approve', requirePermission('purchasing.manage'), idempotency, syncClass('claim'), (req, res) => {
+router.post('/:id/approve', requirePermission('purchasing.approve_requests'), idempotency, syncClass('claim'), (req, res) => {
   const row = get(Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Purchase request not found' }); return; }
   if (row.status !== 'pending') { res.status(409).json({ error: 'This request has already been decided.' }); return; }
@@ -115,7 +115,7 @@ router.post('/:id/approve', requirePermission('purchasing.manage'), idempotency,
   res.json({ ok: true, status: 'approved' });
 });
 
-router.post('/:id/reject', requirePermission('purchasing.manage'), idempotency, syncClass('claim'), (req, res) => {
+router.post('/:id/reject', requirePermission('purchasing.approve_requests'), idempotency, syncClass('claim'), (req, res) => {
   const { note } = parseBody(rejectSchema, req.body);
   const changed = run(`UPDATE purchase_requests SET status='rejected',decision_note=?,decided_by=?,decided_at=datetime('now')
     WHERE id=? AND status='pending'`, note, req.user!.id, Number(req.params.id));
@@ -123,7 +123,7 @@ router.post('/:id/reject', requirePermission('purchasing.manage'), idempotency, 
   res.json({ ok: true });
 });
 
-router.post('/:id/issue-cash', requirePermission('purchasing.manage'), idempotency, syncClass('claim'), (req, res) => {
+router.post('/:id/issue-cash', requirePermission('purchasing.approve_requests'), idempotency, syncClass('claim'), (req, res) => {
   const row = get(Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Purchase request not found' }); return; }
   if (row.status !== 'approved' || row.purchase_mode !== 'requester_cash' || row.cash_issued != null) {
@@ -199,7 +199,7 @@ router.post('/:id/liquidation', idempotency, syncClass('claim'), (req, res) => {
   } catch (e) { db.exec('ROLLBACK'); throw e; }
 });
 
-router.post('/:id/close', requirePermission('purchasing.manage'), idempotency, syncClass('claim'), (req, res) => {
+router.post('/:id/close', requirePermission('purchasing.approve_requests'), idempotency, syncClass('claim'), (req, res) => {
   const row = get(Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Purchase request not found' }); return; }
   if (row.status !== 'liquidation_submitted') { res.status(409).json({ error: 'Submit liquidation before closing the PR.' }); return; }
@@ -216,7 +216,7 @@ router.post('/:id/close', requirePermission('purchasing.manage'), idempotency, s
   res.json({ ok: true, status: 'closed' });
 });
 
-router.post('/:id/return-liquidation', requirePermission('purchasing.manage'), idempotency, syncClass('claim'), (req, res) => {
+router.post('/:id/return-liquidation', requirePermission('purchasing.approve_requests'), idempotency, syncClass('claim'), (req, res) => {
   const row = get(Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Purchase request not found' }); return; }
   if (row.status !== 'liquidation_submitted') { res.status(409).json({ error: 'No submitted liquidation to return.' }); return; }

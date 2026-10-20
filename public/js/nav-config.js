@@ -48,7 +48,7 @@ const NAV = [
   {
     id: 'inventory', label: 'Inventory', icon: 'inventory', requiredModule: 'inventory',
     subtabs: [
-      { id: 'purchase-requests', label: 'Purchase Requests', requiredModule: 'purchasing', requiredAnyPermission: ['purchasing.request', 'purchasing.manage'],
+      { id: 'purchase-requests', label: 'Purchase Requests', requiredModule: 'purchasing', requiredAnyPermission: ['purchasing.request', 'purchasing.approve_requests'],
         tree: [{ label: 'Requests & liquidation', icon: 'inbox', route: 'purchase-requests' }] },
       {
         id: 'items', label: 'Items', requiredPermission: 'inventory.view',

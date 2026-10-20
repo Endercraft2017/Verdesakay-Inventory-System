@@ -43,6 +43,7 @@ window.AccessEditor = (() => {
       { key: 'purchasing.request', label: 'Submit purchase requests', desc: 'Request budgeted purchases and track your own request; no approval or stock movement' },
       { key: 'purchasing.view', label: 'See purchasing', desc: 'Purchase orders, goods receipts, vendor bills', where: ['Phone: Receive PR'] },
       { key: 'purchasing.manage', label: 'Run purchasing', desc: 'Create and change purchase orders (incl. reorder / shortfall POs); raise, approve and dispute vendor bills' },
+      { key: 'purchasing.approve_requests', label: 'Approve purchase requests', desc: 'See all staff PRs, approve budgets, record cash handoffs, review liquidation and close requests; grant only to designated authorities' },
     ] },
     { id: 'production', label: 'Production', items: [
       { key: 'production.view', label: 'See production', desc: 'Job orders, QC, batches, schedule, teams, products & BOM — read only' },
