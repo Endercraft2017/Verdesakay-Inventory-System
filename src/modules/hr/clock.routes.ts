@@ -51,7 +51,7 @@ import {
   importPunchesForPeriod, ROTATE_SECONDS, punchBlockedReason, setSlotPunch, phoneSlots,
   type PunchDevice, type CorrectionSlot,
 } from './clock';
-import { punchPhotoRoutes, punchPhotoUpload, punchPhotoUploadErrors, savePunchPhoto } from './punch-photos';
+import { photoIdsForPunches, punchPhotoRoutes, punchPhotoUpload, punchPhotoUploadErrors, savePunchPhoto } from './punch-photos';
 import { createPunchHold, takePunchHold, holdGeo } from './punch-holds';
 import { syncClass } from '../../sync';
 
@@ -130,9 +130,10 @@ router.get('/recent', requirePermission('hr.view'), (req, res) => {
      WHERE p.id > ? ORDER BY p.id DESC LIMIT 20`,
     sinceId
   );
+  const photos = photoIdsForPunches('attendance', rows.map((r) => r.id));
   // What the day's grid row already holds (incl. times HR typed in), so the kiosk card can show
   // an HR-entered time-in that has no punch of its own.
-  res.json(rows.map(({ employee_id, work_date, ...r }) => ({ ...r, recorded: recordedBrackets(employee_id, work_date) })));
+  res.json(rows.map(({ employee_id, work_date, ...r }) => ({ ...r, photo_id: photos.get(r.id) ?? null, recorded: recordedBrackets(employee_id, work_date) })));
 });
 
 router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, syncClass('physical'), (req, res) => {

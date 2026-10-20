@@ -1404,7 +1404,7 @@ textarea { resize: vertical; min-height: 84px; }
 .kr-name { font-size: 13.5px; font-weight: 600; margin-bottom: 6px; color: var(--text); }
 .kr-times { display: flex; gap: 6px; }
 .kr-slot { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 2px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); min-width: 0; }
-.kr-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
+.kr-label { width: 100%; min-height: 28px; display: flex; align-items: center; justify-content: center; text-align: center; white-space: normal; overflow-wrap: anywhere; line-height: 1.25; font-size: 9px; text-transform: uppercase; letter-spacing: .03em; color: var(--text-muted); }
 .kr-val { font-size: 12.5px; font-weight: 600; color: var(--text-muted); }
 .kr-slot.filled .kr-val { color: var(--text); }
 .kr-slot.filled.in { border-color: var(--success); background: var(--success-weak); }
@@ -1849,3 +1849,10 @@ select option, select optgroup { background-color: var(--surface); color: var(--
 
 .pipeline-related { margin:18px 0; }
 .pipeline-related button { margin:0 8px 8px 0; white-space:normal; text-align:left; }
+
+.kr-photo { display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 1; border-radius: 4px; overflow: hidden; background: var(--surface-2); color: var(--text-muted); font-size: 9px; text-align: center; }
+.kr-photo img { width: 100%; height: 100%; object-fit: cover; }
+.kr-photo img[hidden] { display: none; }
+.kr-photo.loading { background: linear-gradient(110deg, var(--surface-2) 25%, var(--accent-weak) 45%, var(--surface-2) 65%); background-size: 250% 100%; animation: punchPhotoShimmer 1.6s ease-in-out infinite; }
+@keyframes punchPhotoShimmer { to { background-position: -170% 0; } }
+@media (prefers-reduced-motion: reduce) { .kr-photo.loading { animation: none; } }

@@ -10,7 +10,7 @@ import { requireAuth, requirePermission } from '../../shared/auth';
 import { parseBody, kioskPunchSchema } from '../../shared/validation';
 import { isValidKioskCode, punchBlockedReason } from './clock';
 import { recordFieldPunch } from './field';
-import { punchPhotoRoutes } from './punch-photos';
+import { photoIdsForPunches, punchPhotoRoutes } from './punch-photos';
 import { requireKioskDevice } from './kiosk-devices';
 import { syncClass } from '../../sync';
 
@@ -29,7 +29,8 @@ router.get('/recent', requirePermission('hr.view'), (req, res) => {
      WHERE p.id > ? ORDER BY p.id DESC LIMIT 20`,
     sinceId
   );
-  res.json(rows);
+  const photos = photoIdsForPunches('field', rows.map((r) => r.id));
+  res.json(rows.map((r) => ({ ...r, photo_id: photos.get(r.id) ?? null })));
 });
 
 router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, syncClass('physical'), (req, res) => {

@@ -178,7 +178,8 @@ App.register('hr-kiosk', async (view) => {
       if (!blob) return;
       const fd = new FormData();
       fd.append('photo', blob, 'punch.jpg');
-      await API.upload(`/hr/${punchKind === 'field' ? 'field' : 'clock'}/photo/${punchId}`, fd);
+      const photo = await API.upload(`/hr/${punchKind === 'field' ? 'field' : 'clock'}/photo/${punchId}`, fd);
+      updatePhoto(punchKind, punchId, photo.id);
     } catch (e) { /* best-effort only */ }
   }
 
@@ -354,7 +355,7 @@ App.register('hr-kiosk', async (view) => {
     ],
   };
 
-  function emptyRow(name) { return { name, employee_no: null, in: null, lunchOut: null, lunchIn: null, out: null, el: null }; }
+  function emptyRow(name) { return { name, employee_no: null, in: null, lunchOut: null, lunchIn: null, out: null, punches: {}, photos: {}, el: null }; }
 
   // Local calendar date ("YYYY-MM-DD"), matching how the server's own localParts() (src/clock.ts)
   // stamps work_date — the kiosk runs on-site, so local time is what matters here.
@@ -388,16 +389,41 @@ App.register('hr-kiosk', async (view) => {
 
   function slotVal(v) { return v ? UI.esc(v) : '–'; }
 
+  const photoUrls = new Set();
+  function releasePhotos(el) {
+    el.querySelectorAll('img[data-punch-photo]').forEach((img) => {
+      if (photoUrls.delete(img.src)) URL.revokeObjectURL(img.src);
+    });
+  }
+  function updatePhoto(kind, punchId, photoId) {
+    if (!photoId) return;
+    for (const row of state[kind].rows.values()) {
+      const slot = Object.keys(row.punches).find((key) => row.punches[key] === punchId);
+      if (!slot || row.photos[slot] === photoId) continue;
+      row.photos[slot] = photoId;
+      if (mode === kind) rowEl(row, kind);
+    }
+  }
   function rowEl(row, kind) {
     if (!row.el) { row.el = document.createElement('div'); row.el.className = 'kiosk-row'; }
+    releasePhotos(row.el);
     row.el.dataset.name = row.name;
     if (row.employee_no) row.el.dataset.employeeNo = row.employee_no;
     const clickable = kind === 'attendance'; // the field-work 2-state toggle has no real ambiguity to fix
     const cells = SLOT_DEFS[kind].map((s) => {
       const selected = clickable && pendingCorrection && pendingCorrection.name === row.name && pendingCorrection.slot === s.key;
-      return `<div class="kr-slot${row[s.key] ? ' filled ' + s.cls : ''}${clickable ? ' clickable' : ''}${selected ? ' selected' : ''}"${clickable ? ` data-slot="${s.key}"` : ''}><span class="kr-label">${s.label}</span><span class="kr-val">${slotVal(row[s.key])}</span></div>`;
+      return `<div class="kr-slot${row[s.key] ? ' filled ' + s.cls : ''}${clickable ? ' clickable' : ''}${selected ? ' selected' : ''}"${clickable ? ` data-slot="${s.key}"` : ''}><span class="kr-label">${s.label}</span><span class="kr-val">${slotVal(row[s.key])}</span><span class="kr-photo${row.photos[s.key] ? ' loading' : ''}">${row.photos[s.key] ? `<img data-punch-photo="${row.photos[s.key]}" alt="${UI.esc(s.label)} photo" hidden />` : `<span class="kr-photo-empty">${row[s.key] ? 'No photo' : '–'}</span>`}</span></div>`;
     }).join('');
     row.el.innerHTML = `<div class="kr-name">${UI.esc(row.name)}</div><div class="kr-times">${cells}</div>`;
+    row.el.querySelectorAll('img[data-punch-photo]').forEach((img) => {
+      API.blobUrl(`/hr/${kind === 'field' ? 'field' : 'clock'}/photo/${img.dataset.punchPhoto}`).then((url) => {
+        if (!kioskRoot.isConnected || !row.el.contains(img)) { URL.revokeObjectURL(url); return; }
+        photoUrls.add(url);
+        img.onload = () => { img.hidden = false; img.parentElement.classList.remove('loading'); };
+        img.onerror = () => { img.parentElement.classList.remove('loading'); img.parentElement.textContent = 'Unavailable'; photoUrls.delete(url); URL.revokeObjectURL(url); };
+        img.src = url;
+      }).catch(() => { if (img.parentElement) { img.parentElement.classList.remove('loading'); img.parentElement.textContent = 'Unavailable'; } });
+    });
     return row.el;
   }
 
@@ -409,6 +435,7 @@ App.register('hr-kiosk', async (view) => {
     while (logEl.children.length > 10) {
       const last = logEl.lastChild;
       for (const [key, r] of bucket) { if (r.el === last) { bucket.delete(key); break; } }
+      releasePhotos(last);
       last.remove();
     }
   }
@@ -418,6 +445,7 @@ App.register('hr-kiosk', async (view) => {
   function rebuildSide(kind) {
     const bucket = state[kind].rows;
     while (bucket.size > 10) bucket.delete(bucket.keys().next().value);
+    releasePhotos(logEl);
     logEl.innerHTML = '';
     for (const row of bucket.values()) logEl.prepend(rowEl(row, kind));
     if (state[kind].last) setLast(kind, state[kind].last, { silent: true });
@@ -439,7 +467,10 @@ App.register('hr-kiosk', async (view) => {
     // Times already on the day's timekeeping row with no punch of their own (e.g. a time-in HR
     // typed in) -- fill empty slots so the card shows them instead of "–".
     if (p.recorded) for (const k of ['in', 'lunchOut', 'lunchIn']) { if (!row[k] && p.recorded[k]) row[k] = p.recorded[k]; }
-    row[slotFor(kind, p, row)] = (p.ts || '').slice(11, 16);
+    const slot = slotFor(kind, p, row);
+    row[slot] = (p.ts || '').slice(11, 16);
+    row.punches[slot] = p.id;
+    row.photos[slot] = p.photo_id || null;
     bucket.rows.set(key, row);
     bucket.last = p;
     if (mode === kind) { paintRow(row, kind); setLast(kind, p, opts); }
@@ -511,10 +542,10 @@ App.register('hr-kiosk', async (view) => {
 
   async function pollRecent(kind, path, opts) {
     try {
-      const punches = await API.get(path + '?since_id=' + lastSeenId[kind]);
+      const punches = await API.get(path);
       // punches are newest-first; replay oldest→newest so slot assignment (which looks at
       // what's already in the row) and last-touched ordering come out right.
-      punches.slice().reverse().forEach((p) => { if (p.id > lastSeenId[kind]) { recordEvent(kind, p, opts); lastSeenId[kind] = p.id; } });
+      punches.slice().reverse().forEach((p) => { if (p.id > lastSeenId[kind]) { recordEvent(kind, p, opts); lastSeenId[kind] = p.id; } else updatePhoto(kind, p.id, p.photo_id); });
     } catch (e) { /* transient */ }
   }
 
@@ -627,6 +658,7 @@ App.register('hr-kiosk', async (view) => {
       clearInterval(timer); clearInterval(poll); clearInterval(codeRefresh); mo.disconnect();
       // Leaving the camera stream running would keep the light on (and the device locked)
       // even after navigating away from the kiosk screen.
+      photoUrls.forEach((url) => URL.revokeObjectURL(url)); photoUrls.clear();
       if (camStream) camStream.getTracks().forEach((t) => t.stop());
     }
   });
