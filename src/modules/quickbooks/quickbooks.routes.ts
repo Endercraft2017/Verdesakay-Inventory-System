@@ -8,7 +8,7 @@ import { isValidSlug, getTenant, retiredDefaultTenant } from '../../platform/pla
 import { parseBody } from '../../shared/validation';
 import { z } from 'zod';
 import {
-  getQboStatus, qboConfigured, authUrl, completeConnect, disconnect, setAutoPush, pushOrder, orderLink,
+  getQboStatus, qboConfigured, authUrl, completeConnect, disconnect, setAutoPush, pushOrder, orderLink, orderExportPermission,
 } from './quickbooks';
 import { currentSlug } from '../../platform/quota';
 import type { Order, OrderItem } from '../../shared/types';
@@ -68,8 +68,9 @@ router.get('/callback', async (req, res, next) => {
 router.use(requireAuth);
 
 // GET /api/quickbooks/status
-router.get('/status', requirePermission('workspace.manage'), (_req, res) => {
-  res.json({ ...getQboStatus(), last_order_link: null });
+router.get('/status', requireAnyPermission(['workspace.manage', 'orders.approve', 'purchasing.approve_bills']), (req, res) => {
+  const status = getQboStatus();
+  res.json(req.user!.permissions.includes('workspace.manage') ? { ...status, last_order_link: null } : { connected: status.connected });
 });
 
 // GET /api/quickbooks/connect — returns the Intuit authorize URL to open
@@ -98,13 +99,13 @@ router.put('/auto-push', requirePermission('workspace.manage'), syncClass('onlin
 });
 
 // POST /api/quickbooks/push/order/:id — push a single order (create or update in QBO)
-router.post('/push/order/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), syncClass('online'), async (req, res, next) => {
+router.post('/push/order/:id', requireAnyPermission(['orders.approve', 'purchasing.approve_bills']), syncClass('online'), async (req, res, next) => {
   try {
     const id = Number(req.params.id);
     const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
     if (!order) { res.status(404).json({ error: 'Order not found' }); return; }
     // A purchase order (pushed as a QBO Bill) is purchasing's; a sale order the orders module's.
-    if (!canOnOrder(req.user!, order.type, 'edit')) { res.status(403).json({ error: 'Forbidden: insufficient permissions' }); return; }
+    if (!canOnOrder(req.user!, order.type, 'view') || !req.user!.permissions.includes(orderExportPermission(order.type))) { res.status(403).json({ error: 'Approval authority is required to export this document.' }); return; }
     const items = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', id);
     const result = await pushOrder(order, items);
     res.json(result);

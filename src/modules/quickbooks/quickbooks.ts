@@ -15,7 +15,7 @@
  */
 import { getSetting, setSetting, queryOne, run } from '../../shared/db';
 import { encryptSecret, decryptSecret } from '../../shared/secrets';
-import type { Order, OrderItem } from '../../shared/types';
+import type { Order, OrderItem, Permission } from '../../shared/types';
 
 const CFG_KEY = 'qbo_config';   // { realm_id, company_name, auto_push, connected_at }
 const TOK_KEY = 'qbo_tokens';   // AES(JSON { access_token, refresh_token, expires_at })
@@ -215,8 +215,20 @@ export interface PushResult {
   updated: boolean;
 }
 
-/** Push one order to QuickBooks. `sale`/`job` → Invoice, `purchase` → Bill. */
+export function orderExportPermission(type: string): Permission {
+  return type === 'purchase' ? 'purchasing.approve_bills' : 'orders.approve';
+}
+
+/** Drafts and cancelled documents must never become financial documents through auto-push. */
+export function orderReadyForExport(order: Pick<Order, 'status'>): boolean {
+  return ['approved', 'confirmed', 'released', 'completed', 'fulfilled', 'invoiced', 'paid'].includes(String(order.status).toLowerCase());
+}
+
+/** Push one approved order to QuickBooks. `sale`/`job` → Invoice, `purchase` → Bill. */
 export async function pushOrder(order: Order, items: OrderItem[]): Promise<PushResult> {
+  if (!orderReadyForExport(order)) {
+    throw Object.assign(new Error('Approve this order before exporting it to QuickBooks.'), {status:409});
+  }
   const isPurchase = order.type === 'purchase';
   const qboType: 'Invoice' | 'Bill' = isPurchase ? 'Bill' : 'Invoice';
   const partyName = (order.customer_name || (isPurchase ? 'Supplier' : 'Customer')).trim();

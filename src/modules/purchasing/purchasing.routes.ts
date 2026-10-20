@@ -413,13 +413,13 @@ router.put('/bills/:id', requirePermission('purchasing.manage'), syncClass('clai
          ewt_rate = ?, ewt_amount = ?, ewt_atc = ?,
          subtotal = ?, tax_percent = ?, tax_amount = ?, total = ?, notes = ?,
          status = CASE WHEN status = 'disputed' THEN 'draft' ELSE status END,
-         dispute_note = NULL
+         dispute_note = NULL, last_edited_by = ?
        WHERE id = ?`,
       input.vendor_ref ?? null, input.bill_date ?? null, input.due_date ?? null,
       input.currency || bill.currency, input.tax_code_id ?? null,
       input.ewt_rate || 0, ewtAmount, input.ewt_atc ?? null,
       subtotal, input.tax_percent, tax_amount, total,
-      input.notes ?? null, bill.id
+      input.notes ?? null, req.user!.id, bill.id
     );
     run('DELETE FROM vendor_bill_items WHERE bill_id = ?', bill.id);
     withTotals.forEach((l, i) => {
@@ -454,7 +454,7 @@ router.post('/bills/:id/approve', requirePermission('purchasing.approve_bills'),
     res.status(409).json({ error: 'Already approved' });
     return;
   }
-  if (!independentApproval(req,res,bill.created_by,'approve this vendor bill')) return;
+  if (!independentApproval(req,res,bill.created_by,'approve this vendor bill',bill.last_edited_by)) return;
   if (req.body?.force && !req.user!.permissions.includes('purchasing.override_match')) { res.status(403).json({error:'Match override permission is required'}); return; }
   const input = parseBody(approveBillSchema, req.body);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', bill.order_id);

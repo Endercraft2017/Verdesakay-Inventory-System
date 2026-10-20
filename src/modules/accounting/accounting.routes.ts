@@ -1113,8 +1113,8 @@ router.put('/ledger/journal-entries/:id', requirePermission('accounting.manage')
   if (!v.ok) { res.status(400).json({ error: v.errors[0], errors: v.errors }); return; }
   db.exec('BEGIN');
   try {
-    run(`UPDATE journal_entries SET book = ?, entry_date = ?, memo = ?, reference = ? WHERE id = ?`,
-      b.book, b.entry_date, b.memo ?? null, b.reference ?? null, je.id);
+    run(`UPDATE journal_entries SET book = ?, entry_date = ?, memo = ?, reference = ?, last_edited_by = ? WHERE id = ?`,
+      b.book, b.entry_date, b.memo ?? null, b.reference ?? null, req.user!.id, je.id);
     run('DELETE FROM journal_lines WHERE entry_id = ?', je.id);
     insertLines(je.id, b.lines as JournalLineInput[]);
     db.exec('COMMIT');
@@ -1139,7 +1139,7 @@ router.post('/ledger/journal-entries/:id/post', requirePermission('accounting.po
     }
     res.status(409).json({ error: `Entry is already ${je.status}.` }); return;
   }
-  if (!independentApproval(req,res,je.created_by,'post this journal entry')) return;
+  if (!independentApproval(req,res,je.created_by,'post this journal entry',je.last_edited_by)) return;
   const v = validateJournalLines(loadLines(je.id) as JournalLineInput[], accountRefMap());
   if (!v.ok) { res.status(400).json({ error: v.errors[0], errors: v.errors }); return; }
   const closed = closedPeriodFor(je.entry_date);

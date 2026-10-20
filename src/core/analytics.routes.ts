@@ -265,7 +265,12 @@ router.get('/overview', (req, res) => {
 
   if (moduleEnabled('inventory') && can('inventory.view')) out.inventory = inventorySection();
   if (moduleEnabled('manufacturing') && can('production.view')) out.production = productionSection();
-  if (moduleEnabled('purchasing') && can('purchasing.view')) out.purchasing = purchasingSection();
+  if (moduleEnabled('purchasing') && can('purchasing.view')) {
+    const purchasing = purchasingSection();
+    out.purchasing = can('inventory.costs') ? purchasing : {
+      open_pos: purchasing.open_pos, bills_to_approve: purchasing.bills_to_approve,
+    };
+  }
   if (moduleEnabled('sales') && can('orders.view')) out.sales = salesSection();
   if (moduleEnabled('hr') && can('payroll.view')) out.payroll = payrollSection(); // pay is its own permission (payroll/pay-access.ts)
 

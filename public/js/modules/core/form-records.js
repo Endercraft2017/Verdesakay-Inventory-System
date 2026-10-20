@@ -1167,7 +1167,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
     if (state.period) params.set('period', state.period);
     if (isPayroll) view.querySelector('#fr-filter-reset').hidden = !(state.q || state.status || state.period);
     const periodsReq = isPayroll && periodCombo ? API.get('/form-definitions/' + formId + '/periods').catch(() => null) : null;
-    const periodsMetaReq = isPayroll && !state.period ? API.get('/hr/periods').catch(() => []) : null;
+    const periodsMetaReq = isPayroll && !state.period ? API.get('/hr/payroll/cutoffs').catch(() => []) : null;
     let records;
     try {
       records = await API.get('/form-definitions/' + formId + '/records?' + params.toString());

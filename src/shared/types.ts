@@ -1064,6 +1064,7 @@ export interface VendorBill {
   approved_at: string | null;
   notes: string | null;
   created_by: number | null;
+  last_edited_by?: number | null;
   created_at: string;
   approved_by_name?: string | null;
   supplier_name?: string | null;
@@ -1169,6 +1170,7 @@ export interface JournalEntry {
   posted_by: number | null;
   posted_at: string | null;
   created_by: number | null;
+  last_edited_by?: number | null;
   created_at: string;
   created_by_name?: string | null;
   total_debit?: number;
@@ -1609,6 +1611,7 @@ export interface FormRecord {
   status: string;
   period: string | null;
   created_by: number | null;
+  last_edited_by?: number | null;
   created_at: string;
   updated_at: string | null;
   created_by_name?: string | null;

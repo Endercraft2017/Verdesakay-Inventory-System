@@ -295,11 +295,12 @@ router.put('/form-records/:id', syncClass('claim'), (req, res) => {
   }
   correctRecord(existing,req.user!.id,input.change_reason,'correction',()=>{ run(
     `UPDATE form_records
-     SET data = ?, status = ?, updated_at = ?
+     SET data = ?, status = ?, updated_at = ?, last_edited_by = ?
      WHERE id = ?`,
     JSON.stringify(recordData),
     newStatus,
     now().toISOString(),
+    req.user!.id,
     id
   ); const actions=definitionForRecord(existing)?.actions ?? parseActions(queryOne<FormDefinition>('SELECT actions FROM form_definitions WHERE id=?',existing.form_def_id)?.actions as string);runSalesWorkflow(id,originalFields,actions as import('../../shared/types').FormAction[],recordData,newStatus,req.user!); if(existing.slug==='hr_payroll')recordDeductionChange(id,previousData,recordData,req.user!,input.change_reason); });
 

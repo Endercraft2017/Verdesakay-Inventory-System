@@ -105,8 +105,8 @@ export const BUILTIN_ROLES: RoleSeed[] = [
   // Lead capabilities plus controlled line decisions — pause / resume / close early, each with a
   // required reason kept in job_order_events. Deliberately NOT inventory.adjust: no parts release,
   // cancel, delete or stock adjustment (see job-orders.routes.ts gates).
-  { key: 'production_manager', label: 'Production Manager', description: 'Lead + pause / resume / close early + QA hold decisions.',
-    permissions: [...BASELINE, 'production.work_all', 'production.record', 'production.pause', 'production.manage', 'production.qa_review'] },
+  { key: 'production_manager', label: 'Production Manager', description: 'Approves production plans, records across teams, manages the line and decides QA holds.',
+    permissions: [...BASELINE, 'production.work_all', 'production.record', 'production.pause', 'production.manage', 'production.qa_review', 'production.approve'] },
   // QC (first pass) and QA (final pass) are separate people, matching the pipeline's own stage
   // split — job-orders.routes.ts POST /:id/units/inspect checks the specific pass being recorded.
   { key: 'qc_inspector', label: 'QC Inspector', description: 'First-pass (technical) inspection.',
@@ -119,8 +119,8 @@ export const BUILTIN_ROLES: RoleSeed[] = [
   { key: 'releasing_clerk', label: 'Releasing Clerk', description: 'Scans approved sale orders out.',
     permissions: [...BASELINE, 'orders.view', 'orders.release'] },
   { key: 'employee', label: 'Employee', description: 'Personal employee services and purchase requests.', permissions: [...BASELINE] },
-  { key: 'csr_supervisor', label: 'CSR Supervisor', description: 'Reviews sales and authorizes customer release; does not release stock or run purchasing.', permissions: [...BASELINE, 'inventory.view', 'orders.view', 'orders.create', 'orders.edit', 'orders.approve', 'orders.authorize', 'forms.view', 'templates.view'] },
-  { key: 'warehouse_supervisor', label: 'Warehouse Supervisor', description: 'Stock corrections and count review, with separate counter and reviewer.', permissions: [...BASELINE, 'inventory.view', 'inventory.mobile', 'inventory.adjust', 'inventory.receive', 'inventory.transfer', 'inventory.count', 'inventory.review_counts', 'production.kit_release', 'production.repairs', 'orders.view', 'purchasing.view', 'returns.receive'] },
+  { key: 'csr_supervisor', label: 'CSR Supervisor', description: 'Reviews sales and authorizes customer release; does not release stock or run purchasing.', permissions: [...BASELINE, 'inventory.view', 'orders.view', 'orders.create', 'orders.edit', 'orders.approve', 'orders.authorize', 'forms.view', 'forms.upload', 'templates.view'] },
+  { key: 'warehouse_supervisor', label: 'Warehouse Supervisor', description: 'Stock corrections and count review, with separate counter and reviewer.', permissions: [...BASELINE, 'inventory.view', 'inventory.mobile', 'inventory.adjust', 'inventory.receive', 'inventory.transfer', 'inventory.count', 'inventory.review_counts', 'production.kit_release', 'production.repairs', 'orders.view', 'purchasing.view', 'returns.receive', 'forms.view', 'forms.fill.inventory'] },
   { key: 'buyer', label: 'Buyer', description: 'Prepares supplier purchase orders and bills; approval and cash custody are separate.', permissions: [...BASELINE, 'purchasing.view', 'purchasing.manage', 'inventory.view', 'inventory.costs'] },
   { key: 'purchase_approver', label: 'Purchase Approver', description: 'Approves independent purchase requests and vendor bills; no purchasing preparation.', permissions: [...BASELINE, 'purchasing.view', 'purchasing.approve_requests', 'purchasing.approve_bills', 'inventory.costs'] },
   { key: 'cash_custodian', label: 'Cash Custodian', description: 'Records cash handoffs and independently reviews purchase settlements.', permissions: [...BASELINE, 'purchasing.view', 'purchasing.issue_cash', 'purchasing.settle_requests'] },

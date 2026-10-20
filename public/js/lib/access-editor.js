@@ -133,7 +133,7 @@ window.AccessEditor = (() => {
     ] },
     { id: 'admin', label: 'Accounts, security & workspace', items: [
       {"key": "users.manage", "label": "Support accounts", "desc": "Create and support ordinary staff accounts. Roles, grants, privileged accounts and workspace settings require separate permissions."},
-      {"key": "users.permissions", "label": "Administer roles and permissions", "desc": "Create role bundles, assign roles and manage permission exceptions. Changes to privileged accounts also require sign-in security authority."},
+      {"key": "users.permissions", "label": "Administer roles and permissions", "desc": "Fully trusted access administration: create role bundles, grant permissions and assign roles, including Administrator. Treat this as owner-level authority."},
       {"key": "security.manage", "label": "Administer sign-in security", "desc": "Manage MFA policy, kiosk enrollment and privileged-account recovery."},
       {"key": "workspace.manage", "label": "Administer the workspace", "desc": "Configure workspace integrations, installed PCs, billing and support."},
       {"key": "audit.view", "label": "Activity log", "desc": "The app-wide audit trail"},

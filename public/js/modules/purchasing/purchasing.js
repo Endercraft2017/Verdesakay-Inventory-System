@@ -2,9 +2,10 @@
    filter.tab   = 'bills' | 'receipts'  (worklist tabs)
    filter.order = <PO id>               (opens that PO's receiving & billing panel) */
 App.register('purchasing', async (view, filter) => {
-  const money = UI.money;
+  const money = (value) => value == null ? '—' : UI.money(value);
   const canReceive = App.hasPermission('inventory.receive');
   const canBill = App.hasPermission('purchasing.manage'); // vendor bills: purchasing's own permission
+  const canSetTolerance = App.hasPermission('purchasing.override_match');
   let taxCodes = [];
   try { taxCodes = await API.get('/accounting/tax-codes?active=1'); } catch { /* needs accounting.view */ }
   const tab = filter && filter.tab === 'receipts' ? 'receipts' : 'bills';
@@ -60,13 +61,13 @@ App.register('purchasing', async (view, filter) => {
           if it's outside <b>both</b> the % and absolute allowance (whichever is looser wins); quantity only
           checks %.</p>
         <div class="field-row">
-          <div><label>Price tolerance (%)</label><input data-f="price_pct" type="number" min="0" step="0.1" value="${t.price_pct}" ${canBill ? '' : 'disabled'} /></div>
-          <div><label>Price tolerance (₱, flat)</label><input data-f="price_abs" type="number" min="0" step="0.01" value="${t.price_abs}" ${canBill ? '' : 'disabled'} /></div>
-          <div><label>Quantity tolerance (%)</label><input data-f="qty_pct" type="number" min="0" step="0.1" value="${t.qty_pct}" ${canBill ? '' : 'disabled'} /></div>
+          <div><label>Price tolerance (%)</label><input data-f="price_pct" type="number" min="0" step="0.1" value="${t.price_pct ?? ''}" ${canSetTolerance ? '' : 'disabled'} /></div>
+          <div><label>Price tolerance (₱, flat)</label><input data-f="price_abs" type="number" min="0" step="0.01" value="${t.price_abs ?? ''}" ${canSetTolerance ? '' : 'disabled'} /></div>
+          <div><label>Quantity tolerance (%)</label><input data-f="qty_pct" type="number" min="0" step="0.1" value="${t.qty_pct}" ${canSetTolerance ? '' : 'disabled'} /></div>
         </div>`,
-      confirmText: canBill ? 'Save' : null,
-      cancelText: canBill ? 'Cancel' : 'Close',
-      onConfirm: canBill ? async (ov, showErr) => {
+      confirmText: canSetTolerance ? 'Save' : null,
+      cancelText: canSetTolerance ? 'Cancel' : 'Close',
+      onConfirm: canSetTolerance ? async (ov, showErr) => {
         const v = (k) => Number(ov.querySelector(`[data-f="${k}"]`).value);
         const body = { price_pct: v('price_pct'), price_abs: v('price_abs'), qty_pct: v('qty_pct') };
         if (body.price_pct < 0 || body.price_abs < 0 || body.qty_pct < 0) { showErr('Tolerances can’t be negative'); return false; }
