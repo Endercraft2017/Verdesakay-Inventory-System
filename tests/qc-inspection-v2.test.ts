@@ -79,7 +79,7 @@ describe('GET /api/qc/queue', () => {
     expect(ok.status).toBe(200);
     const a = await ctx.api.get('/api/qc/queue').set(bearer(qa.token));
     expect(a.body.units.map((u: { id: number }) => u.id).sort()).toEqual([...units].sort());
-    expect(a.body.units[0].last_pass).toMatchObject({ stage: 1, items: 2 });
+    expect(a.body.units.find((u: { id: number }) => u.id === units[0]).last_pass).toMatchObject({ stage: 1, items: 2 });
     const done = await ctx.api.get('/api/qc/queue?role=qc').set(bearer(qc.token));
     expect(done.body.completed.map((r: { unit_id: number }) => r.unit_id)).toContain(units[0]);
   });

@@ -11,13 +11,24 @@ acceptance, picks and slips. **Inventory → Order Tracking** shows sale/custome
 JO documents without creation or editing. Manufacturing JOs remain under
 **Production → Job Orders**. Pipeline values are order values, not cash received.
 
-**Mobile owner action:** `public/mobile/modules/core/guides.js` still maps Sales
-to `inventory`; change it to `sales` and add a Sales Work entry/pipeline for
-authorized CSR accounts. Route release tasks to the existing `#/so` flow,
-with explicit `orders.release` and the actual
-`/release-slips/queue` stages; avoid requiring `orders.create` or showing
-commercial actions to warehouse/releasing accounts. Give CSR a customer/SO
-view and order status/stock review, while warehouse gets read-only tracking.
+**Phone implementation now present:** Sales guides map to Sales. Authorized
+CSR accounts see **Sales pipeline**, **Customer service**, and **New sale order**
+in Work. The first two derive stages from live sale and release records and
+open an exact order. The new form saves an **open** sale with a selected product
+or part, editable unit price, CKD/semi-built/full form for products, and fee
+lines. It uses a durable idempotent submission; creation does not approve the
+sale or move stock. Releasing still uses `#/so`; its Work badge counts the
+active `/release-slips/queue`, and its route requires Sales and Inventory.
+Releasing and warehouse accounts cannot open the commercial creation route.
+The new phone Sales screens are in `public/mobile/modules/sales/sales.js`.
+
+**Remaining mobile handoff:** Add a searchable customer-registry screen and a
+read-only Inventory order-tracking screen for authorized warehouse staff.
+The CSR order detail currently shows lines, value, stage and next owner; add
+stock shortfalls and release progress where they are actionable. Keep customer
+JO documents distinct from manufacturing JOs. Test partial slips, an order
+changed by another worker, notification deep links and Sales entitlement
+changes with the mobile owner.
 New default CSR/Releasing roles have no purchasing or production authority;
 check existing customized tenant roles separately. Label customer JO documents
 separately from manufacturing JOs. Test 390px roles, no unauthorized create,
@@ -30,12 +41,13 @@ visual hiding alone is not an access control.
 SO approval now sends an actionable `#/so` release notice only to `orders.release`
 holders. An `inventory.adjust` warehouse role receives a separate tracking notice;
 that notice must open read-only order tracking, not a release action it cannot use.
-No mobile source was changed by this desktop/backend work.
+The Sales/CSR and QA phone fixes below were implemented after the original
+desktop/backend handoff.
 
 ### Mobile build brief: Sales, CSR, and Releasing
 
-**Ownership and entry points:** Add a **Sales** section to phone Work/navigation
-when the Sales module is enabled. Keep sale creation and customer follow-up
+**Ownership and entry points:** Work now exposes Sales actions when the Sales
+module and permissions are enabled. Keep sale creation and customer follow-up
 separate from physical stock release. The existing `#/so` route is the Releasing
 desk; reuse it rather than creating another release flow. Give Inventory a
 read-only **Order tracking** entry for authorized warehouse staff. Keep
@@ -55,11 +67,9 @@ module and permission checks as navigation.
 `orders.release`. Default Releasing has `orders.view/release`, but no
 `orders.create/edit`. Warehouse has `orders.view` and `inventory.adjust`, but
 does not receive `orders.release` by default. Check effective permissions for
-custom tenant roles. The phone's current `ROUTE_MODULES.so = ['inventory']`
-should require **Sales and Inventory** for a sale-release route; new Sales/CSR
-routes likewise need the Sales module. Update `public/mobile/app.js`,
-`public/mobile/modules/hr/work.js`, `public/mobile/modules/core/guides.js`,
-and notification links/labels together. Do not treat `orders.view` alone as
+custom tenant roles. Phone `#/so` now requires **Sales and Inventory**;
+the Sales/CSR routes require Sales and their respective order permissions.
+Notification links and labels still need end-to-end review. Do not treat `orders.view` alone as
 permission to create, edit, approve, accept or release.
 
 **Work handoff:** A CSR sees orders needing review/follow-up, not a duplicate
@@ -72,7 +82,7 @@ under history, not the active task count. Releasing reports/partial requests
 go back to Sales for an authorized decision; the phone must not convert a
 report into a release authorization automatically.
 
-**Mobile acceptance:** Test at 390 px with CSR, Releasing, warehouse-only,
+**Remaining mobile acceptance:** Test at 390 px with CSR, Releasing, warehouse-only,
 and mixed-permission accounts. Cover Sales disabled; a direct URL and stale
 push after permission revocation; draft/open/approved/accepted/partly
 released/shipped/cancelled sales; customer search and a customer JO versus a
@@ -80,8 +90,8 @@ manufacturing JO; RTS built-state and CKD part picks; insufficient stock;
 partial release without and with Sales authorization; lost-response retry and
 two workers on one SO. Verify a single stock-out at slip issue, no stock-out
 on allocation or report, and no commercial mutation from Releasing or
-warehouse tracking. Phone changes remain for the mobile owner; this handoff
-does not claim those screens are implemented.
+warehouse tracking. The customer registry and warehouse tracking screens remain
+for the mobile owner; Sales creation and follow-up are implemented.
 
 **Playwright check (2026-10-20, disposable local tenant):** The desktop CSR
 pipeline and searchable customer-service desk opened the exact sale. A narrow
@@ -90,9 +100,13 @@ API was denied; stock stayed at 2 through allocation and became 1 only after
 Sales authorization, photo proof, and a release slip. The 390 px warehouse
 tracking view had no New Sale Order action. Mobile Work opened the existing
 `#/so` release desk for Releasing, and a revoked clerk could not reopen it.
-**Still missing on mobile:** A 390 px CSR Work screen had no Sales pipeline,
-Customer Service desk, or New Sale Order entry. Build and acceptance-test those
-phone screens before treating this Sales workflow as mobile-complete.
+**Additional Playwright check (2026-10-20, disposable local tenant):** A 390 px
+CSR opened all three Work entries, created an open CKD sale with an edited unit
+price and shipping fee, searched it, and opened its exact detail. Its stock did
+not change. At 360 px, Releasing and Warehouse had no New sale action and a
+bookmarked `#/sales-new` was denied. All tested screens fit without horizontal
+scroll. The checks did not cover customer-registry editing, partial sale slips,
+or production planning from sale shortages.
 
 ### Subassembly build handoff
 
@@ -128,21 +142,14 @@ retain their combined QC/QA pass. A QA hold still uses the separate hold-review
 queue; Products In remains blocked until hold is resolved and both required
 inspections pass. The QR sticker is still attached at Products In, after both.
 
-**Mobile owner action:** A narrow QA inspector can currently open and pass a
-newly recorded unit before QC on the 390 px phone screen. Keep that behavior.
-For two-inspection jobs, show each desk's own result and the other desk's
-status on the unit card, and use those results for Ready badges and next-step
-copy instead of the shared `u.stage`. Send `inspection_stage: 1` from QC and
-`inspection_stage: 2` from QA with **every** phone submission, including queued
-or offline work. This is a correctness fix: Playwright opened `#/qc?role=qa`
-as a user with both inspection permissions, passed a pending unit, and then
-`GET /api/job-orders/:id/units` reported `qc_result: pass` and
-`qa_result: null`. The phone had sent no stage, so the backend correctly applied its
-default QC-first choice. The same QA phone flow displayed **Pass to QA** even
-though the user was already on the QA desk; its queue copy still claims units
-must pass QC before QA. Update those labels to say the other inspection remains
-pending and RTS receipt waits for both passes. A QA-only Playwright pass first
-left the unit pending and outside Products In, then desktop QC completed it.
+**Phone fix implemented:** The selected desk now determines the checklist,
+`inspection_stage`, and next-step copy on every submission, including a saved
+workflow attempt. Two-stage unit cards show both QC and QA results. QA-first
+confirmation points to QC; RTS recording remains blocked until both pass.
+The queue and identity copy no longer require QC first. Playwright used a
+dual-permission administrator on a new unit: phone QA sent stage 2, the server
+stored `qa_result: pass`, left `qc_result: null`, and kept the unit pending.
+The earlier narrow QA pre-sticker test also passed.
 If another user completes the same desk first, show a clear already-inspected
 state on `409` and reload the queue; do not replay a different result as
 success. Test QA-first and QC-first with narrow and dual-permission accounts,
@@ -162,7 +169,7 @@ duplicate sync replay. Respect effective permissions, not role names alone.
 
 | Desk / permission | Work item and expected one-tap destination | Current mobile/backend state and gap |
 | --- | --- | --- |
-| Releasing (`orders.release`) | Approved sale needing acceptance, allocation, or release slip; open the exact SO in **Release orders** and show available RTS units, CKD/parts lines, and unshipped remainder. | `#/so?id=…` and `/release-slips/queue` exist. Work's count currently scans *all* approved/released SOs, including completed allocations; use the actual release queue and stage counts. SO approval now emits a release-task push; use the live queue for its current stage. |
+| Releasing (`orders.release`) | Approved sale needing acceptance, allocation, or release slip; open the exact SO in **Release orders** and show available RTS units, CKD/parts lines, and unshipped remainder. | `#/so?id=…` and `/release-slips/queue` exist. Work now counts only active queue stages; confirm the exact push destination and stale-task behavior with the mobile owner. |
 | Warehouse (`inventory.adjust`, `orders.view`) | Track an approved SO and prepare its parts; pick/release a job-order kit under its separate permission. Only `orders.release` may accept or release sale stock. | **Kit releases** and `#/kit-release?id=…` exist. The approved JO queue exists, but JO approval now emits a kit-preparation push. Distinguish warehouse stock work from the commercial SO itself. |
 | Parts clerk / warehouse (`production.repairs` or authorized `inventory.adjust`) | Requested replacement/repair parts; open exact request and source shelf. | `#/repairs?id=…` and `/production/repairs?status=requested` exist, but Work hides **Parts requests** from a warehouse account with only `inventory.adjust` because its card requires `production.repairs`. Creating a request now emits a parts-desk push. |
 | Team leader (`production.record`, `production.manage`) | Released kit awaiting acceptance and active JO output; open exact JO. | Production Work queue exists, but its count combines all released/in-progress JOs; narrow it to the user's actionable work/team where applicable and warehouse release now emits a production-lead prompt. |

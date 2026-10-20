@@ -56,10 +56,10 @@
     qa: {
       role: 'qa', nodes: { queue: '72:16', identify: '72:68', verify: '72:104', check: ['72:145', '72:197'], review: '72:246', pass: '72:285',
         repair: '72:322', evidence: '72:363', fail: '72:396', done: '72:435', recheck: '72:477' },
-      queueTitle: 'Final quality inspection', queueSub: 'Units passed by QC and ready for QA', heroLabel: 'Ready for QA', checkTitle: 'Final-quality checklist',
-      reLabel: 'Recheck', reMeta: 'Final-quality recheck', identifyTitle: 'Identify QA unit', identifyNote: 'Only QC-passed units can begin QA.',
-      identifyInfo: ['Stage protection', 'Units still in QC, repair or Production are not in this queue and cannot be opened here.'],
-      verifyTitle: 'Verify final-quality candidate', verifySub: 'Confirm unit identity and QC completion', verifyPill: 'QC passed',
+      queueTitle: 'Final quality inspection', queueSub: 'Units waiting for QA; QC may still be pending', heroLabel: 'Ready for QA', checkTitle: 'Final-quality checklist',
+      reLabel: 'Recheck', reMeta: 'Final-quality recheck', identifyTitle: 'Identify QA unit', identifyNote: 'Match the unit and job order. QC and QA may inspect in either order.',
+      identifyInfo: ['Independent checks', 'QA can inspect before QC. Both checks must pass before Products In.'],
+      verifyTitle: 'Verify final-quality candidate', verifySub: 'Confirm unit identity; QC may still be pending', verifyPill: 'Ready for QA',
       scopeTitle: 'QA scope', scope: 'Inspect appearance, finish, completeness, labels, accessories and final release readiness.',
       start: 'Start final inspection', reviewTitle: 'Review final quality', reviewSub: 'Choose the unit’s final-quality disposition',
       remarksLabel: 'Final QA remarks', repairOpt: ['↻', 'Return for rectification', 'Correctable finish, accessory or record issue'],
@@ -98,8 +98,11 @@
     return (d.toDateString() === new Date().toDateString() ? 'Today, ' : d.toLocaleDateString() + ', ') + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   }
   var label = function (u) { return u.identifier || ('Unit #' + u.id); };
-  var isFinal = function (u) { return u.stage + 1 >= Math.max(1, u.qc_stages); };
-  var destination = function (u) { return isFinal(u) ? 'RTS' : 'QA'; };
+  var inspectionStage = function (desk, u) { return Math.max(1, Number(u.qc_stages) || 1) <= 1 ? 1 : desk.role === 'qa' ? 2 : 1; };
+  var destination = function (desk, u) {
+    if (Number(u.qc_stages) <= 1 || (desk.role === 'qa' ? u.qc_result : u.qa_result) === 'pass') return 'RTS recording';
+    return desk.role === 'qa' ? 'QC' : 'QA';
+  };
 
   function loadQueue(desk, force) {
     if (cache[desk.role] && !force) return Promise.resolve(cache[desk.role]);
@@ -118,9 +121,9 @@
     });
   }
   /** Checklist items that apply to this unit's pass, grouped into steps (in order). */
-  function stepsFor(u, jo) {
+  function stepsFor(desk, u, jo) {
     var items = [];
-    var first = u.stage + 1 === 1, fin = isFinal(u);
+    var first = inspectionStage(desk, u) === 1, fin = inspectionStage(desk, u) === 2 || Number(u.qc_stages) <= 1;
     if (first && jo.qc_checklist_qc) jo.qc_checklist_qc.items.forEach(function (it) { items.push(Object.assign({ _list: jo.qc_checklist_qc.name }, it)); });
     if (fin && jo.qc_checklist_qa) jo.qc_checklist_qa.items.forEach(function (it) { items.push(Object.assign({ _list: jo.qc_checklist_qa.name }, it)); });
     var steps = [];
@@ -313,7 +316,8 @@
         host.innerHTML = list.length ? list.map(function (u) {
           var meta = which === 're' ? desk.reMeta + (u.open_part_requests ? ' · waiting on parts' : '')
             : (u.priority > 0 ? 'Priority · waiting ' : 'Waiting ') + ago(u.updated_at);
-          var line = u.product_name + ' · ' + u.job_order_number + (desk.role === 'qa' && u.last_pass ? ' · QC passed ' + clock(u.last_pass.created_at).replace('Today, ', '') : '');
+          var checks = Number(u.qc_stages) > 1 ? ' · QC: ' + (u.qc_result || 'pending') + ' · QA: ' + (u.qa_result || 'pending') : '';
+          var line = u.product_name + ' · ' + u.job_order_number + checks;
           return '<button type="button" class="rk-card rk-unitcard" data-unit="' + u.id + '"><b>' + mEsc(label(u)) + '</b><span>' + mEsc(line) + '</span>' +
             '<small' + (which === 're' ? ' class="re"' : '') + '>' + mEsc(meta) + '</small><i aria-hidden="true">›</i></button>';
         }).join('') : '<div class="rk-empty">' + (which === 're' ? 'No units are back for ' + (desk.role === 'qa' ? 'recheck' : 'reinspection') + '.' : 'Nothing waiting for inspection.') + '</div>';
@@ -395,7 +399,7 @@
   function verify(view, desk, u, jo) {
     if (u.status === 'rework') { recheck(view, desk, u, jo); return; }
     var body = page(view, desk, desk.nodes.verify, desk.verifyTitle, desk.verifySub);
-    var cl = u.stage + 1 === 1 ? jo.qc_checklist_qc : jo.qc_checklist_qa;
+    var cl = inspectionStage(desk, u) === 1 ? jo.qc_checklist_qc : jo.qc_checklist_qa;
     body.innerHTML =
       '<div class="rk-jobhead"><span class="rk-no" style="font-size:14px">' + mEsc(label(u)) + '</span><span class="rk-pill" style="background:#fff;color:' +
         (desk.role === 'qa' ? '#14803d' : 'var(--rk-chip-text)') + '">' + mEsc(desk.verifyPill) + '</span>' +
@@ -441,7 +445,7 @@
 
   /* ── Checklist steps (69:145 / 69:197, 72:145 / 72:197) ─────────────────── */
   function check(view, desk, u, jo, g) {
-    var steps = stepsFor(u, jo);
+    var steps = stepsFor(desk, u, jo);
     var s = session(u.id);
     if (!steps.length) { go(desk, { unit: u.id, step: 'review' }); return; }
     g = Math.max(0, Math.min(steps.length - 1, Number(g) || 0));
@@ -532,7 +536,7 @@
 
   /* ── Review (69:247 / 72:246) ───────────────────────────────────────────── */
   function review(view, desk, u, jo) {
-    var steps = stepsFor(u, jo);
+    var steps = stepsFor(desk, u, jo);
     var s = session(u.id);
     var c = tally(steps, s);
     var body = page(view, desk, desk.nodes.review, desk.reviewTitle, desk.reviewSub);
@@ -543,7 +547,7 @@
         (c.issue ? '<span class="rk-pill danger">' + (desk.role === 'qa' ? 'Evidence needed' : 'Photo required') + '</span>' : c.open || c.reqMissing.length ? '<span class="rk-pill warn">Incomplete</span>' : '<span class="rk-pill ok">All clear</span>') + '</div>' +
       '<label class="rk-card rk-field"><small>' + mEsc(desk.remarksLabel) + '</small><textarea rows="3" maxlength="2000" data-remarks placeholder="' +
         (c.issue ? 'Describe the issue' : 'e.g. No defects observed') + '">' + mEsc(s.remarks) + '</textarea></label>' +
-      '<button type="button" class="rk-disp pass" data-d="pass"' + (canPass ? '' : ' disabled') + '><i>✓</i><b>Pass to ' + destination(u) + '</b><span>' +
+      '<button type="button" class="rk-disp pass" data-d="pass"' + (canPass ? '' : ' disabled') + '><i>✓</i><b>Pass to ' + destination(desk, u) + '</b><span>' +
         (canPass ? (desk.role === 'qa' ? 'All final-quality requirements complete' : 'Available only when no open issue remains') :
           c.reqMissing.length ? 'Required checks not passed: ' + mEsc(c.reqMissing.join(', ')) : 'Resolve or route the open issue first') + '</span></button>' +
       (s.bulk ? '' :
@@ -564,14 +568,15 @@
   /* ── Pass (69:286 / 72:285) ─────────────────────────────────────────────── */
   function passView(view, desk, u, jo) {
     var s = session(u.id);
-    var dest = destination(u);
-    var body = page(view, desk, desk.nodes.pass, desk.passTitle, 'Unit will advance to ' + (dest === 'QA' ? 'appearance QA' : 'RTS recording'));
+    var dest = destination(desk, u);
+    var body = page(view, desk, desk.nodes.pass, desk.passTitle, 'Unit will advance to ' + (dest === 'QA' ? 'appearance QA' : dest === 'QC' ? 'functional QC' : 'RTS recording'));
     body.innerHTML =
       '<div class="rk-readyhero"><i aria-hidden="true">✓</i><b>Ready for ' + dest + '</b><strong>' + mEsc(s.bulk ? s.bulk + ' units · ' + u.job_order_number : label(u)) + '</strong>' +
         '<span>' + (desk.role === 'qa' ? 'Appearance and package complete' : 'All technical items passed') + '</span></div>' +
       '<label class="rk-card rk-field"><small>Final remarks</small><textarea rows="3" maxlength="2000" data-remarks>' + mEsc(s.remarks || (desk.role === 'qa' ? 'Unit meets final-quality requirements.' : 'No technical defects observed.')) + '</textarea></label>' +
       R.note('info', '<h3>After confirmation</h3>' + (dest === 'QA' ? 'The unit leaves QC and appears in QA for appearance and final-quality inspection.'
-        : 'The unit leaves ' + desk.role.toUpperCase() + ' and appears in the RTS Clerk queue for ready-to-sell recording.')) +
+        : dest === 'QC' ? 'QA is recorded. The unit still needs functional QC before RTS recording.'
+        : 'Both required checks are complete. The unit appears in the RTS Clerk queue for ready-to-sell recording.')) +
       R.actions([{ id: 'qc-confirm', label: 'Confirm pass to ' + dest, kind: 'primary' }, { id: 'qc-back', label: 'Back', kind: 'secondary' }]);
     body.querySelector('#qc-back').onclick = function () { history.back(); };
     var btn = body.querySelector('#qc-confirm');
@@ -579,7 +584,7 @@
       s.remarks = body.querySelector('[data-remarks]').value.trim();
       btn.disabled = true; btn.textContent = 'Recording…';
       var ids = s.bulkIds || [u.id];
-      var payload = { unit_ids: ids, result: 'pass', checklist: checklistPayload(stepsFor(u, jo), s), remarks: s.remarks || null };
+      var payload = { unit_ids: ids, result: 'pass', checklist: checklistPayload(stepsFor(desk, u, jo), s), remarks: s.remarks || null };
       if (s.bulkIdentifier) payload.identifier = s.bulkIdentifier;
       record(desk, u, payload, btn, 'Confirm pass to ' + dest);
     };
@@ -587,11 +592,12 @@
 
   function record(desk, u, payload, btn, btnText) {
     // A failing / held result carries the evidence photos uploaded for it (the server needs one per unit).
+    payload.inspection_stage = inspectionStage(desk, u);
     if (payload.result === 'fail') payload.evidence_ids = session(u.id).evidence.slice();
     var actionHash=location.hash;
     mWorkflow.draft('qc').then(function(saved){
       if(actionHash!==location.hash||!mWorkflow.owns(saved))return;if(saved.operation.state!=='draft'){mWorkflow.paint(document.getElementById('m-view'),saved);return;}
-      return mWorkflow.start(saved,{path:'/job-orders/'+u.job_order_id+'/units/inspect',payload:payload,title:desk.role.toUpperCase()+' inspection · '+label(u)+' · '+payload.result,successLabel:payload.result==='pass'?'Passed to '+destination(u):payload.result==='repair'?'Sent for rework':'Inspection recorded',role:desk.role,node:desk.nodes.done,reviewRoute:'qc',reviewParams:{role:desk.role},reviewPath:'/qc/queue?role='+desk.role}).then(function(){clearDraft(u.id);delete cache[desk.role];delete jos[u.job_order_id];if(actionHash===location.hash&&mWorkflow.owns(saved))mWorkflow.paint(document.getElementById('m-view'),saved);});
+      return mWorkflow.start(saved,{path:'/job-orders/'+u.job_order_id+'/units/inspect',payload:payload,title:desk.role.toUpperCase()+' inspection · '+label(u)+' · '+payload.result,successLabel:payload.result==='pass'?'Passed to '+destination(desk, u):payload.result==='repair'?'Sent for rework':'Inspection recorded',role:desk.role,node:desk.nodes.done,reviewRoute:'qc',reviewParams:{role:desk.role},reviewPath:'/qc/queue?role='+desk.role}).then(function(){clearDraft(u.id);delete cache[desk.role];delete jos[u.job_order_id];if(actionHash===location.hash&&mWorkflow.owns(saved))mWorkflow.paint(document.getElementById('m-view'),saved);});
     }).catch(fail(btn,btnText));
   }
 
@@ -623,7 +629,7 @@
       btn.disabled = true; btn.textContent = 'Sending…';
       loadJo(u.job_order_id).then(function (jo) {
         record(desk, u, { unit_ids: [u.id], result: 'fail', disposition: 'repair', remarks: s.repair.instruction,
-          checklist: checklistPayload(stepsFor(u, jo), s), repair: { category: s.repair.category, station: s.repair.station, priority: s.repair.priority } }, btn, 'Send to repair');
+          checklist: checklistPayload(stepsFor(desk, u, jo), s), repair: { category: s.repair.category, station: s.repair.station, priority: s.repair.priority } }, btn, 'Send to repair');
       }).catch(fail(btn, 'Send to repair'));
     };
   }
@@ -700,7 +706,7 @@
       loadJo(u.job_order_id).then(function (jo) {
         record(desk, u, {
           unit_ids: [u.id], result: 'fail', disposition: s.disposition || 'scrap', remarks: why,
-          checklist: checklistPayload(stepsFor(u, jo), s),
+          checklist: checklistPayload(stepsFor(desk, u, jo), s),
         }, btn, desk.failConfirm);
       }).catch(fail(btn, desk.failConfirm));
     };
@@ -795,7 +801,6 @@
         return;
       }
       var list = byJo[joId] || [];
-      if(list.length)list=list.filter(function(u){return u.stage===list[0].stage;});
       if (!list.length) { body.innerHTML = '<div class="rk-empty">Nothing ready on this job order.</div>'; return; }
       body.innerHTML =
         '<div class="rk-stepper"><small>Units to pass</small><div class="row"><button type="button" data-dec aria-label="Fewer">−</button>' +
@@ -829,7 +834,7 @@
 
   /* ── Checklist assignment (qc.configure; kept from the previous screen) ──── */
   function checklistAssign(view, desk, u, jo) {
-    var stage = u.stage + 1 === 1 ? 1 : 2;
+    var stage = inspectionStage(desk, u);
     var body = page(view, desk, desk.nodes.verify, 'Assign ' + (stage === 1 ? 'QC' : 'QA') + ' checklist', u.product_name);
     body.innerHTML = R.skeleton(2);
     Promise.all([API.get('/qc/checklists'), API.get('/finished-products/' + jo.product_item_id).catch(function () { return null; })]).then(function (r) {
@@ -932,7 +937,7 @@
     if (unitId) {
       return withUnit(view, desk, unitId, function (u, jo) {
         var s = session(u.id);
-        s.identLabel = label(u); s.dest = destination(u);
+        s.identLabel = label(u); s.dest = destination(desk, u);
         if (['check','review','pass','repair','evidence','fail'].indexOf(step) !== -1 && s.identity !== identityKey(desk,u)) return verify(view,desk,u,jo);
         if (step === 'check') check(view, desk, u, jo, params.g);
         else if (step === 'review') review(view, desk, u, jo);

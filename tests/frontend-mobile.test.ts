@@ -17,6 +17,7 @@ const EXPECTED_ROUTES = [
   'batch', 'job-orders', 'kit-release', 'unit-issues', 'qc', 'repairs', 'record', 'receiving', 'so', 'report-problem', 'anonymous-report', 'settings', 'queue', 'clock',
   'returns', 'semi-finishing', 'inbox', 'directory', 'payslips', 'schedule', 'requests', 'tasks', 'notes', 'guides',
   'announcements', 'notifications', 'confidential-reports', 'time-fix', 'approvals', 'allocate', 'deliveries',
+  'sales', 'sales-service', 'sales-order', 'sales-new',
 ];
 
 describe('mobile bootstrap', () => {
@@ -733,7 +734,7 @@ describe('mobile bootstrap', () => {
     const BASE = { id: 184, number: 'JO-2026-184', product_name: 'K4 Electric Bike', qty_ordered: 12, qty_done: 0, qty_scrapped: 0,
       qc_stages: 2, status: 'released', released_at: '2026-09-28 01:42:00', released_by_name: 'Ana Alvarez', accepted_at: null,
       units_summary: {}, components: [{ component_name: 'Controller 60 V', qty_planned: 12 }] };
-    const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+    const wait = (ms = 100) => new Promise((r) => setTimeout(r, ms));
 
     const APPROVER = { ...MGR, permissions: [...MGR.permissions, 'production.approve', 'production.view'] };
     const DRAFT = { ...BASE, status: 'draft', approved_at: null, released_at: null, approval_revision: 'a'.repeat(64), source_location_name: 'Parts A', output_location_name: 'Finished B', notes: 'Build for depot', team_name: 'Line 2',
@@ -1094,7 +1095,7 @@ describe('mobile bootstrap', () => {
   });
 
   describe('QC and QA inspection (Figma 69:*, 72:*)', () => {
-    const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+    const wait = (ms = 100) => new Promise((r) => setTimeout(r, ms));
     const QC = { id: 21, username: 'qc1', full_name: 'Ramon Cruz', role: 'qc_inspector', employee: true, modules: null,
       permissions: ['inventory.view', 'inventory.mobile', 'production.inspect_qc', 'messages.view', 'messages.send'] };
     const QA = { ...QC, id: 22, username: 'qa1', full_name: 'Lea Santos', role: 'qa_inspector',
@@ -1182,7 +1183,7 @@ describe('mobile bootstrap', () => {
       await wait(80);
       expect(posts).toHaveLength(1);
       expect(posts[0]!.url).toBe('/api/job-orders/184/units/inspect');
-      expect(posts[0]!.body).toMatchObject({ unit_ids: [501], result: 'pass', checklist: [
+      expect(posts[0]!.body).toMatchObject({ unit_ids: [501], result: 'pass', inspection_stage: 1, checklist: [
         { label: 'Frame and fasteners', ok: true, status: 'pass' },
         { label: 'Battery voltage', ok: true, status: 'pass', value: '67.4' },
       ] });
@@ -1219,7 +1220,7 @@ describe('mobile bootstrap', () => {
     });
 
     it('opens the QA desk in amber from the Work hub with QC-passed units and a hold outcome', async () => {
-      const passed = { ...UNIT, stage: 1, last_pass: { created_at: '2026-09-29 01:30:00', inspector_name: 'Ramon Cruz', stage: 1, items: 8 } };
+      const passed = { ...UNIT, stage: 1, qc_result: 'pass', qa_result: null, last_pass: { created_at: '2026-09-29 01:30:00', inspector_name: 'Ramon Cruz', stage: 1, items: 8 } };
       const win = await bootAs(QA, fake([], { role: 'qa', units: [passed], completed: [] }));
       win.location.hash = '#/qc?role=qa';
       await wait();
@@ -1227,7 +1228,7 @@ describe('mobile bootstrap', () => {
       expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('72:16');
       expect(doc.documentElement.getAttribute('data-role-accent')).toBe('qa');
       (doc.querySelector('[data-jo="184"]') as HTMLButtonElement).click(); await wait();
-      expect(doc.getElementById('m-view').textContent).toContain('QC passed');
+      expect(doc.getElementById('m-view').textContent).toContain('QC: pass · QA: pending');
       win.location.hash = '#/qc?role=qa&unit=501';
       await wait();
       expect(doc.getElementById('m-view').textContent).toContain('Ramon Cruz');
@@ -1266,7 +1267,7 @@ describe('mobile bootstrap', () => {
       (doc.getElementById('qc-confirm') as HTMLButtonElement).click();
       await wait(80);
       expect(posts[0]).toMatchObject({ url: '/api/job-orders/184/units/inspect',
-        body: { unit_ids: [501], result: 'fail', disposition: 'hold', evidence_ids: [91] } });
+        body: { unit_ids: [501], result: 'fail', disposition: 'hold', inspection_stage: 2, evidence_ids: [91] } });
       expect(posts[0]!.body.repair).toBeUndefined();
     });
 
