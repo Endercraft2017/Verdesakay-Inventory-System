@@ -1134,3 +1134,38 @@ Final scan hygiene: four generic-key detections were verified original/retained 
 SHA-256 values under filenames containing “access.” Both original and saved file digests
 were checked, artifact filenames shortened, and the unchanged scanner rerun. No actual
 credential, scanner-rule relaxation or allowlist was involved.
+
+
+## Reviewed payroll cutoff ID recovery — 20 October 2026
+
+Base `42e332041569c192dfb9496e3c3b84e0b8103b6f`. See [operator contract](../operations/payroll-cutoff-recovery.md),
+[five primary sources](payroll-cutoff-research.md) and [manifest](evidence/payroll-cutoff-verification.json).
+
+- Full suite: **316 files / 3347 tests passed**, 686.17 seconds
+  ([log](evidence/payroll-cutoff-full.txt)). Runtime/test SHA256 values were frozen and rechecked.
+- Final focused: **6 files / 90 tests passed**, 32.05 seconds.
+  **22 new API cases** cover report recovery, identical financial/timestamp fields, current and historical
+  label/cutoff consistency, paid/duplicate/journal/closed/mail holds, roles/tenants/sessions, purpose/expiry,
+  stale state, concurrent/repeated confirmation, history-write rollback and HTTP receipt exclusion.
+  Installed-node requests refuse online-only and enqueue no repair; existing payroll/offline tests pass.
+- Complete Playwright: **52 passed**, 133.3681 seconds. Six new cases cover
+  actual-app authoritative review, original data/history, cancel, late paid state, navigation discard,
+  changed account/company and scoped axe. Typecheck and delivered JS syntax passed.
+- Initial focused: **69 passed / 2 failed**. Both new fixtures used `mark_paid` where the existing database
+  enum is `paid`; corrected fixture values. A preliminary six-file run passed 89 tests; final 90 includes
+  the added purpose/stale-revision case and stronger retry-cache checks. Failed logs are retained.
+- Initial browser: **49 passed / 1 failed** because the navigation test did not accept the existing native
+  discard prompt. Corrected the test and added independent account/company guard cases; no product
+  navigation/dismissal behavior changed. Initial JSON, screenshot and context are retained. No flakiness
+  allowance/retries were used. Full Vitest did not overlap the browser run.
+- No schema/dependency change; db:types and a fresh advisory scan were not run. Text evidence normalizes
+  colors/whitespace with raw/retained hashes. Transient authenticated trace ZIPs are not published.
+  Final staged secret scanning passed; the mandatory commit hook repeats the scan at commit.
+
+This recovers only a consistent missing/invalid stamp. It does not implement actual transfers,
+duplicate disposition, released/posted adjustments, unrecorded issued-copy/filing verification,
+independent audit protection, large-history/native/physical-office/hosted acceptance or a complete
+production certification. No live customer/provider mutation or deployment occurred. The global
+referenced ~/.claude/CLAUDE.md resolves to /home/agent/.claude/CLAUDE.md and is absent; repository workflow
+instructions, catalog and pipelines were followed. Whole controls remain 36 PASS / 58 FAIL /
+126 UNVERIFIED / 13 N/A; release hold remains.

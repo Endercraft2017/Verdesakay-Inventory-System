@@ -1,0 +1,8 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+
+ Test Files  6 passed (6)
+      Tests  89 passed (89)
+   Start at  06:21:15
+   Duration  30.06s (transform 2.42s, setup 81ms, import 471ms, tests 28.72s, environment 0ms)

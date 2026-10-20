@@ -396,3 +396,13 @@ obligations and IAS 19 recognition versus settlement. Applied source/atomicity/p
 are distinguished from unfinished accrual-date policy, unique transaction authorization,
 retry-safe commands and real bank/remittance/filing evidence. No accounting/labor compliance
 certificate or entity-specific IFRS applicability is inferred.
+
+
+## Reviewed payroll cutoff ID recovery — 20 October 2026
+
+[Five primary sources](payroll-cutoff-research.md) cover ordered, state-bound transaction
+review, per-request authority, attributed credential-safe history, proportionate correction
+and SQLite rollback. [Implementation scope](../operations/payroll-cutoff-recovery.md) preserves
+financial/calculation data and refuses transfers, paid/posted/closed history and duplicates.
+Label consistency and evidence attestation do not independently establish historical truth,
+issued-copy/filing status, accounting/legal compliance or malicious-insider resistance.

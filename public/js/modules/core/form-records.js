@@ -1214,6 +1214,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
             ${isPayroll ? `<button class="icon-btn" data-print="${r.id}" title="Print this slip" aria-label="Print payslip ${UI.esc(r.number)}">${UI.icon('printer')}</button>` : ''}
             ${!isPayroll && formDef.template_id ? `<button class="icon-btn" data-print-tpl="${r.id}" title="Print">${UI.icon('printer')}</button>` : ''}
             ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-owner="${r.id}" title="Review payslip owner" aria-label="Review owner of payslip ${UI.esc(r.number)}">${UI.icon('user')}</button>` : ''}
+            ${isPayroll && canManagePayroll && r.status === 'draft' ? `<button class="icon-btn" data-cutoff-recovery="${r.id}" title="Recover missing cutoff ID" aria-label="Recover cutoff of payslip ${UI.esc(r.number)}">${UI.icon('calendar')}</button>` : ''}
             ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-email="${r.id}" title="Email this payslip" aria-label="Email payslip ${UI.esc(r.number)}">${UI.icon('mail')}</button>` : ''}
             ${isPayroll && canManagePayroll ? (r.status === 'paid'
               ? `<button class="icon-btn" data-unpaid="${r.id}" title="Unmark Paid (unlock for editing)" aria-label="Unmark payslip ${UI.esc(r.number)} as paid">${UI.icon('reply', 15)}</button>`
@@ -1450,6 +1451,46 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
               }
               await API.post(`/hr/payroll/${button.dataset.owner}/identity/confirm`,{review_token:review.review_token},opts);context();
               UI.toast('Payslip identity corrected. Review the change history for its audit record.');load();return true;
+            }catch(error){showError(error.message);return false;}
+          }
+        });
+      }catch(error){UI.toast(error.message,'error');}finally{button.disabled=false;}
+    });
+    el.querySelectorAll('[data-cutoff-recovery]').forEach(button => button.onclick = async event => {
+      event.stopPropagation(); button.disabled=true;
+      const actor=App.getMe(),server=API.serverScope(),token=API.getToken();
+      const opts={expectedServer:server,expectedUserId:actor.id};
+      const context=()=>{if(App.getMe()!==actor||API.serverScope()!==server||API.getToken()!==token||!button.isConnected)throw new Error('Account, company or payroll view changed. Reopen cutoff recovery.');};
+      try {
+        const state=await API.get(`/hr/payroll/${button.dataset.cutoffRecovery}/cutoff-recovery`,opts);context();
+        if(state.hold||!state.cutoff){UI.toast(state.hold||'This cutoff needs a separate correction.','error');return;}
+        let review=null;
+        UI.modal({title:'Recover payslip cutoff',confirmText:'Review cutoff recovery',bodyHTML:`<div id="pcr-content">
+          <p><strong>${UI.esc(state.record.number)}</strong> · ${UI.esc(state.record.employee_name||'No recorded name')} · ${UI.esc(state.record.status)}</p>
+          <p>Stored cutoff ID: ${UI.esc(state.record.stored_cutoff)} · Recorded label: ${UI.esc(state.record.period||state.cutoff.label)}</p>
+          <p>The recorded labels identify ${UI.esc(state.cutoff.label)} (${UI.esc(state.cutoff.start_date)} to ${UI.esc(state.cutoff.end_date)}). Verify the original attendance and payroll records. This recovers its ID; it cannot move payroll to another cutoff.</p>
+          <label>Cutoff<select id="pcr-cutoff"><option value="">Select verified cutoff…</option><option value="${state.cutoff.id}">${UI.esc(state.cutoff.label)} · ${UI.esc(state.cutoff.start_date)} to ${UI.esc(state.cutoff.end_date)}</option></select></label>
+          <label>Reason for correction<input id="pcr-reason" minlength="10" maxlength="200"></label>
+          <label>Evidence reference<input id="pcr-reference" minlength="3" maxlength="120" placeholder="Internal case or attendance-record reference"></label>
+          <p class="muted">Use a reference only. Do not paste IDs, bank details or medical information.</p>
+          <label><input type="checkbox" id="pcr-verified"> I verified the original records and checked for issued copies and filings.</label></div>`,
+          onConfirm:async(overlay,showError)=>{
+            try {
+              context();
+              if(!review){
+                review=await API.post(`/hr/payroll/${button.dataset.cutoffRecovery}/cutoff-recovery/review`,{
+                  cutoff_id:Number(overlay.querySelector('#pcr-cutoff').value),expected_revision:state.record.revision,
+                  reason:overlay.querySelector('#pcr-reason').value,evidence_reference:overlay.querySelector('#pcr-reference').value,
+                  verified_records:overlay.querySelector('#pcr-verified').checked},opts);context();
+                overlay.querySelector('#pcr-content').innerHTML=`<p><strong>${UI.esc(review.record.number)}</strong> · ${UI.esc(review.record.status)}</p>
+                  <p>Employee: ${UI.esc(review.employee.employee_no||'No employee number')} — ${UI.esc(review.employee.name)} (employee ${review.employee.id})</p>
+                  <p>Recover stored cutoff ${UI.esc(review.record.stored_cutoff)} as <strong>${UI.esc(review.cutoff.label)}</strong> (cutoff ${review.cutoff.id}), ${UI.esc(review.cutoff.start_date)} to ${UI.esc(review.cutoff.end_date)}.</p>
+                  <p>Reason: ${UI.esc(review.reason)}</p><p>Evidence reference: ${UI.esc(review.evidence_reference)}</p>
+                  <p>This changes only the cutoff ID. Amounts, pay date, recorded labels and calculation history stay unchanged. Recheck payroll and contribution reports after recovery. This review expires in five minutes.</p>`;
+                overlay.querySelector('[data-confirm]').textContent='Confirm cutoff recovery';overlay.querySelector('[data-confirm]').focus();return false;
+              }
+              await API.post(`/hr/payroll/${button.dataset.cutoffRecovery}/cutoff-recovery/confirm`,{review_token:review.review_token},opts);context();
+              UI.toast('Cutoff ID recovered. Recheck payroll reports and the correction history.');load();return true;
             }catch(error){showError(error.message);return false;}
           }
         });

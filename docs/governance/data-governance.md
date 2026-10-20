@@ -207,3 +207,15 @@ than employee HR objects and distinguishes Paid marks from unlinked settlement/f
 See [contract](../operations/payroll-reconciliation.md) and [primary-source decisions](../audits/payroll-reconcile-research.md).
 These safeguards do not complete reviewed source reconstruction, rights/recipient notification,
 retention/legal holds, independent audit protection or full accounting/operational acceptance.
+
+
+## Payroll cutoff ID recovery — 20 October 2026
+
+A payroll manager can recover a missing/invalid ID only from consistent, uniquely claimed
+existing labels. Fresh online review binds actor/session/company/source state; confirmation
+changes only the ID with mandatory attributed before/after revisions and case reference.
+Paid/released, duplicate, journal, closed-period and known email cases remain held. Evidence
+references are audit data; do not paste sensitive source documents or credentials into them.
+Unlogged issued copies and filings require separate evidence; retention, independent audit
+protection and actual transfers remain open. See [contract](../operations/payroll-cutoff-recovery.md)
+and [primary-source decisions](../audits/payroll-cutoff-research.md).

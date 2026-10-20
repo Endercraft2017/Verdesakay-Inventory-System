@@ -1,0 +1,128 @@
+{
+  "date": "2026-10-20",
+  "base_commit": "42e332041569c192dfb9496e3c3b84e0b8103b6f",
+  "tool_versions": {
+    "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+    "node": "v24.19.0",
+    "npm": "11.9.0",
+    "playwright": "Version 1.64.1",
+    "gitleaks": "8.24.3"
+  },
+  "scope": "Reviewed online recovery of a missing/invalid cutoff stamp from consistent existing labels; financial/calculation fields preserved, transfers and duplicate disposition refused",
+  "research": {
+    "decisions": "../payroll-cutoff-research.md",
+    "sources_retrieved": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html",
+      "https://privacy.gov.ph/data-privacy-act/",
+      "https://www.sqlite.org/lang_savepoint.html"
+    ],
+    "legal_accounting_or_security_certification_inferred": false
+  },
+  "full_run": {
+    "files_passed": 316,
+    "files_failed": 0,
+    "tests_passed": 3347,
+    "tests_failed": 0,
+    "duration_seconds": 686.17
+  },
+  "focused": {
+    "files_passed": 6,
+    "files_failed": 0,
+    "tests_passed": 90,
+    "tests_failed": 0,
+    "duration_seconds": 32.05
+  },
+  "preliminary_focused": {
+    "files_passed": 6,
+    "files_failed": 0,
+    "tests_passed": 89,
+    "tests_failed": 0,
+    "duration_seconds": 30.06
+  },
+  "new_api_cases": 22,
+  "playwright": {
+    "passed": 52,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "duration_seconds": 133.3681
+  },
+  "visual_inspection": "Viewed the retained actual-app review screenshot: readable original/target context and visible separate cancel/confirm controls at 1280x720; no native or all-screen acceptance inferred",
+  "new_browser_cases": 6,
+  "scoped_axe": "Passed cutoff review dialog; existing suite scans also passed. No complete accessibility/native acceptance inferred.",
+  "typecheck": "passed",
+  "delivered_JS_syntax": "node --check public/js/modules/core/form-records.js passed",
+  "schema_and_dependencies": "unchanged; db:types and dependency advisory scan not repeated in this increment",
+  "source_files_sha256": {
+    "src/modules/hr/payroll-cutoff.routes.ts": "da56f93014550721058af1490e0af635f0415ffbea9174e8803d04fe9b0073e2",
+    "src/modules/hr/hr.routes.ts": "e64656391d5d0a9d52361e9e7bd22f44d9a78274ff240f810722774f2e1c2e0b",
+    "src/shared/idempotency.ts": "6beab307fd1aea37f94d57dc82dbbc31d99dc99ca606f3d5ad64a5b25bbd7c91",
+    "public/js/modules/core/form-records.js": "eb718c9f4398a7334ff46c8b916fc4aff9720acf0223f00816a8a8b4983b27de",
+    "tests/payroll-cutoff-recovery.test.ts": "7ff855d3db4ac8d3a71553ec0a86c183bc33b6a91bf1418595fd50fb769048c8",
+    "tests/e2e/server.ts": "a0d351278fbadd1d38390dadc569c17c68ed47e370196ac59b946e55e49fd8f4",
+    "tests/e2e/payroll-cutoff.spec.ts": "f9d20c11cdf857095583c1a92c7375c7fdd3a2420f3524bd929f50a46a960f34"
+  },
+  "failed_runs": [
+    {
+      "run": "initial focused",
+      "result": "4 files: 69 passed / 2 failed; both new fixtures used mark_paid instead of the real paid history enum; fixtures corrected, no product enum change"
+    },
+    {
+      "run": "initial full browser",
+      "result": "49 passed / 1 failed; navigation test did not accept the shared native discard prompt. Test corrected; product dismissal behavior unchanged. Added explicit account/company guard cases."
+    }
+  ],
+  "evidence_formatting": "Text removes ANSI colors, trailing whitespace and blank EOF lines; raw and retained hashes recorded. JSON/images unchanged; transient authenticated trace ZIPs not published.",
+  "artifact_source_sha256_before_text_normalization": {
+    "payroll-cutoff-full.txt": "d4ee61588ca023a32779e6d1fa22f7678c0fac1eb1183868c8250d79ffa87bc4",
+    "payroll-cutoff-focused-final.txt": "439045fc60d7efbf317ca4641331ba0fc73c1b879e8fb5e0906b94eb7b3fb539",
+    "payroll-cutoff-focused-initial.txt": "5beb52849699fee74350548e7e4483222463357fb655f61129714f4e0ef5bf19",
+    "payroll-cutoff-focused.txt": "98c2740def7a56ad5cac058b5abca900049b3acae07f1f148c4fc393a2dc5c5d",
+    "payroll-cutoff-typecheck.txt": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+    "payroll-cutoff-playwright.txt": "93b437126175d0f9b12588997fe88305c4d33b01f432dc3d218552eed985641e",
+    "payroll-cutoff-playwright.json": "be24055e177b12483e66c16c10de667647deb84adac60956b2a9edab157c0c50",
+    "payroll-cutoff-playwright-initial.txt": "9420c3fd142d64a85ed56464b1bb1a9494f18f2c3d100abe83f78f498e7c0f90",
+    "payroll-cutoff-browser-initial.json": "61c523c0fa357f769eaaf68d0c69140825c0b352b2f69f8efd2bbf79a4604f44",
+    "payroll-cutoff-initial-review-context.md": "d52a9e687e8a04142799d93fd2ce31e6cb3cf33ef4359f80a9d1e8d4f7d9ea69",
+    "payroll-cutoff-initial-review-image.png": "033f7133ed88ffcb81d60df3816defea73330c906cd025811eef9a9d87fd31db",
+    "payroll-cutoff-review.png": "c11ca7847522760062661b83ad39bcca26da561372388351eede66fb24ba4409",
+    "payroll-cutoff-candidate.json": "0efaa9069672c2a86e89784702a7649387d64938b741f1c5c40345d847d710e6",
+    "payroll-cutoff-tool-versions.json": "4beb094d9a3d633d002a4097dbee9f413718d5774658c8c98ffb66500c7af93c",
+    "payroll-cutoff-gitleaks.txt": "62ba1bed59a700a3c773685094766b5b576788c3b8868270ed98eb3b0a5665f8"
+  },
+  "artifact_sha256": {
+    "payroll-cutoff-browser-initial.json": "61c523c0fa357f769eaaf68d0c69140825c0b352b2f69f8efd2bbf79a4604f44",
+    "payroll-cutoff-candidate.json": "0efaa9069672c2a86e89784702a7649387d64938b741f1c5c40345d847d710e6",
+    "payroll-cutoff-focused-final.txt": "404b28a491585f3d98928b22245c6ba050c395662562a3aa571997e75c7b5211",
+    "payroll-cutoff-focused-initial.txt": "92271bfe9d4812a789a05a20be6ea66a9a4823736fb2feda31356f67cb39a4b8",
+    "payroll-cutoff-focused.txt": "91cb17be009822b3bc6a360bf984e28d2fe05f08c3d08437e63fb8079dfcbfba",
+    "payroll-cutoff-full.txt": "8ecfc3fd7d9361f25e71aba347683a9f25de24db15c8e382635e60855c34ccbf",
+    "payroll-cutoff-initial-review-context.md": "b07302c6eed50c4c908718e789ccbf8351661a3eef9d97f005c9017593b0be45",
+    "payroll-cutoff-initial-review-image.png": "033f7133ed88ffcb81d60df3816defea73330c906cd025811eef9a9d87fd31db",
+    "payroll-cutoff-playwright-initial.txt": "9420c3fd142d64a85ed56464b1bb1a9494f18f2c3d100abe83f78f498e7c0f90",
+    "payroll-cutoff-playwright.json": "be24055e177b12483e66c16c10de667647deb84adac60956b2a9edab157c0c50",
+    "payroll-cutoff-playwright.txt": "93b437126175d0f9b12588997fe88305c4d33b01f432dc3d218552eed985641e",
+    "payroll-cutoff-review.png": "c11ca7847522760062661b83ad39bcca26da561372388351eede66fb24ba4409",
+    "payroll-cutoff-tool-versions.json": "4beb094d9a3d633d002a4097dbee9f413718d5774658c8c98ffb66500c7af93c",
+    "payroll-cutoff-typecheck.txt": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+    "payroll-cutoff-gitleaks.txt": "62ba1bed59a700a3c773685094766b5b576788c3b8868270ed98eb3b0a5665f8"
+  },
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "not_established": [
+    "Actual transfers or duplicate/malformed/paid/posted adjustment workflow",
+    "Unrecorded issued copies, accepted filings, true original evidence or financial calculation certification",
+    "Independent audit protection, insider/compromised browser resistance or a second approver",
+    "Cloud repair physical-office convergence/restore, large-history capacity or native Windows/device acceptance",
+    "No new server.ts process-kill or power-loss test; previous journal process evidence remains separately scoped",
+    "Full production readiness or resolution of wider scorecard controls"
+  ],
+  "workflow_limit": "The referenced ~/.claude/CLAUDE.md resolves to /home/agent/.claude/CLAUDE.md and is absent; repository CLAUDE.md, module catalog and pipelines were followed.",
+  "staged_secret_scan": {
+    "status": "passed",
+    "command": "gitleaks git --pre-commit --staged --redact --no-banner",
+    "mandatory_commit_hook": "Repeats the staged scan at commit; not bypassed"
+  }
+}

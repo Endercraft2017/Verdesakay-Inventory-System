@@ -1,0 +1,12 @@
+{
+  "base_commit": "42e332041569c192dfb9496e3c3b84e0b8103b6f",
+  "files": {
+    "src/modules/hr/payroll-cutoff.routes.ts": "da56f93014550721058af1490e0af635f0415ffbea9174e8803d04fe9b0073e2",
+    "src/modules/hr/hr.routes.ts": "e64656391d5d0a9d52361e9e7bd22f44d9a78274ff240f810722774f2e1c2e0b",
+    "src/shared/idempotency.ts": "6beab307fd1aea37f94d57dc82dbbc31d99dc99ca606f3d5ad64a5b25bbd7c91",
+    "public/js/modules/core/form-records.js": "eb718c9f4398a7334ff46c8b916fc4aff9720acf0223f00816a8a8b4983b27de",
+    "tests/payroll-cutoff-recovery.test.ts": "7ff855d3db4ac8d3a71553ec0a86c183bc33b6a91bf1418595fd50fb769048c8",
+    "tests/e2e/server.ts": "a0d351278fbadd1d38390dadc569c17c68ed47e370196ac59b946e55e49fd8f4",
+    "tests/e2e/payroll-cutoff.spec.ts": "f9d20c11cdf857095583c1a92c7375c7fdd3a2420f3524bd929f50a46a960f34"
+  }
+}

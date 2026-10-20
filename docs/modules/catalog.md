@@ -769,7 +769,7 @@ computation itself is `modules/payroll`.
 SCHEMA_VERSION 46), `kiosk-devices.ts` (approved time-in kiosk PCs + the `kiosk_lock`
 setting; locked by default when internet-facing, SCHEMA_VERSION 47), `field.ts`, `hr-daily-report.ts`,
 `hr-employee-numbering.ts`, `punch-photos.ts`, `punch-holds.ts` (phone punch scan → selfie
-holds), routes: `payroll-identity.routes.ts` (exceptional online reviewed repair, fresh proof, immutable paid financial state and atomic revision audit), `hr.routes.ts` (also owns the
+holds), routes: `payroll-cutoff.routes.ts` (online reviewed missing/invalid ID recovery; consistent labels, draft-only, history/duplicate/closed-period holds; [contract](../operations/payroll-cutoff-recovery.md)), `payroll-identity.routes.ts` (exceptional online reviewed repair, fresh proof, immutable paid financial state and atomic revision audit), `hr.routes.ts` (also owns the
 `asset_issuances`/`asset_issuance_items` tables and the seeded "Asset Issuance Form"
 doc_template, SCHEMA_VERSION 43; company-wide register `GET /api/hr/assets` with still-out /
 people-who-left filters + CSV, UI `public/js/modules/hr/hr-assets.js` at HR → Employees →
@@ -938,7 +938,7 @@ and [research](../audits/payroll-reports-research.md).
 holds rather than first/newest selection. Reports hold duplicate slots even across pay years.
 Valid cutoff stamps disambiguate custom labels for agency scope; unlinked relevant-month
 history requires review. See [source/journal contract](../operations/payroll-reconciliation.md).
-Reviewed duplicate/cutoff reconstruction and payment/filing acceptance remain.
+Consistent missing/invalid cutoff stamps now have a [reviewed recovery](../operations/payroll-cutoff-recovery.md). Actual transfers, duplicate/unknown reconstruction and payment/filing acceptance remain.
 **Public interface:** pure computation/rendering functions (no routes of its own — exposed
 through `hr.routes.ts`, `accounting.routes.ts`, and `core/me.routes.ts`'s
 `GET /api/me/payslips/:id/pdf`).

@@ -32,6 +32,7 @@ legal approval or independent assurance. The complete release remains on hold.
 
 | Prefix in evidence/ | Scope |
 |---|---|
+| payroll-cutoff-* | Reviewed missing/invalid cutoff ID recovery, history/conflict/authorization holds, browser and scoped accessibility evidence |
 | payroll-reconcile-* | Shared cutoff/duplicate holds, atomic journal replacement, bounded comparison, real process termination/restart and browser evidence |
 | payroll-reports-* | Stable-ID tax/agency/HR attribution, ambiguity/cutoff holds, report CSV/print/error/order browsers and actual server smoke |
 | qbo-lifecycle-* / qbo-jobs-* | Company/connection generation, durable accounting writes and automatic export worker/status |

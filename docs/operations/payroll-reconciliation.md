@@ -154,3 +154,14 @@ The driver starts the actual server against new temporary synthetic catalogs, ki
 its disposable posting child, restarts the server, verifies rollback/re-post/holds and
 removes the temporary data. The child refuses non-test catalogs. This POSIX process-kill
 proof does not substitute for supported Windows/Electron/device or storage power-loss testing.
+
+
+## Consistent-label cutoff recovery follow-up — 20 October 2026
+
+A [reviewed ID recovery](payroll-cutoff-recovery.md) now handles a limited subset of missing/
+invalid cutoff stamps: consistent unique existing labels, draft/never-paid sources and no
+journal/closed-period/known-mail history. Only the stamp changes, with mandatory revision
+history and fresh online review. This narrows the earlier blanket reconstruction gap.
+Actual transfers, duplicate disposition, malformed/unknown history, released/posted adjustments
+and settlement/remittance/filing acceptance remain. No source totals or release status are
+certified by recovering an ID.

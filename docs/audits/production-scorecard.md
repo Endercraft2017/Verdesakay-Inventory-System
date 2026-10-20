@@ -390,3 +390,13 @@ payroll-reconcile-research.md and evidence/payroll-reconcile-verification.json. 
 reconstruction, date/eligibility policy, historical snapshots, retry-safe authorized posting,
 settlement/remittance/filing and wider acceptance remain. No whole control promoted; 36 PASS /
 58 FAIL / 126 UNVERIFIED / 13 N/A and release hold remain unchanged.
+
+
+### Reviewed payroll cutoff ID recovery — 20 October 2026
+
+Missing/invalid stamps now have a fresh online review/confirm workflow for a uniquely
+consistent existing label destination, with atomic attributed revision history. Paid, duplicate,
+posted, closed-period and known email cases hold. Valid-ID transfers are refused. See
+[contract](../operations/payroll-cutoff-recovery.md), [research](payroll-cutoff-research.md)
+and [verification](evidence/payroll-cutoff-verification.json). This is a narrow correction;
+whole controls remain 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A and release stays on hold.

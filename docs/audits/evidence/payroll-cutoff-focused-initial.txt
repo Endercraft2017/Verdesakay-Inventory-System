@@ -1,0 +1,73 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payroll-cutoff-recovery.test.ts > refuses paid, ever-paid and previously paid revision history even after unmarking
+{"timestamp":"2026-10-20T06:19:39.086Z","level":"info","event":"http_request","request_id":"56594937-f29c-4ea6-8e15-bc03e1042e67","tenant":"default","method":"POST","path":"/api/hr/payroll/31/cutoff-recovery/review","status":409,"duration_ms":2}
+
+stdout | tests/payroll-cutoff-recovery.test.ts > rechecks new journal, closed-period, paid and email history at execution
+{"timestamp":"2026-10-20T06:19:39.602Z","level":"info","event":"http_request","request_id":"b7f7e7e8-cb58-4de5-8c40-c6fb81b5594e","tenant":"default","method":"POST","path":"/api/hr/payroll/61/cutoff-recovery/review","status":200,"duration_ms":2}
+
+stdout | tests/payroll-cutoff-recovery.test.ts > rechecks new journal, closed-period, paid and email history at execution
+{"timestamp":"2026-10-20T06:19:39.606Z","level":"info","event":"http_request","request_id":"f22de5a2-4812-4493-9e8d-3385194f1754","tenant":"default","method":"POST","path":"/api/hr/payroll/61/cutoff-recovery/confirm","status":409,"duration_ms":2}
+
+stdout | tests/payroll-cutoff-recovery.test.ts > rechecks new journal, closed-period, paid and email history at execution
+{"timestamp":"2026-10-20T06:19:39.610Z","level":"info","event":"http_request","request_id":"f55d01cb-9390-438f-bc3c-0a92aae307ca","tenant":"default","method":"POST","path":"/api/hr/payroll/62/cutoff-recovery/review","status":200,"duration_ms":2}
+
+stdout | tests/payroll-cutoff-recovery.test.ts > rechecks new journal, closed-period, paid and email history at execution
+{"timestamp":"2026-10-20T06:19:39.613Z","level":"info","event":"http_request","request_id":"3efe6668-04d4-4316-b3ba-c936ba187ccc","tenant":"default","method":"POST","path":"/api/hr/payroll/62/cutoff-recovery/confirm","status":409,"duration_ms":2}
+
+stdout | tests/payroll-cutoff-recovery.test.ts > rechecks new journal, closed-period, paid and email history at execution
+{"timestamp":"2026-10-20T06:19:39.617Z","level":"info","event":"http_request","request_id":"5f0396ff-be68-4cdf-981f-0d9c3f3ed51f","tenant":"default","method":"POST","path":"/api/hr/payroll/63/cutoff-recovery/review","status":200,"duration_ms":2}
+
+stdout | tests/payroll-cutoff-recovery.test.ts
+{"timestamp":"2026-10-20T06:19:37.495Z","level":"info","event":"http_request","request_id":"d7fe813e-b781-4b6c-8fca-9772601de356","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":385}
+
+stdout | tests/payroll-cutoff-recovery.test.ts
+{"timestamp":"2026-10-20T06:19:37.829Z","level":"info","event":"http_request","request_id":"a5bea376-ffdc-4871-9124-9f849959a053","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":327}
+
+stdout | tests/payroll-cutoff-recovery.test.ts
+{"timestamp":"2026-10-20T06:19:38.158Z","level":"info","event":"http_request","request_id":"767f136a-df8d-4100-938d-13615eb70b04","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":326}
+
+stdout | tests/payroll-cutoff-recovery.test.ts
+{"timestamp":"2026-10-20T06:19:38.530Z","level":"info","event":"http_request","request_id":"7a397e01-e29a-4133-8ee6-d32f09324a2d","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":369}
+
+stdout | tests/payroll-cutoff-recovery.test.ts
+{"timestamp":"2026-10-20T06:19:38.900Z","level":"info","event":"http_request","request_id":"39d4007a-281b-43d6-baec-be9c48510f5a","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":367}
+
+ ❯ tests/payroll-cutoff-recovery.test.ts (21 tests | 2 failed) 6492ms
+   × refuses paid, ever-paid and previously paid revision history even after unmarking 9ms
+   × rechecks new journal, closed-period, paid and email history at execution 19ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payroll-cutoff-recovery.test.ts > refuses paid, ever-paid and previously paid revision history even after unmarking
+Error: CHECK constraint failed: action IN ('paid','unpaid')
+ ❯ Module.run src/shared/db.ts:375:26
+    373| /** Execute an INSERT/UPDATE/DELETE and return the run result. */
+    374| export function run(sql: string, ...params: unknown[]) {
+    375|   return db.prepare(sql).run(...(params as Param[]));
+       |                          ^
+    376| }
+    377|
+ ❯ tests/payroll-cutoff-recovery.test.ts:61:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/payroll-cutoff-recovery.test.ts > rechecks new journal, closed-period, paid and email history at execution
+Error: CHECK constraint failed: action IN ('paid','unpaid')
+ ❯ Module.run src/shared/db.ts:375:26
+    373| /** Execute an INSERT/UPDATE/DELETE and return the run result. */
+    374| export function run(sql: string, ...params: unknown[]) {
+    375|   return db.prepare(sql).run(...(params as Param[]));
+       |                          ^
+    376| }
+    377|
+ ❯ tests/payroll-cutoff-recovery.test.ts:123:25
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  2 failed | 69 passed (71)
+   Start at  06:19:33
+   Duration  20.40s (transform 1.59s, setup 59ms, import 310ms, tests 19.58s, environment 0ms)

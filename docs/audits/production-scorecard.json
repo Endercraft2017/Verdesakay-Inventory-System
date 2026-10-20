@@ -2110,9 +2110,9 @@
   "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
   "latest_follow_up": {
     "date": "2026-10-20",
-    "scope": "Payroll source duplicate/cutoff holds, atomic journal replacement, bounded source/journal comparison and process-interruption recovery; seven-source research",
-    "base_commit": "91a66680f659ae3ef940e1de8287528d02ba4e69",
-    "verification": "evidence/payroll-reconcile-verification.json",
+    "scope": "Reviewed missing/invalid payroll cutoff ID recovery with consistent-label, draft/history/duplicate/journal/closed-period/mail holds; five-source research",
+    "base_commit": "42e332041569c192dfb9496e3c3b84e0b8103b6f",
+    "verification": "evidence/payroll-cutoff-verification.json",
     "whole_control_statuses_changed": false
   }
 }

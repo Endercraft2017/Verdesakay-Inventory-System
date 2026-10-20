@@ -27,6 +27,12 @@ const disclosureUsers = ['original', 'reused'].map(kind => Number(db.run("INSERT
 const disclosureEmployees = ['Synthetic Payroll New', 'Synthetic Payroll Old'].map((name,i) => Number(db.run('INSERT INTO employees(employee_no,name,user_id) VALUES(?,?,?)','DISC-BROWSER-'+i,name,disclosureUsers[i]).lastInsertRowid));
 db.run("INSERT INTO employee_profile_changes(employee_id,field,old_value,new_value,source) VALUES(?,'name','Synthetic Payroll Old','Synthetic Payroll New','hr_edit')",disclosureEmployees[0]);
 const disclosureForm = db.queryOne<{id:number}>("SELECT id FROM form_definitions WHERE slug='hr_payroll'")!;
+// Isolated cutoff recovery fixtures; no bank, mail or employee account is linked.
+const cutoffEmployee=Number(db.run("INSERT INTO employees(employee_no,name) VALUES('CUTOFF-BROWSER-EMP','Synthetic Cutoff Browser')").lastInsertRowid);
+for(const number of ['CUTOFF-BROWSER','CUTOFF-CANCEL','CUTOFF-STALE','CUTOFF-CONTEXT']){
+  const id=Number(db.run("INSERT INTO attendance_periods(label,start_date,end_date) VALUES(?,'2032-07-01','2032-07-15')",number).lastInsertRowid);
+  db.run("INSERT INTO form_records(form_def_id,number,data,status,period,created_by) VALUES(?,?,?,'draft',?,1)",disclosureForm.id,number,JSON.stringify({employee_id:cutoffEmployee,employee_name:'Synthetic Cutoff Browser',cutoff_id:'broken',payroll_period:number,pay_date:'2032-07-16',basic_salary:1000,total_earnings:1000,net_pay:1000,_calculation_snapshot:JSON.stringify({version:1,period_label:number,totals:{basic_salary:1000}})}),number);
+}
 // Payroll reconciliation fixtures use a separate pay year from tax/disclosure tests.
 for(const kind of ['GOOD','DUP']){
   const label='RECON-BROWSER-'+kind;

@@ -714,6 +714,12 @@ for the internet (it uses the company's mail server, which only the cloud has).
    `GET /api/me/payslips/:id/pdf` render it (`payroll/payslip-pdf.ts`), re-checking ownership
    and Paid at download time and logging each download. Branch: HR un-marks Paid to correct
    it → download hidden (404) until re-marked.
+3b. **Recover a missing/invalid cutoff ID** (`hr`) — online payroll managers verify original
+   records and review/confirm a consistent unique existing label destination with fresh proof.
+   Only the ID changes under mandatory revision history. Paid/released, duplicate/unresolved,
+   journal, closed-period and known emailed cases hold. Valid-ID transfers are refused; see
+   `docs/operations/payroll-cutoff-recovery.md`. This does not recalculate attendance or choose
+   a duplicate winner.
 4. **Ledger posting** (`accounting`) — `hr.routes.ts` calls
    `accounting-autopost.ts`'s `maybeAutoPostPayroll`. Shared source indexing rejects duplicate
    employee/cutoff slots and foreign-label adoption before writes. Validate the replacement,
