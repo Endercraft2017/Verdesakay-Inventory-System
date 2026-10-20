@@ -241,10 +241,13 @@ router.get('/queue', requireAnyPermission(['production.inspect_qc', 'production.
      ORDER BY j.priority DESC, u.updated_at ASC, u.id ASC`
   );
   const mine = units.filter((u) => {
-    const total = Math.max(1, u.qc_stages);
-    const pass = u.stage + 1;
-    if (total <= 1) return role === 'qc' ? hasQc : hasQa && !(hasQc && role !== 'qa');
-    return role === 'qc' ? pass === 1 && hasQc : pass >= total && hasQa;
+    if (role === 'qc' && !hasQc || role === 'qa' && !hasQa) return false;
+    if (u.qc_stages <= 1) return true; // legacy combined inspection
+    const stage = role === 'qc' ? 1 : 2;
+    const last = queryOne<{ result: string }>(
+      'SELECT result FROM qc_records WHERE unit_id = ? AND stage = ? ORDER BY id DESC LIMIT 1', u.id, stage
+    );
+    return last?.result !== 'pass';
   });
   const lastRecord = (unitId: number, result?: string) => queryOne<{
     id: number; result: string; remarks: string | null; checklist: string | null; created_at: string; inspector_name: string | null;
@@ -257,6 +260,9 @@ router.get('/queue', requireAnyPermission(['production.inspect_qc', 'production.
      WHERE q.unit_id = ? ${result ? 'AND q.result = ?' : ''} ORDER BY q.id DESC LIMIT 1`,
     ...(result ? [unitId, result] : [unitId])
   );
+  const lastRecordForStage = (unitId: number, stage: number) => queryOne<{ result: string }>(
+    'SELECT result FROM qc_records WHERE unit_id = ? AND stage = ? ORDER BY id DESC LIMIT 1', unitId, stage
+  )?.result ?? null;
   const parse = (s: string | null) => { try { return s ? JSON.parse(s) : []; } catch { return []; } };
   const out = mine.map((u) => {
     const lastFail = u.status === 'rework' ? lastRecord(u.id, 'fail') : undefined;
@@ -266,6 +272,8 @@ router.get('/queue', requireAnyPermission(['production.inspect_qc', 'production.
     )!.n;
     return {
       ...u,
+      qc_result: lastRecordForStage(u.id, 1),
+      qa_result: u.qc_stages > 1 ? lastRecordForStage(u.id, 2) : null,
       last_fail: lastFail ? { ...lastFail, checklist: parse(lastFail.checklist) } : null,
       last_pass: lastPass ? { created_at: lastPass.created_at, inspector_name: lastPass.inspector_name, stage: lastPass.stage,
         items: parse(lastPass.checklist).length } : null,

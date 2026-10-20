@@ -539,6 +539,8 @@ const checklistResultSchema = z.object({
 export const inspectUnitsSchema = z
   .object({
     unit_ids: z.array(z.coerce.number().int().positive()).min(1).max(500),
+    // Required when an inspector holds both permissions and wants to inspect QA first.
+    inspection_stage: z.coerce.number().int().min(1).max(2).optional(),
     result: z.enum(['pass', 'fail']),
     remarks: trimmed.max(2000).optional().nullable(),
     identifier: unitIdentifier,

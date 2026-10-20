@@ -122,6 +122,19 @@ function pdb(): DatabaseSync {
   ensureColumn(d, 'tenants', 'subscription', 'TEXT');
   ensureColumn(d, 'tenants', 'is_sandbox', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(d, 'tenants', 'modules', 'TEXT'); // added after the initial control-plane schema
+  // Existing overrides containing Inventory previously included Sales implicitly. Preserve
+  // that entitlement once, then let operators toggle Sales independently going forward.
+  if (!d.prepare("SELECT 1 FROM provisioning_log WHERE slug='__platform__' AND action='sales_module_split' LIMIT 1").get()) {
+    for (const row of d.prepare('SELECT id, modules FROM tenants WHERE modules IS NOT NULL').all() as Array<{ id: number; modules: string }>) {
+      try {
+        const modules = JSON.parse(row.modules);
+        if (Array.isArray(modules) && modules.includes('inventory') && !modules.includes('sales')) {
+          d.prepare('UPDATE tenants SET modules=? WHERE id=?').run(JSON.stringify([...modules, 'sales']), row.id);
+        }
+      } catch { /* malformed legacy override keeps its existing fallback behavior */ }
+    }
+    d.prepare("INSERT INTO provisioning_log (slug, action, detail) VALUES ('__platform__','sales_module_split','Preserved legacy Inventory sales entitlement')").run();
+  }
   ensureColumn(d, 'tenants', 'photo_retention_days', 'INTEGER');
   ensureColumn(d, 'tenants', 'photo_max_mb', 'INTEGER');
   ensureColumn(d, 'tenants', 'awaiting_payment', 'INTEGER NOT NULL DEFAULT 0');

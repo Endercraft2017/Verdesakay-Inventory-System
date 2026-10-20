@@ -55,7 +55,7 @@ describe('bootstrap reference', () => {
   it('returns the module + plan catalogue', async () => {
     const b = (await ctx.api.get('/_platform/api/bootstrap').set(opHdr())).body;
     expect(b.modules).toContain('hr');
-    expect(b.plan_modules.starter).toEqual(['inventory', 'purchasing', 'mobile']);
+    expect(b.plan_modules.starter).toEqual(['inventory', 'sales', 'purchasing', 'mobile']);
     expect(b.plans).toContain('complete');
     expect(b.statuses).not.toContain('purged');
   });
@@ -133,7 +133,7 @@ describe('provision + edit a workspace', () => {
       .send({ slug: 'consoleco', name: 'Console Co', admin_username: 'owner', admin_password: 'ownerpass1', admin_email: 'owner@acme.test', plan: 'starter' });
     expect(r.status).toBe(201);
     expect(r.body.slug).toBe('consoleco');
-    expect(r.body.modules.effective).toEqual(['inventory', 'purchasing', 'mobile']);
+    expect(r.body.modules.effective).toEqual(['inventory', 'sales', 'purchasing', 'mobile']);
     expect(r.body.modules.override).toBeNull();
 
     const list = (await ctx.api.get('/_platform/api/tenants').set(opHdr())).body;

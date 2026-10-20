@@ -8,7 +8,7 @@ import { moduleEnabled, requireModule } from '../../shared/modules';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { createHash } from 'node:crypto';
 import { idempotency } from '../../shared/idempotency';
-import { notifyAnyPermission } from '../../shared/push';
+import { notifyAnyPermission, notifyPermission } from '../../shared/push';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import {
@@ -440,7 +440,7 @@ export function releaseTeardown(orderId: number): void {
 
 // POST /api/orders/:id/accept-release — the warehouse takes on an approved sale order for
 // releasing. Picking (/release) is refused until this is done.
-router.post('/:id/accept-release', releaseGate, syncClass('claim', orderSite), (req, res) => {
+router.post('/:id/accept-release', requireModule('sales'), releaseGate, syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -467,7 +467,7 @@ router.post('/:id/accept-release', releaseGate, syncClass('claim', orderSite), (
 // outgoing goods are `attachments` kind 'release' on the slip id: attached afterwards (desktop),
 // or uploaded first as kind 'release_proof' on the order and passed as `evidence_ids`, which the
 // slip takes over — both apps (phone and desktop) must do the latter, with at least one photo.
-router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), (req, res) => {
+router.post('/:id/release-slip', requireModule('sales'), releaseGate, syncClass('physical', orderSite), (req, res) => {
   const id=Number(req.params.id), order=queryOne<Order>('SELECT * FROM orders WHERE id=?',id);
   if(!order||order.type!=='sale'){res.status(404).json({error:'Sale order not found'});return;}
   const input=parseBody(releaseSlipSchema,req.body);
@@ -520,7 +520,7 @@ router.post('/:id/release-slip', releaseGate, syncClass('physical', orderSite), 
 });
 
 // Customer-authorized cancellation releases only goods that have not left the warehouse.
-router.post('/:id/cancel-remainder', requirePermission('orders.edit'), syncClass('claim',orderSite),(req,res)=>{
+router.post('/:id/cancel-remainder', requireModule('sales'), requirePermission('orders.edit'), syncClass('claim',orderSite),(req,res)=>{
   const id=Number(req.params.id), order=queryOne<Order>('SELECT * FROM orders WHERE id=?',id);
   if(!order||order.type!=='sale'){res.status(404).json({error:'Sale order not found'});return;}
   if(queryOne(`SELECT 1 FROM job_order_units u WHERE u.order_id=? AND u.direct_sold_at IS NOT NULL
@@ -551,7 +551,7 @@ router.post('/:id/cancel-remainder', requirePermission('orders.edit'), syncClass
 // POST /api/orders/:id/release — a warehouse releaser scans / enters goods out against an
 // approved sale order. Records only — reserves the serialized units + bumps each bulk
 // line's released_qty; stock is drawn down later when the order is confirmed/completed.
-router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req, res) => {
+router.post('/:id/release', requireModule('sales'), releaseGate, syncClass('physical', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -759,7 +759,7 @@ router.post('/:id/release', releaseGate, syncClass('physical', orderSite), (req,
 });
 
 // POST /api/orders/:id/release/unreserve — undo a release (units back to stock, bulk down)
-router.post('/:id/release/unreserve', releaseGate, syncClass('claim', orderSite), (req, res) => {
+router.post('/:id/release/unreserve', requireModule('sales'), releaseGate, syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -873,7 +873,7 @@ function canPlanShortfall(order: Order, res: Response): boolean {
 // POST /api/orders/:id/produce-shortfall — for each finished-product line that's short,
 // raise a draft job order (linked to this sale order) for the missing quantity. Reports
 // per line whether the components are on hand to actually build it.
-router.post('/:id/produce-shortfall', requireModule('manufacturing'), requirePermission('inventory.adjust'), syncClass('claim', orderSite), (req, res) => {
+router.post('/:id/produce-shortfall', requireModule('sales'), requireModule('manufacturing'), requirePermission('inventory.adjust'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -919,7 +919,7 @@ router.post('/:id/produce-shortfall', requireModule('manufacturing'), requirePer
 
 // Draft only the purchase demand not already covered by a live linked PO. Source links
 // survive PO line edits; received quantities and cancellations release their planning cover.
-router.post('/:id/purchase-shortfall', requireModule('purchasing'), requirePermission('purchasing.manage'), syncClass('claim', orderSite), (req, res) => {
+router.post('/:id/purchase-shortfall', requireModule('sales'), requireModule('purchasing'), requirePermission('purchasing.manage'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -1014,7 +1014,7 @@ router.post('/', requireAnyPermission(['orders.create', 'purchasing.manage']), c
 // POST /api/orders/:id/status — advance a sale order's status only (no line-item body).
 // Same availability gate as PUT, and the same auto-post / fulfil / teardown side effects.
 // Used by the delivery-completed "mark the order completed?" prompt.
-router.post('/:id/status', requirePermission('orders.edit'), syncClass('claim', orderSite), (req, res) => {
+router.post('/:id/status', requireModule('sales'), requirePermission('orders.edit'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -1064,11 +1064,18 @@ router.post('/:id/status', requirePermission('orders.edit'), syncClass('claim', 
   }
   res.json({ ok: true, status: next });
   const needsWarehouse = queryOne('SELECT 1 FROM order_items WHERE order_id=? AND item_id IS NOT NULL AND quantity > COALESCE(released_qty,0) LIMIT 1', id);
-  if (next === 'approved' && needsWarehouse) void notifyAnyPermission(['orders.release', 'inventory.adjust'], {
+  if (next === 'approved' && needsWarehouse) {
+    void notifyAnyPermission(['orders.release'], {
     title: `Sale order ready for warehouse — ${order.number}`,
     body: 'Review the order lines, accept it, then pick the available stock for release.',
     url: `#/so?id=${id}`, link: { route: 'releasing', params: { tab: 'queue' } }, tag: `sale-release-${id}`,
-  }, req.user!.id);
+    }, req.user!.id);
+    void notifyPermission('inventory.adjust', {
+      title: `Sale order to track — ${order.number}`,
+      body: 'Warehouse can review this sale and prepare stock; a releaser with orders.release completes the handoff.',
+      url: '#/notifications', link: { route: 'orders', params: { type: 'sale', mode: 'track', id } }, tag: `sale-track-${id}`,
+    });
+  }
   maybeAutoPush(id);
 });
 

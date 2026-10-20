@@ -34,6 +34,7 @@ async function inspectModal(jobOrderId, onDone) {
   let repairs = [];
   let loadError = null;
   let activeUnitId = null;
+  let selectedStage = hasQc ? 1 : 2;
   const checkedIds = new Set();
   // The checklist library + this product's own QC/QA links (raw ids, not the resolved
   // fallback-to-default object jo.qc_checklist_qc/qa carries) — only needed to run the
@@ -78,8 +79,8 @@ async function inspectModal(jobOrderId, onDone) {
 
   function checklistFor(unitSubset) {
     const totalStages = Math.max(1, jo.qc_stages || 1);
-    const firstP = unitSubset.some((u) => (u.stage || 0) + 1 === 1);
-    const finalP = unitSubset.some((u) => (u.stage || 0) + 1 >= totalStages);
+    const firstP = totalStages <= 1 || selectedStage === 1;
+    const finalP = totalStages <= 1 || selectedStage === 2;
     const items = [
       ...(firstP && jo.qc_checklist_qc ? jo.qc_checklist_qc.items.map((it) => ({ ...it, _from: 'QC' })) : []),
       ...(finalP && jo.qc_checklist_qa ? jo.qc_checklist_qa.items.map((it) => ({ ...it, _from: 'QA' })) : []),
@@ -238,7 +239,7 @@ async function inspectModal(jobOrderId, onDone) {
       })) : [];
       uploads.reduce((p, up) => p.then((ids) => up().then((id) => ids.concat(id))), Promise.resolve([]))
         .then((evidence_ids) => API.post('/job-orders/' + jobOrderId + '/units/inspect',
-          { unit_ids: unitIds, result, identifier, remarks, checklist, disposition, evidence_ids: result === 'fail' ? evidence_ids : undefined }))
+          { unit_ids: unitIds, inspection_stage: selectedStage, result, identifier, remarks, checklist, disposition, evidence_ids: result === 'fail' ? evidence_ids : undefined }))
         .then(async (r) => {
           jo = r.job_order; await refresh();
           activeUnitId = null; checkedIds.clear();
@@ -256,13 +257,20 @@ async function inspectModal(jobOrderId, onDone) {
     return UI.emptyState({ icon: 'check', title: 'Nothing selected', hint: 'Click a unit, or check one or more boxes, to inspect it here.' });
   }
 
+  function needsDesk(u) {
+    if ((jo.qc_stages || 1) <= 1) return true;
+    return selectedStage === 1 ? u.qc_result !== 'pass' : u.qa_result !== 'pass';
+  }
+  function deskStatus(u) {
+    return (jo.qc_stages || 1) <= 1
+      ? `Combined: ${UI.esc(u.qc_result || 'pending')}`
+      : `QC: ${UI.esc(u.qc_result || 'pending')} · QA: ${UI.esc(u.qa_result || 'pending')}`;
+  }
+
   function sideHTML(queue) {
     if (checkedIds.size) {
       const selected = queue.filter((u) => checkedIds.has(u.id));
       if (!selected.length) return placeholderHTML();
-      if (new Set(selected.map((u) => u.stage + 1)).size > 1) {
-        return UI.emptyState({ icon: 'alert', title: 'Select one inspection stage', hint: 'Inspect QC and QA units separately so each receives the correct checklist.' });
-      }
       const { items, names, firstP, finalP } = checklistFor(selected);
       const pickers = `${firstP ? checklistButtonHTML(1) : ''}${finalP ? checklistButtonHTML(2) : ''}`;
       return `
@@ -288,7 +296,7 @@ async function inspectModal(jobOrderId, onDone) {
       return `
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
           <div><strong>Unit #${unit.id}</strong> <span class="badge-pill ${step.cls}">${step.label}</span>
-            <span class="muted" style="font-size:11px">(pass ${(unit.stage || 0) + 1} / ${jo.qc_stages})</span>
+            <span class="muted" style="font-size:11px">${deskStatus(unit)}</span>
             ${unit.identifier ? `<div class="muted mono" style="font-size:12px;margin-top:4px">${UI.esc(unit.identifier)}</div>` : ''}</div>
           ${pickers ? `<div style="display:flex;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;gap:4px">${pickers}</div>` : ''}
         </div>
@@ -305,8 +313,8 @@ async function inspectModal(jobOrderId, onDone) {
       el.querySelector('#qi-retry').onclick = async () => { await refresh(); draw(); };
       return;
     }
-    const pending = units.filter((u) => u.status === 'pending');
-    const rework = units.filter((u) => u.status === 'rework');
+    const pending = units.filter((u) => u.status === 'pending' && needsDesk(u));
+    const rework = units.filter((u) => u.status === 'rework' && needsDesk(u));
     const queue = pending.concat(rework);
     for (const id of [...checkedIds]) if (!queue.some((u) => u.id === id)) checkedIds.delete(id);
     if (activeUnitId != null && !queue.some((u) => u.id === activeUnitId)) activeUnitId = null;
@@ -314,16 +322,20 @@ async function inspectModal(jobOrderId, onDone) {
     el.innerHTML = `
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
         <strong>${UI.esc(jo.product_name)}</strong>
-        <span class="muted">${jo.qc_stages}-step inspection</span>
+        <span class="muted">${jo.qc_stages <= 1 ? 'Combined inspection' : 'Independent QC and QA'}</span>
         ${jo.team_name ? `<span class="muted">· ${UI.esc(jo.team_name)}</span>` : ''}
       </div>
+      ${jo.qc_stages > 1 ? `<div style="display:flex;gap:8px;margin-bottom:12px">
+        ${hasQc ? `<button type="button" class="btn ${selectedStage === 1 ? '' : 'secondary'}" data-desk="1">QC · ${units.filter((u) => ['pending','rework'].includes(u.status) && u.qc_result !== 'pass').length} waiting</button>` : ''}
+        ${hasQa ? `<button type="button" class="btn ${selectedStage === 2 ? '' : 'secondary'}" data-desk="2">QA · ${units.filter((u) => ['pending','rework'].includes(u.status) && u.qa_result !== 'pass').length} waiting</button>` : ''}
+      </div>` : ''}
       ${queue.length ? `
         <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
           <div style="flex:1 1 55%;min-width:0">
             <table>
               <thead><tr>
                 <th style="width:28px"><input type="checkbox" id="qi-chk-all" /></th>
-                <th>Unit</th><th>Step</th><th>Identifier</th>
+                <th>Unit</th><th>QC / QA</th><th>Identifier</th>
               </tr></thead>
               <tbody>${queue.map((u) => {
                 const blocked = u.status === 'rework' && reworkOpen(u.id);
@@ -331,7 +343,7 @@ async function inspectModal(jobOrderId, onDone) {
                 return `<tr class="clickable${u.id === activeUnitId ? ' active' : ''}" data-unit="${u.id}">
                   <td><input type="checkbox" class="qi-chk" value="${u.id}" ${checkedIds.has(u.id) ? 'checked' : ''} ${blocked ? 'disabled title="Parts request still open"' : ''} /></td>
                   <td>#${u.id}${u.status === 'rework' ? ' <span class="badge-pill confirmed">repair</span>' : ''}</td>
-                  <td><span class="badge-pill ${step.cls}">${step.label}</span> <span class="muted" style="font-size:11px">(${u.stage} / ${jo.qc_stages})</span></td>
+                  <td><span class="badge-pill ${step.cls}">${step.label}</span><div class="muted" style="font-size:11px">${deskStatus(u)}</div></td>
                   <td class="mono">${UI.esc(u.identifier || '—')}</td>
                 </tr>`;
               }).join('')}</tbody>
@@ -357,6 +369,9 @@ async function inspectModal(jobOrderId, onDone) {
           }).join('')}</tbody>
         </table>` : ''}`;
 
+    el.querySelectorAll('[data-desk]').forEach((button) => button.onclick = () => {
+      selectedStage = Number(button.dataset.desk); activeUnitId = null; checkedIds.clear(); draw();
+    });
     if (!queue.length || !canInspect) return;
 
     const redrawSide = () => {
@@ -499,13 +514,31 @@ App.register('production-qc', async (view, filter) => {
 
     const tableEl = view.querySelector('#qc-table');
     let rows;
-    try { rows = await API.get('/job-orders'); }
+    try {
+      const queues = await Promise.all([
+        ...(App.hasPermission('production.inspect_qc') ? [API.get('/qc/queue?role=qc')] : []),
+        ...(App.hasPermission('production.inspect_qa') ? [API.get('/qc/queue?role=qa')] : []),
+      ]);
+      const jobs = new Map();
+      for (const queue of queues) for (const u of queue.units || []) {
+        const j = jobs.get(u.job_order_id) || { id: u.job_order_id, number: u.job_order_number,
+          product_name: u.product_name, team_name: u.team_name, qc_stages: u.qc_stages,
+          units_actionable: 0, units_rework: 0, seen: new Set() };
+        if (!j.seen.has(u.id)) {
+          j.seen.add(u.id);
+          j.units_actionable++;
+          if (u.status === 'rework') j.units_rework++;
+        }
+        jobs.set(u.job_order_id, j);
+      }
+      rows = [...jobs.values()];
+    }
     catch (e) {
       tableEl.innerHTML = `<div class="empty"><strong>Unable to load inspection queue</strong><p>${UI.esc(e.message || 'Please try again.')}</p><button class="btn" id="qc-retry">Retry</button></div>`;
       tableEl.querySelector('#qc-retry').onclick = renderQueue;
       return;
     }
-    const need = (rows || []).filter((j) => j.qc_stages > 0 && (j.units_actionable || 0) > 0 && j.status !== 'cancelled');
+    const need = rows || [];
 
     if (!need.length) {
       tableEl.innerHTML = UI.emptyState({
@@ -519,7 +552,7 @@ App.register('production-qc', async (view, filter) => {
     tableEl.innerHTML = `
       <table>
         <thead><tr>
-          <th>Job order</th><th>Product</th><th>Team</th><th>Stages</th>
+          <th>Job order</th><th>Product</th><th>Team</th><th>Inspection</th>
           <th class="right">Ready for you</th><th class="right">Back from repair</th>
         </tr></thead>
         <tbody>${need.map((j) => `
@@ -527,7 +560,7 @@ App.register('production-qc', async (view, filter) => {
             <td><strong>${UI.esc(j.number)}</strong></td>
             <td>${UI.esc(j.product_name)}</td>
             <td class="muted">${UI.esc(j.team_name || '—')}</td>
-            <td class="muted">${j.qc_stages}-step</td>
+            <td class="muted">${j.qc_stages <= 1 ? 'Combined' : 'QC + QA'}</td>
             <td class="right">${j.units_actionable || 0}</td>
             <td class="right${j.units_rework ? ' danger' : ''}">${j.units_rework || 0}</td>
           </tr>`).join('')}

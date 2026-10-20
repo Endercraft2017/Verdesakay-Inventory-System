@@ -23,7 +23,7 @@
    Every `route` must be one of ROUTE_NAMES (validated by tests/frontend-nav.test.ts).
    ============================================================================ */
 
-const ROUTE_NAMES = ['dashboard', 'analytics', 'sales-overview', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'purchase-requests', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'hr-approvals', 'hr-requests', 'confidential-reports', 'identified-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies', 'stock-counts', 'support', 'billing'];
+const ROUTE_NAMES = ['dashboard', 'analytics', 'sales-overview', 'sales-service', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'purchase-requests', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'hr-approvals', 'hr-requests', 'confidential-reports', 'identified-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies', 'stock-counts', 'support', 'billing'];
 
 const NAV = [
   {
@@ -81,19 +81,10 @@ const NAV = [
         ],
       },
       {
-        id: 'order-tracking', label: 'Order Tracking', requiredPermission: 'orders.view',
+        id: 'order-tracking', label: 'Order Tracking', requiredPermission: 'orders.view', requiredModule: 'sales',
         tree: [
           { label: 'Sale orders to fulfill', icon: 'forms', route: 'orders', filter: { type: 'sale', mode: 'track' } },
           { label: 'Customer job orders', icon: 'printer', route: 'orders', filter: { type: 'job', mode: 'track' } },
-        ],
-      },
-      {
-        /* Warehouse side of a sale order, in pipeline order: accept an approved SO -> pick /
-           scan it out -> issue the release slip (stock leaves here) -> slip history. */
-        id: 'releasing', label: 'Releasing', requiredPermission: 'orders.view',
-        tree: [
-          { label: 'Release Queue', icon: 'inbox', route: 'releasing', filter: { tab: 'queue' } },
-          { label: 'Release Slips', icon: 'sheet', route: 'releasing', filter: { tab: 'slips' } },
         ],
       },
       {
@@ -115,14 +106,19 @@ const NAV = [
     ],
   },
   {
-    id: 'sales', label: 'Sales', icon: 'forms', requiredModule: 'inventory', requiredPermission: 'orders.view',
+    id: 'sales', label: 'Sales', icon: 'forms', requiredModule: 'sales', requiredAnyPermission: ['orders.create', 'orders.edit', 'orders.release'],
     subtabs: [
-      { id: 'sales-overview', label: 'Overview', tree: [{ label: 'Sales overview', icon: 'sheet', route: 'sales-overview' }] },
-      { id: 'sales-orders', label: 'Orders', tree: [
+      { id: 'sales-overview', label: 'Pipeline', requiredPermission: 'orders.view', requiredAnyPermission: ['orders.create', 'orders.edit'], tree: [{ label: 'Sales pipeline', icon: 'sheet', route: 'sales-overview' }] },
+      { id: 'sales-orders', label: 'Orders', requiredPermission: 'orders.view', requiredAnyPermission: ['orders.create', 'orders.edit'], tree: [
         { label: 'Sale Orders', icon: 'forms', route: 'orders', filter: { type: 'sale' } },
         { label: 'Customer Job Orders', icon: 'printer', route: 'orders', filter: { type: 'job' } },
       ] },
-      { id: 'sales-customers', label: 'Customers', tree: [{ label: 'Customers', icon: 'users', route: 'customers' }] },
+      { id: 'sales-service', label: 'Customer Service', requiredPermission: 'orders.view', requiredAnyPermission: ['orders.create', 'orders.edit'], tree: [{ label: 'CSR desk', icon: 'users', route: 'sales-service' }] },
+      { id: 'sales-customers', label: 'Customers', requiredPermission: 'orders.view', requiredAnyPermission: ['orders.create', 'orders.edit'], tree: [{ label: 'Customers', icon: 'users', route: 'customers' }] },
+      { id: 'sales-releasing', label: 'Releasing', requiredPermission: 'orders.view', requiredAnyPermission: ['orders.release'], tree: [
+        { label: 'Release Queue', icon: 'inbox', route: 'releasing', filter: { tab: 'queue' } },
+        { label: 'Release Slips', icon: 'sheet', route: 'releasing', filter: { tab: 'slips' } },
+      ] },
     ],
   },
   {

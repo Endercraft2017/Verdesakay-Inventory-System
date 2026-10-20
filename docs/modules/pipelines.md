@@ -35,9 +35,18 @@ site), and SO, RS and DEL numbers come from the site host's leased blocks. Relea
 photos) and the proof of delivery are physical facts. An approval, release, slip or proof of delivery the
 cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is accepted and flagged (D1).
 
-**Trigger:** a sale order is created (`modules/inventory`, `orders.routes.ts`).
+**Trigger:** a sale order is created in the Sales module (`modules/inventory/orders.routes.ts` remains the shared order implementation). Sales is a separate tenant entitlement that depends on Inventory stock; Purchasing and Manufacturing remain independently enabled.
 
-1. **Intake** (`inventory`) — the desktop order editor (also responsive at phone
+On desktop, **Sales → Pipeline** shows CSR review, awaiting warehouse acceptance,
+picking/release, and shipped/complete using existing order and slip records. **Sales →
+Orders** owns commercial creation, editing, and stock review. **Sales → Customer
+Service** is a searchable CSR desk for follow-up; **Sales → Customers** owns the
+customer registry. **Sales → Releasing** owns the release queue and slips. **Inventory → Order Tracking**
+shows sale/customer JO documents read-only to warehouse staff. New built-in CSR and
+Releasing roles no longer receive unrelated purchasing/production privileges; an
+existing customized role retains its grants until an administrator reviews it.
+
+1. **Intake** (`sales`) — the desktop order editor (also responsive at phone
    widths) saves new sales in `open` status; approval is a subsequent action.
    Inventory links are explicit selections, while services/charges remain non-stock
    even when their name matches an inventory item. Positive quantities, valid dates,
@@ -58,7 +67,7 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
    Already validated owning-site decisions retain D6 on cloud replay, with a clash recorded. Tax/currency
    lock with approved lines; ship-from locks once picking/fulfilment starts. Released
    status is assigned by warehouse picking, not manual intake/status edits.
-2. **Stock review and approval** (`inventory`, `order-availability.ts`) — the desktop row's
+2. **Stock review and approval** (`sales`, `order-availability.ts`) — the desktop row's
    stock review shows the ship-from warehouse, stock elsewhere, other sale commitments,
    draft kit/repair holds, own coverage and shortages. Choosing approved in an open editor
    first saves open details, then opens this review; the approval decision is separate.
@@ -94,13 +103,13 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
      labels unpicked firm demand accurately; it is not a stock-shortage-only filter.
    - Operator guide: [sales stock approval](../guides/sales-stock-approval.md).
      Mobile audit (read only): [root handoff](../../MOBILE-INVENTORY-HANDOFF.md).
-3. **Warehouse acceptance** (`inventory`) — the approved SO waits in Inventory →
+3. **Warehouse acceptance** (`sales`) — the approved SO waits in Sales →
    Releasing → Release Queue ("waiting for warehouse acceptance") until a releaser
    accepts it (`POST /orders/:id/accept-release`, stamps `warehouse_accepted_by/_at`).
    Picking is refused until then. Re-opening / cancelling clears the acceptance.
-   Done by `inventory.adjust` holders (`releasing`/`warehouse`/`admin`/`admin_staff`) or
-   the narrow mobile `releasing_clerk` role via `orders.release`.
-4. **Pick / release** (`inventory`) — `POST /:id/release` (desktop Release Queue or
+   Requires the explicit `orders.release` permission. Stock adjustment alone
+   does not grant release authority; the narrow mobile `releasing_clerk` has it.
+4. **Pick / release** (`sales`) — `POST /:id/release` (desktop Release Queue or
    mobile `so` view): scan unit QR labels → `job_order_units` `reserved`
    (`manufacturing` data), or enter quantities for bulk lines (`released_qty`). Records
    only — no stock movement. Auto-advances approved → `released` once every line is
@@ -108,7 +117,7 @@ cloud would now refuse stands, flagged (D6). A slip's stock-out beyond stock is 
    remainder after an earlier trip. Mobile explicitly selects serials, exact batch
    allocation rows or untracked quantities. Already-shipped quantities are immutable;
    unshipping requires a return, and removing an allocation does not cancel customer demand.
-5. **Release slip — goods out** (`inventory` → `accounting`) —
+5. **Release slip — goods out** (`sales` → `accounting`) —
    `POST /:id/release-slip` records each vehicle's actual load on its own numbered
    `release_slips` / `release_slip_items` manifest. Explicit lines select exact serials and
    batch quantities; `previous_slip_id` guards stale second-trip submissions. Only that

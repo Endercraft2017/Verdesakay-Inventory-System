@@ -2,21 +2,88 @@
 
 ## Sales ownership, warehouse tracking, and subassembly builds (2026-10-20)
 
-Desktop now places commercial Sale Orders and Customer Job Orders under a
-separate **Sales** tab, with a sales-order overview. **Inventory → Order
-Tracking** shows those documents and stock status without create/edit/delete,
-approval, or production-planning controls; **Inventory → Releasing** still
-handles warehouse pick and release. Manufacturing job orders remain under
-**Production → Job Orders**. The Sales overview reports order values and
-statuses; it is not a cash-receipt report.
+Desktop now has a distinct **Sales** entitlement (dependent on Inventory stock).
+**Sales → Pipeline** shows CSR review, waiting for warehouse, picking/release,
+and shipped/complete from actual order/slip records. **Sales → Orders**
+owns commercial orders; **Sales → Customer Service** gives CSR a searchable
+follow-up desk, and **Sales → Customers** owns the registry. **Sales → Releasing** owns warehouse
+acceptance, picks and slips. **Inventory → Order Tracking** shows sale/customer
+JO documents without creation or editing. Manufacturing JOs remain under
+**Production → Job Orders**. Pipeline values are order values, not cash received.
 
-**Mobile owner action:** Keep the same ownership in Work navigation: create and
-edit customer orders in Sales; give warehouse workers a tracking/fulfillment
-view without commercial document creation. Keep the existing warehouse release
-permission and scan path. Label customer JO documents separately from
-manufacturing JOs. Test an `orders.view`/`orders.release` clerk cannot create an
-order, and a sales creator can create one through the Sales flow. No mobile
-source was changed by this desktop/backend work.
+**Mobile owner action:** `public/mobile/modules/core/guides.js` still maps Sales
+to `inventory`; change it to `sales` and add a Sales Work entry/pipeline for
+authorized CSR accounts. Route release tasks to the existing `#/so` flow,
+with explicit `orders.release` and the actual
+`/release-slips/queue` stages; avoid requiring `orders.create` or showing
+commercial actions to warehouse/releasing accounts. Give CSR a customer/SO
+view and order status/stock review, while warehouse gets read-only tracking.
+New default CSR/Releasing roles have no purchasing or production authority;
+check existing customized tenant roles separately. Label customer JO documents
+separately from manufacturing JOs. Test 390px roles, no unauthorized create,
+accept/release, partial slips, and the Sales-disabled entitlement edge case.
+The mobile CSR desk should use the sale's real stage and open the exact order in one tap;
+it should not invent a second case status. Warehouse/releasing phone views should
+omit price and margin fields. The current `orders.view` API still returns commercial
+amounts, so treating them as confidential needs a separate server-side response split;
+visual hiding alone is not an access control.
+SO approval now sends an actionable `#/so` release notice only to `orders.release`
+holders. An `inventory.adjust` warehouse role receives a separate tracking notice;
+that notice must open read-only order tracking, not a release action it cannot use.
+No mobile source was changed by this desktop/backend work.
+
+### Mobile build brief: Sales, CSR, and Releasing
+
+**Ownership and entry points:** Add a **Sales** section to phone Work/navigation
+when the Sales module is enabled. Keep sale creation and customer follow-up
+separate from physical stock release. The existing `#/so` route is the Releasing
+desk; reuse it rather than creating another release flow. Give Inventory a
+read-only **Order tracking** entry for authorized warehouse staff. Keep
+manufacturing job orders in Production and customer job orders in Sales/Order
+tracking, with distinct labels. A direct link or stale push must pass the same
+module and permission checks as navigation.
+
+| Phone screen | Who sees it | Minimum content and action | Source of truth |
+| --- | --- | --- | --- |
+| **Sales pipeline** | `orders.view` plus `orders.create` or `orders.edit` | Four compact groups: CSR review, awaiting warehouse, picking/release, shipped/complete. Show count, order number/customer, outstanding badge and one-tap order detail. Amount cards, if shown, are order value rather than paid revenue. | `GET /api/orders?type=sale`, `GET /api/release-slips/queue`, and `GET /api/analytics/overview` for authorized summary values. Derive the group from the same order/slip records as desktop `sales-overview.js`; do not save a second pipeline status. |
+| **CSR / customer service** | `orders.view` plus `orders.create` or `orders.edit` | Search customer or order number; filter active, needs review, awaiting warehouse, in release, and shipped/complete. Open the exact sale, show shortages and next owner. Show **New sale order** only with `orders.create`; editing/approval controls require their own server permissions. | `GET /api/orders?type=sale&q=…`, `GET /api/orders/:id`, existing sale availability/status endpoints. Mirror the stage calculation in `sales-service.js`. |
+| **Customers** | `orders.view`; create with `orders.create`, edit with `orders.edit` | Search the customer registry and see recent sale orders; create/edit only when allowed. Do not put supplier or purchase-order actions here. | `GET /api/customers?q=…`, `GET /api/customers/:id`; authorized POST/PUT. |
+| **Releasing** | `orders.release` | Keep the existing `#/so` steps: waiting for acceptance, active pick, blocked/authorization, package check, handoff proof, and completed trips. Deep link from Work or push to `#/so?id=…`; show the actual outstanding quantity, build state, CKD parts, authorized partial trip, and exact serials/quantities. Never offer sale price editing or create a new SO here. | `GET /api/release-slips/queue` (`to_accept`, `releasing`, `completed`), `GET /api/release-slips/orders/:id/context`, then the existing `accept-release`, allocation and slip actions. Only an issued slip posts stock-out. |
+| **Inventory order tracking** | Authorized `orders.view` warehouse staff without Sales editing rights | Read-only sale status, release/shortage progress and required parts or RTS work. A link to a customer JO must say **Customer job order**; a manufacturing JO opens Production only under its own permission. No New SO/JO, status change, customer price, margin, or release action. | Sale list/detail and release queue reads; a commercial-field-safe response still needs server work if prices must be confidential. Hiding fields in the phone alone is insufficient. |
+
+**Role boundaries:** Default CSR has `orders.view/create/edit`, but no
+`orders.release`. Default Releasing has `orders.view/release`, but no
+`orders.create/edit`. Warehouse has `orders.view` and `inventory.adjust`, but
+does not receive `orders.release` by default. Check effective permissions for
+custom tenant roles. The phone's current `ROUTE_MODULES.so = ['inventory']`
+should require **Sales and Inventory** for a sale-release route; new Sales/CSR
+routes likewise need the Sales module. Update `public/mobile/app.js`,
+`public/mobile/modules/hr/work.js`, `public/mobile/modules/core/guides.js`,
+and notification links/labels together. Do not treat `orders.view` alone as
+permission to create, edit, approve, accept or release.
+
+**Work handoff:** A CSR sees orders needing review/follow-up, not a duplicate
+warehouse pick list. A releaser sees `to_accept` and `releasing` tasks from
+`/release-slips/queue`; an approved order already fully dispatched must not
+inflate the badge. A warehouse tracker can follow the sale without entering
+`#/so`. On push tap or resume, fetch the live order/queue and explain when
+another worker already accepted, picked or shipped it. Keep completed slips
+under history, not the active task count. Releasing reports/partial requests
+go back to Sales for an authorized decision; the phone must not convert a
+report into a release authorization automatically.
+
+**Mobile acceptance:** Test at 390 px with CSR, Releasing, warehouse-only,
+and mixed-permission accounts. Cover Sales disabled; a direct URL and stale
+push after permission revocation; draft/open/approved/accepted/partly
+released/shipped/cancelled sales; customer search and a customer JO versus a
+manufacturing JO; RTS built-state and CKD part picks; insufficient stock;
+partial release without and with Sales authorization; lost-response retry and
+two workers on one SO. Verify a single stock-out at slip issue, no stock-out
+on allocation or report, and no commercial mutation from Releasing or
+warehouse tracking. Phone changes remain for the mobile owner; this handoff
+does not claim those screens are implemented.
+
+### Subassembly build handoff
 
 A finished product may itself be a component in another product's BOM. The
 parent manufacturing JO retains that product as one component. If stock is
@@ -32,6 +99,37 @@ while reviewing it; do not create the child without acceptance. Test no BOM,
 insufficient raw stock, existing linked child coverage, and stale suggestion
 rejection. A product used in a BOM can still be sold as stock under its one SKU.
 
+## Independent QC and QA desks (2026-10-20)
+
+**Backend/desktop contract:** For a two-inspection JO, QC (`stage:1`) and QA
+(`stage:2`) each appear in their own queue as soon as a unit is recorded. Either
+can inspect first. `POST /api/job-orders/:id/units/inspect` accepts optional
+`inspection_stage:1|2`; a narrow QC or QA account chooses its permitted desk
+automatically. A person with both permissions should send the chosen stage
+explicitly. `GET /api/qc/queue?role=qc|qa` returns units whose corresponding
+inspection has not passed; each row includes `qc_result` and `qa_result`.
+`GET /api/job-orders/:id/units` includes the same result fields. A pass on one
+desk leaves the unit pending and outside RTS until the other desk passes. A
+duplicate pass returns `409 inspection_already_passed`; reload rather than
+silently treating it as a new check. Both screens may be open together and
+submit independently; refresh after any result. Single-inspection legacy JOs
+retain their combined QC/QA pass. A QA hold still uses the separate hold-review
+queue; Products In remains blocked until hold is resolved and both required
+inspections pass. The QR sticker is still attached at Products In, after both.
+
+**Mobile owner action:** Update `public/mobile/modules/manufacturing/qc.js`
+to remove the `u.stage + 1` gate for two-inspection jobs. Show a unit in both
+Ready lists when neither desk has passed; show each desk's own result and the
+other desk's status on the unit card. Send `inspection_stage` with every phone
+submission, including queued/offline work. A QA inspector must be able to
+open a unit before QC. If another user completes the same desk first, show a
+clear already-inspected state on `409` and reload the queue; do not replay a
+different result as success. Work badges should count the relevant desk's
+open units, not the shared `stage` field. Test QA-first, QC-first, two open
+phones submitting at nearly the same time, stale queues, holds, repair,
+permission revocation, no sticker, and Products In refusal after only one pass.
+Do not infer receipt from either inspection notification.
+
 ## Role-based actionable work notifications (2026-10-20)
 
 **Field requirement:** A push and the Work queue must point to the same live
@@ -44,13 +142,13 @@ duplicate sync replay. Respect effective permissions, not role names alone.
 
 | Desk / permission | Work item and expected one-tap destination | Current mobile/backend state and gap |
 | --- | --- | --- |
-| Releasing (`orders.release`, or authorized `inventory.adjust`) | Approved sale needing acceptance, allocation, or release slip; open the exact SO in **Release orders** and show available RTS units, CKD/parts lines, and unshipped remainder. | `#/so?id=…` and `/release-slips/queue` exist. Work's count currently scans *all* approved/released SOs, including completed allocations; use the actual release queue and stage counts. SO approval now emits a release-task push; use the live queue for its current stage. |
-| Warehouse (`inventory.adjust`) | Physical parts on an approved SO and job-order kit to pick/release; open the exact SO/JO and its pick list or kit. | **Kit releases** and `#/kit-release?id=…` exist. The approved JO queue exists, but JO approval now emits a kit-preparation push. Distinguish warehouse stock work from the commercial SO itself. |
+| Releasing (`orders.release`) | Approved sale needing acceptance, allocation, or release slip; open the exact SO in **Release orders** and show available RTS units, CKD/parts lines, and unshipped remainder. | `#/so?id=…` and `/release-slips/queue` exist. Work's count currently scans *all* approved/released SOs, including completed allocations; use the actual release queue and stage counts. SO approval now emits a release-task push; use the live queue for its current stage. |
+| Warehouse (`inventory.adjust`, `orders.view`) | Track an approved SO and prepare its parts; pick/release a job-order kit under its separate permission. Only `orders.release` may accept or release sale stock. | **Kit releases** and `#/kit-release?id=…` exist. The approved JO queue exists, but JO approval now emits a kit-preparation push. Distinguish warehouse stock work from the commercial SO itself. |
 | Parts clerk / warehouse (`production.repairs` or authorized `inventory.adjust`) | Requested replacement/repair parts; open exact request and source shelf. | `#/repairs?id=…` and `/production/repairs?status=requested` exist, but Work hides **Parts requests** from a warehouse account with only `inventory.adjust` because its card requires `production.repairs`. Creating a request now emits a parts-desk push. |
 | Team leader (`production.record`, `production.manage`) | Released kit awaiting acceptance and active JO output; open exact JO. | Production Work queue exists, but its count combines all released/in-progress JOs; narrow it to the user's actionable work/team where applicable and warehouse release now emits a production-lead prompt. |
-| QC (`production.inspect_qc`) | Units waiting for technical inspection, rechecks, and failed units returned from repair; open the JO/unit in `#/qc?role=qc&jo=…`. | `/qc/queue?role=qc` and Work count exist. Production recording a serialized unit and pre-system intake now push QC. Failed/rework units should be surfaced by live queue state, not stale notification count. |
-| QA (`production.inspect_qa`) and hold authority (`production.qa_review`) | QC-passed units waiting for final inspection, QA rechecks, and held units needing decision; open `#/qc?role=qa&jo=…` or its exact hold. | QA Work count and hold queue exist; QA holds already push. QC pass now pushes QA. Keep held units distinct from ready-to-inspect units. |
-| RTS clerk (`production.receive`) | Units/batches passed all required QC/QA, awaiting QR print/attachment, scan verification, and Products In; open `#/receiving?jo=…`. | `/rts/queue` and Work count exist. Final pass now pushes RTS. Passing inspection alone never adds stock. |
+| QC (`production.inspect_qc`) | Units not yet QC-passed, including new units and rechecks; open the JO/unit in `#/qc?role=qc&jo=…`. | `/qc/queue?role=qc` now includes units regardless of QA completion. Production intake pushes QC. Derive the Work count from this desk's live queue. |
+| QA (`production.inspect_qa`) and hold authority (`production.qa_review`) | Units not yet QA-passed, including new units, rechecks, and held units needing decision; open `#/qc?role=qa&jo=…` or its exact hold. | `/qc/queue?role=qa` now includes units before QC. Intake pushes QA; QA holds also push. Keep held units distinct from ready-to-inspect units. |
+| RTS clerk (`production.receive`) | Units/batches passed all required QC/QA, awaiting QR print/attachment, scan verification, and Products In; open `#/receiving?jo=…`. | `/rts/queue` and Work count exist. Whichever desk completes the second required pass pushes RTS. One pass alone never adds stock. |
 
 **Mobile owner action:** Make Work a compact **My next actions** list with
 separate counts by stage and direct record links, plus a history/notifications
@@ -198,8 +296,8 @@ this candidate. See `scripts/test-mobile-inspection-identity.mjs`.
 ## QA identification before the Products In sticker (2026-10-19)
 
 **Confirmed field sequence:** Production records each unit with an internal unit
-record, a human-readable identifier and a photo. QC and then QA inspect that
-record. The physical QR sticker is printed and attached **after QA, at Products
+record, a human-readable identifier and a photo. QC and QA inspect that
+record in either order. The physical QR sticker is printed and attached **after both inspections, at Products
 In**, immediately before the clerk scans the attached sticker to receive RTS
 stock. QA therefore must not require a QR scan or imply that the sticker is
 already on the unit. A production identifier can be used to match the physical
@@ -216,7 +314,7 @@ the physical unit. If the physical unit cannot be distinguished reliably,
 stop and resolve identification with Production before recording an inspection.
 Keep Products In's print → attach → scan verification mandatory as it is.
 
-**Acceptance:** A QA inspector can inspect a QC-passed unit with no QR sticker
+**Acceptance:** A QA inspector can inspect a unit before or after QC with no QR sticker
 by selecting its Ready card, confirming the production identifier and job
 order, completing the checklist, and passing or routing the issue. The unit
 remains out of RTS stock until Products In prints/attaches/scans its sticker and
@@ -969,7 +1067,7 @@ backend follow-up before that mixed-line case can be fulfilled.
 
 ## QC/QA: mobile handoff (recorded unit → inspection → hold or final pass)
 
-**Owner:** mobile developer. **Checked against code:** 2026-10-14. **Status:** QA hold recovery completed in mobile step 6; ordinary inspection/checklist gaps remain open. See `docs/reviews/qc-qa-stage-audit.md` for the backend/desktop audit. A final QA pass leaves a unit awaiting Products In; it does not add sellable stock. New job orders freeze their QC/QA checklist contents at kit release; editing a product checklist later does not change an active job. Legacy released jobs lack a historical snapshot.
+**Owner:** mobile developer. **Checked against code:** 2026-10-20. **Status:** QA hold recovery completed in mobile step 6; independent two-desk inspection UI and ordinary checklist gaps remain open. See `docs/reviews/qc-qa-stage-audit.md` for the backend/desktop audit. After both QC and QA pass, the unit awaits Products In; neither inspection adds sellable stock. New job orders freeze their QC/QA checklist contents at kit release; editing a product checklist later does not change an active job. Legacy released jobs lack a historical snapshot.
 
 **Mobile step 6 (2026-10-14):** hold decisions persist their exact outcome, reason,
 disposition/rectification station, reviewed hold record and retry key before POST.

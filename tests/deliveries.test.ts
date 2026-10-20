@@ -171,8 +171,8 @@ describe('deliveries', () => {
   });
 
   it('completing a delivery for an unfulfilled sale order hands back an `order` hint', async () => {
-    // `releasing` role has delivery.run AND orders.edit — the hint is gated on orders.edit.
-    const rel = await createEmployee(ctx.api, adminToken, { role: 'releasing' });
+    // Office staff can run a delivery and edit the sale; the hint needs orders.edit.
+    const rel = await createEmployee(ctx.api, adminToken, { role: 'admin_staff' });
     const order = await ctx.api.post('/api/orders').set(A()).send({
       type: 'sale', customer_name: 'Fulfil Me', status: 'approved',
       items: [{ name: 'loose widget', quantity: 1, unit_price: 10 }],

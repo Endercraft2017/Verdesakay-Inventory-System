@@ -477,6 +477,18 @@ UPLOAD_DIR; deliberately not enforced so a plan limit can't block a report).
 `tests/image-fixtures.ts`), anonymous transport checks in `tests/frontend-mobile.test.ts`.
 **Status:** working.
 
+## Sales (logical module; shared order implementation under modules/inventory)
+
+**Responsibility:** customers, sale/customer job documents, CSR stock review and approval,
+release authorization, warehouse acceptance and picking, release slips, deliveries and
+customer returns. Sales is a separate tenant entitlement with Inventory as its stock
+dependency. Its APIs are gated by Sales or checked per order type, and the desktop
+Sales area contains Pipeline, Orders, Customer Service, Customers, and Releasing. The pipeline
+reads existing records; it does not maintain duplicate stage status. Inventory keeps
+read-only sale/JO tracking for warehouse staff. The current source files still live
+under `src/modules/inventory/` and `public/js/modules/inventory/`; moving them is a
+separate code-organization task, not a prerequisite for this workflow.
+
 ## modules/inventory
 
 **Inventory UI review (Chunk 1):** the existing desktop layout is retained. List filters
@@ -487,14 +499,14 @@ is reused. Mobile item detail reports connectivity rather than claiming sync, sh
 zero-stock locations and filters actions by permission. Regression coverage:
 `tests/frontend-chunk1.test.ts`; mobile shell cache v110.
 
-**Responsibility:** items, stock levels, suppliers, customers, locations, sale/purchase
-orders (the order shell — 3-way-match purchase logic lives in `purchasing/`),
-sale-order releasing (warehouse acceptance → pick → release slip), deliveries.
+**Responsibility:** items, stock levels, suppliers, locations, stock movements,
+and warehouse tracking. The shared order shell also lives here in source, but Sales
+owns commercial orders and release while Purchasing owns supplier orders.
 **Owned files:** `inventory-stock.ts`, `order-availability.ts`, routes: `inventory.routes.ts`,
 `suppliers.routes.ts`, `customers.routes.ts`, `locations.routes.ts`,
 `deliveries.routes.ts`, `orders.routes.ts`, `release-slips.routes.ts`,
 `sales-returns.routes.ts`.
-UI: desktop Inventory → Releasing (`public/js/modules/inventory/releasing.js`),
+UI: desktop Sales → Releasing (`public/js/modules/inventory/releasing.js`),
 mobile `so` view (`public/mobile/modules/inventory/so.js`).
 **Owned data (releasing):** `orders.warehouse_accepted_by/_at`, `release_slips`,
 `release_slip_items` (snapshot of lines + unit serials); photos are core `attachments`

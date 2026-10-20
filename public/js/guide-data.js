@@ -161,7 +161,7 @@ const GUIDE_PIPELINES = [
       {
         title: 'Raise the sale order',
         role: 'CSR / sales · orders.create',
-        to: { route: 'orders', filter: { type: 'sale' }, label: 'Inventory → Orders → Sale Orders' },
+        to: { route: 'orders', filter: { type: 'sale' }, label: 'Sales → Orders → Sale Orders' },
         spot: '.tree-leaf[data-route="orders"]',
         body: `Press New sale order, select the customer and add inventory items, quantities and prices. Choose Ship from and review tax before saving. The new order is open and its lines remain editable until approval.`,
       },
@@ -185,20 +185,20 @@ const GUIDE_PIPELINES = [
       },
       {
         title: 'Warehouse accepts the order',
-        role: 'Warehouse releaser · inventory.adjust / orders.release',
-        to: { route: 'releasing', filter: { tab: 'queue' }, label: 'Inventory → Releasing → Release Queue' },
+        role: 'Releaser · orders.release',
+        to: { route: 'releasing', filter: { tab: 'queue' }, label: 'Sales → Releasing → Release Queue' },
         spot: '.tree-leaf[data-route="releasing"]',
         body: `Open Release Queue and find the approved order under Waiting for warehouse acceptance. Review it and press Accept for release. This records your acceptance; picking is unavailable until the order is accepted.`,
       },
       {
         title: 'Release the goods',
-        role: 'Warehouse releaser · inventory.adjust / orders.release',
+        role: 'Releaser · orders.release',
         to: { route: 'releasing', filter: { tab: 'queue' }, label: 'Release Queue → open the order' },
         body: `Warehouse accepts the approved order, then selects the exact sale line and its build state. Scan serialized units or choose exact batch/untracked quantities. When one SKU matches several lines, explicitly choose the correct line. Picking holds stock; it does not deduct it. Undo allocation changes only unshipped holds and does not cancel customer demand.`,
       },
       {
         title: 'Issue the release slip',
-        role: 'Warehouse releaser · inventory.adjust / orders.release',
+        role: 'Releaser · orders.release',
         to: { route: 'releasing', filter: { tab: 'slips' }, label: 'Release order → Issue release slip' },
         body: `Select this vehicle’s actual serials, batches and quantities. Check current Sales authority, token, package requirements and goods photo, then issue the trip’s release slip. Only its load leaves stock. Remaining demand stays committed on the same sales order; each further trip needs its own slip and authority. CKD loads contain whole kits only.`,
       },

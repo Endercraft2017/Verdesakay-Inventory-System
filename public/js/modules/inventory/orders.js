@@ -4,7 +4,7 @@ App.register('orders', async (view, filter) => {
   const type = filter && filter.type === 'job' ? 'job' : filter && filter.type === 'purchase' ? 'purchase' : 'sale';
   const tracking = filter && filter.mode === 'track' && type !== 'purchase';
   const noun = type === 'sale' ? 'Sale Order' : type === 'job' ? 'Customer Job Order' : 'Supplier Purchase Order';
-  const state = { q: '', backorder: false };
+  const state = { q: String(filter?.search || ''), backorder: false };
   const qbDoc = type === 'purchase' ? 'Bill' : 'Invoice';
   let qb = { connected: false };
   try { qb = await API.get('/quickbooks/status'); } catch { /* not configured */ }
@@ -33,7 +33,7 @@ App.register('orders', async (view, filter) => {
     <div class="topbar">
       <h2>${tracking ? noun + 's · Fulfillment tracking' : noun + 's'}</h2>
       <div class="grow"></div>
-      <div class="search-box search">${UI.icon('search', 16)}<input id="ord-search" aria-label="Search orders by number or ${partyLabel.toLowerCase()}" placeholder="Search number, ${partyLabel.toLowerCase()}…" /></div>
+      <div class="search-box search">${UI.icon('search', 16)}<input id="ord-search" aria-label="Search orders by number or ${partyLabel.toLowerCase()}" placeholder="Search number, ${partyLabel.toLowerCase()}…" value="${UI.esc(state.q)}" /></div>
       ${type === 'sale' ? `<button class="btn secondary" id="ord-backorder" title="Show firm orders with stock lines still awaiting picking">${UI.icon('alert', 15)} Awaiting release</button>` : ''}
       ${App.hasPermission('users.manage') && qb.configured ? `<button class="btn secondary" id="ord-qb">${UI.icon('sheet')} QuickBooks${qb.connected ? ' ✓' : ''}</button>` : ''}
       ${canCreate ? `<button class="btn" id="ord-new">${UI.icon('plus')} New ${noun}</button>` : ''}
@@ -84,14 +84,14 @@ App.register('orders', async (view, filter) => {
       return;
     }
     tableEl.innerHTML = `
-      <table>
-        <thead><tr><th>Number</th><th>${partyLabel}</th><th>Date</th><th class="right">Total</th><th>Status</th><th></th></tr></thead>
+      <div class="orders-table-scroll"><table>
+        <thead><tr><th>Number</th><th>${partyLabel}</th><th>Date</th>${tracking ? '' : '<th class="right">Total</th>'}<th>Status</th><th></th></tr></thead>
         <tbody>${list.map((o) => `
           <tr class="clickable" data-open="${o.id}">
             <td><strong>${UI.esc(o.number)}</strong>${type === 'job' && o.job_order_number ? `<div class="muted" style="font-size:11px">${UI.esc(o.job_order_number)} · ${UI.esc((o.job_order_status || '').replace('_', ' '))}</div>` : ''}${type === 'sale' && o.fulfillment_modes ? `<div class="muted" style="font-size:11px">${o.fulfillment_modes.split(',').map((m) => UI.esc(({ assembled: 'Fully built', semi_built: 'Semi-built', ckd: 'CKD', part: 'Parts' })[m] || m)).join(' · ')}</div>` : ''}</td>
             <td>${UI.esc(o.customer_name || '—')}</td>
             <td>${UI.esc(o.order_date || UI.fmtDateShort(o.created_at))}</td>
-            <td class="right">${UI.esc(o.currency || '')} ${money(o.total)}</td>
+            ${tracking ? '' : `<td class="right">${UI.esc(o.currency || '')} ${money(o.total)}</td>`}
             <td><span class="badge-pill status-${UI.esc(o.status)}">${UI.esc(o.status)}</span>${o.release_slip_number ? ` <span class="badge-pill" title="Goods left on release slip ${UI.esc(o.release_slip_number)}">Shipped · ${UI.esc(o.release_slip_number)}</span>` : ''}${o.backordered ? ' <span class="badge-pill low" title="Stock lines still await picking">⚠ awaiting pick</span>' : ''}</td>
             <td class="actions">
               ${type === 'job' && !tracking && App.hasPermission('inventory.adjust')
@@ -110,7 +110,7 @@ App.register('orders', async (view, filter) => {
             </td>
           </tr>`).join('')}
         </tbody>
-      </table>`;
+      </table></div>`;
     tableEl.querySelectorAll('[data-stock]').forEach((b) => b.onclick = () => reviewStock(b.dataset.stock));
     tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => openOrder(b.dataset.edit));
     tableEl.querySelectorAll('[data-print]').forEach((b) => b.onclick = () => printOrder(b.dataset.print));
@@ -909,6 +909,7 @@ App.register('orders', async (view, filter) => {
   view.querySelector('#ord-new')?.addEventListener('click', () => orderModal(null));
 
   await load();
+  if (filter && filter.new && canCreate) orderModal(null);
   if (filter && filter.review && type === 'sale') reviewStock(filter.review);
   // filter.id deep-links straight into one order's edit modal (used by the AI assistant's
   // created-record links) — openOrder() only needs the id, it fetches the rest itself.

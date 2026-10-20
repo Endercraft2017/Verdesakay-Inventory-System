@@ -792,6 +792,7 @@ body:has(.drawer.open) .ai-fab { opacity: 0; pointer-events: none; }
 .sales-dashboard .panel { padding: 18px; margin-bottom: 18px; }
 .sales-dashboard .panel .cards { margin: 12px 0 0; }
 .sales-dashboard .table-scroll { max-width: 100%; overflow-x: auto; }
+.orders-table-scroll { max-width: 100%; overflow-x: auto; }
 .sales-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 600px) {
   .sales-dashboard { max-width: calc(100vw - 74px); }
@@ -1350,7 +1351,7 @@ textarea { resize: vertical; min-height: 84px; }
      3-column layout there's no single child left to scroll it internally, so .workspace itself
      gets the scrollbar here (same page-scroll-like feel this breakpoint already had before
      .app was capped to one viewport tall, just contained now instead of scrolling <html>). */
-  .workspace { grid-template-columns: 1fr; overflow-y: auto; }
+  .workspace { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
   .tree { border-right: none; border-bottom: 1px solid var(--border); }
   .rail { flex-direction: row; border-left: none; border-top: 1px solid var(--border); overflow: visible; }
   .rail-top { flex-direction: row; width: auto; flex: 1; overflow-x: auto; overflow-y: hidden; }

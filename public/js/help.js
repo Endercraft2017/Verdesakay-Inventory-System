@@ -169,8 +169,12 @@
         other topic.</p>`,
     },
     {
-      id: 'sales-overview', title: 'Sales overview', group: 'Orders', routes: ['sales-overview'], workflow: 'sales',
-      html: `<p><b>Sales → Overview</b> shows open sale orders, orders awaiting stock or release, order counts and value by status, and the last eight weeks of sale orders. Values are order totals, not cash received. Open Sales → Orders to create or edit a customer order. Inventory → Order Tracking is read-only; use Inventory → Releasing for warehouse fulfillment.</p>`,
+      id: 'sales-overview', title: 'Sales pipeline', group: 'Orders', routes: ['sales-overview'], workflow: 'sales',
+      html: `<p><b>Sales → Pipeline</b> follows customer orders from CSR review through warehouse acceptance, release and shipment. The stages come from sale orders and release slips, so refreshing shows the current record. Order values are not cash received. Open Sales → Orders to create or edit an order; Inventory → Order Tracking is read-only, and Sales → Releasing handles warehouse fulfillment.</p>`,
+    },
+    {
+      id: 'sales-service', title: 'Customer service', group: 'Orders', routes: ['sales-service'], workflow: 'sales',
+      html: `<p><b>Sales → Customer Service</b> is the CSR follow-up desk. Search an order or customer, filter by its actual order/release stage, and open the sale directly. New sale order starts an open draft; stock review and approval happen on that order. Customer records live under Sales → Customers.</p>`,
     },
     {
       id: 'analytics', title: 'Reports (operational dashboards)', group: 'Basics', routes: ['analytics'],

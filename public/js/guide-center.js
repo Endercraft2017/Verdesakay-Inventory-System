@@ -1,7 +1,7 @@
 /* Searchable guides and context-sensitive entry points. Never performs a business action. */
 (function () {
-  const moduleLabels = { home: 'Home & personal tools', forms: 'Documents', documents: 'Documents', messages: 'Messages', account: 'My account', support: 'Support', hr: 'HR', inventory: 'Inventory', manufacturing: 'Production', purchasing: 'Purchasing', accounting: 'Accounting', admin: 'Administration' };
-  const workflowModules = { production: 'manufacturing', sales: 'inventory', purchasing: 'purchasing', payroll: 'hr', inventory: 'inventory', accounting: 'accounting', 'qc-repair': 'manufacturing' };
+  const moduleLabels = { home: 'Home & personal tools', forms: 'Documents', documents: 'Documents', messages: 'Messages', account: 'My account', support: 'Support', hr: 'HR', inventory: 'Inventory', sales: 'Sales', manufacturing: 'Production', purchasing: 'Purchasing', accounting: 'Accounting', admin: 'Administration' };
+  const workflowModules = { production: 'manufacturing', sales: 'sales', purchasing: 'purchasing', payroll: 'hr', inventory: 'inventory', accounting: 'accounting', 'qc-repair': 'manufacturing' };
   const access = (route, filter) => !App.canAccessRoute || App.canAccessRoute(route, filter);
   const text = html => { const el = document.createElement('div'); el.innerHTML = html || ''; return el.textContent || ''; };
   function catalog() {

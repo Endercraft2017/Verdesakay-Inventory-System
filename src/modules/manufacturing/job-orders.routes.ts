@@ -451,16 +451,14 @@ router.get('/', listGate, (req, res) => {
                 AND NOT EXISTS (SELECT 1 FROM job_order_units u WHERE u.batch_id = pb.id)
                 AND pb.qty > COALESCE((SELECT SUM(quantity) FROM production_receipt_items WHERE batch_id = pb.id), 0)
             ) AS batches_receivable,
-            -- Awaiting inspection units bucketed by which pass they're actually on (QC =
-            -- first, QA = final; a single-stage MO's one pass satisfies both buckets at
-            -- once) — lets the caller's own units_actionable below reflect only what a
-            -- narrow qc_inspector/qa_inspector account can act on, not every open unit
-            -- regardless of stage.
+            -- Each desk sees its own unfinished inspection, regardless of the other desk.
             (SELECT COUNT(*) FROM job_order_units u
-              WHERE u.job_order_id = j.id AND u.status IN ('pending','rework') AND (u.stage + 1) = 1
+              WHERE u.job_order_id = j.id AND u.status IN ('pending','rework')
+                AND (j.qc_stages <= 1 OR COALESCE((SELECT q.result FROM qc_records q WHERE q.unit_id = u.id AND q.stage = 1 ORDER BY q.id DESC LIMIT 1), '') != 'pass')
             ) AS units_first_pass_open,
             (SELECT COUNT(*) FROM job_order_units u
-              WHERE u.job_order_id = j.id AND u.status IN ('pending','rework') AND (u.stage + 1) >= j.qc_stages
+              WHERE u.job_order_id = j.id AND u.status IN ('pending','rework')
+                AND (j.qc_stages <= 1 OR COALESCE((SELECT q.result FROM qc_records q WHERE q.unit_id = u.id AND q.stage = 2 ORDER BY q.id DESC LIMIT 1), '') != 'pass')
             ) AS units_final_pass_open
      FROM job_orders j
      LEFT JOIN orders o ON o.id = j.order_id
@@ -1645,6 +1643,10 @@ router.post('/:id/units', recordGate, syncClass('physical'), syncUpload(imageUpl
     title: `QC inspection ready — ${jo.number}`, body: `${identifier} is off the line and waiting for technical inspection.`,
     url: `#/qc?role=qc&jo=${id}`, link: { route: 'production-qc' }, tag: `qc-jo-${id}`,
   }, req.user!.id);
+  if (jo.qc_stages > 1) void notifyAnyPermission(['production.inspect_qa'], {
+    title: `QA inspection ready — ${jo.number}`, body: `${identifier} is off the line and ready for QA, independent of QC.`,
+    url: `#/qc?role=qa&jo=${id}`, link: { route: 'production-qc' }, tag: `qa-jo-${id}`,
+  }, req.user!.id);
 });
 
 /** Put `qty_planned - qty_consumed` of every component back at the source location.
@@ -1859,7 +1861,10 @@ router.get('/:id/units', detailGate, (req, res) => {
   }
   res.json(
     queryAll<JobOrderUnit>(
-      'SELECT * FROM job_order_units WHERE job_order_id = ? ORDER BY id',
+      `SELECT u.*,
+        (SELECT q.result FROM qc_records q WHERE q.unit_id = u.id AND q.stage = 1 ORDER BY q.id DESC LIMIT 1) AS qc_result,
+        (SELECT q.result FROM qc_records q WHERE q.unit_id = u.id AND q.stage = 2 ORDER BY q.id DESC LIMIT 1) AS qa_result
+       FROM job_order_units u WHERE u.job_order_id = ? ORDER BY u.id`,
       id
     )
   );
@@ -1900,7 +1905,7 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
     res.status(404).json({ error: 'Job order not found' });
     return;
   }
-  const { unit_ids, result, remarks, identifier, checklist, disposition, repair, evidence_ids } = parseBody(inspectUnitsSchema, req.body);
+  const { unit_ids, result, remarks, identifier, checklist, disposition, repair, evidence_ids, inspection_stage } = parseBody(inspectUnitsSchema, req.body);
   const units = queryAll<JobOrderUnit>(
     `SELECT * FROM job_order_units WHERE job_order_id = ? AND id IN (${unit_ids.map(() => '?').join(',')})`,
     id,
@@ -1935,25 +1940,26 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
   }
   const outputLoc = jo.output_location_id ?? getDefaultLocationId();
   const stages = Math.max(1, jo.qc_stages || 1);
-  const passStages = new Set(units.map((u) => u.stage + 1));
-  if (passStages.size > 1) {
-    res.status(400).json({ error: 'Inspect units from one QC/QA stage at a time.' });
-    return;
-  }
-
+  const hasQc = req.user!.permissions.includes('production.inspect_qc');
+  const hasQa = req.user!.permissions.includes('production.inspect_qa');
+  const latest = new Map(units.map((u) => [u.id, {
+    qc: queryOne<{ result: string }>('SELECT result FROM qc_records WHERE unit_id = ? AND stage = 1 ORDER BY id DESC LIMIT 1', u.id)?.result,
+    qa: queryOne<{ result: string }>('SELECT result FROM qc_records WHERE unit_id = ? AND stage = 2 ORDER BY id DESC LIMIT 1', u.id)?.result,
+  }]));
+  // Two-desk jobs use separate records. The explicit stage lets a dual-permission
+  // inspector choose QA first; a narrow inspector always uses their own desk.
+  const chosenStage = stages <= 1 ? 1 : inspection_stage ??
+    (!hasQc && hasQa ? 2 : units.every((u) => latest.get(u.id)?.qc === 'pass') ? 2 : 1);
   // Which checklist(s) apply to this pass: the QC checklist on the first pass, the QA
   // checklist on the final one. On a single-stage MO the one inspection is both first
   // and final, so both the product's QC and QA checklists apply together.
-  const isFirstPass = units.some((u) => u.stage + 1 === 1);
-  const isFinalPass = units.some((u) => u.stage + 1 >= stages);
-
+  const isFirstPass = chosenStage === 1;
+  const isFinalPass = chosenStage >= stages;
   // inspectDoorGate only confirmed the caller holds SOME inspect permission; a
   // qc_inspector/qa_inspector account is further restricted to the specific pass(es)
   // these units are actually on. A single-stage job order's one pass is both first and
   // final together (it runs both checklists in one go), so either permission covers it.
   {
-    const hasQc = req.user!.permissions.includes('production.inspect_qc');
-    const hasQa = req.user!.permissions.includes('production.inspect_qa');
     const combinedPass = stages <= 1;
     const covered = combinedPass ? (hasQc || hasQa) : ((!isFirstPass || hasQc) && (!isFinalPass || hasQa));
     if (!covered) {
@@ -1964,6 +1970,10 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
       });
       return;
     }
+  }
+  if (stages > 1 && units.some((u) => (chosenStage === 1 ? latest.get(u.id)?.qc : latest.get(u.id)?.qa) === 'pass')) {
+    res.status(409).json({ error: 'This inspection is already passed for one or more selected units. Refresh the queue.', code: 'inspection_already_passed' });
+    return;
   }
 
   // A unit can only become finished stock once its checklist is complete — every
@@ -2014,7 +2024,7 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
 
   // A hold is QA's: only on the final pass, and only for a failing result.
   const hold = result === 'fail' && disposition === 'hold';
-  if (hold && units.some((u) => u.stage + 1 < stages)) {
+  if (hold && !isFinalPass) {
     res.status(400).json({ error: 'Only the final (QA) pass can hold a unit for review.' });
     return;
   }
@@ -2042,7 +2052,7 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
   db.exec('BEGIN');
   try {
     for (const u of units) {
-      const stage = u.stage + 1;
+      const stage = chosenStage;
       if (hold) {
         // Held for review: the unit keeps its stage (the decision completes this pass).
         const rec = Number(run(
@@ -2092,7 +2102,8 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
         run('UPDATE job_orders SET qty_scrapped = qty_scrapped + 1, updated_at = datetime(\'now\') WHERE id = ?', id);
       } else {
         const identSql = identifier !== undefined && identifier !== null ? identifier : u.identifier;
-        if (stage >= stages) {
+        const otherPassed = stages > 1 && (stage === 1 ? latest.get(u.id)?.qa : latest.get(u.id)?.qc) === 'pass';
+        if (stage >= stages && stages <= 1 || otherPassed) {
           // Final pass — not into stock yet. 'passed' queues it for Products In
           // (POST /:id/products-in), which is where the unit actually posts to stock and
           // becomes sellable/reservable (orders.routes.ts still gates on 'in_stock'). Keep
@@ -2100,7 +2111,7 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
           const unitLoc = u.location_id ?? outputLoc;
           run(
             "UPDATE job_order_units SET status = 'passed', stage = ?, identifier = ?, remarks = ?, location_id = ?, updated_at = datetime('now') WHERE id = ?",
-            stage,
+            stages,
             identSql,
             remarks ?? u.remarks,
             unitLoc,
@@ -2110,7 +2121,7 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
         } else {
           run(
             "UPDATE job_order_units SET stage = ?, identifier = ?, remarks = ?, updated_at = datetime('now') WHERE id = ?",
-            stage,
+            stages > 1 ? 1 : stage,
             identSql,
             remarks ?? u.remarks,
             u.id
@@ -2137,12 +2148,12 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
       link: { route: 'job-orders', params: { id } }, tag: `qa-hold-${id}`,
     }, req.user!.id);
   }
-  if (result === 'pass' && isFirstPass && !isFinalPass) void notifyAnyPermission(['production.inspect_qa'], {
-    title: `QA inspection ready — ${jo.number}`, body: `${unit_ids.length} unit(s) passed QC and await final inspection.`,
-    url: `#/qc?role=qa&jo=${id}`, link: { route: 'production-qc' }, tag: `qa-jo-${id}`,
+  if (result === 'pass' && stages > 1 && units.some((u) => (isFirstPass ? latest.get(u.id)?.qa : latest.get(u.id)?.qc) !== 'pass')) void notifyAnyPermission([isFirstPass ? 'production.inspect_qa' : 'production.inspect_qc'], {
+    title: `${isFirstPass ? 'QA' : 'QC'} inspection pending — ${jo.number}`, body: `${unit_ids.length} unit(s) passed the other inspection and await yours.`,
+    url: `#/qc?role=${isFirstPass ? 'qa' : 'qc'}&jo=${id}`, link: { route: 'production-qc' }, tag: `inspect-jo-${id}`,
   }, req.user!.id);
-  if (result === 'pass' && isFinalPass) void notifyAnyPermission(['production.receive'], {
-    title: `Products In ready — ${jo.number}`, body: `${unit_ids.length} unit(s) passed inspection. Verify the QR and receive them into RTS.`,
+  if (result === 'pass' && (stages <= 1 || units.some((u) => (isFirstPass ? latest.get(u.id)?.qa : latest.get(u.id)?.qc) === 'pass'))) void notifyAnyPermission(['production.receive'], {
+    title: `Products In ready — ${jo.number}`, body: `${unit_ids.length} unit(s) passed both required inspections. Verify the QR and receive them into RTS.`,
     url: `#/receiving?id=${id}`, link: { route: 'production-receiving' }, tag: `rts-jo-${id}`,
   }, req.user!.id);
   res.json({ ok: true, job_order: loadJobOrder(id) });
@@ -2198,7 +2209,7 @@ router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'),
     }).map((item) => item.label);
     if (noReading.length) { res.status(400).json({ error: `Record a reading for: ${noReading.join(', ')}`, blocked: 'checklist' }); return; }
   }
-  const stage = u.stage + 1;
+  const stage = jo.qc_stages > 1 ? 2 : 1;
   const note = `Hold decision: ${remarks}`;
   db.exec('BEGIN');
   try {
@@ -2210,11 +2221,14 @@ router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'),
       note, outcome === 'pass' && checklist ? JSON.stringify(decisionChecklist) : held?.checklist ?? null, req.user!.id
     ).lastInsertRowid);
     if (outcome === 'pass') {
+      const qcPassed = jo.qc_stages <= 1 || queryOne<{ result: string }>(
+        'SELECT result FROM qc_records WHERE unit_id = ? AND stage = 1 ORDER BY id DESC LIMIT 1', u.id
+      )?.result === 'pass';
       run(
-        "UPDATE job_order_units SET status = 'passed', stage = ?, disposition = NULL, remarks = ?, location_id = COALESCE(location_id, ?), updated_at = datetime('now') WHERE id = ?",
-        stage, note, jo.output_location_id ?? getDefaultLocationId(), u.id
+        "UPDATE job_order_units SET status = ?, stage = ?, disposition = NULL, remarks = ?, location_id = COALESCE(location_id, ?), updated_at = datetime('now') WHERE id = ?",
+        qcPassed ? 'passed' : 'pending', qcPassed ? jo.qc_stages : 1, note, jo.output_location_id ?? getDefaultLocationId(), u.id
       );
-      run("UPDATE job_orders SET qty_done = qty_done + 1, updated_at = datetime('now') WHERE id = ?", id);
+      if (qcPassed) run("UPDATE job_orders SET qty_done = qty_done + 1, updated_at = datetime('now') WHERE id = ?", id);
     } else if (outcome === 'rectify') {
       if (repair && (repair.category || repair.station || repair.priority)) {
         run('INSERT INTO qc_repair_details (qc_record_id, category, station, priority) VALUES (?, ?, ?, ?)',
@@ -2241,10 +2255,15 @@ router.post('/:id/units/:unitId/hold-decision', holdGate, syncClass('physical'),
       url: `#/record?unit=${u.id}`, link: { route: 'job-orders', params: { id } }, tag: `qa-hold-${u.id}`,
     });
   }
-  if (outcome === 'pass') void notifyAnyPermission(['production.receive'], {
-    title: `Products In ready — ${jo.number}`, body: `${u.identifier || 'Unit #' + u.id} passed its QA hold decision and awaits RTS receipt.`,
-    url: `#/receiving?id=${id}`, link: { route: 'production-receiving' }, tag: `rts-jo-${id}`,
-  }, req.user!.id);
+  if (outcome === 'pass') {
+    const ready = queryOne<{ status: string }>('SELECT status FROM job_order_units WHERE id = ?', u.id)?.status === 'passed';
+    void notifyAnyPermission([ready ? 'production.receive' : 'production.inspect_qc'], {
+      title: `${ready ? 'Products In ready' : 'QC inspection pending'} — ${jo.number}`,
+      body: ready ? `${u.identifier || 'Unit #' + u.id} passed both inspections and awaits RTS receipt.` : `${u.identifier || 'Unit #' + u.id} passed QA review and still needs QC.`,
+      url: ready ? `#/receiving?id=${id}` : `#/qc?role=qc&unit=${u.id}`,
+      link: { route: ready ? 'production-receiving' : 'production-qc' }, tag: `${ready ? 'rts' : 'qc'}-jo-${id}`,
+    }, req.user!.id);
+  }
   res.json({ ok: true, job_order: loadJobOrder(id) });
 });
 

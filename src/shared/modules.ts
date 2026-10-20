@@ -22,7 +22,8 @@ import { planModules } from '../platform/plans';
  *  login / My Account, Home & dashboards, Documents & file storage, Templates,
  *  Messages, user Admin, and the Activity log. Those have no module gate anywhere. */
 export const MODULES = [
-  'inventory',      // items, stock, suppliers, locations, customers, sale/purchase orders, deliveries
+  'inventory',      // items, stock, suppliers, locations and warehouse tracking
+  'sales',          // customers, commercial orders and outbound release
   'manufacturing',  // production, job orders, BOM / finished products, QC, batches
   'purchasing',     // goods receipts, vendor bills, 3-way match
   'hr',             // employees, timekeeping / kiosk, payroll, HR memos & requests
@@ -39,6 +40,7 @@ export type ModuleName = typeof MODULES[number];
  *  (validateModuleList); the resolver also unions deps in so a stale/partial list
  *  can't half-enable an area. */
 export const MODULE_DEPS: Partial<Record<ModuleName, ModuleName[]>> = {
+  sales: ['inventory'],
   manufacturing: ['inventory'],
   purchasing: ['inventory'],
   quickbooks: ['inventory'],

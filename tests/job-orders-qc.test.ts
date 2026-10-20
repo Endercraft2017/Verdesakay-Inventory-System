@@ -128,19 +128,19 @@ describe('job orders — QA/QC', () => {
     expect((await unitsOf(mo)).find((u) => u.id === units[1]!.id)!.status).toBe('rework');
   });
 
-  it('two-stage QA→QC needs two passes before the unit counts', async () => {
+  it('two-stage QC→QA needs two passes before the unit counts', async () => {
     const { mo, product } = await releasedMO('QC3', 2, 2);
     await addSerializedUnits(ctx.api, token, mo, 2, 'QC3');
     const units = await unitsOf(mo);
 
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
-      .send({ unit_ids: [units[0]!.id], result: 'pass' }); // stage 1 (QA)
+      .send({ unit_ids: [units[0]!.id], result: 'pass' }); // stage 1 (QC)
     expect(await onHand(product)).toBe(0);
     expect((await unitsOf(mo)).find((u) => u.id === units[0]!.id)!.status).toBe('pending');
     expect((await unitsOf(mo)).find((u) => u.id === units[0]!.id)!.stage).toBe(1);
 
     await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(authHdr())
-      .send({ unit_ids: [units[0]!.id], result: 'pass' }); // stage 2 (QC)
+      .send({ unit_ids: [units[0]!.id], result: 'pass' }); // stage 2 (QA)
     expect((await unitsOf(mo)).find((u) => u.id === units[0]!.id)!.status).toBe('passed');
     expect(await onHand(product)).toBe(0); // not yet received
     await receiveAll(mo);

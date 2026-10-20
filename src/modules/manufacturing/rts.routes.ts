@@ -57,8 +57,11 @@ router.post('/legacy', receiveGate, syncClass('physical'), syncUpload(imageUploa
       saveAttachment('qc_unit',unitId,file.filename,'Pre-system legacy intake',req.user!.id);
       db.exec('COMMIT');res.status(201).json({id,number,unit_id:unitId});
       void notifyAnyPermission(['production.inspect_qc'], { title: `QC inspection ready — ${number}`,
-        body: `${input.identifier} was entered as a pre-system unit and needs QC then QA.`,
+        body: `${input.identifier} was entered as a pre-system unit and needs QC and QA.`,
         url: `#/qc?role=qc&jo=${id}`, link: { route: 'production-qc' }, tag: `qc-jo-${id}` }, req.user!.id);
+      void notifyAnyPermission(['production.inspect_qa'], { title: `QA inspection ready — ${number}`,
+        body: `${input.identifier} is ready for QA, independent of QC.`,
+        url: `#/qc?role=qa&jo=${id}`, link: { route: 'production-qc' }, tag: `qa-jo-${id}` }, req.user!.id);
     }catch(e){db.exec('ROLLBACK');throw e;}
   }catch(e){unlink(file?.filename);throw e;}
 });

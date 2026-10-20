@@ -1,6 +1,15 @@
 # QC/QA stage audit — implementation plan
 
-**Branch:** `restructure/module-architecture`. **Reviewed:** 2026-10-14. **Scope:** recorded unit → QC → QA → pass, rework, reject or hold → Products In eligibility. This file records the original findings; backend and desktop fixes followed in the same stage. Mobile source is owned separately; its actions are in the root `MOBILE-INVENTORY-HANDOFF.md`.
+**Branch:** `restructure/module-architecture`. **Reviewed:** 2026-10-14. **Scope:** recorded unit → QC and QA → pass, rework, reject or hold → Products In eligibility. This file records the original findings; backend and desktop fixes followed in the same stage. Mobile source is owned separately; its actions are in the root `MOBILE-INVENTORY-HANDOFF.md`.
+
+**2026-10-20 workflow update:** Two-inspection jobs now have independent QC and QA
+queues. Either role may inspect first, and an inspector with both permissions can
+choose a desk explicitly. Both passes are required before Products In; this was
+verified with QA-first, QC-first, overlapping submissions, narrow permissions,
+and a real two-window desktop browser test. The older sequential notes below
+describe the original audit, not the current gating. One-inspection jobs keep
+their combined pass for existing workflows. Mobile implementation details and
+remaining phone acceptance cases are in `MOBILE-INVENTORY-HANDOFF.md`.
 
 ## Resolution status
 

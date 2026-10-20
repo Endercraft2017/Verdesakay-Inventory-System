@@ -149,23 +149,52 @@ describe('qc_inspector vs qa_inspector on a two-stage job order', () => {
     const { mo } = await releasedMO('TwoStage', 1, 2);
     const [unit] = await addSerializedUnits(ctx.api, token, mo, 1, 'TS2');
 
-    // qa_inspector is blocked from the first (QC) pass.
+    // QA can start first, but cannot claim the QC desk.
     expect((await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(bearer(qa.token))
-      .send({ unit_ids: [unit], result: 'pass' })).status).toBe(403);
+      .send({ unit_ids: [unit], inspection_stage: 1, result: 'pass' })).status).toBe(403);
+    expect((await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(bearer(qc.token))
+      .send({ unit_ids: [unit], inspection_stage: 2, result: 'pass' })).status).toBe(403);
+    expect((await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(bearer(qa.token))
+      .send({ unit_ids: [unit], result: 'pass' })).status).toBe(200);
 
     // qc_inspector performs the first pass.
     const firstPass = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(bearer(qc.token))
       .send({ unit_ids: [unit], result: 'pass' });
     expect(firstPass.status).toBe(200);
 
-    // qc_inspector is now blocked from the final (QA) pass.
-    expect((await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(bearer(qc.token))
-      .send({ unit_ids: [unit], result: 'pass' })).status).toBe(403);
-
     // qa_inspector performs the final pass.
     const finalPass = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(bearer(qa.token))
       .send({ unit_ids: [unit], result: 'pass' });
-    expect(finalPass.status).toBe(200);
+    expect(finalPass.status).toBe(409); // cannot record the same QA pass twice
+  });
+  it('accepts QC and QA submissions made from open screens at the same time', async () => {
+    const qc = await createEmployee(ctx.api, token, { role: 'qc_inspector' });
+    const qa = await createEmployee(ctx.api, token, { role: 'qa_inspector' });
+    const { mo } = await releasedMO('ParallelInspect', 1, 2);
+    const [unit] = await addSerializedUnits(ctx.api, token, mo, 1, 'PAR');
+    const [q, a] = await Promise.all([
+      ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(bearer(qc.token)).send({ unit_ids: [unit], result: 'pass', inspection_stage: 1 }),
+      ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(bearer(qa.token)).send({ unit_ids: [unit], result: 'pass', inspection_stage: 2 }),
+    ]);
+    expect([q.status, a.status]).toEqual([200, 200]);
+    const inspected = (await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body[0];
+    expect(inspected).toMatchObject({ status: 'passed', qc_result: 'pass', qa_result: 'pass' });
+    expect((await ctx.api.get('/api/qc/queue?role=qc').set(bearer(qc.token))).body.units.some((u: { id: number }) => u.id === unit)).toBe(false);
+    expect((await ctx.api.get('/api/qc/queue?role=qa').set(bearer(qa.token))).body.units.some((u: { id: number }) => u.id === unit)).toBe(false);
+  });
+  it('keeps a QA-first hold out of Products In after review until QC passes', async () => {
+    const { mo } = await releasedMO('QAFirstHold', 1, 2);
+    const [unit] = await addSerializedUnits(ctx.api, token, mo, 1, 'QFH');
+    const held = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
+      .send({ unit_ids: [unit], inspection_stage: 2, result: 'fail', disposition: 'hold', remarks: 'Review finish' });
+    expect(held.status).toBe(200);
+    const decided = await ctx.api.post(`/api/job-orders/${mo}/units/${unit}/hold-decision`).set(H())
+      .send({ outcome: 'pass', remarks: 'Finish is within tolerance' });
+    expect(decided.status).toBe(200);
+    expect((await ctx.api.get(`/api/job-orders/${mo}/units`).set(H())).body[0]).toMatchObject({ status: 'pending', qa_result: 'pass' });
+    expect((await ctx.api.get(`/api/job-orders/${mo}/receivable`).set(H())).body.units).toHaveLength(0);
+    expect((await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H()).send({ unit_ids: [unit], inspection_stage: 1, result: 'pass' })).status).toBe(200);
+    expect((await ctx.api.get(`/api/job-orders/${mo}/receivable`).set(H())).body.units).toHaveLength(1);
   });
 });
 

@@ -1,4 +1,4 @@
-/* Inventory → Releasing: the warehouse side of a sale order, in pipeline order.
+/* Sales → Releasing: the warehouse side of a sale order, in pipeline order.
      1. Release Queue — approved SOs waiting for the warehouse to accept them, then the
         accepted ones being picked (scan unit labels / enter quantities).
      2. Issue the release slip once every line is out — who collected it, the vehicle, and
@@ -183,7 +183,7 @@ App.register('releasing', async (view, filter) => {
           <h4 style="${LABEL}">Scan unit labels</h4>
           <div class="search-box">${UI.icon('search', 16)}<input id="rl-scan" autocomplete="off" placeholder="Scan or type a unit label, then Enter" /></div>
           <label for="rl-serial-line" class="muted">Sale line for duplicate serial items</label>
-          <select id="rl-serial-line"><option value="">Match automatically when unique</option>${items.filter((l) => l.item_id && l.fulfillment_mode !== 'ckd').map((l) => `<option value="${l.id}">${UI.esc(l.name)} · ${l.fulfillment_mode === 'semi_built' ? 'Semi-built' : l.fulfillment_mode === 'ckd_component' ? 'CKD part' : 'Fully built'} · ${UI.esc(l.quantity)} @ ${UI.esc(l.unit_price)}</option>`).join('')}</select>`}
+          <select id="rl-serial-line"><option value="">Match automatically when unique</option>${items.filter((l) => l.item_id && l.fulfillment_mode !== 'ckd').map((l) => `<option value="${l.id}">${UI.esc(l.name)} · ${l.fulfillment_mode === 'semi_built' ? 'Semi-built' : l.fulfillment_mode === 'ckd_component' ? 'CKD part' : 'Fully built'} · ${UI.esc(l.quantity)}</option>`).join('')}</select>`}
         <h4 style="${LABEL}">Lines</h4>
         <table>
           <thead><tr><th>Item</th><th class="right">Allocated</th><th style="width:210px"></th></tr></thead>

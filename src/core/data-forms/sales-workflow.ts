@@ -28,7 +28,7 @@ export function runSalesWorkflow(recordId:number,fields:FieldDef[],actions:FormA
   if(action&&!['draft','submitted'].includes(status))throw new ValidationError('Use Draft or Submitted for this form; review and approve its sales order separately');
   if(!action||status!=='submitted'||salesLink(recordId))return salesLink(recordId);
   validateSalesWorkflow(fields,actions);
-  if(!moduleEnabled('inventory')||!user.permissions.includes('orders.create')||!user.permissions.includes('orders.view'))throw Object.assign(new Error('Submitting this form requires sales order creation and viewing permissions'),{status:403});
+  if(!moduleEnabled('sales')||!user.permissions.includes('orders.create')||!user.permissions.includes('orders.view'))throw Object.assign(new Error('Submitting this form requires sales order creation and viewing permissions'),{status:403});
   const customer=data[action.customer_field!] as {id?:number;name?:string;contact_person?:string}|null,rows=data[action.items_field!] as Record<string,unknown>[];
   if(!customer?.id||!rows?.length)throw new ValidationError('Select a customer and add products before submitting');
   if(!queryOne('SELECT id FROM customers WHERE id=? AND archived=0',customer.id))throw new ValidationError('This customer is no longer available. Choose an active customer before submitting.');

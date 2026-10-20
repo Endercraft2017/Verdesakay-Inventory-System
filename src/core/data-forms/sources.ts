@@ -6,9 +6,9 @@ import { ValidationError } from '../../shared/validation';
 
 export const FORM_SOURCES = {
   product: { label:'Inventory products', module:'inventory', permission:'inventory.view', fields:['id','name','sku','unit','description','sale_price','currency'] },
-  customer: { label:'Customers', module:'inventory', permission:'orders.view', fields:['id','name','contact_person','address','tin'] },
+  customer: { label:'Customers', module:'sales', permission:'orders.view', fields:['id','name','contact_person','address','tin'] },
   employee: { label:'Employees', module:'hr', permission:'hr.view', fields:['id','name','employee_no','position','department'] },
-  sales_order: { label:'Sales orders', module:'inventory', permission:'orders.view', fields:['id','number','customer_name','order_date','status','total','currency'] },
+  sales_order: { label:'Sales orders', module:'sales', permission:'orders.view', fields:['id','number','customer_name','order_date','status','total','currency'] },
   supplier: { label:'Suppliers', module:'inventory', permission:'inventory.view', fields:['id','name','contact_person','address'] },
   location: { label:'Inventory locations', module:'inventory', permission:'inventory.view', fields:['id','name','type','address'] },
   account: { label:'Accounting accounts', module:'accounting', permission:'accounting.view', fields:['id','name','code','root_type','currency'] },

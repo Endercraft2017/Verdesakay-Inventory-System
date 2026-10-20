@@ -591,7 +591,8 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
 /** Preserve role permissions, while removing capabilities the tenant has disabled. */
 function entitledUser(user: AuthUser): AuthUser {
   return { ...user, permissions: user.permissions.filter(p => {
-    if (/^(inventory|orders|delivery)\./.test(p) || p === 'forms.manage.inventory') return moduleEnabled('inventory');
+    if (/^inventory\./.test(p) || p === 'forms.manage.inventory') return moduleEnabled('inventory');
+    if (/^(orders|delivery)\./.test(p)) return moduleEnabled('sales');
     if (/^(production|qc)\./.test(p)) return moduleEnabled('manufacturing');
     if (p.startsWith('purchasing.')) return moduleEnabled('purchasing');
     if (/^(hr|payroll)\./.test(p) || p === 'forms.manage.hr') return moduleEnabled('hr');

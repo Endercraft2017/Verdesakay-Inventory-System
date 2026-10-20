@@ -415,7 +415,7 @@ export function createApp() {
   app.use('/api/roles', rolesRoutes);
   app.use('/api/inventory', requireModule('inventory'), inventoryRoutes);
   app.use('/api/suppliers', requireModule('inventory'), suppliersRoutes);
-  app.use('/api/customers', requireModule('inventory'), customersRoutes);
+  app.use('/api/customers', requireModule('sales'), customersRoutes);
   app.use('/api/locations', requireModule('inventory'), locationsRoutes);
   app.use('/api/finished-products', requireModule('manufacturing'), bomRoutes);
   app.use('/api/job-orders', requireModule('manufacturing'), jobOrdersRoutes);
@@ -426,9 +426,9 @@ export function createApp() {
   app.use('/api/rts', requireModule('manufacturing'), rtsRoutes);
   app.use('/api/attachments', attachmentsRoutes);
   app.use('/api/bug-reports', bugReportsRoutes);
-  app.use('/api/deliveries', requireModule('inventory'), deliveriesRoutes);
-  app.use('/api/release-slips', requireModule('inventory'), releaseSlipsRoutes);
-  app.use('/api/sales-returns', requireModule('inventory'), salesReturnsRoutes);
+  app.use('/api/deliveries', requireModule('sales'), deliveriesRoutes);
+  app.use('/api/release-slips', requireModule('sales'), releaseSlipsRoutes);
+  app.use('/api/sales-returns', requireModule('sales'), salesReturnsRoutes);
   app.use('/api/forms', formsRoutes);
   app.use('/api/messages', messagesRoutes);
   app.use('/api', personalRoutes); // /api/notes, /api/tasks, /api/bookmarks

@@ -22,7 +22,7 @@ describe('budgeted internal purchase requests', () => {
     const { roleDefaults } = await import('../src/shared/permissions');
     expect(roleDefaults('admin_staff')).toContain('purchasing.approve_requests');
     expect(roleDefaults('accounting')).toContain('purchasing.approve_requests');
-    expect(roleDefaults('csr')).toContain('purchasing.manage');
+    expect(roleDefaults('csr')).not.toContain('purchasing.manage');
     expect(roleDefaults('csr')).not.toContain('purchasing.approve_requests');
     expect(roleDefaults('releasing')).not.toContain('purchasing.approve_requests');
   });

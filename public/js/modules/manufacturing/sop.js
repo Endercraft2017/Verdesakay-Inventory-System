@@ -8,7 +8,7 @@
 App.register('sop', (view, filter) => {
   const PIPELINES = window.GuideCenter ? GuideCenter.catalog() : [...((window.GUIDE && GUIDE.pipelines) || [])];
   const topics = (window.Help && Help.topics) || [];
-  const moduleForGroup = {HR:'hr', Manufacturing:'production', Inventory:'inventory', Orders:'inventory', Accounting:'accounting', Documents:'documents', Admin:'admin', Basics:'home', Tools:'home'};
+  const moduleForGroup = {HR:'hr', Manufacturing:'production', Inventory:'inventory', Orders:'sales', Accounting:'accounting', Documents:'documents', Admin:'admin', Basics:'home', Tools:'home'};
   topics.filter(t => !t.routes.length || !App.canAccessRoute || t.routes.some(r => App.canAccessRoute(r))).forEach(t => PIPELINES.push({id:'help:'+t.id, title:t.title, tagline:t.group, module:moduleForGroup[t.group] || 'home', steps:[], gotchas:[], helpTopic:t}));
   const byId = Object.fromEntries(PIPELINES.map(p=>[p.id,p]));
 

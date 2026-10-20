@@ -3362,13 +3362,13 @@ function migrate(): void {
 
   // (SCHEMA_VERSION 60) The production screens got their own read permission (production.view);
   // they used to share inventory.view. Same once-only grant as the pay split above.
-  grantOnce('migrated_production_view_split', [['inventory.view', 'production.view']]);
+  grantOnce('migrated_production_view_split', [['inventory.view', 'production.view']], ['csr', 'releasing']);
 
   // (SCHEMA_VERSION 61) Purchase orders, goods receipts and vendor bills got their own pair
   // (purchasing.view / purchasing.manage — inventory/order-access.ts); they used orders.*.
   grantOnce('migrated_purchasing_split', [
     ['orders.view', 'purchasing.view'], ['orders.create', 'purchasing.manage'], ['orders.edit', 'purchasing.manage'],
-  ]);
+  ], ['csr', 'releasing']);
   grantOnce('migrated_purchasing_requests', [['mobile.access', 'purchasing.request']]);
 
   // 93: supplier-order managers are not automatically authorized to approve staff spending.
@@ -3383,6 +3383,28 @@ function migrate(): void {
       }
     }
     setSetting('migrated_pr_approval_authority', true);
+  }
+
+  // Sales desk split: narrow only roles that still match the former built-in bundle.
+  // Tenant-customized roles keep their explicit grants for an administrator to review.
+  if (!getSetting<boolean>('migrated_sales_desk_roles')) {
+    const baseline = ['mobile.access','messages.view','messages.send','purchasing.request'];
+    const legacy: Record<string,string[]> = {
+      releasing: [...baseline,'inventory.view','production.view','inventory.adjust','orders.view','orders.create','orders.edit','purchasing.view','purchasing.manage','forms.view','forms.upload','templates.view','delivery.run','delivery.manage'],
+      csr: [...baseline,'inventory.view','production.view','orders.view','orders.create','orders.edit','purchasing.view','purchasing.manage','forms.view','forms.upload','templates.view'],
+    };
+    for (const role of BUILTIN_ROLES.filter((r) => r.key === 'csr' || r.key === 'releasing')) {
+      const row = db.prepare('SELECT permissions FROM roles WHERE key=?').get(role.key) as {permissions:string}|undefined;
+      if (!row) continue;
+      try {
+        const current = JSON.parse(row.permissions);
+        const old = legacy[role.key];
+        if (Array.isArray(current) && old && current.length === old.length && old.every((p) => current.includes(p))) {
+          db.prepare('UPDATE roles SET permissions=?, description=? WHERE key=?').run(JSON.stringify(role.permissions),role.description,role.key);
+        }
+      } catch { /* leave an invalid customized role for admin review */ }
+    }
+    setSetting('migrated_sales_desk_roles', true);
   }
 
   // (SCHEMA_VERSION 66) Preserve surviving older uploads before the next filesystem
@@ -3657,9 +3679,10 @@ function migrate(): void {
 
 /** One-time permission split: every role and per-account grant holding `from` also gets `to`.
     Flagged in settings so an admin who later removes `to` doesn't get it back on an upgrade. */
-function grantOnce(flag: string, pairs: Array<[string, string]>): void {
+function grantOnce(flag: string, pairs: Array<[string, string]>, excludeRoles: string[] = []): void {
   if (getSetting<boolean>(flag)) return;
   for (const r of db.prepare('SELECT key, permissions FROM roles').all() as Array<{ key: string; permissions: string }>) {
+    if (excludeRoles.includes(r.key)) continue;
     let perms: string[] = [];
     try { perms = JSON.parse(r.permissions); } catch { continue; }
     const next = [...perms];

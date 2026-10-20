@@ -55,7 +55,7 @@ describe('checklist items', () => {
 });
 
 describe('GET /api/qc/queue', () => {
-  it('gives a QC inspector the first-pass units and a QA inspector nothing yet', async () => {
+  it('offers a new unit to both independent inspection desks', async () => {
     const q = await ctx.api.get('/api/qc/queue').set(bearer(qc.token));
     expect(q.status).toBe(200);
     expect(q.body.role).toBe('qc');
@@ -63,7 +63,7 @@ describe('GET /api/qc/queue', () => {
     expect(q.body.units[0]).toMatchObject({ job_order_id: jo, product_name: 'E-Bike QCV2', qc_stages: 2, last_fail: null });
     const a = await ctx.api.get('/api/qc/queue').set(bearer(qa.token));
     expect(a.body.role).toBe('qa');
-    expect(a.body.units).toHaveLength(0);
+    expect(a.body.units.map((u: { id: number }) => u.id).sort()).toEqual([...units].sort());
   });
 
   it('rejects a pass when a required item is only N/A, accepts Pass with a reading, and moves the unit to QA', async () => {
@@ -78,7 +78,7 @@ describe('GET /api/qc/queue', () => {
     ] });
     expect(ok.status).toBe(200);
     const a = await ctx.api.get('/api/qc/queue').set(bearer(qa.token));
-    expect(a.body.units.map((u: { id: number }) => u.id)).toEqual([units[0]]);
+    expect(a.body.units.map((u: { id: number }) => u.id).sort()).toEqual([...units].sort());
     expect(a.body.units[0].last_pass).toMatchObject({ stage: 1, items: 2 });
     const done = await ctx.api.get('/api/qc/queue?role=qc').set(bearer(qc.token));
     expect(done.body.completed.map((r: { unit_id: number }) => r.unit_id)).toContain(units[0]);
@@ -91,11 +91,11 @@ describe('GET /api/qc/queue', () => {
     ] });
     expect(reading.status).toBe(400);
     expect(reading.body.error).toMatch(/reading/i);
-    const mixed = await inspect(token, { unit_ids: [units[0], units[2]], result: 'pass', checklist: [
+    const mixed = await inspect(token, { unit_ids: [units[0], units[2]], inspection_stage: 1, result: 'pass', checklist: [
       { label: 'Frame and fasteners', ok: true, status: 'pass' },
     ] });
-    expect(mixed.status).toBe(400);
-    expect(mixed.body.error).toMatch(/one QC\/QA stage/i);
+    expect(mixed.status).toBe(409);
+    expect(mixed.body.code).toBe('inspection_already_passed');
   });
 
   it('stores repair details on a repair result and shows them on the reinspection unit', async () => {

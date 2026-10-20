@@ -90,8 +90,7 @@ export const BUILTIN_ROLES: RoleSeed[] = [
   { key: 'releasing', label: 'Releasing', description: 'Sale orders out the door and deliveries.',
     permissions: [
       ...BASELINE,
-      'inventory.view', 'production.view', 'inventory.adjust',
-      'orders.view', 'orders.create', 'orders.edit', 'purchasing.view', 'purchasing.manage',
+      'inventory.view', 'orders.view', 'orders.release',
       'forms.view', 'forms.upload',
       'templates.view',
       'delivery.run', 'delivery.manage',
@@ -99,8 +98,8 @@ export const BUILTIN_ROLES: RoleSeed[] = [
   { key: 'csr', label: 'Customer Service', description: 'Customers and sale orders.',
     permissions: [
       ...BASELINE,
-      'inventory.view', 'production.view',
-      'orders.view', 'orders.create', 'orders.edit', 'purchasing.view', 'purchasing.manage',
+      'inventory.view',
+      'orders.view', 'orders.create', 'orders.edit',
       'forms.view', 'forms.upload',
       'templates.view',
     ] },

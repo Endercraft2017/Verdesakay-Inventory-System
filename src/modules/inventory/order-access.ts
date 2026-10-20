@@ -16,13 +16,13 @@ export function orderPermission(type: OrderType | string, action: OrderAction): 
 }
 
 export function canOnOrder(user: Pick<AuthUser, 'permissions'>, type: OrderType | string, action: OrderAction): boolean {
-  return moduleEnabled(type === 'purchase' ? 'purchasing' : 'inventory') && user.permissions.includes(orderPermission(type, action));
+  return moduleEnabled(type === 'purchase' ? 'purchasing' : 'sales') && user.permissions.includes(orderPermission(type, action));
 }
 
 /** Order types this user may list. */
 export function visibleOrderTypes(user: Pick<AuthUser, 'permissions'>): OrderType[] {
   const out: OrderType[] = [];
-  if (moduleEnabled('inventory') && user.permissions.includes('orders.view')) out.push('sale', 'job');
+  if (moduleEnabled('sales') && user.permissions.includes('orders.view')) out.push('sale', 'job');
   if (moduleEnabled('purchasing') && user.permissions.includes('purchasing.view')) out.push('purchase');
   return out;
 }

@@ -47,11 +47,12 @@ describe('production.view', () => {
     expect(prod.body).not.toHaveProperty('inventory');
   });
 
-  it('is in every built-in role that can see inventory', async () => {
+  it('keeps production screens separate from CSR and releasing stock reads', async () => {
     const { BUILTIN_ROLES } = await import('../src/shared/permissions');
     for (const r of BUILTIN_ROLES) {
-      if (r.permissions.includes('inventory.view')) expect(r.permissions, r.key).toContain('production.view');
+      if (r.permissions.includes('inventory.view') && !['csr', 'releasing'].includes(r.key)) expect(r.permissions, r.key).toContain('production.view');
     }
+    for (const key of ['csr', 'releasing']) expect(BUILTIN_ROLES.find((r) => r.key === key)?.permissions).not.toContain('production.view');
   });
 
   it('the upgrade gives it once to whoever could see inventory', async () => {
