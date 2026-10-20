@@ -871,3 +871,13 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 .m-task-confirm h2{font-size:20px;margin:0 0 14px}.m-task-confirm blockquote{margin:12px 0;padding:12px;border-left:3px solid var(--m-border);border-radius:8px;background:var(--m-surface-2);overflow-wrap:anywhere}
 
 .m-task-row.done[aria-busy=true],.m-task-row.done:has([role=alert]){opacity:1}
+
+/* Notes keep checklist feedback beside its card and reuse the personal-tool dialogs. */
+.m-note-feedback{font-size:13px;margin:10px 0 0;overflow-wrap:anywhere}
+.m-note-feedback button{display:block;margin-top:8px}
+.m-note-confirm .m-actions{gap:10px}
+.m-note-schedule>span{display:flex;align-items:center;gap:10px;min-height:44px}
+#m-note-scheduled{width:24px;height:24px;flex-shrink:0;margin:0}
+
+.m-note-confirm [data-confirm]{background:var(--m-danger);color:#fff}
+:root[data-theme=dark] .m-note-confirm [data-confirm]{background:var(--m-error-bg);color:var(--m-error-text);border:1px solid var(--m-danger)}

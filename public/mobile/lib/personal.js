@@ -8,9 +8,9 @@
   window.mPersonalDraft = {
     arm: function (dirty,busy,options) { active={hash:location.hash,dirty:dirty,busy:busy,options:options}; },
     clear: function () { active=null; },
-    allow: function () {
+    allow: function (nextHash) {
       if (!active) return true;
-      var entry = active, destination = location.hash;
+      var entry = active, destination = nextHash || location.hash;
       if (entry.busy?.()) {
         mToast(entry.options?.busyText?.() || 'Please wait for saving to finish.');
         history.replaceState(null, '', entry.hash); return false;

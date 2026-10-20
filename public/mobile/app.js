@@ -50,7 +50,7 @@ window.MApp = (function () {
     }
     return '#/' + name + q;
   }
-  function go(name, params) { if(window.mPersonalDraft && !mPersonalDraft.allow()) return; location.hash = hashFor(name, params); }
+  function go(name, params) { var destination = hashFor(name, params); if(window.mPersonalDraft && !mPersonalDraft.allow(destination)) return; location.hash = destination; }
   function back() { if (history.length > 1) history.back(); else go('home'); }
 
   function parseHash() {
