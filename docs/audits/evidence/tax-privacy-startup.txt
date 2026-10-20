@@ -1,0 +1,2 @@
+PASS: actual server.ts returns only the bounded BIR 2316 identity to accounting, preserves formatted birth date and no-store, refuses HR and anonymous access.
+Disposable cloud-mode catalogs only; no hosted, provider, real employee or tax-filing changes.

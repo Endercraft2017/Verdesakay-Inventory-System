@@ -1033,6 +1033,9 @@ accounting's public interface), not a circular dependency.
 journal entry is `merge` (JV numbers from the host's block); a petty-cash entry is `physical`; everything
 else is a company-wide `claim`. Posting, reversing, closing or voiding what the cloud already did keeps the
 outcome, flagged (D6). Posting into a period the cloud closed stays refused (an accounting control).
+**Tax privacy (20 October 2026):** BIR 2316 detail explicitly projects its tax-template employee
+identity; no whole HR/pay row or automatic future-column exposure. `accounting.view` remains
+the statutory-filing gate. See [contract and evidence](../operations/accounting-tax-privacy.md).
 **Status:** working.
 
 ## modules/ai

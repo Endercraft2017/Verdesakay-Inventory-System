@@ -23,6 +23,9 @@ upsertPlatformUser('browser-operator', 'Synthetic browser operator password', 'B
 const db = await import('../../src/shared/db');
 db.init();
 const { hashPassword } = await import('../../src/shared/password-hash');
+// Synthetic accounting-only identity: verify tax printing without general HR/pay access.
+db.run("INSERT INTO users(username,full_name,role,password_hash) VALUES('tax-privacy-accountant','Synthetic Tax Accountant','accounting',?)",hashPassword('tax-privacy-browser-test-only'));
+db.run("INSERT INTO employees(employee_no,name,position,tin_no,birth_date,daily_rate,photo) VALUES('TAX-PRIVACY-BROWSER','Synthetic Browser Tax Employee','Clerk','SYNTHETIC-TAX-TIN','1991-03-07',1234,'private-browser-photo.jpg')");
 const { credentialStamp } = await import('../../src/shared/account-recovery');
 const { encryptSecret } = await import('../../src/shared/secrets');
 const { newTotpSecret } = await import('../../src/shared/totp');

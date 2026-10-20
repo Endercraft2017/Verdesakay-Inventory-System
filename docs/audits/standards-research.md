@@ -341,3 +341,13 @@ is checked before execution; the client captures actor/server/view across confir
 source-version precondition and short-lived session reauthentication still do not constitute
 a unique one-use transaction credential. Known sent acceptance remains evidence even if the
 actor/source changes afterward. Interrupted runs are retained and replaced by final verification.
+
+## BIR 2316 employee projection — 20 October 2026
+
+The accounting detail endpoint now returns a bounded identity projection instead of the
+whole employee row. Base pay rates, deduction overrides, leave balances, photos and future
+unrelated columns are excluded. Statutory figures and the accounting permission remain.
+See [field contract, regression scope and remaining work](../operations/accounting-tax-privacy.md).
+Research: [OWASP API3:2023 property authorization](https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/),
+retrieved 20 October 2026: explicitly select necessary response properties. This scoped fix
+does not establish compliance or close broader export, retention or template-variable controls.

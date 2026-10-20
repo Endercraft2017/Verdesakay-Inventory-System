@@ -117,3 +117,13 @@ The desktop reviews the preview total/target and refuses account/company/view ch
 sending. A changed source version after review is rejected before provider work; the stamp is
 a precondition, not a one-use authorization credential. An interrupted preliminary full run
 was stopped to include these confirmation safeguards; only the final completed run counts.
+
+## BIR 2316 employee projection — 20 October 2026
+
+The accounting detail endpoint now returns a bounded identity projection instead of the
+whole employee row. Base pay rates, deduction overrides, leave balances, photos and future
+unrelated columns are excluded. Statutory figures and the accounting permission remain.
+See [field contract, regression scope and remaining work](../operations/accounting-tax-privacy.md).
+Research: [OWASP API3:2023 property authorization](https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/),
+retrieved 20 October 2026: explicitly select necessary response properties. This scoped fix
+does not establish compliance or close broader export, retention or template-variable controls.

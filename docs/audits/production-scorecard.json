@@ -191,7 +191,7 @@
     {
       "id": "AUTH-03",
       "severity": "High",
-      "requirement": "Access tokens are short-lived (≤30 minutes); refresh tokens are HttpOnly, expire, rotate on every use, and reuse revokes the token family.",
+      "requirement": "Access tokens are short-lived (\u226430 minutes); refresh tokens are HttpOnly, expire, rotate on every use, and reuse revokes the token family.",
       "status": "FAIL",
       "evidence": "Web sessions use HttpOnly cookies; native clients now have a server-bound OS-vault bridge and memory-only bearer use. Ordinary sessions still last 12 hours without rotating short-lived access/refresh families. Actual native OS/device validation is pending.",
       "scenario": "A stolen active bearer or compromised running client can reuse a session until expiry or revocation. At-rest native protection does not shorten server session lifetime.",
@@ -1147,14 +1147,14 @@
       "severity": "Medium",
       "requirement": "Queries select only required columns, and list views do not issue N+1 queries.",
       "status": "FAIL",
-      "evidence": "src/core/auth.routes.ts:31 and many route lists use full-row queries; no query-count budget is enforced.",
+      "evidence": "src/core/auth.routes.ts:31 and many route lists use full-row queries; no query-count budget is enforced. BIR 2316 detail now explicitly projects its bounded tax-template identity, with accounting-only and future-column regression coverage; this scoped fix does not close wider full-row/N+1 findings. See operations/accounting-tax-privacy.md and evidence/tax-privacy-verification.json.",
       "scenario": "Growing records or a newly added sensitive column can increase payload/query cost or exposure unless each response is rechecked.",
       "fix": "Select explicit response columns on hot paths and add measured query-count budgets for representative list screens."
     },
     {
       "id": "DATA-04",
       "severity": "High",
-      "requirement": "Database connections are pooled; serverless runtimes use a transaction-mode pooler; per-instance pool size × instances stays under the database limit.",
+      "requirement": "Database connections are pooled; serverless runtimes use a transaction-mode pooler; per-instance pool size \u00d7 instances stays under the database limit.",
       "status": "N/A",
       "evidence": "Persistent node:sqlite connections are cached per tenant; no PostgreSQL/serverless connection pool. Deployment must remain one authoritative process per SQLite store; production topology unverified.",
       "scenario": "",
@@ -1235,7 +1235,7 @@
     {
       "id": "DATA-13",
       "severity": "Low",
-      "requirement": "There is a documented, evidence-driven scaling path (indexes → partitioning → sharding / platform change) tied to monitoring thresholds.",
+      "requirement": "There is a documented, evidence-driven scaling path (indexes \u2192 partitioning \u2192 sharding / platform change) tied to monitoring thresholds.",
       "status": "UNVERIFIED",
       "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
@@ -1298,7 +1298,7 @@
     {
       "id": "CACHE-07",
       "severity": "Medium",
-      "requirement": "Scaling changes are made in order, on evidence (connections → queries → read/write split), with a written rationale.",
+      "requirement": "Scaling changes are made in order, on evidence (connections \u2192 queries \u2192 read/write split), with a written rationale.",
       "status": "UNVERIFIED",
       "evidence": "Repository/local evidence and read-only Railway metadata do not establish this complete operational control; see second-pass-audit.md for inspected settings and remaining evidence.",
       "scenario": "",
@@ -2110,9 +2110,9 @@
   "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
   "latest_follow_up": {
     "date": "2026-10-20",
-    "scope": "Manual accounting export freshness, reviewed source/destination preconditions, actor/view binding and shared commercial-line projection",
-    "base_commit": "affa182adba8ea3b66cd63b484fca7d21a68ae2a",
-    "verification": "evidence/manual-export-verification.json",
+    "scope": "BIR 2316 employee field minimization, accounting-only access and seeded-template regression",
+    "base_commit": "7250cbb07092d5594b680b11f3835e3e61952fb5",
+    "verification": "evidence/tax-privacy-verification.json",
     "whole_control_statuses_changed": false
   }
 }

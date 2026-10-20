@@ -1,6 +1,11 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 20 October 2026 — manual QuickBooks exports now require recent identity
+Latest follow-up: 20 October 2026 — the BIR 2316 detail response now explicitly selects its
+bounded tax-template identity, closing a reproduced accounting-only disclosure of unrelated
+HR/pay settings. See [tax privacy](../operations/accounting-tax-privacy.md). Broader export,
+retention and authorization controls remain open; whole-control counts are unchanged.
+
+Previous follow-up: 20 October 2026 — manual QuickBooks exports now require recent identity
 proof and reviewed destination/source-version preconditions, with live actor/order checks before further
 provider calls. Known accepted receipts are preserved; CKD components are excluded from
 commercial pricing. A new sensitive-action inventory documents offline financial/payroll,

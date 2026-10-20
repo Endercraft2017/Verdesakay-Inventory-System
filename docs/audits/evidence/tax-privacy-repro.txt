@@ -1,0 +1,148 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/accounting-privacy.test.ts > BIR 2316 employee projection > allows an accountant without general HR/payroll access to print the bounded tax identity
+{"timestamp":"2026-10-20T01:00:31.275Z","level":"info","event":"http_request","request_id":"f47bd8f7-b621-4668-8583-e8537d6626b5","tenant":"default","method":"GET","path":"/api/hr/employees","status":403,"duration_ms":4}
+
+stdout | tests/accounting-privacy.test.ts > BIR 2316 employee projection > allows an accountant without general HR/payroll access to print the bounded tax identity
+{"timestamp":"2026-10-20T01:00:31.281Z","level":"info","event":"http_request","request_id":"c1992e43-23f2-4af4-b5a5-38e98016b2a0","tenant":"default","method":"GET","path":"/api/accounting/bir-2316/1","status":200,"duration_ms":3}
+
+stdout | tests/accounting-privacy.test.ts > BIR 2316 employee projection > does not disclose a future employee column automatically
+{"timestamp":"2026-10-20T01:00:31.307Z","level":"info","event":"http_request","request_id":"e9a09489-a1b0-4a6e-8555-22fb07096a86","tenant":"default","method":"GET","path":"/api/accounting/bir-2316/1","status":200,"duration_ms":1}
+
+stdout | tests/accounting-privacy.test.ts
+{"timestamp":"2026-10-20T01:00:29.153Z","level":"info","event":"http_request","request_id":"f7f70437-da1e-41ed-8abb-c8067a7892e8","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":502}
+
+stdout | tests/accounting-privacy.test.ts
+{"timestamp":"2026-10-20T01:00:29.695Z","level":"info","event":"http_request","request_id":"d31726de-c1be-4b2a-8afe-a239f3d1e9a7","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":535}
+
+stdout | tests/accounting-privacy.test.ts
+{"timestamp":"2026-10-20T01:00:30.421Z","level":"info","event":"http_request","request_id":"32f30266-9b40-45c2-856d-50686d45beda","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":723}
+
+stdout | tests/accounting-privacy.test.ts
+{"timestamp":"2026-10-20T01:00:30.727Z","level":"info","event":"http_request","request_id":"4e292014-9d74-4997-a13e-f118b54b64cb","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":304}
+
+stdout | tests/accounting-privacy.test.ts
+{"timestamp":"2026-10-20T01:00:31.266Z","level":"info","event":"http_request","request_id":"195bff44-9774-4fa8-a873-ef622d06021b","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":536}
+
+ ❯ tests/accounting-privacy.test.ts (5 tests | 2 failed) 5530ms
+     × allows an accountant without general HR/payroll access to print the bounded tax identity 20ms
+     × does not disclose a future employee column automatically 6ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/accounting-privacy.test.ts > BIR 2316 employee projection > allows an accountant without general HR/payroll access to print the bounded tax identity
+AssertionError: expected [ 'always_whole_day', …(37) ] to deeply equal [ 'birth_date', …(10) ]
+
+- Expected
++ Received
+
+  [
++   "always_whole_day",
+    "birth_date",
+    "birth_date_mdy",
++   "civil_status",
++   "clock_anywhere",
++   "contribution_basis",
++   "created_at",
++   "daily_rate",
++   "deduct_pagibig",
++   "deduct_philhealth",
++   "deduct_sss",
++   "deduct_withholding_tax",
++   "default_shift_id",
++   "department_id",
+    "department_name",
+    "employee_no",
+    "id",
++   "late_exempt",
++   "leave_days_per_year",
++   "leave_days_used",
++   "monthly_rate",
+    "name",
++   "ot_exempt",
+    "pagibig_no",
++   "pagibig_override",
+    "philhealth_no",
++   "philhealth_override",
++   "photo",
+    "position",
++   "rate_type",
++   "rest_days",
+    "sss_no",
++   "sss_override",
++   "start_date",
++   "status",
+    "tin_no",
++   "user_id",
++   "withholding_tax_override",
+  ]
+
+ ❯ tests/accounting-privacy.test.ts:19:49
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/accounting-privacy.test.ts > BIR 2316 employee projection > does not disclose a future employee column automatically
+AssertionError: expected [ 'always_whole_day', …(38) ] to deeply equal [ 'birth_date', …(10) ]
+
+- Expected
++ Received
+
+  [
++   "always_whole_day",
++   "audit_private_fixture",
+    "birth_date",
+    "birth_date_mdy",
++   "civil_status",
++   "clock_anywhere",
++   "contribution_basis",
++   "created_at",
++   "daily_rate",
++   "deduct_pagibig",
++   "deduct_philhealth",
++   "deduct_sss",
++   "deduct_withholding_tax",
++   "default_shift_id",
++   "department_id",
+    "department_name",
+    "employee_no",
+    "id",
++   "late_exempt",
++   "leave_days_per_year",
++   "leave_days_used",
++   "monthly_rate",
+    "name",
++   "ot_exempt",
+    "pagibig_no",
++   "pagibig_override",
+    "philhealth_no",
++   "philhealth_override",
++   "photo",
+    "position",
++   "rate_type",
++   "rest_days",
+    "sss_no",
++   "sss_override",
++   "start_date",
++   "status",
+    "tin_no",
++   "user_id",
++   "withholding_tax_override",
+  ]
+
+ ❯ tests/accounting-privacy.test.ts:37:78
+     35|   const {run}=await import('../src/shared/db');run("ALTER TABLE employ…
+     36|   const res=await ctx.api.get(`/api/accounting/bir-2316/${employeeId}`…
+     37|   expect(res.status).toBe(200);expect(Object.keys(res.body.employee).s…
+       |                                                                              ^
+     38|   expect(JSON.stringify(res.body)).not.toContain('not-for-tax-report');
+     39|  });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 3 passed (5)
+   Start at  01:00:25
+   Duration  5.75s (transform 1.52s, setup 30ms, import 80ms, tests 5.53s, environment 0ms)

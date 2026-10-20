@@ -1,0 +1,45 @@
+{
+  "date": "2026-10-20",
+  "base_commit": "7250cbb07092d5594b680b11f3835e3e61952fb5",
+  "scope": "BIR 2316 bounded employee projection",
+  "full_run": {
+    "files_passed": 311,
+    "files_failed": 0,
+    "tests_passed": 3260,
+    "tests_failed": 0,
+    "duration_seconds": 635.33
+  },
+  "focused_run": {
+    "files_passed": 4,
+    "files_failed": 0,
+    "tests_passed": 184,
+    "tests_failed": 0,
+    "duration_seconds": 24.97
+  },
+  "product_reproduction": {
+    "files_passed": 0,
+    "files_failed": 1,
+    "tests_passed": 3,
+    "tests_failed": 2,
+    "duration_seconds": 5.75
+  },
+  "new_api_tests": 5,
+  "playwright": {
+    "passed": 35,
+    "failed": 0,
+    "new_cases": 1,
+    "duration_seconds": 88.33797
+  },
+  "typecheck": "passed",
+  "actual_server": "passed: bounded accounting-only response, no-store, date formatting, HR/anonymous denial",
+  "preliminary_sandbox_attempt": "HTTP listen EPERM; no cases executed; reran with local-server permissions",
+  "schema": "unchanged; db:types not required or run",
+  "secrets": "staged scan clean; commit hook rechecks final files",
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "limits": [
+    "Other reports, custom variables, payroll export/email and cross-tenant adversarial matrix are not closed by this route fix",
+    "Existing template identity fields preserved for compatibility, not asserted legally mandatory",
+    "No printer/device, tax agency, hosted or legal compliance acceptance inferred"
+  ]
+}

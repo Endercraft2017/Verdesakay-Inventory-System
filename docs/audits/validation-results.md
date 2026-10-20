@@ -892,3 +892,36 @@ pipelines, readiness, handoff and AUTHZ-15 evidence. Whole-control statuses rema
 approval design, controlled reconciliation, field minimization, real provider/currency/tax/
 accountant acceptance, native/hosting/restore/capacity/alerts and the wider security/privacy/AI
 and dependency/governance gates. Owner participation remains last.
+
+
+## BIR 2316 employee privacy — 20 October 2026
+
+Base 7250cbb07092d5594b680b11f3835e3e61952fb5. Reproduced excessive employee
+fields with an accounting-only user, including automatic disclosure of a new
+unrelated column. Explicit SQL projection preserves the template's identity fields
+and tax figures, while excluding the unrelated HR/pay record.
+
+| Check | Completed result |
+|---|---|
+| Full regression | 311 files / 3260 tests passed, 635.33s |
+| Focused | 4 files / 184 tests passed, 24.97s; 5 new API cases |
+| Playwright | 35 passed, 88.338s; 1 new accounting-only response/template case |
+| TypeScript | Passed |
+| Actual server.ts | Bounded tax response, no-store, formatted DOB, HR/anonymous denial |
+| Schema/dependencies | Unchanged; db:types not required/run |
+| Staged secrets and whitespace | Clean; commit hook rechecks final staged files |
+
+The initial sandbox test could not bind an HTTP server (EPERM) and executed no
+cases. With local-server permission, the pre-fix product reproduction completed
+with 2 failing/3 passing cases; all focused cases passed after the fix. The browser
+focused case and complete browser run both completed successfully.
+
+[Verification manifest](evidence/tax-privacy-verification.json),
+[full log](evidence/tax-privacy-full.txt),
+[focused log](evidence/tax-privacy-focused.txt),
+[reproduction](evidence/tax-privacy-repro.txt),
+[browser JSON](evidence/tax-privacy-browser.json),
+[startup](evidence/tax-privacy-startup.txt), and
+[contract/limits](../operations/accounting-tax-privacy.md).
+Broader privacy/export/retention work remains; scorecard statuses and release hold
+are unchanged. No deployment/provider/customer data changes were made.

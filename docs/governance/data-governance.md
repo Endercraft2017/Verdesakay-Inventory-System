@@ -149,3 +149,13 @@ company/environment/generation metadata needed to bind their request; provider c
 remain private. Minimal known acceptance receipts/links survive actor revocation because a
 sent provider write cannot be recalled. Unknown outcomes are not cleared or resent. Existing
 accounting retention, confidentiality and reconciliation duties remain. See ../operations/manual-quickbooks-exports.md.
+
+## BIR 2316 employee projection — 20 October 2026
+
+The accounting detail endpoint now returns a bounded identity projection instead of the
+whole employee row. Base pay rates, deduction overrides, leave balances, photos and future
+unrelated columns are excluded. Statutory figures and the accounting permission remain.
+See [field contract, regression scope and remaining work](../operations/accounting-tax-privacy.md).
+Research: [OWASP API3:2023 property authorization](https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/),
+retrieved 20 October 2026: explicitly select necessary response properties. This scoped fix
+does not establish compliance or close broader export, retention or template-variable controls.

@@ -126,11 +126,14 @@ router.get('/bir-2316', (req, res) => {
   res.json({ year, company: companyProfile(), rows });
 });
 
-// GET /api/accounting/bir-2316/:employeeId?year= — one employee's full figures + 201 data.
+// GET /api/accounting/bir-2316/:employeeId?year= — figures + bounded tax-template identity.
 router.get('/bir-2316/:employeeId', (req, res) => {
   const year = yearOf(req.query.year);
   const emp = queryOne<Record<string, unknown> & { name: string }>(
-    `SELECT e.*, d.name AS department_name FROM employees e
+    // accounting.view permits statutory filings, not the employee's full HR/pay record.
+    // Keep an explicit projection so future employee columns cannot silently leak here.
+    `SELECT e.id, e.employee_no, e.name, e.position, e.tin_no, e.birth_date,
+       e.sss_no, e.philhealth_no, e.pagibig_no, d.name AS department_name FROM employees e
      LEFT JOIN departments d ON d.id = e.department_id WHERE e.id = ?`,
     Number(req.params.employeeId)
   );

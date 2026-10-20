@@ -705,7 +705,9 @@ for the internet (it uses the company's mail server, which only the cloud has).
 5. **Statutory filing** (`accounting`, under Tax & Compliance) — `payroll`'s
    `ph-2316.ts`/`ph-alphalist.ts`/`ph-contributions.ts`/`ph-vat-ewt.ts` compute the
    filings (2316, 1601-C/1604-C, Alphalist, 0619-E, 2550M, SSS/PhilHealth/Pag-IBIG
-   schedules); 13th-month and final-pay stay under `hr`/`payroll`, not filed as
+   schedules). BIR 2316 detail projects only the documented tax-template identity (see
+   `docs/operations/accounting-tax-privacy.md`); base rates, deduction overrides and other HR
+   configuration are not included. The gate remains `accounting.view`. 13th-month and final-pay stay under `hr`/`payroll`, not filed as
    compliance forms. Agency schedules count a payslip toward the month its cutoff ends in
    (SSS IRR), not its pay date.
 
