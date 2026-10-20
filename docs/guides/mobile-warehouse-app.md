@@ -154,3 +154,24 @@ After both passes, the RTS clerk opens its eligible intake, prints and attaches
 the unit QR sticker, scans that sticker, and confirms Products In. Only that
 receipt adds available RTS stock. Recover an interrupted intake through the same
 entry; retry the original saved attempt rather than entering the unit again.
+
+## Latest inspection, receiving and personal tools
+
+- **QC / QA / RTS** first groups eligible work by job or legacy intake. Pick the
+  group, then the unit card. Empty means no work currently eligible for that stage.
+- Before inspection, match the physical identifier and job/intake. QR stickers are
+  not required yet. At RTS, print, attach and scan the sticker before confirming stock-in.
+- **Enter or resume pre-system unit** captures existing goods for mandatory QC then
+  QA without issuing BOM parts or adding stock. See the [intake roadmap](workflow-roadmaps.md#pre-system-physical-units).
+- **Tasks & reminders** groups Overdue, Today, Upcoming, No date and Done. Wait for
+  Updating task to finish; Try again repeats the intended failed update. Relative
+  reminders need a due date; custom reminders need their own time. More actions →
+  Delete task asks for confirmation and retains any linked note.
+- **Messages** provides reply/reaction actions and eligible own-message editing/removal.
+  Check upload, reaction and send feedback before retrying an uncertain action.
+- **Internal Purchase Requests** currently uses the desktop request screen. Do not
+  confuse spending budget/receipts/liquidation with the phone's supplier Receive PR.
+
+Notes-list checklist ticks now save immediately. Wait for Saving checklist; Try again
+repeats a failed tick. Opening the note editor and changing its content still needs
+Save. Shared checklist/task updates are personal work tracking, not inventory actions.

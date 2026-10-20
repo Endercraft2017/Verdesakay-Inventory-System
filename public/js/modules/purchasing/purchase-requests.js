@@ -30,7 +30,7 @@ App.register('purchase-requests', async (view) => {
     const actual = kind === 'liquidation';
     const lines = actual && request.purchases.length ? request.purchases.map((x) => ({ name: x.name, quantity: x.quantity, price: x.actual_unit_price }))
       : actual ? request.items.map((x) => ({ name: x.name, quantity: x.quantity, price: 0 })) : [{ name: '', quantity: 1, price: '' }];
-    UI.modal({ title: actual ? `Liquidate ${request.number}` : 'New purchase request', size: 'lg', confirmText: actual ? 'Submit liquidation' : 'Submit request',
+    UI.modal({ helpTopic: 'purchase-requests', title: actual ? `Liquidate ${request.number}` : 'New purchase request', size: 'lg', confirmText: actual ? 'Submit liquidation' : 'Submit request',
       bodyHTML: `<p class="muted">${actual ? `Record what was actually bought. You may add other items if the total stays within ${pesos(request.approved_budget)}. Upload receipts on the request before submitting.` : 'Items can be new or outside the inventory catalog. Enter a realistic expected price; this is a budget, not the final cost.'}</p>
         ${actual ? '' : '<div class="form-field"><label>Reason for purchase *</label><textarea data-reason rows="2" maxlength="2000"></textarea></div><div class="form-field"><label>Needed by (optional)</label><input data-date type="date"></div>'}
         <div data-lines></div><button type="button" class="btn secondary" data-add>Add item</button>
@@ -75,7 +75,7 @@ App.register('purchase-requests', async (view) => {
     try { r = await API.get(`${base}/${id}`); } catch (e) { UI.toast(e.message,'error'); return; }
     const isBuyer = canReview || r.buyer_id === App.getMe()?.id;
     const lineTable = (items, price) => `<div class="table-wrap"><table><thead><tr><th>Item</th><th>Qty</th><th>Unit price</th><th>Total</th></tr></thead><tbody>${items.map((x) => `<tr><td>${esc(x.name)}</td><td>${esc(x.quantity)}</td><td>${pesos(x[price])}</td><td>${pesos(x.quantity*x[price])}</td></tr>`).join('')}</tbody></table></div>`;
-    const m = UI.modal({ title: r.number + ' · ' + r.status.replaceAll('_',' '), size:'lg', confirmText:null, cancelText:'Close',
+    const m = UI.modal({ helpTopic: 'purchase-requests', title: r.number + ' · ' + r.status.replaceAll('_',' '), size:'lg', confirmText:null, cancelText:'Close',
       bodyHTML: `<p>${esc(r.reason)}</p><p class="muted">Needed by ${esc(r.needed_by || 'unspecified')}</p>
         <h4>Requested · ${pesos(r.requested_budget)}</h4>${lineTable(r.items,'estimated_unit_price')}
         ${r.approved_budget != null ? `<p><strong>Approved budget: ${pesos(r.approved_budget)}</strong> · ${r.purchase_mode === 'requester_cash' ? 'Cash to requester' : 'Assigned buyer'} · Buyer: ${esc(r.buyer_name || '—')} · Approved by ${esc(r.decided_by_name || '—')}</p>` : ''}
@@ -113,7 +113,7 @@ App.register('purchase-requests', async (view) => {
   async function approve(r) {
     let buyers;
     try { buyers = await API.get(base + '/buyers'); } catch (e) { UI.toast(e.message,'error'); return; }
-    UI.modal({ title:'Approve '+r.number, confirmText:'Approve budget', bodyHTML:
+    UI.modal({ helpTopic: 'purchase-requests', title:'Approve '+r.number, confirmText:'Approve budget', bodyHTML:
       `<p class="muted">Approval allows spending up to this overall amount. Choose who will buy; the request stays open until receipts and liquidation are reviewed.</p>
        <div class="form-field"><label>Approved budget *</label><input data-budget type="number" min="0.01" step="0.01" value="${esc(r.requested_budget)}"></div>
        <div class="form-field"><label>Purchase arrangement *</label><select data-mode><option value="requester_cash">Give cash to requester</option><option value="assigned_buyer">Assign purchasing personnel</option></select></div>
@@ -130,14 +130,14 @@ App.register('purchase-requests', async (view) => {
     });
   }
   function noteDecision(r, action) {
-    UI.modal({ title:action === 'reject' ? 'Reject '+r.number : 'Return liquidation for correction', confirmText:action === 'reject' ? 'Reject request' : 'Return to buyer',
+    UI.modal({ helpTopic: 'purchase-requests', title:action === 'reject' ? 'Reject '+r.number : 'Return liquidation for correction', confirmText:action === 'reject' ? 'Reject request' : 'Return to buyer',
       bodyHTML:'<div class="form-field"><label>Reason *</label><textarea data-note rows="3" maxlength="2000"></textarea></div>',
       onConfirm:async(ov,showErr)=>{ const note=ov.querySelector('[data-note]').value.trim(); if(note.length<3){showErr('Give a reason.');return false;}
         try{await API.post(`${base}/${r.id}/${action}`,{note});UI.toast('Decision recorded');load();}catch(e){showErr(e.message);return false;} },
     });
   }
   function cash(r) {
-    UI.modal({ title:'Record cash issued · '+r.number, confirmText:'Record cash handoff', bodyHTML:
+    UI.modal({ helpTopic: 'purchase-requests', title:'Record cash issued · '+r.number, confirmText:'Record cash handoff', bodyHTML:
       `<p class="muted">Record the amount physically given to the requester. This can be less than the approved budget; liquidation will reconcile the difference.</p>
        <div class="form-field"><label>Cash given *</label><input data-amount type="number" min="0.01" step="0.01" value="${esc(r.approved_budget)}"></div>`,
       onConfirm:async(ov,showErr)=>{const amount=Number(ov.querySelector('[data-amount]').value);if(!Number.isFinite(amount)||amount<=0||amount>r.approved_budget){showErr('Amount must be within the approved budget.');return false;}
@@ -145,7 +145,7 @@ App.register('purchase-requests', async (view) => {
     });
   }
   function uploadReceipt(r) {
-    UI.modal({ title:'Upload receipt · '+r.number, confirmText:'Upload receipt', bodyHTML:
+    UI.modal({ helpTopic: 'purchase-requests', title:'Upload receipt · '+r.number, confirmText:'Upload receipt', bodyHTML:
       '<p class="muted">Upload a photo or PDF of the receipt, up to 8 MB.</p><div class="form-field"><label>Receipt file *</label><input type="file" data-file accept="image/jpeg,image/png,image/webp,application/pdf"></div>',
       onConfirm:async(ov,showErr)=>{const f=ov.querySelector('[data-file]').files[0];if(!f){showErr('Choose a receipt file.');return false;}
         const fd=new FormData();fd.append('file',f);try{await API.upload(`${base}/${r.id}/receipts`,fd);UI.toast('Receipt uploaded','success');load();}catch(e){showErr(e.message);return false;} },
@@ -154,7 +154,7 @@ App.register('purchase-requests', async (view) => {
   function close(r) {
     const change = r.purchase_mode === 'requester_cash' ? Math.max(0,Math.round((r.cash_issued-r.actual_total)*100)/100) : 0;
     const reimburse = r.purchase_mode === 'requester_cash' ? Math.max(0,Math.round((r.actual_total-r.cash_issued)*100)/100) : 0;
-    UI.modal({ title:'Close '+r.number, confirmText:'Confirm liquidation & close', bodyHTML:
+    UI.modal({ helpTopic: 'purchase-requests', title:'Close '+r.number, confirmText:'Confirm liquidation & close', bodyHTML:
       `<p>Review every purchased item and receipt before closing. Actual spending: <strong>${pesos(r.actual_total)}</strong>.</p>
        ${r.purchase_mode === 'requester_cash' ? `<p>Change returned: <strong>${pesos(change)}</strong>; reimbursement paid: <strong>${pesos(reimburse)}</strong>.</p>
          <label><input type="checkbox" data-cash-check> I confirm the change was received and any reimbursement was paid.</label>` : ''}

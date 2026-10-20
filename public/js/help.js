@@ -121,7 +121,7 @@
     },
     {
       id: 'kiosk', title: 'Time-in Kiosk', group: 'HR', routes: ['hr-kiosk'],
-      html: `<p>HR → Time Keeping → Time-in Kiosk records live attendance punches on the office monitor.</p><ol><li>If this PC needs approval, ask an HR manager to approve it as an office kiosk.</li><li>Allow camera access. Employees scan the rotating QR from the phone app, or enter their employee number on the kiosk.</li><li>Check the displayed confirmation after each punch.</li><li>Field Work records separate departures and returns; it does not change payroll hours. Import or reconcile attendance in Time Keeping for payroll.</li></ol>`,
+      html: `<p>HR → Time Keeping → Time-in Kiosk records live attendance punches on the office monitor.</p><ol><li>If this PC needs approval, ask an HR manager to approve it as an office kiosk.</li><li>Use the displayed QR or employee-number action supported by this kiosk. Employees follow the phone time-clock prompts for required photos.</li><li>Check the displayed confirmation and time after each punch. Authorized kiosk cards show punch photos; No photo or Unavailable does not by itself mean the punch was absent.</li><li>Field Work records separate departures and returns; it does not change payroll hours. Import or reconcile attendance in Time Keeping for payroll.</li></ol>`,
     },
     {
       id: 'daily-report', title: 'Daily Report', group: 'HR', routes: ['hr-daily-report'],
@@ -365,7 +365,7 @@
     },
     {
       id: 'purchasing', title: 'Purchasing — receiving & vendor bills', group: 'Orders',
-      routes: ['purchasing', 'purchase-requests'], html: `
+      routes: ['purchasing'], html: `
         <p>Purchasing turns a <b>Purchase Order</b> into a controlled flow:</p>
         <p><b>PO → Goods Receipt → Vendor Bill</b>, with a <b>3-way match</b> before any
         bill is approved for payment.</p>
@@ -396,14 +396,14 @@
               it to draft.</li>
         </ul>
         <p><b>Internal Purchase Requests</b> are separate: staff propose items and a budget;
-        purchasing approves cash to the requester or assigns a buyer. The buyer uploads receipts
-        and actual purchases, then purchasing checks liquidation and closes the request. A PR
+        an authorized internal-request approver (purchasing.approve_requests) approves a budget and chooses requester cash or a buyer. The buyer uploads receipts
+        and actual purchases, then the internal-request approver checks liquidation and closes the request. A PR
         does not create a supplier order or post stock. The phone's old <b>Receive PR</b> action
         handles supplier deliveries, not these internal spending requests.</p>
         <p>Use the <b>Match tolerance</b> button on Goods Receipts or Vendor Bills to review price percentage,
-        flat-peso and quantity tolerances. Editing and saving require <i>orders.edit</i>; the price percentage defaults to 2%.</p>
+        flat-peso and quantity tolerances. Editing and saving require <i>purchasing.manage</i>; the price percentage defaults to 2%.</p>
         <p><b>Who can do what:</b> receiving needs <i>Adjust inventory</i>; raising and
-        approving bills needs <i>Edit orders</i> — so the warehouse receives and
+        approving bills needs <i>Manage purchasing</i> — so the warehouse receives and
         accounting approves.</p>`,
     },
     {
@@ -726,6 +726,8 @@
   {const p = window.GUIDE && GUIDE.byId["semi-finishing"]; if(p) TOPICS.push({id:"semi-finishing",title:"Finish a semi-built RTS unit",group:"Manufacturing",routes:[],workflow:"semi-finishing",html:`<p>${p.intro}</p><ol>${p.steps.map(s=>`<li><b>${s.title}</b> — ${s.body}<p><i>Result:</i> ${s.result}</p></li>`).join('')}</ol>`});}
   {const p = window.GUIDE && GUIDE.byId["connected-invoice"]; if(p) TOPICS.push({id:"connected-invoice",title:"Connected invoice and sales submission",group:"Documents",routes:[],workflow:"connected-invoice",html:`<p>${p.intro}</p><ol>${p.steps.map(s=>`<li><b>${s.title}</b> — ${s.body}<p><i>Result:</i> ${s.result}</p></li>`).join('')}</ol>`});}
   {const p = window.GUIDE && GUIDE.byId["payroll-correction"]; if(p) TOPICS.push({id:"payroll-corrections",title:"Payroll correction history",group:"HR",routes:[],workflow:"payroll-correction",html:`<p>${p.intro}</p><ol>${p.steps.map(s=>`<li><b>${s.title}</b> — ${s.body}<p><i>Result:</i> ${s.result}</p></li>`).join('')}</ol>`});}
+  TOPICS.push({"id": "purchase-requests", "title": "Internal Purchase Requests", "group": "Orders", "routes": ["purchase-requests"], "workflow": "budgeted-purchase-request", "html": "<p><b>Inventory → Purchase Requests</b> authorizes internal spending, not supplier receiving.</p><ol><li>With purchasing.request, submit items, quantities and expected costs; non-catalogue items are allowed.</li><li>An approver needs <b>purchasing.approve_requests</b>, separate from supplier purchasing.manage. Approve the total budget and choose requester cash or an eligible buyer.</li><li>Record actual cash handed over separately. The assigned buyer uploads receipts and actual spending, which must stay within the approved overall budget.</li><li>Submit liquidation. The approver reviews evidence, records exact change/reimbursement and closes, or returns it with a correction reason.</li></ol><p>No step automatically creates a PO, receives stock or pays a supplier. Mobile <b>Receive PR</b> means supplier goods receipt and is a different workflow.</p>"});
+  TOPICS.push({"id": "legacy-unit-intake", "title": "Pre-system unit intake", "group": "Manufacturing", "routes": [], "workflow": "legacy-unit-intake", "html": "<p>In mobile <b>RTS recording → Enter or resume pre-system unit</b>, record one already-existing physical unit with product, distinct identifier, location, photo, reason and valuation.</p><p>The LI record is inspection-only: no BOM release or stock is created. QC then QA must both pass. Inspectors match the physical identifier before inspection, without requiring a sticker yet. At Products In, print, attach and scan the sticker and verify storage before stock-in.</p><p>Recover saved original attempts after uncertainty; do not recreate the intake or Add unit again.</p>"});
   const CHECKPOINTS = {
     'barcode-labels': ['Select the items and confirm the printer label size.', 'Review the print sheet, then print one test label before the full batch.', 'If labels are clipped, match paper size and scale in the print dialog.'],
     'products-in': ['Confirm QC/QA is complete, or that the order requires no inspection.', 'Posted output appears in Receipt History and stock at the selected location.', 'If output is missing, check inspection status and whether it was already received.'],

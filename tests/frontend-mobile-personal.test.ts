@@ -139,3 +139,16 @@ it('jumps directly to a visible Work explanation and highlights stock effects wi
  expect(navigations).toHaveLength(before);
  dom.window.close();
 });
+
+it('explains physical identity before QC and the legacy-intake/sticker gates before RTS',async()=>{
+ const {dom,w,view,go}=await boot({get:async()=>[]});
+ await go('qc');view.innerHTML='<button data-jo="1">LI group</button><input id="qc-identity" type="checkbox"><button id="qc-start">Start</button>';
+ let steps=w.MobileGuide.steps(view);
+ expect(steps.find((s:any)=>s.title==='Match the physical unit first').body).toContain('not required before Products In');
+ await go('receiving');view.innerHTML='<button id="rts-legacy">Enter pre-system unit</button><input data-legacy-identifier><input data-legacy-cost><button id="legacy-submit">Send to QC</button><button id="rts-print-labels">Print</button><div data-label-verification>Scan</div><button id="rts-post">Post</button>';
+ steps=w.MobileGuide.steps(view);
+ expect(steps.find((s:any)=>s.title==='Enter or resume a pre-system unit').body).toContain('both QC and QA');
+ expect(steps.find((s:any)=>s.title==='Scan each attached sticker').body).toContain('Camera-scan');
+ expect(steps.find((s:any)=>s.title==='Confirm RTS stock-in').body).toContain('Only confirmed Products In adds stock');
+ dom.window.close();
+});

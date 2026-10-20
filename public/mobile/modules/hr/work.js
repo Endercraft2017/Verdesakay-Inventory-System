@@ -4,7 +4,7 @@
   // Explanations are attached only to rendered, permission-filtered Work entries.
   var WORK_HELP = {
   "receive": [
-    "Receive items delivered against a supplier purchase request/order. PR means purchase request here.",
+    "Receive items delivered against a supplier purchase request/order. This legacy label refers to supplier deliveries, not the internal budget Purchase Requests workflow.",
     "Use when purchased goods physically arrive. Check the order, actual quantities and destination. This is not receipt of goods built by Production.",
     "A confirmed supplier goods receipt adds purchased stock. It does not approve the vendor bill or pay the supplier; those are later purchasing/accounting steps."
   ],
@@ -146,7 +146,7 @@
   "notes": [
     "Keep private notes/checklists and optionally schedule them.",
     "Open a note, edit its text or checklist, and explicitly save changes.",
-    "Saved checklist progress and linked tasks stay connected; notes do not change business records."
+    "Notes-list checklist ticks save immediately; wait for confirmation or retry feedback. Text/editor changes still need Save. Linked personal tasks stay connected; notes do not change business records."
   ],
   "guides": [
     "Read the connected workflow library across modules.",

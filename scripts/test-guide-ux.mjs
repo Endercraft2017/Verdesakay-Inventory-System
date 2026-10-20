@@ -22,7 +22,7 @@ try {
   const page=await context.newPage();page.setDefaultTimeout(15000);page.on('pageerror',e=>report.errors.push(e.message));
   await page.goto(base);await page.waitForFunction(()=>!!window.App?.getMe());
   const pipelines=await page.evaluate(()=>GUIDE.pipelines.filter(p=>p.pipeline).map(p=>({id:p.id,title:p.title,length:p.steps.length})));
-  assert.equal(pipelines.length,11);
+  assert.equal(pipelines.length,13);
   for(const width of [1440,390]) {
     await page.setViewportSize({width,height:1000});
     for(const theme of ['light','dark']) {
@@ -46,12 +46,13 @@ try {
     await page.evaluate(id=>Help.open(id),t.id);
     assert.equal(await page.locator('.help-content h4').first().textContent(),t.title);
   }
-  await page.locator('.drawer-close').click();
+  await page.locator('.drawer.open .drawer-close').click();
   report.checks.push({platform:'web',helpTopics:topics.length});
+  await page.evaluate(()=>App.navigate('purchase-requests'));await page.waitForSelector('#pr-new');await page.locator('#pr-new').click();await page.locator('[data-modal-help]').click();assert.equal(await page.locator('.help-content h4').first().textContent(),'Internal Purchase Requests');await page.locator('.drawer.open .drawer-close').click();await page.locator('.modal-foot [data-close]').click();
   await page.goto(base+'/m/');await page.waitForFunction(()=>!!window.MApp?.getMe());
   await page.evaluate(()=>MApp.go('guides'));await page.waitForSelector('#m-guide-section');
   await page.selectOption('#m-guide-section','pipelines');
-  assert.equal(await page.locator('.m-guide-reference').count(),11);
+  assert.equal(await page.locator('.m-guide-reference').count(),13);
   for(const theme of ['light','dark']) {
     await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);
     for(const p of pipelines) {

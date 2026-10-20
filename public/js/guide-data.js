@@ -230,16 +230,10 @@ const GUIDE_PIPELINES = [
     id: 'purchasing',
     title: 'Purchasing',
     icon: 'inbox',
-    tagline: 'Staff PR → approval → receipts & liquidation; supplier PO → goods receipt → bill',
+    tagline: 'Supplier PO → goods receipt → matched bill → payment',
     audience: 'Purchasing, warehouse, accounting',
-    intro: `An internal PR requests a spending budget, then an assigned buyer uploads receipts and liquidates the actual cost before it closes. Supplier purchase orders are a separate <b>PO → Goods Receipt → Vendor Bill</b> flow with a 3-way match.`,
+    intro: `Supplier purchasing follows <b>PO → Goods Receipt → Vendor Bill</b> with a 3-way match. Internal spending requests use the separate budget-and-liquidation roadmap; approving one never creates a PO or stock.`,
     steps: [
-      {
-        title: 'Request and approve a purchase',
-        role: 'Staff · purchasing.request; authority · purchasing.manage',
-        to: { route: 'purchase-requests', label: 'Inventory → Purchase Requests' },
-        body: `Staff list the items they need, including items not yet in the catalog, with expected unit costs. Purchasing approves an overall budget and either records cash given to the requester or assigns a buyer. The buyer uploads receipts and actual items, including additions within the approved total. Purchasing reconciles any cash change and closes the PR after reviewing liquidation. A PR does not add inventory stock.`,
-      },
       {
         title: 'Raise the purchase order',
         role: 'Purchasing · purchasing.manage',
@@ -249,7 +243,7 @@ const GUIDE_PIPELINES = [
       },
       {
         title: 'Let the system draft POs for you (optional)',
-        role: 'Purchasing · inventory.adjust',
+        role: 'Purchasing · purchasing.manage',
         to: { route: 'inventory', filter: { low: '1' }, label: 'Inventory → Low Stock → Reorder PO' },
         body: `Open Low Stock and choose Reorder PO, or use Draft purchase orders for the shortfall on an order. Open the resulting purchase orders and check suppliers, quantities and prices. Generated orders are open drafts that need review.`,
       },
@@ -262,13 +256,13 @@ const GUIDE_PIPELINES = [
       },
       {
         title: 'Vendor bill & the 3-way match',
-        role: 'Accounting · orders.edit',
+        role: 'Accounting · purchasing.manage',
         to: { route: 'purchasing', filter: { tab: 'bills' }, label: 'Inventory → Purchasing → Vendor Bills' },
         body: `Record the supplier’s invoice against the purchase order and review its match with receipts. Billed quantities must be covered by receipts and prices within tolerance. Correct missing receipts or bill differences before approval. If an authorized override is needed, read the exception and confirmation; the override is recorded.`,
       },
     ],
     gotchas: [
-      `Receiving needs <i>inventory.adjust</i>; billing / approval needs <i>orders.edit</i> — the
+      `Receiving needs <i>inventory.adjust</i>; billing / approval needs <i>purchasing.manage</i> — the
        warehouse receives, accounting approves.`,
       `The mobile "Receive PR" shortcut bypasses the desktop GRN / 3-way-match flow — use it only
        for quick unmatched receipts.`,
@@ -1521,9 +1515,166 @@ for (const [id, related] of Object.entries({sales:['sales-to-cash','split-trips'
   const p = GUIDE_PIPELINES.find(p => p.id === id); if (p) p.related = related;
 }
 
+// Spending requests and existing-unit intake are independent of supplier receiving and new builds.
+GUIDE_PIPELINES.push(...[
+  {
+    "id": "budgeted-purchase-request",
+    "title": "Internal purchase request → approved budget → liquidation",
+    "module": "purchasing",
+    "icon": "inbox",
+    "pipeline": true,
+    "audience": "Staff responsible for these handoffs",
+    "tagline": "Separate authorization, evidence and completion checkpoints.",
+    "intro": "Follow the approvals and physical checks in order. Reading this roadmap grants no additional access.",
+    "steps": [
+      {
+        "title": "Submit the internal request",
+        "module": "Purchasing → Finance",
+        "role": "Requester · purchasing.request",
+        "to": {
+          "route": "purchase-requests",
+          "label": "Inventory → Purchase Requests"
+        },
+        "before": "Reason, needed-by date if applicable, item names, quantities and estimated unit costs.",
+        "body": "Choose New request. Items may be outside the catalogue. Submit the realistic expected spending total.",
+        "result": "A pending spending request; no supplier PO or stock movement."
+      },
+      {
+        "title": "Approve the budget and buyer",
+        "module": "Purchasing → Finance",
+        "role": "Approver · purchasing.approve_requests",
+        "to": {
+          "route": "purchase-requests",
+          "label": "Inventory → Purchase Requests"
+        },
+        "before": "Pending request and reviewed overall spending limit.",
+        "body": "Approve budget and choose cash to requester or an eligible assigned buyer. Reject with a reason if unsuitable. Supplier purchasing.manage alone does not authorize this decision.",
+        "result": "An approved budget and named buyer; approval does not itself record cash given."
+      },
+      {
+        "title": "Record cash and purchase",
+        "module": "Purchasing → Finance",
+        "role": "Approver / assigned buyer",
+        "to": {
+          "route": "purchase-requests",
+          "label": "Inventory → Purchase Requests"
+        },
+        "before": "Approved request and agreed purchasing mode.",
+        "body": "For requester-cash mode use Record cash issued and confirm the real handoff within the budget. The assigned buyer then buys the goods; do not assume the entire budget was paid out.",
+        "result": "Cash issued, if applicable, is recorded separately from the approved limit and actual spending."
+      },
+      {
+        "title": "Upload evidence and liquidate",
+        "module": "Purchasing → Finance",
+        "role": "Assigned buyer",
+        "to": {
+          "route": "purchase-requests",
+          "label": "Inventory → Purchase Requests"
+        },
+        "before": "Receipts and the actual bought items, quantities and unit prices.",
+        "body": "Upload at least one receipt, then Submit liquidation. Additions are allowed only within the overall approved budget. Review actual spending; evidence is locked after submission.",
+        "result": "Submitted liquidation awaits review; it still does not receive inventory or create a supplier order."
+      },
+      {
+        "title": "Reconcile and close",
+        "module": "Purchasing → Finance",
+        "role": "Approver · purchasing.approve_requests",
+        "to": {
+          "route": "purchase-requests",
+          "label": "Inventory → Purchase Requests"
+        },
+        "before": "Submitted actuals and receipt-backed review.",
+        "body": "Close after review only after recording exact change returned or reimbursement paid for requester cash. Return for correction with a reason if needed; the buyer fixes and resubmits.",
+        "result": "A closed, reconciled internal spending request. Inventory receiving and supplier bill/payment workflows remain separate.",
+        "branch": {
+          "label": "Receipts or actuals need correction?",
+          "body": "Return liquidation with a reason. The assigned buyer corrects it and resubmits before another closing review.",
+          "target": 3,
+          "action": "Review the liquidation steps",
+          "direction": "Correction loop"
+        }
+      }
+    ],
+    "gotchas": []
+  },
+  {
+    "id": "legacy-unit-intake",
+    "title": "Pre-system unit → QC → QA → sticker → RTS stock",
+    "module": "manufacturing",
+    "icon": "inbox",
+    "pipeline": true,
+    "audience": "Staff responsible for these handoffs",
+    "tagline": "Separate authorization, evidence and completion checkpoints.",
+    "intro": "Follow the approvals and physical checks in order. Reading this roadmap grants no additional access.",
+    "steps": [
+      {
+        "title": "Enter the existing physical unit",
+        "module": "Receiving → QC / QA",
+        "role": "RTS clerk",
+        "to": {
+          "external": "/m#/receiving",
+          "label": "Phone → Work → RTS recording"
+        },
+        "before": "One pre-system physical unit, finished product, distinct identifier, location, photo, reason and unit cost.",
+        "body": "Choose Enter or resume pre-system unit. Review the declared valuation and submit once. After an unknown response recover the saved original attempt; do not create a second intake.",
+        "result": "An LI inspection-only record. No available stock, BOM component consumption or manufacturing WIP release."
+      },
+      {
+        "title": "Verify identity and perform QC",
+        "module": "Receiving → QC / QA",
+        "role": "QC inspector",
+        "to": {
+          "external": "/m#/qc",
+          "label": "Phone → Work → QC / QA"
+        },
+        "before": "The intake’s QC job group and its physical identifier.",
+        "body": "Choose the group and unit card. Match identifier and intake/job to the physical unit before checks. No QR sticker is required yet; stop if identity is unclear.",
+        "result": "QC pass advances to QA; fail/repair/hold follows its separate disposition. Stock is unchanged."
+      },
+      {
+        "title": "Perform final QA",
+        "module": "Receiving → QC / QA",
+        "role": "QA inspector",
+        "to": {
+          "external": "/m#/qc",
+          "label": "Phone → Work → QC / QA"
+        },
+        "before": "The same unit after its QC pass.",
+        "body": "Confirm identity, review QC and complete appearance checks. Legacy intake always needs both QC and QA; do not bypass either stage or Add unit again.",
+        "result": "A final-passed intake becomes eligible for RTS receiving; stock is still unchanged.",
+        "branch": {
+          "label": "Unit is in rework, held or failed?",
+          "body": "Use its current quality disposition. It is not eligible for RTS until required decisions and inspections are resolved.",
+          "target": 1,
+          "action": "Review identity and inspection",
+          "direction": "Quality recovery"
+        }
+      },
+      {
+        "title": "Print, attach, scan and receive",
+        "module": "Receiving → QC / QA",
+        "role": "RTS clerk",
+        "to": {
+          "external": "/m#/receiving",
+          "label": "Phone → Work → RTS recording"
+        },
+        "before": "Final-passed unit, actual storage location and available capacity.",
+        "body": "Choose its RTS group/unit. Print and attach the unit sticker, camera-scan it and complete physical verification before confirming Products In. Resolve duplicates, holds or location errors rather than bypassing verification.",
+        "result": "Only the confirmed ordinary RTS receipt adds stock, using the declared legacy unit cost."
+      }
+    ],
+    "gotchas": []
+  }
+]);
+GUIDE_PIPELINES.find(p=>p.id==='purchasing').related=['budgeted-purchase-request','purchase-to-pay'];
+GUIDE_PIPELINES.find(p=>p.id==='purchase-to-pay').related=['budgeted-purchase-request'];
+GUIDE_PIPELINES.find(p=>p.id==='quality-to-rts').related=['legacy-unit-intake'];
+GUIDE_PIPELINES.find(p=>p.id==='sales-to-cash').related.push('legacy-unit-intake');
+
 /* route (+ optional sub-tab hint) → pipeline id, so the per-screen Help drawer can
    offer "walk me through this". Screens not listed just link to the guide index. */
 const GUIDE_ROUTE_MAP = {
+  'purchase-requests': 'budgeted-purchase-request',
   'production-overview': 'production',
   'finished-products': 'production',
   'finished-goods': 'production',

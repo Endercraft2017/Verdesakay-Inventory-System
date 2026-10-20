@@ -1,5 +1,7 @@
 /* Authored control instructions. Each entry names an action and its result. */
 window.GuideInstructions = [
+  ["#pr-new", "Request an internal spending budget", "List required items, quantities and realistic expected costs. Submission creates a pending internal Purchase Request, not a supplier PO or stock receipt."],
+  ['#pr-list [data-open]', 'Review the internal purchase request', 'Open its budget, buyer, status and receipts. Budget approval requires purchasing.approve_requests, separately from supplier purchasing.manage. Review the available action before confirming.'],
   ["#pc-new", "Record a physical count", "Count one item at one exact location/build state. Record untracked, serial and batch observations against the current book snapshot; submission does not move stock."],
   ["#pc-plan", "Plan an assigned cycle count", "Assign the item/location/build state, worker and due date. Only applied reconciliation or verification completes the task; a repeating plan schedules the next occurrence afterward."],
   ["#fb-invoice-starter", "Create a connected sales invoice form", "Review the starter fields, currency, terms, access and linked layout. Submission creates an open sales draft; it does not approve, ship or post an accounting invoice."],

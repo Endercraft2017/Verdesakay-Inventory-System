@@ -20,6 +20,7 @@ function setup() {
 describe('Help with real script globals and UI', () => {
   it.each([
     ['inventory', undefined, 'Inventory — items & stock'],
+    ['purchase-requests', undefined, 'Internal Purchase Requests'],
     ['templates', undefined, 'Document Templates'],
     ['orders', { type: 'sale' }, 'Sale Orders'],
     ['orders', { type: 'purchase' }, 'Purchase Orders'],

@@ -20,17 +20,17 @@
     }else if(root.querySelector('[data-title]') && root.querySelector('[data-due]')){
       add('[data-title]','Name the task','Enter the action you need to do. If this task is linked to a note, use Open linked note to change its title and checklist.');
       add('[data-due]','Choose the due time','Choose the local date and time for the deadline. This is the same schedule shown in the webapp’s Tasks & reminders.');
-      add('.personal-reminder-choice select','Choose reminder timing','Choose a reminder relative to the deadline or select a custom date and time.');
+      add('.personal-reminder-choice select','Choose reminder timing','Choose No reminder, a relative reminder or Custom date and time. Relative reminders need a due date; Custom needs a reminder date/time. Resolve validation errors before saving.');
       add('[data-remind]','Set an optional reminder','Choose the reminder date and time. It appears in Notifications and can use push when enabled on the device.');
       add('[data-open-note]','Open the linked checklist','Open linked note to read or edit its text and checklist. Unsaved schedule changes require saving or discarding before leaving.');
-      add('[type=submit]','Save the schedule','Review the deadline and reminder, then press Save or Add. Saving here updates the same task used by the webapp.');
+      add('[type=submit]','Save the schedule','Review the local deadline, reminder and save status, then press Save or Add. More actions → Delete task asks for confirmation and removes its reminder, but keeps a linked note. Cancel/discard protects unsaved edits; saving updates the shared task.');
     }else if(root.querySelector('#m-note-list')){
       add('#m-note-new','Create a note or checklist','Press New note / checklist. Add text or checklist items and optionally schedule a deadline before saving.');
       add('#m-note-search','Find a note','Search title, body text or checklist items. Clear the search to show all your notes.');
-      add('#m-note-list','Open a shared note','Tap a note to edit it. These are your own notes from the webapp; checklist progress and linked schedules stay connected.');
+      add('#m-note-list','Open a shared note','Open a note to edit text/checklist and save editor changes. Checklist ticks on the notes list save immediately: wait for Saving checklist, and use Try again if it fails. A tick can update the linked task; these are your own shared webapp notes.');
     }else if(root.querySelector('#m-task-list')){
       add('#m-task-add','Create a task','Press Add task, enter its title and optionally set a due time and reminder.');
-      add('#m-task-list','Complete or inspect a task','Tap a task to view its schedule and linked note. Use its check button to complete or reopen it; linked checklist completion changes with the task.');
+      add('#m-task-list','Complete or inspect a task','Tasks are grouped into Overdue, Today, Upcoming, No date and Done. Tap a task to view it; the check button completes/reopens it. Wait for Updating task to finish. If it fails, Try again repeats that intended change; do not assume it saved. Linked checklist progress changes with the task.');
     }else if(root.querySelector('#m-guide-search')){
       add('#m-guide-search','Find a task guide','Search by the work you need to do, such as checklist, leave or payroll. Clear the search to show the available workflows again.');
       add('#m-guide-results','Read the workflow','Open a guide to read its steps. A step naming a webapp screen is performed there; use the phone screen’s Guide button for its own controls.');
@@ -44,6 +44,28 @@
             '<p><b>When to use it:</b> '+mEsc(row.dataset.workGuideWhen)+'</p>'+
             '<p><b>Result / next step:</b> '+mEsc(row.dataset.workGuideResult)+'</p>');
         });
+      }
+      if(route==='receiving'){
+        add('[data-jo]','Choose the receiving job group','Open the eligible job-order group before selecting units/batches. An empty queue means none are ready for this stage; a QC pass alone is not stock.');
+        add('#rts-legacy','Enter or resume a pre-system unit','Use only for an existing physical unit not yet in the system. Identifier, photo, location, reason and valuation are required. Intake creates no stock and no BOM release; both QC and QA must pass.');
+        add('[data-legacy-product]','Select the existing product','Select the finished product for this physical unit. The available catalogue choices do not grant permission to create or adjust products.');
+        add('[data-legacy-identifier]','Record physical identity','Use a distinct identifier physically marked on the unit. Do not enter it twice or recreate an uncertain saved intake.');
+        add('[data-legacy-cost]','Review the declared valuation','Review the prefilled unit cost and correct it when appropriate. This valuation follows the legacy unit; it is not a new BOM manufacturing cost.');
+        add('#legacy-submit','Send to QC, then QA','Review the physical-unit confirmation, photo and required fields. Submission creates an inspection-only LI record, not available stock. Recover the saved original attempt after an unknown response.');
+        add('#rts-print-labels','Print and attach the stock sticker','Print the label for the exact unit or batch and attach it to the physical goods. The next verification requires scanning the attached sticker.');
+        add('[data-label-verification]','Scan each attached sticker','Camera-scan every expected attached label. Do not bypass sticker verification or use another unit’s code.');
+        add('#rts-post','Confirm RTS stock-in','After final inspection, sticker scans, physical verification and storage checks, post the receipt once. Only confirmed Products In adds stock; recover saved attempts after uncertainty.');
+      }
+      if(route==='qc'){
+        add('[data-jo]','Choose the inspection job group','Open the eligible job group and select its Ready/Reinspect or Ready/Recheck unit card. Only your current inspection stage is shown.');
+        add('#qc-identity','Match the physical unit first','Match the production identifier and job/intake against the physical unit. A QR sticker is not required before Products In. Stop and use Wrong unit if identity is unclear.');
+        add('#qc-start','Start the verified inspection','Confirm identity before starting the required checks. QC and QA stay separate on two-stage work, including legacy intake. Starting inspection adds no stock.');
+      }
+      if(route==='inbox'){
+        add('#m-chat-input','Write to the selected conversation','Check the recipient and any reply/edit state before typing. A draft is not yet a sent message.');
+        add('#m-chat-attach','Review attachments','Attach the intended files/photos and check preview/upload status before sending. If recovery reports an uncertain result, check the conversation before resending.');
+        add('#m-chat-send','Send and check the result','Send only after reviewing recipient, text and attachments. On a failure read the feedback before retrying.');
+        add('.m-chat-row','Reply, react or manage a message','Open the message’s actions to Reply or React, and Edit/Remove your own eligible messages. Reactions show their saved badge; if confirmation is unclear check it before retrying. Removing needs confirmation.');
       }
       if(!result.length){
         var overview={home:'Use the attendance summary and shortcuts to open Clock, employee requests or your current work.',clock:'Choose the punch you are recording, scan the required code and follow the selfie prompt. Check the recorded confirmation before leaving.',requests:'Open a request to inspect its status, or choose New request and complete its type, dates and reason before submitting.',approvals:'Open a pending request, inspect its reason and dates, then choose your decision and enter a note before saving.',schedule:'Review your shift and work dates. Open the relevant request or attendance correction when the schedule and actual work differ.',payslips:'Open a payroll period to inspect your own earnings and deductions. Use Download when a payslip is released and download is available.',notifications:'Tap a notification to open the record or task it refers to. Enable device notifications in Profile if you need push reminders.',inbox:'Open the intended conversation, write your message and check recipients and attachments before sending.',settings:'Review your profile, device notifications and sign-in settings. Confirm the effect of a setting before saving it.',production:'Open the authorized queue for your role to inspect the job, units or parts waiting for action.',scan:'Scan the item or unit code, verify the result and choose the appropriate stock or production action.',queue:'Review pending offline actions and their errors. Reconnect to sync; queued changes are not complete until the server accepts them.'};

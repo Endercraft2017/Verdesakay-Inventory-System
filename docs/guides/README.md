@@ -18,7 +18,7 @@ session.
 
 | Guide | For | What it covers |
 |---|---|---|
-| [Workflow roadmaps](workflow-roadmaps.md) | All teams | Eleven connected business processes, team handoffs, recovery branches and completion checks |
+| [Workflow roadmaps](workflow-roadmaps.md) | All teams | Thirteen connected business processes, team handoffs, recovery branches and completion checks |
 | [Capturing a sales order](sales-order-intake.md) | Sales / CSR / order entry | Record customer details, choose explicit inventory or non-stock lines, correct validation errors, and save an open order before approval |
 | [Bulk import & export (CSV)](csv-import-export.md) | Inventory / HR staff | Load or update many items, suppliers, or employees from a spreadsheet; export data back out. Fill-in [templates/](templates/) included. |
 | [Sales stock review & approval](sales-stock-approval.md) | Sales / warehouse / production / purchasing | Check warehouse ATP, draft missing supply, approve explicitly and follow pending sync states. [Mobile gaps](../../MOBILE-INVENTORY-HANDOFF.md). |
@@ -68,7 +68,7 @@ screen or that physical devices work.
 
 ### Workflows & Pipelines
 
-In **Guide Center → Workflows & Pipelines**, or the phone Guides section, follow a roadmap across modules. [The current roadmap index](workflow-roadmaps.md) covers all eleven flows, including trip releases, CKD, semi-finishing, customer returns, physical counts, connected invoice forms and payroll corrections.
+In **Guide Center → Workflows & Pipelines**, or the phone Guides section, follow a roadmap across modules. [The current roadmap index](workflow-roadmaps.md) covers all thirteen flows, including trip releases, CKD, semi-finishing, customer returns, physical counts, connected invoice forms and payroll corrections.
 
 The core roadmaps are:
 
