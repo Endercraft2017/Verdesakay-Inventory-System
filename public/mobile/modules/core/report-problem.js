@@ -91,7 +91,7 @@
     var account = String((MApp.getMe() || {}).id || 'guest'), token = API.getToken?.() || '', shared = API.isSharedSession();
     if (!identifiedSession || identifiedSession.account !== account || identifiedSession.token !== token || identifiedSession.shared !== shared) {
       var data = loadDraft(DRAFT_KEY); if (!data || typeof data !== 'object' || Array.isArray(data)) data = {};
-      identifiedSession = { account: account, token: token, shared: shared, data: data, files: [], missingEvidence: Number(data.evidence_count) || 0, version: 0, pending: null, preparing: false, active: null, restored: !!(data.subject || data.description || data.recipient_id || data.evidence_count), saved: !!(data.subject || data.description || data.recipient_id || data.evidence_count) };
+      identifiedSession = { account: account, token: token, shared: shared, data: data, files: [], missingEvidence: Number(data.evidence_count) || 0, version: 0, pending: null, preparing: false, active: null, cases: Object.create(null), restored: !!(data.subject || data.description || data.recipient_id || data.evidence_count), saved: !!(data.subject || data.description || data.recipient_id || data.evidence_count) };
     }
     return identifiedSession;
   }
@@ -109,11 +109,11 @@
   }
   function armReport(ctx) {
     // Route changes retain the live draft/files; unloading needs a warning for memory-only work.
-    mPersonalDraft.arm(function () { return false; }, function () { return ctx.preparing || !!ctx.pending; }, { busyText: function () { return ctx.preparing ? 'Please wait for evidence preparation to finish.' : 'Please wait for report sending to finish.'; } });
+    mPersonalDraft.arm(function () { return false; }, function () { return ctx.preparing || !!ctx.pending || Object.keys(ctx.cases).some(function (id) { return !!ctx.cases[id].pending; }); }, { busyText: function () { return ctx.preparing ? 'Please wait for evidence preparation to finish.' : ctx.pending ? 'Please wait for report sending to finish.' : 'Please wait for the report update to finish.'; } });
   }
   window.addEventListener('beforeunload', function (event) {
     var ctx = identifiedSession;
-    if (ctx && currentReport(ctx) && (ctx.pending || ctx.preparing || ctx.files.length || (!ctx.saved && hasReportDraft(ctx)))) { event.preventDefault(); event.returnValue = ''; }
+    if (ctx && currentReport(ctx) && (ctx.pending || ctx.preparing || ctx.files.length || (!ctx.saved && hasReportDraft(ctx)) || Object.keys(ctx.cases).some(function (id) { return ctx.cases[id].pending || ctx.cases[id].reply; }))) { event.preventDefault(); event.returnValue = ''; }
   });
 
   function identified(view, initial) {
@@ -575,9 +575,9 @@
         if (!reports.length) { host.innerHTML = '<div class="m-empty">' + (assigned ? 'No reports to handle yet.' : 'No reports here yet.') + '</div>'; return; }
         host.innerHTML = reports.map(function (row) {
           var status = String(row.status || 'new'), label = status.charAt(0).toUpperCase() + status.slice(1);
-          return '<button class="m-report-row" type="button" data-report="' + mEsc(row.id) + '"><span><b>' + mEsc(row.number + ' · ' + row.subject) + '</b><small>' + mEsc((assigned ? 'Reporter · ' + row.reporter_name : 'Recipient · ' + row.recipient_name)) + '</small><span class="m-report-status">' + mEsc(label) + '</span></span><i aria-hidden="true">›</i></button>';
+          return '<button class="m-report-row" type="button" data-report="' + mEsc(row.id) + '"><span><b>' + mEsc(row.number + ' · ' + row.subject) + '</b><small>' + mEsc((assigned ? 'Reporter · ' + (row.reporter_name || 'Former staff') : 'Recipient · ' + row.recipient_name)) + '</small>' + (assigned ? '<small>' + mEsc('Handler · ' + (row.assignee_name || row.recipient_name || 'Not assigned')) + '</small>' : '') + '<span class="m-report-status">' + mEsc(label) + '</span></span><i aria-hidden="true">›</i></button>';
         }).join('');
-        host.querySelectorAll('[data-report]').forEach(function (button) { button.onclick = function () { MApp.go('report-problem', { id: button.dataset.report }); }; });
+        host.querySelectorAll('[data-report]').forEach(function (button) { button.onclick = function () { MApp.go('report-problem', { id: button.dataset.report, from: assigned ? 'assigned' : 'mine' }); }; });
       } catch (error) {
         if (host.isConnected && currentReport(ctx)) { host.innerHTML = '<div class="m-error" role="alert">' + mEsc(error.message || 'Could not load reports.') + '</div><button class="m-v2-secondary" type="button" data-retry-reports>Retry reports</button>'; host.querySelector('button').onclick = load; }
       } finally { loading = false; host.removeAttribute('aria-busy'); if (restoreFocus && host.isConnected) { host.tabIndex = -1; (host.querySelector('button') || host).focus(); } }
@@ -585,37 +585,134 @@
     load();
   }
 
-  function identifiedDetail(view, id) {
+  // Follow-up drafts remain private to this account/sign-in and this open app.
+  function identifiedDetail(view, id, origin) {
+    var ctx = reportContext(), key = String(id);
+    var state = ctx.cases[key] || (ctx.cases[key] = { reply: '', status: '', assignee: '', pending: null, revision: 0, errors: {}, downloads: Object.create(null) });
+    var from = origin === 'assigned' ? 'assigned' : origin === 'mine' ? 'mine' : null;
     MApp.setTitle('Identified report');
-    var host = shell(view, '46:721', 'Identified report', 'Status and follow-up', function () { identifiedList(view); });
-    host.innerHTML = '<div class="m-hint">Loading…</div>';
-    API.get('/identified-reports/' + id).then(function (r) {
-      var canHandle = r.can_handle === true;
+    var host = shell(view, '46:721', 'Identified report', 'Status and follow-up', function () { MApp.go('report-problem', { mode: from || 'mine' }); });
+    host.classList.add('m-report-case');
+    ctx.active = { kind: 'detail', id: key, host: host, paint: render }; armReport(ctx);
+    var loading = false, directoryLoading = false, directoryReady = false, users = [], directoryError = '';
+    function alive() { return host.isConnected && currentReport(ctx); }
+    function paint() { var active = ctx.active; if (currentReport(ctx) && active && active.kind === 'detail' && active.id === key && active.host.isConnected) active.paint(); }
+    function label(value) { value = String(value || 'new'); return value.charAt(0).toUpperCase() + value.slice(1); }
+    function errorBlock(action) { return '<p class="m-error" data-case-error="' + action + '" role="alert" tabindex="-1"' + (state.errors[action] ? '' : ' hidden') + '>' + mEsc(state.errors[action] || '') + '</p>'; }
+
+    function directory() {
+      var form = host.querySelector('#m-ir-assign'); if (!form) return;
+      var select = form.querySelector('select'), feedback = form.querySelector('[data-directory-feedback]');
+      var eligible = users.filter(function (user) { return String(user.id) !== String(state.report.reporter_id) && user.active !== 0 && user.active !== false; });
+      if (directoryReady && !directoryLoading && !eligible.some(function (user) { return String(user.id) === state.assignee; })) state.assignee = '';
+      select.innerHTML = '<option value="">' + (directoryLoading ? 'Loading staff…' : !directoryReady ? 'Directory unavailable' : 'Choose a handler') + '</option>' + eligible.map(function (user) { return '<option value="' + mEsc(user.id) + '"' + (String(user.id) === state.assignee ? ' selected' : '') + '>' + mEsc(user.full_name) + '</option>'; }).join('');
+      select.disabled = !!state.pending || !directoryReady || directoryLoading;
+      feedback.innerHTML = directoryError || (directoryReady && !eligible.length) ? '<p class="m-hint" role="status">' + mEsc(directoryError || 'No eligible handler is available.') + '</p><button class="m-v2-secondary" type="button" data-retry-directory>Retry staff directory</button>' : '';
+      var retry = feedback.querySelector('button'); if (retry) { retry.disabled = !!state.pending; retry.onclick = function () { loadDirectory(true); }; }
+      select.onchange = function () { state.assignee = select.value; controls(); };
+      controls();
+    }
+    async function loadDirectory(force) {
+      if (directoryLoading || !alive() || state.pending) return;
+      var restoreFocus = force && host.contains(document.activeElement);
+      directoryLoading = true; directoryError = ''; directory();
+      try { await mUsers.load(force); if (!alive()) return; users = mUsers.ranked(); directoryReady = true; }
+      catch (error) { if (!alive()) return; directoryReady = false; directoryError = 'Staff directory unavailable. Your reply draft is still here.'; }
+      finally { directoryLoading = false; if (alive()) { directory(); if (restoreFocus) { var target = host.querySelector(directoryReady && users.length ? '#m-ir-assign select' : '[data-retry-directory]'); if (target) target.focus(); } } }
+    }
+    function paintEvidence() {
+      var active = ctx.active; if (!currentReport(ctx) || !active || active.kind !== 'detail' || active.id !== key || !active.host.isConnected) return;
+      active.host.querySelectorAll('[data-evidence]').forEach(function (button) {
+        var a = (state.report.attachments || []).filter(function (item) { return String(item.id) === button.dataset.evidence; })[0]; if (!a) return;
+        var job = state.downloads[a.id] || {}; button.disabled = !!job.pending; button.textContent = (job.pending ? 'Downloading… ' : '') + a.original_name;
+        var error = button.parentNode.querySelector('.m-error'); if (error) error.remove();
+        if (job.error) { error = document.createElement('p'); error.className = 'm-error'; error.setAttribute('role', 'alert'); error.textContent = job.error + ' Select the file to retry.'; button.parentNode.appendChild(error); }
+      });
+    }
+    function controls() {
+      var r = state.report; if (!r) return;
+      var status = host.querySelector('#m-ir-status'), assign = host.querySelector('#m-ir-assign'), reply = host.querySelector('#m-ir-reply');
+      host.setAttribute('aria-busy', state.pending ? 'true' : 'false');
+      var back = view.querySelector('.m-report-back'); if (back) back.disabled = !!state.pending;
+      if (status) { status.querySelector('[type="submit"]').textContent = state.pending === 'status' ? 'Updating status…' : 'Update status'; status.querySelector('select').disabled = !!state.pending; status.querySelector('[type="submit"]').disabled = !!state.pending || state.status === r.status; status.querySelector('[data-close-warning]').hidden = state.status !== 'closed' || r.status === 'closed'; }
+      if (assign) { assign.querySelector('[type="submit"]').textContent = state.pending === 'assign' ? 'Assigning handler…' : 'Assign handler'; assign.querySelector('[type="submit"]').disabled = !!state.pending || !directoryReady || directoryLoading || !state.assignee || state.assignee === String(r.assignee_id || r.recipient_id); }
+      if (reply) { reply.querySelector('[type="submit"]').textContent = state.pending === 'reply' ? 'Sending reply…' : 'Send reply'; reply.querySelector('textarea').disabled = !!state.pending; reply.querySelector('[type="submit"]').disabled = !!state.pending || !state.reply.trim(); }
+    }
+    async function mutate(action, payload) {
+      var r = state.report;
+      if (!alive() || state.pending || !r || (action !== 'reply' && !r.can_handle) || (action === 'reply' && r.status === 'closed')) return;
+      var sent = state.reply; state.pending = action; state.errors[action] = ''; state.feedback = ''; state.revision++; paint();
+      try {
+        var updated = await API.post('/identified-reports/' + encodeURIComponent(key) + '/' + action, payload);
+        if (!currentReport(ctx)) return;
+        // Write endpoints return the full case without can_handle. Match the server's handler rule.
+        updated.can_handle = String(updated.recipient_id) === ctx.account || String(updated.assignee_id) === ctx.account;
+        state.report = updated; state.status = updated.status; if (action === 'assign') state.assignee = '';
+        if (action === 'reply' && state.reply === sent) state.reply = '';
+        state.feedback = action === 'reply' ? 'Reply sent.' : action === 'assign' ? 'Handler updated.' : 'Status updated.';
+      } catch (error) {
+        if (currentReport(ctx)) state.errors[action] = (error.message || 'The update could not be confirmed.') + (action === 'reply' ? ' Your draft is still here. Check History before retrying if the connection was interrupted.' : ' Your selection and reply draft are still here.');
+      } finally {
+        state.pending = null; state.revision++; paint();
+        var active = ctx.active; if (currentReport(ctx) && active && active.kind === 'detail' && active.id === key && active.host.isConnected) { var target = active.host.querySelector('[data-case-error="' + action + '"]:not([hidden])') || active.host.querySelector('[data-case-feedback]'); if (target) target.focus(); }
+      }
+    }
+    function render() {
+      if (!alive() || !state.report) return;
+      var r = state.report, canHandle = r.can_handle === true;
+      if (!from) from = String(r.reporter_id) === ctx.account ? 'mine' : 'assigned';
+      if (!state.status) state.status = r.status;
       host.innerHTML = '<section class="m-report-review"><div><span>Reference</span><b>' + mEsc(r.number) + '</b></div>' +
-        '<div><span>Status</span><b>' + mEsc(r.status) + '</b></div><div><span>Subject</span><b>' + mEsc(r.subject) + '</b></div>' +
+        '<div><span>Status</span><b>' + mEsc(label(r.status)) + '</b></div><div><span>Subject</span><b>' + mEsc(r.subject) + '</b></div>' +
         '<div><span>Category</span><b>' + mEsc(r.category) + '</b></div><div><span>Description</span><b>' + mEsc(r.description) + '</b></div>' +
         '<div><span>Incident</span><b>' + mEsc([r.incident_date, r.incident_time, r.location].filter(Boolean).join(' · ') || 'Not provided') + '</b></div>' +
-        '<div><span>Handler</span><b>' + mEsc(r.assignee_name || r.recipient_name) + '</b></div></section>' +
-        '<div class="m-report-evidence">' + (r.attachments || []).map(function (a) { return '<button class="m-v2-secondary" type="button" data-evidence="' + a.id + '">' + mEsc(a.original_name) + '</button>'; }).join('') + '</div>' +
-        '<h2 class="m-report-section-title">History</h2><div class="m-report-timeline">' + (r.events || []).map(function (event) {
-          return '<article><small>' + mEsc(event.created_at + ' · ' + (event.actor_name || 'Former staff') + ' · ' + event.kind) + '</small><p>' + mEsc(event.body || '') + '</p></article>';
-        }).join('') + '</div>' +
-        (canHandle ? '<form class="m-report-form" id="m-ir-status"><label><span>Status</span><select>' + ['new', 'triaged', 'investigating', 'resolved', 'closed'].map(function (s) { return '<option value="' + s + '"' + (s === r.status ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></label><button class="m-v2-secondary" type="submit">Update status</button></form>' +
-          '<form class="m-report-form" id="m-ir-assign"><label><span>Assign handler</span><select><option value="">Loading staff…</option></select></label><button class="m-v2-secondary" type="submit">Assign</button></form>' : '') +
-        (r.status !== 'closed' ? '<form class="m-report-form" id="m-ir-reply"><label><span>Follow-up message</span><textarea rows="3" maxlength="3000" required></textarea></label><button class="m-v2-primary" type="submit">Send reply</button></form>' : '');
-      Array.prototype.forEach.call(host.querySelectorAll('[data-evidence]'), function (button) {
-        button.onclick = function () { var a = (r.attachments || []).filter(function (item) { return String(item.id) === button.getAttribute('data-evidence'); })[0]; if (!a) return; if (String(a.mime_type).indexOf('image/') === 0) mPhoto.view(a.url); else API.download(a.url, a.original_name).catch(function (e) { mToast(e.message, 'err'); }); };
+        '<div><span>Handler</span><b>' + mEsc(r.assignee_name || r.recipient_name || 'Not assigned') + '</b></div></section>' +
+        '<h2 class="m-report-section-title">Evidence</h2><div class="m-report-evidence">' + ((r.attachments || []).length ? r.attachments.map(function (a) {
+          var job = state.downloads[a.id] || {};
+          return '<div class="m-report-evidence-item"><button class="m-v2-secondary" type="button" data-evidence="' + mEsc(a.id) + '"' + (job.pending ? ' disabled' : '') + '>' + mEsc((job.pending ? 'Downloading… ' : '') + a.original_name) + '</button>' + (job.error ? '<p class="m-error" role="alert">' + mEsc(job.error) + ' Select the file to retry.</p>' : '') + '</div>';
+        }).join('') : '<p class="m-hint">No evidence attached.</p>') + '</div>' +
+        '<h2 class="m-report-section-title">History</h2><div class="m-report-timeline">' + ((r.events || []).length ? r.events.map(function (event) {
+          return '<article><small>' + mEsc(event.created_at + ' · ' + (event.actor_name || 'Former staff') + ' · ' + label(event.kind)) + '</small><p>' + mEsc(event.body || '') + '</p></article>';
+        }).join('') : '<p class="m-hint">No history entries yet.</p>') + '</div>' +
+        '<p class="m-report-draft-state" data-case-feedback role="status" tabindex="-1">' + mEsc(state.pending ? state.pending === 'reply' ? 'Sending reply…' : state.pending === 'status' ? 'Updating status…' : 'Assigning handler…' : state.feedback || '') + '</p>' +
+        (canHandle ? '<form class="m-report-form m-report-case-form" id="m-ir-status"><h2 class="m-report-section-title">Update status</h2><p class="m-hint">Current status · ' + mEsc(label(r.status)) + '</p><label><span>Status</span><select>' + selectOptions(['new', 'triaged', 'investigating', 'resolved', 'closed'].map(function (s) { return { value: s, label: label(s) }; }), state.status) + '</select></label><p class="m-report-notice" data-close-warning hidden>Closing stops new replies. Your unsent message remains a draft in this open app.</p>' + errorBlock('status') + '<button class="m-v2-secondary" type="submit">Update status</button></form>' +
+          '<form class="m-report-form m-report-case-form" id="m-ir-assign"><h2 class="m-report-section-title">Assign handler</h2><p class="m-hint">Current handler · ' + mEsc(r.assignee_name || r.recipient_name || 'Not assigned') + '</p><label><span>New handler</span><select disabled><option value="">Loading staff…</option></select></label><div data-directory-feedback></div>' + errorBlock('assign') + '<button class="m-v2-secondary" type="submit">Assign handler</button></form>' : '') +
+        (r.status !== 'closed' ? '<form class="m-report-form m-report-case-form" id="m-ir-reply"><h2 class="m-report-section-title">Follow-up message</h2><label><span>Message</span><textarea rows="3" maxlength="3000" required>' + mEsc(state.reply) + '</textarea></label><p class="m-hint">Your unsent message stays in this open app. It is not saved after closing or reloading.</p>' + errorBlock('reply') + '<button class="m-v2-primary" type="submit">Send reply</button></form>' : '<p class="m-report-notice">This report is closed. New replies are unavailable.' + (state.reply ? ' Your unsent message is retained in this open app for when the report is reopened.' : '') + '</p>');
+      host.querySelectorAll('[data-evidence]').forEach(function (button) {
+        button.onclick = async function () {
+          if (!alive() || !button.isConnected) return;
+          var a = (state.report.attachments || []).filter(function (item) { return String(item.id) === button.dataset.evidence; })[0]; if (!a) return;
+          if (String(a.mime_type).indexOf('image/') === 0) { mPhoto.view(a.url); return; }
+          var job = state.downloads[a.id] || (state.downloads[a.id] = {}); if (job.pending) return;
+          job.pending = true; job.error = ''; paintEvidence();
+          try { await API.download(a.url, a.original_name); }
+          catch (error) { if (currentReport(ctx)) job.error = error.message || 'Evidence could not be downloaded.'; }
+          finally { job.pending = false; paintEvidence(); }
+        };
       });
       var status = host.querySelector('#m-ir-status');
-      if (status) status.onsubmit = function (event) { event.preventDefault(); API.post('/identified-reports/' + id + '/status', { status: status.querySelector('select').value }).then(function () { identifiedDetail(view, id); }).catch(function (e) { mToast(e.message, 'err'); }); };
+      if (status) { status.querySelector('select').onchange = function () { state.status = this.value; controls(); }; status.onsubmit = function (event) { event.preventDefault(); if (status.isConnected && state.status !== state.report.status) mutate('status', { status: state.status }); }; }
       var assign = host.querySelector('#m-ir-assign');
-      if (assign) {
-        mUsers.load().then(function () { assign.querySelector('select').innerHTML = mUsers.ranked().filter(function (user) { return user.id !== r.reporter_id; }).map(function (user) { return '<option value="' + user.id + '"' + (user.id === r.assignee_id ? ' selected' : '') + '>' + mEsc(user.full_name) + '</option>'; }).join(''); }).catch(function () { assign.querySelector('select').innerHTML = '<option value="">Directory unavailable</option>'; });
-        assign.onsubmit = function (event) { event.preventDefault(); var userId = assign.querySelector('select').value; if (!userId) return; API.post('/identified-reports/' + id + '/assign', { user_id: Number(userId) }).then(function () { identifiedDetail(view, id); }).catch(function (e) { mToast(e.message, 'err'); }); };
-      }
+      if (assign) assign.onsubmit = function (event) { event.preventDefault(); if (assign.isConnected && directoryReady && !directoryLoading && state.assignee && state.assignee !== String(state.report.assignee_id || state.report.recipient_id) && users.some(function (user) { return String(user.id) === state.assignee && String(user.id) !== String(state.report.reporter_id) && user.active !== 0 && user.active !== false; })) mutate('assign', { user_id: Number(state.assignee) }); };
       var reply = host.querySelector('#m-ir-reply');
-      if (reply) reply.onsubmit = function (event) { event.preventDefault(); var body = reply.querySelector('textarea').value.trim(); if (!body) return; API.post('/identified-reports/' + id + '/reply', { body: body }).then(function () { identifiedDetail(view, id); }).catch(function (e) { mToast(e.message, 'err'); }); };
-    }).catch(function (e) { host.innerHTML = '<div class="m-error">' + mEsc(e.message) + '</div>'; });
+      if (reply) { reply.querySelector('textarea').oninput = function () { state.reply = this.value; controls(); }; reply.onsubmit = function (event) { event.preventDefault(); if (!reply.isConnected) return; var body = reply.querySelector('textarea').value.trim(); if (body && body.length <= 3000) { state.reply = reply.querySelector('textarea').value; mutate('reply', { body: body }); } }; }
+      directory(); controls();
+      if (canHandle && !state.pending && !directoryReady && !directoryLoading && !directoryError) loadDirectory(false);
+    }
+    async function load() {
+      if (loading || !alive()) return;
+      var restoreFocus = host.contains(document.activeElement);
+      loading = true; var revision = state.revision;
+      host.innerHTML = '<div class="m-hint" role="status">Loading report…</div>';
+      try {
+        var report = await API.get('/identified-reports/' + encodeURIComponent(key)); if (!alive()) return;
+        if (revision === state.revision) { var previous = state.report; state.report = report; if (!state.status || (previous && state.status === previous.status)) state.status = report.status; }
+        render();
+      } catch (error) {
+        if (alive()) { host.innerHTML = '<div class="m-error" role="alert">' + mEsc(error.message || 'Could not load this report.') + '</div><button class="m-v2-secondary" type="button" data-retry-case>Retry report</button>'; host.querySelector('button').onclick = load; }
+      } finally { loading = false; if (restoreFocus && alive()) { host.tabIndex = -1; (host.querySelector('[data-retry-case]') || host).focus(); } }
+    }
+    load();
   }
 
   function guidance(view) {
@@ -628,7 +725,7 @@
   }
 
   MApp.route('report-problem', function (view, params) {
-    if (params && params.id) { identifiedDetail(view, params.id); return; }
+    if (params && params.id) { identifiedDetail(view, params.id, params.from); return; }
     if (params && params.mode === 'mine') { identifiedList(view); return; }
     if (params && params.mode === 'assigned') { identifiedList(view, true); return; }
     if (params && params.mode === 'review') { reviewIdentified(view); return; }

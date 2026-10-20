@@ -907,3 +907,6 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 .m-report-success-mark{display:grid;place-items:center;width:58px;height:58px;margin:auto;border-radius:50%;background:var(--v2-green);color:white;font-size:30px}
 
 #m-report-send,.m-report-v2 [data-open-report]{width:100%}
+
+/* Identified case follow-up: retain the existing report cards and theme tokens. */
+.m-report-case-form{margin-top:1rem}.m-report-evidence-item{max-width:100%;min-width:0}.m-report-evidence-item .m-error{max-width:100%;overflow-wrap:anywhere}.m-report-case .m-report-review b{white-space:pre-wrap;overflow-wrap:anywhere}
