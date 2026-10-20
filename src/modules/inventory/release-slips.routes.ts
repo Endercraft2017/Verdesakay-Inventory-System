@@ -26,7 +26,7 @@ router.use(requireAuth);
 
 // Same people who release (orders.routes.ts releaseGate), plus anyone who can see orders.
 const viewGate = requireAnyPermission(['inventory.adjust', 'orders.release', 'orders.view']);
-const releaseGate = requireAnyPermission(['inventory.adjust', 'orders.release']);
+const releaseGate = requirePermission('orders.release');
 const salesGate = requirePermission('orders.edit');
 // A warehouse supervisor: may release without the token the recipient can't present.
 const supervisorGate = requirePermission('inventory.adjust');

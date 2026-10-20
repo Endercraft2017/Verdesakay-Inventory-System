@@ -207,7 +207,7 @@
 
   var OPS = [
     { label: 'Receive PR', sub: 'Purchase requests', route: 'receive', permission: 'inventory.adjust', count: function () { return openCount('/orders?type=purchase'); } },
-    { label: 'Release orders', sub: 'Allocated units ready for handoff', route: 'so', any: ['orders.release','inventory.adjust'],
+    { label: 'Release orders', sub: 'Allocated units ready for handoff', route: 'so', permission: 'orders.release',
       count: function () { return API.get('/orders?type=sale').then(function (rows) {
         return (rows || []).filter(function (x) { return ['approved', 'released'].indexOf(String(x.status).toLowerCase()) !== -1; }).length;
       }); } },
@@ -276,7 +276,6 @@
   }
   function allowed(op) {
     if (!MApp.canOpen(op.route)) return false;
-    if (MApp.can('inventory.adjust') && op.permission !== 'orders.release' && op.permission !== 'production.approve') return true;
     if (op.permission && MApp.can(op.permission)) return true;
     return op.any && op.any.some(function (p) { return MApp.can(p); });
   }

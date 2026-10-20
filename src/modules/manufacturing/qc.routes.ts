@@ -184,10 +184,10 @@ router.get('/records', requirePermission('production.view'), (req, res) => {
 });
 
 /* GET /api/qc/holds — units QA held for review, oldest first, for whoever decides them (any QA
-   inspector, production.qa_review, inventory.adjust): the hold record (reason, who, when, the
+   inspector, production.qa_review): the hold record (reason, who, when, the
    checklist's issues) and how many evidence photos back it. Decided with
    POST /job-orders/:id/units/:unitId/hold-decision. */
-router.get('/holds', requireAnyPermission(['inventory.adjust', 'production.inspect_qa', 'production.qa_review']), (_req, res) => {
+router.get('/holds', requireAnyPermission(['production.inspect_qa', 'production.qa_review']), (_req, res) => {
   const rows = queryAll<{ id: number; identifier: string | null; stage: number; job_order_id: number; job_order_number: string;
     product_name: string; qc_stages: number; record_id: number; remarks: string | null; held_at: string; held_by_name: string | null;
     checklist: string | null; evidence: number }>(
@@ -217,14 +217,13 @@ router.get('/holds', requireAnyPermission(['inventory.adjust', 'production.inspe
 /* GET /api/qc/queue?role=qc|qa — the inspector's unit queue across open job orders (mobile V2,
    Figma 69:16 / 72:16). Same pass rules as POST /job-orders/:id/units/inspect: the first pass is
    QC (production.inspect_qc), the final pass QA (production.inspect_qa), a single-stage job
-   order's one combined pass accepts either; inventory.adjust sees everything. role narrows a
+   order's one combined pass accepts either. role narrows a
    dual-permission account to one desk. Rework units carry their last failure (remarks, failed
    checklist items, repair details) and open parts requests. Also: the caller's own results today. */
-router.get('/queue', requireAnyPermission(['inventory.adjust', 'production.inspect_qc', 'production.inspect_qa']), (req, res) => {
+router.get('/queue', requireAnyPermission(['production.inspect_qc', 'production.inspect_qa']), (req, res) => {
   const perms = req.user!.permissions;
-  const adjust = perms.includes('inventory.adjust');
-  const hasQc = adjust || perms.includes('production.inspect_qc');
-  const hasQa = adjust || perms.includes('production.inspect_qa');
+  const hasQc = perms.includes('production.inspect_qc');
+  const hasQa = perms.includes('production.inspect_qa');
   const role = req.query.role === 'qa' ? 'qa' : req.query.role === 'qc' ? 'qc' : hasQc ? 'qc' : 'qa';
   const units = queryAll<{
     id: number; identifier: string | null; status: string; stage: number; created_at: string; updated_at: string;

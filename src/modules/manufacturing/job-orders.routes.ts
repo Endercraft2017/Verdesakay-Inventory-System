@@ -66,36 +66,32 @@ const joSite = {
     location: queryOne<{ source_location_id: number | null }>('SELECT source_location_id FROM job_orders WHERE id = ?', Number(req.params.id))?.source_location_id ?? null,
   }),
 };
-// Narrow alternatives to writeGate for the actions a dedicated shop-floor role
-// (production_lead / qc_inspector / qa_inspector / receiving_clerk — see
-// shared/permissions.ts) performs without needing full inventory.adjust. inventory.adjust
-// still works too, so admin/warehouse/admin_staff/releasing accounts are unaffected.
-const recordGate = requireAnyPermission(['inventory.adjust', 'production.record']);
+// Stock adjustment is independent of the explicit production task permissions.
+const recordGate = requirePermission('production.record');
 // Door-level gate for /:id/units/inspect only — lets a caller with EITHER inspect
 // permission in; which *specific* pass(es) they're actually allowed to record is then
 // checked inside the handler once it knows which stage(s) the requested units are on
 // (see the inspectPermissionError() call below). qc.configure is a separate concern
 // (checklist administration, not the pass/fail action itself).
-const inspectDoorGate = requireAnyPermission(['inventory.adjust', 'production.inspect_qc', 'production.inspect_qa']);
-const receiveGate = requireAnyPermission(['inventory.adjust', 'production.receive']);
+const inspectDoorGate = requireAnyPermission(['production.inspect_qc', 'production.inspect_qa']);
+const receiveGate = requirePermission('production.receive');
 // Deliberately NOT satisfied by inventory.adjust: approval is the production manager's
 // sign-off, separate from the warehouse that releases the parts. Admin holds every permission.
 const approveGate = requirePermission('production.approve');
 const conversionGate = requireAnyPermission(['production.approve', 'production.manage']);
-const pauseGate = requireAnyPermission(['inventory.adjust', 'production.pause', 'production.manage']);
+const pauseGate = requireAnyPermission(['production.pause', 'production.manage']);
 // Close early returns unused components but never releases or cancels — so a Production
 // Manager (production.manage) may do it without the warehouse's broad inventory.adjust.
-const closeEarlyGate = requireAnyPermission(['inventory.adjust', 'production.manage']);
+const closeEarlyGate = requirePermission('production.manage');
 // A unit QA held for review is decided by any QA inspector or someone granted production.qa_review
-// (the Production Manager by default); inventory.adjust keeps its usual override.
-const holdGate = requireAnyPermission(['inventory.adjust', 'production.inspect_qa', 'production.qa_review']);
+// (the Production Manager by default).
+const holdGate = requireAnyPermission(['production.inspect_qa', 'production.qa_review']);
 
-/** Line decisions made through a narrow production permission (not the broad inventory.adjust
- *  override) must give a reason — the handoff's "pause/resume/close-early require reasons". */
+/** Non-administrator line decisions must give a reason — the handoff's "pause/resume/close-early require reasons". */
 function reasonFor(req: import('express').Request, action: string): { reason: string | null } | { error: string } {
   const { reason } = parseBody(pauseJobOrderSchema, req.body ?? {});
   const r = reason?.trim() || null;
-  if (!r && !req.user!.permissions.includes('inventory.adjust')) return { error: `Give a reason to ${action} this job order` };
+  if (!r && req.user!.role !== 'admin') return { error: `Give a reason to ${action} this job order` };
   return { reason: r };
 }
 /** Append-only audit trail of pause / resume / close-early (job_order_events). */
@@ -474,20 +470,19 @@ router.get('/', listGate, (req, res) => {
     ...params
   );
   // units_actionable: how many of this job order's pending/rework units the CALLER's own
-  // account can actually pass/fail — inventory.adjust (or holding both split permissions)
+  // account can actually pass/fail — holding both split permissions
   // covers everything; a qc_inspector-only or qa_inspector-only account only its own pass.
   // Drives mobile's Production-tab and Home QA badge counts (see production.js / home.js) —
   // without this, those badges showed every open unit regardless of stage, which didn't
   // match qc.js's own queue (already filtered to just what that account can act on).
   const perms = req.user!.permissions;
-  const canAdjust = perms.includes('inventory.adjust');
   const hasQc = perms.includes('production.inspect_qc');
   const hasQa = perms.includes('production.inspect_qa');
   for (const r of rows as unknown as Array<{
     units_pending: number; units_rework: number; units_first_pass_open: number;
     units_final_pass_open: number; units_actionable: number;
   }>) {
-    if (canAdjust || (hasQc && hasQa)) r.units_actionable = r.units_pending + r.units_rework;
+    if (hasQc && hasQa) r.units_actionable = r.units_pending + r.units_rework;
     else if (hasQc) r.units_actionable = r.units_first_pass_open;
     else if (hasQa) r.units_actionable = r.units_final_pass_open;
     else r.units_actionable = 0;
@@ -1956,7 +1951,7 @@ router.post('/:id/units/inspect', inspectDoorGate, syncClass('physical'), (req, 
   // qc_inspector/qa_inspector account is further restricted to the specific pass(es)
   // these units are actually on. A single-stage job order's one pass is both first and
   // final together (it runs both checklists in one go), so either permission covers it.
-  if (!req.user!.permissions.includes('inventory.adjust')) {
+  {
     const hasQc = req.user!.permissions.includes('production.inspect_qc');
     const hasQa = req.user!.permissions.includes('production.inspect_qa');
     const combinedPass = stages <= 1;

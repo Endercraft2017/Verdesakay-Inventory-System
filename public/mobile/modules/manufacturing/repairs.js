@@ -414,7 +414,7 @@
 
   MApp.route('repairs', function (view, params) {
     params = params || {};
-    var clerk = can('inventory.adjust') || can('production.repairs');
+    var clerk = can('production.repairs');
     var decider = can('production.inspect_qc') || can('production.inspect_qa') || can('production.approve');
     if (params.id && params.step === 'decide' && (clerk || decider)) {
       // The server checks it is the requester or a supervisor, never the proposer.

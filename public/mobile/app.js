@@ -24,13 +24,13 @@ window.MApp = (function () {
   // inventory.mobile (src/shared/permissions.ts): their Work rows, Quick Orbit action and the
   // Production tab follow their own desk permission instead.
   function isWarehouse() { return can('inventory.mobile') && hasModule('inventory'); }
-  // The Production tab: anyone with a production action to take — inventory.adjust or any
+  // The Production tab: anyone with a production action to take — any
   // production.* desk permission (production.view alone is read-only, nothing to do here). A
   // releasing_clerk has none, so the tab stays hidden rather than opening on an empty queue (see
   // public/mobile/modules/manufacturing/production.js's own per-row permission filtering).
   function hasProductionAccess() {
     return hasModule('manufacturing') && !!(me && Array.isArray(me.permissions) &&
-      me.permissions.some(function (p) { return p === 'inventory.adjust' || (p.indexOf('production.') === 0 && p !== 'production.view'); }));
+      me.permissions.some(function (p) { return p.indexOf('production.') === 0 && p !== 'production.view'; }));
   }
   function canApprove() { return !!(me && me.can_approve); }
 
@@ -167,13 +167,13 @@ window.MApp = (function () {
     'my-log': ['inventory'], item: ['inventory'], location: ['inventory'], 'low-stock': ['inventory'], scan: ['inventory'], so: ['inventory'], deliveries: ['inventory']
   };
   var DESK_NEEDS = {
-    production: ['inventory.adjust', 'production.record', 'production.pause', 'production.manage', 'production.approve', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.repairs', 'production.receive'],
-    'job-orders': ['inventory.adjust', 'production.view', 'production.record', 'production.pause', 'production.manage', 'production.approve'],
+    production: ['production.record', 'production.pause', 'production.manage', 'production.approve', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.repairs', 'production.receive'],
+    'job-orders': ['production.record', 'production.pause', 'production.manage', 'production.approve'],
     'kit-release': ['inventory.adjust'],
     'unit-issues': ['inventory.adjust', 'production.view', 'production.record', 'production.manage', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.receive', 'production.repairs', 'orders.release'],
-    qc: ['inventory.adjust', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review'],
-    repairs: ['inventory.adjust', 'production.repairs', 'production.inspect_qc', 'production.inspect_qa', 'production.approve'], receiving: ['inventory.adjust', 'production.receive'],
-    so: ['inventory.adjust', 'orders.release'], deliveries: ['delivery.run', 'delivery.manage'],
+    qc: ['production.inspect_qc', 'production.inspect_qa', 'production.qa_review'],
+    repairs: ['production.repairs', 'production.inspect_qc', 'production.inspect_qa', 'production.approve'], receiving: ['production.receive'],
+    so: ['orders.release'], deliveries: ['delivery.run', 'delivery.manage'],
     scan: ['inventory.mobile', 'inventory.view', 'inventory.adjust', 'production.view', 'production.record', 'production.manage', 'production.approve', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.repairs', 'production.receive', 'orders.release'],
     'confidential-reports': ['reports.confidential']
   };

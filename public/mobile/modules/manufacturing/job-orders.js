@@ -6,8 +6,8 @@
    Backend (job-orders.routes.ts): accept (production.record) gates /progress and /units until
    the lead signs for the kit; serialized units go one at a time through POST /:id/units
    (identifier + photo in one multipart request — never queued offline, because the unit needs
-   its server id and photo together); pause/resume/close need a reason unless the caller holds
-   inventory.adjust, and land in job_order_events (GET /:id/events). A kit problem is a tracked
+   its server id and photo together); pause/resume/close need a reason unless the caller is
+   an administrator, and land in job_order_events (GET /:id/events). A kit problem is a tracked
    production issue. Each step is its own URL so the header back arrow walks the flow:
    #/job-orders[?view=all] · ?id=<jo> · ?id=<jo>&step=problem|count|units|interrupted|output|
    scrap|manage|pause|resume|close|history */
@@ -26,11 +26,11 @@
   function responseLabel(r) { return r.local ? 'Saved on site PC — confirmation pending' : 'Confirmed by site authority'; }
 
   var canAdjust = function () { return MApp.can('inventory.adjust'); };
-  var canRecord = function () { return canAdjust() || MApp.can('production.record'); };
-  var canManage = function () { return canAdjust() || MApp.can('production.manage'); };
+  var canRecord = function () { return MApp.can('production.record'); };
+  var canManage = function () { return MApp.can('production.manage'); };
   var canPause = function () { return canManage() || MApp.can('production.pause'); };
-  var canInspect = function () { return canAdjust() || MApp.can('production.inspect_qc') || MApp.can('production.inspect_qa'); };
-  var reasonRequired = function () { return !canAdjust(); };
+  var canInspect = function () { return MApp.can('production.inspect_qc') || MApp.can('production.inspect_qa'); };
+  var reasonRequired = function () { return (MApp.getMe() || {}).role !== 'admin'; };
   var isManager = function () { return MApp.can('production.manage'); };
   var offline = function () { return navigator.onLine === false; };
   var go = function (id, step, extra) { MApp.go('job-orders', Object.assign({ id: id, step: step }, extra || {})); };

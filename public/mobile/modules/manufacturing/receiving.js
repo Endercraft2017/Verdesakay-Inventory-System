@@ -577,7 +577,7 @@
   MApp.route('receiving', async function (view, params) {
     var render = ++routeSerial, hash = location.hash;
     params = params || {};
-    if (!can('inventory.adjust') && !can('production.receive')) {
+    if (!can('production.receive')) {
       view.innerHTML = '<div class="m-error">You don’t have permission to record ready-to-sell stock.</div>';
       return;
     }

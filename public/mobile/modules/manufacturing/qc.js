@@ -27,7 +27,6 @@
   var jos = {};      // job order detail by id (checklists)
 
   var can = function (p) { return MApp.can(p); };
-  var canAdjust = function () { return can('inventory.adjust'); };
   var offline = function () { return navigator.onLine === false; };
 
   var DESKS = {
@@ -82,7 +81,7 @@
 
   function deskFor(params) {
     if (params && (params.role === 'qa' || params.role === 'qc')) return DESKS[params.role];
-    return (can('production.inspect_qa') || can('production.qa_review')) && !can('production.inspect_qc') && !canAdjust() ? DESKS.qa : DESKS.qc;
+    return (can('production.inspect_qa') || can('production.qa_review')) && !can('production.inspect_qc') ? DESKS.qa : DESKS.qc;
   }
   function go(desk, extra) { var before = location.hash; MApp.go('qc', Object.assign({ role: desk.role }, extra || {})); if (location.hash === before) MApp.render(); }
   function page(view, desk, node, title, sub) { return R.page(view, { role: desk.role, node: node, title: title, subtitle: sub }); }
@@ -254,7 +253,7 @@
     var owner = mProductionDrafts.key('qa-hold-queue');
     var decide = desk.role === 'qa' && canDecideHolds();
     // Someone who only decides holds (production.qa_review) has no inspection queue of their own.
-    var inspects = desk.role !== 'qa' || canAdjust() || can('production.inspect_qa');
+    var inspects = desk.role !== 'qa' || can('production.inspect_qa');
     Promise.all([inspects ? loadQueue(desk, true) : Promise.resolve({ units: [], completed: [] }),
       decide ? Promise.all([loadHolds().then(function (rows) { return { rows: rows }; }).catch(function (err) { return { rows: [], error: err }; }),
         mProductionDrafts.listActions('hold-decision', 'hold').then(function (saved) { return { saved: saved }; }).catch(function (err) { return { saved: [], error: err }; })]) : Promise.resolve([{ rows: [] }, { saved: [] }])]).then(function (both) {
@@ -849,7 +848,7 @@
     }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { checklistAssign(view, desk, u, jo); })); });
   }
 
-  function canDecideHolds() { return canAdjust() || can('production.inspect_qa') || can('production.qa_review'); }
+  function canDecideHolds() { return can('production.inspect_qa') || can('production.qa_review'); }
 
   /* ── Decide a held unit (extends 72:396) — online-only ──────────────────── */
   function holdDecision(view, desk, unitId) {
@@ -921,7 +920,7 @@
   MApp.route('qc', async function (view, params) {
     params = params || {};
     var desk = deskFor(params);
-    var canDesk = canAdjust() || can(desk.role === 'qa' ? 'production.inspect_qa' : 'production.inspect_qc') || (desk.role === 'qa' && can('production.qa_review'));
+    var canDesk = can(desk.role === 'qa' ? 'production.inspect_qa' : 'production.inspect_qc') || (desk.role === 'qa' && can('production.qa_review'));
     if (!canDesk) { view.innerHTML = '<div class="m-error">You don’t have the ' + desk.role.toUpperCase() + ' inspection permission.</div>'; return; }
     var attemptHash=location.hash;var attempt;try{attempt=await mWorkflow.load('qc');}catch(e){view.innerHTML='';view.appendChild(R.error(e,function(){MApp.render();}));return;}if(attemptHash!==location.hash)return;if(attempt&&attempt.operation.state!=='draft'){mWorkflow.paint(view,attempt);return;}
     var unitId = params.unit && Number(params.unit);

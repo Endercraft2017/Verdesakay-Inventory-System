@@ -35,9 +35,7 @@ export type Permission =
   | 'announce'
   | 'qc.configure'
   | 'delivery.run' | 'delivery.manage'
-  // Narrow production-pipeline actions, each independently grantable alongside (or
-  // instead of) the broad inventory.adjust — see job-orders.routes.ts / production.routes.ts
-  // requireAnyPermission(['inventory.adjust', 'production.xxx']) call sites.
+  // Production task permissions are independent of inventory.adjust.
   | 'production.view'       // see the production screens (job orders, QC, batches, BOM) — split from inventory.view
   | 'production.approve'    // production manager: approve a draft job order for release
   | 'production.pause'      // pause / resume a running job order (e.g. for a higher-priority one)

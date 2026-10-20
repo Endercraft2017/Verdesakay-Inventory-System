@@ -126,8 +126,7 @@ export const BUILTIN_ROLES: RoleSeed[] = [
   // (shared/desk-access.ts); the phone's Work row, Quick Orbit action and Production tab follow the
   // desk permission too. Deliberately no inventory.mobile (warehouse phone tools), inventory.view or
   // production.view: the item catalogue, suppliers, every job order and production issues only if
-  // an admin ticks them in Roles (user decision 2026-10-06). 'warehouse', 'admin_staff' and 'releasing' already
-  // pass every production.* requireAnyPermission check through inventory.adjust.
+  // an admin ticks them in Roles (user decision 2026-10-06). Stock adjustment does not grant desk access.
   { key: 'parts_clerk', label: 'Parts Clerk', description: 'Accepts or rejects repair parts requests.',
     permissions: [...BASELINE, 'production.repairs'] },
   { key: 'production_lead', label: 'Production Lead', description: 'Records finished units off the line.',

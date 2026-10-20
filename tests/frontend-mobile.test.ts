@@ -354,6 +354,29 @@ describe('mobile bootstrap', () => {
     expect(WAREHOUSE.filter((r) => blocked(wh, r))).toEqual([]);
   });
 
+  it('stock adjustment does not add unrelated tasks to Work or open their screens', async () => {
+    const win = await bootAs({ id: 2667, username: 'marvin', full_name: 'Dan Marvin', role: 'warehouse',
+      employee: true, modules: null, permissions: ['mobile.access', 'inventory.view', 'inventory.adjust',
+        'production.view', 'production.repairs'] }, (url: string) => {
+      if (url === '/api/auth/me') return undefined;
+      if (url === '/api/messages/unread-count') return { count: 0 };
+      if (url === '/api/me/today') return {};
+      return [];
+    });
+    win.location.hash = '#/work';
+    win.MApp.render();
+    const text = win.mWorkQueue().textContent;
+    expect(text).toContain('Receive PR');
+    expect(text).toContain('Parts requests');
+    for (const label of ['Production job orders', 'QC technical inspection', 'QA appearance inspection',
+      'QA holds', 'RTS recording', 'Release orders', 'Deliveries']) expect(text).not.toContain(label);
+    for (const route of ['job-orders', 'qc', 'receiving', 'so']) {
+      win.location.hash = '#/' + route;
+      win.MApp.render();
+      expect(win.document.getElementById('m-view').textContent).toMatch(/permission|access/i);
+    }
+  });
+
   it('a desk-only account counts its Work tiles from its own queue, never the job-order list', async () => {
     const asked: string[] = [];
     const ME = { id: 3, username: 'qc9', full_name: 'QC Only', role: 'desk_qc', employee: true, modules: null,
@@ -733,7 +756,7 @@ describe('mobile bootstrap', () => {
       warehouse.location.hash = '#/work'; await wait();
       expect(warehouse.document.getElementById('m-view').textContent).not.toContain('Awaiting production approval');
       warehouse.location.hash = '#/job-orders?view=approval'; await wait();
-      expect(warehouse.document.getElementById('m-view').textContent).toContain('requires production approval permission');
+      expect(warehouse.document.querySelector('#m-view [data-no-permission]')).not.toBeNull();
     });
 
     it('reviews the component snapshot, locations and held stock before approving short demand', async () => {

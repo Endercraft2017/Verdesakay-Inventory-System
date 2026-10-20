@@ -686,7 +686,7 @@
   MApp.route('so', async function (view, params) {
     var render = ++renderSerial, hash = location.hash;
     params = params || {};
-    if (!can('inventory.adjust') && !can('orders.release')) {
+    if (!can('orders.release')) {
       view.innerHTML = '<div class="m-error">You don’t have permission to release sale orders.</div>';
       return;
     }

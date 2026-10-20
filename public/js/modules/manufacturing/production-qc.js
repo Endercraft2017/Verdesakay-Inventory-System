@@ -22,10 +22,9 @@
 // panel to a bulk pass/fail scoped to the checked units.
 async function inspectModal(jobOrderId, onDone) {
   const canConfigQc = App.hasPermission('qc.configure');
-  const canAdjust = App.hasPermission('inventory.adjust');
   const hasQc = App.hasPermission('production.inspect_qc');
   const hasQa = App.hasPermission('production.inspect_qa');
-  const canInspect = canAdjust || hasQc || hasQa;
+  const canInspect = hasQc || hasQa;
 
   let jo;
   try { jo = await API.get('/job-orders/' + jobOrderId); }
@@ -69,7 +68,6 @@ async function inspectModal(jobOrderId, onDone) {
   // Pass/Fail buttons up front instead of letting the account hit a 403 after filling the
   // form — same "guide the user" reasoning as the rest of this screen.
   function passAllowed(firstP, finalP) {
-    if (canAdjust) return true;
     const combinedPass = (jo.qc_stages || 1) <= 1;
     return combinedPass ? (hasQc || hasQa) : ((!firstP || hasQc) && (!finalP || hasQa));
   }

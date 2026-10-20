@@ -11,7 +11,7 @@
    release-slip, photos = /api/attachments kind 'release_proof' on the order first, taken over by the
    slip as kind 'release' (both apps must send one — the server refuses the slip without). filter.tab = 'queue' | 'slips' */
 App.register('releasing', async (view, filter) => {
-  const canRelease = App.hasPermission('inventory.adjust') || App.hasPermission('orders.release');
+  const canRelease = App.hasPermission('orders.release');
   const canInspectReturn = App.hasPermission('inventory.adjust');
   const canRepairReturn = canInspectReturn || App.hasPermission('production.inspect_qc') || App.hasPermission('production.inspect_qa');
   const canLinkCredit = App.hasPermission('accounting.manage');

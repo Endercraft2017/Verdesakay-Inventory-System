@@ -5,28 +5,22 @@
    created-record links). */
 App.register('job-orders', async (view, filter) => {
   const canWrite = App.hasPermission('inventory.adjust');
-  // Narrower than canWrite: a production_lead/qc_inspector/qa_inspector account
-  // (production.record / production.inspect_qc / production.inspect_qa, no
-  // inventory.adjust) can use just the Record production / QC callout + repair-parts
-  // sections below — not the job-order-lifecycle actions (new/release/pause/cancel/
-  // close/components) that stay canWrite-only. This is only the door check (does the
-  // section render at all) — which specific pass a qc_inspector/qa_inspector account
-  // may actually perform is enforced per-unit by the server (see production-qc.js).
-  const canRecord = canWrite || App.hasPermission('production.record');
+  // Production execution requires explicit task permissions, separate from stock lifecycle actions.
+  const canRecord = App.hasPermission('production.record');
   // Approval is its own permission (production.approve), not implied by inventory.adjust.
   const canApprove = App.hasPermission('production.approve');
   const canConvert = canApprove || App.hasPermission('production.manage');
   const canReportIssue = canRecord || canApprove || App.hasPermission('production.manage')
     || App.hasPermission('production.inspect_qc') || App.hasPermission('production.inspect_qa')
     || App.hasPermission('production.receive');
-  const canInspectHere = canWrite || App.hasPermission('production.inspect_qc') || App.hasPermission('production.inspect_qa');
+  const canInspectHere = App.hasPermission('production.inspect_qc') || App.hasPermission('production.inspect_qa');
   // Line decisions without the warehouse's inventory.adjust: a Production Manager may pause /
   // resume (production.pause or .manage) and close early (production.manage) — each with a reason
   // the server requires (job-orders.routes.ts reasonFor). Cancel / delete / release stay canWrite.
-  const canPauseLine = canWrite || App.hasPermission('production.pause') || App.hasPermission('production.manage');
-  const canCloseEarly = canWrite || App.hasPermission('production.manage');
+  const canPauseLine = App.hasPermission('production.pause') || App.hasPermission('production.manage');
+  const canCloseEarly = App.hasPermission('production.manage');
   // A unit QA held for review: any QA inspector or a production.qa_review holder decides it.
-  const canDecideHold = canWrite || App.hasPermission('production.inspect_qa') || App.hasPermission('production.qa_review');
+  const canDecideHold = App.hasPermission('production.inspect_qa') || App.hasPermission('production.qa_review');
   const STATUS = ['', 'draft', 'released', 'in_progress', 'paused', 'completed', 'cancelled'];
   const state = { status: '' };
   let rows = [];
@@ -659,9 +653,9 @@ App.register('job-orders', async (view, filter) => {
                        ${jo.warehouse_accepted_at ? `<button type="button" class="btn secondary" data-do="_prepare">${jo.prepared_at ? 'Review / adjust picked kit' : 'Pick / review kit'}</button>` : ''}
                        ${jo.prepared_at ? `<button type="button" class="btn" data-do="_release">Release &amp; issue slip</button>` : ''}
                        <button type="button" class="btn secondary danger" data-do="_delete">Delete</button>` : ''}
-          ${running ? `<button type="button" class="btn secondary" data-do="pause">Pause</button>` : ''}
-          ${jo.status === 'paused' ? `<button type="button" class="btn secondary" data-do="resume">Resume</button>` : ''}
-          ${(running || jo.status === 'paused') ? `${jo.conversion_job_order_id ? '' : `<button type="button" class="btn secondary" data-do="close">Close (finish early)</button>`}
+          ${running && canPauseLine ? `<button type="button" class="btn secondary" data-do="pause">Pause</button>` : ''}
+          ${jo.status === 'paused' && canPauseLine ? `<button type="button" class="btn secondary" data-do="resume">Resume</button>` : ''}
+          ${(running || jo.status === 'paused') ? `${jo.conversion_job_order_id || !canCloseEarly ? '' : `<button type="button" class="btn secondary" data-do="close">Close (finish early)</button>`}
                        <button type="button" class="btn secondary danger" data-do="cancel">Cancel</button>` : ''}
         </div>` : ''}`;
 
@@ -992,8 +986,8 @@ App.register('job-orders', async (view, filter) => {
       });
       el.querySelectorAll('[data-do]').forEach((b) => b.onclick = () => {
         const d = b.dataset.do;
-        // Without inventory.adjust the server needs a reason for pause / resume / close early.
-        if (!canWrite && (d === 'pause' || d === 'resume' || d === 'close')) {
+        // Non-administrators must give a reason for pause / resume / close early.
+        if (!App.isAdmin() && (d === 'pause' || d === 'resume' || d === 'close')) {
           const what = d === 'close' ? 'close this job order early' : d;
           const reason = window.prompt(`Why ${what}? (required)`, '');
           if (reason === null) return;

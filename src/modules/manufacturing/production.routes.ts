@@ -15,10 +15,10 @@ import { batchBalances } from '../inventory/batch-stock';
  *  can only be re-inspected once none of its requests are still `requested`
  *  (see job-orders.routes.ts /units/inspect).
  *
- *  Read = production.view. Writes: raising/cancelling a request needs inventory.adjust
- *  or production.inspect_qc/qa (the QC or QA inspector who failed the unit — either
+ *  Read = production.view. Writes: raising/cancelling a request needs
+ *  production.inspect_qc/qa (the QC or QA inspector who failed the unit — either
  *  covers it, this isn't pass-specific the way job-orders.routes.ts /:id/units/inspect
- *  is); accept/reject needs inventory.adjust or production.repairs (the warehouse parts
+ *  is); accept/reject needs production.repairs (the warehouse parts
  *  clerk) — see inspectGate / repairsGate below. Everything else here (teams, batches,
  *  capacity, label templates) stays plain inventory.adjust. Mounted at /api/production. */
 import { Router } from 'express';
@@ -68,8 +68,8 @@ const writeGate = requirePermission('inventory.adjust');
 // qc_inspector/parts_clerk account can act here without full inventory.adjust.
 // Either QC or QA covers these — none of them (parts request, batch sign-off, request
 // cancel) is specific to one pass the way job-orders.routes.ts /:id/units/inspect is.
-const inspectGate = requireAnyPermission(['inventory.adjust', 'production.inspect_qc', 'production.inspect_qa']);
-const repairsGate = requireAnyPermission(['inventory.adjust', 'production.repairs']);
+const inspectGate = requireAnyPermission(['production.inspect_qc', 'production.inspect_qa']);
+const repairsGate = requirePermission('production.repairs');
 
 const REQUEST_SELECT = `
   SELECT r.*,

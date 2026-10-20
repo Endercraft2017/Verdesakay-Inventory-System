@@ -2,12 +2,7 @@
    parts requests. Split out from the general Work queue so production execution
    has its own home, separate from warehouse put-away/pick/ship tasks. */
 (function () {
-  // perm (or perms, for a row more than one narrow role can open — QC / QA): the narrow
-  // permission(s) that person's role needs (see src/shared/permissions.ts). inventory.adjust
-  // always also qualifies (admin/warehouse/admin_staff/releasing keep seeing every tile,
-  // unchanged) — a row only hides for an account that holds NONE of its perm(s), so e.g. a
-  // qc_inspector-only account still sees "QC / QA" (its own inspect_qc permission covers it)
-  // but not the other three.
+  // Each tile requires its explicit task permission.
   var ROWS = [
     { icon: '🏭', label: 'Awaiting approval', sub: 'review draft production plans', route: 'job-orders', params: { view: 'approval' }, color: '#6d4a91', perm: 'production.approve', strict: true,
       count: function () { return API.get('/job-orders?stage=awaiting_approval').then(function (rows) { return mProductionDrafts.approvalCount(rows || []); }); } },
@@ -43,7 +38,7 @@
     ROWS.filter(function (r) {
       if (!MApp.canOpen(r.route)) return false;
       var perms = r.perms || (r.perm ? [r.perm] : []);
-      return (!r.strict && MApp.can('inventory.adjust')) || perms.some(function (p) { return MApp.can(p); });
+      return perms.some(function (p) { return MApp.can(p); });
     }).forEach(function (r) {
       var row = mEl(
         '<div class="m-wq-row" style="--wq:' + r.color + '">' +

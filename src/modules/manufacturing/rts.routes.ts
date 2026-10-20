@@ -20,7 +20,7 @@ import { notifyAnyPermission } from '../../shared/push';
 
 const router = Router();
 router.use(requireAuth);
-const receiveGate = requireAnyPermission(['inventory.adjust', 'production.receive']);
+const receiveGate = requirePermission('production.receive');
 
 // Dedicated receiving scope: no broad catalogue or production-write grant is added.
 router.get('/legacy/context', receiveGate, (_req, res) => {

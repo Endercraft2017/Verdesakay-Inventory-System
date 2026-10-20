@@ -49,11 +49,8 @@ function editAccess(req: Request, res: Response, next: NextFunction): void {
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
-// Narrow releasing_clerk role (src/shared/permissions.ts) — a mobile-only account scoped
-// to just scanning/entering goods out against an approved sale order, without the broad
-// inventory.adjust the 'releasing'/'warehouse'/'admin'/'admin_staff' roles use for this
-// same action (those roles already satisfy this via inventory.adjust, unaffected).
-const releaseGate = requireAnyPermission(['inventory.adjust', 'orders.release']);
+// Every role needs the explicit permission to release sale-order stock.
+const releaseGate = requirePermission('orders.release');
 
 /** An order's decisions belong to the site of its stock location; one without one (every purchase
  *  order, a sale order with no location) is company-wide: the main site's (docs/OFFLINE-FIRST.md §16). */
