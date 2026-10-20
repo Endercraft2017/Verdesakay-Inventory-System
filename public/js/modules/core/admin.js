@@ -15,6 +15,7 @@ App.register('admin', async (view, filter) => {
       </div>
       <div class="grow"></div>
       <div class="search-box search" id="user-search-box">${UI.icon('search', 16)}<input id="user-search" placeholder="Search staff…" /></div>
+      <div class="search-box search hidden" id="role-search-box">${UI.icon('search', 16)}<input id="role-search" type="search" aria-label="Search roles" placeholder="Search roles…" /></div>
       <button class="btn secondary" id="manage-depts">${UI.icon('building')} Departments</button>
       <button class="btn secondary" id="sign-in-security">${UI.icon('key')} Sign-in security</button>
       <button class="btn" id="add-user">${UI.icon('plus')} New account</button>
@@ -25,6 +26,7 @@ App.register('admin', async (view, filter) => {
   const tableEl = view.querySelector('#users-table');
   let allUsers = [];
   let userQuery = '';
+  let roleQuery = '';
   let tab = filter && filter.tab === 'roles' ? 'roles' : 'accounts';
   let catalog = await AccessEditor.getCatalog(true);
   if (!view.isConnected) return;
@@ -69,6 +71,7 @@ App.register('admin', async (view, filter) => {
     tab = next;
     view.querySelectorAll('#acct-tabs [data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     view.querySelector('#user-search-box').classList.toggle('hidden', tab !== 'accounts');
+    view.querySelector('#role-search-box').classList.toggle('hidden', tab !== 'roles');
     view.querySelector('#manage-depts').classList.toggle('hidden', tab !== 'accounts');
     view.querySelector('#sign-in-security').classList.toggle('hidden', tab !== 'accounts');
     view.querySelector('#add-user').classList.toggle('hidden', tab !== 'accounts');
@@ -83,16 +86,21 @@ App.register('admin', async (view, filter) => {
   }
 
   function renderRoles() {
+    const query = roleQuery.toLowerCase();
+    const roles = catalog.roles.map((role) => ({ role, summary: AccessEditor.roleSummary(catalog, role.key) }));
+    const shown = roles.filter(({ role, summary }) => !query ||
+      [role.key, role.label, role.description, summary].filter(Boolean).join(' ').toLowerCase().includes(query));
     tableEl.innerHTML = `
-      <p class="muted" style="margin:0 0 12px">A role is a set of permissions. Everyone with the role gets them;
+      <div class="admin-roles-intro"><p class="muted">A role is a set of permissions. Everyone with the role gets them;
         you can still add or remove single permissions for one person from their account's <b>Access</b>.</p>
-      <table>
-        <thead><tr><th>Role</th><th>Covers</th><th class="right">Accounts</th><th>HR can assign</th><th></th></tr></thead>
-        <tbody>${catalog.roles.map((r) => `
+        <p class="muted admin-role-count" role="status">${query ? `Showing ${shown.length} of ${roles.length} roles` : `${roles.length} role${roles.length === 1 ? '' : 's'}`}</p></div>
+      <div class="admin-roles-scroll" role="region" aria-label="Roles table" tabindex="0"><table class="admin-roles-table">
+        <thead><tr><th scope="col">Role</th><th scope="col">Covers</th><th scope="col" class="right">Accounts</th><th scope="col">HR can assign</th><th scope="col" aria-label="Role actions"></th></tr></thead>
+        <tbody>${shown.map(({ role: r, summary }) => `
           <tr class="clickable" data-role="${UI.esc(r.key)}">
             <td><strong>${UI.esc(r.label)}</strong>${r.fixed ? ' <span class="badge-pill">Fixed</span>' : ''}
               ${r.description ? `<div class="muted" style="font-size:12px">${UI.esc(r.description)}</div>` : ''}</td>
-            <td class="muted" style="font-size:12px;max-width:420px">${UI.esc(AccessEditor.roleSummary(catalog, r.key))}</td>
+            <td class="muted" style="font-size:12px;max-width:420px">${UI.esc(summary)}</td>
             <td class="right">${r.user_count}</td>
             <td>${r.staff ? '<span class="badge-pill ok">Yes</span>' : '<span class="muted">Admin only</span>'}</td>
             <td class="actions">
@@ -100,9 +108,13 @@ App.register('admin', async (view, filter) => {
               <button class="icon-btn" title="Duplicate as a new role" data-role-copy="${UI.esc(r.key)}">${UI.icon('file')}</button>
               ${r.fixed ? '' : `<button class="icon-btn danger" title="Delete" data-role-del="${UI.esc(r.key)}">${UI.icon('trash')}</button>`}
             </td>
-          </tr>`).join('')}
+          </tr>`).join('') || `<tr><td colspan="5"><div class="empty">${query ? 'No matching roles. Try another search.' : 'No roles available.'}${query ? '<br><button class="btn secondary small" type="button" data-clear-role-search>Clear search</button>' : ''}</div></td></tr>`}
         </tbody>
-      </table>`;
+      </table></div>`;
+    const clear = tableEl.querySelector('[data-clear-role-search]');
+    if (clear) clear.onclick = () => {
+      roleQuery = ''; view.querySelector('#role-search').value = ''; renderRoles(); view.querySelector('#role-search').focus();
+    };
     const byKey = (k) => catalog.roles.find((r) => r.key === k);
     tableEl.querySelectorAll('tr[data-role]').forEach((tr) => tr.onclick = (e) => {
       if (e.target.closest('.actions')) return;
@@ -417,6 +429,10 @@ App.register('admin', async (view, filter) => {
   view.querySelector('#user-search').addEventListener('input', (e) => {
     userQuery = e.target.value.trim();
     renderUsers();
+  });
+  view.querySelector('#role-search').addEventListener('input', (e) => {
+    roleQuery = e.target.value.trim();
+    if (tab === 'roles') renderRoles();
   });
   await load();
   if (!view.isConnected) return;

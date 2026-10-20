@@ -1856,3 +1856,16 @@ select option, select optgroup { background-color: var(--surface); color: var(--
 .kr-photo.loading { background: linear-gradient(110deg, var(--surface-2) 25%, var(--accent-weak) 45%, var(--surface-2) 65%); background-size: 250% 100%; animation: punchPhotoShimmer 1.6s ease-in-out infinite; }
 @keyframes punchPhotoShimmer { to { background-position: -170% 0; } }
 @media (prefers-reduced-motion: reduce) { .kr-photo.loading { animation: none; } }
+
+/* Roles keep the existing account panel, with a padded introduction and contained table. */
+.admin-roles-intro{padding:18px 20px 14px}
+.admin-roles-intro>p{margin:0;line-height:1.5}
+.admin-roles-intro .admin-role-count{margin-top:8px;font-size:12px}
+.admin-roles-scroll{max-width:100%;overflow-x:auto}
+.admin-roles-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.admin-roles-table{min-width:820px}
+.admin-roles-table th{white-space:nowrap}
+.admin-roles-table td:first-child{min-width:200px;overflow-wrap:anywhere}
+.admin-roles-table td:nth-child(2){min-width:240px;overflow-wrap:anywhere}
+.admin-roles-table td:nth-child(4),.admin-roles-table td.actions{white-space:nowrap}
+.admin-roles-table .empty .btn{margin-top:12px}
