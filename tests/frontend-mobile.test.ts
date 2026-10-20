@@ -2303,6 +2303,8 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
     const doc = win.document;
     (doc.querySelector('[data-anon="details"]') as HTMLTextAreaElement).value = 'Pallets are blocking the fire exit.';
     (doc.querySelector('.m-report-anon-form') as HTMLFormElement).dispatchEvent(new win.Event('submit', { cancelable: true }));
+    // Review is a routed screen so Back and repeated renders share the same pending send.
+    await expect.poll(() => doc.getElementById('m-anon-send')).not.toBeNull();
     (doc.getElementById('m-anon-send') as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 30));
     const submit = calls.find((c) => c.url === '/api/anonymous-reports');

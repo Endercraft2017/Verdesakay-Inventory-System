@@ -25,14 +25,8 @@
     return view.querySelector('#m-report-body');
   }
 
-  function saveDraft(key, data) {
-    try { draftStore().setItem(draftKey(key), JSON.stringify(data)); } catch (e) {}
-  }
   function loadDraft(key) {
     try { return JSON.parse(draftStore().getItem(draftKey(key)) || '{}'); } catch (e) { return {}; }
-  }
-  function clearDraft(key) {
-    try { draftStore().removeItem(draftKey(key)); } catch (e) {}
   }
 
   function hub(view) {
@@ -57,7 +51,7 @@
       host.querySelector('.identified').appendChild(hint);
     }
     host.querySelector('#m-report-known').onclick = function () { MApp.go('report-problem', { mode: 'identified' }); };
-    host.querySelector('#m-report-anon').onclick = function () { anonymous(view); };
+    host.querySelector('#m-report-anon').onclick = function () { anonymousRoute('anonymous'); };
     host.querySelector('#m-report-mine').onclick = function () { MApp.go('report-problem', { mode: 'mine' }); };
     host.querySelector('#m-report-assigned').onclick = function () { MApp.go('report-problem', { mode: 'assigned' }); };
     host.querySelector('#m-report-guide').onclick = function () { guidance(view); };
@@ -306,6 +300,62 @@
     host.querySelector('[data-report-hub]').onclick = function () { MApp.go('report-problem'); };
   }
 
+  // Private in-memory UI state only. Identity is never added to anonymous payloads or drafts.
+  var anonymousSession = null;
+  function anonymousContext() {
+    var account = String((MApp.getMe() || {}).id || 'guest'), token = API.getToken?.() || '', shared = API.isSharedSession();
+    if (!anonymousSession || anonymousSession.account !== account || anonymousSession.token !== token || anonymousSession.shared !== shared) {
+      if (anonymousSession) anonymousSession.records.forEach(releaseAnonymousPhotos);
+      var data = loadDraft(ANON_DRAFT_KEY);
+      if (!data || typeof data !== 'object' || Array.isArray(data)) data = {};
+      anonymousSession = { account: account, token: token, shared: shared, data: data, files: [], saved: !!Object.keys(data).length, missingPhotos: Number(data.photo_count) || 0, version: 0, pending: null, preparing: null, active: null, records: [], opened: null, receipt: null };
+    }
+    return anonymousSession;
+  }
+  function currentAnonymous(ctx) {
+    return anonymousSession === ctx && ctx.account === String((MApp.getMe() || {}).id || 'guest') && ctx.token === (API.getToken?.() || '') && ctx.shared === API.isSharedSession();
+  }
+  function releaseAnonymousPhotos(record) {
+    Object.keys(record.photos).forEach(function (id) { if (record.photos[id].url) URL.revokeObjectURL(record.photos[id].url); });
+    record.photos = Object.create(null);
+  }
+  function anonymousDraftText(ctx) {
+    var data = {}; ['category', 'subject', 'details', 'date', 'location'].forEach(function (key) { data[key] = ctx.data[key] || ''; });
+    data.photo_count = ctx.files.length || ctx.missingPhotos; return JSON.stringify(data);
+  }
+  function persistAnonymous(ctx) {
+    ctx.version++;
+    try { draftStore().setItem(ANON_DRAFT_KEY, anonymousDraftText(ctx)); ctx.saved = true; }
+    catch (error) { ctx.saved = false; }
+  }
+  function anonymousBusy(ctx) { return !!(ctx.pending || ctx.preparing); }
+  function armAnonymous(ctx) {
+    mPersonalDraft.arm(function () { return false; }, function () { return anonymousBusy(ctx) || !!(ctx.receipt && !ctx.receipt.saved && ctx.active?.kind === 'receipt'); }, { busyText: function () {
+      if (ctx.receipt && !ctx.receipt.saved) return 'Save your report number and access code, then confirm that you saved them.';
+      return ctx.preparing ? 'Please wait for photo preparation to finish.' : 'Please wait for the anonymous report request to finish.';
+    } });
+  }
+  function anonymousActive(ctx, kind, host, paint) { ctx.active = { kind: kind, host: host, paint: paint }; armAnonymous(ctx); }
+  function paintAnonymous(ctx) { if (currentAnonymous(ctx) && ctx.active?.host.isConnected && ctx.active.paint) ctx.active.paint(); }
+  function anonymousAlive(ctx, host) { return currentAnonymous(ctx) && host.isConnected; }
+  function anonymousError(host, selector, message) {
+    var target = host.querySelector(selector); if (!target) return;
+    target.textContent = message || ''; target.hidden = !message;
+  }
+  function anonymousFeedback(ctx, selector) {
+    var target = currentAnonymous(ctx) && ctx.active?.host.isConnected && ctx.active.host.querySelector(selector);
+    if (target) target.focus();
+  }
+  function anonymousRoute(mode) { MApp.go('report-problem', { mode: mode }); }
+  function validAnonymousReport(report) { return report && typeof report.number === 'string' && typeof report.status === 'string' && Array.isArray(report.messages); }
+  function uncertainAnonymous(message) { var error = new Error(message); error.uncertain = true; return error; }
+  window.addEventListener('beforeunload', function (event) {
+    var ctx = anonymousSession;
+    if (ctx && currentAnonymous(ctx) && (anonymousBusy(ctx) || ctx.files.length || (!ctx.saved && (ctx.data.details || ctx.data.subject)) || (ctx.receipt && !ctx.receipt.saved) || ctx.records.some(function (record) { return record.reply || record.files.length; }))) {
+      event.preventDefault(); event.returnValue = '';
+    }
+  });
+
   /* Identity-free transport for the anonymous channel. Deliberately NOT API.post/API.upload:
      those add the bearer token (and the offline queue would persist it with an idempotency
      key). Only the ticket request is authenticated; the server keeps no link between ticket
@@ -322,9 +372,9 @@
       init.body = JSON.stringify(body);
     }
     return fetch(API.base() + '/api/anonymous-reports' + path, init).catch(function () {
-      var e = new Error('You’re offline. Nothing was sent — your draft is still on this device.'); e.offline = true; throw e;
+      throw uncertainAnonymous('Could not confirm the request. The connection may have been interrupted.');
     }).then(function (res) {
-      return res.json().catch(function () { return {}; }).then(function (data) {
+      return res.json().catch(function () { throw uncertainAnonymous('Could not read the server response.'); }).then(function (data) {
         if (!res.ok) { var e = new Error(data.error || 'Request failed (' + res.status + ')'); e.status = res.status; throw e; }
         return data;
       });
@@ -350,7 +400,6 @@
      sent. The server strips again (defense in depth). */
   var ANON_MAX_PHOTOS = 4;
   var ANON_ACCEPT = 'image/*,application/pdf';
-  var anonPhotos = []; // in memory only — never in the localStorage draft
   function scrubPhoto(file, i, room) {
     var name = function (k) { return 'photo-' + (i + k + 1) + '.jpg'; };
     if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '')) {
@@ -370,12 +419,35 @@
     'What the picture or page shows is not removed — check for names, faces, name tags, screens, reflections or a spot only you use.';
   function photoCountText(n) { return n + ' photo' + (n === 1 ? '' : 's'); }
 
+  function anonymousPicker(ctx, owner, host, slot, onChange) {
+    var preparation = null;
+    var picker = mPhoto.picker({
+      max: slot, initial: owner.files, prepare: scrubPhoto, accept: ANON_ACCEPT,
+      canEdit: function () { return anonymousAlive(ctx, host) && picker.isConnected && !anonymousBusy(ctx); },
+      onBusy: function (busy) {
+        if (!currentAnonymous(ctx)) return;
+        if (busy) { preparation = {}; ctx.preparing = preparation; owner.photoError = ''; ctx.review = null; }
+        else if (ctx.preparing === preparation) { ctx.preparing = null; preparation = null; }
+        paintAnonymous(ctx);
+      },
+      onError: function (error) { if (currentAnonymous(ctx)) { owner.photoError = (error.message || 'Photo could not be prepared.') + ' The file was skipped. Choose it again or continue without it.'; } },
+      onChange: function (files) {
+        if (!currentAnonymous(ctx) || (preparation ? ctx.preparing !== preparation : !host.isConnected || ctx.pending)) return;
+        owner.files = files.slice(); onChange();
+      }
+    });
+    return picker;
+  }
+
   function anonymous(view) {
+    var ctx = anonymousContext();
+    if (ctx.receipt) { anonymousReceipt(view); return; }
     MApp.setTitle('Anonymous report');
-    var draft = loadDraft(ANON_DRAFT_KEY);
-    var host = shell(view, '46:779', 'Anonymous report', 'Separate protected reporting channel', function () { hub(view); });
+    var draft = ctx.data;
+    var host = shell(view, '46:779', 'Anonymous report', 'Separate protected reporting channel', function () { MApp.go('report-problem'); });
     host.innerHTML =
       '<aside class="m-report-anon-notice"><b>Before you continue</b><span>Your name, account, device and exact time are not stored with this report. What you write can still identify you — leave out names or details only you would know if that matters to you.</span></aside>' +
+      (ctx.missingPhotos && !ctx.files.length ? '<p class="m-report-notice">Text draft restored. Reattach your previous photos or PDF pages if they are still needed.</p>' : '') +
       '<form class="m-report-form m-report-anon-form" novalidate>' +
         '<label><span>Category *</span><select data-anon="category">' + selectOptions(CATEGORIES, draft.category || CATEGORIES[0]) + '</select></label>' +
         '<label><span>Short title</span><input data-anon="subject" maxlength="160" value="' + mEsc(draft.subject || '') + '" placeholder="Optional"></label>' +
@@ -384,179 +456,292 @@
         '<label><span>Location</span><input data-anon="location" maxlength="160" value="' + mEsc(draft.location || '') + '" placeholder="Optional"></label></div>' +
         '<div class="m-report-files m-anon-photos"><span>Photos or PDF pages (optional, up to ' + ANON_MAX_PHOTOS + ')</span><div data-anon-photos></div>' +
           '<small>' + mEsc(PHOTO_NOTE) + ' Photos aren’t kept in the saved draft.</small></div>' +
+        '<p class="m-report-draft-state" data-anon-draft role="status"></p><p class="m-report-draft-state" data-anon-preparing role="status"></p>' +
+        '<p class="m-error" data-anon-error role="alert" tabindex="-1" hidden></p><p class="m-error" data-anon-photo-error role="alert" hidden></p>' +
         '<button class="m-v2-primary" type="submit">Review anonymous report</button></form>' +
+      '<div class="m-anon-clear"><button class="m-v2-secondary" type="button" data-clear-draft>Clear draft</button>' +
+      '<div data-clear-confirm hidden><p class="m-report-notice">Clear this anonymous text draft and the photos selected in this app?</p><button class="m-v2-secondary" type="button" data-keep-draft>Keep draft</button><button class="m-v2-secondary" type="button" data-confirm-clear>Clear text and photos</button></div></div>' +
       '<button class="m-report-row" id="m-anon-check" type="button"><span><b>Check a report I filed</b><small>Use the report number and access code</small></span><i aria-hidden="true">›</i></button>';
     var form = host.querySelector('form');
-    form.querySelector('[data-anon-photos]').appendChild(mPhoto.picker({
-      max: ANON_MAX_PHOTOS, initial: anonPhotos, prepare: scrubPhoto, accept: ANON_ACCEPT,
-      onChange: function (files) { anonPhotos = files.slice(); }
-    }));
-    function state() {
-      var s = {};
-      Array.prototype.forEach.call(form.querySelectorAll('[data-anon]'), function (field) { s[field.getAttribute('data-anon')] = String(field.value || '').trim(); });
-      return s;
+    function alive() { return anonymousAlive(ctx, host); }
+    function collect() { var data = {}; form.querySelectorAll('[data-anon]').forEach(function (field) { data[field.dataset.anon] = field.value.trim(); }); return data; }
+    function save() {
+      if (!alive() || ctx.pending) return;
+      var data = collect();
+      if (Object.keys(data).every(function (key) { return data[key] === (ctx.data[key] || ''); })) return;
+      ctx.data = data; ctx.review = null; persistAnonymous(ctx); paint();
     }
-    form.addEventListener('input', function () { saveDraft(ANON_DRAFT_KEY, state()); });
-    host.querySelector('#m-anon-check').onclick = function () { anonymousLookup(view); };
-    form.onsubmit = function (event) {
-      event.preventDefault();
-      var data = state();
-      if (data.details.length < 10) { mToast('Describe the concern (at least 10 characters)', 'err'); form.querySelector('[data-anon="details"]').focus(); return; }
-      anonymousReview(view, data);
+    function paint() {
+      if (!alive()) return;
+      var busy = anonymousBusy(ctx); form.inert = !!ctx.pending;
+      form.querySelector('[type="submit"]').disabled = busy;
+      host.querySelector('#m-anon-check').disabled = busy;
+      view.querySelector('.m-report-back').disabled = busy;
+      host.querySelectorAll('.m-anon-clear button').forEach(function (button) { button.disabled = busy; });
+      host.querySelector('[data-anon-photos]').inert = busy;
+      host.querySelector('[data-anon-draft]').textContent = ctx.saved ? (ctx.shared ? 'Text draft saved for this session.' : 'Text draft saved on this device. Clear it when you no longer need it.') + ' Photos stay only in this open app.' : 'Your draft is in this open app. Device storage is unavailable or the draft has not been saved yet.';
+      host.querySelector('[data-anon-preparing]').textContent = ctx.preparing ? 'Preparing photos and removing hidden details. Please wait before reviewing.' : photoCountText(ctx.files.length) + ' prepared.';
+      anonymousError(host, '[data-anon-photo-error]', ctx.photoError);
+    }
+    anonymousActive(ctx, 'form', host, paint);
+    var picker = anonymousPicker(ctx, ctx, host, ANON_MAX_PHOTOS, function () { ctx.missingPhotos = 0; ctx.review = null; persistAnonymous(ctx); paint(); });
+    host.querySelector('[data-anon-photos]').appendChild(picker);
+    form.addEventListener('input', save); form.addEventListener('change', save);
+    host.querySelector('[data-clear-draft]').onclick = function () { if (alive() && !anonymousBusy(ctx)) { host.querySelector('[data-clear-confirm]').hidden = false; host.querySelector('[data-keep-draft]').focus(); } };
+    host.querySelector('[data-keep-draft]').onclick = function () { host.querySelector('[data-clear-confirm]').hidden = true; host.querySelector('[data-clear-draft]').focus(); };
+    host.querySelector('[data-confirm-clear]').onclick = function () {
+      if (!alive() || anonymousBusy(ctx)) return;
+      ctx.data = {}; ctx.files = []; ctx.missingPhotos = 0; ctx.review = null; ctx.photoError = ''; ctx.saved = false; ctx.version++;
+      try { draftStore().removeItem(ANON_DRAFT_KEY); ctx.saved = false; ctx.clearError = ''; }
+      catch (error) { ctx.clearError = 'The open draft was cleared, but device storage could not be cleared. Try Clear draft again.'; }
+      anonymous(view);
     };
+    host.querySelector('#m-anon-check').onclick = function () { if (!anonymousBusy(ctx)) anonymousRoute('anonymous-lookup'); };
+    form.onsubmit = function (event) {
+      event.preventDefault(); if (!alive() || !form.isConnected || anonymousBusy(ctx)) return;
+      var data = collect();
+      if (data.details.length < 10 || !form.checkValidity()) { anonymousError(host, '[data-anon-error]', 'Describe the concern using at least 10 characters and check the highlighted fields.'); form.querySelector('[data-anon="details"]').focus(); return; }
+      save(); ctx.review = { data: { ...data }, files: ctx.files.slice() }; ctx.sendError = '';
+      anonymousRoute('anonymous-review');
+    };
+    paint(); anonymousError(host, '[data-anon-error]', ctx.clearError);
   }
 
-  function anonymousReview(view, data) {
+  function anonymousReview(view) {
+    var ctx = anonymousContext(), review = ctx.review;
+    if (ctx.receipt) { anonymousReceipt(view); return; }
+    if (!review) { anonymous(view); return; }
+    var data = review.data, files = review.files;
     MApp.setTitle('Review anonymous report');
-    var host = shell(view, '46:779', 'Review', 'Nothing is sent until you confirm', function () { anonymous(view); });
+    var host = shell(view, '46:779', 'Review', 'Nothing is sent until you confirm', function () { anonymousRoute('anonymous'); });
     host.innerHTML =
       '<section class="m-report-review">' +
         '<div><span>Category</span><b>' + mEsc(data.category) + '</b></div>' +
         (data.subject ? '<div><span>Title</span><b>' + mEsc(data.subject) + '</b></div>' : '') +
         '<div><span>Details</span><b>' + mEsc(data.details) + '</b></div>' +
         '<div><span>Incident context</span><b>' + mEsc([data.date, data.location].filter(Boolean).join(' · ') || 'Not provided') + '</b></div>' +
-        '<div><span>Photos</span><b>' + (anonPhotos.length ? photoCountText(anonPhotos.length) + ' · hidden details removed' : 'None') + '</b></div>' +
-      '</section>' +
-      (anonPhotos.length ? '<div class="m-thumbs" id="m-anon-review-photos"></div>' : '') +
+        '<div><span>Photos</span><b>' + (files.length ? photoCountText(files.length) + ' · hidden details removed' : 'None') + '</b></div></section>' +
+      (files.length ? '<div class="m-thumbs" id="m-anon-review-photos"></div>' : '') +
       '<aside class="m-report-anon-notice"><b>You’ll get a report number and a one-time access code</b><span>Save both — they are the only way to see replies. The code is shown once and can’t be recovered.</span></aside>' +
-      '<button class="m-v2-primary" id="m-anon-send" type="button">Send anonymously</button>';
-    var reviewPhotos = host.querySelector('#m-anon-review-photos');
-    anonPhotos.forEach(function (f, i) {
-      var url = URL.createObjectURL(f);
-      var cell = mEl('<div class="m-thumb"><img alt="Photo ' + (i + 1) + '" /></div>');
-      cell.querySelector('img').onload = function () { URL.revokeObjectURL(url); };
-      cell.querySelector('img').src = url;
-      reviewPhotos.appendChild(cell);
+      '<p class="m-error" data-anon-send-error role="alert" tabindex="-1" hidden></p><p class="m-report-draft-state" data-anon-send-status role="status"></p>' +
+      '<button class="m-v2-primary" id="m-anon-send" type="button">Send anonymously</button><button class="m-v2-secondary m-report-edit-back" data-anon-edit type="button">Back to edit</button>';
+    files.forEach(function (file, i) {
+      var url = URL.createObjectURL(file), cell = mEl('<div class="m-thumb"><img alt="Photo ' + (i + 1) + '" /></div>');
+      var img = cell.querySelector('img'); img.onload = img.onerror = function () { URL.revokeObjectURL(url); }; img.src = url;
+      host.querySelector('#m-anon-review-photos').appendChild(cell);
     });
-    var button = host.querySelector('#m-anon-send');
-    button.onclick = function () {
-      if (navigator.onLine === false) { mToast('You’re offline. Nothing was sent — your draft is still on this device.', 'err'); return; }
-      button.disabled = true;
-      button.textContent = 'Sending securely…';
-      API.post('/anonymous-reports/ticket').then(function (t) {
-        return anonPost('', {
-          ticket: t.ticket, category: data.category, subject: data.subject || null, description: data.details,
-          incident_date: data.date || null, location: data.location || null
-        }, anonPhotos);
-      }).then(function (res) {
-        clearDraft(ANON_DRAFT_KEY);
-        anonPhotos = [];
-        anonymousReceipt(view, res);
-      }).catch(function (error) {
-        mToast(error.offline ? 'You’re offline. Nothing was sent — your draft is still on this device.' : (error.message || 'Could not send the report'), 'err');
-        button.disabled = false;
-        button.textContent = 'Send anonymously';
-      });
+    function paint() {
+      if (!anonymousAlive(ctx, host)) return;
+      var busy = anonymousBusy(ctx);
+      host.querySelector('#m-anon-send').disabled = busy || ctx.review !== review;
+      host.querySelector('#m-anon-send').textContent = ctx.pending ? 'Sending securely…' : 'Send anonymously';
+      host.querySelector('[data-anon-edit]').disabled = busy; view.querySelector('.m-report-back').disabled = busy;
+      host.querySelector('[data-anon-send-status]').textContent = ctx.pending?.phase || '';
+      anonymousError(host, '[data-anon-send-error]', ctx.sendError);
+    }
+    anonymousActive(ctx, 'review', host, paint);
+    host.querySelector('[data-anon-edit]').onclick = function () { anonymousRoute('anonymous'); };
+    host.querySelector('#m-anon-send').onclick = async function () {
+      if (!anonymousAlive(ctx, host) || ctx.review !== review || anonymousBusy(ctx)) return;
+      if (navigator.onLine === false) { ctx.sendError = 'You’re offline. Sending has not started. Your text and prepared photos are still here.'; paint(); anonymousFeedback(ctx, '[data-anon-send-error]'); return; }
+      var op = { kind: 'send', phase: 'Starting secure sending…' }, version = ctx.version, store = null, stored = null, submitted = false;
+      try { store = draftStore(); stored = store.getItem(ANON_DRAFT_KEY); } catch (error) {}
+      ctx.pending = op; ctx.sendError = ''; paint();
+      try {
+        var ticket = await API.post('/anonymous-reports/ticket');
+        if (!currentAnonymous(ctx)) return;
+        op.phase = 'Sending report and prepared photos…'; paintAnonymous(ctx); submitted = true;
+        var result = await anonPost('', { ticket: ticket.ticket, category: data.category, subject: data.subject || null, description: data.details, incident_date: data.date || null, location: data.location || null }, files);
+        if (!currentAnonymous(ctx)) return;
+        if (!result || typeof result.number !== 'string' || !result.number || typeof result.access_code !== 'string' || !result.access_code) throw uncertainAnonymous('The response did not contain a report number and access code.');
+        if (ctx.version === version) {
+          var newer = null;
+          try { var latest = store && store.getItem(ANON_DRAFT_KEY); if (store && latest === stored) store.removeItem(ANON_DRAFT_KEY); else if (latest) { newer = JSON.parse(latest); if (!newer || typeof newer !== 'object' || Array.isArray(newer)) newer = null; } } catch (error) {}
+          ctx.data = newer || {}; ctx.files = []; ctx.missingPhotos = Number(newer?.photo_count) || 0; ctx.saved = !!newer; ctx.review = null;
+        }
+        ctx.receipt = { number: result.number, access_code: result.access_code, saved: false, copying: false, feedback: '' };
+        var activeReview = ctx.active?.kind === 'review' && ctx.active.host.isConnected;
+        ctx.pending = null;
+        if (activeReview) anonymousRoute('anonymous-sent');
+      } catch (error) {
+        if (currentAnonymous(ctx)) ctx.sendError = submitted && (error.uncertain || error.status >= 500) ? 'Could not confirm sending. The report may have been received, but its access code was not returned. Your text and photos are still here. Sending again may create another report.' : (error.message || 'Could not send the report.') + ' Your text and prepared photos are still here.';
+      } finally {
+        if (ctx.pending === op) ctx.pending = null;
+        if (currentAnonymous(ctx) && ctx.active?.kind === 'review') { paintAnonymous(ctx); if (ctx.sendError) anonymousFeedback(ctx, '[data-anon-send-error]'); }
+      }
     };
+    paint();
   }
 
-  function anonymousReceipt(view, res) {
+  function anonymousReceipt(view) {
+    var ctx = anonymousContext(), receipt = ctx.receipt;
+    if (!receipt) { anonymous(view); return; }
     MApp.setTitle('Report received');
     var host = shell(view, '46:779', 'Report received', 'Save these now — they are shown only once');
-    host.innerHTML =
-      '<section class="m-anon-receipt">' +
-        '<div><span>Report number</span><b>' + mEsc(res.number) + '</b></div>' +
-        '<div><span>Access code</span><b class="m-anon-code">' + mEsc(res.access_code) + '</b></div>' +
-      '</section>' +
+    host.innerHTML = '<section class="m-anon-receipt"><div><span>Report number</span><b>' + mEsc(receipt.number) + '</b></div><div><span>Access code</span><b class="m-anon-code">' + mEsc(receipt.access_code) + '</b></div></section>' +
       '<aside class="m-report-anon-notice"><b>Anyone with this code can read the replies</b><span>Write it down or keep it somewhere private. It isn’t stored on this device and can’t be recovered.</span></aside>' +
-      '<div class="m-anon-actions"><button class="m-v2-primary" id="m-anon-copy" type="button">Copy number and code</button>' +
-      '<button class="m-v2-secondary" id="m-anon-done" type="button">Done</button></div>';
-    host.querySelector('#m-anon-copy').onclick = function () {
-      var text = 'Report ' + res.number + ' · code ' + res.access_code;
-      (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject(new Error('no clipboard')))
-        .then(function () { mToast('Copied'); }, function () { mToast('Copy isn’t available — write it down', 'err'); });
+      '<button class="m-v2-primary" id="m-anon-copy" type="button">Copy number and code</button><p class="m-report-draft-state" data-copy-status role="status"></p>' +
+      '<label class="m-anon-saved-code"><input type="checkbox" data-saved-code' + (receipt.saved ? ' checked' : '') + '><span>I saved my number and code somewhere private.</span></label>' +
+      '<button class="m-v2-secondary" id="m-anon-done" type="button">Done</button>';
+    function paint() {
+      if (!anonymousAlive(ctx, host)) return;
+      host.querySelector('#m-anon-copy').disabled = receipt.copying;
+      host.querySelector('#m-anon-copy').textContent = receipt.copying ? 'Copying…' : 'Copy number and code';
+      host.querySelector('[data-copy-status]').textContent = receipt.feedback;
+      host.querySelector('#m-anon-done').disabled = !receipt.saved;
+    }
+    anonymousActive(ctx, 'receipt', host, paint);
+    host.querySelector('[data-saved-code]').onchange = function () { if (anonymousAlive(ctx, host)) { receipt.saved = this.checked; paint(); } };
+    host.querySelector('#m-anon-copy').onclick = async function () {
+      if (!anonymousAlive(ctx, host) || receipt.copying) return;
+      receipt.copying = true; receipt.feedback = ''; paint();
+      try { if (!navigator.clipboard) throw new Error('Clipboard unavailable'); await navigator.clipboard.writeText('Report ' + receipt.number + ' · code ' + receipt.access_code); receipt.feedback = 'Number and code copied. Keep them somewhere private, then confirm that you saved them.'; }
+      catch (error) { receipt.feedback = 'Copy isn’t available. Write down both the number and code before continuing.'; }
+      finally { receipt.copying = false; if (ctx.receipt === receipt) paintAnonymous(ctx); }
     };
-    host.querySelector('#m-anon-done').onclick = function () { hub(view); };
+    host.querySelector('#m-anon-done').onclick = function () { if (!anonymousAlive(ctx, host) || !receipt.saved) return; ctx.receipt = null; MApp.go('report-problem'); };
+    paint();
   }
 
   function anonymousLookup(view) {
+    var ctx = anonymousContext();
+    if (ctx.receipt && !ctx.receipt.saved) { anonymousReceipt(view); return; }
     MApp.setTitle('Check a report');
-    var host = shell(view, '46:779', 'Check a report', 'Status and replies from the case handler', function () { anonymous(view); });
-    host.innerHTML =
-      '<form class="m-report-form" novalidate>' +
-        '<label><span>Report number *</span><input data-k="number" autocomplete="off" placeholder="CR-00001"></label>' +
-        '<label><span>Access code *</span><input data-k="code" autocomplete="off" autocapitalize="characters" placeholder="XXXXX-XXXXX-XXXXX-XXXXX"></label>' +
-        '<button class="m-v2-primary" type="submit">Open report</button></form><div id="m-anon-result"></div>';
-    var form = host.querySelector('form');
-    var out = host.querySelector('#m-anon-result');
-    function creds() {
-      return { number: form.querySelector('[data-k="number"]').value.trim(), access_code: form.querySelector('[data-k="code"]').value.trim() };
+    var host = shell(view, '46:779', 'Check a report', 'Status and replies from the case handler', function () { anonymousRoute('anonymous'); });
+    host.innerHTML = '<form class="m-report-form" id="m-anon-lookup" novalidate><label><span>Report number *</span><input data-k="number" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CR-00001"></label>' +
+      '<label><span>Access code *</span><span class="m-anon-code-field"><input type="password" data-k="code" maxlength="40" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX"><button class="m-v2-secondary" type="button" data-show-code aria-pressed="false">Show</button></span></label>' +
+      '<p class="m-error" data-lookup-error role="alert" tabindex="-1" hidden></p><p class="m-report-draft-state" data-lookup-status role="status"></p><button class="m-v2-primary" type="submit">Open report</button></form>' +
+      '<button class="m-v2-secondary" type="button" data-change-report hidden>Change report</button><div id="m-anon-result"></div>';
+    var form = host.querySelector('form'), out = host.querySelector('#m-anon-result');
+    var number = form.querySelector('[data-k="number"]'), code = form.querySelector('[data-k="code"]');
+    function alive() { return anonymousAlive(ctx, host); }
+    function selected() { return ctx.opened; }
+    function paintControls() {
+      if (!alive()) return;
+      var record = selected(), busy = anonymousBusy(ctx);
+      if (record) { number.value = record.credentials.number; code.value = record.credentials.access_code; }
+      number.disabled = code.disabled = busy || !!record;
+      form.querySelector('[type="submit"]').disabled = busy;
+      form.querySelector('[type="submit"]').textContent = ctx.pending?.kind === 'lookup' ? 'Checking…' : record ? 'Refresh status' : 'Open report';
+      host.querySelector('[data-change-report]').hidden = !record; host.querySelector('[data-change-report]').disabled = busy;
+      view.querySelector('.m-report-back').disabled = busy;
+      host.querySelector('[data-lookup-status]').textContent = record ? 'Viewing ' + record.credentials.number + '. Your access code stays only in this open app.' : 'Use your saved number and code. They are not saved on this device.';
+      var reply = out.querySelector('#m-anon-reply');
+      if (reply) {
+        reply.inert = !!ctx.pending;
+        reply.querySelector('[type="submit"]').disabled = busy || !record.reply.trim() || record.files.length > Number(record.report.photos_remaining || 0);
+        reply.querySelector('[type="submit"]').textContent = ctx.pending?.kind === 'reply' ? 'Sending…' : 'Send';
+        reply.querySelectorAll('[data-anon-photos]').forEach(function (el) { el.inert = busy; });
+        anonymousError(reply, '[data-reply-error]', record.error);
+        anonymousError(reply, '[data-reply-photo-error]', record.photoError);
+        reply.querySelector('[data-reply-status]').textContent = ctx.preparing ? 'Preparing photos and removing hidden details…' : ctx.pending?.kind === 'reply' ? 'Sending your reply…' : record.feedback || '';
+      }
+      out.querySelectorAll('[data-remove-photo]').forEach(function (button) { button.disabled = busy; });
     }
-    var photoUrls = []; // object URLs for this screen's thumbnails, revoked on each re-render
-    function show(report) {
-      var c = creds();
-      photoUrls.forEach(function (u) { URL.revokeObjectURL(u); });
-      photoUrls = [];
-      var allOwn = (report.photos || []).slice();
-      report.messages.forEach(function (m) { allOwn = allOwn.concat(m.photos || []); });
-      var anyRemovable = allOwn.some(function (p) { return p.removable; });
-      out.innerHTML =
-        '<section class="m-report-review"><div><span>' + mEsc(report.number) + ' · ' + mEsc(report.category) + '</span><b>' + mEsc(report.subject || 'Anonymous report') + '</b></div>' +
-        '<div><span>Status</span><b class="m-anon-status ' + mEsc(report.status) + '">' + mEsc(report.status) + '</b></div>' +
-        '<div><span>Filed · last update</span><b>' + mEsc(report.created_on) + ' · ' + mEsc(report.updated_on) + '</b></div>' +
+    function paint() { if (alive()) { renderResult(); paintControls(); } }
+    anonymousActive(ctx, 'lookup', host, paint);
+    host.querySelector('[data-show-code]').onclick = function () { code.type = code.type === 'password' ? 'text' : 'password'; this.textContent = code.type === 'password' ? 'Show' : 'Hide'; this.setAttribute('aria-pressed', String(code.type !== 'password')); };
+    host.querySelector('[data-change-report]').onclick = function () { if (!alive() || anonymousBusy(ctx)) return; ctx.opened = null; number.value = code.value = ''; code.type = 'password'; host.querySelector('[data-show-code]').textContent = 'Show'; host.querySelector('[data-show-code]').setAttribute('aria-pressed', 'false'); anonymousError(host, '[data-lookup-error]', ''); renderResult(); paintControls(); number.focus(); };
+    async function loadReport(credentials) {
+      if (!alive() || anonymousBusy(ctx)) return;
+      var op = { kind: 'lookup' }; ctx.pending = op; anonymousError(host, '[data-lookup-error]', ''); paintControls();
+      try {
+        var report = await anonPost('/lookup', credentials);
+        if (!currentAnonymous(ctx)) return;
+        if (!validAnonymousReport(report)) throw new Error('Could not read the report response. Try checking again.');
+        var record = ctx.records.filter(function (item) { return item.credentials.number === credentials.number && item.credentials.access_code === credentials.access_code; })[0];
+        if (!record) { record = { credentials: { ...credentials }, report: report, reply: '', files: [], photos: Object.create(null), version: 0, error: '', photoError: '', feedback: '' }; ctx.records.push(record); }
+        record.report = report; record.feedback = 'Status refreshed. Your unsent message is unchanged.';
+        ctx.opened = record;
+        if (alive()) { number.value = record.credentials.number; code.value = record.credentials.access_code; code.type = 'password'; host.querySelector('[data-show-code]').textContent = 'Show'; host.querySelector('[data-show-code]').setAttribute('aria-pressed', 'false'); }
+      } catch (error) { if (alive()) anonymousError(host, '[data-lookup-error]', error.message || 'Could not check the report. Your draft is still here.'); }
+      finally { if (ctx.pending === op) ctx.pending = null; paintAnonymous(ctx); if (alive() && !host.querySelector('[data-lookup-error]').hidden) anonymousFeedback(ctx, '[data-lookup-error]'); }
+    }
+    form.onsubmit = function (event) {
+      event.preventDefault(); if (!alive() || !form.isConnected || anonymousBusy(ctx)) return;
+      var record = selected(), credentials = record ? record.credentials : { number: number.value.trim(), access_code: code.value.trim() };
+      if (!credentials.number || !credentials.access_code) { anonymousError(host, '[data-lookup-error]', 'Enter the report number and access code.'); (credentials.number ? code : number).focus(); return; }
+      loadReport(credentials);
+    };
+    function renderResult() {
+      var record = selected();
+      if (!record) { out.innerHTML = ''; return; }
+      var report = record.report;
+      var allPhotos = (report.photos || []).concat(...report.messages.map(function (message) { return message.photos || []; }));
+      // Credentials are captured when this case is opened, never taken from edited lookup fields.
+      out.innerHTML = '<section class="m-report-review"><div><span>' + mEsc(report.number) + ' · ' + mEsc(report.category) + '</span><b>' + mEsc(report.subject || 'Anonymous report') + '</b></div><div><span>Status</span><b class="m-anon-status ' + mEsc(report.status) + '">' + mEsc(report.status) + '</b></div><div><span>Filed · last update</span><b>' + mEsc(report.created_on) + ' · ' + mEsc(report.updated_on) + '</b></div>' +
         (report.photo_count ? '<div><span>Photos sent with the report</span><b>' + photoCountText(report.photo_count) + '</b></div>' : '') + '</section>' +
         (report.photo_count ? '<div class="m-thumbs" data-anon-own="report"></div>' : '') +
-        (anyRemovable ? '<p class="m-hint">You can remove a photo until the case handler opens it.</p>' : '') +
-        '<div class="m-anon-thread">' + (report.messages.length ? report.messages.map(function (m) {
-          return '<div class="m-anon-msg ' + mEsc(m.author) + '"><small>' + (m.author === 'handler' ? 'Case handler' : 'You') + ' · ' + mEsc(m.created_on) +
-            (m.photo_count ? ' · ' + photoCountText(m.photo_count) : '') + '</small><p>' + mEsc(m.body) + '</p>' +
-            (m.photo_count ? '<div class="m-thumbs" data-anon-own="' + m.id + '"></div>' : '') + '</div>';
-        }).join('') : '<div class="m-empty">No replies yet.</div>') + '</div>' +
-        (report.status === 'closed' ? '<div class="m-hint">This report is closed.</div>'
-          : '<form class="m-report-form" id="m-anon-reply" novalidate><label class="is-tall"><span>Add information</span><textarea rows="3" maxlength="3000" placeholder="Answer a question or add details"></textarea></label>' +
-            (report.photos_remaining ? '<div class="m-report-files m-anon-photos"><span>Photos or PDF pages (optional)</span><div data-anon-photos></div><small>' + mEsc(PHOTO_NOTE) + '</small></div>' : '') +
-            '<button class="m-v2-primary" type="submit">Send</button></form>');
-      // Your own photos: fetched with number + code in the POST body (never an image URL).
+        (allPhotos.length ? '<p class="m-hint">You can remove your own photos until the case handler opens them. Photos already seen by a handler cannot be removed.</p>' : '<p class="m-hint">No photos attached.</p>') +
+        '<div class="m-anon-thread">' + (report.messages.length ? report.messages.map(function (message) { return '<div class="m-anon-msg ' + mEsc(message.author) + '"><small>' + (message.author === 'handler' ? 'Case handler' : 'You') + ' · ' + mEsc(message.created_on) + (message.photo_count ? ' · ' + photoCountText(message.photo_count) : '') + '</small><p>' + mEsc(message.body) + '</p>' + (message.photo_count ? '<div class="m-thumbs" data-anon-own="' + mEsc(message.id) + '"></div>' : '') + '</div>'; }).join('') : '<div class="m-empty">No replies yet.</div>') + '</div>' +
+        (report.status === 'closed' ? '<p class="m-report-notice">This report is closed. New replies are unavailable.' + (record.reply || record.files.length ? ' Your unsent message and photos remain in this open app for when the report is reopened.' : '') + '</p>' :
+          '<form class="m-report-form" id="m-anon-reply" novalidate><label class="is-tall"><span>Add information</span><textarea rows="3" maxlength="3000" placeholder="Answer a question or add details">' + mEsc(record.reply) + '</textarea></label><p class="m-hint">Your unsent message and photos stay in this open app. Closing or reloading removes them.</p>' +
+          (report.photos_remaining || record.files.length ? '<div class="m-report-files m-anon-photos"><span>Photos or PDF pages (optional)</span><div data-anon-photos></div><small>' + mEsc(PHOTO_NOTE) + '</small></div>' : '<p class="m-hint">This report has no photo slots remaining.</p>') +
+          (record.files.length > Number(report.photos_remaining || 0) ? '<p class="m-error">Only ' + Number(report.photos_remaining || 0) + ' photo slots remain. Remove extra selected photos before sending.</p>' : '') +
+          '<p class="m-error" data-reply-error role="alert" tabindex="-1" hidden></p><p class="m-error" data-reply-photo-error role="alert" hidden></p><p class="m-report-draft-state" data-reply-status role="status" tabindex="-1"></p><button class="m-v2-primary" type="submit">Send</button></form>');
       function fillOwn(key, list) {
-        var strip = out.querySelector('[data-anon-own="' + key + '"]');
-        if (!strip) return;
-        (list || []).forEach(function (p, i) {
-          var cell = mEl('<div class="m-thumb"><button class="m-anon-photo-open" type="button" aria-label="Open photo ' + (i + 1) + '"><img alt="" /></button></div>');
-          anonPhotoUrl(c, p.id).then(function (u) {
-            photoUrls.push(u);
-            cell.querySelector('img').src = u;
-            cell.querySelector('button').onclick = function () { mPhoto.view(u); };
-          }).catch(function () { cell.title = 'Photo could not be loaded'; });
-          if (p.removable) {
-            var x = mEl('<button class="m-thumb-x" type="button" aria-label="Remove photo ' + (i + 1) + '">×</button>');
-            x.onclick = function () {
-              if (!window.confirm('Remove this photo from your report? This can’t be undone.')) return;
-              x.disabled = true;
-              anonPost('/photo/remove', { number: c.number, access_code: c.access_code, photo_id: p.id })
-                .then(function (updated) { mToast('Photo removed'); show(updated); })
-                .catch(function (error) { mToast(error.message, 'err'); x.disabled = false; });
-            };
-            cell.appendChild(x);
+        var strip = out.querySelector('[data-anon-own="' + key + '"]'); if (!strip) return;
+        (list || []).forEach(function (photo, index) {
+          var job = record.photos[photo.id] || (record.photos[photo.id] = {});
+          var cell = mEl('<div class="m-anon-photo-cell"><button class="m-thumb m-anon-photo-open" type="button" aria-label="Open photo ' + (index + 1) + '"><img alt="Photo ' + (index + 1) + '"></button><div data-photo-feedback></div>' + (photo.removable ? '<button class="m-v2-secondary" type="button" data-remove-photo>Remove photo</button>' : '') + '</div>');
+          var button = cell.querySelector('.m-anon-photo-open');
+          function updatePhoto() {
+            if (!anonymousAlive(ctx, host) || selected() !== record || !cell.isConnected) return;
+            var img = button.querySelector('img'); img.hidden = !job.url;
+            if (job.url && img.getAttribute('src') !== job.url) img.src = job.url;
+            else if (!job.url) img.removeAttribute('src');
+            button.disabled = !job.url;
+            var feedback = cell.querySelector('[data-photo-feedback]');
+            feedback.innerHTML = job.error ? '<p class="m-error" role="alert">' + mEsc(job.error) + '</p><button class="m-v2-secondary" type="button">Retry photo</button>' : job.pending ? '<span class="m-hint" role="status">Loading photo…</span>' : '';
+            var retry = feedback.querySelector('button'); if (retry) retry.onclick = loadPhoto;
           }
-          strip.appendChild(cell);
+          async function loadPhoto() {
+            if (!alive() || selected() !== record || job.pending) return;
+            job.pending = true; job.error = ''; updatePhoto();
+            try { var url = await anonPhotoUrl(record.credentials, photo.id); if (!currentAnonymous(ctx) || !record.report.photos?.concat(...record.report.messages.map(function (message) { return message.photos || []; })).some(function (item) { return item.id === photo.id; })) { URL.revokeObjectURL(url); return; } job.url = url; }
+            catch (error) { if (currentAnonymous(ctx)) job.error = 'Photo could not be loaded.'; }
+            finally { job.pending = false; if (job.update) job.update(); }
+          }
+          job.update = updatePhoto;
+          button.querySelector('img').onerror = function () { if (!alive() || !cell.isConnected) return; if (job.url) URL.revokeObjectURL(job.url); job.url = null; job.error = 'Photo could not be displayed.'; updatePhoto(); };
+          button.onclick = function () { if (alive() && cell.isConnected && job.url) { if (window.PhotoViewer) PhotoViewer.open(job.url, 'Report photo'); else mPhoto.view(job.url); } };
+          var remove = cell.querySelector('[data-remove-photo]');
+          if (remove) remove.onclick = async function () {
+            if (!alive() || !cell.isConnected || anonymousBusy(ctx)) return;
+            if (!window.confirm('Remove this photo from your report? This can’t be undone.')) return;
+            var op = { kind: 'remove' }; ctx.pending = op; record.error = ''; paintControls();
+            try { var updated = await anonPost('/photo/remove', { ...record.credentials, photo_id: photo.id }); if (!currentAnonymous(ctx)) return; if (!validAnonymousReport(updated)) throw uncertainAnonymous('Could not read the removal response. Refresh the status before retrying.'); record.report = updated; if (job.url) URL.revokeObjectURL(job.url); delete record.photos[photo.id]; record.feedback = 'Photo removed.'; }
+            catch (error) { if (currentAnonymous(ctx)) record.error = (error.message || 'Could not remove the photo.') + ' Your reply draft is still here.'; }
+            finally { if (ctx.pending === op) ctx.pending = null; paintAnonymous(ctx); }
+          };
+          strip.appendChild(cell); updatePhoto(); if (!job.url && !job.error && !job.pending) loadPhoto();
         });
       }
       fillOwn('report', report.photos);
-      report.messages.forEach(function (m) { fillOwn(m.id, m.photos); });
+      report.messages.forEach(function (message) { fillOwn(message.id, message.photos); });
       var reply = out.querySelector('#m-anon-reply');
-      var replyPhotos = reply && reply.querySelector('[data-anon-photos]')
-        ? reply.querySelector('[data-anon-photos]').appendChild(mPhoto.picker({ max: Math.min(ANON_MAX_PHOTOS, report.photos_remaining), prepare: scrubPhoto, accept: ANON_ACCEPT }))
-        : null;
-      if (reply) reply.onsubmit = function (event) {
-        event.preventDefault();
-        var text = reply.querySelector('textarea').value.trim();
-        if (!text) { mToast('Write a message', 'err'); return; }
-        var b = reply.querySelector('button[type="submit"]'); b.disabled = true;
-        anonPost('/followup', { number: c.number, access_code: c.access_code, body: text }, replyPhotos ? replyPhotos.files() : [])
-          .then(show)
-          .catch(function (error) { mToast(error.message, 'err'); b.disabled = false; });
+      if (!reply) return;
+      var pickerHost = reply.querySelector('[data-anon-photos]');
+      if (pickerHost) pickerHost.appendChild(anonymousPicker(ctx, record, host, Math.max(record.files.length, Math.min(ANON_MAX_PHOTOS, Number(report.photos_remaining) || 0)), function () { record.version++; paintControls(); }));
+      reply.querySelector('textarea').oninput = function () { record.reply = this.value; record.version++; paintControls(); };
+      reply.onsubmit = async function (event) {
+        event.preventDefault(); if (!alive() || !reply.isConnected || selected() !== record || anonymousBusy(ctx) || record.report.status === 'closed') return;
+        var body = reply.querySelector('textarea').value.trim();
+        if (!body || body.length > 3000 || record.files.length > Number(record.report.photos_remaining || 0)) { record.error = 'Write a message and check the remaining photo slots.'; paintControls(); anonymousFeedback(ctx, '[data-reply-error]'); return; }
+        record.reply = reply.querySelector('textarea').value;
+        var version = record.version, files = record.files.slice(), op = { kind: 'reply' };
+        ctx.pending = op; record.error = ''; record.feedback = ''; paintControls();
+        try {
+          var updated = await anonPost('/followup', { ...record.credentials, body: body }, files);
+          if (!currentAnonymous(ctx)) return;
+          if (!validAnonymousReport(updated)) throw uncertainAnonymous('Could not read the reply response.');
+          record.report = updated; if (record.version === version) { record.reply = ''; record.files = []; } record.feedback = 'Reply sent.';
+        } catch (error) { if (currentAnonymous(ctx)) record.error = error.uncertain || error.status >= 500 ? 'Could not confirm sending. Your message and photos are still here. Check the conversation before retrying; your reply may already have been received.' : (error.message || 'Could not send your reply.') + ' Your message and photos are still here.'; }
+        finally { if (ctx.pending === op) ctx.pending = null; paintAnonymous(ctx); if (currentAnonymous(ctx) && ctx.opened === record) anonymousFeedback(ctx, record.error ? '[data-reply-error]' : '[data-reply-status]'); }
       };
     }
-    form.onsubmit = function (event) {
-      event.preventDefault();
-      var c = creds();
-      if (!c.number || !c.access_code) { mToast('Enter the report number and access code', 'err'); return; }
-      var b = form.querySelector('button'); b.disabled = true;
-      out.innerHTML = '<div class="m-hint">Checking…</div>';
-      anonPost('/lookup', c).then(show).catch(function (error) {
-        out.innerHTML = '<div class="m-error">' + mEsc(error.message) + '</div>';
-      }).then(function () { b.disabled = false; });
-    };
+    var record = selected(); if (record) { number.value = record.credentials.number; code.value = record.credentials.access_code; }
+    renderResult(); paintControls();
   }
 
   function identifiedList(view, assigned) {
@@ -731,6 +916,9 @@
     if (params && params.mode === 'review') { reviewIdentified(view); return; }
     if (params && params.mode === 'sent') { identifiedReceipt(view); return; }
     if (params && params.mode === 'identified') { identified(view, params.about ? { subject: params.about } : null); return; }
+    if (params && params.mode === 'anonymous-review') { anonymousReview(view); return; }
+    if (params && params.mode === 'anonymous-sent') { anonymousReceipt(view); return; }
+    if (params && params.mode === 'anonymous-lookup') { anonymousLookup(view); return; }
     if (params && params.mode === 'anonymous') { anonymous(view); return; }
     hub(view);
   });

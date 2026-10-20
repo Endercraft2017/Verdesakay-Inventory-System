@@ -3,7 +3,7 @@
    mPhoto.attach(kind, refId, cap) → camera/picker → POST /attachments  → {id,url}
    mPhoto.thumbs(kind, refId, {editable}) → a DOM strip of attachment thumbnails
    mPhoto.view(url)                → fullscreen viewer (/api-relative path or blob: URL)
-   mPhoto.picker({max, prepare, accept}) → local multi-photo picker (nothing uploaded); .files(), .clear()
+   mPhoto.picker({max, prepare, accept, canEdit, onBusy, onError}) → local multi-photo picker (nothing uploaded); .files(), .clear()
                                      prepare(file, index, room) → Promise<File | File[]> runs on each
                                      pick (e.g. ImageCompress.reencode; a PDF → several page photos),
                                      `room` = slots left; a rejection skips that pick.
@@ -126,13 +126,14 @@
         img.onload = function () { URL.revokeObjectURL(url); };
         img.src = url;
         var x = mEl('<button class="m-thumb-x" type="button" aria-label="Remove photo ' + (i + 1) + '">×</button>');
-        x.onclick = function () { files.splice(i, 1); render(); if (opts.onChange) opts.onChange(files); };
+        x.onclick = function () { if (opts.canEdit && !opts.canEdit()) return; files.splice(i, 1); render(); if (opts.onChange) opts.onChange(files); };
         cell.appendChild(x);
         strip.appendChild(cell);
       });
       if (files.length >= max) return;
       var add = mEl('<button class="m-thumb m-thumb-add" type="button">＋<span>Photo</span></button>');
       add.onclick = function () {
+        if (opts.canEdit && !opts.canEdit()) return;
         var input = document.createElement('input');
         input.type = 'file';
         input.accept = opts.accept || 'image/*';
@@ -140,6 +141,7 @@
         input.style.display = 'none';
         document.body.appendChild(input);
         input.onchange = function () {
+          if (opts.canEdit && !opts.canEdit()) { input.remove(); return; }
           var picked = Array.prototype.slice.call(input.files || [], 0, max - files.length);
           input.remove();
           if ((input.files || []).length > picked.length) mToast('Up to ' + max + ' photos', 'err');
@@ -152,10 +154,9 @@
               if (room <= 0) return;
               // Custom preparation (e.g. anonymous metadata stripping) keeps its
               // stricter contract. Ordinary operational photos share compression.
-              var prep = opts.prepare ? opts.prepare(f, files.length, room) : preparePhoto(f);
-              return prep.then(function (out) {
+              return Promise.resolve().then(function () { return opts.prepare ? opts.prepare(f, files.length, room) : preparePhoto(f); }).then(function (out) {
                 files = files.concat(out).slice(0, max);
-              }, function (e) { mToast(e.message || 'Photo skipped', 'err'); });
+              }, function (e) { if (opts.onError) opts.onError(e); mToast(e.message || 'Photo skipped', 'err'); });
             });
           }, Promise.resolve()).then(function () { render(); if (opts.onChange) opts.onChange(files); if (opts.onBusy) opts.onBusy(false); });
         };

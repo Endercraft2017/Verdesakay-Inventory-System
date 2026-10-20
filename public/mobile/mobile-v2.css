@@ -910,3 +910,13 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 
 /* Identified case follow-up: retain the existing report cards and theme tokens. */
 .m-report-case-form{margin-top:1rem}.m-report-evidence-item{max-width:100%;min-width:0}.m-report-evidence-item .m-error{max-width:100%;overflow-wrap:anywhere}.m-report-case .m-report-review b{white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* Anonymous reporting keeps the existing cards and native themed checkbox. */
+.m-anon-saved-code{display:flex;align-items:flex-start;gap:.6rem;margin:1rem 0;font-size:.8rem;line-height:1.5;color:var(--v2-text)}
+.m-anon-saved-code input[type=checkbox]{flex:none;width:1.1rem;height:1.1rem;margin:.12rem 0 0}
+.m-anon-code-field{display:flex;align-items:center;gap:.65rem}.m-anon-code-field input{min-width:0;flex:1}.m-anon-code-field .m-v2-secondary{width:auto;min-width:4rem;margin:0;padding:.45rem .65rem;font-size:.75rem}
+.m-anon-clear{margin:1rem 0}.m-anon-clear>[data-clear-draft]{width:auto}.m-anon-photo-cell{display:flex;flex-direction:column;gap:.4rem;max-width:9rem}.m-anon-photo-cell .m-error{font-size:.7rem;line-height:1.4;margin:0}.m-anon-photo-cell .m-v2-secondary{font-size:.7rem;padding:.4rem .6rem;min-height:2.3rem;margin:0}
+
+.m-thumbs[data-anon-own]{height:auto;align-items:flex-start;min-height:5.5rem}.m-anon-photo-cell{flex:0 0 7.5rem;overflow:visible}.m-anon-photo-cell .m-thumb{flex:none;width:100%;height:5rem;min-height:5rem}
+
+#m-anon-send,#m-anon-copy,#m-anon-done{width:100%}
