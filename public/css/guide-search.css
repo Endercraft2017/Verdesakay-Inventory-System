@@ -1,0 +1,11 @@
+.guide-retrieval { padding:16px; margin:16px 0; border:1px solid var(--v2-line,var(--border)); border-radius:12px; background:var(--v2-surface,var(--surface)); color:var(--v2-text,var(--text)); }
+.guide-retrieval form { display:flex; flex-wrap:wrap; align-items:end; gap:8px; }
+.guide-retrieval label { display:flex; flex-direction:column; flex:1 1 260px; gap:6px; font-weight:600; }
+.guide-retrieval input { width:100%; box-sizing:border-box; min-height:44px; padding:10px; border:1px solid var(--v2-line,var(--border)); border-radius:8px; background:var(--v2-surface,var(--surface)); color:inherit; font:inherit; }
+.guide-retrieval button { min-height:44px; padding:9px 12px; border:1px solid var(--v2-line,var(--border)); border-radius:8px; background:var(--v2-surface-soft,var(--surface-2)); color:inherit; cursor:pointer; font:inherit; }
+.guide-retrieval button:hover,.guide-retrieval button:focus-visible { outline:2px solid var(--v2-green,var(--accent)); outline-offset:2px; }
+.guide-retrieval-note,.guide-retrieval-source,.guide-retrieval-access { font-size:12px; color:var(--v2-muted,var(--muted)); line-height:1.5; }
+.guide-retrieval-result { padding:14px 0; border-top:1px solid var(--v2-line,var(--border)); overflow-wrap:anywhere; }
+.guide-retrieval-result h4 { margin:0 0 6px; }.guide-retrieval-result p { line-height:1.6; }
+.guide-retrieval [data-intent-choice] { margin:4px; }
+@media print { .guide-retrieval { display:none; } }

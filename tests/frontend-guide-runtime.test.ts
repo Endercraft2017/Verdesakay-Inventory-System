@@ -9,7 +9,7 @@ async function boot() {
   w.VDS_BASE_PATH='/sandbox';w.App={register:(r:string,fn:any)=>routes[r]=fn,currentLocation:()=>({route:'dashboard'}),getMe:()=>({id:userId}),hasModule:(m:string)=>['hr','home'].includes(m),canAccessRoute:(r:string)=>['dashboard','hr-requests','sop'].includes(r),navigate:(...args:any[])=>navigations.push(args)};
   w.NAV=[{id:'home',label:'Home',subtabs:[{label:'Overview',tree:[{label:'Dashboard',route:'dashboard'},{label:'Guide Center',route:'sop'},{label:'My HR',route:'hr-requests',filter:{tab:'requests'}},{label:'Forbidden',route:'admin'}]}]}];
   w.requestAnimationFrame=(cb:any)=>{cb(0);return 1;};w.HTMLElement.prototype.getBoundingClientRect=()=>({left:50,top:100,right:250,bottom:140,width:200,height:40});
-  w.eval(['ui.js','guide-data.js','guide-tour.js','guide-instructions.js','guide-center.js','modules/manufacturing/sop.js'].map(s=>fs.readFileSync(path.join(import.meta.dirname,'../public/js',s),'utf8')).join('\n;\n')+'\nwindow.__UI=UI;');await flush();
+  w.eval(['ui.js','guide-data.js','guide-search.js','guide-tour.js','guide-instructions.js','guide-center.js','modules/manufacturing/sop.js'].map(s=>fs.readFileSync(path.join(import.meta.dirname,'../public/js',s),'utf8')).join('\n;\n')+'\nwindow.__UI=UI;');await flush();
   return {dom,w,routes,navigations,setUser:(id:number)=>userId=id};
 }
 it('filters catalog by access and supports search, empty results, recovery and module filters',async()=>{
@@ -156,4 +156,15 @@ it('keeps new roadmap branches and related workflow navigation usable and search
   }
   expect(navigations).toEqual([]);
   dom.window.close();
+});
+
+it('retrieves a described task and opens its existing guide without navigating business screens',async()=>{
+ const {dom,w,routes,navigations}=await boot();w.App.hasModule=()=>true;w.App.canAccessRoute=()=>true;
+ const view=w.document.querySelector('#view');routes.sop(view,{});
+ const input=view.querySelector('[data-intent-input]');input.value='A customer returned a damaged unit';
+ view.querySelector('[data-intent-form]').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+ expect(view.querySelector('.guide-retrieval-source').textContent).toContain('Customer return');
+ view.querySelector('[data-intent-select]').click();
+ expect(view.querySelector('.guide-hero h3').textContent).toContain('Customer return');
+ expect(navigations).toEqual([]);dom.window.close();
 });

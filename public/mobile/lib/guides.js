@@ -32,6 +32,8 @@
       add('#m-task-add','Create a task','Press Add task, enter its title and optionally set a due time and reminder.');
       add('#m-task-list','Complete or inspect a task','Tasks are grouped into Overdue, Today, Upcoming, No date and Done. Tap a task to view it; the check button completes/reopens it. Wait for Updating task to finish. If it fails, Try again repeats that intended change; do not assume it saved. Linked checklist progress changes with the task.');
     }else if(root.querySelector('#m-guide-search')){
+      add('[data-intent-input]','Describe what you want to do','Describe your task in ordinary words. Find instructions searches published steps locally; it does not ask an AI or perform the task.');
+      add('[data-intent-form] button[type=submit]','Find the right published steps','Choose a clarification if asked, read the source guide and prerequisite, then open the matched guide. A team-handoff label means another role or the webapp may be needed.');
       add('#m-guide-search','Find a task guide','Search by the work you need to do, such as checklist, leave or payroll. Clear the search to show the available workflows again.');
       add('#m-guide-results','Read the workflow','Open a guide to read its steps. A step naming a webapp screen is performed there; use the phone screen’s Guide button for its own controls.');
     }else{
