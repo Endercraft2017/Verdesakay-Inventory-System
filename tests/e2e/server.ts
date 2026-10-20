@@ -23,6 +23,11 @@ upsertPlatformUser('browser-operator', 'Synthetic browser operator password', 'B
 const db = await import('../../src/shared/db');
 db.init();
 const { hashPassword } = await import('../../src/shared/password-hash');
+const disclosureUsers = ['original', 'reused'].map(kind => Number(db.run("INSERT INTO users(username,full_name,role,password_hash) VALUES(?,?,'csr',?)",'payslip-'+kind,'Synthetic payslip '+kind,hashPassword('payslip-browser-test-only')).lastInsertRowid));
+const disclosureEmployees = ['Synthetic Payroll New', 'Synthetic Payroll Old'].map((name,i) => Number(db.run('INSERT INTO employees(employee_no,name,user_id) VALUES(?,?,?)','DISC-BROWSER-'+i,name,disclosureUsers[i]).lastInsertRowid));
+db.run("INSERT INTO employee_profile_changes(employee_id,field,old_value,new_value,source) VALUES(?,'name','Synthetic Payroll Old','Synthetic Payroll New','hr_edit')",disclosureEmployees[0]);
+const disclosureForm = db.queryOne<{id:number}>("SELECT id FROM form_definitions WHERE slug='hr_payroll'")!;
+for (const [number,data] of [['DISC-BROWSER-LEGACY',{employee_name:'Synthetic Payroll Old'}],['DISC-BROWSER-STAMP',{employee_name:'Synthetic Payroll Old',employee_id:disclosureEmployees[0]}],['DISC-BROWSER-TEXT',{employee_name:'Synthetic Payroll Old',employee_id:String(disclosureEmployees[0])}]] as const) db.run("INSERT INTO form_records(form_def_id,number,data,status,created_by) VALUES(?,?,?,'paid',1)",disclosureForm.id,number,JSON.stringify({...data,net_pay:7654}));
 // Synthetic accounting-only identity: verify tax printing without general HR/pay access.
 db.run("INSERT INTO users(username,full_name,role,password_hash) VALUES('tax-privacy-accountant','Synthetic Tax Accountant','accounting',?)",hashPassword('tax-privacy-browser-test-only'));
 db.run("INSERT INTO employees(employee_no,name,position,tin_no,birth_date,daily_rate,photo) VALUES('TAX-PRIVACY-BROWSER','Synthetic Browser Tax Employee','Clerk','SYNTHETIC-TAX-TIN','1991-03-07',1234,'private-browser-photo.jpg')");

@@ -1,0 +1,158 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payslip-disclosure.test.ts > payslip disclosure identity > does not show a legacy reused name to either employee
+{"timestamp":"2026-10-20T01:40:56.279Z","level":"info","event":"http_request","request_id":"4207de34-7b39-4968-84bf-6f2cb284f663","tenant":"default","method":"GET","path":"/api/me/payslips","status":200,"duration_ms":4}
+
+stdout | tests/payslip-disclosure.test.ts > payslip disclosure identity > refuses PDF and timekeeping disclosure for ambiguous legacy names
+{"timestamp":"2026-10-20T01:40:56.303Z","level":"info","event":"http_request","request_id":"3657f13e-4614-4ed8-9424-ccee22242904","tenant":"default","method":"GET","path":"/api/me/payslips/17/pdf","status":200,"duration_ms":18}
+
+stdout | tests/payslip-disclosure.test.ts > payslip disclosure identity > does not email an ambiguous legacy name to the current name holder
+{"timestamp":"2026-10-20T01:40:56.321Z","level":"info","event":"http_request","request_id":"c2a0a5a8-26b8-4207-b991-0d529804f3a9","tenant":"default","method":"POST","path":"/api/hr/payroll/17/email","status":200,"duration_ms":5}
+
+stdout | tests/payslip-disclosure.test.ts > payslip disclosure identity > does not fall back to a name when a stamped employee no longer exists
+{"timestamp":"2026-10-20T01:40:56.325Z","level":"info","event":"http_request","request_id":"31e01594-1d86-4fc2-85a3-aea0ef0bb981","tenant":"default","method":"POST","path":"/api/hr/payroll/19/email","status":200,"duration_ms":2}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:40:53.516Z","level":"info","event":"http_request","request_id":"d7e87cef-f4cf-4e89-9a40-5f89986c47ed","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":394}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:40:53.883Z","level":"info","event":"http_request","request_id":"9bfc0126-65df-4f72-8dfc-ee9969cb2a6b","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":360}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:40:54.472Z","level":"info","event":"http_request","request_id":"ed9cf225-fd7d-48ac-be17-44e98cce2331","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":586}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:40:54.816Z","level":"info","event":"http_request","request_id":"c04a7dc1-393a-43ec-b0d4-d133291a0af4","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":340}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:40:55.427Z","level":"info","event":"http_request","request_id":"4dc743f4-e359-497c-855f-f9dcc1fe122d","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":608}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:40:55.774Z","level":"info","event":"http_request","request_id":"dea1f2dd-3643-49e5-8c38-5cab7b21a286","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":345}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:40:56.269Z","level":"info","event":"http_request","request_id":"e83f10eb-826c-4373-b020-25da87e68e41","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":493}
+
+ ❯ tests/payslip-disclosure.test.ts (9 tests | 6 failed) 6186ms
+     × does not show a legacy reused name to either employee 11ms
+     × refuses PDF and timekeeping disclosure for ambiguous legacy names 24ms
+     × does not email an ambiguous legacy name to the current name holder 6ms
+     × does not fall back to a name when a stamped employee no longer exists 5ms
+     × refuses duplicate normalized current names and shared historical aliases 2ms
+     × treats malformed explicit identity as unresolved instead of coercing or falling back 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payslip-disclosure.test.ts > payslip disclosure identity > does not show a legacy reused name to either employee
+AssertionError: expected [ 18, 17 ] to not include 17
+ ❯ tests/payslip-disclosure.test.ts:25:174
+     23| describe('payslip disclosure identity',()=>{
+     24|  it('does not show a legacy reused name to either employee',async()=>{
+     25|   for(const user of [a,b]){const res=await ctx.api.get('/api/me/paysli…
+       |                                                                                                                                                                              ^
+     26|  });
+     27|  it('refuses PDF and timekeeping disclosure for ambiguous legacy names…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  tests/payslip-disclosure.test.ts > payslip disclosure identity > refuses PDF and timekeeping disclosure for ambiguous legacy names
+AssertionError: expected 200 to be 404 // Object.is equality
+
+- Expected
++ Received
+
+- 404
++ 200
+
+ ❯ tests/payslip-disclosure.test.ts:28:165
+     26|  });
+     27|  it('refuses PDF and timekeeping disclosure for ambiguous legacy names…
+     28|   for(const user of [a,b])for(const suffix of ['pdf','timekeeping'])ex…
+       |                                                                                                                                                                     ^
+     29|  });
+     30|  it('keeps a stamped renamed payslip scoped to its original employee',…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  tests/payslip-disclosure.test.ts > payslip disclosure identity > does not email an ambiguous legacy name to the current name holder
+AssertionError: expected 200 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 200
+
+ ❯ tests/payslip-disclosure.test.ts:35:90
+     33|  });
+     34|  it('does not email an ambiguous legacy name to the current name holde…
+     35|   expect((await ctx.api.post(`/api/hr/payroll/${legacy}/email`).set(hd…
+       |                                                                                          ^
+     36|  });
+     37|  it('does not fall back to a name when a stamped employee no longer ex…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  tests/payslip-disclosure.test.ts > payslip disclosure identity > does not fall back to a name when a stamped employee no longer exists
+AssertionError: expected 200 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 200
+
+ ❯ tests/payslip-disclosure.test.ts:38:92
+     36|  });
+     37|  it('does not fall back to a name when a stamped employee no longer ex…
+     38|   expect((await ctx.api.post(`/api/hr/payroll/${dangling}/email`).set(…
+       |                                                                                            ^
+     39|  });
+     40|  it('emails stamped and uniquely resolved former names to the correct …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  tests/payslip-disclosure.test.ts > payslip disclosure identity > refuses duplicate normalized current names and shared historical aliases
+AssertionError: expected 5 to be null
+
+- Expected:
+null
+
++ Received:
+5
+
+ ❯ tests/payslip-disclosure.test.ts:50:56
+     48|   run("INSERT INTO employee_profile_changes(employee_id,field,old_valu…
+     49|   const owner=(await import('../src/modules/payroll/payslip-owner')).p…
+     50|   expect(owner.idOf({employee_name:'duplicate name'})).toBeNull();expe…
+       |                                                        ^
+     51|  });
+     52|  it('treats malformed explicit identity as unresolved instead of coerc…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  tests/payslip-disclosure.test.ts > payslip disclosure identity > treats malformed explicit identity as unresolved instead of coercing or falling back
+AssertionError: expected 3 to be null
+
+- Expected:
+null
+
++ Received:
+3
+
+ ❯ tests/payslip-disclosure.test.ts:54:128
+     52|  it('treats malformed explicit identity as unresolved instead of coerc…
+     53|   const owner=(await import('../src/modules/payroll/payslip-owner')).p…
+     54|   for(const id of [0,-1,'',true,[cid],{},1.5,'not-an-id',999999])expec…
+       |                                                                                                                                ^
+     55|   expect(owner.idOf({employee_id:String(cid),employee_name:'Wrong Name…
+     56|  });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 3 passed (9)
+   Start at  01:40:49
+   Duration  6.44s (transform 1.55s, setup 27ms, import 104ms, tests 6.19s, environment 0ms)

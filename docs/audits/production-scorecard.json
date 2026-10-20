@@ -310,7 +310,7 @@
       "severity": "Critical",
       "requirement": "Every endpoint that accepts a resource identifier (path, query, body, header) verifies the caller owns or may access that resource.",
       "status": "UNVERIFIED",
-      "evidence": "Database-per-tenant isolation, route-gate source inventory and broad negative tests were reviewed; critical replay and crypto-scope defects were fixed. Every resource/method/owner combination and every external state has not been exhaustively proven. See tests/access-matrix.test.ts, tenant-path.test.ts, production-security.test.ts and idempotency.test.ts.",
+      "evidence": "Database-per-tenant isolation, route-gate source inventory and broad negative tests were reviewed; critical replay and crypto-scope defects were fixed. Every resource/method/owner combination and every external state has not been exhaustively proven. See tests/access-matrix.test.ts, tenant-path.test.ts, production-security.test.ts and idempotency.test.ts. Employee payslip self-service/email now reject ambiguous legacy names and invalid stamped references; scoped negative tests and operations/payslip-identity-disclosure.md document evidence and remaining reconciliation.",
       "scenario": "",
       "fix": "List ID-taking endpoints; run the two-account swap test (AUDIT-02); review the handler code for ownership filters."
     },
@@ -2110,9 +2110,9 @@
   "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
   "latest_follow_up": {
     "date": "2026-10-20",
-    "scope": "BIR 2316 employee field minimization, accounting-only access and seeded-template regression",
-    "base_commit": "7250cbb07092d5594b680b11f3835e3e61952fb5",
-    "verification": "evidence/tax-privacy-verification.json",
+    "scope": "Fail-closed payroll disclosure ownership and unresolved-cutoff generation safety",
+    "base_commit": "6097973776c521c20d4cbc9d69985481e3b6c85b",
+    "verification": "evidence/payslip-identity-verification.json",
     "whole_control_statuses_changed": false
   }
 }

@@ -996,9 +996,16 @@ describe('mobile bootstrap', () => {
         if (url === '/api/job-orders/184/units' && init.method === 'POST') { uploads++; return { id: 91 }; }
         return undefined;
       });
-      win.mProductionDrafts.save = () => Promise.reject(new Error('Device storage full'));
-      win.location.hash = '#/job-orders?id=184&step=count'; await wait();
-      win.document.getElementById('jo-continue').click(); await wait();
+      const save = vi.fn(() => Promise.reject(new Error('Device storage full')));
+      win.mProductionDrafts.save = save;
+      win.location.hash = '#/job-orders?id=184&step=count';
+      // Navigation and IndexedDB setup may take longer than a fixed 40ms under suite load.
+      await vi.waitFor(() => expect(win.document.getElementById('jo-continue')).not.toBeNull());
+      win.document.getElementById('jo-continue').click();
+      await vi.waitFor(() => {
+        expect(save).toHaveBeenCalledTimes(1);
+        expect(win.document.getElementById('jo-continue')?.disabled).toBe(false);
+      });
       expect(uploads).toBe(0);
       expect(win.document.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:240');
       expect(win.document.getElementById('jo-continue').disabled).toBe(false);
@@ -2096,8 +2103,8 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
         ? [...LOCS, { id: 4, name: 'FG-B01', type: 'warehouse', is_default: 0, capacity: 10, total_units: 10 },
           { id: 5, name: 'FG-C02', type: 'warehouse', is_default: 0, capacity: 10, total_units: 4 }] : base(url, init));
       win.location.hash = '#/receiving?unit=601&step=location';
-      await wait(80);
       const view = win.document.getElementById('m-view');
+      await vi.waitFor(() => expect(view.textContent).toContain('FG-B01Warehouse · full (room for 0)'));
       expect(view.textContent).toContain('FG-B01Warehouse · full (room for 0)');
       expect(view.textContent).toContain('FG-C02Warehouse · room for 6');
       expect(view.querySelector('[data-l="4"]')).toBeNull();

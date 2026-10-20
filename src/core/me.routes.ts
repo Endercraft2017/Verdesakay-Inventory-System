@@ -9,7 +9,8 @@ import { renderPayslipPdf } from '../modules/payroll/payslip-pdf';
 import { requireAuth } from '../shared/auth';
 import { parseBody, timeCorrectionSchema, approvalDecisionSchema, selfProfileSchema } from '../shared/validation';
 import { getProfile, updateProfile, profileHistory, PROFILE_FIELDS } from '../modules/hr/employee-profile';
-import { INFO_CHANGE_SLUG, applyInfoChange, previousNames } from '../modules/hr/info-change';
+import { INFO_CHANGE_SLUG, applyInfoChange } from '../modules/hr/info-change';
+import { payslipOwnerResolver } from '../modules/payroll/payslip-owner';
 import { notifyUser, notifyPermission } from '../shared/push';
 import { myClockStatus } from '../modules/hr/clock';
 import { unrecordedOtMinutes, type AttendanceDay } from '../modules/payroll/hr-payroll-compute';
@@ -125,23 +126,24 @@ router.get('/profile/history', (req, res) => {
  *  the moment it was marked paid (nothing else may touch the row). */
 const isFinalPayslip = (status: string) => status === 'paid';
 
-/** This employee's hr_payroll records: stamped with their employee_id, or (older payslips) carrying
- *  their current or any former name — so a rename never hides earlier payslips. */
+/** Stamped records, or legacy records with an unambiguous current/former name.
+ *  Name reuse must never grant access to someone else's older payroll. */
 function myPayslips(emp: Emp, id?: number): FormRecord[] {
   const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
   if (!form) return [];
-  const names = [emp.name, ...previousNames(emp.id)];
+  const owner = payslipOwnerResolver();
+  const names = owner.namesFor(emp.id);
   return queryAll<FormRecord>(
     `SELECT id, number, period, status, data, created_at, updated_at
      FROM form_records
      WHERE form_def_id = ?
-       AND (json_extract(data, '$.employee_id') = ?
+       AND (json_extract(data, '$.employee_id') = ? OR json_extract(data, '$.employee_id') = ?
             OR (json_extract(data, '$.employee_id') IS NULL
-                AND json_extract(data, '$.employee_name') IN (${names.map(() => '?').join(',')})))
+                AND json_extract(data, '$.employee_name') IN (${names.map(() => '?').join(',') || 'NULL'})))
        ${id != null ? 'AND id = ?' : ''}
      ORDER BY id DESC`,
-    form.id, emp.id, ...names, ...(id != null ? [id] : [])
-  );
+    form.id, emp.id, String(emp.id), ...names, ...(id != null ? [id] : [])
+  ).filter(record => owner.idOf(parse(record.data)) === emp.id);
 }
 
 // GET /api/me/payslips — employees can inspect their own current payroll previews.

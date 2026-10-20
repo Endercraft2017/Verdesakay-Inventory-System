@@ -351,3 +351,15 @@ See [field contract, regression scope and remaining work](../operations/accounti
 Research: [OWASP API3:2023 property authorization](https://owasp.org/API-Security/editions/2023/en/0xa3-broken-object-property-level-authorization/),
 retrieved 20 October 2026: explicitly select necessary response properties. This scoped fix
 does not establish compliance or close broader export, retention or template-variable controls.
+
+## Payslip disclosure identity — 20 October 2026
+
+Self-service list/PDF/timekeeping and payroll email now share fail-closed ownership:
+present invalid/missing employee references do not fall back to a name; a legacy
+current/former name must identify one employee. Ambiguous self-service records are
+withheld (direct routes 404); email returns 400 before sending. Stamped and unique
+former-name records remain supported. No automatic legacy reassignment or stored
+data deletion. Reviewed repair tooling and stable-ID statutory reconciliation remain.
+See [contract, operations and evidence](../operations/payslip-identity-disclosure.md).
+Research: [OWASP API1:2023](https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/),
+retrieved 20 October 2026; per-object authorization and regression testing.

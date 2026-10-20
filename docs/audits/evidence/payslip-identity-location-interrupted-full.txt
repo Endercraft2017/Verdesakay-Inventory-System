@@ -1,0 +1,9 @@
+
+> otom@1.0.0 test
+> vitest run --fileParallelism --maxWorkers=2
+
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+ ❯ tests/frontend-mobile.test.ts (130 tests | 1 failed) 27746ms
+       × shows each location's room and won't let a full one be picked 247ms

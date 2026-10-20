@@ -87,7 +87,8 @@ describe('payslip ownership across renames', () => {
     const b = await ctx.api.post('/api/hr/employees').set(A()).send({ employee_no: 'RN-B', name: 'Sam Cruz', daily_rate: 600 });
     const { payslipOwnerResolver } = await import('../src/modules/payroll/payslip-owner');
     const owner = payslipOwnerResolver();
-    expect(owner.idOf({ employee_name: 'Sam Cruz' })).toBe(b.body.id);        // current holder wins
+    // Reusing a name cannot establish who an old unstamped payslip belongs to.
+    expect(owner.idOf({ employee_name: 'Sam Cruz' })).toBeNull();
     expect(owner.idOf({ employee_name: 'Sam Cruz', employee_id: a.body.id })).toBe(a.body.id); // stamped id wins
     expect(owner.nameOf({ employee_name: 'Unknown Person' })).toBe('Unknown Person');
   });

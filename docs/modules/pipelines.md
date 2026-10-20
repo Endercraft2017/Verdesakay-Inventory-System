@@ -613,6 +613,13 @@ snapshot). Not linked to Inventory stock — issuing moves no stock.
 
 ## Payroll run
 
+**Ownership/disclosure (20 October 2026):** stamped IDs must identify a current employee;
+legacy names must be unambiguous across current/former names. Self-service lists, PDF and
+timekeeping and payroll email share `payroll/payslip-owner.ts`. Reused names cannot grant
+access to an older person's slip; unresolved email is refused before sending. Generation refuses unresolved existing cutoff slips with 409 before writes. No automatic
+reassignment. Stable-ID aggregate reconciliation and reviewed repair tooling remain; see
+`docs/operations/payslip-identity-disclosure.md`.
+
 **Trigger:** a payroll period/cutoff is closed (`hr`, `hr.routes.ts`).
 **Permissions:** timekeeping (punches, cutoffs, daily records) is `hr.view` / `hr.manage`; every pay
 step — rates, payroll rules, generate / post / mark paid / email payslips, 13th month, final pay —

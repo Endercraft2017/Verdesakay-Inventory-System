@@ -1,0 +1,2 @@
+PASS: actual server.ts hides ambiguous and dangling legacy payroll from both linked accounts, keeps stamped ownership, refuses PDF/timekeeping and unresolved email without mail-log side effects.
+Disposable synthetic cloud-mode catalogs only; no external mail, employee data, provider or hosting change.

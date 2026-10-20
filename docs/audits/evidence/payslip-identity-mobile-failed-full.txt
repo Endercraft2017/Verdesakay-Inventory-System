@@ -1,0 +1,32 @@
+
+> otom@1.0.0 test
+> vitest run --fileParallelism --maxWorkers=2
+
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+ ❯ tests/frontend-mobile.test.ts (130 tests | 1 failed) 28731ms
+       × blocks uploading when the production attempt cannot be persisted 143ms
+(node:23122) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:23122) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend-mobile.test.ts > mobile bootstrap > production lead and manager (Figma 66:*) > blocks uploading when the production attempt cannot be persisted
+TypeError: Cannot read properties of null (reading 'click')
+ ❯ tests/frontend-mobile.test.ts:1001:49
+    999|       win.mProductionDrafts.save = () => Promise.reject(new Error('Dev…
+    1000|       win.location.hash = '#/job-orders?id=184&step=count'; await wait…
+    1001|       win.document.getElementById('jo-continue').click(); await wait();
+       |                                                 ^
+    1002|       expect(uploads).toBe(0);
+    1003|       expect(win.document.getElementById('m-view').getAttribute('data-…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 311 passed (312)
+      Tests  1 failed | 3269 passed (3270)
+   Start at  01:47:25
+   Duration  658.11s (transform 8.63s, setup 2.93s, import 41.41s, tests 1230.20s, environment 2.43s)

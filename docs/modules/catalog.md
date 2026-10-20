@@ -775,6 +775,8 @@ doc_template, SCHEMA_VERSION 43; company-wide register `GET /api/hr/assets` with
 people-who-left filters + CSV, UI `public/js/modules/hr/hr-assets.js` at HR → Employees →
 Company Assets, tests `tests/hr-assets.test.ts`), `clock.routes.ts`, `field.routes.ts`,
 `employee-profile.ts` + `employee-profile.routes.ts` (self-service profile, below).
+**Payroll email identity:** `hr.routes.ts` refuses unresolved ownership before mailbox lookup
+or sending. See `docs/operations/payslip-identity-disclosure.md`; permission/sync classes unchanged.
 **Employee photos (2026-10-13):** `GET /api/hr/employees` leaves `employees.photo` (a data URI)
 out and sends `photo_rev` (12-hex fingerprint, null = none) instead; the image itself is
 `GET /api/hr/employees/:id/photo?v=<rev>` (hr.view, `Cache-Control: private, max-age=31536000,
@@ -905,6 +907,11 @@ The BIR 2316 prints the employee's Date of Birth (`employees.birth_date` → `bi
 MM/DD/YYYY, added by `GET /accounting/bir-2316/:employeeId`; template row seeded, and patched
 into existing templates at SCHEMA_VERSION 54). The alphalist has no birth-date column in BIR's
 Schedule 1 layout, so it's unchanged.
+**Disclosure ownership (20 October 2026):** present IDs must resolve without name fallback;
+legacy names must uniquely identify one employee across current and historical names. Self-service
+list/PDF/timekeeping and email use the shared resolver. Ambiguous slips are withheld, not silently
+assigned to the current name holder. Generation refuses unresolved cutoff slips before writes. Stable-ID aggregate reconciliation remains; see
+[ownership contract](../operations/payslip-identity-disclosure.md).
 **Public interface:** pure computation/rendering functions (no routes of its own — exposed
 through `hr.routes.ts`, `accounting.routes.ts`, and `core/me.routes.ts`'s
 `GET /api/me/payslips/:id/pdf`).

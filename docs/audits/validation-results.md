@@ -925,3 +925,72 @@ focused case and complete browser run both completed successfully.
 [contract/limits](../operations/accounting-tax-privacy.md).
 Broader privacy/export/retention work remains; scorecard statuses and release hold
 are unchanged. No deployment/provider/customer data changes were made.
+
+
+## Payroll disclosure ownership — 20 October 2026
+
+Base 6097973776c521c20d4cbc9d69985481e3b6c85b. Reproduced self-service
+legacy-name reuse disclosure, incorrect email recipient selection, invalid stamped
+identity fallback and ambiguous-name/coercion cases (6 failed / 3 passed). The
+resolver and self-service now fail closed for known ambiguity/invalid references,
+while preserving stamped ownership and unique former names.
+
+| Check | Completed final result |
+|---|---|
+| Full regression | 312 files / 3272 tests passed, 643.71s |
+| Focused | 6 files / 154 tests passed, 39.54s; 12 new API/resolver/generation cases |
+| Playwright | 37 passed, 101.456s; 2 new separate employee browser sessions |
+| Mobile regression after fixture correction | 130 tests passed; state-based readiness and rejected-save completion |
+| TypeScript | Passed |
+| Actual server.ts | Numeric/text identity, ambiguity/dangling denial, unresolved email without mail-log effects and generation refusal before writes |
+| Schema/dependencies | Unchanged; db:types not required/run |
+| Staged secret/whitespace checks | Clean; final commit hook scans again |
+
+A later test reproduced a compatibility gap: a valid decimal-string employee ID
+returned 404 in self-service (1 failed / 9 passed). The preliminary full run was
+interrupted with exit 130 to correct SQL candidate matching, then final focused,
+browser and full runs completed on the corrected implementation. The earlier
+37-case browser run passed but did not yet cover text IDs; final browser fixtures
+cover both ID representations. No interrupted run is counted as a full pass.
+
+The first completed full run had 3,269 passes and one failure in the existing
+mobile storage-failure test: its fixed 40 ms navigation delay clicked a null
+Continue button. The same test passed in isolation. The fixture now waits for
+control readiness, observes the rejected save and waits for the control to be
+re-enabled while retaining the zero-upload assertion. The entire 130-case mobile
+file and the final full run passed after correction. No mobile product code or
+UI design changed; the failed full log and isolated diagnostic are retained.
+
+A further caller review reproduced two duplicate-generation risks: existing
+ambiguous or dangling cutoff slips did not prevent creation of new records. A
+further preliminary full run was stopped (exit 130), both cases reproduced, and
+generation now returns 409 before opening its write transaction. Final focused
+cases prove no new records and no change to the existing paid slip on refusal.
+The final full run is on this guarded implementation. The first expanded startup
+request omitted the required payroll-period label; a later fixture assertion also assumed a fixed record count despite seeded data.
+Corrected input and a before/after record-count comparison passed.
+
+A further full attempt reported one existing mobile location-capacity case
+failing under concurrent browser/full-suite load and was interrupted (exit 130).
+The isolated case passed. Its fixed 80 ms navigation delay now waits for the
+actual full-location label, retaining all capacity and selectable/full-location
+assertions. The final mobile file passed, and the final full run started after
+all browser checks finished. The interrupted attempt is not a completed pass.
+
+The first startup fixture failed because its separate Python SQLite connection
+lacked `form_history_enabled`; the corrected connection enables existing revision
+triggers and the actual-server smoke passed, then passed again with text-ID cases.
+The prior rename test's current-name-holder precedence was intentionally replaced
+with ambiguity refusal. This is a security contract correction, not removal of the
+negative scenario. Mocked email and disposable catalogs only; no real sends.
+
+[Manifest](evidence/payslip-identity-verification.json),
+[full regression](evidence/payslip-identity-full.txt),
+[focused](evidence/payslip-identity-focused.txt),
+[reproduction](evidence/payslip-identity-repro.txt),
+[text-ID reproduction](evidence/payslip-identity-text-id-repro.txt),
+[browser JSON](evidence/payslip-identity-browser.json),
+[startup](evidence/payslip-identity-startup.txt), and
+[contract/reconciliation limits](../operations/payslip-identity-disclosure.md).
+Broader ownership/repair, aggregation, export/retention and operational controls
+remain open. Whole-control statuses and release hold are unchanged.

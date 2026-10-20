@@ -1,0 +1,83 @@
+{
+  "date": "2026-10-20",
+  "base_commit": "6097973776c521c20d4cbc9d69985481e3b6c85b",
+  "scope": "Fail-closed legacy payroll disclosure ownership",
+  "full_run": {
+    "files_passed": 312,
+    "files_failed": 0,
+    "tests_passed": 3272,
+    "tests_failed": 0,
+    "duration_seconds": 643.71
+  },
+  "focused_run": {
+    "files_passed": 6,
+    "files_failed": 0,
+    "tests_passed": 154,
+    "tests_failed": 0,
+    "duration_seconds": 39.54
+  },
+  "prior_failed_full": {
+    "files_passed": 311,
+    "files_failed": 1,
+    "tests_passed": 3269,
+    "tests_failed": 1,
+    "duration_seconds": 658.11
+  },
+  "mobile_regression": {
+    "files_passed": 1,
+    "files_failed": 0,
+    "tests_passed": 130,
+    "tests_failed": 0,
+    "duration_seconds": 26.8
+  },
+  "location_fixture": "A further full attempt reported the existing location-capacity test failing under concurrent load and was interrupted (exit 130). Isolated case passed. Replaced its 80ms delay with a wait for the full-location label, retaining both capacity text and allowed/denied picker assertions. Final mobile file and full suite passed; final full ran after browser completion.",
+  "mobile_fixture_fix": "Fixed 40ms navigation wait caused null Continue click under load; now waits for control readiness, observes one rejected save and restored enabled control while retaining no-upload assertion. No mobile product code changed.",
+  "product_reproduction": {
+    "files_passed": 0,
+    "files_failed": 1,
+    "tests_passed": 3,
+    "tests_failed": 6,
+    "duration_seconds": 6.44
+  },
+  "text_id_compatibility_reproduction": {
+    "files_passed": 0,
+    "files_failed": 1,
+    "tests_passed": 9,
+    "tests_failed": 1,
+    "duration_seconds": 5.58
+  },
+  "generation_reproduction": {
+    "files_passed": 0,
+    "files_failed": 1,
+    "tests_passed": 10,
+    "tests_failed": 2,
+    "duration_seconds": 5.53
+  },
+  "generation_follow_up": "Stopped a further preliminary full run (exit 130) to reproduce and prevent duplicate generation for unresolved cutoff identity; 2 generation cases failed before guard, final focused passed.",
+  "new_api_tests": 12,
+  "playwright": {
+    "passed": 37,
+    "failed": 0,
+    "new_cases": 2,
+    "duration_seconds": 101.456242
+  },
+  "typecheck": "passed",
+  "actual_server": "passed: numeric/text stamped ownership, ambiguous/dangling refusal and unresolved email without mail-log effects and generation refusal before writes",
+  "preliminary_full_run": {
+    "exit_code": 130,
+    "counted_as_completed": false,
+    "reason": "Stopped to reproduce and fix SQL candidate selection for decimal-string employee IDs"
+  },
+  "generation_startup_fixture_failure": "Initial guard smoke request omitted the required payroll_period; supplied synthetic label. A fixed fixture-count assertion then failed because of seeded data; replaced with before/after count comparison and reran.",
+  "startup_fixture_failure": "Python fixture SQLite connection lacked form_history_enabled; registered it enabled (1) so revision triggers remain active; corrected startup completed",
+  "schema": "unchanged; db:types not required/run",
+  "secrets": "staged scan clean; final commit hook rechecks",
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "limits": [
+    "Name-only resolution cannot prove missing/deleted historical identity evidence",
+    "Reviewed identity-repair tooling and stable-ID statutory aggregation remain engineering work",
+    "Email freshness, recipient-change review, retries/uncertain sends, wider exports/variables and retention remain open",
+    "No hosted, real SMTP, real printer/device, legal compliance or independent assurance inferred"
+  ]
+}

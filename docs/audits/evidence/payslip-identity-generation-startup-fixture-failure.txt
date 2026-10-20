@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/workspace/Verdesakay-Inventory-System/work/payslip-identity-startup-smoke.py", line 47, in <module>
+    status,held,_=request('/api/hr/periods/'+str(cutoff)+'/generate-payslips',{},token);assert status==409 and hold in held['unresolved_record_ids']
+                                                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

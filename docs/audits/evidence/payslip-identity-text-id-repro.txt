@@ -1,0 +1,62 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payslip-disclosure.test.ts > payslip disclosure identity > keeps a stamped renamed payslip scoped to its original employee
+{"timestamp":"2026-10-20T01:46:42.050Z","level":"info","event":"http_request","request_id":"7a399c99-77e2-4073-9cbe-4e018f7d8b8f","tenant":"default","method":"GET","path":"/api/me/payslips/19/pdf","status":200,"duration_ms":17}
+
+stdout | tests/payslip-disclosure.test.ts > payslip disclosure identity > keeps a stamped renamed payslip scoped to its original employee
+{"timestamp":"2026-10-20T01:46:42.054Z","level":"info","event":"http_request","request_id":"b6c6bf53-22f6-405a-9386-a6f27b1079b1","tenant":"default","method":"GET","path":"/api/me/payslips/19/pdf","status":404,"duration_ms":2}
+
+stdout | tests/payslip-disclosure.test.ts > payslip disclosure identity > keeps a stamped renamed payslip scoped to its original employee
+{"timestamp":"2026-10-20T01:46:42.057Z","level":"info","event":"http_request","request_id":"1f0a1fa0-ab71-464e-bda0-dad96c8f788b","tenant":"default","method":"GET","path":"/api/me/payslips/17/pdf","status":404,"duration_ms":2}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:46:40.050Z","level":"info","event":"http_request","request_id":"94e3305d-188b-47a8-bfe9-3bc118bc7806","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":332}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:46:40.389Z","level":"info","event":"http_request","request_id":"648e56ee-b8bb-4538-98f6-7010cf7afa89","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":332}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:46:40.702Z","level":"info","event":"http_request","request_id":"25dd2835-d0dd-485e-94a3-dd3f01819a9a","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":310}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:46:41.026Z","level":"info","event":"http_request","request_id":"83989fd8-5921-4282-b975-a0c3e899714a","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":322}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:46:41.344Z","level":"info","event":"http_request","request_id":"3275a71c-42d6-42b8-b529-36a2bbba83ab","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":315}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:46:41.686Z","level":"info","event":"http_request","request_id":"e615501e-9ce3-485f-af5e-1d3b59fda82b","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":339}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-20T01:46:42.000Z","level":"info","event":"http_request","request_id":"b6910fd5-eb5b-4ef8-acea-5ddbb012e072","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":312}
+
+ ❯ tests/payslip-disclosure.test.ts (10 tests | 1 failed) 5347ms
+     × keeps a stamped renamed payslip scoped to its original employee 29ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payslip-disclosure.test.ts > payslip disclosure identity > keeps a stamped renamed payslip scoped to its original employee
+AssertionError: expected 404 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 404
+
+ ❯ tests/payslip-disclosure.test.ts:33:87
+     31|  it('keeps a stamped renamed payslip scoped to its original employee',…
+     32|   for(const id of [stamped,textStamp]){
+     33|    expect((await ctx.api.get(`/api/me/payslips/${id}/pdf`).set(hdr(a.t…
+       |                                                                                       ^
+     34|    expect((await ctx.api.get(`/api/me/payslips/${id}/pdf`).set(hdr(b.t…
+     35|   }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 9 passed (10)
+   Start at  01:46:36
+   Duration  5.58s (transform 1.54s, setup 26ms, import 88ms, tests 5.35s, environment 0ms)

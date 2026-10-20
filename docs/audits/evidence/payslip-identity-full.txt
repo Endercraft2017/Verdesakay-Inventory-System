@@ -1,0 +1,15 @@
+
+> otom@1.0.0 test
+> vitest run --fileParallelism --maxWorkers=2
+
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+(node:30996) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:30996) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+
+ Test Files  312 passed (312)
+      Tests  3272 passed (3272)
+   Start at  02:13:12
+   Duration  643.71s (transform 7.55s, setup 2.85s, import 40.40s, tests 1202.36s, environment 2.70s)

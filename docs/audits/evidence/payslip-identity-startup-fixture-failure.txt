@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/workspace/Verdesakay-Inventory-System/work/payslip-identity-startup-smoke.py", line 41, in <module>
+    slips.append(d.execute("INSERT INTO form_records(form_def_id,number,data,status,created_by) VALUES(?,?,?,'paid',1)",(form,number,json.dumps(data))).lastrowid)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sqlite3.OperationalError: no such function: form_history_enabled

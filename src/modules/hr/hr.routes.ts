@@ -2555,6 +2555,16 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
     `SELECT * FROM form_records WHERE form_def_id = ? AND (period = ? OR CASE WHEN json_valid(data) THEN CAST(json_extract(data, '$.cutoff_id') AS INTEGER) END = ?)`,
     form.id, payrollPeriod, periodId
   );
+  // Never create a second payroll while an existing cutoff slip has unresolved identity.
+  // Review attribution first; this includes paid legacy slips whose name was reused.
+  const unresolved = periodSlips.filter(r => runCtx.owner.idOf(payslipFields(r)) == null);
+  if (unresolved.length) {
+    res.status(409).json({
+      error: 'Existing payslip ownership needs payroll review before generating this cutoff.',
+      unresolved_record_ids: unresolved.map(r => r.id),
+    });
+    return;
+  }
   db.exec('BEGIN');
   try {
     for (const emp of roster) {
@@ -2925,9 +2935,14 @@ router.post('/payroll/:recordId/email', requirePermission('payroll.manage'), syn
     if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
     const data = JSON.parse(rec.data as string) as Record<string, unknown>;
     const employeeName = String(data.employee_name || '');
+    const ownerId = payslipOwnerResolver().idOf(data);
+    if (ownerId == null) {
+      res.status(400).json({ error: 'Payslip ownership cannot be verified. Ask payroll staff to review its employee identity before emailing.' });
+      return;
+    }
     const target = queryOne<{ email: string | null }>(
       `SELECT u.email FROM employees e LEFT JOIN users u ON u.id = e.user_id WHERE e.id = ?`,
-      payslipOwnerResolver().idOf(data) ?? -1
+      ownerId
     );
     if (!target || !target.email) {
       res.status(400).json({

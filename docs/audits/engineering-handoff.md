@@ -1,6 +1,12 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 20 October 2026 — the BIR 2316 detail response now explicitly selects its
+Latest follow-up: 20 October 2026 — employee payslip disclosure now fails closed for reused
+or ambiguous names and invalid/missing stamped employee references. Self-service and payroll
+email share the resolver. Generation refuses unresolved cutoff slips before payroll writes.
+See [identity contract and reconciliation limits](../operations/payslip-identity-disclosure.md).
+Audited legacy repair and stable-ID statutory aggregation remain engineering work.
+
+Previous follow-up: 20 October 2026 — the BIR 2316 detail response now explicitly selects its
 bounded tax-template identity, closing a reproduced accounting-only disclosure of unrelated
 HR/pay settings. See [tax privacy](../operations/accounting-tax-privacy.md). Broader export,
 retention and authorization controls remain open; whole-control counts are unchanged.
