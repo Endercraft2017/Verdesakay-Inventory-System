@@ -1,5 +1,51 @@
 # Inventory and production: mobile integration gaps
 
+## Mobile implementation status — candidate v136 (2026-10-20)
+
+The new requirements below have been integrated locally on
+`restructure/module-architecture` after upstream `0400314`. Their original
+handoff descriptions remain below as context; this status records the mobile
+implementation rather than claiming a deployment.
+
+- Work now combines permission-scoped live records and unread notices in
+  **Needs my attention**, followed by the authorized queue shortcuts. Each task
+  opens read-only current details, then rechecks permission and queue membership
+  before opening the exact existing action workflow. Completed/reassigned tasks,
+  revoked permissions, unavailable queues and stale push links have explicit
+  states. Work refreshes manually and every 30 seconds while open; stored notices
+  remain under **Notifications & history**. Push permission is not required.
+- Releasing counts come from `/release-slips/queue` active stages, excluding
+  completed trips. Kit and parts work require their explicit permissions;
+  inventory adjustment never grants physical sales release. RTS accepts either
+  `jo` or `id` job-order filters. Production list ownership remains backend-scoped.
+- QC/QA use the chosen desk's checklist and explicit `inspection_stage` for all
+  new inspection submissions, including durable attempts. Draft answers are
+  desk-scoped. Either desk may go first; both required passes and cleared holds
+  are still required for RTS. Single-inspection jobs keep the combined checklist.
+  Legacy intake status uses actual QC/QA results rather than inferring from stage.
+- Sales has a four-stage pipeline, searchable customer follow-up, stock shortages,
+  exact order details, customer registry create/edit and open sale creation.
+  Existing open sales support customer/notes edits with revision checks; approval
+  and release/partial-trip authorization need their own grants. Physical releasing
+  stays in `#/so`. Customer JO documents are labelled distinctly. Warehouse
+  tracking is read-only. The server now filters commercial pricing from operational
+  order/customer/release-context JSON responses, independently of cost visibility.
+- Draft parent job reviews offer subassembly suggestions and explicit, durable
+  linked-child draft acceptance under `production.plan`. The server rechecks
+  current materials/quantity. Neither child creation nor parent planning adds stock.
+- Stock browsing labels and filters parts/supplies versus finished products using
+  `is_finished_product`. Operational item pickers retain both where needed.
+- PR approval, cash issuance and settlement are separate mobile grants, matching
+  the upstream independent-person policy. Supplier-order receiving retains its
+  distinct label. Durable receipt/photo/request recovery remains in place.
+
+Validation includes 192 focused Vitest checks, TypeScript checking, and real
+local-backend Playwright suites for Work/Sales, internal PRs, Work guides and
+legacy intake through QR/RTS. Detailed evidence and scope are recorded in
+`docs/reviews/mobile-attention-validation.md`. Physical phone/printer and site-PC
+installation checks are still separate acceptance work; no deployment or push
+is claimed by this update.
+
 ## Sales ownership, warehouse tracking, and subassembly builds (2026-10-20)
 
 Desktop now has a distinct **Sales** entitlement (dependent on Inventory stock).
@@ -176,6 +222,46 @@ parts/finished filter where a mixed list would confuse workers. Do not infer
 item type from free-text Category or create duplicate product records. Check
 that a finished product with fully built and semi-built RTS balances remains
 one product/SKU with the existing build-state distinctions.
+
+## Mobile internal PR integration completed locally (2026-10-20)
+
+The internal PR actions below are implemented in the candidate mobile cache
+v136. Work now separates **Receive supplier delivery** from **Make PR**,
+**Review PRs** and **My assigned purchases**. New entries have individual Work
+guides explaining their purpose, financial authority and lack of stock movement.
+Inventory adjustment does not confer purchasing authority.
+
+The mobile `purchase-requests` route handles own/assigned/reviewer lists, freeform
+request items and requested budget, both purchase arrangements, approval/reject,
+physical cash issuance, buyer receipts and actual items, return/correction and
+final closure. It shows requester/buyer, status, requested/approved/actual totals,
+cash and receipts. Added/substituted actual items are allowed within the overall
+budget. Missing receipts, cash not yet recorded and over-budget amounts visibly
+block liquidation. Exact physical change or reimbursement must be recorded to
+close. Approval alone never closes a PR or creates inventory stock.
+
+Approval/rejection requires `purchasing.approve_requests`, cash issuance requires
+`purchasing.issue_cash`, and settlement/return requires `purchasing.settle_requests`.
+`purchasing.manage` does not grant these decisions. Independent-person restrictions
+follow the backend, with its audited admin exception. Receipt/liquidation controls require exact assigned-buyer
+ownership, including for approvers. Direct routes retain these checks and the
+server remains authoritative. Desktop's buyer-button check was aligned to the
+same ownership rule instead of treating every approver as a buyer.
+
+Request/actual-item/receipt drafts and immutable decision/file attempts use
+account/server-scoped durable storage. Saved PR work is discoverable from PR
+lists. Browser restart and committed-response-loss recovery retain original
+JSON/files/keys, and site-local saves use the existing pending-confirmation
+screen. Receipts support camera photos, JPG/PNG/WebP and PDF; photos use shared
+compression once, while PDFs remain original files. Receipts are authenticated
+for viewing/download; unsupported or over-8-MB prepared files are blocked.
+
+Validation: 13 real-backend Playwright scenarios plus four Work-guide account/
+permission checks passed. TypeScript and 192 focused regression tests passed.
+Both cash-to-requester and separately assigned buyers, correction, exact change,
+reimbursement, create/upload/close response loss and unchanged stock were tested.
+See `docs/reviews/mobile-purchase-requests-validation.md`. No deployment or
+installed-phone acceptance is claimed; these changes are local pending commit.
 
 ## PR approval authority split (2026-10-20)
 

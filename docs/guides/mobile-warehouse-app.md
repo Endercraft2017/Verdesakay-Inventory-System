@@ -110,7 +110,7 @@ available and explained; the guide does not enable unavailable tasks.
 
 Important distinctions:
 
-- **Receive PR** receives purchased supplier goods against a purchase request/order.
+- **Receive supplier delivery** receives goods against an existing supplier purchase order; it does not approve an internal spending request.
   A confirmed goods receipt adds purchased stock; vendor bill approval/payment are later steps.
 - **RTS recording** receives eligible production output after required quality checks.
 - **Kit releases** issues components to Production. **Release orders** handles customer goods.
@@ -170,8 +170,73 @@ entry; retry the original saved attempt rather than entering the unit again.
 - **Messages** provides reply/reaction actions and eligible own-message editing/removal.
   Check upload, reaction and send feedback before retrying an uncertain action.
 - **Internal Purchase Requests** currently uses the desktop request screen. Do not
-  confuse spending budget/receipts/liquidation with the phone's supplier Receive PR.
+  confuse spending budget/receipts/liquidation with the phone's Receive supplier delivery.
 
 Notes-list checklist ticks now save immediately. Wait for Saving checklist; Try again
 repeats a failed tick. Opening the note editor and changing its content still needs
 Save. Shared checklist/task updates are personal work tracking, not inventory actions.
+
+
+### Internal purchase requests
+
+Use **Make PR** in Work to request a budget for parts, tools or supplies. Enter
+any item names, quantities and expected prices; no inventory SKU or supplier is
+required. Open **My requests** from the form to follow status. A request and its
+approval do not move stock.
+
+Designated authorities use **Review PRs**. Approve a positive overall budget and
+choose cash to the requester or a separate assigned buyer. Record cash only once
+it is physically issued. Supplier-order management permission does not authorize
+internal PR approvals. An approval leaves the purchase and liquidation open.
+
+The buyer uses **My assigned purchases**, opens the PR and adds camera photos or
+JPG/PNG/WebP/PDF receipts, one at a time. Prepared files must fit the 8 MB limit.
+Open **Enter actual purchases** to record what was bought. Add or substitute items
+as necessary, while keeping total spending within the approved overall budget.
+Receipts are required; cash-to-requester purchases also need cash issuance
+recorded before liquidation. Submitted evidence is locked until authority returns
+the liquidation for correction.
+
+The authority downloads/reviews receipts and actual items, returns liquidation
+with a reason if correction is needed, or closes it after recording the exact
+change returned or reimbursement physically paid. Approvers cannot upload or
+liquidate for another buyer. Stocked purchases still need normal item setup and
+supplier receiving; there is no automatic purchase-order conversion.
+
+Drafts and receipt files survive browser restart under the same account/server.
+Use **Saved PR work** to resume or recover. If a response is lost, retry the
+original action; do not record the cash or purchase a second time. A site-local
+acknowledgement remains pending until its command is confirmed.
+
+
+### Live attention, Sales and inspection desks
+
+Work combines live records and unread updates in **Needs my attention**. Open a
+record for read-only details, then **Open workflow** for permitted actions.
+Access and live queue membership are checked again before opening. Refresh is
+available manually and runs every 30 seconds while this Work view remains open.
+Unavailable queues show unknown counts. **Notifications & history** retains older
+updates; an old notice does not authorize a completed or reassigned action.
+
+**Sales pipeline** and **Customers** are separate from warehouse releasing.
+CSR staff can search real stages and customer records; each change needs its
+own create/edit/approve/authorize permission. New sale orders start open, without
+stock-out. Sales can explicitly authorize partial trips; a warehouse report does
+not grant that approval. **Order tracking** shows warehouse progress read-only,
+with commercial pricing removed by the API for operational viewers. A customer
+job order is a sales document; a production job order remains in Production.
+
+QC and QA may inspect in either order on two-inspection jobs. Each desk uses its
+own checklist and draft answers. A single pass does not permit RTS receiving;
+both required passes and cleared holds are needed. Legacy intake shows which
+approvals remain. Existing single-inspection jobs keep their combined checklist.
+
+Draft production job reviews offer **Review subassembly build suggestions**.
+Only an authorized planner can explicitly create a linked child draft, within
+the current buildable quantity. The child must complete its normal workflow and
+RTS receipt before it supplies the parent. Stock browsing filters parts/supplies
+and finished products using the existing product flag and one SKU.
+
+PR approval, physical cash issuance and liquidation settlement are separate
+grants. **Review PRs** shows only the decision buttons granted to that employee;
+requester/buyer separation is also enforced by the backend.

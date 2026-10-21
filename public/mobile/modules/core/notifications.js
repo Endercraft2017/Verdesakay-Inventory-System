@@ -51,7 +51,7 @@
       markRead(n).then(function () {
         if (!row.isConnected) return;
         var phone = n.url && n.url.indexOf('#/notifications') !== 0;
-        if (phone) location.hash = n.url;
+        if (phone) MApp.go('work',{notice:n.url});
         else MApp.go('notifications', { id: n.id, t: Date.now() });
       }).catch(function () {
         if (!row.isConnected) return;
@@ -60,7 +60,7 @@
         var previous = view.querySelector('[data-read-error]'); if (previous) previous.remove();
         error.dataset.readError = '';
         error.querySelector('button').onclick = function () {
-          if (n.url && n.url.indexOf('#/notifications') !== 0) location.hash = n.url;
+          if (n.url && n.url.indexOf('#/notifications') !== 0) MApp.go('work',{notice:n.url});
           else MApp.go('notifications', { id: n.id });
         };
         if (row.isConnected) row.after(error);
@@ -78,7 +78,7 @@
       (phone ? '<button type="button" class="m-btn" data-open>Open</button>' : '') + '</div>'
     );
     var b = card.querySelector('[data-open]');
-    if (b) b.onclick = function () { location.hash = n.url; };
+    if (b) b.onclick = function () { MApp.go('work',{notice:n.url}); };
     return card;
   }
   function render(view, params) {

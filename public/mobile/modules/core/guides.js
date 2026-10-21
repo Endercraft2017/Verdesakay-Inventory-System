@@ -1,6 +1,6 @@
 /* Read-only task library shared with the webapp. Screen guides remain contextual. */
 (function(){
-  var modules={production:'manufacturing',sales:'inventory',purchasing:'purchasing',payroll:'hr',inventory:'inventory',accounting:'accounting','qc-repair':'manufacturing'};
+  var modules={production:'manufacturing',sales:'sales',purchasing:'purchasing',payroll:'hr',inventory:'inventory',accounting:'accounting','qc-repair':'manufacturing'};
   MApp.route('guides',function(view){
     MApp.setTitle('Guides');
     var items=GUIDE.pipelines.filter(function(p){var module=p.module||modules[p.id]||'home';return module==='home'||MApp.hasModule(module);});

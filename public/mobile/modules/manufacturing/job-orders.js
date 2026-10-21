@@ -348,6 +348,7 @@
           submitAction(view, jo, 'approve', { notes: body.querySelector('[data-approval-note]').value.trim() || null, expected_revision: jo.approval_revision }, ap);
         };
       }
+      if(['production.view','production.approve','production.plan'].some(function(p){return MApp.can(p);})){var sub=mEl('<button type="button" class="rk-btn secondary" id="jo-subassemblies">Review subassembly build suggestions</button>');sub.onclick=function(){MApp.go('job-orders',{id:jo.id,step:'subassemblies'});};body.appendChild(sub);}
       var kit = body.querySelector('#jo-kit'); if (kit) kit.onclick = function () { MApp.go('kit-release', { id: jo.id }); };
     }
   }
@@ -811,7 +812,22 @@
     var body=leadPage(view,'66:185','Return complete semi-built package','Only before the first inspection');body.innerHTML=R.note('warn','Repack and verify the entire original package before returning it to semi-built stock. The backend refuses this action after inspection begins.')+'<label class="rk-card rk-field"><small>Reason</small><textarea class="rk-input" data-repack-note maxlength="500"></textarea></label>'+R.check('repacked','The complete package is repacked and physically present')+R.actions([{id:'repack-save',label:'Confirm return to semi-built RTS',kind:'primary'}]);
     body.querySelector('#repack-save').onclick=async function(){var btn=this;try{var reason=body.querySelector('[data-repack-note]').value.trim();if(!reason||!body.querySelector('#repacked').checked)throw new Error('Confirm the complete repacked package and record the reason.');btn.disabled=true;var s=await mWorkflow.draft('semi-finishing');if(s.operation.state==='draft')await mWorkflow.start(s,{path:'/job-orders/'+jo.id+'/cancel',payload:{reason:reason,confirmed_repacked:true},title:'Return complete package for '+jo.number,reviewRoute:'job-orders',reviewParams:{id:jo.id},reviewPath:'/job-orders/'+jo.id});mWorkflow.paint(view,s);}catch(e){mToast(e.message,'err');btn.disabled=false;}};
   }
+  async function subassemblies(view,jo){
+    if(!['production.view','production.approve','production.plan'].some(function(p){return MApp.can(p);}))return;
+    var body=managerPage(view,'66:580','Subassembly build plans',jo.number+' · explicit draft planning only');
+    try{
+      var saved=MApp.can('production.plan')?await mWorkflow.draft('subassembly-'+jo.id):null;if(!body.isConnected)return;
+      if(saved&&saved.operation.state!=='draft'){mWorkflow.paint(view,saved);return;}
+      var rows=await API.get('/job-orders/'+jo.id+'/subassembly-suggestions');if(!body.isConnected)return;
+      body.innerHTML=R.note('info','A finished product stays one component in the parent kit. A linked child must complete approval, kit release, production, inspection and RTS receipt before it supplies stock. Creating a draft does not move stock.')+
+        (rows.length?rows.map(function(r){return '<section class="rk-card" data-component="'+r.component_item_id+'"><h3>'+mEsc(r.component_name)+'</h3>'+R.field('Short / already planned / uncovered',r.short+' / '+r.planned+' / '+r.uncovered)+R.field('Buildable with current raw stock',r.buildable_now)+(r.linked_jobs||[]).map(function(j){return '<button type="button" class="rk-btn secondary" data-child="'+j.id+'">'+mEsc(j.number+' · '+j.status+' · '+j.qty_ordered)+'</button>';}).join('')+(saved&&jo.status==='draft'&&r.suggested_qty>0?'<label class="rk-field"><small>Quantity to plan (maximum '+r.suggested_qty+')</small><input class="rk-input" type="number" data-quantity min="1" max="'+r.suggested_qty+'" step="1" value="'+r.suggested_qty+'"></label>'+R.check('sub-reviewed-'+r.component_item_id,'I reviewed this child build and its separate workflow')+'<button type="button" class="rk-btn primary" data-create>Create linked draft</button>':R.note('info',r.uncovered<=0?'Existing stock or linked plans cover this shortage.':'No immediately buildable quantity. Resolve raw-material stock first.'))+'</section>';}).join(''):R.note('info','No finished-product subassembly shortages need a build plan.'))+R.actions([{id:'sub-back',label:'Back to parent job order',kind:'secondary'}]);
+      body.querySelector('#sub-back').onclick=function(){reopen(jo.id);};body.querySelectorAll('[data-child]').forEach(function(b){b.onclick=function(){MApp.go('job-orders',{id:b.dataset.child});};});
+      body.querySelectorAll('[data-create]').forEach(function(button){button.onclick=async function(){var row=this.closest('[data-component]'),id=Number(row.dataset.component),quantity=Number(row.querySelector('[data-quantity]').value),suggestion=rows.find(function(r){return r.component_item_id===id;});if(!row.querySelector('input[type=checkbox]').checked||!Number.isInteger(quantity)||quantity<1||quantity>suggestion.suggested_qty){mToast('Review the build and enter a whole quantity within the suggestion.','err');return;}try{button.disabled=true;await mWorkflow.start(saved,{path:'/job-orders/'+jo.id+'/subassembly-jobs',payload:{component_item_id:id,quantity:quantity},title:'Plan '+quantity+' '+suggestion.component_name+' for '+jo.number,role:'Production',reviewRoute:'job-orders',reviewParams:{id:jo.id,step:'subassemblies'},reviewPath:'/job-orders/'+jo.id+'/subassembly-suggestions'});if(body.isConnected)mWorkflow.paint(view,saved);}catch(e){button.disabled=false;mToast(e.message,'err');}};});
+    }catch(e){if(body.isConnected){body.innerHTML='';body.appendChild(R.error(e,function(){subassemblies(view,jo);}));}}
+  }
+
   var STEPS = {
+    subassemblies:subassemblies,
     repack:repack, problem: problem, count: count, units: function (v, jo) { units(v, jo); }, interrupted: interrupted, output: output, scrap: scrap,
     manage: manage, pause: function (v, jo) { reasonAction(v, jo, 'pause'); }, resume: function (v, jo) { reasonAction(v, jo, 'resume'); },
     close: closeEarly, history: historyView,

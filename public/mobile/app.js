@@ -76,7 +76,7 @@ window.MApp = (function () {
   var TAB_OF = {
     home: 'home',
     'stock-count-tasks':'work', 'stock-counts': 'work', work: 'work', 'stock-move': 'work', transfer: 'work', damage: 'work', 'new-item': 'work',
-    batch: 'work', 'cycle-count': 'work', receive: 'work', pick: 'work',
+    sales:'work',customers:'work','order-tracking':'work','purchase-requests':'work', batch: 'work', 'cycle-count': 'work', receive: 'work', pick: 'work',
     allocate: 'work', 'assign-qr': 'work', 'low-stock': 'work', location: 'work',
     returns:'work','semi-finishing':'work','my-log': 'work', item: 'work', scan: 'work', deliveries: 'work', so: 'work',
     production: 'work', 'job-orders': 'work', 'kit-release': 'work', 'unit-issues': 'work', qc: 'work', repairs: 'work', record: 'work', receiving: 'work',
@@ -148,6 +148,8 @@ window.MApp = (function () {
       same). Routes not listed are for everyone, or check their own desk permission (qc, repairs,
       receiving, so, job-orders, kit-release, scan …). tests/frontend-mobile.test.ts walks every route. */
   var ROUTE_NEEDS = {
+    sales:['orders.view'], 'order-tracking':['orders.view'], customers:['orders.view'],
+    'purchase-requests':['purchasing.request','purchasing.manage','purchasing.approve_requests','purchasing.issue_cash','purchasing.settle_requests'],
     returns: ['returns.receive','returns.inspect','returns.dispose','inventory.view','orders.release','orders.view','production.inspect_qc','production.inspect_qa'], 'semi-finishing':['production.approve','production.manage'], allocate: ['inventory.transfer','orders.direct_sale'], batch: ['inventory.adjust'], 'cycle-count': ['inventory.count'], 'stock-counts': ['inventory.count'], 'stock-count-tasks':['inventory.count'],
     damage: ['inventory.adjust'], receive: ['inventory.receive'],
     'stock-move': ['inventory.adjust'], transfer: ['inventory.transfer'], 'assign-qr': ['inventory.adjust'],
@@ -160,11 +162,13 @@ window.MApp = (function () {
   };
 
   var ROUTE_MODULES = {
+    sales:['sales','inventory'], customers:['sales','inventory'], 'order-tracking':['inventory'],
+    'purchase-requests':['purchasing'],
     'semi-finishing':['manufacturing'], returns:['sales'], allocate: ['manufacturing'], production: ['manufacturing'], 'job-orders': ['manufacturing'], 'kit-release': ['manufacturing'],
     'unit-issues': ['manufacturing'], qc: ['manufacturing'], repairs: ['manufacturing'], record: ['manufacturing'], receiving: ['manufacturing'],
     batch: ['inventory'], 'cycle-count': ['inventory'], 'stock-counts': ['inventory'], 'stock-count-tasks':['inventory'], damage: ['inventory'], receive: ['inventory', 'purchasing'],
     'stock-move': ['inventory'], transfer: ['inventory'], 'assign-qr': ['inventory'], 'new-item': ['inventory'],
-    'my-log': ['inventory'], item: ['inventory'], location: ['inventory'], 'low-stock': ['inventory'], scan: ['inventory'], so: ['sales'], deliveries: ['sales']
+    'my-log': ['inventory'], item: ['inventory'], location: ['inventory'], 'low-stock': ['inventory'], scan: ['inventory'], so: ['sales','inventory'], deliveries: ['sales']
   };
   var DESK_NEEDS = {
     production: ['production.record', 'production.pause', 'production.manage', 'production.approve', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.repairs', 'production.receive'],
@@ -179,6 +183,7 @@ window.MApp = (function () {
   };
   function routeEnabled(name) { return (ROUTE_MODULES[name] || []).every(hasModule); }
   function canOpen(name) {
+    if(name==='sales'&&(!can('orders.view')||!(can('orders.create')||can('orders.edit'))))return false;
     var needs = ROUTE_NEEDS[name] || DESK_NEEDS[name];
     return routeEnabled(name) && (!needs || needs.some(can));
   }

@@ -29,7 +29,7 @@
   var key = function () { return 'rts-' + (window.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2)); };
   var label = function (u) { return u.identifier || ('UNIT-' + u.id); };
 
-  function legacyStage(u){return u.intake_status==='cancelled'?'Intake cancelled — not RTS':u.status==='scrapped'?'Scrapped — not RTS':u.status==='passed'?'QC and QA passed — ready for receiving':u.status==='hold'?'QA hold':u.status==='failed'?'Failed inspection — not RTS':u.status==='rework'?(u.stage===0?'QC reinspection required':'QA recheck required'):u.stage===0?'Awaiting QC':'Awaiting QA';}
+  function legacyStage(u){return u.intake_status==='cancelled'?'Intake cancelled — not RTS':u.status==='scrapped'?'Scrapped — not RTS':u.status==='passed'?'QC and QA passed — ready for receiving':u.status==='hold'?'QA hold':u.status==='failed'?'Failed inspection — not RTS':u.status==='rework'?(u.stage===0?'QC reinspection required':'QA recheck required'):u.qc_result==='pass'?'Awaiting QA':u.qa_result==='pass'?'Awaiting QC':'Awaiting QC and QA';}
   function when(ts) {
     if (!ts) return null;
     return new Date(String(ts).replace(' ', 'T') + (String(ts).indexOf('Z') === -1 ? 'Z' : ''));
@@ -613,6 +613,6 @@
       });
     }
     // Legacy deep link #/receiving?id=<jobOrderId>: the queue for that job order.
-    queue(view, params.tab, params.id);
+    queue(view, params.tab, params.jo || params.id);
   });
 })();

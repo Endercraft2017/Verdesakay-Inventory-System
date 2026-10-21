@@ -7,7 +7,7 @@
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
 var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
 var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
-var CACHE_VERSION = CACHE_PREFIX + 'v135';
+var CACHE_VERSION = CACHE_PREFIX + 'v136';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -73,6 +73,7 @@ var SHELL = [
   '/mobile/lib/item-picker.js',
   '/mobile/modules/core/home.js',
   '/mobile/modules/hr/work.js',
+  '/mobile/modules/purchasing/requests.js',
   '/mobile/modules/manufacturing/production.js',
   '/mobile/modules/inventory/stock-move.js',
   '/mobile/modules/inventory/damage.js',
@@ -88,6 +89,7 @@ var SHELL = [
   '/mobile/modules/inventory/stock-counts.js',
   '/mobile/modules/inventory/stock-count-tasks.js',
   '/mobile/modules/inventory/orders-fulfil.js',
+  '/mobile/modules/inventory/sales.js',
   '/mobile/modules/inventory/batch-move.js',
   '/mobile/modules/manufacturing/job-orders.js',
   '/mobile/modules/manufacturing/kit-release.js',
@@ -213,6 +215,7 @@ self.addEventListener('push', function (e) {
 self.addEventListener('notificationclick', function (e) {
   e.notification.close();
   var hash = (e.notification.data && e.notification.data.url) || '#/home';
+  if(/^#\/(?:so|qc|repairs|kit-release|purchase-requests|deliveries)(?:\?|$)/.test(hash))hash='#/work?notice='+encodeURIComponent(hash);
   var target = new URL(TENANT_BASE + '/m' + hash, self.location.origin).href;
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
     for (var i = 0; i < list.length; i++) {

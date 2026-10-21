@@ -1074,7 +1074,7 @@ router.post('/:id/status', requireModule('sales'), requirePermission('orders.app
     void notifyPermission('inventory.adjust', {
       title: `Sale order to track — ${order.number}`,
       body: 'Warehouse can review this sale and prepare stock; a releaser with orders.release completes the handoff.',
-      url: '#/notifications', link: { route: 'orders', params: { type: 'sale', mode: 'track', id } }, tag: `sale-track-${id}`,
+      url: `#/order-tracking?id=${id}`, link: { route: 'orders', params: { type: 'sale', mode: 'track', id } }, tag: `sale-track-${id}`,
     });
   }
   maybeAutoPush(id);

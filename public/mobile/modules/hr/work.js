@@ -3,8 +3,15 @@
 (function () {
   // Explanations are attached only to rendered, permission-filtered Work entries.
   var WORK_HELP = {
+  sales:['Follow customer sales through CSR review, warehouse preparation, releasing and completion.','Open the exact order to check stock, customer details and the next owner.','Commercial changes require their own permissions. Only the releasing workflow issues stock-out slips.'],
+  customers:['Search customers and their recent sales.','Create or edit only with assigned sales permissions.','Customer registry changes do not move stock.'],
+  'order-tracking':['Follow sales and customer job orders without commercial changes.','Review status, shortages and issued trips.','Read-only tracking does not allocate, authorize or release stock.'],
+  notifications:['Review stored notices and their history.','Open a notice to follow its permitted current destination.','Live records and current permissions decide which actions remain available.'],
+  'purchase-requests:new':['Request a purchase budget for tools, supplies or parts.','Enter freeform item names, quantities and expected prices. No SKU or supplier is required.','Approval authorizes spending; it does not close the PR or add stock.'],
+  'purchase-requests:review':['Review internal purchase requests using PR approval authority.','Approve or reject budgets, assign a buyer, record physical cash and review receipts and actual spending.','Return liquidation for correction or close after recording exact change/reimbursement. Supplier-order management does not grant this authority.'],
+  'purchase-requests:assigned':['Complete purchases assigned to you.','Upload camera photos or receipt files and enter what was actually bought, including extra items within the approved budget.','Only the assigned buyer submits liquidation. Submission needs receipts and authority review before closure; it adds no stock.'],
   "receive": [
-    "Receive items delivered against a supplier purchase request/order. This legacy label refers to supplier deliveries, not the internal budget Purchase Requests workflow.",
+    "Receive goods delivered against an existing supplier purchase order.",
     "Use when purchased goods physically arrive. Check the order, actual quantities and destination. This is not receipt of goods built by Production.",
     "A confirmed supplier goods receipt adds purchased stock. It does not approve the vendor bill or pay the supplier; those are later purchasing/accounting steps."
   ],
@@ -31,7 +38,7 @@
   "receiving": [
     "Choose a job order and receive its final-passed units into ready-to-sell (RTS) stock.",
     "For pre-system units, enter a legacy intake with identifier, photo and location; both QC and QA must pass before stock entry. For eligible output, print, attach and scan each sticker and verify storage.",
-    "Confirmed Products In adds finished stock. Capacity, duplicate and mismatch checks may block it. This is not Receive PR for supplier deliveries."
+    "Confirmed Products In adds finished stock. Capacity, duplicate and mismatch checks may block it. This is separate from Receive supplier delivery."
   ],
   "job-orders:approval": [
     "Approve a production plan before warehouse release.",
@@ -51,12 +58,12 @@
   "qc:qc": [
     "Perform the technical QC pass for units at your authorized stage.",
     "Choose the job order, then select its Ready/Reinspect unit card and match the production identifier and job order to the physical unit before checks. QR is optional before Products In; stop if identity is unclear. Failed/held decisions need evidence.",
-    "Pass advances to QA when required, otherwise to receiving. Repair or rejection has a separate disposition; a QC pass is not stock-in."
+    "QC and QA may run in either order. Only both required passes make a unit eligible for receiving. Repair or rejection has a separate disposition; a QC pass is not stock-in."
   ],
   "qc:qa": [
     "Perform the appearance/final QA pass for eligible units.",
-    "Choose the job order, then select its Ready/Recheck unit card and confirm the production identifier and job order against the physical unit; no QR sticker is required yet. Review QC and complete appearance checks. Follow repair/hold evidence prompts.",
-    "A final pass queues RTS recording; it does not add stock. Settle repair requests before rechecking returned units."
+    "Choose the job order, then select its Ready/Recheck unit card and confirm the production identifier and job order against the physical unit; no QR sticker is required yet. Review the recorded inspection results and complete appearance checks. QA can run before QC. Follow repair/hold evidence prompts.",
+    "Both required QC and QA passes queue RTS recording; either desk may go first. An inspection never adds stock. Settle repair requests before rechecking returned units."
   ],
   "qc:qa:hold": [
     "Decide the outcome of units QA placed on hold.",
@@ -175,6 +182,9 @@
   ]
 };
   var STOCK_EFFECTS = {
+    'purchase-requests:new':'No stock movement. This requests a spending budget.',
+    'purchase-requests:review':'No stock movement. Financial approval and closure only.',
+    'purchase-requests:assigned':'No stock movement. Supplier goods still need normal receiving.',
     receive:'Adds purchased stock when the supplier goods receipt is confirmed.',
     receiving:'Adds finished stock when Products In / RTS receipt is confirmed.',
     so:'Picking reserves goods; issuing the trip slip deducts its load.',
@@ -200,16 +210,17 @@
     row.dataset.workGuidePurpose=help[0]; row.dataset.workGuideWhen=help[1]; row.dataset.workGuideResult=help[2];
   }
   function helpKey(op) {
+    if(op.route==='purchase-requests')return 'purchase-requests:'+(op.params?.view||'new');
     if(op.route==='job-orders' && op.params?.view==='approval') return 'job-orders:approval';
     if(op.route==='qc') return 'qc:'+op.params.role+(op.params.tab==='hold'?':hold':'');
     return op.route;
   }
 
   var OPS = [
-    { label: 'Receive PR', sub: 'Purchase requests', route: 'receive', permission: 'inventory.receive', count: function () { return openCount('/orders?type=purchase'); } },
+    { label: 'Receive supplier delivery', sub: 'Goods arriving against supplier orders', route: 'receive', permission: 'inventory.receive', count: function () { return openCount('/orders?type=purchase'); } },
     { label: 'Release orders', sub: 'Allocated units ready for handoff', route: 'so', permission: 'orders.release',
-      count: function () { return API.get('/orders?type=sale').then(function (rows) {
-        return (rows || []).filter(function (x) { return ['approved', 'released'].indexOf(String(x.status).toLowerCase()) !== -1; }).length;
+      count: function () { return API.get('/release-slips/queue').then(function (q) {
+        return (q.to_accept || []).length + (q.releasing || []).length;
       }); } },
     { label: 'Kit releases', sub: 'Pick and release job-order kits', route: 'kit-release', permission: 'production.kit_release',
       count: function () { return API.get('/job-orders?stage=awaiting_release').then(function (rows) { return (rows || []).length; }); } },
@@ -231,7 +242,7 @@
     { label: 'QA appearance inspection', sub: 'Inspect units waiting for QA', route: 'qc', params: { role: 'qa' }, permission: 'production.inspect_qa',
       count: function () { return actionableInspection('qa'); } },
     // Someone who decides QA holds without inspecting (production.qa_review, e.g. the Production Manager).
-    { label: 'QA holds', sub: 'Decide units QA held for review', route: 'qc', params: { role: 'qa', tab: 'hold' }, permission: 'production.qa_review',
+    { label: 'QA holds', sub: 'Decide units QA held for review', route: 'qc', params: { role: 'qa', tab: 'hold' }, any: ['production.qa_review','production.inspect_qa'],
       count: function () { return Promise.all([API.get('/qc/holds'), mProductionDrafts.listActions('hold-decision', 'hold')]).then(function (both) { return new Set(both[0].map(function (h) { return h.id; }).concat(both[1].map(function (a) { return a.id; }))).size; }); } },
     { label: 'Deliveries', sub: 'Field drops and proof of delivery', route: 'deliveries', any: ['delivery.run', 'delivery.manage'],
       count: function () { return API.get('/deliveries?mine=1').then(function (rows) {
@@ -245,6 +256,16 @@
   );
 
   OPS.push({label:'My planned checks',sub:'Assigned physical counts and overdue shelves',route:'stock-count-tasks',permission:'inventory.count',count:function(){return API.get('/inventory/stock-counts/tasks?status=open&mine=1').then(function(rows){return rows.length;});}});
+
+  OPS.push(
+    {label:'Make PR',sub:'Request a budget for any purchase',route:'purchase-requests',params:{step:'new'},permission:'purchasing.request',strict:true},
+    {label:'Review PRs',sub:'Approve budgets, cash and liquidation',route:'purchase-requests',params:{view:'review'},any:['purchasing.approve_requests','purchasing.issue_cash','purchasing.settle_requests'],strict:true},
+    {label:'My assigned purchases',sub:'Upload receipts and liquidate your purchases',route:'purchase-requests',params:{view:'assigned'},any:['purchasing.request','purchasing.manage'],strict:true}
+  );
+
+  OPS.push({label:'Sales pipeline',sub:'CSR review, customer follow-up and real order stages',route:'sales',all:['orders.view'],any:['orders.create','orders.edit']},
+    {label:'Customers',sub:'Customer registry and recent sales',route:'customers',permission:'orders.view'},
+    {label:'Order tracking',sub:'Read-only sales and warehouse progress',route:'order-tracking',permission:'orders.view'});
 
   var STOCK_TOOLS = [
     {label:'Physical stock counts',sub:'Scan an exact shelf and submit for review',route:'stock-counts',permission:'inventory.count'},
@@ -276,6 +297,7 @@
   }
   function allowed(op) {
     if (!MApp.canOpen(op.route)) return false;
+    if(op.all&&!op.all.every(function(p){return MApp.can(p);}))return false;
     if (op.permission && MApp.can(op.permission)) return true;
     return op.any && op.any.some(function (p) { return MApp.can(p); });
   }
@@ -295,7 +317,7 @@
       var e = row.querySelector('[data-count]');
       if (e) e.textContent = n ? n + ' WAITING' : 'CLEAR';
     }).catch(function () {
-      var e = row.querySelector('[data-count]'); if (e) e.textContent = 'OPEN';
+      var e = row.querySelector('[data-count]'); if (e) e.textContent = 'UNKNOWN';
     });
     return row;
   }
@@ -333,7 +355,91 @@
   }
   window.mWorkQueue = mWorkQueue;
 
+  // Live records, rather than push payloads, decide what can still be acted on.
+  // A task link carries only a source and record id; details and actions recheck access.
+  function attentionSources() {
+    var sources=[];
+    function add(key,title,route,permission,path,select,params){
+      if(MApp.canOpen(route)&&permission.some(function(p){return MApp.can(p);}))sources.push({key:key,title:title,route:route,path:path,select:select||function(q){return q||[];},params:params||function(r){return {id:r.id};}});
+    }
+    if(MApp.canOpen('sales'))add('csr','Sales follow-up','sales',['orders.create','orders.edit'],'/orders?type=sale',function(q){return (q||[]).filter(function(r){return !['cancelled','completed','fulfilled'].includes(r.status)&&!(r.release_slip_number&&!r.backordered);});});
+    add('release','Sales order releasing','so',['orders.release'],'/release-slips/queue',function(q){return (q.to_accept||[]).concat(q.releasing||[]);});
+    add('kits','Production kit release','kit-release',['production.kit_release'],'/job-orders?stage=awaiting_release');
+    add('parts','Parts request','repairs',['production.repairs'],'/production/repairs?status=requested');
+    add('production','Production work','job-orders',['production.record'],'/job-orders',function(q){return (q||[]).filter(function(r){return ['released','in_progress'].indexOf(r.status)!==-1;});});
+    add('approval','Production approval','job-orders',['production.approve'],'/job-orders?stage=awaiting_approval',null,function(r){return {id:r.id,view:'approval'};});
+    ['qc','qa'].forEach(function(role){add(role,role.toUpperCase()+' inspection','qc',['production.inspect_'+role],'/qc/queue?role='+role,function(q){return q.units||[];},function(r){return {role:role,unit:r.id};});});
+    add('holds','QA hold review','qc',['production.qa_review','production.inspect_qa'],'/qc/holds',null,function(r){return {role:'qa',unit:r.id,step:'hold'};});
+    add('rts','RTS receiving','receiving',['production.receive'],'/rts/queue',function(q){return (q.units||[]).filter(function(r){return !r.hold;}).map(function(r){return Object.assign({},r,{work_kind:'unit'});}).concat((q.batches||[]).map(function(r){return Object.assign({},r,{work_kind:'batch'});}));},function(r){return r.work_kind==='batch'?{batch:r.id}:{unit:r.id};});
+    add('delivery','Delivery','deliveries',['delivery.run','delivery.manage'],'/deliveries?mine=1',function(q){return (q||[]).filter(function(r){return ['pending','out_for_delivery'].indexOf(r.status)!==-1;});});
+    add('pr','Purchase request','purchase-requests',['purchasing.request','purchasing.manage','purchasing.approve_requests','purchasing.issue_cash','purchasing.settle_requests'],'/purchasing/requests',function(q){var user=MApp.getMe()||{};return (q||[]).filter(function(r){
+      return (r.status==='pending'&&MApp.can('purchasing.approve_requests')&&(r.requested_by!==user.id||user.role==='admin'))||
+        (r.status==='approved'&&r.purchase_mode==='requester_cash'&&r.cash_issued==null&&MApp.can('purchasing.issue_cash'))||
+        (r.status==='liquidation_submitted'&&MApp.can('purchasing.settle_requests')&&(r.buyer_id!==user.id||user.role==='admin'))||
+        (r.status==='approved'&&r.buyer_id===user.id);
+    });});
+    add('notice','Unread update','notifications',['mobile.access'],'/notifications',function(q){return (q.items||[]).filter(function(n){var match=/^#\/([a-z-]+)/.exec(n.url||'');return !n.read_at&&(!match||MApp.canOpen(match[1]));}).map(function(n){return Object.assign({},n,{title:n.title,name:n.body});});});
+    add('personal','Personal task','tasks',['mobile.access'],'/tasks',function(q){return (q||[]).filter(function(r){return !r.done;});});
+    return sources;
+  }
+  function noticeTarget(url){
+    var match=/^#\/([a-z-]+)(?:\?(.*))?$/.exec(url||'');if(!match||!MApp.canOpen(match[1]))return null;
+    var params=new URLSearchParams(match[2]||''),route=match[1],key=route==='so'?'release':route==='purchase-requests'?'pr':route==='kit-release'?'kits':route==='repairs'?'parts':route==='deliveries'?'delivery':route==='qc'?(params.get('step')==='hold'?'holds':params.get('role')||'qc'):null;
+    var id=params.get(route==='qc'?'unit':'id');return key&&/^\d+$/.test(id||'')?{task:key,record:'record:'+id}:null;
+  }
+  function attentionId(r){return (r.work_kind||'record')+':'+r.id;}
+  function attentionTitle(r){return r.number||r.identifier||r.batch_number||r.title||r.job_order_number||'Record #'+r.id;}
+  function attentionMeta(r){return [r.customer_name||r.product_name||r.reason||r.name,r.qty_ordered!=null?(r.warehouse_accepted_at?'Picking / release':'Awaiting warehouse acceptance'):r.status&&String(r.status).replace(/_/g,' '),r.expected_date&&'Due '+r.expected_date].filter(Boolean).join(' · ');}
+  function attentionRow(source,r){
+    var row=mEl('<button type="button" class="v2-work-row" data-attention="'+mEsc(source.key)+'"><span><b>'+mEsc(attentionTitle(r))+'</b><small>'+mEsc(source.title+' · '+attentionMeta(r))+'</small></span><em>REVIEW ›</em></button>');
+    row.onclick=function(){MApp.go('work',{task:source.key,record:attentionId(r)});};return row;
+  }
+  async function attentionDetail(view,params){
+    view.innerHTML='';var body=RoleUI.page(view,{role:'Work',title:'Attention item',subtitle:'Checking current status and assigned access'});
+    var source=attentionSources().find(function(s){return s.key===params.task;});
+    function back(){var b=mEl('<button type="button" class="rk-btn secondary">Back to Work</button>');b.onclick=function(){MApp.go('work');};body.appendChild(b);}
+    if(!source){body.innerHTML=RoleUI.note('warn','This duty is no longer available with your current access.');back();return;}
+    try{
+      var hash=location.hash,rows=source.select(await API.get(source.path));if(!body.isConnected||hash!==location.hash)return;
+      var record=rows.find(function(r){return attentionId(r)===params.record;});
+      if(!record){body.innerHTML=RoleUI.note('info','This item no longer needs attention in this queue. It may have been completed, reassigned or moved to another stage. Refresh Work for the latest items.');back();return;}
+      body.innerHTML=RoleUI.jobHead({number:attentionTitle(record),name:source.title,meta:attentionMeta(record)})+
+        RoleUI.note('info','Review this record, then open its workflow to see the actions your permissions allow. Stock and status change only when you confirm an action there.')+
+        (record.job_order_number?RoleUI.field('Production job order',record.job_order_number):'')+
+        (record.identifier?RoleUI.field('Unit',record.identifier):'')+
+        (record.summary?RoleUI.field('Order contents',(record.summary.first_name||'')+' · '+record.summary.lines+' line(s)'):'')+
+        (record.qty_ordered!=null?RoleUI.field('Outstanding / currently picked',record.qty_ordered+' / '+record.qty_released):'')+
+        (record.authorization?RoleUI.field('Release authorization',record.authorization.state||record.authorization.status||'Review in workflow'):'')+
+        (record.qc_result?RoleUI.field('QC result',(record.qc_result.result||record.qc_result)):'')+(record.qa_result?RoleUI.field('QA result',(record.qa_result.result||record.qa_result)):'')+
+        RoleUI.actions([{id:'work-open-action',label:'Open '+source.title,kind:'primary'}]);
+      body.querySelector('#work-open-action').onclick=async function(){
+        var button=this;button.disabled=true;
+        try{await MApp.refreshAccess();var current=attentionSources().find(function(s){return s.key===source.key;});if(!current){MApp.render();return;}
+          var live=current.select(await API.get(current.path)).find(function(r){return attentionId(r)===params.record;});
+          if(!body.isConnected||hash!==location.hash)return;
+          if(!live){MApp.render();return;}MApp.go(current.route,current.params(live));
+        }catch(e){button.disabled=false;mToast('Could not verify current work: '+e.message,'err');}
+      };back();
+    }catch(e){if(!body.isConnected)return;body.innerHTML=RoleUI.note('warn','Live details could not be loaded. Reconnect and retry before acting.');body.appendChild(RoleUI.error(e,function(){attentionDetail(view,params);}));back();}
+  }
+  function attentionFeed(page){
+    page.appendChild(mEl('<div class="v2-work-title"><h2>Needs my attention</h2><button type="button" class="rk-back" data-attention-refresh>Refresh</button></div>'));
+    var host=mEl('<div class="v2-work-list" aria-live="polite"></div>');page.appendChild(host);
+    var run=0,timer;
+    async function refresh(){clearTimeout(timer);var token=++run;host.innerHTML='<div class="v2-work-empty">Loading live work…</div>';var sources=attentionSources();
+      var result=await Promise.all(sources.map(async function(source){try{return {source:source,rows:source.select(await API.get(source.path))};}catch(e){return {source:source,error:e};}}));
+      if(token!==run||!host.isConnected)return;host.innerHTML='';var count=0;
+      result.forEach(function(part){if(part.error){host.appendChild(mEl('<div class="v2-work-empty" role="status">'+mEsc(part.source.title)+': unavailable — retry to check. Count unknown.</div>'));return;}
+        part.rows.forEach(function(r){host.appendChild(attentionRow(part.source,r));count++;});});
+      timer=setTimeout(function(){if(host.isConnected)refresh();},30000);
+      if(!count)host.prepend(mEl('<div class="v2-work-empty">'+(result.some(function(p){return p.error;})?'No items from the queues that loaded. Other queues could not be checked.':'No items need your attention right now.')+'</div>'));
+    }
+    page.querySelector('[data-attention-refresh]').onclick=refresh;refresh();
+  }
+
   MApp.route('work', function (view,params) {
+    if(params&&params.notice){var target=noticeTarget(params.notice);if(target)return attentionDetail(view,target);var route=/^#\/([a-z-]+)/.exec(params.notice);if(route&&route[1]!=='work'&&MApp.canOpen(route[1])){location.hash=params.notice;return;}view.innerHTML='';var unavailable=RoleUI.page(view,{role:'Work',title:'Update unavailable',subtitle:'Current access checked'});unavailable.innerHTML=RoleUI.note('info','This update has no current action with your assigned access. Open Notifications for its history.')+RoleUI.actions([{id:'work-notice-back',label:'Back to Work',kind:'secondary'}]);unavailable.querySelector('#work-notice-back').onclick=function(){MApp.go('work');};return;}
+    if(params&&params.task)return attentionDetail(view,params);
     MApp.setTitle('Work');
     var me = MApp.getMe() || {};
     var ops = OPS.filter(allowed), stockTools = STOCK_TOOLS.filter(function(op){return MApp.canOpen(op.route)&&MApp.can(op.permission);});
@@ -346,12 +452,14 @@
       '</strong><p>' + (ops.length ? mEsc(ops[0].sub) : 'Personal tasks and employee services') + '</p></section>'
     ));
 
-    var taskHead = mEl('<div class="v2-work-title"><h2>My tasks</h2><span>' + (ops.length ? ops.length + ' authorized queue' + (ops.length === 1 ? '' : 's') : 'Today') + '</span></div>');
+    attentionFeed(page);
+    var taskHead = mEl('<div class="v2-work-title"><h2>My authorized queues</h2><span>' + (ops.length ? ops.length + ' authorized queue' + (ops.length === 1 ? '' : 's') : 'Today') + '</span></div>');
     page.appendChild(taskHead);
     var list = mEl('<div class="v2-work-list"></div>');
     page.appendChild(list);
     if (ops.length) ops.forEach(function (op) { list.appendChild(opRow(op)); });
     else employeeTasks(list);
+    var notices=commonTool('Notifications & history','notifications');page.appendChild(notices);
 
     var blocker = mEl(
       '<button type="button" class="v2-work-row blocker"><span><b>Report a blocker</b>' +

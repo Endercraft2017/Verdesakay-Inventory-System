@@ -56,10 +56,10 @@
     qa: {
       role: 'qa', nodes: { queue: '72:16', identify: '72:68', verify: '72:104', check: ['72:145', '72:197'], review: '72:246', pass: '72:285',
         repair: '72:322', evidence: '72:363', fail: '72:396', done: '72:435', recheck: '72:477' },
-      queueTitle: 'Final quality inspection', queueSub: 'Units passed by QC and ready for QA', heroLabel: 'Ready for QA', checkTitle: 'Final-quality checklist',
-      reLabel: 'Recheck', reMeta: 'Final-quality recheck', identifyTitle: 'Identify QA unit', identifyNote: 'Only QC-passed units can begin QA.',
-      identifyInfo: ['Stage protection', 'Units still in QC, repair or Production are not in this queue and cannot be opened here.'],
-      verifyTitle: 'Verify final-quality candidate', verifySub: 'Confirm unit identity and QC completion', verifyPill: 'QC passed',
+      queueTitle: 'Final quality inspection', queueSub: 'Units awaiting appearance inspection; QA may go first', heroLabel: 'Ready for QA', checkTitle: 'Final-quality checklist',
+      reLabel: 'Recheck', reMeta: 'Final-quality recheck', identifyTitle: 'Identify QA unit', identifyNote: 'Confirm the physical unit from your live QA queue.',
+      identifyInfo: ['Stage protection', 'QC and QA are independent. Both required approvals and cleared holds are needed before RTS receiving.'],
+      verifyTitle: 'Verify final-quality candidate', verifySub: 'Confirm unit identity and inspection history', verifyPill: 'Ready for QA',
       scopeTitle: 'QA scope', scope: 'Inspect appearance, finish, completeness, labels, accessories and final release readiness.',
       start: 'Start final inspection', reviewTitle: 'Review final quality', reviewSub: 'Choose the unit’s final-quality disposition',
       remarksLabel: 'Final QA remarks', repairOpt: ['↻', 'Return for rectification', 'Correctable finish, accessory or record issue'],
@@ -98,8 +98,9 @@
     return (d.toDateString() === new Date().toDateString() ? 'Today, ' : d.toLocaleDateString() + ', ') + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   }
   var label = function (u) { return u.identifier || ('Unit #' + u.id); };
-  var isFinal = function (u) { return u.stage + 1 >= Math.max(1, u.qc_stages); };
-  var destination = function (u) { return isFinal(u) ? 'RTS' : 'QA'; };
+  var inspectionStage = function (u, desk) { return Number(u.qc_stages) <= 1 ? 1 : desk.role === 'qa' ? 2 : 1; };
+  var isFinal = function (u, desk) { var other = desk.role === 'qa' ? u.qc_result : u.qa_result; return Number(u.qc_stages) <= 1 || (other === 'pass' || !!(other && other.result === 'pass')); };
+  var destination = function (u, desk) { return isFinal(u, desk) ? 'RTS' : desk.role === 'qa' ? 'QC' : 'QA'; };
 
   function loadQueue(desk, force) {
     if (cache[desk.role] && !force) return Promise.resolve(cache[desk.role]);
@@ -118,9 +119,9 @@
     });
   }
   /** Checklist items that apply to this unit's pass, grouped into steps (in order). */
-  function stepsFor(u, jo) {
+  function stepsFor(u, jo, desk) {
     var items = [];
-    var first = u.stage + 1 === 1, fin = isFinal(u);
+    var first = inspectionStage(u, desk) === 1, fin = Number(u.qc_stages) <= 1 || inspectionStage(u, desk) === 2;
     if (first && jo.qc_checklist_qc) jo.qc_checklist_qc.items.forEach(function (it) { items.push(Object.assign({ _list: jo.qc_checklist_qc.name }, it)); });
     if (fin && jo.qc_checklist_qa) jo.qc_checklist_qa.items.forEach(function (it) { items.push(Object.assign({ _list: jo.qc_checklist_qa.name }, it)); });
     var steps = [];
@@ -132,20 +133,22 @@
     });
     return steps;
   }
-  function session(unitId) {
-    if (!sess[unitId]) {
+  function sessionKey(unitId,desk){return desk.role+':'+unitId;}
+  function session(unitId,desk) {
+    var scoped=sessionKey(unitId,desk);
+    if (!sess[scoped]) {
       var draft = null;
-      try { draft = JSON.parse(localStorage.getItem(DRAFT + unitId) || 'null'); } catch (ignore) {}
-      sess[unitId] = { answers: (draft && draft.answers) || {}, remarks: (draft && draft.remarks) || '', photos: 0, evidence: [], repair: {}, reason: '', disposition: '' };
+      try { draft = JSON.parse(localStorage.getItem(DRAFT + scoped) || 'null'); } catch (ignore) {}
+      sess[scoped] = { answers: (draft && draft.answers) || {}, remarks: (draft && draft.remarks) || '', photos: 0, evidence: [], repair: {}, reason: '', disposition: '' };
     }
-    return sess[unitId];
+    return sess[scoped];
   }
-  function saveDraft(unitId) {
-    var s = session(unitId);
-    try { localStorage.setItem(DRAFT + unitId, JSON.stringify({ answers: s.answers, remarks: s.remarks })); mToast('Draft saved on this device'); }
+  function saveDraft(unitId,desk) {
+    var scoped=sessionKey(unitId,desk), s = session(unitId,desk);
+    try { localStorage.setItem(DRAFT + scoped, JSON.stringify({ answers: s.answers, remarks: s.remarks })); mToast('Draft saved on this device'); }
     catch (ignore) { mToast('Could not save the draft on this device', 'err'); }
   }
-  function clearDraft(unitId) { try { localStorage.removeItem(DRAFT + unitId); } catch (ignore) {} }
+  function clearDraft(unitId,desk) { var scoped=sessionKey(unitId,desk); try { localStorage.removeItem(DRAFT + scoped); } catch (ignore) {} }
   function tally(steps, s) {
     var all = [].concat.apply([], steps.map(function (x) { return x.items; }));
     var c = { total: all.length, pass: 0, issue: 0, na: 0, open: 0, reqMissing: [] };
@@ -212,11 +215,11 @@
     var op = record.operation, h = op.context;
     var final = op.state === 'confirmed' && !op.local;
     var body = page(view, desk, final ? desk.nodes.done : desk.nodes.fail, final ? desk.doneTitle : 'Review held-unit decision', final ? 'Confirmed by site authority' : op.local ? 'Saved on site PC — confirmation pending' : 'Review the original attempt');
-    body.innerHTML = (final ? R.result(op.payload.outcome === 'pass' ? 'Passed to Products In' : op.payload.outcome === 'rectify' ? 'Sent for rectification' : 'Unit failed', label(h), op.payload.outcome === 'pass' ? '' : op.payload.outcome === 'rectify' ? 'warn' : 'bad', op.payload.outcome === 'pass' ? '✓' : op.payload.outcome === 'rectify' ? '↻' : '!') : R.jobHead({ number: label(h), name: h.product_name, meta: h.job_order_number })) +
+    body.innerHTML = (final ? R.result(op.payload.outcome === 'pass' ? 'QA hold review passed' : op.payload.outcome === 'rectify' ? 'Sent for rectification' : 'Unit failed', label(h), op.payload.outcome === 'pass' ? '' : op.payload.outcome === 'rectify' ? 'warn' : 'bad', op.payload.outcome === 'pass' ? '✓' : op.payload.outcome === 'rectify' ? '↻' : '!') : R.jobHead({ number: label(h), name: h.product_name, meta: h.job_order_number })) +
       R.field('Original decision', op.payload.outcome) + R.field('Original reason', op.payload.remarks) +
       (op.payload.disposition ? R.field('Disposition', op.payload.disposition) : '') +
       (op.payload.repair ? R.field('Rectification station', op.payload.repair.station || '—') : '') +
-      R.note(final ? 'info' : 'warn', final ? op.payload.outcome === 'pass' ? 'Passed for Products In. Stock is added only when receiving confirms the unit.' :
+      R.note(final ? 'info' : 'warn', final ? op.payload.outcome === 'pass' ? 'QA review passed. Required QC approval and cleared holds are still needed. Stock is added only when receiving confirms the unit.' :
         op.payload.outcome === 'rectify' ? 'Sent for correction and recheck.' : 'Failed; this unit cannot enter RTS.' :
         op.local ? 'The original decision is saved on the site PC and awaits confirmation. Do not record another decision.' :
         op.state === 'rejected' ? 'The request was refused. Reload and review the current hold before making a corrected decision.' :
@@ -313,7 +316,7 @@
         host.innerHTML = list.length ? list.map(function (u) {
           var meta = which === 're' ? desk.reMeta + (u.open_part_requests ? ' · waiting on parts' : '')
             : (u.priority > 0 ? 'Priority · waiting ' : 'Waiting ') + ago(u.updated_at);
-          var line = u.product_name + ' · ' + u.job_order_number + (desk.role === 'qa' && u.last_pass ? ' · QC passed ' + clock(u.last_pass.created_at).replace('Today, ', '') : '');
+          var line = u.product_name + ' · ' + u.job_order_number + (desk.role === 'qa' && u.last_pass && u.last_pass.stage === 1 ? ' · QC passed ' + clock(u.last_pass.created_at).replace('Today, ', '') : '');
           return '<button type="button" class="rk-card rk-unitcard" data-unit="' + u.id + '"><b>' + mEsc(label(u)) + '</b><span>' + mEsc(line) + '</span>' +
             '<small' + (which === 're' ? ' class="re"' : '') + '>' + mEsc(meta) + '</small><i aria-hidden="true">›</i></button>';
         }).join('') : '<div class="rk-empty">' + (which === 're' ? 'No units are back for ' + (desk.role === 'qa' ? 'recheck' : 'reinspection') + '.' : 'Nothing waiting for inspection.') + '</div>';
@@ -380,7 +383,7 @@
     confirm.onchange = function () { start.disabled = !allowed || !confirm.checked; };
     start.onclick = function () {
       if (!allowed || !confirm.checked) return;
-      var s = session(u.id); s.identity = identityKey(desk, u); s.bulk = null; s.bulkIds = null;
+      var s = session(u.id,desk); s.identity = identityKey(desk, u); s.bulk = null; s.bulkIds = null;
       go(desk, { unit: u.id, step: 'check', g: 0 });
     };
   }
@@ -395,12 +398,12 @@
   function verify(view, desk, u, jo) {
     if (u.status === 'rework') { recheck(view, desk, u, jo); return; }
     var body = page(view, desk, desk.nodes.verify, desk.verifyTitle, desk.verifySub);
-    var cl = u.stage + 1 === 1 ? jo.qc_checklist_qc : jo.qc_checklist_qa;
+    var cl = inspectionStage(u, desk) === 1 ? jo.qc_checklist_qc : jo.qc_checklist_qa;
     body.innerHTML =
       '<div class="rk-jobhead"><span class="rk-no" style="font-size:14px">' + mEsc(label(u)) + '</span><span class="rk-pill" style="background:#fff;color:' +
         (desk.role === 'qa' ? '#14803d' : 'var(--rk-chip-text)') + '">' + mEsc(desk.verifyPill) + '</span>' +
         '<span class="rk-name">' + mEsc(u.product_name) + '</span><span class="rk-meta">' + mEsc([u.job_order_number, u.team_name].filter(Boolean).join(' · ')) + '</span></div>' +
-      (desk.role === 'qa' && u.last_pass
+      (desk.role === 'qa' && u.last_pass && u.last_pass.stage === 1
         ? R.field('QC record', (u.last_pass.inspector_name || '—') + ' · Passed ' + clock(u.last_pass.created_at).replace('Today, ', 'today, ')) +
           R.field('Technical result', u.last_pass.items + ' items passed · no open defects')
         : R.field(u.intake_origin==='legacy'?'Legacy intake recorded':'Production recorded', clock(u.created_at)) + R.field('Batch / lot', u.batch_identifier || u.batch_number || '—')) +
@@ -441,8 +444,8 @@
 
   /* ── Checklist steps (69:145 / 69:197, 72:145 / 72:197) ─────────────────── */
   function check(view, desk, u, jo, g) {
-    var steps = stepsFor(u, jo);
-    var s = session(u.id);
+    var steps = stepsFor(u, jo, desk);
+    var s = session(u.id,desk);
     if (!steps.length) { go(desk, { unit: u.id, step: 'review' }); return; }
     g = Math.max(0, Math.min(steps.length - 1, Number(g) || 0));
     var step = steps[g];
@@ -519,7 +522,7 @@
         : R.note('info', '<h3>Tap a row to record</h3>Each item stores Pass, Issue, Not applicable and optional remarks.');
     }
     paintChecks(); paintMeasures(); paintNotice();
-    body.querySelector('#qc-draft').onclick = function () { saveDraft(u.id); };
+    body.querySelector('#qc-draft').onclick = function () { saveDraft(u.id,desk); };
     body.querySelector('#qc-next').onclick = function () {
       var missing = step.items.filter(function (it) { var a = s.answers[it.label]; return !a || !a.status; });
       if (missing.length) { mToast('Record every check first: ' + missing.map(function (m) { return m.label; }).join(', '), 'err'); return; }
@@ -532,8 +535,8 @@
 
   /* ── Review (69:247 / 72:246) ───────────────────────────────────────────── */
   function review(view, desk, u, jo) {
-    var steps = stepsFor(u, jo);
-    var s = session(u.id);
+    var steps = stepsFor(u, jo, desk);
+    var s = session(u.id,desk);
     var c = tally(steps, s);
     var body = page(view, desk, desk.nodes.review, desk.reviewTitle, desk.reviewSub);
     var canPass = !c.issue && !c.reqMissing.length;
@@ -543,7 +546,7 @@
         (c.issue ? '<span class="rk-pill danger">' + (desk.role === 'qa' ? 'Evidence needed' : 'Photo required') + '</span>' : c.open || c.reqMissing.length ? '<span class="rk-pill warn">Incomplete</span>' : '<span class="rk-pill ok">All clear</span>') + '</div>' +
       '<label class="rk-card rk-field"><small>' + mEsc(desk.remarksLabel) + '</small><textarea rows="3" maxlength="2000" data-remarks placeholder="' +
         (c.issue ? 'Describe the issue' : 'e.g. No defects observed') + '">' + mEsc(s.remarks) + '</textarea></label>' +
-      '<button type="button" class="rk-disp pass" data-d="pass"' + (canPass ? '' : ' disabled') + '><i>✓</i><b>Pass to ' + destination(u) + '</b><span>' +
+      '<button type="button" class="rk-disp pass" data-d="pass"' + (canPass ? '' : ' disabled') + '><i>✓</i><b>Pass to ' + destination(u, desk) + '</b><span>' +
         (canPass ? (desk.role === 'qa' ? 'All final-quality requirements complete' : 'Available only when no open issue remains') :
           c.reqMissing.length ? 'Required checks not passed: ' + mEsc(c.reqMissing.join(', ')) : 'Resolve or route the open issue first') + '</span></button>' +
       (s.bulk ? '' :
@@ -563,14 +566,16 @@
 
   /* ── Pass (69:286 / 72:285) ─────────────────────────────────────────────── */
   function passView(view, desk, u, jo) {
-    var s = session(u.id);
-    var dest = destination(u);
-    var body = page(view, desk, desk.nodes.pass, desk.passTitle, 'Unit will advance to ' + (dest === 'QA' ? 'appearance QA' : 'RTS recording'));
+    var s = session(u.id,desk);
+    var dest = destination(u, desk);
+    if(s.bulkIds&&cache[desk.role]&&!cache[desk.role].units.filter(function(x){return s.bulkIds.includes(x.id);}).every(function(x){return isFinal(x,desk);}))dest=desk.role==='qa'?'QC':'QA';
+    s.dest=dest;
+    var body = page(view, desk, desk.nodes.pass, desk.passTitle, dest === 'RTS' ? 'Both required inspections complete after this pass' : 'This pass is recorded independently; '+dest+' inspection is still required');
     body.innerHTML =
       '<div class="rk-readyhero"><i aria-hidden="true">✓</i><b>Ready for ' + dest + '</b><strong>' + mEsc(s.bulk ? s.bulk + ' units · ' + u.job_order_number : label(u)) + '</strong>' +
         '<span>' + (desk.role === 'qa' ? 'Appearance and package complete' : 'All technical items passed') + '</span></div>' +
       '<label class="rk-card rk-field"><small>Final remarks</small><textarea rows="3" maxlength="2000" data-remarks>' + mEsc(s.remarks || (desk.role === 'qa' ? 'Unit meets final-quality requirements.' : 'No technical defects observed.')) + '</textarea></label>' +
-      R.note('info', '<h3>After confirmation</h3>' + (dest === 'QA' ? 'The unit leaves QC and appears in QA for appearance and final-quality inspection.'
+      R.note('info', '<h3>After confirmation</h3>' + (dest !== 'RTS' ? 'This inspection passes. The unit still needs '+dest+' approval before RTS receiving.'
         : 'The unit leaves ' + desk.role.toUpperCase() + ' and appears in the RTS Clerk queue for ready-to-sell recording.')) +
       R.actions([{ id: 'qc-confirm', label: 'Confirm pass to ' + dest, kind: 'primary' }, { id: 'qc-back', label: 'Back', kind: 'secondary' }]);
     body.querySelector('#qc-back').onclick = function () { history.back(); };
@@ -579,25 +584,26 @@
       s.remarks = body.querySelector('[data-remarks]').value.trim();
       btn.disabled = true; btn.textContent = 'Recording…';
       var ids = s.bulkIds || [u.id];
-      var payload = { unit_ids: ids, result: 'pass', checklist: checklistPayload(stepsFor(u, jo), s), remarks: s.remarks || null };
+      var payload = { unit_ids: ids, result: 'pass', checklist: checklistPayload(stepsFor(u, jo, desk), s), remarks: s.remarks || null };
       if (s.bulkIdentifier) payload.identifier = s.bulkIdentifier;
       record(desk, u, payload, btn, 'Confirm pass to ' + dest);
     };
   }
 
   function record(desk, u, payload, btn, btnText) {
+    payload.inspection_stage = inspectionStage(u, desk);
     // A failing / held result carries the evidence photos uploaded for it (the server needs one per unit).
-    if (payload.result === 'fail') payload.evidence_ids = session(u.id).evidence.slice();
+    if (payload.result === 'fail') payload.evidence_ids = session(u.id,desk).evidence.slice();
     var actionHash=location.hash;
     mWorkflow.draft('qc').then(function(saved){
       if(actionHash!==location.hash||!mWorkflow.owns(saved))return;if(saved.operation.state!=='draft'){mWorkflow.paint(document.getElementById('m-view'),saved);return;}
-      return mWorkflow.start(saved,{path:'/job-orders/'+u.job_order_id+'/units/inspect',payload:payload,title:desk.role.toUpperCase()+' inspection · '+label(u)+' · '+payload.result,successLabel:payload.result==='pass'?'Passed to '+destination(u):payload.result==='repair'?'Sent for rework':'Inspection recorded',role:desk.role,node:desk.nodes.done,reviewRoute:'qc',reviewParams:{role:desk.role},reviewPath:'/qc/queue?role='+desk.role}).then(function(){clearDraft(u.id);delete cache[desk.role];delete jos[u.job_order_id];if(actionHash===location.hash&&mWorkflow.owns(saved))mWorkflow.paint(document.getElementById('m-view'),saved);});
+      return mWorkflow.start(saved,{path:'/job-orders/'+u.job_order_id+'/units/inspect',payload:payload,title:desk.role.toUpperCase()+' inspection · '+label(u)+' · '+payload.result,successLabel:payload.result==='pass'?'Passed to '+(session(u.id,desk).dest||destination(u, desk)):payload.result==='repair'?'Sent for rework':'Inspection recorded',role:desk.role,node:desk.nodes.done,reviewRoute:'qc',reviewParams:{role:desk.role},reviewPath:'/qc/queue?role='+desk.role}).then(function(){clearDraft(u.id,desk);delete cache[desk.role];delete jos[u.job_order_id];if(actionHash===location.hash&&mWorkflow.owns(saved))mWorkflow.paint(document.getElementById('m-view'),saved);});
     }).catch(fail(btn,btnText));
   }
 
   /* ── Repair / rectification (69:323 / 72:322) ───────────────────────────── */
   function repair(view, desk, u) {
-    var s = session(u.id);
+    var s = session(u.id,desk);
     var body = page(view, desk, desk.nodes.repair, desk.repairTitle, desk.repairSub);
     var sel = function (key, opts, v) { return '<select data-r="' + key + '">' + opts.map(function (o) { return '<option' + (o === v ? ' selected' : '') + '>' + mEsc(o) + '</option>'; }).join('') + '</select>'; };
     body.innerHTML =
@@ -613,7 +619,7 @@
       s.repair.instruction = body.querySelector('[data-instr]').value.trim();
     }
     body.querySelector('[data-photo]').onclick = function () { collect(); go(desk, { unit: u.id, step: 'evidence', then: 'repair' }); };
-    body.querySelector('#qc-draft').onclick = function () { collect(); saveDraft(u.id); };
+    body.querySelector('#qc-draft').onclick = function () { collect(); saveDraft(u.id,desk); };
     var btn = body.querySelector('#qc-go');
     btn.onclick = function () {
       collect();
@@ -623,14 +629,14 @@
       btn.disabled = true; btn.textContent = 'Sending…';
       loadJo(u.job_order_id).then(function (jo) {
         record(desk, u, { unit_ids: [u.id], result: 'fail', disposition: 'repair', remarks: s.repair.instruction,
-          checklist: checklistPayload(stepsFor(u, jo), s), repair: { category: s.repair.category, station: s.repair.station, priority: s.repair.priority } }, btn, 'Send to repair');
+          checklist: checklistPayload(stepsFor(u, jo, desk), s), repair: { category: s.repair.category, station: s.repair.station, priority: s.repair.priority } }, btn, 'Send to repair');
       }).catch(fail(btn, 'Send to repair'));
     };
   }
 
   /* ── Evidence (69:364 / 72:363) ─────────────────────────────────────────── */
   function evidence(view, desk, u, then) {
-    var s = session(u.id);
+    var s = session(u.id,desk);
     var body = page(view, desk, desk.nodes.evidence, desk.evidenceTitle, desk.evidenceSub);
     body.innerHTML =
       '<button type="button" class="rk-camera" data-cap><span class="target" aria-hidden="true"></span><b>' + mEsc(desk.evidenceFrame[0]) + '</b><small>' + mEsc(desk.evidenceFrame[1]) + '</small></button>' +
@@ -666,7 +672,7 @@
 
   /* ── Fail / hold (69:397 / 72:396) ──────────────────────────────────────── */
   function failView(view, desk, u) {
-    var s = session(u.id);
+    var s = session(u.id,desk);
     var body = page(view, desk, desk.nodes.fail, desk.failTitle, desk.failSub);
     var outcomes = (desk.role === 'qa' ? [['hold', 'Hold for review (QA decides)']] : []).concat([
       ['scrap', 'Reject — scrap'], ['dispose', 'Reject — dispose'], ['recycle', 'Reject — recycle']]);
@@ -700,7 +706,7 @@
       loadJo(u.job_order_id).then(function (jo) {
         record(desk, u, {
           unit_ids: [u.id], result: 'fail', disposition: s.disposition || 'scrap', remarks: why,
-          checklist: checklistPayload(stepsFor(u, jo), s),
+          checklist: checklistPayload(stepsFor(u, jo, desk), s),
         }, btn, desk.failConfirm);
       }).catch(fail(btn, desk.failConfirm));
     };
@@ -708,7 +714,7 @@
 
   /* ── Recorded (69:436 / 72:435) ─────────────────────────────────────────── */
   function done(view, desk, unitId) {
-    var s = sess[unitId];
+    var scoped=sessionKey(unitId,desk), s = sess[scoped];
     var body = page(view, desk, desk.nodes.done, desk.doneTitle, 'The unit’s next destination is clear');
     if (!s || !s.result) { go(desk); return; }
     var r = s.result;
@@ -734,7 +740,7 @@
     body.querySelector('#qc-next').onclick = function () {
       loadQueue(desk, true).then(function (q) {
         var next = q.units.filter(function (x) { return x.status === 'pending' && x.id !== unitId; })[0];
-        delete sess[unitId];
+        delete sess[scoped];
         if (next) go(desk, { unit: next.id }); else go(desk);
       }).catch(function () { go(desk); });
     };
@@ -819,7 +825,7 @@
         var n=Number(input.value);if(!input.value.trim()||!Number.isInteger(n)||n<1||n>list.length){mToast('Enter a whole quantity within this inspection stage.','err');return;}
         if(list.slice(0,n).some(function(u){return !String(u.identifier||'').trim() || !body.querySelector('#qc-match-'+u.id).checked;})){mToast('Match every selected unit identifier and job order before continuing.','err');return;}
         var first = list[0];
-        var s = session(first.id); s.identity = identityKey(desk,first);
+        var s = session(first.id,desk); s.identity = identityKey(desk,first);
         s.bulk = n; s.bulkIds = list.slice(0, n).map(function (u) { return u.id; });
         s.bulkIdentifier = body.querySelector('[data-bid]').value.trim() || null;
         go(desk, { unit: first.id, step: 'check', g: 0 });
@@ -829,7 +835,7 @@
 
   /* ── Checklist assignment (qc.configure; kept from the previous screen) ──── */
   function checklistAssign(view, desk, u, jo) {
-    var stage = u.stage + 1 === 1 ? 1 : 2;
+    var stage = inspectionStage(u, desk);
     var body = page(view, desk, desk.nodes.verify, 'Assign ' + (stage === 1 ? 'QC' : 'QA') + ' checklist', u.product_name);
     body.innerHTML = R.skeleton(2);
     Promise.all([API.get('/qc/checklists'), API.get('/finished-products/' + jo.product_item_id).catch(function () { return null; })]).then(function (r) {
@@ -931,8 +937,8 @@
     if (unitId && step === 'done') return done(view, desk, unitId);
     if (unitId) {
       return withUnit(view, desk, unitId, function (u, jo) {
-        var s = session(u.id);
-        s.identLabel = label(u); s.dest = destination(u);
+        var s = session(u.id,desk);
+        s.identLabel = label(u); s.dest = destination(u, desk);
         if (['check','review','pass','repair','evidence','fail'].indexOf(step) !== -1 && s.identity !== identityKey(desk,u)) return verify(view,desk,u,jo);
         if (step === 'check') check(view, desk, u, jo, params.g);
         else if (step === 'review') review(view, desk, u, jo);

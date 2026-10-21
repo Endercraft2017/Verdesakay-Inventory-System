@@ -99,12 +99,18 @@
         .map(function (s) { if (s.operation.state === 'sending') s.operation.state = 'unknown'; var id = Number(s.key.slice(prefix.length).split(':')[0]); return { id: id, jobId: id, record: s }; });
     });
   }
+  function listWorkflows(name) {
+    var prefix=scope()+':workflow-'+name;
+    return Promise.all(Object.keys(writes).map(function(k){return writes[k].catch(function(){});})).then(function(){
+      return transaction('readonly',function(store){return store.getAllKeys();});
+    }).then(function(keys){return Promise.all(keys.filter(function(k){return k.indexOf(prefix)===0&&k.endsWith(':0:action');}).map(function(k){return transaction('readonly',function(store){return store.get(k);});}));}).then(function(rows){return rows.filter(function(s){return s&&s.operation&&s.operation.kind==='workflow';}).map(function(s){if(s.operation.state==='sending')s.operation.state='unknown';return s;});});
+  }
   function approvalCount(rows) {
     return listActions('approve').then(function (saved) {
       return new Set(rows.map(function (j) { return j.id; }).concat(saved.map(function (s) { return s.jobId; }))).size;
     });
   }
   window.mProductionDrafts = { key: key, load: load, save: save, remove: remove,
-    listActions: listActions, approvalCount: approvalCount,
+    listWorkflows: listWorkflows, listActions: listActions, approvalCount: approvalCount,
     loadAction: function (jobId) { return load(jobId + ':action'); } };
 })();

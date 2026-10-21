@@ -3,7 +3,7 @@
 (function () {
   /* ---------------- shared: open-order list ---------------- */
   function list(view) {
-    var title = 'Receive';
+    var title = 'Receive supplier delivery';
     MApp.setTitle(title);
     view.innerHTML = '<div class="m-hint">Loading…</div>';
     var q = ['/orders?type=purchase'];

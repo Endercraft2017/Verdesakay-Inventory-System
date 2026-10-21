@@ -121,7 +121,9 @@ router.get('/queue', receiveGate, (req, res) => {
      ORDER BY ri.id DESC LIMIT 60`,
     req.user!.id
   );
-  res.json({ units: out, batches, recorded, intakes:queryAll(`SELECT j.id,j.number,j.product_name,j.status AS intake_status,u.id AS unit_id,u.identifier,u.stage,u.status
+  res.json({ units: out, batches, recorded, intakes:queryAll(`SELECT j.id,j.number,j.product_name,j.status AS intake_status,u.id AS unit_id,u.identifier,u.stage,u.status,
+    (SELECT result FROM qc_records WHERE unit_id=u.id AND stage=1 ORDER BY id DESC LIMIT 1) AS qc_result,
+    (SELECT result FROM qc_records WHERE unit_id=u.id AND stage=2 ORDER BY id DESC LIMIT 1) AS qa_result
     FROM job_orders j JOIN job_order_units u ON u.job_order_id=j.id WHERE j.intake_origin='legacy' AND u.status NOT IN ('in_stock','reserved','sold') ORDER BY j.id DESC`) });
 });
 

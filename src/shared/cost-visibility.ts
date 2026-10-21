@@ -30,3 +30,21 @@ export function redactInventoryCosts<T>(value: T, user: Pick<AuthUser, 'permissi
   };
   return strip(value, supplierDocument) as T;
 }
+
+/** Operational order visibility does not confer commercial pricing authority. Applied
+ * to every JSON response on the document family, including nested context/replay data. */
+export function redactSaleCommercial<T>(value: T, user: Pick<AuthUser, 'permissions'> | undefined, path = ''): T {
+  if (!user || !/\/(?:orders|release-slips|customers)(?:\/|$|\?)/.test(path)) return value;
+  if (['orders.create', 'orders.edit', 'orders.approve', 'orders.authorize', 'accounting.view'].some(p => user.permissions.includes(p as AuthUser['permissions'][number]))) return value;
+  const strip = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(strip);
+    if (!v || typeof v !== 'object') return v;
+    // Supplier-order costing uses its own independent inventory.costs policy.
+    if ((v as Record<string, unknown>).type === 'purchase') return v;
+    return Object.fromEntries(Object.entries(v).filter(([key]) =>
+      !PURCHASE_VALUES.has(key) && !COST_KEYS.has(key) &&
+      !/(?:^|_)(?:price|cost|amount|value|margin|markup|tax|discount)(?:_|$)/i.test(key)
+    ).map(([key, val]) => [key, strip(val)]));
+  };
+  return strip(value) as T;
+}

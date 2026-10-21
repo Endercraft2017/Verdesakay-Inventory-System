@@ -120,8 +120,8 @@
           MApp.go('qc');
         } },
     ].forEach(function (a) {
-      if (a.key !== 'qa' && !MApp.can('inventory.adjust')) return;
-      if (a.key === 'qa' && !MApp.can('inventory.adjust') && !MApp.can('production.inspect_qc') && !MApp.can('production.inspect_qa')) return;
+      if(a.key==='transfer'?!MApp.can('inventory.transfer'):a.key!=='qa'&&!MApp.can('inventory.adjust'))return;
+      if (a.key === 'qa' && !MApp.can('production.inspect_qc') && !MApp.can('production.inspect_qa')) return;
       var b = mEl('<button class="' + (a.warn ? 'warn' : '') + '"' + (a.dim ? ' disabled' : '') +
         '><span class="ic">' + icon(a.key) + '</span>' + mEsc(a.label) + '</button>');
       b.onclick = a.fn;
@@ -136,7 +136,7 @@
     if (params && params.id) { detail(view, params.id); return; }
     MApp.setTitle('Check stock');
     view.innerHTML = '';
-    var picker = mItemPicker({ label: 'Scan or search an item', onPick: function (it) { detail(view, it.id, it.unit); } });
+    var picker = mItemPicker({ label: 'Scan or search an item', showKindFilter:true, onPick: function (it) { detail(view, it.id, it.unit); } });
     view.appendChild(picker.el);
     picker.focus();
   }

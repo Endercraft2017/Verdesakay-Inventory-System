@@ -25,7 +25,7 @@
       }
       if(!a.multipart&&s.rows.length&&!a.payload.evidence_ids){a.payload.evidence_ids=s.rows.map(function(r){return r.unitId;});await save(s);}
       guard(s);var result;
-      if(a.multipart){var fd=new FormData();Object.keys(a.payload).forEach(function(k){if(a.payload[k]!=null)fd.append(k,String(a.payload[k]));});fd.append('image',s.rows[0].file,s.rows[0].identifier);result=await API.upload(a.path,fd,{idempotencyKey:a.key});}
+      if(a.multipart){var fd=new FormData();Object.keys(a.payload).forEach(function(k){if(a.payload[k]!=null)fd.append(k,String(a.payload[k]));});fd.append(a.fileField||'image',s.rows[0].file,s.rows[0].identifier);result=await API.upload(a.path,fd,{idempotencyKey:a.key});}
       else result=await API[a.method||'post'](a.path,a.payload,{idempotencyKey:a.key});
       guard(s);a.result=result;a.local=API.syncLocal(result);a.state='confirmed';a.error=null;await save(s);
     }catch(e){if(!owns(s))throw e;a.state=classify(e);a.error=e.message;await save(s);}finally{delete busy[s.key];}

@@ -28,15 +28,15 @@ try {
  const jump=page.locator('[data-act=jump]');assert.equal(await jump.locator('option').count(),visible.length+1);
  await jump.selectOption(String(visible.indexOf('Release orders')+1));assert.equal(await page.locator('.guide-coach h4').innerText(),'Release orders');assert((await page.locator('.work-guide-effect').innerText()).includes('Picking reserves'));
  await page.locator('[data-act=jump]').selectOption('0');
- for(const label of visible){await page.locator('[data-act=next]').click();assert.equal(await page.locator('.guide-coach h4').innerText(),label);assert((await page.locator('.guide-coach-text').innerText()).includes('Result / next step:'));if(label==='Receive PR'){assert((await page.locator('.guide-coach-text').innerText()).includes('supplier goods receipt'));await page.screenshot({path:path.join(out,'receive-pr.png')});}if(label==='RTS recording')assert((await page.locator('.guide-coach-text').innerText()).includes('not Receive PR'));}
+ for(const label of visible){await page.locator('[data-act=next]').click();assert.equal(await page.locator('.guide-coach h4').innerText(),label);assert((await page.locator('.guide-coach-text').innerText()).includes('Result / next step:'));if(label==='Receive supplier delivery'){assert((await page.locator('.guide-coach-text').innerText()).includes('supplier goods receipt'));await page.screenshot({path:path.join(out,'receive-pr.png')});}if(label==='RTS recording')assert((await page.locator('.guide-coach-text').innerText()).includes('separate from Receive supplier delivery'));}
  await page.locator('[data-act=next]').click();assert.equal(await page.locator('.guide-coach').count(),0);
  assert.equal(await page.evaluate(()=>MApp.currentLocation().name),'work');
  report.checks.push('Every displayed admin queue/tool has a distinct, read-only explanation');
  page=await open(qc.token);
  await page.locator('#m-guide-start').click();
  let steps=await page.evaluate(()=>MobileGuide.steps(document.querySelector('#m-view')).map(s=>s.title));
- assert(steps.includes('QC technical inspection'));assert(!steps.includes('Receive PR'));assert(!steps.includes('QA appearance inspection'));assert(!steps.includes('QA holds'));
- const options=await page.locator('[data-act=jump] option').allTextContents();assert(!options.some(t=>t.includes('Receive PR')||t.includes('QA holds')));
+ assert(steps.includes('QC technical inspection'));assert(!steps.includes('Receive supplier delivery'));assert(!steps.includes('QA appearance inspection'));assert(!steps.includes('QA holds'));
+ const options=await page.locator('[data-act=jump] option').allTextContents();assert(!options.some(t=>t.includes('Receive supplier delivery')||t.includes('QA holds')));
  report.checks.push('Custom QC account includes only its current displayed queues');
  await api('PUT','/users/'+qc.id+'/permissions',{overrides:{'production.inspect_qc':false,'production.qa_review':true}});
  await page.evaluate(()=>MApp.refreshAccess());
@@ -45,7 +45,7 @@ try {
  assert(!steps.includes('QC technical inspection'));assert(steps.includes('QA holds'));
  report.checks.push('Permission change removes stale guide and explains the newly active QA-hold queue');
  page=await open(personal.token);steps=await page.evaluate(()=>MobileGuide.steps(document.querySelector('#m-view')).map(s=>s.title));
- assert(steps.includes('Notes / checklists'));assert(!steps.includes('Receive PR'));assert(!steps.includes('Release orders'));
+ assert(steps.includes('Notes / checklists'));assert(!steps.includes('Receive supplier delivery'));assert(!steps.includes('Release orders'));
  await page.locator('#m-guide-start').click();await page.screenshot({path:path.join(out,'personal-only.png')});
  assert.deepEqual(report.errors,[]);report.checks.push('Personal-only account has no warehouse explanations');
  console.log('PASS '+report.checks.length+' real-browser account/permission checks; '+visible.length+' admin entries explained; zero JavaScript errors.');
