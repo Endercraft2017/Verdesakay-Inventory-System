@@ -402,10 +402,15 @@
     var id=params.get(route==='qc'?'unit':'id');return key&&/^\d+$/.test(id||'')?{task:key,record:'record:'+id}:null;
   }
   function attentionId(r){return (r.work_kind||'record')+':'+r.id;}
-  function attentionTitle(r){return r.number||r.identifier||r.batch_number||r.title||r.job_order_number||'Record #'+r.id;}
-  function attentionMeta(r){return [r.customer_name||r.product_name||r.reason||r.name,r.qty_ordered!=null?(r.warehouse_accepted_at?'Picking / release':'Awaiting warehouse acceptance'):r.status&&String(r.status).replace(/_/g,' '),r.expected_date&&'Due '+r.expected_date].filter(Boolean).join(' · ');}
+  function attentionTitle(r){return r.identifier||(r.work_kind==='batch'?(r.number||r.batch_number):null)||r.number||r.batch_number||r.title||r.job_order_number||'Record #'+r.id;}
+  function attentionMeta(r,source){
+    var state=r.status&&String(r.status).replace(/_/g,' ');
+    if(source&&source.key==='kits')state=r.prepared_at?'Ready for kit release':r.warehouse_accepted_at?'Kit preparation':'Awaiting kit acceptance';
+    else if(source&&source.key==='release')state=r.warehouse_accepted_at?'Picking / release':'Awaiting warehouse acceptance';
+    return [r.work_kind==='batch'?r.remaining_qty+' pcs remaining':null,r.component_name?('Qty '+r.quantity+' · '+r.component_name):r.customer_name||r.product_name||r.reason||r.name,state,r.expected_date&&'Due '+r.expected_date].filter(Boolean).join(' · ');
+  }
   function attentionRow(source,r){
-    var row=mEl('<button type="button" class="v2-work-row" data-attention="'+mEsc(source.key)+'"><span><b>'+mEsc(attentionTitle(r))+'</b><small>'+mEsc(source.title+' · '+attentionMeta(r))+'</small></span><em>REVIEW ›</em></button>');
+    var row=mEl('<button type="button" class="v2-work-row" data-attention="'+mEsc(source.key)+'"><span><b>'+mEsc(attentionTitle(r))+'</b><small>'+mEsc(source.title+' · '+(blockedInspection(source,r)?'Waiting for parts · ':'')+attentionMeta(r,source))+'</small></span><em>REVIEW ›</em></button>');
     row.onclick=function(){MApp.go('work',{task:source.key,record:attentionId(r)});};return row;
   }
   async function attentionDetail(view,params){
@@ -414,11 +419,14 @@
     function back(){var b=mEl('<button type="button" class="rk-btn secondary">Back to Work</button>');b.onclick=function(){MApp.go('work');};body.appendChild(b);}
     if(!source){body.innerHTML=RoleUI.note('warn','This duty is no longer available with your current access.');back();return;}
     try{
-      var hash=location.hash,rows=source.select(await API.get(source.path));if(!body.isConnected||hash!==location.hash)return;
+      var hash=location.hash,rows=await readAttention(source);if(!body.isConnected||hash!==location.hash)return;
       var record=rows.find(function(r){return attentionId(r)===params.record;});
       if(!record){body.innerHTML=RoleUI.note('info','This item no longer needs attention in this queue. It may have been completed, reassigned or moved to another stage. Refresh Work for the latest items.');back();return;}
-      body.innerHTML=RoleUI.jobHead({number:attentionTitle(record),name:source.title,meta:attentionMeta(record)})+
+      body.innerHTML=RoleUI.jobHead({number:attentionTitle(record),name:source.title,meta:attentionMeta(record,source)})+
         RoleUI.note('info','Review this record, then open its workflow to see the actions your permissions allow. Stock and status change only when you confirm an action there.')+
+        (blockedInspection(source,record)?RoleUI.note('warn','Waiting for parts: the warehouse must resolve the open request before reinspection.'):'')+
+        (record.work_kind==='batch'?RoleUI.field('Batch quantity remaining',record.remaining_qty+' pcs'):'')+
+        (record.component_name?RoleUI.field('Requested part',record.component_name+' · Qty '+record.quantity):'')+
         (record.job_order_number?RoleUI.field('Production job order',record.job_order_number):'')+
         (record.identifier?RoleUI.field('Unit',record.identifier):'')+
         (record.summary?RoleUI.field('Order contents',(record.summary.first_name||'')+' · '+record.summary.lines+' line(s)'):'')+
@@ -429,7 +437,7 @@
       body.querySelector('#work-open-action').onclick=async function(){
         var button=this;button.disabled=true;
         try{await MApp.refreshAccess();var current=attentionSources().find(function(s){return s.key===source.key;});if(!current){MApp.render();return;}
-          var live=current.select(await API.get(current.path)).find(function(r){return attentionId(r)===params.record;});
+          var live=(await readAttention(current)).find(function(r){return attentionId(r)===params.record;});
           if(!body.isConnected||hash!==location.hash)return;
           if(!live){MApp.render();return;}MApp.go(current.route,current.params(live));
         }catch(e){button.disabled=false;mToast('Could not verify current work: '+e.message,'err');}
@@ -450,6 +458,68 @@
     }
     page.querySelector('[data-attention-refresh]').onclick=refresh;refresh();
   }
+
+  // Reads are bounded and validated: a successful HTTP response is not proof of a valid queue.
+  function readAttention(source, context) {
+    var strict=['kits','parts','qc','qa','holds','rts'].includes(source.key),timer;
+    var request=Promise.resolve().then(function(){return API.get(source.path);}).then(function(q){
+      if(strict){
+        var valid=source.key==='qc'||source.key==='qa'?q&&Array.isArray(q.units):source.key==='rts'?q&&Array.isArray(q.units)&&Array.isArray(q.batches):Array.isArray(q);
+        if(!valid)throw new Error('The server returned an invalid queue. Refresh to check current work.');
+        if(source.key==='rts'&&q.batches.some(function(b){return !Number.isFinite(Number(b.remaining_qty))||Number(b.remaining_qty)<=0;}))throw new Error('The batch quantities could not be verified.');
+      }
+      var rows=source.select(q);
+      if(strict&&(!Array.isArray(rows)||rows.some(function(r){return !r||!Number.isInteger(Number(r.id))||Number(r.id)<=0;})))throw new Error('The queue records could not be verified.');
+      return context?{rows:rows,held:source.key==='rts'?q.units.filter(function(u){return !!u.hold;}).length:0}:rows;
+    });
+    if(!strict)return request;
+    return Promise.race([request,new Promise(function(resolve,reject){timer=setTimeout(function(){reject(new Error('Queue check timed out. Reconnect and refresh.'));},12000);})]).finally(function(){clearTimeout(timer);});
+  }
+  function blockedInspection(source,r){return ['qc','qa'].includes(source.key)&&r.status==='rework'&&Number(r.open_part_requests)>0;}
+  function homeCount(source,rows){
+    function amount(n,word){return n+' '+word+(n===1?'':word==='batch'?'es':'s');}
+    if(source.key==='rts'){
+      var batches=rows.filter(function(r){return r.work_kind==='batch';}),units=rows.length-batches.length;
+      return (units||!batches.length?amount(units,'unit'):'')+(units&&batches.length?' · ':'')+(batches.length?amount(batches.length,'batch')+' ('+batches.reduce(function(sum,b){return sum+Number(b.remaining_qty);},0)+' pcs)':'');
+    }
+    var count=amount(rows.length,source.key==='kits'?'job':source.key==='parts'?'request':source.key==='holds'?'held unit':'unit');
+    var blocked=rows.filter(function(r){return blockedInspection(source,r);}).length;
+    return count+(blocked?' · '+blocked+' blocked':'');
+  }
+  // Home and Work share selectors and exact-record links, but each Home desk resolves independently.
+  window.mHomeWorkPreview = function(page) {
+    var keys=['kits','parts','qc','qa','holds','rts'],params={qc:{role:'qc'},qa:{role:'qa'},holds:{role:'qa',tab:'hold'}};
+    function sources(){return attentionSources().filter(function(s){return keys.includes(s.key);});}
+    if(!sources().length)return;
+    var owner=(MApp.getMe()||{}).id,run=0,timer;
+    var section=mEl('<section class="v2-home-work" aria-label="Pending work"><div class="v2-work-title"><h2>Pending work</h2><button type="button" class="rk-back" data-home-work-refresh>Refresh</button></div><div data-home-work-list aria-live="polite"></div></section>');
+    page.appendChild(section);
+    function current(){return section.isConnected&&(MApp.getMe()||{}).id===owner;}
+    async function refresh(){
+      clearTimeout(timer);if(!current())return;MApp.refreshAccess();var token=++run,desks=sources(),host=section.querySelector('[data-home-work-list]');
+      if(!desks.length){section.remove();return;}host.innerHTML='';
+      await Promise.all(desks.map(async function(source){
+        var group=mEl('<section class="v2-home-work-desk" data-home-work="'+mEsc(source.key)+'"><div class="v2-home-work-summary"><h3>'+mEsc(source.title)+'</h3><span data-home-work-count>Loading…</span></div><div data-preview-records></div></section>');host.appendChild(group);
+        function active(){return current()&&token===run&&group.isConnected;}
+        try{
+          var result=await readAttention(source,true);if(!active())return;
+          if(!sources().some(function(s){return s.key===source.key;})){group.remove();return;}
+          group.querySelector('[data-home-work-count]').textContent=homeCount(source,result.rows);
+          var records=group.querySelector('[data-preview-records]');
+          if(!result.rows.length)records.appendChild(mEl('<p class="m-hint">'+(source.key==='rts'?'No units or batches ready for receiving.':'No pending work in this queue.')+'</p>'));
+          result.rows.slice(0,2).forEach(function(record){records.appendChild(attentionRow(source,record));});
+          if(result.held){var held=mEl('<button type="button" class="rk-back">'+result.held+' unit'+(result.held===1?'':'s')+' on hold · View RTS issues</button>');held.onclick=function(){if(sources().some(function(s){return s.key==='rts';}))MApp.go('receiving',{tab:'issues'});else MApp.render();};records.appendChild(held);}
+        }catch(e){if(!active())return;group.querySelector('[data-home-work-count]').textContent='Unknown';group.querySelector('[data-preview-records]').innerHTML='<p class="m-hint" role="status">Queue unavailable. Reconnect and refresh; pending work could not be checked.</p>';}
+        if(!active())return;
+        var open=mEl('<button type="button" class="v2-home-secondary">View '+mEsc(source.title)+' queue</button>');
+        open.onclick=function(){if(!sources().some(function(s){return s.key===source.key;})){MApp.render();return;}MApp.go(source.route,params[source.key]||{});};group.appendChild(open);
+      }));
+      if(current()&&token===run)timer=setTimeout(refresh,30000);
+    }
+    section.querySelector('[data-home-work-refresh]').onclick=refresh;
+    setTimeout(refresh,0);
+    return section;
+  };
 
   MApp.route('work', function (view,params) {
     if(params&&params.notice){var target=noticeTarget(params.notice);if(target)return attentionDetail(view,target);var route=/^#\/([a-z-]+)/.exec(params.notice);if(route&&route[1]!=='work'&&MApp.canOpen(route[1])){location.hash=params.notice;return;}view.innerHTML='';var unavailable=RoleUI.page(view,{role:'Work',title:'Update unavailable',subtitle:'Current access checked'});unavailable.innerHTML=RoleUI.note('info','This update has no current action with your assigned access. Open Notifications for its history.')+RoleUI.actions([{id:'work-notice-back',label:'Back to Work',kind:'secondary'}]);unavailable.querySelector('#work-notice-back').onclick=function(){MApp.go('work');};return;}

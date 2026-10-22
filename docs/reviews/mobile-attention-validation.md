@@ -72,3 +72,21 @@ second competing pipeline. Retained desk-scoped inspection drafts and explicit
 inspection stages, added both desk results to unit cards, and bumped the merged
 mobile shell cache to v139. Rechecked the merged code with TypeScript, focused
 mobile/API regression tests and the 16-scenario attention Playwright suite.
+
+
+## Home preview follow-up — candidate v140
+
+The expanded Playwright suite passed 19 scenarios, including real pending parts
+requests, kit release, independent QC and QA queues, and RTS eligibility after
+both passes. Home shows only granted desks, works without an HR employee link,
+opens the existing current-detail gate, removes revoked duties, and reports a
+failed queue read as unknown. The suite also checks stale Home cards and 390px
+layout. Screenshots are in the same ignored local evidence directory:
+`home-pending-work.png`, `home-parts-release.png`, `home-rts-receiving.png`.
+TypeScript and 152 mobile regression tests passed. No operational sandbox data
+was changed.
+
+
+The later candidate v141 focused audit supersedes the original generic count and
+coupled-loading behavior described above. See `mobile-home-preview-audit.md` for
+independent database/API/UI assertions, reproduced baseline defects and limits.

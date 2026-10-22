@@ -938,3 +938,15 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 .m-requests-v2 .m-request-inline-actions{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:.8rem}
 .m-requests-v2 .m-request-refresh{margin-top:1rem}
 .m-requests-v2 .m-request-back:disabled{opacity:.5;cursor:wait}
+
+/* Live operational preview on Today, above employee shortcuts. */
+.v2-home-work { margin: 0 0 24px; }
+.v2-home-work [data-home-work-list] { display: grid; gap: 14px; }
+.v2-home-work-desk { min-width: 0; display: grid; gap: 8px; }
+.v2-home-work-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 6px; }
+.v2-home-work-summary h3 { margin: 0; font-size: 14px; color: var(--v2-text); }
+.v2-home-work-summary span { flex-shrink: 0; font-size: 12px; color: var(--v2-muted); }
+.v2-home-work .v2-home-secondary { margin: 0; }
+
+.v2-home-work [data-preview-records] { display: grid; gap: 8px; min-width: 0; }
+.v2-home-work-summary { flex-wrap: wrap; }

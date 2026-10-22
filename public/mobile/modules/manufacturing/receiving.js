@@ -69,9 +69,10 @@
   /** Load the queue + locations, then hand the named unit (must be waiting for RTS) to fn. */
   function withUnit(view, unitId, fn) {
     view.innerHTML = '<section class="rk-page">' + R.skeleton(2) + '</section>';
-    var hash = location.hash, owner = mProductionDrafts.key('rts-owner');
+    var hash = location.hash, owner = mProductionDrafts.key('rts-owner'), render = routeSerial;
+    function current(){return location.hash===hash&&view.dataset.route==='receiving'&&render===routeSerial&&owner===mProductionDrafts.key('rts-owner');}
     Promise.all([loadQueue(), mLocations.load(true)]).then(function () {
-      if (location.hash !== hash || owner !== mProductionDrafts.key('rts-owner')) return;
+      if (!current()) return;
       var u = last.units.filter(function (x) { return x.id === unitId; })[0];
       if (!u) {
         var body = page(view, '74:68', 'Identify finished unit', '');
@@ -83,7 +84,7 @@
       }
       if (!draft || draft.anchor !== u.id) draft = { anchor: u.id, ids: [u.id], location_id: defaultLoc(u) };
       fn(u);
-    }).catch(function (err) { view.innerHTML = ''; view.appendChild(R.error(err, function () { withUnit(view, unitId, fn); })); });
+    }).catch(function (err) { if(!current())return;view.innerHTML = ''; view.appendChild(R.error(err, function () { withUnit(view, unitId, fn); })); });
   }
 
   /* ── Queue (74:16) ─────────────────────────────────────────────────────── */

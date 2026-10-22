@@ -50,13 +50,13 @@
     }
     var empty = mEl(
       '<button type="button" class="v2-home-update">' +
-      '<span><b>You’re all caught up</b><small>No urgent employee updates right now.</small></span>' +
+      '<span><b>No employee updates</b><small>No urgent employee updates right now.</small></span>' +
       '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button>'
     );
     empty.onclick = function () { MApp.go('notifications'); };
     return empty;
   }
-  function render(view, t) {
+  function render(view, t, preview) {
     view.innerHTML = '';
     var greeting = t.greeting || {};
     var employee = MApp.getMe() || {};
@@ -69,7 +69,8 @@
       '</h1><p>' + mEsc(dayLabel()) + (employee.department_name ? ' · ' + mEsc(employee.department_name) : '') + '</p></header>'
     ));
 
-    if (t.clock && t.clock.linked) {
+    if(t.todayLoading||t.todayUnavailable){page.appendChild(mEl('<section class="v2-attendance-hero"><div class="v2-attendance-label">TODAY’S ATTENDANCE</div><strong>'+(t.todayLoading?'Checking attendance…':'Attendance unavailable')+'</strong><p>Work queues are checked separately below.</p></section>'));}
+    else if (t.clock && t.clock.linked) {
       var c = t.clock;
       var clock = mEl(
         '<section class="v2-attendance-hero ' + (c.clocked_in ? 'is-in' : '') + '">' +
@@ -91,6 +92,7 @@
       page.appendChild(unlinked);
     }
 
+    if(preview)page.appendChild(preview);else if(window.mHomeWorkPreview)mHomeWorkPreview(page);
     page.appendChild(mEl('<h2 class="v2-home-section-title">Quick access</h2>'));
     var grid = mEl('<div class="v2-home-grid"></div>');
     grid.appendChild(shortcut('New request', 'Leave, overtime, offset', 'requests'));
@@ -98,7 +100,7 @@
     grid.appendChild(shortcut('Report issue', 'HR, safety or operations', 'report-problem', 'warn'));
     grid.appendChild(shortcut('Schedule', 'Shifts and changes', 'schedule'));
     page.appendChild(grid);
-    page.appendChild(updateRow(t));
+    if(t.todayUnavailable){var failed=mEl('<div class="m-error" role="status">Employee updates unavailable. <button type="button" class="rk-back">Retry</button></div>');failed.querySelector('button').onclick=function(){MApp.render();};page.appendChild(failed);}else if(!t.todayLoading)page.appendChild(updateRow(t));
 
     if (MApp.canApprove()) {
       var approvals = mEl('<button type="button" class="v2-home-secondary">Review pending approvals</button>');
@@ -111,6 +113,7 @@
       page.appendChild(role);
     }
     view.appendChild(page);
+    return page;
   }
 
   var homeRender=0;
@@ -118,15 +121,13 @@
     var generation=++homeRender,hash=location.hash,owner=MApp.getMe().id;
     function current(){return generation===homeRender&&hash===location.hash&&MApp.getMe()&&MApp.getMe().id===owner;}
     MApp.setTitle('Today');
-    view.innerHTML = '<div class="m-hint">Loading today…</div>';
+    var shell=render(view,{todayLoading:true});
+    function preview(){return shell.querySelector('.v2-home-work');}
     API.get('/me/today')
-      .then(function (t) { if(current())render(view, t || {}); })
+      .then(function (t) { if(current())render(view, t || {},preview()); })
       .catch(function (ex) {
         if(!current())return;
-        view.innerHTML = '<div class="m-error">' + mEsc(ex.message || 'Could not load today') +
-          '</div><button class="m-btn" data-retry>Retry</button>';
-        var retry = view.querySelector('[data-retry]');
-        if (retry) retry.onclick = function () { MApp.render(); };
+        render(view,{todayUnavailable:true},preview());
       });
   });
 })();

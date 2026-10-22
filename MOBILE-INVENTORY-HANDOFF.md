@@ -4,6 +4,51 @@ Read **Mobile implementation status** for the current branch. The older
 requirements and test notes further down are retained for traceability; some
 of their requested screens have since been implemented.
 
+## Home preview Playwright re-verification (2026-10-22)
+
+Fresh disposable DB/API/browser verification passed 14 scenarios, with separate
+employee contexts, exact record/action destinations, browser offline/reconnect,
+stock invariants and trace/network/screenshot capture. Five deliberate browser-only
+faults were all detected by the corresponding tests. No additional product-code
+defect was found; this round adds test/evidence tooling only. See the fresh-run
+section of `docs/reviews/mobile-home-preview-audit.md`. Candidate v141 changes
+are included in the Home preview commit; no deployment or physical-device
+acceptance is claimed.
+
+## Focused Home preview audit — candidate v141 (2026-10-22)
+
+A deeper audit reproduced and fixed ambiguous RTS batch counts, missing blocked
+inspection labels, slow-desk coupling and Home dependence on employee-summary
+loading. Home now distinguishes units, batches/pieces, jobs and requests; shows
+parts-blocked inspection and separate RTS holds; renders each desk independently;
+and keeps operational work available if employee updates fail. Late RTS unit-read
+callbacks cannot replace Home after navigating away. Malformed/timed-out
+queue reads are Unknown, and Refresh rechecks access. Existing workflow guards
+remain authoritative. See `docs/reviews/mobile-home-preview-audit.md` for the raw
+DB/API/UI evidence, reproduction, baseline failures and limits. Changes are
+included in the Home preview commit; this entry is not deployment acceptance.
+
+## Home pending-work preview — candidate v140 (2026-10-22)
+
+Home/Today now shows **Pending work** above Quick access for authorized kit/parts
+release, QC, QA, QA hold review and RTS receiving duties. It reuses Work's live
+queue selectors and exact-record links, with counts and up to two pending records
+per desk. Selecting a record opens current read-only details, then authorized
+actions. Queue buttons show the full relevant desk. No operational preview is
+shown for basic employees without these grants, and no linked HR record is needed
+for this preview.
+
+The preview refreshes manually and every 30 seconds while Home remains open.
+Failed reads show **Unknown**, not zero. Work still rechecks live membership and
+permissions before continuing, so old Home cards cannot authorize completed or
+reassigned work. The generic empty employee update no longer says all work is
+caught up while an operational queue may still have pending records.
+
+Playwright acceptance now covers 19 Home/Work/Sales scenarios against disposable
+real backend data, including all four requested desks, kit work, role isolation,
+stale requests, revoked access and unavailable queue reads. Local implementation;
+this note does not claim deployment or physical-device acceptance.
+
 ## Mobile implementation status — candidate v139 (updated 2026-10-22)
 
 The new requirements below have been integrated on

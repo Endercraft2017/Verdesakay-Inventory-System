@@ -240,3 +240,21 @@ and finished products using the existing product flag and one SKU.
 PR approval, physical cash issuance and liquidation settlement are separate
 grants. **Review PRs** shows only the decision buttons granted to that employee;
 requester/buyer separation is also enforced by the backend.
+
+
+### Pending work on Home
+
+Home shows a quick preview above Quick access for your assigned parts/kit release,
+QC, QA, hold-review and RTS receiving duties. Each desk shows its pending count
+and up to two records. Tap a record for details, then open its authorized workflow,
+or use the queue button for the full list. The preview updates every 30 seconds
+and has a Refresh button. Unknown means the live queue could not be checked.
+Employee-only accounts do not see these operational desks.
+
+Pending counts distinguish units, jobs, requests and batches with remaining pieces.
+Parts-blocked inspection is labelled “Waiting for parts”; it remains in the queue
+but cannot proceed until the warehouse resolves the request. RTS mismatch holds
+have a separate issues link and do not inflate the ready count. Each desk loads
+independently; failed or timed-out reads show Unknown. Operational queues remain
+available when attendance/employee-summary loading fails. Refresh also rechecks
+updated access.
