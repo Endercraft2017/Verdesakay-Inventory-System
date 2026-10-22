@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Codex Session Folders",
+  "version": "0.1.0",
+  "description": "A local folder layer for Codex web session links. No server or conversation API access.",
+  "permissions": ["storage"],
+  "content_scripts": [{
+    "matches": ["https://chatgpt.com/*"],
+    "js": ["content.js"],
+    "css": ["content.css"],
+    "run_at": "document_idle"
+  }]
+}
