@@ -1,4 +1,4 @@
-# Codex Session Folders — browser extension, v0.1.0
+# Codex Session Folders — browser extension, v0.1.1
 
 A small Manifest V3 extension adding a folder panel above Codex web's session list. It supports `/local/<id>` and ordinary `/c/<id>` links on `https://chatgpt.com`. Coding continues wherever Codex already runs; the extension does not run a coding agent, model, server, or desktop helper.
 
@@ -7,11 +7,19 @@ A small Manifest V3 extension adding a folder panel above Codex web's session li
 1. Download `codex-session-folders.zip` and extract it. Keep the extracted folder on your computer.
 2. Open your browser's Extensions page: Chrome `chrome://extensions`, Edge `edge://extensions`, Opera `opera://extensions`, or Brave `brave://extensions`.
 3. Enable **Developer mode**, choose **Load unpacked**, and select the extracted `extension` folder containing `manifest.json`.
-4. Reload the Codex page. A **Session folders** panel should appear above the existing sidebar links.
+4. Reload the Codex page. A compact, collapsed **Session folders** row should appear just above Recents when the chat sidebar is expanded.
 
 Chromium was tested. Chrome, Edge, Opera, and Brave installation paths are provided for their Chromium extension interfaces; those branded browsers were not separately tested. Firefox and Safari packaging is not provided. This is an unpacked preview, not a store-published extension.
 
+## Update from 0.1.0 without losing folders
+
+Replace the files inside your **existing loaded extension folder** with the new `extension` folder's files. Keep the same folder path. Open `opera://extensions` (or your browser's Extensions page), click the extension's **Reload** control, then refresh the Codex tab. Do not uninstall or load it from a different path if you want to retain its storage. Export a backup first if you have saved important folders.
+
+Version 0.1.1 fixes overly broad sidebar selection and inherited layout styles. It rejects the narrow icon rail and broad wrappers, stays within a 220–440px history sidebar, defaults to a single collapsed row, and hides when no suitable sidebar is visible. If the sidebar markup or size cannot be recognized safely, it will not mount.
+
 ## Use
+
+- Click **Session folders** to expand or collapse the entire panel. Its open state persists.
 
 - Press **+** to create a folder.
 - Use the menu next to a saved session to choose its folder or **Unfiled**.

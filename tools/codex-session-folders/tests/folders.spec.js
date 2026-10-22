@@ -11,7 +11,7 @@ const test = base.extend({ context: async ({}, use) => {
   await use(context); await context.close(); await fs.rm(profile,{recursive:true,force:true});
 }, page: async ({context}, use) => {
  const page=await context.newPage(); await page.goto('https://chatgpt.com/local/aaa-111');
- await expect(page.locator('#csf-panel')).toBeVisible(); await use(page);
+ await expect(page.locator('#csf-panel')).toBeVisible(); await page.getByRole('button',{name:'Toggle session folders',exact:true}).click(); await use(page);
 }});
 async function folder(page, name) {
  await page.getByRole('button',{name:'Create folder',exact:true}).click();
@@ -117,8 +117,36 @@ test('waits for a late sidebar and ignores ordinary conversation-body links',asy
  await p.route('https://chatgpt.com/local/delayed',r=>r.fulfill({contentType:'text/html',body:'<html><body><main><a href="/local/body-only">body link</a></main></body></html>'}));
  await p.goto('https://chatgpt.com/local/delayed');
  await expect(p.locator('#csf-panel')).toHaveCount(0);
- await p.evaluate(()=>{const aside=document.createElement('aside');const a=document.createElement('a');a.href='/local/late-session';a.textContent='Late sidebar task';aside.append(a);document.body.prepend(aside);});
+ await p.evaluate(()=>{const aside=document.createElement('aside');aside.style.cssText='width:340px;min-height:200px';const a=document.createElement('a');a.href='/local/late-session';a.textContent='Late sidebar task';aside.append(a);document.body.prepend(aside);});
  await expect(p.locator('#csf-panel')).toBeVisible();
+ await p.getByRole('button',{name:'Toggle session folders',exact:true}).click();
  await expect(row(p,'Late sidebar task')).toHaveCount(1);
  await expect(p.locator('#csf-panel')).not.toContainText('body link');
+});
+
+
+test('regression: separate global rail, chat sidebar and main; compact default, boundaries, hide and restore',async({context})=>{
+ const p=await context.newPage();await p.setViewportSize({width:1600,height:960});
+ await p.route('https://chatgpt.com/local/layout-check',r=>r.fulfill({contentType:'text/html',body:`<!doctype html><html style="color-scheme:dark"><head><meta charset="utf-8"><style>
+ body{margin:0;font:14px system-ui;background:#111;color:#eee}#sidebar-wrapper{position:fixed;left:0;top:0;width:620px;height:100vh;z-index:5;pointer-events:none}#global-rail{position:fixed;left:0;width:64px;height:100vh;pointer-events:auto;background:#151515}#chat-history{position:fixed;left:80px;width:340px;height:100vh;overflow:auto;pointer-events:auto;background:#181818;padding:12px;box-sizing:border-box}#chat-history a{display:block;color:inherit;padding:9px}main{margin-left:450px;padding:24px}#sidebar-wrapper div{min-width:0}
+ </style></head><body><div id="sidebar-wrapper"><nav id="global-rail"><a href="/">Home</a></nav><aside id="chat-history"><h2>Codex</h2><button>New chat</button><h3>Recents</h3><div><a href="/local/one">Better UI/UX</a><a href="/local/two">Mobile task</a></div></aside></div><main><h1>Conversation remains clear</h1><button id="native-control">Native conversation control</button></main></body></html>`}));
+ await p.goto('https://chatgpt.com/local/layout-check');
+ const panel=p.locator('#csf-panel');await expect(panel).toBeVisible();
+ await expect(p.locator('#chat-history #csf-panel')).toHaveCount(1);
+ await expect(p.locator('#global-rail #csf-panel')).toHaveCount(0);
+ await expect(p.getByRole('button',{name:'Toggle session folders',exact:true})).toHaveAttribute('aria-expanded','false');
+ const compact=await panel.boundingBox();expect(compact.height).toBeLessThan(60);
+ await expect(p.getByRole('searchbox')).toBeHidden();
+ await p.locator('#native-control').click();
+ await fs.mkdir(path.resolve(__dirname,'../test-results'),{recursive:true});
+ await p.screenshot({path:path.resolve(__dirname,'../test-results/layout-compact.png')});
+ await p.getByRole('button',{name:'Toggle session folders',exact:true}).click();
+ const bounds=await panel.boundingBox();const host=await p.locator('#chat-history').boundingBox();const main=await p.locator('main').boundingBox();
+ expect(bounds.x).toBeGreaterThanOrEqual(host.x);expect(bounds.x+bounds.width).toBeLessThanOrEqual(host.x+host.width);expect(bounds.x+bounds.width).toBeLessThan(main.x);expect(bounds.height).toBeLessThan(440);
+ await folder(p,'UI');
+ await p.getByRole('button',{name:'Toggle session folders',exact:true}).click();
+ await p.reload();await expect(p.getByRole('button',{name:'Toggle session folders',exact:true})).toHaveAttribute('aria-expanded','false');
+ await p.evaluate(()=>document.querySelector('#chat-history').style.width='64px');await expect(panel).toHaveCount(0);
+ await p.evaluate(()=>document.querySelector('#chat-history').style.width='340px');await expect(panel).toHaveCount(1);
+ await p.getByRole('button',{name:'Toggle session folders',exact:true}).click();await expect(p.getByRole('button',{name:'Toggle UI',exact:true})).toBeVisible();
 });

@@ -1,6 +1,6 @@
 # Playwright verification
 
-Final result: **7 passed, 0 failed** (5.7 seconds), Playwright 1.64.1 and its bundled Chromium, Linux, 2026-10-22.
+Final result: **8 passed, 0 failed** (7.2 seconds), Playwright 1.64.1 and its bundled Chromium, Linux, 2026-10-22.
 
 The real unpacked Manifest V3 extension was loaded into Chromium using `launchPersistentContext`. The fixture intercepts a ChatGPT URL and supplies synthetic sidebar HTML. Chrome storage was real; no real OpenAI account was used.
 
@@ -14,6 +14,10 @@ Verified:
 6. Native controls remain clickable; screenshot captured; panel foreground/background adapt to light and dark color schemes.
 7. Panel waits for a late sidebar and ignores session links appearing only in conversation content.
 
+8. Regression fixture with a separate global icon rail, broad outer sidebar wrapper, fixed chat history, and conversation pane: verifies deepest suitable container, collapsed initial height under 60px, no horizontal overlap, hidden/expanded sidebar transitions, and retained folder state.
+
 Screenshot: `preview.png` is a synthetic fixture, not the user's account.
 
 Limit: authenticated live Codex compatibility, branded browsers, multiple simultaneous edits, and future sidebar redesigns were not verified. This is a tested preview, not a guarantee that every production sidebar layout is supported.
+
+Version 0.1.1 addresses the live overlap reported in the user screenshots. The regression reconstructs that layout; authenticated DOM access was still unavailable.

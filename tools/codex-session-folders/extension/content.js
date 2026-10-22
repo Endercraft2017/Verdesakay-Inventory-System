@@ -4,7 +4,7 @@
   window.__codexSessionFolders = true;
   const KEY = 'codex-session-folders-v1';
   const PANEL = 'csf-panel';
-  let state = { folders: [], assignments: {}, sessions: {}, collapsed: {} };
+  let state = { folders: [], assignments: {}, sessions: {}, collapsed: {}, uiOpen: false };
   let sidebar, panel, timer;
   let saveQueue = Promise.resolve();
   const el = (tag, text, cls) => {
@@ -26,8 +26,9 @@
     } catch { return null; }
   }
   function validate(raw) {
-    const next = { folders: [], assignments: {}, sessions: {}, collapsed: {} };
+    const next = { folders: [], assignments: {}, sessions: {}, collapsed: {}, uiOpen: false };
     if (!raw || typeof raw !== 'object') return next;
+    next.uiOpen = raw.uiOpen === true;
     next.collapsed[''] = raw.collapsed?.[''] === true;
     const ids = new Set();
     for (const f of Array.isArray(raw.folders) ? raw.folders.slice(0, 100) : []) {
@@ -54,10 +55,23 @@
     saveQueue.catch(() => status('Could not save. Export a backup before closing.'));
   }
   function findSidebar() {
-    // Only use a container with genuine session links; never scan conversation text.
-    const candidates = document.querySelectorAll('nav, aside, [data-testid*="sidebar"], [id*="sidebar"]');
-    return [...candidates].find(node => !node.closest('#' + PANEL) &&
-      [...node.querySelectorAll('a[href]')].some(a => !a.closest('#' + PANEL) && sessionPath(a.getAttribute('href')))) || null;
+    // Reject the global navigation rail and broad page wrappers. Choose the
+    // smallest visible history container, not the first sidebar-like ancestor.
+    const candidates = [...document.querySelectorAll('nav, aside, [data-testid*="sidebar"], [id*="sidebar"]')];
+    const valid = candidates.filter(node => {
+      if (node.closest('#' + PANEL) || node.querySelector('main, [role="main"]')) return false;
+      const box = node.getBoundingClientRect();
+      if (box.width < 220 || box.width > 440 || box.height < 80 || box.left < 0 || box.right > innerWidth) return false;
+      if (getComputedStyle(node).visibility === 'hidden' || getComputedStyle(node).display === 'none') return false;
+      return [...node.querySelectorAll('a[href]')].some(a => !a.closest('#' + PANEL) && sessionPath(a.getAttribute('href')));
+    });
+    return valid.find(node => !valid.some(other => other !== node && node.contains(other))) || null;
+  }
+  function mount() {
+    panel?.remove(); panel = el('div'); panel.id = PANEL;
+    const heading = [...sidebar.querySelectorAll('h1,h2,h3,h4,[role="heading"],[data-app-action-sidebar-section-heading]')]
+      .find(node => !node.closest('#' + PANEL) && /^(Recents|Recent chats|Your chats)$/i.test(node.textContent.trim()));
+    if (heading) heading.before(panel); else sidebar.prepend(panel);
   }
   function collect() {
     let changed = false;
@@ -94,14 +108,18 @@
   function render() {
     if (!panel) return;
     const section = el('section'); section.setAttribute('aria-label', 'Codex session folders');
-    const header = el('div', undefined, 'csf-header'); header.append(el('strong', 'Session folders'));
+    const header = el('div', undefined, 'csf-header');
+    const togglePanel = button(`${state.uiOpen ? '▾' : '▸'} Session folders`, 'Toggle session folders', () => { state.uiOpen = !state.uiOpen; change(); });
+    togglePanel.setAttribute('aria-expanded', String(state.uiOpen)); header.append(togglePanel);
     header.append(button('+', 'Create folder', () => {
       if (state.folders.length >= 100) return status('Maximum 100 folders.');
+      state.uiOpen = true;
       dialog('Folder name', '', name => { state.folders.push({ id: 'f-' + crypto.randomUUID(), name }); change(); });
     })); section.append(header);
+    const body = el('div', undefined, 'csf-body'); body.hidden = !state.uiOpen; section.append(body);
     const search = el('input'); search.type = 'search'; search.placeholder = 'Find saved sessions';
-    search.setAttribute('aria-label', 'Find saved sessions'); section.append(search);
-    const list = el('div', undefined, 'csf-list'); section.append(list);
+    search.setAttribute('aria-label', 'Find saved sessions'); body.append(search);
+    const list = el('div', undefined, 'csf-list'); body.append(list);
     function draw() {
       list.replaceChildren(); const query = search.value.trim().toLowerCase();
       const groups = [...state.folders, { id: '', name: 'Unfiled' }];
@@ -159,19 +177,19 @@
         const raw = JSON.parse(await upload.text());
         if (raw.version !== 1 || !Array.isArray(raw.folders) || !raw.sessions || typeof raw.sessions !== 'object') throw Error('Invalid backup.');
         if (!confirm('Replace this browser’s folder organization with the backup? Codex chats are unchanged.')) return;
-        state = validate(raw); change();
+        const wasOpen = state.uiOpen; state = validate(raw); state.uiOpen = wasOpen; change();
       } catch { status('Import failed. Choose a valid version 1 folder backup.'); }
       file.value = '';
-    }); footer.append(file); section.append(footer);
-    section.append(el('p', 'Saved in this browser profile. Original Recents stay unchanged. Scroll Recents to discover older links.', 'csf-note'));
-    const notice = el('p', '', 'csf-status'); notice.setAttribute('role', 'status'); section.append(notice);
+    }); footer.append(file); body.append(footer);
+    body.append(el('p', 'Saved in this browser profile. Original Recents stay unchanged. Scroll Recents to discover older links.', 'csf-note'));
+    const notice = el('p', '', 'csf-status'); notice.setAttribute('role', 'status'); body.append(notice);
     panel.replaceChildren(section);
   }
   function refresh() {
-    const found = findSidebar(); if (!found) return;
+    const found = findSidebar(); if (!found) { panel?.remove(); panel = null; sidebar = null; return; }
     sidebar = found;
     if (!panel || !panel.isConnected || !sidebar.contains(panel)) {
-      panel?.remove(); panel = el('div'); panel.id = PANEL; sidebar.prepend(panel); collect(); render(); return;
+      mount(); collect(); render(); return;
     }
     // Avoid rerendering while someone is searching, selecting, or editing.
     const before = JSON.stringify(state.sessions); collect();
@@ -181,10 +199,11 @@
     if (records.every(r => (r.target instanceof Element ? r.target : r.target.parentElement)?.closest('#' + PANEL))) return;
     clearTimeout(timer); timer = setTimeout(refresh, 150);
   });
+  window.addEventListener('resize', () => { clearTimeout(timer); timer = setTimeout(refresh, 150); });
   (async () => {
     try { state = validate((await chrome.storage.local.get(KEY))[KEY]); }
     catch { /* A working in-memory view remains possible. */ }
-    refresh(); observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href'] });
+    refresh(); observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['href', 'class', 'style', 'hidden', 'aria-hidden'] });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local' || !changes[KEY]) return;
       const next = validate(changes[KEY].newValue);
