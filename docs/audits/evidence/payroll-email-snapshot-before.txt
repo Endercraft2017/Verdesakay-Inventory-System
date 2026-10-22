@@ -1,0 +1,21 @@
+{"timestamp":"2026-10-22T06:46:03.435Z","level":"info","event":"http_request","request_id":"eff23aaf-0e51-4734-a935-91bcb507e16c","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":362}
+{"timestamp":"2026-10-22T06:46:03.520Z","level":"info","event":"http_request","request_id":"597ef5ab-d6c3-4e35-aa25-65049a36e39a","tenant":"default","method":"GET","path":"/api/hr/payroll/18/email","status":200,"duration_ms":26}
+{"timestamp":"2026-10-22T06:46:03.532Z","level":"info","event":"http_request","request_id":"be129f55-f1c2-4098-88d7-268ef846b8ef","tenant":"default","method":"POST","path":"/api/hr/payroll/18/email/review","status":200,"duration_ms":9}
+{"timestamp":"2026-10-22T06:46:03.539Z","level":"info","event":"http_request","request_id":"df69436d-2b56-4a11-bd5f-1699d24ccae6","tenant":"default","method":"POST","path":"/api/hr/payroll/18/email/confirm","status":202,"duration_ms":5}
+[{"case":"queued email before new-node enrollment","error":"FOREIGN KEY constraint failed","counts":{"payroll_email_releases":1,"payroll_email_events":2,"payroll_email_versions":0}},{"case":"empty intent history with SMTP settings","error":null,"counts":{"payroll_email_releases":0,"payroll_email_events":0,"payroll_email_versions":2}}]
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Node exports must succeed and contain zero cloud email rows
+    at <anonymous> (/workspace/Verdesakay-Inventory-System/work/payroll-email-snapshot-before.ts:20:142)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

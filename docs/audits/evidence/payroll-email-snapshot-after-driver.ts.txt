@@ -1,0 +1,21 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import assert from 'node:assert/strict';
+import {setupApp,cleanup,login} from '../tests/helpers';
+process.env.NODE_ENV='test';process.env.VDS_TEST_ADMIN_PASSWORD='admin123-test-only';
+const ctx=await setupApp(),token=await login(ctx.api),db=await import('../src/shared/db'),{enableSync}=await import('../src/sync'),{buildNodeSnapshot}=await import('../src/sync/transport');
+const results:any[]=[];
+try{
+ enableSync(db.activeDb(),{role:'cloud',nodeNo:0});db.run("UPDATE users SET email='snapshot-fixture@example.test' WHERE id=1");
+ const e=Number(db.run("INSERT INTO employees(employee_no,name,user_id) VALUES('SNAPSHOT-MAIL','Synthetic snapshot mail',1)").lastInsertRowid),f=db.queryOne<{id:number}>("SELECT id FROM form_definitions WHERE slug='hr_payroll'")!.id;
+ const id=Number(db.run("INSERT INTO form_records(form_def_id,number,data,status,created_by) VALUES(?,'SNAPSHOT-MAIL',?,'paid',1)",f,JSON.stringify({employee_id:e,employee_name:'Synthetic snapshot mail',net_pay:1000})).lastInsertRowid);
+ const {saveMailSettings}=await import('../src/shared/mailer');saveMailSettings({transport:'smtp',from_name:'Synthetic Snapshot',from_email:'payroll@example.test',reply_to:'',smtp_host:'127.0.0.1',smtp_port:1,smtp_secure:true,smtp_user:''});
+ const base=`/api/hr/payroll/${id}/email`,headers={Authorization:`Bearer ${token}`},pre=await ctx.api.get(base).set(headers),review=await ctx.api.post(base+'/review').set(headers).send({source_stamp:pre.body.source_stamp});assert.equal(review.status,200,review.text);
+ const confirm=await ctx.api.post(base+'/confirm').set(headers).send({review_id:review.body.id,review_token:review.body.review_token});assert.equal(confirm.status,202,confirm.text);
+ function snapshot(name:string){const file=path.join(ctx.tmpDir,name+'.db');let error:string|null=null;try{buildNodeSnapshot('default',file);}catch(e){error=(e as Error).message;}const d=new DatabaseSync(file);try{return {case:name,error,counts:Object.fromEntries(['payroll_email_releases','payroll_email_events','payroll_email_versions'].map(t=>[t,d.prepare('SELECT count(*) AS n FROM '+t).get()?.n]))};}finally{d.close();}}
+ results.push(snapshot('queued email before new-node enrollment'));
+ db.run('DELETE FROM payroll_email_events');db.run('DELETE FROM payroll_email_releases');
+ results.push(snapshot('empty intent history with SMTP settings'));
+ fs.writeFileSync('work/payroll-email-snapshot-after.json',JSON.stringify(results,null,2)+'\n');console.log(JSON.stringify(results));assert.ok(results.every(x=>!x.error&&Object.values(x.counts).every(n=>n===0)),'Node exports must succeed and contain zero cloud email rows');
+}finally{cleanup(ctx);}

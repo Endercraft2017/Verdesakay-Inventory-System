@@ -1,0 +1,36 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payroll-email.test.ts > R1 real tenants with identical record IDs cannot consume each other’s reviews
+{"timestamp":"2026-10-22T05:50:11.308Z","level":"info","event":"http_request","request_id":"7d82298e-c9f9-4ecf-bf06-8afcf5589c59","tenant":"default","method":"GET","path":"/api/hr/payroll/79/email","status":200,"duration_ms":3}
+
+stdout | tests/payroll-email.test.ts > R1 real tenants with identical record IDs cannot consume each other’s reviews
+{"timestamp":"2026-10-22T05:50:11.315Z","level":"info","event":"http_request","request_id":"088fec61-93d0-4e13-a267-d20a66f4930f","tenant":"default","method":"POST","path":"/api/hr/payroll/79/email/review","status":200,"duration_ms":5}
+
+stdout | tests/payroll-email.test.ts
+{"timestamp":"2026-10-22T05:50:09.380Z","level":"info","event":"http_request","request_id":"a2bc65d7-5578-4dc2-97ce-66cc30788580","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":338}
+
+ ❯ tests/payroll-email.test.ts (64 tests | 1 failed) 7343ms
+   × R1 real tenants with identical record IDs cannot consume each other’s reviews 520ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payroll-email.test.ts > R1 real tenants with identical record IDs cannot consume each other’s reviews
+AssertionError: {"error":"Unknown workspace."}: expected 404 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 404
+
+ ❯ tests/payroll-email.test.ts:80:206
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  1 failed | 202 passed (203)
+   Start at  05:50:04
+   Duration  31.74s (transform 2.40s, setup 47ms, import 396ms, tests 30.82s, environment 1ms)

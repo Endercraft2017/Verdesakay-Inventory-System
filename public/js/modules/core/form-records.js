@@ -10,6 +10,74 @@ const formRecordViews = new WeakMap();
 // proposed payload doesn't end up in the address bar.
 let pendingFormDraft = null;
 
+// Email approval is separate from saving or printing payroll. Never retain a preview
+// after its tenant/session/view changes, and never turn a lost response into a new attempt.
+async function reviewPayslipEmail(button) {
+  const actor=App.getMe(),server=API.serverScope(),token=API.getToken(),base=`/hr/payroll/${button.dataset.email}/email`;
+  const opts={expectedServer:server,expectedUserId:actor.id};
+  const context=()=>{if(App.getMe()!==actor||API.serverScope()!==server||API.getToken()!==token||!button.isConnected)throw new Error('Account, company or payroll view changed. Close this review and start again.');};
+  context();let state=await API.get(base,opts);context();
+  let review=null,completed=false,invalid=false,overlay;
+  const labels={review:'Awaiting confirmation',queued:'Queued',sending:'Sending — outcome pending',accepted:'Accepted by mail server — delivery unconfirmed',not_accepted:'Not accepted by mail server',unknown:'Unknown — investigate before retrying',cancelled:'Cancelled before sending',expired:'Approval expired before sending'};
+  const previous=()=>state.history[0];
+  const blocked=()=>['queued','sending'].includes(previous()?.state);
+  const render=()=>{
+    overlay.querySelector('#pe-content').innerHTML=`<p><strong>${UI.esc(state.record.number)}</strong> · saved revision ${UI.esc(state.record.revision)}</p>
+      <p>Recipient: <strong>${UI.esc(state.recipient||'Unavailable')}</strong></p>
+      <p>Email requires an online connection. Review and identity verification must stay current (at most five minutes). Mail-server acceptance does not confirm mailbox delivery.</p>
+      ${state.release_error?`<p role="status">${UI.esc(state.release_error)}</p>`:''}
+      ${state.legacy_attempts?'<p>Legacy email attempts need provider investigation; their delivery is unconfirmed.</p>':''}
+      <div id="pe-history" aria-live="polite">${state.history.map(r=>`<p><strong>${UI.esc(labels[r.state]||r.state)}</strong><br>Attempt ${UI.esc(r.id)} · revision ${UI.esc(r.revision)} · ${UI.esc(r.recipient)}<br>Message-ID: ${UI.esc(r.message_id)}${r.outcome_code?'<br>'+UI.esc(r.outcome_code):''}</p>`).join('')||'<p>No confirmed release recorded.</p>'}</div>
+      <p><button type="button" class="btn secondary" id="pe-refresh">Refresh status</button> ${previous()?.state==='queued'?'<button type="button" class="btn secondary" id="pe-cancel">Cancel queued release</button>':''}</p>
+      ${(previous()||state.legacy_attempts)&&!blocked()?`<div class="form-row"><label for="pe-reason">Reason for another email</label><input id="pe-reason" maxlength="200" data-no-submit></div>
+        <div class="form-row"><label for="pe-reference">Provider investigation reference</label><input id="pe-reference" maxlength="120" data-no-submit></div>
+        <label><input type="checkbox" id="pe-risk"> I checked the previous outcome and understand another email may create a duplicate.</label>`:''}
+      <div id="pe-preview"></div>`;
+    overlay.querySelector('#pe-refresh').onclick=async()=>{
+      try{context();state=await API.get(base,opts);context();review=null;completed=false;invalid=false;render();overlay.querySelector('[data-confirm]').textContent='Review exact email';overlay.querySelector('[data-confirm]').disabled=blocked()||!state.source_stamp;overlay.querySelector('#pe-refresh').focus();}
+      catch(e){invalidate(e.message);}
+    };
+    const cancel=overlay.querySelector('#pe-cancel');if(cancel)cancel.onclick=async()=>{
+      cancel.disabled=true;try{context();await API.post(`${base}/${previous().id}/cancel`,{},opts);context();state=await API.get(base,opts);context();review=null;completed=false;render();overlay.querySelector('[data-confirm]').textContent='Review exact email';overlay.querySelector('[data-confirm]').disabled=!state.source_stamp;}
+      catch(e){invalidate(e.message);}finally{cancel.disabled=false;}
+    };
+  };
+  const invalidate=message=>{
+    review=null;invalid=true;let current=true;try{context();}catch{current=false;}
+    if(current)overlay.querySelector('#pe-preview').textContent='Preview cleared. Refresh status or reopen to review again.';
+    else overlay.querySelector('#pe-content').textContent='Private review cleared. Close this dialog and start from the current account and company.';
+    const error=overlay.querySelector('[data-modal-error]');error.textContent=message;error.hidden=false;error.classList.remove('hidden');error.focus();overlay.querySelector('[data-confirm]').disabled=true;
+  };
+  overlay=UI.modal({title:'Payslip email release',size:'lg',bodyHTML:'<div id="pe-content"></div>',confirmText:'Review exact email',cancelText:'Close',protectChanges:false,
+    isConfirmDisabled:()=>invalid||completed||blocked()||!state.source_stamp,
+    onClose:()=>{review=null;if(button.isConnected){button.disabled=false;button.focus();}},
+    onConfirm:async(dialog,showError)=>{
+      try{
+        context();
+        if(!review){
+          const recovery=(previous()||state.legacy_attempts)?{...(previous()?{retry_of:previous().id}:{}),reason:dialog.querySelector('#pe-reason').value,evidence_reference:dialog.querySelector('#pe-reference').value,duplicate_risk_acknowledged:dialog.querySelector('#pe-risk').checked}:{};
+          review=await API.post(base+'/review',{source_stamp:state.source_stamp,...recovery},opts);context();
+          dialog.querySelector('#pe-preview').innerHTML=`<p>From: ${UI.esc(review.from)}<br>To: <strong>${UI.esc(review.recipient)}</strong><br>Subject: ${UI.esc(review.subject)}</p><p>Check the recipient and exact saved content below before confirming. Review expires by ${UI.esc(new Date(review.expires_at).toLocaleTimeString())}.</p><iframe id="pe-preview-frame" title="Exact payslip email content" sandbox="allow-same-origin" style="width:100%;height:420px;border:1px solid var(--border)"></iframe>`;
+          const frame=dialog.querySelector('#pe-preview-frame');
+          frame.addEventListener('load',()=>{frame.contentDocument?.addEventListener('keydown',event=>{if(event.key==='Escape'){event.preventDefault();dialog.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));}});});
+          frame.srcdoc='<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; style-src &#39;unsafe-inline&#39;; img-src data:; form-action &#39;none&#39;">'+review.html;
+          for(const field of dialog.querySelectorAll('#pe-reason,#pe-reference,#pe-risk'))field.disabled=true;
+          dialog.querySelector('[data-confirm]').textContent='Confirm email release';requestAnimationFrame(()=>dialog.querySelector('[data-confirm]')?.focus());return false;
+        }
+        const result=await API.post(base+'/confirm',{review_id:review.id,review_token:review.review_token},opts);context();
+        // Preserve the same review on a lost network response: the same confirmation is
+        // idempotent. Never create a new review automatically to recover that response.
+        completed=true;review=null;state=await API.get(base,opts);context();render();dialog.querySelector('[data-confirm]').textContent='Release recorded';UI.toast(labels[result.state]||result.state);requestAnimationFrame(()=>dialog.querySelector('#pe-refresh')?.focus());return false;
+      }catch(e){
+        if(e.offline){showError('Response unavailable. Check status or repeat this same confirmation; do not start another release.');return false;}
+        invalidate(e.message);return false;
+      }
+    }
+  }).overlay;render();overlay.querySelector('[data-confirm]').disabled=blocked()||!state.source_stamp;
+  const watch=new MutationObserver(()=>{if(!overlay.isConnected){watch.disconnect();return;}try{context();}catch(e){watch.disconnect();invalidate(e.message);}});
+  watch.observe(document.getElementById('app-screen'),{childList:true,subtree:true});
+}
+
 App.register('form-records', async (view, filter) => {
   filter = filter || {};
   // filter.slug — jump straight to one form by its slug (HR nav's "Payroll" -> hr_payroll),
@@ -1504,8 +1572,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         e.stopPropagation();
         b.disabled = true;
         try {
-          await API.post(`/hr/payroll/${b.dataset.email}/email`, {});
-          UI.toast('Payslip emailed');
+          await reviewPayslipEmail(b);
         } catch (err) {
           payrollActionFailure(err);
         } finally {

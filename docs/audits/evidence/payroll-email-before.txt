@@ -1,0 +1,92 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | work/payroll-email-before.test.ts > requires review before provider contact
+{"timestamp":"2026-10-22T05:34:27.707Z","level":"info","event":"http_request","request_id":"f507e9b1-8f16-47b7-aece-1f42c4529b37","tenant":"default","method":"POST","path":"/api/hr/payroll/17/email","status":200,"duration_ms":42}
+
+stdout | work/payroll-email-before.test.ts > rejects stale saved payroll and a recipient changed after staff read
+{"timestamp":"2026-10-22T05:34:27.727Z","level":"info","event":"http_request","request_id":"ffc913f7-1791-42f0-b3d6-eae2501271fd","tenant":"default","method":"POST","path":"/api/hr/payroll/18/email","status":200,"duration_ms":12}
+
+stdout | work/payroll-email-before.test.ts > does not send two copies for concurrent submissions of the same payslip
+{"timestamp":"2026-10-22T05:34:27.749Z","level":"info","event":"http_request","request_id":"667fb09b-1b64-4c47-8e72-9f41f8897e75","tenant":"default","method":"POST","path":"/api/hr/payroll/19/email","status":200,"duration_ms":16}
+
+stdout | work/payroll-email-before.test.ts > does not send two copies for concurrent submissions of the same payslip
+{"timestamp":"2026-10-22T05:34:27.751Z","level":"info","event":"http_request","request_id":"23170b9e-0324-4318-99d6-ac5fbdfe25a8","tenant":"default","method":"POST","path":"/api/hr/payroll/19/email","status":200,"duration_ms":17}
+
+stdout | work/payroll-email-before.test.ts > preserves uncertain SMTP outcome and prevents a blind duplicate retry
+{"timestamp":"2026-10-22T05:34:27.766Z","level":"info","event":"http_request","request_id":"ee10c8b0-4acc-4bad-8319-14d74382eed1","tenant":"default","method":"POST","path":"/api/hr/payroll/20/email","status":400,"duration_ms":11}
+
+stdout | work/payroll-email-before.test.ts > preserves uncertain SMTP outcome and prevents a blind duplicate retry
+{"timestamp":"2026-10-22T05:34:27.777Z","level":"info","event":"http_request","request_id":"f8c4d9d9-f92a-4540-8a8f-a402f285b1ae","tenant":"default","method":"POST","path":"/api/hr/payroll/20/email","status":400,"duration_ms":9}
+
+stdout | work/payroll-email-before.test.ts > does not lose the accepted outcome when the post-send log write fails
+{"timestamp":"2026-10-22T05:34:27.790Z","event":"request_error","request_id":"869a7af4-7063-4116-82e5-495d03a2955f","status":500,"error_type":"Error"}
+{"timestamp":"2026-10-22T05:34:27.790Z","level":"error","event":"response_error","request_id":"869a7af4-7063-4116-82e5-495d03a2955f","status":500}
+{"timestamp":"2026-10-22T05:34:27.791Z","level":"info","event":"http_request","request_id":"869a7af4-7063-4116-82e5-495d03a2955f","tenant":"default","method":"POST","path":"/api/hr/payroll/21/email","status":500,"duration_ms":9}
+
+stdout | work/payroll-email-before.test.ts
+{"timestamp":"2026-10-22T05:34:27.258Z","level":"info","event":"http_request","request_id":"5dda42a5-ab2e-49ef-bdc4-57ee52a279ea","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":343}
+
+ ❯ work/payroll-email-before.test.ts (5 tests | 5 failed) 3948ms
+   × requires review before provider contact 51ms
+   × rejects stale saved payroll and a recipient changed after staff read 18ms
+   × does not send two copies for concurrent submissions of the same payslip 23ms
+   × preserves uncertain SMTP outcome and prevents a blind duplicate retry 27ms
+   × does not lose the accepted outcome when the post-send log write fails 13ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  work/payroll-email-before.test.ts > requires review before provider contact
+AssertionError: expected 200 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 200
+
+ ❯ work/payroll-email-before.test.ts:16:176
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  work/payroll-email-before.test.ts > rejects stale saved payroll and a recipient changed after staff read
+AssertionError: expected 200 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 200
+
+ ❯ work/payroll-email-before.test.ts:17:446
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  work/payroll-email-before.test.ts > does not send two copies for concurrent submissions of the same payslip
+AssertionError: expected 2 to be less than or equal to 1
+ ❯ work/payroll-email-before.test.ts:18:250
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  work/payroll-email-before.test.ts > preserves uncertain SMTP outcome and prevents a blind duplicate retry
+AssertionError: expected 2 to be less than or equal to 1
+ ❯ work/payroll-email-before.test.ts:19:323
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  work/payroll-email-before.test.ts > does not lose the accepted outcome when the post-send log write fails
+AssertionError: expected 500 not to be 500 // Object.is equality
+ ❯ work/payroll-email-before.test.ts:20:441
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed (5)
+   Start at  05:34:23
+   Duration  4.20s (transform 1.56s, setup 27ms, import 103ms, tests 3.95s, environment 0ms)

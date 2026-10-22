@@ -1,0 +1,56 @@
+[WebServer] (node:38043) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:38056) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:38067) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 7 tests using 1 worker
+
+(node:38076) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 tests/e2e/payroll-email.spec.ts:11:1 › operator reviews exact recipient and saved content, then records acceptance without claiming delivery (1.8m)
+
+
+  1) tests/e2e/payroll-email.spec.ts:11:1 › operator reviews exact recipient and saved content, then records acceptance without claiming delivery
+
+    Test was interrupted.
+
+    Error: browserContext.newPage: Protocol error (Target.createTarget): browserContextId
+     Please check out https://github.com/dequelabs/axe-core-npm/blob/develop/packages/playwright/error-handling.md
+
+      12 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{
+      13 |  test.setTimeout(120000);const dialog=await reviewed(page,'GOOD');const exactHtml=await page.locator('#pe-preview-frame').getAttribute('srcdoc');const isolated=await page.context().browser()!.newContext();const mailPage=await isolated.newPage();await mailPage.route('**/*',r=>r.abort());await mailPage.setContent('<html lang="en"><head><title>Reviewed email content</title></head><body><main id="email-content">'+exactHtml!.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>/i,'')+'</main></body></html>');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];
+    > 14 |  for(const theme of ['light','dark'])for(const width of [1440,1024,768,390]){
+         |                                                                              ^
+      15 |   await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);await page.setViewportSize({width,height:1000});await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeInViewport();await expect(dialog.getByRole('button',{name:'Close',exact:true})).toBeInViewport();await page.evaluate(axeSource);const scan=await page.evaluate(async()=>await(window as any).axe.run({include:[['[role="dialog"]']]},{iframes:false}));expect(scan.violations).toEqual([]);await mailPage.setViewportSize({width,height:1000});const contentScan=await new AxeBuilder({page:mailPage}).include('#email-content').analyze();expect(contentScan.violations).toEqual([]);scans.push({theme,width,frame_scan:'Separate isolated captured HTML; production script sandbox retained',content_violations:contentScan.violations,content_incomplete:contentScan.incomplete,violations:scan.violations,incomplete:scan.incomplete.map((x:any)=>({id:x.id,impact:x.impact,nodes:x.nodes.map((n:any)=>({target:n.target,summary:n.failureSummary}))}))});await page.screenshot({path:`work/payroll-email-${theme}-${width}.png`});
+      16 |  }
+      17 |  await isolated.close();fs.writeFileSync('work/payroll-email-browser-axe.json',JSON.stringify(scans,null,2)+'\n');await dialog.getByRole('button',{name:'Confirm email release',exact:true}).click();await expect(dialog).toContainText('Release recorded');await expect.poll(async()=>(await status(page)).status.history[0]?.state).toBe('accepted');await dialog.getByRole('button',{name:'Refresh status',exact:true}).click();await expect(dialog).toContainText('Accepted by mail server — delivery unconfirmed');const state=(await status(page)).status;expect(state.history).toHaveLength(1);expect(state.history[0].delivery_confirmation).toBe('unavailable');
+        at AxeBuilder.analyze (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:219:13)
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:14:325
+    [cause]: Error: browserContext.newPage: Protocol error (Target.createTarget): browserContextId
+        at AxeBuilder.finishRun (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:315:37)
+        at AxeBuilder.analyze (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:217:25)
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:14:325
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/test-failed-2.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 interrupted
+    tests/e2e/payroll-email.spec.ts:11:1 › operator reviews exact recipient and saved content, then records acceptance without claiming delivery
+  6 did not run

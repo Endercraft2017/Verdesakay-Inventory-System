@@ -775,7 +775,7 @@ computation itself is `modules/payroll`.
 SCHEMA_VERSION 46), `kiosk-devices.ts` (approved time-in kiosk PCs + the `kiosk_lock`
 setting; locked by default when internet-facing, SCHEMA_VERSION 47), `field.ts`, `hr-daily-report.ts`,
 `hr-employee-numbering.ts`, `punch-photos.ts`, `punch-holds.ts` (phone punch scan → selfie
-holds), routes: `payroll-copy.routes.ts` (payroll-view saved copy read with bounded IDs and preview equality checks), `payroll-cutoff.routes.ts` (online reviewed missing/invalid ID recovery; consistent labels, draft-only, history/duplicate/closed-period holds; [contract](../operations/payroll-cutoff-recovery.md)), `payroll-identity.routes.ts` (exceptional online reviewed repair, fresh proof, immutable paid financial state and atomic revision audit), `hr.routes.ts` (also owns the
+holds), `payroll-email.ts` + `payroll-email.routes.ts` (online exact review/confirmation, durable tenant-local intents and mandatory events, per-attempt worker claim, honest SMTP acceptance/rejection/unknown outcomes and linked manual recovery; [contract](../operations/payroll-email-release.md)); technical DDL in `shared/payroll-email-schema.ts`, transport in `shared/reviewed-smtp.ts`, startup passes in `server.ts`; routes: `payroll-copy.routes.ts` (payroll-view saved copy read with bounded IDs and preview equality checks), `payroll-cutoff.routes.ts` (online reviewed missing/invalid ID recovery; consistent labels, draft-only, history/duplicate/closed-period holds; [contract](../operations/payroll-cutoff-recovery.md)), `payroll-identity.routes.ts` (exceptional online reviewed repair, fresh proof, immutable paid financial state and atomic revision audit), `hr.routes.ts` (also owns the
 `asset_issuances`/`asset_issuance_items` tables and the seeded "Asset Issuance Form"
 doc_template, SCHEMA_VERSION 43; company-wide register `GET /api/hr/assets` with still-out /
 people-who-left filters + CSV, UI `public/js/modules/hr/hr-assets.js` at HR → Employees →
@@ -1112,6 +1112,7 @@ installed PC says it needs the internet. The search-index rebuild is per copy (n
 **Responsibility:** the BYO-SMTP outbound mail tool and its route surface; tenant-visible setup guide at `/email-setup.html` linked from Email and settings.
 **Owned files:** routes: `mail.routes.ts` (the transport itself, `mailer.ts`, lives in
 `shared/` since `modules/ai` and `modules/quickbooks` also send mail through it).
+Payslip release uses the separate reviewed SMTP adapter and HR-owned durable workflow; other mail features retain their existing transport behavior.
 **Offline (phase 4i):** `online`: the mail server and its password are cloud-only (D8).
 **Status:** working.
 

@@ -1102,6 +1102,53 @@ export interface Payments {
   created_at: Generated<string>;
 }
 
+export interface PayrollEmailEvents {
+  id: Generated<number>;
+  release_id: string;
+  state: string;
+  code: string;
+  actor_id: number | null;
+  created_at: number;
+}
+
+export interface PayrollEmailReleases {
+  seq: Generated<number>;
+  id: string;
+  tenant: string;
+  record_id: number;
+  revision: number;
+  record_number: string;
+  employee_id: number;
+  recipient_user_id: number;
+  state: string;
+  actor_id: number;
+  session_hash: string;
+  actor_stamp: string;
+  credential_stamp: string;
+  source_stamp: string;
+  recipient_hash: string;
+  recipient_mask: string;
+  content_hash: string;
+  message_id: string;
+  proof_hash: string;
+  payload: string | null;
+  retry_of: string | null;
+  reason: string | null;
+  evidence_reference: string | null;
+  created_at: number;
+  expires_at: number;
+  confirmed_at: number | null;
+  claimed_at: number | null;
+  finished_at: number | null;
+  outcome_code: string | null;
+}
+
+export interface PayrollEmailVersions {
+  kind: string;
+  entity: string;
+  version: number;
+}
+
 export interface PayrollTables {
   id: Generated<number>;
   kind: string;
@@ -1918,6 +1965,9 @@ export interface DB {
   password_resets: PasswordResets;
   payment_allocations: PaymentAllocations;
   payments: Payments;
+  payroll_email_events: PayrollEmailEvents;
+  payroll_email_releases: PayrollEmailReleases;
+  payroll_email_versions: PayrollEmailVersions;
   payroll_tables: PayrollTables;
   payslip_deduction_history: PayslipDeductionHistory;
   payslip_paid_history: PayslipPaidHistory;

@@ -1,0 +1,60 @@
+[WebServer] (node:37578) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:37591) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:37602) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 7 tests using 1 worker
+
+(node:37611) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 tests/e2e/payroll-email.spec.ts:11:1 › operator reviews exact recipient and saved content, then records acceptance without claiming delivery (2.0m)
+(node:37737) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 tests/e2e/payroll-email.spec.ts:19:1 › closing an unconfirmed review does not queue or send work (2.2s)
+  ✓  3 tests/e2e/payroll-email.spec.ts:20:1 › changed saved pay clears the stale preview and disables confirmation with an accessible recovery path (2.5s)
+  ✓  4 tests/e2e/payroll-email.spec.ts:23:1 › a recipient changed after review cannot receive the old approval (2.2s)
+  ✓  5 tests/e2e/payroll-email.spec.ts:26:1 › a changed browser identity cannot confirm an old private preview (2.1s)
+  ✓  6 tests/e2e/payroll-email.spec.ts:27:1 › lost confirmation response repeats the same review and produces one submission (2.3s)
+  ✓  7 tests/e2e/payroll-email.spec.ts:30:1 › unknown SMTP outcome is visible and another release requires explicit investigation and risk acknowledgement (2.9s)
+
+
+  1) tests/e2e/payroll-email.spec.ts:11:1 › operator reviews exact recipient and saved content, then records acceptance without claiming delivery
+
+    Test timeout of 120000ms exceeded.
+
+    Error: browserContext.newPage: Target page, context or browser has been closed
+     Please check out https://github.com/dequelabs/axe-core-npm/blob/develop/packages/playwright/error-handling.md
+
+      12 |  test.setTimeout(120000);const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];
+      13 |  for(const theme of ['light','dark'])for(const width of [1440,1024,768,390]){
+    > 14 |   await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);await page.setViewportSize({width,height:1000});await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeInViewport();await expect(dialog.getByRole('button',{name:'Close',exact:true})).toBeInViewport();const scan=await new AxeBuilder({page}).include('[role="dialog"]').analyze();expect(scan.violations).toEqual([]);scans.push({theme,width,violations:scan.violations,incomplete:scan.incomplete.map(x=>({id:x.id,impact:x.impact,nodes:x.nodes.map(n=>({target:n.target,summary:n.failureSummary}))}))});await page.screenshot({path:`work/payroll-email-${theme}-${width}.png`});
+         |                                                                                                                                                                                                                                                                                                                                     ^
+      15 |  }
+      16 |  fs.writeFileSync('work/payroll-email-browser-axe.json',JSON.stringify(scans,null,2)+'\n');await dialog.getByRole('button',{name:'Confirm email release',exact:true}).click();await expect(dialog).toContainText('Release recorded');await expect.poll(async()=>(await status(page)).status.history[0]?.state).toBe('accepted');await dialog.getByRole('button',{name:'Refresh status',exact:true}).click();await expect(dialog).toContainText('Accepted by mail server — delivery unconfirmed');const state=(await status(page)).status;expect(state.history).toHaveLength(1);expect(state.history[0].delivery_confirmation).toBe('unavailable');
+      17 |  const wire=JSON.parse(fs.readFileSync('work/payroll-email-browser-wire.json','utf8'));expect(wire.filter((m:any)=>m.to.includes('<browser-good@example.test>'))).toHaveLength(1);await page.keyboard.press('Escape');await expect(dialog).toBeHidden();await expect(page.getByRole('button',{name:'Email payslip EMAIL-BROWSER-GOOD',exact:true})).toBeFocused();
+        at AxeBuilder.analyze (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:219:13)
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:14:325
+    [cause]: Error: browserContext.newPage: Target page, context or browser has been closed
+        at AxeBuilder.finishRun (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:315:37)
+        at AxeBuilder.analyze (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:217:25)
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:14:325
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests/e2e/payroll-email.spec.ts:11:1 › operator reviews exact recipient and saved content, then records acceptance without claiming delivery
+  6 passed (2.4m)

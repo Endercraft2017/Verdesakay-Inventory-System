@@ -32,7 +32,7 @@ it('withholds duplicate paid rows from employee list, PDF and timekeeping',async
 });
 it('accepts valid draft payment and permits only its owner to download the resulting paid slip',async()=>{
  const a=slip();expect((await mark(a.id)).status).toBe(200);expect((await ctx.api.get(`/api/me/payslips/${a.id}/pdf`).set(h(owner))).status).toBe(200);expect((await ctx.api.get(`/api/me/payslips/${a.id}/pdf`).set(h(other))).status).toBe(404);
- expect((await send(a.id)).status).toBe(200);expect(mail.send).toHaveBeenCalledWith(expect.objectContaining({to:'release-owner@example.test'}),1);
+ expect((await send(a.id)).status).toBe(409);expect(mail.send).not.toHaveBeenCalled(); // email requires a separate exact-content review
 });
 it('holds malformed payloads, invalid explicit cutoff/owner IDs and unsupported statuses',async()=>{
  for(const extra of [{cutoff_id:'broken'},{employee_id:'broken'}]){const a=slip(cutoff(),extra);expect((await mark(a.id)).status).toBe(409);}

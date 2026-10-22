@@ -83,7 +83,11 @@ See [research](../audits/payroll-copy-research.md),
 HTTP/browser actions and the vendored XLSX writer/reader. No real payroll, mail, bank or provider
 transaction is performed.
 
-Still open: reviewed/version-bound recipient and durable uncertain email intent; true duplicate
+Follow-up: reviewed recipient/version binding and durable uncertain email intent are implemented
+and locally tested in [payroll email release](payroll-email-release.md); real provider and hosting
+acceptance remain open.
+
+Still open: true duplicate
 adjustments/valid cutoff transfers/malformed history recovery; full pay/contribution arithmetic and
 historical settings acceptance; settlement/remittance/filing receipts; replica/fresh-proof authority;
 large-history capacity; native Windows/Android and hosted checks; manual assistive-technology and

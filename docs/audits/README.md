@@ -32,6 +32,7 @@ legal approval or independent assurance. The complete release remains on hold.
 
 | Prefix in evidence/ | Scope |
 |---|---|
+| payroll-email-* | Exact recipient/content approval, durable confirmation/claim, real TLS SMTP, races, uncertainty, offline invalidation, killed processes and browser recovery; [contract](payroll-email-contract.md) and [runbook](../operations/payroll-email-release.md) |
 | payroll-copy-* | Saved staff print/Excel source checks, stale-preview refusal, draft labels, actual XLSX and browser/editor UX evidence |
 | payroll-release-* | Current-source paid/email/employee-read holds, corrupt-JSON recovery, offline source-clash replay and browser evidence |
 | payroll-cutoff-* | Reviewed missing/invalid cutoff ID recovery, history/conflict/authorization holds, browser and scoped accessibility evidence |

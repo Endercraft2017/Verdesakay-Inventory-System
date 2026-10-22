@@ -1,0 +1,84 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payroll-email.test.ts > R2 global variable invalidates confirmation
+{"timestamp":"2026-10-22T05:42:46.956Z","level":"info","event":"http_request","request_id":"5150a7d9-6125-4a1b-9e8d-423c220561b9","tenant":"default","method":"GET","path":"/api/hr/payroll/39/email","status":200,"duration_ms":2}
+
+stdout | tests/payroll-email.test.ts > R2 global variable invalidates confirmation
+{"timestamp":"2026-10-22T05:42:46.961Z","level":"info","event":"http_request","request_id":"50362a17-cf53-44f3-affb-c1fc64f01c3f","tenant":"default","method":"POST","path":"/api/hr/payroll/39/email/review","status":200,"duration_ms":3}
+
+stdout | tests/payroll-email.test.ts > R2 global variable invalidates queued dispatch
+{"timestamp":"2026-10-22T05:42:46.972Z","level":"info","event":"http_request","request_id":"657e5b40-33c8-4534-9970-6730ea322af9","tenant":"default","method":"GET","path":"/api/hr/payroll/40/email","status":200,"duration_ms":2}
+
+stdout | tests/payroll-email.test.ts > R2 global variable invalidates queued dispatch
+{"timestamp":"2026-10-22T05:42:46.977Z","level":"info","event":"http_request","request_id":"aa332278-aaaf-4603-8280-a67c36589b5e","tenant":"default","method":"POST","path":"/api/hr/payroll/40/email/review","status":200,"duration_ms":3}
+
+stdout | tests/payroll-email.test.ts > R2 global variable invalidates queued dispatch
+{"timestamp":"2026-10-22T05:42:46.982Z","level":"info","event":"http_request","request_id":"66e27dbb-5005-4025-8075-08c90f257fd3","tenant":"default","method":"POST","path":"/api/hr/payroll/40/email/confirm","status":202,"duration_ms":3}
+
+stdout | tests/payroll-email.test.ts > R7 review tokens are redacted from generic request activity
+{"timestamp":"2026-10-22T05:42:47.813Z","level":"info","event":"http_request","request_id":"c91ac004-2ab9-437a-8fc0-c8913949c4fe","tenant":"default","method":"GET","path":"/api/hr/payroll/74/email","status":200,"duration_ms":3}
+
+stdout | tests/payroll-email.test.ts > R7 review tokens are redacted from generic request activity
+{"timestamp":"2026-10-22T05:42:47.818Z","level":"info","event":"http_request","request_id":"2702468d-de78-47c5-9d36-8fd6599f12bd","tenant":"default","method":"POST","path":"/api/hr/payroll/74/email/review","status":200,"duration_ms":3}
+
+stdout | tests/payroll-email.test.ts > R7 review tokens are redacted from generic request activity
+{"timestamp":"2026-10-22T05:42:47.823Z","level":"info","event":"http_request","request_id":"5f7d2e16-5bd0-44ae-b4fe-64399131d8ef","tenant":"default","method":"POST","path":"/api/hr/payroll/74/email/confirm","status":202,"duration_ms":3}
+
+stdout | tests/payroll-email.test.ts
+{"timestamp":"2026-10-22T05:42:46.129Z","level":"info","event":"http_request","request_id":"bf694e96-4161-4f04-bf57-8a246bb9d2f0","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":403}
+
+ ❯ tests/payroll-email.test.ts (58 tests | 3 failed) 5024ms
+   × R2 global variable invalidates confirmation 16ms
+   × R2 global variable invalidates queued dispatch 15ms
+   × R7 review tokens are redacted from generic request activity 15ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payroll-email.test.ts > R2 global variable invalidates confirmation
+Error: NOT NULL constraint failed: global_variables.label
+ ❯ Module.run src/shared/db.ts:378:26
+    376| /** Execute an INSERT/UPDATE/DELETE and return the run result. */
+    377| export function run(sql: string, ...params: unknown[]) {
+    378|   return db.prepare(sql).run(...(params as Param[]));
+       |                          ^
+    379| }
+    380|
+ ❯ db.setSetting.name tests/payroll-email.test.ts:43:28
+ ❯ tests/payroll-email.test.ts:54:79
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/payroll-email.test.ts > R2 global variable invalidates queued dispatch
+Error: NOT NULL constraint failed: global_variables.label
+ ❯ Module.run src/shared/db.ts:378:26
+    376| /** Execute an INSERT/UPDATE/DELETE and return the run result. */
+    377| export function run(sql: string, ...params: unknown[]) {
+    378|   return db.prepare(sql).run(...(params as Param[]));
+       |                          ^
+    379| }
+    380|
+ ❯ db.setSetting.name tests/payroll-email.test.ts:43:28
+ ❯ tests/payroll-email.test.ts:55:99
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/payroll-email.test.ts > R7 review tokens are redacted from generic request activity
+Error: no such column: detail
+ ❯ Proxy.real src/shared/db.ts:355:52
+    353|     if (prop === 'prepare' && syncHooks.prepare) {
+    354|       const hook = syncHooks.prepare;
+    355|       return (sql: string) => hook(conn, sql, conn.prepare(sql));
+       |                                                    ^
+    356|     }
+    357|     const real = conn as unknown as Record<string | symbol, unknown>;
+ ❯ Module.queryAll src/shared/db.ts:373:13
+ ❯ tests/payroll-email.test.ts:73:132
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 55 passed (58)
+   Start at  05:42:42
+   Duration  5.29s (transform 1.54s, setup 31ms, import 109ms, tests 5.02s, environment 0ms)

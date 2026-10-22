@@ -1,0 +1,34 @@
+{"timestamp":"2026-10-22T05:48:36.633Z","level":"info","event":"http_request","request_id":"755c440f-3c2b-4333-8305-d6864ed6b950","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":329}
+{"timestamp":"2026-10-22T05:48:37.064Z","level":"info","event":"http_request","request_id":"cd0e59d3-f330-4776-a001-ebc64e35cda4","tenant":"default","method":"GET","path":"/api/hr/payroll/17/email","status":200,"duration_ms":20}
+{"timestamp":"2026-10-22T05:48:37.073Z","level":"info","event":"http_request","request_id":"7cd1ba66-900f-488c-8e60-6ea898250fa7","tenant":"default","method":"POST","path":"/api/hr/payroll/17/email/review","status":200,"duration_ms":6}
+{"timestamp":"2026-10-22T05:48:37.079Z","level":"info","event":"http_request","request_id":"2ddf931f-aa7e-4220-b811-a05feb23cc90","tenant":"default","method":"POST","path":"/api/hr/payroll/17/email/confirm","status":202,"duration_ms":4}
+{"timestamp":"2026-10-22T05:48:44.270Z","level":"info","event":"http_request","request_id":"70f3e68c-fdac-4ce9-9976-22684f2514ae","tenant":"default","method":"GET","path":"/api/hr/payroll/18/email","status":200,"duration_ms":4}
+{"timestamp":"2026-10-22T05:48:44.276Z","level":"info","event":"http_request","request_id":"5b5115e9-c592-4a3b-831e-fb51b0ab097b","tenant":"default","method":"POST","path":"/api/hr/payroll/18/email/review","status":200,"duration_ms":4}
+{"timestamp":"2026-10-22T05:48:44.283Z","level":"info","event":"http_request","request_id":"cf3c0a9f-d283-4ce0-9f5c-a7e1aaeaf3c4","tenant":"default","method":"POST","path":"/api/hr/payroll/18/email/confirm","status":202,"duration_ms":5}
+{"timestamp":"2026-10-22T05:48:52.801Z","level":"info","event":"http_request","request_id":"5d961046-f085-46eb-86c5-d582618eec5e","tenant":"default","method":"GET","path":"/api/hr/payroll/19/email","status":200,"duration_ms":4}
+{"timestamp":"2026-10-22T05:48:52.807Z","level":"info","event":"http_request","request_id":"e35445de-4097-4ac6-8c7d-efe1fca2d3d0","tenant":"default","method":"POST","path":"/api/hr/payroll/19/email/review","status":200,"duration_ms":4}
+{"timestamp":"2026-10-22T05:48:52.813Z","level":"info","event":"http_request","request_id":"841cd822-86f1-4523-83a4-abcf79fea35c","tenant":"default","method":"POST","path":"/api/hr/payroll/19/email/confirm","status":202,"duration_ms":4}
+{"timestamp":"2026-10-22T05:49:01.179Z","level":"info","event":"http_request","request_id":"61b92bff-fe45-4dff-bfc7-0b404d0067dc","tenant":"default","method":"GET","path":"/api/hr/payroll/20/email","status":200,"duration_ms":8}
+{"timestamp":"2026-10-22T05:49:01.188Z","level":"info","event":"http_request","request_id":"4aebb6d2-641b-4ca8-a6ca-43dee457672f","tenant":"default","method":"POST","path":"/api/hr/payroll/20/email/review","status":200,"duration_ms":7}
+{"timestamp":"2026-10-22T05:49:01.194Z","level":"info","event":"http_request","request_id":"3545f24a-625f-41a7-9930-f6d09267555b","tenant":"default","method":"POST","path":"/api/hr/payroll/20/email/confirm","status":202,"duration_ms":4}
+{"timestamp":"2026-10-22T05:49:09.867Z","level":"info","event":"http_request","request_id":"96eac678-28de-4688-bcb5-5276989e11ed","tenant":"default","method":"GET","path":"/api/hr/payroll/21/email","status":200,"duration_ms":6}
+{"timestamp":"2026-10-22T05:49:09.874Z","level":"info","event":"http_request","request_id":"63a8210a-7e51-4a00-9094-f2984037f826","tenant":"default","method":"POST","path":"/api/hr/payroll/21/email/review","status":200,"duration_ms":5}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+false !== true
+
+    at <anonymous> (/workspace/Verdesakay-Inventory-System/scripts/payroll-email-crash-drill.ts:43:345)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

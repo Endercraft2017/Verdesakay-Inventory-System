@@ -42,8 +42,9 @@ describe('payslip disclosure identity',()=>{
  it('does not fall back to a name when a stamped employee no longer exists',async()=>{
   expect((await ctx.api.post(`/api/hr/payroll/${dangling}/email`).set(hdr(admin))).status).toBe(409);expect(mail.send).not.toHaveBeenCalled();
  });
- it('emails stamped and uniquely resolved former names to the correct linked account',async()=>{
-  for(const [id,email] of [[stamped,'old-owner@example.test'],[unique,'unique-owner@example.test']] as const){expect((await ctx.api.post(`/api/hr/payroll/${id}/email`).set(hdr(admin))).status).toBe(200);expect(mail.send).toHaveBeenLastCalledWith(expect.objectContaining({to:email}),expect.any(Number));}
+ it('preflights exact email recipients for stamped and uniquely resolved former names',async()=>{
+  const {saveMailSettings}=await import('../src/shared/mailer');saveMailSettings({transport:'smtp',from_name:'Synthetic Disclosure',from_email:'payroll@example.test',reply_to:'',smtp_host:'127.0.0.1',smtp_port:1,smtp_secure:true,smtp_user:''});
+  for(const [id,email] of [[stamped,'old-owner@example.test'],[unique,'unique-owner@example.test']] as const){const r=await ctx.api.get(`/api/hr/payroll/${id}/email`).set(hdr(admin));expect(r.status,r.text).toBe(200);expect(r.body.recipient).toBe(email);expect(r.body.record.id).toBe(id);expect((await ctx.api.post(`/api/hr/payroll/${id}/email`).set(hdr(admin))).status).toBe(409);expect(mail.send).not.toHaveBeenCalled();}
  });
  it('retains a unique legacy former-name download',async()=>{
   expect((await ctx.api.get(`/api/me/payslips/${unique}/pdf`).set(hdr(c.token))).status).toBe(200);

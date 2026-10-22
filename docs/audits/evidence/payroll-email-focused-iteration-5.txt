@@ -1,0 +1,89 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payroll-email.test.ts > R4 SMTP command rejection after DATA is distinct from losing the final reply
+{"timestamp":"2026-10-22T05:53:53.656Z","level":"info","event":"http_request","request_id":"429e9f5f-db8e-413e-9c0a-15c0351a7574","tenant":"default","method":"GET","path":"/api/hr/payroll/80/email","status":200,"duration_ms":3}
+
+stdout | tests/payroll-email.test.ts > R4 SMTP command rejection after DATA is distinct from losing the final reply
+{"timestamp":"2026-10-22T05:53:53.660Z","level":"info","event":"http_request","request_id":"964f6f38-be20-4c06-a0b0-e72ada1c7d47","tenant":"default","method":"POST","path":"/api/hr/payroll/80/email/review","status":200,"duration_ms":3}
+
+stdout | tests/payroll-email.test.ts > R4 SMTP command rejection after DATA is distinct from losing the final reply
+{"timestamp":"2026-10-22T05:53:53.664Z","level":"info","event":"http_request","request_id":"fe175c7e-5624-4db0-aea4-54a9afd5147b","tenant":"default","method":"POST","path":"/api/hr/payroll/80/email/confirm","status":202,"duration_ms":3}
+
+stdout | tests/payroll-email.test.ts > R4 temporary SMTP rejection is visible and not retried automatically
+{"timestamp":"2026-10-22T05:53:53.672Z","level":"info","event":"http_request","request_id":"6430ff19-8a47-4c12-81c9-b43076f19828","tenant":"default","method":"GET","path":"/api/hr/payroll/81/email","status":200,"duration_ms":2}
+
+stdout | tests/payroll-email.test.ts > R4 temporary SMTP rejection is visible and not retried automatically
+{"timestamp":"2026-10-22T05:53:53.676Z","level":"info","event":"http_request","request_id":"8d1802c0-1902-42c2-afc4-2988613e1110","tenant":"default","method":"POST","path":"/api/hr/payroll/81/email/review","status":200,"duration_ms":2}
+
+stdout | tests/payroll-email.test.ts > R4 temporary SMTP rejection is visible and not retried automatically
+{"timestamp":"2026-10-22T05:53:53.680Z","level":"info","event":"http_request","request_id":"e444ac17-ed73-4b15-bb34-f12c60f9e95a","tenant":"default","method":"POST","path":"/api/hr/payroll/81/email/confirm","status":202,"duration_ms":2}
+
+stdout | tests/payroll-email.test.ts > R4 a stalled peer times out and its socket is closed before recovery
+{"timestamp":"2026-10-22T05:53:53.686Z","level":"info","event":"http_request","request_id":"4d0e68d2-7ce8-41a1-b00a-67f0542cc080","tenant":"default","method":"GET","path":"/api/hr/payroll/82/email","status":200,"duration_ms":2}
+
+stdout | tests/payroll-email.test.ts > R4 a stalled peer times out and its socket is closed before recovery
+{"timestamp":"2026-10-22T05:53:53.690Z","level":"info","event":"http_request","request_id":"679a9b15-4a1d-4cdf-8258-05b0426f706f","tenant":"default","method":"POST","path":"/api/hr/payroll/82/email/review","status":200,"duration_ms":2}
+
+stdout | tests/payroll-email.test.ts > R4 a stalled peer times out and its socket is closed before recovery
+{"timestamp":"2026-10-22T05:53:53.694Z","level":"info","event":"http_request","request_id":"b2828fee-3437-45af-8920-dd0731abfa9f","tenant":"default","method":"POST","path":"/api/hr/payroll/82/email/confirm","status":202,"duration_ms":3}
+
+stdout | tests/payroll-email.test.ts
+{"timestamp":"2026-10-22T05:53:50.544Z","level":"info","event":"http_request","request_id":"fb85aace-111b-4ad7-800e-6a83e8503c0b","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":313}
+
+ ❯ tests/payroll-email.test.ts (68 tests | 3 failed) 6490ms
+   × R4 SMTP command rejection after DATA is distinct from losing the final reply 17ms
+   × R4 temporary SMTP rejection is visible and not retried automatically 14ms
+   × R4 a stalled peer times out and its socket is closed before recovery 13ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payroll-email.test.ts > R4 SMTP command rejection after DATA is distinct from losing the final reply
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ tests/payroll-email.test.ts:85:220
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/payroll-email.test.ts > R4 temporary SMTP rejection is visible and not retried automatically
+AssertionError: expected { seq: 62, …(28) } to match object { state: 'not_accepted', …(1) }
+(27 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "outcome_code": "smtp_rejected_451",
+-   "state": "not_accepted",
++   "outcome_code": "operator_confirmed",
++   "state": "queued",
+  }
+
+ ❯ tests/payroll-email.test.ts:86:220
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/payroll-email.test.ts > R4 a stalled peer times out and its socket is closed before recovery
+AssertionError: expected 'queued' to be 'unknown' // Object.is equality
+
+Expected: "unknown"
+Received: "queued"
+
+ ❯ tests/payroll-email.test.ts:87:223
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  3 failed | 204 passed (207)
+   Start at  05:53:47
+   Duration  30.50s (transform 1.70s, setup 51ms, import 408ms, tests 29.54s, environment 0ms)

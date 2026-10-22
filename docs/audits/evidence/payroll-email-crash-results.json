@@ -1,0 +1,264 @@
+{
+  "environment": {
+    "node": "v24.19.0",
+    "sqlite": {
+      "version": "3.53.3"
+    },
+    "journal": {
+      "journal_mode": "wal"
+    },
+    "synchronous": {
+      "synchronous": 2
+    }
+  },
+  "base_commit": "e7cf902f2c225fe8bd1a7964d403c8647483eb37",
+  "cases": [
+    {
+      "name": "committed queue survives restart; accepted outcome is not resent",
+      "release": {
+        "id": "23834c61-0960-449b-9f22-3aa1a1ab9099",
+        "state": "accepted",
+        "revision": 1,
+        "content_hash": "b49b0214b1247ad234570e5fa865fc77ee48a20325c98bd7180eeeae3da0fe90",
+        "message_id": "<payroll-23834c61-0960-449b-9f22-3aa1a1ab9099@example.test>",
+        "outcome_code": "smtp_accepted",
+        "confirmed_at": 1792651984053,
+        "claimed_at": 1792651985911
+      },
+      "events": [
+        {
+          "state": "review",
+          "code": "review_created"
+        },
+        {
+          "state": "queued",
+          "code": "operator_confirmed"
+        },
+        {
+          "state": "sending",
+          "code": "worker_claimed"
+        },
+        {
+          "state": "accepted",
+          "code": "smtp_accepted"
+        }
+      ],
+      "smtp_messages": [
+        {
+          "from": "<payroll@example.test>",
+          "to": [
+            "<crash-recipient@example.test>"
+          ],
+          "raw": "From: Synthetic Crash Payroll <payroll@example.test>\r\nTo: crash-recipient@example.test\r\nSubject: =?UTF-8?Q?Payslip_=E2=80=94_CRASH-DRILL-0?=\r\nMessage-ID: <payroll-23834c61-0960-449b-9f22-3aa1a1ab9099@example.test>\r\nDate: Thu, 22 Oct 2026 06:53:04 +0000\r\nContent-Transfer-Encoding: quoted-printable\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<style>\r\n  .slip { border: 1px solid #222; padding: 8px 10px; font-size: =\r\n11px; }\r\n  .slip h3 { text-align: center; margin: 0 0 8px; font-size: 12.=\r\n5px; letter-spacing: 0.04em; }\r\n  .slip-row { display: flex; =\r\njustify-content: space-between; gap: 6px; margin-bottom: 3px; }\r\n  .slip-row .l { color: #333; }\r\n  .slip-row .v { font-weight: 600; =\r\ntext-align: right; }\r\n  .slip-cols { display: flex; gap: 10px; margin-top: =\r\n6px; }\r\n  .slip-col { flex: 1; min-width: 0; }\r\n  .slip-col h4 { margin: 0 0 =\r\n4px; font-size: 10.5px; border-bottom: 1px solid #999; padding-bottom: 2px;=\r\n }\r\n  .slip-line { display: flex; justify-content: space-between; gap: 4px; =\r\nfont-size: 10.5px; margin-bottom: 2px; }\r\n  .slip-total { display: flex; =\r\njustify-content: space-between; font-weight: 700; border-top: 1px solid =\r\n#999; margin-top: 4px; padding-top: 3px; font-size: 10.5px; }\r\n  .slip-net { display: flex; justify-content: space-between; font-weight: =\r\n700; font-size: 13px; border-top: 2px solid #222; border-bottom: 2px solid =\r\n#222; margin-top: 8px; padding: 4px 0; }\r\n  .slip-sig { display: flex; =\r\njustify-content: space-between; margin-top: 18px; font-size: 9.5px; color: =\r\n#555; }\r\n  .slip-sig div { text-align: center; width: 46%; border-top: 1px =\r\nsolid #666; padding-top: 3px; }\r\n</style>\r\n<div class=3D\"slip\">\r\n  <h3>EMPLOYEE PAYROLL SLIP</h3>\r\n  <div class=3D\"slip-row\"><span =\r\nclass=3D\"l\">Employee Name:</span><span class=3D\"v\">Synthetic Crash =\r\nRecipient</span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Dept.=\r\n/Position:</span><span class=3D\"v\"></span></div>\r\n  <div =\r\nclass=3D\"slip-row\"><span class=3D\"l\">Payroll Period:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Pay =\r\nDate:</span><span class=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span=\r\n class=3D\"l\">Daily Rate:</span><span class=3D\"v\">0.00</span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Days Worked:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Days =\r\nAbsent:</span><span class=3D\"v\"></span></div>\r\n  <div =\r\nclass=3D\"slip-row\"><span class=3D\"l\">Half Days:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span =\r\nclass=3D\"l\">Undertime Days:</span><span class=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">OT Hours:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">OT =\r\nRate/Hour:</span><span class=3D\"v\">0.00</span></div>\r\n  <div class=3D\"slip-cols\">\r\n    <div class=3D\"slip-col\">\r\n      <h4>EARNINGS</h4>\r\n      <div class=3D\"slip-line\"><span>Basic =\r\nSalary</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>O=\r\nvertime Pay</span><span>0.00</span></div>\r\n      <div =\r\nclass=3D\"slip-line\"><span>Undertime</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Undertime Day Pay</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-line\"><span>Holiday =\r\nPay</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Spec=\r\nial Holiday 30%</span><span>0.00</span></div>\r\n      <div =\r\nclass=3D\"slip-line\"><span>Rest Day OT</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Night Differential</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-total\"><span>Total =\r\nEarnings</span><span>0.00</span></div>\r\n    </div>\r\n    <div =\r\nclass=3D\"slip-col\">\r\n      <h4>DEDUCTIONS</h4>\r\n      <div =\r\nclass=3D\"slip-line\"><span>SSS</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>PhilHealth</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-line\"><span>Pag-IBIG</span><span>0=\r\n.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Withholding =\r\nTax</span><span>0.00</span></div>\r\n     =20\r\n      <div =\r\nclass=3D\"slip-line\"><span>Late</span><span>0.00</span></div>\r\n      <div class=3D\"slip-total\"><span>Total Deductions</span><span>0.=\r\n00</span></div>\r\n    </div>\r\n  </div>\r\n  <div class=3D\"slip-net\"><span>NET =\r\nPAY</span><span>1,000.00</span></div>\r\n  <div class=3D\"slip-sig\">\r\n    <div>Employee Signature</div>\r\n    <div>Authorized Signature</div>\r\n  </div>\r\n</div>",
+          "html": "<style>\r\n  .slip { border: 1px solid #222; padding: 8px 10px; font-size: 11px; }\r\n  .slip h3 { text-align: center; margin: 0 0 8px; font-size: 12.5px; letter-spacing: 0.04em; }\r\n  .slip-row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 3px; }\r\n  .slip-row .l { color: #333; }\r\n  .slip-row .v { font-weight: 600; text-align: right; }\r\n  .slip-cols { display: flex; gap: 10px; margin-top: 6px; }\r\n  .slip-col { flex: 1; min-width: 0; }\r\n  .slip-col h4 { margin: 0 0 4px; font-size: 10.5px; border-bottom: 1px solid #999; padding-bottom: 2px; }\r\n  .slip-line { display: flex; justify-content: space-between; gap: 4px; font-size: 10.5px; margin-bottom: 2px; }\r\n  .slip-total { display: flex; justify-content: space-between; font-weight: 700; border-top: 1px solid #999; margin-top: 4px; padding-top: 3px; font-size: 10.5px; }\r\n  .slip-net { display: flex; justify-content: space-between; font-weight: 700; font-size: 13px; border-top: 2px solid #222; border-bottom: 2px solid #222; margin-top: 8px; padding: 4px 0; }\r\n  .slip-sig { display: flex; justify-content: space-between; margin-top: 18px; font-size: 9.5px; color: #555; }\r\n  .slip-sig div { text-align: center; width: 46%; border-top: 1px solid #666; padding-top: 3px; }\r\n</style>\r\n<div class=\"slip\">\r\n  <h3>EMPLOYEE PAYROLL SLIP</h3>\r\n  <div class=\"slip-row\"><span class=\"l\">Employee Name:</span><span class=\"v\">Synthetic Crash Recipient</span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Dept./Position:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Payroll Period:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Pay Date:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Daily Rate:</span><span class=\"v\">0.00</span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Days Worked:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Days Absent:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Half Days:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Undertime Days:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">OT Hours:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">OT Rate/Hour:</span><span class=\"v\">0.00</span></div>\r\n  <div class=\"slip-cols\">\r\n    <div class=\"slip-col\">\r\n      <h4>EARNINGS</h4>\r\n      <div class=\"slip-line\"><span>Basic Salary</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Overtime Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Undertime</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Undertime Day Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Holiday Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Special Holiday 30%</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Rest Day OT</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Night Differential</span><span>0.00</span></div>\r\n      <div class=\"slip-total\"><span>Total Earnings</span><span>0.00</span></div>\r\n    </div>\r\n    <div class=\"slip-col\">\r\n      <h4>DEDUCTIONS</h4>\r\n      <div class=\"slip-line\"><span>SSS</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>PhilHealth</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Pag-IBIG</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Withholding Tax</span><span>0.00</span></div>\r\n      \r\n      <div class=\"slip-line\"><span>Late</span><span>0.00</span></div>\r\n      <div class=\"slip-total\"><span>Total Deductions</span><span>0.00</span></div>\r\n    </div>\r\n  </div>\r\n  <div class=\"slip-net\"><span>NET PAY</span><span>1,000.00</span></div>\r\n  <div class=\"slip-sig\">\r\n    <div>Employee Signature</div>\r\n    <div>Authorized Signature</div>\r\n  </div>\r\n</div>",
+          "message_id": "<payroll-23834c61-0960-449b-9f22-3aa1a1ab9099@example.test>"
+        }
+      ]
+    },
+    {
+      "name": "SIGKILL after claim before SMTP greeting",
+      "release": {
+        "id": "375be71a-a353-4297-9d9e-6c683182f0ba",
+        "state": "unknown",
+        "revision": 1,
+        "content_hash": "b49b0214b1247ad234570e5fa865fc77ee48a20325c98bd7180eeeae3da0fe90",
+        "message_id": "<payroll-375be71a-a353-4297-9d9e-6c683182f0ba@example.test>",
+        "outcome_code": "worker_interrupted",
+        "confirmed_at": 1792651991447,
+        "claimed_at": 1792651873476
+      },
+      "events": [
+        {
+          "state": "review",
+          "code": "review_created"
+        },
+        {
+          "state": "queued",
+          "code": "operator_confirmed"
+        },
+        {
+          "state": "sending",
+          "code": "worker_claimed"
+        },
+        {
+          "state": "unknown",
+          "code": "worker_interrupted"
+        }
+      ],
+      "smtp_messages": [],
+      "lease_age_accelerated": true
+    },
+    {
+      "name": "SIGKILL after DATA before final SMTP acknowledgement",
+      "release": {
+        "id": "b8c344f2-f644-4933-b904-8e5e49d03ac7",
+        "state": "unknown",
+        "revision": 1,
+        "content_hash": "b49b0214b1247ad234570e5fa865fc77ee48a20325c98bd7180eeeae3da0fe90",
+        "message_id": "<payroll-b8c344f2-f644-4933-b904-8e5e49d03ac7@example.test>",
+        "outcome_code": "worker_interrupted",
+        "confirmed_at": 1792652000714,
+        "claimed_at": 1792651882357
+      },
+      "events": [
+        {
+          "state": "review",
+          "code": "review_created"
+        },
+        {
+          "state": "queued",
+          "code": "operator_confirmed"
+        },
+        {
+          "state": "sending",
+          "code": "worker_claimed"
+        },
+        {
+          "state": "unknown",
+          "code": "worker_interrupted"
+        }
+      ],
+      "smtp_messages": [
+        {
+          "from": "<payroll@example.test>",
+          "to": [
+            "<crash-recipient@example.test>"
+          ],
+          "raw": "From: Synthetic Crash Payroll <payroll@example.test>\r\nTo: crash-recipient@example.test\r\nSubject: =?UTF-8?Q?Payslip_=E2=80=94_CRASH-DRILL-4?=\r\nMessage-ID: <payroll-b8c344f2-f644-4933-b904-8e5e49d03ac7@example.test>\r\nDate: Thu, 22 Oct 2026 06:53:20 +0000\r\nContent-Transfer-Encoding: quoted-printable\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<style>\r\n  .slip { border: 1px solid #222; padding: 8px 10px; font-size: =\r\n11px; }\r\n  .slip h3 { text-align: center; margin: 0 0 8px; font-size: 12.=\r\n5px; letter-spacing: 0.04em; }\r\n  .slip-row { display: flex; =\r\njustify-content: space-between; gap: 6px; margin-bottom: 3px; }\r\n  .slip-row .l { color: #333; }\r\n  .slip-row .v { font-weight: 600; =\r\ntext-align: right; }\r\n  .slip-cols { display: flex; gap: 10px; margin-top: =\r\n6px; }\r\n  .slip-col { flex: 1; min-width: 0; }\r\n  .slip-col h4 { margin: 0 0 =\r\n4px; font-size: 10.5px; border-bottom: 1px solid #999; padding-bottom: 2px;=\r\n }\r\n  .slip-line { display: flex; justify-content: space-between; gap: 4px; =\r\nfont-size: 10.5px; margin-bottom: 2px; }\r\n  .slip-total { display: flex; =\r\njustify-content: space-between; font-weight: 700; border-top: 1px solid =\r\n#999; margin-top: 4px; padding-top: 3px; font-size: 10.5px; }\r\n  .slip-net { display: flex; justify-content: space-between; font-weight: =\r\n700; font-size: 13px; border-top: 2px solid #222; border-bottom: 2px solid =\r\n#222; margin-top: 8px; padding: 4px 0; }\r\n  .slip-sig { display: flex; =\r\njustify-content: space-between; margin-top: 18px; font-size: 9.5px; color: =\r\n#555; }\r\n  .slip-sig div { text-align: center; width: 46%; border-top: 1px =\r\nsolid #666; padding-top: 3px; }\r\n</style>\r\n<div class=3D\"slip\">\r\n  <h3>EMPLOYEE PAYROLL SLIP</h3>\r\n  <div class=3D\"slip-row\"><span =\r\nclass=3D\"l\">Employee Name:</span><span class=3D\"v\">Synthetic Crash =\r\nRecipient</span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Dept.=\r\n/Position:</span><span class=3D\"v\"></span></div>\r\n  <div =\r\nclass=3D\"slip-row\"><span class=3D\"l\">Payroll Period:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Pay =\r\nDate:</span><span class=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span=\r\n class=3D\"l\">Daily Rate:</span><span class=3D\"v\">0.00</span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Days Worked:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Days =\r\nAbsent:</span><span class=3D\"v\"></span></div>\r\n  <div =\r\nclass=3D\"slip-row\"><span class=3D\"l\">Half Days:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span =\r\nclass=3D\"l\">Undertime Days:</span><span class=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">OT Hours:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">OT =\r\nRate/Hour:</span><span class=3D\"v\">0.00</span></div>\r\n  <div class=3D\"slip-cols\">\r\n    <div class=3D\"slip-col\">\r\n      <h4>EARNINGS</h4>\r\n      <div class=3D\"slip-line\"><span>Basic =\r\nSalary</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>O=\r\nvertime Pay</span><span>0.00</span></div>\r\n      <div =\r\nclass=3D\"slip-line\"><span>Undertime</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Undertime Day Pay</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-line\"><span>Holiday =\r\nPay</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Spec=\r\nial Holiday 30%</span><span>0.00</span></div>\r\n      <div =\r\nclass=3D\"slip-line\"><span>Rest Day OT</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Night Differential</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-total\"><span>Total =\r\nEarnings</span><span>0.00</span></div>\r\n    </div>\r\n    <div =\r\nclass=3D\"slip-col\">\r\n      <h4>DEDUCTIONS</h4>\r\n      <div =\r\nclass=3D\"slip-line\"><span>SSS</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>PhilHealth</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-line\"><span>Pag-IBIG</span><span>0=\r\n.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Withholding =\r\nTax</span><span>0.00</span></div>\r\n     =20\r\n      <div =\r\nclass=3D\"slip-line\"><span>Late</span><span>0.00</span></div>\r\n      <div class=3D\"slip-total\"><span>Total Deductions</span><span>0.=\r\n00</span></div>\r\n    </div>\r\n  </div>\r\n  <div class=3D\"slip-net\"><span>NET =\r\nPAY</span><span>1,000.00</span></div>\r\n  <div class=3D\"slip-sig\">\r\n    <div>Employee Signature</div>\r\n    <div>Authorized Signature</div>\r\n  </div>\r\n</div>",
+          "html": "<style>\r\n  .slip { border: 1px solid #222; padding: 8px 10px; font-size: 11px; }\r\n  .slip h3 { text-align: center; margin: 0 0 8px; font-size: 12.5px; letter-spacing: 0.04em; }\r\n  .slip-row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 3px; }\r\n  .slip-row .l { color: #333; }\r\n  .slip-row .v { font-weight: 600; text-align: right; }\r\n  .slip-cols { display: flex; gap: 10px; margin-top: 6px; }\r\n  .slip-col { flex: 1; min-width: 0; }\r\n  .slip-col h4 { margin: 0 0 4px; font-size: 10.5px; border-bottom: 1px solid #999; padding-bottom: 2px; }\r\n  .slip-line { display: flex; justify-content: space-between; gap: 4px; font-size: 10.5px; margin-bottom: 2px; }\r\n  .slip-total { display: flex; justify-content: space-between; font-weight: 700; border-top: 1px solid #999; margin-top: 4px; padding-top: 3px; font-size: 10.5px; }\r\n  .slip-net { display: flex; justify-content: space-between; font-weight: 700; font-size: 13px; border-top: 2px solid #222; border-bottom: 2px solid #222; margin-top: 8px; padding: 4px 0; }\r\n  .slip-sig { display: flex; justify-content: space-between; margin-top: 18px; font-size: 9.5px; color: #555; }\r\n  .slip-sig div { text-align: center; width: 46%; border-top: 1px solid #666; padding-top: 3px; }\r\n</style>\r\n<div class=\"slip\">\r\n  <h3>EMPLOYEE PAYROLL SLIP</h3>\r\n  <div class=\"slip-row\"><span class=\"l\">Employee Name:</span><span class=\"v\">Synthetic Crash Recipient</span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Dept./Position:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Payroll Period:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Pay Date:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Daily Rate:</span><span class=\"v\">0.00</span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Days Worked:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Days Absent:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Half Days:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Undertime Days:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">OT Hours:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">OT Rate/Hour:</span><span class=\"v\">0.00</span></div>\r\n  <div class=\"slip-cols\">\r\n    <div class=\"slip-col\">\r\n      <h4>EARNINGS</h4>\r\n      <div class=\"slip-line\"><span>Basic Salary</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Overtime Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Undertime</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Undertime Day Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Holiday Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Special Holiday 30%</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Rest Day OT</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Night Differential</span><span>0.00</span></div>\r\n      <div class=\"slip-total\"><span>Total Earnings</span><span>0.00</span></div>\r\n    </div>\r\n    <div class=\"slip-col\">\r\n      <h4>DEDUCTIONS</h4>\r\n      <div class=\"slip-line\"><span>SSS</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>PhilHealth</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Pag-IBIG</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Withholding Tax</span><span>0.00</span></div>\r\n      \r\n      <div class=\"slip-line\"><span>Late</span><span>0.00</span></div>\r\n      <div class=\"slip-total\"><span>Total Deductions</span><span>0.00</span></div>\r\n    </div>\r\n  </div>\r\n  <div class=\"slip-net\"><span>NET PAY</span><span>1,000.00</span></div>\r\n  <div class=\"slip-sig\">\r\n    <div>Employee Signature</div>\r\n    <div>Authorized Signature</div>\r\n  </div>\r\n</div>",
+          "message_id": "<payroll-b8c344f2-f644-4933-b904-8e5e49d03ac7@example.test>"
+        }
+      ],
+      "lease_age_accelerated": true
+    },
+    {
+      "name": "SIGKILL after SMTP 250 before outcome commit",
+      "release": {
+        "id": "31ccb99f-f83b-4330-97d2-6aab4ba89a7e",
+        "state": "unknown",
+        "revision": 1,
+        "content_hash": "b49b0214b1247ad234570e5fa865fc77ee48a20325c98bd7180eeeae3da0fe90",
+        "message_id": "<payroll-31ccb99f-f83b-4330-97d2-6aab4ba89a7e@example.test>",
+        "outcome_code": "worker_interrupted",
+        "confirmed_at": 1792652009384,
+        "claimed_at": 1792651891106
+      },
+      "events": [
+        {
+          "state": "review",
+          "code": "review_created"
+        },
+        {
+          "state": "queued",
+          "code": "operator_confirmed"
+        },
+        {
+          "state": "sending",
+          "code": "worker_claimed"
+        },
+        {
+          "state": "unknown",
+          "code": "worker_interrupted"
+        }
+      ],
+      "smtp_messages": [
+        {
+          "from": "<payroll@example.test>",
+          "to": [
+            "<crash-recipient@example.test>"
+          ],
+          "raw": "From: Synthetic Crash Payroll <payroll@example.test>\r\nTo: crash-recipient@example.test\r\nSubject: =?UTF-8?Q?Payslip_=E2=80=94_CRASH-DRILL-6?=\r\nMessage-ID: <payroll-31ccb99f-f83b-4330-97d2-6aab4ba89a7e@example.test>\r\nDate: Thu, 22 Oct 2026 06:53:29 +0000\r\nContent-Transfer-Encoding: quoted-printable\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<style>\r\n  .slip { border: 1px solid #222; padding: 8px 10px; font-size: =\r\n11px; }\r\n  .slip h3 { text-align: center; margin: 0 0 8px; font-size: 12.=\r\n5px; letter-spacing: 0.04em; }\r\n  .slip-row { display: flex; =\r\njustify-content: space-between; gap: 6px; margin-bottom: 3px; }\r\n  .slip-row .l { color: #333; }\r\n  .slip-row .v { font-weight: 600; =\r\ntext-align: right; }\r\n  .slip-cols { display: flex; gap: 10px; margin-top: =\r\n6px; }\r\n  .slip-col { flex: 1; min-width: 0; }\r\n  .slip-col h4 { margin: 0 0 =\r\n4px; font-size: 10.5px; border-bottom: 1px solid #999; padding-bottom: 2px;=\r\n }\r\n  .slip-line { display: flex; justify-content: space-between; gap: 4px; =\r\nfont-size: 10.5px; margin-bottom: 2px; }\r\n  .slip-total { display: flex; =\r\njustify-content: space-between; font-weight: 700; border-top: 1px solid =\r\n#999; margin-top: 4px; padding-top: 3px; font-size: 10.5px; }\r\n  .slip-net { display: flex; justify-content: space-between; font-weight: =\r\n700; font-size: 13px; border-top: 2px solid #222; border-bottom: 2px solid =\r\n#222; margin-top: 8px; padding: 4px 0; }\r\n  .slip-sig { display: flex; =\r\njustify-content: space-between; margin-top: 18px; font-size: 9.5px; color: =\r\n#555; }\r\n  .slip-sig div { text-align: center; width: 46%; border-top: 1px =\r\nsolid #666; padding-top: 3px; }\r\n</style>\r\n<div class=3D\"slip\">\r\n  <h3>EMPLOYEE PAYROLL SLIP</h3>\r\n  <div class=3D\"slip-row\"><span =\r\nclass=3D\"l\">Employee Name:</span><span class=3D\"v\">Synthetic Crash =\r\nRecipient</span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Dept.=\r\n/Position:</span><span class=3D\"v\"></span></div>\r\n  <div =\r\nclass=3D\"slip-row\"><span class=3D\"l\">Payroll Period:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Pay =\r\nDate:</span><span class=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span=\r\n class=3D\"l\">Daily Rate:</span><span class=3D\"v\">0.00</span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Days Worked:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Days =\r\nAbsent:</span><span class=3D\"v\"></span></div>\r\n  <div =\r\nclass=3D\"slip-row\"><span class=3D\"l\">Half Days:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span =\r\nclass=3D\"l\">Undertime Days:</span><span class=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">OT Hours:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">OT =\r\nRate/Hour:</span><span class=3D\"v\">0.00</span></div>\r\n  <div class=3D\"slip-cols\">\r\n    <div class=3D\"slip-col\">\r\n      <h4>EARNINGS</h4>\r\n      <div class=3D\"slip-line\"><span>Basic =\r\nSalary</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>O=\r\nvertime Pay</span><span>0.00</span></div>\r\n      <div =\r\nclass=3D\"slip-line\"><span>Undertime</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Undertime Day Pay</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-line\"><span>Holiday =\r\nPay</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Spec=\r\nial Holiday 30%</span><span>0.00</span></div>\r\n      <div =\r\nclass=3D\"slip-line\"><span>Rest Day OT</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Night Differential</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-total\"><span>Total =\r\nEarnings</span><span>0.00</span></div>\r\n    </div>\r\n    <div =\r\nclass=3D\"slip-col\">\r\n      <h4>DEDUCTIONS</h4>\r\n      <div =\r\nclass=3D\"slip-line\"><span>SSS</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>PhilHealth</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-line\"><span>Pag-IBIG</span><span>0=\r\n.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Withholding =\r\nTax</span><span>0.00</span></div>\r\n     =20\r\n      <div =\r\nclass=3D\"slip-line\"><span>Late</span><span>0.00</span></div>\r\n      <div class=3D\"slip-total\"><span>Total Deductions</span><span>0.=\r\n00</span></div>\r\n    </div>\r\n  </div>\r\n  <div class=3D\"slip-net\"><span>NET =\r\nPAY</span><span>1,000.00</span></div>\r\n  <div class=3D\"slip-sig\">\r\n    <div>Employee Signature</div>\r\n    <div>Authorized Signature</div>\r\n  </div>\r\n</div>",
+          "html": "<style>\r\n  .slip { border: 1px solid #222; padding: 8px 10px; font-size: 11px; }\r\n  .slip h3 { text-align: center; margin: 0 0 8px; font-size: 12.5px; letter-spacing: 0.04em; }\r\n  .slip-row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 3px; }\r\n  .slip-row .l { color: #333; }\r\n  .slip-row .v { font-weight: 600; text-align: right; }\r\n  .slip-cols { display: flex; gap: 10px; margin-top: 6px; }\r\n  .slip-col { flex: 1; min-width: 0; }\r\n  .slip-col h4 { margin: 0 0 4px; font-size: 10.5px; border-bottom: 1px solid #999; padding-bottom: 2px; }\r\n  .slip-line { display: flex; justify-content: space-between; gap: 4px; font-size: 10.5px; margin-bottom: 2px; }\r\n  .slip-total { display: flex; justify-content: space-between; font-weight: 700; border-top: 1px solid #999; margin-top: 4px; padding-top: 3px; font-size: 10.5px; }\r\n  .slip-net { display: flex; justify-content: space-between; font-weight: 700; font-size: 13px; border-top: 2px solid #222; border-bottom: 2px solid #222; margin-top: 8px; padding: 4px 0; }\r\n  .slip-sig { display: flex; justify-content: space-between; margin-top: 18px; font-size: 9.5px; color: #555; }\r\n  .slip-sig div { text-align: center; width: 46%; border-top: 1px solid #666; padding-top: 3px; }\r\n</style>\r\n<div class=\"slip\">\r\n  <h3>EMPLOYEE PAYROLL SLIP</h3>\r\n  <div class=\"slip-row\"><span class=\"l\">Employee Name:</span><span class=\"v\">Synthetic Crash Recipient</span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Dept./Position:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Payroll Period:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Pay Date:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Daily Rate:</span><span class=\"v\">0.00</span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Days Worked:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Days Absent:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Half Days:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Undertime Days:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">OT Hours:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">OT Rate/Hour:</span><span class=\"v\">0.00</span></div>\r\n  <div class=\"slip-cols\">\r\n    <div class=\"slip-col\">\r\n      <h4>EARNINGS</h4>\r\n      <div class=\"slip-line\"><span>Basic Salary</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Overtime Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Undertime</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Undertime Day Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Holiday Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Special Holiday 30%</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Rest Day OT</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Night Differential</span><span>0.00</span></div>\r\n      <div class=\"slip-total\"><span>Total Earnings</span><span>0.00</span></div>\r\n    </div>\r\n    <div class=\"slip-col\">\r\n      <h4>DEDUCTIONS</h4>\r\n      <div class=\"slip-line\"><span>SSS</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>PhilHealth</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Pag-IBIG</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Withholding Tax</span><span>0.00</span></div>\r\n      \r\n      <div class=\"slip-line\"><span>Late</span><span>0.00</span></div>\r\n      <div class=\"slip-total\"><span>Total Deductions</span><span>0.00</span></div>\r\n    </div>\r\n  </div>\r\n  <div class=\"slip-net\"><span>NET PAY</span><span>1,000.00</span></div>\r\n  <div class=\"slip-sig\">\r\n    <div>Employee Signature</div>\r\n    <div>Authorized Signature</div>\r\n  </div>\r\n</div>",
+          "message_id": "<payroll-31ccb99f-f83b-4330-97d2-6aab4ba89a7e@example.test>"
+        }
+      ],
+      "lease_age_accelerated": true
+    },
+    {
+      "name": "committed confirmation loses HTTP response; same confirmation safely recovers",
+      "release": {
+        "id": "b7e4bbc3-49d0-44f2-a764-a63266755080",
+        "state": "accepted",
+        "revision": 1,
+        "content_hash": "b49b0214b1247ad234570e5fa865fc77ee48a20325c98bd7180eeeae3da0fe90",
+        "message_id": "<payroll-b7e4bbc3-49d0-44f2-a764-a63266755080@example.test>",
+        "outcome_code": "smtp_accepted",
+        "confirmed_at": 1792652019820,
+        "claimed_at": 1792652024723
+      },
+      "events": [
+        {
+          "state": "review",
+          "code": "review_created"
+        },
+        {
+          "state": "queued",
+          "code": "operator_confirmed"
+        },
+        {
+          "state": "sending",
+          "code": "worker_claimed"
+        },
+        {
+          "state": "accepted",
+          "code": "smtp_accepted"
+        }
+      ],
+      "smtp_messages": [
+        {
+          "from": "<payroll@example.test>",
+          "to": [
+            "<crash-recipient@example.test>"
+          ],
+          "raw": "From: Synthetic Crash Payroll <payroll@example.test>\r\nTo: crash-recipient@example.test\r\nSubject: =?UTF-8?Q?Payslip_=E2=80=94_CRASH-DRILL-8?=\r\nMessage-ID: <payroll-b7e4bbc3-49d0-44f2-a764-a63266755080@example.test>\r\nDate: Thu, 22 Oct 2026 06:53:38 +0000\r\nContent-Transfer-Encoding: quoted-printable\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<style>\r\n  .slip { border: 1px solid #222; padding: 8px 10px; font-size: =\r\n11px; }\r\n  .slip h3 { text-align: center; margin: 0 0 8px; font-size: 12.=\r\n5px; letter-spacing: 0.04em; }\r\n  .slip-row { display: flex; =\r\njustify-content: space-between; gap: 6px; margin-bottom: 3px; }\r\n  .slip-row .l { color: #333; }\r\n  .slip-row .v { font-weight: 600; =\r\ntext-align: right; }\r\n  .slip-cols { display: flex; gap: 10px; margin-top: =\r\n6px; }\r\n  .slip-col { flex: 1; min-width: 0; }\r\n  .slip-col h4 { margin: 0 0 =\r\n4px; font-size: 10.5px; border-bottom: 1px solid #999; padding-bottom: 2px;=\r\n }\r\n  .slip-line { display: flex; justify-content: space-between; gap: 4px; =\r\nfont-size: 10.5px; margin-bottom: 2px; }\r\n  .slip-total { display: flex; =\r\njustify-content: space-between; font-weight: 700; border-top: 1px solid =\r\n#999; margin-top: 4px; padding-top: 3px; font-size: 10.5px; }\r\n  .slip-net { display: flex; justify-content: space-between; font-weight: =\r\n700; font-size: 13px; border-top: 2px solid #222; border-bottom: 2px solid =\r\n#222; margin-top: 8px; padding: 4px 0; }\r\n  .slip-sig { display: flex; =\r\njustify-content: space-between; margin-top: 18px; font-size: 9.5px; color: =\r\n#555; }\r\n  .slip-sig div { text-align: center; width: 46%; border-top: 1px =\r\nsolid #666; padding-top: 3px; }\r\n</style>\r\n<div class=3D\"slip\">\r\n  <h3>EMPLOYEE PAYROLL SLIP</h3>\r\n  <div class=3D\"slip-row\"><span =\r\nclass=3D\"l\">Employee Name:</span><span class=3D\"v\">Synthetic Crash =\r\nRecipient</span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Dept.=\r\n/Position:</span><span class=3D\"v\"></span></div>\r\n  <div =\r\nclass=3D\"slip-row\"><span class=3D\"l\">Payroll Period:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Pay =\r\nDate:</span><span class=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span=\r\n class=3D\"l\">Daily Rate:</span><span class=3D\"v\">0.00</span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Days Worked:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Days =\r\nAbsent:</span><span class=3D\"v\"></span></div>\r\n  <div =\r\nclass=3D\"slip-row\"><span class=3D\"l\">Half Days:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span =\r\nclass=3D\"l\">Undertime Days:</span><span class=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">OT Hours:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">OT =\r\nRate/Hour:</span><span class=3D\"v\">0.00</span></div>\r\n  <div class=3D\"slip-cols\">\r\n    <div class=3D\"slip-col\">\r\n      <h4>EARNINGS</h4>\r\n      <div class=3D\"slip-line\"><span>Basic =\r\nSalary</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>O=\r\nvertime Pay</span><span>0.00</span></div>\r\n      <div =\r\nclass=3D\"slip-line\"><span>Undertime</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Undertime Day Pay</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-line\"><span>Holiday =\r\nPay</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Spec=\r\nial Holiday 30%</span><span>0.00</span></div>\r\n      <div =\r\nclass=3D\"slip-line\"><span>Rest Day OT</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Night Differential</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-total\"><span>Total =\r\nEarnings</span><span>0.00</span></div>\r\n    </div>\r\n    <div =\r\nclass=3D\"slip-col\">\r\n      <h4>DEDUCTIONS</h4>\r\n      <div =\r\nclass=3D\"slip-line\"><span>SSS</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>PhilHealth</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-line\"><span>Pag-IBIG</span><span>0=\r\n.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Withholding =\r\nTax</span><span>0.00</span></div>\r\n     =20\r\n      <div =\r\nclass=3D\"slip-line\"><span>Late</span><span>0.00</span></div>\r\n      <div class=3D\"slip-total\"><span>Total Deductions</span><span>0.=\r\n00</span></div>\r\n    </div>\r\n  </div>\r\n  <div class=3D\"slip-net\"><span>NET =\r\nPAY</span><span>1,000.00</span></div>\r\n  <div class=3D\"slip-sig\">\r\n    <div>Employee Signature</div>\r\n    <div>Authorized Signature</div>\r\n  </div>\r\n</div>",
+          "html": "<style>\r\n  .slip { border: 1px solid #222; padding: 8px 10px; font-size: 11px; }\r\n  .slip h3 { text-align: center; margin: 0 0 8px; font-size: 12.5px; letter-spacing: 0.04em; }\r\n  .slip-row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 3px; }\r\n  .slip-row .l { color: #333; }\r\n  .slip-row .v { font-weight: 600; text-align: right; }\r\n  .slip-cols { display: flex; gap: 10px; margin-top: 6px; }\r\n  .slip-col { flex: 1; min-width: 0; }\r\n  .slip-col h4 { margin: 0 0 4px; font-size: 10.5px; border-bottom: 1px solid #999; padding-bottom: 2px; }\r\n  .slip-line { display: flex; justify-content: space-between; gap: 4px; font-size: 10.5px; margin-bottom: 2px; }\r\n  .slip-total { display: flex; justify-content: space-between; font-weight: 700; border-top: 1px solid #999; margin-top: 4px; padding-top: 3px; font-size: 10.5px; }\r\n  .slip-net { display: flex; justify-content: space-between; font-weight: 700; font-size: 13px; border-top: 2px solid #222; border-bottom: 2px solid #222; margin-top: 8px; padding: 4px 0; }\r\n  .slip-sig { display: flex; justify-content: space-between; margin-top: 18px; font-size: 9.5px; color: #555; }\r\n  .slip-sig div { text-align: center; width: 46%; border-top: 1px solid #666; padding-top: 3px; }\r\n</style>\r\n<div class=\"slip\">\r\n  <h3>EMPLOYEE PAYROLL SLIP</h3>\r\n  <div class=\"slip-row\"><span class=\"l\">Employee Name:</span><span class=\"v\">Synthetic Crash Recipient</span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Dept./Position:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Payroll Period:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Pay Date:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Daily Rate:</span><span class=\"v\">0.00</span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Days Worked:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Days Absent:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Half Days:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Undertime Days:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">OT Hours:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">OT Rate/Hour:</span><span class=\"v\">0.00</span></div>\r\n  <div class=\"slip-cols\">\r\n    <div class=\"slip-col\">\r\n      <h4>EARNINGS</h4>\r\n      <div class=\"slip-line\"><span>Basic Salary</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Overtime Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Undertime</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Undertime Day Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Holiday Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Special Holiday 30%</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Rest Day OT</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Night Differential</span><span>0.00</span></div>\r\n      <div class=\"slip-total\"><span>Total Earnings</span><span>0.00</span></div>\r\n    </div>\r\n    <div class=\"slip-col\">\r\n      <h4>DEDUCTIONS</h4>\r\n      <div class=\"slip-line\"><span>SSS</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>PhilHealth</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Pag-IBIG</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Withholding Tax</span><span>0.00</span></div>\r\n      \r\n      <div class=\"slip-line\"><span>Late</span><span>0.00</span></div>\r\n      <div class=\"slip-total\"><span>Total Deductions</span><span>0.00</span></div>\r\n    </div>\r\n  </div>\r\n  <div class=\"slip-net\"><span>NET PAY</span><span>1,000.00</span></div>\r\n  <div class=\"slip-sig\">\r\n    <div>Employee Signature</div>\r\n    <div>Authorized Signature</div>\r\n  </div>\r\n</div>",
+          "message_id": "<payroll-b7e4bbc3-49d0-44f2-a764-a63266755080@example.test>"
+        }
+      ],
+      "lost_response": true,
+      "replay_status": 202
+    },
+    {
+      "name": "two real server processes claim one durable attempt",
+      "release": {
+        "id": "901e6d0d-a7dc-4021-8c42-fcd014f5efc2",
+        "state": "accepted",
+        "revision": 1,
+        "content_hash": "b49b0214b1247ad234570e5fa865fc77ee48a20325c98bd7180eeeae3da0fe90",
+        "message_id": "<payroll-901e6d0d-a7dc-4021-8c42-fcd014f5efc2@example.test>",
+        "outcome_code": "smtp_accepted",
+        "confirmed_at": 1792652024787,
+        "claimed_at": 1792652026655
+      },
+      "events": [
+        {
+          "state": "review",
+          "code": "review_created"
+        },
+        {
+          "state": "queued",
+          "code": "operator_confirmed"
+        },
+        {
+          "state": "sending",
+          "code": "worker_claimed"
+        },
+        {
+          "state": "accepted",
+          "code": "smtp_accepted"
+        }
+      ],
+      "smtp_messages": [
+        {
+          "from": "<payroll@example.test>",
+          "to": [
+            "<crash-recipient@example.test>"
+          ],
+          "raw": "From: Synthetic Crash Payroll <payroll@example.test>\r\nTo: crash-recipient@example.test\r\nSubject: =?UTF-8?Q?Payslip_=E2=80=94_CRASH-DRILL-9?=\r\nMessage-ID: <payroll-901e6d0d-a7dc-4021-8c42-fcd014f5efc2@example.test>\r\nDate: Thu, 22 Oct 2026 06:53:44 +0000\r\nContent-Transfer-Encoding: quoted-printable\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<style>\r\n  .slip { border: 1px solid #222; padding: 8px 10px; font-size: =\r\n11px; }\r\n  .slip h3 { text-align: center; margin: 0 0 8px; font-size: 12.=\r\n5px; letter-spacing: 0.04em; }\r\n  .slip-row { display: flex; =\r\njustify-content: space-between; gap: 6px; margin-bottom: 3px; }\r\n  .slip-row .l { color: #333; }\r\n  .slip-row .v { font-weight: 600; =\r\ntext-align: right; }\r\n  .slip-cols { display: flex; gap: 10px; margin-top: =\r\n6px; }\r\n  .slip-col { flex: 1; min-width: 0; }\r\n  .slip-col h4 { margin: 0 0 =\r\n4px; font-size: 10.5px; border-bottom: 1px solid #999; padding-bottom: 2px;=\r\n }\r\n  .slip-line { display: flex; justify-content: space-between; gap: 4px; =\r\nfont-size: 10.5px; margin-bottom: 2px; }\r\n  .slip-total { display: flex; =\r\njustify-content: space-between; font-weight: 700; border-top: 1px solid =\r\n#999; margin-top: 4px; padding-top: 3px; font-size: 10.5px; }\r\n  .slip-net { display: flex; justify-content: space-between; font-weight: =\r\n700; font-size: 13px; border-top: 2px solid #222; border-bottom: 2px solid =\r\n#222; margin-top: 8px; padding: 4px 0; }\r\n  .slip-sig { display: flex; =\r\njustify-content: space-between; margin-top: 18px; font-size: 9.5px; color: =\r\n#555; }\r\n  .slip-sig div { text-align: center; width: 46%; border-top: 1px =\r\nsolid #666; padding-top: 3px; }\r\n</style>\r\n<div class=3D\"slip\">\r\n  <h3>EMPLOYEE PAYROLL SLIP</h3>\r\n  <div class=3D\"slip-row\"><span =\r\nclass=3D\"l\">Employee Name:</span><span class=3D\"v\">Synthetic Crash =\r\nRecipient</span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Dept.=\r\n/Position:</span><span class=3D\"v\"></span></div>\r\n  <div =\r\nclass=3D\"slip-row\"><span class=3D\"l\">Payroll Period:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Pay =\r\nDate:</span><span class=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span=\r\n class=3D\"l\">Daily Rate:</span><span class=3D\"v\">0.00</span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Days Worked:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">Days =\r\nAbsent:</span><span class=3D\"v\"></span></div>\r\n  <div =\r\nclass=3D\"slip-row\"><span class=3D\"l\">Half Days:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span =\r\nclass=3D\"l\">Undertime Days:</span><span class=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">OT Hours:</span><span =\r\nclass=3D\"v\"></span></div>\r\n  <div class=3D\"slip-row\"><span class=3D\"l\">OT =\r\nRate/Hour:</span><span class=3D\"v\">0.00</span></div>\r\n  <div class=3D\"slip-cols\">\r\n    <div class=3D\"slip-col\">\r\n      <h4>EARNINGS</h4>\r\n      <div class=3D\"slip-line\"><span>Basic =\r\nSalary</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>O=\r\nvertime Pay</span><span>0.00</span></div>\r\n      <div =\r\nclass=3D\"slip-line\"><span>Undertime</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Undertime Day Pay</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-line\"><span>Holiday =\r\nPay</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Spec=\r\nial Holiday 30%</span><span>0.00</span></div>\r\n      <div =\r\nclass=3D\"slip-line\"><span>Rest Day OT</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Night Differential</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-total\"><span>Total =\r\nEarnings</span><span>0.00</span></div>\r\n    </div>\r\n    <div =\r\nclass=3D\"slip-col\">\r\n      <h4>DEDUCTIONS</h4>\r\n      <div =\r\nclass=3D\"slip-line\"><span>SSS</span><span>0.00</span></div>\r\n      <div class=3D\"slip-line\"><span>PhilHealth</span><span>0.=\r\n00</span></div>\r\n      <div class=3D\"slip-line\"><span>Pag-IBIG</span><span>0=\r\n.00</span></div>\r\n      <div class=3D\"slip-line\"><span>Withholding =\r\nTax</span><span>0.00</span></div>\r\n     =20\r\n      <div =\r\nclass=3D\"slip-line\"><span>Late</span><span>0.00</span></div>\r\n      <div class=3D\"slip-total\"><span>Total Deductions</span><span>0.=\r\n00</span></div>\r\n    </div>\r\n  </div>\r\n  <div class=3D\"slip-net\"><span>NET =\r\nPAY</span><span>1,000.00</span></div>\r\n  <div class=3D\"slip-sig\">\r\n    <div>Employee Signature</div>\r\n    <div>Authorized Signature</div>\r\n  </div>\r\n</div>",
+          "html": "<style>\r\n  .slip { border: 1px solid #222; padding: 8px 10px; font-size: 11px; }\r\n  .slip h3 { text-align: center; margin: 0 0 8px; font-size: 12.5px; letter-spacing: 0.04em; }\r\n  .slip-row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 3px; }\r\n  .slip-row .l { color: #333; }\r\n  .slip-row .v { font-weight: 600; text-align: right; }\r\n  .slip-cols { display: flex; gap: 10px; margin-top: 6px; }\r\n  .slip-col { flex: 1; min-width: 0; }\r\n  .slip-col h4 { margin: 0 0 4px; font-size: 10.5px; border-bottom: 1px solid #999; padding-bottom: 2px; }\r\n  .slip-line { display: flex; justify-content: space-between; gap: 4px; font-size: 10.5px; margin-bottom: 2px; }\r\n  .slip-total { display: flex; justify-content: space-between; font-weight: 700; border-top: 1px solid #999; margin-top: 4px; padding-top: 3px; font-size: 10.5px; }\r\n  .slip-net { display: flex; justify-content: space-between; font-weight: 700; font-size: 13px; border-top: 2px solid #222; border-bottom: 2px solid #222; margin-top: 8px; padding: 4px 0; }\r\n  .slip-sig { display: flex; justify-content: space-between; margin-top: 18px; font-size: 9.5px; color: #555; }\r\n  .slip-sig div { text-align: center; width: 46%; border-top: 1px solid #666; padding-top: 3px; }\r\n</style>\r\n<div class=\"slip\">\r\n  <h3>EMPLOYEE PAYROLL SLIP</h3>\r\n  <div class=\"slip-row\"><span class=\"l\">Employee Name:</span><span class=\"v\">Synthetic Crash Recipient</span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Dept./Position:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Payroll Period:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Pay Date:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Daily Rate:</span><span class=\"v\">0.00</span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Days Worked:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Days Absent:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Half Days:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">Undertime Days:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">OT Hours:</span><span class=\"v\"></span></div>\r\n  <div class=\"slip-row\"><span class=\"l\">OT Rate/Hour:</span><span class=\"v\">0.00</span></div>\r\n  <div class=\"slip-cols\">\r\n    <div class=\"slip-col\">\r\n      <h4>EARNINGS</h4>\r\n      <div class=\"slip-line\"><span>Basic Salary</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Overtime Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Undertime</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Undertime Day Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Holiday Pay</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Special Holiday 30%</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Rest Day OT</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Night Differential</span><span>0.00</span></div>\r\n      <div class=\"slip-total\"><span>Total Earnings</span><span>0.00</span></div>\r\n    </div>\r\n    <div class=\"slip-col\">\r\n      <h4>DEDUCTIONS</h4>\r\n      <div class=\"slip-line\"><span>SSS</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>PhilHealth</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Pag-IBIG</span><span>0.00</span></div>\r\n      <div class=\"slip-line\"><span>Withholding Tax</span><span>0.00</span></div>\r\n      \r\n      <div class=\"slip-line\"><span>Late</span><span>0.00</span></div>\r\n      <div class=\"slip-total\"><span>Total Deductions</span><span>0.00</span></div>\r\n    </div>\r\n  </div>\r\n  <div class=\"slip-net\"><span>NET PAY</span><span>1,000.00</span></div>\r\n  <div class=\"slip-sig\">\r\n    <div>Employee Signature</div>\r\n    <div>Authorized Signature</div>\r\n  </div>\r\n</div>",
+          "message_id": "<payroll-901e6d0d-a7dc-4021-8c42-fcd014f5efc2@example.test>"
+        }
+      ]
+    }
+  ]
+}

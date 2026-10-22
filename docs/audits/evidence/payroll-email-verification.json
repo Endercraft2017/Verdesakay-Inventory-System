@@ -1,0 +1,801 @@
+{
+  "date": "2026-10-22",
+  "base_commit": "e7cf902f2c225fe8bd1a7964d403c8647483eb37",
+  "scope": "Reviewed tenant payslip email only: exact source/recipient approval, durable confirmation/claim, SMTP outcomes and linked recovery; offline authority and actual snapshot sanitization",
+  "contract": "../payroll-email-contract.md",
+  "verification_notes": "../payroll-email-verification-notes.md",
+  "runbook": "../../operations/payroll-email-release.md",
+  "source_freeze": "payroll-email-source-freeze.json",
+  "changed_source_files": 26,
+  "baseline": {
+    "expected_failing_reproductions": 5,
+    "application_changed_after_baseline": true,
+    "wire": "payroll-email-before-wire.json"
+  },
+  "focused": {
+    "files_passed": 9,
+    "tests_passed": 252,
+    "failed": 0,
+    "duration_seconds": 80.12
+  },
+  "full_run": {
+    "status": "passed",
+    "files_passed": 321,
+    "tests_passed": 3467,
+    "duration_seconds": 672.2
+  },
+  "first_complete_failed_run": {
+    "files_passed": 318,
+    "files_failed": 3,
+    "tests_passed": 3462,
+    "tests_failed": 3,
+    "duration_seconds": 676.92,
+    "evidence": "payroll-email-full-first-failed.txt",
+    "fixes": "Current migration target; retained exact former-name preflight recipient check; explicit online class per route; no gate exemptions"
+  },
+  "playwright": {
+    "passed": 71,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "duration_seconds": 183.22662000000003,
+    "new_email_journeys": 7
+  },
+  "email_accessibility": {
+    "dialog_combinations": 8,
+    "separate_content_scans": 8,
+    "violations": 0,
+    "dialog_incomplete_rules": {
+      "color-contrast": 8,
+      "frame-tested": 8
+    },
+    "dialog_incomplete_nodes": {
+      "color-contrast": 24,
+      "frame-tested": 8
+    },
+    "isolated_content_incomplete": 0,
+    "rules_disabled": [],
+    "protected_frame_traversal": false,
+    "screenshots_reviewed": [
+      {
+        "theme": "light",
+        "width": 1440
+      },
+      {
+        "theme": "light",
+        "width": 1024
+      },
+      {
+        "theme": "light",
+        "width": 768
+      },
+      {
+        "theme": "light",
+        "width": 390
+      },
+      {
+        "theme": "dark",
+        "width": 1440
+      },
+      {
+        "theme": "dark",
+        "width": 1024
+      },
+      {
+        "theme": "dark",
+        "width": 768
+      },
+      {
+        "theme": "dark",
+        "width": 390
+      }
+    ],
+    "conformance_inferred": false
+  },
+  "editor_ux": {
+    "scans": 94,
+    "violations": 0,
+    "checks": 15,
+    "failed": 0,
+    "errors": 0
+  },
+  "editor_timing": "Shared UI/editor source is unchanged from the passing gate; final snapshot and route-class fixes do not alter those files. Both source freezes are retained.",
+  "real_server_experiments": {
+    "passed": 6,
+    "cases": [
+      "committed queue survives restart; accepted outcome is not resent",
+      "SIGKILL after claim before SMTP greeting",
+      "SIGKILL after DATA before final SMTP acknowledgement",
+      "SIGKILL after SMTP 250 before outcome commit",
+      "committed confirmation loses HTTP response; same confirmation safely recovers",
+      "two real server processes claim one durable attempt"
+    ],
+    "environment": {
+      "node": "v24.19.0",
+      "sqlite": {
+        "version": "3.53.3"
+      },
+      "journal": {
+        "journal_mode": "wal"
+      },
+      "synchronous": {
+        "synchronous": 2
+      }
+    },
+    "lease_age_accelerated_after_kill": true,
+    "actual_entrypoint": "server.ts"
+  },
+  "actual_node_export": {
+    "before": "payroll-email-snapshot-before.json",
+    "after": "payroll-email-snapshot-after.json",
+    "final_counts": [
+      {
+        "case": "queued email before new-node enrollment",
+        "error": null,
+        "counts": {
+          "payroll_email_releases": 0,
+          "payroll_email_events": 0,
+          "payroll_email_versions": 0
+        }
+      },
+      {
+        "case": "empty intent history with SMTP settings",
+        "error": null,
+        "counts": {
+          "payroll_email_releases": 0,
+          "payroll_email_events": 0,
+          "payroll_email_versions": 0
+        }
+      }
+    ],
+    "private_proof_and_payload_bytes_absent_asserted": true,
+    "original_queued_work_preserved_and_submitted_once": true
+  },
+  "runtime_audit": {
+    "exit_code": 1,
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 3,
+      "high": 1,
+      "critical": 0,
+      "total": 4
+    },
+    "open_packages": {
+      "argparse": "moderate",
+      "mammoth": "moderate",
+      "node-forge": "high",
+      "sprintf-js": "moderate"
+    },
+    "runtime_versions_changed": false,
+    "direct_test_dependency": "axe-core 4.14.0 was already present transitively; explicit root test edge added offline"
+  },
+  "secret_scans": {
+    "tool": "Gitleaks 8.24.3",
+    "preliminary_changed_file_scan": "passed",
+    "final_changed_file_scan": "passed",
+    "staged_scan": "passed",
+    "commit_hook": "Required by .githooks/pre-commit; actual completion is recorded by the commit command, not predicted in this manifest",
+    "historic_revocation_or_all_history_cleanliness_inferred": false
+  },
+  "delivery_guarantee": "SMTP acceptance only; confirmed delivery unavailable; no exactly-once guarantee",
+  "broader_release_hold": true,
+  "complete_control_counts_unchanged": {
+    "PASS": 36,
+    "FAIL": 58,
+    "UNVERIFIED": 126,
+    "NA": 13
+  },
+  "independent_verification_required": [
+    "Code/security review by another reviewer",
+    "Real provider auth/STARTTLS, acceptance, bounces and recipient delivery",
+    "Hosting disk, worker monitoring, capacity and backup rollback reconciliation",
+    "Windows/native and mixed-build/cutover acceptance",
+    "Approved retention, legal and payroll/accountant acceptance",
+    "Manual accessibility and assistive technology acceptance"
+  ],
+  "evidence": [
+    {
+      "path": "payroll-email-before.txt",
+      "raw_sha256": "e757e54353dc38cd5efd6e20c8391c7edf475dc7a88ab5426715c1abeb5be64a",
+      "sha256": "2070850e52eae4aff97f1e356f6afe6360367a71b9d50356ccbf95e782ad7732",
+      "source": "work/payroll-email-before.txt"
+    },
+    {
+      "path": "payroll-email-before-wire.json",
+      "raw_sha256": "84c798e35c753e5c09ad0c35185c13b2ed4bd28d2a7041f37bb88c4b7b2716e9",
+      "sha256": "84c798e35c753e5c09ad0c35185c13b2ed4bd28d2a7041f37bb88c4b7b2716e9",
+      "source": "work/payroll-email-before-wire.json"
+    },
+    {
+      "path": "payroll-email-before-driver.ts.txt",
+      "raw_sha256": "7acdde95254397dcb438debd8964795718061130a8cffd56de04a4200834efed",
+      "sha256": "7acdde95254397dcb438debd8964795718061130a8cffd56de04a4200834efed",
+      "source": "work/payroll-email-before.test.ts"
+    },
+    {
+      "path": "payroll-email-before-config.ts.txt",
+      "raw_sha256": "40b96e4db538c86834d99aea8d7af50314583220bb4fbc15f2f83f1908a6edfb",
+      "sha256": "40b96e4db538c86834d99aea8d7af50314583220bb4fbc15f2f83f1908a6edfb",
+      "source": "work/payroll-email-before.config.ts"
+    },
+    {
+      "path": "payroll-email-focused-iteration-1.txt",
+      "raw_sha256": "3a7f471211599b82c36893a22a7836b7b9a18e0b58f755dbd3e672cab80d4643",
+      "sha256": "88f85505ea6188542cee5bab6ef393e1645500441a63070d447cb36ee4a926f0",
+      "source": "work/payroll-email-focused-1.txt"
+    },
+    {
+      "path": "payroll-email-focused-iteration-2.txt",
+      "raw_sha256": "59bee5bc6e70a0bcb7be34d96d0962bebc2a7e8dc36223a2f989b220475fb5f6",
+      "sha256": "8a8ee1a4e3dd9b4b86cd27608a17f2b75cf946cba1da875246e3f8021c91ed04",
+      "source": "work/payroll-email-focused-2.txt"
+    },
+    {
+      "path": "payroll-email-focused-iteration-3.txt",
+      "raw_sha256": "b0bde268b1310e5bceba57f3331ee35eb49659714f30ef587b335b2f75d516dc",
+      "sha256": "fcf1ca06c062605f74c0a7a06bf5c0c325b6bc80d3d7ae2b393e2ef91f70cd4b",
+      "source": "work/payroll-email-focused-3.txt"
+    },
+    {
+      "path": "payroll-email-focused-iteration-4.txt",
+      "raw_sha256": "a51a3e16b36e8a8b5d154a9f760a41bfdc1b7b77d8aee814244a73ca1f172673",
+      "sha256": "a702e97d67789fcd2d67f35d6fe6f61efab4bf8bba8320dabb00a91b8de71971",
+      "source": "work/payroll-email-focused-4.txt"
+    },
+    {
+      "path": "payroll-email-focused-iteration-5.txt",
+      "raw_sha256": "c5ff2c0e408a2a49e9aa137c26f1b3073544220e8f2f242258a36782f981a10f",
+      "sha256": "0128bd99b766556fc7417fb36e5ad6baf1281d548fb19c386379dcf5fa679f55",
+      "source": "work/payroll-email-focused-5.txt"
+    },
+    {
+      "path": "payroll-email-focused-iteration-6.txt",
+      "raw_sha256": "94d088c3416fb9c7f9bf871a09ee75c87425381808ac6a3372f5eb3b786c3761",
+      "sha256": "afe5aa412c29eae5922cb144ab4e3b4f402bb956fb9d9f69396cd13c6214c6b8",
+      "source": "work/payroll-email-focused-6.txt"
+    },
+    {
+      "path": "payroll-email-focused-iteration-7.txt",
+      "raw_sha256": "7336c9a6151a689e72fbb604634b449e3603b7c1108349202a9416e4669169f2",
+      "sha256": "a9972608bdc621f11cd5844e78c2cffdd851f7983439dbf20f81be00883a544f",
+      "source": "work/payroll-email-focused-7.txt"
+    },
+    {
+      "path": "payroll-email-focused-iteration-8.txt",
+      "raw_sha256": "492582ad59f5c175e684a406683535a9207620cf4c4fc679f30b77bf80f108c2",
+      "sha256": "2d913d7082c4df54d921431eb6c7f9ca4ded9006f564a041767e05ab51049007",
+      "source": "work/payroll-email-focused-8.txt"
+    },
+    {
+      "path": "payroll-email-browser-iteration-1.txt",
+      "raw_sha256": "8f57dae17587f8083531622a4dbf7724b3b0296870663f3a47ab283f79d638b4",
+      "sha256": "a98f90df7e69bc0342e3dab511d0793dd1f0d5042c2ee107f8e2518f41304388",
+      "source": "work/payroll-email-playwright-1.txt"
+    },
+    {
+      "path": "payroll-email-browser-iteration-2.txt",
+      "raw_sha256": "ae00f3a29c24820f52788a67f93884d4ebe9f9fb359277f79544cce58903de0e",
+      "sha256": "1bffc106ef3c3f826751f9bffb6a089c12294ae3aac6c48a905a7f14dac826f2",
+      "source": "work/payroll-email-playwright-2.txt"
+    },
+    {
+      "path": "payroll-email-browser-iteration-3.txt",
+      "raw_sha256": "425bafacc0169cc59376431fc342442ca3df3c72ff6acc6046582225605703cd",
+      "sha256": "51174e81e790ffa201e8fe83f599526633ea0d5c94ae220c33c4f8cdfcedb089",
+      "source": "work/payroll-email-playwright-3.txt"
+    },
+    {
+      "path": "payroll-email-browser-iteration-4.txt",
+      "raw_sha256": "af86806a5bbc2bdc0428ffdb9533d1d2ddf3d63fd2d3bb1cb3c0a5596b63654e",
+      "sha256": "bd83699abd0e1f5fac0ebc7a7a472e19209d04736ed8968b1666938fc2c5aca2",
+      "source": "work/payroll-email-playwright-4.txt"
+    },
+    {
+      "path": "payroll-email-browser-iteration-5.txt",
+      "raw_sha256": "99acd36f3c582ec262ff7d0385bdba0961ff740d223036f380ede02871b0031a",
+      "sha256": "0a25045974eed15de4661765b038c114df58f587ac3c2d46ebbbcbe164f82195",
+      "source": "work/payroll-email-playwright-5.txt"
+    },
+    {
+      "path": "payroll-email-browser-iteration-6.txt",
+      "raw_sha256": "b44c1bcbe6150f12852cf7e9e47fee2af4f364615bd233f50f49aba6aea00f15",
+      "sha256": "a55864b44d72d68a3db95ed1df31089bdf6e3093747c32198b243d5fef4926cb",
+      "source": "work/payroll-email-playwright-6.txt"
+    },
+    {
+      "path": "payroll-email-browser-iteration-7.txt",
+      "raw_sha256": "69cd9c3480f7bbe5ac3db7b1c533a15aafbfee94f7d905a8fd20b5cfe20e0877",
+      "sha256": "69cd9c3480f7bbe5ac3db7b1c533a15aafbfee94f7d905a8fd20b5cfe20e0877",
+      "source": "work/payroll-email-playwright-7.txt"
+    },
+    {
+      "path": "payroll-email-typecheck-iteration-1.txt",
+      "raw_sha256": "75d606d4711d0c50b4184a1061b8bf45f5998d9bb1e4a9bd08379ae859d115aa",
+      "sha256": "75d606d4711d0c50b4184a1061b8bf45f5998d9bb1e4a9bd08379ae859d115aa",
+      "source": "work/payroll-email-typecheck-1.txt"
+    },
+    {
+      "path": "payroll-email-typecheck-iteration-2.txt",
+      "raw_sha256": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+      "sha256": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+      "source": "work/payroll-email-typecheck-2.txt"
+    },
+    {
+      "path": "payroll-email-typecheck-iteration-3.txt",
+      "raw_sha256": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+      "sha256": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+      "source": "work/payroll-email-typecheck-3.txt"
+    },
+    {
+      "path": "payroll-email-typecheck-iteration-4.txt",
+      "raw_sha256": "6c9a94877975404da8e3bb61a1ee5d8578345913daf73751f0df32552aae92fe",
+      "sha256": "6c9a94877975404da8e3bb61a1ee5d8578345913daf73751f0df32552aae92fe",
+      "source": "work/payroll-email-typecheck-4.txt"
+    },
+    {
+      "path": "payroll-email-typecheck-iteration-5.txt",
+      "raw_sha256": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+      "sha256": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+      "source": "work/payroll-email-typecheck-5.txt"
+    },
+    {
+      "path": "payroll-email-typecheck-iteration-6.txt",
+      "raw_sha256": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+      "sha256": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+      "source": "work/payroll-email-typecheck-6.txt"
+    },
+    {
+      "path": "payroll-email-typecheck-iteration-7.txt",
+      "raw_sha256": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+      "sha256": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+      "source": "work/payroll-email-typecheck-7.txt"
+    },
+    {
+      "path": "payroll-email-typecheck-iteration-8.txt",
+      "raw_sha256": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+      "sha256": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+      "source": "work/payroll-email-typecheck-8.txt"
+    },
+    {
+      "path": "payroll-email-typecheck-iteration-9.txt",
+      "raw_sha256": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+      "sha256": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+      "source": "work/payroll-email-typecheck-9.txt"
+    },
+    {
+      "path": "payroll-email-uppercase-before.txt",
+      "raw_sha256": "a9fbf3ffd166d0feed4bf8266e610decd110347ba6c288fa53c1a7d9fe1cdab1",
+      "sha256": "9c7ddfa84fc1f8081d95aab9b522847eb06d7ee5f5ae1ac8fa17c0a56a319e34",
+      "source": "work/payroll-email-uppercase-before.txt"
+    },
+    {
+      "path": "payroll-email-node-before.txt",
+      "raw_sha256": "af885afc1be5229752b56bdbf54f413179674dd6a35aeb783bff005c6866ef28",
+      "sha256": "3b5449170e8a1cc89843aa765af2243adb9ed059fc737bd31cf9fb544cc61f1c",
+      "source": "work/payroll-email-node-before.txt"
+    },
+    {
+      "path": "payroll-email-crash-iteration-1.txt",
+      "raw_sha256": "b4299cabe18532ebf3a54e0c2f6f8a6638b5736c9de897f5605874e2b3077a1e",
+      "sha256": "b4299cabe18532ebf3a54e0c2f6f8a6638b5736c9de897f5605874e2b3077a1e",
+      "source": "work/payroll-email-crash-1.txt"
+    },
+    {
+      "path": "payroll-email-crash-iteration-2.txt",
+      "raw_sha256": "8635052ba53fe2f03502d2b0fffdd11888746aa5541fb76355fd9e8cb26297d3",
+      "sha256": "8635052ba53fe2f03502d2b0fffdd11888746aa5541fb76355fd9e8cb26297d3",
+      "source": "work/payroll-email-crash-2.txt"
+    },
+    {
+      "path": "payroll-email-crash-initial-failure.json",
+      "raw_sha256": "e1b90e393f125a9cf2414ae0945041572ada0ea9d5dbfd4debb89c16accf5e83",
+      "sha256": "e1b90e393f125a9cf2414ae0945041572ada0ea9d5dbfd4debb89c16accf5e83",
+      "source": "work/payroll-email-crash-failed-1/failed.json"
+    },
+    {
+      "path": "payroll-email-browser-initial-1.json",
+      "raw_sha256": "55222c75a64cb7cb89ffcf0f891a5aaac78442c7e5520d83dfc6ed0ae801923c",
+      "sha256": "4eb4e72f5af5ec8dd7d45ce7873c9771091e11e7fbb6e0edc990ee01fc2312cc",
+      "source": "work/payroll-email-browser-failed-1/results.json"
+    },
+    {
+      "path": "payroll-email-browser-initial-1-payroll-email-closing-an-u-0db8f-does-not-queue-or-send-work-test-failed-1.png",
+      "raw_sha256": "b120e69c79280256de531919ad7f8884f4cfb10acc89b0a16ac737be6ab42d95",
+      "sha256": "b120e69c79280256de531919ad7f8884f4cfb10acc89b0a16ac737be6ab42d95",
+      "source": "work/payroll-email-browser-failed-1/payroll-email-closing-an-u-0db8f-does-not-queue-or-send-work-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-1-payroll-email-lost-confirm-2b990-and-produces-one-submission-test-failed-1.png",
+      "raw_sha256": "3c7c9b490c0f21f4e8d4e95173531e484d91b02af4c747e6f0c54cb20ca5a03c",
+      "sha256": "3c7c9b490c0f21f4e8d4e95173531e484d91b02af4c747e6f0c54cb20ca5a03c",
+      "source": "work/payroll-email-browser-failed-1/payroll-email-lost-confirm-2b990-and-produces-one-submission-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-1-payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-1.png",
+      "raw_sha256": "231b767f8fa9caa28815111f9a4a21e10abf080ed03af2f55a88c43958c98aeb",
+      "sha256": "231b767f8fa9caa28815111f9a4a21e10abf080ed03af2f55a88c43958c98aeb",
+      "source": "work/payroll-email-browser-failed-1/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-1-payroll-email-changed-save-2d926-an-accessible-recovery-path-test-failed-1.png",
+      "raw_sha256": "be362d5f9886b8e233d25ac0d831ba97080a50f44a97df2fe0fa362c16e0d4f7",
+      "sha256": "be362d5f9886b8e233d25ac0d831ba97080a50f44a97df2fe0fa362c16e0d4f7",
+      "source": "work/payroll-email-browser-failed-1/payroll-email-changed-save-2d926-an-accessible-recovery-path-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-1-payroll-email-a-changed-br-98918-firm-an-old-private-preview-test-failed-1.png",
+      "raw_sha256": "9f943388e66bcfb6d7eba888e833ef6467cfd283c3e3055f77afcf877acd2fd5",
+      "sha256": "9f943388e66bcfb6d7eba888e833ef6467cfd283c3e3055f77afcf877acd2fd5",
+      "source": "work/payroll-email-browser-failed-1/payroll-email-a-changed-br-98918-firm-an-old-private-preview-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-1-payroll-email-unknown-SMTP-ab0fb-on-and-risk-acknowledgement-test-failed-1.png",
+      "raw_sha256": "a8dfb9e1b9a3bd87b1e7f6e459865005a28fe4eb6e7fbc99ba25b3600764d103",
+      "sha256": "a8dfb9e1b9a3bd87b1e7f6e459865005a28fe4eb6e7fbc99ba25b3600764d103",
+      "source": "work/payroll-email-browser-failed-1/payroll-email-unknown-SMTP-ab0fb-on-and-risk-acknowledgement-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-1-payroll-email-a-recipient--f7367-ot-receive-the-old-approval-test-failed-1.png",
+      "raw_sha256": "ac01ac5adb5d2f101456a79e8022c7775b6a65c73ac2019be5a6e3661682dcff",
+      "sha256": "ac01ac5adb5d2f101456a79e8022c7775b6a65c73ac2019be5a6e3661682dcff",
+      "source": "work/payroll-email-browser-failed-1/payroll-email-a-recipient--f7367-ot-receive-the-old-approval-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-2.json",
+      "raw_sha256": "6b5136fab7ead1f7df07f76796fb2ca18d9b7475aef2f56f23019d5b049e81d5",
+      "sha256": "69eaaea16d79551ea8a96a3a92f51c325ed4a54fd3601a71b38d716fd9cd533b",
+      "source": "work/payroll-email-browser-failed-2/results.json"
+    },
+    {
+      "path": "payroll-email-browser-initial-2-payroll-email-closing-an-u-0db8f-does-not-queue-or-send-work-test-failed-1.png",
+      "raw_sha256": "517bcd02cc8ff4f12706c85aea706a2996dcfb97051a85381669ddb3c6d43168",
+      "sha256": "517bcd02cc8ff4f12706c85aea706a2996dcfb97051a85381669ddb3c6d43168",
+      "source": "work/payroll-email-browser-failed-2/payroll-email-closing-an-u-0db8f-does-not-queue-or-send-work-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-2-payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-1.png",
+      "raw_sha256": "0099729e8680629af7422408fff9c7c3401a510553dc69b08934599ef3ecb4e6",
+      "sha256": "0099729e8680629af7422408fff9c7c3401a510553dc69b08934599ef3ecb4e6",
+      "source": "work/payroll-email-browser-failed-2/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-2-payroll-email-changed-save-2d926-an-accessible-recovery-path-test-failed-1.png",
+      "raw_sha256": "3dafa8be66692f68a01369181122204dcb14e556483a20cd1b5b9cbd8a8b6f61",
+      "sha256": "3dafa8be66692f68a01369181122204dcb14e556483a20cd1b5b9cbd8a8b6f61",
+      "source": "work/payroll-email-browser-failed-2/payroll-email-changed-save-2d926-an-accessible-recovery-path-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-2-payroll-email-a-changed-br-98918-firm-an-old-private-preview-test-failed-1.png",
+      "raw_sha256": "4bc28cd0ac203bc2b4878ff98bc9fa6ca30cbb0f7eed8d3cc5f543ce8437cd97",
+      "sha256": "4bc28cd0ac203bc2b4878ff98bc9fa6ca30cbb0f7eed8d3cc5f543ce8437cd97",
+      "source": "work/payroll-email-browser-failed-2/payroll-email-a-changed-br-98918-firm-an-old-private-preview-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-2-payroll-email-a-recipient--f7367-ot-receive-the-old-approval-test-failed-1.png",
+      "raw_sha256": "ca19baf634bd7ce4fdf008065e980a1487f44e9359522abbcce6ec14f0e51c1f",
+      "sha256": "ca19baf634bd7ce4fdf008065e980a1487f44e9359522abbcce6ec14f0e51c1f",
+      "source": "work/payroll-email-browser-failed-2/payroll-email-a-recipient--f7367-ot-receive-the-old-approval-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-3.json",
+      "raw_sha256": "82c5c88f8983cc268e25cfbd49e848ea4f4f1777e05b4821237f864074cb0b26",
+      "sha256": "fce345831ddf59d21c5139ac66ab35d621517e326c3dbc17ad90079467e29909",
+      "source": "work/payroll-email-browser-failed-3/results.json"
+    },
+    {
+      "path": "payroll-email-browser-initial-3-payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-1.png",
+      "raw_sha256": "5882f83cbce534f667f67ad2288a208cf6c39fbc5ec93643cb7eed52a0c5e129",
+      "sha256": "5882f83cbce534f667f67ad2288a208cf6c39fbc5ec93643cb7eed52a0c5e129",
+      "source": "work/payroll-email-browser-failed-3/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-4.json",
+      "raw_sha256": "19d14149c13e16dadfeb224ca3573058e76ba77f477c7f91f9a5606807683647",
+      "sha256": "7a074656fb33c4e539740edfc8e25119baf230e0278c6bb70205eea754cd0ac4",
+      "source": "work/payroll-email-browser-failed-4/results.json"
+    },
+    {
+      "path": "payroll-email-browser-initial-4-payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-1.png",
+      "raw_sha256": "b74c880e850bf54e4b3d9f9103b07546e2d0e7023b6e03108dbb5a8e674abf32",
+      "sha256": "b74c880e850bf54e4b3d9f9103b07546e2d0e7023b6e03108dbb5a8e674abf32",
+      "source": "work/payroll-email-browser-failed-4/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-4-payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-2.png",
+      "raw_sha256": "ff55dc74ec9380a2e4fe327091fb61094df092bec86a90afe35776dae4b1295b",
+      "sha256": "ff55dc74ec9380a2e4fe327091fb61094df092bec86a90afe35776dae4b1295b",
+      "source": "work/payroll-email-browser-failed-4/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-2.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-6.json",
+      "raw_sha256": "d50b86f837924ce264756e7bc47d45d38d363f16d2953b09a399e4a8949b762e",
+      "sha256": "c0f11f2cd3e6fc7713d8c320a11e83429135a295d16ff6d9878542a5e12e67c3",
+      "source": "work/payroll-email-browser-failed-6/results.json"
+    },
+    {
+      "path": "payroll-email-browser-initial-6-payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-1.png",
+      "raw_sha256": "10fb869600864c640c54129b79b34daa7f4a8665100684d6be924356dd220512",
+      "sha256": "10fb869600864c640c54129b79b34daa7f4a8665100684d6be924356dd220512",
+      "source": "work/payroll-email-browser-failed-6/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-1.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-6-payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-2.png",
+      "raw_sha256": "529af3048379d5603e4bdf46296bc9ccefc59acb6ee7bdabd2d170852fc6a973",
+      "sha256": "529af3048379d5603e4bdf46296bc9ccefc59acb6ee7bdabd2d170852fc6a973",
+      "source": "work/payroll-email-browser-failed-6/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery-test-failed-2.png"
+    },
+    {
+      "path": "payroll-email-browser-initial-5-import.json",
+      "raw_sha256": "c730757dfaf444a105f49c7272a5c06289bcc225374a481278c65dfce4254f68",
+      "sha256": "2eb36161b9b1d9fd69ab299abc695452d3dfe3934ecc04c1b3e9b1d73ef15f83",
+      "source": "work/payroll-email-browser-failed-5.json"
+    },
+    {
+      "path": "payroll-email-light-1024.png",
+      "raw_sha256": "1b5537f9e9835c86e8e2b5f25aa8489011b95c1008cb76592dac95ae018fdb10",
+      "sha256": "1b5537f9e9835c86e8e2b5f25aa8489011b95c1008cb76592dac95ae018fdb10",
+      "source": "work/payroll-email-light-1024.png"
+    },
+    {
+      "path": "payroll-email-light-1440.png",
+      "raw_sha256": "e4dcaf56a6cb391a6ddc23373c9477a536c167541c9d1792a3e5b53c3f6daf3a",
+      "sha256": "e4dcaf56a6cb391a6ddc23373c9477a536c167541c9d1792a3e5b53c3f6daf3a",
+      "source": "work/payroll-email-light-1440.png"
+    },
+    {
+      "path": "payroll-email-light-768.png",
+      "raw_sha256": "e045b2b458bf29d8b9e7971ae2ab7665cf6d8a705927bb92e4edfd8b92ae32f8",
+      "sha256": "e045b2b458bf29d8b9e7971ae2ab7665cf6d8a705927bb92e4edfd8b92ae32f8",
+      "source": "work/payroll-email-light-768.png"
+    },
+    {
+      "path": "payroll-email-dark-1024.png",
+      "raw_sha256": "284e85404afec18c9d8392c5aaf25974cda48ebe006c1f4032e1111e531dea3d",
+      "sha256": "284e85404afec18c9d8392c5aaf25974cda48ebe006c1f4032e1111e531dea3d",
+      "source": "work/payroll-email-dark-1024.png"
+    },
+    {
+      "path": "payroll-email-light-390.png",
+      "raw_sha256": "e2cce218b27bc3db3e52b604674188b7e6af95ecc47dc9fba43dc3965cff0568",
+      "sha256": "e2cce218b27bc3db3e52b604674188b7e6af95ecc47dc9fba43dc3965cff0568",
+      "source": "work/payroll-email-light-390.png"
+    },
+    {
+      "path": "payroll-email-dark-390.png",
+      "raw_sha256": "b9c8843541778bcddd392c507517b4cd4de071f5d6120a88ad45fa28283902c1",
+      "sha256": "b9c8843541778bcddd392c507517b4cd4de071f5d6120a88ad45fa28283902c1",
+      "source": "work/payroll-email-dark-390.png"
+    },
+    {
+      "path": "payroll-email-dark-768.png",
+      "raw_sha256": "fd3e15fa6eced36015cc87c3421c3861af4bc669998067278ba077cdfbfdc4d8",
+      "sha256": "fd3e15fa6eced36015cc87c3421c3861af4bc669998067278ba077cdfbfdc4d8",
+      "source": "work/payroll-email-dark-768.png"
+    },
+    {
+      "path": "payroll-email-dark-1440.png",
+      "raw_sha256": "a89307c229cb5a88f795b7fa35b255466f72156f132963092067cc1db0e0cab6",
+      "sha256": "a89307c229cb5a88f795b7fa35b255466f72156f132963092067cc1db0e0cab6",
+      "source": "work/payroll-email-dark-1440.png"
+    },
+    {
+      "path": "payroll-email-focused-final.txt",
+      "raw_sha256": "ceef403f39ce756872e92b91b27feb95274b8a857ba125d95ac2005814cb94a5",
+      "sha256": "f9ac4533a95afad84193aa8547cf1b08c9ef57627255377815e1755e0e91ec4c",
+      "source": "work/payroll-email-focused-final.txt"
+    },
+    {
+      "path": "payroll-email-typecheck-final.txt",
+      "raw_sha256": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+      "sha256": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+      "source": "work/payroll-email-typecheck-final.txt"
+    },
+    {
+      "path": "payroll-email-syntax-final.txt",
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source": "work/payroll-email-syntax-final.txt"
+    },
+    {
+      "path": "payroll-email-playwright-final.txt",
+      "raw_sha256": "fea1ce6a972fa663dfba9b93ae1142bde6253189cbcda22eab05011d79d85cdd",
+      "sha256": "fea1ce6a972fa663dfba9b93ae1142bde6253189cbcda22eab05011d79d85cdd",
+      "source": "work/payroll-email-playwright-final.txt"
+    },
+    {
+      "path": "payroll-email-crash-final.txt",
+      "raw_sha256": "e45752a4f02458be72178d40e72c92687d673fe97cbeea0f7e93a8840d4ef4e3",
+      "sha256": "e45752a4f02458be72178d40e72c92687d673fe97cbeea0f7e93a8840d4ef4e3",
+      "source": "work/payroll-email-crash-final.txt"
+    },
+    {
+      "path": "payroll-email-editor-final.txt",
+      "raw_sha256": "3449c477faee37993f5229067922b811b55bdef02008b2c4f5c687057a63348a",
+      "sha256": "3449c477faee37993f5229067922b811b55bdef02008b2c4f5c687057a63348a",
+      "source": "work/payroll-email-editor-final.txt"
+    },
+    {
+      "path": "payroll-email-full-final.txt",
+      "raw_sha256": "1e9db54af8781cc07202caac7abc58ca2a62aef3387b4734bebd46b257f25e5d",
+      "sha256": "6b8b19b5fa7bb0c521e69221bafa4d394a3cd9bd2b86306a87c01365ea504d88",
+      "source": "work/payroll-email-full-final.txt"
+    },
+    {
+      "path": "payroll-email-gitleaks-final.txt",
+      "raw_sha256": "100e8e6ee7a60669940601bfc67147a697d1fcb56757f70a1f09d171e8e056be",
+      "sha256": "100e8e6ee7a60669940601bfc67147a697d1fcb56757f70a1f09d171e8e056be",
+      "source": "work/payroll-email-gitleaks-final.txt"
+    },
+    {
+      "path": "payroll-email-gitleaks-staged.txt",
+      "raw_sha256": "a9542c51336337f504f78920577eaef46e830e5125c216f0fd2ab6e43dfa3f80",
+      "sha256": "a9542c51336337f504f78920577eaef46e830e5125c216f0fd2ab6e43dfa3f80",
+      "source": "work/payroll-email-gitleaks-staged.txt"
+    },
+    {
+      "path": "payroll-email-db-types-final.txt",
+      "raw_sha256": "95a6e92b2fe4b24716f2881d542f8421c9f986eb4e48af9846a07d174b99a02c",
+      "sha256": "95a6e92b2fe4b24716f2881d542f8421c9f986eb4e48af9846a07d174b99a02c",
+      "source": "work/payroll-email-db-types-final.txt"
+    },
+    {
+      "path": "payroll-email-test-tool-lock.txt",
+      "raw_sha256": "281efbcfdcdf8d130a7ea714d14738c61fc4e0419cd3f371e06ce68048e0bad7",
+      "sha256": "281efbcfdcdf8d130a7ea714d14738c61fc4e0419cd3f371e06ce68048e0bad7",
+      "source": "work/payroll-email-test-tool-lock.txt"
+    },
+    {
+      "path": "payroll-email-crash-results.json",
+      "raw_sha256": "8271caf20e7c83532702fae34e90678d6a3be82da550d11a13a515554e1810cf",
+      "sha256": "8271caf20e7c83532702fae34e90678d6a3be82da550d11a13a515554e1810cf",
+      "source": "work/payroll-email-crash/results.json"
+    },
+    {
+      "path": "payroll-email-schema.sql",
+      "raw_sha256": "dd62a5c0215f62c3f04adc2c9541f753f39751e06b416e4fb5cc232b859d67d3",
+      "sha256": "dd62a5c0215f62c3f04adc2c9541f753f39751e06b416e4fb5cc232b859d67d3",
+      "source": "work/payroll-email-crash/schema.sql"
+    },
+    {
+      "path": "payroll-email-browser-axe.json",
+      "raw_sha256": "f4f12dc8b87e1dec346289defde2a04e2c799278103ee11d9938097eaa37e134",
+      "sha256": "f4f12dc8b87e1dec346289defde2a04e2c799278103ee11d9938097eaa37e134",
+      "source": "work/payroll-email-browser-axe.json"
+    },
+    {
+      "path": "payroll-email-browser-wire.json",
+      "raw_sha256": "91b557a29f171c6d3038ef620369410984e8db154cd731d4bbc45408e631cb8d",
+      "sha256": "91b557a29f171c6d3038ef620369410984e8db154cd731d4bbc45408e631cb8d",
+      "source": "work/payroll-email-browser-wire.json"
+    },
+    {
+      "path": "payroll-email-source-freeze.json",
+      "raw_sha256": "42bc41e4cdcc6ba5844416b8c062568be195c7a433b52df3db68b60436fffb42",
+      "sha256": "42bc41e4cdcc6ba5844416b8c062568be195c7a433b52df3db68b60436fffb42",
+      "source": "work/payroll-email-source-freeze.json"
+    },
+    {
+      "path": "payroll-email-playwright-final.json",
+      "raw_sha256": "c770f8ea0bb948cb4a39e9603026b64b7af93f6a1265c1556f0bf0c97aacbc81",
+      "sha256": "3f0ffbb48cdf0ae4229cc42249d7fb17bd85ea27f07a49e18e708c38699ca676",
+      "source": "work/payroll-email-playwright-final.json"
+    },
+    {
+      "path": "payroll-email-browser-journeys.json",
+      "raw_sha256": "6e0162c604dd3020b29b320a36b5fb4498413f3f25bf75e8234dd988b4f952ec",
+      "sha256": "c74403225be9bd2e07ef26d06414dc36ac77dbe9ef475f033b150c09c2aeb02b",
+      "source": "work/payroll-email-browser-journeys.json"
+    },
+    {
+      "path": "payroll-email-editor-final.json",
+      "raw_sha256": "9e8fdd038f11028c4dcd8c311aef52960f36ec10da65729a8aefb2d27d2dabd1",
+      "sha256": "188d3b0ee5d1ecd1d69f147cde5a136d4bbf65d303f816821d7f80715cbff87c",
+      "source": "work/payroll-email-editor-final.json"
+    },
+    {
+      "path": "payroll-email-snapshot-before.txt",
+      "raw_sha256": "5669da954881c827203bb92c4aa7c28f6605c0b0df0a3ed2bcbaaadc968bbc85",
+      "sha256": "5669da954881c827203bb92c4aa7c28f6605c0b0df0a3ed2bcbaaadc968bbc85",
+      "source": "work/payroll-email-snapshot-before.txt"
+    },
+    {
+      "path": "payroll-email-snapshot-before.json",
+      "raw_sha256": "1724e5e74de1db7a06cdd37a9583a9a27407e09b18e1559af8d6d8c11f823055",
+      "sha256": "1724e5e74de1db7a06cdd37a9583a9a27407e09b18e1559af8d6d8c11f823055",
+      "source": "work/payroll-email-snapshot-before.json"
+    },
+    {
+      "path": "payroll-email-snapshot-before-driver.ts.txt",
+      "raw_sha256": "43a96fe9ac11fb7cf270fcf3130e2599c731f31a26db5e3af4119a22c786374f",
+      "sha256": "43a96fe9ac11fb7cf270fcf3130e2599c731f31a26db5e3af4119a22c786374f",
+      "source": "work/payroll-email-snapshot-before.ts"
+    },
+    {
+      "path": "payroll-email-snapshot-after.txt",
+      "raw_sha256": "230e0424fefe205df28502c5ec828d04ab7f19c4d3432e367b04a0ea284ec52b",
+      "sha256": "230e0424fefe205df28502c5ec828d04ab7f19c4d3432e367b04a0ea284ec52b",
+      "source": "work/payroll-email-snapshot-after.txt"
+    },
+    {
+      "path": "payroll-email-snapshot-after.json",
+      "raw_sha256": "b4e42ba52d2f6b2913c9d74687fdcf1009445f72a18082f509a697e067455a13",
+      "sha256": "b4e42ba52d2f6b2913c9d74687fdcf1009445f72a18082f509a697e067455a13",
+      "source": "work/payroll-email-snapshot-after.json"
+    },
+    {
+      "path": "payroll-email-snapshot-after-driver.ts.txt",
+      "raw_sha256": "7cb4ddecc875c004a6f91b50b13f3fe686721e18253d050328af3410228614f2",
+      "sha256": "7cb4ddecc875c004a6f91b50b13f3fe686721e18253d050328af3410228614f2",
+      "source": "work/payroll-email-snapshot-after.ts"
+    },
+    {
+      "path": "payroll-email-full-first-failed.txt",
+      "raw_sha256": "ac34ae895aac5f58da1d2ae714c88ac41dc43d6414393aca45a4e5b6a512a248",
+      "sha256": "24e74810f76ba08bcccfd9ea35f161107be4be1155dbc6278fc49d0e0e504143",
+      "source": "work/payroll-email-full-first-failed.txt"
+    },
+    {
+      "path": "payroll-email-focused-snapshot.txt",
+      "raw_sha256": "ceef403f39ce756872e92b91b27feb95274b8a857ba125d95ac2005814cb94a5",
+      "sha256": "f9ac4533a95afad84193aa8547cf1b08c9ef57627255377815e1755e0e91ec4c",
+      "source": "work/payroll-email-focused-snapshot.txt"
+    },
+    {
+      "path": "payroll-email-source-freeze-initial.json",
+      "raw_sha256": "ed248e14f5f410386046ab0be98484d1b75605436a360a2c5c76bf7b65075003",
+      "sha256": "ed248e14f5f410386046ab0be98484d1b75605436a360a2c5c76bf7b65075003",
+      "source": "work/payroll-email-source-freeze-initial.json"
+    },
+    {
+      "path": "payroll-email-npm-runtime.json",
+      "raw_sha256": "7b451910db7f5967f937beaf452236368dcbb96dafa4552cc084c131133565d4",
+      "sha256": "7b451910db7f5967f937beaf452236368dcbb96dafa4552cc084c131133565d4",
+      "source": "work/payroll-email-npm-runtime.json"
+    },
+    {
+      "path": "payroll-email-environment.json",
+      "raw_sha256": "02c18ee3f6fd0f3f757241454f998e58ea7dc8d232b4061409ce7382c5a8839a",
+      "sha256": "02c18ee3f6fd0f3f757241454f998e58ea7dc8d232b4061409ce7382c5a8839a",
+      "source": "work/payroll-email-environment.json"
+    },
+    {
+      "path": "payroll-email-focused-initial-final.txt",
+      "raw_sha256": "816e4e58089ce5036c1edd06cf9ebbb3b2a3dc71cc412d7a2e8420534ed882b1",
+      "sha256": "181243f4fb75625c26136142bfd1ed269218b29a6617cb4a98d7cebc9986a7dd",
+      "source": "work/payroll-email-focused-initial-final.txt"
+    },
+    {
+      "path": "payroll-email-gitleaks-preliminary.txt",
+      "raw_sha256": "5be9a436a75b1f4eef4c913ea68786d8fe8fdfbd7bbd634082eab7677f4f7b2c",
+      "sha256": "5be9a436a75b1f4eef4c913ea68786d8fe8fdfbd7bbd634082eab7677f4f7b2c",
+      "source": "work/payroll-email-gitleaks-preliminary.txt"
+    },
+    {
+      "path": "payroll-email-whitespace-before.txt",
+      "raw_sha256": "225d2e13d00e081d33c1f94819411c9979ae2f2a98308af984644675260f25a7",
+      "sha256": "225d2e13d00e081d33c1f94819411c9979ae2f2a98308af984644675260f25a7",
+      "source": "work/payroll-email-whitespace-before.txt"
+    }
+  ],
+  "post_test_whitespace_only": [
+    {
+      "path": "src/shared/payroll-email-schema.ts",
+      "tested_sha256": "4d18f67509522e6ed6cffea85757508d578d91a6ad17fbf34acace62046a4b88",
+      "committed_sha256": "22a248d69977c0dbb04b77b653fa41dad1435f7c1db6c3d80811be5467ad0aec",
+      "change": "Removed an empty line after the final function brace to pass the staged whitespace gate; rstrip byte equality asserted"
+    }
+  ],
+  "typecheck": {
+    "passed": true,
+    "evidence": "payroll-email-typecheck-final.txt"
+  },
+  "javascript_syntax": {
+    "passed": true,
+    "evidence": "payroll-email-syntax-final.txt"
+  },
+  "schema_types": {
+    "generated": true,
+    "evidence": "payroll-email-db-types-final.txt"
+  }
+}

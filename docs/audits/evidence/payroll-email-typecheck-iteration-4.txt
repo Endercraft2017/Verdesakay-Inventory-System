@@ -1,0 +1,5 @@
+
+> otom@1.0.0 typecheck
+> tsc --noEmit
+
+tests/payroll-email.test.ts(79,392): error TS2339: Property 'id' does not exist on type 'number'.

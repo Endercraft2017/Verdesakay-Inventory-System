@@ -1,0 +1,370 @@
+[
+  {
+    "theme": "light",
+    "width": 1440,
+    "frame_scan": "Separate isolated captured HTML; production script sandbox retained",
+    "content_violations": [],
+    "content_incomplete": [],
+    "violations": [],
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "h3"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          },
+          {
+            "target": [
+              "p:nth-child(3)"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+          },
+          {
+            "target": [
+              "#pe-preview > p:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+          },
+          {
+            "target": [
+              "button[data-confirm=\"\"]"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          }
+        ]
+      },
+      {
+        "id": "frame-tested",
+        "impact": "critical",
+        "nodes": [
+          {
+            "target": [
+              "#pe-preview-frame"
+            ],
+            "summary": "Fix all of the following:\n  The iframe still has to be tested with axe-core"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "theme": "light",
+    "width": 1024,
+    "frame_scan": "Separate isolated captured HTML; production script sandbox retained",
+    "content_violations": [],
+    "content_incomplete": [],
+    "violations": [],
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "h3"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          },
+          {
+            "target": [
+              "p:nth-child(3)"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+          },
+          {
+            "target": [
+              "#pe-preview > p:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+          },
+          {
+            "target": [
+              "button[data-confirm=\"\"]"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          }
+        ]
+      },
+      {
+        "id": "frame-tested",
+        "impact": "critical",
+        "nodes": [
+          {
+            "target": [
+              "#pe-preview-frame"
+            ],
+            "summary": "Fix all of the following:\n  The iframe still has to be tested with axe-core"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "theme": "light",
+    "width": 768,
+    "frame_scan": "Separate isolated captured HTML; production script sandbox retained",
+    "content_violations": [],
+    "content_incomplete": [],
+    "violations": [],
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "h3"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          },
+          {
+            "target": [
+              "button[data-confirm=\"\"]"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          }
+        ]
+      },
+      {
+        "id": "frame-tested",
+        "impact": "critical",
+        "nodes": [
+          {
+            "target": [
+              "#pe-preview-frame"
+            ],
+            "summary": "Fix all of the following:\n  The iframe still has to be tested with axe-core"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "theme": "light",
+    "width": 390,
+    "frame_scan": "Separate isolated captured HTML; production script sandbox retained",
+    "content_violations": [],
+    "content_incomplete": [],
+    "violations": [],
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "h3"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          },
+          {
+            "target": [
+              "button[data-confirm=\"\"]"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          }
+        ]
+      },
+      {
+        "id": "frame-tested",
+        "impact": "critical",
+        "nodes": [
+          {
+            "target": [
+              "#pe-preview-frame"
+            ],
+            "summary": "Fix all of the following:\n  The iframe still has to be tested with axe-core"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "frame_scan": "Separate isolated captured HTML; production script sandbox retained",
+    "content_violations": [],
+    "content_incomplete": [],
+    "violations": [],
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "h3"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          },
+          {
+            "target": [
+              "p:nth-child(3)"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+          },
+          {
+            "target": [
+              "#pe-preview > p:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+          },
+          {
+            "target": [
+              "button[data-confirm=\"\"]"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          }
+        ]
+      },
+      {
+        "id": "frame-tested",
+        "impact": "critical",
+        "nodes": [
+          {
+            "target": [
+              "#pe-preview-frame"
+            ],
+            "summary": "Fix all of the following:\n  The iframe still has to be tested with axe-core"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "theme": "dark",
+    "width": 1024,
+    "frame_scan": "Separate isolated captured HTML; production script sandbox retained",
+    "content_violations": [],
+    "content_incomplete": [],
+    "violations": [],
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "h3"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          },
+          {
+            "target": [
+              "p:nth-child(3)"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+          },
+          {
+            "target": [
+              "#pe-preview > p:nth-child(1)"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements"
+          },
+          {
+            "target": [
+              "button[data-confirm=\"\"]"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          }
+        ]
+      },
+      {
+        "id": "frame-tested",
+        "impact": "critical",
+        "nodes": [
+          {
+            "target": [
+              "#pe-preview-frame"
+            ],
+            "summary": "Fix all of the following:\n  The iframe still has to be tested with axe-core"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "theme": "dark",
+    "width": 768,
+    "frame_scan": "Separate isolated captured HTML; production script sandbox retained",
+    "content_violations": [],
+    "content_incomplete": [],
+    "violations": [],
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "h3"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          },
+          {
+            "target": [
+              "button[data-confirm=\"\"]"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          }
+        ]
+      },
+      {
+        "id": "frame-tested",
+        "impact": "critical",
+        "nodes": [
+          {
+            "target": [
+              "#pe-preview-frame"
+            ],
+            "summary": "Fix all of the following:\n  The iframe still has to be tested with axe-core"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "theme": "dark",
+    "width": 390,
+    "frame_scan": "Separate isolated captured HTML; production script sandbox retained",
+    "content_violations": [],
+    "content_incomplete": [],
+    "violations": [],
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "nodes": [
+          {
+            "target": [
+              "h3"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          },
+          {
+            "target": [
+              "button[data-confirm=\"\"]"
+            ],
+            "summary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient"
+          }
+        ]
+      },
+      {
+        "id": "frame-tested",
+        "impact": "critical",
+        "nodes": [
+          {
+            "target": [
+              "#pe-preview-frame"
+            ],
+            "summary": "Fix all of the following:\n  The iframe still has to be tested with axe-core"
+          }
+        ]
+      }
+    ]
+  }
+]

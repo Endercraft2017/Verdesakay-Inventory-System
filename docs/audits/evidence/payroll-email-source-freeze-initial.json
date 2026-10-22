@@ -1,0 +1,29 @@
+{
+  "base_commit": "e7cf902f2c225fe8bd1a7964d403c8647483eb37",
+  "frozen_at": "2026-10-22T06:27:27.054191+00:00",
+  "files": {
+    "package-lock.json": "28736bcfdeb7197f61fbebfb2b553115e7b503bff9016ded4d75d578c790b51c",
+    "package.json": "23e2f22b7df1d08d86d2d56b378b9b19c404d060e9d997cbfd82aebfea234f4f",
+    "public/js/modules/core/form-records.js": "32969056f352752023fe9a060c54f0841e153acb27e35e9f2beb79d0649e77b4",
+    "scripts/payroll-email-crash-drill.ts": "16fec65a33ececc688ead80570c97bdf27a2107dbad165cbb55e4b555cb1b52f",
+    "server.ts": "99618a9de371a65a1cff0918bc26b525a07b39d70cf06db82387251e457e95d9",
+    "src/modules/hr/hr.routes.ts": "a479ee696a8d04097a48d6bce6dbe16f95667a797a102590e824721a04310c09",
+    "src/modules/hr/payroll-email.routes.ts": "933ed0ff9c277e1587a4beafe0be2fc29eeecdbd92bc9d64771835d66b338f0b",
+    "src/modules/hr/payroll-email.ts": "5928886c49fdcdd071439c4a68ead0593f75797fa4075128ce9e17ea8dd29969",
+    "src/shared/db-types.ts": "777d2d80632a87cae4a14882954d514a19c53112971555e442d10e39b1d1fda6",
+    "src/shared/db.ts": "881dfbc3e7ce4f571936f8ed9df71dbf94fe6bf7f2f4072c7ec8ce717373d62d",
+    "src/shared/idempotency.ts": "7b38a0a1fc80ffb5ba6ba24719ff93201b159396a43f1dd800de242e99e29b5a",
+    "src/shared/payroll-email-schema.ts": "4d18f67509522e6ed6cffea85757508d578d91a6ad17fbf34acace62046a4b88",
+    "src/shared/reviewed-smtp.ts": "bccd1138dc787cb51266e297dbd1885d134711ff7b0386226842836e5d1a0744",
+    "src/shared/step-up.ts": "6ada502c3b771467dd62b0c4d230f2261b713959ef63d834cb41ddfa754a9118",
+    "src/sync/node.ts": "07fd3302d037dabaee29d6390be6e563503bf89438422d0cefc3e5a18a4a1bc1",
+    "tests/e2e/payroll-email.spec.ts": "346488bfcbbe30e2202cc784cb631b2b7533961867f559d7e6b53537c75a04e0",
+    "tests/e2e/server.ts": "283fd5c2846652c2721a4f943b299122307379ee39019d9931fdfa375b95997e",
+    "tests/helpers/smtp-capture.ts": "ab9f19695000bba9311599e1ca32932ad484c9c08daa0fcf868d0f6fe4e50ad8",
+    "tests/hr.test.ts": "618af6cc114959d82a717d3c9c6a461c5086498f9464b70cf7ce1fb14fa61619",
+    "tests/payroll-email-node.test.ts": "34e195597cd9c8b85567249d381c5e3e5fc947a5d8f511f91951eabc18683270",
+    "tests/payroll-email.test.ts": "857552ed74523fc1494ca22fd46301a6e6cff1e03998b866290c86bd25bfed5c",
+    "tests/payroll-release.test.ts": "d0f7a9300201496fd0a30fca1154740af2797882ad90bce7827aadb3521ff5c3",
+    "tests/sync-payroll.test.ts": "38eaff80e3a0b4de94932e935304df4791e81598445baa2c77dab75a3795dab2"
+  }
+}

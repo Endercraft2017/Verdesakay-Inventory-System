@@ -1340,7 +1340,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     if (otherRec) expect((await ctx.api.delete(`/api/form-records/${otherRec.id}`).set(hdr())).status).toBe(200);
   });
 
-  it('emailing a payslip 400s when the employee has no linked account (or the linked account has no email)', async () => {
+  it('emailing a payslip requires review when the employee has no linked account (or the linked account has no email)', async () => {
     const emp = await ctx.api.post('/api/hr/employees').set(hdr())
       .send({ employee_no: 'TEST-EMAIL', name: 'Email Test Employee', daily_rate: 800 });
     const period = await ctx.api.post('/api/hr/periods').set(hdr())
@@ -1357,8 +1357,8 @@ describe('generate-payslips computes real numbers from attendance + linked forms
 
     expect((await ctx.api.post(`/api/hr/payroll/${recId}/mark-paid`).set(hdr())).status).toBe(200);
     const res = await ctx.api.post(`/api/hr/payroll/${recId}/email`).set(hdr());
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/linked user account/i);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/active account/i);
   });
 
   it('the read-only payroll detail route returns a per-day breakdown that sums to the payslip\'s own totals', async () => {

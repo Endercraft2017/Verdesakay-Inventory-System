@@ -35,16 +35,19 @@ export function hasFreshVerification(userId: number, token: string): boolean {
 }
 
 /** Place after permission and syncClass('online'): offline business routes are unaffected. */
-export function requireFreshVerification(req: Request,res: Response,next: NextFunction): void {
+export function freshVerificationFor(action:string) {
+ return (req:Request,res:Response,next:NextFunction):void=>{
   if (!req.user || !req.token) {
-    res.status(403).json({error:'Sign in directly on the cloud to verify account changes.'});return;
+    res.status(403).json({error:`Sign in directly on the cloud to ${action}.`});return;
   }
-  if (mfaSetupRequired(req.user)) { res.status(403).json({error:'Set up two-step sign-in before changing accounts.',mfa_setup_required:true});return; }
+  if (mfaSetupRequired(req.user)) { res.status(403).json({error:`Set up two-step sign-in before you ${action}.`,mfa_setup_required:true});return; }
   if (!hasFreshVerification(req.user.id,req.token)) {
-    res.status(403).json({error:'Confirm your identity before changing accounts or sign-in security.',step_up_required:true,mfa_required:mfaApplies()&&mfaEnabled(req.user.id)});return;
+    res.status(403).json({error:`Confirm your identity before you ${action}.`,step_up_required:true,mfa_required:mfaApplies()&&mfaEnabled(req.user.id)});return;
   }
   next();
+ };
 }
+export const requireFreshVerification=freshVerificationFor('change accounts or sign-in security');
 
 export interface SavedVerificationContext { user_id: number; session_hash: string; credential_stamp: string }
 /** OAuth may finish after the five-minute write window, but never after its actor/session was revoked. */

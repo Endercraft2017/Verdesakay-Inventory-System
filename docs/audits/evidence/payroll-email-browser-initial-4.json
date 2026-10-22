@@ -1,0 +1,328 @@
+{
+  "config": {
+    "argv": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+      "/workspace/Verdesakay-Inventory-System/node_modules/.bin/playwright",
+      "test",
+      "tests/e2e/payroll-email.spec.ts"
+    ],
+    "configFile": "/workspace/Verdesakay-Inventory-System/playwright.config.ts",
+    "rootDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "",
+        "testDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "snapshotDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "testIgnore": [],
+        "testMatch": "**/*.spec.ts",
+        "timeout": 30000,
+        "use": {
+          "baseURL": "http://127.0.0.1:4173",
+          "trace": "retain-on-failure",
+          "screenshot": "only-on-failure",
+          "launchOptions": {}
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": ""
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "html",
+        {
+          "open": "never",
+          "outputFolder": "work/playwright-report"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "work/playwright-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npx tsx tests/e2e/server.ts",
+      "url": "http://127.0.0.1:4173/api/health",
+      "reuseExistingServer": false,
+      "timeout": 30000
+    }
+  },
+  "suites": [
+    {
+      "title": "payroll-email.spec.ts",
+      "file": "payroll-email.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "operator reviews exact recipient and saved content, then records acceptance without claiming delivery",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "interrupted",
+                  "duration": 110734,
+                  "error": {
+                    "message": "Error: browserContext.newPage: Protocol error (Target.createTarget): browserContextId\n Please check out https://github.com/dequelabs/axe-core-npm/blob/develop/packages/playwright/error-handling.md",
+                    "stack": "Error: browserContext.newPage: Protocol error (Target.createTarget): browserContextId\n Please check out https://github.com/dequelabs/axe-core-npm/blob/develop/packages/playwright/error-handling.md\n    at AxeBuilder.analyze (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:219:13)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:14:325",
+                    "cause": {
+                      "message": "Error: browserContext.newPage: Protocol error (Target.createTarget): browserContextId",
+                      "stack": "Error: browserContext.newPage: Protocol error (Target.createTarget): browserContextId\n    at AxeBuilder.finishRun (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:315:37)\n    at AxeBuilder.analyze (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:217:25)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:14:325"
+                    },
+                    "location": {
+                      "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                      "column": 325,
+                      "line": 14
+                    },
+                    "snippet": "  12 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  13 |  test.setTimeout(120000);const dialog=await reviewed(page,'GOOD');const exactHtml=await page.locator('#pe-preview-frame').getAttribute('srcdoc');const isolated=await page.context().browser()!.newContext();const mailPage=await isolated.newPage();await mailPage.route('**/*',r=>r.abort());await mailPage.setContent('<html lang=\"en\"><head><title>Reviewed email content</title></head><body><main id=\"email-content\">'+exactHtml!.replace(/<meta http-equiv=\"Content-Security-Policy\"[^>]*>/i,'')+'</main></body></html>');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];\n> 14 |  for(const theme of ['light','dark'])for(const width of [1440,1024,768,390]){\n     |                                                                              ^\n  15 |   await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);await page.setViewportSize({width,height:1000});await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeInViewport();await expect(dialog.getByRole('button',{name:'Close',exact:true})).toBeInViewport();await page.evaluate(axeSource);const scan=await page.evaluate(async()=>await(window as any).axe.run({include:[['[role=\"dialog\"]']]},{iframes:false}));expect(scan.violations).toEqual([]);await mailPage.setViewportSize({width,height:1000});const contentScan=await new AxeBuilder({page:mailPage}).include('#email-content').analyze();expect(contentScan.violations).toEqual([]);scans.push({theme,width,frame_scan:'Separate isolated captured HTML; production script sandbox retained',content_violations:contentScan.violations,content_incomplete:contentScan.incomplete,violations:scan.violations,incomplete:scan.incomplete.map((x:any)=>({id:x.id,impact:x.impact,nodes:x.nodes.map((n:any)=>({target:n.target,summary:n.failureSummary}))}))});await page.screenshot({path:`work/payroll-email-${theme}-${width}.png`});\n  16 |  }\n  17 |  await isolated.close();fs.writeFileSync('work/payroll-email-browser-axe.json',JSON.stringify(scans,null,2)+'\\n');await dialog.getByRole('button',{name:'Confirm email release',exact:true}).click();await expect(dialog).toContainText('Release recorded');await expect.poll(async()=>(await status(page)).status.history[0]?.state).toBe('accepted');await dialog.getByRole('button',{name:'Refresh status',exact:true}).click();await expect(dialog).toContainText('Accepted by mail server — delivery unconfirmed');const state=(await status(page)).status;expect(state.history).toHaveLength(1);expect(state.history[0].delivery_confirmation).toBe('unavailable');"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                        "column": 325,
+                        "line": 14
+                      },
+                      "message": "Error: browserContext.newPage: Protocol error (Target.createTarget): browserContextId\n Please check out https://github.com/dequelabs/axe-core-npm/blob/develop/packages/playwright/error-handling.md\n\n  12 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  13 |  test.setTimeout(120000);const dialog=await reviewed(page,'GOOD');const exactHtml=await page.locator('#pe-preview-frame').getAttribute('srcdoc');const isolated=await page.context().browser()!.newContext();const mailPage=await isolated.newPage();await mailPage.route('**/*',r=>r.abort());await mailPage.setContent('<html lang=\"en\"><head><title>Reviewed email content</title></head><body><main id=\"email-content\">'+exactHtml!.replace(/<meta http-equiv=\"Content-Security-Policy\"[^>]*>/i,'')+'</main></body></html>');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];\n> 14 |  for(const theme of ['light','dark'])for(const width of [1440,1024,768,390]){\n     |                                                                              ^\n  15 |   await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);await page.setViewportSize({width,height:1000});await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeInViewport();await expect(dialog.getByRole('button',{name:'Close',exact:true})).toBeInViewport();await page.evaluate(axeSource);const scan=await page.evaluate(async()=>await(window as any).axe.run({include:[['[role=\"dialog\"]']]},{iframes:false}));expect(scan.violations).toEqual([]);await mailPage.setViewportSize({width,height:1000});const contentScan=await new AxeBuilder({page:mailPage}).include('#email-content').analyze();expect(contentScan.violations).toEqual([]);scans.push({theme,width,frame_scan:'Separate isolated captured HTML; production script sandbox retained',content_violations:contentScan.violations,content_incomplete:contentScan.incomplete,violations:scan.violations,incomplete:scan.incomplete.map((x:any)=>({id:x.id,impact:x.impact,nodes:x.nodes.map((n:any)=>({target:n.target,summary:n.failureSummary}))}))});await page.screenshot({path:`work/payroll-email-${theme}-${width}.png`});\n  16 |  }\n  17 |  await isolated.close();fs.writeFileSync('work/payroll-email-browser-axe.json',JSON.stringify(scans,null,2)+'\\n');await dialog.getByRole('button',{name:'Confirm email release',exact:true}).click();await expect(dialog).toContainText('Release recorded');await expect.poll(async()=>(await status(page)).status.history[0]?.state).toBe('accepted');await dialog.getByRole('button',{name:'Refresh status',exact:true}).click();await expect(dialog).toContainText('Accepted by mail server — delivery unconfirmed');const state=(await status(page)).status;expect(state.history).toHaveLength(1);expect(state.history[0].delivery_confirmation).toBe('unavailable');\n    at AxeBuilder.analyze (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:219:13)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:14:325\n[cause]: Error: browserContext.newPage: Protocol error (Target.createTarget): browserContextId\n    at AxeBuilder.finishRun (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:315:37)\n    at AxeBuilder.analyze (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:217:25)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:14:325"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T06:03:51.071Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/test-failed-2.png"
+                    },
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                    "column": 325,
+                    "line": 14
+                  }
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-da435024868c173c931b",
+          "file": "payroll-email.spec.ts",
+          "line": 11,
+          "column": 1
+        },
+        {
+          "title": "closing an unconfirmed review does not queue or send work",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-c93869ab0ea2688f8ef5",
+          "file": "payroll-email.spec.ts",
+          "line": 19,
+          "column": 1
+        },
+        {
+          "title": "changed saved pay clears the stale preview and disables confirmation with an accessible recovery path",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-5633a6945eb7a8036afe",
+          "file": "payroll-email.spec.ts",
+          "line": 20,
+          "column": 1
+        },
+        {
+          "title": "a recipient changed after review cannot receive the old approval",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-993f578706055a077e0a",
+          "file": "payroll-email.spec.ts",
+          "line": 23,
+          "column": 1
+        },
+        {
+          "title": "a changed browser identity cannot confirm an old private preview",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-2459ea70758748f04341",
+          "file": "payroll-email.spec.ts",
+          "line": 26,
+          "column": 1
+        },
+        {
+          "title": "lost confirmation response repeats the same review and produces one submission",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-42e09e1c7d124ac731d2",
+          "file": "payroll-email.spec.ts",
+          "line": 27,
+          "column": 1
+        },
+        {
+          "title": "unknown SMTP outcome is visible and another release requires explicit investigation and risk acknowledgement",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-9fda5e17f9d5b5e1f4dd",
+          "file": "payroll-email.spec.ts",
+          "line": 30,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-22T06:03:42.517Z",
+    "duration": 119729.238,
+    "expected": 0,
+    "skipped": 7,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

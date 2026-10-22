@@ -88,6 +88,7 @@ describe('a payroll cutoff while the internet is down', () => {
     // Emailing it needs the cloud's mail server.
     const mail = await api().post(`/api/hr/payroll/${slip}/email`).set(h).send({});
     expect(mail.status).toBe(503);
+    for(const stage of ['review','confirm'])expect((await api().post(`/api/hr/payroll/${slip}/email/${stage}`).set(h).send({})).status).toBe(503);
   });
 
   it('reaches the cloud identically', async () => {
@@ -136,4 +137,24 @@ it('refuses local duplicate release, then retains a valid accepted offline payme
   const clashes=(await ok(api().get('/api/sync/clashes').set(T.cloudHdr()))).body as Array<{summary:string}>;
   expect(clashes.some(c=>c.summary.includes(`Payslip #${original.id} paid decision retained with source review required`))).toBe(true);
   expect((await api().post(`/api/hr/payroll/${original.id}/email`).set(T.cloudHdr()).send({})).status).toBe(409);
+});
+
+it('keeps email intent cloud-only and invalidates queued approval after a real offline correction syncs',async()=>{
+ const {smtpCapture}=await import('./helpers/smtp-capture'),peer=await smtpCapture();
+ try{
+  const db=T.dbmod,cloud=T.cloudDb(),svc=await import('../src/modules/hr/payroll-email'),{saveMailSettings}=await import('../src/shared/mailer');
+  cloud.prepare('UPDATE employees SET user_id=1 WHERE id=?').run(emp);cloud.prepare("UPDATE users SET email='offline-review@example.test' WHERE id=1").run();
+  saveMailSettings({transport:'smtp',from_name:'Synthetic Sync Payroll',from_email:'payroll@example.test',reply_to:'',smtp_host:'127.0.0.1',smtp_port:peer.port,smtp_secure:true,smtp_user:''});
+  const token=T.cloudHdr().Authorization!.slice(7),{markFreshVerification}=await import('../src/shared/step-up');markFreshVerification(1,token);
+  const id=payslips(cloud,'Sep 1-2, 2026')[0]!.id,base=`/api/hr/payroll/${id}/email`;
+  const state=await ok(api().get(base).set(T.cloudHdr())),review=await ok(api().post(base+'/review').set(T.cloudHdr()).send({source_stamp:state.body.source_stamp}));
+  await ok(api().post(base+'/confirm').set(T.cloudHdr()).send({review_id:review.body.id,review_token:review.body.review_token}),202);
+  await T.hostRound();expect(T.hostDb().prepare('SELECT count(*) AS n FROM payroll_email_releases').get()?.n).toBe(0);
+  T.cutOff('host');await ok(api().post(`/api/hr/payroll/${id}/unmark-paid`).set(T.hostHdr()).send({}));
+  expect(await db.withTenant(T.hostSlug,()=>svc.processOnePayrollEmail())).toBe(false);expect(peer.connections.count).toBe(0);
+  T.reconnect('host');const sync=await T.hostRound();expect(sync.pushed.filter(p=>p.state!=='confirmed')).toEqual([]);
+  expect(cloud.prepare('SELECT status FROM form_records WHERE id=?').get(id)?.status).toBe('draft');
+  expect(await svc.processOnePayrollEmail()).toBe(true);expect(cloud.prepare('SELECT state FROM payroll_email_releases WHERE id=?').get(review.body.id)?.state).toBe('cancelled');
+  expect(peer.messages).toHaveLength(0);expect(T.hostDb().prepare('SELECT count(*) AS n FROM payroll_email_releases').get()?.n).toBe(0);
+ }finally{await peer.close();}
 });

@@ -1,0 +1,306 @@
+[WebServer] (node:36026) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:36039) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:36050) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 7 tests using 1 worker
+
+(node:36105) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 tests/e2e/payroll-email.spec.ts:11:1 › operator reviews exact recipient and saved content, then records acceptance without claiming delivery (7.3s)
+(node:36198) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  2 tests/e2e/payroll-email.spec.ts:19:1 › closing an unconfirmed review does not queue or send work (7.2s)
+(node:36311) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  3 tests/e2e/payroll-email.spec.ts:20:1 › changed saved pay clears the stale preview and disables confirmation with an accessible recovery path (6.7s)
+(node:36424) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  4 tests/e2e/payroll-email.spec.ts:23:1 › a recipient changed after review cannot receive the old approval (7.3s)
+(node:36531) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  5 tests/e2e/payroll-email.spec.ts:26:1 › a changed browser identity cannot confirm an old private preview (7.4s)
+(node:36626) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  6 tests/e2e/payroll-email.spec.ts:27:1 › lost confirmation response repeats the same review and produces one submission (7.3s)
+(node:36734) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  7 tests/e2e/payroll-email.spec.ts:30:1 › unknown SMTP outcome is visible and another release requires explicit investigation and risk acknowledgement (7.3s)
+
+
+  1) tests/e2e/payroll-email.spec.ts:11:1 › operator reviews exact recipient and saved content, then records acceptance without claiming delivery
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms
+      - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+
+
+       7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;
+       8 | }
+    >  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}
+         |                                                                                                                                                                                                                                                      ^
+      10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}
+      11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{
+      12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];
+        at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:12:15
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) tests/e2e/payroll-email.spec.ts:19:1 › closing an unconfirmed review does not queue or send work
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms
+      - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+
+
+       7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;
+       8 | }
+    >  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}
+         |                                                                                                                                                                                                                                                      ^
+      10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}
+      11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{
+      12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];
+        at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:19:95
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-closing-an-u-0db8f-does-not-queue-or-send-work/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-email-closing-an-u-0db8f-does-not-queue-or-send-work/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-closing-an-u-0db8f-does-not-queue-or-send-work/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-email-closing-an-u-0db8f-does-not-queue-or-send-work/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) tests/e2e/payroll-email.spec.ts:20:1 › changed saved pay clears the stale preview and disables confirmation with an accessible recovery path
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms
+      - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+
+
+       7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;
+       8 | }
+    >  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}
+         |                                                                                                                                                                                                                                                      ^
+      10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}
+      11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{
+      12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];
+        at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:21:15
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-changed-save-2d926-an-accessible-recovery-path/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-email-changed-save-2d926-an-accessible-recovery-path/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-changed-save-2d926-an-accessible-recovery-path/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-email-changed-save-2d926-an-accessible-recovery-path/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) tests/e2e/payroll-email.spec.ts:23:1 › a recipient changed after review cannot receive the old approval
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms
+      - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+
+
+       7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;
+       8 | }
+    >  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}
+         |                                                                                                                                                                                                                                                      ^
+      10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}
+      11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{
+      12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];
+        at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:24:15
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-a-recipient--f7367-ot-receive-the-old-approval/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-email-a-recipient--f7367-ot-receive-the-old-approval/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-a-recipient--f7367-ot-receive-the-old-approval/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-email-a-recipient--f7367-ot-receive-the-old-approval/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5) tests/e2e/payroll-email.spec.ts:26:1 › a changed browser identity cannot confirm an old private preview
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms
+      - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+
+
+       7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;
+       8 | }
+    >  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}
+         |                                                                                                                                                                                                                                                      ^
+      10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}
+      11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{
+      12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];
+        at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:26:102
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-a-changed-br-98918-firm-an-old-private-preview/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-email-a-changed-br-98918-firm-an-old-private-preview/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-a-changed-br-98918-firm-an-old-private-preview/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-email-a-changed-br-98918-firm-an-old-private-preview/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  6) tests/e2e/payroll-email.spec.ts:27:1 › lost confirmation response repeats the same review and produces one submission
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms
+      - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+
+
+       7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;
+       8 | }
+    >  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}
+         |                                                                                                                                                                                                                                                      ^
+      10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}
+      11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{
+      12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];
+        at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:28:15
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-lost-confirm-2b990-and-produces-one-submission/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-email-lost-confirm-2b990-and-produces-one-submission/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-lost-confirm-2b990-and-produces-one-submission/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-email-lost-confirm-2b990-and-produces-one-submission/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  7) tests/e2e/payroll-email.spec.ts:30:1 › unknown SMTP outcome is visible and another release requires explicit investigation and risk acknowledgement
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms
+      - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })
+
+
+       7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;
+       8 | }
+    >  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}
+         |                                                                                                                                                                                                                                                      ^
+      10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}
+      11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{
+      12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];
+        at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:31:15
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-unknown-SMTP-ab0fb-on-and-risk-acknowledgement/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-email-unknown-SMTP-ab0fb-on-and-risk-acknowledgement/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-unknown-SMTP-ab0fb-on-and-risk-acknowledgement/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-email-unknown-SMTP-ab0fb-on-and-risk-acknowledgement/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  7 failed
+    tests/e2e/payroll-email.spec.ts:11:1 › operator reviews exact recipient and saved content, then records acceptance without claiming delivery
+    tests/e2e/payroll-email.spec.ts:19:1 › closing an unconfirmed review does not queue or send work
+    tests/e2e/payroll-email.spec.ts:20:1 › changed saved pay clears the stale preview and disables confirmation with an accessible recovery path
+    tests/e2e/payroll-email.spec.ts:23:1 › a recipient changed after review cannot receive the old approval
+    tests/e2e/payroll-email.spec.ts:26:1 › a changed browser identity cannot confirm an old private preview
+    tests/e2e/payroll-email.spec.ts:27:1 › lost confirmation response repeats the same review and produces one submission
+    tests/e2e/payroll-email.spec.ts:30:1 › unknown SMTP outcome is visible and another release requires explicit investigation and risk acknowledgement

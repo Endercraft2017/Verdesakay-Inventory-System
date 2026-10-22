@@ -1,0 +1,123 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms > emailing a payslip 400s when the employee has no linked account (or the linked account has no email)
+{"timestamp":"2026-10-22T05:44:30.389Z","level":"info","event":"http_request","request_id":"889490a6-ac23-45a7-aaa2-54905c77ae3a","tenant":"default","method":"POST","path":"/api/hr/employees","status":201,"duration_ms":1}
+
+stdout | tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms > emailing a payslip 400s when the employee has no linked account (or the linked account has no email)
+{"timestamp":"2026-10-22T05:44:30.391Z","level":"info","event":"http_request","request_id":"5097d32d-acde-4b13-a746-a75d46b2961d","tenant":"default","method":"POST","path":"/api/hr/periods","status":201,"duration_ms":1}
+
+stdout | tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms > emailing a payslip 400s when the employee has no linked account (or the linked account has no email)
+{"timestamp":"2026-10-22T05:44:30.393Z","level":"info","event":"http_request","request_id":"d6845400-fe09-46e0-a2af-dcd6fca02142","tenant":"default","method":"POST","path":"/api/hr/periods/31/employees","status":201,"duration_ms":1}
+
+stdout | tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms > emailing a payslip 400s when the employee has no linked account (or the linked account has no email)
+{"timestamp":"2026-10-22T05:44:30.395Z","level":"info","event":"http_request","request_id":"3230c98b-eff4-43eb-9d46-67db23facda5","tenant":"default","method":"PUT","path":"/api/hr/periods/31/attendance","status":200,"duration_ms":1}
+
+stdout | tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms > emailing a payslip 400s when the employee has no linked account (or the linked account has no email)
+{"timestamp":"2026-10-22T05:44:30.399Z","level":"info","event":"http_request","request_id":"68c23f97-2551-4def-a4de-48e32493dd7c","tenant":"default","method":"POST","path":"/api/hr/periods/31/generate-payslips","status":201,"duration_ms":3}
+
+stdout | tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms > emailing a payslip 400s when the employee has no linked account (or the linked account has no email)
+{"timestamp":"2026-10-22T05:44:30.401Z","level":"info","event":"http_request","request_id":"e1264b74-ef81-4661-aa43-b1b1c37e1209","tenant":"default","method":"GET","path":"/api/form-definitions/1/records","status":200,"duration_ms":1}
+
+stdout | tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms > emailing a payslip 400s when the employee has no linked account (or the linked account has no email)
+{"timestamp":"2026-10-22T05:44:30.403Z","level":"info","event":"http_request","request_id":"ed450505-1525-4499-80d7-2a84b98635ed","tenant":"default","method":"POST","path":"/api/hr/payroll/42/mark-paid","status":200,"duration_ms":2}
+
+stdout | tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms > emailing a payslip 400s when the employee has no linked account (or the linked account has no email)
+{"timestamp":"2026-10-22T05:44:30.406Z","level":"info","event":"http_request","request_id":"6f9f32ba-5bde-430f-b80e-b211f944eb7b","tenant":"default","method":"POST","path":"/api/hr/payroll/42/email","status":409,"duration_ms":2}
+
+stdout | tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms
+{"timestamp":"2026-10-22T05:44:29.806Z","level":"info","event":"http_request","request_id":"d40f7021-e8e1-496a-b2b2-e154f6ef9fbb","tenant":"default","method":"PUT","path":"/api/hr/payroll-policy","status":200,"duration_ms":2}
+
+stdout | tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms
+{"timestamp":"2026-10-22T05:44:29.809Z","level":"info","event":"http_request","request_id":"72e10ccf-1771-4463-8839-bd57a232ee49","tenant":"default","method":"POST","path":"/api/hr/shifts","status":201,"duration_ms":1}
+
+stdout | tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms
+{"timestamp":"2026-10-22T05:44:29.812Z","level":"info","event":"http_request","request_id":"e3b8645d-9451-49da-84d2-541254f35b5e","tenant":"default","method":"GET","path":"/api/form-definitions","status":200,"duration_ms":2}
+
+stdout | tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms
+{"timestamp":"2026-10-22T05:44:29.816Z","level":"info","event":"http_request","request_id":"081d6396-5d0b-440c-88cd-04dc079ccb50","tenant":"default","method":"POST","path":"/api/form-definitions","status":201,"duration_ms":3}
+
+stdout | tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms
+{"timestamp":"2026-10-22T05:44:29.819Z","level":"info","event":"http_request","request_id":"28dd61ca-7ef7-4deb-b299-53d1d317fdca","tenant":"default","method":"GET","path":"/api/form-definitions","status":200,"duration_ms":1}
+
+stdout | tests/hr.test.ts
+{"timestamp":"2026-10-22T05:44:22.775Z","level":"info","event":"http_request","request_id":"0e31a1f5-03fe-4c10-bc3f-abc3260bcef0","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":567}
+
+stdout | tests/hr.test.ts
+{"timestamp":"2026-10-22T05:44:23.412Z","level":"info","event":"http_request","request_id":"566c3e0f-6351-4f81-aec7-ca8d68dae288","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":626}
+
+stdout | tests/hr.test.ts
+{"timestamp":"2026-10-22T05:44:23.940Z","level":"info","event":"http_request","request_id":"d2853d87-ade9-49bd-9f43-812ba90e9c04","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":525}
+
+ ❯ tests/hr.test.ts (114 tests | 1 failed) 11273ms
+     × emailing a payslip 400s when the employee has no linked account (or the linked account has no email) 22ms
+stdout | tests/payroll-release.test.ts > accepts valid draft payment and permits only its owner to download the resulting paid slip
+{"timestamp":"2026-10-22T05:44:35.235Z","level":"info","event":"http_request","request_id":"8c031d7c-6ac2-4337-833e-4c3df0a08d1c","tenant":"default","method":"POST","path":"/api/hr/payroll/22/mark-paid","status":200,"duration_ms":2}
+
+stdout | tests/payroll-release.test.ts > accepts valid draft payment and permits only its owner to download the resulting paid slip
+{"timestamp":"2026-10-22T05:44:35.251Z","level":"info","event":"http_request","request_id":"ebd62576-59e1-4e89-a3e6-82466017890e","tenant":"default","method":"GET","path":"/api/me/payslips/22/pdf","status":200,"duration_ms":15}
+
+stdout | tests/payroll-release.test.ts > accepts valid draft payment and permits only its owner to download the resulting paid slip
+{"timestamp":"2026-10-22T05:44:35.254Z","level":"info","event":"http_request","request_id":"c49b7373-27ae-45f9-b2a5-5f38f2f5efef","tenant":"default","method":"GET","path":"/api/me/payslips/22/pdf","status":404,"duration_ms":2}
+
+stdout | tests/payroll-release.test.ts > accepts valid draft payment and permits only its owner to download the resulting paid slip
+{"timestamp":"2026-10-22T05:44:35.257Z","level":"info","event":"http_request","request_id":"34611290-158f-43b7-b362-b51e8b1cd77f","tenant":"default","method":"POST","path":"/api/hr/payroll/22/email","status":409,"duration_ms":2}
+
+stdout | tests/payroll-release.test.ts
+{"timestamp":"2026-10-22T05:44:33.849Z","level":"info","event":"http_request","request_id":"49795393-ec67-4870-a296-45acb4899fd0","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":337}
+
+stdout | tests/payroll-release.test.ts
+{"timestamp":"2026-10-22T05:44:34.195Z","level":"info","event":"http_request","request_id":"4311b39e-8c3b-4b0d-aeb2-c9e530f723e9","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":339}
+
+stdout | tests/payroll-release.test.ts
+{"timestamp":"2026-10-22T05:44:34.530Z","level":"info","event":"http_request","request_id":"f336ff81-6dc4-461e-bce7-3e194a62bc34","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":332}
+
+stdout | tests/payroll-release.test.ts
+{"timestamp":"2026-10-22T05:44:34.868Z","level":"info","event":"http_request","request_id":"ef440f8c-9ddd-439b-9b55-8648dc4f7193","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":335}
+
+stdout | tests/payroll-release.test.ts
+{"timestamp":"2026-10-22T05:44:35.197Z","level":"info","event":"http_request","request_id":"f9b12925-6a64-4824-ba15-3ac0ae2fdbeb","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":326}
+
+ ❯ tests/payroll-release.test.ts (16 tests | 1 failed) 4012ms
+   × accepts valid draft payment and permits only its owner to download the resulting paid slip 29ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/hr.test.ts > generate-payslips computes real numbers from attendance + linked forms > emailing a payslip 400s when the employee has no linked account (or the linked account has no email)
+AssertionError: expected 409 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 409
+
+ ❯ tests/hr.test.ts:1360:24
+    1358|     expect((await ctx.api.post(`/api/hr/payroll/${recId}/mark-paid`).s…
+    1359|     const res = await ctx.api.post(`/api/hr/payroll/${recId}/email`).s…
+    1360|     expect(res.status).toBe(400);
+       |                        ^
+    1361|     expect(res.body.error).toMatch(/linked user account/i);
+    1362|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/payroll-release.test.ts > accepts valid draft payment and permits only its owner to download the resulting paid slip
+AssertionError: expected 409 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 409
+
+ ❯ tests/payroll-release.test.ts:35:36
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  2 failed | 1 passed (3)
+      Tests  2 failed | 186 passed (188)
+   Start at  05:44:13
+   Duration  22.32s (transform 2.35s, setup 42ms, import 369ms, tests 21.54s, environment 0ms)

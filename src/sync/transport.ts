@@ -217,6 +217,9 @@ export function buildNodeSnapshot(slug: string, file: string): void {
   try {
     d.exec('PRAGMA secure_delete = ON');
     const tables = d.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string; sql: string | null }>;
+    // This private export must remove mandatory email events before their parent intents.
+    // Keep the production foreign key restrictive; only the sanitized copy is cleared.
+    if(tables.some(t=>t.name==='payroll_email_events'))d.exec('DELETE FROM payroll_email_events');
     for (const { name, sql } of tables) {
       if (name.startsWith('sqlite_') || name === 'sync_effects') continue;
       if (/^CREATE VIRTUAL TABLE/i.test(sql ?? '')) d.exec(`DELETE FROM "${name}"`); // FTS: through the vtable
@@ -229,6 +232,9 @@ export function buildNodeSnapshot(slug: string, file: string): void {
     for (const { key } of d.prepare('SELECT key FROM settings').all() as Array<{ key: string }>) {
       if (isCloudOnlySetting(key)) del.run(key); // secrets + AI / email / QuickBooks settings
     }
+    // Deleting cloud settings fires the email invalidation fences. Their technical markers
+    // are cloud-only too, so clear them after every other scrub, before removing free pages.
+    if(tables.some(t=>t.name==='payroll_email_versions'))d.exec('DELETE FROM payroll_email_versions');
     d.exec('VACUUM');
   } finally {
     d.close();

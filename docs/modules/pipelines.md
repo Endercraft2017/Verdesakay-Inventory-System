@@ -723,8 +723,15 @@ for the internet (it uses the company's mail server, which only the cloud has).
    and Paid at download time and logging each download. Branch: HR un-marks Paid to correct
    it → download hidden (404) until re-marked. Email is also Paid-only and source-checked.
    Previously accepted offline paid decisions stand under D6 with source clashes recorded and
-   current-replica issuance held. Unknown legacy linkage, actual settlement and reviewed email
-   intent remain separate; see `docs/operations/payroll-release.md`.
+   current-replica issuance held. Unknown legacy linkage and actual settlement remain separate;
+   see `docs/operations/payroll-release.md`.
+   **Email release:** current cloud session + payroll.manage + fresh proof → exact saved
+   recipient/content review → durable queued confirmation → one worker claim → SMTP accepted /
+   not_accepted / unknown. Changes before claim invalidate approval; no automatic resend of
+   interrupted/unknown work. Explicit linked recovery needs reason, provider reference and
+   duplicate-risk acknowledgement. Acceptance is not delivery. Offline source changes invalidate
+   queued cloud email when synchronized; email intents/events never replicate. See
+   `docs/operations/payroll-email-release.md`.
 3b. **Recover a missing/invalid cutoff ID** (`hr`) — online payroll managers verify original
    records and review/confirm a consistent unique existing label destination with fresh proof.
    Only the ID changes under mandatory revision history. Paid/released, duplicate/unresolved,
@@ -799,9 +806,11 @@ LAN (e.g. a stock withdrawal, a punch, a QC result).
    `authority_seq`, keeps site-issued IDs/numbers, and returns effects from other sites. Badge:
    "Synced". *(Built: `sync/authority.ts` `acceptCommand` / `pullFor`, `sync/rebase.ts`
    `applyConfirmed` — undo pending, apply effects, record verdicts, re-run pending.)*
-4. **Side effects** (cloud only) — outbox: email, web push, QuickBooks push, AI — exactly
-   once, where the command became final. (Accounting auto-post is a DB write inside the handler,
-   so it travels as part of the confirmed effect, not the outbox.)
+4. **Side effects** (cloud only) — requested where the command becomes final. External delivery
+   guarantees depend on each integration; there is no general exactly-once guarantee. Reviewed
+   payslip email uses its separate online intent/claim/recovery workflow and never a node replay.
+   (Accounting auto-post is a DB write inside the handler, so it travels as part of the confirmed
+   effect, not the outbox.)
 
 **Data carried:** command (API call + metadata; uploads as SHA-256 blobs sent first — built, phase 3e) up; confirmed effects (SQLite changesets) down,
 to every node (full replica; only node-local tables such as session tokens and integration

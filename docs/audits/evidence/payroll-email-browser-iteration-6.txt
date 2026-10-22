@@ -1,0 +1,68 @@
+[WebServer] (node:38369) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:38382) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:38393) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 7 tests using 1 worker
+
+(node:38402) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 tests/e2e/payroll-email.spec.ts:13:1 › operator reviews exact recipient and saved content, then records acceptance without claiming delivery (14.3s)
+(node:38634) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 tests/e2e/payroll-email.spec.ts:21:1 › closing an unconfirmed review does not queue or send work (2.2s)
+  ✓  3 tests/e2e/payroll-email.spec.ts:22:1 › changed saved pay clears the stale preview and disables confirmation with an accessible recovery path (2.6s)
+  ✓  4 tests/e2e/payroll-email.spec.ts:25:1 › a recipient changed after review cannot receive the old approval (2.2s)
+  ✓  5 tests/e2e/payroll-email.spec.ts:28:1 › a changed browser identity cannot confirm an old private preview (2.2s)
+  ✓  6 tests/e2e/payroll-email.spec.ts:29:1 › lost confirmation response repeats the same review and produces one submission (2.3s)
+  ✓  7 tests/e2e/payroll-email.spec.ts:32:1 › unknown SMTP outcome is visible and another release requires explicit investigation and risk acknowledgement (3.0s)
+
+
+  1) tests/e2e/payroll-email.spec.ts:13:1 › operator reviews exact recipient and saved content, then records acceptance without claiming delivery
+
+    Error: expect(locator).toBeHidden() failed
+
+    Locator:  getByRole('dialog', { name: 'Payslip email release', exact: true })
+    Expected: hidden
+    Received: visible
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toBeHidden" getByRole('dialog', { name: 'Payslip email release', exact: true }) with timeout 5000ms
+      - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true })
+        14 × locator resolved to <div role="dialog" tabindex="-1" class="modal lg" aria-modal="true" aria-label="Payslip email release">…</div>
+           - unexpected value "visible"
+
+
+      17 |  }
+      18 |  await isolated.close();fs.writeFileSync('work/payroll-email-browser-axe.json',JSON.stringify(scans,null,2)+'\n');await dialog.getByRole('button',{name:'Confirm email release',exact:true}).click();await expect(dialog).toContainText('Release recorded');await expect.poll(async()=>(await status(page)).status.history[0]?.state).toBe('accepted');await dialog.getByRole('button',{name:'Refresh status',exact:true}).click();await expect(dialog).toContainText('Accepted by mail server — delivery unconfirmed');const state=(await status(page)).status;expect(state.history).toHaveLength(1);expect(state.history[0].delivery_confirmation).toBe('unavailable');
+    > 19 |  const wire=JSON.parse(fs.readFileSync('work/payroll-email-browser-wire.json','utf8'));expect(wire.filter((m:any)=>m.to.includes('<browser-good@example.test>'))).toHaveLength(1);await page.keyboard.press('Escape');await expect(dialog).toBeHidden();await expect(page.getByRole('button',{name:'Email payslip EMAIL-BROWSER-GOOD',exact:true})).toBeFocused();
+         |                                                                                                                                                                                                                                            ^
+      20 | });
+      21 | test('closing an unconfirmed review does not queue or send work',async({page})=>{const dialog=await reviewed(page,'CANCEL');let confirmations=0;page.on('request',r=>{if(r.url().endsWith('/email/confirm'))confirmations++;});await page.keyboard.press('Escape');await expect(dialog).toBeHidden();expect(confirmations).toBe(0);const wire=JSON.parse(fs.readFileSync('work/payroll-email-browser-wire.json','utf8'));expect(wire.filter((m:any)=>m.to.includes('<browser-cancel@example.test>'))).toHaveLength(0);});
+      22 | test('changed saved pay clears the stale preview and disables confirmation with an accessible recovery path',async({page})=>{
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:19:236
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/test-failed-2.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests/e2e/payroll-email.spec.ts:13:1 › operator reviews exact recipient and saved content, then records acceptance without claiming delivery
+  6 passed (40.2s)

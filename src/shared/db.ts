@@ -12,6 +12,7 @@
 import path from 'node:path';
 import { createRequire } from 'node:module';
 const {field:printFormField}=createRequire(import.meta.url)('../../public/js/lib/form-print.js') as {field:(field:{key:string;label:string;type?:string;source?:string;format?:string;currency?:string},classes:{row:string;label:string;value:string})=>string};
+import {createPayrollEmailSchema} from './payroll-email-schema';
 import { createDocumentDefaultsSchema, initializeDocumentDefaults } from './document-defaults';
 import { createFormTemplateSchema } from './form-template-schema';
 import { createFormHistorySchema } from './form-history-schema';
@@ -93,7 +94,7 @@ function openConnection(slug: string): DatabaseSync {
 // 65: durable message attachment bytes.
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
-export const SCHEMA_VERSION = 84; // 84: synchronized users.mfa_recovery_required; 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 85; // 85: cloud-only reviewed payroll email intents; 84: synchronized users.mfa_recovery_required; 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -288,6 +289,7 @@ function tenantConnection(slug: string, initialAdminHash?: string): DatabaseSync
     createFormTemplateSchema(conn);
     createFormHistorySchema(conn);
     createDocumentDefaultsSchema(conn);
+    createPayrollEmailSchema(conn);
     ensureUploadDir();
     const previousForms=new Set((conn.prepare('SELECT id FROM form_definitions').all() as Array<{id:number}>).map(f=>f.id));
     seed(initialAdminHash);
@@ -327,6 +329,7 @@ export function forceMigrate(slug: string): void {
     createFormTemplateSchema(activeDb());
     createFormHistorySchema(activeDb());
     createDocumentDefaultsSchema(activeDb());
+    createPayrollEmailSchema(activeDb());
   });
 }
 

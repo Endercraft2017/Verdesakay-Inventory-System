@@ -1248,3 +1248,43 @@ global previews are frozen separately; old copies cannot be recalled. Reviewed d
 actual duplicate adjustments, historic payroll correctness, settlement/filing, dependency and
 native/hosted/privacy/operational acceptance remain. All 233 controls retain their whole-control
 statuses (36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A); the release remains on hold.
+
+## Reviewed payslip email release — 22 October 2026
+
+Narrow scope: exact saved recipient/content review, confirmation, durable queue/claim, SMTP
+acceptance/rejection/uncertainty and controlled recovery. Baseline production commit:
+e7cf902f2c225fe8bd1a7964d403c8647483eb37. See [contract/findings](payroll-email-contract.md),
+[verification notes](payroll-email-verification-notes.md), [runbook](../operations/payroll-email-release.md)
+and [checksummed manifest](evidence/payroll-email-verification.json).
+
+| Check | Final result |
+|---|---|
+| Typecheck; browser JavaScript syntax; generated SQLite types | Passed / generated |
+| Focused HTTP/SMTP/state/authority/snapshot/recovery tests | 9 files, 252 tests passed; 80.12 seconds |
+| Complete Vitest regression | 321 files, 3467 tests passed; 672.20 seconds |
+| Complete Playwright regression | 71 passed; zero failures/flaky/skipped; 183.22662 seconds |
+| Real server process experiments | Six passed: queued restart, accepted restart, three SIGKILL windows, lost committed HTTP response and competing process workers; some cases combine these observations |
+| Actual node export reproductions | Both pass: zero cloud email rows/markers; source queue/history intact; proof/ciphertext absent from VACUUMed file; original intent still submits once |
+| Email dialog/content accessibility | Eight viewport/theme combinations and eight isolated content scans; zero violations; retained dialog color-contrast/frame-tested incompletes |
+| Shared editor UX gate | 94 scans, 15 workflow checks, zero automated violations/failures/errors; same UI/editor bytes as final source |
+| Runtime npm audit | Exit 1: one high and three moderate broader findings, retained open |
+
+The first complete Vitest run is retained: 318 files/3462 tests passed, three failed. Corrected
+an old fixed schema-number expectation, retained former-name recipient checking through
+preflight instead of direct sending, and declared online classification on every email route
+rather than adding an exemption. Additional direct snapshot experiments found restrictive
+child/parent deletion order and marker re-creation after settings scrub; actual export/file
+assertions now cover both. A second frozen-source full run passed. No source/test edits were
+made while either full run was active.
+
+Five deliberately failing original-code reproductions, all intermediate failures and the
+before/after SMTP/snapshot observations are retained. The notes distinguish fixture/harness
+errors from product defects. The tests use real Nodemailer and verified local TLS; no live
+provider or real payroll email was sent. SMTP acceptance is not mailbox delivery. Unknown is
+not failed, and an interrupted intent is not automatically resent. No exactly-once guarantee.
+
+The final manifest records source hashes and scan evidence. Authentication trace ZIPs, private
+TLS keys and temporary databases are excluded. Git's required staged Gitleaks hook remains
+active; its actual outcome is reported with the commit. Historical-secret revocation and all
+other broader release blockers remain open. Real-provider/hosting/restore, mixed-build/native
+rollout, independent review and legal/retention/payroll acceptance are not established here.

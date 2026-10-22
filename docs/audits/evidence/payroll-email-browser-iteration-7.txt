@@ -1,0 +1,20 @@
+[WebServer] (node:38948) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:38961) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:38972) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 7 tests using 1 worker
+
+(node:38981) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e/payroll-email.spec.ts:13:1 › operator reviews exact recipient and saved content, then records acceptance without claiming delivery (9.5s)
+  ✓  2 tests/e2e/payroll-email.spec.ts:21:1 › closing an unconfirmed review does not queue or send work (2.0s)
+  ✓  3 tests/e2e/payroll-email.spec.ts:22:1 › changed saved pay clears the stale preview and disables confirmation with an accessible recovery path (2.6s)
+  ✓  4 tests/e2e/payroll-email.spec.ts:25:1 › a recipient changed after review cannot receive the old approval (2.2s)
+  ✓  5 tests/e2e/payroll-email.spec.ts:28:1 › a changed browser identity cannot confirm an old private preview (2.1s)
+  ✓  6 tests/e2e/payroll-email.spec.ts:29:1 › lost confirmation response repeats the same review and produces one submission (2.3s)
+  ✓  7 tests/e2e/payroll-email.spec.ts:32:1 › unknown SMTP outcome is visible and another release requires explicit investigation and risk acknowledgement (2.8s)
+
+  7 passed (33.3s)

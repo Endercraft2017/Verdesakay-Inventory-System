@@ -1,0 +1,9 @@
+{
+  "node": "v24.19.0",
+  "npm": "11.9.0",
+  "playwright": "1.64.1",
+  "axe_core": "4.14.0",
+  "openssl": "OpenSSL 3.5.7 9 Jun 2026 (Library: OpenSSL 3.5.7 9 Jun 2026)",
+  "gitleaks": "8.24.3",
+  "system": "Linux-6.18.55-x86_64-with-glibc2.41"
+}

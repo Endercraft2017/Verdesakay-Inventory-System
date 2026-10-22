@@ -146,5 +146,5 @@ it('migrates schema 83 without changing the user column order used by sync', () 
   db.setSetting('schema_version', 83);
   db.closeAllConnections(); db.init();
   expect(columns()).toEqual(fresh);
-  expect(db.getSetting('schema_version')).toBe(84);
+  expect(db.getSetting('schema_version')).toBe(db.SCHEMA_VERSION);
 });

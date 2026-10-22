@@ -1,0 +1,20 @@
+[
+  {
+    "case": "queued email before new-node enrollment",
+    "error": null,
+    "counts": {
+      "payroll_email_releases": 0,
+      "payroll_email_events": 0,
+      "payroll_email_versions": 0
+    }
+  },
+  {
+    "case": "empty intent history with SMTP settings",
+    "error": null,
+    "counts": {
+      "payroll_email_releases": 0,
+      "payroll_email_events": 0,
+      "payroll_email_versions": 0
+    }
+  }
+]

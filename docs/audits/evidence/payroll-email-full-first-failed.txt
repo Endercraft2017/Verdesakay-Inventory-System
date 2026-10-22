@@ -1,0 +1,111 @@
+
+> otom@1.0.0 test
+> vitest run --fileParallelism --maxWorkers=2
+
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/account-recovery.test.ts > migrates schema 83 without changing the user column order used by sync
+[backup] "default" is being upgraded to schema v85; snapshot saved to /tmp/vds-test-guard-qD5gTd/backups/default/pre-migrate/default-v83-to-v85-20261022-063757.db
+
+stdout | tests/account-recovery.test.ts
+{"timestamp":"2026-10-22T06:37:34.080Z","level":"info","event":"http_request","request_id":"41af04c4-a86e-4f13-b463-87c3a4eaeb15","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":330}
+
+ ❯ tests/account-recovery.test.ts (8 tests | 1 failed) 24932ms
+   × migrates schema 83 without changing the user column order used by sync 59ms
+(node:45397) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:45397) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+stdout | tests/payslip-disclosure.test.ts > payslip disclosure identity > emails stamped and uniquely resolved former names to the correct linked account
+{"timestamp":"2026-10-22T06:44:03.298Z","level":"info","event":"http_request","request_id":"9853ccba-5f9b-416e-98b2-ccf3e6fad9ad","tenant":"default","method":"POST","path":"/api/hr/payroll/19/email","status":409,"duration_ms":2}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-22T06:44:01.164Z","level":"info","event":"http_request","request_id":"4c7bead3-f1d5-4379-a8c4-fe97cfcd663d","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":320}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-22T06:44:01.494Z","level":"info","event":"http_request","request_id":"ada5ed12-4795-4b00-b705-8efaa53d3675","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":323}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-22T06:44:01.838Z","level":"info","event":"http_request","request_id":"c45f1c9f-0522-468f-9032-06441f91ace0","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":341}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-22T06:44:02.201Z","level":"info","event":"http_request","request_id":"652de648-2c20-4aec-9664-31f2fe61464f","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":360}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-22T06:44:02.543Z","level":"info","event":"http_request","request_id":"c4a21aa3-ac75-4ddf-91e3-5239b929c4c7","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":338}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-22T06:44:02.881Z","level":"info","event":"http_request","request_id":"c0367911-1d15-4e8a-8179-061217f1b97b","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":335}
+
+stdout | tests/payslip-disclosure.test.ts
+{"timestamp":"2026-10-22T06:44:03.219Z","level":"info","event":"http_request","request_id":"fe2eecf0-4f95-48df-9df5-36b055d84a66","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":336}
+
+ ❯ tests/payslip-disclosure.test.ts (12 tests | 1 failed) 3825ms
+     × emails stamped and uniquely resolved former names to the correct linked account 7ms
+ ❯ tests/sync-route-classes.test.ts (1 test | 1 failed) 37ms
+     × every mutating route declares one (or is listed with a reason) 35ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/account-recovery.test.ts > migrates schema 83 without changing the user column order used by sync
+AssertionError: expected 85 to be 84 // Object.is equality
+
+- Expected
++ Received
+
+- 84
++ 85
+
+ ❯ tests/account-recovery.test.ts:149:43
+    147|   db.closeAllConnections(); db.init();
+    148|   expect(columns()).toEqual(fresh);
+    149|   expect(db.getSetting('schema_version')).toBe(84);
+       |                                           ^
+    150| });
+    151|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/payslip-disclosure.test.ts > payslip disclosure identity > emails stamped and uniquely resolved former names to the correct linked account
+AssertionError: expected 409 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 409
+
+ ❯ tests/payslip-disclosure.test.ts:46:194
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/sync-route-classes.test.ts > sync classes > every mutating route declares one (or is listed with a reason)
+AssertionError: add syncClass(...) to these routes (docs/OFFLINE-FIRST.md §1), or list them with a reason: expected [ …(4) ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "src/modules/hr/payroll-email.routes.ts:post /",
++   "src/modules/hr/payroll-email.routes.ts:post /review",
++   "src/modules/hr/payroll-email.routes.ts:post /confirm",
++   "src/modules/hr/payroll-email.routes.ts:post /:releaseId/cancel",
++ ]
+
+ ❯ tests/sync-route-classes.test.ts:101:114
+     99|       }
+    100|     }
+    101|     expect(missing, 'add syncClass(...) to these routes (docs/OFFLINE-…
+       |                                                                                                                  ^
+    102|     // The list stays honest: every entry still names a real, unclasse…
+    103|     expect(Object.keys(NO_CLASS_NEEDED).filter((k) => !seen.has(k))).t…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  3 failed | 318 passed (321)
+      Tests  3 failed | 3462 passed (3465)
+   Start at  06:36:23
+   Duration  676.92s (transform 7.38s, setup 2.92s, import 41.08s, tests 1266.63s, environment 2.34s)

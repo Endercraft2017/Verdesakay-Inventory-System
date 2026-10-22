@@ -1,3 +1,4 @@
+import {processOnePayrollEmail} from './src/modules/hr/payroll-email';
 import {pruneInquiryReceipts} from './src/platform/inquiry-receipts';
 import { prunePaymentReportReceipts } from './src/platform/payment-report-receipts';
 import { runOwnerAlertPass } from './src/platform/owner-alert-monitor';
@@ -84,6 +85,20 @@ async function exportPass(){
 if(DEPLOY_MODE==='cloud'){
   setInterval(()=>{void exportPass();},15_000).unref();
   setImmediate(()=>{void exportPass();});
+}
+
+let payrollEmailRunning=false;
+async function payrollEmailPass(){
+  if(DEPLOY_MODE!=='cloud'||payrollEmailRunning)return;
+  payrollEmailRunning=true;
+  try {for(const slug of backgroundTenants()){
+    try {await withTenant(slug,processOnePayrollEmail);}
+    catch {console.error('[payroll-email] worker failed; inspect durable release state');}
+  }} finally {payrollEmailRunning=false;}
+}
+if(DEPLOY_MODE==='cloud'){
+  setInterval(()=>{void payrollEmailPass();},5_000).unref();
+  setImmediate(()=>{void payrollEmailPass();});
 }
 
 const housekeeping = () => {

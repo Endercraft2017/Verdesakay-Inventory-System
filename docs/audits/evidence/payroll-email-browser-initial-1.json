@@ -1,0 +1,643 @@
+{
+  "config": {
+    "argv": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+      "/workspace/Verdesakay-Inventory-System/node_modules/.bin/playwright",
+      "test",
+      "tests/e2e/payroll-email.spec.ts"
+    ],
+    "configFile": "/workspace/Verdesakay-Inventory-System/playwright.config.ts",
+    "rootDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "",
+        "testDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "snapshotDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "testIgnore": [],
+        "testMatch": "**/*.spec.ts",
+        "timeout": 30000,
+        "use": {
+          "baseURL": "http://127.0.0.1:4173",
+          "trace": "retain-on-failure",
+          "screenshot": "only-on-failure",
+          "launchOptions": {}
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": ""
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "html",
+        {
+          "open": "never",
+          "outputFolder": "work/playwright-report"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "work/playwright-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npx tsx tests/e2e/server.ts",
+      "url": "http://127.0.0.1:4173/api/health",
+      "reuseExistingServer": false,
+      "timeout": 30000
+    }
+  },
+  "suites": [
+    {
+      "title": "payroll-email.spec.ts",
+      "file": "payroll-email.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "operator reviews exact recipient and saved content, then records acceptance without claiming delivery",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 7293,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:12:15",
+                    "location": {
+                      "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                      "column": 246,
+                      "line": 9
+                    },
+                    "snippet": "   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                        "column": 246,
+                        "line": 9
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n\n   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:12:15"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T05:57:05.881Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                    "column": 246,
+                    "line": 9
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-da435024868c173c931b",
+          "file": "payroll-email.spec.ts",
+          "line": 11,
+          "column": 1
+        },
+        {
+          "title": "closing an unconfirmed review does not queue or send work",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 7163,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:19:95",
+                    "location": {
+                      "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                      "column": 246,
+                      "line": 9
+                    },
+                    "snippet": "   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                        "column": 246,
+                        "line": 9
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n\n   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:19:95"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T05:57:13.842Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-closing-an-u-0db8f-does-not-queue-or-send-work/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-closing-an-u-0db8f-does-not-queue-or-send-work/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-closing-an-u-0db8f-does-not-queue-or-send-work/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                    "column": 246,
+                    "line": 9
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-c93869ab0ea2688f8ef5",
+          "file": "payroll-email.spec.ts",
+          "line": 19,
+          "column": 1
+        },
+        {
+          "title": "changed saved pay clears the stale preview and disables confirmation with an accessible recovery path",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 6745,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:21:15",
+                    "location": {
+                      "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                      "column": 246,
+                      "line": 9
+                    },
+                    "snippet": "   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                        "column": 246,
+                        "line": 9
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n\n   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:21:15"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T05:57:21.650Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-changed-save-2d926-an-accessible-recovery-path/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-changed-save-2d926-an-accessible-recovery-path/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-changed-save-2d926-an-accessible-recovery-path/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                    "column": 246,
+                    "line": 9
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-5633a6945eb7a8036afe",
+          "file": "payroll-email.spec.ts",
+          "line": 20,
+          "column": 1
+        },
+        {
+          "title": "a recipient changed after review cannot receive the old approval",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 7278,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:24:15",
+                    "location": {
+                      "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                      "column": 246,
+                      "line": 9
+                    },
+                    "snippet": "   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                        "column": 246,
+                        "line": 9
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n\n   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:24:15"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T05:57:29.011Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-a-recipient--f7367-ot-receive-the-old-approval/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-a-recipient--f7367-ot-receive-the-old-approval/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-a-recipient--f7367-ot-receive-the-old-approval/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                    "column": 246,
+                    "line": 9
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-993f578706055a077e0a",
+          "file": "payroll-email.spec.ts",
+          "line": 23,
+          "column": 1
+        },
+        {
+          "title": "a changed browser identity cannot confirm an old private preview",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 4,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 7412,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:26:102",
+                    "location": {
+                      "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                      "column": 246,
+                      "line": 9
+                    },
+                    "snippet": "   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                        "column": 246,
+                        "line": 9
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n\n   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:26:102"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T05:57:36.958Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-a-changed-br-98918-firm-an-old-private-preview/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-a-changed-br-98918-firm-an-old-private-preview/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-a-changed-br-98918-firm-an-old-private-preview/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                    "column": 246,
+                    "line": 9
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-2459ea70758748f04341",
+          "file": "payroll-email.spec.ts",
+          "line": 26,
+          "column": 1
+        },
+        {
+          "title": "lost confirmation response repeats the same review and produces one submission",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 5,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 7252,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:28:15",
+                    "location": {
+                      "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                      "column": 246,
+                      "line": 9
+                    },
+                    "snippet": "   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                        "column": 246,
+                        "line": 9
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n\n   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:28:15"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T05:57:45.135Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-lost-confirm-2b990-and-produces-one-submission/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-lost-confirm-2b990-and-produces-one-submission/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-lost-confirm-2b990-and-produces-one-submission/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                    "column": 246,
+                    "line": 9
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-42e09e1c7d124ac731d2",
+          "file": "payroll-email.spec.ts",
+          "line": 27,
+          "column": 1
+        },
+        {
+          "title": "unknown SMTP outcome is visible and another release requires explicit investigation and risk acknowledgement",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 6,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 7341,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:31:15",
+                    "location": {
+                      "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                      "column": 246,
+                      "line": 9
+                    },
+                    "snippet": "   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                        "column": 246,
+                        "line": 9
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\nExpected: visible\nTimeout: 5000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true }) with timeout 5000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Payslip email release', exact: true }).getByRole('button', { name: 'Confirm email release', exact: true })\u001b[22m\n\n\n   7 |  await page.evaluate(number=>(window as any).App.navigate('form-records',{slug:'hr_payroll',q:number}),number);await page.getByRole('button',{name:'Email payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip email release',exact:true});await expect(dialog).toBeVisible();return dialog;\n   8 | }\n>  9 | async function reviewed(page:Page,kind:string){const dialog=await open(page,kind);await dialog.getByRole('button',{name:'Review exact email',exact:true}).click();await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeVisible();await expect(page.frameLocator('#pe-preview-frame').getByText('1,000.00',{exact:true})).toBeVisible();return dialog;}\n     |                                                                                                                                                                                                                                                      ^\n  10 | async function status(page:Page){return page.evaluate(async()=>{const api=(window as any).API,forms=await api.get('/form-definitions'),f=forms.find((f:any)=>f.slug==='hr_payroll'),rows=await api.get(`/form-definitions/${f.id}/records`),number=document.querySelector('#pe-content strong')?.textContent,r=rows.find((r:any)=>r.number===number);return {record:r,status:await api.get(`/hr/payroll/${r.id}/email`)};});}\n  11 | test('operator reviews exact recipient and saved content, then records acceptance without claiming delivery',async({page})=>{\n  12 |  const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];\n    at reviewed (/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:9:246)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:31:15"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T05:57:53.111Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-unknown-SMTP-ab0fb-on-and-risk-acknowledgement/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-unknown-SMTP-ab0fb-on-and-risk-acknowledgement/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-unknown-SMTP-ab0fb-on-and-risk-acknowledgement/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                    "column": 246,
+                    "line": 9
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-9fda5e17f9d5b5e1f4dd",
+          "file": "payroll-email.spec.ts",
+          "line": 30,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-22T05:56:56.408Z",
+    "duration": 64358.481,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 7,
+    "flaky": 0
+  }
+}

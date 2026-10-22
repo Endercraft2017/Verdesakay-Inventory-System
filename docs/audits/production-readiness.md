@@ -55,7 +55,7 @@ These items prevent an unconditional production-ready statement. Other checklist
 
 ## Validation and practical limits
 
-See [validation-results.md](validation-results.md) for recorded command results. All integration/browser fixtures use fresh temporary database/data/upload/backup paths, preserving the workspace's real data. No paid AI, email or QuickBooks calls were made; provider integration tests use mocks. The load probe makes only local requests and has no remote-target option.
+See [validation-results.md](validation-results.md) for recorded command results. All integration/browser fixtures use fresh temporary database/data/upload/backup paths, preserving the workspace's real data. No paid AI, live-provider email or QuickBooks calls were made. Provider integrations generally use mocks; the narrow payslip-email follow-up additionally uses real Nodemailer and a local TLS SMTP capture server with synthetic data. See [email contract](payroll-email-contract.md) and [recovery runbook](../operations/payroll-email-release.md). The load probe makes only local requests and has no remote-target option.
 
 ### Playwright and accessibility
 

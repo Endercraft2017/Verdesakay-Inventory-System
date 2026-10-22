@@ -45,6 +45,20 @@ for(const kind of ['DRAFT','STALE','CONTEXT','EDIT','PAID']){
  const employee=Number(db.run('INSERT INTO employees(employee_no,name) VALUES(?,?)',label,'Synthetic Copy '+kind).lastInsertRowid);
  db.run('INSERT INTO form_records(form_def_id,number,data,status,period,created_by) VALUES(?,?,?,?,?,1)',disclosureForm.id,label,JSON.stringify({employee_id:employee,employee_name:'Synthetic Copy '+kind,cutoff_id:cutoff,pay_date:'2037-07-16',total_earnings:1000,net_pay:1000,_calculation_snapshot:JSON.stringify({version:1,employee_name:'Synthetic Copy '+kind,days:[],totals:{total_earnings:1000,net_pay:1000}})}),kind==='PAID'?'paid':'draft',label);
 }
+// Actual TLS SMTP peer and isolated email records. The application uses its real
+// reviewed-mail adapter even in tests; no JSON transport stands in for acceptance.
+const {smtpCapture}=await import('../helpers/smtp-capture');
+const emailPeer=await smtpCapture();emailPeer.setRecipientMode('browser-unknown@example.test','disconnect');
+const {saveMailSettings}=await import('../../src/shared/mailer');
+saveMailSettings({transport:'smtp',from_name:'Synthetic Browser Payroll',from_email:'payroll@example.test',reply_to:'',smtp_host:'127.0.0.1',smtp_port:emailPeer.port,smtp_secure:true,smtp_user:''});
+for(const kind of ['GOOD','STALE','RECIPIENT','CANCEL','CONTEXT','LOST','UNKNOWN']){
+ const u=Number(db.run("INSERT INTO users(username,full_name,role,password_hash,email) VALUES(?,?,'csr',?,?)",'browser-mail-'+kind,'Synthetic Email '+kind,hashPassword('Synthetic browser mail password'),'browser-'+kind.toLowerCase()+'@example.test').lastInsertRowid);
+ const e=Number(db.run('INSERT INTO employees(employee_no,name,user_id) VALUES(?,?,?)','EMAIL-BROWSER-'+kind,'Synthetic Email '+kind,u).lastInsertRowid);
+ db.run("INSERT INTO form_records(form_def_id,number,data,status,created_by) VALUES(?,?,?,'paid',1)",disclosureForm.id,'EMAIL-BROWSER-'+kind,JSON.stringify({employee_id:e,employee_name:'Synthetic Email '+kind,net_pay:1000}));
+}
+const {processOnePayrollEmail}=await import('../../src/modules/hr/payroll-email');let emailWorking=false;
+const emailTimer=setInterval(async()=>{if(emailWorking)return;emailWorking=true;try{await processOnePayrollEmail();fs.writeFileSync('work/payroll-email-browser-wire.json',JSON.stringify(emailPeer.messages,null,2)+'\n');}finally{emailWorking=false;}},100);
+emailTimer.unref();
 // Payroll reconciliation fixtures use a separate pay year from tax/disclosure tests.
 for(const kind of ['GOOD','DUP']){
   const label='RECON-BROWSER-'+kind;
@@ -143,6 +157,7 @@ const { attachWebSocket } = await import('../../src/shared/ws');
 const server = createApp().listen(Number(process.env.E2E_PORT || 4173), process.env.E2E_HOST || '127.0.0.1');
 attachWebSocket(server);
 function stop() {
+  clearInterval(emailTimer);void emailPeer.close();
   server.closeAllConnections();
   server.close(() => {
     db.closeAllConnections();

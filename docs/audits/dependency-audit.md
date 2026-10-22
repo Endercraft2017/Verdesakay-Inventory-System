@@ -63,3 +63,12 @@ remains an inappropriate old major-version downgrade; none was applied. No lockf
 was changed in the accounting lifecycle increment. Raw evidence is
 `evidence/gaps-2026-10-18-npm-runtime.json`. Reachability limits and release disposition above
 remain open. This does not revalidate launcher/dev/mobile lockfiles or clear historical secrets.
+
+### 22 October 2026 — narrow payslip email follow-up
+
+Refreshed `npm audit --omit=dev --json` under the user's existing advisory-API authorization.
+Exit 1: node-forge high; mammoth, argparse and sprintf-js moderate (four total). Retained
+[evidence](evidence/payroll-email-npm-runtime.json). Runtime dependency versions are unchanged;
+these findings remain broader release blockers. The explicit axe-core 4.14.0 test dependency
+points to the same previously installed transitive package; its lock edge was added offline
+without installation scripts. This audit does not certify a clean dependency graph.

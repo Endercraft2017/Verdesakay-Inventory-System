@@ -1,0 +1,39 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payroll-email.test.ts > R1 a reviewed address with an uppercase domain has a truthful acceptance outcome
+{"timestamp":"2026-10-22T06:15:30.238Z","level":"info","event":"http_request","request_id":"dd0b9df6-52c5-4004-bd6d-3509c4f1c2b1","tenant":"default","method":"GET","path":"/api/hr/payroll/17/email","status":200,"duration_ms":24}
+
+stdout | tests/payroll-email.test.ts > R1 a reviewed address with an uppercase domain has a truthful acceptance outcome
+{"timestamp":"2026-10-22T06:15:30.249Z","level":"info","event":"http_request","request_id":"44eeaacf-c773-4103-b3ec-cf965efd64fa","tenant":"default","method":"POST","path":"/api/hr/payroll/17/email/review","status":200,"duration_ms":7}
+
+stdout | tests/payroll-email.test.ts > R1 a reviewed address with an uppercase domain has a truthful acceptance outcome
+{"timestamp":"2026-10-22T06:15:30.256Z","level":"info","event":"http_request","request_id":"a494a412-4ca8-4f3c-9b7a-db9d0f65b84d","tenant":"default","method":"POST","path":"/api/hr/payroll/17/email/confirm","status":202,"duration_ms":5}
+
+stdout | tests/payroll-email.test.ts > R1 a reviewed address with an uppercase domain has a truthful acceptance outcome
+{"case":"uppercase-recipient-domain","reviewed":"Recipient@EXAMPLE.TEST","envelope":[["<Recipient@example.test>"]],"outcome":"unknown"}
+
+stdout | tests/payroll-email.test.ts
+{"timestamp":"2026-10-22T06:15:29.765Z","level":"info","event":"http_request","request_id":"e78728e4-6112-40ba-9845-6f4843f26f03","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":351}
+
+ ❯ tests/payroll-email.test.ts (80 tests | 1 failed | 79 skipped) 3814ms
+   × R1 a reviewed address with an uppercase domain has a truthful acceptance outcome 81ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payroll-email.test.ts > R1 a reviewed address with an uppercase domain has a truthful acceptance outcome
+AssertionError: expected 'unknown' to be 'accepted' // Object.is equality
+
+Expected: "accepted"
+Received: "unknown"
+
+ ❯ tests/payroll-email.test.ts:101:495
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 79 skipped (80)
+   Start at  06:15:26
+   Duration  4.09s (transform 1.51s, setup 30ms, import 119ms, tests 3.81s, environment 0ms)

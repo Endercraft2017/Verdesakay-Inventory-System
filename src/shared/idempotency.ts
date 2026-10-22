@@ -41,7 +41,7 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
   if (/^\/api\/(auth|signup|sync)(?:\/|$)/i.test(req.originalUrl.split('?')[0] ?? '')) return next();
   // Ephemeral review credentials must not be persisted in HTTP receipts or replayed
   // ahead of their fresh-proof gate. Confirmation has its own atomic revision guard.
-  if (/\/api\/hr\/payroll\/[^/]+\/(?:identity|cutoff-recovery)(?:\/|$)/i.test(req.originalUrl.split('?')[0] ?? '')) return next();
+  if (/\/api\/hr\/payroll\/[^/]+\/(?:identity|cutoff-recovery|email)(?:\/|$)/i.test(req.originalUrl.split('?')[0] ?? '')) return next();
 
   requireAuth(req, res, () => {
     const user = req.user!;

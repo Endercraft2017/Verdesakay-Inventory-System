@@ -1,0 +1,395 @@
+{
+  "config": {
+    "argv": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+      "/workspace/Verdesakay-Inventory-System/node_modules/.bin/playwright",
+      "test",
+      "tests/e2e/payroll-email.spec.ts"
+    ],
+    "configFile": "/workspace/Verdesakay-Inventory-System/playwright.config.ts",
+    "rootDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "",
+        "testDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "snapshotDir": "/workspace/Verdesakay-Inventory-System/tests/e2e",
+        "testIgnore": [],
+        "testMatch": "**/*.spec.ts",
+        "timeout": 30000,
+        "use": {
+          "baseURL": "http://127.0.0.1:4173",
+          "trace": "retain-on-failure",
+          "screenshot": "only-on-failure",
+          "launchOptions": {}
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": ""
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "html",
+        {
+          "open": "never",
+          "outputFolder": "work/playwright-report"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "work/playwright-results.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npx tsx tests/e2e/server.ts",
+      "url": "http://127.0.0.1:4173/api/health",
+      "reuseExistingServer": false,
+      "timeout": 30000
+    }
+  },
+  "suites": [
+    {
+      "title": "payroll-email.spec.ts",
+      "file": "payroll-email.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "operator reviews exact recipient and saved content, then records acceptance without claiming delivery",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 120402,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 120000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts",
+                        "column": 325,
+                        "line": 14
+                      },
+                      "message": "Error: browserContext.newPage: Target page, context or browser has been closed\n Please check out https://github.com/dequelabs/axe-core-npm/blob/develop/packages/playwright/error-handling.md\n\n  12 |  test.setTimeout(120000);const dialog=await reviewed(page,'GOOD');await expect(dialog).toContainText('browser-good@example.test');const scans:any[]=[];\n  13 |  for(const theme of ['light','dark'])for(const width of [1440,1024,768,390]){\n> 14 |   await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);await page.setViewportSize({width,height:1000});await expect(dialog.getByRole('button',{name:'Confirm email release',exact:true})).toBeInViewport();await expect(dialog.getByRole('button',{name:'Close',exact:true})).toBeInViewport();const scan=await new AxeBuilder({page}).include('[role=\"dialog\"]').analyze();expect(scan.violations).toEqual([]);scans.push({theme,width,violations:scan.violations,incomplete:scan.incomplete.map(x=>({id:x.id,impact:x.impact,nodes:x.nodes.map(n=>({target:n.target,summary:n.failureSummary}))}))});await page.screenshot({path:`work/payroll-email-${theme}-${width}.png`});\n     |                                                                                                                                                                                                                                                                                                                                     ^\n  15 |  }\n  16 |  fs.writeFileSync('work/payroll-email-browser-axe.json',JSON.stringify(scans,null,2)+'\\n');await dialog.getByRole('button',{name:'Confirm email release',exact:true}).click();await expect(dialog).toContainText('Release recorded');await expect.poll(async()=>(await status(page)).status.history[0]?.state).toBe('accepted');await dialog.getByRole('button',{name:'Refresh status',exact:true}).click();await expect(dialog).toContainText('Accepted by mail server — delivery unconfirmed');const state=(await status(page)).status;expect(state.history).toHaveLength(1);expect(state.history[0].delivery_confirmation).toBe('unavailable');\n  17 |  const wire=JSON.parse(fs.readFileSync('work/payroll-email-browser-wire.json','utf8'));expect(wire.filter((m:any)=>m.to.includes('<browser-good@example.test>'))).toHaveLength(1);await page.keyboard.press('Escape');await expect(dialog).toBeHidden();await expect(page.getByRole('button',{name:'Email payslip EMAIL-BROWSER-GOOD',exact:true})).toBeFocused();\n    at AxeBuilder.analyze (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:219:13)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:14:325\n[cause]: Error: browserContext.newPage: Target page, context or browser has been closed\n    at AxeBuilder.finishRun (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:315:37)\n    at AxeBuilder.analyze (/workspace/Verdesakay-Inventory-System/node_modules/@axe-core/playwright/dist/index.mjs:217:25)\n    at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-email.spec.ts:14:325"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T06:01:06.167Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/workspace/Verdesakay-Inventory-System/work/playwright-artifacts/payroll-email-operator-rev-5e9ff-e-without-claiming-delivery/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-da435024868c173c931b",
+          "file": "payroll-email.spec.ts",
+          "line": 11,
+          "column": 1
+        },
+        {
+          "title": "closing an unconfirmed review does not queue or send work",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2158,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T06:03:07.391Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-c93869ab0ea2688f8ef5",
+          "file": "payroll-email.spec.ts",
+          "line": 19,
+          "column": 1
+        },
+        {
+          "title": "changed saved pay clears the stale preview and disables confirmation with an accessible recovery path",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2455,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T06:03:09.644Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-5633a6945eb7a8036afe",
+          "file": "payroll-email.spec.ts",
+          "line": 20,
+          "column": 1
+        },
+        {
+          "title": "a recipient changed after review cannot receive the old approval",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2184,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T06:03:12.109Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-993f578706055a077e0a",
+          "file": "payroll-email.spec.ts",
+          "line": 23,
+          "column": 1
+        },
+        {
+          "title": "a changed browser identity cannot confirm an old private preview",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2115,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T06:03:14.302Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-2459ea70758748f04341",
+          "file": "payroll-email.spec.ts",
+          "line": 26,
+          "column": 1
+        },
+        {
+          "title": "lost confirmation response repeats the same review and produces one submission",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2326,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T06:03:16.427Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-42e09e1c7d124ac731d2",
+          "file": "payroll-email.spec.ts",
+          "line": 27,
+          "column": 1
+        },
+        {
+          "title": "unknown SMTP outcome is visible and another release requires explicit investigation and risk acknowledgement",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 2859,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-22T06:03:18.762Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "1dc048e36610db15d70f-9fda5e17f9d5b5e1f4dd",
+          "file": "payroll-email.spec.ts",
+          "line": 30,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-22T06:00:57.674Z",
+    "duration": 144049.22900000002,
+    "expected": 6,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

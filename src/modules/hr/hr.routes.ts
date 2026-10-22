@@ -2,6 +2,7 @@ import { safeDocumentType } from '../../shared/file-response';
 import payrollIdentityRoutes from './payroll-identity.routes';
 import payrollCutoffRoutes from './payroll-cutoff.routes';
 import payrollCopyRoutes from './payroll-copy.routes';
+import payrollEmailRoutes from './payroll-email.routes';
 import { correctRecord } from '../../core/data-forms/history';
 import { recordDeductionChange, deductionHistory } from '../payroll/deduction-history';
 import { effectiveHrForm } from './request-policy';
@@ -17,8 +18,6 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { storeDurableUpload, resolveDurableUploadAsync, forgetDurableUpload } from '../../shared/durable-uploads';
 import crypto from 'node:crypto';
-import { templateVariables } from '../../shared/doc-render';
-import { createRequire } from 'node:module';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { db, queryOne, queryAll, run, nextSequence, nextFormRecordNumber, uploadDir, getSetting, setSetting } from '../../shared/db';
@@ -68,7 +67,6 @@ import { redactPay, canChangePay, PAY_FIELDS } from '../payroll/pay-access';
 import { enforceQuota } from '../../platform/quota';
 import { slotPunchIdsForDates, type CorrectionSlot } from './clock';
 import { photoIdsForPunches } from './punch-photos';
-import { sendMail } from '../../shared/mailer';
 import { ledgerEnabled, maybeAutoPostPayroll, postedEntryForSource } from '../accounting/accounting-autopost';
 import { noWorkFormIds as noWorkFormIdsWithAction } from '../../core/form-actions';
 import { notifyUser } from '../../shared/push';
@@ -77,17 +75,6 @@ import { syncUpload } from '../../sync/files';
 import { now, sideEffectsSuppressed, siteDecisionStands } from '../../shared/sync-context';
 
 // Reuses the browser's own payslip HTML renderer instead of duplicating it server-side —
-// hr-payroll-print.js is pure string logic (no DOM/window access) and already resolves its
-// own require('./doc-template.js') internally when run under Node, same trick the test suite
-// uses to load it. `createRequire` (not `require`, since this file is ESM) needs a base URL
-// to resolve the relative path from.
-const clientRequire = createRequire(import.meta.url);
-const { renderSlip: renderPayrollSlip, FALLBACK_BODY: PAYROLL_SLIP_FALLBACK } =
-  clientRequire('../../../public/js/hr-payroll-print.js') as {
-    renderSlip: (data: Record<string, unknown>, templateBody: string, variables?:unknown[]) => string;
-    FALLBACK_BODY: string;
-  };
-
 const EMP_CSV_COLUMNS = [
   'employee_no', 'name', 'department', 'position', 'rate_type', 'daily_rate', 'monthly_rate',
   'status', 'start_date', 'sss_no', 'philhealth_no', 'pagibig_no', 'tin_no',
@@ -96,6 +83,7 @@ const EMP_CSV_COLUMNS = [
 const router = Router();
 router.use(requireAuth);
 router.use(payrollCopyRoutes);
+router.use('/payroll/:recordId/email', payrollEmailRoutes);
 router.use('/payroll/:recordId/identity', payrollIdentityRoutes);
 router.use('/payroll/:recordId/cutoff-recovery', payrollCutoffRoutes);
 
@@ -2911,48 +2899,6 @@ router.get('/payroll/:recordId/deductions-history',requirePermission('payroll.vi
   const record=queryOne<{slug:string}>('SELECT fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id=fr.form_def_id WHERE fr.id=?',Number(req.params.recordId));
   if(!record||record.slug!=='hr_payroll'){res.status(404).json({error:'Payslip not found'});return;}
   res.json(deductionHistory(Number(req.params.recordId)));
-});
-
-// POST /api/hr/payroll/:recordId/email — emails this payslip to the employee's linked account.
-// Employees have no email of their own (that's exactly what the account-linking feature is
-// for) — this only works once HR has linked one under Employees, and only if that account has
-// an email address set.
-router.post('/payroll/:recordId/email', requirePermission('payroll.manage'), syncClass('online'), async (req, res, next) => {
-  try {
-    const rec = queryOne<FormRecord & { slug: string }>(
-      `SELECT fr.*, fd.slug FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
-      Number(req.params.recordId)
-    );
-    if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
-    const source=assertPayrollRelease(payrollSourceIndex(),rec.id,true);
-    const data = source.data!;
-    const employeeName = String(data.employee_name || '');
-    const ownerId = payslipOwnerResolver().idOf(data);
-    if (ownerId == null) {
-      res.status(400).json({ error: 'Payslip ownership cannot be verified. Ask payroll staff to review its employee identity before emailing.' });
-      return;
-    }
-    const target = queryOne<{ email: string | null }>(
-      `SELECT u.email FROM employees e LEFT JOIN users u ON u.id = e.user_id WHERE e.id = ?`,
-      ownerId
-    );
-    if (!target || !target.email) {
-      res.status(400).json({
-        error: `${employeeName || 'This employee'} has no linked user account with an email address. Link an account under HR → Employees first.`,
-      });
-      return;
-    }
-    const tpl = queryOne<{ id:number;body: string }>("SELECT t.id,t.body FROM form_definitions f JOIN doc_templates t ON t.id=f.template_id WHERE f.id=?", rec.form_def_id);
-    const globals=Object.fromEntries(queryAll<{key:string;value:string}>('SELECT key,value FROM global_variables').map(v=>[v.key,v.value]));
-    const html = renderPayrollSlip({...data,company:companyProfile(),global:globals}, tpl?.body || PAYROLL_SLIP_FALLBACK,tpl?templateVariables(tpl.id):[]);
-    const r = await sendMail(
-      { to: target.email, subject: `Payslip — ${data.payroll_period || rec.number}`, html },
-      req.user!.id
-    );
-    res.status(r.ok ? 200 : 400).json(r);
-  } catch (e) {
-    next(e);
-  }
 });
 
 // Multer-specific error handling (file too large, etc.) for the document upload route.
