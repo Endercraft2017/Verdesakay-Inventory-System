@@ -39,6 +39,12 @@ for(const number of ['CUTOFF-BROWSER','CUTOFF-CANCEL','CUTOFF-STALE','CUTOFF-CON
   const id=Number(db.run("INSERT INTO attendance_periods(label,start_date,end_date) VALUES(?,'2032-07-01','2032-07-15')",number).lastInsertRowid);
   db.run("INSERT INTO form_records(form_def_id,number,data,status,period,created_by) VALUES(?,?,?,'draft',?,1)",disclosureForm.id,number,JSON.stringify({employee_id:cutoffEmployee,employee_name:'Synthetic Cutoff Browser',cutoff_id:'broken',payroll_period:number,pay_date:'2032-07-16',basic_salary:1000,total_earnings:1000,net_pay:1000,_calculation_snapshot:JSON.stringify({version:1,period_label:number,totals:{basic_salary:1000}})}),number);
 }
+// Staff copy fixtures are independent so browser source changes cannot affect other journeys.
+for(const kind of ['DRAFT','STALE','CONTEXT','EDIT','PAID']){
+ const label='COPY-BROWSER-'+kind,cutoff=Number(db.run("INSERT INTO attendance_periods(label,start_date,end_date) VALUES(?,'2037-07-01','2037-07-15')",label).lastInsertRowid);
+ const employee=Number(db.run('INSERT INTO employees(employee_no,name) VALUES(?,?)',label,'Synthetic Copy '+kind).lastInsertRowid);
+ db.run('INSERT INTO form_records(form_def_id,number,data,status,period,created_by) VALUES(?,?,?,?,?,1)',disclosureForm.id,label,JSON.stringify({employee_id:employee,employee_name:'Synthetic Copy '+kind,cutoff_id:cutoff,pay_date:'2037-07-16',total_earnings:1000,net_pay:1000,_calculation_snapshot:JSON.stringify({version:1,employee_name:'Synthetic Copy '+kind,days:[],totals:{total_earnings:1000,net_pay:1000}})}),kind==='PAID'?'paid':'draft',label);
+}
 // Payroll reconciliation fixtures use a separate pay year from tax/disclosure tests.
 for(const kind of ['GOOD','DUP']){
   const label='RECON-BROWSER-'+kind;

@@ -529,7 +529,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
 
   async function printSelected() {
     if (!selectedIds.size) { UI.toast('No records selected', 'error'); return; }
-    const list = currentRecords.filter((r) => selectedIds.has(r.id)).map(payrollPrintData);
+    const list = currentRecords.filter((r) => selectedIds.has(r.id));
     printSlips(list);
   }
 
@@ -546,7 +546,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   // Payroll gets a real styled .xlsx (colored header/summary/department bands, currency +
   // date cell formats — see hr-payroll-export.js; CSV is plain text and can't carry any of
   // that). Every other form keeps the original plain-CSV export, unchanged.
-  function downloadCsv(records, labelHint) {
+  async function downloadCsv(records, labelHint) {
     const list = records || currentRecords;
     if (!list.length) { UI.toast('No records to export', 'error'); return; }
     const baseName = `${(formDef.slug || 'records') + (labelHint || state.period ? '-' + (labelHint || state.period) : '')}`.replace(/[^a-z0-9._-]+/gi, '_');
@@ -556,13 +556,11 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         UI.toast('Excel export module failed to load', 'error');
         return;
       }
-      // The period IS the workbook's title (a bundle's own labelHint, else whatever period is
-      // selected) — only an unfiltered "All periods" export has no single period to name it
-      // after, so that falls back to the form's own name instead.
-      const title = labelHint || state.period || formDef.name;
-      const subtitle = `${list.length} payslip${list.length === 1 ? '' : 's'}` +
-        (!labelHint && !state.period && state.status ? ` — status "${state.status}"` : '');
-      downloadPayrollWorkbook(list, formDef, { title, subtitle, filename: `${baseName}.xlsx` });
+      try {
+        const context=payrollCopyContext(),copy=await context.read(list);context.check();
+        const title=payrollCopyTitle(copy),filename=`${copy.form.slug}-${title}`.replace(/[^a-z0-9._-]+/gi,'_')+'.xlsx';
+        downloadPayrollWorkbook(copy.records,copy.form,{title,copyNotice:copy.notice,filename});
+      }catch(error){payrollActionFailure(error);}
       return;
     }
 
@@ -612,75 +610,74 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   }
 
   function payrollPrintData(r){return {...r.data,number:r.number,record:{number:r.number,status:r.status,created_at:r.created_at},today:new Date().toLocaleDateString()};}
-  async function printSlips(dataList,templateId) {
-    if(!templateId)return choosePrintLayout(id=>printSlips(dataList,id));
-    const list = dataList || currentRecords.map(payrollPrintData);
-    if (!list.length) { UI.toast('No records to print', 'error'); return; }
-    if (typeof buildPayrollSlipsHtml === 'undefined') { UI.toast('Print module failed to load', 'error'); return; }
-
-    const tpl=await API.get('/templates/'+templateId),context=await loadPrintContext(templateId);
-    const render=data=>renderSlip({...data,company:context.company,global:context.global},tpl.body,context.variables);
-    const tiled=buildTiledPagesHtml(list,render,{copiesPerRecord:tpl.copies_per_record,recordsPerPage:tpl.records_per_page,tileFill:tpl.tile_fill,continuous:!!tpl.tile_continuous,gapXmm:tpl.grid_gap_x_mm,gapYmm:tpl.grid_gap_y_mm,repeatCount:tpl.repeat_count,pageContentHeightMm:pageContentHeightMm(tpl.body)});
-    const html=tiled||list.map((data,i)=>`<div${i<list.length-1?' style="break-after:page"':''}>${render(data)}</div>`).join('');
-    const full=UI.printableHtml(html,formDef.name);
-
-    UI.modal({
-      title: 'Payslip Preview',
-      size: 'xl',
-      bodyHTML: `<iframe title="Payslip print preview" id="payslip-preview-frame" style="width:100%;height:70vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
-      cancelText: 'Close',
-      confirmText: 'Print…',
-      onOpen: (ov) => {
-        const ifr = ov.querySelector('#payslip-preview-frame');
-        // Once the slip HTML has actually rendered (real layout needed — scrollHeight is
-        // meaningless before then), shrink any cell whose content overflows its fixed-height
-        // grid cell instead of leaving it silently clipped by .payslip-grid's overflow:hidden.
-        UI.loadPrintFrame(ifr,full,tiled?fitTiledCells:undefined);
-      },
-      onConfirm: async (ov) => {
-        const ifr = ov.querySelector('#payslip-preview-frame');
-        await UI.printFrame(ifr);
-        return false; // keep the preview open — printing shouldn't close it
-      },
-    });
+  function payrollCopyTitle(copy){const labels=[...new Set(copy.records.map(r=>r.period).filter(Boolean))];return labels.length===1?labels[0]:copy.form.name;}
+  function payrollCopyContext(){
+    const actor=App.getMe(),server=API.serverScope(),token=API.getToken(),anchor=view.querySelector('#fr-print-slips');
+    const opts={expectedServer:server,expectedUserId:actor.id};
+    const check=()=>{if(App.getMe()!==actor||API.serverScope()!==server||API.getToken()!==token||formRecordViews.get(view)!==owner||!anchor?.isConnected)throw new Error('Account, company or payroll view changed. Reopen payroll.');};
+    return {check,read:async(records,expected)=>{
+      check();if(records.length>200)throw new Error('Select at most 200 payslips per print or Excel export.');
+      const copy=await API.get(`/hr/payroll/copy?form_id=${formDef.id}&ids=${records.map(r=>r.id).join(',')}${expected?'&expected='+expected:''}`,opts);check();return copy;
+    }};
+  }
+  async function recheckPayrollPrint(context,copy,ov,frame,gate){
+    try{
+      if(frame._printReady)await frame._printReady;
+      await context.read(copy.records,copy.snapshot);context.check();
+      if(!ov.isConnected)throw new Error('Print preview closed. Reopen payroll.');
+      await UI.printFrame(frame);
+    }catch(error){
+      // A stale or held preview cannot keep an enabled Print action or old printable money.
+      if(ov.isConnected){gate.blocked=true;frame.srcdoc='';ov.querySelector('[data-confirm]').disabled=true;const message=ov.querySelector('[data-copy-state]');message.setAttribute('role','alert');message.textContent=error.message+' Close this preview and reopen it after review.';message.tabIndex=-1;message.focus();}
+    }
+    return false;
+  }
+  async function printSlips(records,templateId) {
+    if(!templateId)return choosePrintLayout(id=>printSlips(records,id));
+    const selected=records||currentRecords;
+    if(!selected.length){UI.toast('No records to print','error');return;}
+    if(typeof buildPayrollSlipsHtml==='undefined'){UI.toast('Print module failed to load','error');return;}
+    try{
+      const copyContext=payrollCopyContext();
+      const tpl=await API.get('/templates/'+templateId),context=await loadPrintContext(templateId);
+      const copy=await copyContext.read(selected),list=copy.records;copyContext.check();
+      const render=r=>`<div><h1 style="font:700 13px Arial;margin:0;padding:3px;text-align:center;color:#111;background:#fff">Payslip — ${UI.esc(r.number)}</h1><h2 style="font:700 ${r.status==='paid'?13:18}px Arial;margin:0;padding:3px;text-align:center;color:#111;background:#fff">${r.status==='paid'?'PAID RECORD COPY — payment evidence is separate.':'DRAFT — NOT FINAL'}</h2>${renderSlip({...payrollPrintData(r),company:context.company,global:context.global},tpl.body,context.variables)}</div>`;
+      const tiled=buildTiledPagesHtml(list,render,{copiesPerRecord:tpl.copies_per_record,recordsPerPage:tpl.records_per_page,tileFill:tpl.tile_fill,continuous:!!tpl.tile_continuous,gapXmm:tpl.grid_gap_x_mm,gapYmm:tpl.grid_gap_y_mm,repeatCount:tpl.repeat_count,pageContentHeightMm:pageContentHeightMm(tpl.body)});
+      const html=tiled||list.map((r,i)=>`<div${i<list.length-1?' style="break-after:page"':''}>${render(r)}</div>`).join('');
+      const full=UI.printableHtml(`<main>${html}</main>`,copy.form.name),gate={blocked:false};
+      let previewResize;
+      UI.modal({title:'Payslip Preview',size:'xl',cancelText:'Close',confirmText:'Print…',
+        bodyHTML:`<p data-copy-state role="status">${UI.esc(copy.notice)} Saved values reloaded. Printing checks saved payroll again.</p><iframe title="Payslip print preview" id="payslip-preview-frame" style="width:100%;height:70vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+        onOpen:ov=>{
+          const frame=ov.querySelector('#payslip-preview-frame');
+          UI.loadPrintFrame(frame,full,tiled?fitTiledCells:undefined);
+          if(tiled){previewResize=new ResizeObserver(()=>{if(frame.contentDocument)fitTiledCells(frame.contentDocument);});previewResize.observe(frame);}
+        },
+        onClose:()=>previewResize?.disconnect(),
+        isConfirmDisabled:()=>gate.blocked,
+        onConfirm:ov=>recheckPayrollPrint(copyContext,copy,ov,ov.querySelector('#payslip-preview-frame'),gate),
+      });
+    }catch(error){payrollActionFailure(error);}
   }
 
-  // Printable payroll summary for one period (or whatever's filtered) — same records and
-  // totals as Download Excel (hr-payroll-export.js buildPayrollSummaryHtml), same preview-
-  // modal + iframe pattern as printSlips() above. `records`/`labelHint` come from a period
-  // bundle's own button; the header button prints what's currently in view.
-  async function printSummary(records, labelHint) {
-    const list = records || currentRecords;
-    if (!list.length) { UI.toast('No records to print', 'error'); return; }
-    if (typeof buildPayrollSummaryHtml === 'undefined') { UI.toast('Print module failed to load', 'error'); return; }
-    const period = labelHint || state.period;
-    const cutoffId = currentRecords.find(r => r.period === period && r.data && r.data.cutoff_id)?.data.cutoff_id;
-    const meta = period ? periodsMeta.find(p => cutoffId ? p.id === Number(cutoffId) : p.label === period) : null;
-    const company = await API.get('/templates/company').catch(() => null);
-    const subtitle = `${list.length} payslip${list.length === 1 ? '' : 's'}` +
-      (!labelHint && state.status ? ` — status "${state.status}"` : '') +
-      (!labelHint && state.q ? ` — search "${state.q}"` : '');
-    const html = buildPayrollSummaryHtml(list, formDef, {
-      title: period || formDef.name,
-      subtitle,
-      company,
-      dateRange: meta ? `${meta.start_date} – ${meta.end_date}` : '',
-      printedAt: new Date().toLocaleString(),
-    });
-    UI.modal({
-      title: 'Payroll Summary Preview',
-      size: 'xl',
-      bodyHTML: `<iframe id="payroll-summary-frame" style="width:100%;height:70vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
-      cancelText: 'Close',
-      confirmText: 'Print…',
-      onOpen: (ov) => { ov.querySelector('#payroll-summary-frame').srcdoc = UI.printableHtml(html, `Payroll Summary - ${period || formDef.name}`); },
-      onConfirm: (ov) => {
-        const ifr = ov.querySelector('#payroll-summary-frame');
-        ifr.contentWindow.focus();
-        ifr.contentWindow.print();
-        return false;
-      },
-    });
+  async function printSummary(records) {
+    const selected=records||currentRecords;
+    if(!selected.length){UI.toast('No records to print','error');return;}
+    if(typeof buildPayrollSummaryHtml==='undefined'){UI.toast('Print module failed to load','error');return;}
+    try{
+      const context=payrollCopyContext(),company=await API.get('/templates/company');
+      const copy=await context.read(selected);context.check();
+      const title=payrollCopyTitle(copy),meta=copy.cutoffs.length===1?copy.cutoffs[0]:null;
+      const html=buildPayrollSummaryHtml(copy.records,copy.form,{title,company,copyNotice:copy.notice,
+        dateRange:meta?`${meta.start_date} – ${meta.end_date}`:'',printedAt:new Date().toLocaleString()});
+      const gate={blocked:false};
+      UI.modal({title:'Payroll Summary Preview',size:'xl',cancelText:'Close',confirmText:'Print…',
+        bodyHTML:`<p data-copy-state role="status">${UI.esc(copy.notice)} Saved values reloaded. Printing checks saved payroll again.</p><iframe title="Payroll summary print preview" id="payroll-summary-frame" style="width:100%;height:70vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+        onOpen:ov=>UI.loadPrintFrame(ov.querySelector('#payroll-summary-frame'),UI.printableHtml(`<main>${html}</main>`,'Payroll Summary - '+title)),
+        isConfirmDisabled:()=>gate.blocked,
+        onConfirm:ov=>recheckPayrollPrint(context,copy,ov,ov.querySelector('#payroll-summary-frame'),gate),
+      });
+    }catch(error){payrollActionFailure(error);}
   }
 
   // Same Day Type badge vocabulary hr-timekeeping.js's Daily Time grid already shows — kept
@@ -800,7 +797,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         </tr></thead><tbody>${rows || '<tr><td colspan="9" class="muted">No attendance recorded for this period</td></tr>'}</tbody></table></div>`,
       cancelText: 'Close',
       onOpen: (ov) => {
-        // Local working copy — the print button and any live edits below use this, never
+        // Local working copy — live previews below use this, never
         // mutating the caller's own `r.data` unless/until Save actually persists it, so
         // closing without saving leaves the record (and the list behind this modal) untouched.
         if (openAdjustments) ov.querySelector('.pd-adjustments')?.setAttribute('open', '');
@@ -818,8 +815,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
         if (btn) btn.onclick = async () => {
           btn.disabled = true;
           try {
-            if (deductionsDirty && dedCheckboxes.length && !await refreshPreview()) return;
-            if (ov.isConnected) await printSlips([{...payrollPrintData(r),...liveData}]);
+            if (deductionsDirty) { UI.toast('Save Deductions before printing. Printed copies use saved payroll.', 'error'); return; }
+            if (ov.isConnected) await printSlips([r]);
           } finally { btn.disabled = false; }
         };
 
@@ -955,6 +952,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   // tiled N-up instead via print-tiling.js's buildTiledPagesHtml — the same layout
   // hr-payroll-print.js hand-built for payroll, generalized for any template.
   async function printRecordsViaTemplate(records,templateId) {
+    if(isPayroll)return printSlips(records,templateId);
     if(!templateId)return choosePrintLayout(id=>printRecordsViaTemplate(records,id));
     if (!templateId) { UI.toast('No print template linked to this form', 'error'); return; }
     if (!records.length) { UI.toast('No records to print', 'error'); return; }
@@ -1358,7 +1356,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       });
       el.querySelectorAll('[data-bundle-print]').forEach((b) => b.onclick = (e) => {
         e.stopPropagation();
-        printSlips(records.filter((r) => (r.period || '(no period)') === b.dataset.bundlePrint).map(payrollPrintData));
+        printSlips(records.filter((r) => (r.period || '(no period)') === b.dataset.bundlePrint));
       });
       el.querySelectorAll('[data-bundle-summary]').forEach((b) => b.onclick = (e) => {
         e.stopPropagation();
@@ -1407,7 +1405,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
       b.onclick = (e) => {
         e.stopPropagation();
         const r = records.find((x) => String(x.id) === String(b.dataset.print));
-        if (r) printSlips([payrollPrintData(r)]);
+        if (r) printSlips([r]);
       });
     el.querySelectorAll('[data-print-tpl]').forEach((b) =>
       b.onclick = (e) => {

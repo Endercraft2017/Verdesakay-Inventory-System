@@ -1,6 +1,7 @@
 import { safeDocumentType } from '../../shared/file-response';
 import payrollIdentityRoutes from './payroll-identity.routes';
 import payrollCutoffRoutes from './payroll-cutoff.routes';
+import payrollCopyRoutes from './payroll-copy.routes';
 import { correctRecord } from '../../core/data-forms/history';
 import { recordDeductionChange, deductionHistory } from '../payroll/deduction-history';
 import { effectiveHrForm } from './request-policy';
@@ -94,6 +95,7 @@ const EMP_CSV_COLUMNS = [
 
 const router = Router();
 router.use(requireAuth);
+router.use(payrollCopyRoutes);
 router.use('/payroll/:recordId/identity', payrollIdentityRoutes);
 router.use('/payroll/:recordId/cutoff-recovery', payrollCutoffRoutes);
 

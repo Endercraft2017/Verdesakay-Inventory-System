@@ -698,6 +698,12 @@ for the internet (it uses the company's mail server, which only the cloud has).
    HR reviews the cutoff on Forms → HR Payroll: **Print All** (slips), **Print Summary** (A4
    landscape register — totals, department subtotals, every payslip, Prepared/Checked/Approved
    lines; 2026-10-05) and **Download Excel** read the same totals (`public/js/hr-payroll-export.js`).
+   Every staff row/visible/selected/bundle print, summary and Excel action now reloads up to
+   200 saved records through `GET /hr/payroll/copy` (`payroll.view`), checking source holds
+   including hidden siblings. No partial batch is issued. Unsaved deductions must be saved;
+   draft copies are visibly labeled. Print rechecks the saved preview digest and clears/holds
+   stale output; late account/company/view responses cannot reopen it. See
+   `docs/operations/payroll-staff-copies.md` for replica, layout and payment-evidence limits.
    Rate change branch (2026-10-05): HR → Employees → Edit → Pay → **Change rate** (new rate +
    effective date, today or backdated) logs the rate, then redoes stage 2–3 for that employee on
    every cutoff ending on or after the date (`POST /hr/employees/:id/rate-change`, oldest first).
@@ -1540,3 +1546,12 @@ provider request (also after refresh/401 waits) → shared commercial-line proje
 known provider receipt/link → release own lock. Actor/order change stops future calls; acceptance
 already received is retained. Background intents retain their own policy, not a forged session.
 Offline accounting/payroll claim routes are not retagged; see the sensitive-action inventory.
+
+
+Editor audit follow-up (22 October 2026): disposable setup password replacement → prior
+session revoked → new API sign-in plus actual browser cookie sign-in at `/?view=desktop` →
+94 scoped scans and 15 task checks. Label-in-name fixes preserve visible button text and
+ribbon state labels; results and incomplete checks remain evidence, not a conformance claim.
+
+Staff record search → JSON-valid guarded employee-name extraction → safe parsed review rows.
+Corrupt history remains findable by record number; payroll copy validation still holds it.

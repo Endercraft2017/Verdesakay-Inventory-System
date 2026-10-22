@@ -1,6 +1,15 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 22 October 2026 — paid marking, email and employee list/PDF/timekeeping
+Latest follow-up: 22 October 2026 — all staff payroll print/summary/Excel paths reload saved
+payroll with current-source holds and bounded batches. Print rechecks saved preview state;
+stale/held frames clear and Print remains disabled. Draft copies have visible labels; unsaved
+deduction edits must be saved. Account/company/view guards reject late output. See
+[contract](../operations/payroll-staff-copies.md), [six-source research](payroll-copy-research.md)
+and [verification](evidence/payroll-copy-verification.json). Downloaded files cannot be recalled;
+local replica convergence, signed/final issuance, payment/filing evidence and reviewed durable
+email remain. Whole-control counts and release hold are unchanged.
+
+Previous follow-up: 22 October 2026 — paid marking, email and employee list/PDF/timekeeping
 now share current payroll source holds. Draft email is refused; malformed JSON cannot crash
 the employee candidate read. Known duplicate/identity/cutoff conflicts hold, including custom
 aliases. Previously accepted offline payment decisions remain under D6, with atomic source

@@ -1,0 +1,238 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payroll-copy.test.ts > lets a payroll reader reload saved values with a bounded private projection and draft notice
+{"timestamp":"2026-10-22T03:58:24.998Z","level":"info","event":"http_request","request_id":"3582f4e6-fa61-4d50-b5bb-a6b556b8b403","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":404,"duration_ms":4}
+
+stdout | tests/payroll-copy.test.ts > requires authentication and payroll viewing independently of HR/form permissions
+{"timestamp":"2026-10-22T03:58:25.006Z","level":"info","event":"http_request","request_id":"5cf17466-3cd1-4530-b927-ba7eaeb45f8c","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":401,"duration_ms":1}
+
+stdout | tests/payroll-copy.test.ts > requires authentication and payroll viewing independently of HR/form permissions
+{"timestamp":"2026-10-22T03:58:25.011Z","level":"info","event":"http_request","request_id":"6e19b00e-9ffb-45a5-9683-ccfab2db4613","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":404,"duration_ms":3}
+
+stdout | tests/payroll-copy.test.ts > blocks the whole requested batch for a duplicate even when its sibling is not selected
+{"timestamp":"2026-10-22T03:58:25.015Z","level":"info","event":"http_request","request_id":"4ea06bd4-c444-46f4-9da7-35c3c6be10bf","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":404,"duration_ms":1}
+
+stdout | tests/payroll-copy.test.ts > refuses corrupt source, invalid identity, invalid money and unsupported status
+{"timestamp":"2026-10-22T03:58:25.019Z","level":"info","event":"http_request","request_id":"cfde8682-2963-4933-b268-8730319ab6a7","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":404,"duration_ms":1}
+
+stdout | tests/payroll-copy.test.ts > accepts an unchanged preview precondition and rejects changed saved money/status/revision
+{"timestamp":"2026-10-22T03:58:25.022Z","level":"info","event":"http_request","request_id":"5b2cc6e9-6789-4eb7-978c-6ac73bb0a79b","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":404,"duration_ms":1}
+
+stdout | tests/payroll-copy.test.ts > revalidates source holds at print time even with the original matching preview hash
+{"timestamp":"2026-10-22T03:58:25.026Z","level":"info","event":"http_request","request_id":"668d34b5-bf8d-4d0d-b6f7-936182a896e5","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":404,"duration_ms":1}
+
+stdout | tests/payroll-copy.test.ts > revalidates source holds at print time even with the original matching preview hash
+{"timestamp":"2026-10-22T03:58:25.029Z","level":"info","event":"http_request","request_id":"f21a7aca-ecb7-444f-9b26-a0d6a716c1db","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":404,"duration_ms":2}
+
+stdout | tests/payroll-copy.test.ts > checks form and cutoff metadata changes as part of the preview precondition
+{"timestamp":"2026-10-22T03:58:25.040Z","level":"info","event":"http_request","request_id":"e4a54168-1ed9-44d0-bf90-5c45e79a02bf","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":404,"duration_ms":2}
+
+stdout | tests/payroll-copy.test.ts > checks form and cutoff metadata changes as part of the preview precondition
+{"timestamp":"2026-10-22T03:58:25.043Z","level":"info","event":"http_request","request_id":"d6008e80-2319-45d1-bc40-19d0f9dd3c30","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":404,"duration_ms":1}
+
+stdout | tests/payroll-copy.test.ts > bounds batches and strictly validates IDs, repeated parameters and snapshot hashes
+{"timestamp":"2026-10-22T03:58:25.056Z","level":"info","event":"http_request","request_id":"d3e35a08-a782-45c3-82f1-215eecb67ba2","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":404,"duration_ms":1}
+
+stdout | tests/payroll-copy.test.ts > labels Paid-only copies separately and never treats a mixed selection as finalized
+{"timestamp":"2026-10-22T03:58:25.059Z","level":"info","event":"http_request","request_id":"f7dbd354-99ad-41a5-82e4-eb1f05d5c96a","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":404,"duration_ms":1}
+
+stdout | tests/payroll-copy.test.ts > preserves requested order and changes the snapshot when the selected set changes
+{"timestamp":"2026-10-22T03:58:25.064Z","level":"info","event":"http_request","request_id":"8893158f-f39f-4a61-99d1-7174c6806736","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":404,"duration_ms":2}
+
+stdout | tests/payroll-copy.test.ts > preserves requested order and changes the snapshot when the selected set changes
+{"timestamp":"2026-10-22T03:58:25.066Z","level":"info","event":"http_request","request_id":"691e86f2-2acc-4ca6-9dde-cb61184d056e","tenant":"default","method":"GET","path":"/api/hr/payroll/copy","status":404,"duration_ms":1}
+
+stdout | tests/payroll-copy.test.ts
+{"timestamp":"2026-10-22T03:58:22.700Z","level":"info","event":"http_request","request_id":"3f5ac52e-7b3a-4b50-b150-02ca24b86280","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":599}
+
+stdout | tests/payroll-copy.test.ts
+{"timestamp":"2026-10-22T03:58:22.711Z","level":"info","event":"http_request","request_id":"6ed71ff8-d53d-49eb-969f-2b5d0fc78a4f","tenant":"default","method":"POST","path":"/api/roles","status":201,"duration_ms":4}
+
+stdout | tests/payroll-copy.test.ts
+{"timestamp":"2026-10-22T03:58:23.327Z","level":"info","event":"http_request","request_id":"22bb22a2-7286-404c-9689-803cd9abad69","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":613}
+
+stdout | tests/payroll-copy.test.ts
+{"timestamp":"2026-10-22T03:58:23.936Z","level":"info","event":"http_request","request_id":"6940b11b-305f-440a-bcbf-c53165cff877","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":606}
+
+stdout | tests/payroll-copy.test.ts
+{"timestamp":"2026-10-22T03:58:24.254Z","level":"info","event":"http_request","request_id":"2a02ddb3-76aa-4ede-b759-11b6dda04118","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":314}
+
+stdout | tests/payroll-copy.test.ts
+{"timestamp":"2026-10-22T03:58:24.987Z","level":"info","event":"http_request","request_id":"126dd91c-a137-430b-98b9-bb27ff097bae","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":729}
+
+ ❯ tests/payroll-copy.test.ts (11 tests | 10 failed) 6775ms
+   × lets a payroll reader reload saved values with a bounded private projection and draft notice 14ms
+   × requires authentication and payroll viewing independently of HR/form permissions 9ms
+   × blocks the whole requested batch for a duplicate even when its sibling is not selected 5ms
+   × refuses corrupt source, invalid identity, invalid money and unsupported status 3ms
+   × accepts an unchanged preview precondition and rejects changed saved money/status/revision 4ms
+   × revalidates source holds at print time even with the original matching preview hash 13ms
+   × checks form and cutoff metadata changes as part of the preview precondition 8ms
+   × bounds batches and strictly validates IDs, repeated parameters and snapshot hashes 3ms
+   × labels Paid-only copies separately and never treats a mixed selection as finalized 4ms
+   × preserves requested order and changes the snapshot when the selected set changes 6ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payroll-copy.test.ts > lets a payroll reader reload saved values with a bounded private projection and draft notice
+AssertionError: expected 404 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 404
+
+ ❯ tests/payroll-copy.test.ts:21:72
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  tests/payroll-copy.test.ts > requires authentication and payroll viewing independently of HR/form permissions
+AssertionError: expected 404 to be 403 // Object.is equality
+
+- Expected
++ Received
+
+- 403
++ 404
+
+ ❯ tests/payroll-copy.test.ts:24:169
+     22| });
+     23| it('requires authentication and payroll viewing independently of HR/fo…
+     24|  const a=slip();expect((await ctx.api.get('/api/hr/payroll/copy').quer…
+       |                                                                                                                                                                         ^
+     25| });
+     26| it('blocks the whole requested batch for a duplicate even when its sib…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+ FAIL  tests/payroll-copy.test.ts > blocks the whole requested batch for a duplicate even when its sibling is not selected
+AssertionError: expected 404 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 404
+
+ ❯ tests/payroll-copy.test.ts:27:97
+     25| });
+     26| it('blocks the whole requested batch for a duplicate even when its sib…
+     27|  const a=slip(),b=slip();slip('paid',a.period);const r=await copy([a.i…
+       |                                                                                                 ^
+     28| });
+     29| it('refuses corrupt source, invalid identity, invalid money and unsupp…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯
+
+ FAIL  tests/payroll-copy.test.ts > refuses corrupt source, invalid identity, invalid money and unsupported status
+AssertionError: expected 404 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 404
+
+ ❯ tests/payroll-copy.test.ts:30:149
+     28| });
+     29| it('refuses corrupt source, invalid identity, invalid money and unsupp…
+     30|  for(const extra of [{employee_id:'bad'},{cutoff_id:'bad'},{net_pay:{}…
+       |                                                                                                                                                     ^
+     31|  const a=slip();db.run("UPDATE form_records SET data='broken' WHERE id…
+     32| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯
+
+ FAIL  tests/payroll-copy.test.ts > accepts an unchanged preview precondition and rejects changed saved money/status/revision
+AssertionError: expected 404 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 404
+
+ ❯ tests/payroll-copy.test.ts:34:55
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯
+
+ FAIL  tests/payroll-copy.test.ts > revalidates source holds at print time even with the original matching preview hash
+AssertionError: expected 404 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 404
+
+ ❯ tests/payroll-copy.test.ts:38:113
+     36| });
+     37| it('revalidates source holds at print time even with the original matc…
+     38|  const a=slip(),r=await copy([a.id]);slip('draft',a.period);expect((aw…
+       |                                                                                                                 ^
+     39| });
+     40| it('checks form and cutoff metadata changes as part of the preview pre…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯
+
+ FAIL  tests/payroll-copy.test.ts > checks form and cutoff metadata changes as part of the preview precondition
+AssertionError: expected 404 to be 409 // Object.is equality
+
+- Expected
++ Received
+
+- 409
++ 404
+
+ ❯ tests/payroll-copy.test.ts:41:175
+     39| });
+     40| it('checks form and cutoff metadata changes as part of the preview pre…
+     41|  const a=slip(),r=await copy([a.id]);db.run("UPDATE attendance_periods…
+       |                                                                                                                                                                               ^
+     42| });
+     43| it('refuses missing/nonpayroll IDs without returning a partial batch',…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/10]⎯
+
+ FAIL  tests/payroll-copy.test.ts > bounds batches and strictly validates IDs, repeated parameters and snapshot hashes
+AssertionError: expected 404 to be 400 // Object.is equality
+
+- Expected
++ Received
+
+- 400
++ 404
+
+ ❯ tests/payroll-copy.test.ts:51:98
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/10]⎯
+
+ FAIL  tests/payroll-copy.test.ts > labels Paid-only copies separately and never treats a mixed selection as finalized
+AssertionError: the given combination of arguments (undefined and string) is invalid for this assertion. You can use an array, a map, an object, a set, a string, or a weakset instead of a string
+ ❯ tests/payroll-copy.test.ts:55:73
+     53| });
+     54| it('labels Paid-only copies separately and never treats a mixed select…
+     55|  const a=slip('paid'),b=slip();expect((await copy([a.id])).body.notice…
+       |                                                                         ^
+     56| });
+     57| it('preserves requested order and changes the snapshot when the select…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/10]⎯
+
+ FAIL  tests/payroll-copy.test.ts > preserves requested order and changes the snapshot when the selected set changes
+TypeError: Cannot read properties of undefined (reading 'map')
+ ❯ tests/payroll-copy.test.ts:58:101
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/10]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  10 failed | 1 passed (11)
+   Start at  03:58:17
+   Duration  7.10s (transform 1.95s, setup 30ms, import 135ms, tests 6.78s, environment 0ms)

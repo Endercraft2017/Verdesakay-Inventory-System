@@ -1,0 +1,66 @@
+[WebServer] (node:16599) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:16612) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:16623) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 9 tests using 1 worker
+
+(node:16631) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e/payroll-copy.spec.ts:13:1 › row/header/selected print, summary and Excel hold duplicates outside the visible selection (3.0s)
+  ✓  2 tests/e2e/payroll-copy.spec.ts:20:1 › Excel reloads saved values instead of the older visible list and contains the draft notice (1.6s)
+  ✘  3 tests/e2e/payroll-copy.spec.ts:25:1 › draft preview is labeled, accessible and blocks printing after the saved source changes (10.7s)
+(node:16852) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  4 tests/e2e/payroll-copy.spec.ts:35:1 › summary rechecks an unchanged Paid copy before calling the browser print action (2.2s)
+  ✓  5 tests/e2e/payroll-copy.spec.ts:39:1 › unsaved deduction changes stay open and cannot be issued by the detail Print action (2.2s)
+  ✓  6 tests/e2e/payroll-copy.spec.ts:43:1 › a delayed copy response cannot reopen private payroll after leaving the view (1.7s)
+  ✓  7 tests/e2e/payroll-copy.spec.ts:49:41 › print refuses a changed account without sending a copy request (1.4s)
+  ✓  8 tests/e2e/payroll-copy.spec.ts:49:41 › print refuses a changed company without sending a copy request (2.0s)
+  ✓  9 tests/e2e/payroll-copy.spec.ts:53:1 › cutoff bundle print uses saved record identities and the same guarded preview (2.3s)
+
+
+  1) tests/e2e/payroll-copy.spec.ts:25:1 › draft preview is labeled, accessible and blocks printing after the saved source changes
+
+    Error: expect(locator).toBeHidden() failed
+
+    Locator:  getByRole('dialog', { name: 'Payslip Preview', exact: true })
+    Expected: hidden
+    Received: visible
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toBeHidden" getByRole('dialog', { name: 'Payslip Preview', exact: true }) with timeout 5000ms
+      - waiting for getByRole('dialog', { name: 'Payslip Preview', exact: true })
+        14 × locator resolved to <div role="dialog" tabindex="-1" class="modal xl" aria-modal="true" aria-label="Payslip Preview">…</div>
+           - unexpected value "visible"
+
+
+      31 |  await page.setViewportSize({width:1440,height:1000});await page.evaluate(()=>document.documentElement.dataset.theme='light');await page.screenshot({path:'work/payroll-copy-draft.png'});
+      32 |  await changeMoney(page,number,2222);let prints=0;await page.exposeFunction('copyPrinted',()=>prints++);await page.locator('#payslip-preview-frame').evaluate((frame:any)=>{frame.contentWindow.print=()=>{(window as any).copyPrinted();};});
+    > 33 |  await dialog.getByRole('button',{name:'Print…',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('Saved payroll changed');await expect(dialog.getByRole('button',{name:'Print…',exact:true})).toBeDisabled();await expect(page.locator('#payslip-preview-frame')).toHaveAttribute('srcdoc','');expect(prints).toBe(0);await page.screenshot({path:'work/payroll-copy-stale.png'});await page.keyboard.press('Escape');await expect(dialog).toBeHidden();await expect(page.getByRole('button',{name:'Print payslip '+number,exact:true})).toBeFocused();
+         |                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ^
+      34 | });
+      35 | test('summary rechecks an unchanged Paid copy before calling the browser print action',async({page})=>{
+      36 |  await open(page,'COPY-BROWSER-PAID');await page.locator('#fr-print-summary').click();const dialog=page.getByRole('dialog',{name:'Payroll Summary Preview',exact:true});await expect(dialog).toContainText('PAID RECORD COPY');await expect(page.frameLocator('#payroll-summary-frame').getByText('PAID RECORD COPY — payment evidence is separate.')).toBeVisible();
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-copy.spec.ts:33:454
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-copy-draft-preview-94aa0-er-the-saved-source-changes/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-copy-draft-preview-94aa0-er-the-saved-source-changes/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-copy-draft-preview-94aa0-er-the-saved-source-changes/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-copy-draft-preview-94aa0-er-the-saved-source-changes/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests/e2e/payroll-copy.spec.ts:25:1 › draft preview is labeled, accessible and blocks printing after the saved source changes
+  8 passed (34.9s)

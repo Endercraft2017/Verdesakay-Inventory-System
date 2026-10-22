@@ -2110,9 +2110,9 @@
   "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
   "latest_follow_up": {
     "date": "2026-10-22",
-    "scope": "Current-source payroll paid/email/employee disclosure guards, corrupt JSON handling and offline accepted-payment source clashes; four-source research",
-    "base_commit": "6667c52235cabcc6937b01949bde2d0c16053427",
-    "verification": "evidence/payroll-release-verification.json",
+    "scope": "Saved staff payroll print/Excel source checks, stale preview refusal, draft labels, XLSX serialization and browser/editor UX evidence; six-source research",
+    "base_commit": "0c8954ab2e606b5d3ce01b7e4756196b506dc214",
+    "verification": "evidence/payroll-copy-verification.json",
     "whole_control_statuses_changed": false
   }
 }

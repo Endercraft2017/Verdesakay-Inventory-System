@@ -1,0 +1,85 @@
+{
+  "testEngine": {
+    "name": "axe-core",
+    "version": "4.14.0"
+  },
+  "testRunner": {
+    "name": "axe"
+  },
+  "testEnvironment": {
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+    "windowWidth": 1280,
+    "windowHeight": 720,
+    "orientationAngle": 0,
+    "orientationType": "landscape-primary"
+  },
+  "timestamp": "2026-10-22T04:30:13.539Z",
+  "url": "http://127.0.0.1:4173/#form-records?slug=hr_payroll&q=COPY-BROWSER-STALE&form_id=1&status=&period=",
+  "violations": [],
+  "incomplete": [
+    {
+      "id": "color-contrast",
+      "impact": "serious",
+      "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+      "nodes": [
+        {
+          "target": [
+            "h3"
+          ],
+          "html": "<h3>Payslip Preview</h3>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "12.4pt (16.5px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<div class=\"modal-head\">",
+                  "target": [
+                    ".modal-head"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ]
+        },
+        {
+          "target": [
+            "button[data-confirm=\"\"]"
+          ],
+          "html": "<button class=\"btn\" data-confirm=\"\">Print…</button>",
+          "checks": [
+            {
+              "id": "color-contrast",
+              "data": {
+                "contrastRatio": 0,
+                "fontSize": "10.1pt (13.5px)",
+                "fontWeight": "normal",
+                "messageKey": "bgGradient",
+                "expectedContrastRatio": "4.5:1"
+              },
+              "relatedNodes": [
+                {
+                  "html": "<button class=\"btn\" data-confirm=\"\">Print…</button>",
+                  "target": [
+                    "button[data-confirm=\"\"]"
+                  ]
+                }
+              ],
+              "impact": "serious",
+              "message": "Element's background color could not be determined due to a background gradient"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "manual_review": "Preview/header/button screenshots inspected in both themes at 1440/1024/768/390px. Gradient backgrounds require manual contrast judgment; screenshots and zero automated violations do not establish conformance."
+}

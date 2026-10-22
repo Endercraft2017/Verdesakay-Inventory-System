@@ -1,0 +1,389 @@
+
+> otom@1.0.0 test:e2e
+> playwright test
+
+[WebServer] (node:12303) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:12316) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:12327) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 61 tests using 1 worker
+
+(node:12348) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓   1 tests/e2e/accounting-privacy.spec.ts:3:1 › accounting browser receives bounded tax identity and renders the seeded certificate (1.8s)
+  ✓   2 tests/e2e/alert-monitor.spec.ts:7:1 › old delivery failures remain discoverable across pages and failed reads preserve the selected view (1.5s)
+  ✓   3 tests/e2e/alert-monitor.spec.ts:23:1 › stalled delivery reads time out, retain evidence and recover without a write (1.3s)
+  ✓   4 tests/e2e/business-alerts.spec.ts:3:1 › website inquiry retains its draft after durable enqueue fails and saves one source/alert after correction (1.7s)
+  ✓   5 tests/e2e/control-plane-settings.spec.ts:3:1 › owner settings retain edited fields after a real database failure and accept a corrected save (1.3s)
+  ✓   6 tests/e2e/creation-receipts.spec.ts:3:1 › console retries a committed request whose response was lost without creating a second generated slug (2.4s)
+  ✓   7 tests/e2e/creation-receipts.spec.ts:35:1 › website retries a committed signup after a lost response using the same creation key (2.7s)
+  ✓   8 tests/e2e/inquiry-receipts.spec.ts:3:1 › public inquiry retries a lost committed response, rejects changed details and then replays the original without duplication (2.3s)
+  ✓   9 tests/e2e/inquiry-receipts.spec.ts:29:1 › contact form refuses null or HTML success responses and keeps its retry key until a real acknowledgement (1.3s)
+  ✓  10 tests/e2e/inquiry-receipts.spec.ts:50:1 › contact deadline releases a hanging committed send and retries with the same key (1.2s)
+  ✓  11 tests/e2e/mail-outbox.spec.ts:3:1 › owner sees uncertain signup delivery, retains it on refresh failure and sends no retry (1.3s)
+  ✓  12 tests/e2e/manual-export.spec.ts:4:1 › manual export shows financial context, cancels safely, reauthenticates and then exports (2.9s)
+  ✓  13 tests/e2e/manual-export.spec.ts:15:1 › stale displayed destination is rejected without exporting into the current connection (2.1s)
+  ✓  14 tests/e2e/manual-export.spec.ts:23:51 › confirmation refuses a changed account before sending (2.1s)
+  ✓  15 tests/e2e/manual-export.spec.ts:23:51 › confirmation refuses a changed company before sending (2.1s)
+  ✓  16 tests/e2e/manual-export.spec.ts:23:51 › confirmation refuses a changed view before sending (1.9s)
+[WebServer] (node:12327) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+[WebServer] (node:12327) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+  ✓  17 tests/e2e/passkeys.spec.ts:3:1 › console verifies real WebAuthn registration and sign-in, rejects replay, and protects the last key (3.4s)
+  ✓  18 tests/e2e/payment-receipts.spec.ts:3:1 › payment form retries a committed report after response loss using its original key and proof (2.9s)
+  ✓  19 tests/e2e/payroll-copy.spec.ts:13:1 › row/header/selected print, summary and Excel hold duplicates outside the visible selection (3.1s)
+  ✓  20 tests/e2e/payroll-copy.spec.ts:20:1 › Excel reloads saved values instead of the older visible list and contains the draft notice (1.6s)
+  ✘  21 tests/e2e/payroll-copy.spec.ts:25:1 › draft preview is labeled, accessible and blocks printing after the saved source changes (3.2s)
+(node:12975) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  22 tests/e2e/payroll-copy.spec.ts:31:1 › summary rechecks an unchanged Paid copy before calling the browser print action (2.0s)
+  ✓  23 tests/e2e/payroll-copy.spec.ts:35:1 › unsaved deduction changes stay open and cannot be issued by the detail Print action (2.1s)
+  ✓  24 tests/e2e/payroll-copy.spec.ts:39:1 › a delayed copy response cannot reopen private payroll after leaving the view (1.6s)
+  ✓  25 tests/e2e/payroll-cutoff.spec.ts:14:1 › reviews the authoritative cutoff, preserves original money and creates attributed correction history (3.1s)
+  ✓  26 tests/e2e/payroll-cutoff.spec.ts:21:1 › cancelling review sends no correction and retains the original stamp (2.2s)
+  ✓  27 tests/e2e/payroll-cutoff.spec.ts:24:1 › a changed payroll record is refused with an accessible error at confirmation (2.4s)
+  ✓  28 tests/e2e/payroll-cutoff.spec.ts:28:1 › leaving the payroll view discards its reviewed correction without submitting (2.2s)
+  ✓  29 tests/e2e/payroll-cutoff.spec.ts:35:41 › a changed account prevents submitting the reviewed correction (2.3s)
+  ✓  30 tests/e2e/payroll-cutoff.spec.ts:35:41 › a changed company prevents submitting the reviewed correction (2.3s)
+  ✓  31 tests/e2e/payroll-reconciliation.spec.ts:15:1 › real payroll comparison is read-only, accessible and matches after an explicit posting (3.0s)
+  ✓  32 tests/e2e/payroll-reconciliation.spec.ts:24:1 › duplicate payroll is visibly held and a real posting attempt preserves the ledger (2.4s)
+  ✓  33 tests/e2e/payroll-reconciliation.spec.ts:30:1 › comparison failures are visible and an older response cannot replace a newer label (2.2s)
+  ✓  34 tests/e2e/payroll-release.spec.ts:8:1 › a source conflict blocks marking paid and preserves its draft state (2.5s)
+  ✓  35 tests/e2e/payroll-release.spec.ts:11:1 › a valid draft cannot be emailed and valid payment enables the email action (1.8s)
+  ✓  36 tests/e2e/payroll-release.spec.ts:15:1 › an employee cannot retrieve previously paid duplicate records by list or guessed PDF/timekeeping URL (1.7s)
+  ✓  37 tests/e2e/payroll-repair.spec.ts:17:1 › reviewed repair preserves paid state and grants the identified employee access (3.3s)
+  ✓  38 tests/e2e/payroll-repair.spec.ts:26:1 › cancelling a reviewed repair sends no confirmation (2.4s)
+  ✓  39 tests/e2e/payroll-repair.spec.ts:29:1 › stale payroll state is refused and shows an accessible error in the review (2.4s)
+  ✓  40 tests/e2e/payroll-reports.spec.ts:11:1 › same-name employees retain separate certificates, print details and CSV identifiers (2.8s)
+  ✓  41 tests/e2e/payroll-reports.spec.ts:29:1 › every payroll report shows the real integrity error and disables export (2.7s)
+  ✓  42 tests/e2e/payroll-reports.spec.ts:43:1 › changing year clears export immediately and ignores a late older response (1.9s)
+  ✓  43 tests/e2e/payslip-disclosure.spec.ts:3:41 › payslip original employee cannot retrieve ambiguous legacy pay (1.6s)
+  ✓  44 tests/e2e/payslip-disclosure.spec.ts:3:41 › payslip reused employee cannot retrieve ambiguous legacy pay (1.7s)
+  ✓  45 tests/e2e/quickbooks-exports.spec.ts:3:1 › administrator sees durable export failures, handles status errors and refreshes safely (2.8s)
+  ✓  46 tests/e2e/readiness.spec.ts:17:1 › desktop: wrong password, keyboard login, stock journey and server logout (2.6s)
+  ✓  47 tests/e2e/readiness.spec.ts:56:1 › mobile: 360px layout, core navigation, offline failure and sign out (1.6s)
+  ✓  48 tests/e2e/readiness.spec.ts:89:1 › login forms: labelled controls, keyboard access and axe scan (1.4s)
+  ✓  49 tests/e2e/readiness.spec.ts:98:1 › API attack surface: injection, oversized inputs, CORS and private caching (16ms)
+  ✓  50 tests/e2e/readiness.spec.ts:110:1 › browser: separate users cannot edit each other’s notes; role changes revoke cookies (3.0s)
+  ✓  51 tests/e2e/readiness.spec.ts:142:1 › browser: message HTML is a non-executable attachment and policy links are usable (1.9s)
+  ✓  52 tests/e2e/readiness.spec.ts:164:1 › browser: uploaded JavaScript cannot execute as a self-hosted script (1.3s)
+  ✓  53 tests/e2e/readiness.spec.ts:182:1 › browser: authenticator enrollment, one-use recovery and mobile factor sign-in (9.9s)
+  ✓  54 tests/e2e/readiness.spec.ts:250:1 › assisted recovery: email-link redemption requires authenticator enrollment before workspace access (3.7s)
+  ✓  55 tests/e2e/readiness.spec.ts:277:1 › recovery cancellation: GET previews are inert and owner confirmation is single-use (1.4s)
+  ✓  56 tests/e2e/signup-atomic.spec.ts:3:1 › website signup retains input after invoice failure and retries the same workspace successfully (3.0s)
+  ✓  57 tests/e2e/signup-budget.spec.ts:6:1 › signup deadline preserves a committed request identity and retries without duplicate invoice (2.4s)
+  ✓  58 tests/e2e/signup-budget.spec.ts:22:1 › signup busy response retains fields and the same key for a successful retry (1.5s)
+  ✓  59 tests/e2e/signup-budget.spec.ts:30:1 › signup refuses null, HTML and wrong-status success without losing request identity (2.0s)
+  ✓  60 tests/e2e/step-up.spec.ts:5:1 › stale admin changes require accessible password + factor confirmation and preserve cancelled work (3.1s)
+  ✓  61 tests/e2e/support-errors.spec.ts:3:1 › support submission hides a real storage failure, retains the draft and accepts a corrected retry (2.0s)
+
+
+  1) tests/e2e/payroll-copy.spec.ts:25:1 › draft preview is labeled, accessible and blocks printing after the saved source changes
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  -   1
+    + Received  + 272
+
+    - Array []
+    + Array [
+    +   Object {
+    +     "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+    +     "help": "Elements must meet minimum color contrast ratio thresholds",
+    +     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+    +     "id": "color-contrast",
+    +     "impact": "serious",
+    +     "nodes": Array [
+    +       Object {
+    +         "all": Array [],
+    +         "any": Array [
+    +           Object {
+    +             "data": Object {
+    +               "bgColor": "#eef0f3",
+    +               "contrastRatio": 1.36,
+    +               "expectedContrastRatio": "3:1",
+    +               "fgColor": "#cdcfd1",
+    +               "fontSize": "24.0pt (32px)",
+    +               "fontWeight": "bold",
+    +               "messageKey": null,
+    +             },
+    +             "id": "color-contrast",
+    +             "impact": "serious",
+    +             "message": "Element has insufficient color contrast of 1.36 (foreground color: #cdcfd1, background color: #eef0f3, font size: 24.0pt (32px), font weight: bold). Expected contrast ratio of 3:1",
+    +             "relatedNodes": Array [
+    +               Object {
+    +                 "html": "<body class=\"doc-content\">",
+    +                 "target": Array [
+    +                   "#payslip-preview-frame",
+    +                   "body",
+    +                 ],
+    +               },
+    +             ],
+    +           },
+    +         ],
+    +         "failureSummary": "Fix any of the following:
+    +   Element has insufficient color contrast of 1.36 (foreground color: #cdcfd1, background color: #eef0f3, font size: 24.0pt (32px), font weight: bold). Expected contrast ratio of 3:1",
+    +         "html": "<div aria-hidden=\"true\" style=\"position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:.15;font:bold 32px Arial;z-index:2;transform:rotate(-20deg)\">DRAFT — NOT FINAL</div>",
+    +         "impact": "serious",
+    +         "none": Array [],
+    +         "target": Array [
+    +           "#payslip-preview-frame",
+    +           "div:nth-child(1) > .tiled-cell-inner > div > div[aria-hidden=\"true\"]",
+    +         ],
+    +       },
+    +       Object {
+    +         "all": Array [],
+    +         "any": Array [
+    +           Object {
+    +             "data": Object {
+    +               "bgColor": "#eef0f3",
+    +               "contrastRatio": 1.36,
+    +               "expectedContrastRatio": "3:1",
+    +               "fgColor": "#cdcfd1",
+    +               "fontSize": "24.0pt (32px)",
+    +               "fontWeight": "bold",
+    +               "messageKey": null,
+    +             },
+    +             "id": "color-contrast",
+    +             "impact": "serious",
+    +             "message": "Element has insufficient color contrast of 1.36 (foreground color: #cdcfd1, background color: #eef0f3, font size: 24.0pt (32px), font weight: bold). Expected contrast ratio of 3:1",
+    +             "relatedNodes": Array [
+    +               Object {
+    +                 "html": "<body class=\"doc-content\">",
+    +                 "target": Array [
+    +                   "#payslip-preview-frame",
+    +                   "body",
+    +                 ],
+    +               },
+    +             ],
+    +           },
+    +         ],
+    +         "failureSummary": "Fix any of the following:
+    +   Element has insufficient color contrast of 1.36 (foreground color: #cdcfd1, background color: #eef0f3, font size: 24.0pt (32px), font weight: bold). Expected contrast ratio of 3:1",
+    +         "html": "<div aria-hidden=\"true\" style=\"position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:.15;font:bold 32px Arial;z-index:2;transform:rotate(-20deg)\">DRAFT — NOT FINAL</div>",
+    +         "impact": "serious",
+    +         "none": Array [],
+    +         "target": Array [
+    +           "#payslip-preview-frame",
+    +           "div:nth-child(2) > .tiled-cell-inner > div > div[aria-hidden=\"true\"]",
+    +         ],
+    +       },
+    +     ],
+    +     "tags": Array [
+    +       "cat.color",
+    +       "wcag2aa",
+    +       "wcag143",
+    +       "TTv5",
+    +       "TT13.c",
+    +       "EN-301-549",
+    +       "EN-9.1.4.3",
+    +       "ACT",
+    +       "RGAAv4",
+    +       "RGAA-3.2.1",
+    +     ],
+    +   },
+    +   Object {
+    +     "description": "Ensure the document has a main landmark",
+    +     "help": "Document should have one main landmark",
+    +     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/landmark-one-main?application=playwright",
+    +     "id": "landmark-one-main",
+    +     "impact": "moderate",
+    +     "nodes": Array [
+    +       Object {
+    +         "all": Array [
+    +           Object {
+    +             "data": null,
+    +             "id": "page-has-main",
+    +             "impact": "moderate",
+    +             "message": "Document does not have a main landmark",
+    +             "relatedNodes": Array [],
+    +           },
+    +         ],
+    +         "any": Array [],
+    +         "failureSummary": "Fix all of the following:
+    +   Document does not have a main landmark",
+    +         "html": "<html>",
+    +         "impact": "moderate",
+    +         "none": Array [],
+    +         "target": Array [
+    +           "#payslip-preview-frame",
+    +           "html",
+    +         ],
+    +       },
+    +     ],
+    +     "tags": Array [
+    +       "cat.semantics",
+    +       "best-practice",
+    +     ],
+    +   },
+    +   Object {
+    +     "description": "Ensure that the page, or at least one of its frames contains a level-one heading",
+    +     "help": "Page should contain a level-one heading",
+    +     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/page-has-heading-one?application=playwright",
+    +     "id": "page-has-heading-one",
+    +     "impact": "moderate",
+    +     "nodes": Array [
+    +       Object {
+    +         "all": Array [
+    +           Object {
+    +             "data": null,
+    +             "id": "page-has-heading-one",
+    +             "impact": "moderate",
+    +             "message": "Page must have a level-one heading",
+    +             "relatedNodes": Array [],
+    +           },
+    +         ],
+    +         "any": Array [],
+    +         "failureSummary": "Fix all of the following:
+    +   Page must have a level-one heading",
+    +         "html": "<html>",
+    +         "impact": "moderate",
+    +         "none": Array [],
+    +         "target": Array [
+    +           "#payslip-preview-frame",
+    +           "html",
+    +         ],
+    +       },
+    +     ],
+    +     "tags": Array [
+    +       "cat.semantics",
+    +       "best-practice",
+    +     ],
+    +   },
+    +   Object {
+    +     "description": "Ensure all page content is contained by landmarks",
+    +     "help": "All page content should be contained by landmarks",
+    +     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/region?application=playwright",
+    +     "id": "region",
+    +     "impact": "moderate",
+    +     "nodes": Array [
+    +       Object {
+    +         "all": Array [],
+    +         "any": Array [
+    +           Object {
+    +             "data": Object {
+    +               "isIframe": false,
+    +             },
+    +             "id": "region",
+    +             "impact": "moderate",
+    +             "message": "Some page content is not contained by landmarks",
+    +             "relatedNodes": Array [],
+    +           },
+    +         ],
+    +         "failureSummary": "Fix any of the following:
+    +   Some page content is not contained by landmarks",
+    +         "html": "<div style=\"font:700 11px Arial;padding:3px;text-align:center\">DRAFT — NOT FINAL</div>",
+    +         "impact": "moderate",
+    +         "none": Array [],
+    +         "target": Array [
+    +           "#payslip-preview-frame",
+    +           "div:nth-child(1) > .tiled-cell-inner > div > div:nth-child(1)",
+    +         ],
+    +       },
+    +       Object {
+    +         "all": Array [],
+    +         "any": Array [
+    +           Object {
+    +             "data": Object {
+    +               "isIframe": false,
+    +             },
+    +             "id": "region",
+    +             "impact": "moderate",
+    +             "message": "Some page content is not contained by landmarks",
+    +             "relatedNodes": Array [],
+    +           },
+    +         ],
+    +         "failureSummary": "Fix any of the following:
+    +   Some page content is not contained by landmarks",
+    +         "html": "<div class=\"slip\">",
+    +         "impact": "moderate",
+    +         "none": Array [],
+    +         "target": Array [
+    +           "#payslip-preview-frame",
+    +           "div:nth-child(1) > .tiled-cell-inner > div > .slip",
+    +         ],
+    +       },
+    +       Object {
+    +         "all": Array [],
+    +         "any": Array [
+    +           Object {
+    +             "data": Object {
+    +               "isIframe": false,
+    +             },
+    +             "id": "region",
+    +             "impact": "moderate",
+    +             "message": "Some page content is not contained by landmarks",
+    +             "relatedNodes": Array [],
+    +           },
+    +         ],
+    +         "failureSummary": "Fix any of the following:
+    +   Some page content is not contained by landmarks",
+    +         "html": "<div style=\"font:700 11px Arial;padding:3px;text-align:center\">DRAFT — NOT FINAL</div>",
+    +         "impact": "moderate",
+    +         "none": Array [],
+    +         "target": Array [
+    +           "#payslip-preview-frame",
+    +           "div:nth-child(2) > .tiled-cell-inner > div > div:nth-child(1)",
+    +         ],
+    +       },
+    +       Object {
+    +         "all": Array [],
+    +         "any": Array [
+    +           Object {
+    +             "data": Object {
+    +               "isIframe": false,
+    +             },
+    +             "id": "region",
+    +             "impact": "moderate",
+    +             "message": "Some page content is not contained by landmarks",
+    +             "relatedNodes": Array [],
+    +           },
+    +         ],
+    +         "failureSummary": "Fix any of the following:
+    +   Some page content is not contained by landmarks",
+    +         "html": "<div class=\"slip\">",
+    +         "impact": "moderate",
+    +         "none": Array [],
+    +         "target": Array [
+    +           "#payslip-preview-frame",
+    +           "div:nth-child(2) > .tiled-cell-inner > div > .slip",
+    +         ],
+    +       },
+    +     ],
+    +     "tags": Array [
+    +       "cat.keyboard",
+    +       "best-practice",
+    +       "RGAAv4",
+    +       "RGAA-9.2.1",
+    +     ],
+    +   },
+    + ]
+
+      25 | test('draft preview is labeled, accessible and blocks printing after the saved source changes',async({page})=>{
+      26 |  const number='COPY-BROWSER-STALE';await open(page,number);await page.getByRole('button',{name:'Print payslip '+number,exact:true}).click();const dialog=page.getByRole('dialog',{name:'Payslip Preview',exact:true});await expect(dialog).toContainText('DRAFT — NOT FINAL');await expect(page.frameLocator('#payslip-preview-frame').getByText('DRAFT — NOT FINAL',{exact:true}).first()).toBeVisible();
+    > 27 |  expect((await new AxeBuilder({page}).include('[role="dialog"]').analyze()).violations).toEqual([]);await page.screenshot({path:'work/payroll-copy-draft.png'});
+         |                                                                                         ^
+      28 |  await changeMoney(page,number,2222);let prints=0;await page.exposeFunction('copyPrinted',()=>prints++);await page.locator('#payslip-preview-frame').evaluate((frame:any)=>{frame.contentWindow.print=()=>{(window as any).copyPrinted();};});
+      29 |  await dialog.getByRole('button',{name:'Print…',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('Saved payroll changed');await expect(dialog.getByRole('button',{name:'Print…',exact:true})).toBeDisabled();await expect(page.locator('#payslip-preview-frame')).toHaveAttribute('srcdoc','');expect(prints).toBe(0);await page.screenshot({path:'work/payroll-copy-stale.png'});
+      30 | });
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-copy.spec.ts:27:89
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-copy-draft-preview-94aa0-er-the-saved-source-changes/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-copy-draft-preview-94aa0-er-the-saved-source-changes/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-copy-draft-preview-94aa0-er-the-saved-source-changes/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-copy-draft-preview-94aa0-er-the-saved-source-changes/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests/e2e/payroll-copy.spec.ts:25:1 › draft preview is labeled, accessible and blocks printing after the saved source changes
+  60 passed (2.5m)

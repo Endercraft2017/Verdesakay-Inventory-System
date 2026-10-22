@@ -1,0 +1,50 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payroll-copy.test.ts > keeps staff payroll search usable when unrelated saved JSON is corrupt and holds that corrupt copy
+{"timestamp":"2026-10-22T04:28:12.362Z","event":"request_error","request_id":"fa869b16-562f-4091-b182-c0aa3fe778e8","status":500,"error_type":"Error"}
+{"timestamp":"2026-10-22T04:28:12.362Z","level":"error","event":"response_error","request_id":"fa869b16-562f-4091-b182-c0aa3fe778e8","status":500}
+{"timestamp":"2026-10-22T04:28:12.363Z","level":"info","event":"http_request","request_id":"fa869b16-562f-4091-b182-c0aa3fe778e8","tenant":"default","method":"GET","path":"/api/form-definitions/1/records","status":500,"duration_ms":2}
+
+stdout | tests/payroll-copy.test.ts
+{"timestamp":"2026-10-22T04:28:09.586Z","level":"info","event":"http_request","request_id":"4b4ea383-6c49-44ef-aa8b-5294af8a7275","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":386}
+
+stdout | tests/payroll-copy.test.ts
+{"timestamp":"2026-10-22T04:28:09.595Z","level":"info","event":"http_request","request_id":"a7d4be13-fa8a-429c-ae99-1fab427eaeba","tenant":"default","method":"POST","path":"/api/roles","status":201,"duration_ms":3}
+
+stdout | tests/payroll-copy.test.ts
+{"timestamp":"2026-10-22T04:28:09.978Z","level":"info","event":"http_request","request_id":"6ef2ad2c-1d3f-41ad-8155-3a61a5a49a63","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":379}
+
+stdout | tests/payroll-copy.test.ts
+{"timestamp":"2026-10-22T04:28:10.380Z","level":"info","event":"http_request","request_id":"ef1be5ba-b707-457d-80b7-f9f8c8592db3","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":398}
+
+stdout | tests/payroll-copy.test.ts
+{"timestamp":"2026-10-22T04:28:10.800Z","level":"info","event":"http_request","request_id":"79e6c490-a1ad-47d4-a0ac-3bfb4f776a46","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":416}
+
+stdout | tests/payroll-copy.test.ts
+{"timestamp":"2026-10-22T04:28:11.145Z","level":"info","event":"http_request","request_id":"506a0dd5-9644-476f-ac3d-9a4147fe8e61","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":342}
+
+ ❯ tests/payroll-copy.test.ts (14 tests | 1 failed) 8558ms
+   × keeps staff payroll search usable when unrelated saved JSON is corrupt and holds that corrupt copy 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payroll-copy.test.ts > keeps staff payroll search usable when unrelated saved JSON is corrupt and holds that corrupt copy
+AssertionError: expected 500 to be 200 // Object.is equality
+
+- Expected
++ Received
+
+- 200
++ 500
+
+ ❯ tests/payroll-copy.test.ts:83:142
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 13 passed (14)
+   Start at  04:28:03
+   Duration  8.92s (transform 3.35s, setup 71ms, import 112ms, tests 8.56s, environment 0ms)

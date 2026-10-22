@@ -1,0 +1,28 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+ ❯ tests/payroll-copy-workbook.test.ts (2 tests | 1 failed) 22ms
+   × keeps spreadsheet-looking text inert in an actual XLSX round trip with a visible draft notice 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payroll-copy-workbook.test.ts > keeps spreadsheet-looking text inert in an actual XLSX round trip with a visible draft notice
+TypeError: Cannot read properties of undefined (reading 'encode_cell')
+ ❯ put tests/payroll-copy-workbook.test.ts:6:1
+      4| const require=createRequire(import.meta.url),XLSX=require('../public/j…
+      5| const module={exports:{} as any};
+      6| new Function('module','exports','XLSX',fs.readFileSync('public/js/hr-p…
+       | ^
+      7| it('keeps spreadsheet-looking text inert in an actual XLSX round trip …
+      8|  const hostile='=HYPERLINK("https://example.test","synthetic")';
+ ❯ band tests/payroll-copy-workbook.test.ts:6:1
+ ❯ Object.buildPayrollWorkbook tests/payroll-copy-workbook.test.ts:6:1
+ ❯ tests/payroll-copy-workbook.test.ts:9:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 6 passed (7)
+      Tests  1 failed | 73 passed (74)
+   Start at  04:02:55
+   Duration  14.85s (transform 1.39s, setup 71ms, import 256ms, tests 13.75s, environment 1ms)

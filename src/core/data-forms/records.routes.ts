@@ -63,7 +63,8 @@ router.get('/form-definitions/:id/records', (req, res) => {
     // Matches the record's own number OR, when the form has one, its employee_name field —
     // payroll (and every other HR form keyed to an employee) is far more often searched by who
     // it's for than by its sequential number.
-    where.push("(fr.number LIKE ? OR json_extract(fr.data, '$.employee_name') LIKE ?)");
+    // A damaged historical row must remain findable for review without crashing every search.
+    where.push("(fr.number LIKE ? OR CASE WHEN json_valid(fr.data) THEN json_extract(fr.data, '$.employee_name') ELSE NULL END LIKE ?)");
     params.push(`%${q.trim()}%`, `%${q.trim()}%`);
   }
   const rows = queryAll<FormRecord>(

@@ -1,0 +1,6 @@
+
+> otom@1.0.0 test:editor:ux
+> node scripts/test-editor-ux.mjs
+
+POST /templates: 401 {"error":"Not authenticated"}
+{"scans":0,"violations":0,"checks":0,"failed":0,"errors":1}

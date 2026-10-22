@@ -37,6 +37,8 @@ async function scan(name, selector = '.doc-fs') {
   const map = item => ({ id: item.id, impact: item.impact, description: item.description, helpUrl: item.helpUrl,
     nodes: item.nodes.map(node => ({ target: node.target, summary: node.failureSummary, html: node.html })) });
   report.scans.push({ name, violations: result.violations.map(map), incomplete: result.incomplete.map(map) });
+  // Keep the failing nodes available while the full task gate is still running.
+  fs.writeFileSync(path.join(output, 'progress.json'), JSON.stringify(report, null, 2));
   await page.screenshot({ path: path.join(output, name + '.png') });
   console.log(`${name}: ${result.violations.length} violations, ${result.incomplete.length} manual-review rules`);
 }
@@ -55,19 +57,25 @@ try {
   });
   token = (await api('POST', '/auth/login', { username: 'admin', password: 'admin123-test-only' })).token;
   await api('POST', '/auth/change-password', { current_password: 'admin123-test-only', new_password: 'EditorAudit!73952' });
+  // Password replacement revokes every prior session, including this setup session.
+  token = (await api('POST', '/auth/login', { username: 'admin', password: 'EditorAudit!73952' })).token;
   const template = await api('POST', '/templates', { name: 'Editor UX audit', type: 'generic',
     body: '<style data-docpage>@page{size:210mm 297mm;margin:14mm}</style><header class="doc-head"><h1>{{company.name}}</h1></header><p>Employee payslip layout.</p>' });
   const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/lib/chromium/chromium', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(fs.existsSync);
   browser = await chromium.launch({ ...(executablePath ? { executablePath } : {}), headless: true });
   context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce', permissions: ['clipboard-read','clipboard-write'] });
   await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
-  await context.addInitScript(({ value, origin }) => { if (window === window.top && location.origin === origin) {
-    localStorage.setItem('vds_token', value); localStorage.setItem('vds_theme', 'light');
-  } }, { value: token, origin: base });
+  await context.addInitScript(({ origin }) => { if (window === window.top && location.origin === origin) {
+    localStorage.setItem('vds_theme', 'light');
+  } }, { origin: base });
   page = await context.newPage();
   page.setDefaultTimeout(15000);
   page.on('pageerror', error => report.errors.push(error.message));
-  await page.goto(base + '/app');
+  await page.goto(base + '/?view=desktop');
+  // Hosted browser auth uses HttpOnly cookies; exercise its real sign-in UI.
+  await page.locator('#login-username').fill('admin');
+  await page.locator('#login-password').fill('EditorAudit!73952');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.waitForFunction(() => typeof App !== 'undefined' && App.getMe());
   await page.evaluate(() => App.navigate('templates'));
   await page.locator(`[data-edit="${template.id}"]`).click();

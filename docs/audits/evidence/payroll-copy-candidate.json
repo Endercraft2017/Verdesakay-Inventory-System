@@ -1,0 +1,17 @@
+{
+  "base_commit": "0c8954ab2e606b5d3ce01b7e4756196b506dc214",
+  "source_files_sha256": {
+    "public/js/doc-editor.js": "37c3d77127cbed5c326119f69efd7379829e71b4803b235728363f39165b1659",
+    "public/js/hr-payroll-export.js": "35d088340b5f63310a9913384f555bc17850174dd1e174a3f3a92192817bdc6d",
+    "public/js/modules/core/form-records.js": "0cd5cf9f34851d22322320b91cd1fa230629c59b75390c5dd0673e8a547ac2f4",
+    "scripts/test-editor-ux.mjs": "3847fab23c8c8a02967775b62ba2a12b28eee7fb8a26967b7e5926bab0ff52fa",
+    "src/core/data-forms/records.routes.ts": "3f8fd351a857806beada7ea43288c56979045987e1b507ebc19f2802ea33aa62",
+    "src/modules/hr/hr.routes.ts": "5a58ee6d96f8300e6332eadbb10c20a589e784c705971090ab774a51ea549950",
+    "src/modules/hr/payroll-copy.routes.ts": "113032509f7dbba571fd271ca7ee59b61c521fc46cb3fc543cd3b9af89f6db51",
+    "src/modules/payroll/payroll-copy.ts": "2d2528b93c3bb0a3dd119ccd7f73642a797e1e670dbd02efb340988943bf0cad",
+    "tests/e2e/payroll-copy.spec.ts": "864acdf5fa0d74b26a4401180aac232203b15cf5a0f644985d4fae23bcd95fa2",
+    "tests/e2e/server.ts": "45d6e47f3376b35710d685ac035c5c0431e454b108079945284e4618a928d38c",
+    "tests/payroll-copy-workbook.test.ts": "4f85e1d47f9d2b71e7b0db932de7a577980747bb4b1792ce22e5681cf3ff5f15",
+    "tests/payroll-copy.test.ts": "b6421109909b2185effc9b020a156418e5c0477bdb4316b0cc551bca5d591f04"
+  }
+}

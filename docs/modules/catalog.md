@@ -335,6 +335,8 @@ distribution route, icon artwork.
 
 ## core/ — ungated baseline
 
+Staff data-form record searches guard JSON extraction so unrelated corrupt history cannot crash name/number review; corrupt payroll still fails the copy source gate.
+
 Employee payroll reads (`me.routes.ts`) use the shared payroll source/release index; held
 records are withheld with the established response projection. Unrelated invalid JSON cannot
 crash candidate selection. See [contract](../operations/payroll-release.md).
@@ -773,12 +775,13 @@ computation itself is `modules/payroll`.
 SCHEMA_VERSION 46), `kiosk-devices.ts` (approved time-in kiosk PCs + the `kiosk_lock`
 setting; locked by default when internet-facing, SCHEMA_VERSION 47), `field.ts`, `hr-daily-report.ts`,
 `hr-employee-numbering.ts`, `punch-photos.ts`, `punch-holds.ts` (phone punch scan → selfie
-holds), routes: `payroll-cutoff.routes.ts` (online reviewed missing/invalid ID recovery; consistent labels, draft-only, history/duplicate/closed-period holds; [contract](../operations/payroll-cutoff-recovery.md)), `payroll-identity.routes.ts` (exceptional online reviewed repair, fresh proof, immutable paid financial state and atomic revision audit), `hr.routes.ts` (also owns the
+holds), routes: `payroll-copy.routes.ts` (payroll-view saved copy read with bounded IDs and preview equality checks), `payroll-cutoff.routes.ts` (online reviewed missing/invalid ID recovery; consistent labels, draft-only, history/duplicate/closed-period holds; [contract](../operations/payroll-cutoff-recovery.md)), `payroll-identity.routes.ts` (exceptional online reviewed repair, fresh proof, immutable paid financial state and atomic revision audit), `hr.routes.ts` (also owns the
 `asset_issuances`/`asset_issuance_items` tables and the seeded "Asset Issuance Form"
 doc_template, SCHEMA_VERSION 43; company-wide register `GET /api/hr/assets` with still-out /
 people-who-left filters + CSV, UI `public/js/modules/hr/hr-assets.js` at HR → Employees →
 Company Assets, tests `tests/hr-assets.test.ts`), `clock.routes.ts`, `field.routes.ts`,
 `employee-profile.ts` + `employee-profile.routes.ts` (self-service profile, below).
+**Staff payroll copies (22 October 2026):** `payroll/payroll-copy.ts` and `hr/payroll-copy.routes.ts` reload/check saved payroll in one read savepoint for every staff print/Excel path. Print rechecks the preview digest; conflicts clear the frame and keep Print disabled. Draft labels, saved-only detail printing and late account/company/view guards preserve review workflows. [Contract](../operations/payroll-staff-copies.md) covers replica, template, payment and downloaded-copy limits.
 **Payroll release (22 October 2026):** `payroll/payroll-release.ts` gates paid marking and online email; employee list/PDF/timekeeping withhold held records. Paid/history/source-clash writes are atomic; existing D6 accepted decisions remain. Draft email is disabled/refused. [Contract](../operations/payroll-release.md) records legacy, replica and settlement limits.
 **Payroll source reconciliation (20 October 2026):** generation and rate recomputation use
 `payroll/payroll-source.ts` to reject duplicate/ambiguous source slots. Rate-change failures
@@ -905,7 +908,7 @@ from `hr` and `accounting` specifically because both of those modules depended o
 *and on each other* through it (a two-way `hr` ↔ `accounting` coupling found during
 the reorg's import-graph survey). Owning it as its own module resolves that: both `hr`
 and `accounting` now depend one-directionally on `payroll`, not on each other.
-**Owned files:** `payroll-release.ts` (shared current-source issuance checks and per-read cutoff cache), `payroll-source.ts` (shared stable employee/cutoff identity, recorded legacy aliases and duplicate holds), `hr-payroll-compute.ts`, `hr-payroll-import.ts`,
+**Owned files:** `payroll-copy.ts` (bounded saved staff copies and preview equality preconditions), `payroll-release.ts` (shared current-source issuance checks and per-read cutoff cache), `payroll-source.ts` (shared stable employee/cutoff identity, recorded legacy aliases and duplicate holds), `hr-payroll-compute.ts`, `hr-payroll-import.ts`,
 `employee-rate-history.ts`, `payroll-tables.ts`, `ph-2316.ts`, `ph-alphalist.ts`,
 `ph-contributions.ts`, `ph-final-pay.ts`, `ph-income-tax.ts`,
 `ph-payroll-report-data.ts`, `ph-statutory.ts`, `ph-vat-ewt.ts`, `statutory-month.ts`
@@ -1626,3 +1629,11 @@ shared/db.initializeFreshTenant reuses the prepared hash only for empty, uncache
 reservations; password-hash owns format checks. Default bootstrap remains unchanged. Website
 signup uses an abortable twenty-second read and stable same-page key. See
 `docs/operations/public-signup-budget.md`; schema setup/capacity/distributed controls remain.
+
+
+Editor follow-up (22 October 2026): visible text is retained in generated button names;
+ribbon Hide/Show names match their labels, Help/File names include their visible text, and
+style cards expose their full visible names. The mandatory audit harness re-authenticates after
+password replacement and exercises real cookie login at the current desktop entry URL.
+Progress JSON retains failing scan nodes during execution. See
+[verification](../audits/evidence/payroll-copy-verification.json).

@@ -411,3 +411,14 @@ current-replica issuance holds. See [contract](../operations/payroll-release.md)
 [research](payroll-release-research.md) and [verification](evidence/payroll-release-verification.json).
 Unknown legacy linkage, true duplicate adjustments, recipient/fresh-proof/durable email and
 settlement/filing acceptance remain. Whole-control counts and release hold are unchanged.
+
+
+### Staff payroll print and Excel copies — 22 October 2026
+
+Supported staff output paths now reload saved payroll and enforce source holds for entire
+bounded selections. Print rechecks preview equality and permanently disables/clears stale
+output; drafts are labeled, unsaved deduction printing is blocked, and late account/company/
+view responses are refused. See [contract](../operations/payroll-staff-copies.md),
+[research](payroll-copy-research.md) and [verification](evidence/payroll-copy-verification.json).
+These copies are not signed approvals or payment evidence. Wider controls, 36 PASS / 58 FAIL /
+126 UNVERIFIED / 13 N/A, and the release hold remain unchanged.

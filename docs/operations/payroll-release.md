@@ -93,10 +93,10 @@ office/device/network acceptance or instant revocation of an already downloaded 
 5. Preserve evidence of previously issued copies and accepted filings. This gate cannot recall
    PDFs/printouts/email already received or establish whether a third party used them.
 
-Staff preview/print and payroll Excel summary paths retain their existing behavior; this
-gate does not yet turn those exports into reviewed final issuance. Restrict their use to
-approved review while sources are held. Extending final-release controls to those paths
-remains engineering work. Already issued copies cannot be recalled by a source check.
+Follow-up: [staff print/summary/Excel](payroll-staff-copies.md) now reload saved records and
+apply source holds to entire batches. Print rechecks saved preview equality; drafts are labeled
+and unsaved deduction printing is refused. These copies still do not establish signed final
+approval, current cloud convergence or payment evidence. Already issued copies cannot be recalled.
 
 The desktop disabled email action communicates the Paid requirement. Source conflicts from
 Mark Paid/email open a persistent, escaped, dismissible review dialog rather than a short

@@ -2771,7 +2771,7 @@ const DocAdvanced = (() => {
             if (tab === 'Styles') {
                 const styles = { ...defaults, ...cfg.styles };
                 const roles={normal:['Body text','Everyday paragraphs'],title:['Document title','The title at the start of a document'],heading1:['Main heading','Starts a main section · H1'],heading2:['Subheading','Starts a subsection · H2'],heading3:['Smaller heading','A section within a subsection · H3'],caption:['Caption','A label below an image or table']};
-                panel.innerHTML = '<h3>Choose a text style</h3>' + Object.entries(styles).map(([key, s]) => {const [name,meaning]=roles[key]||[s.name,'Reusable paragraph formatting'];return `<div class="doc-style-card"><button class="doc-style-apply" data-adv="style-apply" data-style-key="${esc(key)}" aria-label="Apply ${esc(name)} style" title="Apply ${esc(name)} to the current paragraph"><span class="doc-style-preview" style="font-family:${esc(s.font)};font-size:${Math.min(22,Math.max(14,Number(s.size)||14))}px;font-weight:${s.tag==='p'?400:600}">${esc(name)}</span><span class="doc-style-meaning">${esc(meaning)}</span><span class="doc-style-meta">${esc(s.font)} · ${Math.round(Number(s.size)*.75*10)/10} pt</span></button><button class="doc-style-edit" data-adv="style-edit" data-style-key="${esc(key)}" aria-label="Edit ${esc(name)} style" title="Edit ${esc(name)}; updates all paragraphs using it">${docIcon('signature')}</button></div>`;}).join('') + '<h3>Numbering</h3><p>Use numbered lists and Indent / Outdent for nested levels.</p><button data-adv="multilevel">Hierarchical numbering</button>';
+                panel.innerHTML = '<h3>Choose a text style</h3>' + Object.entries(styles).map(([key, s]) => {const [name,meaning]=roles[key]||[s.name,'Reusable paragraph formatting'];return `<div class="doc-style-card"><button class="doc-style-apply" data-adv="style-apply" data-style-key="${esc(key)}" title="Apply ${esc(name)} to the current paragraph"><span class="doc-style-preview" style="font-family:${esc(s.font)};font-size:${Math.min(22,Math.max(14,Number(s.size)||14))}px;font-weight:${s.tag==='p'?400:600}">${esc(name)}</span><span class="doc-style-meaning">${esc(meaning)}</span><span class="doc-style-meta">${esc(s.font)} · ${Math.round(Number(s.size)*.75*10)/10} pt</span></button><button class="doc-style-edit" data-adv="style-edit" data-style-key="${esc(key)}" aria-label="Edit ${esc(name)} style" title="Edit ${esc(name)}; updates all paragraphs using it">${docIcon('signature')}</button></div>`;}).join('') + '<h3>Numbering</h3><p>Use numbered lists and Indent / Outdent for nested levels.</p><button data-adv="multilevel">Hierarchical numbering</button>';
                 return true;
             }
             if (tab === 'Review') {
@@ -2936,7 +2936,7 @@ function mountStudio(fs, surface, opts, api) {
     rail.insertAdjacentHTML('beforeend','<button type="button" data-editor-assistant aria-label="Open assistant">'+UI.icon('sparkles',18)+'<span>Assistant</span></button>');
     rail.querySelector('[data-editor-assistant]').addEventListener('click',()=>assistantFab.click());
   }
-  rail.insertAdjacentHTML('beforeend','<button type="button" data-help title="Editor guide" aria-label="Editor guide">'+docIcon('help')+'<span>Help</span></button>');
+  rail.insertAdjacentHTML('beforeend','<button type="button" data-help title="Editor guide" aria-label="Help — Editor guide">'+docIcon('help')+'<span>Help</span></button>');
   rail.querySelector('[data-help]').addEventListener('click',docEditorHelpDialog);
   rail.insertAdjacentHTML('afterbegin','<button type="button" data-rail-toggle aria-expanded="true" aria-label="Collapse tool sidebar" title="Collapse tool sidebar">'+docIcon('justifyLeft')+'<span>Collapse</span></button>');
   function syncRailTooltips(){const collapsed=desk.classList.contains('rail-collapsed');rail.querySelectorAll('[data-studio-tab]').forEach(button=>{const key=button.dataset.studioTab;button.removeAttribute('title');button.dataset.tip=collapsed?toolNames[key]:toolDescriptions[key];});const help=rail.querySelector('[data-help]');help.removeAttribute('title');help.dataset.tip=collapsed?'Help':'Open the editor guide for editing, layout and printing instructions.';const assistant=rail.querySelector('[data-editor-assistant]');if(assistant)assistant.dataset.tip=collapsed?'Assistant':'Open the assistant without covering the canvas with its launcher.';const toggle=rail.querySelector('[data-rail-toggle]');toggle.removeAttribute('title');toggle.dataset.tip=collapsed?'Expand':'Hide tool names to give the document more space.';}
@@ -3156,7 +3156,7 @@ function open(opts = {}) {
       <div class="doc-modes" role="group" aria-label="Editing mode"><button type="button" data-mode="visual" class="active" aria-pressed="true">Edit</button><button type="button" data-mode="pages" aria-pressed="false">Print preview</button></div>
       <div class="doc-fs-bar-actions">
         <span class="doc-save-status" role="status" aria-live="polite">No unsaved changes</span>
-        <button type="button" class="btn secondary" data-file title="Import and export document" aria-label="Import and export document">${docIcon('document')}<span>File</span></button>
+        <button type="button" class="btn secondary" data-file title="Import and export document" aria-label="File — Import and export document">${docIcon('document')}<span>File</span></button>
         <button type="button" class="btn secondary" data-linked-forms title="Connect this template to forms and choose default print layouts" aria-haspopup="dialog">${docIcon('shared')}<span>Linked forms</span></button>
         <button type="button" class="btn secondary" data-preview title="Preview document">${docIcon('preview')}<span>Preview data</span></button>
         <button type="button" class="btn secondary" data-details title="Editor preferences and keyboard shortcuts" aria-haspopup="dialog">${docIcon('settings')}<span>Settings</span></button>
@@ -3170,7 +3170,7 @@ function open(opts = {}) {
       <label class="doc-secondary-details"><span>Document type</span><select class="doc-fs-type doc-fs-type-top">${typeOptions.map((t) => `<option value="${escAttr(t)}" ${t === (opts.type || typeOptions[0]) ? 'selected' : ''}>${escAttr(t.charAt(0).toUpperCase() + t.slice(1))}</option>`).join('')}</select></label>
       ${opts.periodLabel ? `<label class="doc-secondary-details"><span>${escAttr(opts.periodLabel)}</span><input class="doc-fs-period" placeholder="e.g. October 2026" value="${escAttr(opts.period || '')}"></label>` : ''}
     </div>
-    <div class="doc-ribbon-controls"><div class="doc-ribbon-history" role="toolbar" aria-label="Document history"><button type="button" data-ex="undo" title="Undo (Ctrl+Z)" disabled>${docIcon('undo')}</button><button type="button" data-ex="redo" title="Redo (Ctrl+Y)" disabled>${docIcon('redo')}</button></div><div class="doc-tabs" role="tablist">${tabsHTML()}</div><button type="button" class="doc-ribbon-toggle" data-ribbon-toggle aria-expanded="true" aria-label="Collapse ribbon">Hide ribbon</button></div>
+    <div class="doc-ribbon-controls"><div class="doc-ribbon-history" role="toolbar" aria-label="Document history"><button type="button" data-ex="undo" title="Undo (Ctrl+Z)" disabled>${docIcon('undo')}</button><button type="button" data-ex="redo" title="Redo (Ctrl+Y)" disabled>${docIcon('redo')}</button></div><div class="doc-tabs" role="tablist">${tabsHTML()}</div><button type="button" class="doc-ribbon-toggle" data-ribbon-toggle aria-expanded="true" aria-label="Hide ribbon">Hide ribbon</button></div>
     <div class="doc-panel" data-panel="home" tabindex="0" role="toolbar" aria-label="Text formatting">${homePanelHTML()}</div>
     <div class="doc-panel" data-panel="insert" tabindex="0" role="toolbar" aria-label="Insert" style="display:none">${insertPanelHTML()}</div>
     <div class="doc-panel" data-panel="layout" tabindex="0" role="toolbar" aria-label="Layout" style="display:none">${layoutPanelHTML()}</div>
@@ -3179,7 +3179,12 @@ function open(opts = {}) {
     <div class="doc-canvas"><div class="doc-zoom"><div class="doc-page doc-surface doc-content" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Document body"></div></div></div>
     <div class="doc-code doc-code-cm" style="display:none"></div>
     <footer class="doc-statusbar"><span>${docIcon('document')}<span class="doc-page-info"></span></span><span class="doc-word-count" role="status" aria-live="off" aria-label="Document word count"></span><span class="doc-workspace-hint">Select an object to move or resize · Ctrl / ⌘ S to save</span><div class="doc-view-tools"><button type="button" data-zoom="out" title="Zoom out">−</button><button type="button" data-zoom="fit" title="Fit page to available width">Fit width</button><span class="doc-zoom-info">100%</span><button type="button" data-zoom="in" title="Zoom in">+</button></div></footer>`;
-  fs.querySelectorAll('button[title],select[title],input[title]').forEach((el) => { if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', el.title); });
+  fs.querySelectorAll('button[title],select[title],input[title]').forEach((el) => {
+    if(el.hasAttribute('aria-label'))return;
+    const visible=el.tagName==='BUTTON'?el.textContent.trim().replace(/\s+/g,' '):'';
+    // Voice control must be able to use the label the person can actually see.
+    el.setAttribute('aria-label',visible&&!el.title.toLowerCase().includes(visible.toLowerCase())?visible+' — '+el.title:el.title);
+  });
   document.body.appendChild(fs);
   fs.querySelector('.doc-view-tools [data-zoom=fit]').replaceWith(fs.querySelector('.doc-zoomsel'));
   fs.querySelector('[data-zoom-tools]').remove();
@@ -3213,7 +3218,7 @@ function open(opts = {}) {
   Object.values(panels).forEach(panel=>{ribbonRO?.observe(panel);panel.addEventListener('scroll',updateRibbonHint);});
   fs.querySelector('[data-ribbon-more]').addEventListener('click',()=>panels[activeTab].scrollBy({top:Math.max(80,panels[activeTab].clientHeight*.75),behavior:'smooth'}));
 
-  function setRibbonCollapsed(collapsed){fs.classList.toggle('ribbon-collapsed',collapsed);const button=fs.querySelector('[data-ribbon-toggle]');button.setAttribute('aria-expanded',String(!collapsed));button.setAttribute('aria-label',collapsed?'Expand ribbon':'Collapse ribbon');button.textContent=collapsed?'Show ribbon':'Hide ribbon';applyZoom();}
+  function setRibbonCollapsed(collapsed){fs.classList.toggle('ribbon-collapsed',collapsed);const button=fs.querySelector('[data-ribbon-toggle]');button.setAttribute('aria-expanded',String(!collapsed));button.setAttribute('aria-label',collapsed?'Show ribbon':'Hide ribbon');button.textContent=collapsed?'Show ribbon':'Hide ribbon';applyZoom();}
   fs.querySelector('[data-ribbon-toggle]').addEventListener('click',()=>setRibbonCollapsed(!fs.classList.contains('ribbon-collapsed')));
   function switchTab(name) {
     if (!panels[name]) return;

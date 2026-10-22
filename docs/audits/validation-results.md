@@ -1207,3 +1207,44 @@ data projection. They do not certify arithmetic, actual settlement/filings, true
 instant replica convergence, independent audit, staff print/Excel final-release controls, reviewed/durable email or native/hosted/office
 acceptance. The referenced global workflow file is absent; repository instructions were followed.
 Whole controls remain 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release hold remains.
+
+
+## Staff payroll saved print and Excel copies — 22 October 2026
+
+Base `0c8954ab2e606b5d3ce01b7e4756196b506dc214`. See [contract](../operations/payroll-staff-copies.md),
+[six-source research](payroll-copy-research.md) and [manifest](evidence/payroll-copy-verification.json).
+
+- Full regression: **319 files / 3380 passed**, 648.5 seconds.
+  Source/test hashes frozen and verified; full Vitest starts after browser/editor gates finish.
+  Focused: **17 files / 319 passed**, 63.92 seconds.
+- **14 new API cases** check read permissions, tenant/form/missing-ID isolation, strict bounded
+  batches, whole-batch hidden-sibling holds, invalid source/status/money, saved projection,
+  private no-store, ordered snapshots, late conflicts and money/status/revision/form/cutoff preconditions.
+- **Two new workbook cases** exercise the actual vendored XLSX writer/reader and printable
+  summary escaping. Spreadsheet-looking text stays string cells with no formulas. The browser
+  downloads a real XLSX with refreshed money and the draft notice.
+- Final complete Playwright: **64 passed**, 157.3683 seconds, no flaky/skipped cases.
+  Nine new journeys cover row/visible/selected/bundle print, summary and Excel holds, saved-value
+  reload, stale print refusal, valid Paid print dispatch, unsaved deduction preservation, late
+  view/account/company refusal, resize fit, keyboard recovery and scoped axe.
+- Complete editor UX gate: **94 scans, 15 checks**,
+  zero automated violations, failed checks or runtime errors. Incomplete rules are retained and
+  manually reviewed within the stated limits. Both-theme 1440/1024/768/390px preview screenshots
+  and the blocked frame were inspected; no physical paper or assistive-technology acceptance inferred.
+- Failed/preliminary runs remain archived: 10/11 initial cases failed before the endpoint;
+  CommonJS XLSX fixture error corrected; real contrast/landmark and heading-order findings fixed;
+  keyboard focus recovery fixed; successful pre-resize browsers followed by a visual clipping fix.
+  A separately reproduced staff-search 500 (13 passed / 1 failed) is corrected by guarding JSON extraction.
+  Editor setup re-logins after password revocation and uses the real cookie login/current URL.
+  Editor label-in-name failures (52 initial scans, then 37 File-only scans) were corrected without exclusions;
+  final incomplete checks are described in payroll-copy-review-notes.md. These findings are retained separately in this evidence family.
+- Typecheck and delivered-JS/script syntax passed. No schema/dependency change; no db:types or
+  fresh advisory scan. No deployment command, real payroll/mail/bank/provider transaction or
+  customer data was used. Staged Gitleaks and mandatory commit hook run before push.
+
+Copies use the current server replica and preserve explicit legacy compatibility. A digest is an
+output equality precondition, not payment evidence, a factor or signed approval. Existing template/
+global previews are frozen separately; old copies cannot be recalled. Reviewed durable email,
+actual duplicate adjustments, historic payroll correctness, settlement/filing, dependency and
+native/hosted/privacy/operational acceptance remain. All 233 controls retain their whole-control
+statuses (36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A); the release remains on hold.

@@ -32,6 +32,7 @@ legal approval or independent assurance. The complete release remains on hold.
 
 | Prefix in evidence/ | Scope |
 |---|---|
+| payroll-copy-* | Saved staff print/Excel source checks, stale-preview refusal, draft labels, actual XLSX and browser/editor UX evidence |
 | payroll-release-* | Current-source paid/email/employee-read holds, corrupt-JSON recovery, offline source-clash replay and browser evidence |
 | payroll-cutoff-* | Reviewed missing/invalid cutoff ID recovery, history/conflict/authorization holds, browser and scoped accessibility evidence |
 | payroll-reconcile-* | Shared cutoff/duplicate holds, atomic journal replacement, bounded comparison, real process termination/restart and browser evidence |

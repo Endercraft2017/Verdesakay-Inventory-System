@@ -231,3 +231,13 @@ atomic. Current replica state cannot revoke old PDF/email/print copies or prove 
 settlement/filings. Unknown legacy linkage, independent audit protection, recipient approval,
 retention/rights and actual adjustments remain. See [contract](../operations/payroll-release.md)
 and [research](../audits/payroll-release-research.md).
+
+
+## Saved staff payroll copies — 22 October 2026
+
+Print/summary/Excel reload selected saved payroll, block whole conflicted selections and omit
+unused saved calculation breakdowns. Print rechecks saved source equality, clears stale frames
+and holds the action. Drafts are labeled; Paid is not settlement evidence. Custom saved fields
+remain for layouts; downloaded/printed copies cannot be revoked and replicas can lag. This does
+not implement payroll retention/rights, signed issuance or complete field minimization. See
+[contract](../operations/payroll-staff-copies.md) and [research](../audits/payroll-copy-research.md).

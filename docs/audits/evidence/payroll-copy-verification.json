@@ -1,0 +1,224 @@
+{
+  "date": "2026-10-22",
+  "base_commit": "0c8954ab2e606b5d3ce01b7e4756196b506dc214",
+  "scope": "Staff payroll saved print/summary/Excel copies, source holds, preview equality, draft notices, unsaved-edit and late-context refusal; responsive preview and keyboard recovery; corrupt-history staff search; current editor audit harness",
+  "research": {
+    "decisions": "../payroll-copy-research.md",
+    "sources_retrieved": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html",
+      "https://owasp.org/www-community/attacks/CSV_Injection",
+      "https://privacy.gov.ph/data-privacy-act/",
+      "https://www.sqlite.org/lang_transaction.html",
+      "https://www.w3.org/WAI/WCAG22/Understanding/label-in-name.html"
+    ],
+    "failed_source": "OWASP CSV_Injection_Prevention_Cheat_Sheet.html URL unavailable; official community page used",
+    "certification_inferred": false
+  },
+  "full_run": {
+    "files_passed": 319,
+    "tests_passed": 3380,
+    "failed": 0,
+    "duration_seconds": 648.5
+  },
+  "focused": {
+    "files_passed": 17,
+    "tests_passed": 319,
+    "failed": 0,
+    "duration_seconds": 63.92
+  },
+  "new_api_cases": 14,
+  "new_workbook_cases": 2,
+  "playwright": {
+    "passed": 64,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "duration_seconds": 157.36831
+  },
+  "new_browser_cases": 9,
+  "editor_ux": {
+    "scans": 94,
+    "violations": 0,
+    "checks": 15,
+    "failed": 0,
+    "errors": 0
+  },
+  "editor_manual_review": {
+    "incomplete_rules": {
+      "color-contrast": 90,
+      "label-content-name-mismatch": 55
+    },
+    "limit": "Gradient/complex backgrounds and other incomplete checks require manual judgment; no WCAG/native/all-screen/operator acceptance inferred"
+  },
+  "copy_axe": {
+    "violations": 0,
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious"
+      }
+    ]
+  },
+  "visual_review": "Inspected 1440/1024/768/390px in both themes and the blocked stale frame; fixed resize clipping and focus loss. Physical paper/native printer and human assistive-technology acceptance remain.",
+  "typecheck": "passed",
+  "JS_syntax": "passed for changed delivered JS and editor audit script",
+  "schema_and_dependencies": "unchanged; db:types and fresh advisory scan not repeated",
+  "tool_versions": {
+    "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+    "node": "v24.19.0",
+    "npm": "11.9.0",
+    "playwright": "Version 1.64.1",
+    "gitleaks": "8.24.3"
+  },
+  "source_files_sha256": {
+    "public/js/doc-editor.js": "37c3d77127cbed5c326119f69efd7379829e71b4803b235728363f39165b1659",
+    "public/js/hr-payroll-export.js": "35d088340b5f63310a9913384f555bc17850174dd1e174a3f3a92192817bdc6d",
+    "public/js/modules/core/form-records.js": "0cd5cf9f34851d22322320b91cd1fa230629c59b75390c5dd0673e8a547ac2f4",
+    "scripts/test-editor-ux.mjs": "3847fab23c8c8a02967775b62ba2a12b28eee7fb8a26967b7e5926bab0ff52fa",
+    "src/core/data-forms/records.routes.ts": "3f8fd351a857806beada7ea43288c56979045987e1b507ebc19f2802ea33aa62",
+    "src/modules/hr/hr.routes.ts": "5a58ee6d96f8300e6332eadbb10c20a589e784c705971090ab774a51ea549950",
+    "src/modules/hr/payroll-copy.routes.ts": "113032509f7dbba571fd271ca7ee59b61c521fc46cb3fc543cd3b9af89f6db51",
+    "src/modules/payroll/payroll-copy.ts": "2d2528b93c3bb0a3dd119ccd7f73642a797e1e670dbd02efb340988943bf0cad",
+    "tests/e2e/payroll-copy.spec.ts": "864acdf5fa0d74b26a4401180aac232203b15cf5a0f644985d4fae23bcd95fa2",
+    "tests/e2e/server.ts": "45d6e47f3376b35710d685ac035c5c0431e454b108079945284e4618a928d38c",
+    "tests/payroll-copy-workbook.test.ts": "4f85e1d47f9d2b71e7b0db932de7a577980747bb4b1792ce22e5681cf3ff5f15",
+    "tests/payroll-copy.test.ts": "b6421109909b2185effc9b020a156418e5c0477bdb4316b0cc551bca5d591f04"
+  },
+  "failed_or_preliminary_runs": [
+    {
+      "run": "before implementation",
+      "result": "10 failed / 1 passed; endpoint absent"
+    },
+    {
+      "run": "staff corrupt JSON search",
+      "result": "13 passed / 1 failed; unrelated corrupt row caused HTTP 500. JSON extraction is now guarded and review remains possible."
+    },
+    {
+      "run": "initial workbook fixture",
+      "result": "73 passed / 1 failed; CommonJS require did not expose the browser XLSX global. Fixture now loads the actual browser library interface."
+    },
+    {
+      "run": "first complete browsers",
+      "result": "60 passed / 1 failed: new watermark contrast and missing preview landmarks. Corrected without rule exclusions."
+    },
+    {
+      "run": "second complete browsers",
+      "result": "60 passed / 1 failed: heading-order finding; corrected print headings."
+    },
+    {
+      "run": "first expanded copy browsers",
+      "result": "8 passed / 1 failed: disabled Print lost keyboard focus and Escape did not dismiss. Persistent error now receives focus; Escape returns to invoker."
+    },
+    {
+      "run": "pre-resize copy browsers",
+      "result": "9 passed; visual inspection still found viewport-resize clipping. Added ResizeObserver refitting and bounding-box regression."
+    },
+    {
+      "run": "editor setup",
+      "result": "Three initial setup failures: revoked password-change session, then obsolete /app entry URL causing two timeouts. Re-login, real cookie sign-in and current desktop URL added; application revocation unchanged."
+    }
+  ],
+  "artifact_source_sha256_before_text_normalization": {
+    "payroll-copy-review-notes.md": "f468a896585d07e6a0139cb33d4c2525427a0ac1d200c747d649aabfdfcf95f0",
+    "payroll-copy-search-before.txt": "812a45a2c2718285a9d8ba040528f528142c3b0cb595771e0cb6c5c86702010b",
+    "payroll-copy-before.txt": "51c06cc5baf82b2466e7daf556babc242d5f8254a606358e4eb02ba467de416b",
+    "payroll-copy-focused-before-vendor-fixture.txt": "52b6de6ae237a321aad13fcae5222b19afd7bfde5c233e4a98d27e8560a3ee4a",
+    "payroll-copy-focused.txt": "0636b63745e854fa4d3c6663dd29cfbb9bea60796187e9b07901a3a9da42c4a6",
+    "payroll-copy-typecheck.txt": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+    "payroll-copy-candidate.json": "ab63842c8029cdd6e118c36d6abdbcf910ab447a0ca8194ae22e8740caeb6982",
+    "payroll-copy-tool-versions.json": "4beb094d9a3d633d002a4097dbee9f413718d5774658c8c98ffb66500c7af93c",
+    "payroll-copy-playwright-before-accessibility.txt": "699d2dbda368568a5473e3fbebd6d78ccfb4cfba8b7857e480191cb9bd496ba9",
+    "payroll-copy-playwright-before-heading.txt": "9625efeb7b528e07fdf8fc06f71de0e949b1ab258ed384f912180c67a6df5bc9",
+    "payroll-copy-browser-before-focus.txt": "e6bdf270aa14817cb9024e0d4aecdbbd5341b48fcc7fcfca970116b873514af2",
+    "payroll-copy-browser-before-resize.txt": "b4909e0acb713559e36983dd33424ae80ecbfda5d2a43f3f60f264252e04af9c",
+    "payroll-copy-browser-focused.txt": "f09d73e62d36ce10455ff9bd2b6776764ee87af18b09bed7b739b6fec8ee0bb9",
+    "payroll-copy-playwright.txt": "2256b15e7b60bbfc8c69f05299f32a618cc4b39a5d2b9af2e71c5e7320361b67",
+    "payroll-copy-playwright.json": "2796d544541ea86568884fa4d3317664ad31d989ac0d70eb7cb3b1c852d9bb12",
+    "payroll-copy-playwright-before-editor-labels.txt": "1a8ac8f3ab2617deaa70c235848edb0afed396400ce5283fc3281571fc021cb7",
+    "payroll-copy-playwright-before-editor-labels.json": "e4253457166e7f50813921abe6d211c4c27864be65b458311cac70c6d4668b50",
+    "payroll-copy-playwright-before-search.txt": "b17e7e86da251b25218f10cb0fed09066605b5fcfbbd594465238fcb50e51e9b",
+    "payroll-copy-playwright-before-search.json": "d9a734cf89f57862b4464e7398588d1c72eff1c1ca327db1a33f8e37c3f7f265",
+    "payroll-copy-editor-before-login.txt": "bc2e58da77a97b1ea2596d3e680df4b1d1b2e19d56dc79249b57a9fc736cc31b",
+    "payroll-copy-editor-before-cookie-login.txt": "1864c52457626df2efb9bcc0d174306397e38d1446bd97ced53e2690a57a12f8",
+    "payroll-copy-editor-before-current-url.txt": "6c309ca5d0d810f00612071702683c811d718e3d1be8a1541d8f5695b87046ef",
+    "payroll-copy-editor-ux.txt": "3449c477faee37993f5229067922b811b55bdef02008b2c4f5c687057a63348a",
+    "payroll-copy-editor-results.json": "9e8fdd038f11028c4dcd8c311aef52960f36ec10da65729a8aefb2d27d2dabd1",
+    "payroll-copy-axe-summary.json": "ae313941ed533611ef4e3b93a5b1d58c6b7461737d008abc0d16398a66cb8ac0",
+    "payroll-copy-full.txt": "5ad9a05160a63a111bae089d7d81606f3396e2a743e144da3d26a52cadd1d04b",
+    "payroll-copy-stale.png": "df17cf29f7b48c7760dcaedb4e7c94f249fb276080fd3a00f23193716dbfd9bf",
+    "payroll-copy-light-1440.png": "f689edfa29b587175a9ba305cc2ea0bb51912433813b142b5e7893b4d81691f3",
+    "payroll-copy-light-1024.png": "cc6f84b86ca6cf5c780a9d1910b2b9bd0476f4f603bf9918c29eb623d0f2c86b",
+    "payroll-copy-light-768.png": "5884a8e7ca03f2270c227f4b7896c07550e74e7121f8bd4bb948049d8fb2c757",
+    "payroll-copy-light-390.png": "34b145a2ed7b7c356586b53ca2df9fd35c99b0a5895fb8cc958b2ef3b8d9ebfb",
+    "payroll-copy-dark-1440.png": "9515964dbfdad92a124862a9ee251f37d63ee70016179ed8c9e383855d52b91c",
+    "payroll-copy-dark-1024.png": "c0ce7b1ca9cf08c15b78630401c5717f26c4b836c37d5c66429c855f9cd769d3",
+    "payroll-copy-dark-768.png": "8c3d8a48c2ee4bc410a72562c969d37ee104a362da1b87c0b5efd3304cf749a8",
+    "payroll-copy-dark-390.png": "706717f73072bbee68f0aaea8449a8057b8407b9f6c1eb74ad13d34d17a3688e",
+    "payroll-copy-editor-findings-file-label.json": "cb951283ad515678eca94a8dbbc06d0da2e679e82eb5d025e169e7ff7d68e6d5",
+    "payroll-copy-editor-findings-file-label.txt": "eb030de24ea547cce4ff68d6586fcb1d6aed0c0c84d992190395fa9975af2a8c",
+    "payroll-copy-editor-findings-labels.json": "d49a020e090dbb269f186131b6443d263f3161b0d93d9d2c95a913404c6d63eb",
+    "payroll-copy-editor-findings-labels.txt": "f6ad31d1e2f94288585aa47fe66dcd0b11d84518bd459340c9332e08a9bfbe94",
+    "payroll-copy-gitleaks.txt": "7738600640307da17993e4fb46a31ef1f3a27d709b7bff3732082be99b9bf278"
+  },
+  "artifact_sha256": {
+    "payroll-copy-axe-summary.json": "ae313941ed533611ef4e3b93a5b1d58c6b7461737d008abc0d16398a66cb8ac0",
+    "payroll-copy-before.txt": "c7eba372a9e4b5bc98f1e6ed4058fb256059778f296465ad5f30a508fda77276",
+    "payroll-copy-browser-before-focus.txt": "40fe70717371adafb934a128561331185d2dea93417dc5031553787e3e0d01a3",
+    "payroll-copy-browser-before-resize.txt": "b4909e0acb713559e36983dd33424ae80ecbfda5d2a43f3f60f264252e04af9c",
+    "payroll-copy-browser-focused.txt": "f09d73e62d36ce10455ff9bd2b6776764ee87af18b09bed7b739b6fec8ee0bb9",
+    "payroll-copy-candidate.json": "ab63842c8029cdd6e118c36d6abdbcf910ab447a0ca8194ae22e8740caeb6982",
+    "payroll-copy-dark-1024.png": "c0ce7b1ca9cf08c15b78630401c5717f26c4b836c37d5c66429c855f9cd769d3",
+    "payroll-copy-dark-1440.png": "9515964dbfdad92a124862a9ee251f37d63ee70016179ed8c9e383855d52b91c",
+    "payroll-copy-dark-390.png": "706717f73072bbee68f0aaea8449a8057b8407b9f6c1eb74ad13d34d17a3688e",
+    "payroll-copy-dark-768.png": "8c3d8a48c2ee4bc410a72562c969d37ee104a362da1b87c0b5efd3304cf749a8",
+    "payroll-copy-editor-before-cookie-login.txt": "1864c52457626df2efb9bcc0d174306397e38d1446bd97ced53e2690a57a12f8",
+    "payroll-copy-editor-before-current-url.txt": "a4f8ec34f99f6a132d0635c9319f270a900a8f72bf4062f0355e880d2ad00eba",
+    "payroll-copy-editor-before-login.txt": "bc2e58da77a97b1ea2596d3e680df4b1d1b2e19d56dc79249b57a9fc736cc31b",
+    "payroll-copy-editor-findings-file-label.json": "cb951283ad515678eca94a8dbbc06d0da2e679e82eb5d025e169e7ff7d68e6d5",
+    "payroll-copy-editor-findings-file-label.txt": "eb030de24ea547cce4ff68d6586fcb1d6aed0c0c84d992190395fa9975af2a8c",
+    "payroll-copy-editor-findings-labels.json": "d49a020e090dbb269f186131b6443d263f3161b0d93d9d2c95a913404c6d63eb",
+    "payroll-copy-editor-findings-labels.txt": "f6ad31d1e2f94288585aa47fe66dcd0b11d84518bd459340c9332e08a9bfbe94",
+    "payroll-copy-editor-results.json": "9e8fdd038f11028c4dcd8c311aef52960f36ec10da65729a8aefb2d27d2dabd1",
+    "payroll-copy-editor-ux.txt": "3449c477faee37993f5229067922b811b55bdef02008b2c4f5c687057a63348a",
+    "payroll-copy-focused-before-vendor-fixture.txt": "a64ad6ddee2c2e572c4737e82edba8e52cc72d031face246e0634abf658abd59",
+    "payroll-copy-focused.txt": "cfc7b3de6a19a494820f7d970b5e2c98b953b1ddec1f0247d823d94ab77854ed",
+    "payroll-copy-full.txt": "aa2de63830fc13108577717b8021ba4d3a0544281b285423caf63b90ad2583d7",
+    "payroll-copy-light-1024.png": "cc6f84b86ca6cf5c780a9d1910b2b9bd0476f4f603bf9918c29eb623d0f2c86b",
+    "payroll-copy-light-1440.png": "f689edfa29b587175a9ba305cc2ea0bb51912433813b142b5e7893b4d81691f3",
+    "payroll-copy-light-390.png": "34b145a2ed7b7c356586b53ca2df9fd35c99b0a5895fb8cc958b2ef3b8d9ebfb",
+    "payroll-copy-light-768.png": "5884a8e7ca03f2270c227f4b7896c07550e74e7121f8bd4bb948049d8fb2c757",
+    "payroll-copy-playwright-before-accessibility.txt": "ccbecc873e1a00fa1f6a5e5816cf366c62b66efe06383c19f7f2179d1248dad1",
+    "payroll-copy-playwright-before-editor-labels.json": "e4253457166e7f50813921abe6d211c4c27864be65b458311cac70c6d4668b50",
+    "payroll-copy-playwright-before-editor-labels.txt": "1a8ac8f3ab2617deaa70c235848edb0afed396400ce5283fc3281571fc021cb7",
+    "payroll-copy-playwright-before-heading.txt": "92bc0e37d669dfc5c4181b477e334f05c4007f98d3aa4795038f8a6da34265cd",
+    "payroll-copy-playwright-before-search.json": "d9a734cf89f57862b4464e7398588d1c72eff1c1ca327db1a33f8e37c3f7f265",
+    "payroll-copy-playwright-before-search.txt": "b17e7e86da251b25218f10cb0fed09066605b5fcfbbd594465238fcb50e51e9b",
+    "payroll-copy-playwright.json": "2796d544541ea86568884fa4d3317664ad31d989ac0d70eb7cb3b1c852d9bb12",
+    "payroll-copy-playwright.txt": "2256b15e7b60bbfc8c69f05299f32a618cc4b39a5d2b9af2e71c5e7320361b67",
+    "payroll-copy-review-notes.md": "f468a896585d07e6a0139cb33d4c2525427a0ac1d200c747d649aabfdfcf95f0",
+    "payroll-copy-search-before.txt": "8e62e7e3123747a57003fdff2e0c3bf8c3545ee1e4e050b1d38e7df683a59f23",
+    "payroll-copy-stale.png": "df17cf29f7b48c7760dcaedb4e7c94f249fb276080fd3a00f23193716dbfd9bf",
+    "payroll-copy-tool-versions.json": "4beb094d9a3d633d002a4097dbee9f413718d5774658c8c98ffb66500c7af93c",
+    "payroll-copy-typecheck.txt": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+    "payroll-copy-gitleaks.txt": "7738600640307da17993e4fb46a31ef1f3a27d709b7bff3732082be99b9bf278"
+  },
+  "evidence_formatting": "Text removes ANSI colors/trailing whitespace/blank EOF lines. Raw and retained hashes recorded. JSON/images unchanged; authenticated trace ZIPs are not published.",
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "not_established": [
+    "Unforgeable final-document approval or revocation of downloaded/printed/manual copies",
+    "Complete historic identity/cutoff linkage, schema/money arithmetic, statutory calculations or settlement/filing evidence",
+    "Cloud convergence and fresh-factor/authority proofs on installed replicas",
+    "Template/global-setting version binding, reviewed recipient and durable uncertain email dispatch",
+    "Full historical field minimization, privacy retention/rights and independent audit integrity",
+    "Native Windows/Android, physical-office/hosted/provider/large-history capacity or manual accessibility acceptance",
+    "Existing dependency advisory findings are not resolved by these regression tests"
+  ],
+  "staged_gitleaks": {
+    "result": "passed",
+    "command": "work/gitleaks git --pre-commit --staged --redact --no-banner",
+    "artifact": "payroll-copy-gitleaks.txt",
+    "mandatory_commit_hook": "enabled and repeats the scan at commit"
+  }
+}

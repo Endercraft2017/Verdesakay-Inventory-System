@@ -316,7 +316,9 @@ function buildPayrollWorkbook(records, formDef, opts) {
   const payDates = [...new Set(list.map((rec) => rec.data && rec.data.pay_date).filter(Boolean))];
   const subtitle = (opts.subtitle || `${list.length} payslip${list.length === 1 ? '' : 's'}`) +
     (payDates.length === 1 ? `  •  Pay Date: ${payDates[0]}` : '');
-  band(r, 0, layout.mainCols - 1, subtitle, S.subtitle()); r += 2;
+  band(r, 0, layout.mainCols - 1, subtitle, S.subtitle()); r++;
+  if(opts.copyNotice){band(r,0,layout.mainCols-1,opts.copyNotice,S.subtitle());r++;}
+  r++;
 
   band(r, 0, SUMMARY_COLS - 1, 'SUMMARY', S.section()); r++;
   const summaryLabels = ['Total Gross', 'Statutory (SSS/PhilHealth/Pag-IBIG/Tax)', 'Other Deductions', 'Total Deductions', 'Total Net Pay'];
@@ -518,6 +520,7 @@ function buildPayrollSummaryHtml(records, formDef, opts) {
         <h1>Payroll Summary — ${_hrxEsc(opts.title || formDef.name || 'HR Payroll')}</h1></div>
       <div class="ps-meta">${meta}</div>
     </div>
+    ${opts.copyNotice ? `<p style="font-weight:bold;border:2px solid #222;padding:8px">${_hrxEsc(opts.copyNotice)}</p>` : ''}
     <div class="ps-sec">SUMMARY</div>
     <div class="ps-totals">${totalsBox}</div>
     ${deptTable}

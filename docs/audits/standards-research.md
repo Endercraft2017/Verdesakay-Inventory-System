@@ -416,3 +416,13 @@ execution gates, proportionate accurate disclosure and transactional paid/histor
 linkage, current-replica/offline visibility, unresolved source adjustments, unlogged issued
 copies, reviewed/durable email and actual settlement/filing evidence. This does not satisfy
 the complete sensitive-action, privacy lifecycle or financial accounting controls.
+
+
+## Staff payroll print and Excel — 22 October 2026
+
+[Six primary sources](payroll-copy-research.md) guide per-request access, saved-source equality,
+whole-batch source holds, typed spreadsheet text and consistent read snapshots. The failed
+initial OWASP CSV URL is recorded; the official community page was retrieved instead. Repository
+editor UX guidance is applied to visible draft state, contrast, landmarks and persistent recovery.
+[Contract](../operations/payroll-staff-copies.md) separates supported UI controls from signed final
+issuance, replica convergence, actual settlement and recall of downloaded copies.
