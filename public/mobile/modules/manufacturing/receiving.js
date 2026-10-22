@@ -12,6 +12,9 @@
   var SCAN_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/></svg>';
 
   MApp.route('receiving', function (view, params) {
+    view.setAttribute('data-role-screen', 'rts');
+    view.setAttribute('data-role-title', 'Ready to sell');
+    view.setAttribute('data-role-subtitle', 'Record passed units as finished products');
     var id = params && params.id;
     if (id) { load(view, id); } else { worklist(view); }
   });

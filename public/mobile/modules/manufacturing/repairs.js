@@ -63,5 +63,10 @@
     });
   }
 
-  MApp.route('repairs', function (view) { list(view); });
+  MApp.route('repairs', function (view) {
+    view.setAttribute('data-role-screen', 'warehouseman');
+    view.setAttribute('data-role-title', 'Parts requests');
+    view.setAttribute('data-role-subtitle', 'Review, issue or reject parts requested for repair');
+    list(view);
+  });
 })();

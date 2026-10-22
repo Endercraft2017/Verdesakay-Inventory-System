@@ -154,6 +154,9 @@
   }
 
   MApp.route('so', function (view, params) {
+    view.setAttribute('data-role-screen', 'releasing');
+    view.setAttribute('data-role-title', 'Releasing');
+    view.setAttribute('data-role-subtitle', 'Scan, verify and hand units off for delivery');
     if (params && params.id) detail(view, params.id);
     else list(view);
   });

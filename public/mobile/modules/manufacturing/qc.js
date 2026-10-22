@@ -22,6 +22,10 @@
     hasQc = MApp.can('production.inspect_qc');
     hasQa = MApp.can('production.inspect_qa');
     canInspect = canAdjust || hasQc || hasQa;
+    var qualityRole = hasQa && !hasQc && !canAdjust ? 'qa' : (hasQc && !hasQa && !canAdjust ? 'qc' : 'quality');
+    view.setAttribute('data-role-screen', qualityRole);
+    view.setAttribute('data-role-title', qualityRole === 'qa' ? 'QA inspection' : (qualityRole === 'qc' ? 'QC inspection' : 'QC / QA inspection'));
+    view.setAttribute('data-role-subtitle', qualityRole === 'qa' ? 'Appearance and final acceptance' : (qualityRole === 'qc' ? 'Technical checks and repair decisions' : 'Technical and final inspection stages'));
     var id = params && params.id;
     if (id) { load(view, id); }
     else { worklist(view); }
@@ -29,7 +33,7 @@
 
   /* ---------- worklist ---------- */
   function worklist(view) {
-    MApp.setTitle('QC / QA');
+    MApp.setTitle(hasQa && !hasQc && !canAdjust ? 'QA queue' : (hasQc && !hasQa && !canAdjust ? 'QC queue' : 'QC / QA'));
     view.innerHTML = '<div class="m-hint">Loading…</div>';
     API.get('/job-orders')
       .then(function (rows) {
@@ -62,7 +66,7 @@
 
   /* ---------- one job order ---------- */
   function load(view, id) {
-    MApp.setTitle('QC inspection');
+    MApp.setTitle(hasQa && !hasQc && !canAdjust ? 'QA inspection' : 'QC inspection');
     view.innerHTML = '<div class="m-hint">Loading…</div>';
     Promise.all([
       API.get('/job-orders/' + id),
