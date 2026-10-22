@@ -15,12 +15,12 @@ import {
   parseBody, ValidationError, createOrderSchema, updateOrderSchema, orderStatusSchema,
   releaseOrderSchema, unreserveOrderSchema, releaseSlipSchema, shortfallActionSchema,
 } from '../../shared/validation';
-import { getQboStatus, pushOrder } from '../quickbooks/quickbooks';
+import { getQboStatus, pushOrder, orderExportPermission, orderReadyForExport } from '../quickbooks/quickbooks';
 import { fulfillSaleStockInTransaction, maybeAutoPostSale, maybeFulfillSale, postFulfilledSaleCogs, unpostSource } from '../accounting/accounting-autopost';
 import { getDefaultLocationId, locationName, overdrawAllowed, variantStockAt } from './inventory-stock';
 import { createDraftJobOrder } from '../manufacturing/job-orders.routes';
 import { orderAvailability } from './order-availability';
-import type { Order, OrderItem, OrderType } from '../../shared/types';
+import type { Order, OrderItem, OrderType, AuthUser } from '../../shared/types';
 import { recordSiteClash, syncClass } from '../../sync';
 import { siteDecisionStands, syncContext } from '../../shared/sync-context';
 import { currentAuthorization, latestOverride, slipError } from './release-auth';
@@ -70,13 +70,13 @@ function shortageStands(req: Request, number: string, shortLines: number): boole
 
 /** Best-effort background push after a save when the tenant has QuickBooks auto-push on.
     Never blocks the response; failures are logged only. */
-function maybeAutoPush(orderId: number): void {
+function maybeAutoPush(orderId: number, user: AuthUser): void {
   try {
     if (!moduleEnabled('quickbooks')) return;
     if (!getQboStatus().auto_push || !getQboStatus().connected) return;
   } catch { return; }
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', orderId);
-  if (!order) return;
+  if (!order || !orderReadyForExport(order) || !user.permissions.includes(orderExportPermission(order.type))) return;
   const items = queryAll<OrderItem>("SELECT * FROM order_items WHERE order_id = ? AND fulfillment_mode != 'ckd_component' ORDER BY sort, id", orderId);
   Promise.resolve(pushOrder(order, items)).catch((e) =>
     console.warn(`[qbo] auto-push order ${orderId} failed: ${(e as Error).message}`));
@@ -515,7 +515,7 @@ router.post('/:id/release-slip', requireModule('sales'), releaseGate, syncClass(
     if(ctx&&!snapshot)(ctx.validatedSnapshots??={}).releaseTrip={orderId:id,deliveryId};
     db.exec('COMMIT');
   }catch(e){db.exec('ROLLBACK');const err=e as Error&{status?:number;code?:string};if(err.status===409){res.status(409).json({error:err.message,code:err.code,blocked:err.code});return;}throw e;}
-  maybeAutoPostSale(id,req.user!.id);postFulfilledSaleCogs(id,req.user!.id);maybeAutoPush(id);
+  maybeAutoPostSale(id,req.user!.id);postFulfilledSaleCogs(id,req.user!.id);maybeAutoPush(id,req.user!);
   res.status(201).json({ok:true,id:slipId,delivery_id:deliveryId,order:orderWithLines(id),backorder:null,remaining:orderOutstanding(id)});
 });
 
@@ -1005,7 +1005,7 @@ router.post('/', requireAnyPermission(['orders.create', 'purchasing.manage']), c
       maybeFulfillSale(newId, req.user!.id);
     }
     res.status(201).json({ id: info.lastInsertRowid, number });
-    maybeAutoPush(Number(info.lastInsertRowid));
+    maybeAutoPush(Number(info.lastInsertRowid),req.user!);
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
@@ -1077,7 +1077,7 @@ router.post('/:id/status', requireModule('sales'), requirePermission('orders.app
       url: `#/order-tracking?id=${id}`, link: { route: 'orders', params: { type: 'sale', mode: 'track', id } }, tag: `sale-track-${id}`,
     });
   }
-  maybeAutoPush(id);
+  maybeAutoPush(id,req.user!);
 });
 
 // PUT /api/orders/:id — replace header + items, recompute totals (type/number unchanged)
@@ -1202,7 +1202,7 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
       }
     }
     res.json({ ok: true });
-    maybeAutoPush(id);
+    maybeAutoPush(id,req.user!);
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;

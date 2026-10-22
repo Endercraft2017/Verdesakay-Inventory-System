@@ -152,6 +152,7 @@ window.MApp = (function () {
     'purchase-requests':['purchasing.request','purchasing.manage','purchasing.approve_requests','purchasing.issue_cash','purchasing.settle_requests'],
     returns: ['returns.receive','returns.inspect','returns.dispose','inventory.view','orders.release','orders.view','production.inspect_qc','production.inspect_qa'], 'semi-finishing':['production.approve','production.manage'], allocate: ['inventory.transfer','orders.direct_sale'], batch: ['inventory.adjust'], 'cycle-count': ['inventory.count'], 'stock-counts': ['inventory.count'], 'stock-count-tasks':['inventory.count'],
     damage: ['inventory.adjust'], receive: ['inventory.receive'],
+    'sales-service': ['orders.create','orders.edit'], 'sales-order': ['orders.create','orders.edit'], 'sales-new': ['orders.create'],
     'stock-move': ['inventory.adjust'], transfer: ['inventory.transfer'], 'assign-qr': ['inventory.adjust'],
     'new-item': ['inventory.create'],
     'my-log': ['inventory.view'], item: ['inventory.view'], location: ['inventory.view'], 'low-stock': ['inventory.view'],
@@ -168,7 +169,8 @@ window.MApp = (function () {
     'unit-issues': ['manufacturing'], qc: ['manufacturing'], repairs: ['manufacturing'], record: ['manufacturing'], receiving: ['manufacturing'],
     batch: ['inventory'], 'cycle-count': ['inventory'], 'stock-counts': ['inventory'], 'stock-count-tasks':['inventory'], damage: ['inventory'], receive: ['inventory', 'purchasing'],
     'stock-move': ['inventory'], transfer: ['inventory'], 'assign-qr': ['inventory'], 'new-item': ['inventory'],
-    'my-log': ['inventory'], item: ['inventory'], location: ['inventory'], 'low-stock': ['inventory'], scan: ['inventory'], so: ['sales','inventory'], deliveries: ['sales']
+    'my-log': ['inventory'], item: ['inventory'], location: ['inventory'], 'low-stock': ['inventory'], scan: ['inventory'],
+    'sales-service': ['sales','inventory'], 'sales-order': ['sales','inventory'], 'sales-new': ['sales','inventory'], so: ['sales', 'inventory'], deliveries: ['sales']
   };
   var DESK_NEEDS = {
     production: ['production.record', 'production.pause', 'production.manage', 'production.approve', 'production.inspect_qc', 'production.inspect_qa', 'production.qa_review', 'production.repairs', 'production.receive'],

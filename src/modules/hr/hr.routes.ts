@@ -673,7 +673,7 @@ router.post('/employees/:id/rate-change', requirePermission('payroll.rates'), sy
     const current = rateInForceOn(id, today) ?? next;
     run('UPDATE employees SET daily_rate = ?, rate_type = ?, monthly_rate = ? WHERE id = ?',
       current.daily_rate, current.rate_type, current.monthly_rate, id);
-    const payroll = recomputePayslipsFrom(id, affectedFrom);
+    const payroll = recomputePayslipsFrom(id, affectedFrom, req.user!.id);
     db.exec('COMMIT');
     res.json({ ok: true, ...current, ...payroll });
   } catch (e) {
@@ -1199,7 +1199,14 @@ router.put('/payroll-policy', requirePermission('payroll.configure'), syncClass(
 
 // ─── Cutoff periods ─────────────────────────────────────────────────────────
 
-// GET /api/hr/periods
+// GET /api/hr/payroll/cutoffs
+// Payroll reviewers need cutoff labels and dates, not personnel or attendance access.
+router.get('/payroll/cutoffs', requirePermission('payroll.view'), (_req, res) => {
+  res.json(queryAll<Pick<AttendancePeriod, 'id' | 'label' | 'start_date' | 'end_date'>>(
+    'SELECT id, label, start_date, end_date FROM attendance_periods ORDER BY start_date DESC, id DESC'
+  ));
+});
+
 router.get('/periods', requireAnyPermission(['hr.view','hr.timekeeping.view']), (_req, res) => {
   const rows = queryAll<AttendancePeriod>(
     `SELECT p.*,
@@ -2491,7 +2498,7 @@ interface PaidPayslipShortfall {
     the earlier ones already redone). Unpaid payslips are saved; paid ones are only measured. A
     cutoff with no payslip yet is skipped — generating it later picks the new rate up anyway. A
     payslip is matched to its cutoff by label, the same link the payroll detail view uses. */
-function recomputePayslipsFrom(employeeId: number, from: string): { recomputed: RecomputedPayslip[]; paid: PaidPayslipShortfall[] } {
+function recomputePayslipsFrom(employeeId: number, from: string, actor: number): { recomputed: RecomputedPayslip[]; paid: PaidPayslipShortfall[] } {
   const recomputed: RecomputedPayslip[] = [];
   const paid: PaidPayslipShortfall[] = [];
   const form = queryOne<FormDefinition>("SELECT * FROM form_definitions WHERE slug = 'hr_payroll'");
@@ -2524,7 +2531,7 @@ function recomputePayslipsFrom(employeeId: number, from: string): { recomputed: 
       });
       continue;
     }
-    run(`UPDATE form_records SET data = ?, updated_at = datetime('now') WHERE id = ?`, JSON.stringify(data), slip.id);
+    run(`UPDATE form_records SET data = ?, updated_at = datetime('now'), last_edited_by = ? WHERE id = ?`, JSON.stringify(data), actor, slip.id);
     recomputed.push({
       ...base,
       earnings_before: num(prev.total_earnings), earnings_after: num(data.total_earnings),
@@ -2574,8 +2581,8 @@ router.post('/payroll/:recordId/reconcile-owner', requirePermission('payroll.man
   if (!employee) { res.status(404).json({ error: 'Employee not found' }); return; }
   const corrected = { ...data, employee_id: employee.id };
   correctRecord(record, req.user!.id, input.reason, 'payroll-owner-reconciliation', () => {
-    const result = run('UPDATE form_records SET data = ?, updated_at = datetime(\'now\') WHERE id = ? AND data = ?',
-      JSON.stringify(corrected), recordId, record.data);
+    const result = run('UPDATE form_records SET data = ?, updated_at = datetime(\'now\'), last_edited_by = ? WHERE id = ? AND data = ?',
+      JSON.stringify(corrected), req.user!.id, recordId, record.data);
     if (!result.changes) throw new Error('Payslip changed during review');
   });
   logEvent(req, { entity: 'hr', entityId: recordId, action: 'payslip-owner-reconciled',
@@ -2633,8 +2640,8 @@ router.post('/periods/:id/generate-payslips', requirePermission('payroll.manage'
       const { data, possibleHalfDay } = payslipData(runCtx, emp, payslipFields(existing), payrollPeriod, input.pay_date || undefined);
       if (possibleHalfDay) possibleHalfDayEmployees++;
       if (existing) {
-        run(`UPDATE form_records SET data = ?, period = ?, updated_at = datetime('now') WHERE id = ?`,
-          JSON.stringify(data), payrollPeriod, existing.id);
+        run(`UPDATE form_records SET data = ?, period = ?, updated_at = datetime('now'), last_edited_by = ? WHERE id = ?`,
+          JSON.stringify(data), payrollPeriod, req.user!.id, existing.id);
         updated++;
       } else {
         const number = nextFormRecordNumber(form.number_prefix);
@@ -2671,8 +2678,8 @@ router.post('/periods/:id/post-payroll-gl', requirePermission('payroll.approve')
   // strictly as generatePayslipsSchema (that one requires it non-empty for a *new* generate);
   // here it's optional and just needs to match whatever records are already sitting there.
   const payrollPeriod = (typeof req.body?.payroll_period === 'string' && req.body.payroll_period.trim()) || period.label;
-  const prepared = queryOne<{created_by:number}>(`SELECT fr.created_by FROM form_records fr JOIN form_definitions fd ON fd.id=fr.form_def_id WHERE fd.slug='hr_payroll' AND fr.period=? AND fr.created_by=? LIMIT 1`,payrollPeriod,req.user!.id);
-  if (prepared && !independentApproval(req,res,prepared.created_by,'approve payroll')) return;
+  const preparedByCaller = queryOne<{id:number}>(`SELECT fr.id FROM form_records fr JOIN form_definitions fd ON fd.id=fr.form_def_id WHERE fd.slug='hr_payroll' AND fr.period=? AND (fr.created_by=? OR fr.last_edited_by=?) LIMIT 1`,payrollPeriod,req.user!.id,req.user!.id);
+  if (preparedByCaller && !independentApproval(req,res,req.user!.id,'approve payroll')) return;
   const outcome = maybeAutoPostPayroll(periodId, payrollPeriod, req.user!.id);
   if (outcome.error) { res.status(400).json(outcome); return; }
   if (!outcome.posted) { res.status(400).json({ ...outcome, error: outcome.skipped === 'nothing_to_post' ? 'No payslips to post for this period yet — generate payslips first.' : `Not posted (${outcome.skipped}).` }); return; }
@@ -2683,13 +2690,13 @@ router.post('/periods/:id/post-payroll-gl', requirePermission('payroll.approve')
 // will skip it on future regenerates, and the generic /api/form-records PUT/DELETE routes
 // refuse to touch it (see form-builder.routes.ts) until it's unmarked.
 router.post('/payroll/:recordId/mark-paid', requirePermission('payroll.pay'), syncClass('claim'), (req, res) => {
-  const rec = queryOne<{ id: number; status: string; slug: string; created_by:number }>(
-    `SELECT fr.id, fr.status, fr.created_by, fd.slug FROM form_records fr
+  const rec = queryOne<{ id: number; status: string; slug: string; created_by:number; last_edited_by:number|null }>(
+    `SELECT fr.id, fr.status, fr.created_by, fr.last_edited_by, fd.slug FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
     Number(req.params.recordId)
   );
   if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
-  if (!independentApproval(req,res,rec.created_by,'confirm payroll payment')) return;
+  if (!independentApproval(req,res,rec.created_by,'confirm payroll payment',rec.last_edited_by)) return;
   if (rec.status === 'paid') {
     // Clash-check (D6): marked paid on the cloud too — the same outcome; kept, flagged.
     if (siteDecisionStands()) {
@@ -2721,8 +2728,8 @@ function recordPaidChange(recordId: number, action: 'paid' | 'unpaid', userId: n
 
 // POST /api/hr/payroll/:recordId/unmark-paid — unlocks it again for editing/regeneration.
 router.post('/payroll/:recordId/unmark-paid', requirePermission('payroll.pay'), syncClass('claim'), (req, res) => {
-  const rec = queryOne<{ id: number; status: string; slug: string; created_by:number }>(
-    `SELECT fr.id, fr.status, fr.created_by, fd.slug FROM form_records fr
+  const rec = queryOne<{ id: number; status: string; slug: string; created_by:number; last_edited_by:number|null }>(
+    `SELECT fr.id, fr.status, fr.created_by, fr.last_edited_by, fd.slug FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?`,
     Number(req.params.recordId)
   );
@@ -2965,7 +2972,7 @@ router.put('/payroll/:recordId/deductions', requirePermission('payroll.manage'),
     statutory_basis: result.statutory_basis,
   };
   correctRecord(ctx.rec,req.user!.id,input.change_reason,'deductions',()=>{
-    run('UPDATE form_records SET data=?,updated_at=? WHERE id=?',JSON.stringify(newData),now().toISOString(),ctx.rec.id);
+    run('UPDATE form_records SET data=?,updated_at=?,last_edited_by=? WHERE id=?',JSON.stringify(newData),now().toISOString(),req.user!.id,ctx.rec.id);
     recordDeductionChange(ctx.rec.id,ctx.data,newData,req.user!,input.change_reason);
   });
   const later_cutoffs=queryAll<{id:number;number:string;status:string;label:string}>(`SELECT fr.id,fr.number,fr.status,p.label FROM form_records fr JOIN attendance_periods p ON p.id=CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data,'$.cutoff_id') AS INTEGER) END WHERE fr.form_def_id=? AND CASE WHEN json_valid(fr.data) THEN CAST(json_extract(fr.data,'$.employee_id') AS INTEGER) END=? AND p.end_date>? AND substr(p.end_date,1,7)=? ORDER BY p.end_date`,ctx.rec.form_def_id,ctx.emp.id,ctx.period.end_date,ctx.period.end_date.slice(0,7));

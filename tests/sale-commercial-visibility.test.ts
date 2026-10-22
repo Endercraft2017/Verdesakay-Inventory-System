@@ -12,6 +12,7 @@ describe('operational sale visibility', () => {
     const source={total:100,items:[{unit_price:100}]};
     expect(redactSaleCommercial(source,user(['orders.edit']),'/api/orders/1')).toBe(source);
     expect(redactSaleCommercial(source,user(['orders.view']),'/api/purchasing/requests')).toBe(source);
+    expect(redactSaleCommercial(source,user(['purchasing.view','inventory.costs']),'/api/purchasing/orders/1')).toBe(source);
   });
   it('does not equate cost visibility or physical release to commercial authority', () => {
     for(const permission of ['inventory.costs','orders.release'] as const)expect(redactSaleCommercial({total:123,quantity:2},user([permission]),'/api/customers/1')).toEqual({quantity:2});

@@ -28,6 +28,7 @@ App.register('sop', (view, filter) => {
       <div class="grow"></div>
       <button class="btn secondary" id="guide-print">${UI.icon('printer')} Print</button>
     </div>
+    <div id="guide-task-search"></div>
     <div class="guide-section-tabs" role="group" aria-label="Guide sections"><button class="btn secondary" data-guide-section="all">All guides</button><button class="btn secondary" data-guide-section="pipelines">Workflows &amp; Pipelines</button></div>
     <div class="guide-catalog-filters"><label class="sr-only" for="guide-search">Search guides</label><input id="guide-search" type="search" placeholder="What would you like to do? e.g. payroll, leave, checklist…"><label for="guide-module">Module</label><select id="guide-module"><option value="">All available modules</option>${[...new Set(PIPELINES.map(p=>p.module || 'home'))].map(m=>`<option value="${UI.esc(m)}">${UI.esc(window.GuideCenter?.moduleLabels[m]||m)}</option>`).join('')}</select><span id="guide-match-count" aria-live="polite"></span></div>
     <div class="guide-layout">
@@ -192,6 +193,11 @@ App.register('sop', (view, filter) => {
   }`;
   view.appendChild(style);
 
+  if(window.GuideSearch) GuideSearch.mount(view.querySelector('#guide-task-search'),{
+    items:PIPELINES,esc:UI.esc,
+    canUse:step=>!!step.to?.route && (!App.canAccessRoute || App.canAccessRoute(step.to.route,step.to.filter)),
+    onSelect:(id,index)=>{active=id;section='all';view.querySelector('#guide-search').value='';view.querySelector('#guide-module').value='';draw();filterGuides();const target=mainEl.querySelector('#pipeline-step-'+index)||mainEl;target.scrollIntoView?.({behavior:'smooth',block:'start'});}
+  });
   draw(); filterGuides();
 
   if (filter && filter.tour === '1' && window.GuideTour) {

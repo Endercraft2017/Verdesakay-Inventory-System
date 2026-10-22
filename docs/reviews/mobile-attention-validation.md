@@ -1,7 +1,7 @@
 # Mobile live attention and handoff integration validation
 
 Date: 2026-10-20. Branch: `restructure/module-architecture`.
-Base: upstream `0400314`; candidate cache v136. Local, uncommitted implementation.
+Base: upstream `0400314`; candidate cache v139. Committed source; deployment is separate.
 
 Work now shows live attention records together with unread updates. Selecting a
 record opens read-only current details, followed by its permitted workflow. Both
@@ -60,3 +60,15 @@ an existing open sale here changes customer/notes and preserves its line items.
 Creation, customer changes and authorization use durable original-attempt recovery.
 Physical release continues through the existing scanning, allocation and trip-slip
 workflow; approval or a partial-release report does not post stock-out.
+
+
+## Push integration
+
+Before pushing, integrated upstream `0813346` and its employee-request, authored
+guide, financial-permission and Sales follow-up changes. The live attention
+pipeline remains the canonical `sales` screen; upstream `sales-service`,
+`sales-order` and `sales-new` routes remain available without registering a
+second competing pipeline. Retained desk-scoped inspection drafts and explicit
+inspection stages, added both desk results to unit cards, and bumped the merged
+mobile shell cache to v139. Rechecked the merged code with TypeScript, focused
+mobile/API regression tests and the 16-scenario attention Playwright suite.

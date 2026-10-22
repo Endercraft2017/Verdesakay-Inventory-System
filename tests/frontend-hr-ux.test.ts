@@ -333,7 +333,7 @@ function payrollGet(records: () => unknown) {
     if (p === '/form-definitions/40') return PAYROLL_FORM;
     if (p.startsWith('/form-definitions/40/records')) return records();
     if (p === '/form-definitions/40/periods') return ['March 1-15', 'February 16-28'];
-    if (p === '/hr/periods') return [];
+    if (p === '/hr/payroll/cutoffs') return [];
     // The detail modal's own error path is enough to prove the row opened it.
     if (/^\/hr\/payroll\/\d+\/detail$/.test(p)) throw new Error('detail not stubbed');
     return {};

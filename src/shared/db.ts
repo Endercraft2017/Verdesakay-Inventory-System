@@ -105,7 +105,8 @@ function openConnection(slug: string): DatabaseSync {
 // 64: checklist notes and linked personal scheduler tasks.
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
 // 96: job recording assignments and the one-time role/CSR/privacy migration.
-export const SCHEMA_VERSION = 96; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+// 97: financial draft editor attribution and targeted default-role corrections.
+export const SCHEMA_VERSION = 97; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -2176,6 +2177,14 @@ function migrate(): void {
   if (!recordCols.has('definition_version')) db.exec('ALTER TABLE form_records ADD COLUMN definition_version INTEGER');
   if (!recordCols.has('revision')) db.exec('ALTER TABLE form_records ADD COLUMN revision INTEGER NOT NULL DEFAULT 1');
 
+  // 97: preserve the original creator while tracking who last prepared a financial draft.
+  for (const table of ['journal_entries', 'vendor_bills', 'form_records']) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!cols.some(c => c.name === 'last_edited_by')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN last_edited_by INTEGER REFERENCES users(id) ON DELETE SET NULL`);
+    }
+  }
+
   // 73: item placement preference is separate from stock held at any one location.
   const preferredLocCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
   if (!preferredLocCols.some((c) => c.name === 'preferred_location_id')) db.exec('ALTER TABLE inventory_items ADD COLUMN preferred_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL');
@@ -3774,6 +3783,32 @@ function seedRoles(): void {
         }
       }
       setSetting('role_audit_profiles_v1',true);
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
+  // Update only unchanged default bundles. Preserve owner-customized or deleted roles.
+  if (!getSetting('role_permission_followup_v1')) {
+    const additions: Record<string, string[]> = {
+      production_manager: ['production.approve'],
+      csr_supervisor: ['forms.upload'],
+      warehouse_supervisor: ['forms.view', 'forms.fill.inventory'],
+    };
+    db.exec('BEGIN');
+    try {
+      for (const [key, added] of Object.entries(additions)) {
+        const profile = BUILTIN_ROLES.find(r => r.key === key)!;
+        const row = db.prepare('SELECT permissions, description FROM roles WHERE key=?').get(key) as {permissions:string;description:string}|undefined;
+        if (!row) continue;
+        let current: string[];
+        try { current = JSON.parse(row.permissions); } catch { continue; }
+        const previous = profile.permissions.filter(p => !added.includes(p));
+        if (!Array.isArray(current) || current.length !== previous.length || !previous.every(p => current.includes(p))) continue;
+        const description = key === 'production_manager' && row.description === 'Lead + pause / resume / close early + QA hold decisions.'
+          ? profile.description : row.description;
+        db.prepare("UPDATE roles SET permissions=?,description=?,updated_at=datetime('now') WHERE key=?")
+          .run(JSON.stringify(profile.permissions), description, key);
+      }
+      setSetting('role_permission_followup_v1', true);
       db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); throw error; }
   }

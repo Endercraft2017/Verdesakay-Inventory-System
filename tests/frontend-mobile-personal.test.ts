@@ -8,7 +8,7 @@ async function boot(api:any){
   const routes:any={},navigations:any[]=[];let loc={name:'work',params:{}};const view=w.document.querySelector('#m-view');
   w.API=api;w.confirm=()=>true;w.VDS_BASE_PATH='/sandbox';w.MApp={route:(n:string,f:any)=>routes[n]=f,setTitle:(t:string)=>w.document.querySelector('#m-title').textContent=t,getMe:()=>({id:1,role:'employee'}),can:()=>false,canOpen:()=>false,hasModule:()=>true,canApprove:()=>false,refreshAccess:async()=>{},currentLocation:()=>loc,go:(n:string,p:any={})=>{if(w.mPersonalDraft&&!w.mPersonalDraft.allow('#/'+n))return;navigations.push([n,p]);loc={name:n,params:p};w.location.hash='#/'+n;view.dataset.route=n;if(routes[n])routes[n](view,p);},render:()=>{view.dataset.route=loc.name;if(routes[loc.name])routes[loc.name](view,loc.params);}};
   w.requestAnimationFrame=(f:any)=>{f();return 1;};w.HTMLElement.prototype.getBoundingClientRect=()=>({left:30,top:100,right:230,bottom:140,width:200,height:40});
-  for(const file of ['mobile/lib/dom.js','js/lib/photo-viewer.js','js/personal-ux.js','mobile/lib/personal.js','js/guide-data.js','mobile/lib/guides.js','js/guide-tour.js','mobile/modules/core/tasks.js','mobile/modules/core/notes.js','mobile/modules/core/guides.js','mobile/modules/hr/work.js'])w.eval(fs.readFileSync(path.join(import.meta.dirname,'../public',file),'utf8'));
+  for(const file of ['mobile/lib/dom.js','js/lib/photo-viewer.js','js/personal-ux.js','mobile/lib/personal.js','js/guide-data.js','js/guide-search.js','mobile/lib/guides.js','js/guide-tour.js','mobile/modules/core/tasks.js','mobile/modules/core/notes.js','mobile/modules/core/guides.js','mobile/modules/hr/work.js'])w.eval(fs.readFileSync(path.join(import.meta.dirname,'../public',file),'utf8'));
   await flush();return {dom,w,view,navigations,routes,go:async(n:string,p:any={})=>{w.MApp.go(n,p);await flush();}};
 }
 it('Work reads shared tasks and opens the selected task and linked note',async()=>{
@@ -151,4 +151,14 @@ it('explains physical identity before QC and the legacy-intake/sticker gates bef
  expect(steps.find((s:any)=>s.title==='Scan each attached sticker').body).toContain('Camera-scan');
  expect(steps.find((s:any)=>s.title==='Confirm RTS stock-in').body).toContain('Only confirmed Products In adds stock');
  dom.window.close();
+});
+
+it('clarifies a mobile task description and opens the selected authored workflow without performing work',async()=>{
+ const {dom,w,view,go,navigations}=await boot({get:async()=>[]});await go('guides');const before=navigations.length;
+ view.querySelector('[data-intent-input]').value='receive goods';view.querySelector('[data-intent-form]').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+ expect(view.querySelectorAll('[data-intent-choice]')).toHaveLength(3);
+ view.querySelector('[data-intent-choice="0"]').click();expect(view.querySelector('.guide-retrieval-source').textContent).toContain('Purchasing');
+ view.querySelector('[data-intent-select]').click();
+ expect(view.querySelector('[data-guide-id="purchase-to-pay"]').open).toBe(true);
+ expect(navigations).toHaveLength(before);dom.window.close();
 });

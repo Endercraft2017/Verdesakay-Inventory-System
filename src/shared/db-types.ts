@@ -581,6 +581,7 @@ export interface FormRecords {
   updated_at: string | null;
   definition_version: number | null;
   revision: Generated<number>;
+  last_edited_by: number | null;
   period: string | null;
 }
 
@@ -860,6 +861,7 @@ export interface JournalEntries {
   posted_at: string | null;
   created_by: number | null;
   created_at: Generated<string>;
+  last_edited_by: number | null;
 }
 
 export interface JournalLines {
@@ -1882,6 +1884,7 @@ export interface VendorBills {
   notes: string | null;
   created_by: number | null;
   created_at: Generated<string>;
+  last_edited_by: number | null;
   tax_code_id: number | null;
   ewt_rate: Generated<number>;
   ewt_amount: Generated<number>;

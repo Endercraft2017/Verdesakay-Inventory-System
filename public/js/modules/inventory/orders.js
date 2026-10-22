@@ -14,7 +14,7 @@ App.register('orders', async (view, filter) => {
   const canCreate = !tracking && canWrite('create');
   const canEdit = !tracking && canWrite('edit');
   const canDelete = !tracking && canWrite('delete');
-  const canQbPush = qb.connected && canEdit;
+  const canQbPush = qb.connected && App.hasPermission(type === 'purchase' ? 'purchasing.approve_bills' : 'orders.approve');
 
   let suppliers = [];
   if (type === 'purchase') { try { suppliers = await API.get('/suppliers'); } catch { /* optional */ } }
@@ -102,7 +102,7 @@ App.register('orders', async (view, filter) => {
               ${type === 'purchase' ? `<button class="icon-btn" title="Receiving & bills" data-purch="${o.id}">${UI.icon('inbox')}</button>` : ''}
               ${type === 'sale' && !tracking && ['approved', 'released'].includes(String(o.status).toLowerCase()) && App.hasPermission('orders.authorize') && window.ReleaseAuth
                 ? `<button class="icon-btn" title="Release authorization (who may collect)" data-relauth="${o.id}" data-num="${UI.esc(o.number)}">${UI.icon('key')}</button>` : ''}
-              ${canQbPush ? `<button class="icon-btn" title="Push to QuickBooks as a ${qbDoc}" data-qbpush="${o.id}">${UI.icon('sheet')}</button>` : ''}
+              ${canQbPush && ['approved','confirmed','released','completed','fulfilled','invoiced','paid'].includes(String(o.status).toLowerCase()) ? `<button class="icon-btn" title="Push to QuickBooks as a ${qbDoc}" data-qbpush="${o.id}">${UI.icon('sheet')}</button>` : ''}
               <button class="icon-btn" title="Print" data-print="${o.id}">${UI.icon('printer')}</button>
               ${type === 'sale' ? `<button class="icon-btn" title="Review stock & approval" aria-label="Review stock and approval for ${UI.esc(o.number)}" data-stock="${o.id}">${UI.icon('inventory')}</button>` : ''}
               ${canEdit ? `<button class="icon-btn" title="Edit" data-edit="${o.id}">${UI.icon('edit')}</button>` : ''}

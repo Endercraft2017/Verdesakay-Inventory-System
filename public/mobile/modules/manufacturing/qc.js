@@ -316,7 +316,7 @@
         host.innerHTML = list.length ? list.map(function (u) {
           var meta = which === 're' ? desk.reMeta + (u.open_part_requests ? ' · waiting on parts' : '')
             : (u.priority > 0 ? 'Priority · waiting ' : 'Waiting ') + ago(u.updated_at);
-          var line = u.product_name + ' · ' + u.job_order_number + (desk.role === 'qa' && u.last_pass && u.last_pass.stage === 1 ? ' · QC passed ' + clock(u.last_pass.created_at).replace('Today, ', '') : '');
+          var line = u.product_name + ' · ' + u.job_order_number + (Number(u.qc_stages)>1?' · QC: '+(u.qc_result||'pending')+' · QA: '+(u.qa_result||'pending'):'');
           return '<button type="button" class="rk-card rk-unitcard" data-unit="' + u.id + '"><b>' + mEsc(label(u)) + '</b><span>' + mEsc(line) + '</span>' +
             '<small' + (which === 're' ? ' class="re"' : '') + '>' + mEsc(meta) + '</small><i aria-hidden="true">›</i></button>';
         }).join('') : '<div class="rk-empty">' + (which === 're' ? 'No units are back for ' + (desk.role === 'qa' ? 'recheck' : 'reinspection') + '.' : 'Nothing waiting for inspection.') + '</div>';

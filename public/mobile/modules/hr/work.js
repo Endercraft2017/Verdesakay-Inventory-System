@@ -64,6 +64,17 @@
     "Perform the appearance/final QA pass for eligible units.",
     "Choose the job order, then select its Ready/Recheck unit card and confirm the production identifier and job order against the physical unit; no QR sticker is required yet. Review the recorded inspection results and complete appearance checks. QA can run before QC. Follow repair/hold evidence prompts.",
     "Both required QC and QA passes queue RTS recording; either desk may go first. An inspection never adds stock. Settle repair requests before rechecking returned units."
+
+  ],
+  "sales-service": [
+    "Find and follow up a customer sale order by customer name or SO number.",
+    "Search the live list and open the exact sale to review its lines, value, stage, and next owner.",
+    "Customer-service review does not accept, pick, or release warehouse stock."
+  ],
+  "sales-new": [
+    "Prepare a new customer sale order from the phone.",
+    "Choose stock lines or products, select the build form for a finished product, set its selling price, and add separate fees when needed.",
+    "Saving creates an open order for Sales review. It does not approve the sale or deduct stock."
   ],
   "qc:qa:hold": [
     "Decide the outcome of units QA placed on hold.",
@@ -222,6 +233,8 @@
       count: function () { return API.get('/release-slips/queue').then(function (q) {
         return (q.to_accept || []).length + (q.releasing || []).length;
       }); } },
+    { label: 'Customer service', sub: 'Search and follow up sale orders', route: 'sales-service', all: ['orders.view'], any: ['orders.create','orders.edit'], action: true },
+    { label: 'New sale order', sub: 'Prepare an open customer order', route: 'sales-new', all: ['orders.view','orders.create'], action: true },
     { label: 'Kit releases', sub: 'Pick and release job-order kits', route: 'kit-release', permission: 'production.kit_release',
       count: function () { return API.get('/job-orders?stage=awaiting_release').then(function (rows) { return (rows || []).length; }); } },
     { label: 'Allocate units', sub: 'Assign passed units to orders', route: 'allocate', any: ['inventory.transfer','orders.direct_sale'] },
@@ -297,9 +310,10 @@
   }
   function allowed(op) {
     if (!MApp.canOpen(op.route)) return false;
-    if(op.all&&!op.all.every(function(p){return MApp.can(p);}))return false;
-    if (op.permission && MApp.can(op.permission)) return true;
-    return op.any && op.any.some(function (p) { return MApp.can(p); });
+    if (op.all && !op.all.every(function (p) { return MApp.can(p); })) return false;
+    if (op.permission) return MApp.can(op.permission);
+    if (op.any) return op.any.some(function (p) { return MApp.can(p); });
+    return !!op.all;
   }
   function roleName() {
     var me = MApp.getMe() || {};
@@ -308,7 +322,7 @@
   function opRow(op) {
     var row = mEl(
       '<button type="button" class="v2-work-row"><span><b>' + mEsc(op.label) + '</b>' +
-      '<small>' + mEsc(op.sub) + '</small></span><em data-count>OPEN</em>' +
+      '<small>' + mEsc(op.sub) + '</small></span><em data-count>' + (op.action ? 'GO' : 'OPEN') + '</em>' +
       '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button>'
     );
     explain(row,helpKey(op),op.label);

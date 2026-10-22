@@ -30,18 +30,18 @@ App.register('analytics', async (view) => {
     sections.push(`
       <h3 class="rep-h">Inventory</h3>
       <div class="cards">
-        ${card('', 'sheet', 'Stock value', money(iv.stock_value))}
+        ${iv.stock_value !== undefined ? card('', 'sheet', 'Stock value', money(iv.stock_value)) : ''}
         ${card('', 'inventory', 'Items', iv.items)}
         ${card('warn', 'alert', 'Low stock', iv.low_stock)}
         ${card('alert', 'alert', 'Out of stock', iv.out_of_stock)}
-        ${card('warn', 'history', 'Dead stock (90d)', iv.dead_stock_count, money(iv.dead_stock_value))}
+        ${card('warn', 'history', 'Dead stock (90d)', iv.dead_stock_count, iv.dead_stock_value !== undefined ? money(iv.dead_stock_value) : '')}
       </div>
-      <div class="grid-2">
+      ${iv.value_by_location && iv.top_value_items ? `<div class="grid-2">
         ${panel('Stock value by location', tbl(['Location', '#Units', '#Value'],
           iv.value_by_location.map((r) => `<tr><td>${UI.esc(r.location)}</td><td class="right">${r.units}</td><td class="right">${money(r.value)}</td></tr>`)))}
         ${panel('Highest-value items', tbl(['Item', '#On hand', '#Value'],
           iv.top_value_items.map((r) => `<tr><td>${UI.esc(r.name)}<div class="muted mono">${UI.esc(r.sku || '—')}</div></td><td class="right">${r.quantity}</td><td class="right">${money(r.value)}</td></tr>`)))}
-      </div>`);
+      </div>` : ''}`);
   }
 
   /* -------- production -------- */
@@ -74,18 +74,18 @@ App.register('analytics', async (view) => {
     sections.push(`
       <h3 class="rep-h">Purchasing &amp; payables</h3>
       <div class="cards">
-        ${card('', 'inbox', 'Open POs', pu.open_pos, money(pu.open_po_value))}
-        ${card(pu.gr_ni_value > 0 ? 'warn' : '', 'history', 'Received, not invoiced', money(pu.gr_ni_value))}
+        ${card('', 'inbox', 'Open POs', pu.open_pos, pu.open_po_value !== undefined ? money(pu.open_po_value) : '')}
+        ${pu.gr_ni_value !== undefined ? card(pu.gr_ni_value > 0 ? 'warn' : '', 'history', 'Received, not invoiced', money(pu.gr_ni_value)) : ''}
         ${card(pu.bills_to_approve ? 'warn' : '', 'sheet', 'Bills to approve', pu.bills_to_approve)}
-        ${card(a.d60_plus > 0 ? 'alert' : '', 'alert', 'Payables 60+ days', money(a.d60_plus))}
-        ${card('', 'sheet', 'Total payable', money(a.total))}
+        ${a ? card(a.d60_plus > 0 ? 'alert' : '', 'alert', 'Payables 60+ days', money(a.d60_plus)) : ''}
+        ${a ? card('', 'sheet', 'Total payable', money(a.total)) : ''}
       </div>
-      ${panel('Payables aging (approved bills)', tbl(['Bucket', '#Amount'], [
+      ${a ? panel('Payables aging (approved bills)', tbl(['Bucket', '#Amount'], [
         `<tr><td>Current / not due</td><td class="right">${money(a.current)}</td></tr>`,
         `<tr><td>1–30 days overdue</td><td class="right">${money(a.d1_30)}</td></tr>`,
         `<tr><td>31–60 days overdue</td><td class="right">${money(a.d31_60)}</td></tr>`,
         `<tr><td>60+ days overdue</td><td class="right">${money(a.d60_plus)}</td></tr>`,
-      ]))}`);
+      ])) : ''}`);
   }
 
   /* -------- sales -------- */

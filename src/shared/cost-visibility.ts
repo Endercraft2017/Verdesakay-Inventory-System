@@ -13,14 +13,14 @@ const PURCHASE_VALUES = new Set([
 /** Receiving staff can identify supplier goods without seeing their acquisition prices. */
 export function redactInventoryCosts<T>(value: T, user: Pick<AuthUser, 'permissions'> | undefined, path = ''): T {
   if (!user || user.permissions.includes('inventory.costs')) return value;
-  const supplierDocument = /\/purchasing\/(?:bills|receipts|tolerance)(?:\/|$|\?)/.test(path);
+  const supplierDocument = /\/purchasing\/(?:orders|bills|receipts|tolerance)(?:\/|$|\?)/.test(path);
   const strip = (v: unknown, purchase: boolean): unknown => {
     if (Array.isArray(v)) return v.map(row => strip(row, purchase));
     if (!v || typeof v !== 'object') return v;
     const entries = Object.entries(v);
     const isPurchase = purchase || (v as Record<string, unknown>).type === 'purchase';
     return Object.fromEntries(entries
-      .filter(([key]) => !COST_KEYS.has(key) && !/(?:^|_)cost(?:_|$)/i.test(key) && !(isPurchase && (PURCHASE_VALUES.has(key) || /(?:^|_)(?:price|cost|amount|value)(?:_|$)/i.test(key))))
+      .filter(([key]) => !COST_KEYS.has(key) && !/(?:^|_)cost(?:_|$)/i.test(key) && !(isPurchase && (key === 'match' || key === 'match_json' || PURCHASE_VALUES.has(key) || /(?:^|_)(?:price|cost|amount|value)(?:_|$)/i.test(key))))
       .map(([key, val]) => {
         if (key === 'attributes' && typeof val === 'string') {
           try { return [key, JSON.stringify(strip(JSON.parse(val), isPurchase))]; } catch { /* preserve other metadata */ }
@@ -34,6 +34,7 @@ export function redactInventoryCosts<T>(value: T, user: Pick<AuthUser, 'permissi
 /** Operational order visibility does not confer commercial pricing authority. Applied
  * to every JSON response on the document family, including nested context/replay data. */
 export function redactSaleCommercial<T>(value: T, user: Pick<AuthUser, 'permissions'> | undefined, path = ''): T {
+  if (/\/purchasing(?:\/|$)/.test(path)) return value;
   if (!user || !/\/(?:orders|release-slips|customers)(?:\/|$|\?)/.test(path)) return value;
   if (['orders.create', 'orders.edit', 'orders.approve', 'orders.authorize', 'accounting.view'].some(p => user.permissions.includes(p as AuthUser['permissions'][number]))) return value;
   const strip = (v: unknown): unknown => {

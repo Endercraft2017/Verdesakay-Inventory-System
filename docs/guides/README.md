@@ -87,3 +87,26 @@ Each checkpoint lists the responsible team, prerequisites, action and result
 handed to the next team. Select a roadmap checkpoint to read its details. Screen
 links respect your account's access; the roadmap explains other teams' work even
 when you cannot open their screens. Reading a guide never posts a transaction.
+
+### Describe a task to find instructions
+
+In the webapp Guide Center or mobile Guides, use **What do you want to do?** and
+**Find instructions**. For example: “A customer returned a damaged unit”, “I need
+a budget to buy tools”, or “old stock before the system”.
+
+Search retrieves published guide steps with their prerequisites, results and
+source guide/step. Broad “receive goods” or “PR” searches offer clarification
+choices. Use **Read this guide** to open the existing instructions; this does not
+open a business screen or perform a transaction. Available-screen and handoff
+labels help distinguish your work from another team's responsibilities.
+
+This is local keyword retrieval with curated synonyms and intent hints, without
+an LLM, generated procedures or an AI API. Questions are not stored by this feature
+or sent to a search service. It works with the loaded guide library offline; the
+mobile app precaches its search assets. Account module filters still apply, and
+reading a procedure never grants permission to execute its actions.
+
+It is not general conversation or an unrestricted semantic search. If there is no
+close match, rephrase with the action/item or browse the library. New terminology
+may need another synonym or authored guide. Run `node scripts/test-guide-retrieval-ux.mjs`
+for real-browser retrieval checks after changing the search or guide content.
