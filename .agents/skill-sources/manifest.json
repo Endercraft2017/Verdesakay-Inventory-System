@@ -1,0 +1,723 @@
+{
+  "sources": [
+    {
+      "repository": "https://github.com/DietrichGebert/ponytail",
+      "commit": "09c434ab73ca43761c5d8b0c5d341926c2fba710",
+      "skills": 6
+    },
+    {
+      "repository": "https://github.com/Graphify-Labs/graphify",
+      "commit": "847a93f3cab5e2c82ea9170014b21cd2c52a4417",
+      "skills": 1
+    },
+    {
+      "repository": "https://github.com/JuliusBrussee/caveman",
+      "commit": "bad48a0e1df55e05e3f52249afa35ecc1909ee76",
+      "skills": 22
+    },
+    {
+      "repository": "https://github.com/Leonxlnx/taste-skill",
+      "commit": "6010f91a9935f1c167dfc500fb1a475681892e6b",
+      "skills": 1
+    },
+    {
+      "repository": "https://github.com/addyosmani/agent-skills",
+      "commit": "aeac41d4d005999432bb7312f7ff06383a91d59d",
+      "skills": 25
+    },
+    {
+      "repository": "https://github.com/anthropics/skills",
+      "commit": "dbd4588f9e1033efb41dad4bef2f7947c8993d44",
+      "skills": 19
+    },
+    {
+      "repository": "https://github.com/mattpocock/skills",
+      "commit": "5beb35b040e3de97e54fa9e386d7e42d15c295c2",
+      "skills": 31
+    },
+    {
+      "repository": "https://github.com/multica-ai/andrej-karpathy-skills",
+      "commit": "2c606141936f1eeef17fa3043a72095b4765b9c2",
+      "skills": 1
+    },
+    {
+      "repository": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+      "commit": "623a9a9037d006ea727f8213f084d02a6b6f11b5",
+      "skills": 1
+    },
+    {
+      "repository": "https://github.com/obra/superpowers",
+      "commit": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+      "skills": 15
+    },
+    {
+      "repository": "https://github.com/vercel-labs/agent-skills",
+      "commit": "063bee94c3f4df8453406c830b0a7df0f2860278",
+      "skills": 9
+    }
+  ],
+  "local_changes": [
+    {
+      "path": ".agents/skills/obra--superpowers--test-driven-development/SKILL.md",
+      "original_name": "test-driven-development",
+      "installed_name": "obra-test-driven-development"
+    }
+  ],
+  "skills": [
+    {
+      "collection": "DietrichGebert--ponytail",
+      "path": ".agents/skills/DietrichGebert--ponytail--ponytail",
+      "name": "ponytail"
+    },
+    {
+      "collection": "DietrichGebert--ponytail",
+      "path": ".agents/skills/DietrichGebert--ponytail--ponytail-audit",
+      "name": "ponytail-audit"
+    },
+    {
+      "collection": "DietrichGebert--ponytail",
+      "path": ".agents/skills/DietrichGebert--ponytail--ponytail-debt",
+      "name": "ponytail-debt"
+    },
+    {
+      "collection": "DietrichGebert--ponytail",
+      "path": ".agents/skills/DietrichGebert--ponytail--ponytail-gain",
+      "name": "ponytail-gain"
+    },
+    {
+      "collection": "DietrichGebert--ponytail",
+      "path": ".agents/skills/DietrichGebert--ponytail--ponytail-help",
+      "name": "ponytail-help"
+    },
+    {
+      "collection": "DietrichGebert--ponytail",
+      "path": ".agents/skills/DietrichGebert--ponytail--ponytail-review",
+      "name": "ponytail-review"
+    },
+    {
+      "collection": "Graphify-Labs--graphify",
+      "path": ".agents/skills/Graphify-Labs--graphify--graphify",
+      "name": "graphify"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--cavecrew",
+      "name": "cavecrew"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--caveman",
+      "name": "caveman"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--caveman-commit",
+      "name": "caveman-commit"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--caveman-compress",
+      "name": "caveman-compress"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--caveman-discover",
+      "name": "caveman-discover"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--caveman-evidence-review",
+      "name": "caveman-evidence-review"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--caveman-explore",
+      "name": "caveman-explore"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--caveman-help",
+      "name": "caveman-help"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--caveman-learn",
+      "name": "caveman-learn"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--caveman-manage",
+      "name": "caveman-manage"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--caveman-optimize",
+      "name": "caveman-optimize"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--caveman-review",
+      "name": "caveman-review"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--caveman-setup",
+      "name": "caveman-setup"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--caveman-stats",
+      "name": "caveman-stats"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--investigate-first",
+      "name": "investigate-first"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--lean-build",
+      "name": "lean-build"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--megacave",
+      "name": "megacave"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--migration",
+      "name": "migration"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--safe-refactor",
+      "name": "safe-refactor"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--surgical-patch",
+      "name": "surgical-patch"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--ultracave",
+      "name": "ultracave"
+    },
+    {
+      "collection": "JuliusBrussee--caveman",
+      "path": ".agents/skills/JuliusBrussee--caveman--verify-and-stop",
+      "name": "verify-and-stop"
+    },
+    {
+      "collection": "Leonxlnx--taste-skill",
+      "path": ".agents/skills/Leonxlnx--taste-skill--taste-skill",
+      "name": "design-taste-frontend"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--api-and-interface-design",
+      "name": "api-and-interface-design"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--browser-testing-with-devtools",
+      "name": "browser-testing-with-devtools"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--ci-cd-and-automation",
+      "name": "ci-cd-and-automation"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--code-review-and-quality",
+      "name": "code-review-and-quality"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--code-simplification",
+      "name": "code-simplification"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--constraint-driven-development",
+      "name": "constraint-driven-development"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--context-engineering",
+      "name": "context-engineering"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--debugging-and-error-recovery",
+      "name": "debugging-and-error-recovery"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--deprecation-and-migration",
+      "name": "deprecation-and-migration"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--documentation-and-adrs",
+      "name": "documentation-and-adrs"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--doubt-driven-development",
+      "name": "doubt-driven-development"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--frontend-ui-engineering",
+      "name": "frontend-ui-engineering"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--git-workflow-and-versioning",
+      "name": "git-workflow-and-versioning"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--idea-refine",
+      "name": "idea-refine"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--incremental-implementation",
+      "name": "incremental-implementation"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--interview-me",
+      "name": "interview-me"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--observability-and-instrumentation",
+      "name": "observability-and-instrumentation"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--performance-optimization",
+      "name": "performance-optimization"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--planning-and-task-breakdown",
+      "name": "planning-and-task-breakdown"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--security-and-hardening",
+      "name": "security-and-hardening"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--shipping-and-launch",
+      "name": "shipping-and-launch"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--source-driven-development",
+      "name": "source-driven-development"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--spec-driven-development",
+      "name": "spec-driven-development"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--test-driven-development",
+      "name": "test-driven-development"
+    },
+    {
+      "collection": "addyosmani--agent-skills",
+      "path": ".agents/skills/addyosmani--agent-skills--using-agent-skills",
+      "name": "using-agent-skills"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--academy-guide",
+      "name": "academy-guide"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--algorithmic-art",
+      "name": "algorithmic-art"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--brand-guidelines",
+      "name": "brand-guidelines"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--canvas-design",
+      "name": "canvas-design"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--claude-api",
+      "name": "claude-api"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--discernment-nudge",
+      "name": "discernment-nudge"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--doc-coauthoring",
+      "name": "doc-coauthoring"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--docx",
+      "name": "docx"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--frontend-design",
+      "name": "frontend-design"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--internal-comms",
+      "name": "internal-comms"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--mcp-builder",
+      "name": "mcp-builder"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--pdf",
+      "name": "pdf"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--pptx",
+      "name": "pptx"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--skill-creator",
+      "name": "skill-creator"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--slack-gif-creator",
+      "name": "slack-gif-creator"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--theme-factory",
+      "name": "theme-factory"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--web-artifacts-builder",
+      "name": "web-artifacts-builder"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--webapp-testing",
+      "name": "webapp-testing"
+    },
+    {
+      "collection": "anthropics--skills",
+      "path": ".agents/skills/anthropics--skills--xlsx",
+      "name": "xlsx"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--ask-matt",
+      "name": "ask-matt"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--code-review",
+      "name": "code-review"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--codebase-design",
+      "name": "codebase-design"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--diagnosing-bugs",
+      "name": "diagnosing-bugs"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--domain-modeling",
+      "name": "domain-modeling"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--grill-with-docs",
+      "name": "grill-with-docs"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--implement",
+      "name": "implement"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--implement-spec",
+      "name": "implement-spec"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--improve-codebase-architecture",
+      "name": "improve-codebase-architecture"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--pr",
+      "name": "pr"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--prototype",
+      "name": "prototype"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--research",
+      "name": "research"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--retro",
+      "name": "retro"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--setup-matt-pocock-skills",
+      "name": "setup-matt-pocock-skills"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--tdd",
+      "name": "tdd"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--to-spec",
+      "name": "to-spec"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--to-tickets",
+      "name": "to-tickets"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--triage",
+      "name": "triage"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--wayfinder",
+      "name": "wayfinder"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--wizard",
+      "name": "wizard"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--git-guardrails-claude-code",
+      "name": "git-guardrails-claude-code"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--migrate-to-shoehorn",
+      "name": "migrate-to-shoehorn"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--scaffold-exercises",
+      "name": "scaffold-exercises"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--setup-pre-commit",
+      "name": "setup-pre-commit"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--grill-me",
+      "name": "grill-me"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--grilling",
+      "name": "grilling"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--handoff",
+      "name": "handoff"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--teach",
+      "name": "teach"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--to-questionnaire",
+      "name": "to-questionnaire"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--wait-what",
+      "name": "wait-what"
+    },
+    {
+      "collection": "mattpocock--skills",
+      "path": ".agents/skills/mattpocock--skills--writing-for-agents",
+      "name": "writing-for-agents"
+    },
+    {
+      "collection": "multica-ai--andrej-karpathy-skills",
+      "path": ".agents/skills/multica-ai--andrej-karpathy-skills--karpathy-guidelines",
+      "name": "karpathy-guidelines"
+    },
+    {
+      "collection": "nextlevelbuilder--ui-ux-pro-max-skill",
+      "path": ".agents/skills/nextlevelbuilder--ui-ux-pro-max-skill--ui-ux-pro-max",
+      "name": "ui-ux-pro-max"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--brainstorming",
+      "name": "brainstorming"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--diagnosing-superpowers",
+      "name": "diagnosing-superpowers"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--dispatching-parallel-agents",
+      "name": "dispatching-parallel-agents"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--executing-plans",
+      "name": "executing-plans"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--finishing-a-development-branch",
+      "name": "finishing-a-development-branch"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--receiving-code-review",
+      "name": "receiving-code-review"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--requesting-code-review",
+      "name": "requesting-code-review"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--subagent-driven-development",
+      "name": "subagent-driven-development"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--systematic-debugging",
+      "name": "systematic-debugging"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--test-driven-development",
+      "name": "obra-test-driven-development"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--using-git-worktrees",
+      "name": "using-git-worktrees"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--using-superpowers",
+      "name": "using-superpowers"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--verification-before-completion",
+      "name": "verification-before-completion"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--writing-plans",
+      "name": "writing-plans"
+    },
+    {
+      "collection": "obra--superpowers",
+      "path": ".agents/skills/obra--superpowers--writing-skills",
+      "name": "writing-skills"
+    },
+    {
+      "collection": "vercel-labs--agent-skills",
+      "path": ".agents/skills/vercel-labs--agent-skills--composition-patterns",
+      "name": "vercel-composition-patterns"
+    },
+    {
+      "collection": "vercel-labs--agent-skills",
+      "path": ".agents/skills/vercel-labs--agent-skills--deploy-to-vercel",
+      "name": "deploy-to-vercel"
+    },
+    {
+      "collection": "vercel-labs--agent-skills",
+      "path": ".agents/skills/vercel-labs--agent-skills--react-best-practices",
+      "name": "vercel-react-best-practices"
+    },
+    {
+      "collection": "vercel-labs--agent-skills",
+      "path": ".agents/skills/vercel-labs--agent-skills--react-native-skills",
+      "name": "vercel-react-native-skills"
+    },
+    {
+      "collection": "vercel-labs--agent-skills",
+      "path": ".agents/skills/vercel-labs--agent-skills--react-view-transitions",
+      "name": "vercel-react-view-transitions"
+    },
+    {
+      "collection": "vercel-labs--agent-skills",
+      "path": ".agents/skills/vercel-labs--agent-skills--vercel-cli-with-tokens",
+      "name": "vercel-cli-with-tokens"
+    },
+    {
+      "collection": "vercel-labs--agent-skills",
+      "path": ".agents/skills/vercel-labs--agent-skills--vercel-optimize",
+      "name": "vercel-optimize"
+    },
+    {
+      "collection": "vercel-labs--agent-skills",
+      "path": ".agents/skills/vercel-labs--agent-skills--web-design-guidelines",
+      "name": "web-design-guidelines"
+    },
+    {
+      "collection": "vercel-labs--agent-skills",
+      "path": ".agents/skills/vercel-labs--agent-skills--writing-guidelines",
+      "name": "writing-guidelines"
+    }
+  ]
+}
