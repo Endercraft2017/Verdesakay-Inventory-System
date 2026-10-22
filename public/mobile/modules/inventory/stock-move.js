@@ -1,82 +1,15 @@
-/* Stock In / Stock Out — wraps POST /api/inventory/:id/adjust.
-   Exposes mStockMoveForm(view, {item, mode}) so the Scan view can reuse the form. */
-(function () {
-  function label(mode) { return mode === 'out' ? 'Stock Out' : 'Stock In'; }
-
-  function moveForm(view, o) {
-    var mode = o.mode === 'out' ? 'out' : 'in';
-    var item = o.item;
-    MApp.setTitle(label(mode));
-    view.innerHTML = '';
-
-    var form = mEl(
-      '<form class="m-form">' +
-      '  <div class="m-picked"><b>' + mEsc(item.name) + '</b>' +
-      (item.sku ? '<span>#' + mEsc(item.sku) + '</span>' : '') +
-      '    <button type="button" class="m-change" data-change>Change</button></div>' +
-      '  <div data-loc></div>' +
-      '  <div data-qty></div>' +
-      '  <label class="m-field"><span class="m-label">Note (optional)</span>' +
-      '    <input type="text" class="m-input" data-note maxlength="200" placeholder="Reference / remark" /></label>' +
-      '  <div class="m-actions"><button class="m-btn" type="submit">Confirm ' + label(mode) + '</button></div>' +
-      '</form>'
-    );
-    form.querySelector('[data-change]').onclick = function () { pick(view, mode); };
-
-    var qty = mQtyField('Quantity', 1);
-    form.querySelector('[data-qty]').appendChild(qty.el);
-
-    mLocations.load()
-      .then(function () { return API.get('/inventory/' + item.id + '/stock'); })
-      .then(function (breakdown) {
-        var byLoc = {};
-        (breakdown || []).forEach(function (b) { byLoc[b.location_id] = b.quantity; });
-        var loc = mLocations.select({ label: 'Location', stockByLoc: byLoc });
-        form.querySelector('[data-loc]').appendChild(loc.el);
-
-        form.onsubmit = function (e) {
-          e.preventDefault();
-          var n = qty.value();
-          if (n < 1) { mToast('Enter a quantity', 'err'); return; }
-          var btn = form.querySelector('button[type=submit]');
-          btn.disabled = true;
-          mSubmit('/inventory/' + item.id + '/adjust', {
-            change: mode === 'out' ? -n : n,
-            location_id: loc.value(),
-            reason: form.querySelector('[data-note]').value.trim() || null,
-          }, { label: label(mode) + ' — ' + item.name + ' ×' + n })
-            .then(function (r) {
-              var qtyLine = item.name + '  ' + (mode === 'out' ? '−' : '+') + n + ' ' + (item.unit || '');
-              mSuccess(view, {
-                title: r.queued ? 'Saved — will sync' : label(mode) + ' recorded',
-                lines: r.queued
-                  ? [qtyLine, 'You’re offline. It will send automatically when back online.']
-                  : [qtyLine, 'On hand here: ' + r.response.location_quantity, 'Total on hand: ' + r.response.quantity],
-                actions: [
-                  { label: 'Another ' + label(mode), onClick: function () { pick(view, mode); } },
-                  { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },
-                ],
-              });
-            })
-            .catch(function (ex) { mToast(ex.message || 'Failed', 'err'); btn.disabled = false; });
-        };
-      })
-      .catch(function (ex) { view.innerHTML = '<div class="m-error">' + mEsc(ex.message) + '</div>'; });
-
-    view.appendChild(form);
+/* Build-state-aware adjustments. Durable exact request; no optimistic stock success. */
+(function(){
+  async function form(view,o){
+    var item=o.item,mode=o.mode==='out'?'out':'in',route='stock-move',hash=location.hash;
+    try{var s=await mWorkflow.draft(route);if(hash!==location.hash)return;if(s.operation.state!=='draft'){mWorkflow.paint(view,s);return;}s.batch.item=item;s.batch.mode=mode;await mWorkflow.save(s);await mLocations.load(true);if(hash!==location.hash||!mWorkflow.owns(s))return;
+      MApp.setTitle(mode==='out'?'Stock Out':'Stock In');view.innerHTML='<form class="m-form"><div class="m-picked"><b>'+mEsc(item.name)+'</b><button type="button" class="m-change" data-change-item>Change item</button></div><label class="m-field">Build state<select class="m-select" data-build><option value="assembled">Fully built / standard</option><option value="semi_built">Semi-built</option></select></label><div data-location></div><div data-balance class="m-hint"></div><label class="m-field">Quantity<input class="m-input" type="number" min="0.001" step="any" data-qty value="'+(s.batch.quantity||1)+'"></label><label class="m-field">Reason<input class="m-input" data-note maxlength="500"></label><button class="m-btn" type="submit">Review and confirm adjustment</button></form>';
+      var f=view.querySelector('form'),loc=mLocations.select({label:'Stock location'});f.querySelector('[data-change-item]').onclick=async function(){await mProductionDrafts.remove(s);MApp.go('stock-move',{mode:mode});};f.querySelector('[data-location]').appendChild(loc.el);if(s.batch.location_id)loc.select.value=s.batch.location_id;f.querySelector('[data-build]').value=s.batch.build_mode||'assembled';f.querySelector('[data-note]').value=s.batch.reason||'';
+      var stock=await API.get('/inventory/'+item.id+'/stock');if(hash!==location.hash||!mWorkflow.owns(s))return;function collect(){s.batch.quantity=Number(f.querySelector('[data-qty]').value);s.batch.reason=f.querySelector('[data-note]').value.trim();s.batch.location_id=loc.value();s.batch.build_mode=f.querySelector('[data-build]').value;var row=stock.find(function(r){return r.location_id===loc.value();});f.querySelector('[data-balance]').textContent=(row?Number(row[s.batch.build_mode==='semi_built'?'semi_built_quantity':'assembled_quantity']||0):0)+' on hand in this build state';return mWorkflow.save(s);}
+      f.querySelectorAll('input,select').forEach(function(e){e.onchange=function(){collect().catch(function(e){mToast(e.message,'err');});};});await collect();
+      f.onsubmit=async function(e){e.preventDefault();var btn=f.querySelector('button[type=submit]');try{await collect();if(!Number.isFinite(s.batch.quantity)||s.batch.quantity<=0)throw new Error('Enter a positive quantity.');if(!s.batch.reason)throw new Error('Record the adjustment reason.');btn.disabled=true;await mWorkflow.start(s,{path:'/inventory/'+item.id+'/adjust',payload:{change:mode==='out'?-s.batch.quantity:s.batch.quantity,location_id:s.batch.location_id,build_mode:s.batch.build_mode,reason:s.batch.reason},title:'Stock '+mode+' · '+item.name+' · '+s.batch.build_mode+' · '+s.batch.quantity,reviewRoute:route,reviewPath:'/inventory/'+item.id});mWorkflow.paint(view,s);}catch(ex){mToast(ex.message,'err');btn.disabled=false;}};
+    }catch(e){view.innerHTML='';view.appendChild(RoleUI.error(e,function(){form(view,o);}));}
   }
-
-  function pick(view, mode) {
-    MApp.setTitle(label(mode));
-    view.innerHTML = '';
-    var picker = mItemPicker({ label: 'Which item?', onPick: function (it) { moveForm(view, { item: it, mode: mode }); } });
-    view.appendChild(picker.el);
-    picker.focus();
-  }
-
-  MApp.route('stock-move', function (view, params) {
-    pick(view, params.mode === 'out' ? 'out' : 'in');
-  });
-
-  window.mStockMoveForm = moveForm;
+  async function pick(view,p){var s=await mWorkflow.draft('stock-move');if(s.operation.state!=='draft'){mWorkflow.paint(view,s);return;}if(s.batch.item){form(view,{item:s.batch.item,mode:s.batch.mode});return;}MApp.setTitle('Stock adjustment');view.innerHTML='';var picker=mItemPicker({label:'Which item?',onPick:function(item){form(view,{item:item,mode:p.mode});}});view.appendChild(picker.el);picker.focus();}
+  MApp.route('stock-move',function(view,p){pick(view,p||{}).catch(function(e){mToast(e.message,'err');});});window.mStockMoveForm=form;
 })();

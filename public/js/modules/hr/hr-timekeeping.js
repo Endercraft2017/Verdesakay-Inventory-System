@@ -7,7 +7,7 @@
    modal — e.g. the HR Overview "Needs Attention" panel jumping straight to one flagged
    employee's grid instead of just landing on the roster and making HR find them. */
 App.register('hr-timekeeping', async (view, filter) => {
-  if (!App.hasPermission('hr.view')) {
+  if (!App.hasPermission('hr.view') && !App.hasPermission('hr.timekeeping.view')) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
     return;
   }
@@ -20,74 +20,192 @@ App.register('hr-timekeeping', async (view, filter) => {
 
 /* ── Cutoff list ──────────────────────────────────────────────────────────── */
 async function renderList(view) {
+  // Cutoff writes are hr.manage server-side (hr.routes.ts) — a read-only HR viewer gets the
+  // list and the calendar/log tools, not create/delete buttons that would only 403.
+  const canManage = (App.hasPermission('hr.manage') || App.hasPermission('hr.timekeeping.manage'));
   view.innerHTML = `
     <div class="topbar">
-      <h2>Time Keeping</h2>
+      <div>
+        <h2>Time Keeping</h2>
+        <div class="sub">Pay cutoffs — open one to log daily time-in/out and generate payslips.</div>
+      </div>
       <div class="grow"></div>
-      <button class="btn secondary" id="tk-govforms">${UI.icon('sheet')} Payroll Worksheets ▾</button>
-      <button class="btn secondary" id="tk-holidays" style="margin-left:8px" title="The PH holiday calendar (Regular / Special Non-Working / Special Working) — pays every employee automatically unless overridden on that person's own Daily Time record">${UI.icon('calendar')} Holidays</button>
-      <button class="btn secondary" id="tk-noWork" style="margin-left:8px" title="Company-wide suspensions and other no-work declarations (typhoon, equipment failure, etc.) — not a public holiday, see the Holidays button for those — applies to every employee automatically, no per-employee linking needed">${UI.icon('alert')} No Work / Suspension</button>
-      <button class="btn secondary" id="tk-punchlog" style="margin-left:8px" title="Every raw time-clock punch — where each phone punch came from (office, distance, map), and remote punches by field staff">${UI.icon('sheet')} Punch Log</button>
-      <button class="btn secondary" id="tk-policy" style="margin-left:8px">${UI.icon('settings')} Policy Settings</button>
-      <button class="btn" id="tk-new" style="margin-left:8px">${UI.icon('plus')} New Cutoff</button>
+      <button type="button" class="btn secondary" id="tk-tools-toggle" aria-expanded="false" aria-controls="tk-tools">${UI.icon('settings')} Calendar &amp; tools</button>
+      ${canManage ? `<button type="button" class="btn" id="tk-new">${UI.icon('plus')} New Cutoff</button>` : ''}
     </div>
-    <div class="panel"><div id="tk-table"></div></div>`;
+    <div class="hr-tools" id="tk-tools" hidden>
+      <div class="hr-tools-group" role="group" aria-labelledby="tk-tools-cal">
+        <span class="hr-tools-label" id="tk-tools-cal">Calendar</span>
+        <button type="button" class="btn secondary small" id="tk-holidays" title="The PH holiday calendar (Regular / Special Non-Working / Special Working) — pays every employee automatically unless overridden on that person's own Daily Time record">${UI.icon('calendar', 14)} Holidays</button>
+        <button type="button" class="btn secondary small" id="tk-noWork" title="Company-wide suspensions and other no-work declarations (typhoon, equipment failure, etc.) — not a public holiday, see the Holidays button for those — applies to every employee automatically, no per-employee linking needed">${UI.icon('alert', 14)} No Work / Suspension</button>
+      </div>
+      <div class="hr-tools-group" role="group" aria-labelledby="tk-tools-rec">
+        <span class="hr-tools-label" id="tk-tools-rec">Records</span>
+        <button type="button" class="btn secondary small" id="tk-punchlog" title="Every raw time-clock punch — where each phone punch came from (office, distance, map), and remote punches by field staff">${UI.icon('sheet', 14)} Punch Log</button>
+        ${App.hasPermission('payroll.view') ? `<button type="button" class="btn secondary small" id="tk-govforms">${UI.icon('sheet', 14)} Payroll Worksheets</button>` : ''}
+      </div>
+      <div class="hr-tools-group" role="group" aria-labelledby="tk-tools-set">
+        <span class="hr-tools-label" id="tk-tools-set">Setup</span>
+        <button type="button" class="btn secondary small" id="tk-policy">${UI.icon('settings', 14)} Policy Settings</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="hr-filters" id="tk-filters" hidden>
+        <div class="search-box search">
+          <span class="ic">${UI.icon('search', 15)}</span>
+          <label class="hr-sr-only" for="tk-search">Search cutoffs</label>
+          <input type="search" id="tk-search" placeholder="Search name or date…" autocomplete="off" />
+        </div>
+        <div class="fld">
+          <label for="tk-year">Year</label>
+          <select id="tk-year"><option value="">All years</option></select>
+        </div>
+        <button type="button" class="btn secondary small" id="tk-filter-reset" hidden>Reset</button>
+        <div class="grow"></div>
+        <span class="hr-filter-count" id="tk-count" aria-live="polite"></span>
+      </div>
+      <div id="tk-table"></div>
+    </div>`;
 
+  wireHrDisclosure(view.querySelector('#tk-tools-toggle'), view.querySelector('#tk-tools'));
   view.querySelector('#tk-punchlog').addEventListener('click', () => punchLogModal());
   view.querySelector('#tk-policy').addEventListener('click', () => policySettingsModal());
-  view.querySelector('#tk-govforms').addEventListener('click', () => govFormsModal());
+  const govBtn = view.querySelector('#tk-govforms'); // payroll.view only
+  if (govBtn) govBtn.addEventListener('click', () => govFormsModal());
   view.querySelector('#tk-holidays').addEventListener('click', () => companyHolidaysModal());
   view.querySelector('#tk-noWork').addEventListener('click', () => noWorkMemoModal());
 
   const tableEl = view.querySelector('#tk-table');
+  const filtersEl = view.querySelector('#tk-filters');
+  const searchInput = view.querySelector('#tk-search');
+  const yearSel = view.querySelector('#tk-year');
+  const resetBtn = view.querySelector('#tk-filter-reset');
+  const countEl = view.querySelector('#tk-count');
+  let all = [];
 
   async function load() {
-    tableEl.innerHTML = '<div class="empty">Loading…</div>';
-    const list = await API.get('/hr/periods');
-    render(list);
+    tableEl.setAttribute('aria-busy', 'true');
+    tableEl.innerHTML = '<div class="empty" role="status">Loading cutoffs…</div>';
+    try {
+      all = await API.get('/hr/periods');
+    } catch (err) {
+      filtersEl.hidden = true;
+      tableEl.innerHTML = UI.emptyState({
+        icon: 'alert',
+        title: 'Couldn’t load cutoffs',
+        hint: (err && err.message) || 'Check your connection, then try again.',
+        action: '<button type="button" class="btn secondary" id="tk-retry">Try again</button>',
+      });
+      tableEl.querySelector('#tk-retry').onclick = () => load();
+      return;
+    } finally {
+      tableEl.removeAttribute('aria-busy');
+    }
+    // Year options come from the cutoffs themselves (newest first, like the list).
+    const years = [...new Set(all.map((p) => String(p.start_date || '').slice(0, 4)).filter(Boolean))];
+    const keep = years.includes(yearSel.value) ? yearSel.value : '';
+    yearSel.innerHTML = '<option value="">All years</option>' +
+      years.map((y) => `<option value="${UI.esc(y)}"${y === keep ? ' selected' : ''}>${UI.esc(y)}</option>`).join('');
+    render();
   }
 
-  function render(list) {
-    if (!list.length) {
+  function render() {
+    filtersEl.hidden = !all.length;
+    if (!all.length) {
       tableEl.innerHTML = UI.emptyState({
         icon: 'calendar',
         title: 'No cutoffs yet',
-        hint: 'Create a pay cutoff to start logging daily time-in/out.',
-        action: `<button class="btn" id="tk-empty-new">${UI.icon('plus')} New Cutoff</button>`,
+        hint: canManage ? 'Create a pay cutoff to start logging daily time-in/out.' : 'HR hasn’t created a pay cutoff yet.',
+        action: canManage ? `<button type="button" class="btn" id="tk-empty-new">${UI.icon('plus')} New Cutoff</button>` : '',
       });
       const en = tableEl.querySelector('#tk-empty-new');
       if (en) en.onclick = () => periodModal(null, load);
       return;
     }
+    const q = searchInput.value.trim().toLowerCase();
+    const year = yearSel.value;
+    const list = all.filter((p) =>
+      (!year || String(p.start_date || '').startsWith(year)) &&
+      (!q || [p.label, p.start_date, p.end_date].some((v) => String(v || '').toLowerCase().includes(q))));
+    resetBtn.hidden = !(q || year);
+    countEl.textContent = list.length === all.length
+      ? `${all.length} cutoff${all.length === 1 ? '' : 's'}`
+      : `${list.length} of ${all.length} cutoffs`;
+    if (!list.length) {
+      tableEl.innerHTML = UI.emptyState({
+        icon: 'search',
+        title: 'No cutoffs match these filters',
+        hint: 'Try a different name, date or year.',
+        action: '<button type="button" class="btn secondary" id="tk-clear-filters">Clear filters</button>',
+      });
+      tableEl.querySelector('#tk-clear-filters').onclick = () => resetFilters();
+      return;
+    }
     tableEl.innerHTML = `
       <table>
-        <thead><tr><th>Cutoff</th><th>Date range</th><th class="right">Employees</th><th></th></tr></thead>
+        <thead><tr><th>Cutoff</th><th>Date range</th><th class="right">Employees</th>${canManage ? '<th><span class="hr-sr-only">Actions</span></th>' : ''}</tr></thead>
         <tbody>${list.map((p) => `
           <tr class="clickable" data-open="${p.id}">
-            <td><strong>${UI.esc(p.label)}</strong></td>
+            <td><button type="button" class="hr-row-open">${UI.esc(p.label)}</button>${p.locked ? ' <span class="badge-pill">Paid · locked</span>' : ''}</td>
             <td>${UI.esc(p.start_date)} &ndash; ${UI.esc(p.end_date)}</td>
             <td class="right">${p.employee_count || 0}</td>
-            <td class="actions"><button class="icon-btn danger" title="Delete" data-del="${p.id}">${UI.icon('trash')}</button></td>
+            ${canManage ? `<td class="actions"><button type="button" class="icon-btn danger" title="Delete cutoff" aria-label="Delete cutoff ${UI.esc(p.label)}" data-del="${p.id}" ${p.locked ? 'disabled title="Locked after payment"' : ''}>${UI.icon('trash')}</button></td>` : ''}
           </tr>`).join('')}
         </tbody>
       </table>`;
-    tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); del(b.dataset.del, list); });
+    tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); del(b.dataset.del); });
+    // The label is a real <button>, so Tab + Enter/Space opens a cutoff; its click bubbles here.
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
       if (e.target.closest('.actions')) return;
       App.navigate('hr-timekeeping', { period_id: tr.dataset.open });
     });
   }
 
-  async function del(id, list) {
-    const p = list.find((x) => String(x.id) === String(id));
+  function resetFilters() {
+    searchInput.value = '';
+    yearSel.value = '';
+    render();
+    searchInput.focus();
+  }
+
+  async function del(id) {
+    const p = all.find((x) => String(x.id) === String(id));
+    if (!p) return;
     if (!await UI.confirmDialog(`Delete cutoff "${p.label}"? All logged time-in/out for it will be lost.`, 'Delete')) return;
-    await API.del('/hr/periods/' + id);
+    try {
+      await API.del('/hr/periods/' + id);
+    } catch (err) {
+      UI.toast((err && err.message) || 'Could not delete the cutoff', 'error');
+      return;
+    }
     UI.toast('Cutoff deleted');
     load();
   }
 
-  view.querySelector('#tk-new').addEventListener('click', () => periodModal(null, load));
+  // Only #tk-table re-renders, so the search field keeps focus/caret while typing.
+  searchInput.addEventListener('input', () => render());
+  yearSel.addEventListener('change', () => render());
+  resetBtn.addEventListener('click', () => resetFilters());
+  const newBtn = view.querySelector('#tk-new'); // hr.manage only
+  if (newBtn) newBtn.addEventListener('click', () => periodModal(null, load));
   await load();
+}
+
+// Inline progressive disclosure for rarely used tools: a toggle button that shows/hides a
+// panel rendered in normal flow (never an absolutely positioned menu, so nothing gets clipped
+// by a scrolling ancestor). Shared by the cutoff list and the cutoff detail screen.
+function hrWorkflowLoadError(root, error, retry) {
+  root.innerHTML=UI.emptyState({icon:'alert',title:'Couldn’t load these records',hint:error.message || 'Check your connection.',action:'<button type="button" class="btn secondary" data-hr-retry>Try again</button>'});
+  root.querySelector('[data-hr-retry]').onclick=retry;
+}
+
+function wireHrDisclosure(toggle, panel) {
+  if (!toggle || !panel) return;
+  toggle.addEventListener('click', () => {
+    const open = toggle.getAttribute('aria-expanded') !== 'true';
+    toggle.setAttribute('aria-expanded', String(open));
+    panel.hidden = !open;
+  });
 }
 
 /* ── Cutoff create/edit modal ─────────────────────────────────────────────── */
@@ -240,7 +358,8 @@ function punchLogModal() {
       </div>
       <p class="muted" style="font-size:12px;margin:6px 0 10px">Phone punches keep the location the phone reported:
         the office it was within, or its distance from the nearest office. <b>Outside office</b> punches come from staff
-        allowed to time in anywhere. A phone can fake its GPS, so look into anything that doesn't fit.</p>
+        allowed to time in anywhere. A phone can fake its GPS, so look into anything that doesn't fit.
+        <b>Device</b> flags a punch made on a borrowed phone, or on a phone another employee usually signs in on.</p>
       <div id="pl-list"><p class="muted">Loading…</p></div>`,
     cancelText: 'Close',
     onOpen: (ov) => {
@@ -259,19 +378,36 @@ function punchLogModal() {
               : 'Location recorded';
             return `${place} · ±${Math.round(r.accuracy_m || 0)} m · ${map}`;
           };
+          // src/modules/hr/clock.ts PunchDevice — recorded for review, never blocked.
+          const device = (r) => r.device_flag === 'borrowed'
+            ? `<span class="badge-pill low">Borrowed phone</span>${r.device_user_name ? ` <span class="muted">usually ${UI.esc(r.device_user_name)}</span>` : ''}`
+            : r.device_flag === 'other_user'
+              ? `<span class="badge-pill low">Another's phone</span>${r.device_user_name ? ` <span class="muted">usually ${UI.esc(r.device_user_name)}</span>` : ''}`
+              : '';
           list.innerHTML = rows.length ? `
             <table class="line-table">
-              <thead><tr><th>Time</th><th>Employee</th><th>In/Out</th><th>Source</th><th>Where</th></tr></thead>
+              <thead><tr><th>Time</th><th>Employee</th><th>In/Out</th><th>Source</th><th>Where</th><th>Device</th><th>Photo</th></tr></thead>
               <tbody>${rows.map((r) => `<tr>
                 <td>${UI.esc((r.ts || '').slice(0, 16))}</td>
                 <td>${UI.esc(r.name)}${r.employee_no ? ` <span class="muted">${UI.esc(r.employee_no)}</span>` : ''}</td>
                 <td>${r.kind === 'in' ? 'IN' : 'OUT'}</td>
                 <td>${UI.esc(SOURCE[r.source] || r.source)}</td>
                 <td>${where(r)}</td>
+                <td>${device(r)}</td>
+                <td>${r.photo_id ? `<button type="button" class="btn secondary small" data-pl-photo="${r.photo_id}">View</button>` : ''}</td>
               </tr>`).join('')}</tbody>
             </table>
             ${rows.length >= 1000 ? '<p class="muted" style="font-size:12px">Showing the latest 1000 — narrow the dates to see more.</p>' : ''}`
             : '<p class="muted">No punches in this range.</p>';
+          // The phone's time-in selfie, or the kiosk camera's photo (src/modules/hr/punch-photos.ts).
+          list.querySelectorAll('[data-pl-photo]').forEach((b) => b.onclick = () => {
+            const m = UI.modal({ title: 'Punch Photo', cancelText: 'Close', bodyHTML: '<div id="pl-photo-body" class="muted" style="text-align:center">Loading…</div>' });
+            const box = m.overlay.querySelector('#pl-photo-body');
+            API.blobUrl(`/hr/clock/photo/${b.dataset.plPhoto}`).then((objUrl) => {
+              box.className = '';
+              box.innerHTML = `<img src="${objUrl}" alt="Punch photo" style="max-width:100%;border-radius:10px;display:block;margin:0 auto" />`;
+            }).catch(() => { box.textContent = 'Could not load the photo.'; });
+          });
         } catch (e) { list.innerHTML = `<p class="form-error">${UI.esc(e.message || 'Could not load punches')}</p>`; }
       };
       ov.querySelector('#pl-go').onclick = load;
@@ -285,7 +421,7 @@ function punchLogModal() {
    for this PC); approval stores a token in that browser. */
 async function kioskDevicesModal() {
   let info = await API.get('/hr/clock/kiosk-devices');
-  const canManage = App.hasPermission('hr.manage');
+  const canManage = (App.hasPermission('hr.manage') || App.hasPermission('hr.timekeeping.manage'));
 
   UI.modal({
     title: 'Kiosk Devices',
@@ -370,9 +506,8 @@ function shiftModal(existing, onSaved) {
       <div><label>Name *</label><input data-f="name" value="${UI.esc(editing ? existing.name : '')}" placeholder="e.g. Morning" autofocus /></div>
       <div class="field-row" style="margin-top:10px">
         <div><label>Start time *</label><input data-f="start_time" type="time" value="${UI.esc(editing ? existing.start_time : '')}" /></div>
-        <div><label>End time *</label><input data-f="end_time" type="time" value="${UI.esc(editing ? existing.end_time : '')}" /></div>
+        <div><label>End time * ${UI.helpIcon('An end time earlier than the start time is an overnight shift, for example 22:00 to 06:00.')}</label><input data-f="end_time" type="time" value="${UI.esc(editing ? existing.end_time : '')}" /></div>
       </div>
-      <p class="muted" style="font-size:12px;margin:6px 0 0">An end time earlier than the start time is treated as an overnight shift (e.g. 22:00 &rarr; 06:00).</p>
       <div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px">
         <input type="checkbox" data-f="is_default" style="width:auto" ${editing && existing.is_default ? 'checked' : ''} /> Default shift
       </label></div>`,
@@ -395,7 +530,7 @@ function shiftModal(existing, onSaved) {
 /* ── Policy Settings: shifts list (add/edit/delete/default) + company-wide payroll rules ──── */
 async function policySettingsModal() {
   const [shiftsInit, policy] = await Promise.all([
-    API.get('/hr/shifts').catch(() => []),
+    API.get('/hr/shifts').catch(e => { UI.toast('Couldn’t load shifts: '+e.message,'error'); return []; }),
     API.get('/hr/payroll-policy').catch(() => null),
   ]);
   let shifts = shiftsInit;
@@ -421,6 +556,8 @@ async function policySettingsModal() {
         <div><label>Late deduction block</label>
           <select data-p="late_unit"><option value="minute">Per minute</option><option value="hour">Per hour</option></select></div>
       </div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0">Late within the grace period costs nothing; once past it,
+        the whole lateness counts from the shift start — 6 minutes late with a 5-minute grace is 6 minutes late.</p>
       <div class="field-row" style="margin-top:10px">
         <div><label>OT credit block</label>
           <select data-p="ot_unit"><option value="minute">Per minute</option><option value="30min">Per 30 minutes</option><option value="hour">Per hour</option></select></div>
@@ -432,12 +569,28 @@ async function policySettingsModal() {
         daily rate used in payroll is monthly rate ÷ this number (e.g. 26 working days/month). Maximum OT caps how
         many OT hours are credited/paid per day — hours worked past it are simply unpaid presence, not converted
         into anything else. Leave blank for no cap.</p>
+      <div class="field-row" style="margin-top:10px">
+        <div><label>OT grace (minutes)</label><input data-p="ot_grace_minutes" type="number" min="0" max="59" placeholder="0 = off" /></div>
+        <div><label>OT counts after (minutes)</label><input data-p="ot_min_minutes" type="number" min="0" max="480" placeholder="0 = from the first block" /></div>
+      </div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0"><strong>OT grace</strong>: a time-out this many minutes
+        or less short of the next OT block counts as reaching it — per-hour blocks with 5 minutes: out at 5:56 pm on
+        a 5:00 pm shift end is 1 hour of OT. <strong>OT counts after</strong>: no OT until this much is worked,
+        then it counts in OT credit blocks — 60 with per-30-minute blocks: out at 6:30 pm is 1.5 hours, 5:30 pm is
+        none. Leave both at 0 for plain blocks.</p>
       <div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px">
         <input type="checkbox" data-p="require_ot_form" style="width:auto" /> Require a linked Overtime Request form for OT to be paid
       </label></div>
       <p class="muted" style="font-size:12px;margin:2px 0 0">On (default): a clock-out past the shift's end only pays
         OT when that day is linked to an approved Overtime Request. Off: any clock-out past the shift's end
         auto-pays OT — no form needed.</p>
+      <div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" data-p="require_rest_day_form" style="width:auto" /> Require an approved Rest Day Work Request for the rest-day premium
+      </label></div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0">Off (default): working a rest day pays the +30%
+        automatically. On: the premium (and the rest-day OT rate) is paid only when that day is linked to an
+        approved Rest Day Work Request; without one it pays as an ordinary working day. An approved Change of
+        Rest Day moves the rest day itself, either way.</p>
       <hr style="margin:16px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
       <strong>Hours & Minimum Time</strong>
       <div class="field-row" style="margin-top:8px">
@@ -549,10 +702,13 @@ async function policySettingsModal() {
       </div>
       <div style="margin-top:14px">
         <label>Statutory deduction schedule</label>
-        <p class="muted" style="font-size:12px;margin:2px 0 6px">Most companies don't deduct everything every cutoff
-          — e.g. SSS only on the 1st cutoff, PhilHealth / Pag-IBIG / withholding tax only on the 2nd. Leave every box
-          checked to keep splitting each deduction evenly across every cutoff (the default). Whichever cutoff(s) a
-          deduction is checked for take the full monthly amount, split only across those.</p>
+        <p class="muted" style="font-size:12px;margin:2px 0 6px">Which cutoff(s) take each deduction. SSS and
+          Pag-IBIG follow the law's monthly basis — what the employee actually earned in the cutoffs ending that
+          month: an earlier cutoff takes the share of what's been earned so far, and the month's last checked cutoff
+          takes the rest. Check them on the <strong>last cutoff of the month</strong> for the exact legal amount; a
+          month whose only checked cutoff is an earlier one uses the employee's full-month rate instead, because the
+          month's pay isn't known yet. PhilHealth is on the fixed monthly basic rate (absences don't lower it), split
+          across its checked cutoffs.</p>
         <div id="tk-ded-schedule"></div>
       </div>
       <button type="button" class="btn" id="tk-policy-save" style="margin-top:14px">${UI.icon('sheet', 14)} Save Rules</button>
@@ -576,15 +732,27 @@ async function policySettingsModal() {
     cancelText: 'Close',
     onOpen: (ov) => {
       const p = (k) => ov.querySelector(`[data-p="${k}"]`);
-      ov.querySelector('#tk-rate-tables').onclick = () => rateTablesModal();
+      // Shifts, office locations and kiosks are timekeeping (hr.manage); the payroll rules and
+      // statutory rate tables are pay (payroll.manage / payroll.view — payroll/pay-access.ts).
+      const rateTablesBtn = ov.querySelector('#tk-rate-tables');
+      if (App.hasPermission('payroll.view')) rateTablesBtn.onclick = () => rateTablesModal();
+      else rateTablesBtn.hidden = true;
+      if (!App.hasPermission('payroll.configure')) {
+        const save = ov.querySelector('#tk-policy-save');
+        save.disabled = true;
+        save.title = 'Saving payroll rules needs the Run payroll permission';
+      }
       ov.querySelector('#tk-geofence').onclick = () => geofenceModal();
       ov.querySelector('#tk-kiosks').onclick = () => kioskDevicesModal();
       if (policy) {
         p('grace_minutes').value = policy.grace_minutes;
         p('late_unit').value = policy.late_unit;
         p('ot_unit').value = policy.ot_unit;
+        p('ot_grace_minutes').value = policy.ot_grace_minutes ?? 0;
+        p('ot_min_minutes').value = policy.ot_min_minutes ?? 0;
         p('ot_rate_percent').value = policy.ot_rate_percent;
         p('require_ot_form').checked = policy.require_ot_form !== false;
+        p('require_rest_day_form').checked = !!policy.require_rest_day_form;
         p('monthly_rate_divisor').value = policy.monthly_rate_divisor;
         p('pay_frequency').value = policy.pay_frequency || 'semi_monthly';
         p('auto_statutory').checked = policy.auto_statutory !== false;
@@ -659,7 +827,7 @@ async function policySettingsModal() {
         });
       }
       async function refreshShifts() {
-        shifts = await API.get('/hr/shifts').catch(() => []);
+        shifts = await API.get('/hr/shifts').catch(e => { UI.toast('Couldn’t load shifts: '+e.message,'error'); return []; });
         renderShifts();
       }
       renderShifts();
@@ -670,8 +838,11 @@ async function policySettingsModal() {
           grace_minutes: Number(p('grace_minutes').value) || 0,
           late_unit: p('late_unit').value,
           ot_unit: p('ot_unit').value,
+          ot_grace_minutes: Number(p('ot_grace_minutes').value) || 0,
+          ot_min_minutes: Number(p('ot_min_minutes').value) || 0,
           ot_rate_percent: Number(p('ot_rate_percent').value) || 0,
           require_ot_form: p('require_ot_form').checked,
+          require_rest_day_form: p('require_rest_day_form').checked,
           monthly_rate_divisor: Number(p('monthly_rate_divisor').value) || 26,
           max_ot_hours: p('max_ot_hours').value === '' ? null : Number(p('max_ot_hours').value),
           pay_frequency: p('pay_frequency').value,
@@ -731,7 +902,7 @@ async function thirteenthMonthModal() {
       let last = { rows: [], total: 0, year: '' };
       async function load() {
         ov.querySelector('#tm-body').innerHTML = '<div class="empty">Loading…</div>';
-        last = await API.get('/hr/thirteenth-month?year=' + yearSel.value).catch(() => ({ rows: [], total: 0, year: yearSel.value }));
+        try { last = await API.get('/hr/thirteenth-month?year=' + yearSel.value); } catch(e) { last={rows:[],total:0,year:yearSel.value}; hrWorkflowLoadError(ov.querySelector('#tm-body'),e,load); return; }
         const b = ov.querySelector('#tm-body');
         if (!last.rows.length) { b.innerHTML = '<div class="empty">No payslips found for ' + UI.esc(yearSel.value) + '.</div>'; return; }
         b.innerHTML = `<table class="line-table"><thead><tr>
@@ -769,16 +940,17 @@ async function thirteenthMonthModal() {
    underlying "No Work Memo" Data Form always existed for this; this is just a direct way to
    manage it from Time Keeping instead of via Form Builder / Data Forms. */
 async function noWorkMemoModal() {
+  const canWrite = App.hasPermission('forms.manage.hr');
   let formId = null;
   try {
     const forms = await API.get('/form-definitions');
     const f = forms.find((x) => x.slug === 'no_work_memo');
     formId = f ? f.id : null;
-  } catch { /* fall through to the error state below */ }
+  } catch(e) { UI.toast('Couldn’t load HR forms: '+e.message,'error'); return; }
   if (!formId) { UI.toast('No Work Memo form not found — ask an admin to check Form Builder (HR).', 'error'); return; }
 
   async function load() {
-    return API.get(`/form-definitions/${formId}/records`).catch(() => []);
+    return API.get('/hr/calendar/no_work_memo');
   }
 
   const m = UI.modal({
@@ -793,12 +965,12 @@ async function noWorkMemoModal() {
         cutoff covering these dates; paid credits a full day, unpaid is the same as an absence but documented. No
         per-employee linking needed.</p>
       <div style="display:flex;margin-bottom:8px"><div class="grow"></div>
-        <button type="button" class="btn secondary small" id="nw-new">${UI.icon('plus')} New</button></div>
+        ${canWrite ? `<button type="button" class="btn secondary small" id="nw-new">${UI.icon('plus')} New</button>` : ''}</div>
       <div id="nw-list"><div class="empty">Loading…</div></div>`,
     onOpen: (ov) => {
       const list = ov.querySelector('#nw-list');
       async function refresh() {
-        const records = await load();
+        let records; try { records = await load(); } catch(e) { hrWorkflowLoadError(list,e,refresh); return; }
         if (!records.length) {
           list.innerHTML = UI.emptyState({ icon: 'alert', title: 'No holidays or no-work declarations yet', hint: 'Add one for an upcoming holiday or suspension.' });
           return;
@@ -811,7 +983,7 @@ async function noWorkMemoModal() {
               <td>${UI.esc(r.data.date_to || '')}</td>
               <td>${UI.esc(r.data.reason || '')}</td>
               <td><span class="badge-pill ${r.data.paid === 'Yes' ? 'status-completed' : 'status-cancelled'}">${UI.esc(r.data.paid || 'No')}</span></td>
-              <td class="actions"><button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button></td>
+              <td class="actions">${canWrite ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button>` : ''}</td>
             </tr>`).join('')}</tbody></table>`;
         list.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
           if (!await UI.confirmDialog('Delete this declaration?', 'Delete')) return;
@@ -819,7 +991,7 @@ async function noWorkMemoModal() {
           catch (e) { UI.toast(e.message, 'error'); }
         });
       }
-      ov.querySelector('#nw-new').onclick = () => newModal(refresh);
+      const create=ov.querySelector('#nw-new'); if(create) create.onclick = () => newModal(refresh);
       refresh();
     },
   });
@@ -856,12 +1028,13 @@ async function noWorkMemoModal() {
    fields (date range + paid vs a single date + type) don't actually overlap much. Seeded with
    reference dates in src/db.ts; admin edits/adds/deletes freely here. */
 async function companyHolidaysModal() {
+  const canWrite = App.hasPermission('forms.manage.hr');
   let formId = null;
   try {
     const forms = await API.get('/form-definitions');
     const f = forms.find((x) => x.slug === 'company_holiday');
     formId = f ? f.id : null;
-  } catch { /* fall through to the error state below */ }
+  } catch(e) { UI.toast('Couldn’t load HR forms: '+e.message,'error'); return; }
   if (!formId) { UI.toast('Company Holidays form not found — ask an admin to check Form Builder (HR).', 'error'); return; }
 
   const TYPE_BADGE = {
@@ -871,7 +1044,7 @@ async function companyHolidaysModal() {
   };
 
   async function load() {
-    const records = await API.get(`/form-definitions/${formId}/records`).catch(() => []);
+    const records = await API.get('/hr/calendar/company_holiday');
     return records.slice().sort((a, b) => String(a.data.date || '').localeCompare(String(b.data.date || '')));
   }
 
@@ -885,12 +1058,12 @@ async function companyHolidaysModal() {
         not). A specific employee's Daily Time record can override any date here for that one person (Daily Time —
         Day Type column).</p>
       <div style="display:flex;margin-bottom:8px"><div class="grow"></div>
-        <button type="button" class="btn secondary small" id="ch-new">${UI.icon('plus')} New</button></div>
+        ${canWrite ? `<button type="button" class="btn secondary small" id="ch-new">${UI.icon('plus')} New</button>` : ''}</div>
       <div id="ch-list"><div class="empty">Loading…</div></div>`,
     onOpen: (ov) => {
       const list = ov.querySelector('#ch-list');
       async function refresh() {
-        const records = await load();
+        let records; try { records = await load(); } catch(e) { hrWorkflowLoadError(list,e,refresh); return; }
         if (!records.length) {
           list.innerHTML = UI.emptyState({ icon: 'calendar', title: 'No holidays yet', hint: 'Add a date and its DOLE-declared type.' });
           return;
@@ -901,7 +1074,7 @@ async function companyHolidaysModal() {
               <td class="mono">${UI.esc(r.data.date || '')}</td>
               <td>${UI.esc(r.data.name || '')}</td>
               <td><span class="badge-pill ${TYPE_BADGE[r.data.type] || ''}">${UI.esc(r.data.type || '')}</span></td>
-              <td class="actions"><button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button></td>
+              <td class="actions">${canWrite ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button>` : ''}</td>
             </tr>`).join('')}</tbody></table>`;
         list.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
           if (!await UI.confirmDialog('Delete this holiday?', 'Delete')) return;
@@ -909,7 +1082,7 @@ async function companyHolidaysModal() {
           catch (e) { UI.toast(e.message, 'error'); }
         });
       }
-      ov.querySelector('#ch-new').onclick = () => newModal(refresh);
+      const create=ov.querySelector('#ch-new'); if(create) create.onclick = () => newModal(refresh);
       refresh();
     },
   });
@@ -1065,10 +1238,11 @@ async function finalPayModal() {
 const RATE_KIND_LABEL = { sss: 'SSS', philhealth: 'PhilHealth', pagibig: 'Pag-IBIG', rwt: 'BIR withholding tax' };
 
 async function rateTablesModal() {
+  const canWrite=App.hasPermission('payroll.configure');
   async function load() {
-    return API.get('/hr/payroll-tables').catch(() => ({ rows: [], effective: {}, as_of: '' }));
+    return API.get('/hr/payroll-tables');
   }
-  let state = await load();
+  let state; try { state=await load(); } catch(e) { UI.modal({title:'Couldn’t load statutory rate tables',bodyHTML:`<p>${UI.esc(e.message)}</p>`,cancelText:'Close',confirmText:'Retry',protectChanges:false,onConfirm:()=>{rateTablesModal();}});return; }
 
   const m = UI.modal({
     title: 'Statutory rate tables',
@@ -1098,15 +1272,15 @@ async function rateTablesModal() {
             ${versions.map((v) => `
               <span class="chip" style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--border,#dce6f2);border-radius:12px;padding:1px 8px;margin:2px 4px 2px 0">
                 ${UI.esc(v.effective_from)}${v.note ? ` · ${UI.esc(v.note)}` : ''}
-                <button type="button" class="icon-btn" data-del-ver="${v.id}" title="Delete this version" style="padding:0">${UI.icon('trash', 12)}</button>
+                ${canWrite ? `<button type="button" class="icon-btn" data-del-ver="${v.id}" title="Delete this version" style="padding:0">${UI.icon('trash', 12)}</button>` : ''}
               </span>`).join('') || '<span class="muted">no stored versions — using the built-in 2026 seed</span>'}
           </div>
           <label style="font-size:12px">Effective figures (JSON)</label>
-          <textarea data-json="${kind}" rows="7" style="width:100%;font-family:monospace;font-size:12px">${UI.esc(JSON.stringify(eff, null, 2))}</textarea>
+          <textarea data-json="${kind}" ${canWrite ? '' : 'readonly'} rows="7" style="width:100%;font-family:monospace;font-size:12px">${UI.esc(JSON.stringify(eff, null, 2))}</textarea>
           <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
-            <input type="date" data-date="${kind}" value="${new Date().getFullYear() + 1}-01-01" style="width:150px" />
-            <input type="text" data-note="${kind}" placeholder="Note (e.g. 'per SSS Circular 2027-001')" style="flex:1" />
-            <button type="button" class="btn secondary small" data-save="${kind}">Save as new version</button>
+            <input type="date" data-date="${kind}" ${canWrite ? '' : 'disabled'} value="${new Date().getFullYear() + 1}-01-01" style="width:150px" />
+            <input type="text" data-note="${kind}" ${canWrite ? '' : 'disabled'} placeholder="Note (e.g. 'per SSS Circular 2027-001')" style="flex:1" />
+            ${canWrite ? `<button type="button" class="btn secondary small" data-save="${kind}">Save as new version</button>` : ''}
           </div>
         </div>`;
     }).join('');
@@ -1143,28 +1317,75 @@ async function rateTablesModal() {
 async function renderPeriod(view, periodId, initialEmployeeId) {
   let period = null;
   try { period = await API.get('/hr/periods/' + periodId); }
-  catch { view.innerHTML = '<div class="empty">Cutoff not found.</div>'; return; }
+  catch (err) {
+    // A deleted/bad id is final; anything else (offline, 5xx) gets a retry instead of a dead end.
+    const notFound = err && err.status === 404;
+    view.innerHTML = `
+      <div class="topbar">
+        <button type="button" class="btn secondary small" id="tk-back">${UI.icon('arrow-left', 14)} All Cutoffs</button>
+      </div>
+      <div class="panel">${UI.emptyState({
+        icon: notFound ? 'calendar' : 'alert',
+        title: notFound ? 'Cutoff not found' : 'Couldn’t load this cutoff',
+        hint: notFound ? 'It may have been deleted. Go back to the cutoff list.' : ((err && err.message) || 'Check your connection, then try again.'),
+        action: notFound ? '' : '<button type="button" class="btn secondary" id="tk-retry">Try again</button>',
+      })}</div>`;
+    view.querySelector('#tk-back').onclick = () => App.navigate('hr-timekeeping');
+    const retry = view.querySelector('#tk-retry');
+    if (retry) retry.onclick = () => renderPeriod(view, periodId, initialEmployeeId);
+    return;
+  }
   // The payroll_period label used for the last (or most recent) Generate Payslips run — it's
   // editable there, so "Post to GL" needs to target the same label, not always period.label.
   let lastPayrollPeriod = period.label;
+  // Roster/cutoff writes are hr.manage and payslip/GL writes payroll.manage server-side; read-only
+  // viewers keep the roster, daily grids and CSV export without buttons that would only 403.
+  const canManage = (App.hasPermission('hr.manage') || App.hasPermission('hr.timekeeping.manage')) && !period.locked;
+  const canPayroll = App.hasPermission('payroll.manage');
+  const showRate = App.hasPermission('payroll.view');
+  const canPostPayroll = App.hasPermission('payroll.approve');
+  const hasTools = canManage || canPayroll || canPostPayroll;
 
   view.innerHTML = `
-    <div class="topbar">
-      <button class="btn secondary small" id="tk-back">${UI.icon('arrow-left', 14)} All Cutoffs</button>
-      <h2 style="margin-left:10px">${UI.esc(period.label)}</h2>
-      <span class="muted" style="margin-left:6px">${UI.esc(period.start_date)} &ndash; ${UI.esc(period.end_date)}</span>
-      <div class="grow"></div>
-      <button class="btn secondary" id="tk-edit-period">${UI.icon('edit')} Edit Cutoff</button>
-      <button class="btn secondary" id="tk-import-punches" style="margin-left:8px" title="Punches fill time-in/out live while someone's on this cutoff's roster — use this to backfill anyone who punched before being added">${UI.icon('calendar')} Import Punches</button>
-      <button class="btn secondary" id="tk-export-csv" style="margin-left:8px" title="Download this cutoff's whole timekeeping roster as CSV">${UI.icon('download')} Export CSV</button>
-      <button class="btn secondary" id="tk-post-gl" style="margin-left:8px" title="Post this cutoff's generated payslips to the General Ledger">${UI.icon('building', 15)} Post to GL</button>
-      <button class="btn" id="tk-generate" style="margin-left:8px">${UI.icon('sheet')} Generate Payslips</button>
+    <div class="topbar tk-cutoff-header">
+      <button type="button" class="btn secondary small" id="tk-back">${UI.icon('arrow-left', 14)} All Cutoffs</button>
+      <div>
+        <h2 id="tk-period-title">${UI.esc(period.label)}</h2>
+        <div class="sub" id="tk-period-sub"></div>
+      </div>
+      <div class="tk-cutoff-actions">
+      <button type="button" class="btn secondary small tk-warning-trigger" id="tk-warnings" ${!(period.warnings || []).length ? 'hidden' : ''} aria-label="Review payroll warnings">${UI.icon('alert', 14)} Review notes <span id="tk-warning-count">${(period.warnings || []).length}</span></button>
+      <button type="button" class="btn secondary" id="tk-export-csv" title="Download this cutoff's whole timekeeping roster as CSV">${UI.icon('download')} Export CSV</button>
+      ${hasTools ? `<button type="button" class="btn secondary" id="tk-more-toggle" aria-expanded="false" aria-controls="tk-more">${UI.icon('settings')} Cutoff tools</button>` : ''}
+      ${canPayroll ? `<button type="button" class="btn" id="tk-generate">${UI.icon('sheet')} Generate Payslips</button>` : ''}
+      </div>
     </div>
+    ${period.locked ? '<div class="panel hr-workflow-notice"><strong>Locked after payment</strong><p class="muted">Attendance, roster and cutoff dates are read-only. Payroll must explicitly unmark all paid payslips to reopen them. Remaining unpaid payslips can still be reviewed and paid.</p></div>' : ''}
+    ${hasTools ? `<div class="hr-tools" id="tk-more" hidden>
+      ${canManage ? `<div class="hr-tools-group" role="group" aria-labelledby="tk-more-cutoff">
+        <span class="hr-tools-label" id="tk-more-cutoff">Cutoff</span>
+        <button type="button" class="btn secondary small" id="tk-edit-period">${UI.icon('edit', 14)} Edit Cutoff</button>
+        <button type="button" class="btn secondary small" id="tk-import-punches" title="Punches fill time-in/out live while someone's on this cutoff's roster — use this to backfill anyone who punched before being added">${UI.icon('calendar', 14)} Import Punches</button>
+      </div>` : ''}
+      ${canPostPayroll ? `<div class="hr-tools-group" role="group" aria-labelledby="tk-more-acct">
+        <span class="hr-tools-label" id="tk-more-acct">Accounting</span>
+        <button type="button" class="btn secondary small" id="tk-post-gl" title="Post this cutoff's generated payslips to the General Ledger">${UI.icon('building', 14)} Post to GL</button>
+      </div>` : ''}
+    </div>` : ''}
     <div class="panel">
       <div class="tk-roster-filters">
         <div class="search-box search">
           <span class="ic">${UI.icon('search', 15)}</span>
+          <label class="hr-sr-only" for="tk-roster-search">Search roster by name</label>
           <input type="search" id="tk-roster-search" placeholder="Search name…" autocomplete="off" />
+        </div>
+        <div class="fld">
+          <label for="tk-roster-show">Show</label>
+          <select id="tk-roster-show">
+            <option value="" selected>Everyone</option>
+            <option value="incomplete">Incomplete days</option>
+            <option value="unlogged">Nothing logged</option>
+          </select>
         </div>
         <div class="fld">
           <label for="tk-roster-group">Group</label>
@@ -1180,45 +1401,58 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             <option value="name">Name</option>
             <option value="department">Department</option>
             <option value="status">Status</option>
-            <option value="daily_rate">Daily Rate</option>
+            ${showRate ? '<option value="daily_rate">Daily Rate</option>' : ''}
             <option value="days_logged">Days Logged</option>
           </select>
         </div>
-        <button type="button" class="icon-btn" id="tk-roster-sort-dir" title="Reverse sort order">${UI.icon('adjust', 15)}</button>
+        <button type="button" class="btn secondary small" id="tk-roster-sort-dir" title="Change sort direction" aria-label="Sort descending">A–Z</button>
+        <button type="button" class="btn secondary small" id="tk-roster-reset" disabled>Reset</button>
         <div class="grow"></div>
-        <button class="btn danger small" id="tk-remove-selected" hidden>${UI.icon('trash')} Remove selected</button>
-        <button class="btn secondary" id="tk-add-emp">${UI.icon('plus')} Add Employee</button>
+        <span class="hr-filter-count" id="tk-roster-count" aria-live="polite"></span>
+        ${canManage ? `<button type="button" class="btn danger small" id="tk-remove-selected" hidden>${UI.icon('trash')} Remove selected</button>
+        <button type="button" class="btn secondary" id="tk-add-emp">${UI.icon('plus')} Add Employee</button>` : ''}
       </div>
       <div id="tk-roster"></div>
     </div>`;
 
+  function renderHeader() {
+    view.querySelector('#tk-period-title').textContent = period.label;
+    const n = (period.roster || []).length;
+    view.querySelector('#tk-period-sub').textContent =
+      `${period.start_date} – ${period.end_date} · ${n} employee${n === 1 ? '' : 's'} on roster`;
+  }
+  renderHeader();
+  view.querySelector('#tk-warnings').onclick = () => UI.modal({ title: 'Payroll review notes', bodyHTML: `<p class="muted">These warnings do not block payslip generation. Review anything that may affect this cutoff.</p><ul class="review-note-list">${(period.warnings || []).map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul>`, cancelText: 'Close', confirmText: 'Review approvals', protectChanges: false, onConfirm: () => App.navigate('hr-approvals') });
+
   view.querySelector('#tk-back').onclick = () => App.navigate('hr-timekeeping');
-  view.querySelector('#tk-edit-period').onclick = () => periodModal(period, async () => {
-    period = await API.get('/hr/periods/' + periodId);
-    renderRoster();
-  });
-  view.querySelector('#tk-generate').onclick = () => generateModal();
-  view.querySelector('#tk-post-gl').onclick = () => postGlModal();
-  view.querySelector('#tk-import-punches').onclick = async (e) => {
-    if (!App.hasPermission('hr.manage')) { UI.toast('Needs HR manage', 'error'); return; }
+  wireHrDisclosure(view.querySelector('#tk-more-toggle'), view.querySelector('#tk-more'));
+  const editBtn = view.querySelector('#tk-edit-period'); // hr.manage only
+  // reload() also re-renders the header, so an edited label/date range shows immediately.
+  if (editBtn) editBtn.onclick = () => periodModal(period, reload);
+  const genBtn = view.querySelector('#tk-generate'); // payroll.manage only
+  if (genBtn) genBtn.onclick = () => generateModal();
+  const glBtn = view.querySelector('#tk-post-gl');
+  if (glBtn) glBtn.onclick = () => postGlModal();
+  const importBtn = view.querySelector('#tk-import-punches'); // hr.manage only
+  if (importBtn) importBtn.onclick = async () => {
     const ok = await UI.confirmDialog(
       'Fill each roster day’s time-in / time-out from the employee’s clock punches for that date. Days you’ve already set by hand are left untouched.',
       'Import'
     );
     if (!ok) return;
-    e.target.disabled = true;
+    importBtn.disabled = true;
     try {
       const r = await API.post(`/hr/clock/import/${periodId}`);
       UI.toast(`Filled ${r.filled} day(s) across ${r.dates} date(s)`, 'success');
-      period = await API.get('/hr/periods/' + periodId);
-      renderRoster();
+      await reload();
     } catch (ex) {
       UI.toast(ex.message || 'Import failed', 'error');
     } finally {
-      e.target.disabled = false;
+      importBtn.disabled = false;
     }
   };
-  view.querySelector('#tk-add-emp').onclick = () => addEmployeeModal();
+  const addEmpBtn = view.querySelector('#tk-add-emp'); // hr.manage only
+  if (addEmpBtn) addEmpBtn.onclick = () => addEmployeeModal();
   view.querySelector('#tk-export-csv').onclick = () =>
     API.download(`/hr/periods/${periodId}/attendance/export`, `timekeeping-${period.label.replace(/[^a-z0-9]+/gi, '-')}.csv`)
       .catch((e) => UI.toast(e.message, 'error'));
@@ -1228,9 +1462,17 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   const sortSel = view.querySelector('#tk-roster-sort');
   const sortDirBtn = view.querySelector('#tk-roster-sort-dir');
   const searchInput = view.querySelector('#tk-roster-search');
-  const rosterView = { groupBy: 'department', sortBy: 'name', sortDir: 'asc', search: '' };
+  const showSel = view.querySelector('#tk-roster-show');
+  const resetBtn = view.querySelector('#tk-roster-reset');
+  const countEl = view.querySelector('#tk-roster-count');
+  const ROSTER_DEFAULTS = { groupBy: 'department', sortBy: 'name', sortDir: 'asc', search: '', show: '' };
+  const rosterView = { ...ROSTER_DEFAULTS };
+  const SHOW_FILTERS = {
+    incomplete: (r) => (r.days_incomplete || 0) > 0,
+    unlogged: (r) => !(r.days_logged || 0),
+  };
 
-  const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', resigned: 'Resigned', terminated: 'Terminated' };
+  const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', suspended: 'Suspended', resigned: 'Resigned', terminated: 'Terminated' };
   const SORTERS = {
     name: (r) => (r.name || '').toLowerCase(),
     department: (r) => (r.department_name || '').toLowerCase(),
@@ -1253,60 +1495,97 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   function rosterRowHtml(r) {
     return `
       <tr class="clickable" data-open="${r.employee_id}">
-        <td><input type="checkbox" class="tk-roster-chk" data-emp="${r.employee_id}" data-name="${UI.esc(r.name)}" /></td>
-        <td><strong>${UI.esc(r.name)}</strong></td>
+        ${canManage ? `<td><input type="checkbox" class="tk-roster-chk" data-emp="${r.employee_id}" data-name="${UI.esc(r.name)}" aria-label="Select ${UI.esc(r.name)}" /></td>` : ''}
+        <td><button type="button" class="hr-row-open" title="Open daily time">${UI.esc(r.name)}</button></td>
         <td>${UI.esc(r.department_name || '—')}</td>
         <td>${UI.esc(STATUS_LABELS[r.status] || r.status || '—')}</td>
-        <td class="right">${UI.money(r.daily_rate)}</td>
+        ${showRate ? `<td class="right">${UI.money(r.daily_rate)}</td>` : ''}
         <td class="right">${r.days_logged || 0} / ${r.days_total || 0}${r.days_incomplete
           ? ` <span class="tk-roster-incomplete" title="${r.days_incomplete} incomplete day(s) — only one of time in/out set">${UI.icon('alert', 13)} ${r.days_incomplete}</span>`
           : ''}</td>
-        <td class="actions">${r.days_incomplete && r.user_id
-          ? `<button class="icon-btn" title="Send this employee a notice to fix their missing time-out and see HR" data-notify="${r.employee_id}">${UI.icon('send', 15)}</button>`
-          : ''}<button class="icon-btn danger" title="Remove from cutoff" data-rm="${r.employee_id}">${UI.icon('trash')}</button></td>
+        <td class="actions">${canManage && r.days_incomplete && r.user_id
+          ? `<button type="button" class="icon-btn" title="Send this employee a notice to fix their missing time-out and see HR" aria-label="Send ${UI.esc(r.name)} a missing time-out notice" data-notify="${r.employee_id}">${UI.icon('send', 15)}</button>`
+          : ''}${canManage ? `<button type="button" class="icon-btn danger" title="Remove from cutoff" aria-label="Remove ${UI.esc(r.name)} from cutoff" data-rm="${r.employee_id}">${UI.icon('trash')}</button>` : ''}</td>
       </tr>`;
   }
 
   // One table for the whole roster — group headers are separator rows inside its <tbody>, not
   // separate <table>s, so every group's columns line up on the same fixed grid. `sections` is
-  // [{ name, rows }]; name === null renders no header (the ungrouped case).
+  // [{ name, rows }]; name === null renders no header (the ungrouped case). The checkbox and
+  // rate columns exist only for roles that see them, so the <col>s and group colspan follow suit.
   function rosterTableHtml(sections) {
+    const colCount = 5 + (canManage ? 1 : 0) + (showRate ? 1 : 0);
     const body = sections.map((s) => {
       const head = s.name != null
-        ? `<tr class="tk-group-row"><td colspan="7">${UI.esc(s.name)} <span>(${s.rows.length})</span></td></tr>`
+        ? `<tr class="tk-group-row"><td colspan="${colCount}">${UI.esc(s.name)} <span>(${s.rows.length})</span></td></tr>`
         : '';
       return head + s.rows.map(rosterRowHtml).join('');
     }).join('');
     return `
       <table class="tk-roster-table">
         <colgroup>
-          <col class="c-chk" /><col class="c-emp" /><col class="c-dept" />
-          <col class="c-status" /><col class="c-rate" /><col class="c-days" /><col class="c-act" />
+          ${canManage ? '<col class="c-chk" />' : ''}<col class="c-emp" /><col class="c-dept" />
+          <col class="c-status" />${showRate ? '<col class="c-rate" />' : ''}<col class="c-days" /><col class="c-act" />
         </colgroup>
-        <thead><tr><th></th><th>Employee</th><th>Department</th><th>Status</th><th class="right">Daily Rate</th><th class="right">Days Logged</th><th></th></tr></thead>
+        <thead><tr>${canManage ? '<th><span class="hr-sr-only">Select</span></th>' : ''}<th>Employee</th><th>Department</th><th>Status</th>${showRate ? '<th class="right">Daily Rate</th>' : ''}<th class="right">Days Logged</th><th><span class="hr-sr-only">Actions</span></th></tr></thead>
         <tbody>${body}</tbody>
       </table>`;
   }
 
+  function rosterFiltersActive() {
+    return Object.keys(ROSTER_DEFAULTS).some((k) => k === 'search'
+      ? !!rosterView.search.trim()
+      : rosterView[k] !== ROSTER_DEFAULTS[k]);
+  }
+
+  function resetRosterView() {
+    Object.assign(rosterView, ROSTER_DEFAULTS);
+    searchInput.value = '';
+    showSel.value = ROSTER_DEFAULTS.show;
+    groupSel.value = ROSTER_DEFAULTS.groupBy;
+    sortSel.value = ROSTER_DEFAULTS.sortBy;
+    renderRoster();
+    searchInput.focus();
+  }
+
   function renderRoster() {
+    renderHeader();
     const fullRoster = period.roster || [];
+    const selected = new Set([...rosterEl.querySelectorAll('.tk-roster-chk:checked')].map(el => el.dataset.emp));
+    resetBtn.disabled = !rosterFiltersActive();
+    const numericSort = ['daily_rate', 'days_logged'].includes(rosterView.sortBy);
+    sortDirBtn.textContent = numericSort ? (rosterView.sortDir === 'asc' ? 'Low–high' : 'High–low') : (rosterView.sortDir === 'asc' ? 'A–Z' : 'Z–A');
+    sortDirBtn.title = `Current order: ${sortDirBtn.textContent}. Click to reverse.`;
+    sortDirBtn.setAttribute('aria-label', rosterView.sortDir === 'asc' ? 'Sort descending' : 'Sort ascending');
     if (!fullRoster.length) {
+      countEl.textContent = '';
       rosterEl.innerHTML = UI.emptyState({
         icon: 'users',
         title: 'No employees on this cutoff yet',
-        hint: 'Add employees to start logging their daily time-in/out.',
+        hint: canManage ? 'Add employees to start logging their daily time-in/out.' : 'HR hasn’t added anyone to this cutoff yet.',
+        action: canManage ? `<button type="button" class="btn" id="tk-empty-add">${UI.icon('plus')} Add Employee</button>` : '',
       });
+      const emptyAdd = rosterEl.querySelector('#tk-empty-add');
+      if (emptyAdd) emptyAdd.onclick = () => addEmployeeModal();
+      updateRemoveSelectedBtn();
       return;
     }
 
     const q = rosterView.search.trim().toLowerCase();
-    const roster = q ? fullRoster.filter((r) => (r.name || '').toLowerCase().includes(q)) : fullRoster;
+    const showFn = SHOW_FILTERS[rosterView.show];
+    const roster = fullRoster.filter((r) =>
+      (!q || (r.name || '').toLowerCase().includes(q)) && (!showFn || showFn(r)));
+    countEl.textContent = roster.length === fullRoster.length
+      ? `${fullRoster.length} employee${fullRoster.length === 1 ? '' : 's'}`
+      : `${roster.length} of ${fullRoster.length} employees`;
     if (!roster.length) {
       rosterEl.innerHTML = UI.emptyState({
         icon: 'search',
-        title: `No one on this cutoff matches “${rosterView.search.trim()}”`,
-        hint: 'Clear the search to see the whole roster.',
+        title: q ? `No one on this cutoff matches “${rosterView.search.trim()}”` : 'No one on this cutoff matches this filter',
+        hint: 'Clear the filters to see the whole roster.',
+        action: '<button type="button" class="btn secondary" id="tk-roster-clear">Clear filters</button>',
       });
+      rosterEl.querySelector('#tk-roster-clear').onclick = () => resetRosterView();
       updateRemoveSelectedBtn();
       return;
     }
@@ -1329,6 +1608,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       );
     }
 
+    rosterEl.querySelectorAll('.tk-roster-chk').forEach(el => { el.checked = selected.has(el.dataset.emp); });
     rosterEl.querySelectorAll('[data-rm]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); removeEmployee(b.dataset.rm, roster); });
     rosterEl.querySelectorAll('[data-notify]').forEach((b) => b.onclick = (e) => {
       e.stopPropagation();
@@ -1347,12 +1627,13 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     updateRemoveSelectedBtn();
   }
 
-  const removeSelectedBtn = view.querySelector('#tk-remove-selected');
+  const removeSelectedBtn = view.querySelector('#tk-remove-selected'); // hr.manage only
   function selectedEmployees() {
     return Array.from(rosterEl.querySelectorAll('.tk-roster-chk:checked'))
       .map((c) => ({ id: c.dataset.emp, name: c.dataset.name }));
   }
   function updateRemoveSelectedBtn() {
+    if (!removeSelectedBtn) return;
     const n = selectedEmployees().length;
     removeSelectedBtn.hidden = n === 0;
     removeSelectedBtn.textContent = '';
@@ -1362,7 +1643,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   // confirm — each removal is its own irreversible action (their logged time for this cutoff
   // goes with it), so a rushed single "yes to all" click shouldn't be able to take out someone
   // the user didn't mean to. Cancelling one skips just that employee and moves to the next.
-  removeSelectedBtn.onclick = async () => {
+  if (removeSelectedBtn) removeSelectedBtn.onclick = async () => {
     const targets = selectedEmployees();
     let removed = 0, skipped = 0;
     for (const t of targets) {
@@ -1406,22 +1687,40 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
 
   groupSel.addEventListener('change', () => { rosterView.groupBy = groupSel.value; renderRoster(); });
   sortSel.addEventListener('change', () => { rosterView.sortBy = sortSel.value; renderRoster(); });
+  showSel.addEventListener('change', () => { rosterView.show = showSel.value; renderRoster(); });
   sortDirBtn.addEventListener('click', () => {
     rosterView.sortDir = rosterView.sortDir === 'asc' ? 'desc' : 'asc';
     renderRoster();
   });
+  resetBtn.addEventListener('click', () => resetRosterView());
   // Only #tk-roster is re-rendered, so the search field keeps focus/caret while typing.
   searchInput.addEventListener('input', () => { rosterView.search = searchInput.value; renderRoster(); });
 
+  // Refetch after any write. A failed refresh keeps the roster already on screen (the write
+  // itself went through) and says so, rather than throwing into the caller's success path.
   async function reload() {
-    period = await API.get('/hr/periods/' + periodId);
+    try {
+      period = await API.get('/hr/periods/' + periodId);
+    } catch (err) {
+      UI.toast(`Couldn’t refresh the roster: ${(err && err.message) || 'request failed'}`, 'error');
+      return;
+    }
+    if (period.locked) { App.navigate('hr-timekeeping', { period_id: periodId }); return; }
+    const warningPanel = view.querySelector('#tk-warnings');
+    if (warningPanel) { warningPanel.hidden = !(period.warnings || []).length; warningPanel.querySelector('#tk-warning-count').textContent = (period.warnings || []).length; }
     renderRoster();
   }
 
   async function removeEmployee(employeeId, roster) {
     const r = roster.find((x) => String(x.employee_id) === String(employeeId));
+    if (!r) return;
     if (!await UI.confirmDialog(`Remove ${r.name} from this cutoff? Their logged time for it will be lost.`, 'Remove')) return;
-    await API.del(`/hr/periods/${periodId}/employees/${employeeId}`);
+    try {
+      await API.del(`/hr/periods/${periodId}/employees/${employeeId}`);
+    } catch (err) {
+      UI.toast((err && err.message) || 'Could not remove the employee', 'error');
+      return;
+    }
     UI.toast('Employee removed from cutoff');
     reload();
   }
@@ -1572,12 +1871,12 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
 
   async function dailyGridModal(rosterRow) {
     const employeeId = rosterRow.employee_id;
-    const FORM_LINK_SLUGS = ['overtime_request', 'halfday_request', 'leave_request', 'undertime_request', 'offset_form', 'lunch_offset_form', 'reported_absence'];
+    const FORM_LINK_SLUGS = ['overtime_request', 'halfday_request', 'leave_request', 'undertime_request', 'offset_form', 'lunch_offset_form', 'reported_absence', 'rest_day_work_request', 'rest_day_change'];
     const [days, shifts, policy, holidayForms] = await Promise.all([
       API.get(`/hr/periods/${periodId}/attendance?employee_id=${employeeId}`),
-      API.get('/hr/shifts').catch(() => []),
-      API.get('/hr/payroll-policy').catch(() => ({ default_rest_days: [0, 6] })),
-      API.get('/form-definitions').catch(() => []),
+      API.get('/hr/shifts').catch(e => { UI.toast('Couldn’t load shifts: '+e.message,'error'); return []; }),
+      API.get('/hr/payroll-policy').catch(e => { UI.toast('Couldn’t load payroll policy. Daily previews may be incomplete; payroll uses the server policy.','error'); return { default_rest_days: [0, 6] }; }),
+      API.get('/form-definitions').catch(e => { UI.toast('Couldn’t load HR forms: '+e.message,'error'); return []; }),
     ]);
     const defaultShift = shifts.find((s) => s.is_default) || null;
     days.forEach((d) => {
@@ -1591,9 +1890,13 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       d._formIds = ids.filter((n) => Number.isInteger(n) && n > 0);
       d._links = [];
     });
+    // Every form linked when the grid opened — lets restDaySwapFor tell "HR just unlinked this
+    // Change of Rest Day" (ignore the server's swap until Save) from a swap whose form is linked
+    // on a day in some other cutoff (keep it).
+    const loadedFormIds = new Set(days.flatMap((d) => d._formIds));
 
-    // "Make a new form" — the fields that actually drive payroll for each request type; the
-    // record is created approved and linked to this day in one step (POST /form-records).
+    // "Make a new form" — the configured form fields plus payroll-specific fields. Requests
+    // remain pending until a department approver or HR decides them.
     const MAKE_FORM_TYPES = [
       { slug: 'halfday_request', label: 'Half Day', dateKey: 'date', fields: [
         { key: 'session', label: 'Session', type: 'select', options: ['Morning (AM)', 'Afternoon (PM)'], required: true },
@@ -1618,7 +1921,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
         { key: 'new_lunch_out', label: 'Approved lunch/break start', type: 'time', required: true },
         { key: 'new_lunch_in', label: 'Approved return (optional)', type: 'time' },
       ] },
-      { slug: 'leave_request', label: 'Leave (this day)', dateKey: 'date_from', fields: [
+      { slug: 'leave_request', label: 'Leave', dateKey: 'date_from', fields: [
         { key: 'leave_type', label: 'Leave type', type: 'select', required: true,
           options: ['Vacation Leave', 'Sick Leave', 'Emergency Leave', 'Maternity/Paternity Leave', 'Bereavement Leave', 'Unpaid Leave'] },
       ] },
@@ -1630,7 +1933,31 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       { slug: 'reported_absence', label: 'Reported', dateKey: 'work_date', fields: [
         { key: 'reason', label: 'What was reported', type: 'text', required: true },
       ] },
+      // Authorizes working this rest day — pays the rest-day premium when Policy Settings
+      // requires the form (require_rest_day_form); otherwise it's the paper trail.
+      { slug: 'rest_day_work_request', label: 'Rest Day Work', dateKey: 'work_date', fields: [] },
+      // Moves the rest day: this date becomes a working day, new_rest_day the rest day
+      // (src/modules/hr/rest-day.ts). Filed on the rest day being worked.
+      { slug: 'rest_day_change', label: 'Change of Rest Day', dateKey: 'original_rest_day', fields: [
+        { key: 'new_rest_day', label: 'New rest day', type: 'date', required: true },
+      ] },
     ];
+
+    // Preserve configured details (including custom fields); only employee identity and the
+    // selected attendance date are supplied by this grid. Approval metadata is server-owned.
+    MAKE_FORM_TYPES.forEach((type) => {
+      const def = holidayForms.find((form) => form.slug === type.slug);
+      const supplied = ['employee_id', 'employee_name', 'employee_no', 'name', 'department', 'position', type.dateKey,
+        'approved_by', 'decided_by', 'decided_at', 'decision_note'];
+      if (type.slug === 'leave_request') supplied.push('date_to', 'days', 'leave_dates');
+      const fields = new Map(type.fields.map((field) => [field.key, field]));
+      (def && Array.isArray(def.fields) ? def.fields : []).forEach((field) => {
+        if (!supplied.includes(field.key)) fields.set(field.key, { ...fields.get(field.key), ...field });
+      });
+      if (!fields.has('reason')) fields.set('reason', { key: 'reason', label: 'Reason', type: 'textarea' });
+      fields.set('reason', { ...fields.get('reason'), required: true, type: 'textarea' });
+      type.fields = [...fields.values()];
+    });
 
     // Same two-layer resolution as the payroll engine (hr-payroll-compute.ts via hr.routes.ts)
     // — a per-record override wins, else the Company Holidays calendar, else not a holiday —
@@ -1639,7 +1966,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     const holidayForm = holidayForms.find((f) => f.slug === 'company_holiday');
     const holidayByDate = {};
     if (holidayForm) {
-      const records = await API.get(`/form-definitions/${holidayForm.id}/records`).catch(() => []);
+      const records = await API.get('/hr/calendar/company_holiday').catch(e => { UI.toast('Holiday calendar unavailable: '+e.message,'error');return []; });
       const TYPE_TO_CODE = { 'Regular Holiday': 'regular', 'Special Non-Working Holiday': 'special_non_working', 'Special Working Holiday': 'special_working' };
       records.forEach((r) => { if (r.data.date) holidayByDate[r.data.date] = TYPE_TO_CODE[r.data.type] || null; });
     }
@@ -1651,7 +1978,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     const noWorkForm = holidayForms.find((f) => f.slug === 'no_work_memo');
     let noWorkMemos = [];
     if (noWorkForm) {
-      noWorkMemos = (await API.get(`/form-definitions/${noWorkForm.id}/records`).catch(() => []))
+      noWorkMemos = (await API.get('/hr/calendar/no_work_memo').catch(e => { UI.toast('No-work calendar unavailable: '+e.message,'error');return []; }))
         .filter((r) => r.data.date_from && r.data.date_to);
     }
     function noWorkFor(workDate) {
@@ -1680,6 +2007,37 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
       <option value="yes" ${selected === 'yes' ? 'selected' : ''}>Rest day</option>
       <option value="no" ${selected === 'no' ? 'selected' : ''}>Working day</option>`;
 
+    // Rest-day forms only count once approved (same rule as payroll — src/modules/hr/rest-day.ts).
+    const isApprovedLink = (l) => l.status === 'approved';
+    // Mirror of restDaySwapsFor: an approved Change of Rest Day linked on ANY day of this grid
+    // (saved or not) moves the rest day for both of its dates. A swap the server found through a
+    // day outside this grid (rest_day_swap) still applies unless HR unlinked its form here.
+    function restDaySwapFor(d) {
+      let local = null;
+      days.forEach((dd) => (dd._links || []).forEach((l) => {
+        if (l.slug !== 'rest_day_change' || !isApprovedLink(l) || !l.data) return;
+        if (l.data.original_rest_day === d.work_date) local = 'no';
+        if (l.data.new_rest_day === d.work_date) local = 'yes';
+      }));
+      if (local) return local;
+      if (!d.rest_day_swap) return null;
+      const linkedNow = days.some((dd) => (dd._formIds || []).includes(d.rest_day_swap_form_id));
+      return loadedFormIds.has(d.rest_day_swap_form_id) && !linkedNow ? null : d.rest_day_swap;
+    }
+    // Per-day override, then an approved Change of Rest Day, then the weekly pattern.
+    function isRestDayFor(d) {
+      if (d.rest_day === 'yes') return true;
+      if (d.rest_day === 'no') return false;
+      const swap = restDaySwapFor(d);
+      return swap ? swap === 'yes' : empRestDays.includes(weekdayOf(d.work_date));
+    }
+    // Worked a rest day that Policy Settings says needs an approved Rest Day Work Request to earn
+    // its premium, and none is linked — same one-click nudge as Possible Half Day?.
+    function restDayFormMissing(d) {
+      return !!policy.require_rest_day_form && isRestDayFor(d) && !!(d.time_in || d.time_out)
+        && !(d._links || []).some((l) => l.slug === 'rest_day_work_request' && isApprovedLink(l));
+    }
+
     // Manual "credit this as a half day anyway" call (attendance_records.half_day_override) —
     // for a day HR knows was a half day but that neither has a linked Half Day request nor
     // happens to match the automatic possible-half-day heuristic (see possibleHalfDayFlagged
@@ -1700,28 +2058,59 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     // linked Offset form's shifted end isn't reflected here (rare combo, still correct at
     // generate time). Purely a hint shown when "Make a new form → Overtime" is picked, so HR
     // doesn't have to guess an "estimate" the engine ignores anyway.
-    function detectedOtText(d) {
+    // Early OT (time before the shift start) is only offered — and only paid — when the day's
+    // time-in is at least this far ahead of the shift start (EARLY_OT_MIN_MINUTES in
+    // hr-payroll-compute.ts).
+    const EARLY_OT_MIN_MINUTES = 60;
+    const toMinHM = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    /** Minutes this day's time-in came before its shift start (0 if not early / unknown). */
+    function earlyMinutesFor(d) {
+      const shift = shifts.find((s) => String(s.id) === String(d.shift_id));
+      if (!shift || !d.time_in) return 0;
+      return Math.max(0, toMinHM(shift.start_time) - toMinHM(d.time_in));
+    }
+    // Early OT and after-shift OT share the day's cap, early first — the payroll engine's rule:
+    // the cap is max_ot_hours, raised (never lowered) by the form's approved hours.
+    function detectedOtText(d, opts = {}) {
       if (!d.time_in || !d.time_out) return 'Enter the day’s Time Out first — OT is computed from it.';
       const shift = shifts.find((s) => String(s.id) === String(d.shift_id));
       if (!shift) return 'Assign a shift to this day — OT is measured against the shift’s end time.';
-      const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
-      const start = toMin(shift.start_time);
-      let end = toMin(shift.end_time); if (end < start) end += 24 * 60;
-      let out = toMin(d.time_out); if (out < toMin(d.time_in)) out += 24 * 60;
+      const start = toMinHM(shift.start_time);
+      let end = toMinHM(shift.end_time); if (end < start) end += 24 * 60;
+      let out = toMinHM(d.time_out); if (out < toMinHM(d.time_in)) out += 24 * 60;
       const raw = out - end;
-      if (raw <= 0) return 'No time logged past the shift end — nothing to pay as OT.';
+      const earlyRaw = earlyMinutesFor(d);
       const unitMin = policy.ot_unit === 'hour' ? 60 : policy.ot_unit === '30min' ? 30 : 1;
-      let mins = Math.floor(raw / unitMin) * unitMin;
-      let capped = false;
-      if (policy.max_ot_hours != null && mins > policy.max_ot_hours * 60) { mins = policy.max_ot_hours * 60; capped = true; }
-      if (mins <= 0) return `${raw} min past the shift end — under one ${policy.ot_unit} block, so it rounds to 0 OT.`;
-      const h = mins % 60 ? (mins / 60).toFixed(2) : String(mins / 60);
-      return `≈ ${h} h will be paid as OT — computed from the logged Time Out${capped ? `, capped at ${policy.max_ot_hours} h` : ''}.`;
+      // Mirrors otCreditMinutes in hr-payroll-compute.ts: nothing until ot_min_minutes, then
+      // whole blocks; within ot_grace_minutes of the next step counts as reaching it.
+      const otMin = Number(policy.ot_min_minutes) || 0, otGrace = Number(policy.ot_grace_minutes) || 0;
+      const credit = (m) => {
+        if (m <= 0) return 0;
+        const got = m < otMin ? 0 : otMin + Math.floor((m - otMin) / unitMin) * unitMin;
+        if (!otGrace || (unitMin === 1 && m >= otMin)) return got;
+        const next = m < otMin ? otMin : got + unitMin;
+        return m + otGrace >= next ? next : got;
+      };
+      const approved = Number(opts.approvedHours) > 0 ? Number(opts.approvedHours) * 60 : 0;
+      const cap = policy.max_ot_hours != null ? Math.max(policy.max_ot_hours * 60, approved) : null;
+      const earlyRounded = opts.early && earlyRaw >= EARLY_OT_MIN_MINUTES ? credit(earlyRaw) : 0;
+      const early = cap != null ? Math.min(earlyRounded, cap) : earlyRounded;
+      const lateRounded = credit(raw);
+      const late = cap != null ? Math.min(lateRounded, cap - early) : lateRounded;
+      const capped = early + late < earlyRounded + lateRounded;
+      const hrs = (m) => (m % 60 ? (m / 60).toFixed(2) : String(m / 60));
+      if (early + late <= 0) {
+        if (raw <= 0) return 'No time logged past the shift end — nothing to pay as OT.';
+        return `${raw} min past the shift end — not enough to count as OT under the OT rules (Policy Settings).`;
+      }
+      const parts = early > 0 ? ` (${hrs(early)} h early + ${hrs(late)} h after the shift)` : '';
+      return `≈ ${hrs(early + late)} h will be paid as OT${parts} — computed from the logged times${capped ? `, capped at ${hrs(cap)} h for the day` : ''}.`;
     }
 
     function possibleHalfDayFlagged(d) {
-      if ((d._links || []).some((l) => l.slug === 'halfday_request')) return false; // already correctly linked
+      if ((d._links || []).some(l => isApprovedLink(l) || l.slug === 'reported_absence')) return false; // a linked form (Half Day, Undertime…) already says what the day was
       if (d.half_day_override) return false; // HR already manually credited this day a half day
+      if (rosterRow.always_whole_day) return false; // always paid a whole day — never a half day
       const workedMin = workedMinutesFor(d);
       if (workedMin == null) return false;
       const shift = shifts.find((s) => String(s.id) === String(d.shift_id));
@@ -1745,13 +2134,14 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     UI.modal({
       title: `Daily time — ${rosterRow.name}`,
       size: 'xl',
-      headActionHTML: rosterRow.user_id
+      headActionHTML: canManage && rosterRow.user_id
         ? `<button type="button" class="btn secondary small" id="tk-notify-emp">${UI.icon('send', 14)} Send notice</button>`
         : '',
-      bodyHTML: `<div class="line-items"><table class="line-table"><thead><tr>
+      bodyHTML: `${canManage ? '' : '<p class="muted">Read-only attendance. An HR manager can make corrections.</p>'}<div class="line-items"><table class="line-table tk-daily-table"><thead><tr>
           <th>Date</th><th>Shift</th><th>Time In</th><th>Lunch Out</th><th>Lunch In</th><th>Time Out</th><th>Day Type</th><th>Half Day</th><th>Rest Day</th><th>Notes</th><th>Linked Form</th>
         </tr></thead><tbody id="tk-days"></tbody></table></div>`,
-      confirmText: 'Save',
+      confirmText: canManage ? 'Save' : null,
+      cancelText: canManage ? 'Cancel' : 'Close',
       onOpen: (ov) => {
         const body = ov.querySelector('#tk-days');
         const notifyBtn = ov.querySelector('#tk-notify-emp');
@@ -1828,15 +2218,33 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
           el.innerHTML = halfDayFlagHtml(days[i], i);
           el.querySelectorAll('[data-halfday-flag]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.halfdayFlag)));
         }
+        function restDayFlagHtml(d, i) {
+          if (!restDayFormMissing(d)) return '';
+          return `<div style="margin-top:3px">
+              <button type="button" class="badge-pill status-cancelled" data-restday-flag="${i}"
+                style="cursor:pointer;border:none;font:inherit"
+                title="Policy Settings requires an approved Rest Day Work Request for the rest-day premium — without one this day pays as an ordinary working day. Click to link or file it.">
+                Needs Rest Day form
+              </button>
+            </div>`;
+        }
+        // Refreshed on time-field commit, like renderHalfDayFlag — whether the day was worked can
+        // change without a full renderRows.
+        function renderRestDayFlag(i) {
+          const el = body.querySelector(`[data-restday-flag-cell="${i}"]`);
+          if (!el) return;
+          el.innerHTML = restDayFlagHtml(days[i], i);
+          el.querySelectorAll('[data-restday-flag]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.restdayFlag)));
+        }
         const TIME_KEYS = ['time_in', 'lunch_out', 'lunch_in', 'time_out'];
         // Small camera badge, shown only when the kiosk actually captured a photo for that
         // slot (see the `photos` object GET /periods/:id/attendance now attaches to each day —
         // src/routes/hr.routes.ts). `url` is /api-relative, per API.blobUrl's convention.
         function photoBtnHtml(url) {
-          return url ? `<button type="button" class="tk-photo-btn" data-photo-url="${UI.esc(url)}" title="View kiosk photo">${UI.icon('camera', 12)}</button>` : '';
+          return url ? `<button type="button" class="tk-photo-btn" data-photo-url="${UI.esc(url)}" title="View punch photo (kiosk camera or phone selfie)">${UI.icon('camera', 12)}</button>` : '';
         }
         function openPunchPhoto(url) {
-          const m = UI.modal({ title: 'Kiosk Photo', cancelText: 'Close', bodyHTML: '<div id="tk-photo-body" class="muted" style="text-align:center">Loading…</div>' });
+          const m = UI.modal({ title: 'Punch Photo', cancelText: 'Close', bodyHTML: '<div id="tk-photo-body" class="muted" style="text-align:center">Loading…</div>' });
           const body = m.overlay.querySelector('#tk-photo-body');
           API.blobUrl(url).then((objUrl) => {
             body.className = '';
@@ -1869,6 +2277,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             inp.value = fmtTimeDisplay(v24);
             renderMinFlag(row);
             renderHalfDayFlag(row);
+            renderRestDayFlag(row);
             renderIncompleteRow(row);
           };
           const finalizeAndCycle = () => {
@@ -1966,15 +2375,16 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             // Effective holiday: override (if not '' and not 'none') else the calendar's entry.
             const effHoliday = d.holiday_type ? (d.holiday_type === 'none' ? null : d.holiday_type) : holidayByDate[d.work_date];
             // Per-date override wins, else the weekly rest-day pattern for this weekday.
-            const isRestDay = d.rest_day === 'yes' ? true
-              : d.rest_day === 'no' ? false
-              : empRestDays.includes(weekdayOf(d.work_date));
+            const isRestDay = isRestDayFor(d);
+            // Shown only when an approved Change of Rest Day (not HR's dropdown) decided the day.
+            const swap = restDaySwapFor(d);
+            const movedRestDay = !d.rest_day && !!swap && (swap === 'yes') !== empRestDays.includes(weekdayOf(d.work_date));
             const isCancellation = effHoliday === 'cancelled_paid' || effHoliday === 'cancelled_unpaid';
             const noWork = effHoliday ? null : noWorkFor(d.work_date); // holiday/override always takes precedence
             // Explicit "Half Day" identifier — the linked-form badge in the last column already
             // names the form, but doesn't stand out as a distinct DAY TYPE the way the holiday/
             // rest-day tags above it do, so a half day was easy to miss at a glance.
-            const hdLink = (d._links || []).find((l) => l.slug === 'halfday_request');
+            const hdLink = (d._links || []).find((l) => l.slug === 'halfday_request' && isApprovedLink(l));
             const halfDayTag = hdLink
               ? `<span class="badge-pill status-confirmed" title="Judged against just this half's own AM/PM window, not the full shift">Half Day${hdLink.session ? ` (${hdLink.session.startsWith('After') ? 'PM' : 'AM'})` : ''}</span>`
               : d.half_day_override
@@ -1984,10 +2394,14 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
               ? `<span class="badge-pill ${isCancellation ? 'status-cancelled' : 'status-completed'}" title="${isCancellation ? 'Not worked — credited as a paid/unpaid day per the selection, no premium' : 'Pays the DOLE premium automatically'}">${UI.esc(HOLIDAY_LABELS[effHoliday] || effHoliday)}</span>`
               : noWork
                 ? `<span class="badge-pill ${noWork === 'paid' ? 'status-completed' : 'status-cancelled'}" title="Company-wide No Work Memo — ${noWork === 'paid' ? 'credited as a paid day' : 'unpaid, same as an absence but documented'}">No Work (${noWork === 'paid' ? 'Paid' : 'Unpaid'})</span>`
-                : (isRestDay ? '<span class="badge-pill status-confirmed" title="Pays +30% automatically if worked">Rest Day</span>' : halfDayTag);
+                : isRestDay
+                  ? `<span class="badge-pill status-confirmed" title="${movedRestDay ? 'Moved here by an approved Change of Rest Day. ' : ''}${policy.require_rest_day_form ? 'Pays +30% if worked, with an approved Rest Day Work Request linked' : 'Pays +30% automatically if worked'}">Rest Day${movedRestDay ? ' (moved)' : ''}</span>`
+                  : movedRestDay
+                    ? `<span class="badge-pill muted" title="Usual rest day, moved away by an approved Change of Rest Day — judged as an ordinary working day">Rest Day Moved</span>${halfDayTag ? ` ${halfDayTag}` : ''}`
+                    : halfDayTag;
             return `
             <tr data-row="${i}" class="${incomplete ? 'tk-incomplete' : ''}" ${incomplete ? 'title="Incomplete — only one of time in/out is set"' : ''}>
-              <td>${UI.esc(d.work_date)}${tag ? `<div style="margin-top:3px">${tag}</div>` : ''}<div data-min-flag="${i}">${minFlagHtml(d, i)}</div><div data-halfday-flag-cell="${i}">${halfDayFlagHtml(d, i)}</div></td>
+              <td>${UI.esc(d.work_date)}${tag ? `<div style="margin-top:3px">${tag}</div>` : ''}<div data-min-flag="${i}">${minFlagHtml(d, i)}</div><div data-halfday-flag-cell="${i}">${halfDayFlagHtml(d, i)}</div><div data-restday-flag-cell="${i}">${restDayFlagHtml(d, i)}</div></td>
               <td><select data-k="shift_id">${shiftOptions(d.shift_id)}</select></td>
               <td><div class="tk-time-cell"><input data-k="time_in" type="text" inputmode="numeric" autocomplete="off" placeholder="--:-- --" value="${UI.esc(fmtTimeDisplay(d.time_in))}" />${photoBtnHtml(d.photos && d.photos.time_in)}</div></td>
               <td><div class="tk-time-cell"><input data-k="lunch_out" type="text" inputmode="numeric" autocomplete="off" placeholder="--:-- --" value="${UI.esc(fmtTimeDisplay(d.lunch_out))}" title="Start of the unpaid lunch break — for the record only; payroll still deducts the fixed lunch minutes" />${photoBtnHtml(d.photos && d.photos.lunch_out)}</div></td>
@@ -1998,12 +2412,36 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
               <td><select data-k="rest_day" title="Override this one day/employee — leave at Default to inherit the weekly rest-day pattern. Use for a rest day that moves week to week.">${restDayOptions(d.rest_day)}</select></td>
               <td><input data-k="notes" value="${UI.esc(d.notes || '')}" placeholder="optional" /></td>
               <td>
-                ${(d._links || []).map((l, li) => `<span class="badge-pill" data-unlink="${i}" data-unlink-idx="${li}" title="Click to unlink" style="cursor:pointer;margin:1px 2px 1px 0;display:inline-block">${UI.esc(l.label)} ✕</span>`).join('')}
-                <button type="button" class="icon-btn" data-link="${i}" title="Link or create an OT/Half Day/Leave/Undertime/Offset/Reported form — a day can have more than one">${UI.icon('plus', 14)}</button>
+                ${(d._links || []).map((l, li) => `<span class="tk-linked-form"><button type="button" class="badge-pill tk-linked-form-view" data-view-form="${i}" data-view-form-idx="${li}" title="View form details" aria-label="View ${UI.esc(l.label)} details">${UI.esc(l.label)}${l.slug !== 'reported_absence' && !isApprovedLink(l) ? ` · ${UI.esc(l.status || 'pending')}` : ''}</button>${canManage ? `<button type="button" class="tk-linked-form-remove" data-unlink="${i}" data-unlink-idx="${li}" title="Unlink from this day (Shift-click skips confirmation)" aria-label="Unlink ${UI.esc(l.label)} from ${UI.esc(d.work_date)}">×</button>` : ''}</span>`).join('')}
+                <button type="button" class="icon-btn" data-link="${i}" title="Link or create an OT/Half Day/Leave/Undertime/Offset/Reported/Rest Day form — a day can have more than one">${UI.icon('plus', 14)}</button>
               </td>
             </tr>`;
           }).join('');
           body.querySelectorAll('[data-photo-url]').forEach((b) => b.addEventListener('click', () => openPunchPhoto(b.dataset.photoUrl)));
+          if (!canManage) {
+            body.querySelectorAll('input, select, textarea').forEach((field) => { field.disabled = true; });
+            body.querySelectorAll('button:not([data-photo-url]):not([data-view-form])').forEach((button) => { button.hidden = true; });
+          }
+          body.querySelectorAll('[data-view-form]').forEach((b) => b.onclick = async () => {
+            const day = days[Number(b.dataset.viewForm)];
+            const link = day?._links[Number(b.dataset.viewFormIdx)];
+            if (!link) return;
+            let record;
+            try { record = await API.get('/form-records/' + link.id); }
+            catch (error) {
+              if (!link.data) { UI.toast('Couldn’t load form details: ' + error.message, 'error'); return; }
+              record = { number: link.label, status: link.status, data: link.data, form_slug: link.slug };
+            }
+            const form = holidayForms.find((f) => f.slug === (record.form_slug || link.slug));
+            const labels = new Map((form?.fields || []).map((field) => [field.key, field.label]));
+            const fields = Object.entries(record.data || {}).filter(([key, value]) =>
+              !['employee_id', 'charged_dates', 'decided_by', '_calculation_snapshot'].includes(key) && value != null && value !== '');
+            UI.modal({ title: link.label, cancelText: 'Close', bodyHTML:
+              `<p><strong>Status:</strong> ${UI.esc(record.status || link.status || 'Unknown')}</p><p><strong>Linked date:</strong> ${UI.esc(day.work_date)}</p>` +
+              (fields.length ? `<dl>${fields.map(([key, value]) => `<dt style="font-weight:600;margin-top:10px">${UI.esc(labels.get(key) || key.replaceAll('_', ' '))}</dt><dd style="margin:3px 0;white-space:pre-wrap;overflow-wrap:anywhere">${UI.esc(String(value))}</dd>`).join('')}</dl>` : '<p class="muted">No additional form details are recorded.</p>'),
+            });
+          });
+          if (!canManage) return; // Read-only HR can inspect forms, but cannot change links.
           body.querySelectorAll('input[data-k], select[data-k]').forEach((inp) => {
             if (TIME_KEYS.includes(inp.dataset.k)) { wireTimeInput(inp); return; }
             const evt = inp.tagName === 'SELECT' ? 'change' : 'input';
@@ -2022,22 +2460,26 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             renderMinFlag(Number(b.dataset.minDeny));
           });
           body.querySelectorAll('[data-halfday-flag]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.halfdayFlag)));
+          body.querySelectorAll('[data-restday-flag]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.restdayFlag)));
           body.querySelectorAll('[data-link]').forEach((b) => b.onclick = () => linkFormModal(Number(b.dataset.link)));
-          body.querySelectorAll('[data-unlink]').forEach((b) => b.onclick = () => {
+          body.querySelectorAll('[data-unlink]').forEach((b) => b.onclick = async (event) => {
             const i = Number(b.dataset.unlink);
             const li = Number(b.dataset.unlinkIdx);
+            const link = days[i]?._links[li];
+            if (!link) return;
+            if (!event.shiftKey && !await UI.confirmDialog(`Unlink ${link.label} from ${days[i].work_date}? The form record will remain available. Save Daily Time to keep this change.`, 'Unlink form')) return;
             days[i]._links.splice(li, 1);
             days[i]._formIds = days[i]._links.map((l) => l.id);
+            ov.__markDirty?.();
             renderRows();
           });
         }
 
         async function linkFormModal(rowIndex) {
           const day = days[rowIndex];
-          const defs = await API.get('/form-definitions').catch(() => []);
-          const relevant = defs.filter((f) => FORM_LINK_SLUGS.includes(f.slug));
-          const [lists, linkedIds] = await Promise.all([
-            Promise.all(relevant.map((f) => API.get(`/form-definitions/${f.id}/records`).catch(() => []))),
+          const defs = await API.get('/form-definitions').catch(e => { UI.toast('Couldn’t load HR forms: '+e.message,'error'); return []; });
+          const [eligible, linkedIds] = await Promise.all([
+            API.get(`/hr/requests/eligible?employee_id=${employeeId}&date=${day.work_date}`),
             API.get('/hr/linked-form-record-ids').catch(() => []),
           ]);
           // A form record is "already used" if it's linked to any attendance day system-wide
@@ -2045,32 +2487,34 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
           // (days[]._formIds). Either way it shouldn't be offered again.
           const used = new Set(linkedIds);
           days.forEach((dd) => (dd._formIds || []).forEach((id) => used.add(id)));
-          const options = [];
-          relevant.forEach((f, fi) => {
-            (lists[fi] || []).forEach((r) => {
-              const name = (r.data && r.data.employee_name) || '';
-              if (String(name).trim() === String(rosterRow.name).trim() && !used.has(r.id)) {
-                options.push({ form: f, record: r });
-              }
+          const options = eligible.filter(r => r.slug === 'leave_request' || !used.has(r.id))
+            .map(r => ({ form: defs.find(f => f.id === r.form_def_id), record: r })).filter(o => o.form);
+          function linkLocally(form, record) {
+            const targets = form.slug === 'leave_request' ? days.filter(d => LeaveDates.parse(record.data).includes(d.work_date)) : [day];
+            targets.forEach(d => {
+              if (!d._formIds.includes(record.id)) d._formIds.push(record.id);
+              if (!d._links.some(l => l.id === record.id)) d._links.push({ id: record.id, label: `${form.name} ${record.number}`, slug: form.slug,
+                session: record.data.session || null, status: record.status, data: record.data });
             });
-          });
+            ov.__markDirty?.(); renderRows();
+          }
 
-          const typeOpts = MAKE_FORM_TYPES.map((t) => `<option value="${t.slug}">${UI.esc(t.label)}</option>`).join('');
+          const typeOpts = MAKE_FORM_TYPES.filter(t => defs.some(def => def.slug === t.slug)).map((t) => `<option value="${t.slug}">${UI.esc(t.label)}</option>`).join('');
           const m2 = UI.modal({
             title: `Link a form — ${rosterRow.name} · ${day.work_date}`,
             headActionHTML: `<button type="button" class="btn secondary small" id="tk-link-goto">${UI.icon('forms', 14)} Data Forms</button>`,
             bodyHTML: `
               <div style="font-weight:600;margin-bottom:6px">Link an existing form</div>
               ${options.length
-                ? `<div class="var-pick-list">${options.map((o, i) => `
-                    <button type="button" class="var-pick" data-pick="${i}">
-                      <span>${UI.esc(o.form.name)} — ${UI.esc(o.record.number)}</span>
+                ? `<div class="var-pick-list" style="display:grid;gap:6px;max-height:180px;overflow-y:auto">${options.map((o, i) => `
+                    <button type="button" class="var-pick btn secondary small" style="display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;white-space:normal" data-pick="${i}">
+                      <span>${UI.esc(o.form.name)} — ${UI.esc(o.record.number)}<small style="display:block;font-weight:normal">${UI.esc(o.record.data.leave_dates || o.record.data.work_date || o.record.data.date || '')} · View details</small></span>
                       <span class="muted">${UI.esc(o.record.status)}</span>
                     </button>`).join('')}</div>`
-                : `<p class="muted" style="font-size:12.5px;margin:2px 0">No unlinked OT/Half Day/Leave/Undertime/Offset/Reported records for ${UI.esc(rosterRow.name)}.</p>`}
+                : `<p class="muted" style="font-size:12.5px;margin:2px 0">No unlinked OT/Half Day/Leave/Undertime/Offset/Reported/Rest Day records for ${UI.esc(rosterRow.name)}.</p>`}
               <hr style="margin:14px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
               <div style="font-weight:600;margin-bottom:2px">Make a new form</div>
-              <p class="muted" style="font-size:12px;margin:2px 0 8px">Created approved for ${UI.esc(rosterRow.name)} on ${day.work_date} and linked to this day.</p>
+              <p class="muted" style="font-size:12px;margin:2px 0 8px">Filed for ${UI.esc(rosterRow.name)}. Requests stay pending until approved. Leave links to every selected date across open cutoffs.</p>
               <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
                 <div><label style="font-size:12px">Type</label><select id="mf-type"><option value="">Choose…</option>${typeOpts}</select></div>
               </div>
@@ -2080,34 +2524,69 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
             cancelText: 'Close',
             onOpen: (ov2) => {
               ov2.querySelector('#tk-link-goto').onclick = () => App.navigate('form-records');
-              ov2.querySelectorAll('[data-pick]').forEach((b) => b.onclick = () => {
+              ov2.querySelectorAll('[data-pick]').forEach((b) => b.onclick = async () => {
                 const o = options[Number(b.dataset.pick)];
-                day._formIds.push(o.record.id);
-                day._links.push({ id: o.record.id, label: `${o.form.name} ${o.record.number}`, slug: o.form.slug, session: (o.record.data && o.record.data.session) || null });
-                m2.close();
-                renderRows();
+                const labels = new Map((o.form.fields || []).map(f => [f.key, f.label]));
+                const preview = o.form.slug === 'leave_request' ? await API.post('/hr/leave-preview', { employee_id: employeeId, data: o.record.data }) : null;
+                UI.modal({ title: `${o.form.name} — ${o.record.number}`, confirmText: o.form.slug === 'leave_request' ? 'Link all covered dates' : 'Link this date', cancelText: 'Back',
+                  bodyHTML: `<p><strong>Status:</strong> ${UI.esc(o.record.status)}</p><dl>${Object.entries(o.record.data).filter(([key, value]) => !['employee_id','charged_dates','decided_by'].includes(key) && value != null && value !== '').map(([key, value]) => `<dt style="font-weight:600;margin-top:10px">${UI.esc(labels.get(key) || key.replaceAll('_',' '))}</dt><dd style="margin:3px 0;white-space:pre-wrap;overflow-wrap:anywhere">${UI.esc(String(value))}</dd>`).join('')}</dl>${preview ? `<p>${preview.days} scheduled working day(s) · ${preview.remaining} available</p><ul>${preview.warnings.map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul>` : ''}`,
+                  onConfirm: async () => {
+                    if (o.form.slug === 'leave_request') {
+                      const result = await API.post(`/hr/requests/${o.record.id}/link-attendance`);
+                      if (result.warnings.length) UI.toast(result.warnings.join(' '), 'info');
+                    }
+                    linkLocally(o.form, o.record); m2.close();
+                    UI.toast('Form linked to its covered dates — save Daily Time to keep other edits.');
+                  },
+                });
               });
 
               const typeSel = ov2.querySelector('#mf-type');
               const fieldsEl = ov2.querySelector('#mf-fields');
               const createBtn = ov2.querySelector('#mf-create');
               const errEl = ov2.querySelector('#mf-err');
+              let leavePicker;
               typeSel.onchange = () => {
                 const t = MAKE_FORM_TYPES.find((x) => x.slug === typeSel.value);
                 errEl.textContent = '';
                 if (!t) { fieldsEl.innerHTML = ''; createBtn.disabled = true; return; }
-                createBtn.disabled = false;
-                const hintHtml = t.detectOt
-                  ? `<p class="muted" style="font-size:12.5px;margin:2px 0;flex-basis:100%">${UI.esc(detectedOtText(day))}</p>`
+                createBtn.disabled = !App.hasPermission('forms.manage.hr');
+                if (createBtn.disabled) errEl.textContent = 'Creating HR forms requires HR form-management access.';
+                // Overtime: offer Early OT only when this day's time-in is 1 h+ before the shift
+                // start; the hint below re-computes as the tick / approved hours change.
+                const earlyMin = t.detectOt ? earlyMinutesFor(day) : 0;
+                const earlyHtml = earlyMin >= EARLY_OT_MIN_MINUTES
+                  ? `<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;flex-basis:100%;font-weight:normal">
+                      <input type="checkbox" id="mf-early-ot" style="width:auto" />
+                      Early OT — count the ${earlyMin % 60 ? (earlyMin / 60).toFixed(2) : earlyMin / 60} h before the shift start (timed in ${UI.esc(day.time_in)})
+                    </label>`
                   : '';
-                fieldsEl.innerHTML = hintHtml + t.fields.map((f) => {
+                const hintHtml = t.detectOt
+                  ? `<p class="muted" id="mf-ot-hint" style="font-size:12.5px;margin:2px 0;flex-basis:100%">${UI.esc(detectedOtText(day))}</p>${earlyHtml}`
+                  : '';
+                fieldsEl.innerHTML = hintHtml + (t.slug === 'leave_request' ? LeaveDates.markup() : '') + t.fields.map((f) => {
                   const lbl = `<label style="font-size:12px">${UI.esc(f.label)}${f.required ? ' *' : ''}</label>`;
-                  if (f.type === 'select') {
-                    return `<div>${lbl}<select data-mf="${f.key}"><option value="">—</option>${f.options.map((o) => `<option value="${UI.esc(o)}">${UI.esc(o)}</option>`).join('')}</select></div>`;
+                  if (f.type === 'select' || f.type === 'employee') {
+                    return `<div>${lbl}<select data-mf="${f.key}"><option value="">—</option>${(f.options || []).map((o) => { const value = typeof o === 'object' ? o.value || o.id || o.label || o.name : o; const label = typeof o === 'object' ? o.label || o.name || value : o; return `<option value="${UI.esc(String(value))}">${UI.esc(String(label))}</option>`; }).join('')}</select></div>`;
                   }
-                  const inputType = f.type === 'number' ? 'number' : f.type === 'time' ? 'time' : 'text';
+                  if (f.type === 'textarea') return `<div style="flex-basis:100%">${lbl}<textarea data-mf="${f.key}" rows="3"></textarea></div>`;
+                  if (f.type === 'checkbox') return `<div>${lbl}<input type="checkbox" data-mf="${f.key}" style="width:auto" /></div>`;
+                  const inputType = f.type === 'number' ? 'number' : f.type === 'time' ? 'time' : f.type === 'date' ? 'date' : 'text';
                   return `<div>${lbl}<input type="${inputType}" data-mf="${f.key}" ${f.type === 'number' ? 'min="0" step="0.5"' : ''} /></div>`;
                 }).join('');
+                leavePicker = t.slug === 'leave_request' ? LeaveDates.mount(fieldsEl, { data: { date_from: day.work_date, date_to: day.work_date }, preview: data => API.post('/hr/leave-preview', { employee_id: employeeId, data }) }) : null;
+                t.fields.forEach(f => { const el = fieldsEl.querySelector(`[data-mf="${f.key}"]`); if (el && f.default != null && f.default !== '') { if (el.type === 'checkbox') el.checked = f.default === true || f.default === 'Yes'; else el.value = f.default; } });
+                if (t.detectOt) {
+                  const earlyBox = fieldsEl.querySelector('#mf-early-ot');
+                  const approvedInp = fieldsEl.querySelector('[data-mf="approved_hours"]');
+                  const refreshHint = () => {
+                    fieldsEl.querySelector('#mf-ot-hint').textContent = detectedOtText(day, {
+                      early: !!(earlyBox && earlyBox.checked), approvedHours: approvedInp ? approvedInp.value : '',
+                    });
+                  };
+                  if (earlyBox) earlyBox.onchange = refreshHint;
+                  if (approvedInp) approvedInp.oninput = refreshHint;
+                }
               };
 
               createBtn.onclick = async () => {
@@ -2116,27 +2595,37 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
                 const def = defs.find((d) => d.slug === t.slug);
                 if (!def) { errEl.textContent = `The "${t.label}" form isn't set up in Data Forms.`; return; }
                 const data = {
+                  employee_id: employeeId,
                   employee_name: rosterRow.name,
+                  employee_no: rosterRow.employee_no || '',
+                  position: rosterRow.position || '',
                   department: rosterRow.department_name || rosterRow.department || '',
-                  reason: 'Filed from Time Keeping',
                 };
                 data[t.dateKey] = day.work_date;
-                if (t.slug === 'leave_request') { data.date_to = day.work_date; data.days = 1; }
+                if (t.slug === 'leave_request') { Object.assign(data, leavePicker.value()); if (!data.leave_dates) { errEl.textContent = 'Select at least one leave date.'; return; } }
                 for (const f of t.fields) {
                   const el = ov2.querySelector(`[data-mf="${f.key}"]`);
-                  const v = el ? el.value.trim() : '';
+                  const v = el ? (el.type === 'checkbox' ? (el.checked ? 'Yes' : 'No') : el.value.trim()) : '';
                   if (f.required && !v) { errEl.textContent = `${f.label} is required.`; return; }
+                  if (v && f.type === 'number' && !Number.isFinite(Number(v))) { errEl.textContent = `${f.label} must be a valid number.`; return; }
                   if (v) data[f.key] = f.type === 'number' ? Number(v) : v;
                 }
+                // Early OT tick (only rendered on a day timed in 1 h+ early) — read by payroll.
+                const earlyBox = ov2.querySelector('#mf-early-ot');
+                if (t.slug === 'overtime_request') data.early_ot = !!(earlyBox && earlyBox.checked);
                 // Leave: the payroll engine treats a leave day as paid only when with_pay==='Yes'
                 // — infer it from the leave type so a leave made here computes correctly.
-                if (t.slug === 'leave_request') data.with_pay = data.leave_type === 'Unpaid Leave' ? 'No' : 'Yes';
+                if (t.slug === 'leave_request') data.with_pay = data.leave_type === 'Unpaid Leave' ? 'No' : (data.with_pay || 'Yes');
+                if (t.slug === 'rest_day_change' && data.new_rest_day === data.original_rest_day) {
+                  errEl.textContent = 'The new rest day must be a different date.'; return;
+                }
                 createBtn.disabled = true;
                 try {
-                  const res = await API.post('/form-records', { form_def_id: def.id, data, status: 'approved' });
-                  day._formIds.push(res.id);
-                  day._links.push({ id: res.id, label: `${def.name} ${res.number || ''}`.trim(), slug: def.slug, session: data.session || null });
-                  UI.toast(`${def.name} ${res.number || ''} created & linked`);
+                  const status = def.slug === 'reported_absence' ? 'approved' : 'pending';
+                  const res = await API.post('/form-records', { form_def_id: def.id, data, status });
+                  linkLocally(def, { id: res.id, number: res.number || '', status, data });
+                  if (res.action_warnings && res.action_warnings.length) UI.modal({ title: 'Leave review notes', bodyHTML: `<ul>${res.action_warnings.map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul>`, cancelText: 'Close' });
+                  UI.toast(`${def.name} ${res.number || ''} created — save Daily Time to keep the link${['leave_request','overtime_request','undertime_request','halfday_request','offset_form','lunch_offset_form','holiday_work_request','rest_day_work_request','rest_day_change'].includes(def.slug) ? ' — pending approval' : ''}`);
                   m2.close();
                   renderRows();
                 } catch (err) {
@@ -2156,13 +2645,14 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
           for (const id of d._formIds) {
             try {
               const r = await API.get('/form-records/' + id);
-              d._links.push({ id, label: `${r.form_name || 'Form'} ${r.number || ''}`.trim(), slug: r.form_slug || null, session: (r.data && r.data.session) || null });
-            } catch { d._links.push({ id, label: 'Linked', slug: null, session: null }); }
+              d._links.push({ id, label: `${r.form_name || 'Form'} ${r.number || ''}`.trim(), slug: r.form_slug || null, session: (r.data && r.data.session) || null, status: r.status, data: r.data || {} });
+            } catch { d._links.push({ id, label: 'Linked', slug: null, session: null, status: null, data: null }); }
           }
         })).then(renderRows);
         renderRows();
       },
       onConfirm: async () => {
+        if (!canManage) return;
         await API.put(`/hr/periods/${periodId}/attendance`, {
           employee_id: employeeId,
           days: days.map((d) => ({
@@ -2187,6 +2677,7 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
     UI.modal({
       title: 'Generate payslips',
       bodyHTML: `
+        ${(period.warnings || []).length ? `<div role="status"><strong>Warnings — you can still generate</strong><ul>${period.warnings.map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul></div>` : ''}
         <p class="muted" style="margin-top:0">Creates or updates one HR Payroll record per employee on this cutoff — days worked,
           late deductions, and OT/Holiday pay are computed automatically from the daily log and any linked forms (per the
           Policy Settings rules). Statutory deductions (SSS/PhilHealth/Pag-IBIG), cash advances, and net pay still need your review —
@@ -2213,9 +2704,11 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
           title: 'Payslips ready',
           bodyHTML: `<p>${res.created} created, ${res.updated} updated for "${UI.esc(res.period)}".</p>
             <p class="muted">Fill in hours/earnings/deductions there, then use the existing Print flow.</p>
-            ${halfDayWarning}`,
+            ${halfDayWarning}
+            ${res.skipped_locked ? `<p>${res.skipped_locked} paid payslip(s) were left unchanged.</p>` : ''}
+            ${(res.warnings || []).length ? `<div role="status"><strong>Review warnings</strong><ul>${res.warnings.map(w => `<li>${UI.esc(w)}</li>`).join('')}</ul></div>` : ''}`,
           confirmText: 'Open Payroll',
-          onConfirm: () => { App.navigate('form-records', { form_id: res.form_id, period: res.period }); },
+          onConfirm: () => { App.navigate('form-records', { form_id: res.form_id, slug: 'hr_payroll', period: res.period }); },
         });
       },
     });

@@ -27,6 +27,7 @@ App.register('messages', async (view, filter) => {
       <div class="chat-sidebar">
         <div class="chat-sidebar-head">
           <h2>Messages</h2>
+          <button class="btn secondary small" id="chat-reports">Reports</button>
           <button class="btn small" id="chat-new">${UI.icon('edit', 15)} New</button>
         </div>
         <div id="chat-convo-list" class="msg-list">${UI.emptyState({ icon: 'inbox', title: 'Loading…' })}</div>
@@ -40,6 +41,7 @@ App.register('messages', async (view, filter) => {
   const threadEl = view.querySelector('#chat-thread');
 
   view.querySelector('#chat-new').addEventListener('click', newMessageModal);
+  view.querySelector('#chat-reports').addEventListener('click', () => App.navigate('identified-reports'));
 
   async function loadConversations() {
     try {
@@ -88,6 +90,7 @@ App.register('messages', async (view, filter) => {
       <div class="chat-load-older hidden" id="chat-load-older"><button class="btn secondary small">Load earlier messages</button></div>
       <div class="chat-messages" id="chat-messages"><div class="empty">Loading…</div></div>
       <div class="chat-reply-strip hidden" id="chat-reply-strip"></div>
+      <div class="chat-file-preview hidden" id="chat-file-preview" aria-live="polite"></div>
       <div class="chat-compose">
         <button class="icon-btn" id="chat-attach-btn" title="Attach a file">${UI.icon('upload', 18)}</button>
         <input type="file" id="chat-file-input" multiple class="hidden" />
@@ -165,14 +168,21 @@ App.register('messages', async (view, filter) => {
 
   function attachmentHTML(a) {
     const isImage = (a.mime_type || '').startsWith('image/');
-    if (isImage) {
-      return `<div class="chat-attach-img-wrap" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}"><img class="chat-attach-img" alt="${UI.esc(a.name)}" /></div>`;
+    const isVideo = (a.mime_type || '').startsWith('video/') || /\.(mp4|webm|mov|m4v)$/i.test(a.name || '');
+    if (isImage || isVideo) {
+      return `<div class="chat-media" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" data-media-kind="${isVideo ? 'video' : 'image'}" data-media-type="${UI.esc(isVideo ? ({ mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime' }[ (a.name || '').split('.').pop().toLowerCase() ] || a.mime_type || 'video/mp4') : a.mime_type || '')}">
+        <div class="chat-media-stage is-loading" aria-busy="true">
+          <div class="chat-media-loading" role="status"><span class="chat-media-glyph">${isVideo ? '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg>' : UI.icon('image', 28)}</span><span>Preparing ${isVideo ? 'video' : 'photo'}…</span></div>
+          ${isVideo ? '<video controls playsinline preload="metadata" hidden></video>' : `<img class="chat-attach-img" alt="${UI.esc(a.name)}" hidden />`}
+        </div>
+        <button class="btn secondary small" data-media-download>Download</button>
+      </div>`;
     }
-    return `<div class="msg-attach" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" style="cursor:pointer">
+    return `<button type="button" class="msg-attach" data-att-url="${UI.esc(a.url)}" data-att-name="${UI.esc(a.name)}" aria-label="Preview ${UI.esc(a.name)}">
       <span class="msg-attach-icon">${UI.icon(UI.fileIconName(a.name), 16)}</span>
       <span class="msg-attach-name">${UI.esc(a.name)}</span>
       <span class="msg-attach-size muted">${UI.fmtBytes(a.size_bytes)}</span>
-    </div>`;
+    </button>`;
   }
 
   function bubbleHTML(m) {
@@ -224,9 +234,40 @@ App.register('messages', async (view, filter) => {
   function hydrateBubbleExtras(m) {
     const row = threadEl.querySelector(`.chat-row[data-id="${m.id}"]`);
     if (!row) return;
-    row.querySelectorAll('.chat-attach-img-wrap img').forEach((img) => {
-      const wrap = img.closest('.chat-attach-img-wrap');
-      API.blobUrl(wrap.dataset.attUrl).then((u) => { img.src = u; }).catch(() => {});
+    row.querySelectorAll('.chat-media').forEach((wrap) => {
+      if (wrap.dataset.hydrated) return;
+      wrap.dataset.hydrated = 'true';
+      const stage = wrap.querySelector('.chat-media-stage');
+      const media = wrap.querySelector('img, video');
+      const status = wrap.querySelector('.chat-media-loading');
+      const fail = (message) => {
+        media.hidden = true;
+        stage.classList.remove('is-loading');
+        stage.setAttribute('aria-busy', 'false');
+        status.textContent = message;
+        status.hidden = false;
+      };
+      media.addEventListener(media.tagName === 'VIDEO' ? 'loadeddata' : 'load', () => {
+        stage.classList.remove('is-loading');
+        stage.setAttribute('aria-busy', 'false');
+        status.hidden = true;
+        media.hidden = false;
+      }, { once: true });
+      media.addEventListener('error', () => fail('Preview unavailable. You can still download this file.'), { once: true });
+      API.blobUrl(wrap.dataset.attUrl, wrap.dataset.mediaKind === 'video' ? wrap.dataset.mediaType : undefined).then((url) => {
+        if (!wrap.isConnected) { URL.revokeObjectURL(url); return; }
+        media.src = url;
+        if (media.tagName === 'VIDEO') media.preload = 'auto';
+        // Reclaim the authenticated blob when its bubble or view is removed.
+        const observer = new MutationObserver(() => {
+          if (wrap.isConnected) return;
+          if (media.tagName === 'VIDEO') media.pause();
+          media.removeAttribute('src');
+          URL.revokeObjectURL(url);
+          observer.disconnect();
+        });
+        observer.observe(view.parentNode || document.body, { childList: true, subtree: true });
+      }).catch((err) => fail(err.message || 'Unable to load attachment.'));
     });
     if (m.deleted_at || !m.body) return;
     const match = m.body.match(URL_RE);
@@ -385,7 +426,16 @@ App.register('messages', async (view, filter) => {
         return;
       }
       const att = e.target.closest('[data-att-url]');
-      if (att) { API.download(att.dataset.attUrl, att.dataset.attName).catch((err) => UI.toast(err.message, 'error')); return; }
+      if (att) {
+        if (e.target.closest('[data-media-download]')) {
+          API.download(att.dataset.attUrl, att.dataset.attName).catch((err) => UI.toast(err.message, 'error'));
+        } else if (att.dataset.mediaKind === 'image') {
+          PhotoViewer.open(att.dataset.attUrl, att.dataset.attName);
+        } else if (!att.dataset.mediaKind) {
+          AttachmentViewer.open(att.dataset.attUrl, att.dataset.attName);
+        }
+        return;
+      }
       const chip = e.target.closest('.chat-reaction');
       if (chip) { react(Number(chip.closest('.chat-row').dataset.id), chip.dataset.emoji); return; }
       const actBtn = e.target.closest('[data-act]');
@@ -411,6 +461,16 @@ App.register('messages', async (view, filter) => {
     const sendBtn = threadEl.querySelector('#chat-send-btn');
     const attachBtn = threadEl.querySelector('#chat-attach-btn');
     const fileInput = threadEl.querySelector('#chat-file-input');
+    const filePreview = threadEl.querySelector('#chat-file-preview');
+    let selectedFiles = [];
+    const uploadStatus = MessageUpload.create(filePreview);
+    function renderFiles() {
+      filePreview.classList.toggle('hidden', !selectedFiles.length);
+      filePreview.innerHTML = selectedFiles.map((file, index) => `<span class="chat-file-chip">${UI.esc(file.name)}<button type="button" data-remove="${index}" aria-label="Remove ${UI.esc(file.name)}">×</button></span>`).join('');
+      filePreview.querySelectorAll('[data-remove]').forEach((button) => {
+        button.onclick = () => { selectedFiles.splice(Number(button.dataset.remove), 1); renderFiles(); };
+      });
+    }
 
     input.addEventListener('input', () => {
       autoGrow(input);
@@ -425,11 +485,19 @@ App.register('messages', async (view, filter) => {
     });
     sendBtn.addEventListener('click', sendOrSave);
     attachBtn.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', () => { if (fileInput.files.length) sendOrSave(); });
+    fileInput.addEventListener('change', () => {
+      const picked = [...fileInput.files];
+      if (selectedFiles.length + picked.length > 10) UI.toast('Up to 10 files per message', 'error');
+      selectedFiles = selectedFiles.concat(picked).slice(0, 10);
+      fileInput.value = '';
+      renderFiles();
+    });
 
     async function sendOrSave() {
+      if (sendBtn.disabled) return;
+      const recipientId = activeOtherId;
       const body = input.value.trim();
-      const files = fileInput.files;
+      const files = selectedFiles.slice();
       if (editingId) {
         if (!body) { UI.toast('Message cannot be empty', 'error'); return; }
         const id = editingId;
@@ -447,25 +515,28 @@ App.register('messages', async (view, filter) => {
       }
       if (!body && !(files && files.length)) return;
       sendBtn.disabled = true;
+      attachBtn.disabled = true;
+      input.disabled = true;
+      filePreview.querySelectorAll('button').forEach((button) => { button.disabled = true; });
+      if (files.length) uploadStatus.start();
       try {
-        const [company] = await Promise.all([API.get('/templates/company').catch(() => ({}))]);
-        const compressImages = company.compress_images !== false;
         if (files && files.length) {
-          let outFiles = [...files];
-          if (compressImages && window.ImageCompress) {
-            outFiles = await Promise.all(outFiles.map((f) => window.ImageCompress.maybeCompress(f)));
+          let outFiles = files;
+          if (window.ImageCompress) {
+            outFiles = await Promise.all(outFiles.map((f) => window.ImageCompress.maybeCompress(f, { thresholdBytes: 0, maxDim: 1600, quality: 0.8 })));
           }
           const fd = new FormData();
-          fd.append('recipient_id', activeOtherId);
+          fd.append('recipient_id', recipientId);
           fd.append('body', body);
           if (replyTo) fd.append('reply_to_id', replyTo.id);
           outFiles.forEach((f) => fd.append('files', f));
-          await API.upload('/messages', fd);
+          await API.upload('/messages', fd, { onProgress: uploadStatus.progress });
         } else {
           await API.post('/messages', { recipient_id: activeOtherId, body, reply_to_id: replyTo ? replyTo.id : undefined });
         }
         input.value = '';
-        fileInput.value = '';
+        selectedFiles = [];
+        renderFiles();
         autoGrow(input);
         replyTo = null;
         renderReplyStrip();
@@ -477,7 +548,11 @@ App.register('messages', async (view, filter) => {
       } catch (e) {
         UI.toast(e.message, 'error');
       } finally {
+        uploadStatus.stop();
+        input.disabled = false;
+        filePreview.querySelectorAll('button').forEach((button) => { button.disabled = false; });
         sendBtn.disabled = false;
+        attachBtn.disabled = false;
       }
     }
   }

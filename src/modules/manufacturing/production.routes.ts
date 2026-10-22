@@ -1,3 +1,5 @@
+import {canRecordJob,scopedLineReader} from './job-access';
+import { batchBalances } from '../inventory/batch-stock';
 /** Production — repair / rework parts requests.
  *
  *  When a QA/QC inspector fails a unit with disposition = 'repair', the unit goes to
@@ -7,24 +9,31 @@
  *    - kind 'replace' — a fitted part is swapped; the removed one is booked into its
  *                       damage twin (unless return_to_damage = 0).
  *  Nothing moves until the warehouse ACCEPTS the request — that is when the replacement
- *  is issued from storage and the removed part lands in the damage record. A rework unit
+ *  is issued from storage and the removed part lands in the damage record. Until then the
+ *  request HOLDS its quantity at one approved source (stock-holds.ts), so kit picking, other
+ *  requests and the sale-order gate can't take it. The requester is pushed when the part is
+ *  issued, rejected, short or needs a revision approved. A rework unit
  *  can only be re-inspected once none of its requests are still `requested`
  *  (see job-orders.routes.ts /units/inspect).
  *
- *  Read = inventory.view. Writes: raising/cancelling a request needs inventory.adjust
- *  or production.inspect_qc/qa (the QC or QA inspector who failed the unit — either
+ *  Read = production.view. Writes: raising/cancelling a request needs
+ *  production.inspect_qc/qa (the QC or QA inspector who failed the unit — either
  *  covers it, this isn't pass-specific the way job-orders.routes.ts /:id/units/inspect
- *  is); accept/reject needs inventory.adjust or production.repairs (the warehouse parts
+ *  is); accept/reject needs production.repairs (the warehouse parts
  *  clerk) — see inspectGate / repairsGate below. Everything else here (teams, batches,
  *  capacity, label templates) stays plain inventory.adjust. Mounted at /api/production. */
 import { Router } from 'express';
 import { db, queryOne, queryAll, run, nextSequence, getSetting, setSetting } from '../../shared/db';
 import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
+import { LABEL_TEMPLATES, LINE, REPAIRS_READ, UNIT_RECORD } from '../../shared/desk-access';
 import {
   parseBody,
   repairRequestSchema,
   repairAcceptSchema,
   repairRejectSchema,
+  repairRevisionSchema,
+  repairRevisionDecisionSchema,
+  repairShortageSchema,
   createBatchSchema,
   updateBatchSchema,
   batchInspectSchema,
@@ -39,21 +48,29 @@ import {
   findOrCreateDamageTwin,
 } from '../inventory/inventory-stock';
 import { checklistForProduct } from './qc.routes';
+import { REPAIR_SOURCE_TYPES, freeFor, holdOf, placeRepairHold, releaseRepairHold } from './stock-holds';
+import { notifyAnyPermission, notifyPermission, notifyUser } from '../../shared/push';
 import type {
   JobOrder, JobOrderUnit, ProductionBatch, ProductionTeam, ProductionTeamMember, RepairPartRequest,
 } from '../../shared/types';
+import { syncClass } from '../../sync';
 
 const router = Router();
 router.use(requireAuth);
 
-const readGate = requirePermission('inventory.view');
-const writeGate = requirePermission('inventory.adjust');
+const readGate = requirePermission('production.view');
+// Desk-scoped reads (shared/desk-access.ts): each floor desk reads only what its task needs.
+const repairsRead = requireAnyPermission(['production.view', ...REPAIRS_READ]);
+const lineRead = requireAnyPermission(['production.view', ...LINE]);
+const labelsRead = requireAnyPermission(['production.view', ...LABEL_TEMPLATES]);
+const recordRead = requireAnyPermission(['production.view', ...UNIT_RECORD]);
+const writeGate = requirePermission('production.configure');
 // See job-orders.routes.ts for why these exist alongside writeGate: a dedicated
 // qc_inspector/parts_clerk account can act here without full inventory.adjust.
 // Either QC or QA covers these — none of them (parts request, batch sign-off, request
 // cancel) is specific to one pass the way job-orders.routes.ts /:id/units/inspect is.
-const inspectGate = requireAnyPermission(['inventory.adjust', 'production.inspect_qc', 'production.inspect_qa']);
-const repairsGate = requireAnyPermission(['inventory.adjust', 'production.repairs']);
+const inspectGate = requireAnyPermission(['production.inspect_qc', 'production.inspect_qa']);
+const repairsGate = requirePermission('production.repairs');
 
 const REQUEST_SELECT = `
   SELECT r.*,
@@ -62,12 +79,14 @@ const REQUEST_SELECT = `
          u.identifier AS unit_identifier,
          jo.number    AS job_order_number,
          jo.product_name AS product_name,
+         sr.number AS sales_return_number,
          fl.name      AS from_location_name
   FROM repair_part_requests r
   LEFT JOIN users rb ON rb.id = r.requested_by
   LEFT JOIN users db_ ON db_.id = r.decided_by
   LEFT JOIN job_order_units u ON u.id = r.unit_id
   LEFT JOIN job_orders jo ON jo.id = r.job_order_id
+  LEFT JOIN sales_returns sr ON sr.id = r.sales_return_id
   LEFT JOIN locations fl ON fl.id = r.from_location_id
 `;
 
@@ -79,7 +98,7 @@ const unitLabel = (u: Pick<JobOrderUnit, 'id' | 'identifier'>): string =>
   u.identifier && u.identifier.trim() ? u.identifier.trim() : `unit #${u.id}`;
 
 // GET /api/production/repairs?status=&unit=&job_order= — the warehouse queue
-router.get('/repairs', readGate, (req, res) => {
+router.get('/repairs', repairsRead, (req, res) => {
   const { status, unit, job_order } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
@@ -95,14 +114,14 @@ router.get('/repairs', readGate, (req, res) => {
 });
 
 // GET /api/production/repairs/:id
-router.get('/repairs/:id', readGate, (req, res) => {
+router.get('/repairs/:id', repairsRead, (req, res) => {
   const r = loadRequest(Number(req.params.id));
   if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
   res.json(r);
 });
 
 // GET /api/production/units/:unitId/repairs — a unit's parts requests (for the repair panel)
-router.get('/units/:unitId/repairs', readGate, (req, res) => {
+router.get('/units/:unitId/repairs', repairsRead, (req, res) => {
   const unitId = Number(req.params.unitId);
   if (!queryOne('SELECT id FROM job_order_units WHERE id = ?', unitId)) {
     res.status(404).json({ error: 'Unit not found' });
@@ -112,11 +131,14 @@ router.get('/units/:unitId/repairs', readGate, (req, res) => {
 });
 
 // POST /api/production/units/:unitId/repairs — production raises a parts request
-router.post('/units/:unitId/repairs', inspectGate, (req, res) => {
+router.post('/units/:unitId/repairs', inspectGate, syncClass('merge'), (req, res) => {
   const unitId = Number(req.params.unitId);
   const unit = queryOne<JobOrderUnit>('SELECT * FROM job_order_units WHERE id = ?', unitId);
   if (!unit) { res.status(404).json({ error: 'Unit not found' }); return; }
-  if (unit.status !== 'rework') {
+  const salesReturn = unit.status === 'returned_rework' ? queryOne<{ id: number }>(
+    `SELECT r.id FROM sales_returns r JOIN sales_return_dispositions d ON d.return_id = r.id
+     WHERE r.unit_id = ? AND r.status = 'rejected' AND d.state = 'repair'`, unitId) : null;
+  if (unit.status !== 'rework' && !salesReturn) {
     res.status(409).json({ error: 'Only a unit sent back for repair can request parts' });
     return;
   }
@@ -127,12 +149,13 @@ router.post('/units/:unitId/repairs', inspectGate, (req, res) => {
   const number = nextSequence('rpr_seq', 'RPR');
   const info = run(
     `INSERT INTO repair_part_requests
-       (number, unit_id, job_order_id, kind, component_item_id, component_name, quantity,
+       (number, unit_id, job_order_id, sales_return_id, kind, component_item_id, component_name, quantity,
         fault, return_to_damage, status, requested_by, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?)`,
     number,
     unitId,
     unit.job_order_id,
+    salesReturn?.id ?? null,
     input.kind,
     input.component_item_id,
     comp.name,
@@ -142,11 +165,17 @@ router.post('/units/:unitId/repairs', inspectGate, (req, res) => {
     req.user!.id,
     input.notes ?? null
   );
+  // Set the part aside at an approved source now; none with enough free stock = a shortage.
+  placeRepairHold(Number(info.lastInsertRowid));
   res.status(201).json(loadRequest(Number(info.lastInsertRowid)));
+  void notifyAnyPermission(['production.repairs', 'inventory.adjust'], {
+    title: `Replacement parts requested — ${number}`, body: `${input.quantity} × ${comp.name} for a unit awaiting repair.`,
+    url: `#/repairs?id=${Number(info.lastInsertRowid)}`, link: { route: 'repairs' }, tag: `repair-part-${Number(info.lastInsertRowid)}`,
+  }, req.user!.id);
 });
 
 // POST /api/production/repairs/:id/accept — warehouse issues the part (stock moves now)
-router.post('/repairs/:id/accept', repairsGate, (req, res) => {
+router.post('/repairs/:id/accept', repairsGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const r = queryOne<RepairPartRequest>('SELECT * FROM repair_part_requests WHERE id = ?', id);
   if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
@@ -154,12 +183,35 @@ router.post('/repairs/:id/accept', repairsGate, (req, res) => {
     res.status(409).json({ error: `Request is already ${r.status}` });
     return;
   }
-  const { from_location_id, warehouse_remarks } = parseBody(repairAcceptSchema, req.body);
+  const { from_location_id, warehouse_remarks, scanned_code, picked_quantity } = parseBody(repairAcceptSchema, req.body);
   const unit = queryOne<JobOrderUnit>('SELECT * FROM job_order_units WHERE id = ?', r.unit_id);
   const jo = r.job_order_id ? queryOne<JobOrder>('SELECT * FROM job_orders WHERE id = ?', r.job_order_id) : null;
   const fromLoc = from_location_id ?? jo?.source_location_id ?? getDefaultLocationId();
-  const loc = queryOne<{ name: string }>('SELECT name FROM locations WHERE id = ?', fromLoc);
+  const loc = queryOne<{ name: string; type: string }>('SELECT name, type FROM locations WHERE id = ?', fromLoc);
   if (!loc) { res.status(400).json({ error: 'Location not found' }); return; }
+  // Approved repair-parts sources only (a truck is transit, not storage).
+  if (!REPAIR_SOURCE_TYPES.has(loc.type)) {
+    res.status(400).json({ error: `${loc.name} is not an approved repair-parts source`, blocked: 'source' });
+    return;
+  }
+  if (queryOne("SELECT 1 FROM repair_revisions WHERE request_id = ? AND status = 'pending'", id)) {
+    res.status(409).json({ error: 'A revision of this request is waiting for approval — it can’t be issued yet.', blocked: 'revision' });
+    return;
+  }
+  // Exact-request rule: a different SKU or another quantity needs a formal revision.
+  if (picked_quantity != null && picked_quantity !== r.quantity) {
+    res.status(409).json({ error: `Picked ${picked_quantity} but ${r.quantity} were requested — revise the request to change the quantity.`, blocked: 'quantity' });
+    return;
+  }
+  if (scanned_code) {
+    const item = r.component_item_id != null
+      ? queryOne<{ sku: string | null }>('SELECT sku FROM inventory_items WHERE id = ?', r.component_item_id) : null;
+    const code = scanned_code.trim().toLowerCase();
+    if (!item || (String(item.sku ?? '').toLowerCase() !== code && String(r.component_item_id) !== code)) {
+      res.status(409).json({ error: `${scanned_code} is not the requested part (${item?.sku || r.component_name}).`, blocked: 'sku' });
+      return;
+    }
+  }
 
   if (r.component_item_id == null) {
     res.status(400).json({ error: 'The requested component no longer exists' });
@@ -168,6 +220,12 @@ router.post('/repairs/:id/accept', repairsGate, (req, res) => {
   const have = stockAt(r.component_item_id, fromLoc);
   if (have < r.quantity) {
     res.status(400).json({ error: `Only ${have} of ${r.component_name} at ${loc.name} — need ${r.quantity}.` });
+    return;
+  }
+  // Stock held for other repair requests or picked for kits isn't this request's to take.
+  const free = freeFor(r.component_item_id, fromLoc, id);
+  if (free < r.quantity) {
+    res.status(409).json({ error: `Only ${Math.max(0, free)} of ${r.component_name} at ${loc.name} is free — the rest is held for other repair requests or kits.`, blocked: 'held' });
     return;
   }
   const who = unit ? unitLabel(unit) : `unit #${r.unit_id}`;
@@ -201,24 +259,32 @@ router.post('/repairs/:id/accept', repairsGate, (req, res) => {
       warehouse_remarks ?? null,
       id
     );
+    releaseRepairHold(id);
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
   }
+  if (r.requested_by && r.requested_by !== req.user!.id) {
+    void notifyUser(r.requested_by, { title: `Part issued — ${r.number}`, body: `${r.quantity} × ${r.component_name} for ${who}`, ...requesterLinks(r.unit_id), tag: `rpr-${id}` });
+  }
   res.json(loadRequest(id));
 });
 
 // POST /api/production/repairs/:id/reject — warehouse declines (no stock movement)
-router.post('/repairs/:id/reject', repairsGate, (req, res) => {
+router.post('/repairs/:id/reject', repairsGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
-  const r = queryOne<RepairPartRequest>('SELECT status FROM repair_part_requests WHERE id = ?', id);
+  const r = queryOne<RepairPartRequest>('SELECT * FROM repair_part_requests WHERE id = ?', id);
   if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
   if (r.status !== 'requested') {
     res.status(409).json({ error: `Request is already ${r.status}` });
     return;
   }
   const { warehouse_remarks } = parseBody(repairRejectSchema, req.body);
+  releaseRepairHold(id);
+  if (r.requested_by && r.requested_by !== req.user!.id) {
+    void notifyUser(r.requested_by, { title: `Part request rejected — ${r.number}`, body: warehouse_remarks, ...requesterLinks(r.unit_id), tag: `rpr-${id}` });
+  }
   run(
     `UPDATE repair_part_requests
      SET status = 'rejected', decided_by = ?, decided_at = datetime('now'),
@@ -228,6 +294,171 @@ router.post('/repairs/:id/reject', repairsGate, (req, res) => {
     warehouse_remarks,
     id
   );
+  res.json(loadRequest(id));
+});
+
+/** Where the requester (QC / QA) opens the unit a request is for, and its job order on the desktop. */
+function requesterLinks(unitId: number): { url: string; link?: { route: string; params: Record<string, unknown> } } {
+  const u = queryOne<{ stage: number; qc_stages: number; job_order_id: number }>(
+    'SELECT u.stage, j.qc_stages, u.job_order_id FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id WHERE u.id = ?', unitId
+  );
+  if (!u) return { url: '#/qc' };
+  const role = u.qc_stages > 1 && u.stage + 1 >= u.qc_stages ? 'qa' : 'qc';
+  return { url: `#/qc?role=${role}&unit=${unitId}`, link: { route: 'job-orders', params: { id: u.job_order_id } } };
+}
+
+function repairEvent(requestId: number, kind: string, details: unknown, actorId: number): void {
+  run('INSERT INTO repair_request_events (request_id, kind, details, actor_id) VALUES (?, ?, ?, ?)',
+    requestId, kind, details == null ? null : JSON.stringify(details), actorId);
+}
+
+/* GET /api/production/repairs/:id/context — what the parts clerk verifies before issuing
+   (Figma 83:68 to 83:452): the unit and its source inspection, duplicate open requests for the
+   same unit and part, stock at every location (approved sources first), a pending revision
+   and the request's history. */
+router.get('/repairs/:id/context', repairsRead, (req, res) => {
+  const id = Number(req.params.id);
+  const r = loadRequest(id);
+  if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
+  const unit = queryOne<{ id: number; identifier: string | null; status: string; product_name: string }>(
+    'SELECT u.id, u.identifier, u.status, j.product_name FROM job_order_units u JOIN job_orders j ON j.id = u.job_order_id WHERE u.id = ?', r.unit_id
+  );
+  const inspection = queryOne<Record<string, unknown>>(
+    `SELECT q.id, q.stage, q.remarks, q.created_at, us.full_name AS inspector_name, rd.category, rd.station, rd.priority
+     FROM qc_records q LEFT JOIN users us ON us.id = q.inspector_id LEFT JOIN qc_repair_details rd ON rd.qc_record_id = q.id
+     WHERE q.unit_id = ? AND q.result = 'fail' ORDER BY q.id DESC LIMIT 1`, r.unit_id
+  ) ?? null;
+  const item = r.component_item_id != null
+    ? queryOne<{ id: number; name: string; sku: string | null }>('SELECT id, name, sku FROM inventory_items WHERE id = ?', r.component_item_id) ?? null : null;
+  const duplicates = queryAll<{ id: number; number: string }>(
+    `SELECT id, number FROM repair_part_requests WHERE unit_id = ? AND component_item_id IS ? AND status = 'requested' AND id != ?`,
+    r.unit_id, r.component_item_id, id
+  );
+  const sources = r.component_item_id == null ? [] : queryAll<{ id: number; name: string; type: string; is_default: number }>(
+    'SELECT id, name, type, is_default FROM locations ORDER BY is_default DESC, name COLLATE NOCASE'
+  ).map((l) => {
+    // free: what this request can take there — stock minus kit picks and other requests' holds.
+    const available = stockAt(r.component_item_id!, l.id);
+    return { ...l, available, free: Math.max(0, freeFor(r.component_item_id!, l.id, id)), approved: REPAIR_SOURCE_TYPES.has(l.type) };
+  }).sort((a, b) => Number(b.approved) - Number(a.approved) || b.free - a.free);
+  const hold = r.status === 'requested' ? holdOf(id) : null;
+  const revision = queryOne<Record<string, unknown>>(
+    `SELECT v.*, u.full_name AS proposed_by_name FROM repair_revisions v LEFT JOIN users u ON u.id = v.proposed_by
+     WHERE v.request_id = ? ORDER BY v.id DESC LIMIT 1`, id
+  ) ?? null;
+  const events = queryAll(
+    `SELECT e.kind, e.details, e.created_at, u.full_name AS actor_name FROM repair_request_events e LEFT JOIN users u ON u.id = e.actor_id
+     WHERE e.request_id = ? ORDER BY e.id`, id
+  );
+  const shortage = r.status === 'requested' && !sources.some((x) => x.approved && x.free >= r.quantity);
+  res.json({ request: r, unit, inspection, item, duplicates, sources, hold, revision, events, shortage });
+});
+
+/* GET /api/production/repair-history?q=&state=issued|rejected|blocked — read-only audit list
+   (83:488) with counts. "blocked" = still requested with no approved source holding enough. */
+router.get('/repair-history', repairsRead, (req, res) => {
+  const q = String(req.query.q ?? '').trim().toLowerCase();
+  const want = String(req.query.state ?? '');
+  const rows = queryAll<RepairPartRequest & { sku: string | null; quantity: number; component_item_id: number | null }>(
+    `${REQUEST_SELECT.replace('FROM repair_part_requests r', ', ci.sku AS sku FROM repair_part_requests r LEFT JOIN inventory_items ci ON ci.id = r.component_item_id')}
+     ORDER BY r.id DESC LIMIT 500`
+  );
+  const approved = queryAll<{ id: number }>("SELECT id FROM locations WHERE type IN ('warehouse', 'branch', 'store', 'other')");
+  const stateOf = (r: { id: number; status: string; component_item_id: number | null; quantity: number }) =>
+    r.status === 'accepted' ? 'issued' : r.status === 'rejected' ? 'rejected'
+      : r.status === 'requested' && (r.component_item_id == null || !approved.some((l) => freeFor(r.component_item_id!, l.id, r.id) >= r.quantity)) ? 'blocked'
+      : r.status;
+  const all = rows.map((r) => ({ ...r, state: stateOf(r) }));
+  const counts = { issued: 0, rejected: 0, blocked: 0 };
+  all.forEach((r) => { if (r.state in counts) counts[r.state as keyof typeof counts]++; });
+  const out = all.filter((r) => (!want || r.state === want) && (!q || [r.number, r.unit_identifier, r.job_order_number, r.sku, r.component_name]
+    .some((v) => v != null && String(v).toLowerCase().includes(q))));
+  res.json({ counts, rows: out.slice(0, 100) });
+});
+
+/* POST /api/production/repairs/:id/shortage — escalate "no approved stock" (83:416). Records
+   only; the request stays open and blocked until stock arrives or it is revised. */
+router.post('/repairs/:id/shortage', repairsGate, syncClass('merge'), (req, res) => {
+  const id = Number(req.params.id);
+  const r = queryOne<{ status: string }>('SELECT status FROM repair_part_requests WHERE id = ?', id);
+  if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
+  if (r.status !== 'requested') { res.status(409).json({ error: `Request is already ${r.status}` }); return; }
+  const { note } = parseBody(repairShortageSchema, req.body);
+  repairEvent(id, 'shortage', { note: note ?? null }, req.user!.id);
+  // The repair station waits on it; the warehouse supervisors arrange replenishment.
+  const sr = loadRequest(id)!;
+  const push = { title: `Repair part short — ${sr.number}`, body: `${sr.quantity} × ${sr.component_name} for ${sr.unit_identifier || 'unit #' + sr.unit_id}${note ? ' — ' + note : ''}`, tag: `rpr-${id}` };
+  if (sr.requested_by && sr.requested_by !== req.user!.id) void notifyUser(sr.requested_by, { ...push, ...requesterLinks(sr.unit_id) });
+  void notifyPermission('inventory.adjust', { ...push, url: `#/repairs?id=${id}`, link: { route: 'repairs' } });
+  res.status(201).json({ ok: true });
+});
+
+/* POST /api/production/repairs/:id/revision — the parts clerk proposes another part or quantity
+   (83:452). The clerk can't approve their own proposal. */
+router.post('/repairs/:id/revision', repairsGate, syncClass('merge'), (req, res) => {
+  const id = Number(req.params.id);
+  const r = queryOne<RepairPartRequest>('SELECT * FROM repair_part_requests WHERE id = ?', id);
+  if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
+  if (r.status !== 'requested') { res.status(409).json({ error: `Request is already ${r.status}` }); return; }
+  if (queryOne("SELECT 1 FROM repair_revisions WHERE request_id = ? AND status = 'pending'", id)) {
+    res.status(409).json({ error: 'A revision is already waiting for approval.' });
+    return;
+  }
+  const input = parseBody(repairRevisionSchema, req.body);
+  const itemId = input.component_item_id ?? r.component_item_id;
+  const item = itemId != null ? queryOne<{ name: string }>('SELECT name FROM inventory_items WHERE id = ?', itemId) : null;
+  if (!item) { res.status(400).json({ error: 'That component item does not exist' }); return; }
+  if (itemId === r.component_item_id && input.quantity === r.quantity) {
+    res.status(400).json({ error: 'The revision changes nothing — pick another part or quantity.' });
+    return;
+  }
+  const rid = Number(run(
+    `INSERT INTO repair_revisions (request_id, proposed_item_id, proposed_name, proposed_quantity, reason, proposed_by)
+     VALUES (?, ?, ?, ?, ?, ?)`, id, itemId, item.name, input.quantity, input.reason, req.user!.id
+  ).lastInsertRowid);
+  repairEvent(id, 'revision_requested', { revision_id: rid, item: item.name, quantity: input.quantity, reason: input.reason }, req.user!.id);
+  if (r.requested_by && r.requested_by !== req.user!.id) {
+    void notifyUser(r.requested_by, { title: `Approve a revision — ${r.number}`, body: `${input.quantity} × ${item.name} instead of ${r.quantity} × ${r.component_name}: ${input.reason}`,
+      url: `#/repairs?id=${id}&step=decide`, link: r.job_order_id ? { route: 'job-orders', params: { id: r.job_order_id } } : undefined, tag: `rpr-${id}` });
+  }
+  res.status(201).json({ id: rid });
+});
+
+/* POST /api/production/repairs/:id/revision/decide — the requester or a supervisor
+   (production.approve / inventory.adjust) approves or rejects; never the proposer. */
+// The door is the repairs desk list (the requester is a QC / QA inspector); the handler then allows only
+// the requester or a supervisor, never the proposer.
+router.post('/repairs/:id/revision/decide', repairsRead, syncClass('claim'), (req, res) => {
+  const id = Number(req.params.id);
+  const r = queryOne<RepairPartRequest>('SELECT * FROM repair_part_requests WHERE id = ?', id);
+  const v = queryOne<{ id: number; proposed_item_id: number | null; proposed_name: string; proposed_quantity: number; proposed_by: number | null }>(
+    "SELECT * FROM repair_revisions WHERE request_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1", id
+  );
+  if (!r || !v) { res.status(404).json({ error: 'No pending revision for this request' }); return; }
+  const perms = req.user!.permissions;
+  const mayDecide = r.requested_by === req.user!.id || perms.includes('production.approve');
+  if (!mayDecide) { res.status(403).json({ error: 'Only the requester or a supervisor can decide a revision.' }); return; }
+  if (v.proposed_by === req.user!.id) { res.status(403).json({ error: 'You proposed this revision — someone else must approve it.' }); return; }
+  const { approve, note } = parseBody(repairRevisionDecisionSchema, req.body);
+  db.exec('BEGIN');
+  try {
+    run("UPDATE repair_revisions SET status = ?, decided_by = ?, decision_note = ?, decided_at = datetime('now') WHERE id = ?",
+      approve ? 'approved' : 'rejected', req.user!.id, note ?? null, v.id);
+    if (approve) {
+      run("UPDATE repair_part_requests SET component_item_id = ?, component_name = ?, quantity = ?, updated_at = datetime('now') WHERE id = ?",
+        v.proposed_item_id, v.proposed_name, v.proposed_quantity, id);
+      placeRepairHold(id); // hold the revised part / quantity instead
+    }
+    repairEvent(id, approve ? 'revision_approved' : 'revision_rejected', { revision_id: v.id, note: note ?? null }, req.user!.id);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  if (v.proposed_by) {
+    void notifyUser(v.proposed_by, { title: `Revision ${approve ? 'approved' : 'rejected'} — ${r.number}`, body: note || (approve ? `Issue ${v.proposed_quantity} × ${v.proposed_name}` : 'Keep the original request'),
+      url: `#/repairs?id=${id}`, tag: `rpr-${id}` });
+  }
   res.json(loadRequest(id));
 });
 
@@ -247,17 +478,17 @@ function teamMembers(teamId: number): ProductionTeamMember[] {
 // GET /api/production/employees — the roster to pick team members from. Deliberately its own
 // endpoint (rather than reusing /api/hr/employees) so anyone who can manage production teams
 // can staff them without also needing hr.view; only the fields the picker needs are exposed.
-router.get('/employees', readGate, (_req, res) => {
+router.get('/employees', lineRead, (_req, res) => {
   res.json(queryAll(
     `SELECT e.id, e.name, e.employee_no, e.position, d.name AS department_name
      FROM employees e LEFT JOIN departments d ON d.id = e.department_id
-     WHERE e.status NOT IN ('resigned', 'terminated')
+     WHERE e.status NOT IN ('suspended', 'resigned', 'terminated')
      ORDER BY d.name COLLATE NOCASE, e.name COLLATE NOCASE`
   ));
 });
 
 // GET /api/production/teams — teams with member count + open job-order count
-router.get('/teams', readGate, (req, res) => {
+router.get('/teams', lineRead, (req, res) => {
   const activeOnly = req.query.active === '1' || req.query.active === 'true';
   const rows = queryAll<ProductionTeam>(
     `SELECT t.*,
@@ -272,7 +503,7 @@ router.get('/teams', readGate, (req, res) => {
 });
 
 // GET /api/production/teams/:id
-router.get('/teams/:id', readGate, (req, res) => {
+router.get('/teams/:id', lineRead, (req, res) => {
   const id = Number(req.params.id);
   const team = queryOne<ProductionTeam>('SELECT * FROM production_teams WHERE id = ?', id);
   if (!team) { res.status(404).json({ error: 'Team not found' }); return; }
@@ -280,7 +511,7 @@ router.get('/teams/:id', readGate, (req, res) => {
 });
 
 // POST /api/production/teams
-router.post('/teams', writeGate, (req, res) => {
+router.post('/teams', writeGate, syncClass('claim'), (req, res) => {
   const input = parseBody(productionTeamSchema, req.body);
   const info = run(
     'INSERT INTO production_teams (name, notes, is_active) VALUES (?, ?, ?)',
@@ -290,7 +521,7 @@ router.post('/teams', writeGate, (req, res) => {
 });
 
 // PUT /api/production/teams/:id
-router.put('/teams/:id', writeGate, (req, res) => {
+router.put('/teams/:id', writeGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const team = queryOne<ProductionTeam>('SELECT * FROM production_teams WHERE id = ?', id);
   if (!team) { res.status(404).json({ error: 'Team not found' }); return; }
@@ -306,7 +537,7 @@ router.put('/teams/:id', writeGate, (req, res) => {
 });
 
 // DELETE /api/production/teams/:id — blocked while a job order still points at it
-router.delete('/teams/:id', writeGate, (req, res) => {
+router.delete('/teams/:id', writeGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM production_teams WHERE id = ?', id)) {
     res.status(404).json({ error: 'Team not found' });
@@ -322,7 +553,7 @@ router.delete('/teams/:id', writeGate, (req, res) => {
 });
 
 // POST /api/production/teams/:id/members  { employee_id, role? }
-router.post('/teams/:id/members', writeGate, (req, res) => {
+router.post('/teams/:id/members', writeGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   if (!queryOne('SELECT id FROM production_teams WHERE id = ?', id)) {
     res.status(404).json({ error: 'Team not found' });
@@ -345,7 +576,7 @@ router.post('/teams/:id/members', writeGate, (req, res) => {
 });
 
 // DELETE /api/production/teams/:id/members/:employeeId
-router.delete('/teams/:id/members/:employeeId', writeGate, (req, res) => {
+router.delete('/teams/:id/members/:employeeId', writeGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const info = run(
     'DELETE FROM production_team_members WHERE team_id = ? AND employee_id = ?',
@@ -356,10 +587,10 @@ router.delete('/teams/:id/members/:employeeId', writeGate, (req, res) => {
 });
 
 // GET / PUT /api/production/capacity — advisory units/day for the schedule board
-router.get('/capacity', readGate, (_req, res) => {
+router.get('/capacity', lineRead, (_req, res) => {
   res.json({ daily_capacity: Number(getSetting<number>(CAPACITY_KEY)) || 0 });
 });
-router.put('/capacity', writeGate, (req, res) => {
+router.put('/capacity', writeGate, syncClass('claim'), (req, res) => {
   const { daily_capacity } = parseBody(productionCapacitySchema, req.body);
   setSetting(CAPACITY_KEY, daily_capacity);
   res.json({ daily_capacity });
@@ -382,7 +613,7 @@ const loadBatch = (id: number): ProductionBatch | null =>
   queryOne<ProductionBatch>(`${BATCH_SELECT} WHERE b.id = ?`, id) ?? null;
 
 // GET /api/production/batches?job_order=&product=&status=
-router.get('/batches', readGate, (req, res) => {
+router.get('/batches', lineRead, (req, res) => {
   const { job_order, product, status } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
@@ -393,15 +624,16 @@ router.get('/batches', readGate, (req, res) => {
     queryAll<ProductionBatch>(
       `${BATCH_SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY b.id DESC`,
       ...params
-    )
+    ).filter(b=>!scopedLineReader(req.user!) || b.job_order_id!=null && canRecordJob(req.user!,b.job_order_id))
   );
 });
 
 // GET /api/production/batches/:id — batch + its units + QC records
-router.get('/batches/:id', readGate, (req, res) => {
+router.get('/batches/:id', lineRead, (req, res) => {
   const id = Number(req.params.id);
   const batch = loadBatch(id);
   if (!batch) { res.status(404).json({ error: 'Batch not found' }); return; }
+  if (scopedLineReader(req.user!) && (!batch.job_order_id || !canRecordJob(req.user!,batch.job_order_id))) {res.status(403).json({error:'You are not assigned to this job order'});return;}
   const units = queryAll<JobOrderUnit>('SELECT * FROM job_order_units WHERE batch_id = ? ORDER BY id', id);
   const qc = queryAll<{ checklist: string | null }>(
     `SELECT q.*, u.full_name AS inspector_name
@@ -417,7 +649,7 @@ router.get('/batches/:id', readGate, (req, res) => {
 });
 
 // POST /api/production/batches — create one by hand (grouping / relabelling)
-router.post('/batches', writeGate, (req, res) => {
+router.post('/batches', writeGate, syncClass('merge'), (req, res) => {
   const input = parseBody(createBatchSchema, req.body);
   if (input.job_order_id && !queryOne('SELECT id FROM job_orders WHERE id = ?', input.job_order_id)) {
     res.status(400).json({ error: 'Job order not found' });
@@ -444,7 +676,7 @@ router.post('/batches', writeGate, (req, res) => {
 });
 
 // PUT /api/production/batches/:id — relabel / re-note / change status
-router.put('/batches/:id', writeGate, (req, res) => {
+router.put('/batches/:id', writeGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const batch = queryOne<ProductionBatch>('SELECT * FROM production_batches WHERE id = ?', id);
   if (!batch) { res.status(404).json({ error: 'Batch not found' }); return; }
@@ -465,7 +697,7 @@ router.put('/batches/:id', writeGate, (req, res) => {
 // a quality record (this batch's `status` open<->closed here means "signed off", not
 // "received") — independent of Products In, which is what actually posts the batch's stock
 // (see job-orders.routes.ts POST /:id/products-in).
-router.post('/batches/:id/inspect', inspectGate, (req, res) => {
+router.post('/batches/:id/inspect', inspectGate, syncClass('physical'), (req, res) => {
   const id = Number(req.params.id);
   const batch = queryOne<ProductionBatch>('SELECT * FROM production_batches WHERE id = ?', id);
   if (!batch) { res.status(404).json({ error: 'Batch not found' }); return; }
@@ -543,7 +775,7 @@ export const DEFAULT_BATCH_LABEL = `<img class="lbl-qr" src="{{qr_src}}" alt="" 
 </div>`;
 
 // GET /api/production/label-templates — the editable unit + batch label bodies
-router.get('/label-templates', readGate, (_req, res) => {
+router.get('/label-templates', labelsRead, (_req, res) => {
   res.json({
     unit: getSetting<string>(UNIT_LABEL_KEY) || DEFAULT_UNIT_LABEL,
     batch: getSetting<string>(BATCH_LABEL_KEY) || DEFAULT_BATCH_LABEL,
@@ -553,7 +785,7 @@ router.get('/label-templates', readGate, (_req, res) => {
 });
 
 // PUT /api/production/label-templates — save one or both; '' / null resets to default
-router.put('/label-templates', writeGate, (req, res) => {
+router.put('/label-templates', writeGate, syncClass('claim'), (req, res) => {
   const body = (req.body ?? {}) as { unit?: unknown; batch?: unknown };
   if (body.unit !== undefined) {
     const v = typeof body.unit === 'string' ? body.unit.trim() : '';
@@ -585,11 +817,15 @@ function qcRows(col: 'unit_id' | 'batch_id', id: number) {
 }
 
 // GET /api/production/record?unit=<id>  |  ?batch=<id> — the full read-only history.
-router.get('/record', readGate, (req, res) => {
+router.get('/record', recordRead, (req, res) => {
   const unitId = req.query.unit ? Number(req.query.unit) : null;
   const batchId = req.query.batch ? Number(req.query.batch) : null;
   if (!unitId && !batchId) { res.status(400).json({ error: 'A unit or batch id is required' }); return; }
 
+  if (scopedLineReader(req.user!)) {
+    const record=queryOne<{job_order_id:number}>(unitId?'SELECT job_order_id FROM job_order_units WHERE id=?':'SELECT job_order_id FROM production_batches WHERE id=?',unitId||batchId);
+    if(record && !canRecordJob(req.user!,record.job_order_id)) {res.status(403).json({error:'You are not assigned to this job order'});return;}
+  }
   let productId: number | null = null;
   let joId: number | null = null;
   const out: Record<string, unknown> = { kind: unitId ? 'unit' : 'batch' };
@@ -621,6 +857,9 @@ router.get('/record', readGate, (req, res) => {
     const b = loadBatch(batchId!);
     if (!b) { res.status(404).json({ error: 'Batch not found' }); return; }
     out.batch = b;
+    out.batch_stock = batchBalances(b.id);
+    out.batch_allocations = queryAll(`SELECT a.quantity,a.state,o.number AS order_number FROM production_batch_allocations a JOIN orders o ON o.id=a.order_id WHERE a.batch_id=?`,b.id);
+    out.batch_counts = queryAll('SELECT location_id,before_quantity,counted_quantity,reason,created_at FROM production_batch_counts WHERE batch_id=? ORDER BY id DESC',b.id);
     productId = b.product_item_id;
     joId = b.job_order_id;
     out.units = queryAll<JobOrderUnit>('SELECT * FROM job_order_units WHERE batch_id = ? ORDER BY id', batchId);
@@ -632,6 +871,7 @@ router.get('/record', readGate, (req, res) => {
       'SELECT id, name, sku, unit, product_group, attributes FROM inventory_items WHERE id = ?', productId
     );
     if (p) {
+      out.stock = queryAll(`SELECT s.build_mode,SUM(s.quantity) AS quantity FROM inventory_variant_stock s WHERE s.item_id=? GROUP BY s.build_mode`,p.id);
       let spec: unknown = null;
       try { spec = p.attributes ? (JSON.parse(p.attributes) as Record<string, unknown>).spec : null; } catch { spec = null; }
       out.product = { id: p.id, name: p.name, sku: p.sku, unit: p.unit, model: p.product_group, variant: spec ?? null };
@@ -639,7 +879,7 @@ router.get('/record', readGate, (req, res) => {
   }
   if (joId) {
     out.job_order = queryOne(
-      `SELECT j.id, j.number, j.product_name, j.status, j.planned_start, j.due_date, j.accepted_at,
+      `SELECT j.id, j.number, j.product_name, j.build_mode, j.status, j.planned_start, j.due_date, j.accepted_at,
               t.name AS team_name, cb.full_name AS created_by_name, rb.full_name AS released_by_name, ab.full_name AS accepted_by_name,
               sl.name AS source_location_name, ol.name AS output_location_name
        FROM job_orders j
@@ -668,7 +908,7 @@ router.get('/record', readGate, (req, res) => {
 });
 
 // POST /api/production/repairs/:id/cancel — pull a request back before the warehouse acts
-router.post('/repairs/:id/cancel', inspectGate, (req, res) => {
+router.post('/repairs/:id/cancel', inspectGate, syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const r = queryOne<RepairPartRequest>('SELECT status FROM repair_part_requests WHERE id = ?', id);
   if (!r) { res.status(404).json({ error: 'Request not found' }); return; }
@@ -680,6 +920,7 @@ router.post('/repairs/:id/cancel', inspectGate, (req, res) => {
     "UPDATE repair_part_requests SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?",
     id
   );
+  releaseRepairHold(id);
   res.json(loadRequest(id));
 });
 

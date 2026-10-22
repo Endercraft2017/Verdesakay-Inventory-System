@@ -9,17 +9,20 @@
  * (record, action type): once an action has a `success` row in form_record_action_runs it is
  * not run again, so re-saving / re-approving a record is safe.
  */
+import { renderDocument } from '../shared/doc-render';
 import path from 'node:path';
 import fs from 'node:fs';
+import { storeDurableUpload } from '../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { db, queryOne, queryAll, run, uploadDir } from '../shared/db';
 import { notifyUser } from '../shared/push';
 import { sendMail, mailReady } from '../shared/mailer';
 import { companyProfile } from '../modules/payroll/ph-payroll-report-data';
-import { resolvePermissions } from '../shared/permissions';
+import { userPermissions } from '../shared/roles';
 import type { FormAction, FormDefinition, FieldDef, Role } from '../shared/types';
+import { commandFileName, now } from '../shared/sync-context';
 
-export type ActionTrigger = 'create' | 'approved';
+export type ActionTrigger = 'create' | 'approved' | 'submitted';
 
 interface RunArgs {
   recordId: number;
@@ -46,6 +49,12 @@ function parseJson<T>(raw: unknown, fallback: T): T {
 /** The employee this record is about — from a field of type `employee` (value is the name),
  *  else a plain `employee_name` / `employee_id` in the data. Null if none / no match. */
 function resolveEmployee(fields: FieldDef[], data: Record<string, unknown>): ResolvedEmployee | null {
+  const reference=fields.find(field=>field.type==='reference'&&field.source==='employee');
+  const selected=reference?data[reference.key] as {id?:number}|undefined:undefined;
+  if(selected?.id){
+    const employee=queryOne<ResolvedEmployee>('SELECT e.id,e.name,e.user_id,u.email,e.department_id FROM employees e LEFT JOIN users u ON u.id=e.user_id WHERE e.id=?',selected.id);
+    if(employee)return employee;
+  }
   const empField = fields.find((f) => f.type === 'employee');
   const name = empField ? data[empField.key] : (data.employee_name ?? data.employee);
   const id = data.employee_id;
@@ -73,21 +82,12 @@ function fillTemplate(tpl: string, ctx: { number: string; form: string; employee
     .replace(/\{field:([a-z0-9_]+)\}/gi, (_m, k: string) => String(ctx.data[k] ?? ''));
 }
 
-/** Render a form's linked doc_template body to standalone HTML by plain {{key}} substitution
- *  (no formula engine — see docs). Used to file a snapshot of the notice into the 201 file. */
+/** Render the assigned default using the same escaped variables and controls as preview. */
 function renderTemplateHtml(templateId: number | null, ctx: Record<string, unknown>): string | null {
   if (!templateId) return null;
   const tpl = queryOne<{ body: string }>('SELECT body FROM doc_templates WHERE id = ?', templateId);
   if (!tpl) return null;
-  const flat: Record<string, string> = {};
-  for (const [k, v] of Object.entries(ctx)) flat[k] = v == null ? '' : String(v);
-  const co = companyProfile();
-  flat['company.name'] = String(co.name ?? '');
-  flat['company.address'] = String(co.address ?? '');
-  flat['company.phone'] = String(co.phone ?? '');
-  flat['company.email'] = String(co.email ?? '');
-  const body = tpl.body.replace(/\{\{\s*([a-z0-9_.]+)\s*\}\}/gi, (_m, k: string) => flat[k] ?? '');
-  return `<!doctype html><meta charset="utf-8"><body>${body}</body>`;
+  return `<!doctype html><meta charset="utf-8"><body>${renderDocument(tpl.body,{...ctx,company:companyProfile()},templateId)}</body>`;
 }
 
 function alreadySucceeded(recordId: number, type: string): boolean {
@@ -108,15 +108,17 @@ export function runFormActions(args: RunArgs): { warnings: string[] } {
   const actions = parseJson<FormAction[]>(args.formDef.actions, []);
   if (!actions.length) return { warnings };
   const fields = parseJson<FieldDef[]>(args.formDef.fields, []);
-  const due = actions.filter((a) => (a.run_on ?? 'create') === args.trigger);
+  const due = actions.filter((a) => a.type!=='create_sales_draft' && (a.run_on ?? 'create') === args.trigger);
   if (!due.length) return { warnings };
 
   const employee = resolveEmployee(fields, args.data);
   const link = `#/form-records?form_id=${args.formDef.id}`;
   const tplCtx: Record<string, unknown> = {
     ...args.data,
+    fields: args.data,
     number: args.recordNumber,
-    today: new Date().toISOString().slice(0, 10),
+    record:{number:args.recordNumber,status:args.trigger==='approved'?'approved':(queryOne<{status:string}>('SELECT status FROM form_records WHERE id=?',args.recordId)?.status||''),created_at:queryOne<{created_at:string}>('SELECT created_at FROM form_records WHERE id=?',args.recordId)?.created_at||''},
+    today: now().toISOString().slice(0, 10),
   };
 
   for (const action of due) {
@@ -140,8 +142,10 @@ export function runFormActions(args: RunArgs): { warnings: string[] } {
           if (!employee) { warnings.push('File to 201: no employee on this record'); logRun(args.recordId, action.type, 'skipped', 'no employee'); break; }
           const html = renderTemplateHtml(args.formDef.template_id, tplCtx);
           if (!html) { warnings.push('File to 201: this form has no printable template'); logRun(args.recordId, action.type, 'skipped', 'no template'); break; }
-          const stored = `mm-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.html`;
+          // Offline, named after the command: the PC's file and the cloud's are the same file.
+          const stored = commandFileName('mm', '.html') ?? `mm-${Date.now()}-${crypto.randomBytes(6).toString('hex')}.html`;
           fs.writeFileSync(path.join(uploadDir(), stored), html, 'utf8');
+          storeDurableUpload(stored);
           const title = `${args.formDef.name} ${args.recordNumber}`;
           const info = run(
             `INSERT INTO employee_documents (employee_id, title, stored_name, original_name, mime_type, size_bytes, uploaded_by)
@@ -173,7 +177,7 @@ export function runFormActions(args: RunArgs): { warnings: string[] } {
               'SELECT id, role, permission_overrides FROM users WHERE active = 1')) {
               let ov: Record<string, boolean> = {};
               try { ov = u.permission_overrides ? JSON.parse(u.permission_overrides) : {}; } catch { ov = {}; }
-              if (resolvePermissions(u.role, ov).includes('hr.manage')) recipients.add(u.id);
+              if (userPermissions(u.role, ov).includes('hr.manage')) recipients.add(u.id);
             }
           }
           recipients.delete(args.actingUserId);

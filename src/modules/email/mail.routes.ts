@@ -3,11 +3,12 @@ import { Router } from 'express';
 import { requireAuth, requirePermission } from '../../shared/auth';
 import { parseBody, mailSettingsSchema, sendMailSchema } from '../../shared/validation';
 import { getMailSettings, saveMailSettings, sendMail, verifyMailSettings, mailLog, mailReady } from '../../shared/mailer';
+import { syncClass } from '../../sync';
 
 const router = Router();
 router.use(requireAuth);
 
-const configGate = requirePermission('users.manage');
+const configGate = requirePermission('workspace.manage');
 
 // GET /api/mail/settings — current config (password never returned; `has_password` flag instead)
 router.get('/settings', configGate, (_req, res) => {
@@ -15,7 +16,8 @@ router.get('/settings', configGate, (_req, res) => {
 });
 
 // PUT /api/mail/settings
-router.put('/settings', configGate, (req, res) => {
+// The company's mail server and its password are cloud-only (D8).
+router.put('/settings', configGate, syncClass('online'), (req, res) => {
   const input = parseBody(mailSettingsSchema, req.body);
   if (input.transport === 'smtp' && (!input.smtp_host || !input.from_email)) {
     res.status(400).json({ error: 'SMTP host and a From address are required for SMTP.' });
@@ -26,7 +28,7 @@ router.put('/settings', configGate, (req, res) => {
 });
 
 // POST /api/mail/test — verify the connection, then send a test message
-router.post('/test', configGate, async (req, res, next) => {
+router.post('/test', configGate, syncClass('online'), async (req, res, next) => {
   try {
     const to = typeof req.body?.to === 'string' ? req.body.to.trim() : '';
     if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
@@ -39,7 +41,7 @@ router.post('/test', configGate, async (req, res, next) => {
       return;
     }
     const r = await sendMail(
-      { to, subject: 'Verdesakay — test email', text: 'This is a test message from your Verdesakay system. Email is working.' },
+      { to, subject: 'Otom — test email', text: 'This is a test message from your Otom system. Email is working.' },
       req.user!.id
     );
     res.status(r.ok ? 200 : 400).json(r);
@@ -49,7 +51,7 @@ router.post('/test', configGate, async (req, res, next) => {
 });
 
 // POST /api/mail/send — send an email (used by the Email drawer and the AI tool's route peer)
-router.post('/send', requirePermission('mail.send'), async (req, res, next) => {
+router.post('/send', requirePermission('mail.send'), syncClass('online'), async (req, res, next) => {
   try {
     const { to, subject, body } = parseBody(sendMailSchema, req.body);
     const r = await sendMail({ to, subject, text: body }, req.user!.id);

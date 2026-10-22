@@ -20,7 +20,7 @@ is sent until an admin fills this in, and the SMTP password is encrypted at rest
 | Field | What to put |
 |---|---|
 | **Transport** | `SMTP` to turn email on; `Off` to disable all sending. |
-| **From name** | Display name recipients see, e.g. `Verdesakay Office`. Optional. |
+| **From name** | Display name recipients see, e.g. `Otom`. Optional. |
 | **From email** | The address mail is sent *as*, e.g. `office@yourcompany.com`. Usually the same as the SMTP username. |
 | **Reply-to** | Where replies should go if different from *From*. Optional. |
 | **SMTP host** | Your provider's outgoing server (see table below). |
@@ -52,7 +52,7 @@ credentials, and sends one test message to an address you choose. Every send
 
 1. The Google account needs **2-Step Verification** turned on
    (`myaccount.google.com` → Security).
-2. Go to `myaccount.google.com/apppasswords`, create one named "Verdesakay",
+2. Go to `myaccount.google.com/apppasswords`, create one named "Otom",
    and copy the 16-character code.
 3. In Email → Settings: host `smtp.gmail.com`, port `587`, secure **off**,
    username = the Gmail address, password = that 16-character code (spaces optional).
@@ -121,3 +121,35 @@ domain registrar's DNS panel. Send a test to a Gmail address and use
 
 The **log** under Email → shows every attempt with its status (`sent` / `failed`)
 and the provider's error text, which is the fastest way to see what a receiver rejected.
+
+## Tenant guide, operator-assisted setup, and manual fees
+
+Tenants can open **Setup guide** from the Email drawer or Email settings. It is
+served locally at `/email-setup.html`, including on path-based tenant hosts; no
+GitHub account is needed. On a dedicated console host the same content is served
+at `/_platform/email-setup.html`.
+
+In `/_platform`, select the workspace → **Settings** → **Tenant email / assisted
+setup**. Configure that company's SMTP provider, save, and send a test to an address
+you control. Confirm actual delivery and check spam; provider acceptance does not
+guarantee inbox delivery. Blank password preserves the stored secret; the explicit
+clear checkbox removes it. Secrets remain encrypted and hidden; changes and test
+outcomes are audited. Outbound SMTP must be allowed by the server's hosting plan.
+
+Use **Invoice assisted SMTP setup** to open the existing Billing form, prefilled
+with kind **implementation** and description **One-time assisted SMTP setup**.
+Enter the agreed PHP amount and due date; no default fee is assumed. There is no
+second invoice ledger. Customers see this bill in their existing Billing screen.
+Issue the registered BIR invoice through your normal manual process and record
+its number in Billing. Record/confirm payment only after checking the actual
+transfer. Track service completion separately as a resolved Support entry.
+Paying an implementation/other invoice does not activate a subscription or clear
+its payment lock; subscription payments retain their existing activation behavior.
+
+The header **Email alerts** configures our platform mailbox, separate from tenant
+SMTP: select **Brevo**, verify the sender/domain in Brevo, and supply the **API
+key** (not an SMTP key), From address, and alert recipients. Save and send a test.
+Brevo here uses HTTPS; SMTP keys apply only to SMTP transports. Leave a secret
+blank to keep it or use **Clear saved key / password** to remove it. Set a stable
+`MAIL_SECRET_KEY` or `APP_SECRET` in production; never send credentials in support
+messages or put our platform key in a tenant's settings.

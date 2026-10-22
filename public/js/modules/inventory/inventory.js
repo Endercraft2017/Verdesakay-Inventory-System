@@ -3,6 +3,7 @@
 /* ---------- ECOUNT-style Item form (data-driven from item-form-config.js) ---------- */
 // Cached merged config (defaults overlaid with the admin's saved customization).
 let _itemFormConfig = null;
+let _itemFieldSequence = 0;
 
 /** Merge the admin's saved per-field overrides over ITEM_FORM_DEFAULTS (by key). */
 function mergeFormConfig(saved) {
@@ -58,7 +59,71 @@ async function loadLocations(force) {
 }
 function locationOptions(selected, list) {
   return (list || _locations).map((l) =>
-    `<option value="${l.id}" ${String(l.id) === String(selected) ? 'selected' : ''}>${UI.esc(l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('');
+    `<option value="${l.id}" ${String(l.id) === String(selected) ? 'selected' : ''}>${UI.esc(l.path || l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('');
+}
+
+/** New items start at a root. Each extra level is revealed only when requested.
+ * New child names are sent with the item so the server can save everything atomically. */
+function wireStartingLocationPicker(overlay) {
+  const host = overlay.querySelector('[data-start-location]');
+  if (!host) return () => null;
+  const roots = _locations.filter((l) => !l.parent_id);
+  const root = host.querySelector('[data-root-location]');
+  root.innerHTML = roots.map((l) => `<option value="${l.id}">${UI.esc(l.name)}${l.is_default ? ' (default)' : ''}</option>`).join('');
+  const defaultLoc = _locations.find((l) => l.is_default);
+  let defaultRoot = defaultLoc;
+  while (defaultRoot?.parent_id) defaultRoot = _locations.find((l) => l.id === defaultRoot.parent_id);
+  if (defaultRoot) root.value = String(defaultRoot.id);
+  const levels = host.querySelector('[data-location-levels]');
+  const add = host.querySelector('[data-add-location-level]');
+  const selection = () => {
+    let locationId = Number(root.value) || null;
+    const newLevels = [];
+    let incomplete = false;
+    for (const row of levels.querySelectorAll('[data-location-row]')) {
+      const value = row.querySelector('select').value;
+      if (!value) break;
+      if (value === '__new__') {
+        const name = row.querySelector('input').value.trim();
+        if (!name) { incomplete = true; break; }
+        newLevels.push(name);
+      } else if (!newLevels.length) locationId = Number(value);
+    }
+    return { locationId, newLevels, incomplete };
+  };
+  const refresh = () => {
+    const depth = 1 + levels.querySelectorAll('select').length;
+    const last = [...levels.querySelectorAll('select')].at(-1);
+    add.style.display = depth >= 5 ? 'none' : '';
+    add.disabled = !root.value || !!(last && (!last.value || selection().incomplete));
+  };
+  root.onchange = () => { levels.innerHTML = ''; refresh(); };
+  add.onclick = () => {
+    const current = selection();
+    const children = current.newLevels.length ? [] : _locations.filter((l) => l.parent_id === current.locationId);
+    const level = 2 + levels.querySelectorAll('select').length;
+    const wrap = document.createElement('div');
+    wrap.className = 'form-field';
+    wrap.dataset.locationRow = '';
+    wrap.innerHTML = `<label>Level ${level} (optional)</label><select data-child-location>
+      <option value="">Use level ${level - 1}</option>
+      ${children.map((l) => `<option value="${l.id}">${UI.esc(l.name)}</option>`).join('')}
+      <option value="__new__">+ Create new sublocation…</option></select>
+      <input data-new-location maxlength="120" placeholder="Name for level ${level}" style="display:none;margin-top:8px" />`;
+    levels.appendChild(wrap);
+    const select = wrap.querySelector('select');
+    const name = wrap.querySelector('input');
+    select.onchange = () => {
+      while (wrap.nextElementSibling) wrap.nextElementSibling.remove();
+      name.style.display = select.value === '__new__' ? '' : 'none';
+      if (select.value === '__new__') name.focus();
+      refresh();
+    };
+    name.oninput = refresh;
+    refresh();
+  };
+  refresh();
+  return selection;
 }
 
 /** Current value of a field for an item (or its default for a new item). */
@@ -84,11 +149,12 @@ function renderItemField(def, value, opts = {}) {
   const v = value === null || value === undefined ? '' : value;
   const req = def.required ? ' <span class="req">*</span>' : '';
   const help = UI.helpIcon(def.help);
-  const head = `<div class="field-label"><label>${e(def.label)}${req}</label>${help}</div>`;
+  const fieldId = `item-field-${++_itemFieldSequence}`;
+  const head = `<div class="field-label"><label for="${fieldId}">${e(def.label)}${req}</label>${help}</div>`;
 
   if (def.type === 'checkbox') {
     return `<div class="form-field inline">
-      <label class="check-opt"><input type="checkbox" data-key="${def.key}" ${isChecked(v) ? 'checked' : ''} /> ${e(def.label)}</label>${help}
+      <label class="check-opt"><input type="checkbox" id="${fieldId}" data-key="${def.key}" ${isChecked(v) ? 'checked' : ''} /> ${e(def.label)}</label>${help}
     </div>`;
   }
   if (def.type === 'static') {
@@ -102,18 +168,18 @@ function renderItemField(def, value, opts = {}) {
       : def.type === 'supplier'
         ? itemSupplierOptions(v)
         : (def.options || []).map((o) => `<option value="${e(o)}" ${String(v) === String(o) ? 'selected' : ''}>${e(o)}</option>`).join('');
-    return `<div class="form-field">${head}<select data-key="${def.key}">${inner}</select></div>`;
+    return `<div class="form-field">${head}<select id="${fieldId}" data-key="${def.key}">${inner}</select></div>`;
   }
   if (def.type === 'textarea') {
-    return `<div class="form-field span2">${head}<textarea data-key="${def.key}" placeholder="${e(def.placeholder || '')}">${e(v)}</textarea></div>`;
+    return `<div class="form-field span2">${head}<textarea id="${fieldId}" data-key="${def.key}" placeholder="${e(def.placeholder || '')}">${e(v)}</textarea></div>`;
   }
   if (def.type === 'search') {
-    return `<div class="form-field">${head}<div class="search-box">${UI.icon('search', 16)}<input data-key="${def.key}" value="${e(v)}" placeholder="${e(def.placeholder || '')}" /></div></div>`;
+    return `<div class="form-field">${head}<div class="search-box">${UI.icon('search', 16)}<input id="${fieldId}" data-key="${def.key}" value="${e(v)}" placeholder="${e(def.placeholder || '')}" /></div></div>`;
   }
   if (def.type === 'combobox') {
     return `<div class="form-field">${head}
       <div class="combobox" data-combo-src="${e(def.source || '')}">
-        <input data-key="${def.key}" value="${e(v)}" autocomplete="off" placeholder="${e(def.placeholder || 'Type to search…')}" />
+        <input id="${fieldId}" data-key="${def.key}" value="${e(v)}" autocomplete="off" placeholder="${e(def.placeholder || 'Type to search…')}" />
         <div class="combo-list hidden"></div>
       </div></div>`;
   }
@@ -136,21 +202,40 @@ function renderItemField(def, value, opts = {}) {
   const disabled = opts.disabled ? ' disabled' : '';
   const suffix = def.type === 'percent' ? '<span class="field-suffix">%</span>'
     : (def.suffix ? `<span class="field-suffix">${e(def.suffix)}</span>` : '');
-  const input = `<input data-key="${def.key}" type="${numeric ? 'number' : 'text'}"${step}${disabled} value="${e(v)}" placeholder="${e(def.placeholder || '')}" />`;
+  const input = `<input id="${fieldId}" data-key="${def.key}" type="${numeric ? 'number' : 'text'}"${step}${disabled} value="${e(v)}" placeholder="${e(def.placeholder || '')}" />`;
   return `<div class="form-field">${head}<div class="field-with-suffix">${input}${suffix}</div></div>`;
 }
 
 /** Build the tabbed form body from the config for a given item (null = new). */
 function renderItemFormBody(cfg, it) {
-  const tabs = ITEM_FORM_TABS.filter((t) => cfg.some((f) => f.tab === t.id && f.visible));
+  // The location picker is essential even if an administrator hides every optional
+  // stock field in Form Options.
+  const tabs = ITEM_FORM_TABS.filter((t) => t.id === 'qty' || cfg.some((f) => f.tab === t.id && f.visible));
   const bar = tabs.map((t, i) =>
     `<button type="button" class="form-tab ${i === 0 ? 'active' : ''}" data-formtab="${t.id}">${UI.esc(t.label)}</button>`).join('');
   const panels = tabs.map((t, i) => {
     const fields = cfg.filter((f) => f.tab === t.id && f.visible).map((f) => {
       const editLocked = it && it.id && f.key === 'quantity'; // quantity changes go through the adjust modal
-      return renderItemField(f, itemFieldValue(f, it), { disabled: editLocked });
+      const display = f.key === 'quantity' && editLocked ? { ...f, label: 'Current stock (read only)' } : f;
+      return renderItemField(display, itemFieldValue(f, it), { disabled: editLocked });
     }).join('');
-    return `<div data-formpanel="${t.id}" class="form-panel ${i === 0 ? '' : 'hidden'}"><div class="form-grid">${fields}</div></div>`;
+    const intro = {
+      default: 'Identify and classify this item. Only the item name is required.',
+      price: 'Defaults used when buying, selling and valuing this item. Order prices can still be changed on an individual order.',
+      qty: it && it.id ? 'Current stock is changed through Stock in/out or Transfer stock. Set where this item is usually stored below.' : 'Enter opening stock only when creating an item. Choose a starting location; extra sublocation levels are optional.',
+      info: 'Optional barcode, photo and internal notes.',
+    }[t.id];
+    const location = t.id !== 'qty' ? '' : (it && it.id ? `
+      <div class="form-field span2" data-preferred-wrap><label for="item-preferred-location">Preferred storage location</label>
+        <select id="item-preferred-location" data-preferred-location><option value="">No preference</option>${locationOptions(it.preferred_location_id, _locations)}</select>
+        <p class="muted item-field-hint">Changing this preference does not move existing stock. Use Transfer stock for that.</p></div>` : `
+      <div class="form-field span2" data-start-location>
+        <label for="item-root-location">Starting-stock location <span class="req">*</span></label>
+        <select id="item-root-location" data-root-location></select><div data-location-levels></div>
+        <button type="button" class="btn secondary small item-add-location" data-add-location-level>+ Add sublocation level</button>
+        <p class="muted item-field-hint">Stock goes to the last selected level. Add up to four optional levels.</p>
+      </div>`);
+    return `<div data-formpanel="${t.id}" class="form-panel ${i === 0 ? '' : 'hidden'}">${intro ? `<p class="muted item-tab-intro">${intro}</p>` : ''}<div class="form-grid">${fields}${location}</div></div>`;
   }).join('');
   return `<div class="form-tabs">${bar}</div>${panels}`;
 }
@@ -261,8 +346,10 @@ function collectItemForm(overlay, cfg, it) {
 }
 
 App.register('inventory', async (view, filter) => {
-  const state = { q: '', department_id: '', supplier_id: '', location_id: '', category: '', low: !!(filter && filter.low), include_damaged: false };
+  const state = { q: '', department_id: '', supplier_id: '', location_id: '', category: '', kind: filter?.kind || 'parts', low: !!(filter && filter.low), include_damaged: false };
   let lastItems = [];
+  let requestVersion = 0;
+  let searchTimer;
 
   function deptOptions(selected) {
     return '<option value="">— Department —</option>' +
@@ -272,26 +359,54 @@ App.register('inventory', async (view, filter) => {
 
   view.innerHTML = `
     <div class="topbar">
-      <h2>Inventory</h2>
+      <h2 id="inv-title">Parts &amp; supplies</h2>
       <div class="grow"></div>
-      <div class="search-box search">${UI.icon('search', 16)}<input id="inv-search" placeholder="Search name, SKU, spec, location…" /></div>
-      <select id="inv-cat" style="width:150px"><option value="">— Category —</option></select>
-      <select id="inv-dept" style="width:160px">${deptOptions('')}</select>
-      <select id="inv-supplier" style="width:150px"><option value="">— Supplier —</option></select>
-      <select id="inv-location" style="width:150px"><option value="">— Location —</option></select>
+      <div class="search-box search">${UI.icon('search', 16)}<input id="inv-search" aria-label="Search inventory" placeholder="Search name, SKU, spec, location…" /></div>
+      <select id="inv-cat" aria-label="Category" style="width:150px"><option value="">— Category —</option></select>
+      <select id="inv-dept" aria-label="Department" style="width:160px">${deptOptions('')}</select>
+      <select id="inv-supplier" aria-label="Supplier" style="width:150px"><option value="">— Supplier —</option></select>
+      <select id="inv-location" aria-label="Location" style="width:150px"><option value="">— Location —</option></select>
       <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500;white-space:nowrap;">
         <input type="checkbox" id="inv-low" style="width:auto" ${state.low ? 'checked' : ''} /> Low stock</label>
       <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500;white-space:nowrap;" title="Show damaged-stock records (hidden by default)">
         <input type="checkbox" id="inv-damaged" style="width:auto" ${state.include_damaged ? 'checked' : ''} /> Show damaged</label>
-      <button class="btn secondary" id="inv-import" title="Create or update items from a CSV file">${UI.icon('upload')} Import</button>
+      <button class="btn secondary" id="inv-import" ${App.hasPermission('inventory.create') ? '' : 'hidden'} title="Create or update items from a CSV file">${UI.icon('upload')} Import</button>
       <button class="btn secondary" id="inv-export" title="Export current list to CSV">${UI.icon('download')} Export</button>
       <button class="btn secondary" id="inv-labels" title="Print barcode labels for the current list">${UI.icon('printer')} Labels</button>
-      ${App.hasPermission('orders.create') ? `<button class="btn secondary" id="inv-reorder" title="Draft purchase orders to restock everything below its reorder level">${UI.icon('inbox')} Reorder PO</button>` : ''}
-      <button class="btn" id="inv-add">${UI.icon('plus')} New item</button>
+      ${App.hasPermission('purchasing.manage') ? `<button class="btn secondary" id="inv-reorder" title="Draft purchase orders to restock everything below its reorder level">${UI.icon('inbox')} Reorder PO</button>` : ''}
+      <button class="btn" id="inv-add" ${App.hasPermission('inventory.create') && state.kind !== 'finished' ? '' : 'hidden'}>${UI.icon('plus')} New item</button>
+      <span class="muted inventory-result-count" id="inv-count" role="status"></span>
+      <button class="btn secondary small" id="inv-clear">Clear filters</button>
     </div>
+    <div class="item-kind-tabs" role="group" aria-label="Inventory item type">
+      <button type="button" data-kind="parts">Parts &amp; supplies</button>
+      <button type="button" data-kind="finished">Finished products</button>
+      <button type="button" data-kind="all">All stock items</button>
+    </div>
+    <p class="muted item-kind-description" id="inv-kind-description"></p>
     <div class="panel"><div id="inv-table"></div></div>`;
 
   const tableEl = view.querySelector('#inv-table');
+
+  function showKind() {
+    const labels = { parts: 'Parts & supplies', finished: 'Finished products', all: 'All stock items' };
+    const descriptions = {
+      parts: 'Loose parts, materials and supplies. Finished products have their own view.',
+      finished: 'Finished-product stock uses the same item record and SKU as its BOM. Production manages the build and individual RTS units.',
+      all: 'Combined catalog. Item type is shown beside each name so parts and finished products remain distinct.',
+    };
+    view.querySelector('#inv-title').textContent = labels[state.kind];
+    view.querySelector('#inv-kind-description').textContent = descriptions[state.kind];
+    view.querySelector('#inv-add').hidden = !App.hasPermission('inventory.create') || state.kind === 'finished';
+    const reorder = view.querySelector('#inv-reorder');
+    if (reorder) reorder.hidden = state.kind === 'finished';
+    view.querySelectorAll('[data-kind]').forEach((button) => {
+      const active = button.dataset.kind === state.kind;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  }
+  showKind();
 
   function fillSupplierFilter() {
     const sel = view.querySelector('#inv-supplier');
@@ -304,7 +419,7 @@ App.register('inventory', async (view, filter) => {
     const sel = view.querySelector('#inv-location');
     if (!sel) return;
     sel.innerHTML = '<option value="">— Location —</option>' +
-      _locations.map((l) => `<option value="${l.id}" ${String(l.id) === String(state.location_id) ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('');
+      _locations.map((l) => `<option value="${l.id}" ${String(l.id) === String(state.location_id) ? 'selected' : ''}>${UI.esc(l.path || l.name)}</option>`).join('');
   }
 
   async function loadCategories() {
@@ -324,12 +439,31 @@ App.register('inventory', async (view, filter) => {
     if (state.supplier_id) params.set('supplier_id', state.supplier_id);
     if (state.location_id) params.set('location_id', state.location_id);
     if (state.category) params.set('category', state.category);
+    params.set('kind', state.kind);
     if (state.low) params.set('low', '1');
     if (state.include_damaged) params.set('include_damaged', '1');
-    tableEl.innerHTML = '<div class="empty">Loading…</div>';
-    const items = await API.get('/inventory?' + params.toString());
-    lastItems = items;
-    render(items);
+    const version = ++requestVersion;
+    lastItems = [];
+    tableEl.setAttribute('aria-busy', 'true');
+    view.querySelector('#inv-count').textContent = 'Loading…';
+    tableEl.innerHTML = '<div class="empty" role="status">Loading…</div>';
+    try {
+      const items = await API.get('/inventory?' + params.toString());
+      if (version !== requestVersion) return;
+      lastItems = items;
+      render(items);
+      view.querySelector('#inv-count').textContent = `${items.length} item${items.length === 1 ? '' : 's'} shown`;
+    } catch (err) {
+      if (version !== requestVersion) return;
+      // Do not offer an export or label sheet from an older filter result.
+      lastItems = [];
+      view.querySelector('#inv-count').textContent = 'Could not load items';
+      tableEl.innerHTML = `<div class="empty" role="alert">Could not load items. Your filters are unchanged.
+        <button class="btn secondary small" data-retry>Try again</button></div>`;
+      tableEl.querySelector('[data-retry]').onclick = load;
+    } finally {
+      if (version === requestVersion) tableEl.removeAttribute('aria-busy');
+    }
   }
 
   function exportCsv() {
@@ -448,8 +582,9 @@ App.register('inventory', async (view, filter) => {
       .lbl-bc svg{max-width:100%;max-height:100%}
       @media print{.lbl{border-color:#999}}
     </style></head><body><div class="sheet">${cells.join('')}</div>
-    <script>window.onload=function(){window.print()}<\/script></body></html>`);
+    </body></html>`);
     w.document.close();
+    UI.printWhenLoaded(w);
     UI.toast(`${cells.length} label${cells.length === 1 ? '' : 's'} ready`);
     return true;
   }
@@ -518,9 +653,9 @@ App.register('inventory', async (view, filter) => {
       const fresh = !state.q && !state.department_id && !state.supplier_id && !state.location_id && !state.category && !state.low && !state.include_damaged;
       tableEl.innerHTML = UI.emptyState({
         icon: 'inventory',
-        title: fresh ? 'No items yet' : 'No matching items',
-        hint: fresh ? 'Add your first inventory item to start tracking stock.' : 'Try a different search or filter.',
-        action: fresh ? `<button class="btn" id="inv-empty-add">${UI.icon('plus')} New item</button>` : '',
+        title: fresh ? (state.kind === 'finished' ? 'No finished products yet' : 'No items yet') : 'No matching items',
+        hint: fresh ? (state.kind === 'finished' ? 'Create a finished product and BOM under Production → Finished Products.' : 'Add your first item to start tracking stock.') : 'Try a different search or filter.',
+        action: fresh && state.kind !== 'finished' && App.hasPermission('inventory.create') ? `<button class="btn" id="inv-empty-add">${UI.icon('plus')} New item</button>` : '',
       });
       const ea = tableEl.querySelector('#inv-empty-add');
       if (ea) ea.onclick = () => itemModal(null);
@@ -534,7 +669,7 @@ App.register('inventory', async (view, filter) => {
         </tr></thead>
         <tbody>${items.map((i) => `
           <tr class="clickable" data-open="${i.id}">
-            <td><strong>${UI.esc(i.name)}</strong><div class="muted mono">${UI.esc(i.sku || '—')}</div>${groupLineHTML(i)}</td>
+            <td><strong>${UI.esc(i.name)}</strong><div class="muted mono">${UI.esc(i.sku || '—')}</div><span class="item-kind-badge">${i.is_finished_product ? 'Finished product' : 'Part / supply'}</span>${groupLineHTML(i)}</td>
             <td>${UI.esc(i.category || '—')}</td>
             <td>${UI.esc(i.department_name || '—')}</td>
             <td>${UI.esc(i.supplier_name || '—')}</td>
@@ -553,6 +688,11 @@ App.register('inventory', async (view, filter) => {
           </tr>`).join('')}
         </tbody>
       </table>`;
+
+    [['data-adjust', 'inventory.adjust'], ['data-transfer', 'inventory.transfer'], ['data-edit', 'inventory.edit'], ['data-del', 'inventory.delete']].forEach(([attr, permission]) => {
+      if (!App.hasPermission(permission)) tableEl.querySelectorAll('[' + attr + ']').forEach((button) => { button.hidden = true; });
+    });
+    tableEl.querySelectorAll('button[title]').forEach((button) => button.setAttribute('aria-label', button.title));
 
     tableEl.querySelectorAll('[data-adjust]').forEach((b) => b.onclick = () => adjustModal(b.dataset.adjust, items));
     tableEl.querySelectorAll('[data-transfer]').forEach((b) => b.onclick = () => transferModal(b.dataset.transfer, items));
@@ -602,7 +742,8 @@ App.register('inventory', async (view, filter) => {
     push('Department', it.department_name);
     push('Supplier', it.supplier_name);
     push('Unit', it.unit);
-    push('Location', it.location);
+    push('Preferred storage location', it.preferred_location_name);
+    push('Legacy location note', it.location);
     push('Currency', attrs.currency);
     push('Purchase price', attrs.purchase_price);
     push('Sale price', attrs.sale_price);
@@ -684,14 +825,20 @@ App.register('inventory', async (view, filter) => {
   // (used by orderModal()'s missing-product prompt) — anything without .id is create mode,
   // its fields just seed the New Item form instead of starting blank. `onCreated(item)` — UI.modal
   // has no return channel of its own, so this is how a caller finds out what got created.
-  async function itemModal(it, onCreated) {
+  function itemModal(it, onCreated) {
+    return UI.modalTask('inventory:item:' + ((it && it.id) || 'new'), () => openItemModal(it, onCreated));
+  }
+  async function openItemModal(it, onCreated) {
     const cfg = await loadItemFormConfig();
     await loadSuppliers(true); // pick list must be current when the form renders
+    await loadLocations(true);
     const canCustomize = App.hasPermission('inventory.configure');
     const editing = !!(it && it.id);
     let imageState = null;
+    let startingLocation = () => null;
     const m = UI.modal({
       title: editing ? 'Edit item' : 'New item',
+      protectChanges: true,
       helpTopic: 'new-item',
       size: 'lg',
       headActionHTML: canCustomize ? `<button class="btn secondary small" id="item-option-btn">Option</button>` : '',
@@ -701,23 +848,45 @@ App.register('inventory', async (view, filter) => {
         wireItemFormTabs(overlay);
         wireItemComboboxes(overlay);
         imageState = wireItemImageField(overlay, it);
+        startingLocation = wireStartingLocationPicker(overlay);
         const opt = overlay.querySelector('#item-option-btn');
-        if (opt) opt.addEventListener('click', () => openItemOptions(overlay, it));
+        if (opt) opt.addEventListener('click', () => openItemOptions(overlay, it, () => {
+          refreshItemFormBody(overlay, it);
+          startingLocation = wireStartingLocationPicker(overlay);
+        }));
       },
       onConfirm: async (overlay, showErr) => {
         // Required-field validation (visible fields only).
         for (const def of _itemFormConfig) {
           if (!def.visible || def.type === 'static' || def.type === 'image' || !def.required) continue;
           const val = readItemField(overlay, def);
-          if (val === '' || val === false || val === null || val === undefined) {
+          if (val === false || val === null || val === undefined || String(val).trim() === '') {
             showErr(`${def.label} is required`);
             const panelBtn = overlay.querySelector(`[data-formtab="${def.tab}"]`);
             if (panelBtn) panelBtn.click();
+            const field = overlay.querySelector(`[data-key="${def.key}"]`);
+            if (field) {
+              field.setAttribute('aria-invalid', 'true');
+              field.setAttribute('aria-describedby', overlay.querySelector('[data-modal-error]').id);
+              field.focus();
+              field.addEventListener('input', () => {
+                field.removeAttribute('aria-invalid');
+                field.removeAttribute('aria-describedby');
+              }, { once: true });
+            }
             return false;
           }
         }
         const { core, attributes } = collectItemForm(overlay, _itemFormConfig, it);
         const body = { ...core, attributes };
+        if (!App.hasPermission('inventory.costs')) delete body.unit_cost;
+        if (!editing) {
+          const choice = startingLocation();
+          if (!choice?.locationId) { overlay.querySelector('[data-formtab="qty"]')?.click(); showErr('Create a stock location before adding an item'); return false; }
+          if (choice.incomplete) { overlay.querySelector('[data-formtab="qty"]')?.click(); showErr('Enter a name for each new sublocation'); return false; }
+          body.location_id = choice.locationId;
+          body.new_location_levels = choice.newLevels;
+        } else body.preferred_location_id = Number(overlay.querySelector('[data-preferred-location]').value) || null;
         let id;
         if (editing) {
           delete body.quantity; // stock changes go through the adjust modal
@@ -755,7 +924,7 @@ App.register('inventory', async (view, filter) => {
   }
 
   /** Admin "Option" panel: show/hide, required, default per field — saved app-wide. */
-  function openItemOptions(formOverlay, it) {
+  function openItemOptions(formOverlay, it, refreshForm) {
     const tabs = ITEM_FORM_TABS.filter((t) => _itemFormConfig.some((f) => f.tab === t.id));
     const bar = tabs.map((t, i) => {
       const n = _itemFormConfig.filter((f) => f.tab === t.id).length;
@@ -792,6 +961,7 @@ App.register('inventory', async (view, filter) => {
 
     UI.modal({
       title: 'Form Options',
+      protectChanges: true,
       size: 'lg',
       headActionHTML: `<button class="btn secondary small" id="opt-reset">Reset to defaults</button>`,
       bodyHTML: `<p class="muted" style="margin-top:0">Show or hide fields, mark them required, and set defaults. Saved for everyone.</p>
@@ -809,7 +979,7 @@ App.register('inventory', async (view, filter) => {
             await API.put('/inventory/form-config', payload);
             _itemFormConfig = mergeFormConfig(null);
             UI.toast('Form layout reset to defaults');
-            refreshItemFormBody(formOverlay, it);
+            refreshForm();
             ov.remove();
           } catch (e) { UI.toast(e.message, 'error'); reset.disabled = false; }
         });
@@ -829,20 +999,23 @@ App.register('inventory', async (view, filter) => {
         await API.put('/inventory/form-config', payload);
         _itemFormConfig = newCfg;
         UI.toast('Form layout saved');
-        refreshItemFormBody(formOverlay, it);
+        refreshForm();
       },
     });
   }
 
-  async function adjustModal(id, items) {
+  function adjustModal(id, items) {
+    return UI.modalTask('inventory:adjust:' + id, () => openAdjustModal(id, items));
+  }
+  async function openAdjustModal(id, items) {
     const it = items.find((x) => x.id == id);
     const breakdown = await API.get(`/inventory/${id}/stock`).catch(() => []);
     const rows = breakdown.map((b) => ({ id: b.location_id, name: b.location_name, is_default: b.is_default }));
-    const qtyAt = (locId) => (breakdown.find((b) => String(b.location_id) === String(locId)) || {}).quantity || 0;
+    const qtyAt = (locId, mode = 'assembled') => (breakdown.find((b) => String(b.location_id) === String(locId)) || {})[mode === 'semi_built' ? 'semi_built_quantity' : 'assembled_quantity'] || 0;
     const top = [...breakdown].filter((b) => b.quantity > 0).sort((a, b) => b.quantity - a.quantity)[0];
     const initial = (top || breakdown.find((b) => b.is_default) || breakdown[0] || {}).location_id;
 
-    UI.modal({
+    return UI.modal({
       title: `Adjust stock — ${it.name}`,
       bodyHTML: `
         <p class="muted">Total on hand: <strong>${it.quantity} ${UI.esc(it.unit || '')}</strong></p>
@@ -851,6 +1024,7 @@ App.register('inventory', async (view, filter) => {
           <div><label>Action</label><select data-f="dir">
             <option value="in">Stock IN (＋)</option><option value="out">Stock OUT (−)</option></select></div>
         </div>
+        ${it.is_finished_product ? '<div><label>Product build state</label><select data-f="mode"><option value="assembled">Fully built</option><option value="semi_built">Semi-built package</option></select></div>' : ''}
         <div class="field-row">
           <div><label>Amount</label><input data-f="amount" type="number" min="1" value="1" /></div>
           <div><label>Reason / reference</label><input data-f="reason" placeholder="e.g. Purchase, Released to Dept" /></div>
@@ -859,35 +1033,41 @@ App.register('inventory', async (view, filter) => {
       confirmText: 'Apply',
       onOpen: (overlay) => {
         const sel = overlay.querySelector('[data-f="loc"]');
+        const mode = overlay.querySelector('[data-f="mode"]');
         const at = overlay.querySelector('[data-at] strong');
-        sel.addEventListener('change', () => { at.textContent = qtyAt(sel.value); });
+        const refreshQty = () => { at.textContent = qtyAt(sel.value, mode?.value || 'assembled'); };
+        sel.addEventListener('change', refreshQty); mode?.addEventListener('change', refreshQty);
       },
       onConfirm: async (overlay, showErr) => {
         const location_id = overlay.querySelector('[data-f="loc"]').value;
         const dir = overlay.querySelector('[data-f="dir"]').value;
         const amount = parseInt(overlay.querySelector('[data-f="amount"]').value, 10);
         const reason = overlay.querySelector('[data-f="reason"]').value;
+        const build_mode = overlay.querySelector('[data-f="mode"]')?.value || 'assembled';
         if (!location_id) { showErr('Pick a location'); return false; }
         if (!amount || amount <= 0) { showErr('Enter a positive amount'); return false; }
         const change = dir === 'out' ? -amount : amount;
-        const r = await API.post(`/inventory/${id}/adjust`, { change, reason, location_id });
+        const r = await API.post(`/inventory/${id}/adjust`, { change, reason, location_id, build_mode });
         UI.toast(`Stock updated — ${r.location_quantity} here, ${r.quantity} total`);
         load();
       },
     });
   }
 
-  async function transferModal(id, items) {
+  function transferModal(id, items) {
+    return UI.modalTask('inventory:transfer:' + id, () => openTransferModal(id, items));
+  }
+  async function openTransferModal(id, items) {
     const it = items.find((x) => x.id == id);
     const breakdown = await API.get(`/inventory/${id}/stock`).catch(() => []);
     if (breakdown.length < 2) { UI.toast('Add a second location first (Inventory → Locations)', 'error'); return; }
     const rows = breakdown.map((b) => ({ id: b.location_id, name: b.location_name, is_default: b.is_default }));
-    const qtyAt = (locId) => (breakdown.find((b) => String(b.location_id) === String(locId)) || {}).quantity || 0;
+    const qtyAt = (locId, mode = 'assembled') => (breakdown.find((b) => String(b.location_id) === String(locId)) || {})[mode === 'semi_built' ? 'semi_built_quantity' : 'assembled_quantity'] || 0;
     const top = [...breakdown].filter((b) => b.quantity > 0).sort((a, b) => b.quantity - a.quantity)[0];
     const fromInit = (top || breakdown[0]).location_id;
     const toInit = (breakdown.find((b) => b.location_id !== fromInit) || {}).location_id;
 
-    UI.modal({
+    return UI.modal({
       title: `Transfer stock — ${it.name}`,
       bodyHTML: `
         <div class="field-row">
@@ -896,6 +1076,7 @@ App.register('inventory', async (view, filter) => {
           <div><label>To</label><select data-f="to">${locationOptions(toInit, rows)}</select>
             <p class="muted" data-toat style="margin:4px 0 0;font-size:12px">Currently: <strong>${qtyAt(toInit)}</strong></p></div>
         </div>
+        ${it.is_finished_product ? '<div><label>Product build state</label><select data-f="mode"><option value="assembled">Fully built</option><option value="semi_built">Semi-built package</option></select></div>' : ''}
         <div class="field-row">
           <div><label>Amount</label><input data-f="amount" type="number" min="1" value="1" /></div>
           <div><label>Reason / reference</label><input data-f="reason" placeholder="e.g. Restock branch" /></div>
@@ -904,24 +1085,29 @@ App.register('inventory', async (view, filter) => {
       onOpen: (overlay) => {
         const from = overlay.querySelector('[data-f="from"]');
         const to = overlay.querySelector('[data-f="to"]');
-        from.addEventListener('change', () => { overlay.querySelector('[data-fromat] strong').textContent = qtyAt(from.value); });
-        to.addEventListener('change', () => { overlay.querySelector('[data-toat] strong').textContent = qtyAt(to.value); });
+        const mode = overlay.querySelector('[data-f="mode"]');
+        const refreshQty = () => { overlay.querySelector('[data-fromat] strong').textContent = qtyAt(from.value, mode?.value || 'assembled'); overlay.querySelector('[data-toat] strong').textContent = qtyAt(to.value, mode?.value || 'assembled'); };
+        from.addEventListener('change', refreshQty); to.addEventListener('change', refreshQty); mode?.addEventListener('change', refreshQty);
       },
       onConfirm: async (overlay, showErr) => {
         const from_location_id = overlay.querySelector('[data-f="from"]').value;
         const to_location_id = overlay.querySelector('[data-f="to"]').value;
         const amount = parseInt(overlay.querySelector('[data-f="amount"]').value, 10);
         const reason = overlay.querySelector('[data-f="reason"]').value;
+        const build_mode = overlay.querySelector('[data-f="mode"]')?.value || 'assembled';
         if (from_location_id === to_location_id) { showErr('Pick two different locations'); return false; }
         if (!amount || amount <= 0) { showErr('Enter a positive amount'); return false; }
-        const r = await API.post(`/inventory/${id}/transfer`, { from_location_id, to_location_id, amount, reason });
+        const r = await API.post(`/inventory/${id}/transfer`, { from_location_id, to_location_id, amount, reason, build_mode });
         UI.toast(`Transferred — ${r.from} left at source, ${r.to} now at destination`);
         load();
       },
     });
   }
 
-  async function historyModal(id) {
+  function historyModal(id) {
+    return UI.modalTask('inventory:history:' + id, () => openHistoryModal(id));
+  }
+  async function openHistoryModal(id) {
     const it = await API.get('/inventory/' + id);
     const rows = it.history.map((h) => `
       <tr><td>${UI.fmtDate(h.created_at)}</td>
@@ -931,7 +1117,7 @@ App.register('inventory', async (view, filter) => {
       <td class="right">${h.balance_after}</td>
       <td>${UI.esc(h.reason || '—')}</td>
       <td>${UI.esc(h.user_name || '—')}</td></tr>`).join('');
-    UI.modal({
+    return UI.modal({
       title: `History — ${it.name}`,
       size: 'lg',
       bodyHTML: it.history.length
@@ -956,10 +1142,22 @@ App.register('inventory', async (view, filter) => {
   }
 
   // Wire toolbar
-  let searchTimer;
+  view.querySelectorAll('[data-kind]').forEach((button) => button.addEventListener('click', () => {
+    if (state.kind === button.dataset.kind) return;
+    App.navigate('inventory', { kind: button.dataset.kind });
+  }));
+  view.querySelector('#inv-clear').onclick = () => {
+    clearTimeout(searchTimer);
+    Object.assign(state, { q: '', department_id: '', supplier_id: '', location_id: '', category: '', low: false, include_damaged: false });
+    ['inv-search', 'inv-cat', 'inv-dept', 'inv-supplier', 'inv-location'].forEach((id) => { view.querySelector('#' + id).value = ''; });
+    view.querySelector('#inv-low').checked = false;
+    view.querySelector('#inv-damaged').checked = false;
+    load();
+  };
   view.querySelector('#inv-search').addEventListener('input', (e) => {
     clearTimeout(searchTimer);
     state.q = e.target.value.trim();
+    requestVersion++;
     searchTimer = setTimeout(load, 250);
   });
   view.querySelector('#inv-cat').addEventListener('change', (e) => { state.category = e.target.value; load(); });

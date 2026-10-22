@@ -2,13 +2,14 @@
    Editing is admin-only; everyone can view/preview. */
 App.register('templates', async (view) => {
   const admin = App.hasPermission('templates.edit');
+  const companyEdit = App.hasPermission('templates.company');
 
   // A small neutral placeholder headshot so {{employee.photo}} renders something in previews.
   const SAMPLE_PHOTO = UI.PLACEHOLDER_PHOTO;
 
   // Sample data so the editor preview shows realistic output.
   const SAMPLE = {
-    company: { name: 'Verdesakay Inc.', address: '123 Main St, Cebu City', phone: '(032) 555-1234', email: 'hello@verdesakay.com' },
+    company: { name: 'Example Company', address: '123 Main St, Cebu City', phone: '(032) 555-1234', email: 'hello@example.com' },
     order: {
       no: 'SO-00001', type: 'Sale Order', date: '2026-06-27', status: 'open',
       customer_name: 'ACME Corporation', customer_contact: 'orders@acme.com', notes: 'Deliver by Friday.',
@@ -25,35 +26,37 @@ App.register('templates', async (view) => {
     user: { name: 'System Administrator' }, today: '2026-06-27',
   };
 
+  Object.assign(SAMPLE,(typeof buildSlipContext==='function'?buildSlipContext:value=>value)({employee_name:SAMPLE.employee.name,dept_position:'Operations / Warehouse Staff',payroll_period:'Sample cutoff',pay_date:SAMPLE.today,daily_rate:600,days_worked:10,basic_salary:6000,total_earnings:6500,total_deductions:500,net_pay:6000,overtime_pay:500,sss:250,philhealth:150,pagibig:100}));
+  SAMPLE.company.tin='123-456-789-000';SAMPLE.employee.tin_no='123-456-789';SAMPLE.employee.address='Sample employee address';
+  SAMPLE.issuance={number:'AI-00001',issued_date:SAMPLE.today,notes:'Company property issued for work',issued_by_name:SAMPLE.user.name};
+  SAMPLE.items.forEach((item,i)=>Object.assign(item,{asset_name:i?'Company phone':'Company laptop',category:'Equipment',asset_tag:'AST-0000'+(i+1),condition_on_issue:'Good'}));
+  SAMPLE.year=2026;SAMPLE.f={"sss_gsis_phic_pagibig_union": "0.00", "thirteenth_month_ceiling": "90,000.00", "thirteenth_month_and_other_benefits": "0.00", "de_minimis": "0.00", "total_non_taxable": "0.00", "basic_salary": "0.00", "overtime_pay": "0.00", "holiday_pay": "0.00", "night_diff_and_other": "0.00", "taxable_13th_month_excess": "0.00", "gross_compensation": "0.00", "taxable_compensation_present": "0.00", "taxable_compensation_previous": "0.00", "gross_taxable_compensation": "0.00", "tax_due": "0.00", "tax_withheld_present": "0.00", "tax_withheld_previous": "0.00", "total_tax_withheld": "0.00", "over_withheld_label": "OVER-WITHHELD", "over_withheld_abs": "0.00", "payslip_count": "12"};
+
   view.innerHTML = `
-    <div class="topbar">
-      <h2>Document Templates</h2>
-      <div class="grow"></div>
-      <select id="tpl-period-filter" title="Filter by period" style="padding:6px 8px;border:1px solid var(--border-strong,#c6d4e6);border-radius:6px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:13px">
-        <option value="">All periods</option>
-      </select>
-      ${admin ? `<button class="btn secondary" id="tpl-vars">${UI.icon('settings')} Variables</button>` : ''}
-      <button class="btn secondary" id="tpl-company">${UI.icon('building')} Company profile</button>
-      ${admin ? `<button class="btn" id="tpl-new">${UI.icon('plus')} New template</button>` : ''}
-    </div>
-    <div class="panel"><div id="tpl-table"></div></div>`;
+    <section class="tpl-library">
+      <header class="tpl-library-header" data-page-header>
+        <div><span class="tpl-eyebrow">DOCUMENTS</span><h2>Template library</h2><p>Design consistent documents for your everyday work.</p></div>
+        <div class="tpl-library-actions" data-page-actions>${admin ? `<button class="btn" id="tpl-new">${UI.icon('plus')} Create template</button>` : ''}</div>
+      </header>
+      <div class="tpl-library-toolbar">
+        <div class="tpl-library-count"><span id="tpl-count">—</span> templates</div>
+        <div class="grow"></div>
+        ${admin ? `<button class="btn secondary" id="tpl-defaults">${UI.icon('file')} Built-in defaults</button><button class="btn secondary" id="tpl-vars">${UI.icon('settings')} Variables</button>` : ''}
+        <button class="btn secondary" id="tpl-company">${UI.icon('building')} Company profile</button>
+      </div>
+      <div class="tpl-library-list"><div id="tpl-table"></div></div>
+      <p class="tpl-library-note">Templates connect your layout with live data. Preview uses sample records.</p>
+    </section>`;
 
   const tableEl = view.querySelector('#tpl-table');
-  const periodFilter = view.querySelector('#tpl-period-filter');
   let fullList = [];
 
   async function load() {
     tableEl.innerHTML = '<div class="empty">Loading…</div>';
     fullList = await API.get('/templates');
-    // Populate period filter from unique periods in the list.
-    const periods = [...new Set(fullList.map((t) => t.period || '').filter(Boolean))].sort((a, b) => b.localeCompare(a));
-    const cur = periodFilter.value;
-    periodFilter.innerHTML = '<option value="">All periods</option>' + periods.map((p) => `<option value="${UI.esc(p)}" ${p === cur ? 'selected' : ''}>${UI.esc(p)}</option>`).join('');
-    render(periodFilter.value ? fullList.filter((t) => t.period === periodFilter.value) : fullList);
+    view.querySelector('#tpl-count').textContent = fullList.length;
+    render(fullList);
   }
-  periodFilter.addEventListener('change', () => {
-    render(periodFilter.value ? fullList.filter((t) => t.period === periodFilter.value) : fullList);
-  });
 
   function render(list) {
     if (!list.length) {
@@ -61,16 +64,16 @@ App.register('templates', async (view) => {
       return;
     }
     // Group by period (most-recent first, no-period last).
-    const groups = {};
+    const groups = Object.create(null);
     list.forEach((t) => { const k = t.period || ''; (groups[k] = groups[k] || []).push(t); });
     const sortedKeys = [...Object.keys(groups).filter(Boolean).sort((a, b) => b.localeCompare(a)), ...Object.keys(groups).filter((k) => !k)];
     let rows = '';
     sortedKeys.forEach((key) => {
-      rows += `<tr><td colspan="4" style="padding:10px 14px 4px;font-weight:700;font-size:12px;color:var(--text-muted,#5d6b84);text-transform:uppercase;letter-spacing:.06em;border-bottom:none;background:var(--surface-2,#eef4fb)">${UI.esc(key || '—')}</td></tr>`;
+      rows += `<tr><td colspan="4" class="tpl-period-heading">${UI.esc(key || 'General templates')}</td></tr>`;
       groups[key].forEach((t) => {
         rows += `<tr class="clickable" data-open="${t.id}">
-            <td><strong>${UI.esc(t.name)}</strong></td>
-            <td><span class="badge-pill muted">${UI.esc(t.type)}</span></td>
+            <td><div class="tpl-name-cell"><span class="tpl-document-icon">${UI.icon('file', 20)}</span><div><strong>${UI.esc(t.name)}</strong><span class="tpl-row-detail">${(t.copies_per_record || 1) * (t.records_per_page || 1) > 1 ? `${t.copies_per_record} × ${t.records_per_page} print grid` : 'Single document'}${t.tile_continuous ? ' · Continuous' : ''}</span></div></div></td>
+            <td><span class="tpl-type-badge">${UI.esc(t.type.charAt(0).toUpperCase() + t.type.slice(1))}</span></td>
             <td>${UI.fmtDate(t.updated_at)}</td>
             <td class="actions">
               <button class="icon-btn" title="Preview" data-prev="${t.id}">${UI.icon('eye')}</button>
@@ -82,7 +85,7 @@ App.register('templates', async (view) => {
     });
     tableEl.innerHTML = `
       <table>
-        <thead><tr><th>Name</th><th>Type</th><th>Updated</th><th></th></tr></thead>
+        <thead><tr><th>Template</th><th>Document type</th><th>Last updated</th><th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
     // Preview-modal + iframe, not window.open() — a new browser window/tab can be
@@ -94,37 +97,38 @@ App.register('templates', async (view) => {
     // than simulating the real-batch "fewer records than cells" edge case that only matters
     // when actually printing a batch of records.
     const openPreview = async (id) => {
-      const t = await API.get('/templates/' + id);
-      const rows = t.copies_per_record || 1, cols = t.records_per_page || 1;
-      const continuous = !!t.tile_continuous, repeatCount = t.repeat_count || 1;
-      const tiled = (rows > 1 || cols > 1 || (continuous && repeatCount > 1)) && typeof buildTiledPagesHtml === 'function';
-      const rendered = tiled
-        ? buildTiledPagesHtml([1], () => renderTemplate(t.body, SAMPLE), {
-          copiesPerRecord: rows, recordsPerPage: cols, tileFill: 'repeat', continuous, repeatCount,
-          pageContentHeightMm: typeof pageContentHeightMm === 'function' ? pageContentHeightMm(t.body) : undefined,
-        })
-        : renderTemplate(t.body, SAMPLE);
-      const full = UI.printableHtml(rendered, t.name + ' (preview)');
-      UI.modal({
-        title: t.name + ' — Preview',
-        size: 'lg',
-        bodyHTML: `<iframe id="tpl-preview-frame" style="width:100%;height:65vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
-        cancelText: 'Close',
-        confirmText: 'Print…',
-        onOpen: (ov) => {
-          const ifr = ov.querySelector('#tpl-preview-frame');
-          if (tiled) ifr.onload = () => { if (typeof fitTiledCells === 'function') fitTiledCells(ifr.contentDocument); };
-          ifr.srcdoc = full;
-        },
-        onConfirm: (ov) => {
-          const ifr = ov.querySelector('#tpl-preview-frame');
-          ifr.contentWindow.focus();
-          ifr.contentWindow.print();
-          return false; // keep the preview open — printing shouldn't close it
-        },
-      });
+      try {
+        const [t, custom] = await Promise.all([API.get('/templates/' + id), API.get('/templates/variables?template_id=' + id)]);
+        const context = previewContext(custom);
+        const rows = t.copies_per_record || 1, cols = t.records_per_page || 1;
+        const continuous = !!t.tile_continuous, repeatCount = t.repeat_count || 1;
+        const tiled = (rows > 1 || cols > 1 || (continuous && repeatCount > 1)) && typeof buildTiledPagesHtml === 'function';
+        const rendered = (tiled
+          ? buildTiledPagesHtml([1], () => renderTemplate(t.body, context), {
+            copiesPerRecord: rows, recordsPerPage: cols, tileFill: 'repeat', continuous, repeatCount, gapXmm:t.grid_gap_x_mm,gapYmm:t.grid_gap_y_mm,
+            pageContentHeightMm: typeof pageContentHeightMm === 'function' ? pageContentHeightMm(t.body) : undefined,
+          })
+          : renderTemplate(t.body, context)) || renderTemplate(t.body, context);
+        const full = UI.printableHtml(rendered, t.name + ' (preview)');
+        UI.modal({
+          title: t.name + ' — Preview',
+          size: 'lg',
+          bodyHTML: `<iframe sandbox="allow-same-origin allow-modals" title="Document preview" id="tpl-preview-frame" style="width:100%;height:65vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+          cancelText: 'Close',
+          confirmText: 'Print…',
+          onOpen: (ov) => {
+            const ifr = ov.querySelector('#tpl-preview-frame');
+            UI.loadPrintFrame(ifr, full, tiled && typeof fitTiledCells === 'function' ? fitTiledCells : undefined);
+          },
+          onConfirm: async (ov) => {
+            const ifr = ov.querySelector('#tpl-preview-frame');
+            await UI.printFrame(ifr);
+            return false; // keep the preview open — printing shouldn't close it
+          },
+        });
+      } catch (err) { UI.toast(err.message || 'Could not load preview', 'error'); }
     };
-    const openEdit = async (id) => editor(await API.get('/templates/' + id));
+    const openEdit = async (id) => { try { await editor(await API.get('/templates/' + id)); } catch (err) { UI.toast(err.message || 'Could not open editor', 'error'); } };
 
     tableEl.querySelectorAll('[data-prev]').forEach((b) => b.onclick = () => openPreview(b.dataset.prev));
     tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = () => openEdit(b.dataset.edit));
@@ -154,7 +158,7 @@ App.register('templates', async (view) => {
       <div class="doc-company"><h1>{{company.name}}</h1><div>{{company.address}}</div><div class="muted">{{company.phone}} · {{company.email}}</div></div>
       <div class="doc-meta"><div>{{today}}</div></div>
     </header>
-    <p>Start writing your document here. Use the <strong>{ } Variable</strong> button on the Insert tab to drop in live data.</p></div>`;
+    <p>Start writing your document here. Use <strong>Insert → Variable</strong> or the Variables sidebar to drop in live data.</p></div>`;
 
   // Ready-made starting points offered when "New template" is pressed. Each is plain
   // HTML + {{tokens}} the renderer understands; the user edits everything afterwards.
@@ -396,49 +400,68 @@ App.register('templates', async (view) => {
 
   async function editor(tpl, starter) {
     const editing = !!tpl;
+    let savedId = tpl ? tpl.id : null, savedRevision = tpl ? tpl.revision : undefined;
     if (!window.DocEditor) { UI.toast('Editor failed to load', 'error'); return; }
-    const varsUrl = '/templates/variables' + (editing ? `?template_id=${tpl.id}` : '');
+    const seed = tpl || starter || {};
+    const sourceId = editing ? tpl.id : seed.source_template_id;
+    const varsUrl = '/templates/variables' + (sourceId ? `?template_id=${sourceId}` : '');
     const [catalog, initialCustom] = await Promise.all([
-      API.get('/templates/variables/catalog').catch(() => []),
-      API.get(varsUrl).catch(() => []),
+      API.get('/templates/variables/catalog'),
+      API.get(varsUrl),
     ]);
     let custom = initialCustom;
     let vars = buildVarList(catalog, custom);
-    const reloadVars = async () => { custom = await API.get(varsUrl).catch(() => []); vars = buildVarList(catalog, custom); };
+    const reloadVars = async () => { custom = await API.get(varsUrl); vars = buildVarList(catalog, custom); };
 
     window.DocEditor.open({
+      getTemplateId: () => savedId,
+      sharedStudio: true,
+      getSavedRevision: () => savedRevision,
+      onSharedRevision: revision => { savedRevision=revision; },
+      getDocumentKey: () => savedId ? 'template:' + savedId : 'new-template:' + (seed.source_template_id || seed.name || 'blank'),
+      documentKey: editing ? 'template:' + tpl.id : 'new-template:' + (seed.source_template_id || seed.name || 'blank'),
       title: editing ? 'Edit Template' : (starter ? 'New Template · ' + starter.name : 'New Template'),
       name: editing ? tpl.name : (starter ? starter.name : ''),
       type: editing ? tpl.type : (starter ? starter.type : 'sale'),
-      period: editing ? (tpl.period || '') : '',
+      period: seed.period || '',
       periodLabel: 'Accounting Period',
       typeOptions: ['sale', 'job', 'purchase', 'generic'],
       body: editing ? tpl.body : (starter ? starter.body : BLANK_BODY),
-      copiesPerRecord: editing ? (tpl.copies_per_record || 1) : 1,
-      recordsPerPage: editing ? (tpl.records_per_page || 1) : 1,
-      tileFill: editing ? (tpl.tile_fill || 'blank') : 'blank',
-      continuous: editing ? !!tpl.tile_continuous : false,
-      repeatCount: editing ? (tpl.repeat_count || 1) : 1,
+      copiesPerRecord: seed.copies_per_record || 1,
+      recordsPerPage: seed.records_per_page || 1,
+      gapXmm: seed.grid_gap_x_mm ?? 6, gapYmm: seed.grid_gap_y_mm ?? 6,
+      tileFill: seed.tile_fill || 'blank',
+      continuous: !!seed.tile_continuous,
+      repeatCount: seed.repeat_count || 1,
       getVariables: () => vars,
-      sampleContext: previewContext(custom),
+      sampleContext: () => previewContext(custom),
+      loadPreviewRecord: ['sale','purchase','job'].includes(seed.type || 'sale') ? async (id) => {
+        const [order, company] = await Promise.all([API.get('/orders/' + id), API.get('/templates/company')]);
+        return buildDocContext({ order, company, user: App.getMe(), variables: custom });
+      } : undefined,
       renderPreview: (body) => UI.printableHtml(renderTemplate(body, previewContext(custom)), 'Preview'),
-      onManageVars: async (ed) => {
+      onManageVars: sourceId && !editing ? undefined : async (ed) => {
         await variableManager(editing ? 'template' : 'global', editing ? tpl.id : null, catalog);
         await reloadVars();
         if (ed && ed.refresh) ed.refresh();
       },
-      onSave: async ({ name, type, period, body, copiesPerRecord, recordsPerPage, tileFill, continuous, repeatCount }) => {
+      onSave: async ({ name, type, period, body, copiesPerRecord, recordsPerPage, tileFill, continuous, repeatCount, gapXmm, gapYmm, studioVersion }) => {
         if (!name.trim()) return 'Template name is required';
         if (!body.trim()) return 'Template body cannot be empty';
         const payload = {
           name: name.trim(), type, period: period ? period.trim() : null, body,
           copies_per_record: copiesPerRecord, records_per_page: recordsPerPage, tile_fill: tileFill,
-          tile_continuous: continuous, repeat_count: repeatCount,
+          grid_gap_x_mm: gapXmm, grid_gap_y_mm: gapYmm, tile_continuous: continuous, repeat_count: repeatCount, studio_version: studioVersion,
         };
-        if (editing) await API.put('/templates/' + tpl.id, payload);
-        else await API.post('/templates', payload);
+        if (savedId) {
+          const result = await API.put('/templates/' + savedId, { ...payload, expected_revision: savedRevision });
+          savedRevision = result.revision;
+        } else {
+          const result = await API.post('/templates', { ...payload, source_template_id: seed.source_template_id, source_revision: seed.source_revision });
+          savedId = result.id; savedRevision = result.revision;
+        }
         UI.toast('Template saved');
-        load();
+        load().catch((err) => UI.toast(err.message || 'Could not refresh template list', 'error'));
         return true;
       },
     });
@@ -481,13 +504,13 @@ App.register('templates', async (view) => {
     });
     m.overlay.querySelectorAll('[data-starter]').forEach((b) => b.addEventListener('click', () => {
       m.close();
-      editor(null, STARTERS.find((s) => s.id === b.dataset.starter) || null);
+      editor(null, STARTERS.find((s) => s.id === b.dataset.starter) || null).catch((err) => UI.toast(err.message || 'Could not open editor', 'error'));
     }));
     m.overlay.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
       m.close();
       try {
         const t = await API.get('/templates/' + b.dataset.copy);
-        editor(null, { name: t.name + ' (copy)', type: t.type, body: t.body });
+        await editor(null, { ...t, name: t.name + ' (copy)', source_template_id: t.id, source_revision: t.revision });
       } catch (err) {
         UI.toast((err && err.message) || 'Could not load that template', 'error');
       }
@@ -511,7 +534,7 @@ App.register('templates', async (view) => {
             const all = await API.get(url).catch(() => []);
             const mine = all.filter((v) => scope === 'global' ? v.scope === 'global' : (v.scope === 'template' && String(v.template_id) === String(templateId)));
             if (!mine.length) { listEl.innerHTML = UI.emptyState({ icon: 'settings', title: 'No custom variables yet', hint: 'Create one with “New variable”.' }); return; }
-            const groups = {}; mine.forEach((v) => (groups[v.category || 'Custom'] = groups[v.category || 'Custom'] || []).push(v));
+            const groups = Object.create(null); mine.forEach((v) => (groups[v.category || 'Custom'] = groups[v.category || 'Custom'] || []).push(v));
             const detail = (v) => v.source_type === 'constant' ? (v.value || '') : v.source_type === 'field' ? '↳ ' + (v.field_path || '') : 'ƒ ' + (v.formula || '');
             listEl.innerHTML = Object.keys(groups).map((g) => `<div style="margin-bottom:10px"><div class="pal-head">${UI.esc(g)}</div>${groups[g].map((v) => `
               <div class="tool-row" data-id="${v.id}">
@@ -596,27 +619,36 @@ App.register('templates', async (view) => {
       helpTopic: 'company-profile',
       bodyHTML: `
         <p class="muted" style="margin-top:0">Used by the {{company.*}} variables on printed documents.</p>
-        <label>Company name</label><input data-f="name" value="${UI.esc(c.name)}" ${admin ? '' : 'disabled'} />
-        <label>Address</label><input data-f="address" value="${UI.esc(c.address)}" ${admin ? '' : 'disabled'} />
+        <label>Company name</label><input data-f="name" value="${UI.esc(c.name)}" ${companyEdit ? '' : 'disabled'} />
+        <label>Address</label><input data-f="address" value="${UI.esc(c.address)}" ${companyEdit ? '' : 'disabled'} />
         <div class="field-row">
-          <div><label>Phone</label><input data-f="phone" value="${UI.esc(c.phone)}" ${admin ? '' : 'disabled'} /></div>
-          <div><label>Email</label><input data-f="email" value="${UI.esc(c.email)}" ${admin ? '' : 'disabled'} /></div>
+          <div><label>Phone</label><input data-f="phone" value="${UI.esc(c.phone)}" ${companyEdit ? '' : 'disabled'} /></div>
+          <div><label>Email</label><input data-f="email" value="${UI.esc(c.email)}" ${companyEdit ? '' : 'disabled'} /></div>
         </div>
-        <label>Logo URL</label><input data-f="logo_url" value="${UI.esc(c.logo_url)}" ${admin ? '' : 'disabled'} />
-        <label class="check" style="margin-top:14px"><input type="checkbox" data-f="compress_images" ${c.compress_images !== false ? 'checked' : ''} ${admin ? '' : 'disabled'} /> Compress image attachments over 1&nbsp;MB before upload (Messages)</label>
-        <p class="muted" style="font-size:12px;margin:4px 0 0">Large photos are downscaled to 1920&nbsp;px and re-saved as JPEG in the browser, so they take far less storage. Other file types are never touched.</p>`,
-      confirmText: admin ? 'Save' : null,
-      cancelText: admin ? 'Cancel' : 'Close',
-      onConfirm: admin ? async (ov) => {
+        <label>Logo URL</label><input data-f="logo_url" value="${UI.esc(c.logo_url)}" ${companyEdit ? '' : 'disabled'} />
+        <p class="muted" style="font-size:12px;margin:14px 0 0">Supported photos in messages and reports are compressed before upload. Documents are kept in their original format.</p>`,
+      confirmText: companyEdit ? 'Save' : null,
+      cancelText: companyEdit ? 'Cancel' : 'Close',
+      onConfirm: companyEdit ? async (ov) => {
         const g = (k) => ov.querySelector(`[data-f="${k}"]`).value;
         await API.put('/templates/company', {
           name: g('name'), address: g('address'), phone: g('phone'), email: g('email'), logo_url: g('logo_url'),
-          compress_images: ov.querySelector('[data-f="compress_images"]').checked,
+          compress_images: true,
         });
         UI.toast('Company profile saved');
       } : null,
     });
   }
+
+  async function builtInDefaultsModal(){
+    try{
+      const [defaults,templates]=await Promise.all([API.get('/templates/defaults'),API.get('/templates')]);
+      UI.modal({title:'Built-in document defaults',size:'lg',cancelText:'Cancel',confirmText:'Save defaults',bodyHTML:`<p class="muted">Choose the layout used by each built-in document. Renaming a template keeps its assignment. A replacement must use the document's fields; use Preview with real data to verify it. Payslip defaults are managed on HR Payroll in Form Builder.</p>${defaults.map(d=>`<label>${UI.esc(d.label)}<select data-default-key="${UI.esc(d.key)}"><option value="">Choose a template…</option>${templates.filter(t=>t.type===d.type).map(t=>`<option value="${t.id}" ${t.id===d.template_id?'selected':''}>${UI.esc(t.name)}</option>`).join('')}</select></label>`).join('')}`,
+       onConfirm:async ov=>{const choices=[...ov.querySelectorAll('[data-default-key]')].map(el=>({key:el.dataset.defaultKey,id:Number(el.value)}));if(choices.some(c=>!c.id))throw Error('Choose a layout for every built-in document');for(const c of choices)if(defaults.find(d=>d.key===c.key).template_id!==c.id)await API.put('/templates/defaults/'+c.key,{template_id:c.id});UI.toast('Built-in document defaults saved');return true;}
+      });
+    }catch(err){UI.toast(err.message,'error');}
+  }
+  view.querySelector('#tpl-defaults')?.addEventListener('click',builtInDefaultsModal);
 
   view.querySelector('#tpl-company').addEventListener('click', companyModal);
   const newBtn = view.querySelector('#tpl-new');

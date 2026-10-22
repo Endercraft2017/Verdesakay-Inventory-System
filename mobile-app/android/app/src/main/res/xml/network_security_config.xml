@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- docs/OFFLINE-FIRST.md §29. No plain HTTP. Trusts the usual public certificates (the cloud) and a
+     site certificate installed on the phone (a site host, decision D5). 7d replaces the install step
+     with the site certificate pinned when the phone is connected to the site. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

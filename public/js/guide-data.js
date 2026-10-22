@@ -36,22 +36,14 @@ const GUIDE_PIPELINES = [
         role: 'read: inventory.view',
         to: { route: 'production-overview', label: 'Production → Overview' },
         spot: '.tree-leaf[data-route="production-overview"]',
-        body: `The home screen for this whole tab, not a working screen of its own — a
-          summary of where things stand: overdue job orders, units stuck in rework, what's
-          waiting on someone (QC/QA queue, Products In, repair requests to accept), and a
-          short production report. Every row links straight to the screen that handles it.`,
+        body: `Open Production Overview and review overdue jobs, inspection queues, rework and output waiting for receipt. Select a linked row to open the screen where that work is handled.`,
       },
       {
         title: 'Define the finished product & BOM',
         role: 'Inventory · inventory.edit',
         to: { route: 'finished-products', label: 'Production → Product Setup' },
         spot: '.tree-leaf[data-route="finished-products"]',
-        body: `A one-time setup step, not part of the day-to-day flow below: pick an item and
-          list the parts to build one unit — that list is the <b>BOM</b>. A component that is
-          itself a finished product with its own BOM is a <b>sub-assembly</b> and is exploded
-          automatically. Optionally set a standard <b>Labor</b> and <b>Overhead</b> per unit —
-          they're added on top of the rolled-up material cost to value finished units into
-          stock.`,
+        body: `Open Product Setup and create or edit the finished product. Add each component and the quantity needed for one unit to its bill of materials (BOM). Review optional labor and overhead costs before saving. Components that have their own BOM are expanded as sub-assemblies. An optional selling markup suggests a price from the full standard unit cost; sales must choose to apply it on an order.`,
         tip: `A product can be saved with <b>no BOM</b> — it still builds, it just reserves and
           consumes nothing until you add components.`,
       },
@@ -59,93 +51,64 @@ const GUIDE_PIPELINES = [
         title: 'Attach a QC/QA checklist (optional)',
         role: 'QA · qc.configure',
         to: { route: 'production-qc', label: 'Production → QC / QA → Manage Checklists' },
-        body: `Also setup: build named, reusable checklists (each check scoped to <i>every</i>
-          inspection, the <i>QA</i> pass, or the <i>QC</i> pass) from <b>Manage Checklists</b> —
-          reachable from either QC/QA page — then attach one to the product on its BOM editor
-          in Product Setup. Required checks must be ticked before a unit or batch can pass.`,
+        body: `Open Manage Checklists on the QC/QA page. Name the checklist, add its checks and choose whether each applies to every inspection, QC or QA. Attach it in the product’s BOM editor. Required checks must be completed before an inspection can pass.`,
       },
       {
         title: 'Schedule / start the job order',
         role: 'Production · inventory.adjust',
         to: { route: 'job-orders', label: 'Production → Job Orders' },
         spot: '.tree-leaf[data-route="job-orders"]',
-        body: `Where the day-to-day pipeline actually starts. Choose the product and quantity.
-          Set the <b>team</b>, <b>work centre</b>, <b>planned start</b>, <b>due date</b> and
-          <b>priority</b> right here, and how many <b>inspection stages</b> apply (0 = straight
-          to Products In, 1 = QC/QA, 2 = QC then QA). Pick the <b>source</b> location (parts are
-          pulled from) and the <b>output</b> location (a default destination — Products In can
-          still send finished units elsewhere at receiving time). It starts as a <b>draft</b>.
-          <b>Production → Scheduling</b> is the supporting calendar/roster view across every
-          job order, for monitoring at a glance rather than one at a time.`,
+        body: `Press New job order. Choose the product, quantity, team, work centre and planned dates. Set inspection stages: 0 goes straight to Products In, 1 uses QC/QA, and 2 uses QC then QA. Choose the parts source and default output location, then save the draft. Use Scheduling to review workload across jobs.`,
       },
       {
         title: 'Release (parts out)',
         role: 'Production / warehouse · inventory.adjust',
         to: { route: 'job-orders', label: 'Job order → Release' },
-        body: `Reserves and deducts the planned components from the source location — it fails with
-          a shortfall list if stock is short (no partial release). If the general ledger is on, the
-          material value moves from Inventory into Work in Process. Records who released it.`,
+        body: `An authorized approver approves the draft. Warehouse then uses Accept (warehouse), Pick / review kit and Release & issue slip. Partial picks save holds; only a fully prepared, currently covered kit can issue its numbered parts slip and deduct components. For a sale-linked job, purchase missing components from the sale’s stock review, which owns the combined supply plan.`,
       },
       {
         title: 'Accept the parts kit',
-        role: 'Production lead · production.record or inventory.adjust',
+        role: 'Production lead · production.record',
         to: { route: 'job-orders', label: 'Job order → Accept parts kit' },
-        body: `The production lead counts the released kit against the job order's Components
-          list and taps <b>Accept job order</b> (optional handover note). Records who accepted it
-          and when. Output can't be recorded until the kit is accepted — a short or damaged kit
-          goes back to the warehouse via <b>Report a problem</b> instead.`,
+        body: `Count the handed-over kit against the job order’s Components list. Confirm the count, add a handover note if needed, and press Accept job order. If parts are missing or damaged, use Report a problem instead. Output cannot be recorded until acceptance.`,
       },
       {
         title: 'Build (record production progress)',
-        role: 'Shop floor · production.record or inventory.adjust',
+        role: 'Shop floor · production.record',
         to: { route: 'job-orders', label: 'Job order → Record production' },
-        body: `Open the job order and record output only after the kit is accepted.
-          For serialized output, enter each unit's identifier and attach its build photo in the desktop or phone recording form;
-          this needs a connection. For bulk output, enter <b>finished</b> and <b>scrapped</b> counts. Either way this doesn't post to
-          stock yet — with <b>0 inspection stages</b> the entry becomes a batch/lot awaiting
-          Products In directly; with <b>1–2 stages</b> the units queue for inspection first —
-          give the entry a <b>batch label</b> to group them.`,
+        body: `After production accepts the released kit, record serialized output one unit at a time with identifier and photo; non-serialized output uses batch quantities. Recording sends output to required inspection or Products In, never directly to sellable stock. After an uncertain phone response, recover the saved original attempt; confirmed units must not be added again.`,
       },
       {
         title: 'Inspect (QC/QA)',
-        role: 'Inspector · production.inspect_qc / production.inspect_qa, or inventory.adjust',
+        role: 'QC / QA · production.inspect_qc / production.inspect_qa',
         to: { route: 'production-qc', label: 'Production → QC / QA' },
         spot: '.tree-leaf[data-route="production-qc"]',
-        body: `Select a unit or a batch, work the checklist, then <b>Pass</b> or <b>Fail</b>. The
-          final pass queues the unit for Products In (below) — it isn't stock yet. A <b>fail</b>
-          needs a <b>disposition</b>: <i>scrap / dispose / recycle</i> (terminal — counts as
-          scrapped) or <i>repair</i>.`,
+        body: `Use your own QC or QA pass. Two-stage jobs enforce separate inspectors; a single stage uses the combined checklist. Complete required checks; N/A does not satisfy a required check. Fail/hold decisions need a unit evidence photo. Informational issue reports do not advance inspection or pause production. Settle repair requests before reinspection; final passes queue receiving, not stock.`,
+      },
+      {
+        title: 'Decide a QA hold (branch)',
+        role: 'Any QA inspector · production.qa_review (Production Manager by default)',
+        to: { route: 'job-orders', label: 'Job order → Held by QA for review → Decide…' },
+        body: `Open the job order’s Held by QA for review section and choose Decide. Review the evidence, enter a reason and select pass, rectify or fail. Pass sends output to Products In; rectify returns it to rework. The hold prevents job completion until decided.`,
       },
       {
         title: 'Findings & reports',
         role: 'read: inventory.view',
         to: { route: 'production-qc', filter: { tab: 'findings' }, label: 'Production → QC / QA → Findings & Reports' },
-        body: `Every pass/fail ever recorded, across every job order — filter by result, date, or a
-          job order / product search, and export to CSV. Open a row for the full finding: the
-          checklist snapshot, remarks, disposition and inspector.`,
+        body: `Open Findings & Reports and filter by result, date, job order or product. Open a finding to inspect its checklist, remarks, disposition and inspector. Export CSV when you need the filtered findings outside the app.`,
       },
       {
         title: 'Repair / rework (branch)',
-        role: 'Requests: production.inspect_qc/qa; decisions: production.repairs; inventory.adjust covers both',
+        role: 'Production raises · Warehouse accepts · inventory.adjust',
         to: { route: 'repairs', label: 'Production → Repairs & Parts Requests' },
-        body: `A unit failed as <b>repair</b> goes to rework and holds the job order open. From the
-          repair panel, raise <b>parts requests</b> — <i>add</i> a missing part or <i>replace</i> a
-          fitted one (the removed part is booked to its damage record). Nothing moves until the
-          warehouse <b>accepts</b> the request here. The unit can only be re-inspected once every
-          request is settled — passing then rejoins the flow at Products In.`,
+        body: `Open the unit’s repair panel and request a part to add or replace. Enter the part, quantity and fault reason. The request holds available stock; the parts clerk must issue the exact approved part and quantity. Resolve every request before re-inspection. Replacement parts and revised quantities need requester approval.`,
       },
       {
         title: 'Products In',
-        role: 'Receiving · production.receive or inventory.adjust',
+        role: 'Receiving · production.receive',
         to: { route: 'production-receiving', label: 'Production → Products In' },
         spot: '.tree-leaf[data-route="production-receiving"]',
-        body: `The checkpoint that mirrors Purchasing's <b>Goods Receipt</b>: nothing posts to
-          stock until it's confirmed/counted in here, whether it needed QC or not. <b>Ready to
-          Receive</b> lists every job order with output waiting — tick the units, or enter a
-          batch's received quantity (short counts allowed), pick the <b>destination
-          location</b>, and post. Picking a different location than the job order's default
-          output is how a "warehouse transfer" away from the shop floor happens, in the same
-          step. <b>Receipt History</b> is the log of every past receipt.`,
+        body: `Review Ready to Receive. Select passed units and/or actual whole batch quantities, choose one exact storage location and post. Combined receipts check total capacity atomically. Duplicates, product-data mismatches and full/transit locations block posting. Review saved original attempts after an uncertain mobile receipt; site-PC saves remain pending until sync confirms. Stock received elsewhere needs a transfer to the sale’s ship-from location.`,
         tip: `A unit only becomes sellable/reservable once it's been received here — a QC pass
           alone isn't enough.`,
       },
@@ -153,40 +116,24 @@ const GUIDE_PIPELINES = [
         title: 'Batches / lots & the production record',
         role: 'read: inventory.view',
         to: { route: 'production-batches', label: 'Production → Batches / Lots' },
-        body: `A <b>batch/lot</b> groups the units off one job order under a <code>BATCH-#####</code>
-          number — the traceability log, independent of whether it's been received yet. Open one
-          to relabel it, change its status, or record an optional batch-level QC/QA sign-off (a
-          quality flag, not a receipt). Scanning a unit or batch QR opens its printable
-          <b>Production record</b> — the build details, every sign-off, repairs, and the stock
-          movements it drove.`,
+        body: `Open a batch in Batches / Lots to review its identifier, status and inspection history. Use Full record or scan its QR to inspect the build, sign-offs, repairs and stock movements. A batch inspection records quality information; it does not receive stock.`,
       },
       {
         title: 'Labels & QR',
-        role: 'Production · inventory.view (print) / inventory.adjust (label design)',
+        role: 'Production · inventory.adjust',
         to: { route: 'finished-products', label: 'Product Setup → Print QR labels' },
-        body: `Print QR labels per unit (its identifier) or per batch. Edit the layout under
-          <b>Label design</b>. Scanning a label in this system's scanner resolves it to the
-          production record.`,
+        body: `Open Print QR labels for the product’s units or batch. Review the identifiers and copies before printing. Use Label design to change the layout. Scanning these labels opens the matching production record.`,
       },
       {
         title: 'Completion & returns',
         role: 'automatic',
-        body: `Production completion tracks the <i>build</i>, not receiving: once every ordered
-          unit is accounted for (built + scrapped) and nothing is pending or in rework, the job
-          order <b>completes</b> and the components reserved but not consumed are returned to
-          the source location — even if some output is still awaiting Products In (real
-          physical units don't wait on paperwork). <b>Close (finish early)</b> or <b>Cancel</b>
-          do the same return manually; either way, whatever was already built still needs to be
-          received.`,
+        body: `Close early stops new output and returns unused components while preserving built pending/rework/held output and repair requests for inspection and receiving. Do not confuse close with cancel or with customer returns. Review remaining output and WIP before final completion.`,
       },
       {
         title: 'Sell / move finished goods',
         role: 'Sales / warehouse · inventory.adjust',
         to: { route: 'finished-goods', label: 'Production → Finished Goods' },
-        body: `<b>Finished Goods</b> is the cross-product view of what's actually on hand, ready
-          to sell or move — everything Products In has received. Sell against a sale order, or
-          move it again with the same action used at receiving. Only received (in-stock) units can be sold or moved. <b>Sell / Move → Sell</b> deducts stock immediately;
-          it differs from <b>Release SOs</b>, which reserves units until the sale order is confirmed/completed.`,
+        body: `Open Finished Goods and find the received units to sell or move. Choose the relevant action and review its order or destination. Only output already received into stock is available here.`,
       },
     ],
     gotchas: [
@@ -205,71 +152,74 @@ const GUIDE_PIPELINES = [
     id: 'sales',
     title: 'Sales orders',
     icon: 'forms',
-    tagline: 'Order → approve (stock check) → release → deliver → confirm',
+    tagline: 'Order → approve (stock check) → warehouse accepts → release → release slip → deliver',
     audience: 'CSR / sales, warehouse releaser, delivery, accounting',
     intro: `How a customer order moves from raw document to goods out the door. Status runs
-      <b>open → approved → released → confirmed / completed</b>.`,
+      <b>open → approved → released → confirmed / completed</b>; the release slip is what
+      confirms it.`,
     steps: [
       {
         title: 'Raise the sale order',
         role: 'CSR / sales · orders.create',
-        to: { route: 'orders', filter: { type: 'sale' }, label: 'Inventory → Orders → Sale Orders' },
-        spot: '.tree-leaf.active[data-route="orders"]',
-        body: `Pick the customer, add line items from inventory (finished products or raw items), set
-          the <b>Ship from</b> location and tax. It starts <b>open</b> and line items stay freely
-          editable while it is.`,
+        to: { route: 'orders', filter: { type: 'sale' }, label: 'Sales → Orders → Sale Orders' },
+        spot: '.tree-leaf[data-route="orders"]',
+        body: `Press New sale order, select the customer and add inventory items, quantities and prices. Choose Ship from and review tax before saving. The new order is open and its lines remain editable until approval.`,
       },
       {
         title: 'Approve — with a stock check',
         role: 'CSR / manager · orders.edit',
         to: { route: 'orders', filter: { type: 'sale' }, label: 'Sale order → Status → Approve' },
-        body: `Moving the order to <b>approved</b> checks every line against available stock (net of
-          what's reserved elsewhere). Approving <b>locks the line items</b> and unlocks the warehouse
-          to release. The toolbar's <b>Backorders</b> toggle lists every approved order still short
-          of stock — those rows carry a ⚠ badge.`,
+        body: `Open Review stock & approval on the sale order. Check the exact ship-from location, other sale commitments, kit/repair holds and linked supply. Approval is separate from planning and does not move stock. Awaiting release lists unpicked firm demand; it is not a shortage-only filter.`,
+      },
+      {
+        title: 'Authorize the release',
+        role: 'CSR / manager · orders.edit',
+        to: { route: 'orders', filter: { type: 'sale' }, label: 'Sale order → key icon' },
+        body: `Open the sale order’s key action. Set pickup or delivery, recipient, ID reference, validity, handoff area and whether partial release is allowed. Issue the authorization and give its token to the recipient. Only the last four ID-reference characters are stored. Review warehouse release reports here.`,
       },
       {
         title: 'Cover a shortfall (if the check fails)',
         role: 'CSR / manager · orders.edit',
         to: { route: 'orders', filter: { type: 'sale' }, label: 'Sale order → shortfall prompt' },
-        body: `If a line is short you get four choices: <b>Trim to available</b>, <b>Create job
-          orders for the shortfall</b> (a draft MO per short finished-product line, linked to this
-          order), <b>Draft purchase orders for the shortfall</b> (one per preferred supplier for
-          parts that must be bought), or <b>Approve as a backorder</b> (proceed anyway).`,
+        body: `Review existing linked supply before drafting more. Draft CKD-parts production for uncovered builds, or Draft missing purchases for uncovered buying demand. A production manager may Finish a semi-built RTS unit for a fully built shortage: its loose parts are included, so do not issue BOM parts again. Receive or transfer supply to the sale’s ship-from location; drafts are not stock.`,
+      },
+      {
+        title: 'Warehouse accepts the order',
+        role: 'Releaser · orders.release',
+        to: { route: 'releasing', filter: { tab: 'queue' }, label: 'Sales → Releasing → Release Queue' },
+        spot: '.tree-leaf[data-route="releasing"]',
+        body: `Open Release Queue and find the approved order under Waiting for warehouse acceptance. Review it and press Accept for release. This records your acceptance; picking is unavailable until the order is accepted.`,
       },
       {
         title: 'Release the goods',
-        role: 'Releaser · orders.release or inventory.adjust (phone: inventory.mobile)',
-        to: { external: 'Phone → Work → Release SOs', label: 'Phone → Work → Release SOs' },
-        body: `Open the order on the phone and press <b>Scan units to release</b>. Scan each unit's
-          printed QR label; for non-serialized lines, type the quantity. Scanned units go to
-          <b>reserved</b> — earmarked for the order but still physically on hand. Once every line is
-          covered the order flips to <b>released</b>. <b>Nothing leaves inventory yet.</b>`,
+        role: 'Releaser · orders.release',
+        to: { route: 'releasing', filter: { tab: 'queue' }, label: 'Release Queue → open the order' },
+        body: `Warehouse accepts the approved order, then selects the exact sale line and its build state. Scan serialized units or choose exact batch/untracked quantities. When one SKU matches several lines, explicitly choose the correct line. Picking holds stock; it does not deduct it. Undo allocation changes only unshipped holds and does not cancel customer demand.`,
+      },
+      {
+        title: 'Issue the release slip',
+        role: 'Releaser · orders.release',
+        to: { route: 'releasing', filter: { tab: 'slips' }, label: 'Release order → Issue release slip' },
+        body: `Select this vehicle’s actual serials, batches and quantities. Check current Sales authority, token, package requirements and goods photo, then issue the trip’s release slip. Only its load leaves stock. Remaining demand stays committed on the same sales order; each further trip needs its own slip and authority. CKD loads contain whole kits only.`,
       },
       {
         title: 'Deliver',
-        role: 'Dispatcher · delivery.manage; driver · delivery.run',
-        to: { external: 'Phone → Work → Deliveries', label: 'Phone → Work → Deliveries' },
-        body: `A dispatcher creates a delivery linked to the order and assigns its driver. On the phone,
-          the driver starts the delivery and captures proof of delivery while connected
-          (recipient, signature, photos, location) and mark it delivered. If the order isn't
-          confirmed yet, the phone then offers <b>"Mark SO-xxxx completed"</b> — one tap runs the
-          next step.`,
+        role: 'Driver · delivery.run',
+        to: { external: 'Phone → Work → Deliveries' },
+        body: `Book an own-driver trip or courier pickup for the particular release slip. An own-driver trip may start before warehouse-out but cannot finish a physical sale without its slip. Courier pickup records collection by the carrier, not customer delivery. Evidence is optional in the delivery app; follow company SOP. Review saved attempts after a lost response; never force stock completion.`,
       },
       {
-        title: 'Confirm / invoice',
+        title: 'Complete / invoice',
         role: 'Accounting / CSR · orders.edit',
-        to: { route: 'orders', filter: { type: 'sale' }, label: 'Sale order → Status → Confirm' },
-        body: `Move the order to <b>confirmed</b> or <b>completed</b>. <b>This is when stock actually
-          leaves inventory</b> — reserved units flip to <b>sold</b>, line quantities are drawn down
-          from the ship-from location, and (when the general ledger is on) COGS is posted. Re-opening
-          or cancelling reverses all of it.`,
+        to: { route: 'orders', filter: { type: 'sale' }, label: 'Sale order → Status → Completed' },
+        body: `Review shipment and trip history on the original sale. It remains partially fulfilled until all noncancelled demand ships and delivery trips finish. Sales can cancel only an unshipped remainder with a reason. Receive customer returns against the original slip, then inspect them; do not reopen the shipped sale as a return. Finance records customer settlement separately.`,
       },
     ],
     gotchas: [
-      `A releaser can't scan against an <b>open</b> order — approve it first.`,
-      `<b>Records only:</b> releasing doesn't move stock. If the ledger is off, use
-       <i>Phone → Work → Pick Order</i> to deduct stock, or just confirm the order.`,
+      `A releaser can't scan against an <b>open</b> order (approve it first) or one the warehouse
+       hasn't accepted yet.`,
+      `<b>Scanning is records only</b> — stock moves when the release slip is issued, even with the
+       general ledger off.`,
       `"Allocate finished units" on the desktop order screen <b>sells</b> units immediately
        (over-the-counter), skipping the reserve step.`,
     ],
@@ -280,57 +230,43 @@ const GUIDE_PIPELINES = [
     id: 'purchasing',
     title: 'Purchasing',
     icon: 'inbox',
-    tagline: 'Purchase order → goods receipt → vendor bill (3-way match)',
+    tagline: 'Supplier PO → goods receipt → matched bill → payment',
     audience: 'Purchasing, warehouse, accounting',
-    intro: `A purchase order becomes a controlled <b>PO → Goods Receipt → Vendor Bill</b> flow, with
-      a 3-way match before any bill is approved for payment.`,
+    intro: `Supplier purchasing follows <b>PO → Goods Receipt → Vendor Bill</b> with a 3-way match. Internal spending requests use the separate budget-and-liquidation roadmap; approving one never creates a PO or stock.`,
     steps: [
       {
         title: 'Raise the purchase order',
-        role: 'Purchasing · orders.create',
+        role: 'Purchasing · purchasing.manage',
         to: { route: 'orders', filter: { type: 'purchase' }, label: 'Inventory → Orders → Purchase Orders' },
-        spot: '.tree-leaf.active[data-route="orders"]',
-        body: `Pick the <b>supplier</b> and an <b>expected delivery</b> date. Lines can include items
-          you already stock — that's just a top-up purchase.`,
+        spot: '.tree-leaf[data-route="orders"]',
+        body: `Press New purchase order. Select the supplier, expected delivery date and purchased items, then enter quantities and prices. Review the lines before saving the open order.`,
       },
       {
         title: 'Let the system draft POs for you (optional)',
-        role: 'Purchasing · orders.create (Reorder PO); inventory.adjust (job-order shortfall)',
+        role: 'Purchasing · purchasing.manage',
         to: { route: 'inventory', filter: { low: '1' }, label: 'Inventory → Low Stock → Reorder PO' },
-        body: `<b>Inventory → Reorder PO</b> drafts a PO for everything at or below its reorder level (one
-          per preferred supplier). The <b>Draft purchase orders for the shortfall</b> button on a
-          short sale / job order does the same for that order's gap. Each lands as an <b>open</b>
-          draft to review under Purchase Orders.`,
+        body: `Open Low Stock and choose Reorder PO, or use Draft purchase orders for the shortfall on an order. Open the resulting purchase orders and check suppliers, quantities and prices. Generated orders are open drafts that need review.`,
       },
       {
         title: 'Receive what arrived',
         role: 'Warehouse · inventory.adjust',
         to: { route: 'purchasing', filter: { tab: 'receipts' }, label: 'Inventory → Purchasing → Goods Receipts' },
         spot: '.tree-leaf[data-route="purchasing"]',
-        body: `From the PO's <b>Receiving &amp; bills</b>, press <b>Record receipt</b>. Enter the
-          quantity that actually arrived per line and the location. Posting the receipt (GRN-#####)
-          <b>moves that stock in</b> and shows in the item's history. Receive as many times as
-          deliveries come. The phone's <b>Work → Receive PR</b> is a separate quick stock receipt;
-          it does not create the GRN coverage needed for desktop bill matching.`,
+        body: `Open the purchase order’s Receiving & bills section and press Record receipt. Enter the quantity actually delivered for each line and the destination location. Posting the goods receipt adds that stock. Record later deliveries as additional receipts; the phone’s quick Receive PR uses a separate receipt flow.`,
       },
       {
         title: 'Vendor bill & the 3-way match',
-        role: 'Accounting · orders.edit',
+        role: 'Accounting · purchasing.manage',
         to: { route: 'purchasing', filter: { tab: 'bills' }, label: 'Inventory → Purchasing → Vendor Bills' },
-        body: `Record the supplier's invoice, then <b>Approve</b>. The 3-way match requires every
-          billed line to be covered by what was received, and the price to be within tolerance of
-          the PO price, counting earlier approved bills; off-PO charges are flagged. A clean match approves; an exception blocks
-          approval until you receive the shortfall, fix the bill, or <b>Force approve</b> (recorded
-          against your name).`,
+        body: `Record the supplier’s invoice against the purchase order and review its match with receipts. Billed quantities must be covered by receipts and prices within tolerance. Correct missing receipts or bill differences before approval. If an authorized override is needed, read the exception and confirmation; the override is recorded.`,
       },
     ],
     gotchas: [
-      `Receiving needs <i>inventory.adjust</i>; billing / approval needs <i>orders.edit</i> — the
+      `Receiving needs <i>inventory.adjust</i>; billing / approval needs <i>purchasing.manage</i> — the
        warehouse receives, accounting approves.`,
       `The mobile "Receive PR" shortcut bypasses the desktop GRN / 3-way-match flow — use it only
        for quick unmatched receipts.`,
-      `Use <b>Match tolerance</b> on Goods Receipts or Vendor Bills to review the price percentage
-       (default 2%), flat-peso and quantity allowances. Saving requires <i>orders.edit</i>.`,
+      `Match tolerance (default 2% on price) is a workspace setting.`,
     ],
   },
 
@@ -349,87 +285,63 @@ const GUIDE_PIPELINES = [
         role: 'HR · hr.manage',
         to: { route: 'hr-timekeeping', label: 'HR → Time Keeping → Policy Settings' },
         spot: '.tree-leaf[data-route="hr-timekeeping"]',
-        body: `Set your <b>pay frequency</b>, grace minutes, OT rules and cap, night-differential,
-          minimum work-time policy, and the half-day window. Leave <b>Auto-compute SSS / PhilHealth
-          / Pag-IBIG / withholding tax</b> on to fill those lines from the government rate tables
-          (the <b>2026</b> schedule is built in — <i>Statutory Rate Tables → Open rate tables</i>).`,
-        tip: `Every January, paste any new SSS / PhilHealth / BIR figures and <b>Save as a new
-          version</b> with the actual effective date in the circular. Saving the same kind and date replaces
-          that version — use a new effective date to preserve earlier rules.`,
+        body: `Open Calendar & tools → Policy Settings. Review pay frequency, grace time, overtime, night differential and half-day rules, then Save Rules. Review automatic statutory deduction settings and the applicable rate-table version before generating payroll.`,
+        tip: `When official rates change, verify their effective date and <b>Save as a new version</b>. Preserve older versions for payroll covering earlier dates.`,
       },
       {
         title: 'Keep the employee 201 files current',
         role: 'HR · hr.manage',
         to: { route: 'hr-employees', label: 'HR → Employees' },
         spot: '.tree-leaf[data-route="hr-employees"]',
-        body: `Each record needs a <b>pay rate</b> (daily or monthly), employment status, and the
-          statutory numbers (SSS / PhilHealth / Pag-IBIG / TIN). Per-employee statutory on/off
-          switches live under <b>Accounting → Tax &amp; Compliance → Statutory deductions</b>.`,
+        body: `Open Employees and edit the employee’s record. Review Basic Info, Pay & Schedule, Payroll Rules and Leave & Records. Check daily or monthly rate, status, shift, rest days and statutory identifiers before saving. Statutory deduction switches are also available in Tax & Compliance.`,
       },
       {
         title: 'Open the cutoff period',
-        role: 'HR · hr.view (read) / hr.manage (create cutoff)',
+        role: 'HR · hr.view',
         to: { route: 'hr-timekeeping', label: 'HR → Time Keeping' },
-        body: `Pick or create the cutoff you're processing. Each period holds a daily <b>time in /
-          out</b> per employee and which shift applied that day.`,
+        body: `Open the cutoff covering the payroll dates you are processing, or press New Cutoff to create it. Check its inclusive dates and roster before entering attendance. Each employee’s daily records include the applied shift and times.`,
       },
       {
         title: 'Record attendance',
         role: 'HR / timekeeper · hr.manage',
         to: { route: 'hr-timekeeping', label: 'HR → Time Keeping (grid)' },
-        body: `Enter time in / out (and the lunch bracket), then <b>reconcile</b> punches into the
-          grid. Each day is classified <b>Whole / Half / Undertime Day</b>. The <b>Time-in Kiosk</b>
-          (an office monitor) and the phone time clock feed raw punches into this grid.`,
+        body: `Open an employee in the cutoff and review each day’s shift, time in/out and lunch times. Punches fill roster records live; Import Punches backfills punches recorded before roster inclusion. Correct missing information and inspect the Whole, Half or Undertime classification before generating pay.`,
       },
       {
         title: "Check today's attendance at a glance",
         role: 'HR / timekeeper · hr.view',
         to: { route: 'hr-daily-report', label: 'HR → Time Keeping → Daily Report' },
-        body: `A live, whole-company snapshot for one date: <b>Present / Late / Absent / On
-          Leave</b> counts, broken down per department, plus a searchable employee list. Reads
-          today's kiosk/phone punches directly — no need to wait for <i>Import Punches</i>. The employee roster comes from cutoffs covering the selected date; set up the cutoff and roster first. Rest days, holidays, and company no-work days are shown separately so
-          they're never mistaken for absences.`,
+        body: `Choose a date in Daily Report and review the department counts and employee list. Search an employee or filter an attendance status to investigate. The report reads kiosk and phone punches directly; check rest days, holidays and leave before interpreting a missing punch as absence.`,
       },
       {
         title: 'Link OT / leave / offset forms',
-        role: 'HR · forms.manage.hr (forms) + hr.manage (attendance)',
-        to: { route: 'form-records', filter: { scope: 'hr' }, label: 'HR → Memos & Notices / request forms' },
-        body: `Attach an approved <b>Overtime</b>, <b>Leave</b>, <b>Offset</b> or <b>Undertime</b>
-          form to the day so it's paid correctly (an Offset form's optional <i>New Time In</i>
-          shifts the whole day's window). HR memos and NTEs live here too.`,
+        role: 'HR · hr.manage',
+        to: { route: 'hr-timekeeping', label: 'Time Keeping → employee day → Link a form' },
+        body: `Open the employee’s day in Time Keeping and choose Link a form. Inspect the existing form’s details before attaching it, or create a complete form with a reason and its date coverage. Multi-day leave links across its selected dates and consumes scheduled working days only.`,
       },
       {
         title: 'Generate payslips',
         role: 'HR · hr.manage',
         to: { route: 'hr-timekeeping', label: 'HR → Time Keeping → Generate Payslips' },
-        body: `<b>Generate Payslips</b> creates records in the HR Payroll form for the period.
-          With auto-compute on, SSS / PhilHealth / Pag-IBIG / withholding are filled from the rate
-          tables (the monthly contribution split across your cutoffs). Cash advances and other manual deduction lines are <b>kept</b> when regenerated.
-          Rest-day overtime and the OT rate are computed from attendance and policy and are recalculated.
-          Check the cutoff's deduction schedule and payslip switches; paid payslips are locked.`,
+        body: `Review this cutoff’s roster, attendance and approved forms, then press Generate Payslips. Read Review notes: warnings remain visible but do not block generation. Confirm when ready and review the generated HR Payroll records. Check manual adjustments again after any regeneration.`,
       },
       {
         title: 'Review & print payslips',
-        role: 'HR · forms.manage.hr',
+        role: 'HR · hr.view',
         to: { route: 'form-records', filter: { slug: 'hr_payroll' }, label: 'HR → Payroll' },
-        body: `Open the Payroll form for the period, check the lines against the grid, then
-          <b>print</b> each payslip against the payslip template.`,
+        body: `Open Payroll and select the cutoff in Period. Open a payslip and compare earnings, deductions and net pay with attendance and approved forms. For an unpaid payslip, open Statutory Deductions to override SSS, PhilHealth, Pag-IBIG or withholding tax; zero is valid and Use automatic restores calculation. Preview totals, optionally enter a reason, and Save Deductions. Check Deduction history and review any later-cutoff notice. Preview individual slips or Print Summary before printing. Mark payment only after payment is made; paid payroll locks the cutoff’s attendance and roster.`,
       },
       {
         title: '13th-month & final pay',
         role: 'HR · hr.manage',
         to: { route: 'hr-timekeeping', label: 'HR → Time Keeping → Payroll Worksheets' },
-        body: `13th-month and final-pay <i>processing</i> stay here under Time Keeping. (13th-month
-          isn't a payslip line, so a December payout is added to that month's 1601-C by hand.)`,
+        body: `Open Calendar & tools → Payroll Worksheets and choose the worksheet you need. Review the employee, period and computed inputs before processing 13th-month or final pay. Review the related tax worksheet separately before filing.`,
       },
       {
         title: 'File the government forms',
         role: 'Accounting · accounting.view',
         to: { route: 'accounting', label: 'Accounting → Tax & Compliance' },
-        body: `<b>Tax &amp; Compliance</b> builds supported statutory worksheets from the payslips —
-          <b>1601-C</b> (monthly), <b>1604-C</b> + <b>Alphalist</b> (annual), <b>2316</b> per
-          employee, and the monthly <b>SSS / PhilHealth / Pag-IBIG</b> contribution schedules. All
-          are worksheets — review before filing in eBIRForms / eFPS or each agency's portal.`,
+        body: `Open Tax & Compliance, select the return and period, and generate its worksheet. Review compensation tax and SSS, PhilHealth or Pag-IBIG totals against payroll. Export the supported file and submit through the relevant agency portal; generating a worksheet does not file a return.`,
       },
     ],
     gotchas: [
@@ -455,67 +367,52 @@ const GUIDE_PIPELINES = [
     steps: [
       {
         title: 'Add your items',
-        role: 'Inventory · inventory.create',
+        role: 'Inventory · inventory.edit',
         to: { route: 'inventory', label: 'Inventory → All Items → New item' },
         spot: '.tree-leaf[data-route="inventory"]',
-        body: `Click <b>New item</b>. On <b>Default</b>, enter Item Name, Item Code (SKU) and Unit;
-          on <b>Qty</b>, set <b>Safety Stock Quantity</b> (the reorder level) so the item flags when
-          stock runs low. Optionally add a <b>Barcode</b> and a <b>Standard cost</b> (used to value
-          stock and roll up BOM costs). Bulk-load with <b>Import</b> (matched by SKU).`,
+        body: `Press New item and enter a unique SKU, name, unit and reorder level. Add barcode and standard cost when needed, then save. For bulk setup, use Import and check the sample CSV; existing items are matched by SKU.`,
       },
       {
         title: 'Set up locations & suppliers',
-        role: 'Inventory · inventory.create (new) / inventory.edit (changes)',
+        role: 'Inventory · inventory.edit',
         to: { route: 'locations', label: 'Inventory → Locations' },
-        body: `Add each warehouse / branch / truck that holds stock; one is the <b>default</b> where
-          new stock lands. Add vendors under <b>Suppliers</b> and link each item to a preferred one
-          so reorder POs know who to buy from.`,
+        body: `Add each storage location and review its type, default setting and capacity. Add vendors under Suppliers, then select each item’s preferred supplier so replenishment orders can use it.`,
       },
       {
         title: 'Record stock in / out & corrections',
         role: 'Warehouse · inventory.adjust',
         to: { route: 'inventory', label: 'Inventory → item row → Stock in / out' },
-        body: `Record a delivery, a withdrawal, or a correction from the item's row action. Every
-          movement is kept in the item's <b>history</b> and on the cross-item <b>Stock Movements</b>
-          screen.`,
+        body: `For an intentional stock movement, select the exact location and build state, quantity and reason, then verify Stock Movements. For a physical/book discrepancy use Physical Counts with independent review and linked reconciliation; do not hide a mismatch with an unexplained adjustment.`,
       },
       {
         title: 'Transfer between locations',
         role: 'Warehouse · inventory.adjust',
         to: { route: 'inventory', label: 'Inventory → item row → Transfer' },
-        body: `Move units from one location to another — the grand total doesn't change. Once you
-          have more than one location, each item tracks a quantity <b>per location</b>.`,
+        body: `Select exact source/destination hierarchy paths and build state. For tracked stock select exact serials or batches, not just an aggregate quantity. Review free stock and capacity. Transfers change location balances without changing total stock; a parent location does not automatically own child-location stock.`,
       },
       {
         title: 'Low stock & Reorder PO',
-        role: 'Purchasing · orders.create (Reorder PO); inventory.adjust (job-order shortfall)',
+        role: 'Purchasing · purchasing.manage',
         to: { route: 'inventory', filter: { low: '1' }, label: 'Inventory → Low Stock' },
-        body: `The <b>Low Stock</b> filter shows everything at or below its reorder level.
-          <b>Reorder PO</b> drafts purchase orders for that list — one per preferred supplier,
-          topping each item to a multiple of its reorder level. Finished products are skipped
-          (those are produced).`,
+        body: `Enable Low stock to find items at or below reorder level. Review preferred suppliers, then choose Reorder PO. Check the resulting purchase-order drafts and quantities before using them. Finished products are excluded because they are produced.`,
       },
       {
         title: 'Print barcode labels',
         role: 'Inventory · inventory.view',
         to: { route: 'inventory', label: 'Inventory → Labels' },
-        body: `Print <b>Code 128</b> labels for the items in the current list — each encodes the
-          item's Barcode, or its SKU if it has none. Pick a size and copies, tick the items, then
-          <b>Open print sheet</b>. The labels scan back with this system's phone scanner.`,
+        body: `Open Labels, select the items and choose size and copies. Open the print sheet and inspect it before printing. Each Code 128 label uses the item’s barcode, or its SKU if no barcode is set.`,
       },
       {
         title: 'Report damage',
         role: 'Warehouse · inventory.adjust',
         to: { route: 'inventory', label: 'Inventory → item row → Report damage' },
-        body: `Reporting damaged units moves them into a separate <b>damage</b> record — they leave
-          sellable stock without vanishing from the books.`,
+        body: `Open the item’s Report damage action. Enter the damaged quantity, location and explanation, then review before confirming. This removes it from sellable stock and creates a damage record for traceability.`,
       },
       {
         title: 'Audit the movements',
         role: 'read: inventory.view',
         to: { route: 'inventory-movements', label: 'Inventory → Stock Movements' },
-        body: `Every in / out / transfer / damage across every item, filterable — the answer to
-          "why did this quantity change?".`,
+        body: `Open Stock Movements and filter by item, direction, location and date range. Inspect the movements around the quantity change you are investigating, then export the filtered log if needed.`,
       },
     ],
     gotchas: [
@@ -534,72 +431,58 @@ const GUIDE_PIPELINES = [
     icon: 'sheet',
     tagline: 'Books → journals → tax worksheets → AR/AP → petty cash → reports',
     audience: 'Accounting, finance, management',
-    intro: `Confirmed sale orders, approved vendor bills and reviewed payroll cutoffs feed the ledger and the statutory returns. The
+    intro: `Sale orders, vendor bills and payslips feed the ledger and the statutory returns. The
       tax screens are <b>worksheets</b> — review and adjust before filing.`,
     steps: [
       {
         title: 'What feeds Accounting',
         role: 'context',
-        body: `<b>Sale orders</b> (output VAT, AR, sales), <b>approved vendor bills</b> (input VAT,
-          AP, expenses) and <b>generated payslips</b> (withholding, contributions) are the sources. Payroll enters the ledger only after <b>Post to GL</b> on the payroll records screen.
-          Keep those flows clean and the accounting screens mostly fill themselves.`,
+        body: `Check the source transactions before reviewing accounting totals: sale orders feed sales and receivables, approved vendor bills feed payables, and payroll feeds compensation and statutory worksheets. Review posting status where a ledger posting is required.`,
       },
       {
         title: 'Set up the books (once)',
         role: 'Accounting · accounting.manage',
         to: { route: 'accounting-ledger', label: 'Accounting → General Ledger → Books' },
         spot: '.tree-leaf[data-route="accounting-ledger"]',
-        body: `<b>Set up books</b> creates a standard Philippine SMB <b>chart of accounts</b> and
-          your first fiscal year. <b>Group</b> accounts are headers you can't post to; leaf accounts
-          hold balances.`,
+        body: `Open General Ledger → Books. Review the fiscal year and currency, then choose Set up books. This creates the chart of accounts and first fiscal year. Use posting accounts for journal lines; group accounts are headings.`,
       },
       {
         title: 'Record & post journals',
         role: 'Accounting · accounting.manage',
-        to: { route: 'accounting-ledger', filter: { tab: 'journal' }, label: 'Accounting → General Ledger → Journal' },
-        body: `Open the <b>Journal</b> tab and click <b>New entry</b>. Pick accounts, put amounts in the <b>Debit</b> or <b>Credit</b> column (totals must
-          match), save as a <b>draft</b>, then <b>Post</b>. A posted entry is never edited or
-          deleted — <b>Reverse</b> it and a mirror entry is posted. Trial Balance / P&amp;L /
-          Balance Sheet are live from the posted entries.`,
+        to: { route: 'accounting-ledger', label: 'Accounting → General Ledger → Journal' },
+        body: `Choose New entry, enter the date and accounts, and balance total debits and credits. Save a draft, review it, then Post. Posted entries cannot be edited or deleted; use Reverse for a correcting entry. Reports use posted entries.`,
       },
       {
         title: 'Tax & Compliance worksheets',
         role: 'Accounting · accounting.view',
         to: { route: 'accounting', label: 'Accounting → Tax & Compliance' },
         spot: '.tree-leaf[data-route="accounting"]',
-        body: `Builds <b>2550M</b> (VAT), <b>0619-E</b> (expanded withholding), <b>1601-C / 1604-C /
-          Alphalist / 2316</b> (compensation tax) and the <b>SSS / PhilHealth / Pag-IBIG</b>
-          contribution schedules from your records. Use the CSV or DAT export offered by that worksheet, validate it in the agency's tools,
-          and submit through the appropriate portal. The payroll Alphalist exports CSV and needs conversion to DAT.`,
+        body: `Select the tax or contribution worksheet and its period. Generate and compare it with source transactions, then export the supported CSV or DAT. Submit through the relevant portal after review; the app does not file the return for you.`,
       },
       {
         title: 'Receivables & payables',
-        role: 'Accounting · accounting.view (read) / accounting.manage (payments and notes)',
+        role: 'Accounting · accounting.view',
         to: { route: 'accounting-receivables', label: 'Accounting → Receivables & Payables' },
-        body: `AR / AP aging, <b>Payments</b> against invoices and bills, and <b>Credit / Debit
-          Notes</b>. This is where a customer payment or a supplier settlement is recorded.`,
+        body: `Open the customer receivable or supplier payable and review outstanding invoices or bills. Use Record payment for an actual receipt or settlement. Review allocation, date and amount before saving; use credit or debit notes for adjustments.`,
       },
       {
         title: 'Petty cash',
         role: 'Accounting · accounting.manage',
         to: { route: 'accounting-petty-cash', label: 'Accounting → Cash → Petty Cash' },
-        body: `One fund per cash box, with a custodian and opening float. Record every <b>cash
-          out</b> (disbursement) and <b>cash in</b> (replenishment); the table keeps a running
-          balance. <b>Export</b> the register for the cash count.`,
+        body: `Choose the cash fund, or create one with a custodian and opening float. Record each replenishment with Cash in and each disbursement with Cash out. Review its running balance and export the register for a cash count.`,
       },
       {
         title: 'Read the dashboards',
         role: 'permission-gated',
         to: { route: 'analytics', label: 'Home → Reports' },
-        body: `A fixed, at-a-glance snapshot — stock value, production, <b>payables aging</b>, sales,
-          and the latest payroll period — with only the sections your role allows. Hit
-          <b>Refresh</b> after entering new data.`,
+        body: `Open Reports and review the stock, production, aging, sales and payroll sections available to your role. Press Refresh after source records change. Investigate a total in its source module before changing records.`,
       },
     ],
     gotchas: [
       `Closing a ledger <b>period</b> locks posting into its dates.`,
-      `The app does not submit tax or agency filings; review its worksheets and validate exports before submission.`,
-      `13th-month pay isn't a payslip line — add a December payout to that month's 1601-C by hand.`,
+      `PH agencies have no direct filing API — every tax screen produces a worksheet / export you
+       submit yourself.`,
+      `Review 13th-month and final-pay payouts separately when reconciling compensation tax worksheets.`,
     ],
   },
 
@@ -610,58 +493,1200 @@ const GUIDE_PIPELINES = [
     icon: 'check',
     tagline: 'Quick reference — fail → disposition → parts → re-inspect',
     audience: 'QC/QA, production, warehouse',
-    intro: `The repair branch of the Production workflow: inspection failure, parts requests, and re-inspection.`,
+    intro: `Use this sequence for failed inspections that need parts and rework.`,
     steps: [
       {
         title: 'Fail → disposition',
         role: 'Inspector',
         to: { route: 'production-qc', label: 'Production → QC / QA' },
-        body: `<i>scrap / dispose / recycle</i> = terminal (counts as scrapped). <b>repair</b> = the
-          unit goes to rework and the job order stays open.`,
+        body: `Open the inspection and review the failed checks. Enter remarks, attach evidence for the failed unit and choose its disposition before Fail. Scrap, dispose and recycle are terminal; repair sends it to rework. QA can hold it for an authorized decision.`,
       },
       {
         title: 'Raise parts requests',
         role: 'Production',
         to: { route: 'job-orders', label: 'Job order → Repair panel' },
-        body: `<i>add</i> (a missing part) or <i>replace</i> (swap — the old part goes to its damage
-          record). Add a fault reason (assembler / production / supplier / wear / other).`,
+        body: `Open the unit’s Repair panel and choose add for a missing part or replace for a fitted part. Enter the part, quantity and fault reason. Available parts are held for the request; a replacement’s removed part is recorded as damaged.`,
       },
       {
-        title: 'Warehouse accepts',
-        role: 'Warehouse',
+        title: 'Parts clerk issues',
+        role: 'Parts clerk · production.repairs',
         to: { route: 'repairs', label: 'Production → Repairs & Parts Requests' },
-        body: `Accept issues the replacement from a chosen location with remarks; reject needs a
-          reason. This is the only point stock moves.`,
+        body: `Open the parts request and review its approved item and quantity. Issue from an approved location and scan the exact requested part. Enter a reason if rejecting. Request a revision for a different part or quantity; stock moves when issued.`,
       },
       {
         title: 'Re-inspect',
         role: 'Inspector',
         to: { route: 'production-qc', label: 'Production → QC / QA' },
-        body: `Allowed only once no request is still open. Pass → the unit resumes its stage flow;
-          the final pass queues it for <b>Products In</b>, which is what actually posts it to
-          stock.`,
+        body: `Check that all parts requests are settled, then reopen the unit’s inspection and complete the required checks. A pass returns it to its inspection flow; the final pass queues it for Products In, where stock receipt is recorded.`,
       },
     ],
     gotchas: [],
   },
 ];
 
+// Task-focused workflows complement the existing operational playbooks.
+GUIDE_PIPELINES.push(
+  { id: 'getting-started', title: 'Find your way around', icon: 'help', audience: 'Everyone', module: 'home', tagline: 'Find a feature, read its guide, and keep useful shortcuts nearby', intro: 'Start from the task you want to accomplish. Your menus and guides follow your role and enabled modules.', steps: [
+    { title: 'Search for a screen', body: 'Type a feature name in Search Menu. Press Enter to open the first match; Escape closes the suggestions.', spot: '#menu-search', tip: 'Alt + Shift + G starts a walkthrough of your current screen or dialog.' },
+    { title: 'Open contextual guidance', body: 'Press Guide in the screen, side panel or dialog header to start its highlighted walkthrough. Use Next to move between controls and Escape to exit; the current draft stays open.', spot: '[data-guide-open]' },
+    { title: 'Track work that matters', body: 'Open Notes from the side toolbar and choose New note / checklist. Add the steps you need to do, enable Schedule this note and enter its due time before saving.', spot: '[data-tool="notes"]' },
+  ], gotchas: ['Guides explain actions; they never save, approve, delete, or pay on your behalf.'] },
+  { id: 'keyboard-tips', title: 'Keyboard shortcuts and navigation tips', icon: 'help', module: 'home', tagline: 'Hotkeys that work here, with their exact context', audience: 'Everyone', intro: 'Shortcuts help when you know where they apply. These are implemented in the app.', steps: [
+    { title: 'Open a guide', body: '<kbd>Alt + Shift + G</kbd> starts a walkthrough on the current screen or dialog. Tab and Shift + Tab move between controls. Escape closes a tooltip or walkthrough before closing its parent dialog.' },
+    { title: 'Find a screen', spot: '#menu-search', body: 'Type in Search Menu. Enter opens the first match; Escape closes suggestions.' },
+    { title: 'Add checklist items', body: 'In Notes, Enter in the checklist item box adds the item without saving the entire note.' },
+    { title: 'Work in the document editor', body: 'Inside the editor: Ctrl/Cmd + S saves; Ctrl/Cmd + Z undoes; Ctrl/Cmd + Y or Shift + Z redoes; Ctrl/Cmd + F opens Find. Ctrl/Cmd + plus, minus, and zero control zoom.', tip: 'These editor commands apply while editing a document. Ordinary dialogs have their own Save or Confirm buttons.' },
+  ], gotchas: [] },
+  { id: 'file-request', title: 'File an employee request', icon: 'calendar', module: 'hr', tagline: 'Leave, half-day, overtime, offset, and other requests', audience: 'Employees', intro: 'Submit a complete request and track its review.', steps: [
+    { title: 'Choose a request type', to: { route: 'hr-requests', label: 'My HR' }, spot: '#myhr-new', nextSpot: '.modal-overlay [data-field], .modal-overlay .leave-date-picker', advanceOn: 'click', body: 'Open the Requests tab in My HR, press New request and choose Leave, Half Day, Overtime, Offset or the request type you need. Use Attendance corrections for missed punches.' },
+    { title: 'Provide the details', body: 'Enter the reason and requested dates or times. For leave, select a date range, separate dates or both and review the date preview. Only scheduled working days consume leave balance.', spot: '.modal-overlay:last-child .modal-body' },
+    { title: 'Submit and track', body: 'Review the dates and details before submitting. A submitted request stays pending until an authorized approver decides it. Open it from My HR to inspect its status.', to: { route: 'hr-requests', label: 'My HR' }, spot: '#myhr-content', tip: 'Submitting a form is separate from approval. Warnings are advisory; read them before proceeding.' },
+  ], gotchas: ['Only scheduled working days consume paid leave. An approved multi-day leave attaches to every selected covered date.'] },
+  { id: 'review-requests', title: 'Review employee requests', icon: 'check', module: 'hr', tagline: 'Inspect details, warnings and authority before deciding', audience: 'Department approvers and HR', intro: 'Make informed decisions without missing the employee’s reason or date coverage.', steps: [
+    { title: 'Open approvals', to: { route: 'hr-approvals', label: 'Approvals' }, spot: '#ap-search', body: 'Open Pending in Approvals. Search by employee or request name, then press Review on the item you need to decide. Only requests within your authority are actionable.' },
+    { title: 'Inspect the complete request', spot: '.modal-overlay:last-child .modal-body', body: 'Press Review and read the request’s displayed reason, dates and other details. Check relevant attendance and leave balance before deciding; ask for clarification if information is missing.' },
+    { title: 'Record the decision', spot: '.modal-overlay:last-child #ap-decision', body: 'Choose Approve or Reject, enter a decision note (including the reason for rejection) and press Save decision. Department approval notifies HR and does not need a second approval. Read any balance-override prompt and subsequent review notes.', tip: 'Approval is an explicit decision; a walkthrough never presses its confirmation button.' },
+  ], gotchas: ['Overlapping requests warn rather than block. Approved paid leave must not charge the same date twice.'] },
+  { id: 'build-form', title: 'Build a request form', icon: 'forms', module: 'hr', tagline: 'Name → fields → optional automation → review', audience: 'Form administrators', intro: 'Create a useful form without getting lost in its technical settings.', steps: [
+    { title: 'Create a form', to: { route: 'form-builder', filter: { scope: 'hr' }, label: 'HR Form Builder' }, spot: '#fb-new-form', advanceOn: 'click', nextSpot: '#fb-name', body: 'Press New Form to build a custom form, or choose Quick Add for a common HR form. A form definition specifies fields; it does not submit a request.' },
+    { title: 'Name the form', spot: '#fb-name', body: 'Enter the name employees will recognize, such as Leave Request. The internal ID is generated from it; expand Advanced settings only to change the ID, numbering prefix or icon.' },
+    { title: 'Add useful fields', spot: '#fb-add-field', body: 'Press Add field, enter its label and key, choose its type and mark it required when reviewers need it. Include a Reason field for requests. Print templates use the field keys. Connected fields select existing products, customers, employees and other permitted records. Use Connect value on a Text or Number field to fill a property from a selected record. Product line items support quantities, prices and discounts; Calculated number supports totals and percentages. Currency amount keeps values numeric and prints two decimals with the currency code. Inventory also offers a Sales invoice starter with PHP and 0% tax for review, billing details, dates, payment terms and a printable layout.' },
+    { title: 'Choose optional automation', spot: '.fb-actions summary', body: 'Expand Automated actions and press Add action if saving or approving a record should trigger a follow-up. Select its action type and trigger, then review its recipient and message. For a custom sales form, choose Create a draft sales order on submission and map its customer, items, tax and final total fields. Save as Draft while editing; Submitted creates an open sales order for review.' },
+    { title: 'Review before creating', spot: '.modal-overlay:last-child [data-confirm]', body: 'Check the name, required fields and automation, then press Create form. Open the saved form to test a draft before asking employees to use it.', tip: 'Question-mark icons provide detailed explanations without leaving this dialog.' },
+  ], gotchas: ['Changing an existing form ID or field key can affect templates and workflows that refer to it.'] },
+  { id: 'notes-scheduler', title: 'Turn a note into scheduled work', icon: 'note', module: 'home', tagline: 'Note → checklist → schedule → complete', audience: 'Everyone', intro: 'Keep personal notes, to-dos and reminders connected.', steps: [
+    { title: 'Open Notes', spot: '[data-tool="notes"]', advanceOn: 'click', nextSpot: '#note-new', body: 'Choose Notes in the side toolbar.' },
+    { title: 'Create a note or checklist', spot: '#note-new', advanceOn: 'click', nextSpot: '#note-title', body: 'Press New note / checklist and enter a title. Add body text for context and use Add item for each action you need to complete.', tip: 'Enter in the checklist item box adds an item rather than saving the note.' },
+    { title: 'Schedule the note', spot: '#note-scheduled', body: 'Check Schedule this note, enter its due date and time, and optionally choose Remind me. Press Save to create or update the linked Tasks & reminders task.' },
+    { title: 'Keep progress in sync', spot: '#note-items', body: 'Check each checklist item as you finish it; checking every item completes the linked task. Open Tasks & reminders to review the task and choose Open linked note to return. Reopening the task leaves an item unfinished.', tip: 'Rescheduling updates the same task. Push delivery requires notifications enabled on your device.' },
+  ], gotchas: ['Notes are private to your account. Deleting a note preserves the existing scheduled task and its captured context.'] },
+  { id: 'document-editing', title: 'Create and edit a document', icon: 'file', module: 'home', tagline: 'Choose a document → edit → preview → save', audience: 'Document users', intro: 'Use the document editor without confusing editing, saving and issuing.', steps: [
+    { title: 'Choose the document', to: { route: 'templates', label: 'Templates' }, body: 'Open Templates and create a template or edit an existing one. Select the form it prints and give the template a recognizable name.' },
+    { title: 'Edit the content', spot: '.doc-surface', body: 'Write in the document canvas. Select text to format it and insert the form fields you need. Review page layout before previewing.', tip: 'In the document editor: Ctrl/Cmd + S saves, Ctrl/Cmd + Z undoes, and Ctrl/Cmd + Y redoes.' },
+    { title: 'Preview and save', spot: '.doc-fs [data-preview]', body: 'Choose Preview and select a record to check field values and page breaks. Return to the editor and Save when the output is correct. Saving a template does not issue a business record.', tip: 'Use the editor’s Find control for search. Editor shortcuts apply inside the editor, not every screen.' },
+  ], gotchas: [] },
+);
+
+// Cross-module roadmaps: inputs, actions and handoffs verified against the app.
+GUIDE_PIPELINES.push(...[
+  {
+    "id": "sales-to-cash",
+    "title": "Sales → parts → production → delivery → payment",
+    "module": "inventory",
+    "icon": "send",
+    "tagline": "Follow the module connections and team handoffs.",
+    "audience": "Everyone involved in the process",
+    "pipeline": true,
+    "intro": "Follow the business process across modules. Each checkpoint names the responsible team, required inputs and result passed to the next team. Your role may only have access to some screens.",
+    "steps": [
+      {
+        "title": "Sales order",
+        "module": "Sales",
+        "role": "Sales / CSR",
+        "to": {
+          "route": "orders",
+          "filter": {
+            "type": "sale"
+          },
+          "label": "Inventory → Orders"
+        },
+        "before": "Customer, stock-linked order lines and ship-from location.",
+        "body": "Save the order, then open Review stock & approval. Check local availability and commitments.",
+        "result": "An open order and stock review show what must be supplied."
+      },
+      {
+        "title": "Plan missing supply",
+        "module": "Sales → Production / Purchasing",
+        "role": "Sales / planner",
+        "to": {
+          "route": "orders",
+          "filter": {
+            "type": "sale"
+          },
+          "label": "Inventory → Orders"
+        },
+        "before": "A stock review showing a shortage.",
+        "body": "Review existing linked supply before drafting more. Draft CKD-parts production for uncovered builds, or Draft missing purchases for uncovered buying demand. A production manager may Finish a semi-built RTS unit for a fully built shortage: its loose parts are included, so do not issue BOM parts again. Receive or transfer supply to the sale’s ship-from location; drafts are not stock.",
+        "result": "Linked production jobs or purchase drafts cover the outstanding plan; they are not received stock."
+      },
+      {
+        "title": "Approve the production job",
+        "module": "Production",
+        "role": "Production approver",
+        "to": {
+          "route": "job-orders",
+          "filter": {},
+          "label": "Production → Job Orders"
+        },
+        "before": "A draft production job, a valid product BOM and planned source/output locations.",
+        "body": "Review components and quantity, then Approve. Warehouse must accept the approved job.",
+        "result": "An approved job is ready for warehouse kit preparation."
+      },
+      {
+        "title": "Parts request / pick the kit",
+        "module": "Production → Warehouse",
+        "role": "Parts clerk / warehouse",
+        "to": {
+          "route": "job-orders",
+          "filter": {},
+          "label": "Production → Job Orders"
+        },
+        "before": "Approved job accepted by warehouse; components available at the source.",
+        "body": "Pick physical quantities after warehouse acceptance. Partial picks hold available components. For sale-linked jobs use the sale stock review for aggregate purchasing; standalone jobs use their supply review. Receive shortages at the exact source, finish picking, then issue the slip.",
+        "result": "Picked parts are held for this kit. A fully prepared kit is ready for its parts slip."
+      },
+      {
+        "title": "Release parts and accept the kit",
+        "module": "Warehouse → Production",
+        "role": "Warehouse / production lead",
+        "to": {
+          "route": "job-orders",
+          "filter": {},
+          "label": "Production → Job Orders"
+        },
+        "before": "A fully prepared kit and the physical handover.",
+        "body": "Use Release & issue slip. Production counts the kit and accepts the job; report missing or damaged parts.",
+        "result": "The parts slip deducts components; acceptance allows production recording."
+      },
+      {
+        "title": "Record production",
+        "module": "Production",
+        "role": "Shop floor",
+        "to": {
+          "route": "job-orders",
+          "filter": {},
+          "label": "Production → Job Orders"
+        },
+        "before": "Released, accepted job and actual completed output.",
+        "body": "After production accepts the released kit, record serialized output one unit at a time with identifier and photo; non-serialized output uses batch quantities. Recording sends output to required inspection or Products In, never directly to sellable stock. After an uncertain phone response, recover the saved original attempt; confirmed units must not be added again.",
+        "result": "Output enters configured inspection stages, or Products In when no inspection is required. It is not yet sellable stock."
+      },
+      {
+        "title": "QC / QA and repair branch",
+        "module": "Production → Quality",
+        "role": "QC / QA inspector",
+        "to": {
+          "route": "production-qc",
+          "filter": {},
+          "label": "Production → QC / QA"
+        },
+        "before": "Recorded output and the required checklist.",
+        "body": "Use your own QC or QA pass. Two-stage jobs enforce separate inspectors; a single stage uses the combined checklist. Complete required checks; N/A does not satisfy a required check. Fail/hold decisions need a unit evidence photo. Informational issue reports do not advance inspection or pause production. Settle repair requests before reinspection; final passes queue receiving, not stock.",
+        "result": "Output that completes required inspections becomes ready for receiving."
+      },
+      {
+        "title": "Receive finished goods",
+        "module": "Quality → Warehouse",
+        "role": "Receiving clerk",
+        "to": {
+          "route": "production-receiving",
+          "filter": {},
+          "label": "Production → Products In"
+        },
+        "before": "Output ready to receive and physical counts.",
+        "body": "Review Ready to Receive. Select passed units and/or actual whole batch quantities, choose one exact storage location and post. Combined receipts check total capacity atomically. Duplicates, product-data mismatches and full/transit locations block posting. Review saved original attempts after an uncertain mobile receipt; site-PC saves remain pending until sync confirms. Stock received elsewhere needs a transfer to the sale’s ship-from location.",
+        "result": "Received finished goods become stock available for the sales order."
+      },
+      {
+        "title": "Authorize and pick the sales release",
+        "module": "Sales → Warehouse",
+        "role": "Sales / releaser",
+        "to": {
+          "route": "releasing",
+          "filter": {
+            "tab": "queue"
+          },
+          "label": "Inventory → Releasing"
+        },
+        "before": "Approved sales order, stock coverage and release authorization from the order.",
+        "body": "Warehouse accepts the approved order, then selects the exact sale line and its build state. Scan serialized units or choose exact batch/untracked quantities. When one SKU matches several lines, explicitly choose the correct line. Picking holds stock; it does not deduct it. Undo allocation changes only unshipped holds and does not cancel customer demand.",
+        "result": "Goods are reserved for the order; picking alone does not deduct stock."
+      },
+      {
+        "title": "Issue release slip and deliver",
+        "module": "Warehouse → Delivery",
+        "role": "Releaser / driver",
+        "to": {
+          "route": "releasing",
+          "filter": {
+            "tab": "slips"
+          },
+          "label": "Inventory → Releasing"
+        },
+        "before": "Picked goods, authorization token and required handover evidence.",
+        "body": "Select this vehicle’s actual serials, batches and quantities. Check current Sales authority, token, package requirements and goods photo, then issue the trip’s release slip. Only its load leaves stock. Remaining demand stays committed on the same sales order; each further trip needs its own slip and authority. CKD loads contain whole kits only. Book an own-driver trip or courier pickup for the particular release slip. An own-driver trip may start before warehouse-out but cannot finish a physical sale without its slip. Courier pickup records collection by the carrier, not customer delivery. Evidence is optional in the delivery app; follow company SOP. Review saved attempts after a lost response; never force stock completion.",
+        "result": "Only this trip’s load leaves stock. Further trips keep the original SO; courier custody is distinct from customer receipt."
+      },
+      {
+        "title": "Complete order and collect payment",
+        "module": "Sales → Accounting",
+        "role": "CSR / accountant",
+        "to": {
+          "route": "accounting-receivables",
+          "filter": {},
+          "label": "Accounting → Receivables & Payables"
+        },
+        "before": "Review every trip, remaining demand and the customer’s open documents.",
+        "body": "Review shipment and trip history on the original sale. It remains partially fulfilled until all noncancelled demand ships and delivery trips finish. Sales can cancel only an unshipped remainder with a reason. Receive customer returns against the original slip, then inspect them; do not reopen the shipped sale as a return. Finance records customer settlement separately. Open the customer in AR aging to allocate the actual receipt to its documents.",
+        "result": "Posted allocations reduce the outstanding balance. An on-account receipt may leave an invoice open."
+      }
+    ],
+    "gotchas": [
+      "Follow only the branches that apply. Existing stock can skip production; purchased goods use goods receipts.",
+      "Draft orders, picked kits and QC passes have different effects. Check the result at each handoff before proceeding."
+    ],
+    "related": [
+      "split-trips",
+      "ckd-sale",
+      "semi-finishing",
+      "customer-return",
+      "connected-invoice"
+    ]
+  },
+  {
+    "id": "purchase-to-pay",
+    "title": "Purchasing → stock → bill → payment → ledger",
+    "module": "purchasing",
+    "icon": "send",
+    "tagline": "Follow the module connections and team handoffs.",
+    "audience": "Everyone involved in the process",
+    "pipeline": true,
+    "intro": "Follow the business process across modules. Each checkpoint names the responsible team, required inputs and result passed to the next team. Your role may only have access to some screens.",
+    "steps": [
+      {
+        "title": "Purchase order",
+        "module": "Purchasing",
+        "role": "Purchaser",
+        "to": {
+          "route": "orders",
+          "filter": {
+            "type": "purchase"
+          },
+          "label": "Inventory → Orders"
+        },
+        "before": "Supplier, required items and approved quantities/prices.",
+        "body": "Create or review the purchase draft generated by a sales or parts shortage.",
+        "result": "A purchase order records expected supply; stock is unchanged."
+      },
+      {
+        "title": "Goods receipt",
+        "module": "Purchasing → Warehouse",
+        "role": "Receiver",
+        "to": {
+          "route": "purchasing",
+          "filter": {
+            "tab": "receipts"
+          },
+          "label": "Inventory → Purchasing"
+        },
+        "before": "Supplier delivery and purchase order.",
+        "body": "Record receipt against the PO with actual quantities and destination.",
+        "result": "Posted receipt adds stock for kits or sales."
+      },
+      {
+        "title": "Vendor bill and match",
+        "module": "Warehouse → Accounting",
+        "role": "Accountant",
+        "to": {
+          "route": "purchasing",
+          "filter": {
+            "tab": "bills"
+          },
+          "label": "Inventory → Purchasing"
+        },
+        "before": "Supplier invoice and posted receipts.",
+        "body": "Enter and review the bill against PO prices and received quantities. Resolve matching differences before approval.",
+        "result": "Approved bill is ready for payable review."
+      },
+      {
+        "title": "Supplier payment",
+        "module": "Accounting",
+        "role": "Accountant",
+        "to": {
+          "route": "accounting-receivables",
+          "filter": {},
+          "label": "Accounting → Receivables & Payables"
+        },
+        "before": "Reviewed supplier balance and configured cash/bank account.",
+        "body": "Open the supplier in AP aging and record the payment with document allocations.",
+        "result": "The posted payment and allocations record settlement."
+      },
+      {
+        "title": "Check the ledger",
+        "module": "Accounting",
+        "role": "Accountant",
+        "to": {
+          "route": "accounting-ledger",
+          "filter": {
+            "tab": "journal"
+          },
+          "label": "Accounting → General Ledger"
+        },
+        "before": "General Ledger configured and applicable transactions posted.",
+        "body": "Review generated journal entries and source references; resolve posting errors or unposted sources.",
+        "result": "Source documents and ledger entries reconcile; viewing this guide never posts them."
+      }
+    ],
+    "gotchas": [
+      "Follow only the branches that apply. Existing stock can skip production; purchased goods use goods receipts.",
+      "Draft orders, picked kits and QC passes have different effects. Check the result at each handoff before proceeding."
+    ]
+  },
+  {
+    "id": "attendance-to-payroll",
+    "title": "Attendance → approvals → payroll → accounting",
+    "module": "hr",
+    "icon": "send",
+    "tagline": "Follow the module connections and team handoffs.",
+    "audience": "Everyone involved in the process",
+    "pipeline": true,
+    "intro": "Follow the business process across modules. Each checkpoint names the responsible team, required inputs and result passed to the next team. Your role may only have access to some screens.",
+    "steps": [
+      {
+        "title": "Cutoff and roster",
+        "module": "HR",
+        "role": "HR staff",
+        "to": {
+          "route": "hr-timekeeping",
+          "filter": {},
+          "label": "HR → Time Keeping"
+        },
+        "before": "Employees, payroll policy and effective rate tables.",
+        "body": "Create the cutoff and add its employees.",
+        "result": "A dated roster is ready for attendance."
+      },
+      {
+        "title": "Attendance and approved forms",
+        "module": "HR → Approvals",
+        "role": "Employees / approvers / HR",
+        "to": {
+          "route": "hr-timekeeping",
+          "filter": {},
+          "label": "HR → Time Keeping"
+        },
+        "before": "Cutoff roster and attendance sources.",
+        "body": "Review punches and attendance; reconcile approved leave, overtime and offset forms.",
+        "result": "Verified inputs are ready for payroll computation."
+      },
+      {
+        "title": "Generate and review payroll",
+        "module": "HR",
+        "role": "Payroll staff",
+        "to": {
+          "route": "hr-timekeeping",
+          "filter": {},
+          "label": "HR → Time Keeping"
+        },
+        "before": "Verified attendance and adjustments.",
+        "body": "Generate Payslips, read review notes and compare earnings, deductions and net pay.",
+        "result": "Reviewed payroll records are ready for payment and printing."
+      },
+      {
+        "title": "Pay and post to GL",
+        "module": "HR → Accounting",
+        "role": "Payroll / accountant",
+        "to": {
+          "route": "hr-timekeeping",
+          "filter": {},
+          "label": "HR → Time Keeping"
+        },
+        "before": "Reviewed payslips, actual payment and configured ledger.",
+        "body": "Mark paid only after payment; use Post to GL explicitly and review its result.",
+        "result": "Paid payroll locks the cutoff; posted payroll can be checked in the ledger."
+      },
+      {
+        "title": "Compliance worksheets",
+        "module": "Accounting",
+        "role": "Tax / accounting staff",
+        "to": {
+          "route": "accounting",
+          "filter": {},
+          "label": "Accounting → Tax & Compliance"
+        },
+        "before": "Reviewed payroll and the reporting period.",
+        "body": "Generate and reconcile the supported government worksheets before agency submission.",
+        "result": "Exported worksheets are prepared; generating them does not file a return."
+      }
+    ],
+    "gotchas": [
+      "Follow only the branches that apply. Existing stock can skip production; purchased goods use goods receipts.",
+      "Draft orders, picked kits and QC passes have different effects. Check the result at each handoff before proceeding."
+    ],
+    "related": [
+      "payroll-correction"
+    ]
+  }
+]);
+
+// Current cross-module additions. Each stage names its physical or administrative effect.
+GUIDE_PIPELINES.push(...[
+  {
+    "id": "split-trips",
+    "title": "Sales release → multiple trips → driver or courier",
+    "module": "inventory",
+    "icon": "send",
+    "pipeline": true,
+    "audience": "Staff responsible for these handoffs",
+    "tagline": "Follow prerequisites, physical actions and the next team’s checkpoint.",
+    "intro": "Follow the connected roadmap. Record only what actually happened, review the result, and hand it to the next team. Other teams’ screens may be read-only or unavailable to your account.",
+    "steps": [
+      {
+        "title": "Review remaining demand",
+        "module": "Sales → Warehouse",
+        "role": "Sales / releaser",
+        "to": {
+          "route": "orders",
+          "label": "Inventory → Sale Orders",
+          "filter": {
+            "type": "sale"
+          }
+        },
+        "before": "Approved sales order and exact physical line/build state.",
+        "body": "Review shipped, cancelled and still-held amounts. Pick only the correct sale line; shared stock must not be counted once per line.",
+        "result": "A reviewed remaining load and current release authority."
+      },
+      {
+        "title": "Choose the trip load",
+        "module": "Warehouse",
+        "role": "Releaser",
+        "to": {
+          "route": "releasing",
+          "label": "Inventory → Releasing → Release Slips",
+          "filter": {
+            "tab": "slips"
+          }
+        },
+        "before": "Accepted order, allocations and goods leaving now.",
+        "body": "Select exact serials, batch allocations and untracked quantities for this trip. Confirm packages, token or authorized override and required goods photo.",
+        "result": "One numbered release slip deducts only this load; remaining demand stays on the same SO."
+      },
+      {
+        "title": "Book the linked trip",
+        "module": "Warehouse → Delivery",
+        "role": "Delivery manager",
+        "to": {
+          "route": "releasing",
+          "label": "Inventory → Releasing → Release Slips",
+          "filter": {
+            "tab": "slips"
+          }
+        },
+        "before": "Issued release slip and its actual load.",
+        "body": "From the slip book own delivery or courier pickup. Complete or cancel an active booking before replacing it. Reconcile a saved booking attempt before submitting another.",
+        "result": "The booking points to this slip’s manifest, not every item on the SO."
+      },
+      {
+        "title": "Driver delivery or courier pickup",
+        "module": "Delivery",
+        "role": "Assigned staff / manager",
+        "to": {
+          "external": "/m#/deliveries",
+          "label": "Phone → Work → Deliveries"
+        },
+        "before": "Physical trip/collection; warehouse slip before terminal completion.",
+        "body": "Own driver records delivery or a failed-attempt reason. Courier staff use Record courier pickup and check carrier/tracking. Evidence is optional in-app; follow company policy. Recover uncertain attempts with their original request.",
+        "result": "Driver delivery records recipient handoff; courier pickup records carrier custody only. Neither deducts stock again.",
+        "branch": {
+          "label": "Failed delivery attempt?",
+          "body": "Record the reason. No extra stock moves; arrange another attempt through the delivery workflow.",
+          "target": 2,
+          "action": "Review the trip booking",
+          "direction": "Recovery loop"
+        }
+      },
+      {
+        "title": "Continue or close remaining demand",
+        "module": "Delivery → Sales",
+        "role": "Sales / manager",
+        "to": {
+          "route": "orders",
+          "label": "Inventory → Sale Orders",
+          "filter": {
+            "type": "sale"
+          }
+        },
+        "before": "Trip history and customer’s remaining requirements.",
+        "body": "Repeat picking, authority, slip and booking for another vehicle. Cancel only unshipped remaining demand with a reason if the customer no longer needs it. Use slip-linked returns for shipped goods.",
+        "result": "The same SO retains every trip and reaches fulfillment only after all noncancelled goods and trips are complete."
+      }
+    ],
+    "gotchas": [
+      "A saved attempt or site-local result is not the same as central confirmation. Review saved work before starting a replacement request."
+    ]
+  },
+  {
+    "id": "ckd-sale",
+    "title": "CKD sale → component picking → whole-kit shipment",
+    "module": "inventory",
+    "icon": "send",
+    "pipeline": true,
+    "audience": "Staff responsible for these handoffs",
+    "tagline": "Follow prerequisites, physical actions and the next team’s checkpoint.",
+    "intro": "Follow the connected roadmap. Record only what actually happened, review the result, and hand it to the next team. Other teams’ screens may be read-only or unavailable to your account.",
+    "steps": [
+      {
+        "title": "Choose CKD on the sales line",
+        "module": "Sales",
+        "role": "Sales",
+        "to": {
+          "route": "orders",
+          "label": "Inventory → Sale Orders",
+          "filter": {
+            "type": "sale"
+          }
+        },
+        "before": "A product with a reviewed BOM and customer agreement to receive components.",
+        "body": "Select CKD · ship parts and review the saved component snapshot and quantity. CKD is different from a semi-built complete package.",
+        "result": "The sales line represents kits; physical picking uses its child component lines."
+      },
+      {
+        "title": "Check component supply",
+        "module": "Sales → Warehouse",
+        "role": "Sales / warehouse",
+        "to": {
+          "route": "orders",
+          "label": "Inventory → Sale Orders",
+          "filter": {
+            "type": "sale"
+          }
+        },
+        "before": "CKD line and source-location availability.",
+        "body": "Review the stock/approval panel and arrange missing supply. Pick components from their exact source after warehouse acceptance.",
+        "result": "Component allocations are held for this sale, without a finished-SKU stock deduction."
+      },
+      {
+        "title": "Verify complete kits",
+        "module": "Warehouse",
+        "role": "Releaser",
+        "to": {
+          "route": "releasing",
+          "label": "Inventory → Releasing → Release Slips",
+          "filter": {
+            "tab": "slips"
+          }
+        },
+        "before": "Picked quantities for every component per kit.",
+        "body": "Ship only whole CKD kits. Undo extra component picks or finish another complete kit; do not send an incomplete kit under partial authority.",
+        "result": "A whole-kit trip load is ready for release."
+      },
+      {
+        "title": "Issue trip slip and hand over",
+        "module": "Warehouse → Delivery",
+        "role": "Releaser / driver",
+        "to": {
+          "route": "releasing",
+          "label": "Inventory → Releasing → Release Slips",
+          "filter": {
+            "tab": "slips"
+          }
+        },
+        "before": "Current authority permitting any partial load and required handoff evidence.",
+        "body": "Issue the slip for whole kits. The manifest keeps the parent and shipped child parts. Book own delivery/courier for that slip; keep remaining kits on the same SO.",
+        "result": "Shipped components leave stock once; the finished product balance is unchanged."
+      }
+    ],
+    "gotchas": [
+      "A saved attempt or site-local result is not the same as central confirmation. Review saved work before starting a replacement request."
+    ]
+  },
+  {
+    "id": "semi-finishing",
+    "title": "Semi-built RTS package → finishing → QC/QA → fully built RTS",
+    "module": "manufacturing",
+    "icon": "send",
+    "pipeline": true,
+    "audience": "Staff responsible for these handoffs",
+    "tagline": "Follow prerequisites, physical actions and the next team’s checkpoint.",
+    "intro": "Follow the connected roadmap. Record only what actually happened, review the result, and hand it to the next team. Other teams’ screens may be read-only or unavailable to your account.",
+    "steps": [
+      {
+        "title": "Choose an eligible package",
+        "module": "Sales → Production",
+        "role": "Production manager / approver",
+        "to": {
+          "route": "orders",
+          "label": "Inventory → Sale Orders",
+          "filter": {
+            "type": "sale"
+          }
+        },
+        "before": "Fully built demand and a complete semi-built RTS package at the chosen source.",
+        "body": "From stock review choose Finish a semi-built RTS unit, or use mobile Semi-finishing. Select the exact source unit or eligible untracked package. Confirm all loose parts are present.",
+        "result": "The source is a complete package, not a new build from loose BOM stock."
+      },
+      {
+        "title": "Start finishing once",
+        "module": "Production",
+        "role": "Production manager / approver",
+        "to": {
+          "external": "/m#/semi-finishing",
+          "label": "Phone → Work → Semi-finishing"
+        },
+        "before": "Source package, identifier, required photo, finishing cost and physical verification.",
+        "body": "Start finishing the unit. Recover the original request if confirmation is unknown. Do not pick BOM parts or use Add unit again for this conversion.",
+        "result": "One semi-built RTS unit leaves stock and the same physical package becomes one pending inspection unit."
+      },
+      {
+        "title": "Inspect the converted unit",
+        "module": "Production → Quality",
+        "role": "QC / QA",
+        "to": {
+          "route": "production-qc",
+          "label": "Production → QC / QA"
+        },
+        "before": "Conversion job and its already-recorded unit.",
+        "body": "Run the configured QC/QA stages, including repair/hold decisions as required. Before inspection, cancellation requires a reason and confirmation that the entire package is repacked.",
+        "result": "Final passed output is ready for receiving; a conversion does not skip quality."
+      },
+      {
+        "title": "Receive fully built output",
+        "module": "Quality → Warehouse",
+        "role": "Receiving clerk",
+        "to": {
+          "route": "production-receiving",
+          "label": "Production → Products In"
+        },
+        "before": "Passed converted unit and valid storage location.",
+        "body": "Post Products In once, then transfer if needed for the sales ship-from location.",
+        "result": "Fully built RTS stock becomes available for the normal sales release."
+      }
+    ],
+    "gotchas": [
+      "A saved attempt or site-local result is not the same as central confirmation. Review saved work before starting a replacement request."
+    ]
+  },
+  {
+    "id": "customer-return",
+    "title": "Customer return → inspection → restock or repair → credit",
+    "module": "inventory",
+    "icon": "send",
+    "pipeline": true,
+    "audience": "Staff responsible for these handoffs",
+    "tagline": "Follow prerequisites, physical actions and the next team’s checkpoint.",
+    "intro": "Follow the connected roadmap. Record only what actually happened, review the result, and hand it to the next team. Other teams’ screens may be read-only or unavailable to your account.",
+    "steps": [
+      {
+        "title": "Receive against the original slip",
+        "module": "Customer → Warehouse",
+        "role": "Return receiver",
+        "to": {
+          "route": "releasing",
+          "label": "Inventory → Releasing → Release Slips",
+          "filter": {
+            "tab": "slips"
+          }
+        },
+        "before": "Original shipped slip/line, actual returned quantity or exact sold serial, reason and fresh photo.",
+        "body": "Open Release Slips and Record goods received, or use mobile Returns. Use the slip from the current sale/return cycle; do not reopen the shipped order.",
+        "result": "A numbered return receipt records custody only: no stock-in and no refund."
+      },
+      {
+        "title": "Inspect the returned goods",
+        "module": "Warehouse",
+        "role": "Inventory adjuster",
+        "to": {
+          "route": "releasing",
+          "label": "Inventory → Releasing → Release Slips",
+          "filter": {
+            "tab": "slips"
+          }
+        },
+        "before": "Received return and physical condition.",
+        "body": "Inspect and Restock to a chosen location or Reject. Only an accepted restock adds sellable stock; review any ledger reconciliation warning separately.",
+        "result": "Restock changes stock once; rejected goods remain outside sellable inventory.",
+        "branch": {
+          "label": "Rejected on inspection?",
+          "body": "Keep out of sellable stock. Repair, salvage or dispose through the return workflow.",
+          "target": 2,
+          "action": "Review rejected-goods disposition",
+          "direction": "Return branch"
+        }
+      },
+      {
+        "title": "Repair, salvage or dispose",
+        "module": "Warehouse → Production",
+        "role": "Inspector / warehouse",
+        "to": {
+          "external": "/m#/returns",
+          "label": "Phone → Work → Returns"
+        },
+        "before": "Rejected goods and reviewed disposition.",
+        "body": "Serialized repairs may request parts through the existing clerk queue. Settle pending requests, explicitly complete repair and perform a fresh warehouse return inspection. Salvage goes to damage stock; disposal adds no stock.",
+        "result": "A passed return reinspection may restock. This never uses manufacturing Add unit or Products In."
+      },
+      {
+        "title": "Link the financial correction",
+        "module": "Inventory → Accounting",
+        "role": "Accountant",
+        "to": {
+          "route": "accounting-receivables",
+          "label": "Accounting → Receivables & Payables"
+        },
+        "before": "Issued customer credit note tied to the same original sale and customer.",
+        "body": "Finance reviews and issues the note; link it to the return from the slip using authorized credit actions. If voided, retain history and link an issued replacement when appropriate.",
+        "result": "Customer credit is recorded separately from physical stock disposition."
+      }
+    ],
+    "gotchas": [
+      "A saved attempt or site-local result is not the same as central confirmation. Review saved work before starting a replacement request."
+    ]
+  },
+  {
+    "id": "physical-count",
+    "title": "Planned count → independent review → stock reconciliation",
+    "module": "inventory",
+    "icon": "send",
+    "pipeline": true,
+    "audience": "Staff responsible for these handoffs",
+    "tagline": "Follow prerequisites, physical actions and the next team’s checkpoint.",
+    "intro": "Follow the connected roadmap. Record only what actually happened, review the result, and hand it to the next team. Other teams’ screens may be read-only or unavailable to your account.",
+    "steps": [
+      {
+        "title": "Plan a check or investigate a difference",
+        "module": "Inventory control",
+        "role": "Supervisor",
+        "to": {
+          "route": "stock-counts",
+          "label": "Inventory → Physical Counts"
+        },
+        "before": "One item, exact nested location and build state; optional source discrepancy.",
+        "body": "Use Planned checks → Plan count to assign a worker, due date, instructions and optional repeat. Coverage identifies positions still needing a plan.",
+        "result": "An assigned task stays open until its count is reconciled, not merely submitted."
+      },
+      {
+        "title": "Record the physical observation",
+        "module": "Warehouse",
+        "role": "Assigned counter",
+        "to": {
+          "route": "stock-counts",
+          "label": "Inventory → Physical Counts"
+        },
+        "before": "Current book snapshot and physical access to the exact position.",
+        "body": "New count records untracked quantity, every shown batch quantity and physically present serial labels. Recount if book/serial/batch data changes. An unknown label does not create stock.",
+        "result": "The count is evidence; submission moves no stock."
+      },
+      {
+        "title": "Independent review",
+        "module": "Warehouse → Inventory control",
+        "role": "Different authorized reviewer",
+        "to": {
+          "route": "stock-counts",
+          "label": "Inventory → Physical Counts"
+        },
+        "before": "Submitted count and supporting details.",
+        "body": "Approve or reject. The counter cannot approve their own observation. A rejected count needs a fresh observation; it does not complete the task.",
+        "result": "Approved evidence permits reconciliation but still has not moved stock.",
+        "branch": {
+          "label": "Count rejected or snapshot changed?",
+          "body": "Record a fresh physical observation. Approval does not waive a changed book snapshot.",
+          "target": 1,
+          "action": "Return to physical counting",
+          "direction": "Recount loop"
+        }
+      },
+      {
+        "title": "Apply or verify reconciliation",
+        "module": "Inventory control",
+        "role": "Inventory adjuster",
+        "to": {
+          "route": "stock-counts",
+          "label": "Inventory → Physical Counts"
+        },
+        "before": "Approved current count with resolved serialized differences.",
+        "body": "Apply untracked and exact batch differences through their linked corrections, or verify an already-corrected balance. Resolve serial mismatches through exact-unit workflows first.",
+        "result": "Correction/verification completes the planned task and creates the next repeat when configured."
+      },
+      {
+        "title": "Close the originating issue",
+        "module": "Inventory control",
+        "role": "Supervisor",
+        "to": {
+          "route": "stock-discrepancies",
+          "label": "Inventory → Stock Discrepancies"
+        },
+        "before": "Reconciled stock, current physical check and a review note.",
+        "body": "Separately close the linked discrepancy or direct-sale audit after checking its evidence. New audit evidence requires a new count.",
+        "result": "Closure retains the evidence trail and makes no further stock movement."
+      }
+    ],
+    "gotchas": [
+      "A saved attempt or site-local result is not the same as central confirmation. Review saved work before starting a replacement request."
+    ]
+  },
+  {
+    "id": "connected-invoice",
+    "title": "Connected invoice form → submitted sales draft → fulfillment",
+    "module": "inventory",
+    "icon": "send",
+    "pipeline": true,
+    "audience": "Staff responsible for these handoffs",
+    "tagline": "Follow prerequisites, physical actions and the next team’s checkpoint.",
+    "intro": "Follow the connected roadmap. Record only what actually happened, review the result, and hand it to the next team. Other teams’ screens may be read-only or unavailable to your account.",
+    "steps": [
+      {
+        "title": "Design and grant entry access",
+        "module": "Documents",
+        "role": "Form designer / account administrator",
+        "to": {
+          "route": "form-builder",
+          "label": "Documents → Form Builder",
+          "filter": {
+            "scope": "inventory"
+          }
+        },
+        "before": "Inventory form designer and permitted product/customer sources.",
+        "body": "Use the Sales invoice starter or configure connected customer/product rows and calculations. Enable Create a draft sales order on submission. In Access grant entry roles/accounts; account permission forms.fill.inventory is also required for delegated entry.",
+        "result": "A versioned form, safe connected fields and authorized entry access are ready."
+      },
+      {
+        "title": "Capture an invoice draft",
+        "module": "Documents → Sales",
+        "role": "Authorized form entry staff",
+        "to": {
+          "route": "form-records",
+          "label": "Documents → Data Forms"
+        },
+        "before": "Assigned active form, sales permissions for submission and matching-currency products.",
+        "body": "Choose saved customer/products; review invoice date, due date, payment terms, quantities, discounts and prices. Calculations are recomputed on save. Save as Draft when incomplete; a selected source snapshot does not silently refresh later.",
+        "result": "A numbered draft retains entered values without issuing an accounting invoice or moving stock."
+      },
+      {
+        "title": "Submit and review the sales order",
+        "module": "Sales",
+        "role": "Entry staff / sales reviewer",
+        "to": {
+          "route": "form-records",
+          "label": "Documents → Data Forms"
+        },
+        "before": "Valid form fields, current access and active source records.",
+        "body": "Submit the record. Use Review sales order after success. A failed submission leaves no partial order; retry a lost response using the retained original request rather than creating another record.",
+        "result": "One submitted source record links to one open sales order. Its values/status are locked; later changes belong on the order."
+      },
+      {
+        "title": "Follow the sales pipeline",
+        "module": "Sales → Warehouse → Accounting",
+        "role": "Sales / warehouse / accountant",
+        "to": {
+          "route": "orders",
+          "label": "Inventory → Sale Orders",
+          "filter": {
+            "type": "sale"
+          }
+        },
+        "before": "Linked open sales order and reviewed customer demand.",
+        "body": "Review stock and approval, plan supply, pick and issue physical trip slips, then deliver and settle through normal sales/accounting workflows.",
+        "result": "Form submission is the start of sales processing, not approval, stock-out or a posted invoice."
+      }
+    ],
+    "gotchas": [
+      "A saved attempt or site-local result is not the same as central confirmation. Review saved work before starting a replacement request."
+    ]
+  },
+  {
+    "id": "payroll-correction",
+    "title": "Payroll correction → history → later-cutoff review → ledger",
+    "module": "hr",
+    "icon": "send",
+    "pipeline": true,
+    "audience": "Staff responsible for these handoffs",
+    "tagline": "Follow prerequisites, physical actions and the next team’s checkpoint.",
+    "intro": "Follow the connected roadmap. Record only what actually happened, review the result, and hand it to the next team. Other teams’ screens may be read-only or unavailable to your account.",
+    "steps": [
+      {
+        "title": "Identify the correct historical record",
+        "module": "HR",
+        "role": "Payroll staff",
+        "to": {
+          "route": "form-records",
+          "label": "Documents → Data Forms"
+        },
+        "before": "Employee, cutoff, record schema version and payment status.",
+        "body": "Review the original record and revision history. Archived forms require a correction reason; paid slips reject editing. Handle any authorized unmarking/payment correction before changes.",
+        "result": "The exact historical input and lock state are known."
+      },
+      {
+        "title": "Preview and save a correction",
+        "module": "HR",
+        "role": "Payroll staff",
+        "to": {
+          "route": "form-records",
+          "label": "Documents → Data Forms"
+        },
+        "before": "Unpaid editable record and reviewed deduction override or attendance/rate correction.",
+        "body": "Preview deduction changes without persistence, then explicitly save. Review before/after amounts and modes. Archived corrections require a reason; record revisions retain actor and time.",
+        "result": "A saved correction has an audit trail; preview alone changes nothing."
+      },
+      {
+        "title": "Reconcile later same-month cutoffs",
+        "module": "HR → Payroll",
+        "role": "Payroll staff",
+        "to": {
+          "route": "hr-timekeeping",
+          "label": "HR → Time Keeping"
+        },
+        "before": "Earlier correction and later cutoffs flagged for review.",
+        "body": "Review and regenerate unpaid later cutoffs oldest first so automatic statutory amounts use actual earlier deductions. Retain/review manual amounts; paid cutoffs remain locked.",
+        "result": "Later payroll is reconciled in order rather than assuming the first correction updated everything."
+      },
+      {
+        "title": "Review final pay and posting",
+        "module": "Payroll → Accounting",
+        "role": "Payroll / accountant",
+        "to": {
+          "route": "hr-timekeeping",
+          "label": "HR → Time Keeping"
+        },
+        "before": "Reviewed regenerated payslips and any posting warnings.",
+        "body": "Mark Paid only after actual settlement. Review cutoffs flagged for GL re-posting and use explicit Post to GL where required; reconcile source entries.",
+        "result": "Payment, historical correction and ledger posting are each confirmed separately."
+      }
+    ],
+    "gotchas": [
+      "A saved attempt or site-local result is not the same as central confirmation. Review saved work before starting a replacement request."
+    ]
+  },
+  {
+    "id": "quality-to-rts",
+    "title": "QC/QA → issue evidence → repair or hold → RTS receipt",
+    "module": "manufacturing",
+    "icon": "send",
+    "pipeline": true,
+    "audience": "Staff responsible for these handoffs",
+    "tagline": "Follow prerequisites, physical actions and the next team’s checkpoint.",
+    "intro": "Follow the connected roadmap. Record only what actually happened, review the result, and hand it to the next team. Other teams’ screens may be read-only or unavailable to your account.",
+    "steps": [
+      {
+        "title": "Inspect the correct pass",
+        "module": "Production → Quality",
+        "role": "QC or QA inspector",
+        "to": {
+          "route": "production-qc",
+          "label": "Production → QC / QA"
+        },
+        "before": "Recorded unit/batch at your authorized stage.",
+        "body": "Complete checks; N/A cannot satisfy required items. Two-stage QC and QA have separate authorities. Single-stage combines the checks.",
+        "result": "A reviewed inspection is ready for an explicit disposition."
+      },
+      {
+        "title": "Report findings and decide",
+        "module": "Quality",
+        "role": "Inspector",
+        "to": {
+          "route": "production-qc",
+          "label": "Production → QC / QA"
+        },
+        "before": "Required evidence photo for a fail/hold and reviewed inspection.",
+        "body": "Record Pass, repair/rectification or terminal rejection as appropriate. Issues and photos may hold multiple informational reports; reports alone do not advance inspection or pause a job.",
+        "result": "Pass continues to the next stage; repair, hold or rejection has its own next action."
+      },
+      {
+        "title": "Settle repair parts or QA hold",
+        "module": "Quality → Warehouse",
+        "role": "Requester / parts clerk / QA reviewer",
+        "to": {
+          "route": "repairs",
+          "label": "Production → Repairs & Parts Requests"
+        },
+        "before": "Rework request or final-stage hold awaiting authorized decision.",
+        "body": "Clerk issues the exact approved part and quantity from storage; shortages are escalated. Substitute part/quantity revisions need requester or independent supervisor approval. Settle requests before reinspection. QA holds are decided in the QA Hold view.",
+        "result": "Resolved repair returns to inspection; final pass queues receiving, not sellable stock."
+      },
+      {
+        "title": "Verify and receive RTS",
+        "module": "Quality → Warehouse",
+        "role": "Receiving clerk",
+        "to": {
+          "route": "production-receiving",
+          "label": "Production → Products In"
+        },
+        "before": "Final-passed output without unresolved product-data mismatch and storage capacity.",
+        "body": "Select units and whole batch quantities, physically verify and post to the exact storage location. Resolve duplicates/capacity issues; recover unknown original receipt attempts before retrying new ones.",
+        "result": "One confirmed Products In receipt adds RTS stock. A site-local acknowledgement remains pending until sync confirms."
+      }
+    ],
+    "gotchas": [
+      "A saved attempt or site-local result is not the same as central confirmation. Review saved work before starting a replacement request."
+    ]
+  }
+]);
+
+// Related roadmaps keep the per-module playbooks connected to their full handoffs.
+for (const [id, related] of Object.entries({sales:['sales-to-cash','split-trips','ckd-sale','customer-return'],production:['sales-to-cash','semi-finishing','quality-to-rts'],'qc-repair':['quality-to-rts','customer-return'],inventory:['physical-count','purchase-to-pay'],payroll:['attendance-to-payroll','payroll-correction'],'build-form':['connected-invoice']})) {
+  const p = GUIDE_PIPELINES.find(p => p.id === id); if (p) p.related = related;
+}
+
+// Spending requests and existing-unit intake are independent of supplier receiving and new builds.
+GUIDE_PIPELINES.push(...[
+  {
+    "id": "budgeted-purchase-request",
+    "title": "Internal purchase request → approved budget → liquidation",
+    "module": "purchasing",
+    "icon": "inbox",
+    "pipeline": true,
+    "audience": "Staff responsible for these handoffs",
+    "tagline": "Separate authorization, evidence and completion checkpoints.",
+    "intro": "Follow the approvals and physical checks in order. Reading this roadmap grants no additional access.",
+    "steps": [
+      {
+        "title": "Submit the internal request",
+        "module": "Purchasing → Finance",
+        "role": "Requester · purchasing.request",
+        "to": {
+          "route": "purchase-requests",
+          "label": "Inventory → Purchase Requests"
+        },
+        "before": "Reason, needed-by date if applicable, item names, quantities and estimated unit costs.",
+        "body": "Choose New request. Items may be outside the catalogue. Submit the realistic expected spending total.",
+        "result": "A pending spending request; no supplier PO or stock movement."
+      },
+      {
+        "title": "Approve the budget and buyer",
+        "module": "Purchasing → Finance",
+        "role": "Approver · purchasing.approve_requests",
+        "to": {
+          "route": "purchase-requests",
+          "label": "Inventory → Purchase Requests"
+        },
+        "before": "Pending request and reviewed overall spending limit.",
+        "body": "Approve budget and choose cash to requester or an eligible assigned buyer. Reject with a reason if unsuitable. Supplier purchasing.manage alone does not authorize this decision.",
+        "result": "An approved budget and named buyer; approval does not itself record cash given."
+      },
+      {
+        "title": "Record cash and purchase",
+        "module": "Purchasing → Finance",
+        "role": "Approver / assigned buyer",
+        "to": {
+          "route": "purchase-requests",
+          "label": "Inventory → Purchase Requests"
+        },
+        "before": "Approved request and agreed purchasing mode.",
+        "body": "For requester-cash mode use Record cash issued and confirm the real handoff within the budget. The assigned buyer then buys the goods; do not assume the entire budget was paid out.",
+        "result": "Cash issued, if applicable, is recorded separately from the approved limit and actual spending."
+      },
+      {
+        "title": "Upload evidence and liquidate",
+        "module": "Purchasing → Finance",
+        "role": "Assigned buyer",
+        "to": {
+          "route": "purchase-requests",
+          "label": "Inventory → Purchase Requests"
+        },
+        "before": "Receipts and the actual bought items, quantities and unit prices.",
+        "body": "Upload at least one receipt, then Submit liquidation. Additions are allowed only within the overall approved budget. Review actual spending; evidence is locked after submission.",
+        "result": "Submitted liquidation awaits review; it still does not receive inventory or create a supplier order."
+      },
+      {
+        "title": "Reconcile and close",
+        "module": "Purchasing → Finance",
+        "role": "Approver · purchasing.approve_requests",
+        "to": {
+          "route": "purchase-requests",
+          "label": "Inventory → Purchase Requests"
+        },
+        "before": "Submitted actuals and receipt-backed review.",
+        "body": "Close after review only after recording exact change returned or reimbursement paid for requester cash. Return for correction with a reason if needed; the buyer fixes and resubmits.",
+        "result": "A closed, reconciled internal spending request. Inventory receiving and supplier bill/payment workflows remain separate.",
+        "branch": {
+          "label": "Receipts or actuals need correction?",
+          "body": "Return liquidation with a reason. The assigned buyer corrects it and resubmits before another closing review.",
+          "target": 3,
+          "action": "Review the liquidation steps",
+          "direction": "Correction loop"
+        }
+      }
+    ],
+    "gotchas": []
+  },
+  {
+    "id": "legacy-unit-intake",
+    "title": "Pre-system unit → QC → QA → sticker → RTS stock",
+    "module": "manufacturing",
+    "icon": "inbox",
+    "pipeline": true,
+    "audience": "Staff responsible for these handoffs",
+    "tagline": "Separate authorization, evidence and completion checkpoints.",
+    "intro": "Follow the approvals and physical checks in order. Reading this roadmap grants no additional access.",
+    "steps": [
+      {
+        "title": "Enter the existing physical unit",
+        "module": "Receiving → QC / QA",
+        "role": "RTS clerk",
+        "to": {
+          "external": "/m#/receiving",
+          "label": "Phone → Work → RTS recording"
+        },
+        "before": "One pre-system physical unit, finished product, distinct identifier, location, photo, reason and unit cost.",
+        "body": "Choose Enter or resume pre-system unit. Review the declared valuation and submit once. After an unknown response recover the saved original attempt; do not create a second intake.",
+        "result": "An LI inspection-only record. No available stock, BOM component consumption or manufacturing WIP release."
+      },
+      {
+        "title": "Verify identity and perform QC",
+        "module": "Receiving → QC / QA",
+        "role": "QC inspector",
+        "to": {
+          "external": "/m#/qc",
+          "label": "Phone → Work → QC / QA"
+        },
+        "before": "The intake’s QC job group and its physical identifier.",
+        "body": "Choose the group and unit card. Match identifier and intake/job to the physical unit before checks. No QR sticker is required yet; stop if identity is unclear.",
+        "result": "QC pass advances to QA; fail/repair/hold follows its separate disposition. Stock is unchanged."
+      },
+      {
+        "title": "Perform final QA",
+        "module": "Receiving → QC / QA",
+        "role": "QA inspector",
+        "to": {
+          "external": "/m#/qc",
+          "label": "Phone → Work → QC / QA"
+        },
+        "before": "The same unit after its QC pass.",
+        "body": "Confirm identity, review QC and complete appearance checks. Legacy intake always needs both QC and QA; do not bypass either stage or Add unit again.",
+        "result": "A final-passed intake becomes eligible for RTS receiving; stock is still unchanged.",
+        "branch": {
+          "label": "Unit is in rework, held or failed?",
+          "body": "Use its current quality disposition. It is not eligible for RTS until required decisions and inspections are resolved.",
+          "target": 1,
+          "action": "Review identity and inspection",
+          "direction": "Quality recovery"
+        }
+      },
+      {
+        "title": "Print, attach, scan and receive",
+        "module": "Receiving → QC / QA",
+        "role": "RTS clerk",
+        "to": {
+          "external": "/m#/receiving",
+          "label": "Phone → Work → RTS recording"
+        },
+        "before": "Final-passed unit, actual storage location and available capacity.",
+        "body": "Choose its RTS group/unit. Print and attach the unit sticker, camera-scan it and complete physical verification before confirming Products In. Resolve duplicates, holds or location errors rather than bypassing verification.",
+        "result": "Only the confirmed ordinary RTS receipt adds stock, using the declared legacy unit cost."
+      }
+    ],
+    "gotchas": []
+  }
+]);
+GUIDE_PIPELINES.find(p=>p.id==='purchasing').related=['budgeted-purchase-request','purchase-to-pay'];
+GUIDE_PIPELINES.find(p=>p.id==='purchase-to-pay').related=['budgeted-purchase-request'];
+GUIDE_PIPELINES.find(p=>p.id==='quality-to-rts').related=['legacy-unit-intake'];
+GUIDE_PIPELINES.find(p=>p.id==='sales-to-cash').related.push('legacy-unit-intake');
+
 /* route (+ optional sub-tab hint) → pipeline id, so the per-screen Help drawer can
    offer "walk me through this". Screens not listed just link to the guide index. */
 const GUIDE_ROUTE_MAP = {
+  'purchase-requests': 'budgeted-purchase-request',
   'production-overview': 'production',
   'finished-products': 'production',
   'finished-goods': 'production',
   'job-orders': 'production',
   'production-qc': 'production',
   'production-receiving': 'production',
-  'repairs': 'qc-repair',
+  'repairs': 'production',
   'production-batches': 'production',
   'production-schedule': 'production',
   'production-teams': 'production',
   'production-record': 'production',
   'orders': 'sales',
-  'customers': 'sales',
   'purchasing': 'purchasing',
   'hr': 'payroll',
   'hr-timekeeping': 'payroll',
@@ -676,6 +1701,13 @@ const GUIDE_ROUTE_MAP = {
   'accounting-ledger': 'accounting',
   'accounting-receivables': 'accounting',
   'accounting-petty-cash': 'accounting',
+  'analytics': 'accounting',
+  'dashboard': 'getting-started',
+  'hr-requests': 'file-request',
+  'hr-approvals': 'review-requests',
+  'form-builder': 'build-form',
+  'forms': 'document-editing',
+  'templates': 'document-editing',
 };
 
 const GUIDE = {
@@ -684,9 +1716,9 @@ const GUIDE = {
   routeMap: GUIDE_ROUTE_MAP,
   /** Pipeline for a route name (or null). */
   forRoute(route, filter) {
-    if (route === 'orders' && filter && filter.type === 'purchase') return this.byId.purchasing;
-    if (route === 'orders' && filter && filter.type === 'job') return null;
-    if (route === 'form-records' && filter && (filter.slug === 'hr_payroll' || filter.scope === 'hr')) return this.byId.payroll;
+    if (route === 'orders' && filter?.type === 'purchase') return this.byId.purchasing;
+    if (route === 'orders' && filter?.type === 'job') return null;
+    if (route === 'form-records' && (filter?.slug === 'hr_payroll' || filter?.scope === 'hr')) return this.byId.payroll;
     const id = GUIDE_ROUTE_MAP[route];
     return id ? this.byId[id] : null;
   },

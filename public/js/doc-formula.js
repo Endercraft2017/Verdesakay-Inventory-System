@@ -44,6 +44,12 @@ function resolveRef(scope, path) {
 }
 
 const FUNCS = {
+  money: (value, currency = 'PHP') => {
+    if(value == null || value === '') return '';
+    if(typeof value === 'boolean' || !Number.isFinite(Number(value)) || Math.abs(Number(value)) > Number.MAX_SAFE_INTEGER / 100) throw new Error('Invalid monetary value');
+    if(!/^[A-Z]{3}$/.test(currency)) throw new Error('Use a three-letter currency code');
+    return new Intl.NumberFormat('en-US', {style:'currency', currency, currencyDisplay:'code', minimumFractionDigits:2, maximumFractionDigits:2}).format(Number(value));
+  },
   sum: (a) => flattenNumbers(a).reduce((s, n) => s + n, 0),
   avg: (a) => { const xs = flattenNumbers(a); return xs.length ? xs.reduce((s, n) => s + n, 0) / xs.length : 0; },
   count: (a) => (Array.isArray(a) ? a.flat(Infinity).length : (a === undefined ? 0 : 1)),

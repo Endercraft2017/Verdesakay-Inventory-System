@@ -13,6 +13,11 @@
         (item.batch.identifier ? ' · ' + mEsc(item.batch.identifier) : '') +
         ' · qty ' + item.batch.qty + ' · ' + mEsc(item.batch.status) + '</div>';
     }
+    if (item.batch && item.batch.balances) {
+      tag += item.batch.balances.map(function(b){return '<div class="m-hint">'+mEsc(b.location_name)+': '+b.on_hand+' in batch · '+b.reserved+' reserved · '+b.available+' free</div>';}).join('');
+      tag += (item.batch.allocations || []).map(function(a){return '<div class="m-hint">'+mEsc(a.order_number)+' · '+a.quantity+' '+mEsc(a.state)+'</div>';}).join('');
+      if (!item.batch.balances.length && item.batch.received_quantity > 0) tag += '<div class="m-hint">Older batch stock needs reconciliation before exact-batch allocation.</div>';
+    }
     var uom = typeof item.unit === 'string' ? item.unit : '';
     var recTarget = (item.unit && item.unit.id) ? { unit: item.unit.id }
       : (item.batch && item.batch.id) ? { batch: item.batch.id } : null;
@@ -24,7 +29,7 @@
       '  <div class="m-choose-qty">On hand: ' + (item.quantity != null ? item.quantity + ' ' + mEsc(uom) : '—') + '</div>' +
       '  <div class="m-actions">' +
       (recTarget ? '    <button class="m-btn" data-record>Open production record</button>' : '') +
-      (item.id ? '    <button class="m-btn ' + (recTarget ? 'm-btn-secondary' : '') + '" data-in>Stock In</button>' +
+      (item.id && !recTarget ? '    <button class="m-btn ' + (recTarget ? 'm-btn-secondary' : '') + '" data-in>Stock In</button>' +
       '    <button class="m-btn m-btn-secondary" data-out>Stock Out</button>' : '') +
       '    <button class="m-btn m-btn-secondary" data-again>Scan another</button>' +
       '  </div>' +

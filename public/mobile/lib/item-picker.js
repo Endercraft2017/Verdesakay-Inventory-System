@@ -18,7 +18,8 @@
     );
     var input = box.querySelector('input');
     var list = box.querySelector('.m-picker-list');
-    var timer = null;
+    var timer = null, request = 0, kind = opts.kind || 'all';
+    if(opts.showKindFilter){var filter=mEl('<label class="m-label">Item type<select class="m-input" aria-label="Item type"><option value="all">All items</option><option value="parts">Parts / supplies</option><option value="finished">Finished products</option></select></label>');box.insertBefore(filter,box.querySelector('.m-picker-row'));filter.querySelector('select').onchange=function(){kind=this.value;search(input.value.trim());};}
 
     function pick(it) {
       if (window.mRecent) mRecent.push(it);
@@ -34,8 +35,8 @@
         if (!heading) list.appendChild(mEl('<li class="m-picker-empty">No matches</li>'));
         return;
       }
-      items.forEach(function (it) {
-        var sub = [it.sku ? '#' + it.sku : null, (it.quantity != null ? it.quantity + ' ' + (it.unit || '') : null)]
+      items.filter(function(it){return kind==='all'||(kind==='finished'?!!it.is_finished_product:!it.is_finished_product);}).forEach(function (it) {
+        var sub = [it.is_finished_product ? 'Finished product' : 'Part / supply', it.sku ? '#' + it.sku : null, (it.quantity != null ? it.quantity + ' ' + (it.unit || '') : null)]
           .filter(Boolean).join(' · ');
         var li = mEl(
           '<li class="m-picker-item"><b>' + mEsc(it.name) + '</b>' +
@@ -52,9 +53,10 @@
     }
 
     function search(q) {
-      if (!q) { showRecent(); return; }
-      API.get('/inventory?q=' + encodeURIComponent(q) + '&limit=20')
-        .then(function (items) { rowsFor(items); })
+      var own=++request;
+      if (!q && !opts.showKindFilter) { showRecent(); return; }
+      API.get('/inventory?q=' + encodeURIComponent(q) + '&kind='+encodeURIComponent(kind)+'&limit=20')
+        .then(function (items) { if(own===request)rowsFor(items); })
         .catch(function (e) { mToast(e.message || 'Search failed', 'err'); });
     }
 

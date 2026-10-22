@@ -8,6 +8,16 @@ let ctx: TestContext;
 let token: string;
 const hdr = () => ({ Authorization: `Bearer ${token}` });
 
+// Accounting fixtures must use the same physical handoff as a real stocked sale.
+const shipStockSale = async (orderId: number, itemId: number, quantity: number) => {
+  await ctx.api.put('/api/release-slips/policy').set(hdr()).send({ authorization_required: false });
+  expect((await ctx.api.post(`/api/orders/${orderId}/accept-release`).set(hdr()).send({})).status).toBe(200);
+  expect((await ctx.api.post(`/api/orders/${orderId}/release`).set(hdr())
+    .send({ bulk: [{ item_id: itemId, quantity }] })).status).toBe(200);
+  expect((await ctx.api.post(`/api/orders/${orderId}/release-slip`).set(hdr())
+    .send({ collected_by: 'Accounting fixture driver' })).status).toBe(201);
+};
+
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
@@ -21,10 +31,11 @@ describe('accounting: 2550M (VAT)', () => {
 
     // A confirmed sale this month: total 11,200 incl. 1,200 VAT. (2550M re-sources from the
     // sales journal, which counts confirmed / completed / … sales — not open drafts.)
-    await ctx.api.post('/api/orders').set(hdr()).send({
-      type: 'sale', status: 'confirmed', order_date: '2026-07-05', tax_percent: 12,
+    const sale = await ctx.api.post('/api/orders').set(hdr()).send({
+      type: 'sale', status: 'approved', order_date: '2026-07-05', tax_percent: 12,
       items: [{ item_id: item, name: 'VAT Widget', quantity: 10, unit_price: 1000 }],
     });
+    await shipStockSale(sale.body.id, item, 10);
     // A purchase this month, received + billed + approved: 5,600 incl. 600 VAT.
     const po = await ctx.api.post('/api/orders').set(hdr()).send({
       type: 'purchase', order_date: '2026-07-03', tax_percent: 12,
@@ -77,12 +88,12 @@ describe('accounting: 0619-E (expanded withholding)', () => {
 });
 
 describe('accounting: permission gate', () => {
-  it('needs accounting.view (warehouse 403, accounting 200)', async () => {
+  it('needs accounting visibility for books and payroll visibility for employee tax records', async () => {
     const wh = await createEmployee(ctx.api, token, { role: 'warehouse', username: 'acc_wh' });
     const acc = await createEmployee(ctx.api, token, { role: 'accounting', username: 'acc_acc' });
 
     expect((await ctx.api.get('/api/accounting/bir-1601c?year=2026').set('Authorization', `Bearer ${wh.token}`)).status).toBe(403);
-    expect((await ctx.api.get('/api/accounting/bir-1601c?year=2026').set('Authorization', `Bearer ${acc.token}`)).status).toBe(200);
+    expect((await ctx.api.get('/api/accounting/bir-1601c?year=2026').set('Authorization', `Bearer ${acc.token}`)).status).toBe(403);
     expect((await ctx.api.get('/api/accounting/bir-2550m?month=2026-07').set('Authorization', `Bearer ${acc.token}`)).status).toBe(200);
   });
 });
@@ -908,10 +919,12 @@ describe('accounting: COGS on sale (Phase 3b)', () => {
     const invBefore = await acctBal('1150');
 
     const so = await ctx.api.post('/api/orders').set(hdr()).send({
-      type: 'sale', customer_id: custId, order_date: '2026-05-04', status: 'confirmed', tax_percent: 12,
+      type: 'sale', customer_id: custId, order_date: '2026-05-04', status: 'approved', tax_percent: 12,
       items: [{ item_id: itemId, name: 'COGS Widget', quantity: 10, unit_price: 20 }],
     });
+    expect(so.status).toBe(201);
     soId = so.body.id;
+    await shipStockSale(soId, itemId, 10);
 
     expect(await onHand(itemId)).toBe(90); // 10 shipped
     const jes = await ctx.api.get('/api/accounting/ledger/journal-entries')
@@ -926,28 +939,31 @@ describe('accounting: COGS on sale (Phase 3b)', () => {
     expect(tb.balanced).toBe(true);
   });
 
-  it('pulling the sale back to open restores the stock and reverses COGS', async () => {
+  it('refuses reopening a shipped sale and retains its stock movement and COGS', async () => {
     const cogsMid = await acctBal('5100');
-    await ctx.api.put(`/api/orders/${soId}`).set(hdr()).send({
+    const reopen = await ctx.api.put(`/api/orders/${soId}`).set(hdr()).send({
       type: 'sale', customer_id: custId, order_date: '2026-05-04', status: 'open', tax_percent: 12,
       items: [{ item_id: itemId, name: 'COGS Widget', quantity: 10, unit_price: 20 }],
     });
-    expect(await onHand(itemId)).toBe(100); // stock back
-    const jes = await ctx.api.get('/api/accounting/ledger/journal-entries')
-      .query({ source_type: 'sale_cogs', source_id: soId }).set(hdr());
-    expect(jes.body.length).toBe(2); // original + reversal
-    expect(await acctBal('5100')).toBe(Math.round((cogsMid - 70) * 100) / 100);
-  });
-
-  it('re-confirming posts a fresh COGS entry (not a no-op)', async () => {
-    await ctx.api.put(`/api/orders/${soId}`).set(hdr()).send({
-      type: 'sale', customer_id: custId, order_date: '2026-05-04', status: 'confirmed', tax_percent: 12,
-      items: [{ item_id: itemId, name: 'COGS Widget', quantity: 10, unit_price: 20 }],
-    });
+    expect(reopen.status).toBe(409);
+    expect(reopen.body.code).toBe('already_shipped');
     expect(await onHand(itemId)).toBe(90);
     const jes = await ctx.api.get('/api/accounting/ledger/journal-entries')
       .query({ source_type: 'sale_cogs', source_id: soId }).set(hdr());
-    expect(jes.body.length).toBe(3); // original + reversal + fresh
+    expect(jes.body.length).toBe(1);
+    expect(await acctBal('5100')).toBe(cogsMid);
+  });
+
+  it('re-saving a shipped sale does not deduct stock or post COGS twice', async () => {
+    const again = await ctx.api.put(`/api/orders/${soId}`).set(hdr()).send({
+      type: 'sale', customer_id: custId, order_date: '2026-05-04', status: 'confirmed', tax_percent: 12,
+      items: [{ item_id: itemId, name: 'COGS Widget', quantity: 10, unit_price: 20 }],
+    });
+    expect(again.status).toBe(200);
+    expect(await onHand(itemId)).toBe(90);
+    const jes = await ctx.api.get('/api/accounting/ledger/journal-entries')
+      .query({ source_type: 'sale_cogs', source_id: soId }).set(hdr());
+    expect(jes.body.length).toBe(1);
   });
 });
 

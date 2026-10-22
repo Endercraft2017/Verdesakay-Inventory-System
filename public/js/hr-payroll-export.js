@@ -409,6 +409,133 @@ function downloadPayrollWorkbook(records, formDef, opts) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/* ---------- Printable payroll summary (register) ----------
+   The same three sections as the workbook — SUMMARY, BY DEPARTMENT, and the per-department
+   payroll list — as one A4-landscape HTML page for form-records.js's "Print Summary" preview
+   (wrapped by UI.printableHtml there). Same computePayrollExportData() totals and the same
+   HR_PAYROLL_ZONES columns, so the printout always matches the screen and the Excel file.
+   Paper is narrower than a sheet, so a column that's blank/zero for every payslip in view
+   (e.g. Night Differential in a period nobody worked nights) is left out; the zone subtotals
+   and Net Pay always stay. Pure string building — no DOM, unit-testable. */
+
+const _HRX_COUNT_KEYS = new Set(['days_worked', 'days_absent', 'days_half', 'days_undertime', 'ot_hours']);
+const _HRX_RATE_KEYS = new Set(['daily_rate', 'ot_rate_hour']);
+
+function _hrxEsc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function _hrxFmt(key, v) {
+  const n = Number(v) || 0;
+  if (_HRX_COUNT_KEYS.has(key)) return n ? n.toLocaleString('en-US', { maximumFractionDigits: 2 }) : '';
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+const HR_PAYROLL_SUMMARY_CSS = `
+  @page { size: A4 landscape; margin: 10mm; }
+  body { padding: 0; font-size: 10px; }
+  @media screen { body { padding: 16px; } }
+  .ps-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #16243d; padding-bottom: 6px; margin-bottom: 10px; }
+  .ps-head h1 { margin: 0; font-size: 16px; }
+  .ps-head .ps-co { font-size: 12px; font-weight: 600; color: #444; }
+  .ps-head .ps-meta { text-align: right; font-size: 10px; color: #444; }
+  .ps-sec { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; margin: 12px 0 4px; color: #16243d; }
+  .ps-totals { display: flex; border: 1px solid #c6d4e6; }
+  .ps-totals > div { flex: 1; padding: 6px 10px; border-right: 1px solid #c6d4e6; }
+  .ps-totals > div:last-child { border-right: 0; background: #e3f6ec; }
+  .ps-totals .l { font-size: 9px; color: #555; }
+  .ps-totals .v { font-size: 14px; font-weight: 700; }
+  table.ps { width: 100%; border-collapse: collapse; font-size: 8.5px; }
+  table.ps th, table.ps td { border: 1px solid #c6d4e6; padding: 2px 4px; }
+  table.ps th { background: #f4f7fb; font-weight: 600; text-align: center; }
+  table.ps th.zone { background: #16243d; color: #fff; }
+  table.ps td.n { text-align: right; white-space: nowrap; }
+  table.ps td.b, table.ps th.b { font-weight: 700; }
+  table.ps tr.dept td { background: #e8eaf9; font-weight: 700; }
+  table.ps tr.sub td { background: #f5f8fc; font-weight: 700; }
+  table.ps tr.grand td { background: #fdf2e0; font-weight: 700; border-top: 2px solid #16243d; }
+  table.ps tr { page-break-inside: avoid; }
+  .ps-sign { display: flex; gap: 40px; margin-top: 36px; page-break-inside: avoid; }
+  .ps-sign > div { flex: 1; font-size: 10px; }
+  .ps-sign .line { border-top: 1px solid #222; margin-top: 30px; padding-top: 3px; text-align: center; }
+`;
+
+/** records/formDef: same as buildPayrollWorkbook. opts.title (period name), opts.subtitle,
+    opts.company ({name}), opts.dateRange ("start – end"), opts.printedAt (string). */
+function buildPayrollSummaryHtml(records, formDef, opts) {
+  opts = opts || {};
+  const list = records || [];
+  const { totals, departments } = computePayrollExportData(list);
+  const M = (v) => _hrxFmt('', v);
+
+  // Columns: every zone field that has a non-zero value somewhere in view, plus the zone
+  // subtotals/Net Pay unconditionally. A zone left with no columns drops out entirely.
+  const used = (key) => list.some((r) => Number(r.data && r.data[key]) || 0);
+  const zones = HR_PAYROLL_ZONES.map((z) => ({
+    ...z,
+    cols: z.fields
+      .filter(([key, , subtotal]) => subtotal || used(key))
+      .map(([key, fallback, subtotal]) => ({ key, label: _hrxFieldLabel(formDef, key, fallback), subtotal: !!subtotal })),
+  })).filter((z) => z.cols.length);
+  const allCols = zones.flatMap((z) => z.cols);
+  const colSum = (rows, key) => rows.reduce((s, r) => s + (Number(r.data[key]) || 0), 0);
+  // Rates aren't additive — a subtotal row leaves them blank instead of summing them.
+  const sumRow = (cls, label, rows) => `<tr class="${cls}"><td>${_hrxEsc(label)}</td>${allCols.map((c) =>
+    `<td class="n">${_HRX_RATE_KEYS.has(c.key) ? '' : _hrxFmt(c.key, colSum(rows, c.key))}</td>`).join('')}</tr>`;
+
+  const payDates = [...new Set(list.map((r) => r.data && r.data.pay_date).filter(Boolean))];
+  const meta = [
+    opts.dateRange ? `Period: ${_hrxEsc(opts.dateRange)}` : '',
+    payDates.length === 1 ? `Pay Date: ${_hrxEsc(payDates[0])}` : '',
+    _hrxEsc(opts.subtitle || `${list.length} payslip${list.length === 1 ? '' : 's'}`),
+    opts.printedAt ? `Printed ${_hrxEsc(opts.printedAt)}` : '',
+  ].filter(Boolean).join('<br>');
+
+  const totalsBox = [
+    ['Total Gross', totals.gross], ['Statutory (SSS/PhilHealth/Pag-IBIG/Tax)', totals.statutory],
+    ['Other Deductions', totals.otherDeductions], ['Total Deductions', totals.totalDeductions], ['Total Net Pay', totals.net],
+  ].map(([l, v]) => `<div><div class="l">${l}</div><div class="v">${M(v)}</div></div>`).join('');
+
+  const deptTable = departments.length > 1 ? `
+    <div class="ps-sec">BY DEPARTMENT</div>
+    <table class="ps"><thead><tr><th style="text-align:left">Department</th><th>Employees</th><th>Gross</th><th>Statutory</th><th>Other Deductions</th><th>Total Deductions</th><th>Net Pay</th></tr></thead>
+    <tbody>${departments.map((d) => `<tr><td>${_hrxEsc(d.name)}</td><td class="n">${d.count}</td><td class="n">${M(d.gross)}</td><td class="n">${M(d.statutory)}</td><td class="n">${M(d.otherDeductions)}</td><td class="n">${M(d.totalDeductions)}</td><td class="n b">${M(d.net)}</td></tr>`).join('')}
+      <tr class="grand"><td>TOTAL</td><td class="n">${totals.count}</td><td class="n">${M(totals.gross)}</td><td class="n">${M(totals.statutory)}</td><td class="n">${M(totals.otherDeductions)}</td><td class="n">${M(totals.totalDeductions)}</td><td class="n">${M(totals.net)}</td></tr>
+    </tbody></table>` : '';
+
+  const multiDept = departments.length > 1;
+  const body = departments.map((d) => {
+    const rows = [...d.records].sort((a, b) => String(a.data.employee_name || '').localeCompare(String(b.data.employee_name || '')));
+    return (multiDept ? `<tr class="dept"><td colspan="${allCols.length + 1}">${_hrxEsc(d.name)} (${d.count})</td></tr>` : '') +
+      rows.map((r) => `<tr><td>${_hrxEsc(r.data.employee_name || '')}</td>${allCols.map((c) =>
+        `<td class="n${c.subtotal ? ' b' : ''}">${_hrxFmt(c.key, r.data[c.key])}</td>`).join('')}</tr>`).join('') +
+      (multiDept ? sumRow('sub', `Subtotal — ${d.name}`, d.records) : '');
+  }).join('');
+
+  return `<style>${HR_PAYROLL_SUMMARY_CSS}</style>
+    <div class="ps-head">
+      <div>${opts.company && opts.company.name ? `<div class="ps-co">${_hrxEsc(opts.company.name)}</div>` : ''}
+        <h1>Payroll Summary — ${_hrxEsc(opts.title || formDef.name || 'HR Payroll')}</h1></div>
+      <div class="ps-meta">${meta}</div>
+    </div>
+    <div class="ps-sec">SUMMARY</div>
+    <div class="ps-totals">${totalsBox}</div>
+    ${deptTable}
+    <div class="ps-sec">PAYROLL</div>
+    <table class="ps">
+      <thead>
+        <tr><th rowspan="2" style="text-align:left;min-width:110px">Employee</th>${zones.map((z) => `<th class="zone" colspan="${z.cols.length}">${z.label}</th>`).join('')}</tr>
+        <tr>${allCols.map((c) => `<th${c.subtotal ? ' class="b"' : ''}>${_hrxEsc(c.label)}</th>`).join('')}</tr>
+      </thead>
+      <tbody>${body}${sumRow('grand', 'GRAND TOTAL', list)}</tbody>
+    </table>
+    <div class="ps-sign">
+      <div>Prepared by:<div class="line">Signature over printed name</div></div>
+      <div>Checked by:<div class="line">Signature over printed name</div></div>
+      <div>Approved by:<div class="line">Signature over printed name</div></div>
+    </div>`;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { computePayrollExportData, buildPayrollWorkbook, downloadPayrollWorkbook };
+  module.exports = { computePayrollExportData, buildPayrollWorkbook, downloadPayrollWorkbook, buildPayrollSummaryHtml };
 }

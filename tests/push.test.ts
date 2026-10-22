@@ -83,4 +83,30 @@ describe('web push', () => {
     expect(res.status).toBe(201);
     expect(__sentPush.some((p) => p.userId === bob.id && /Hi/.test(p.payload.title))).toBe(true);
   });
+
+  it('notifies authorized release and kit desks once when work becomes actionable', async () => {
+    const releaser = await createEmployee(ctx.api, token, { role: 'releasing_clerk' });
+    const warehouse = await createEmployee(ctx.api, token, { role: 'warehouse' });
+    const unrelated = await createEmployee(ctx.api, token, { role: 'hr' });
+    for (const [worker, name] of [[releaser, 'release'], [warehouse, 'warehouse'], [unrelated, 'hr']] as const) {
+      await ctx.api.post('/api/push/subscribe').set(hdr(worker.token)).send(fakeSub(`https://push.example.com/sub/${name}`));
+    }
+    const stock = await ctx.api.post('/api/inventory').set(hdr()).send({ name: 'Push test stock', quantity: 2 });
+    const sale = await ctx.api.post('/api/orders').set(hdr()).send({ type: 'sale', items: [{ item_id: stock.body.id, name: 'Push test stock', quantity: 1, unit_price: 10 }] });
+    expect(sale.status).toBe(201);
+    expect((await ctx.api.post(`/api/orders/${sale.body.id}/status`).set(hdr()).send({ status: 'approved' })).status).toBe(200);
+    expect(__sentPush.some((push) => push.userId === releaser.id && push.payload.url === `#/so?id=${sale.body.id}`)).toBe(true);
+    expect(__sentPush.some((push) => push.userId === unrelated.id && push.payload.url === `#/so?id=${sale.body.id}`)).toBe(false);
+    const releaseNotices = __sentPush.filter((push) => push.userId === releaser.id && push.payload.url === `#/so?id=${sale.body.id}`).length;
+    expect((await ctx.api.post(`/api/orders/${sale.body.id}/status`).set(hdr()).send({ status: 'approved' })).status).toBe(200);
+    expect(__sentPush.filter((push) => push.userId === releaser.id && push.payload.url === `#/so?id=${sale.body.id}`).length).toBe(releaseNotices);
+
+    const product = await ctx.api.post('/api/inventory').set(hdr()).send({ name: 'Push test product', quantity: 0 });
+    await ctx.api.put(`/api/finished-products/${product.body.id}`).set(hdr()).send({ components: [] });
+    const job = await ctx.api.post('/api/job-orders').set(hdr()).send({ product_item_id: product.body.id, qty_ordered: 1 });
+    expect(job.status).toBe(201);
+    expect((await ctx.api.post(`/api/job-orders/${job.body.id}/approve`).set(hdr()).send({})).status).toBe(200);
+    expect(__sentPush.some((push) => push.userId === warehouse.id && push.payload.url === `#/kit-release?id=${job.body.id}`)).toBe(true);
+    expect(__sentPush.some((push) => push.userId === unrelated.id && push.payload.url === `#/kit-release?id=${job.body.id}`)).toBe(false);
+  });
 });

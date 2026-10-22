@@ -84,6 +84,21 @@ describe('POST /api/hr/employees/import', () => {
     expect(list2.body.find((e: { employee_no: string }) => e.employee_no === 'EMP-1001').name).toBe('Maria S. Santos');
   });
 
+  it('logs an imported rate change to rate history (payroll pays from it), but not on a dry run', async () => {
+    const emp = await ctx.api.post('/api/hr/employees').set(authHdr())
+      .send({ employee_no: 'EMP-RATEIMP', name: 'Rate Import', daily_rate: 500, start_date: '2020-01-01' });
+    const history = async () =>
+      (await ctx.api.get(`/api/hr/employees/${emp.body.id}/rate-history`).set(authHdr())).body as Array<{ daily_rate: number; note: string }>;
+
+    await imp('employee_no,name,rate_type,daily_rate\nEMP-RATEIMP,Rate Import,daily,800\n', true);
+    expect((await history()).map((h) => h.daily_rate)).toEqual([500]);
+
+    await imp('employee_no,name,rate_type,daily_rate\nEMP-RATEIMP,Rate Import,daily,800\n');
+    const after = await history();
+    expect(after[0]).toMatchObject({ daily_rate: 800, note: 'Employee import' });
+    expect(after.map((h) => h.daily_rate)).toEqual([800, 500]);
+  });
+
   it('errors an unknown department', async () => {
     const r = await imp('employee_no,name,department\nEMP-9,Nobody,Atlantis Dept\n');
     expect(r.body.skipped).toBe(1);

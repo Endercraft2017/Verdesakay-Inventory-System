@@ -1,15 +1,99 @@
-/* Lightweight API client with token handling. */
+/* Lightweight API client with token handling.
+
+   Every request carries X-Device-Id: a random ID this browser/app generates once and keeps
+   (vds_device_id). It is not a fingerprint — it names the device so the server can show where
+   an account is signed in (src/shared/device.ts). It survives sign-out on purpose. Anonymous
+   reports never get it.
+
+   A borrowed-phone sign-in keeps its token in sessionStorage instead of localStorage, so it
+   ends when the app/tab is closed; setToken(t, { shared: true }). */
 const API = (() => {
   const TOKEN_KEY = 'vds_token';
+  const DEVICE_KEY = 'vds_device_id';
 
-  function getToken() { return localStorage.getItem(TOKEN_KEY); }
-  function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
-  function clearToken() { localStorage.removeItem(TOKEN_KEY); }
+  function getToken() {
+    try { return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
+  }
+  /* The last response of a GET made with { remember: true }, so a screen can draw what it showed
+     last time while the fresh copy loads (API.peek). Memory only — never written to storage, so
+     nothing personal stays on a shared PC — and emptied on sign-in/out and after any change
+     (POST/PUT/PATCH/DELETE), which may have made it out of date. */
+  const remembered = new Map();
+  const REMEMBER_MAX = 30;
+  function peek(path) { return remembered.has(path) ? remembered.get(path) : null; }
+
+  function setToken(t, opts) {
+    clearToken();
+    try { ((opts && opts.shared) ? sessionStorage : localStorage).setItem(TOKEN_KEY, t); } catch (e) { /* storage blocked */ }
+  }
+  function clearToken() {
+    remembered.clear();
+    try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
+    try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
+  }
+  /** True when the current token is a borrowed-phone (sessionStorage) one. */
+  function isSharedSession() {
+    try { return !!sessionStorage.getItem(TOKEN_KEY); } catch (e) { return false; }
+  }
+
+  let memDeviceId = null;
+  function newId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
+  }
+  /** This browser's device ID, created on first use. */
+  function deviceId() {
+    try {
+      let id = localStorage.getItem(DEVICE_KEY);
+      if (!id) { id = newId(); localStorage.setItem(DEVICE_KEY, id); }
+      return id;
+    } catch (e) {
+      return memDeviceId || (memDeviceId = newId()); // storage blocked: stable for this page only
+    }
+  }
+
+  /** Where the API lives: this page's own server, or — in the installed phone app, whose pages are
+      bundled inside it (docs/OFFLINE-FIRST.md §29) — the server the phone was pointed at. */
+  function base() {
+    if (!window.VDS_NATIVE) return window.VDS_BASE_PATH || '';
+    try { return (localStorage.getItem('vds_api_base') || '').replace(/\/+$/, ''); } catch (e) { return ''; }
+  }
+
+  // fetch has no upload progress events; keep the same response handling for XHR uploads.
+  function uploadResponse(url, method, headers, payload, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(method, url);
+      Object.entries(headers).forEach(([key, value]) => xhr.setRequestHeader(key, value));
+      xhr.upload.onprogress = (event) => onProgress({ loaded: event.loaded, total: event.lengthComputable ? event.total : null });
+      xhr.onerror = () => reject(new Error('Network unavailable'));
+      xhr.onabort = () => reject(new Error('Upload cancelled'));
+      xhr.onload = () => resolve({
+        status: xhr.status, ok: xhr.status >= 200 && xhr.status < 300,
+        headers: { get: (key) => xhr.getResponseHeader(key) },
+        json: async () => JSON.parse(xhr.responseText),
+      });
+      xhr.send(payload);
+    });
+  }
 
   async function request(method, path, body, isForm, opts) {
+    const finished = window.SlowLoading?.request(method, path, opts);
+    try { return await performRequest(method, path, body, isForm, opts); }
+    finally { finished?.(); }
+  }
+
+  async function performRequest(method, path, body, isForm, opts) {
+    if (method !== 'GET') remembered.clear();
     const headers = {};
     const token = getToken();
     if (token) headers['Authorization'] = 'Bearer ' + token;
+    if (!/^\/anonymous-reports/.test(path)) headers['X-Device-Id'] = deviceId();
+    // Which app this is (src/shared/device.ts): both are held to the evidence-photo rules.
+    headers['X-Client'] = window.VDS_NATIVE || /^\/m(\/|$)/.test(location.pathname.slice((window.VDS_BASE_PATH || '').length)) ? 'mobile' : 'desktop';
     // Opt-in idempotency: a caller (e.g. the mobile offline queue) passes a stable
     // key so a retried request is de-duplicated server-side instead of re-applied.
     if (opts && opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
@@ -29,7 +113,13 @@ const API = (() => {
 
     let res;
     try {
-      res = await fetch('/api' + path, { method, headers, body: payload });
+      const url = base() + (path.startsWith('/api/') ? path : '/api' + path);
+      // Capture flows can cancel a stale or timed-out fetch without replaying its write.
+      const init = { method, headers, body: payload };
+      if (opts && opts.signal) init.signal = opts.signal;
+      res = isForm && opts && opts.onProgress
+        ? await uploadResponse(url, method, headers, payload, opts.onProgress)
+        : await fetch(url, init);
     } catch (e) {
       // fetch only throws on a genuine network failure (offline, DNS, connection reset).
       const err = new Error('Network unavailable');
@@ -37,7 +127,9 @@ const API = (() => {
       throw err;
     }
 
-    if (res.status === 401) {
+    // A 401 from the sign-in endpoints means wrong credentials, not an expired session —
+    // fall through so the server's own message ("Invalid username or password") is shown.
+    if (res.status === 401 && !/^\/auth\/(login|forgot-password|reset-password)\b/.test(path)) {
       clearToken();
       if (window.App) window.App.showLogin();
       throw new Error('Session expired. Please sign in again.');
@@ -47,28 +139,50 @@ const API = (() => {
     const ct = res.headers.get('content-type') || '';
     if (ct.includes('application/json')) data = await res.json();
 
+    // On an installed PC an action is first saved only on that PC (docs/OFFLINE-FIRST.md §2.4):
+    // say so app-wide — lib/sync-status.js tells the person it isn't final until it syncs.
+    if (res.ok && res.headers.get('X-Sync-State') === 'local') {
+      window.dispatchEvent(new CustomEvent('vds:sync-local', {
+        detail: { commandId: res.headers.get('X-Sync-Command'), method, path },
+      }));
+      // Tag the result itself (not serialized) so the screen that made it can show it as
+      // "saved on this PC, not final" and follow it: API.syncLocal(result) → command id.
+      if (data && typeof data === 'object') {
+        try { Object.defineProperty(data, '__syncCommand', { value: res.headers.get('X-Sync-Command') || 'local', enumerable: false }); } catch (e) { /* frozen */ }
+      }
+    }
+
     if (!res.ok) {
       const err = new Error((data && data.error) || ('Request failed (' + res.status + ')'));
       err.status = res.status;
       err.data = data;   // full parsed body — callers can inspect extra fields (e.g. a 409's details)
       throw err;
     }
+    if (method === 'GET' && opts && opts.remember) {
+      remembered.delete(path); // re-insert at the end: the Map's order is oldest first
+      remembered.set(path, data);
+      if (remembered.size > REMEMBER_MAX) remembered.delete(remembered.keys().next().value);
+    }
     return data;
   }
 
   /** Fetch a binary endpoint with auth and return an object URL (caller revokes it). */
-  async function blobUrl(path) {
+  async function blobUrl(path, mimeOverride) {
     const token = getToken();
-    const res = await fetch('/api' + path, {
-      headers: token ? { Authorization: 'Bearer ' + token } : {},
-    });
+    const headers = { 'X-Device-Id': deviceId() };
+    if (token) headers.Authorization = 'Bearer ' + token;
+    const res = await fetch(base() + (path.startsWith('/api/') ? path : '/api' + path), { headers });
     if (res.status === 401) {
       clearToken();
       if (window.App) window.App.showLogin();
       throw new Error('Session expired. Please sign in again.');
     }
-    if (!res.ok) throw new Error('Request failed (' + res.status + ')');
-    return URL.createObjectURL(await res.blob());
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error((data && data.error) || ('Request failed (' + res.status + ')'));
+    }
+    const blob = await res.blob();
+    return URL.createObjectURL(mimeOverride ? new Blob([blob], { type: mimeOverride }) : blob);
   }
 
   /** Fetch an auth'd endpoint that returns a file (CSV / DAT / etc.) and save it. */
@@ -77,18 +191,26 @@ const API = (() => {
     const a = document.createElement('a');
     a.href = url;
     a.download = filename || 'download';
+    document.body.appendChild(a);
     a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
   }
 
   return {
-    getToken, setToken, clearToken,
-    get: (p) => request('GET', p),
+    getToken, setToken, clearToken, isSharedSession, deviceId, base,
+    /** opts.remember: keep the response for API.peek(p) (see `remembered`). */
+    get: (p, opts) => request('GET', p, undefined, false, opts),
+    peek,
     post: (p, b, opts) => request('POST', p, b, false, opts),
     put: (p, b, opts) => request('PUT', p, b, false, opts),
     patch: (p, b, opts) => request('PATCH', p, b, false, opts),
     del: (p) => request('DELETE', p),
-    upload: (p, formData) => request('POST', p, formData, true),
+    upload: (p, formData, opts) => request('POST', p, formData, true, opts),
+    /** The installed-PC command id when `result` was only saved on that PC (not final yet), else null. */
+    syncLocal: (result) => (result && result.__syncCommand) || null,
     blobUrl, download,
   };
 })();
+// Shared mobile helpers and chat test for window.API before using the client.
+window.API = API;

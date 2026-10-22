@@ -34,8 +34,26 @@ async function draftMO(prefix: string, qty: number, qc_stages: number) {
 }
 
 describe('POST /api/job-orders/:id/accept', () => {
+  it('replays the original kit acceptance and rejects a changed note under its key', async () => {
+    const mo = await draftMO('AccRetry', 3, 0);
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post('/api/job-orders/warehouse-accept').set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id: mo }] });
+    await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
+    const headers = { ...H(), 'Idempotency-Key': 'kit-accept-retry-original' };
+    const first = await ctx.api.post(`/api/job-orders/${mo}/accept`).set(headers).send({ notes: 'Original counted kit' });
+    const retry = await ctx.api.post(`/api/job-orders/${mo}/accept`).set(headers).send({ notes: 'Original counted kit' });
+    expect(first.status).toBe(200); expect(retry.status).toBe(200);
+    expect(retry.headers['idempotency-replayed']).toBe('true');
+    expect(retry.body.job_order.accepted_at).toBe(first.body.job_order.accepted_at);
+    expect((await ctx.api.post(`/api/job-orders/${mo}/accept`).set(headers).send({ notes: 'Different kit note' })).status).toBe(409);
+    expect((await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body.accept_notes).toBe('Original counted kit');
+  });
   it('blocks recording output until production accepts the kit', async () => {
     const mo = await draftMO('AccGate', 3, 0);
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
 
     const early = await ctx.api.post(`/api/job-orders/${mo}/progress`).set(H()).send({ done_delta: 1 });
@@ -55,22 +73,31 @@ describe('POST /api/job-orders/:id/accept', () => {
 
   it('blocks adding a serialized unit until accepted', async () => {
     const mo = await draftMO('AccUnit', 2, 1);
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
-    const early = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).send({ identifier: 'ACC-1' });
+    const early = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).field('identifier', 'ACC-1').attach('image', Buffer.from('unit-photo'), 'unit.png');
     expect(early.status).toBe(409);
     await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
-    const ok = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).send({ identifier: 'ACC-1' });
+    const ok = await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).field('identifier', 'ACC-1').attach('image', Buffer.from('unit-photo'), 'unit.png');
     expect(ok.status).toBe(201);
   });
 
   it('refuses a draft, a second accept, and a closed job order', async () => {
     const mo = await draftMO('AccState', 2, 0);
     expect((await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H())).status).toBe(409); // draft
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
     expect((await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H())).status).toBe(200);
     expect((await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H())).status).toBe(409); // again
 
     const mo2 = await draftMO('AccCancel', 2, 0);
+    await ctx.api.post(`/api/job-orders/${mo2}/approve`).set(H());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo2] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo2 }] });
     await ctx.api.post(`/api/job-orders/${mo2}/release`).set(H());
     await ctx.api.post(`/api/job-orders/${mo2}/cancel`).set(H());
     expect((await ctx.api.post(`/api/job-orders/${mo2}/accept`).set(H())).status).toBe(409);
@@ -80,6 +107,10 @@ describe('POST /api/job-orders/:id/accept', () => {
     const lead = await createEmployee(ctx.api, token, { role: 'production_lead' });
     const qc = await createEmployee(ctx.api, token, { role: 'qc_inspector' });
     const mo = await draftMO('AccRole', 2, 1);
+    await ctx.api.put(`/api/job-orders/${mo}/assignees`).set(H()).send({user_ids:[lead.id]});
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
     expect((await ctx.api.post(`/api/job-orders/${mo}/accept`).set(bearer(qc.token))).status).toBe(403);
     const acc = await ctx.api.post(`/api/job-orders/${mo}/accept`).set(bearer(lead.token));
@@ -89,6 +120,9 @@ describe('POST /api/job-orders/:id/accept', () => {
 
   it('exempts a job order that already has output recorded (pre-accept-step data)', async () => {
     const mo = await draftMO('AccLegacy', 3, 0);
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
     // Simulate a job order built before the accept step existed: output, no acceptance.
     run("UPDATE job_orders SET qty_scrapped = 1, status = 'in_progress' WHERE id = ?", mo);
@@ -98,9 +132,12 @@ describe('POST /api/job-orders/:id/accept', () => {
 
   it('shows who accepted on the production record dossier', async () => {
     const mo = await draftMO('AccDossier', 1, 1);
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
     await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
-    const unit = (await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).send({ identifier: 'ACC-DOS-1' })).body.id;
+    const unit = (await ctx.api.post(`/api/job-orders/${mo}/units`).set(H()).field('identifier', 'ACC-DOS-1').attach('image', Buffer.from('unit-photo'), 'unit.png')).body.id;
     const rec = await ctx.api.get(`/api/production/record?unit=${unit}`).set(H());
     expect(rec.status).toBe(200);
     expect(rec.body.job_order.accepted_by_name).toBeTruthy();

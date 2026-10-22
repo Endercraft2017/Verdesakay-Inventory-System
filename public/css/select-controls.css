@@ -1,0 +1,50 @@
+/* Shared dropdown chrome. Native option menus and keyboard behavior stay intact. */
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark'] { color-scheme: dark; }
+select:not([multiple]):is(:not([size]), [size='0'], [size='1']) {
+  appearance: none;
+  -webkit-appearance: none;
+  /* Higher priority prevents local background shorthands from restoring the OS arrow. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b819e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 7px center !important;
+  padding-inline-end: 24px !important;
+  color-scheme: inherit;
+}
+select option, select optgroup {
+  background-color: var(--surface, var(--v2-surface, var(--m-surface, var(--panel, Canvas))));
+  color: var(--text, var(--v2-text, var(--m-text, var(--ink, CanvasText))));
+}
+[dir='rtl'] select:not([multiple]):is(:not([size]), [size='0'], [size='1']) { background-position: left 7px center !important; }
+@media (forced-colors: active) {
+  select:not([multiple]):is(:not([size]), [size='0'], [size='1']) {
+    appearance: auto;
+    -webkit-appearance: auto;
+    background-image: none !important;
+  }
+}
+
+/* Explicit on the control: nested light form/print styles must not leave white
+   checkboxes in the dark application theme. Keep native keyboard/forced-color behavior. */
+:root[data-theme='light'] input[type='checkbox'] { color-scheme: light !important; }
+:root[data-theme='dark'] input[type='checkbox'] { color-scheme: dark !important; }
+:root[data-theme='dark'] .rk-check input[type='checkbox']:not(:checked) { background: #151a20; }
+
+/* Shared desktop/mobile password visibility controls. */
+.auth-password-row { display: flex; align-items: center; gap: 8px; }
+.auth-password-row input { flex: 1; min-width: 0; }
+.auth-toggle { flex: none; padding: 9px 12px; border: 1px solid var(--border, var(--m-border)); border-radius: 8px; background: var(--surface, var(--m-surface)); color: var(--text, var(--m-text)); font: inherit; font-size: 13px; cursor: pointer; }
+.auth-toggle:focus-visible { outline: 2px solid var(--accent, var(--m-accent)); outline-offset: 2px; }
+.auth-status, .auth-help { font-size: 12px; line-height: 1.5; color: var(--text-muted, var(--m-muted)); }
+.auth-status:empty { display: none; }
+.auth-status { margin: 8px 0 0; }
+.auth-help { margin: 8px 0 12px; }
+.auth-account { font-size: 13px; overflow-wrap: anywhere; }
+.auth-password-row input[aria-invalid='true'] { border-color: var(--danger, var(--m-danger)); }
+#m-login-form label.m-shared-opt { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; }
+#m-login-form .m-shared-opt > input[type='checkbox'] { width: 18px; height: 18px; flex: 0 0 18px; margin: 2px 0 0; padding: 0; }
+#m-login-form .m-shared-opt > span { flex: 1; min-width: 0; }
+.m-recovery { display: block; margin-top: 12px; text-align: center; color: var(--m-accent); font-size: 13px; }
+.m-blocked .m-btn { display: block; width: 100%; }
+.m-blocked [role='status'] { font-size: 13px; }
+.modal-foot [data-confirm][hidden], [data-another-link][hidden] { display: none !important; }

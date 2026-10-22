@@ -1,3 +1,4 @@
+import { independentApproval } from '../../shared/approval-policy';
 /**
  * Purchasing depth: goods receipts + vendor bills + 3-way match, all hung off a
  * purchase order (an `orders` row with type = 'purchase').
@@ -5,29 +6,48 @@
  *   Purchase Order  →  Goods Receipt(s)   (what arrived — posts stock in)
  *                   →  Vendor Bill(s)     (what we're charged — gated on a 3-way match)
  *
- * Reading needs `orders.view`. Receiving (which moves stock) needs `inventory.adjust`.
- * Raising / approving vendor bills needs `orders.edit`.
+ * Reading needs `purchasing.view`. Receiving (which moves stock) needs `inventory.adjust`.
+ * Raising / approving vendor bills needs `purchasing.manage` (split from orders.* — the purchase
+ * order itself follows the same pair, inventory/order-access.ts).
  */
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { db, queryOne, queryAll, run, nextSequence, getSetting, setSetting } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
 import {
   parseBody, createReceiptSchema, vendorBillSchema, approveBillSchema,
   disputeBillSchema, matchToleranceSchema,
 } from '../../shared/validation';
-import { applyStockChange } from '../inventory/inventory-stock';
+import { applyStockChange, locationName } from '../inventory/inventory-stock';
 import { maybeAutoPostVendorBill, maybeAutoPostGoodsReceipt, unpostSource } from '../accounting/accounting-autopost';
 import {
   threeWayMatch, receiptStatus, DEFAULT_TOLERANCE,
   type MatchInputLine, type MatchTolerance,
 } from './purchasing-match';
 import type { Order, OrderItem, GoodsReceipt, VendorBill } from '../../shared/types';
+import { recordSiteClash, syncClass } from '../../sync';
+import { now, siteDecisionStands } from '../../shared/sync-context';
+import requestsRoutes from './requests.routes';
 
 const router = Router();
 router.use(requireAuth);
+router.use('/requests', requestsRoutes);
 
 const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+const withReceiptPath = (receipt: GoodsReceipt): GoodsReceipt => ({
+  ...receipt, location_name: receipt.location_id ? locationName(receipt.location_id) : receipt.location_name,
+});
 const TOL_KEY = 'purchasing_match_tolerance';
+
+/** A goods receipt belongs to the site of the location the goods arrive at (docs/OFFLINE-FIRST.md
+ *  §16, §23); reversing one is decided there too. Vendor bills are company-wide (the main site). */
+const receivingSite = {
+  home: (req: Request) => ({ location: Number((req.body as { location_id?: unknown } | undefined)?.location_id) || null }),
+};
+const receiptSite = {
+  home: (req: Request) => ({
+    location: queryOne<{ location_id: number | null }>('SELECT location_id FROM goods_receipts WHERE id = ?', Number(req.params.id))?.location_id ?? null,
+  }),
+};
 
 /** Cost value of a goods receipt: Σ received qty × the matching PO line's unit price,
  *  falling back to the item's standard `unit_cost` for a line with no PO link. */
@@ -95,7 +115,7 @@ function matchForBill(order: Order, billId: number): ReturnType<typeof threeWayM
 /* --------------------------------------------------------------- PO summary --- */
 
 // GET /api/purchasing/orders/:id — receiving + billing picture for one PO.
-router.get('/orders/:id', requirePermission('orders.view'), (req, res) => {
+router.get('/orders/:id', requirePermission('purchasing.view'), (req, res) => {
   const order = loadPO(res, Number(req.params.id));
   if (!order) return;
 
@@ -139,7 +159,7 @@ router.get('/orders/:id', requirePermission('orders.view'), (req, res) => {
        LEFT JOIN users u ON u.id = g.received_by
        WHERE g.order_id = ? ORDER BY g.id DESC`,
       order.id
-    ),
+    ).map(withReceiptPath),
     bills: queryAll<VendorBill>(
       `SELECT b.*, u.full_name AS approved_by_name
        FROM vendor_bills b LEFT JOIN users u ON u.id = b.approved_by
@@ -154,7 +174,7 @@ router.get('/orders/:id', requirePermission('orders.view'), (req, res) => {
 /* ------------------------------------------------------------ goods receipts --- */
 
 // GET /api/purchasing/receipts — recent receipts (optionally ?order_id=).
-router.get('/receipts', requirePermission('orders.view'), (req, res) => {
+router.get('/receipts', requirePermission('purchasing.view'), (req, res) => {
   const where: string[] = [];
   const params: unknown[] = [];
   if (req.query.order_id) { where.push('g.order_id = ?'); params.push(Number(req.query.order_id)); }
@@ -169,12 +189,12 @@ router.get('/receipts', requirePermission('orders.view'), (req, res) => {
        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
        ORDER BY g.id DESC LIMIT 200`,
       ...params
-    )
+    ).map(withReceiptPath)
   );
 });
 
 // GET /api/purchasing/receipts/:id — one receipt + its lines.
-router.get('/receipts/:id', requirePermission('orders.view'), (req, res) => {
+router.get('/receipts/:id', requirePermission('purchasing.view'), (req, res) => {
   const receipt = queryOne<GoodsReceipt>(
     `SELECT g.*, l.name AS location_name, u.full_name AS received_by_name, o.number AS order_number
      FROM goods_receipts g
@@ -186,11 +206,11 @@ router.get('/receipts/:id', requirePermission('orders.view'), (req, res) => {
   );
   if (!receipt) { res.status(404).json({ error: 'Receipt not found' }); return; }
   receipt.items = queryAll('SELECT * FROM goods_receipt_items WHERE receipt_id = ? ORDER BY sort, id', receipt.id);
-  res.json(receipt);
+  res.json(withReceiptPath(receipt));
 });
 
 // POST /api/purchasing/orders/:id/receipts — record what arrived + post stock in.
-router.post('/orders/:id/receipts', requirePermission('inventory.adjust'), (req, res) => {
+router.post('/orders/:id/receipts', requirePermission('inventory.receive'), syncClass('physical', receivingSite), (req, res) => {
   const order = loadPO(res, Number(req.params.id));
   if (!order) return;
   const input = parseBody(createReceiptSchema, req.body);
@@ -203,8 +223,15 @@ router.post('/orders/:id/receipts', requirePermission('inventory.adjust'), (req,
   for (const l of input.lines) {
     if (l.order_item_id != null
       && !queryOne('SELECT id FROM order_items WHERE id = ? AND order_id = ?', l.order_item_id, order.id)) {
-      res.status(400).json({ error: `Line "${l.name}" points at a PO line that isn't on this order` });
-      return;
+      // Clash-check (D6): the PO line was removed on the cloud after the site received against
+      // it. The goods arrived — the line is kept, unlinked from the PO, and flagged.
+      if (siteDecisionStands()) {
+        recordSiteClash(req, `Goods receipt on ${order.number}: line "${l.name}" was removed from the PO on the cloud; it was received unlinked.`);
+        l.order_item_id = null;
+      } else {
+        res.status(400).json({ error: `Line "${l.name}" points at a PO line that isn't on this order` });
+        return;
+      }
     }
     if (l.item_id != null && !queryOne('SELECT id FROM inventory_items WHERE id = ?', l.item_id)) {
       res.status(400).json({ error: `Line "${l.name}" points at an item that doesn't exist` });
@@ -243,7 +270,7 @@ router.post('/orders/:id/receipts', requirePermission('inventory.adjust'), (req,
     });
     db.exec('COMMIT');
     // GL: perpetual inventory — DR Inventory / CR Goods Received Not Invoiced (best-effort).
-    maybeAutoPostGoodsReceipt(receiptId, number, input.received_date ?? new Date().toISOString().slice(0, 10),
+    maybeAutoPostGoodsReceipt(receiptId, number, input.received_date ?? now().toISOString().slice(0, 10),
       receiptValue(receiptId), req.user!.id);
     res.status(201).json({ id: receiptId, number });
   } catch (e) {
@@ -253,7 +280,7 @@ router.post('/orders/:id/receipts', requirePermission('inventory.adjust'), (req,
 });
 
 // DELETE /api/purchasing/receipts/:id — reverse the posted stock and remove the receipt.
-router.delete('/receipts/:id', requirePermission('inventory.adjust'), (req, res) => {
+router.delete('/receipts/:id', requirePermission('inventory.receive'), syncClass('claim', receiptSite), (req, res) => {
   const receipt = queryOne<GoodsReceipt>('SELECT * FROM goods_receipts WHERE id = ?', Number(req.params.id));
   if (!receipt) { res.status(404).json({ error: 'Receipt not found' }); return; }
   const lines = queryAll<{ item_id: number | null; quantity: number; name: string }>(
@@ -291,7 +318,7 @@ function computeBillTotals<T extends { quantity: number; unit_price: number }>(l
 }
 
 // GET /api/purchasing/bills — AP worklist (optionally ?status= / ?order_id=).
-router.get('/bills', requirePermission('orders.view'), (req, res) => {
+router.get('/bills', requirePermission('purchasing.view'), (req, res) => {
   const where: string[] = [];
   const params: unknown[] = [];
   if (typeof req.query.status === 'string') { where.push('b.status = ?'); params.push(req.query.status); }
@@ -311,7 +338,7 @@ router.get('/bills', requirePermission('orders.view'), (req, res) => {
 });
 
 // GET /api/purchasing/bills/:id — a bill, its lines, and a fresh 3-way match.
-router.get('/bills/:id', requirePermission('orders.view'), (req, res) => {
+router.get('/bills/:id', requirePermission('purchasing.view'), (req, res) => {
   const bill = queryOne<VendorBill>(
     `SELECT b.*, s.name AS supplier_name, o.number AS order_number, u.full_name AS approved_by_name
      FROM vendor_bills b
@@ -328,7 +355,7 @@ router.get('/bills/:id', requirePermission('orders.view'), (req, res) => {
 });
 
 // POST /api/purchasing/orders/:id/bills — enter a supplier's invoice against the PO.
-router.post('/orders/:id/bills', requirePermission('orders.edit'), (req, res) => {
+router.post('/orders/:id/bills', requirePermission('purchasing.manage'), syncClass('merge'), (req, res) => {
   const order = loadPO(res, Number(req.params.id));
   if (!order) return;
   const input = parseBody(vendorBillSchema, req.body);
@@ -368,7 +395,7 @@ router.post('/orders/:id/bills', requirePermission('orders.edit'), (req, res) =>
 });
 
 // PUT /api/purchasing/bills/:id — edit a bill that isn't approved yet.
-router.put('/bills/:id', requirePermission('orders.edit'), (req, res) => {
+router.put('/bills/:id', requirePermission('purchasing.manage'), syncClass('claim'), (req, res) => {
   const bill = queryOne<VendorBill>('SELECT * FROM vendor_bills WHERE id = ?', Number(req.params.id));
   if (!bill) { res.status(404).json({ error: 'Bill not found' }); return; }
   if (bill.status === 'approved') {
@@ -386,13 +413,13 @@ router.put('/bills/:id', requirePermission('orders.edit'), (req, res) => {
          ewt_rate = ?, ewt_amount = ?, ewt_atc = ?,
          subtotal = ?, tax_percent = ?, tax_amount = ?, total = ?, notes = ?,
          status = CASE WHEN status = 'disputed' THEN 'draft' ELSE status END,
-         dispute_note = NULL
+         dispute_note = NULL, last_edited_by = ?
        WHERE id = ?`,
       input.vendor_ref ?? null, input.bill_date ?? null, input.due_date ?? null,
       input.currency || bill.currency, input.tax_code_id ?? null,
       input.ewt_rate || 0, ewtAmount, input.ewt_atc ?? null,
       subtotal, input.tax_percent, tax_amount, total,
-      input.notes ?? null, bill.id
+      input.notes ?? null, req.user!.id, bill.id
     );
     run('DELETE FROM vendor_bill_items WHERE bill_id = ?', bill.id);
     withTotals.forEach((l, i) => {
@@ -414,18 +441,34 @@ router.put('/bills/:id', requirePermission('orders.edit'), (req, res) => {
 
 // POST /api/purchasing/bills/:id/approve — passes only on a clean 3-way match,
 // unless `force` is set (which records who overrode and why).
-router.post('/bills/:id/approve', requirePermission('orders.edit'), (req, res) => {
+router.post('/bills/:id/approve', requirePermission('purchasing.approve_bills'), syncClass('claim'), (req, res) => {
   const bill = queryOne<VendorBill>('SELECT * FROM vendor_bills WHERE id = ?', Number(req.params.id));
   if (!bill) { res.status(404).json({ error: 'Bill not found' }); return; }
-  if (bill.status === 'approved') { res.status(409).json({ error: 'Already approved' }); return; }
+  if (bill.status === 'approved') {
+    // Clash-check (D6): approved on the cloud meanwhile — the first approval is kept, flagged.
+    if (siteDecisionStands()) {
+      recordSiteClash(req, `Vendor bill ${bill.number} was approved on the cloud and at the main site; the first approval was kept.`);
+      res.json({ ok: true, clash: true });
+      return;
+    }
+    res.status(409).json({ error: 'Already approved' });
+    return;
+  }
+  if (!independentApproval(req,res,bill.created_by,'approve this vendor bill',bill.last_edited_by)) return;
+  if (req.body?.force && !req.user!.permissions.includes('purchasing.override_match')) { res.status(403).json({error:'Match override permission is required'}); return; }
   const input = parseBody(approveBillSchema, req.body);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', bill.order_id);
   if (!order) { res.status(404).json({ error: 'Purchase order not found' }); return; }
 
   const match = matchForBill(order, bill.id);
   if (!match.ok && !input.force) {
-    res.status(409).json({ error: '3-way match failed', match });
-    return;
+    // Clash-check (D6): the match held at the main site; receipts or the PO changed on the cloud
+    // meanwhile. The approval stands, flagged (its match_json records the cloud's exceptions).
+    if (!siteDecisionStands()) {
+      res.status(409).json({ error: '3-way match failed', match });
+      return;
+    }
+    recordSiteClash(req, `Vendor bill ${bill.number} was approved at the main site, but the cloud's 3-way match now has ${match.issues.length} exception(s).`);
   }
   const note = input.force && !match.ok
     ? `Force-approved over ${match.issues.length} exception(s)${input.note ? ' — ' + input.note : ''}`
@@ -441,7 +484,7 @@ router.post('/bills/:id/approve', requirePermission('orders.edit'), (req, res) =
 });
 
 // POST /api/purchasing/bills/:id/dispute — park a bill with a reason.
-router.post('/bills/:id/dispute', requirePermission('orders.edit'), (req, res) => {
+router.post('/bills/:id/dispute', requirePermission('purchasing.manage'), syncClass('claim'), (req, res) => {
   const bill = queryOne<VendorBill>('SELECT id FROM vendor_bills WHERE id = ?', Number(req.params.id));
   if (!bill) { res.status(404).json({ error: 'Bill not found' }); return; }
   const input = parseBody(disputeBillSchema, req.body);
@@ -456,7 +499,7 @@ router.post('/bills/:id/dispute', requirePermission('orders.edit'), (req, res) =
 });
 
 // DELETE /api/purchasing/bills/:id — only while not approved.
-router.delete('/bills/:id', requirePermission('orders.edit'), (req, res) => {
+router.delete('/bills/:id', requirePermission('purchasing.manage'), syncClass('claim'), (req, res) => {
   const bill = queryOne<VendorBill>('SELECT status FROM vendor_bills WHERE id = ?', Number(req.params.id));
   if (!bill) { res.status(404).json({ error: 'Bill not found' }); return; }
   if (bill.status === 'approved') {
@@ -469,11 +512,11 @@ router.delete('/bills/:id', requirePermission('orders.edit'), (req, res) => {
 
 /* ----------------------------------------------------------------- tolerance --- */
 
-router.get('/tolerance', requirePermission('orders.view'), (_req, res) => {
+router.get('/tolerance', requirePermission('purchasing.view'), (_req, res) => {
   res.json(tolerance());
 });
 
-router.put('/tolerance', requirePermission('orders.edit'), (req, res) => {
+router.put('/tolerance', requirePermission('purchasing.override_match'), syncClass('claim'), (req, res) => {
   const input = parseBody(matchToleranceSchema, req.body);
   setSetting(TOL_KEY, input);
   res.json(input);

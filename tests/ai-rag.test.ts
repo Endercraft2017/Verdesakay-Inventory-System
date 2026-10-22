@@ -31,6 +31,9 @@ beforeAll(async () => {
   const cid = (await ctx.api.post('/api/inventory').set(authHdr()).send({ name: 'RAG Part', quantity: 50 })).body.id;
   await ctx.api.put(`/api/finished-products/${pid}`).set(authHdr()).send({ components: [{ component_item_id: cid, quantity: 1 }] });
   const mo = (await ctx.api.post('/api/job-orders').set(authHdr()).send({ product_item_id: pid, qty_ordered: 1, qc_stages: 1 })).body.id;
+  await ctx.api.post(`/api/job-orders/${mo}/approve`).set(authHdr());
+  await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [mo] });
+  await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: mo }] });
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(authHdr());
   await ctx.api.post(`/api/job-orders/${mo}/accept`).set(authHdr());
   await addSerializedUnits(ctx.api, token, mo, 1, 'RAG');

@@ -37,13 +37,13 @@ export function planLimitsFor(plan: string | null | undefined): PlanLimits {
  */
 export const PLAN_MODULES: Record<PlanName, string[]> = {
   // Self-hosted / single-tenant — every module (also short-circuited in modules.ts).
-  unlimited:  ['inventory', 'manufacturing', 'purchasing', 'hr', 'accounting', 'ai', 'mobile', 'email', 'quickbooks'],
+  unlimited:  ['inventory', 'sales', 'manufacturing', 'purchasing', 'hr', 'accounting', 'ai', 'mobile', 'email', 'quickbooks'],
   // Evaluators see the whole product during the trial.
-  trial:      ['inventory', 'manufacturing', 'purchasing', 'hr', 'accounting', 'ai', 'mobile', 'email', 'quickbooks'],
+  trial:      ['inventory', 'sales', 'manufacturing', 'purchasing', 'hr', 'accounting', 'ai', 'mobile', 'email', 'quickbooks'],
   // Paid tiers — a sensible default bundle; tune per deal with `tenant:modules`.
-  starter:    ['inventory', 'purchasing', 'mobile'],
-  operations: ['inventory', 'manufacturing', 'purchasing', 'hr', 'mobile', 'email'],
-  complete:   ['inventory', 'manufacturing', 'purchasing', 'hr', 'accounting', 'ai', 'mobile', 'email', 'quickbooks'],
+  starter:    ['inventory', 'sales', 'purchasing', 'mobile'],
+  operations: ['inventory', 'sales', 'manufacturing', 'purchasing', 'hr', 'mobile', 'email'],
+  complete:   ['inventory', 'sales', 'manufacturing', 'purchasing', 'hr', 'accounting', 'ai', 'mobile', 'email', 'quickbooks'],
 };
 
 export function planModules(plan: string | null | undefined): string[] {

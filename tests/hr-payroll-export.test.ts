@@ -23,10 +23,11 @@ function loadModule() {
       totals: { count: number; gross: number; statutory: number; otherDeductions: number; totalDeductions: number; net: number };
       departments: { name: string; count: number; gross: number; statutory: number; otherDeductions: number; totalDeductions: number; net: number }[];
     };
+    buildPayrollSummaryHtml: (records: { data: Record<string, unknown> }[], formDef: { name?: string; fields?: { key: string; label: string }[] }, opts?: Record<string, unknown>) => string;
   };
 }
 
-const { computePayrollExportData } = loadModule();
+const { computePayrollExportData, buildPayrollSummaryHtml } = loadModule();
 
 const rec = (dept_position: string, overrides: Record<string, unknown> = {}) => ({
   data: {
@@ -79,5 +80,54 @@ describe('computePayrollExportData', () => {
     const { totals } = computePayrollExportData([rec('X / Role', { total_earnings: undefined, sss: 'n/a' })]);
     expect(Number.isNaN(totals.gross)).toBe(false);
     expect(totals.gross).toBe(0);
+  });
+});
+
+describe('buildPayrollSummaryHtml (Print Summary)', () => {
+  const formDef = { name: 'HR Payroll', fields: [] };
+
+  it('prints the period title, company, the same 5 totals, and a grand total row', () => {
+    const html = buildPayrollSummaryHtml(
+      [rec('Warehouse / Warehouseman', { employee_name: 'Ana', pay_date: '2026-10-05' })],
+      formDef, { title: '2nd cutoff September', company: { name: 'Acme Corp' }, dateRange: '2026-09-16 – 2026-09-30' });
+    expect(html).toContain('Payroll Summary — 2nd cutoff September');
+    expect(html).toContain('Acme Corp');
+    expect(html).toContain('Pay Date: 2026-10-05');
+    expect(html).toContain('Period: 2026-09-16 – 2026-09-30');
+    for (const v of ['10,000.00', '1,100.00', '200.00', '1,300.00', '8,700.00']) expect(html).toContain(v);
+    expect(html).toContain('GRAND TOTAL');
+    expect(html).toContain('Ana');
+  });
+
+  it('adds BY DEPARTMENT and per-department subtotals only when there is more than one department', () => {
+    const one = buildPayrollSummaryHtml([rec('A / x'), rec('A / y')], formDef);
+    expect(one).not.toContain('BY DEPARTMENT');
+    expect(one).not.toContain('Subtotal');
+    const two = buildPayrollSummaryHtml([rec('A / x'), rec('B / y')], formDef);
+    expect(two).toContain('BY DEPARTMENT');
+    expect(two).toContain('Subtotal — A');
+    expect(two).toContain('Subtotal — B');
+  });
+
+  it('drops columns that are zero for every payslip but always keeps the subtotals and Net Pay', () => {
+    const html = buildPayrollSummaryHtml([rec('A / x', { night_diff_pay: 0, overtime_pay: 250 })], formDef);
+    expect(html).not.toContain('Night Differential');
+    expect(html).toContain('Overtime Pay');
+    expect(html).toContain('Total Earnings');
+    expect(html).toContain('Total Deductions');
+    expect(html).toContain('Net Pay');
+  });
+
+  it('leaves rate columns blank on subtotal/grand-total rows instead of summing them', () => {
+    const html = buildPayrollSummaryHtml([rec('A / x', { daily_rate: 645 }), rec('A / y', { daily_rate: 645 })], formDef);
+    expect(html).toContain('645.00');
+    expect(html).not.toContain('1,290.00');
+  });
+
+  it('escapes employee and department names', () => {
+    const html = buildPayrollSummaryHtml([rec('<b>Dept</b> / x', { employee_name: '<script>x</script>' }), rec('B / y')], formDef);
+    expect(html).not.toContain('<script>x</script>');
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).not.toContain('<b>Dept</b>');
   });
 });

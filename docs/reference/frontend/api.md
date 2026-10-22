@@ -34,10 +34,15 @@ unit-tested directly).
   failed (<status>)')` — so callers can just `catch (e) { UI.toast(e.message, 'error') }`.
 - Returns the parsed JSON body (or `null`) on success.
 
+- **`API.get(path, { remember: true })`** keeps that response in memory, and
+  **`API.peek(path)`** returns it (or `null`) so a screen can draw what it showed last time
+  while the fresh copy loads (first user: `hr-employees.js`). Memory only (never storage), at
+  most 30 paths, emptied by `setToken`/`clearToken` and by any POST/PUT/PATCH/DELETE.
+
 ## Internal structure
-Single IIFE closure. `TOKEN_KEY = 'vds_token'` is the only piece of module state (besides
-`localStorage`, which is the actual persistence). No caching, no request queue, no retry
-logic — every call hits the network directly.
+Single IIFE closure. `TOKEN_KEY = 'vds_token'` plus the `remembered` Map (above) are the module
+state. No request queue or retry logic — every call still hits the network; `peek` only lets a
+screen show the previous answer meanwhile. Tests: `tests/frontend-api-client.test.ts`.
 
 ## Dependencies
 - `window.App.showLogin` (soft dependency, checked with `if (window.App)` — API can be used
@@ -61,3 +66,19 @@ closures that use `API` on the editor's behalf).
 - Because 401 handling calls `window.App.showLogin()` directly, any code that calls `API.*`
   before `App` is defined (unlikely in practice, since `api.js` loads first but `App.boot()`
   runs on `DOMContentLoaded`) would silently skip that redirect.
+
+Binary attachments use `blobUrl(path)` with bearer authentication; paths may be
+API-relative or already prefixed with `/api/`. Server error messages are preserved.
+`download(path, filename)` clicks an attached save link and keeps its blob URL alive
+for 60 seconds so the browser has time to start saving.
+
+`upload(path, formData, { onProgress })` uses authenticated XMLHttpRequest upload
+events to report `{ loaded, total }` (total is null when unknown). Uploads without
+the callback continue using fetch; both share session and response handling.
+
+`slow-loading.js` loads early in desktop/mobile shells. Foreground API reads and
+startup show a dismissible notice after 10 seconds; request completion/failure
+clears it. Unread-count polls and `get(path, { background: true })` stay silent.
+Pending writes disable Retry. Retry is a user-initiated page reload, confirms
+possible draft loss after edits, and retains existing beforeunload protections.
+Navigation drops watches for the previous view. No request is retried automatically.

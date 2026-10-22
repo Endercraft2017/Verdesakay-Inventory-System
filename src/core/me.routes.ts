@@ -2,14 +2,28 @@
  *  record. Mounted at /api/me. Any logged-in user; endpoints 403 if the account
  *  isn't linked to an `employees` row. */
 import { Router, type Request } from 'express';
-import { queryOne, queryAll, run } from '../shared/db';
+import bcrypt from 'bcryptjs';
+import { db, queryOne, queryAll, run, getSetting } from '../shared/db';
+import { logEvent } from '../shared/activity';
+import { renderPayslipPdf } from '../modules/payroll/payslip-pdf';
 import { requireAuth } from '../shared/auth';
-import { parseBody, timeCorrectionSchema, approvalDecisionSchema } from '../shared/validation';
+import { parseBody, timeCorrectionSchema, approvalDecisionSchema, selfProfileSchema } from '../shared/validation';
+import { getProfile, updateProfile, profileHistory, PROFILE_FIELDS } from '../modules/hr/employee-profile';
+import { INFO_CHANGE_SLUG, applyInfoChange, previousNames } from '../modules/hr/info-change';
 import { notifyUser, notifyPermission } from '../shared/push';
 import { myClockStatus } from '../modules/hr/clock';
 import { unrecordedOtMinutes, type AttendanceDay } from '../modules/payroll/hr-payroll-compute';
 import { currentPolicy } from '../modules/hr/hr.routes';
 import type { FormDefinition, FormRecord, TimeCorrection } from '../shared/types';
+import { recordSiteClash, syncClass } from '../sync';
+import { approverDepartmentIds, cutoffIsPaid, notifyApprovers } from '../modules/hr/workflow';
+import { normalizeRequest, leaveDates, scheduledLeaveDates, overlappingLeave, leaveWarnings, attachLeave, leavePreview, requestEmployeeJoin } from '../modules/hr/request-data';
+import { now, reRunOfRecordedCommand, siteDecisionStands } from '../shared/sync-context';
+
+import { definitionForRecord } from './data-forms/history';
+import { REQUEST_SLUGS } from './data-forms/request-types';
+// Compatibility export for callers of the self-service API.
+export { REQUEST_SLUGS } from './data-forms/request-types';
 
 const router = Router();
 router.use(requireAuth);
@@ -17,14 +31,19 @@ router.use(requireAuth);
 interface Emp {
   id: number; name: string; department_id: number | null; position: string | null; employee_no: string | null;
   default_shift_id: number | null; department_name: string | null;
+  /** Self-chosen display name (employee_profiles) — never replaces the legal `name`. */
+  preferred_name: string | null;
   leave_days_per_year: number; leave_days_used: number; leave_days_remaining: number;
 }
 
 function me(userId: number): Emp | undefined {
   return queryOne<Emp>(
     `SELECT e.id, e.name, e.department_id, e.position, e.employee_no, e.default_shift_id, d.name AS department_name,
-            e.leave_days_per_year, e.leave_days_used, (e.leave_days_per_year - e.leave_days_used) AS leave_days_remaining
-     FROM employees e LEFT JOIN departments d ON d.id = e.department_id WHERE e.user_id = ?`,
+            e.leave_days_per_year, e.leave_days_used, (e.leave_days_per_year - e.leave_days_used) AS leave_days_remaining,
+            ep.preferred_name
+     FROM employees e LEFT JOIN departments d ON d.id = e.department_id
+     LEFT JOIN employee_profiles ep ON ep.employee_id = e.id
+     WHERE e.user_id = ?`,
     userId
   );
 }
@@ -34,26 +53,185 @@ function needEmp(res: import('express').Response, emp: Emp | undefined): emp is 
 }
 
 const parse = (d: unknown) => { try { return JSON.parse(String(d)); } catch { return {}; } };
+function requestDisplayData(slug: string, data: Record<string, unknown>) {
+  if (slug !== 'schedule_change') return null;
+  const shift = (id: unknown) => id == null ? undefined : queryOne<{ name: string; start_time: string; end_time: string }>(
+    'SELECT name, start_time, end_time FROM shifts WHERE id = ?', Number(id));
+  const label = (id: unknown) => {
+    const row = shift(id);
+    return row ? `${row.name} · ${row.start_time}–${row.end_time}` : id == null ? 'No shift assigned' : 'Shift no longer available';
+  };
+  return { 'Work date': data.work_date, 'Current shift': label(data.current_shift_id),
+    'Requested shift': label(data.requested_shift_id), Reason: data.reason };
+}
 
 // GET /api/me — the linked employee (or null)
 router.get('/', (req, res) => {
   res.json({ employee: me(req.user!.id) ?? null });
 });
 
-// GET /api/me/payslips — this employee's HR Payroll records, newest first
+/* ─── Profile & contact details (self-service) ────────────────────────────────── */
+
+// GET /api/me/profile — editable personal details + the read-only official record
+router.get('/profile', (req, res) => {
+  const emp = me(req.user!.id);
+  if (!needEmp(res, emp)) return;
+  const official = queryOne<{ status: string; start_date: string | null }>('SELECT status, start_date FROM employees WHERE id = ?', emp.id);
+  res.json({
+    ...getProfile(emp.id),
+    official: {
+      name: emp.name, employee_no: emp.employee_no, position: emp.position,
+      department: emp.department_name, status: official?.status ?? null, start_date: official?.start_date ?? null,
+    },
+  });
+});
+
+// PUT /api/me/profile — { current_password, preferred_name?, mobile_phone?, … } (partial).
+// Re-authenticates with the password; unknown keys (legal name, position, pay…) are a 400.
+// Contact changes clear HR verification and ping HR to re-verify.
+router.put('/profile', syncClass('merge', { redact: ['current_password'] }), (req, res) => {
+  const emp = me(req.user!.id);
+  if (!needEmp(res, emp)) return;
+  // Offline, the change is recorded without the password (redacted): it is checked where the
+  // change is made, and not again when the command is re-run on the host or the cloud.
+  const reRun = reRunOfRecordedCommand();
+  const { current_password, ...input } = parseBody(selfProfileSchema, reRun ? { ...req.body, current_password: '-' } : req.body);
+  const user = queryOne<{ password_hash: string }>('SELECT password_hash FROM users WHERE id = ?', req.user!.id);
+  // 400, not 401: the mobile API client treats 401 as "session expired" and signs the user out.
+  if (!user || (!reRun && !bcrypt.compareSync(current_password, user.password_hash))) {
+    res.status(400).json({ error: 'Current password is incorrect' }); return;
+  }
+  const values = Object.fromEntries(PROFILE_FIELDS.filter((k) => k in input).map((k) => [k, input[k] ?? null]));
+  const result = updateProfile(emp.id, req.user!.id, values);
+  if (result.changed.some((k) => k !== 'preferred_name')) {
+    void notifyPermission('hr.manage', {
+      // No phone screen for it: the push opens the notification itself; the desktop opens HR.
+      title: 'Contact details updated', body: `${emp.name} — please verify`, link: { route: 'hr-employees', params: { id: emp.id } }, tag: 'profile-' + emp.id,
+    });
+  }
+  res.json({ ...result, profile: getProfile(emp.id) });
+});
+
+// GET /api/me/profile/history — your own recent profile changes
+router.get('/profile/history', (req, res) => {
+  const emp = me(req.user!.id);
+  if (!needEmp(res, emp)) return;
+  res.json(profileHistory(emp.id));
+});
+
+/** A payslip is final once HR marks it Paid (POST /hr/payroll/:id/mark-paid, hr.manage): that
+ *  lock is the only state regenerate/edit/delete all refuse, so its figures can't change after.
+ *  Mere existence (a 'draft' from generate-payslips) never counts. While locked, updated_at is
+ *  the moment it was marked paid (nothing else may touch the row). */
+const isFinalPayslip = (status: string) => status === 'paid';
+
+/** This employee's hr_payroll records: stamped with their employee_id, or (older payslips) carrying
+ *  their current or any former name — so a rename never hides earlier payslips. */
+function myPayslips(emp: Emp, id?: number): FormRecord[] {
+  const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
+  if (!form) return [];
+  // Old slips have no employee_id. A name that another employee currently uses, or once used,
+  // cannot establish ownership safely; a mistaken match would expose pay and its PDF.
+  const otherNames = new Set(queryAll<{ name: string }>(
+    `SELECT name FROM employees WHERE id != ?
+     UNION SELECT old_value AS name FROM employee_profile_changes
+       WHERE employee_id != ? AND field = 'name' AND old_value IS NOT NULL`, emp.id, emp.id
+  ).map((row) => row.name.trim().toLowerCase()));
+  const names = [...new Set([emp.name, ...previousNames(emp.id)])]
+    .filter((name) => !otherNames.has(name.trim().toLowerCase()));
+  return queryAll<FormRecord>(
+    `SELECT id, number, period, status, data, created_at, updated_at
+     FROM form_records
+     WHERE form_def_id = ?
+       AND (json_extract(data, '$.employee_id') = ?
+            ${names.length ? `OR (json_extract(data, '$.employee_id') IS NULL
+                AND json_extract(data, '$.employee_name') IN (${names.map(() => '?').join(',')}))` : ''})
+       ${id != null ? 'AND id = ?' : ''}
+     ORDER BY id DESC`,
+    form.id, emp.id, ...names, ...(id != null ? [id] : [])
+  );
+}
+
+// GET /api/me/payslips — employees can inspect their own current payroll previews.
+// Only a paid/locked record receives a PDF download URL.
 router.get('/payslips', (req, res) => {
   const emp = me(req.user!.id);
   if (!needEmp(res, emp)) return;
-  const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
-  if (!form) { res.json([]); return; }
-  const rows = queryAll<FormRecord>(
-    `SELECT id, number, period, status, data, created_at, updated_at
-     FROM form_records
-     WHERE form_def_id = ? AND json_extract(data, '$.employee_name') = ?
-     ORDER BY id DESC`,
-    form.id, emp.name
+  res.set('Cache-Control', 'private, no-store');
+  res.json(myPayslips(emp).map((r) => {
+    const finalized = isFinalPayslip(r.status);
+    return {
+      ...r, data: parse(r.data), finalized,
+      finalized_at: finalized ? r.updated_at : null,
+      download_url: finalized ? `/me/payslips/${r.id}/pdf` : null,
+    };
+  }));
+});
+
+// Paid slips show their frozen payroll-day snapshot. An unpaid preview shows current recorded
+// punches instead, because its saved calculation can be superseded before HR marks it Paid.
+router.get('/payslips/:id/timekeeping', (req, res) => {
+  const emp = me(req.user!.id);
+  if (!needEmp(res, emp)) return;
+  const rec = myPayslips(emp, Number(req.params.id))[0];
+  if (!rec) { res.status(404).json({ error: 'Payslip not found' }); return; }
+  const finalized = isFinalPayslip(rec.status);
+  const data = parse(rec.data);
+  const cutoffId = Number(data.cutoff_id);
+  const cutoff = Number.isSafeInteger(cutoffId) && cutoffId > 0
+    ? queryOne<{ id: number; label: string; start_date: string; end_date: string }>('SELECT id, label, start_date, end_date FROM attendance_periods WHERE id = ?', cutoffId)
+    : queryOne<{ id: number; label: string; start_date: string; end_date: string }>('SELECT id, label, start_date, end_date FROM attendance_periods WHERE label = ?', rec.period);
+  if (!cutoff) { res.set('Cache-Control', 'private, no-store'); res.json({ finalized, days: [], notice: 'Timekeeping detail is unavailable for this payslip.' }); return; }
+  let calculated: Array<Record<string, unknown>> = [];
+  try {
+    const snapshot = JSON.parse(String(data._calculation_snapshot || ''));
+    if (snapshot.version === 1 && Array.isArray(snapshot.days)) calculated = snapshot.days;
+  } catch { /* Older payroll records did not save calculations. */ }
+  const punches = queryAll<{ work_date: string; time_in: string | null; lunch_out: string | null; lunch_in: string | null; time_out: string | null }>(
+    'SELECT work_date, time_in, lunch_out, lunch_in, time_out FROM attendance_records WHERE period_id = ? AND employee_id = ? ORDER BY work_date',
+    cutoff.id, emp.id
   );
-  res.json(rows.map((r) => ({ ...r, data: parse(r.data) })));
+  const byDate = new Map(punches.map((p) => [p.work_date, p]));
+  const useSnapshot = finalized && calculated.length > 0;
+  const days = useSnapshot ? calculated.map((day) => ({
+    ...day, lunch_out: byDate.get(String(day.work_date))?.lunch_out ?? null,
+    lunch_in: byDate.get(String(day.work_date))?.lunch_in ?? null,
+  })) : punches;
+  res.set('Cache-Control', 'private, no-store');
+  res.json({ finalized, period_label: cutoff.label, start_date: cutoff.start_date, end_date: cutoff.end_date,
+    days, source: useSnapshot ? 'saved_calculation' : 'attendance_record',
+    notice: !finalized ? 'Draft timekeeping preview. These are the current recorded punches; HR corrections and payroll figures may change before payment.'
+      : useSnapshot ? null : 'This older payslip has no saved payroll calculation. These are the recorded punches; later corrections may differ from what payroll used.' });
+});
+
+// GET /api/me/payslips/:id/pdf — download one of YOUR finalized payslips. Ownership and
+// finalization are re-checked here at download time; every successful download is logged.
+router.get('/payslips/:id/pdf', (req, res) => {
+  const emp = me(req.user!.id);
+  if (!needEmp(res, emp)) return;
+  const rec = myPayslips(emp, Number(req.params.id))[0];
+  // Someone else's payslip answers exactly like a missing one — no existence leak.
+  if (!rec) { res.status(404).json({ error: 'Payslip not found' }); return; }
+  if (!isFinalPayslip(rec.status)) {
+    res.status(404).json({ error: 'Payslip not found' });
+    return;
+  }
+  const def = queryOne<{ fields: string }>("SELECT fields FROM form_definitions WHERE slug = 'hr_payroll'");
+  const labels: Record<string, string> = {};
+  const fields = parse(def?.fields) as unknown;
+  if (Array.isArray(fields)) for (const f of fields as Array<{ key: string; label?: string }>) if (f.label) labels[f.key] = f.label;
+  const pdf = renderPayslipPdf({
+    number: rec.number, data: parse(rec.data), finalizedAt: rec.updated_at ?? rec.created_at,
+    company: getSetting<{ name?: string; address?: string }>('company_profile') ?? null, labels,
+  });
+  logEvent(req, { entity: 'payroll', entityId: rec.id, action: 'payslip-download', summary: `Downloaded payslip ${rec.number}` });
+  const safe = String(rec.number).replace(/[^A-Za-z0-9-]+/g, '-');
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="Payslip-${safe}.pdf"`,
+    'Cache-Control': 'private, no-store',
+  });
+  res.send(pdf);
 });
 
 // GET /api/me/schedule — current + next cutoff's roster days with shift times
@@ -74,21 +252,16 @@ router.get('/schedule', (req, res) => {
      ORDER BY ar.work_date`,
     emp.id
   );
-  res.json({ default_shift: defShift, days });
+  res.json({ default_shift: defShift, days: days.map(d => ({ ...d, is_working_day: scheduledLeaveDates(emp.id, [d.work_date]).length > 0 })) });
 });
 
 /** Slugs an employee may self-file from mobile. */
-export const REQUEST_SLUGS = [
-  'leave_request', 'overtime_request', 'undertime_request', 'halfday_request', 'offset_form',
-  'lunch_offset_form', 'holiday_work_request', 'travel_order', 'coe_request',
-  'reimbursement_request', 'loan_application', 'training_request', 'incident_report',
-];
 
 // GET /api/me/request-types — the HR request forms available to file
 router.get('/request-types', (_req, res) => {
   const rows = queryAll<FormDefinition>(
     `SELECT id, name, slug, icon, fields FROM form_definitions
-     WHERE slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
+     WHERE archived_at IS NULL AND slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
      ORDER BY name`,
     ...REQUEST_SLUGS
   );
@@ -98,33 +271,48 @@ router.get('/request-types', (_req, res) => {
     // meant to be set by whoever approves the request (HR, when linking it to an attendance
     // day), not handed to the employee filing it, so it's stripped out of the self-file form
     // even though it's a normal field everywhere else (Data Forms, Daily Time's own quick-add).
-    const visibleFields = r.slug === 'overtime_request' ? fields.filter((f) => f.key !== 'approved_hours') : fields;
+    const internalFields = ['employee_id', 'approved_by', 'decided_by', 'decided_at', 'decision_note', 'leave_days_charged', 'charged_dates', 'leave_warnings'];
+    if (r.slug === 'overtime_request') internalFields.push('approved_hours');
+    const visibleFields = fields.filter((f) => !internalFields.includes(f.key));
+    if (r.slug === 'leave_request' && !visibleFields.some(f => f.key === 'leave_dates')) visibleFields.push({ key: 'leave_dates', label: 'Selected dates (optional; replaces the range)', type: 'textarea' } as any);
+    if (r.slug === 'schedule_change') {
+      const shiftField = visibleFields.find(f => f.key === 'requested_shift_id');
+      if (shiftField) (shiftField as any).options = queryAll<{ id: number; name: string; start_time: string; end_time: string }>(
+        'SELECT id, name, start_time, end_time FROM shifts ORDER BY name, id').map(s => ({ value: String(s.id), label: `${s.name} · ${s.start_time}–${s.end_time}` }));
+    }
     return { ...r, fields: visibleFields };
   }));
 });
 
 // GET /api/me/requests — records this user filed for any request form, newest first
+router.post('/leave-preview', (req, res) => {
+  const employee = me(req.user!.id);
+  if (!needEmp(res, employee)) return;
+  res.json(leavePreview(employee.id, req.body));
+});
 router.get('/requests', (req, res) => {
-  const rows = queryAll<FormRecord & { form_name: string; slug: string }>(
+  const rows = queryAll<FormRecord & { form_name: string; slug: string; fields: string }>(
     `SELECT fr.id, fr.number, fr.status, fr.data, fr.created_at, fr.updated_at,
-            fd.name AS form_name, fd.slug
+            fd.name AS form_name, fd.slug, fd.fields
      FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
-     WHERE fr.created_by = ? AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
+     LEFT JOIN employees e ON ${requestEmployeeJoin}
+     WHERE (fr.created_by = ? OR e.user_id = ?) AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
      ORDER BY fr.id DESC LIMIT 100`,
-    req.user!.id, ...REQUEST_SLUGS
+    req.user!.id, req.user!.id, ...REQUEST_SLUGS
   );
-  res.json(rows.map((r) => ({ ...r, data: parse(r.data) })));
+  res.json(rows.map((r) => { const data = parse(r.data); return { ...r, data, fields: parse(r.fields), display_data: requestDisplayData(r.slug, data) }; }));
 });
 
 // POST /api/me/requests/:id/cancel — withdraw your own still-pending request
-router.post('/requests/:id/cancel', (req, res) => {
-  const rec = queryOne<{ id: number; status: string; created_by: number | null; slug: string }>(
-    `SELECT fr.id, fr.status, fr.created_by, fd.slug
+router.post('/requests/:id/cancel', syncClass('merge'), (req, res) => {
+  const rec = queryOne<{ id: number; status: string; created_by: number | null; slug: string; employee_user_id: number | null }>(
+    `SELECT fr.id, fr.status, fr.created_by, fd.slug, e.user_id AS employee_user_id
      FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
+     LEFT JOIN employees e ON ${requestEmployeeJoin}
      WHERE fr.id = ?`,
     Number(req.params.id)
   );
-  if (!rec || rec.created_by !== req.user!.id || !REQUEST_SLUGS.includes(rec.slug)) {
+  if (!rec || (rec.created_by !== req.user!.id && rec.employee_user_id !== req.user!.id) || !REQUEST_SLUGS.includes(rec.slug)) {
     res.status(404).json({ error: 'Request not found' }); return;
   }
   if (rec.status !== 'pending' && rec.status !== 'draft') {
@@ -149,7 +337,7 @@ router.get('/time-corrections', (req, res) => {
 });
 
 // POST /api/me/time-corrections — file a fix; pings the approvers
-router.post('/time-corrections', (req, res) => {
+router.post('/time-corrections', syncClass('merge'), (req, res) => {
   const emp = me(req.user!.id);
   if (!needEmp(res, emp)) return;
   const input = parseBody(timeCorrectionSchema, req.body);
@@ -164,18 +352,12 @@ router.post('/time-corrections', (req, res) => {
     url: '#/approvals',
     tag: 'tc-new-' + info.lastInsertRowid,
   };
-  if (emp.department_id) {
-    const head = queryOne<{ head_user_id: number | null }>(
-      'SELECT head_user_id FROM departments WHERE id = ?', emp.department_id
-    );
-    if (head?.head_user_id && head.head_user_id !== req.user!.id) void notifyUser(head.head_user_id, payload);
-  }
-  void notifyPermission('hr.manage', payload);
+  notifyApprovers(emp.department_id, { ...payload, link: { route: 'hr-approvals' } }, req.user!.id);
   res.status(201).json({ id: info.lastInsertRowid });
 });
 
 // POST /api/me/time-corrections/:id/cancel — withdraw your own pending fix
-router.post('/time-corrections/:id/cancel', (req, res) => {
+router.post('/time-corrections/:id/cancel', syncClass('merge'), (req, res) => {
   const emp = me(req.user!.id);
   if (!needEmp(res, emp)) return;
   const tc = queryOne<{ id: number; status: string }>(
@@ -192,7 +374,7 @@ router.post('/time-corrections/:id/cancel', (req, res) => {
 
 /** Department ids this user is the registered head of. */
 function headedDeptIds(userId: number): number[] {
-  return queryAll<{ id: number }>('SELECT id FROM departments WHERE head_user_id = ?', userId).map((r) => r.id);
+  return approverDepartmentIds(userId);
 }
 /** May the caller decide an item belonging to the given department? */
 function mayDecide(req: Request, deptId: number | null): boolean {
@@ -204,8 +386,10 @@ function mayDecide(req: Request, deptId: number | null): boolean {
 router.get('/approvals', (req, res) => {
   const isHrManager = req.user!.permissions.includes('hr.manage');
   const heads = headedDeptIds(req.user!.id);
-  if (!isHrManager && !heads.length) { res.json({ requests: [], time_corrections: [] }); return; }
+  if (!isHrManager && !heads.length) { res.json({ can_approve: false, requests: [], time_corrections: [], history: [] }); return; }
   const inScope = (deptId: number | null) => isHrManager || (deptId != null && heads.includes(deptId));
+  const departmentSQL = isHrManager ? '' : ` AND e.department_id IN (${heads.map(() => '?').join(',')})`;
+  const departmentParams = isHrManager ? [] : heads;
 
   const reqRows = queryAll<FormRecord & { form_name: string; slug: string; filed_by: string | null; employee_name: string | null; department_id: number | null }>(
     `SELECT fr.id, fr.number, fr.status, fr.data, fr.created_at,
@@ -214,81 +398,183 @@ router.get('/approvals', (req, res) => {
      FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id
      LEFT JOIN users u ON u.id = fr.created_by
-     LEFT JOIN employees e ON e.user_id = fr.created_by
+     LEFT JOIN employees e ON ${requestEmployeeJoin}
      WHERE fr.status = 'pending' AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
-       AND (fr.created_by IS NULL OR fr.created_by != ?)
+       AND CASE WHEN e.id IS NOT NULL THEN COALESCE(e.user_id, 0) ELSE COALESCE(fr.created_by, 0) END != ?
+     ${departmentSQL}
      ORDER BY fr.id DESC LIMIT 200`,
-    ...REQUEST_SLUGS, req.user!.id
+    ...REQUEST_SLUGS, req.user!.id, ...departmentParams
   );
   const tcRows = queryAll<TimeCorrection & { employee_name: string; department_id: number | null }>(
     `SELECT tc.*, e.name AS employee_name, e.department_id
      FROM time_corrections tc JOIN employees e ON e.id = tc.employee_id
      WHERE tc.status = 'pending' AND (tc.user_id IS NULL OR tc.user_id != ?)
+     ${departmentSQL}
      ORDER BY tc.id DESC LIMIT 200`,
-    req.user!.id
+    req.user!.id, ...departmentParams
   );
   res.json({
-    requests: reqRows.filter((r) => inScope(r.department_id)).map((r) => ({ ...r, data: parse(r.data) })),
+    // Information changes touch the official HR record, so only hr.manage sees/decides them.
+    can_approve: isHrManager || heads.length > 0,
+    history: [
+      ...queryAll<FormRecord & { form_name: string; slug: string; employee_name: string | null; department_id: number | null }>(`SELECT fr.*, fd.name AS form_name, fd.slug, e.name AS employee_name, e.department_id FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id LEFT JOIN employees e ON ${requestEmployeeJoin} WHERE fr.status IN ('approved', 'rejected') AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')}) ${departmentSQL} ORDER BY fr.updated_at DESC LIMIT 100`, ...REQUEST_SLUGS, ...departmentParams)
+        .filter(r => inScope(r.department_id) && (r.slug !== INFO_CHANGE_SLUG || isHrManager)).map(r => { const data = parse(r.data); return { ...r, kind: 'request', data, display_data: requestDisplayData(r.slug, data) }; }),
+      ...queryAll<TimeCorrection & { employee_name: string; department_id: number | null; decided_by_name: string | null }>(`SELECT tc.*, e.name AS employee_name, e.department_id, u.full_name AS decided_by_name FROM time_corrections tc JOIN employees e ON e.id = tc.employee_id LEFT JOIN users u ON u.id = tc.decided_by WHERE tc.status IN ('approved', 'rejected') ${departmentSQL} ORDER BY tc.decided_at DESC LIMIT 100`, ...departmentParams).filter(r => inScope(r.department_id)).map(r => ({ ...r, kind: 'correction', form_name: 'Attendance correction', updated_at: r.decided_at }))
+    ].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).slice(0, 100),
+    requests: reqRows
+      .filter((r) => inScope(r.department_id) && (r.slug !== INFO_CHANGE_SLUG || isHrManager))
+      .map((r) => { const data = parse(r.data); return { ...r, data, display_data: requestDisplayData(r.slug, data) }; }),
     time_corrections: tcRows.filter((r) => inScope(r.department_id)),
   });
 });
 
 // POST /api/me/approvals/requests/:id/decide — { decision: 'approved'|'rejected', note?, override_balance? }
-router.post('/approvals/requests/:id/decide', (req, res) => {
+router.post('/approvals/requests/:id/decide', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const rec = queryOne<{
-    id: number; status: string; created_by: number | null; data: string; slug: string; form_name: string;
-    department_id: number | null; employee_id: number | null; leave_days_per_year: number | null; leave_days_used: number | null;
+    id: number; form_def_id: number; definition_version: number; status: string; created_by: number | null; data: string; slug: string; form_name: string;
+    department_id: number | null; employee_id: number | null; employee_user_id: number | null; leave_days_per_year: number | null; leave_days_used: number | null;
   }>(
-    `SELECT fr.id, fr.status, fr.created_by, fr.data, fd.slug, fd.name AS form_name,
-            e.department_id, e.id AS employee_id, e.leave_days_per_year, e.leave_days_used
+    `SELECT fr.id,fr.form_def_id,fr.definition_version, fr.status, fr.created_by, fr.data, fd.slug, fd.name AS form_name,
+            e.department_id, e.id AS employee_id, e.user_id AS employee_user_id, e.leave_days_per_year, e.leave_days_used
      FROM form_records fr
      JOIN form_definitions fd ON fd.id = fr.form_def_id
-     LEFT JOIN employees e ON e.user_id = fr.created_by
+     LEFT JOIN employees e ON ${requestEmployeeJoin}
      WHERE fr.id = ?`,
     id
   );
   if (!rec || !REQUEST_SLUGS.includes(rec.slug)) { res.status(404).json({ error: 'Request not found' }); return; }
-  if (rec.created_by === req.user!.id) { res.status(403).json({ error: 'You can’t decide your own request' }); return; }
+  if ((rec.employee_id && rec.employee_user_id === req.user!.id) || (!rec.employee_id && rec.created_by === req.user!.id)) { res.status(403).json({ error: 'You can’t decide your own request' }); return; }
   if (!mayDecide(req, rec.department_id)) { res.status(403).json({ error: 'Not an approver for this request' }); return; }
-  if (rec.status !== 'pending') { res.status(400).json({ error: 'This request is no longer pending' }); return; }
-
-  const { decision, note, override_balance } = parseBody(approvalDecisionSchema, req.body);
-  const data = parse(rec.data);
-
-  // Approving a paid Leave request consumes the employee's fixed leave-day bank. Blocked if it
-  // would go negative, unless the approver explicitly overrides — a rejected decision, or one
-  // where with_pay isn't 'Yes', never touches the balance (see docs on the "simple fixed bank"
-  // design: no accrual math, no carry-over, one-way consumption with no un-approve path).
-  if (decision === 'approved' && rec.slug === 'leave_request' && data.with_pay === 'Yes' && rec.employee_id) {
-    const days = Number(data.days) || 0;
-    if (days > 0) {
-      const remaining = (rec.leave_days_per_year ?? 5) - (rec.leave_days_used ?? 0);
-      if (remaining - days < 0 && !override_balance) {
-        res.status(400).json({ error: `Requested ${days} day(s), only ${remaining} remaining. Approve anyway to override.` });
-        return;
-      }
-      run('UPDATE employees SET leave_days_used = leave_days_used + ? WHERE id = ?', days, rec.employee_id);
+  const infoChange = rec.slug === INFO_CHANGE_SLUG;
+  if (infoChange && !req.user!.permissions.includes('hr.manage')) {
+    res.status(403).json({ error: 'Only HR can decide information-change requests' }); return;
+  }
+  if (rec.status !== 'pending') {
+    // Clash-check (D6): decided or withdrawn on the cloud meanwhile — the first outcome is kept.
+    if (siteDecisionStands()) {
+      recordSiteClash(req, `${rec.form_name} #${id} was already ${rec.status} on the cloud when the main site's decision arrived; ${rec.status} was kept.`);
+      res.json({ ok: true, clash: true, status: rec.status });
+      return;
     }
+    res.status(400).json({ error: 'This request is no longer pending' }); return;
   }
 
-  data.decided_by = req.user!.full_name;
-  data.decided_at = new Date().toISOString().slice(0, 16).replace('T', ' ');
-  if (note) data.decision_note = note;
-  run("UPDATE form_records SET status = ?, data = ?, updated_at = datetime('now') WHERE id = ?", decision, JSON.stringify(data), id);
+  const { decision, note, override_balance } = parseBody(approvalDecisionSchema, req.body);
+  let data = parse(rec.data);
+  const expectedShift = data.current_shift_id;
+  let warnings: string[] = [];
+  if (decision === 'approved') {
+    const fields = queryOne<{ fields: string }>('SELECT fd.fields FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id WHERE fr.id = ?', id)?.fields;
+    data = normalizeRequest(rec.slug, (definitionForRecord(rec)?.fields ?? parse(fields || '[]')) as any, data, Number(rec.employee_id));
+    if (rec.slug === 'leave_request') warnings = leaveWarnings(Number(rec.employee_id), data, id);
+  }
+
+  // Information change: apply to the employee record and record the decision in ONE
+  // transaction, re-checking pending inside it so a double-tap can't apply twice.
+  if (infoChange) {
+    let applied: ReturnType<typeof applyInfoChange> | null = null;
+    db.exec('BEGIN');
+    try {
+      const still = queryOne<{ status: string }>('SELECT status FROM form_records WHERE id = ?', id);
+      if (still?.status !== 'pending') { db.exec('ROLLBACK'); res.status(400).json({ error: 'This request is no longer pending' }); return; }
+      // (A clash with the cloud was caught above, before the transaction.)
+      if (decision === 'approved') {
+        applied = applyInfoChange(data, req.user!.id);
+        data.applied = applied.applied;
+        if (applied.note) data.applied_note = applied.note;
+      }
+      data.decided_by = req.user!.full_name;
+      data.decided_at = now().toISOString().slice(0, 16).replace('T', ' ');
+      if (note) data.decision_note = note;
+      run("UPDATE form_records SET status = ?, data = ?, updated_at = datetime('now') WHERE id = ?", decision, JSON.stringify(data), id);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    if (rec.created_by) {
+      void notifyUser(rec.created_by, {
+        title: `Information change ${decision}`,
+        body: String(data.field ?? rec.form_name) + (note ? ' — ' + note : ''),
+        url: '#/requests', link: {route:'hr-requests',params:{id,kind:'request'}}, tag: 'req-' + id,
+      });
+    }
+    res.json({ ok: true, status: decision, applied: applied?.applied ?? false, applied_note: applied?.note ?? null });
+    return;
+  }
+
+  db.exec('BEGIN');
+  try {
+    if (decision === 'approved' && rec.slug === 'schedule_change') {
+      const date = String(data.work_date);
+      const row = queryOne<{ id: number; period_id: number; shift_id: number | null }>(
+        'SELECT id, period_id, shift_id FROM attendance_records WHERE employee_id = ? AND work_date = ?', rec.employee_id, date);
+      if (!row || date <= new Date().toISOString().slice(0, 10) || row.shift_id !== expectedShift || cutoffIsPaid(row.period_id)
+          || !scheduledLeaveDates(Number(rec.employee_id), [date]).length) {
+        db.exec('ROLLBACK');
+        res.status(409).json({ error: 'The roster changed, the date passed, or payroll was paid. Review the current schedule and file a new request.' }); return;
+      }
+      run("UPDATE attendance_records SET shift_id = ?, updated_at = datetime('now') WHERE id = ?", Number(data.requested_shift_id), row.id);
+      data.current_shift_id = expectedShift;
+    }
+    // Approving a paid Leave request consumes the employee's fixed leave-day bank. Blocked if it
+    // would go negative, unless the approver explicitly overrides — a rejected decision, or one
+    // where with_pay isn't 'Yes', never touches the balance (see docs on the "simple fixed bank"
+    // design: no accrual math, no carry-over, one-way consumption with no un-approve path).
+    if (decision === 'approved' && rec.slug === 'leave_request' && data.with_pay === 'Yes' && rec.employee_id) {
+      const dates = scheduledLeaveDates(rec.employee_id, leaveDates(data));
+      const alreadyCharged = new Set(overlappingLeave(rec.employee_id, dates, id)
+        .filter(r => r.status === 'approved' && r.data.with_pay === 'Yes')
+        .flatMap(r => String(r.data.charged_dates || r.dates.join(',')).split(',')));
+      const chargedDates = dates.filter(d => !alreadyCharged.has(d));
+      const days = chargedDates.length;
+      data.charged_dates = chargedDates.join(','); data.leave_days_charged = days;
+      if (days < dates.length) warnings.push(`${dates.length - days} date(s) are already covered by approved paid leave; they are not deducted twice.`);
+      if (days > 0) {
+        const remaining = (rec.leave_days_per_year ?? 5) - (rec.leave_days_used ?? 0);
+        if (remaining - days < 0 && !override_balance) {
+          // Clash-check (D6): the main site saw enough leave left; the cloud approved other leave
+          // meanwhile. The approval stands and the balance goes below zero, flagged.
+          if (!siteDecisionStands()) {
+            db.exec('ROLLBACK');
+            res.status(400).json({ error: `Requested ${days} day(s), only ${remaining} remaining. Approve anyway to override.` });
+            return;
+          }
+          recordSiteClash(req, `Leave request #${id} was approved at the main site, but on the cloud only ${remaining} day(s) remained for ${days} requested; the balance is now below zero.`);
+        }
+        run('UPDATE employees SET leave_days_used = leave_days_used + ? WHERE id = ?', days, rec.employee_id);
+      }
+    }
+
+    data.decided_by = req.user!.full_name;
+    data.decided_at = now().toISOString().slice(0, 16).replace('T', ' ');
+    if (note) data.decision_note = note;
+    if (warnings.length) data.leave_warnings = warnings.join('\n');
+    run("UPDATE form_records SET status = ?, data = ?, updated_at = datetime('now') WHERE id = ?", decision, JSON.stringify(data), id);
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+  if (decision === 'approved' && rec.slug === 'leave_request') warnings.push(...attachLeave(id).warnings);
   if (rec.created_by) {
     void notifyUser(rec.created_by, {
       title: `Request ${decision}`,
       body: rec.form_name + (note ? ' — ' + note : ''),
       url: '#/requests',
+      link: {route:'hr-requests',params:{id,kind:'request'}},
       tag: 'req-' + id,
     });
   }
-  res.json({ ok: true, status: decision });
+  if (rec.employee_user_id && rec.employee_user_id !== rec.created_by) {
+    void notifyUser(rec.employee_user_id, { title: `Request ${decision}`, body: rec.form_name + (note ? ' — ' + note : ''), url:'#/requests',link:{route:'hr-requests',params:{id,kind:'request'}},tag:'req-'+id });
+  }
+  if (!req.user!.permissions.includes('hr.manage')) {
+    void notifyPermission('hr.manage', { title: `Department request ${decision}`, body: `${req.user!.full_name} — ${rec.form_name}${note ? ' — ' + note : ''}`, url: '#/approvals', link: { route: 'hr-approvals', params:{id,kind:'request',tab:'recent'} }, tag: 'hr-decision-' + id });
+  }
+  res.json({ ok: true, status: decision, warnings, leave_days_charged: data.leave_days_charged });
 });
 
 // POST /api/me/approvals/time-corrections/:id/decide — { decision, note? }
-router.post('/approvals/time-corrections/:id/decide', (req, res) => {
+router.post('/approvals/time-corrections/:id/decide', syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const tc = queryOne<TimeCorrection & { department_id: number | null }>(
     `SELECT tc.*, e.department_id FROM time_corrections tc
@@ -298,41 +584,61 @@ router.post('/approvals/time-corrections/:id/decide', (req, res) => {
   if (!tc) { res.status(404).json({ error: 'Correction not found' }); return; }
   if (tc.user_id === req.user!.id) { res.status(403).json({ error: 'You can’t decide your own correction' }); return; }
   if (!mayDecide(req, tc.department_id ?? null)) { res.status(403).json({ error: 'Not an approver for this correction' }); return; }
-  if (tc.status !== 'pending') { res.status(400).json({ error: 'This correction is no longer pending' }); return; }
+  if (tc.status !== 'pending') {
+    // Clash-check (D6): decided or withdrawn on the cloud meanwhile — the first outcome is kept.
+    if (siteDecisionStands()) {
+      recordSiteClash(req, `Time fix #${id} (${tc.work_date}) was already ${tc.status} on the cloud when the main site's decision arrived; ${tc.status} was kept.`);
+      res.json({ ok: true, clash: true, status: tc.status, applied: false });
+      return;
+    }
+    res.status(400).json({ error: 'This correction is no longer pending' }); return;
+  }
 
   const { decision, note } = parseBody(approvalDecisionSchema, req.body);
-  run(
-    "UPDATE time_corrections SET status = ?, decided_by = ?, decided_at = datetime('now'), decision_note = ? WHERE id = ?",
-    decision, req.user!.id, note || null, id
-  );
-  let applied = false;
-  if (decision === 'approved') {
-    const period = queryOne<{ id: number }>(
-      'SELECT id FROM attendance_periods WHERE ? BETWEEN start_date AND end_date ORDER BY id DESC LIMIT 1',
-      tc.work_date
-    );
-    if (period) {
-      run(
-        `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, notes)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(period_id, employee_id, work_date) DO UPDATE SET
-           time_in  = COALESCE(excluded.time_in, attendance_records.time_in),
-           time_out = COALESCE(excluded.time_out, attendance_records.time_out),
-           notes    = excluded.notes,
-           updated_at = datetime('now')`,
-        period.id, tc.employee_id, tc.work_date, tc.requested_in || null, tc.requested_out || null,
-        'Time correction approved' + (note ? ' — ' + note : '')
-      );
-      applied = true;
-    }
+  const correctionPeriod = queryOne<{ id: number }>('SELECT id FROM attendance_periods WHERE ? BETWEEN start_date AND end_date ORDER BY id DESC LIMIT 1', tc.work_date);
+  if (decision === 'approved' && correctionPeriod && cutoffIsPaid(correctionPeriod.id)) {
+    res.status(423).json({ error: 'This cutoff is locked after payment. Payroll must unmark its paid payslips before an attendance correction can be applied.' }); return;
   }
+  let applied = false;
+  db.exec('BEGIN');
+  try {
+    run(
+      "UPDATE time_corrections SET status = ?, decided_by = ?, decided_at = datetime('now'), decision_note = ? WHERE id = ?",
+      decision, req.user!.id, note || null, id
+    );
+    if (decision === 'approved') {
+      const period = queryOne<{ id: number }>(
+        'SELECT id FROM attendance_periods WHERE ? BETWEEN start_date AND end_date ORDER BY id DESC LIMIT 1',
+        tc.work_date
+      );
+      if (period) {
+        run(
+          `INSERT INTO attendance_records (period_id, employee_id, work_date, time_in, time_out, notes)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(period_id, employee_id, work_date) DO UPDATE SET
+             time_in  = COALESCE(excluded.time_in, attendance_records.time_in),
+             time_out = COALESCE(excluded.time_out, attendance_records.time_out),
+             notes    = excluded.notes,
+             updated_at = datetime('now')`,
+          period.id, tc.employee_id, tc.work_date, tc.requested_in || null, tc.requested_out || null,
+          'Time correction approved' + (note ? ' — ' + note : '')
+        );
+        applied = true;
+      }
+    }
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
   if (tc.user_id) {
     void notifyUser(tc.user_id, {
       title: `Time fix ${decision}`,
       body: tc.work_date + (note ? ' — ' + note : ''),
       url: '#/time-fix',
+      link: {route:'hr-requests',params:{id,kind:'correction'}},
       tag: 'tc-' + id,
     });
+  }
+  if (!req.user!.permissions.includes('hr.manage')) {
+    void notifyPermission('hr.manage', { title: `Department time correction ${decision}`, body: `${req.user!.full_name} — ${tc.work_date}${note ? ' — ' + note : ''}`, url: '#/approvals', link: { route: 'hr-approvals', params:{id,kind:'correction',tab:'recent'} }, tag: 'hr-correction-' + id });
   }
   res.json({ ok: true, status: decision, applied });
 });
@@ -442,9 +748,10 @@ function relDays(dateStr: string | null | undefined): string {
 router.get('/today', (req, res) => {
   const hour = new Date().getHours();
   const partOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
-  const firstName = (req.user!.full_name || req.user!.username || '').trim().split(/\s+/)[0];
   const stack: StackItem[] = [];
   const emp = me(req.user!.id);
+  // The employee's self-chosen preferred name wins; otherwise the account name's first word.
+  const firstName = emp?.preferred_name || (req.user!.full_name || req.user!.username || '').trim().split(/\s+/)[0];
 
   let clock: null | { linked: boolean; clocked_in: boolean; since: string | null; hours_today: number;
     shift: { name: string | null; start_time: string; end_time: string } | null } = null;
@@ -566,9 +873,9 @@ router.get('/today', (req, res) => {
     const pendReq = queryAll<{ department_id: number | null }>(
       `SELECT e.department_id
        FROM form_records fr JOIN form_definitions fd ON fd.id = fr.form_def_id
-       LEFT JOIN employees e ON e.user_id = fr.created_by
+       LEFT JOIN employees e ON ${requestEmployeeJoin}
        WHERE fr.status = 'pending' AND fd.slug IN (${REQUEST_SLUGS.map(() => '?').join(',')})
-         AND (fr.created_by IS NULL OR fr.created_by != ?)`,
+         AND CASE WHEN e.id IS NOT NULL THEN COALESCE(e.user_id, 0) ELSE COALESCE(fr.created_by, 0) END != ?`,
       ...REQUEST_SLUGS, req.user!.id
     ).filter((r) => inScope(r.department_id)).length;
     const pendTc = queryAll<{ department_id: number | null }>(

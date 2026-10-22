@@ -84,7 +84,7 @@ describe('rbac', () => {
     const res = await ctx.api
       .post('/api/users')
       .set('Authorization', `Bearer ${emp.token}`)
-      .send({ username: 'sneaky', full_name: 'X', password: 'secret1' });
+      .send({ username: 'sneaky', full_name: 'X', password: 'secret123' });
     expect(res.status).toBe(403);
   });
 
@@ -123,14 +123,14 @@ describe('profile', () => {
 describe('change password', () => {
   it('lets a user change their own password and rejects the old one', async () => {
     const adminToken = await login(ctx.api);
-    const emp = await createEmployee(ctx.api, adminToken, { username: 'pwuser', password: 'secret1' });
+    const emp = await createEmployee(ctx.api, adminToken, { username: 'pwuser', password: 'secret123' });
     const change = await ctx.api
       .post('/api/auth/change-password')
       .set('Authorization', `Bearer ${emp.token}`)
-      .send({ current_password: 'secret1', new_password: 'brandnew2' });
+      .send({ current_password: 'secret123', new_password: 'brandnew2' });
     expect(change.status).toBe(200);
 
-    const oldLogin = await ctx.api.post('/api/auth/login').send({ username: 'pwuser', password: 'secret1' });
+    const oldLogin = await ctx.api.post('/api/auth/login').send({ username: 'pwuser', password: 'secret123' });
     expect(oldLogin.status).toBe(401);
     const newLogin = await ctx.api.post('/api/auth/login').send({ username: 'pwuser', password: 'brandnew2' });
     expect(newLogin.status).toBe(200);

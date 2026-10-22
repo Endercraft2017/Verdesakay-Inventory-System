@@ -6,6 +6,7 @@ import { queryOne, run } from '../shared/db';
 import { requireAuth } from '../shared/auth';
 import { parseBody, pushSubscriptionSchema, pushUnsubscribeSchema } from '../shared/validation';
 import { vapidPublicKey, notifyUser } from '../shared/push';
+import { deviceIdOf } from '../shared/device';
 
 const router = Router();
 router.use(requireAuth);
@@ -16,19 +17,26 @@ router.get('/key', (_req, res) => {
 });
 
 // POST /api/push/subscribe — upsert this device's PushSubscription for the caller.
+// Refused on a borrowed-phone session: the owner's phone must not start receiving this
+// person's notifications. The device ID lets sign-out drop it again (auth.routes logout).
 router.post('/subscribe', (req, res) => {
+  if (req.authSession?.shared) {
+    res.status(403).json({ error: 'Notifications stay off when you sign in on a borrowed phone.' });
+    return;
+  }
   const sub = parseBody(pushSubscriptionSchema, req.body);
   run(
-    `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, device_id)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(endpoint) DO UPDATE SET
        user_id = excluded.user_id, p256dh = excluded.p256dh,
-       auth = excluded.auth, user_agent = excluded.user_agent`,
+       auth = excluded.auth, user_agent = excluded.user_agent, device_id = excluded.device_id`,
     req.user!.id,
     sub.endpoint,
     sub.keys.p256dh,
     sub.keys.auth,
-    (req.get('user-agent') || '').slice(0, 300)
+    (req.get('user-agent') || '').slice(0, 300),
+    deviceIdOf(req)
   );
   res.status(201).json({ ok: true });
 });
@@ -40,22 +48,29 @@ router.post('/unsubscribe', (req, res) => {
   res.json({ ok: true });
 });
 
-// GET /api/push/status — does the caller have any device registered?
+// GET /api/push/status — does the caller have any device registered? With ?endpoint=, also
+// whether THAT browser subscription is registered to the caller (a shared phone's browser
+// subscription may belong to whoever enabled it there, not to the person now signed in).
 router.get('/status', (req, res) => {
   const n = queryOne<{ n: number }>(
     'SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ?',
     req.user!.id
   )?.n ?? 0;
-  res.json({ subscriptions: n });
+  const endpoint = typeof req.query.endpoint === 'string' ? req.query.endpoint : '';
+  const mine = endpoint
+    ? !!queryOne('SELECT 1 AS x FROM push_subscriptions WHERE user_id = ? AND endpoint = ?', req.user!.id, endpoint)
+    : undefined;
+  res.json({ subscriptions: n, this_device: mine, shared_session: !!req.authSession?.shared });
 });
 
 // POST /api/push/test — send a test notification to the caller's devices.
 router.post('/test', async (req, res) => {
   await notifyUser(req.user!.id, {
-    title: 'Verdesakay Warehouse',
+    title: 'Otom Warehouse',
     body: 'Notifications are working. 🎉',
     url: '#/home',
     tag: 'push-test',
+    record: false,
   });
   res.json({ ok: true });
 });

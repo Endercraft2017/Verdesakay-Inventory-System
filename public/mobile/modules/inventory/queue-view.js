@@ -7,9 +7,16 @@ MApp.route('queue', function (view) {
   function active() { return location.hash.replace(/^#\/?/, '').split('?')[0] === 'queue'; }
   function draw() {
     if (!active()) { if (off) off(); return; } // navigated away — stop listening
-    mQueue.all().then(function (ops) {
+    Promise.all([mQueue.all(), mQueue.foreignCount().catch(function () { return 0; })]).then(function (r) {
+      var ops = r[0], foreign = r[1];
       if (!active()) { if (off) off(); return; }
       view.innerHTML = '';
+      // Another account's queued actions (shared phone) are never sent as you — see queue.js.
+      if (foreign) {
+        view.appendChild(mEl('<div class="m-hint">' + foreign + ' unsent action' + (foreign === 1 ? '' : 's') +
+          ' on this phone belong' + (foreign === 1 ? 's' : '') + ' to another account. ' +
+          (foreign === 1 ? 'It sends' : 'They send') + ' when that person signs in here.</div>'));
+      }
       if (!ops.length) {
         view.appendChild(mEl('<div class="m-empty">✅ Everything is synced.</div>'));
         return;

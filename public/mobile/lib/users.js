@@ -4,7 +4,8 @@
   var cache = null;
   var SUPER_ROLES = ['admin', 'admin_staff'];
 
-  function load() {
+  function load(force) {
+    if (force === true) cache = null;
     if (cache) return Promise.resolve(cache);
     return API.get('/users').then(function (rows) {
       cache = (rows || []).filter(function (u) { return u.id !== (MApp.getMe() || {}).id; });

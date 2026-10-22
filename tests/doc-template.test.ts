@@ -27,6 +27,21 @@ function loadRenderer(): {
 const { renderTemplate, ORDER_VARIABLES } = loadRenderer();
 
 describe('renderTemplate', () => {
+  it('prints boolean values as Yes/No while preserving condition and formula semantics', () => {
+    expect(renderTemplate('{{checked}} / {{unchecked}} / {{text}}', {checked:true,unchecked:false,text:'false'})).toBe('Yes / No / false');
+    expect(renderTemplate('{{#if checked}}Confirmed{{/if}}{{#if unchecked}}Wrong{{/if}}', {checked:true,unchecked:false})).toBe('Confirmed');
+    expect(renderTemplate('{{= checked + unchecked}}', {checked:true,unchecked:false})).toBe('1');
+  });
+
+  it('formats explicit money with two decimals and a currency code without formatting quantities', () => {
+    const html=renderTemplate('{{qty}} × {{= money(price, "PHP")}} = {{= money(total, "PHP")}}',{qty:2,price:99,total:198}).replaceAll('\u00a0',' ');
+    expect(html).toBe('2 × PHP 99.00 = PHP 198.00');
+    expect(renderTemplate('{{= money(value, "USD")}}',{value:0}).replaceAll('\u00a0',' ')).toBe('USD 0.00');
+    expect(renderTemplate('{{= money(value, "PHP")}}',{})).toBe('');
+    expect(renderTemplate('{{= money(value, "PHP")}}',{value:'not an amount'})).toBe('');
+    expect(renderTemplate('{{= money(value, "bad currency")}}',{value:1})).toBe('');
+  });
+
   it('interpolates dotted paths', () => {
     expect(renderTemplate('No: {{order.no}}', { order: { no: 'SO-1' } })).toBe('No: SO-1');
   });

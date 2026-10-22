@@ -8,10 +8,10 @@ logout, "who am I", and a user's own password/display-name changes. Mounted at `
 
 | Method & path | Auth | Schema | DB operations | Success response | Error cases |
 |---|---|---|---|---|---|
-| `POST /login` | 🔓 none | `loginSchema` | `SELECT * FROM users WHERE username = ?` (lower-cased); on success `createSession(user.id)` inserts into `sessions`; conditionally `SELECT name FROM departments WHERE id = ?` | `200 {token, user:{id, username, full_name, role, department_id, department_name}}` | `401 {error:'Invalid username or password'}` if user missing, `active !== 1`, or `bcrypt.compareSync` fails |
-| `POST /logout` | 🔑 `requireAuth` | — | `destroySession(req.token)` → `DELETE FROM sessions WHERE token = ?` (only if `req.token` is set) | `200 {ok: true}` | — (401 via `requireAuth` if unauthenticated) |
+| `POST /login` | 🔓 none | `loginSchema` | `SELECT * FROM users WHERE username = ?` (lower-cased); on success `createSession(user.id, { req, shared })` inserts into `sessions` with device ID / IP / user agent (`shared: true` ⇒ borrowed-phone session, 4 h / 30 min idle); conditionally `SELECT name FROM departments WHERE id = ?` | `200 {token, user:{id, username, full_name, role, department_id, department_name, permissions, modules}, session:{shared}}` | `401 {error:'Invalid username or password'}` if user missing, `active !== 1`, or `bcrypt.compareSync` fails |
+| `POST /logout` | 🔑 `requireAuth` | — | `destroySession(req.token)` → ends the row (`ended_at`, `end_reason = 'logout'`; kept as history); deletes the user's `push_subscriptions` whose `device_id` is this request's `X-Device-Id` | `200 {ok: true}` | — (401 via `requireAuth` if unauthenticated) |
 | `GET /me` | 🔑 `requireAuth` | — | none (reads `req.user`, already resolved by `requireAuth`/`userFromToken`) | `200 {user: req.user}` (the full `AuthUser`, including `.permissions`) | 401 if unauthenticated |
-| `POST /change-password` | 🔑 `requireAuth` | `changePasswordSchema` | `SELECT * FROM users WHERE id = ?`; verifies `current_password` via `bcrypt.compareSync`; `UPDATE users SET password_hash = ?`; `DELETE FROM sessions WHERE user_id = ? AND token != ?` (drops every other session, keeps the current one) | `200 {ok: true}` | `400 {error:'Current password is incorrect'}` if the check fails; 401 if unauthenticated |
+| `POST /change-password` | 🔑 `requireAuth` | `changePasswordSchema` | `SELECT * FROM users WHERE id = ?`; verifies `current_password` via `bcrypt.compareSync`; `UPDATE users SET password_hash = ?`; `endUserSessions(user, 'password', currentToken)` (ends every other session, keeps the current one) | `200 {ok: true}` | `400 {error:'Current password is incorrect'}` if the check fails; 401 if unauthenticated |
 | `PUT /profile` | 🔑 `requireAuth` | `updateProfileSchema` | `UPDATE users SET full_name = ? WHERE id = ?` | `200 {ok: true, full_name}` | 401 if unauthenticated; 400 via zod if `full_name` invalid |
 
 ### Schemas (from `src/shared/validation.ts`)
@@ -26,7 +26,8 @@ failure — caught by the central error handler in `app.ts`, not handled inline 
 - `express` — `Router`.
 - `bcryptjs` — `bcrypt.compareSync` (login, change-password) and `bcrypt.hashSync` (change-password).
 - `../db` — `queryOne`, `run`.
-- `../auth` — `createSession`, `destroySession`, `requireAuth`.
+- `../auth` — `createSession`, `destroySession`, `requireAuth`, `endUserSessions`, `endSessionBySid`, `listUserSessions`.
+- Session routes: `GET /sessions` (`?history=1` adds ended ones; never returns tokens — `id` is the public `sid`), `POST /sessions/:sid/revoke` (400 for the current session, 404 if not yours / already ended), `POST /sessions/revoke-others`.
 - `../validation` — `parseBody`, `loginSchema`, `changePasswordSchema`, `updateProfileSchema`.
 - `../types` — `UserRow` (typing the row fetched from `users`).
 

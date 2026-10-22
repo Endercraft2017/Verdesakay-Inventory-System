@@ -14,23 +14,29 @@ one `default` tenant, exactly as before.
   tenant-facing request code.
 - Uploaded files: `UPLOAD_DIR` for `default`; `UPLOAD_DIR/<slug>/` per tenant (item images,
   form files, 201-file documents, AI reports — all resolved through `db.uploadDir()`).
-  `tenant:purge` deletes the folder.
+  `tenant:purge` deletes the folder. With a file bucket (`FILES_S3_*`, below) the bucket holds
+  them under `files/<same path>` (encrypted) in place of the database copies, and `UPLOAD_DIR`
+  is a cache; purge deletes the bucket copies too. See `src/shared/file-store.ts` and
+  [DEPLOY-RAILWAY.md](DEPLOY-RAILWAY.md) Part 6.
 
 ## Environment
 
 | Var | Purpose | Default |
 |---|---|---|
-| `APP_DOMAIN` | Root domain for tenant sub-domains, e.g. `verdesakay.app`. **Empty ⇒ single-tenant** (host is ignored; only the `default` tenant). | *(empty)* |
+| `APP_DOMAIN` | Root domain for tenant sub-domains, e.g. `app.afkcube.com`. **Empty ⇒ single-tenant** (host is ignored; only the `default` tenant). | *(empty)* |
 | `PLATFORM_DB_PATH` | The control-plane DB file. | `<root>/db/platform.db` |
 | `DATA_DIR` | Where non-`default` tenant DB files live. | `<root>/db/tenants` |
 | `DB_PATH` | The `default` tenant's DB file. | `<root>/db/data.db` |
-| `UPLOAD_DIR` | Uploaded files. | `<root>/uploads` |
+| `UPLOAD_DIR` | Uploaded files (a cache when a file bucket is set). | `<root>/uploads` |
+| `FILES_S3_FROM` | Store uploads in the bucket of this off-site backup target (e.g. `railway` ⇒ `BACKUP_S3_RAILWAY_*`). Or set `FILES_S3_BUCKET` / `_ENDPOINT` / `_KEY_ID` / `_SECRET` (+ `_REGION`, `_PATH_STYLE`). The bucket replaces the in-database upload copies. | *(unset: disk + database copies)* |
+| `FILES_KEY` | Encrypts the bucket copies. **Required with a file bucket; lose it and they're unreadable.** | `BACKUP_KEY` |
+| `FILES_S3_PREFIX` / `FILES_CACHE_DAYS` | Key prefix in the bucket / drop local copies unused this many days (`0` keeps all). Punch photos always stay on disk. | `files` / `7` |
 | `SIGNUPS_OPEN` | `"true"` makes `POST /api/signup` live (self-serve tenant creation). Anything else ⇒ 404; you provision manually. | *(off)* |
 | `PLATFORM_CONSOLE` | `"true"` mounts the owner console at `/_platform`. Anything else ⇒ the whole path 404s. | *(off)* |
 | `PLATFORM_HOST` | Dedicated console host, e.g. `admin.app.example.com`. When set, `/_platform` answers **only** there and every other path on that host redirects to `/_platform/` (no tenant app is served on it). | *(unset: apex/default host)* |
 | `TZ` | Office time zone, e.g. `Asia/Manila`. Attendance/payroll dates and kiosk rules use server-local time (Node + SQLite `'localtime'`), so it must be set **before the process starts**. Required behind a proxy: the server refuses to start without it. | *(OS time zone)* |
 | `BEHIND_PROXY` | `"true"` when a TLS-terminating proxy fronts the app: serve plain HTTP on `PORT`, trust `X-Forwarded-*`. Auto-on when `RAILWAY_ENVIRONMENT` is set. See [DEPLOY-RAILWAY.md](DEPLOY-RAILWAY.md). | *(off)* |
-| `PLATFORM_ADMIN_USERNAME` / `PLATFORM_ADMIN_PASSWORD` | Bootstrap the first console operator on boot (only when there are none yet). Or use `npm run platform:user`. | *(unset)* |
+| `PLATFORM_ADMIN_USERNAME` / `PLATFORM_ADMIN_PASSWORD` | Bootstrap the first console operator on boot (only when there are none yet). Or use `npm run platform:user`. An existing operator's password is left alone unless `PLATFORM_ADMIN_RESET=true` (forgotten-password recovery; also ends their sessions). Operators change their own password in the console. | *(unset)* |
 | `PLATFORM_ADMIN_TOKEN` | Optional shared secret — when set, every `/_platform/api` request must also send `X-Platform-Token: <token>`. | *(unset)* |
 | `APP_SECRET` / `MAIL_SECRET_KEY` | AES key for secrets at rest (SMTP password, etc.). **Set this in SaaS mode** so tenant DB files aren't self-decrypting. | auto-generated per DB |
 
@@ -166,6 +172,7 @@ Automatic (src/shared/backup.ts + src/platform/backups.ts). Nothing to set up fo
 | What | When | Where (under `BACKUP_DIR`) | Kept |
 |---|---|---|---|
 | Every tenant DB (`default` = data.db) + `platform.db` (`_platform`) | Daily: at boot, then the first hourly check after midnight | `<name>/daily/<name>-YYYY-MM-DD.db` | Newest `BACKUP_KEEP_DAILY` (14) + the last one of each month for `BACKUP_KEEP_MONTHLY` (12) months |
+| Same | Hourly, when the DB changed since the last one (also copied off-site) | `<name>/hourly/<name>-YYYY-MM-DD-HH.db` | Newest `BACKUP_KEEP_HOURLY` (48); `0` turns them off |
 | Same | Right before a schema migration | `<name>/pre-migrate/` | `BACKUP_KEEP_PREMIGRATE` (10) per DB |
 | Same | `npm run backup` (manual) | `<name>/manual/` | 20 per DB |
 | `UPLOAD_DIR` (images, attachments, photos) | With each daily/manual run | `uploads/` | Additive mirror; files deleted in the app are **not** deleted here, **except kiosk punch photos** (`kiosk-punches/`): when the app's photo retention deletes one, the backup copy goes too, locally and off-site, so employee photos never outlive the retention policy |
@@ -206,3 +213,73 @@ older-schema backup is fine: it's migrated (and snapshotted again) when the serv
 Uploads are restored by copying files back from `BACKUP_DIR/uploads/`.
 
 Test a restore now and then. A backup you've never restored from hasn't been proven to work.
+
+### Owner-managed subscriptions and monthly PHP quotes
+
+**New tenant** asks for company name and initial admin credentials; the URL slug is
+derived automatically. New owner-created tenants start without optional modules;
+configure their subscription afterward in the dedicated editor. Choose a bundle or
+individual modules, active login seats, and monthly PHP rates. Required module
+dependencies are included and separately priced in individual-module mode.
+
+Monthly quote = bundle/module prices + allocated login seats × seat price. Blank
+rates mean unset; zero explicitly means free. These are negotiated owner quotes,
+not provider payments or a public pricing catalog. Blank seat allowance retains the
+resource plan's active-account limit; existing unlimited tenants stay unlimited.
+Employee records are always unlimited and do not consume login seats. Creating or
+reactivating a login account consumes a seat; disabling one releases capacity.
+Reducing seats preserves all accounts and employee records but blocks additions and
+reactivations while capacity is exceeded. Existing employee-based quote JSON keeps
+its modules; its old employee allowance/rate is not converted into a seat charge.
+The owner must enter the new seat pricing before a monthly total is available.
+
+`PUT /_platform/api/tenants/:slug/subscription` validates and atomically saves the
+subscription and matching entitlements. Once configured, use this editor/API to
+change bundles/modules rather than the legacy plan/module setters. Other resource
+caps continue to follow the resource plan; individual modules retain that plan.
+
+### Tenant analytics and support
+
+Open a tenant, then **Analytics & support**. Owner-only endpoints expose aggregate
+usage/capacity, recursive upload storage and folder breakdown, database size, AI
+cost estimates, active users (7/30 days), successful/failed logins, daily activity,
+module activity, onboarding, sync heartbeats/conflicts, local backup metadata,
+response-time mean/p95, alerts, usage snapshots, subscription history, customer
+contact details, internal notes, support issues and JSON exports.
+
+Authenticated API activity is an engagement proxy, not time spent in the UI.
+Telemetry excludes health checks, sync transport, and anonymous reports; no request
+bodies, credentials, IP addresses or employee financial details are stored. Mobile
+usage is identified by the authenticated client's X-Client header. Detailed events
+are retained for 90 days; daily usage snapshots for up to a year, with the latest
+90 returned. An hourly cloud job and owner analytics views refresh today's snapshot.
+Historical trends begin at deployment and are not reconstructed from current data.
+
+Thresholds are configurable per tenant: capacity percentage, inactivity days, stale
+device hours, and an optional estimated PHP cost per AI request. Alerts are displayed
+in the console; automatic customer emails and delivery tracking are not implemented.
+Costs based on request counts are estimates, not token-based provider invoices.
+Server-visible sync queues do not establish the state of unsent queues on devices.
+Local backup timestamps do not prove remote/volume backups or a verified restore.
+Unavailable metrics are shown as unknown. Payment history, renewals and collected
+revenue remain unavailable until a payment provider and verified webhooks exist.
+
+### Public customer website
+
+With `TENANT_PATH_HOST=otom.afkcube.com`, the apex serves the public feature/subscription
+website on desktop and mobile. `/login` asks for the company's URL name and opens
+its tenant; `/signup` opens the new-customer form. `/site/*` holds public assets.
+Tenant app paths and the owner console remain separate. Keep
+`DEFAULT_TENANT_REDIRECT=verdesakay`: it still retires old unprefixed company APIs
+and keeps the original database recovery-only; it no longer redirects the apex
+website. Root mobile aliases continue to direct existing users to Verdesakay.
+
+Self-service signup requires `SIGNUPS_OPEN=true`. It provisions a **14-day trial**,
+with selected modules (dependencies included), 1–5 active login seats, unlimited
+employee records, and no payment collected. Trial expiry makes the tenant read-only.
+Paid checkout and larger self-service seat purchases await payment integration.
+When signup is disabled, the form states registration is not open and cannot submit.
+
+Deploy using the regular `npm start` command after the completed Verdesakay cutover;
+do not rerun the one-time adoption launcher. Preserve existing data variables,
+secrets, volume, tenant routing variables and migrated Verdesakay database/uploads.

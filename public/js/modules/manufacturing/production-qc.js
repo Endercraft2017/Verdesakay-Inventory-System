@@ -22,16 +22,19 @@
 // panel to a bulk pass/fail scoped to the checked units.
 async function inspectModal(jobOrderId, onDone) {
   const canConfigQc = App.hasPermission('qc.configure');
-  const canAdjust = App.hasPermission('inventory.adjust');
   const hasQc = App.hasPermission('production.inspect_qc');
   const hasQa = App.hasPermission('production.inspect_qa');
-  const canInspect = canAdjust || hasQc || hasQa;
+  const canInspect = hasQc || hasQa;
 
-  let jo = await API.get('/job-orders/' + jobOrderId);
+  let jo;
+  try { jo = await API.get('/job-orders/' + jobOrderId); }
+  catch (e) { UI.toast(e.message || 'Unable to load the job order', 'error'); return; }
   let units = [];
   let qcLog = [];
   let repairs = [];
+  let loadError = null;
   let activeUnitId = null;
+  let selectedStage = hasQc ? 1 : 2;
   const checkedIds = new Set();
   // The checklist library + this product's own QC/QA links (raw ids, not the resolved
   // fallback-to-default object jo.qc_checklist_qc/qa carries) — only needed to run the
@@ -43,8 +46,13 @@ async function inspectModal(jobOrderId, onDone) {
   const host = () => m.overlay ? m.overlay.querySelector('#qi-body') : null;
 
   async function refresh() {
-    try { units = await API.get('/job-orders/' + jobOrderId + '/units'); } catch { units = []; }
-    try { qcLog = await API.get('/job-orders/' + jobOrderId + '/qc'); } catch { qcLog = []; }
+    loadError = null;
+    try {
+      [units, qcLog] = await Promise.all([
+        API.get('/job-orders/' + jobOrderId + '/units'),
+        API.get('/job-orders/' + jobOrderId + '/qc'),
+      ]);
+    } catch (e) { loadError = e; return; }
     try { repairs = await API.get('/production/repairs?job_order=' + jobOrderId); } catch { repairs = []; }
     if (canConfigQc) {
       try { allChecklists = await API.get('/qc/checklists'); } catch { allChecklists = []; }
@@ -61,7 +69,6 @@ async function inspectModal(jobOrderId, onDone) {
   // Pass/Fail buttons up front instead of letting the account hit a 403 after filling the
   // form — same "guide the user" reasoning as the rest of this screen.
   function passAllowed(firstP, finalP) {
-    if (canAdjust) return true;
     const combinedPass = (jo.qc_stages || 1) <= 1;
     return combinedPass ? (hasQc || hasQa) : ((!firstP || hasQc) && (!finalP || hasQa));
   }
@@ -72,8 +79,8 @@ async function inspectModal(jobOrderId, onDone) {
 
   function checklistFor(unitSubset) {
     const totalStages = Math.max(1, jo.qc_stages || 1);
-    const firstP = unitSubset.some((u) => (u.stage || 0) + 1 === 1);
-    const finalP = unitSubset.some((u) => (u.stage || 0) + 1 >= totalStages);
+    const firstP = totalStages <= 1 || selectedStage === 1;
+    const finalP = totalStages <= 1 || selectedStage === 2;
     const items = [
       ...(firstP && jo.qc_checklist_qc ? jo.qc_checklist_qc.items.map((it) => ({ ...it, _from: 'QC' })) : []),
       ...(finalP && jo.qc_checklist_qa ? jo.qc_checklist_qa.items.map((it) => ({ ...it, _from: 'QA' })) : []),
@@ -92,6 +99,7 @@ async function inspectModal(jobOrderId, onDone) {
   function checklistButtonHTML(stage) {
     if (!canConfigQc) return '';
     const label = stage === 1 ? 'QC' : 'QA';
+    if (jo.released_at) return `<span class="muted" style="font-size:11px" title="This job order uses the checklist captured when its kit was released">${label} checklist frozen at release</span>`;
     const currentId = product ? (stage === 1 ? product.qc_checklist_qc_id : product.qc_checklist_qa_id) : null;
     const current = currentId ? allChecklists.find((c) => String(c.id) === String(currentId)) : null;
     return `<button type="button" class="btn secondary small qi-assign-btn" data-stage="${stage}" title="Assign this product's ${label} checklist">
@@ -155,23 +163,37 @@ async function inspectModal(jobOrderId, onDone) {
     searchEl.focus();
   }
 
-  function inspectFormHTML(qcCl, qcClNames, allowed, passLabel) {
+  function inspectFormHTML(qcCl, qcClNames, allowed, passLabel, finalPass) {
+    const labels = qcCl.map((it) => it.label.trim().toLowerCase());
+    if (new Set(labels).size !== labels.length) {
+      return UI.emptyState({ icon: 'alert', title: 'Checklist configuration needs attention',
+        hint: 'QC and QA contain the same check label. Ask a checklist manager to give each check a distinct label before inspecting this job.' });
+    }
     return `
       ${qcCl.length ? `
         <div style="margin-top:10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);padding:10px">
           <label style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">QC/QA checklist${qcClNames.length ? ` — ${qcClNames.map(UI.esc).join(' + ')}` : ''}</label>
           <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
             ${qcCl.map((it, i) => `
-              <label class="check"><input type="checkbox" class="qi-chk-item" data-i="${i}" data-label="${UI.esc(it.label)}" ${allowed ? '' : 'disabled'} />
-                ${UI.esc(it.label)}${it.required ? ' <span style="color:var(--danger,#dc2626)">*</span>' : ''}
-                ${qcClNames.length > 1 ? `<span class="muted" style="font-size:11px">(${it._from})</span>` : ''}</label>`).join('')}
+              <div class="qi-check-row" data-i="${i}" style="border-bottom:1px solid var(--border);padding:6px 0">
+                <label>${UI.esc(it.label)}${it.required ? ' <span style="color:var(--danger,#dc2626)">*</span>' : ''}
+                  ${qcClNames.length > 1 ? `<span class="muted" style="font-size:11px">(${it._from})</span>` : ''}</label>
+                ${it.hint ? `<div class="muted" style="font-size:11px">${UI.esc(it.hint)}</div>` : ''}
+                <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+                  <select class="qi-check-status" aria-label="${UI.esc(it.label)} result" ${allowed ? '' : 'disabled'}><option value="">Choose result</option><option value="pass">Pass</option><option value="issue">Issue</option><option value="na">N/A</option></select>
+                  ${it.measure ? `<input class="qi-check-value" aria-label="${UI.esc(it.label)} reading (${UI.esc(it.measure)})" placeholder="Reading (${UI.esc(it.measure)})" maxlength="60" ${allowed ? '' : 'disabled'} />` : ''}
+                  <input class="qi-check-note" aria-label="${UI.esc(it.label)} note" placeholder="Note (optional)" maxlength="500" ${allowed ? '' : 'disabled'} />
+                </div>
+              </div>`).join('')}
           </div>
         </div>` : ''}
       <div style="margin-top:8px">
         <div style="margin-bottom:8px"><label>Identifier (optional, applies to passed units)</label><input id="qi-ident" ${allowed ? '' : 'disabled'} placeholder="e.g. chassis / serial no." /></div>
         <div style="margin-bottom:8px"><label>Remarks</label><input id="qi-remarks" ${allowed ? '' : 'disabled'} placeholder="Notes / reason if failing" /></div>
         <div><label>On fail</label>
-          <select id="qi-disp" ${allowed ? '' : 'disabled'}>${DISPOSITIONS.map((d) => `<option value="${d}">${d[0].toUpperCase() + d.slice(1)}</option>`).join('')}</select></div>
+          <select id="qi-disp" ${allowed ? '' : 'disabled'}>${[...DISPOSITIONS, ...(finalPass ? ['hold'] : [])].map((d) => `<option value="${d}">${d === 'hold' ? 'Hold for QA review' : d[0].toUpperCase() + d.slice(1)}</option>`).join('')}</select></div>
+        <div style="margin-top:8px"><label>Evidence photo(s) — required to fail</label>
+          <input type="file" id="qi-photos" accept="image/*" multiple ${allowed ? '' : 'disabled'} /></div>
       </div>
       ${allowed ? `
         <div style="display:flex;gap:8px;margin-top:10px">
@@ -188,22 +210,40 @@ async function inspectModal(jobOrderId, onDone) {
       const remarks = (el.querySelector('#qi-remarks').value || '').trim() || undefined;
       const disposition = result === 'fail' ? (el.querySelector('#qi-disp') || {}).value : undefined;
       if (result === 'fail' && !remarks) { UI.toast('Add a remark when failing units', 'error'); return; }
+      const photos = [...((el.querySelector('#qi-photos') || {}).files || [])];
+      if (result === 'fail' && !photos.length) { UI.toast('Add at least one evidence photo to fail units', 'error'); return; }
 
       let checklist;
-      const boxes = [...el.querySelectorAll('.qi-chk-item')];
-      if (boxes.length) {
-        checklist = boxes.map((b) => ({ label: b.dataset.label, ok: b.checked }));
+      const rows = [...el.querySelectorAll('.qi-check-row')];
+      if (rows.length) {
+        checklist = rows.map((row, i) => {
+          const status = row.querySelector('.qi-check-status').value;
+          if (!status) return null;
+          return { label: qcCl[i].label, ok: status === 'pass', status: status || undefined,
+            value: row.querySelector('.qi-check-value')?.value.trim() || undefined,
+            note: row.querySelector('.qi-check-note').value.trim() || undefined };
+        }).filter(Boolean);
         if (result === 'pass') {
-          const missing = boxes.filter((b, i) => qcCl[i] && qcCl[i].required && !b.checked)
-            .map((b) => b.dataset.label);
-          if (missing.length) { UI.toast('Tick the required checks first: ' + missing.join(', '), 'error'); return; }
+          const missing = qcCl.filter((item) => item.required && !checklist.some((answer) => answer.label === item.label && answer.status === 'pass')).map((item) => item.label);
+          if (missing.length) { UI.toast('Pass the required checks first: ' + missing.join(', '), 'error'); return; }
+          const readings = qcCl.filter((item) => item.measure && checklist.some((answer) => answer.label === item.label && answer.status === 'pass' && !answer.value)).map((item) => item.label);
+          if (readings.length) { UI.toast('Record readings for: ' + readings.join(', '), 'error'); return; }
         }
       }
-      API.post('/job-orders/' + jobOrderId + '/units/inspect', { unit_ids: unitIds, result, identifier, remarks, checklist, disposition })
+      // Evidence first (the server refuses a failing result without a photo of each unit): every
+      // chosen photo is attached to every failed unit, so each result has its own.
+      const uploads = result === 'fail' ? unitIds.flatMap((uid) => photos.map((f) => () => {
+        const fd = new FormData();
+        fd.append('kind', 'qc_unit'); fd.append('ref_id', String(uid)); fd.append('caption', 'QC/QA evidence'); fd.append('image', f);
+        return API.upload('/attachments', fd).then((a) => a.id);
+      })) : [];
+      uploads.reduce((p, up) => p.then((ids) => up().then((id) => ids.concat(id))), Promise.resolve([]))
+        .then((evidence_ids) => API.post('/job-orders/' + jobOrderId + '/units/inspect',
+          { unit_ids: unitIds, inspection_stage: selectedStage, result, identifier, remarks, checklist, disposition, evidence_ids: result === 'fail' ? evidence_ids : undefined }))
         .then(async (r) => {
           jo = r.job_order; await refresh();
           activeUnitId = null; checkedIds.clear();
-          UI.toast(result === 'pass' ? 'Unit(s) passed' : disposition === 'repair' ? 'Sent to repair' : 'Unit(s) failed');
+          UI.toast(result === 'pass' ? 'Unit(s) passed' : disposition === 'hold' ? 'Sent to QA hold review' : disposition === 'repair' ? 'Sent to repair' : 'Unit(s) failed');
           draw();
           if (onDone) onDone();
         })
@@ -215,6 +255,16 @@ async function inspectModal(jobOrderId, onDone) {
 
   function placeholderHTML() {
     return UI.emptyState({ icon: 'check', title: 'Nothing selected', hint: 'Click a unit, or check one or more boxes, to inspect it here.' });
+  }
+
+  function needsDesk(u) {
+    if ((jo.qc_stages || 1) <= 1) return true;
+    return selectedStage === 1 ? u.qc_result !== 'pass' : u.qa_result !== 'pass';
+  }
+  function deskStatus(u) {
+    return (jo.qc_stages || 1) <= 1
+      ? `Combined: ${UI.esc(u.qc_result || 'pending')}`
+      : `QC: ${UI.esc(u.qc_result || 'pending')} · QA: ${UI.esc(u.qa_result || 'pending')}`;
   }
 
   function sideHTML(queue) {
@@ -229,7 +279,7 @@ async function inspectModal(jobOrderId, onDone) {
             <div class="muted" style="font-size:12px">${selected.map((u) => '#' + u.id).join(', ')}</div></div>
           ${pickers ? `<div style="display:flex;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;gap:4px">${pickers}</div>` : ''}
         </div>
-        ${inspectFormHTML(items, names, passAllowed(firstP, finalP), passLabelFor(firstP, finalP))}`;
+        ${inspectFormHTML(items, names, passAllowed(firstP, finalP), passLabelFor(firstP, finalP), finalP)}`;
     }
     if (activeUnitId != null) {
       const unit = queue.find((u) => u.id === activeUnitId);
@@ -246,11 +296,11 @@ async function inspectModal(jobOrderId, onDone) {
       return `
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">
           <div><strong>Unit #${unit.id}</strong> <span class="badge-pill ${step.cls}">${step.label}</span>
-            <span class="muted" style="font-size:11px">(pass ${(unit.stage || 0) + 1} / ${jo.qc_stages})</span>
+            <span class="muted" style="font-size:11px">${deskStatus(unit)}</span>
             ${unit.identifier ? `<div class="muted mono" style="font-size:12px;margin-top:4px">${UI.esc(unit.identifier)}</div>` : ''}</div>
           ${pickers ? `<div style="display:flex;flex-direction:row;flex-wrap:wrap;justify-content:flex-end;gap:4px">${pickers}</div>` : ''}
         </div>
-        ${inspectFormHTML(items, names, passAllowed(firstP, finalP), passLabelFor(firstP, finalP))}`;
+        ${inspectFormHTML(items, names, passAllowed(firstP, finalP), passLabelFor(firstP, finalP), finalP)}`;
     }
     return placeholderHTML();
   }
@@ -258,8 +308,13 @@ async function inspectModal(jobOrderId, onDone) {
   function draw() {
     const el = host();
     if (!el) return;
-    const pending = units.filter((u) => u.status === 'pending');
-    const rework = units.filter((u) => u.status === 'rework');
+    if (loadError) {
+      el.innerHTML = `<div class="empty"><strong>Unable to load inspection details</strong><p>${UI.esc(loadError.message || 'Please try again.')}</p><button type="button" class="btn" id="qi-retry">Retry</button></div>`;
+      el.querySelector('#qi-retry').onclick = async () => { await refresh(); draw(); };
+      return;
+    }
+    const pending = units.filter((u) => u.status === 'pending' && needsDesk(u));
+    const rework = units.filter((u) => u.status === 'rework' && needsDesk(u));
     const queue = pending.concat(rework);
     for (const id of [...checkedIds]) if (!queue.some((u) => u.id === id)) checkedIds.delete(id);
     if (activeUnitId != null && !queue.some((u) => u.id === activeUnitId)) activeUnitId = null;
@@ -267,16 +322,20 @@ async function inspectModal(jobOrderId, onDone) {
     el.innerHTML = `
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
         <strong>${UI.esc(jo.product_name)}</strong>
-        <span class="muted">${jo.qc_stages}-step inspection</span>
+        <span class="muted">${jo.qc_stages <= 1 ? 'Combined inspection' : 'Independent QC and QA'}</span>
         ${jo.team_name ? `<span class="muted">· ${UI.esc(jo.team_name)}</span>` : ''}
       </div>
+      ${jo.qc_stages > 1 ? `<div style="display:flex;gap:8px;margin-bottom:12px">
+        ${hasQc ? `<button type="button" class="btn ${selectedStage === 1 ? '' : 'secondary'}" data-desk="1">QC · ${units.filter((u) => ['pending','rework'].includes(u.status) && u.qc_result !== 'pass').length} waiting</button>` : ''}
+        ${hasQa ? `<button type="button" class="btn ${selectedStage === 2 ? '' : 'secondary'}" data-desk="2">QA · ${units.filter((u) => ['pending','rework'].includes(u.status) && u.qa_result !== 'pass').length} waiting</button>` : ''}
+      </div>` : ''}
       ${queue.length ? `
-        <div style="display:flex;gap:16px;align-items:flex-start">
+        <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
           <div style="flex:1 1 55%;min-width:0">
             <table>
               <thead><tr>
                 <th style="width:28px"><input type="checkbox" id="qi-chk-all" /></th>
-                <th>Unit</th><th>Step</th><th>Identifier</th>
+                <th>Unit</th><th>QC / QA</th><th>Identifier</th>
               </tr></thead>
               <tbody>${queue.map((u) => {
                 const blocked = u.status === 'rework' && reworkOpen(u.id);
@@ -284,7 +343,7 @@ async function inspectModal(jobOrderId, onDone) {
                 return `<tr class="clickable${u.id === activeUnitId ? ' active' : ''}" data-unit="${u.id}">
                   <td><input type="checkbox" class="qi-chk" value="${u.id}" ${checkedIds.has(u.id) ? 'checked' : ''} ${blocked ? 'disabled title="Parts request still open"' : ''} /></td>
                   <td>#${u.id}${u.status === 'rework' ? ' <span class="badge-pill confirmed">repair</span>' : ''}</td>
-                  <td><span class="badge-pill ${step.cls}">${step.label}</span> <span class="muted" style="font-size:11px">(${u.stage} / ${jo.qc_stages})</span></td>
+                  <td><span class="badge-pill ${step.cls}">${step.label}</span><div class="muted" style="font-size:11px">${deskStatus(u)}</div></td>
                   <td class="mono">${UI.esc(u.identifier || '—')}</td>
                 </tr>`;
               }).join('')}</tbody>
@@ -310,6 +369,9 @@ async function inspectModal(jobOrderId, onDone) {
           }).join('')}</tbody>
         </table>` : ''}`;
 
+    el.querySelectorAll('[data-desk]').forEach((button) => button.onclick = () => {
+      selectedStage = Number(button.dataset.desk); activeUnitId = null; checkedIds.clear(); draw();
+    });
     if (!queue.length || !canInspect) return;
 
     const redrawSide = () => {
@@ -352,7 +414,7 @@ window.ProductionQC = { inspect: inspectModal };
 
 App.register('production-qc', async (view, filter) => {
   const canConfigQc = App.hasPermission('qc.configure');
-  const tab = filter && filter.tab === 'findings' ? 'findings' : 'queue';
+  const tab = filter && ['findings', 'holds'].includes(filter.tab) ? filter.tab : 'queue';
   const checklistBtnHTML = canConfigQc
     ? `<button class="btn secondary" id="qc-checklists">${UI.icon('edit')} Manage Checklists</button>`
     : '';
@@ -367,7 +429,78 @@ App.register('production-qc', async (view, filter) => {
       <div><div class="value">${value}</div><div class="label">${UI.esc(label)}</div></div></div>`;
   }
 
-  if (tab === 'findings') { await renderFindings(); } else { await renderQueue(); }
+  if (tab === 'findings') { await renderFindings(); }
+  else if (tab === 'holds') { await renderHolds(); }
+  else { await renderQueue(); }
+
+  async function renderHolds() {
+    view.innerHTML = `<div class="topbar"><h2>QC / QA <span class="muted" style="font-weight:400;font-size:14px">On hold</span></h2><div class="grow"></div>${checklistBtnHTML}</div>
+      <div class="panel"><div id="qh-table" class="empty">Loading…</div></div>`;
+    wireChecklistBtn();
+    const table = view.querySelector('#qh-table');
+    let holds;
+    try { holds = await API.get('/qc/holds'); }
+    catch (e) {
+      table.innerHTML = `<strong>Unable to load QA holds</strong><p>${UI.esc(e.message || 'Please try again.')}</p><button class="btn" id="qh-retry">Retry</button>`;
+      table.querySelector('#qh-retry').onclick = renderHolds;
+      return;
+    }
+    if (!holds.length) {
+      table.innerHTML = UI.emptyState({ icon: 'check', title: 'No units on hold', hint: 'QA holds needing a decision will appear here.' });
+      return;
+    }
+    table.classList.remove('empty');
+    table.innerHTML = `<table><thead><tr><th>Held since</th><th>Job order / unit</th><th>Product</th><th>Reason and issues</th><th>Evidence</th><th></th></tr></thead><tbody>
+      ${holds.map((h) => `<tr><td class="muted">${UI.fmtDate(h.held_at)}</td><td><strong>${UI.esc(h.job_order_number)}</strong><div>${UI.esc(h.identifier || '#' + h.id)}</div></td>
+        <td>${UI.esc(h.product_name)}</td><td>${UI.esc(h.remarks || '—')}${h.issues?.length ? `<div class="muted">${h.issues.map((i) => UI.esc(i.label)).join(', ')}</div>` : ''}</td>
+        <td>${h.evidence || 0} photo(s)</td><td><button class="btn secondary" data-open-job="${h.job_order_id}">Open job</button> <button class="btn secondary" data-decide="${h.id}">Decide</button></td></tr>`).join('')}</tbody></table>`;
+    table.querySelectorAll('[data-open-job]').forEach((button) => button.onclick = () => App.navigate('job-orders', { id: Number(button.dataset.openJob) }));
+    table.querySelectorAll('[data-decide]').forEach((button) => button.onclick = async () => {
+      const h = holds.find((row) => String(row.id) === button.dataset.decide);
+      let job;
+      try { job = await API.get('/job-orders/' + h.job_order_id); }
+      catch (e) { UI.toast(e.message || 'Unable to load the job checklist', 'error'); return; }
+      const checks = [
+        ...((job.qc_stages || 1) <= 1 ? job.qc_checklist_qc?.items || [] : []),
+        ...(job.qc_checklist_qa?.items || []),
+      ];
+      const previous = new Map((h.checklist || []).map((item) => [item.label.toLocaleLowerCase(), item]));
+      UI.modal({ title: 'Decide held unit — ' + (h.identifier || '#' + h.id),
+        bodyHTML: `<p class="muted">${UI.esc(h.remarks || 'Held for review')}</p><p class="muted">${h.evidence || 0} evidence photo(s). Open the job order for full history.</p>
+          <div><label>Decision</label><select data-f="outcome"><option value="pass">Pass — send to Products In</option><option value="rectify">Rectify — return for recheck</option><option value="fail">Fail — reject</option></select></div>
+          ${checks.length ? `<div data-hold-checks><p class="muted">Confirm the applicable checklist before passing this unit.</p>${checks.map((item, i) => {
+            const answer = previous.get(item.label.toLocaleLowerCase()) || {};
+            return `<div data-hold-check="${i}" style="margin:8px 0"><label>${UI.esc(item.label)}${item.required ? ' *' : ''}</label>
+              <select data-check-status aria-label="${UI.esc(item.label)} result"><option value="">Choose result</option><option value="pass" ${answer.status === 'pass' ? 'selected' : ''}>Pass</option><option value="issue" ${answer.status === 'issue' ? 'selected' : ''}>Issue</option><option value="na" ${answer.status === 'na' ? 'selected' : ''}>N/A</option></select>
+              ${item.measure ? `<input data-check-value aria-label="${UI.esc(item.label)} reading (${UI.esc(item.measure)})" placeholder="Reading (${UI.esc(item.measure)})" value="${UI.esc(answer.value || '')}" maxlength="60" />` : ''}
+              <input data-check-note aria-label="${UI.esc(item.label)} note" placeholder="Note (optional)" value="${UI.esc(answer.note || '')}" maxlength="500" /></div>`;
+          }).join('')}</div>` : ''}
+          <div data-fail hidden><label>Disposition</label><select data-f="disposition"><option value="scrap">Scrap</option><option value="dispose">Dispose</option><option value="recycle">Recycle</option></select></div>
+          <div><label>Reason <span class="req">*</span></label><textarea data-f="remarks" rows="3" maxlength="2000"></textarea></div>`,
+        confirmText: 'Record decision',
+        onOpen: (overlay) => { const outcome = overlay.querySelector('[data-f="outcome"]'); outcome.onchange = () => { overlay.querySelector('[data-fail]').hidden = outcome.value !== 'fail'; if (overlay.querySelector('[data-hold-checks]')) overlay.querySelector('[data-hold-checks]').hidden = outcome.value !== 'pass'; }; },
+        onConfirm: async (overlay, showErr) => {
+          const value = (name) => overlay.querySelector(`[data-f="${name}"]`).value.trim();
+          if (value('remarks').length < 3) { showErr('Give the reason for this decision'); return false; }
+          let checklist;
+          if (value('outcome') === 'pass') {
+            checklist = [...overlay.querySelectorAll('[data-hold-check]')].map((row, i) => {
+              const status = row.querySelector('[data-check-status]').value;
+              return status ? { label: checks[i].label, ok: status === 'pass', status,
+                value: row.querySelector('[data-check-value]')?.value.trim() || undefined,
+                note: row.querySelector('[data-check-note]').value.trim() || undefined } : null;
+            }).filter(Boolean);
+            const missing = checks.filter((item) => item.required && !checklist.some((answer) => answer.label === item.label && answer.status === 'pass'));
+            if (missing.length) { showErr('Pass the required checks first: ' + missing.map((item) => item.label).join(', ')); return false; }
+            const noReading = checks.filter((item) => item.measure && checklist.some((answer) => answer.label === item.label && answer.status === 'pass' && !answer.value));
+            if (noReading.length) { showErr('Record readings for: ' + noReading.map((item) => item.label).join(', ')); return false; }
+          }
+          await API.post(`/job-orders/${h.job_order_id}/units/${h.id}/hold-decision`, { outcome: value('outcome'), remarks: value('remarks'), disposition: value('outcome') === 'fail' ? value('disposition') : undefined, checklist });
+          UI.toast('Hold decision recorded'); await renderHolds();
+        },
+      });
+    });
+  }
 
   async function renderQueue() {
     view.innerHTML = `
@@ -380,8 +513,32 @@ App.register('production-qc', async (view, filter) => {
     wireChecklistBtn();
 
     const tableEl = view.querySelector('#qc-table');
-    const rows = await API.get('/job-orders').catch(() => []);
-    const need = (rows || []).filter((j) => j.qc_stages > 0 && ((j.units_pending || 0) > 0 || (j.units_rework || 0) > 0) && j.status !== 'cancelled');
+    let rows;
+    try {
+      const queues = await Promise.all([
+        ...(App.hasPermission('production.inspect_qc') ? [API.get('/qc/queue?role=qc')] : []),
+        ...(App.hasPermission('production.inspect_qa') ? [API.get('/qc/queue?role=qa')] : []),
+      ]);
+      const jobs = new Map();
+      for (const queue of queues) for (const u of queue.units || []) {
+        const j = jobs.get(u.job_order_id) || { id: u.job_order_id, number: u.job_order_number,
+          product_name: u.product_name, team_name: u.team_name, qc_stages: u.qc_stages,
+          units_actionable: 0, units_rework: 0, seen: new Set() };
+        if (!j.seen.has(u.id)) {
+          j.seen.add(u.id);
+          j.units_actionable++;
+          if (u.status === 'rework') j.units_rework++;
+        }
+        jobs.set(u.job_order_id, j);
+      }
+      rows = [...jobs.values()];
+    }
+    catch (e) {
+      tableEl.innerHTML = `<div class="empty"><strong>Unable to load inspection queue</strong><p>${UI.esc(e.message || 'Please try again.')}</p><button class="btn" id="qc-retry">Retry</button></div>`;
+      tableEl.querySelector('#qc-retry').onclick = renderQueue;
+      return;
+    }
+    const need = rows || [];
 
     if (!need.length) {
       tableEl.innerHTML = UI.emptyState({
@@ -395,16 +552,16 @@ App.register('production-qc', async (view, filter) => {
     tableEl.innerHTML = `
       <table>
         <thead><tr>
-          <th>Job order</th><th>Product</th><th>Team</th><th>Stages</th>
-          <th class="right">To inspect</th><th class="right">Back from repair</th>
+          <th>Job order</th><th>Product</th><th>Team</th><th>Inspection</th>
+          <th class="right">Ready for you</th><th class="right">Back from repair</th>
         </tr></thead>
         <tbody>${need.map((j) => `
           <tr class="clickable" data-open="${j.id}">
             <td><strong>${UI.esc(j.number)}</strong></td>
             <td>${UI.esc(j.product_name)}</td>
             <td class="muted">${UI.esc(j.team_name || '—')}</td>
-            <td class="muted">${j.qc_stages}-step</td>
-            <td class="right">${j.units_pending || 0}</td>
+            <td class="muted">${j.qc_stages <= 1 ? 'Combined' : 'QC + QA'}</td>
+            <td class="right">${j.units_actionable || 0}</td>
             <td class="right${j.units_rework ? ' danger' : ''}">${j.units_rework || 0}</td>
           </tr>`).join('')}
         </tbody>
@@ -414,7 +571,7 @@ App.register('production-qc', async (view, filter) => {
 
   async function renderFindings() {
     const state = { result: '', q: '', from: '', to: '', offset: 0, limit: 50 };
-    let last = { rows: [], total: 0, summary: { pass: 0, fail: 0 } };
+    let last = { rows: [], total: 0, summary: { pass: 0, fail: 0, hold: 0 } };
 
     view.innerHTML = `
       <div class="topbar">
@@ -425,6 +582,7 @@ App.register('production-qc', async (view, filter) => {
           <option value="">All results</option>
           <option value="pass">Pass</option>
           <option value="fail">Fail</option>
+          <option value="hold">Hold</option>
         </select>
         <label class="inline-date">From <input type="date" id="qf-from" /></label>
         <label class="inline-date">To <input type="date" id="qf-to" /></label>
@@ -455,12 +613,13 @@ App.register('production-qc', async (view, filter) => {
 
     function render() {
       const { rows, total, summary } = last;
-      const inspected = (summary.pass || 0) + (summary.fail || 0);
+      const inspected = (summary.pass || 0) + (summary.fail || 0) + (summary.hold || 0);
       const passRate = inspected ? Math.round((summary.pass / inspected) * 100) : null;
       cardsEl.innerHTML = `
         ${statCard('good', 'check', 'Passed', summary.pass || 0)}
         ${statCard('alert', 'alert', 'Failed', summary.fail || 0)}
-        ${statCard('', 'sheet', 'Pass rate', passRate == null ? '—' : passRate + '%')}`;
+        ${statCard('alert', 'alert', 'Held', summary.hold || 0)}
+        ${statCard('', 'sheet', 'Pass / recorded outcome', passRate == null ? '—' : passRate + '%')}`;
 
       if (!rows.length) {
         tableEl.innerHTML = UI.emptyState({
@@ -483,7 +642,7 @@ App.register('production-qc', async (view, filter) => {
               <td>${UI.esc(r.product_name)}</td>
               <td class="muted">${UI.esc(r.unit_identifier || r.batch_number || '—')}</td>
               <td class="muted">${r.stage}</td>
-              <td>${r.result === 'pass' ? '<span class="badge-pill ok">pass</span>' : '<span class="badge-pill low">fail</span>'}</td>
+              <td>${r.result === 'pass' ? '<span class="badge-pill ok">pass</span>' : `<span class="badge-pill low">${UI.esc(r.result)}</span>`}</td>
               <td class="muted">${UI.esc(r.disposition || '—')}</td>
               <td class="muted">${UI.esc(r.inspector_name || '—')}</td>
               <td class="muted">${UI.esc(r.remarks || '—')}</td>

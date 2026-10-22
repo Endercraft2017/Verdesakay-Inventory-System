@@ -28,10 +28,16 @@ const REAL_COLUMNS = ['name', 'sku', 'category', 'department_id', 'supplier_id',
 const { ITEM_FORM_TABS, ITEM_FORM_SECTIONS, ITEM_CORE_KEYS, ITEM_FORM_DEFAULTS } = loadCatalog();
 
 describe('item-form-config catalog', () => {
-  it('has the 7 ECOUNT tabs', () => {
+  it('puts the everyday item, pricing and stock tabs first', () => {
     expect(ITEM_FORM_TABS.map((t) => t.id)).toEqual(
-      ['default', 'info', 'qty', 'price', 'cost', 'additional', 'management']
+      ['default', 'price', 'qty', 'info', 'additional', 'cost', 'management']
     );
+  });
+
+  it('groups everyday prices and opening quantity away from item identity', () => {
+    const field = (key: string) => ITEM_FORM_DEFAULTS.find((f) => f.key === key);
+    for (const key of ['currency', 'purchase_price', 'sale_price', 'unit_cost']) expect(field(key)?.tab).toBe('price');
+    expect(field('quantity')?.tab).toBe('qty');
   });
 
   it('field keys are unique', () => {

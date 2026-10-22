@@ -9,6 +9,8 @@
     'upc_a', 'upc_e', 'itf', 'codabar', 'data_matrix', 'aztec', 'pdf417',
   ];
 
+  var active = null;
+
   function secureCamera() {
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   }
@@ -18,8 +20,11 @@
       the X button or the returned `.close()`. */
   function open(opts) {
     opts = opts || {};
+    if (active && opts.key && active.key === opts.key) { active.focus(); return active; }
+    if (active) active.close();
+    var openingHash = location.hash, reason = 'cancelled';
     var overlay = mEl(
-      '<div class="m-scan">' +
+      '<div class="m-scan" role="dialog" aria-modal="true" aria-label="' + mEsc(opts.title || 'Scan barcode or QR') + '">' +
       '  <div class="m-scan-head">' +
       '    <span>' + mEsc(opts.title || 'Scan barcode or QR') + '</span>' +
       '    <span class="m-scan-head-btns">' +
@@ -31,14 +36,14 @@
       '    <video playsinline muted></video>' +
       '    <div class="m-scan-frame"></div>' +
       '  </div>' +
-      '  <div class="m-scan-msg" hidden></div>' +
+      '  <div class="m-scan-msg" role="status" hidden></div>' +
       '  <form class="m-scan-manual">' +
-      '    <input type="text" placeholder="Or type the code" autocomplete="off" autocapitalize="characters" />' +
+      '    <input type="text" aria-label="' + mEsc(opts.manualLabel || 'Barcode or QR code') + '" placeholder="Or type the code" autocomplete="off" autocapitalize="characters" />' +
       '    <button class="m-btn" type="submit">Use code</button>' +
       '  </form>' +
       '</div>'
     );
-    document.getElementById('m-overlay-root').appendChild(overlay);
+    (document.getElementById('m-overlay-root') || document.body).appendChild(overlay);
 
     var video = overlay.querySelector('video');
     var msg = overlay.querySelector('.m-scan-msg');
@@ -47,24 +52,43 @@
     var zx = null;
     var done = false;
 
-    function say(text) { msg.hidden = false; msg.textContent = text; }
+    function usable() { if (done) return false; if (!overlay.isConnected || (opts.isCurrent && !opts.isCurrent())) { stop('navigation'); return false; } return true; }
+    function say(text) { if (usable()) { msg.hidden = false; msg.textContent = text; } }
+    if (opts.allowManual === false) overlay.querySelector('.m-scan-manual').remove();
+
     function manualOnly(text) {
+      if (!usable()) return;
+      stopStream();
+      if (opts.allowManual === false) { say('Camera scanning is required. Enable camera access and use HTTPS, then try again.'); overlay.querySelector('.m-scan-stage').hidden = true; return; }
       say(text);
       overlay.querySelector('.m-scan-stage').hidden = true;
       overlay.querySelector('input').focus();
     }
 
-    function stop() {
+    function stopStream() {
+      var media = stream || video.srcObject;
+      if (media?.getTracks) media.getTracks().forEach(function (track) { track.stop(); });
+      stream = null; video.srcObject = null;
+    }
+    function cleanup() {
+      if (done) return;
       done = true;
       if (timer) clearInterval(timer);
-      if (zx) { try { zx.reset(); } catch (e) { /* ignore */ } }
-      if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
-      overlay.remove();
+      if (zx) { try { zx.reset(); } catch (e) {} }
+      stopStream(); observer.disconnect(); window.removeEventListener('hashchange', departed);
+      if (active === control) active = null;
+      if (opts.onClose) opts.onClose(reason);
     }
+    function stop(why) { reason = typeof why === 'string' ? why : 'cancelled'; control.close(); }
+    function departed() { queueMicrotask(function () { if (location.hash !== openingHash || (opts.isCurrent && !opts.isCurrent())) stop('navigation'); }); }
+    var observer = new MutationObserver(function () { if (!overlay.isConnected || (opts.isCurrent && !opts.isCurrent())) stop('navigation'); });
+    var control = MessageOverlay.mount(overlay, { initialFocus: '.m-scan-x', onClose: cleanup });
+    control.key = opts.key; active = control;
+    observer.observe(document.body, { childList: true, subtree: true }); window.addEventListener('hashchange', departed);
 
     var lastCode = null, lastAt = 0;
     function finish(text) {
-      if (done || !text) return;
+      if (!usable() || !text) return;
       text = String(text).trim();
       if (opts.continuous) {
         var now = Date.now();
@@ -74,7 +98,7 @@
         opts.onResult(text);
         return;
       }
-      stop();
+      stop('result');
       opts.onResult(text);
     }
 
@@ -83,7 +107,7 @@
     // Torch / flashlight — offered only when the running video track supports it.
     var torchOn = false;
     function wireTorch() {
-      if (done) return;
+      if (!usable()) return;
       var src = stream || video.srcObject;
       var track = src && src.getVideoTracks && src.getVideoTracks()[0];
       var caps = track && track.getCapabilities ? track.getCapabilities() : {};
@@ -91,14 +115,16 @@
       var btn = overlay.querySelector('.m-scan-torch');
       btn.hidden = false;
       btn.onclick = function () {
+        if (!usable()) return;
         torchOn = !torchOn;
         btn.classList.toggle('on', torchOn);
         track.applyConstraints({ advanced: [{ torch: torchOn }] }).catch(function () {});
       };
     }
 
-    overlay.querySelector('.m-scan-manual').onsubmit = function (e) {
+    if (opts.allowManual !== false) overlay.querySelector('.m-scan-manual').onsubmit = function (e) {
       e.preventDefault();
+      if (!usable() || opts.allowManual === false) return;
       var inp = e.target.querySelector('input');
       var v = inp.value.trim();
       if (!v) return;
@@ -107,6 +133,7 @@
     };
 
     function camError(err) {
+      if (!usable()) return;
       var denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
       manualOnly(denied
         ? 'Camera permission denied. Type the code below instead.'
@@ -115,22 +142,26 @@
 
     /* ---- Native BarcodeDetector: our own stream + a polling loop ---- */
     function startNative(formats) {
+      if (!usable()) return;
+      var detecting = false;
       var detector = new BarcodeDetector({ formats: formats });
       navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
-        .then(function (s) { stream = s; video.srcObject = s; return video.play(); })
+        .then(function (s) { if (!usable()) { s.getTracks().forEach(function (t) { t.stop(); }); return; } stream = s; video.srcObject = s; return video.play(); })
         .then(function () {
+          if (!usable()) return;
           wireTorch();
           var firstTry = true;
           timer = setInterval(function () {
-            if (done) return;
-            detector.detect(video)
-              .then(function (codes) { if (codes && codes.length) finish(codes[0].rawValue); })
+            if (!usable() || detecting) return;
+            detecting = true;
+            Promise.resolve().then(function () { return detector.detect(video); })
+              .then(function (codes) { if (usable() && codes && codes.length) finish(codes[0].rawValue); })
               .catch(function () {
                 // Some engines declare BarcodeDetector but throw on detect() —
                 // bail to ZXing on the very first failure.
-                if (firstTry && window.ZXing) { clearInterval(timer); timer = null; startZXing(); }
+                if (usable() && firstTry && window.ZXing) { clearInterval(timer); timer = null; stopStream(); startZXing(); }
               })
-              .finally(function () { firstTry = false; });
+              .finally(function () { firstTry = false; detecting = false; });
           }, 300);
         })
         .catch(camError);
@@ -138,36 +169,66 @@
 
     /* ---- ZXing fallback: the reader owns the camera; reset() tears it down ---- */
     function startZXing() {
-      zx = new ZXing.BrowserMultiFormatReader();
-      zx.decodeFromConstraints(
+      if (!usable()) return;
+      var reader = zx = new ZXing.BrowserMultiFormatReader();
+      reader.decodeFromConstraints(
         { video: { facingMode: { ideal: 'environment' } } },
         video,
-        function (result) { if (result && !done) finish(result.getText ? result.getText() : result.text); }
-      ).then(function () { setTimeout(wireTorch, 400); }).catch(camError);
+        function (result) { if (!usable()) { reader.reset(); stopStream(); return; } if (result) finish(result.getText ? result.getText() : result.text); }
+      ).then(function () { if (!usable()) { reader.reset(); stopStream(); return; } setTimeout(wireTorch, 400); }).catch(camError);
     }
 
     if (!secureCamera()) {
       manualOnly('Camera needs a secure (HTTPS) connection. Type the code below instead.');
-      return { close: stop };
+      return control;
     }
 
     if (window.BarcodeDetector && BarcodeDetector.getSupportedFormats) {
       BarcodeDetector.getSupportedFormats()
         .then(function (supported) {
+          if (!usable()) return;
           var use = WANT_FORMATS.filter(function (f) { return supported.indexOf(f) !== -1; });
           if (use.length) startNative(use);
           else if (window.ZXing) startZXing();
           else manualOnly('This browser can’t scan. Type the code below instead.');
         })
-        .catch(function () { if (window.ZXing) startZXing(); else manualOnly('This browser can’t scan. Type the code below instead.'); });
+        .catch(function () { if (!usable()) return; if (window.ZXing) startZXing(); else manualOnly('This browser can’t scan. Type the code below instead.'); });
     } else if (window.ZXing) {
       startZXing();
     } else {
       manualOnly('This browser can’t scan. Type the code below instead.');
     }
 
-    return { close: stop };
+    return control;
   }
 
-  window.mScanner = { open: open, supported: secureCamera };
+  /** Physical sticker verification is separate from finding/selecting a record.
+      New selections start unverified. Recovery retries the already-reviewed request. */
+  function verification(host, codes, onChange) {
+    var entries = codes.map(function (entry) { return typeof entry === 'string' ? {code:entry,aliases:[]} : entry; });
+    var expected = entries.map(function (entry) { return String(entry.code).trim(); });
+    var seen = {}, active = null;
+    function complete() { return expected.length > 0 && expected.every(function (code) { return seen[code.toLowerCase()]; }); }
+    function paint() {
+      host.innerHTML = '<div class="rk-card rk-field"><small>Attached QR sticker verification</small><p data-scan-status></p><button type="button" class="rk-btn secondary" data-verify-label>Scan attached sticker' + (expected.length > 1 ? 's' : '') + '</button></div>';
+      host.querySelector('[data-scan-status]').textContent = expected.filter(function (code) { return seen[code.toLowerCase()]; }).length + ' of ' + expected.length + ' labels scanned';
+      host.querySelector('[data-verify-label]').onclick = function () {
+        if (active) active.close();
+        active = window.mScanner.open({ title: 'Scan the attached QR sticker', continuous: true, allowManual: false, onResult: function (value) {
+          if (!host.isConnected) { active.close(); return; }
+          var code = String(value || '').trim().toLowerCase();
+          var matches = entries.filter(function (entry) { return [entry.code].concat(entry.aliases || []).some(function(v){return String(v).trim().toLowerCase()===code;}); });
+          if (matches.length !== 1) { mToast('Wrong or ambiguous label. Scan a sticker for the selected stock.', 'err'); return; }
+          seen[String(matches[0].code).toLowerCase()] = true;
+          if (complete()) active.close();
+          paint();
+        } });
+      };
+      if (onChange) onChange(complete());
+    }
+    paint();
+    return { complete: complete };
+  }
+
+  window.mScanner = { open: open, supported: secureCamera, verification: verification };
 })();

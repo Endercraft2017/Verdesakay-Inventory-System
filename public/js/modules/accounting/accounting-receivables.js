@@ -19,7 +19,7 @@ App.register('accounting-receivables', async (view, filter) => {
 
   view.innerHTML = `
     <div class="topbar"><h2>Receivables &amp; Payables</h2><div class="grow"></div>
-      ${canManage ? `<button class="btn" id="rp-new-pay">${UI.icon('plus')} Record payment</button>` : ''}</div>
+      ${App.hasPermission('accounting.record_payments') ? `<button class="btn" id="rp-new-pay">${UI.icon('plus')} Record payment</button>` : ''}</div>
     <div class="subnav-inline" id="rp-tabs">${tabs.map((t) =>
       `<button class="tab ${t === active ? 'active' : ''}" data-tab="${t}">${t}</button>`).join('')}</div>
     <div class="panel"><div id="rp-body"><div class="empty">Loading…</div></div></div>
@@ -82,7 +82,7 @@ App.register('accounting-receivables', async (view, filter) => {
             <td class="muted">${BUCKET_LABEL[doc.bucket]}</td><td class="right">${money(doc.outstanding)}</td></tr>`).join('')}</tbody></table>`
           : '<p class="muted">No open documents.</p>'}
           ${p.credits ? `<p class="muted">On-account credit: <strong>${money(p.credits)}</strong> — net owed <strong>${money(p.total)}</strong>.</p>` : ''}
-          ${canManage && p.party_id ? `<button class="btn" style="margin-top:12px" id="rp-pay-party">Record ${kind === 'ar' ? 'receipt' : 'payment'}</button>` : ''}`,
+          ${App.hasPermission('accounting.record_payments') && p.party_id ? `<button class="btn" style="margin-top:12px" id="rp-pay-party">Record ${kind === 'ar' ? 'receipt' : 'payment'}</button>` : ''}`,
       });
       const pb = document.getElementById('rp-pay-party');
       if (pb) pb.onclick = () => paymentModal({
@@ -130,7 +130,7 @@ App.register('accounting-receivables', async (view, filter) => {
         ${(p.allocations && p.allocations.length) ? `<table><thead><tr><th>Document</th><th class="right">Amount</th></tr></thead>
           <tbody>${p.allocations.map((a) => `<tr><td class="mono">${UI.esc(a.doc_number || ('#' + a.doc_id))}</td><td class="right">${money(a.amount)}</td></tr>`).join('')}</tbody></table>`
           : '<p class="muted">Unapplied (on account).</p>'}
-        ${canManage && p.status === 'posted' ? `<button class="btn danger" style="margin-top:14px" id="rp-void">Void payment</button>` : ''}`,
+        ${App.hasPermission('accounting.record_payments') && p.status === 'posted' ? `<button class="btn danger" style="margin-top:14px" id="rp-void">Void payment</button>` : ''}`,
     });
     const vb = document.getElementById('rp-void');
     if (vb) vb.onclick = async () => {
@@ -243,7 +243,7 @@ App.register('accounting-receivables', async (view, filter) => {
     const list = await API.get('/accounting/credit-notes');
     body.innerHTML = `
       <div style="display:flex;margin-bottom:8px"><div class="grow"></div>
-        ${canManage ? `<button class="btn secondary small" id="cn-new">${UI.icon('plus')} New note</button>` : ''}</div>
+        ${App.hasPermission('accounting.post') ? `<button class="btn secondary small" id="cn-new">${UI.icon('plus')} New note</button>` : ''}</div>
       ${list.length ? `<table><thead><tr><th>No.</th><th>Date</th><th>Kind</th><th>Party</th><th>Reason</th>
         <th class="right">Total</th><th>Status</th></tr></thead>
         <tbody>${list.map((n) => `<tr class="clickable" data-open="${n.id}">
@@ -274,7 +274,7 @@ App.register('accounting-receivables', async (view, filter) => {
           <div><span class="muted">Status</span><div>${n.status}</div></div>
         </div>
         ${n.reason ? `<p style="margin:8px 0">${UI.esc(n.reason)}</p>` : ''}
-        ${canManage && n.status === 'issued' ? `<button class="btn danger" style="margin-top:14px" id="cn-void">Void note</button>` : ''}`,
+        ${App.hasPermission('accounting.post') && n.status === 'issued' ? `<button class="btn danger" style="margin-top:14px" id="cn-void">Void note</button>` : ''}`,
     });
     const vb = document.getElementById('cn-void');
     if (vb) vb.onclick = async () => {
@@ -285,10 +285,11 @@ App.register('accounting-receivables', async (view, filter) => {
   }
 
   async function creditNoteModal() {
-    const [customers, suppliers, allCodes] = await Promise.all([
+    const [customers, suppliers, allCodes, saleOrders] = await Promise.all([
       API.get('/customers').catch(() => []),
       API.get('/suppliers').catch(() => []),
       API.get('/accounting/tax-codes?active=1').catch(() => []),
+      API.get('/orders?type=sale').catch(() => []),
     ]);
     let kind = 'customer';
     const render = () => {
@@ -306,6 +307,9 @@ App.register('accounting-receivables', async (view, filter) => {
         <div class="form-field span2"><div class="field-label"><label>${kind === 'customer' ? 'Customer' : 'Supplier'}</label></div>
           <select data-f="party_id"><option value="">— name only —</option>
             ${parties.map((p) => `<option value="${p.id}">${UI.esc(p.name)}</option>`).join('')}</select></div>
+        ${kind === 'customer' ? `<div class="form-field span2"><div class="field-label"><label>Related sale order</label></div>
+          <select data-f="source_doc_id"><option value="">— allowance without a sale link —</option>
+            ${saleOrders.map((o) => `<option value="${o.id}">${UI.esc(o.number)} · ${UI.esc(o.customer_name || 'Walk-in')}</option>`).join('')}</select></div>` : ''}
         <div class="form-field"><div class="field-label"><label>Net amount <span class="req">*</span></label></div>
           <input data-f="subtotal" type="number" step="0.01" min="0" value="" /></div>
         <div class="form-field"><div class="field-label"><label>VAT amount</label></div>
@@ -341,6 +345,8 @@ App.register('accounting-receivables', async (view, filter) => {
           subtotal: Number(g('subtotal').value) || 0,
           tax_amount: Number(g('tax_amount').value) || 0,
           tax_code_id: tc && tc.value ? Number(tc.value) : null,
+          source_doc_type: g('source_doc_id')?.value ? 'sale_order' : null,
+          source_doc_id: g('source_doc_id')?.value ? Number(g('source_doc_id').value) : null,
           reason: g('reason').value.trim() || null,
         };
         if (b.subtotal + b.tax_amount <= 0) { showErr('Enter an amount'); return false; }

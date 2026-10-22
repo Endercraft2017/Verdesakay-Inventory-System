@@ -3,7 +3,7 @@
    on the progress form. Each batch has its own number, QC/QA sign-off and dossier.
    filter.id deep-links straight into one batch. */
 App.register('production-batches', async (view, filter) => {
-  const canWrite = App.hasPermission('inventory.adjust');
+  const canWrite = App.hasPermission('production.configure');
   const canConfigQc = App.hasPermission('qc.configure');
   const STATUS = ['', 'open', 'released', 'closed'];
   const state = { status: '' };
@@ -203,7 +203,7 @@ App.register('production-batches', async (view, filter) => {
       confirmText: 'Open print sheet',
       onConfirm: (ov, showErr) => {
         const n = Math.max(1, parseInt(ov.querySelector('[data-f="n"]').value, 10) || 1);
-        const qr = window.qrcode(0, 'M'); qr.addData(batch.number); qr.make();
+        const qr = window.qrcode(0, 'M'); qr.addData('VDS:BATCH:' + batch.id); qr.make();
         const ctx = {
           product: { name: batch.product_name || '—', variant: '' },
           batch: { number: batch.number, identifier: batch.identifier || '', qty: batch.qty },
@@ -218,8 +218,9 @@ App.register('production-batches', async (view, filter) => {
           .lbl{width:52mm;height:30mm;border:1px solid #ddd;border-radius:2mm;display:flex;gap:2mm;padding:2mm;align-items:center;page-break-inside:avoid;overflow:hidden}
           .lbl-qr{width:26mm;height:26mm;flex:none}.lbl-txt{overflow:hidden;font-size:9pt;line-height:1.2}
           .lbl-name{font-weight:700}.lbl-variant{font-size:8.5pt}.lbl-code{font-family:ui-monospace,monospace;font-size:8pt;word-break:break-all}.lbl-sub{color:#888;font-size:7.5pt}
-        </style></head><body><div class="sheet">${Array(n).fill(cell).join('')}</div><script>window.onload=function(){window.print()}<\/script></body></html>`);
+        </style></head><body><div class="sheet">${Array(n).fill(cell).join('')}</div></body></html>`);
         w.document.close();
+        UI.printWhenLoaded(w);
         UI.toast(`${n} label${n === 1 ? '' : 's'} ready`);
       },
     });

@@ -5,6 +5,7 @@
  * served (auth-checked) by GET /api/ai/reports/:name.
  */
 import fs from 'node:fs';
+import { storeDurableUpload } from '../../shared/durable-uploads';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { uploadDir } from '../../shared/db';
@@ -44,7 +45,7 @@ export const REPORT_FILE_RE = /^ai-report-[A-Za-z0-9-]+\.(html|docx)$/;
 const slug = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40) || 'report';
 
-export async function executeReportingTool(name: string, args: unknown, _user: AuthUser): Promise<ToolResult> {
+export async function executeReportingTool(name: string, args: unknown, user: AuthUser): Promise<ToolResult> {
   if (name !== 'create_report_document') return { success: false, error: `Unknown tool: ${name}` };
   const a = (args ?? {}) as Record<string, unknown>;
   const title = typeof a.title === 'string' && a.title.trim() ? a.title.trim().slice(0, 160) : 'Report';
@@ -53,7 +54,8 @@ export async function executeReportingTool(name: string, args: unknown, _user: A
   const fmt = a.format === 'html' || a.format === 'docx' ? a.format : 'both';
 
   const blocks = parseMarkdown(content);
-  const stamp = `${slug(title)}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+  // The owner's id leads the name (ai-report-u<id>-…): GET /api/ai/reports serves it only to them.
+  const stamp = `u${user.id}-${slug(title)}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
   const files: Array<{ name: string; url: string; format: string; bytes: number }> = [];
 
   try {
@@ -61,12 +63,14 @@ export async function executeReportingTool(name: string, args: unknown, _user: A
       const fn = `ai-report-${stamp}.html`;
       const buf = Buffer.from(renderHtml(title, blocks), 'utf8');
       await fs.promises.writeFile(path.join(uploadDir(), fn), buf);
+      storeDurableUpload(fn);
       files.push({ name: fn, url: `/api/ai/reports/${fn}`, format: 'html', bytes: buf.length });
     }
     if (fmt === 'docx' || fmt === 'both') {
       const fn = `ai-report-${stamp}.docx`;
       const buf = await renderDocx(title, blocks);
       await fs.promises.writeFile(path.join(uploadDir(), fn), buf);
+      storeDurableUpload(fn);
       files.push({ name: fn, url: `/api/ai/reports/${fn}`, format: 'docx', bytes: buf.length });
     }
   } catch (e) {

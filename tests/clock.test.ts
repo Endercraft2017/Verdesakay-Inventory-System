@@ -1,7 +1,7 @@
 /** Time clock: rotating kiosk code, phone + kiosk punches, segment classification,
  *  de-dupe, and reconciliation into attendance_records. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
+import { setupApp, cleanup, login, createEmployee, phonePunch, fakeJpeg, type TestContext } from './helpers';
 // NOTE: `run`/`queryOne`/`currentKioskCode` are imported dynamically inside beforeAll,
 // after setupApp() sets DB_PATH — a top-level `import ... from '../src/shared/db'` (directly, or
 // transitively via '../src/modules/hr/clock', which itself imports './db') would evaluate DB_PATH
@@ -51,7 +51,7 @@ describe('time clock', () => {
     const e = await linkedEmployee();
     const h = { Authorization: `Bearer ${e.accountToken}` };
 
-    const inn = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
+    const inn = await phonePunch(ctx.api, h, { code: code() });
     expect(inn.status).toBe(200);
     expect(inn.body.kind).toBe('in');
     expect(inn.body.hours_today).toBe(0);
@@ -59,33 +59,28 @@ describe('time clock', () => {
     // force a gap so the 45s de-dupe doesn't swallow the next punch
     run("UPDATE time_punches SET ts = datetime(ts, '-10 minutes') WHERE employee_id = ?", e.employeeId);
 
-    const out = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
+    const out = await phonePunch(ctx.api, h, { code: code() });
     expect(out.body.kind).toBe('out');
     expect(out.body.hours_today).toBeGreaterThan(0);
   });
 
   it('rejects a stale / wrong code', async () => {
     const e = await linkedEmployee();
-    const res = await ctx.api.post('/api/hr/clock/punch')
-      .set({ Authorization: `Bearer ${e.accountToken}` })
-      .send({ code: 'AAAAAAAAAA' });
+    const res = await phonePunch(ctx.api, { Authorization: `Bearer ${e.accountToken}` }, { code: 'AAAAAAAAAA' });
     expect(res.status).toBe(400);
   });
 
   it('rejects an account with no linked employee', async () => {
     const acc = await createEmployee(ctx.api, adminToken, { role: 'warehouse' });
-    const res = await ctx.api.post('/api/hr/clock/punch')
-      .set({ Authorization: `Bearer ${acc.token}` })
-      .send({ code: code() });
+    const res = await phonePunch(ctx.api, { Authorization: `Bearer ${acc.token}` }, { code: code() });
     expect(res.status).toBe(403);
     expect(res.body.error).toMatch(/not linked/i);
   });
 
-  it('de-dupes a repeat punch within 45s', async () => {
+  it('de-dupes a repeat automatic (kiosk) punch within 45s', async () => {
     const e = await linkedEmployee();
-    const h = { Authorization: `Bearer ${e.accountToken}` };
-    const a = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
-    const b = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
+    const a = await ctx.api.post('/api/hr/clock/kiosk-punch').set(A()).send({ code: code(), employee_no: e.employee_no });
+    const b = await ctx.api.post('/api/hr/clock/kiosk-punch').set(A()).send({ code: code(), employee_no: e.employee_no });
     expect(b.body.duplicate).toBe(true);
     expect(b.body.kind).toBe(a.body.kind);
     const n = queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM time_punches WHERE employee_id = ?', e.employeeId)!.n;
@@ -104,10 +99,26 @@ describe('time clock', () => {
     expect(ok.body.source).toBe('kiosk');
   });
 
+  it('a suspended employee cannot punch (phone or kiosk) until set back to regular', async () => {
+    const e = await linkedEmployee({ status: 'suspended' });
+    const h = { Authorization: `Bearer ${e.accountToken}` };
+    const phone = await phonePunch(ctx.api, h, { code: code() });
+    expect(phone.status).toBe(403);
+    expect(phone.body.error).toMatch(/suspended/i);
+    const kiosk = await ctx.api.post('/api/hr/clock/kiosk-punch').set(A())
+      .send({ code: code(), employee_no: e.employee_no });
+    expect(kiosk.status).toBe(403);
+    expect(kiosk.body.error).toMatch(/suspended/i);
+    expect(queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM time_punches WHERE employee_id = ?', e.employeeId)!.n).toBe(0);
+
+    run("UPDATE employees SET status = 'regular' WHERE id = ?", e.employeeId);
+    const after = await phonePunch(ctx.api, h, { code: code() });
+    expect(after.status).toBe(200);
+  });
+
   it('recent feed lists punches newest-first with id filtering', async () => {
     const e = await linkedEmployee();
-    await ctx.api.post('/api/hr/clock/punch')
-      .set({ Authorization: `Bearer ${e.accountToken}` }).send({ code: code() });
+    await phonePunch(ctx.api, { Authorization: `Bearer ${e.accountToken}` }, { code: code() });
     const all = await ctx.api.get('/api/hr/clock/recent?since_id=0').set(A());
     expect(all.body.length).toBeGreaterThan(0);
     const top = all.body[0].id;
@@ -124,7 +135,7 @@ describe('time clock', () => {
     await ctx.api.post(`/api/hr/periods/${period.body.id}/employees/bulk`).set(A())
       .send({ employee_ids: [e.employeeId] });
 
-    const punch = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
+    const punch = await phonePunch(ctx.api, h, { code: code() });
     expect(punch.status).toBe(200);
     const today = punch.body.work_date as string;
 
@@ -224,7 +235,7 @@ describe('time clock', () => {
   it('refuses another auto punch once the day\'s final out has already happened', async () => {
     const e = await linkedEmployee();
     const h = { Authorization: `Bearer ${e.accountToken}` };
-    const first = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
+    const first = await phonePunch(ctx.api, h, { code: code() });
     const day = first.body.work_date as string;
     run(
       "INSERT INTO time_punches (employee_id, work_date, ts, kind, segment, source) VALUES (?, ?, datetime('now','localtime'), 'out', 'afternoon_out', 'kiosk')",
@@ -232,9 +243,13 @@ describe('time clock', () => {
     );
     run("UPDATE time_punches SET ts = datetime(ts, '-10 minutes') WHERE employee_id = ?", e.employeeId); // clear the 45s de-dupe window
 
-    const res = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
+    const res = await ctx.api.post('/api/hr/clock/kiosk-punch').set(A()).send({ code: code(), employee_no: e.employee_no });
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/already timed out/i);
+    // On the phone the employee picks the slot: Time out again replaces that Out (e.g. OT).
+    const phone = await phonePunch(ctx.api, h, { code: code() }, 'out');
+    expect(phone.status).toBe(200);
+    expect(phone.body.replaced).toBe(true);
   });
 
   it('a time-in HR typed into the grid makes the next punch a time-out, filling time_out', async () => {
@@ -251,7 +266,7 @@ describe('time clock', () => {
       const status = await ctx.api.get('/api/hr/clock/my-status').set(h);
       expect(status.body.clocked_in).toBe(true);
 
-      const punch = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
+      const punch = await phonePunch(ctx.api, h, { code: code() });
       expect(punch.status).toBe(200);
       expect(punch.body.kind).toBe('out');
       expect(punch.body.segment).toBe('afternoon_out');
@@ -284,7 +299,7 @@ describe('time clock', () => {
           .send({ label: 'Forgot time-in', start_date: today, end_date: today });
         await ctx.api.post(`/api/hr/periods/${period.body.id}/employees/bulk`).set(A()).send({ employee_ids: [e.employeeId] });
 
-        const punch = await ctx.api.post('/api/hr/clock/punch').set({ Authorization: `Bearer ${e.accountToken}` }).send({ code: code() });
+        const punch = await phonePunch(ctx.api, { Authorization: `Bearer ${e.accountToken}` }, { code: code() });
         expect(punch.status).toBe(200);
         expect(punch.body.kind).toBe('out');
         expect(punch.body.segment).toBe('afternoon_out');
@@ -298,7 +313,7 @@ describe('time clock', () => {
 
         // Timing out again is refused like any other already-timed-out day.
         run("UPDATE time_punches SET ts = datetime(ts, '-10 minutes') WHERE employee_id = ?", e.employeeId);
-        const again = await ctx.api.post('/api/hr/clock/punch').set({ Authorization: `Bearer ${e.accountToken}` }).send({ code: code() });
+        const again = await ctx.api.post('/api/hr/clock/kiosk-punch').set(A()).send({ code: code(), employee_no: e.employee_no });
         expect(again.status).toBe(409);
 
         // The Daily Report reads them as present (they were at work), not absent.
@@ -315,7 +330,7 @@ describe('time clock', () => {
         if (nowHm() >= '23:59') return; // can't be "before" a 23:59 shift end right now
         const shift = await ctx.api.post('/api/hr/shifts').set(A()).send({ name: 'All day', start_time: '00:00', end_time: '23:59' });
         const e = await linkedEmployee({ default_shift_id: shift.body.id });
-        const punch = await ctx.api.post('/api/hr/clock/punch').set({ Authorization: `Bearer ${e.accountToken}` }).send({ code: code() });
+        const punch = await phonePunch(ctx.api, { Authorization: `Bearer ${e.accountToken}` }, { code: code() });
         expect(punch.body.kind).toBe('in');
       } finally { restore(); }
     });
@@ -324,7 +339,7 @@ describe('time clock', () => {
       if (nowHm() < '00:01') return;
       const shift = await ctx.api.post('/api/hr/shifts').set(A()).send({ name: 'Tiny', start_time: '00:00', end_time: '00:01' });
       const e = await linkedEmployee({ default_shift_id: shift.body.id });
-      const punch = await ctx.api.post('/api/hr/clock/punch').set({ Authorization: `Bearer ${e.accountToken}` }).send({ code: code() });
+      const punch = await phonePunch(ctx.api, { Authorization: `Bearer ${e.accountToken}` }, { code: code() });
       expect(punch.body.kind).toBe('out');
     });
 
@@ -333,7 +348,7 @@ describe('time clock', () => {
       try {
         const shift = await ctx.api.post('/api/hr/shifts').set(A()).send({ name: 'Night', start_time: '22:00', end_time: '06:00' });
         const e = await linkedEmployee({ default_shift_id: shift.body.id });
-        const punch = await ctx.api.post('/api/hr/clock/punch').set({ Authorization: `Bearer ${e.accountToken}` }).send({ code: code() });
+        const punch = await phonePunch(ctx.api, { Authorization: `Bearer ${e.accountToken}` }, { code: code() });
         expect(punch.body.kind).toBe('in');
       } finally { restore(); }
     });
@@ -365,7 +380,7 @@ describe('time clock', () => {
     it('updates the existing punch for that slot in place instead of inserting a duplicate', async () => {
       const e = await linkedEmployee();
       const h = { Authorization: `Bearer ${e.accountToken}` };
-      const inn = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
+      const inn = await phonePunch(ctx.api, h, { code: code() });
       expect(inn.body.segment).toMatch(/_in$/);
 
       const corrected = await ctx.api.post('/api/hr/clock/correct').set(A())
@@ -380,7 +395,7 @@ describe('time clock', () => {
     it('is the only way to log more time once already timed out for the day (e.g. OT)', async () => {
       const e = await linkedEmployee();
       const h = { Authorization: `Bearer ${e.accountToken}` };
-      const first = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
+      const first = await phonePunch(ctx.api, h, { code: code() });
       const day = first.body.work_date as string;
       run(
         "INSERT INTO time_punches (employee_id, work_date, ts, kind, segment, source) VALUES (?, ?, datetime('now','localtime'), 'out', 'afternoon_out', 'kiosk')",
@@ -388,7 +403,7 @@ describe('time clock', () => {
       );
       run("UPDATE time_punches SET ts = datetime(ts, '-10 minutes') WHERE employee_id = ?", e.employeeId);
 
-      const blocked = await ctx.api.post('/api/hr/clock/punch').set(h).send({ code: code() });
+      const blocked = await ctx.api.post('/api/hr/clock/kiosk-punch').set(A()).send({ code: code(), employee_no: e.employee_no });
       expect(blocked.status).toBe(409);
 
       const ot = await ctx.api.post('/api/hr/clock/correct').set(A())
@@ -399,5 +414,153 @@ describe('time clock', () => {
       const n = queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM time_punches WHERE employee_id = ?', e.employeeId)!.n;
       expect(n).toBe(2);
     });
+  });
+});
+
+describe('phone punch: scan, then selfie', () => {
+  const H = (e: { accountToken: string }) => ({ Authorization: `Bearer ${e.accountToken}` });
+  const selfie = (h: Record<string, string>, holdId: unknown, withPhoto = true, slot = 'in') => {
+    const req = ctx.api.post('/api/hr/clock/punch/selfie').set(h).field('hold_id', String(holdId)).field('slot', slot);
+    return withPhoto ? req.attach('photo', fakeJpeg(), { filename: 's.jpg', contentType: 'image/jpeg' }) : req;
+  };
+  const punchCount = (employeeId: number) =>
+    queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM time_punches WHERE employee_id = ?', employeeId)!.n;
+
+  it('the old one-step route records nothing and tells the app to update', async () => {
+    const e = await linkedEmployee();
+    const res = await ctx.api.post('/api/hr/clock/punch').set(H(e)).send({ code: code() });
+    expect(res.status).toBe(410);
+    expect(res.body.error).toMatch(/selfie/i);
+    expect(punchCount(e.employeeId)).toBe(0);
+  });
+
+  it('a scan alone records no punch; the selfie records it with the photo kept', async () => {
+    const e = await linkedEmployee();
+    const scan = await ctx.api.post('/api/hr/clock/punch/scan').set(H(e)).send({ code: code() });
+    expect(scan.status).toBe(200);
+    expect(scan.body.hold_id).toBeGreaterThan(0);
+    expect(punchCount(e.employeeId)).toBe(0);
+
+    const res = await selfie(H(e), scan.body.hold_id);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ kind: 'in', source: 'phone' });
+    expect(res.body.photo_id).toBeGreaterThan(0);
+    const photo = queryOne<{ punch_kind: string; punch_id: number; employee_id: number }>(
+      'SELECT punch_kind, punch_id, employee_id FROM punch_photos WHERE id = ?', res.body.photo_id
+    );
+    expect(photo).toEqual({ punch_kind: 'attendance', punch_id: res.body.id, employee_id: e.employeeId });
+    // HR can open it like a kiosk photo, and the Punch Log points at it.
+    const img = await ctx.api.get(`/api/hr/clock/photo/${res.body.photo_id}`).set(A());
+    expect(img.status).toBe(200);
+    const day = res.body.work_date as string;
+    const log = await ctx.api.get(`/api/hr/clock/punches?from=${day}&to=${day}`).set(A());
+    expect(log.body.find((r: { id: number }) => r.id === res.body.id)?.photo_id).toBe(res.body.photo_id);
+    // The hold is used up: sending the selfie again does not make a second punch.
+    expect((await selfie(H(e), scan.body.hold_id)).status).toBe(400);
+    expect(punchCount(e.employeeId)).toBe(1);
+  });
+
+  it('records the punch at the scan time, not when the selfie arrives', async () => {
+    const e = await linkedEmployee();
+    const scan = await ctx.api.post('/api/hr/clock/punch/scan').set(H(e)).send({ code: code() });
+    // The selfie took 2 minutes.
+    run(
+      "UPDATE time_punch_holds SET scanned_ms = scanned_ms - 120000, scanned_at = datetime(scanned_at, '-2 minutes') WHERE id = ?",
+      scan.body.hold_id
+    );
+    const scannedAt = queryOne<{ scanned_at: string }>('SELECT scanned_at FROM time_punch_holds WHERE id = ?', scan.body.hold_id)!.scanned_at;
+    const res = await selfie(H(e), scan.body.hold_id);
+    expect(res.status).toBe(200);
+    const row = queryOne<{ ts: string }>('SELECT ts FROM time_punches WHERE id = ?', res.body.id)!;
+    expect(row.ts).toBe(scannedAt);
+  });
+
+  it('refuses a selfie with no photo, and keeps the scan so the employee can retry', async () => {
+    const e = await linkedEmployee();
+    const scan = await ctx.api.post('/api/hr/clock/punch/scan').set(H(e)).send({ code: code() });
+    const none = await selfie(H(e), scan.body.hold_id, false);
+    expect(none.status).toBe(400);
+    expect(none.body.error).toMatch(/selfie/i);
+    expect(punchCount(e.employeeId)).toBe(0);
+    expect((await selfie(H(e), scan.body.hold_id)).status).toBe(200);
+  });
+
+  it('refuses an expired scan', async () => {
+    const e = await linkedEmployee();
+    const scan = await ctx.api.post('/api/hr/clock/punch/scan').set(H(e)).send({ code: code() });
+    run('UPDATE time_punch_holds SET scanned_ms = scanned_ms - 6 * 60000 WHERE id = ?', scan.body.hold_id);
+    const res = await selfie(H(e), scan.body.hold_id);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/expired/i);
+    expect(punchCount(e.employeeId)).toBe(0);
+  });
+
+  it("can't use someone else's scan", async () => {
+    const a = await linkedEmployee();
+    const b = await linkedEmployee();
+    const scan = await ctx.api.post('/api/hr/clock/punch/scan').set(H(a)).send({ code: code() });
+    expect((await selfie(H(b), scan.body.hold_id)).status).toBe(400);
+    expect(punchCount(b.employeeId)).toBe(0);
+    expect((await selfie(H(a), scan.body.hold_id)).status).toBe(200); // still a's to use
+  });
+
+  it('a new scan replaces the earlier one', async () => {
+    const e = await linkedEmployee();
+    const first = await ctx.api.post('/api/hr/clock/punch/scan').set(H(e)).send({ code: code() });
+    const second = await ctx.api.post('/api/hr/clock/punch/scan').set(H(e)).send({ code: code() });
+    expect((await selfie(H(e), first.body.hold_id)).status).toBe(400);
+    expect((await selfie(H(e), second.body.hold_id)).status).toBe(200);
+    expect(punchCount(e.employeeId)).toBe(1);
+  });
+
+  const scanThen = async (e: { accountToken: string }, slot: string) => {
+    const scan = await ctx.api.post('/api/hr/clock/punch/scan').set(H(e)).send({ code: code() });
+    return selfie(H(e), scan.body.hold_id, true, slot);
+  };
+
+  it('records the slot the employee picked, and /my-status shows the four tiles', async () => {
+    const e = await linkedEmployee();
+    const before = await ctx.api.get('/api/hr/clock/my-status').set(H(e));
+    expect(before.body.slots).toEqual({ in: null, lunchOut: null, lunchIn: null, out: null });
+    expect(['in', 'out']).toContain(before.body.next_slot); // 'out' only when it's already past shift end
+
+    const inn = await scanThen(e, 'in');
+    expect(inn.body).toMatchObject({ kind: 'in', replaced: false });
+    const out = await scanThen(e, 'out');
+    expect(out.body).toMatchObject({ kind: 'out', segment: 'afternoon_out', replaced: false });
+
+    const after = await ctx.api.get('/api/hr/clock/my-status').set(H(e));
+    expect(after.body.slots.in).toBe(inn.body.at);
+    expect(after.body.slots.out).toBe(out.body.at);
+    expect(after.body.next_slot).toBeNull(); // the day's Out is recorded
+  });
+
+  it('re-doing a slot moves that same punch and replaces its photo', async () => {
+    const e = await linkedEmployee();
+    const first = await scanThen(e, 'in');
+    run("UPDATE time_punches SET ts = datetime(ts, '-30 minutes') WHERE id = ?", first.body.id);
+    const oldFile = queryOne<{ file_name: string }>('SELECT file_name FROM punch_photos WHERE id = ?', first.body.photo_id)!.file_name;
+
+    const again = await scanThen(e, 'in');
+    expect(again.status).toBe(200);
+    expect(again.body.replaced).toBe(true);
+    expect(again.body.id).toBe(first.body.id); // the same punch, not a second time-in
+    expect(again.body.photo_id).toBe(first.body.photo_id); // the same photo row, new file
+    expect(punchCount(e.employeeId)).toBe(1);
+    const row = queryOne<{ ts: string }>('SELECT ts FROM time_punches WHERE id = ?', first.body.id)!;
+    expect(row.ts.slice(11, 16)).toBe(again.body.at);
+    const newFile = queryOne<{ file_name: string }>('SELECT file_name FROM punch_photos WHERE id = ?', again.body.photo_id)!.file_name;
+    expect(newFile).not.toBe(oldFile);
+    expect(queryOne<{ n: number }>('SELECT COUNT(*) AS n FROM punch_photos WHERE punch_id = ?', first.body.id)!.n).toBe(1);
+  });
+
+  it('refuses a selfie that names no slot, keeping the scan', async () => {
+    const e = await linkedEmployee();
+    const scan = await ctx.api.post('/api/hr/clock/punch/scan').set(H(e)).send({ code: code() });
+    const bad = await ctx.api.post('/api/hr/clock/punch/selfie').set(H(e)).field('hold_id', String(scan.body.hold_id))
+      .attach('photo', fakeJpeg(), { filename: 's.jpg', contentType: 'image/jpeg' });
+    expect(bad.status).toBe(400);
+    expect(punchCount(e.employeeId)).toBe(0);
+    expect((await selfie(H(e), scan.body.hold_id)).status).toBe(200);
   });
 });

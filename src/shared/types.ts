@@ -3,45 +3,48 @@
  * These mirror the database schema in src/db.ts and the JSON shapes the API returns.
  */
 
-export type Role =
-  | 'admin' | 'admin_staff' | 'accounting' | 'warehouse'
-  | 'releasing' | 'csr' | 'hr' | 'marketing'
-  // Narrow, single-task shop-floor roles — each holds only the one production
-  // permission its person needs (see permissions.ts ROLE_DEFAULTS), on top of what
-  // 'warehouse' already covers for general operations. Introduced so a parts-request
-  // clerk, a line lead, a QC inspector, a QA inspector and a Products In clerk can each
-  // get an account scoped to exactly their own task instead of sharing inventory.adjust.
-  // QC and QA are deliberately separate roles/people, matching the pipeline's own
-  // first-pass-QC-then-final-pass-QA distinction (docs/modules/pipelines.md).
-  | 'parts_clerk' | 'production_lead' | 'qc_inspector' | 'qa_inspector' | 'receiving_clerk'
-  // Same narrowing, orders module: a mobile-only account that just scans/enters goods out
-  // against an approved sale order, without the broad inventory.adjust that also lets it
-  // adjust arbitrary stock.
-  | 'releasing_clerk';
+/** A role key from the tenant's `roles` table (src/shared/roles.ts). Workspaces create their own
+    roles, so this is any string; the built-in seeds are listed in permissions.ts BUILTIN_ROLES.
+    Only 'admin' is fixed (always every permission). */
+export type Role = string;
 
 export type Permission =
+  | 'inventory.receive' | 'inventory.transfer' | 'inventory.count' | 'inventory.review_counts' | 'inventory.costs' | 'production.work_all' | 'production.plan' | 'production.kit_release' | 'production.configure' | 'evidence.manage' | 'orders.approve' | 'orders.authorize' | 'orders.configure' | 'orders.override_release' | 'orders.direct_sale' | 'purchasing.approve_bills' | 'purchasing.override_match' | 'purchasing.issue_cash' | 'purchasing.settle_requests' | 'accounting.post' | 'accounting.record_payments' | 'accounting.configure' | 'payroll.approve' | 'payroll.pay' | 'payroll.rates' | 'payroll.configure' | 'users.permissions' | 'security.manage' | 'workspace.manage' | 'returns.receive' | 'returns.inspect' | 'returns.dispose' | 'forms.variables' | 'hr.timekeeping.view' | 'hr.timekeeping.manage' | 'hr.kiosk'
+  // Sign in to the phone app (/m). Every role carries it by default — see permissions.ts BASELINE.
+  | 'mobile.access'
   | 'inventory.view' | 'inventory.create' | 'inventory.edit' | 'inventory.delete'
   | 'inventory.adjust' | 'inventory.configure' | 'inventory.mobile'
   | 'orders.view' | 'orders.create' | 'orders.edit' | 'orders.delete'
+  // Purchase orders, goods receipts and vendor bills (split from orders.*; inventory/order-access.ts).
+  | 'purchasing.view' | 'purchasing.manage' | 'purchasing.request' | 'purchasing.approve_requests'
   | 'forms.view' | 'forms.upload' | 'forms.delete'
+  | 'forms.fill.inventory'
   | 'forms.manage.hr' | 'forms.manage.inventory' | 'forms.manage.admin' | 'forms.manage.accounting'
   | 'messages.view' | 'messages.send'
   | 'templates.view' | 'templates.edit' | 'templates.company'
   | 'users.manage'
   | 'hr.view' | 'hr.manage'
+  // Pay, split from HR records (src/modules/payroll/pay-access.ts): rates, payslips, payroll runs.
+  | 'payroll.view' | 'payroll.manage'
   | 'accounting.view' | 'accounting.manage'
   | 'audit.view'
+  // Case handlers for the anonymous reporting channel (src/core/confidential-reports.ts).
+  | 'reports.confidential'
+  // Production Manager's controlled actions: pause/resume/close-early with a required reason.
+  | 'production.manage'
   | 'mail.send'
   | 'announce'
   | 'qc.configure'
   | 'delivery.run' | 'delivery.manage'
-  // Narrow production-pipeline actions, each independently grantable alongside (or
-  // instead of) the broad inventory.adjust — see job-orders.routes.ts / production.routes.ts
-  // requireAnyPermission(['inventory.adjust', 'production.xxx']) call sites.
+  // Production task permissions are independent of inventory.adjust.
+  | 'production.view'       // see the production screens (job orders, QC, batches, BOM) — split from inventory.view
+  | 'production.approve'    // production manager: approve a draft job order for release
+  | 'production.pause'      // pause / resume a running job order (e.g. for a higher-priority one)
   | 'production.repairs'    // warehouse: accept/reject a rework parts request
   | 'production.record'     // line lead: record units/batches off the line
   | 'production.inspect_qc' // QC inspector: pass/fail a unit's first pass
   | 'production.inspect_qa' // QA inspector: pass/fail a unit's final pass
+  | 'production.qa_review'  // decide a unit QA put on hold (QA inspectors can too)
   | 'production.receive'    // Products In: receive passed output into stock
   // Same narrowing, orders module (orders.routes.ts requireAnyPermission(['inventory.adjust',
   // 'orders.release'])) — a releasing_clerk mobile account scoped to just scanning/entering
@@ -100,6 +103,8 @@ export interface UserRow {
   full_name: string;
   email: string | null;
   password_hash: string;
+  password_change_required: number;
+  temporary_password_expires_at: string | null;
   role: Role;
   department_id: number | null;
   active: number; // 0 | 1
@@ -110,6 +115,8 @@ export interface UserRow {
 
 /** The authenticated user attached to requests (no password hash). */
 export interface AuthUser {
+  password_change_required?: number;
+  temporary_password_expires_at?: string | null;
   id: number;
   username: string;
   full_name: string;
@@ -122,9 +129,30 @@ export interface AuthUser {
 
 export interface SessionRow {
   token: string;
+  /** Public id — the only way a session is referred to outside src/shared/auth.ts. */
+  sid: string;
   user_id: number;
   created_at: string;
   expires_at: string;
+  device_id: string | null;
+  ip: string | null;
+  user_agent: string | null;
+  last_seen_at: string | null;
+  last_ip: string | null;
+  /** 1 = borrowed-phone sign-in (short, idle-limited, no push). */
+  shared: number;
+  idle_minutes: number | null;
+  ended_at: string | null;
+  end_reason: string | null;
+}
+
+/** The session behind the current request (req.authSession, set by requireAuth). */
+export interface AuthSession {
+  sid: string;
+  shared: boolean;
+  device_id: string | null;
+  last_seen_at: string | null;
+  last_ip: string | null;
 }
 
 export interface Supplier {
@@ -230,6 +258,9 @@ export interface CreditNote {
 export interface LocationRow {
   id: number;
   name: string;
+  parent_id: number | null;
+  path?: string;
+  depth?: number;
   type: string;
   address: string | null;
   notes: string | null;
@@ -239,6 +270,11 @@ export interface LocationRow {
   /** Joined in by GET /api/locations. */
   total_units?: number;
   item_count?: number;
+  subtree_units?: number;
+  subtree_item_count?: number;
+  child_count?: number;
+  /** Room in units of stock (location_capacities), null = no limit. */
+  capacity?: number | null;
 }
 
 export interface InventoryStockRow {
@@ -249,6 +285,8 @@ export interface InventoryStockRow {
 }
 
 export interface InventoryItem {
+  reserved_for_sales?:number;
+  available_quantity?:number;
   id: number;
   name: string;
   sku: string | null;
@@ -262,6 +300,7 @@ export interface InventoryItem {
    *  when a job order posts to the GL (ACCOUNTING-SYSTEM-PLAN Phase 3b). 0 until set. */
   unit_cost: number;
   location: string | null;
+  preferred_location_id: number | null;
   notes: string | null;
   /** Raw JSON string in the DB row; parsed to an object in API responses. */
   attributes: string | Record<string, unknown> | null;
@@ -304,6 +343,8 @@ export interface BomComponent {
 export type JobOrderStatus = 'draft' | 'released' | 'in_progress' | 'paused' | 'completed' | 'cancelled';
 
 export interface JobOrder {
+  intake_origin?: string;
+  legacy_unit_cost?: number | null;
   id: number;
   number: string;
   order_id: number | null;
@@ -313,6 +354,14 @@ export interface JobOrder {
   qty_done: number;
   qty_scrapped: number;
   status: JobOrderStatus;
+  build_mode: 'assembled' | 'semi_built';
+  conversion_job_order_id?: number | null;
+  conversion_source_unit_id?: number | null;
+  conversion_source_batch_id?: number | null;
+  conversion_source_batch_number?: string | null;
+  conversion_source_cost?: number | null;
+  conversion_finishing_cost?: number | null;
+  conversion_cancel_reason?: string | null;
   source_location_id: number | null;
   output_location_id: number | null;
   qc_stages: number;
@@ -323,6 +372,21 @@ export interface JobOrder {
   created_at: string;
   updated_at: string;
   released_by: number | null;
+  /** Manager's approval of the draft; /release refuses until set (POST /:id/approve).
+   *  Editing the draft clears it. */
+  approved_by: number | null;
+  approved_at: string | null;
+  approve_notes: string | null;
+  /** Warehouse took on the approved draft (POST /job-orders/warehouse-accept), then picked
+   *  the whole kit (POST /job-orders/prepare). /release needs both. */
+  warehouse_accepted_by: number | null;
+  warehouse_accepted_at: string | null;
+  prepared_by: number | null;
+  prepared_at: string | null;
+  /** Last pause (POST /:id/pause); cleared on resume. */
+  paused_by: number | null;
+  paused_at: string | null;
+  pause_reason: string | null;
   /** Production lead's sign-off that the released parts kit arrived (POST /:id/accept). */
   accepted_by: number | null;
   accepted_at: string | null;
@@ -337,6 +401,15 @@ export interface JobOrder {
   work_center: string | null;
   created_by_name?: string | null;
   released_by_name?: string | null;
+  approved_by_name?: string | null;
+  /** Content revision of the reviewed plan, excluding changing live stock. */
+  approval_revision?: string;
+  warehouse_accepted_by_name?: string | null;
+  prepared_by_name?: string | null;
+  paused_by_name?: string | null;
+  open_issues?: number;
+  parts_slip_id?: number | null;
+  parts_slip_number?: string | null;
   accepted_by_name?: string | null;
   team_name?: string | null;
   order_number?: string | null;
@@ -347,12 +420,19 @@ export interface JobOrder {
    *  that stage's default, else null). */
   qc_checklist_qa?: { id: number; name: string; items: QcChecklistItem[] } | null;
   qc_checklist_qc?: { id: number; name: string; items: QcChecklistItem[] } | null;
+  /** JSON captured at release; null on legacy jobs. */
+  qc_checklist_qc_snapshot?: string | null;
+  qc_checklist_qa_snapshot?: string | null;
 }
 
 /** One configurable QA/QC checklist line. */
 export interface QcChecklistItem {
   label: string;
   required: boolean;
+  /** Mobile V2: the checklist step this item belongs to, a measurement unit, and a one-line hint. */
+  group?: string | null;
+  measure?: string | null;
+  hint?: string | null;
 }
 
 /** A named, reusable QC/QA checklist, belonging to one stage as a whole (stage: 1 = QC /
@@ -380,9 +460,96 @@ export interface QcChecklistResult {
   note?: string | null;
 }
 
+/** A numbered record of goods physically leaving the warehouse against a sale order.
+ *  Issuing it confirms the SO (stock out). See src/modules/inventory/release-slips.routes.ts. */
+export interface ReleaseSlip {
+  id: number;
+  number: string;
+  order_id: number;
+  released_by: number | null;
+  released_at: string;
+  collected_by: string | null;
+  vehicle_plate: string | null;
+  notes: string | null;
+  order_number?: string;
+  customer_name?: string | null;
+  released_by_name?: string | null;
+  photo_count?: number;
+  /** Set when a supervisor's override stood in for the release token. */
+  override_reason?: string | null;
+  override_by_name?: string | null;
+  items?: ReleaseSlipItem[];
+}
+/** A job order's parts release slip — the numbered record of the kit the warehouse handed
+ *  to production. Issuing it (POST /job-orders/:id/release) is when components leave stock. */
+export interface PartsReleaseSlip {
+  id: number;
+  number: string;
+  job_order_id: number;
+  released_by: number | null;
+  released_at: string;
+  received_by: string | null;
+  notes: string | null;
+  job_order_number?: string;
+  product_name?: string | null;
+  qty_ordered?: number;
+  source_location_name?: string | null;
+  released_by_name?: string | null;
+  photo_count?: number;
+  items?: PartsReleaseSlipItem[];
+}
+export interface PartsReleaseSlipItem {
+  id: number;
+  slip_id: number;
+  component_item_id: number | null;
+  name: string;
+  sku: string | null;
+  unit: string | null;
+  quantity: number;
+}
+
+/** An issue reported on the production floor, against a whole job order or one unit. */
+export interface ProductionIssue {
+  id: number;
+  job_order_id: number;
+  unit_id: number | null;
+  category: string;
+  severity: 'low' | 'normal' | 'high' | 'critical';
+  description: string;
+  status: 'open' | 'resolved';
+  resolution: string | null;
+  reported_by: number | null;
+  created_at: string;
+  updated_by: number | null;
+  updated_at: string;
+  resolved_by: number | null;
+  resolved_at: string | null;
+  job_order_number?: string;
+  unit_identifier?: string | null;
+  reported_by_name?: string | null;
+  updated_by_name?: string | null;
+  resolved_by_name?: string | null;
+  photo_count?: number;
+}
+export interface ReleaseSlipItem {
+  id: number;
+  slip_id: number;
+  order_item_id: number | null;
+  /** Stock was removed by the older direct-unit Sell action before a release slip. */
+  direct_sold_at: string | null;
+  item_id: number | null;
+  name: string;
+  sku: string | null;
+  unit: string | null;
+  quantity: number;
+  /** Comma-separated serials of the units that left on this line, when serialized. */
+  unit_identifiers: string | null;
+}
+
 /** A field delivery / drop with its proof of delivery. See src/routes/deliveries.routes.ts. */
 export type DeliveryStatus = 'pending' | 'out_for_delivery' | 'delivered' | 'failed' | 'cancelled';
 export interface Delivery {
+  release_slip_id?: number | null;
   id: number;
   number: string;
   order_id: number | null;
@@ -391,6 +558,9 @@ export interface Delivery {
   contact_phone: string | null;
   scheduled_date: string | null;
   assigned_to: number | null;
+  delivery_mode: 'own' | 'courier';
+  courier_name: string | null;
+  tracking_number: string | null;
   status: DeliveryStatus;
   notes: string | null;
   pod_recipient: string | null;
@@ -414,7 +584,7 @@ export interface Delivery {
     See src/routes/attachments.routes.ts. */
 export interface Attachment {
   id: number;
-  kind: 'qc_unit' | 'damage' | 'problem' | 'delivery' | 'signature';
+  kind: 'qc_unit' | 'damage' | 'problem' | 'delivery' | 'signature' | 'release' | 'parts_release' | 'production_issue';
   ref_id: number;
   image_path: string;
   caption: string | null;
@@ -433,6 +603,8 @@ export interface JobOrderComponent {
   qty_per_unit: number;
   qty_planned: number;
   qty_consumed: number;
+  /** Warehouse's picked count while preparing the kit (POST /job-orders/prepare). */
+  qty_picked: number;
   /** Joined: the component's current grand total on hand. */
   component_on_hand?: number;
 }
@@ -443,9 +615,14 @@ export type JobOrderUnitStatus =
    *  POST /job-orders/:id/products-in. Not sellable/reservable until it becomes 'in_stock'. */
   | 'passed'
   | 'in_stock' | 'failed' | 'scrapped' | 'sold' | 'rework'
+  | 'returned_rejected' | 'returned_rework' | 'returned_salvaged' | 'returned_disposed'
+  /** Held by QA for review (final pass); decided by QA / production.qa_review — pass, rectify or fail. */
+  | 'hold'
   /** Earmarked for a sale order by a warehouse release; still physical on-hand stock
    *  until the order reaches a confirmed status and `maybeFulfillSale` draws it down. */
-  | 'reserved';
+  | 'reserved'
+  /** Semi-built source after finishing intake; uninspected output cancelled and returned. */
+  | 'converted' | 'cancelled';
 
 /** What the inspector decided for a failed unit. `repair` sends it to rework; the
  *  others are terminal (the unit is counted as scrapped). */
@@ -457,11 +634,15 @@ export interface JobOrderUnit {
   product_item_id: number | null;
   identifier: string | null;
   status: JobOrderUnitStatus;
+  conversion_source_unit_id?: number | null;
+  received_unit_cost?: number | null;
   /** Number of inspection stages this unit has passed so far. */
   stage: number;
   location_id: number | null;
   /** Sales order that sold or relocated this unit (nullable). */
   order_id: number | null;
+  /** Commercial sale line that reserved/sold this unit. */
+  order_item_id: number | null;
   /** Production batch this unit belongs to (nullable — serialized units may be loose). */
   batch_id: number | null;
   /** Set when the unit was failed (see UnitDisposition). */
@@ -566,6 +747,7 @@ export interface RepairPartRequest {
   number: string;
   unit_id: number;
   job_order_id: number | null;
+  sales_return_id?: number | null;
   kind: RepairRequestKind;
   component_item_id: number | null;
   component_name: string;
@@ -619,7 +801,8 @@ export interface QcRecord {
   unit_id: number | null;
   /** 1 = QA, 2 = QC. */
   stage: number;
-  result: 'pass' | 'fail';
+  /** 'hold' = QA held the unit for review (no pass/fail yet). */
+  result: 'pass' | 'fail' | 'hold';
   remarks: string | null;
   /** JSON string in the row; parsed to QcChecklistResult[] in API responses. */
   checklist: string | QcChecklistResult[] | null;
@@ -659,6 +842,10 @@ export interface ActivityLogRow {
   action: string | null;
   status_code: number | null;
   ip: string | null;
+  /** The browser/app's random device ID (X-Device-Id — see src/shared/device.ts). */
+  device_id: string | null;
+  /** Readable label from the User-Agent, e.g. "Chrome on Android". */
+  device: string | null;
   summary: string | null;
   /** Redacted JSON snapshot of the request body (string in the row). */
   meta: string | null;
@@ -736,6 +923,8 @@ export interface BugReport {
 export type OrderType = 'sale' | 'job' | 'purchase';
 
 export interface Order {
+  /** Edit token computed from stored header/lines; optional for legacy integrations. */
+  revision?: string;
   id: number;
   type: OrderType;
   number: string;
@@ -767,6 +956,10 @@ export interface Order {
    *  cancelled / re-opened. Does NOT move stock — that still happens on confirm. */
   released_at: string | null;
   released_by: number | null;
+  /** Sale orders only: the warehouse took on this approved SO for releasing
+   *  (`POST /orders/:id/accept-release`). `/release` requires it. */
+  warehouse_accepted_at?: string | null;
+  warehouse_accepted_by?: number | null;
   /** Optional VAT / tax classification (drives the GL post + the BIR journals). */
   tax_code_id: number | null;
   created_by_name?: string | null;
@@ -779,13 +972,22 @@ export interface Order {
   job_order_id?: number | null;
   job_order_number?: string | null;
   job_order_status?: string | null;
+  fulfillment_modes?: string | null;
+  warehouse_accepted_by_name?: string | null;
+  release_slip_id?: number | null;
+  release_slip_number?: string | null;
   items?: OrderItem[];
 }
 
 export interface OrderItem {
+  dispatched_qty?: number;
+  dispatched_bulk_qty?: number;
+  cancelled_qty?: number;
   id: number;
   order_id: number;
   item_id: number | null;
+  fulfillment_mode: 'assembled' | 'semi_built' | 'ckd' | 'ckd_component';
+  parent_order_item_id: number | null;
   name: string;
   sku: string | null;
   description: string | null;
@@ -862,6 +1064,7 @@ export interface VendorBill {
   approved_at: string | null;
   notes: string | null;
   created_by: number | null;
+  last_edited_by?: number | null;
   created_at: string;
   approved_by_name?: string | null;
   supplier_name?: string | null;
@@ -967,6 +1170,7 @@ export interface JournalEntry {
   posted_by: number | null;
   posted_at: string | null;
   created_by: number | null;
+  last_edited_by?: number | null;
   created_at: string;
   created_by_name?: string | null;
   total_debit?: number;
@@ -1003,6 +1207,8 @@ export interface DocTemplate {
   // (SCHEMA_VERSION 35) Continuous tiling — see the db.ts version-history comment. Only
   // meaningful when tile_continuous is truthy; otherwise copies_per_record alone is still
   // the repeat count, exactly as before these two fields existed.
+  grid_gap_x_mm: number;
+  grid_gap_y_mm: number;
   repeat_count: number;
   tile_continuous: number; // 0 | 1
   created_by: number | null;
@@ -1010,7 +1216,9 @@ export interface DocTemplate {
   updated_at: string;
 }
 
-export type EmployeeStatus = 'probationary' | 'regular' | 'resigned' | 'terminated';
+/** 'suspended': still employed (rosters, payroll) but barred from clocking in and production
+    staffing until HR sets them back to probationary/regular. */
+export type EmployeeStatus = 'probationary' | 'regular' | 'suspended' | 'resigned' | 'terminated';
 
 export interface Employee {
   id: number;
@@ -1027,6 +1235,8 @@ export interface Employee {
   philhealth_no: string | null;
   pagibig_no: string | null;
   tin_no: string | null;
+  birth_date: string | null; // YYYY-MM-DD
+  civil_status: string | null; // one of CIVIL_STATUSES (validation.ts)
   photo: string | null; // data: URI
   created_at: string;
   department_name?: string | null;
@@ -1046,6 +1256,10 @@ export interface Employee {
   // late_exempt: ot_hours still computes and shows on the payslip detail, only overtime_pay
   // is zeroed. See hr-payroll-compute.ts.
   ot_exempt: boolean;
+  // Always paid a whole day: any day with both a time-in and a time-out earns the full daily
+  // basic, whatever the times — no half day, late, undertime or Undertime Day. OT, night
+  // differential and holiday/rest-day premiums still follow the normal rules.
+  always_whole_day: boolean;
   // A fixed withholding-tax peso amount for this employee, replacing the computed BIR formula
   // every cutoff (e.g. a negotiated/BIR-registered special rate). null = use the normal
   // computed amount. Only takes effect while deduct_withholding_tax is also on — see
@@ -1057,6 +1271,9 @@ export interface Employee {
   sss_override: number | null;
   philhealth_override: number | null;
   pagibig_override: number | null;
+  /** SSS / Pag-IBIG basis: 'actual' (month's actual pay, the law's default) or 'fixed' (fixed
+      monthly rate, by written agreement). See computeEmployeeStatutory in hr.routes.ts. */
+  contribution_basis: 'actual' | 'fixed';
 }
 
 /** Company-wide format for the RECOMMENDED employee number (settings key "employee_no_policy") —
@@ -1090,6 +1307,13 @@ export interface PayrollPolicy {
   grace_minutes: number;
   late_unit: 'minute' | 'hour';
   ot_unit: 'minute' | '30min' | 'hour';
+  /** OT grace: short of the next OT step by no more than this many minutes counts as reaching
+      it — 17:56 on a 17:00 end with hour steps and 5 min grace is 1 h. 0/absent = off. See
+      otCreditMinutes in hr-payroll-compute.ts. */
+  ot_grace_minutes?: number;
+  /** Minimum OT before any counts; past it OT counts in ot_unit steps — 60 with 30-minute
+      steps: 18:30 on a 17:00 end is 1.5 h, 17:30 is 0. 0/absent = steps from the first minute. */
+  ot_min_minutes?: number;
   ot_rate_percent: number;
   /** When true (the default), OT only pays when the day is linked to an approved Overtime
       Request form — a raw late clock-out by itself isn't auto-paid. When false, any clock-out
@@ -1207,6 +1431,11 @@ export interface PayrollPolicy {
       period-independent DB lookup, so it can't live in the DB-free compute engine itself) and
       AttendanceDay.holidayEligible in hr-payroll-compute.ts. */
   holiday_adjacency_requirement: 'none' | 'before' | 'after' | 'both';
+  /** When true, a worked rest day earns its rest-day premium (the +30%, and the rest-day part
+      of a holiday-on-rest-day or OT rate) only when an APPROVED Rest Day Work Request is linked
+      to that day — otherwise it pays as an ordinary working day. False/absent (default,
+      preserves the older behavior): the premium is automatic. See src/modules/hr/rest-day.ts. */
+  require_rest_day_form?: boolean;
 }
 
 export interface EmployeeDocument {
@@ -1262,6 +1491,8 @@ export interface AttendancePeriod {
   created_by: number | null;
   created_at: string;
   employee_count?: number;
+  locked?: boolean;
+  warnings?: string[];
 }
 
 export interface AttendanceRecord {
@@ -1308,7 +1539,14 @@ export interface AttendanceRecord {
 export interface FieldDef {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'date' | 'select' | 'textarea' | 'checkbox' | 'employee';
+  type: 'text' | 'number' | 'date' | 'time' | 'select' | 'textarea' | 'checkbox' | 'employee' | 'reference' | 'system' | 'line_items' | 'calculated';
+  calculation?: {operator:'sum'|'multiply'|'subtract'|'percent';operands:string[]};
+  price_editable?:boolean;
+  format?: 'currency';
+  currency?: string;
+  source?: 'product' | 'customer' | 'employee' | 'sales_order' | 'supplier' | 'location' | 'account' | 'tax_code' | 'company' | 'user';
+  property?: string;
+  binding?: { field: string; property: string; editable: boolean };
   required: boolean;
   options: string[];  // only for type = 'select'
   default: string;
@@ -1323,8 +1561,16 @@ export interface FormAction {
     | 'email_employee'       // email the rendered notice via the company SMTP mailbox
     | 'notify_hr'            // message the employee's dept head, else hr.manage holders
     | 'create_followup_task' // add a task due on `due_field`
-    | 'apply_no_work';       // date_from/date_to/paid range feeds paid/unpaid no-work into payroll
-  run_on?: 'create' | 'approved';
+    | 'apply_no_work'
+    | 'create_sales_draft';       // date_from/date_to/paid range feeds paid/unpaid no-work into payroll
+  run_on?: 'create' | 'approved' | 'submitted';
+  customer_field?:string;
+  items_field?:string;
+  tax_field?:string;
+  total_field?:string;
+  date_field?:string;
+  currency?:string;
+  notes_field?:string;
   subject?: string;          // notify_employee / email_employee — templated
   body?: string;             // notify_employee — templated
   due_field?: string;        // create_followup_task — a date field key on the form
@@ -1333,6 +1579,12 @@ export interface FormAction {
 
 /** A custom form type created by an admin. */
 export interface FormDefinition {
+  entry_access?: string | {roles:string[];users:number[]};
+  access_revision?:number;
+  records_allowed?:boolean;
+  version?: number;
+  archived_at?: string | null;
+  archive_reason?: string | null;
   id: number;
   name: string;
   slug: string;
@@ -1350,6 +1602,8 @@ export interface FormDefinition {
 
 /** A submitted record for a custom form. */
 export interface FormRecord {
+  definition_version?: number;
+  revision?: number;
   id: number;
   form_def_id: number;
   number: string;
@@ -1357,6 +1611,7 @@ export interface FormRecord {
   status: string;
   period: string | null;
   created_by: number | null;
+  last_edited_by?: number | null;
   created_at: string;
   updated_at: string | null;
   created_by_name?: string | null;
@@ -1412,6 +1667,7 @@ declare global {
     interface Request {
       user?: AuthUser;
       token?: string;
+      authSession?: AuthSession;
     }
   }
 }

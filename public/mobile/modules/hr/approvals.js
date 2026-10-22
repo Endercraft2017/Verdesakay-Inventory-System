@@ -25,11 +25,17 @@
       .then(function (res) {
         var items = [];
         (res.requests || []).forEach(function (r) {
+          var d = r.data || {};
           items.push({
             kind: 'req', id: r.id, path: '/me/approvals/requests/' + r.id + '/decide',
             type: r.form_name, number: r.number,
             who: r.employee_name || r.filed_by || 'Someone', role: '',
-            created_at: r.created_at, data: r.data || {},
+            created_at: r.created_at,
+            // An information change is shown as a before/after so HR sees exactly what approving
+            // writes to the employee record (the server applies it on approval).
+            data: r.display_data || (r.slug === 'information_change'
+              ? { Change: d.field, 'On record now': d.current_value || '—', 'Correct value': d.requested_value, Reason: d.reason }
+              : d),
           });
         });
         (res.time_corrections || []).forEach(function (r) {
@@ -151,30 +157,45 @@
 
   function flushOnLeave() { flushPending(); }
 
-  function flushPending() {
+  async function flushPending() {
     var p = state.pending;
     if (!p) return;
     state.pending = null;
     clearTimeout(p.timer);
     window.removeEventListener('hashchange', flushOnLeave);
     hideUndo();
-    API.post(p.it.path, { decision: p.decision, note: p.note || null })
-      .then(function () {
-        mToast(p.decision === 'approved' ? 'Approved' : 'Rejected');
-        MApp.refreshInboxBadge && MApp.refreshInboxBadge();
-      })
-      .catch(function (ex) {
-        mToast(ex.message || 'Could not save — restored', 'err');
-        state.items.splice(Math.min(p.at, state.items.length), 0, p.it);
-        if (location.hash.indexOf('approvals') !== -1) draw();
-      });
+    var body = { decision: p.decision, note: p.note || null };
+    try {
+      var res;
+      try {
+        res = await API.post(p.it.path, body);
+      } catch (ex) {
+        // The server checks the current balance at decision time. Never silently
+        // overdraw it: ask the approver before retrying with the explicit override.
+        if (p.decision !== 'approved' || !/approve anyway to override/i.test(ex.message || '')) throw ex;
+        if (!window.confirm(ex.message + '\n\nApprove this paid leave and let the balance go below zero?')) {
+          throw new Error('Approval cancelled. The request is still pending.');
+        }
+        res = await API.post(p.it.path, { decision: 'approved', note: p.note || null, override_balance: true });
+      }
+      if (res && res.warnings && res.warnings.length) window.alert(res.warnings.join('\n\n'));
+      mToast(res && res.applied_note ? 'Approved — ' + res.applied_note
+        : res && res.applied ? 'Approved — employee record updated'
+        : p.decision === 'approved' ? 'Approved' : 'Rejected');
+      MApp.refreshInboxBadge && MApp.refreshInboxBadge();
+    } catch (ex) {
+      mToast(ex.offline ? 'Approval was not sent. Reconnect, then review it again.' : (ex.message || 'Could not save — restored'), 'err');
+      state.items.splice(Math.min(p.at, state.items.length), 0, p.it);
+      state.idx = p.at;
+      if (location.hash.indexOf('approvals') !== -1) draw();
+    }
   }
 
   function showUndo(decision) {
     hideUndo();
     var bar = mEl('<div class="m-undo" id="m-appr-undo">' +
-      '<span class="ok-ic">✓</span>' + (decision === 'approved' ? 'Approved.' : 'Rejected.') +
-      ' You can undo this action. <button>Undo</button></div>');
+      '<span class="ok-ic">✓</span>' + (decision === 'approved' ? 'Approval queued.' : 'Rejection queued.') +
+      ' Not saved yet — you can undo this action. <button>Undo</button></div>');
     bar.querySelector('button').onclick = undo;
     document.body.appendChild(bar);
   }

@@ -24,6 +24,7 @@ beforeAll(async () => {
   adminToken = await login(ctx.api);
   const emp = await createEmployee(ctx.api, adminToken, { role: 'warehouse' });
   empToken = emp.token;
+  await ctx.api.put(`/api/users/${emp.id}/permissions`).set(hdr(adminToken)).send({overrides:{'forms.manage.inventory':true}});
 });
 afterAll(() => cleanup(ctx));
 
@@ -135,7 +136,7 @@ describe('form definition scope-based access control', () => {
     expect(forbidden.status).toBe(403);
   });
 
-  it('warehouse can create an inventory-scoped form; accounting cannot', async () => {
+  it('explicitly delegated inventory form designer can create an inventory-scoped form; accounting cannot', async () => {
     const okRes = await ctx.api.post('/api/form-definitions').set(hdr(empToken)).send(formFor('inventory', 'c'));
     expect(okRes.status).toBe(201);
     const forbidden = await ctx.api.post('/api/form-definitions').set(hdr(accountingToken)).send(formFor('inventory', 'd'));
@@ -194,6 +195,7 @@ describe('form definition scope-based access control', () => {
 describe('form definition template link', () => {
   let formId: number;
   let templateId: number;
+  let starterId:number;
 
   beforeAll(async () => {
     const form = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send({
@@ -206,9 +208,10 @@ describe('form definition template link', () => {
     templateId = tpl.body.id;
   });
 
-  it('starts unlinked', async () => {
+  it('starts with a linked starter template', async () => {
     const res = await ctx.api.get('/api/form-definitions/' + formId).set(hdr(empToken));
-    expect(res.body.template_id).toBeNull();
+    starterId=res.body.template_id;
+    expect(starterId).toBeGreaterThan(0);
   });
 
   it('employee cannot link a template (403)', async () => {
@@ -245,12 +248,12 @@ describe('form definition template link', () => {
     expect(detail.body.template_id).toBeNull();
   });
 
-  it('deleting the linked template un-links it automatically (ON DELETE SET NULL)', async () => {
+  it('deleting the default selects the remaining linked starter template', async () => {
     await ctx.api.put(`/api/form-definitions/${formId}/template`)
       .set(hdr(adminToken)).send({ template_id: templateId });
     await ctx.api.delete('/api/templates/' + templateId).set(hdr(adminToken));
     const detail = await ctx.api.get('/api/form-definitions/' + formId).set(hdr(empToken));
-    expect(detail.body.template_id).toBeNull();
+    expect(detail.body.template_id).toBe(starterId);
   });
 });
 
@@ -270,10 +273,12 @@ describe('form definition template-body (design print template, scope-authorized
     hrFormId = form.body.id;
   });
 
-  it('hr (no templates.edit) can create the template body for its own hr-scoped form', async () => {
+  it('hr (no templates.edit) can edit its form starter template', async () => {
+    const form=(await ctx.api.get('/api/form-definitions/'+hrFormId).set(hdr(hrToken))).body;
+    const opened=(await ctx.api.get('/api/templates/'+form.template_id).set(hdr(hrToken))).body;
     const res = await ctx.api.put(`/api/form-definitions/${hrFormId}/template-body`)
-      .set(hdr(hrToken)).send({ name: 'Leave Slip Template', type: 'generic', body: '<p>{{reason}}</p>' });
-    expect(res.status).toBe(201);
+      .set(hdr(hrToken)).send({ expected_revision:opened.revision, name: 'Leave Slip Template', type: 'generic', body: '<p>{{reason}}</p>' });
+    expect(res.status).toBe(200);
     const detail = await ctx.api.get('/api/form-definitions/' + hrFormId).set(hdr(hrToken));
     expect(detail.body.template_id).toBe(res.body.id);
     const tpl = await ctx.api.get('/api/templates/' + res.body.id).set(hdr(hrToken));
@@ -282,8 +287,9 @@ describe('form definition template-body (design print template, scope-authorized
 
   it('calling it again updates the same template (upsert), not a second one', async () => {
     const first = await ctx.api.get('/api/form-definitions/' + hrFormId).set(hdr(hrToken));
+    const opened = await ctx.api.get('/api/templates/' + first.body.template_id).set(hdr(hrToken));
     const res = await ctx.api.put(`/api/form-definitions/${hrFormId}/template-body`)
-      .set(hdr(hrToken)).send({ name: 'Leave Slip Template v2', type: 'generic', body: '<p>updated {{reason}}</p>' });
+      .set(hdr(hrToken)).send({ expected_revision: opened.body.revision, name: 'Leave Slip Template v2', type: 'generic', body: '<p>updated {{reason}}</p>' });
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(first.body.template_id);
     const tpl = await ctx.api.get('/api/templates/' + res.body.id).set(hdr(hrToken));
@@ -420,24 +426,26 @@ describe('form records', () => {
     expect((await ctx.api.get('/api/form-records/' + recordId).set(hdr(empToken))).status).toBe(404);
   });
 
-  it('deleting a form cascades its records', async () => {
+  it('forms with records must be archived rather than deleted', async () => {
     const r = await ctx.api.post('/api/form-records').set(hdr(empToken))
       .send({ form_def_id: formId, data: { amount: 1 } });
     expect(r.status).toBe(201);
-    await ctx.api.delete('/api/form-definitions/' + formId).set(hdr(adminToken));
-    expect((await ctx.api.get('/api/form-records/' + r.body.id).set(hdr(empToken))).status).toBe(404);
+    expect((await ctx.api.delete('/api/form-definitions/' + formId).set(hdr(adminToken))).status).toBe(409);
+    expect((await ctx.api.get('/api/form-records/' + r.body.id).set(hdr(empToken))).status).toBe(200);
   });
 
   it('self-filing a REQUEST_SLUGS form (e.g. leave_request) works for anyone, forced to status=pending, regardless of scope permissions', async () => {
     // sampleForm ('Leave Request', slug leave_request) was created earlier with no scope — a
     // marketing-role user holds none of the four forms.manage.* and couldn't manage it, but
     // self-filing bypasses the scope gate entirely for the ~12 whitelisted HR request slugs.
-    const marketing = (await createEmployee(ctx.api, adminToken, { role: 'marketing' })).token;
+    const person = await createEmployee(ctx.api, adminToken, { role: 'marketing' });
+    const marketing = person.token;
+    await ctx.api.post('/api/hr/employees').set(hdr(adminToken)).send({ employee_no: `FORM-SELF-${person.id}`, name: person.username, user_id: person.id });
     const leaveFormId = (await ctx.api.get('/api/form-definitions').set(hdr(adminToken)))
       .body.find((f: { slug: string }) => f.slug === 'leave_request').id;
     const res = await ctx.api.post('/api/form-records').set(hdr(marketing)).send({
       form_def_id: leaveFormId,
-      data: { reason: 'Trip', days: 2 },
+      data: { reason: 'Trip', days: 2, date_from: '2026-06-01', date_to: '2026-06-02' },
       status: 'approved', // a self-filer trying to skip the workflow — must be ignored
     });
     expect(res.status).toBe(201);
@@ -470,11 +478,11 @@ describe('global variables', () => {
     expect(res.status).toBe(403);
   });
 
-  it('a role with forms.manage for just one section can still upsert (globals are shared)', async () => {
+  it('a scope-only form designer cannot change shared variables', async () => {
     // empToken = warehouse -> forms.manage.inventory only, but globals aren't scoped
     const res = await ctx.api.put('/api/global-variables/warehouse_note')
       .set(hdr(empToken)).send({ label: 'Warehouse Note', value: 'x' });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
   });
 
   it('admin can create a global variable', async () => {
@@ -552,6 +560,32 @@ describe('hr payroll csv import', () => {
     payrollFormId = forms.body.find((f: { slug: string }) => f.slug === 'hr_payroll').id;
   });
 
+  it('previews imports without saving and requires confirmation for existing matches', async () => {
+    const period = 'Preview duplicate audit';
+    const before = await ctx.api.get(`/api/form-definitions/${payrollFormId}/records`).set(hdr(adminToken)).query({ period });
+    const preview = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`).set(hdr(adminToken))
+      .field('period', period).field('dry_run', '1').attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(preview.status).toBe(200);
+    expect(preview.body.count).toBe(1);
+    expect(preview.body.duplicate_count).toBe(0);
+    expect((await ctx.api.get(`/api/form-definitions/${payrollFormId}/records`).set(hdr(adminToken)).query({ period })).body.length).toBe(before.body.length);
+    const imported = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`).set(hdr(adminToken))
+      .field('period', period).attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(imported.status).toBe(201);
+    const blocked = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`).set(hdr(adminToken))
+      .field('period', period).attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(blocked.status).toBe(409);
+    const matched = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`).set(hdr(adminToken))
+      .field('period', period).field('dry_run', '1').attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(matched.body.duplicate_count).toBe(1);
+    expect(matched.body.rows[0].matched_numbers).toEqual(imported.body.numbers);
+    const confirmed = await ctx.api.post(`/api/form-definitions/${payrollFormId}/import`).set(hdr(adminToken))
+      .field('period', period).field('allow_duplicates', '1').attach('file', Buffer.from(SUMMARY_CSV), 'summary.csv');
+    expect(confirmed.status).toBe(201);
+    const records = await ctx.api.get(`/api/form-definitions/${payrollFormId}/records`).set(hdr(adminToken)).query({ period });
+    for (const record of records.body) await ctx.api.delete(`/api/form-records/${record.id}`).set(hdr(adminToken));
+  });
+
   it('rejects import for a non-payroll form', async () => {
     const other = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send(sampleForm2());
     const res = await ctx.api.post(`/api/form-definitions/${other.body.id}/import`)
@@ -609,4 +643,13 @@ describe('hr payroll csv import', () => {
       fields: [{ key: 'hours', label: 'Hours', type: 'number', required: true, options: [], default: '' }],
     };
   }
+});
+it('supports editable time fields used by HR offset requests', async () => {
+  const form = { name: 'Time field test', slug: 'time_field_test', number_prefix: 'TFT', scope: 'hr', fields: [{ key: 'new_time_out', label: 'New time out', type: 'time', required: true }] };
+  const created = await ctx.api.post('/api/form-definitions').set(hdr(adminToken)).send(form);
+  expect(created.status).toBe(201);
+  const saved = await ctx.api.get(`/api/form-definitions/${created.body.id}`).set(hdr(adminToken));
+  expect(saved.body.fields[0].type).toBe('time');
+  const updated = await ctx.api.put(`/api/form-definitions/${created.body.id}`).set(hdr(adminToken)).send({ ...form, name: 'Updated time field test' });
+  expect(updated.status).toBe(200);
 });

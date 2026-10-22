@@ -4,35 +4,44 @@
    virtual ID card from the editable "Employee ID Card" document template (Documents >
    Templates), the same way payslips print from the "HR Payroll Slip" template.
    Route: hr-employees. */
-App.register('hr-employees', async (view) => {
+App.register('hr-employees', async (view, filter) => {
   if (!App.hasPermission('hr.view')) {
     view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
     return;
   }
   const canManage = App.hasPermission('hr.manage');
+  // Pay is its own permission (src/modules/payroll/pay-access.ts): without payroll.view the server
+  // leaves the rates out, so the Rate column and the pay fields are hidden; without
+  // payroll.manage the server keeps the stored pay whatever this form sends.
+  const canSeePay = App.hasPermission('payroll.view');
+  const canChangePay = App.hasPermission('payroll.rates');
+  const PAY_HIDDEN_NOTE = '<p class="muted" style="font-size:12px;margin:0 0 12px">Pay is shown only to people with the payroll permission.</p>';
   const state = { q: '', department_id: '', status: '' };
   let depts = [];
 
-  const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', resigned: 'Resigned', terminated: 'Terminated' };
-  const STATUS_CLASS = { probationary: 'status-confirmed', regular: 'status-completed', resigned: 'muted', terminated: 'status-cancelled' };
+  const STATUS_LABELS = { probationary: 'Probationary', regular: 'Regular', suspended: 'Suspended', resigned: 'Resigned', terminated: 'Terminated' };
+  // Suspended: still employed, but blocked from clocking in until HR sets them back.
+  const STATUS_CLASS = { probationary: 'status-confirmed', regular: 'status-completed', suspended: 'status-cancelled', resigned: 'muted', terminated: 'status-cancelled' };
   const ASSET_STATUS_LABELS = { issued: 'Issued', returned: 'Returned', lost: 'Lost', damaged: 'Damaged' };
   const ASSET_STATUS_CLASS = { issued: 'status-confirmed', returned: 'status-completed', lost: 'status-cancelled', damaged: 'status-cancelled' };
   const PLACEHOLDER_PHOTO = UI.PLACEHOLDER_PHOTO;
 
   view.innerHTML = `
     <div class="topbar">
-      <h2>Employees</h2>
+      <div><h2>Employees</h2><div class="sub">Employee records, department assignments, pay and schedules.</div></div>
       <div class="grow"></div>
-      <div class="search-box search">${UI.icon('search', 16)}<input id="emp-search" placeholder="Search name…" /></div>
-      <select id="emp-dept-filter" style="margin-left:8px"><option value="">All departments</option></select>
-      <select id="emp-status-filter" style="margin-left:8px">
+      ${canManage ? `<button class="btn secondary" id="emp-no-settings" title="Employee numbering format" aria-label="Employee numbering format">${UI.icon('settings', 15)}</button>` : ''}
+      ${canManage ? `<button class="btn secondary" id="emp-import" title="Create or update employees from a CSV file">${UI.icon('upload')} Import</button>` : ''}
+      ${canManage ? `<button class="btn" id="emp-new">${UI.icon('plus')} New Employee</button>` : ''}
+    </div>
+    <div class="hr-filters hr-employee-filters">
+      <div class="search-box search"><label class="hr-sr-only" for="emp-search">Search employees</label>${UI.icon('search', 16)}<input id="emp-search" placeholder="Search name…" /></div>
+      <div class="fld"><label for="emp-dept-filter">Department</label><select id="emp-dept-filter"><option value="">All departments</option></select></div>
+      <div class="fld"><label for="emp-status-filter">Status</label><select id="emp-status-filter">
         <option value="">All statuses</option>
         ${Object.keys(STATUS_LABELS).map((s) => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join('')}
-      </select>
-      ${canManage ? `<button class="btn secondary" id="emp-no-settings" style="margin-left:8px" title="Employee numbering format">${UI.icon('settings', 15)}</button>` : ''}
-      ${canManage ? `<button class="btn secondary" id="emp-import" style="margin-left:8px" title="Create or update employees from a CSV file">${UI.icon('upload')} Import</button>` : ''}
-      ${canManage ? `<button class="btn danger small" id="emp-remove-selected" style="margin-left:8px" hidden>${UI.icon('trash')} Remove selected</button>` : ''}
-      ${canManage ? `<button class="btn" id="emp-new" style="margin-left:8px">${UI.icon('plus')} New Employee</button>` : ''}
+      </select></div>
+      ${canManage ? `<button class="btn danger small" id="emp-remove-selected" hidden>${UI.icon('trash')} Remove selected</button>` : ''}
     </div>
     <div class="panel"><div id="emp-table"></div></div>`;
 
@@ -68,6 +77,9 @@ App.register('hr-employees', async (view) => {
 
   async function ensureDepts() {
     if (depts.length) return depts;
+    // The shell already loaded the list at sign-in (app.js) — reuse it instead of another trip.
+    const shell = App.getDepartments ? App.getDepartments() : null;
+    if (shell && shell.length) { depts = shell.slice(); return depts; }
     try { depts = await API.get('/users/departments/list'); } catch { depts = []; }
     return depts;
   }
@@ -99,6 +111,7 @@ App.register('hr-employees', async (view) => {
         const deptFilter = view.querySelector('#emp-dept-filter');
         if (deptFilter) deptFilter.innerHTML = '<option value="">All departments</option>' + optsHTML;
         UI.toast('Department added');
+        if (App.reloadDepartments) App.reloadDepartments(); // keep the shell's copy (ensureDepts) current
       },
     });
   }
@@ -121,6 +134,7 @@ App.register('hr-employees', async (view) => {
   }
 
   async function createLinkedAccount(empOv, typedName, onCreated) {
+    if (!empOv.dataset.employeeId) { UI.toast('Save this employee first, then open it to create and link an account.','info'); return; }
     const fullName = typedName || empOv.querySelector('[data-f="name"]').value.trim();
     const deptId = empOv.querySelector('[data-f="department_id"]').value;
     let catalog;
@@ -140,16 +154,18 @@ App.register('hr-employees', async (view) => {
           <div><label>Base role *</label><select id="na-role">${roleOpts}</select></div>
           <div><label>Department</label><select id="na-dept">${deptOpts}</select></div>
         </div>
+        <div data-role-preview></div>
         <div style="margin-top:10px"><label>Email <span class="muted">(for password resets)</span></label>
           <input id="na-email" type="email" placeholder="name@company.com" /></div>
         <div style="margin-top:10px"><label>Temporary password *</label><input id="na-pw" class="mono" value="${tempPassword()}" /></div>
-        <p class="muted" style="font-size:12px">Share this with the employee; they can change it under My Account. The account is created right away and linked to this employee when you save the form. Need more access than one role gives? Add it afterwards with the <strong>Access</strong> button next to the linked account.</p>`,
+        <p class="muted" style="font-size:12px">Share this with the employee; they can change it under My Account. The account is created and linked to the saved employee immediately. Cancel does not undo account creation. Need more access than one role gives? Add it afterwards with the <strong>Access</strong> button next to the linked account.</p>`,
       confirmText: 'Create account',
+      onOpen: (ov) => AccessEditor.enhanceRoleSelect(ov.querySelector('#na-role'), catalog, ov.querySelector('[data-role-preview]')),
       onConfirm: async (ov, showErr) => {
         const val = (id) => ov.querySelector(id).value.trim();
         const body = {
           full_name: val('#na-name'), username: val('#na-user'), password: ov.querySelector('#na-pw').value,
-          email: val('#na-email'), role: val('#na-role'), department_id: val('#na-dept') || null,
+          email: val('#na-email'), role: val('#na-role'), department_id: val('#na-dept') || null, employee_id: Number(empOv.dataset.employeeId),
         };
         if (!body.full_name || !body.username || !body.password) { showErr('Full name, username and password are required'); return false; }
         if (!body.role) { showErr('Choose a role for the account'); return false; }
@@ -184,25 +200,84 @@ App.register('hr-employees', async (view) => {
     const deptFilter = view.querySelector('#emp-dept-filter');
     if (deptFilter) deptFilter.innerHTML = '<option value="">All departments</option>' + optsHTML;
     UI.toast('Department deleted');
+    if (App.reloadDepartments) App.reloadDepartments();
   }
 
-  async function load() {
-    tableEl.innerHTML = '<div class="empty">Loading…</div>';
+  let displayedEmployees = [];
+  let loadVersion = 0;
+  async function fillDeptFilter() {
     await ensureDepts();
     const deptFilter = view.querySelector('#emp-dept-filter');
     if (deptFilter.options.length <= 1) {
       deptFilter.innerHTML = '<option value="">All departments</option>' +
         depts.map((d) => `<option value="${d.id}">${UI.esc(d.name)}</option>`).join('');
     }
+  }
+
+  /* Draws the list this screen showed last time straight away (API.peek), then swaps in the
+     fresh copy if it differs. The department filter loads alongside, not before. */
+  async function load() {
+    const version = ++loadVersion;
     const params = new URLSearchParams();
     if (state.q) params.set('q', state.q);
     if (state.department_id) params.set('department_id', state.department_id);
     if (state.status) params.set('status', state.status);
-    const list = await API.get('/hr/employees?' + params.toString());
-    render(list);
+    const path = '/hr/employees?' + params.toString();
+    const seen = API.peek ? API.peek(path) : null;
+    if (seen) render(seen);
+    else tableEl.innerHTML = '<div class="empty">Loading…</div>';
+    let list;
+    try {
+      [list] = await Promise.all([API.get(path, { remember: true }), fillDeptFilter()]);
+    } catch (e) {
+      if (version !== loadVersion) return;
+      if (seen) { UI.toast(e.message, 'error'); return; } // keep showing the last list
+      tableEl.innerHTML = UI.emptyState({icon:'alert',title:'Couldn’t load employees',hint:e.message,action:'<button class="btn secondary" id="emp-retry">Try again</button>'});
+      tableEl.querySelector('#emp-retry').onclick=load;
+      return;
+    }
+    if (version !== loadVersion) return; // a newer search/filter started meanwhile
+    if (!seen || JSON.stringify(list) !== JSON.stringify(seen)) render(list);
+  }
+
+  /* Photos load after the table, one small cached image each (GET /hr/employees/:id/photo). The
+     ?v=<photo_rev> URL changes with the photo, so the browser keeps each one until it does. */
+  const photoUrls = new Map(); // "<id>:<rev>" -> Promise<object URL>, for this visit
+  function photoUrl(id, rev) {
+    const key = id + ':' + rev;
+    if (!photoUrls.has(key)) {
+      photoUrls.set(key, API.blobUrl(`/hr/employees/${id}/photo?v=${encodeURIComponent(rev)}`)
+        .catch(() => { photoUrls.delete(key); return PLACEHOLDER_PHOTO; }));
+    }
+    return photoUrls.get(key);
+  }
+  function showPhoto(img) {
+    photoUrl(img.dataset.photoId, img.dataset.photoRev).then((u) => { img.src = u; });
+  }
+  function loadPhotos(root) {
+    const imgs = root.querySelectorAll('img[data-photo-rev]');
+    if (!('IntersectionObserver' in window)) { imgs.forEach(showPhoto); return; }
+    const io = new IntersectionObserver((entries) => entries.forEach((en) => {
+      if (en.isIntersecting) { io.unobserve(en.target); showPhoto(en.target); }
+    }), { rootMargin: '200px' });
+    imgs.forEach((img) => io.observe(img));
+  }
+  /** The photo as a data: URI (the ID card template embeds it), or the placeholder. */
+  async function photoDataUrl(emp) {
+    if (!emp.photo_rev) return PLACEHOLDER_PHOTO;
+    const u = await photoUrl(emp.id, emp.photo_rev);
+    if (u === PLACEHOLDER_PHOTO) return u;
+    const blob = await (await fetch(u)).blob();
+    return new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => resolve(PLACEHOLDER_PHOTO);
+      r.readAsDataURL(blob);
+    });
   }
 
   function render(list) {
+    displayedEmployees = list;
     if (!list.length) {
       tableEl.innerHTML = UI.emptyState({
         icon: 'users',
@@ -216,27 +291,28 @@ App.register('hr-employees', async (view) => {
     }
     tableEl.innerHTML = `
       <table>
-        <thead><tr>${canManage ? '<th></th>' : ''}<th></th><th>Name</th><th>Employee No.</th><th>Department</th><th>Position</th><th class="right">Rate</th><th>Status</th><th></th></tr></thead>
+        <thead><tr>${canManage ? '<th></th>' : ''}<th></th><th>Name</th><th>Employee No.</th><th>Department</th><th>Position</th>${canSeePay ? '<th class="right">Rate</th>' : ''}<th>Status</th><th></th></tr></thead>
         <tbody>${list.map((e) => `
           <tr class="clickable" data-open="${e.id}">
             ${canManage ? `<td><input type="checkbox" class="emp-chk" data-emp="${e.id}" data-name="${UI.esc(e.name)}" /></td>` : ''}
-            <td><img src="${UI.esc(e.photo || PLACEHOLDER_PHOTO)}" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle" /></td>
+            <td><img src="${UI.esc(PLACEHOLDER_PHOTO)}"${e.photo_rev ? ` data-photo-id="${e.id}" data-photo-rev="${UI.esc(e.photo_rev)}"` : ''} alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle" /></td>
             <td><strong>${UI.esc(e.name)}</strong>${e.user_id ? ` <span class="muted" title="Linked to account: ${UI.esc(e.linked_username || '')}" style="vertical-align:middle">${UI.icon('key', 13)}</span>` : ''}</td>
             <td class="mono muted">${UI.esc(e.employee_no || '—')}</td>
             <td>${UI.esc(e.department_name || '—')}</td>
             <td>${UI.esc(e.position || '—')}</td>
-            <td class="right">${e.rate_type === 'monthly'
+            ${canSeePay ? `<td class="right">${e.rate_type === 'monthly'
               ? `${money(e.monthly_rate)}<span class="muted">/mo</span>`
-              : `${money(e.daily_rate)}<span class="muted">/day</span>`}</td>
+              : `${money(e.daily_rate)}<span class="muted">/day</span>`}</td>` : ''}
             <td><span class="badge-pill ${STATUS_CLASS[e.status] || 'muted'}">${STATUS_LABELS[e.status] || e.status}</span></td>
             <td class="actions">
               <button class="icon-btn" title="Generate ID" data-id-card="${e.id}">${UI.icon('idcard')}</button>
-              <button class="icon-btn" title="Edit" data-edit="${e.id}">${UI.icon('edit')}</button>
-              <button class="icon-btn danger" title="Delete" data-del="${e.id}">${UI.icon('trash')}</button>
+              <button class="icon-btn" title="${canManage ? 'Edit' : 'View employee'}" data-edit="${e.id}">${UI.icon(canManage ? 'edit' : 'users')}</button>
+              ${canManage ? `<button class="icon-btn danger" title="Delete" data-del="${e.id}">${UI.icon('trash')}</button>` : ''}
             </td>
           </tr>`).join('')}
         </tbody>
       </table>`;
+    loadPhotos(tableEl);
     tableEl.querySelectorAll('[data-edit]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); openEmployee(b.dataset.edit, list); });
     tableEl.querySelectorAll('[data-del]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); del(b.dataset.del, list); });
     tableEl.querySelectorAll('[data-id-card]').forEach((b) => b.onclick = (e) => {
@@ -244,6 +320,7 @@ App.register('hr-employees', async (view) => {
       const emp = list.find((x) => String(x.id) === String(b.dataset.idCard));
       if (emp) generateId(emp);
     });
+    tableEl.querySelectorAll('tr[data-open]').forEach(tr => { tr.tabIndex=0; tr.onkeydown=e=>{if(e.target===tr && (e.key==='Enter' || e.key===' ')){e.preventDefault();openEmployee(tr.dataset.open,list);}}; });
     tableEl.querySelectorAll('tr[data-open]').forEach((tr) => tr.onclick = (e) => {
       if (e.target.closest('.actions') || e.target.closest('.emp-chk')) return;
       openEmployee(tr.dataset.open, list);
@@ -287,7 +364,14 @@ App.register('hr-employees', async (view) => {
 
   function openEmployee(id, list) {
     const emp = list.find((x) => String(x.id) === String(id));
-    if (emp) employeeModal(emp);
+    if (!emp) return;
+    if (canManage) { employeeModal(emp); return; }
+    const fields = [['Employee number',emp.employee_no],['Department',emp.department_name],['Position',emp.position],['Status',emp.status],['Start date',emp.start_date],['Available leave',(emp.leave_days_per_year ?? 5)-(emp.leave_days_used ?? 0)],['SSS',emp.sss_no],['PhilHealth',emp.philhealth_no],['Pag-IBIG',emp.pagibig_no],['TIN',emp.tin_no]];
+    if (canSeePay) fields.push(['Daily rate',money(emp.daily_rate)],['Monthly rate',money(emp.monthly_rate)]);
+    UI.modal({title:emp.name,cancelText:'Close',bodyHTML:`<p class="muted">Read-only employee record. An HR manager can make changes.</p>${fields.map(([label,value])=>`<div class="tool-row"><strong>${UI.esc(label)}</strong><span>${UI.esc(String(value ?? '—'))}</span></div>`).join('')}<h4>Documents</h4><div id="emp-read-docs">Loading…</div><h4>Assets</h4><div id="emp-read-assets">Loading…</div>`,onOpen:async ov=>{
+      try {const docs=await API.get(`/hr/employees/${emp.id}/documents`);ov.querySelector('#emp-read-docs').innerHTML=docs.length?docs.map((d,i)=>`<button class="btn secondary small" data-download="${i}">${UI.esc(d.title)}</button>`).join(' '):'<p class="muted">No documents.</p>';ov.querySelectorAll('[data-download]').forEach(b=>b.onclick=()=>downloadDoc(emp.id,docs[Number(b.dataset.download)].id,docs));}catch(e){ov.querySelector('#emp-read-docs').textContent='Couldn’t load documents: '+e.message;}
+      try {const assets=await API.get(`/hr/employees/${emp.id}/assets`);ov.querySelector('#emp-read-assets').innerHTML=assets.length?assets.map(a=>`<p>${UI.esc(a.form_number || '')} — ${(a.items || []).map(i=>`${UI.esc(i.asset_name)} (${UI.esc(i.status)})`).join(', ')}</p>`).join(''):'<p class="muted">No assets.</p>';}catch(e){ov.querySelector('#emp-read-assets').textContent='Couldn’t load assets: '+e.message;}
+    }});
   }
 
   /* ---------- Photo: resize client-side to a small JPEG data URI before storing ---------- */
@@ -328,7 +412,10 @@ App.register('hr-employees', async (view) => {
 
   function employeeModal(existing) {
     const editing = !!existing;
-    let photoData = editing ? (existing.photo || '') : '';
+    // The list carries no photo (photo_rev only): the preview loads it, and the save sends
+    // `photo` only when it was changed here — omitted, the server keeps the stored one.
+    let photoData = '';
+    let photoChanged = false;
 
     Promise.all([
       ensureDepts(),
@@ -380,7 +467,7 @@ App.register('hr-employees', async (view) => {
           </div>
 
           <div data-formpanel="basic" class="form-panel">
-            <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:14px">
+            <div class="hr-employee-identity">
               <div style="text-align:center">
                 <img id="emp-photo-preview" src="${UI.esc(photoData || PLACEHOLDER_PHOTO)}" style="width:84px;height:84px;border-radius:50%;object-fit:cover;border:1px solid var(--border-strong)" />
                 <div style="margin-top:6px">
@@ -415,6 +502,14 @@ App.register('hr-employees', async (view) => {
               <div><label>Status</label><select data-f="status">${statusOpts}</select></div>
               <div><label>Start date</label><input data-f="start_date" type="date" value="${UI.esc(editing ? (existing.start_date || '') : '')}" /></div>
             </div>
+            <div class="field-row" style="margin-top:8px">
+              <div><label>Birth date</label><input data-f="birth_date" type="date" value="${UI.esc(editing ? (existing.birth_date || '') : '')}" /></div>
+              <div><label>Civil status</label><select data-f="civil_status">
+                <option value="">—</option>
+                ${/* Same list as CIVIL_STATUSES in src/shared/validation.ts */ ['Single', 'Married', 'Widowed', 'Legally separated', 'Annulled', 'Divorced']
+                  .map((s) => `<option${editing && existing.civil_status === s ? ' selected' : ''}>${s}</option>`).join('')}
+              </select></div>
+            </div>
             <div class="field-row" style="margin-top:10px">
               <div><label>Linked user account</label>
                 <div style="display:flex;gap:6px">
@@ -427,28 +522,25 @@ App.register('hr-employees', async (view) => {
           </div>
 
           <div data-formpanel="pay" class="form-panel hidden">
+            ${canSeePay ? '' : PAY_HIDDEN_NOTE}
+            <div class="${canSeePay ? '' : 'hidden'}">
             <div class="field-row">
-              <div><label>Rate type</label><select data-f="rate_type">
+              <div><label>Rate type</label><select data-f="rate_type" ${editing ? 'disabled' : ''}>
                 <option value="daily" ${rateType === 'daily' ? 'selected' : ''}>Daily</option>
                 <option value="monthly" ${rateType === 'monthly' ? 'selected' : ''}>Monthly</option>
               </select></div>
               <div><label id="emp-rate-label">${rateType === 'monthly' ? 'Monthly rate' : 'Daily rate'}</label>
-                <input data-f="rate_amount" type="number" step="0.01" min="0" value="${UI.esc(String(rateAmount || 0))}" />
+                <input data-f="rate_amount" type="number" step="0.01" min="0" value="${UI.esc(String(rateAmount || 0))}" ${editing ? `readonly${canChangePay ? ' title="Click to change the rate" style="cursor:pointer"' : ''}` : ''} />
                 <div class="muted" id="emp-rate-hint" style="font-size:12px;margin-top:3px"></div>
               </div>
             </div>
             ${editing ? `
-            <div class="field-row" id="emp-rate-change-row" style="display:none;margin-top:8px">
-              <div><label>Effective date</label><input data-f="rate_effective_date" type="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
-              <div><label>Note (optional)</label><input data-f="rate_change_note" placeholder="e.g. Annual raise" /></div>
-            </div>
-            <p class="muted" id="emp-rate-change-hint" style="font-size:12px;margin:4px 0 0;display:none">
-              Logged to this employee's rate history — payroll will use ${UI.esc(existing.daily_rate != null ? money(existing.daily_rate) + '/day' : 'the old rate')}
-              for cutoff days before this date, and the new rate from this date on. Can be backdated; not before today for a future raise yet.</p>
-            <div style="margin-top:10px">
+            <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+              ${canChangePay ? `<button type="button" class="btn secondary small" id="emp-rate-change">${UI.icon('edit', 15)} Change rate</button>` : ''}
               <button type="button" class="btn secondary small" id="emp-rate-history-toggle">${UI.icon('history', 15)} Rate history</button>
-              <div id="emp-rate-history" style="display:none;margin-top:8px"></div>
-            </div>` : ''}
+            </div>
+            <div id="emp-rate-history" style="display:none;margin-top:8px"></div>` : ''}
+            </div>
             <label style="margin-top:18px;display:block">Default shift</label>
             <select data-f="default_shift_id">${shiftOpts}</select>
             <p class="muted" style="font-size:12px;margin:4px 0 0">Pre-fills new Daily Time rows in Time Keeping — a
@@ -485,6 +577,13 @@ App.register('hr-employees', async (view) => {
             <p class="muted" style="font-size:12px;margin:4px 0 0">For salaried staff never entitled to overtime (e.g.
               a supervisor). OT hours still show on the payslip detail for the record — this only zeroes the peso pay.</p>
             <label style="margin-top:14px;display:flex;align-items:center;gap:6px">
+              <input type="checkbox" data-f="always_whole_day" style="width:auto" ${existing && existing.always_whole_day ? 'checked' : ''} />
+              Always paid a whole day
+            </label>
+            <p class="muted" style="font-size:12px;margin:4px 0 0">Any day with both a time in and a time out earns the
+              full daily rate, whatever the times — never a half day, and no late or undertime deduction. Overtime,
+              night differential and holiday pay still follow the usual rules; a day missing a punch is handled as usual.</p>
+            <label style="margin-top:14px;display:flex;align-items:center;gap:6px">
               <input type="checkbox" data-f="clock_anywhere" style="width:auto" ${existing && existing.clock_anywhere ? 'checked' : ''} />
               Can time in outside the office
             </label>
@@ -492,13 +591,14 @@ App.register('hr-employees', async (view) => {
               skip the office location lock and get a "Clock in here" button on their phone that works without the
               office QR. Their location is still saved with every punch.</p>
 
+            <div class="${canSeePay ? '' : 'hidden'}">
             <label style="margin-top:24px;display:block;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted)">Statutory Deductions</label>
             <p class="muted" style="font-size:12px;margin:4px 0 12px">Also editable in bulk from Accounting &rarr;
               Statutory Deductions. Unchecking one zeroes that contribution on this employee's next generated
               payslip and drops them from that fund's remittance schedule. An override replaces the computed
               amount with a fixed peso figure whenever its checkbox stays on (SSS/PhilHealth/Pag-IBIG still
               split across cutoffs the normal way; leave blank to keep using the computed table amount).</p>
-            <div style="display:grid;grid-template-columns:160px 1fr;gap:10px 12px;align-items:center">
+            <div class="hr-deduction-grid">
               <div class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase">Fund</div>
               <div class="muted" style="font-size:11px;font-weight:700;text-transform:uppercase">Override amount</div>
               ${[
@@ -513,13 +613,23 @@ App.register('hr-employees', async (view) => {
                 <input type="number" step="0.01" min="0" data-f="${d.key}_override" placeholder="Computed amount"
                   value="${existing && existing[d.key + '_override'] != null ? existing[d.key + '_override'] : ''}" />`).join('')}
             </div>
+            <label style="display:flex;align-items:center;gap:6px;margin-top:14px;font-weight:normal">
+              <input type="checkbox" data-f="contribution_basis_fixed" style="width:auto" ${existing && existing.contribution_basis === 'fixed' ? 'checked' : ''} />
+              Fixed contribution basis (employee agreed in writing)
+            </label>
+            <p class="muted" style="font-size:12px;margin:4px 0 0">Off (default): SSS and Pag-IBIG follow the law —
+              computed on what the employee actually earned that month. On: computed on the fixed monthly rate (monthly
+              rate, or daily rate &times; the monthly rate divisor) every month, whatever the attendance. PhilHealth is
+              always on the fixed monthly rate.</p>
+            </div>
           </div>
 
-          <div data-formpanel="leave" class="form-panel hidden">
-            <label style="display:block">Paid leave (simple fixed bank — not accrual-based)</label>
+          <div data-formpanel="leave" class="form-panel hidden"><p class="muted">Document uploads, asset changes, leave adjustments and rate changes save immediately. Save applies the employee fields; Cancel does not undo those separate actions.</p>
+            <label style="display:block">Employee leave bank</label><p class="muted">Approved paid leave consumes scheduled working days. Use Adjust balance to add or deduct days with a recorded reason; ordinary employee edits preserve the bank.</p>
+            ${editing ? '<button class="btn secondary small" type="button" id="emp-leave-adjust">Adjust balance</button> <button class="btn secondary small" type="button" id="emp-leave-history">Adjustment history</button>' : ''}
             <div class="field-row">
-              <div><label>Days / year</label><input data-f="leave_days_per_year" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_per_year ?? 5) : 5))}" /></div>
-              <div><label>Days used (this year)</label><input data-f="leave_days_used" type="number" step="0.5" min="0" value="${UI.esc(String(editing ? (existing.leave_days_used ?? 0) : 0))}" />
+              <div><label>Individual entitlement (days)</label><input data-f="leave_days_per_year" type="number" step="0.5" min="0" ${editing ? 'readonly' : ''} value="${UI.esc(String(editing ? (existing.leave_days_per_year ?? 5) : 5))}" /></div>
+              <div><label>Days consumed</label><input data-f="leave_days_used" type="number" step="0.5" min="0" ${editing ? 'readonly' : ''} value="${UI.esc(String(editing ? (existing.leave_days_used ?? 0) : 0))}" />
                 ${editing ? `<div class="muted" style="font-size:12px;margin-top:3px">${UI.esc(String((existing.leave_days_per_year ?? 5) - (existing.leave_days_used ?? 0)))} remaining</div>` : ''}
               </div>
             </div>
@@ -576,28 +686,19 @@ App.register('hr-employees', async (view) => {
           const rateLabel = ov.querySelector('#emp-rate-label');
           const rateHint = ov.querySelector('#emp-rate-hint');
           const rateAmountInp = ov.querySelector('[data-f="rate_amount"]');
-          const rateChangeRow = ov.querySelector('#emp-rate-change-row');
-          const rateChangeHint = ov.querySelector('#emp-rate-change-hint');
+          // Editing: the rate box is read-only (see the Change rate note below), so say how to set it.
+          const lockedNote = !editing ? ''
+            : canChangePay ? 'Set or change it with Change rate.' : 'Only payroll managers can change the rate.';
           function updateRateUI() {
             if (rateTypeSel.value === 'monthly') {
               rateLabel.textContent = 'Monthly rate';
               const amt = Number(rateAmountInp.value) || 0;
-              rateHint.textContent = amt
+              rateHint.textContent = (amt
                 ? `≈ ${money(amt / monthlyRateDivisor)} / day (monthly ÷ ${monthlyRateDivisor})`
-                : `Divided by ${monthlyRateDivisor} to get the daily rate used in payroll.`;
+                : `Divided by ${monthlyRateDivisor} to get the daily rate used in payroll.`) + (lockedNote ? ' ' + lockedNote : '');
             } else {
               rateLabel.textContent = 'Daily rate';
-              rateHint.textContent = '';
-            }
-            // Only editing mode has these elements — the effective-date/note fields (and their
-            // hint) matter only when this save would actually change the resolved daily rate,
-            // so they stay hidden the rest of the time instead of cluttering every edit.
-            if (rateChangeRow) {
-              const amt = Number(rateAmountInp.value) || 0;
-              const newDaily = rateTypeSel.value === 'monthly' ? amt / monthlyRateDivisor : amt;
-              const changed = Math.round(newDaily * 100) !== Math.round((existing.daily_rate || 0) * 100);
-              rateChangeRow.style.display = changed ? 'flex' : 'none';
-              rateChangeHint.style.display = changed ? 'block' : 'none';
+              rateHint.textContent = lockedNote;
             }
           }
           rateTypeSel.addEventListener('change', updateRateUI);
@@ -608,10 +709,27 @@ App.register('hr-employees', async (view) => {
           if (rateHistoryToggle) {
             const historyEl = ov.querySelector('#emp-rate-history');
             let historyLoaded = false;
-            rateHistoryToggle.onclick = async () => {
+            rateHistoryToggle.onclick = () => {
               const opening = historyEl.style.display === 'none';
               historyEl.style.display = opening ? 'block' : 'none';
-              if (!opening || historyLoaded) return;
+              if (opening && !historyLoaded) loadRateHistory();
+            };
+            // The rate fields are read-only while editing: a rate change goes through its own
+            // dialog, which logs it and recomputes the affected payslips straight away. The
+            // fields then show the rate in force today, so Save here never re-sends an old rate.
+            const rateChangeBtn = ov.querySelector('#emp-rate-change');
+            if (rateChangeBtn) rateAmountInp.addEventListener('click', () => rateChangeBtn.click());
+            if (rateChangeBtn) rateChangeBtn.onclick = () => rateChangeModal(existing, (r) => {
+              existing.rate_type = r.rate_type;
+              existing.daily_rate = r.daily_rate;
+              existing.monthly_rate = r.monthly_rate;
+              rateTypeSel.value = r.rate_type;
+              rateAmountInp.value = String(r.rate_type === 'monthly' ? r.monthly_rate : r.daily_rate);
+              updateRateUI();
+              if (historyEl.style.display !== 'none') loadRateHistory(); else historyLoaded = false;
+              load();
+            });
+            async function loadRateHistory() {
               historyLoaded = true;
               historyEl.innerHTML = '<div class="muted" style="padding:6px 0">Loading…</div>';
               try {
@@ -630,7 +748,7 @@ App.register('hr-employees', async (view) => {
               } catch (e) {
                 historyEl.innerHTML = `<div class="muted" style="padding:6px 0">${UI.esc(e.message || 'Failed to load')}</div>`;
               }
-            };
+            }
           }
 
           const accessBtn = ov.querySelector('#emp-user-access');
@@ -640,7 +758,7 @@ App.register('hr-employees', async (view) => {
             selected: currentUserId != null ? currentUserId : '',
             placeholder: 'Type a name or username…',
             emptyText: 'No matching account',
-            onSelect: syncAccessBtn,
+            onSelect: () => { syncAccessBtn(); if(ov.__markDirty) ov.__markDirty(); },
             action: {
               label: '+ Create new account',
               onClick: (typed) => createLinkedAccount(ov, typed, (u) => {
@@ -648,6 +766,7 @@ App.register('hr-employees', async (view) => {
                 users.sort((a, b) => a.full_name.localeCompare(b.full_name));
                 userCombo.setOptions(userComboOptions());
                 userCombo.setSelected(u.id);
+                existing.user_id = u.id;
                 syncAccessBtn();
               }),
             },
@@ -659,22 +778,35 @@ App.register('hr-employees', async (view) => {
 
           const fileInp = ov.querySelector('#emp-photo-file');
           const preview = ov.querySelector('#emp-photo-preview');
+          if (editing && existing.photo_rev) {
+            photoUrl(existing.id, existing.photo_rev).then((u) => { if (!photoChanged) preview.src = u; });
+          }
           ov.querySelector('#emp-photo-pick').onclick = () => fileInp.click();
           fileInp.addEventListener('change', async () => {
             if (!fileInp.files.length) return;
             try {
               photoData = await resizeImageToDataUrl(fileInp.files[0], 320, 0.82);
+              photoChanged = true;
               preview.src = photoData;
             } catch (e) {
               UI.toast(e.message, 'error');
             }
           });
-          ov.querySelector('#emp-photo-clear').onclick = () => { photoData = ''; preview.src = PLACEHOLDER_PHOTO; };
+          ov.querySelector('#emp-photo-clear').onclick = () => { photoData = ''; photoChanged = true; preview.src = PLACEHOLDER_PHOTO; };
 
           if (!editing) return;
+          ov.dataset.employeeId = existing.id;
+          ov.querySelector('#emp-leave-adjust').onclick=()=>{
+            if(Number(ov.querySelector('[data-f="leave_days_per_year"]').value)!==(existing.leave_days_per_year ?? 5) || Number(ov.querySelector('[data-f="leave_days_used"]').value)!==(existing.leave_days_used ?? 0)) { UI.toast('Save your leave field changes before adjusting the balance.','info');return; }
+            UI.modal({title:`Adjust leave — ${existing.name}`,bodyHTML:'<p class="muted">This adjustment saves immediately. Use positive days to add leave or negative days to deduct it.</p><label for="leave-days">Days to add / deduct</label><input id="leave-days" type="number" step="0.5"><label for="leave-reason">Reason *</label><textarea id="leave-reason" maxlength="1000"></textarea>',confirmText:'Save adjustment',onConfirm:async(ad,showErr)=>{
+              const days=Number(ad.querySelector('#leave-days').value), reason=ad.querySelector('#leave-reason').value.trim();if(!days || reason.length<3){showErr('Enter a non-zero number of days and a short reason.');return false;}
+              const res=await API.post(`/hr/employees/${existing.id}/leave-adjustments`,{days,reason});existing.leave_days_per_year=res.entitlement;ov.querySelector('[data-f="leave_days_per_year"]').value=res.entitlement;UI.toast(`Leave adjusted — ${res.remaining} days remaining`);load();
+            }});
+          };
+          ov.querySelector('#emp-leave-history').onclick=async()=>{try{const history=await API.get(`/hr/employees/${existing.id}/leave-adjustments`);UI.modal({title:'Leave adjustment history',cancelText:'Close',bodyHTML:history.length?history.map(h=>`<div class="tool-row"><span>${UI.esc(h.created_at)} · ${UI.esc(h.user_name || '')}</span><span>${UI.esc(h.summary)}</span></div>`).join(''):'<p class="muted">No recorded adjustments.</p>'});}catch(e){UI.toast(e.message,'error');}};
           const docsEl = ov.querySelector('#emp-docs');
           async function loadDocs() {
-            const docs = await API.get(`/hr/employees/${existing.id}/documents`).catch(() => []);
+            let docs; try { docs = await API.get(`/hr/employees/${existing.id}/documents`); } catch(e) { docsEl.innerHTML = `<p>${UI.esc(e.message)}</p><button type="button" class="btn secondary small" id="emp-doc-retry">Retry documents</button>`; docsEl.querySelector('#emp-doc-retry').onclick=loadDocs; return; }
             if (!docs.length) { docsEl.innerHTML = '<div class="muted" style="padding:6px 0">No documents uploaded yet.</div>'; return; }
             docsEl.innerHTML = docs.map((d) => `
               <div class="tool-row" data-doc="${d.id}">
@@ -688,8 +820,7 @@ App.register('hr-employees', async (view) => {
             docsEl.querySelectorAll('[data-doc-dl]').forEach((b) => b.onclick = () => downloadDoc(existing.id, b.dataset.docDl, docs));
             docsEl.querySelectorAll('[data-doc-del]').forEach((b) => b.onclick = async () => {
               if (!await UI.confirmDialog('Delete this document?', 'Delete')) return;
-              await API.del(`/hr/employees/${existing.id}/documents/${b.dataset.docDel}`);
-              loadDocs();
+              try { await API.del(`/hr/employees/${existing.id}/documents/${b.dataset.docDel}`); loadDocs(); } catch(e) { UI.toast(e.message,'error'); }
             });
           }
           const docFileInp = ov.querySelector('#emp-doc-file');
@@ -712,7 +843,7 @@ App.register('hr-employees', async (view) => {
 
           const assetsEl = ov.querySelector('#emp-assets');
           async function loadAssets() {
-            const issuances = await API.get(`/hr/employees/${existing.id}/assets`).catch(() => []);
+            let issuances; try { issuances = await API.get(`/hr/employees/${existing.id}/assets`); } catch(e) { assetsEl.innerHTML = `<p>${UI.esc(e.message)}</p><button type="button" class="btn secondary small" id="emp-assets-retry">Retry assets</button>`; assetsEl.querySelector('#emp-assets-retry').onclick=loadAssets; return; }
             if (!issuances.length) { assetsEl.innerHTML = '<div class="muted" style="padding:6px 0">No assets issued yet.</div>'; return; }
             assetsEl.innerHTML = issuances.map((f) => `
               <div class="tool-row" data-issuance="${f.id}" style="align-items:flex-start">
@@ -739,8 +870,7 @@ App.register('hr-employees', async (view) => {
             });
             assetsEl.querySelectorAll('[data-asset-del]').forEach((b) => b.onclick = async () => {
               if (!await UI.confirmDialog('Delete this asset issuance record?', 'Delete')) return;
-              await API.del(`/hr/assets/${b.dataset.assetDel}`);
-              loadAssets();
+              try { await API.del(`/hr/assets/${b.dataset.assetDel}`); loadAssets(); } catch(e) { UI.toast(e.message,'error'); }
             });
           }
           ov.querySelector('#emp-asset-issue').onclick = () => assetIssuanceModal(existing, loadAssets);
@@ -766,6 +896,8 @@ App.register('hr-employees', async (view) => {
             monthly_rate: rateTypeVal === 'monthly' ? rateAmountVal : null,
             status: ov.querySelector('[data-f="status"]').value,
             start_date: ov.querySelector('[data-f="start_date"]').value,
+            birth_date: ov.querySelector('[data-f="birth_date"]').value,
+            civil_status: ov.querySelector('[data-f="civil_status"]').value,
             sss_no: ov.querySelector('[data-f="sss_no"]').value.trim(),
             philhealth_no: ov.querySelector('[data-f="philhealth_no"]').value.trim(),
             pagibig_no: ov.querySelector('[data-f="pagibig_no"]').value.trim(),
@@ -777,6 +909,7 @@ App.register('hr-employees', async (view) => {
               : null,
             late_exempt: ov.querySelector('[data-f="late_exempt"]').checked,
             ot_exempt: ov.querySelector('[data-f="ot_exempt"]').checked,
+            always_whole_day: ov.querySelector('[data-f="always_whole_day"]').checked,
             clock_anywhere: ov.querySelector('[data-f="clock_anywhere"]').checked,
             deduct_sss: ov.querySelector('[data-f="deduct_sss"]').checked,
             deduct_philhealth: ov.querySelector('[data-f="deduct_philhealth"]').checked,
@@ -786,20 +919,118 @@ App.register('hr-employees', async (view) => {
             sss_override: ov.querySelector('[data-f="sss_override"]').value.trim() || null,
             philhealth_override: ov.querySelector('[data-f="philhealth_override"]').value.trim() || null,
             pagibig_override: ov.querySelector('[data-f="pagibig_override"]').value.trim() || null,
-            photo: photoData,
+            contribution_basis: ov.querySelector('[data-f="contribution_basis_fixed"]').checked ? 'fixed' : 'actual',
+            photo: photoChanged ? photoData : undefined, // undefined is left out of the JSON
           };
-          if (editing) {
-            const effDateInp = ov.querySelector('[data-f="rate_effective_date"]');
-            if (effDateInp) body.rate_effective_date = effDateInp.value;
-            const noteInp = ov.querySelector('[data-f="rate_change_note"]');
-            if (noteInp) body.rate_change_note = noteInp.value.trim();
-          }
           if (editing) await API.put('/hr/employees/' + existing.id, body);
           else await API.post('/hr/employees', body);
           UI.toast(editing ? 'Employee saved' : 'Employee created');
           load();
         },
       });
+    });
+  }
+
+  /* ---------- Change rate (logs it, then recomputes the payslips it reaches) ---------- */
+  function rateLabelText(r) {
+    return r.rate_type === 'monthly' ? `${money(r.monthly_rate)}/mo (${money(r.daily_rate)}/day)` : `${money(r.daily_rate)}/day`;
+  }
+
+  function rateChangeModal(emp, onDone) {
+    // Same UTC "today" the server checks a future date against.
+    const today = new Date().toISOString().slice(0, 10);
+    const type = emp.rate_type || 'daily';
+    UI.modal({
+      title: `Change rate — ${emp.name}`,
+      bodyHTML: `
+        <p class="muted" style="font-size:13px;margin-top:0">Current rate: <strong>${UI.esc(rateLabelText(emp))}</strong></p>
+        <div class="field-row">
+          <div><label>Rate type</label><select data-r="rate_type">
+            <option value="daily" ${type === 'daily' ? 'selected' : ''}>Daily</option>
+            <option value="monthly" ${type === 'monthly' ? 'selected' : ''}>Monthly</option>
+          </select></div>
+          <div><label data-r="amount_label">${type === 'monthly' ? 'New monthly rate' : 'New daily rate'}</label>
+            <input data-r="amount" type="number" step="0.01" min="0" />
+            <div class="muted" data-r="amount_hint" style="font-size:12px;margin-top:3px"></div>
+          </div>
+        </div>
+        <div class="field-row" style="margin-top:8px">
+          <div><label>Effective date</label><input data-r="effective_date" type="date" max="${today}" value="${today}" /></div>
+          <div><label>Note (optional)</label><input data-r="note" maxlength="200" placeholder="e.g. Annual raise" /></div>
+        </div>
+        <p class="muted" style="font-size:12px;margin:10px 0 0">Days before the effective date keep the old rate. Every
+          unpaid payslip for a cutoff ending on or after it is recomputed now. Payslips already marked paid are not
+          changed — you'll see how much each one is short. Can be backdated; a future date isn't supported yet.</p>`,
+      confirmText: 'Change rate',
+      onOpen: (ov) => {
+        const typeSel = ov.querySelector('[data-r="rate_type"]');
+        const amountInp = ov.querySelector('[data-r="amount"]');
+        const sync = () => {
+          const monthly = typeSel.value === 'monthly';
+          ov.querySelector('[data-r="amount_label"]').textContent = monthly ? 'New monthly rate' : 'New daily rate';
+          const amt = Number(amountInp.value) || 0;
+          ov.querySelector('[data-r="amount_hint"]').textContent = monthly && amt
+            ? `≈ ${money(amt / monthlyRateDivisor)} / day (monthly ÷ ${monthlyRateDivisor})` : '';
+        };
+        typeSel.addEventListener('change', sync);
+        amountInp.addEventListener('input', sync);
+        setTimeout(() => amountInp.focus(), 0);
+      },
+      onConfirm: async (ov, showErr) => {
+        const rateType = ov.querySelector('[data-r="rate_type"]').value;
+        const amount = Number(ov.querySelector('[data-r="amount"]').value) || 0;
+        const effectiveDate = ov.querySelector('[data-r="effective_date"]').value;
+        if (amount <= 0) { showErr('Enter the new rate'); return false; }
+        if (!effectiveDate) { showErr('Pick the date the new rate takes effect'); return false; }
+        if (effectiveDate > today) { showErr('The effective date can\'t be in the future yet'); return false; }
+        const result = await API.post(`/hr/employees/${emp.id}/rate-change`, {
+          rate_type: rateType,
+          daily_rate: rateType === 'daily' ? amount : 0,
+          monthly_rate: rateType === 'monthly' ? amount : null,
+          effective_date: effectiveDate,
+          note: ov.querySelector('[data-r="note"]').value.trim() || null,
+        });
+        onDone(result);
+        rateChangeResultModal(emp, { rate_type: rateType, daily_rate: rateType === 'monthly' ? amount / monthlyRateDivisor : amount, monthly_rate: amount }, effectiveDate, result);
+      },
+    });
+  }
+
+  function rateChangeResultModal(emp, newRate, effectiveDate, result) {
+    const recomputed = result.recomputed || [];
+    const paid = result.paid || [];
+    const glPosted = recomputed.filter((r) => r.gl_posted);
+    const owed = paid.reduce((s, p) => s + (Number(p.difference) || 0), 0);
+    const row = (title, sub) => `
+      <div class="tool-row"><div class="tool-row-main">
+        <div class="tool-row-title">${title}</div><div class="tool-row-sub">${sub}</div>
+      </div></div>`;
+    UI.modal({
+      title: 'Rate changed',
+      cancelText: 'Close',
+      bodyHTML: `
+        <p style="margin-top:0">${UI.esc(emp.name)} is now on <strong>${UI.esc(rateLabelText(newRate))}</strong>
+          from ${UI.esc(UI.fmtDateShort(effectiveDate))}.</p>
+        ${!recomputed.length && !paid.length ? `<p class="muted" style="font-size:13px">No payslips were affected —
+          cutoffs generated from now on use the new rate.</p>` : ''}
+        ${recomputed.length ? `
+          <label style="display:block;margin-top:14px">Payslips recomputed (${recomputed.length})</label>
+          ${recomputed.map((r) => row(
+            `${UI.esc(r.period)} <span class="muted" style="font-weight:normal">· ${UI.esc(r.number)}</span>`,
+            `Gross ${money(r.earnings_before)} → ${money(r.earnings_after)} · Net ${money(r.net_before)} → ${money(r.net_after)}`
+          )).join('')}` : ''}
+        ${glPosted.length ? `<p class="form-error" style="margin-top:8px">Already posted to the General Ledger:
+          ${glPosted.map((r) => UI.esc(r.period)).join(', ')}. Open each cutoff and post its payroll to the GL again.</p>` : ''}
+        ${paid.length ? `
+          <label style="display:block;margin-top:14px">Already paid — not changed (${paid.length})</label>
+          ${paid.map((p) => row(
+            `${UI.esc(p.period)} <span class="muted" style="font-weight:normal">· ${UI.esc(p.number)}</span>`,
+            `Paid ${money(p.earnings_paid)} gross · at the new rate ${money(p.earnings_at_new_rate)} · `
+              + `<strong>${p.difference >= 0 ? 'short' : 'over'} ${money(Math.abs(p.difference))}</strong>`
+          )).join('')}
+          <p class="muted" style="font-size:12px;margin:6px 0 0">Total ${owed >= 0 ? 'owed' : 'overpaid'}:
+            <strong>${money(Math.abs(owed))}</strong> gross. Settle it by hand, or unmark a payslip as paid and
+            regenerate its cutoff to recompute it.</p>` : ''}`,
     });
   }
 
@@ -875,7 +1106,7 @@ App.register('hr-employees', async (view) => {
   async function downloadDoc(employeeId, docId, docs) {
     const doc = docs.find((x) => String(x.id) === String(docId));
     try {
-      const res = await fetch(`/api/hr/employees/${employeeId}/documents/${docId}/download`, {
+      const res = await fetch(API.base() + `/api/hr/employees/${employeeId}/documents/${docId}/download`, {
         headers: { Authorization: 'Bearer ' + API.getToken() },
       });
       if (!res.ok) throw new Error('Download failed');
@@ -959,37 +1190,8 @@ App.register('hr-employees', async (view) => {
     });
   }
 
-  function returnAssetModal(issuanceId, itemId, after) {
-    UI.modal({
-      title: 'Mark asset returned',
-      bodyHTML: `
-        <div class="field-row">
-          <div><label>Return date</label><input data-f="date" type="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
-          <div><label>Status</label><select data-f="status">
-            <option value="returned">Returned</option>
-            <option value="lost">Lost</option>
-            <option value="damaged">Damaged</option>
-          </select></div>
-        </div>
-        <div style="margin-top:8px"><label>Condition</label><input data-f="cond" placeholder="Good, worn, scratched…" /></div>
-        <div style="margin-top:8px"><label>Notes</label><textarea data-f="notes" rows="2"></textarea></div>`,
-      confirmText: 'Save',
-      onConfirm: async (ov, showErr) => {
-        const returnDate = ov.querySelector('[data-f="date"]').value;
-        if (!returnDate) { showErr('Return date is required'); return false; }
-        try {
-          await API.post(`/hr/assets/${issuanceId}/items/${itemId}/return`, {
-            returned_date: returnDate,
-            status: ov.querySelector('[data-f="status"]').value,
-            condition_on_return: ov.querySelector('[data-f="cond"]').value.trim() || null,
-            return_notes: ov.querySelector('[data-f="notes"]').value.trim() || null,
-          });
-          UI.toast('Asset updated');
-          if (after) after();
-        } catch (e) { showErr(e.message); return false; }
-      },
-    });
-  }
+  // Shared with the company-wide register (hr-assets.js).
+  const returnAssetModal = (issuanceId, itemId, after) => HRAssets.returnModal(issuanceId, itemId, after);
 
   /* Default body used only if the editable "Asset Issuance Form" document template (Documents >
      Templates) is somehow missing — normal installs always have the seeded one. */
@@ -1010,12 +1212,11 @@ App.register('hr-employees', async (view) => {
   // Same preview-modal + iframe pattern as generateId() below — avoids window.open() popup blocking.
   async function printAssetIssuance(emp, issuance) {
     try {
-      const [templateList, company] = await Promise.all([
-        API.get('/templates'),
+      const [tpl, company] = await Promise.all([
+        API.get('/templates/defaults/asset_issuance'),
         API.get('/templates/company'),
       ]);
-      const meta = templateList.find((t) => t.name === 'Asset Issuance Form');
-      const tpl = meta ? await API.get('/templates/' + meta.id) : null;
+      const variables=await API.get('/templates/variables?template_id='+tpl.id);
       const tplBody = tpl ? tpl.body : FALLBACK_ASSET_FORM_TEMPLATE;
       const ctx = {
         company,
@@ -1033,7 +1234,9 @@ App.register('hr-employees', async (view) => {
         })),
         today: new Date().toLocaleDateString(),
       };
-      const full = UI.printableHtml(renderTemplate(tplBody, ctx), 'Asset Issuance - ' + emp.name);
+      const tiled=buildTiledPagesHtml([issuance],()=>renderTemplate(tplBody,applyVariables(ctx,variables)),{copiesPerRecord:tpl.copies_per_record,recordsPerPage:tpl.records_per_page,tileFill:tpl.tile_fill,continuous:!!tpl.tile_continuous,gapXmm:tpl.grid_gap_x_mm,gapYmm:tpl.grid_gap_y_mm,repeatCount:tpl.repeat_count,pageContentHeightMm:pageContentHeightMm(tplBody)});
+      const full = UI.printableHtml(tiled||renderTemplate(tplBody,applyVariables(ctx,variables)), 'Asset Issuance - ' + emp.name);
+
 
       UI.modal({
         title: 'Asset Issuance Form Preview',
@@ -1041,11 +1244,10 @@ App.register('hr-employees', async (view) => {
         bodyHTML: `<iframe id="asset-form-frame" style="width:100%;height:60vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
         cancelText: 'Close',
         confirmText: 'Print…',
-        onOpen: (ov) => { ov.querySelector('#asset-form-frame').srcdoc = full; },
-        onConfirm: (ov) => {
+        onOpen: (ov) => { UI.loadPrintFrame(ov.querySelector('#asset-form-frame'),full,tiled?fitTiledCells:undefined); },
+        onConfirm: async (ov) => {
           const ifr = ov.querySelector('#asset-form-frame');
-          ifr.contentWindow.focus();
-          ifr.contentWindow.print();
+          await UI.printFrame(ifr);
           return false; // keep the preview open — printing shouldn't close it
         },
       });
@@ -1070,31 +1272,31 @@ App.register('hr-employees', async (view) => {
   // new window, so there's nothing for a popup blocker to block.
   async function generateId(emp) {
     try {
-      const [templateList, company] = await Promise.all([
-        API.get('/templates'),
+      const [tpl, company, photo] = await Promise.all([
+        API.get('/templates/defaults/employee_id'),
         API.get('/templates/company'),
+        photoDataUrl(emp),
       ]);
-      const meta = templateList.find((t) => t.name === 'Employee ID Card');
-      const tpl = meta ? await API.get('/templates/' + meta.id) : null;
+      const variables=await API.get('/templates/variables?template_id='+tpl.id);
       const tplBody = tpl ? tpl.body : FALLBACK_ID_TEMPLATE;
       const ctx = {
         company,
         employee: {
           name: emp.name, employee_no: emp.employee_no || '', position: emp.position || '',
-          department: emp.department_name || '', photo: emp.photo || PLACEHOLDER_PHOTO,
+          department: emp.department_name || '', photo,
         },
         today: new Date().toLocaleDateString(),
       };
       // Same opt-in Print Grid tiling as form-linked templates (public/js/print-tiling.js) —
       // e.g. a sheet of several ID card blanks (grid > 1x1), or 2 copies of the same card.
       const tiled = tpl && typeof buildTiledPagesHtml === 'function'
-        ? buildTiledPagesHtml([emp], () => renderTemplate(tplBody, ctx), {
+        ? buildTiledPagesHtml([emp], () => renderTemplate(tplBody,applyVariables(ctx,variables)), {
           copiesPerRecord: tpl.copies_per_record, recordsPerPage: tpl.records_per_page, tileFill: tpl.tile_fill,
-          continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count,
+          continuous: !!tpl.tile_continuous, gapXmm:tpl.grid_gap_x_mm,gapYmm:tpl.grid_gap_y_mm,repeatCount: tpl.repeat_count,
           pageContentHeightMm: typeof pageContentHeightMm === 'function' ? pageContentHeightMm(tplBody) : undefined,
         })
         : '';
-      const full = UI.printableHtml(tiled || renderTemplate(tplBody, ctx), 'ID - ' + emp.name);
+      const full = UI.printableHtml(tiled || renderTemplate(tplBody,applyVariables(ctx,variables)), 'ID - ' + emp.name);
 
       UI.modal({
         title: 'ID Card Preview',
@@ -1104,13 +1306,11 @@ App.register('hr-employees', async (view) => {
         confirmText: 'Print…',
         onOpen: (ov) => {
           const ifr = ov.querySelector('#idcard-preview-frame');
-          if (tiled) ifr.onload = () => { if (typeof fitTiledCells === 'function') fitTiledCells(ifr.contentDocument); };
-          ifr.srcdoc = full;
+          UI.loadPrintFrame(ifr, full, tiled && typeof fitTiledCells === 'function' ? fitTiledCells : undefined);
         },
-        onConfirm: (ov) => {
+        onConfirm: async (ov) => {
           const ifr = ov.querySelector('#idcard-preview-frame');
-          ifr.contentWindow.focus();
-          ifr.contentWindow.print();
+          await UI.printFrame(ifr);
           return false; // keep the preview open — printing shouldn't close it
         },
       });
@@ -1165,4 +1365,5 @@ App.register('hr-employees', async (view) => {
   }));
 
   await load();
+  if (filter && filter.id && view.isConnected) openEmployee(filter.id, displayedEmployees);
 });

@@ -12,26 +12,26 @@
       html: `<p><b>Accounting → Receivables &amp; Payables → Payments</b> lists customer receipts and supplier settlements. Set up <b>Books</b> and a cash/bank account first so Deposit to / Pay from has an account to select.</p><ol><li>Click <b>Record payment</b>, choose whether money is received or paid, select the party, date, amount and cash/bank account.</li><li>For invoice/bill allocations, open the party from AR / AP Aging and use its Record receipt/payment action; tick the open documents and set each Apply amount. The top-level Record payment form records an on-account payment. Click <b>Save payment</b> (needs <i>accounting.manage</i>).</li><li>Open a posted payment to review its allocations. Use <b>Void payment</b> for a mistake; do not post a second payment as a correction.</li></ol><p>View access needs <i>accounting.view</i>.</p>`,
     },
     { id: 'credit-notes', title: 'Credit / Debit Notes', group: 'Accounting', routes: [], workflow: 'accounting',
-      html: `<p><b>Accounting → Receivables &amp; Payables → Credit / Debit Notes</b> records returns, allowances and overbilling.</p><ol><li>Click <b>New note</b>, choose Customer credit or Supplier debit, select the party, Date, Subtotal, VAT amount, optional Tax code and Reason.</li><li>Review the values and click <b>Issue note</b> (needs <i>accounting.manage</i>).</li><li>Open an issued note to see its details; use <b>Void note</b> if it was issued incorrectly.</li></ol><p>A note adjusts the financial balance; it is not a general stock-return form.</p>`,
+      html: `<p><b>Accounting → Receivables &amp; Payables → Credit / Debit Notes</b> records returns, allowances and overbilling.</p><ol><li>Click <b>New note</b>, choose Customer credit or Supplier debit, select the party, Date, Net amount, VAT amount, optional Tax code and Reason. For a return-linked customer credit select its Related sale order.</li><li>Review the values and click <b>Issue note</b> (needs <i>accounting.manage</i>).</li><li>Open an issued note to see its details; use <b>Void note</b> if it was issued incorrectly.</li></ol><p>A note adjusts the financial balance; it is not a general stock-return form.</p>`,
     },
     { id: 'qc-findings', title: 'QC / QA Findings & Reports', group: 'Manufacturing', routes: [], workflow: 'production',
       html: `<p><b>Production → QC / QA → Findings &amp; Reports</b> is the inspection history.</p><ol><li>Filter the result and date range, or search by job order or product.</li><li>Open a finding to see the inspector, remarks, disposition and checklist snapshot.</li><li>Use <b>Export</b> to download the filtered findings.</li></ol><p>Recording a new Pass/Fail belongs to <b>Inspection Queue</b>, not this history view. Reading needs <i>inventory.view</i>.</p>`,
     },
     { id: 'low-stock', title: 'Low Stock', group: 'Inventory', routes: [], workflow: 'inventory',
-      html: `<p><b>Inventory → Items → Low Stock</b> opens the inventory list with <b>Low stock</b> ticked.</p><ol><li>Review items at or below their Safety Stock Quantity (reorder level); use other list filters to narrow the result.</li><li>Click <b>Reorder PO</b>, review the target multiplier and draft purchases (needs <i>orders.create</i>).</li><li>Review the drafts under <b>Inventory → Orders → Purchase Orders</b>. Finished products are skipped; build those through Production.</li><li>Untick <b>Low stock</b> or choose All Items to return to the full catalogue.</li></ol>`,
+      html: `<p><b>Inventory → Items → Low Stock</b> opens the inventory list with <b>Low stock</b> ticked.</p><ol><li>Review items at or below their Safety Stock Quantity (reorder level); use other list filters to narrow the result.</li><li>Click <b>Reorder PO</b>, review the target multiplier and draft purchases (needs <i>purchasing.manage</i>).</li><li>Review the drafts under <b>Inventory → Orders → Purchase Orders</b>. Finished products are skipped; build those through Production.</li><li>Untick <b>Low stock</b> or choose All Items to return to the full catalogue.</li></ol>`,
     },
 
     {
       id: 'purchase-orders', title: 'Purchase Orders', group: 'Orders', routes: [], workflow: 'purchasing',
-      html: `<p><b>Inventory → Orders → Purchase Orders</b> is the purchasing document list.</p><ol><li>Click <b>New Purchase Order</b>, choose <b>Supplier (on file)</b>, set Expected delivery, and add the items, quantities and prices.</li><li>Save the order, then review its row details and print it with the appropriate template.</li><li>Use the row's <b>Receiving &amp; bills</b> action to <b>Record receipt</b> for deliveries and enter vendor bills.</li><li>Posting a goods receipt adds stock. Approving a bill checks receipt coverage and PO prices; creating the PO alone does not receive goods.</li></ol><p>This is separate from Sale Orders and production Job Orders.</p>`,
+      html: `<p><b>Inventory → Orders → Purchase Orders</b> is the purchasing document list.</p><ol><li>Click <b>New Purchase Order</b>, choose <b>Supplier (on file)</b>, set Expected delivery, and add the items, quantities and prices.</li><li>Save the order, then review its row details and print it with the appropriate template.</li><li>Use the row's <b>Receiving &amp; bills</b> action to <b>Record receipt</b> for deliveries and enter vendor bills.</li><li>Managing POs and bills needs <i>purchasing.manage</i>; receiving needs <i>inventory.adjust</i>. Posting a goods receipt adds stock. Approving a bill checks receipt coverage and PO prices; creating the PO alone does not receive goods.</li></ol><p>This is separate from Sale Orders and production Job Orders.</p>`,
     },
     {
       id: 'job-documents', title: 'Job Order documents', group: 'Orders', routes: [],
-      html: `<p><b>Inventory → Orders → Job Orders</b> stores customer work documents, numbered JO-….</p><ol><li>Click <b>New Job Order</b>, enter the customer, work/items, quantities and prices, and save.</li><li>Open the row to review or print the document.</li><li>For a build, use the row's <b>Start production</b> action, choose the finished product, build quantity, source and output locations, then create the linked production order.</li><li>Manage that build under <b>Production → Job Orders</b>; the JO document and the production order are separate records.</li></ol><p>Stock-kit release, acceptance, inspection and Products In belong to the production order, not this document.</p>`,
+      html: `<p><b>Sales → Orders → Customer Job Orders</b> stores customer work documents, numbered JO-….</p><ol><li>Click <b>New Job Order</b>, enter the customer, work/items, quantities and prices, and save.</li><li>Open the row to review or print the document.</li><li>For a build, use the row's <b>Start production</b> action, choose the finished product, build quantity, source and output locations, then create the linked production order.</li><li>Manage that build under <b>Production → Job Orders</b>; the JO document and the production order are separate records.</li></ol><p>Stock-kit release, acceptance, inspection and Products In belong to the production order, not this document.</p>`,
     },
     {
       id: 'new-item', title: 'New / Edit item', group: 'Inventory', routes: [],
-      html: `<p>Open <b>Inventory → All Items → New item</b>, or use the row's Edit action.</p><ol><li>On <b>Default</b>, enter <b>Item Name</b> and <b>Item Code</b> (the SKU). A blank code can use the numbering policy; <b>Fn</b> controls its format for accounts with configuration access.</li><li>Choose Unit, Category, Department and Supplier; set Purchase Price, Sale Price and Standard Cost where applicable.</li><li>Use <b>Qty</b> for <b>Safety Stock Quantity</b> (the reorder level) and stock-related fields, and <b>Item Information</b> / <b>Additional Information</b> for other details.</li><li>Click <b>Create item</b> or <b>Save changes</b>. Set opening Inventory Qty when creating; use Stock in / out for later quantity changes.</li></ol><p><b>Option</b> changes which fields and tabs appear (needs <i>inventory.configure</i>). Labels and visibility can be customized, so your company's layout may differ.</p>`,
+      html: `<p>Open <b>Inventory → Items → Parts &amp; supplies</b> or <b>Finished products</b>, then choose an item.</p><ol><li>On <b>Item details</b>, enter its name, code/SKU, unit and classification. <b>Fn</b> controls code format for accounts with configuration access.</li><li>On <b>Pricing</b>, set the default purchase price, sale price and standard cost where applicable. These serve different purposes; individual order prices can change.</li><li>On <b>Stock &amp; location</b>, choose a storage location and safety-stock level. Opening quantity is entered when creating an item; later changes use Stock in/out or Transfer stock.</li><li><b>More details</b> holds the barcode, photo and notes. Save when ready.</li></ol><p><b>Option</b> changes field visibility and defaults (needs <i>inventory.configure</i>). Finished products share the item master with parts but are clearly separated in the list and have their BOM under Production.</p>`,
     },
     {
       id: 'payroll-policy', title: 'Payroll Policy Settings', group: 'HR', routes: [], workflow: 'payroll',
@@ -43,7 +43,7 @@
     },
     {
       id: 'global-variables', title: 'Template variables', group: 'Documents', routes: [],
-      html: `<p>Use <b>Documents → Templates → Variables</b> for global template variables, or the editor's variable manager for variables local to one template.</p><ol><li>Click <b>New variable</b> and give it a key, label and category.</li><li>Choose a fixed value, bound data field or formula, complete its settings, and save.</li><li>Insert it with <b>Insert → { } Variable</b> or its <code>{{key}}</code> token.</li><li>Check a preview and a real printed record; a field may be empty if that record has no value.</li></ol><p>Changing a global variable affects every template using it. Editing variables requires <i>templates.edit</i>.</p>`,
+      html: `<p>Use <b>Documents → Templates → Variables</b> for global template variables, or the editor's variable manager for variables local to one template.</p><ol><li>Click <b>New variable</b> and give it a key, label and category.</li><li>Choose a fixed value, bound data field or formula, complete its settings, and save.</li><li>Insert it with <b>Variables → Insert variable</b> or its <code>{{key}}</code> token.</li><li>Check a preview and a real printed record; a field may be empty if that record has no value.</li></ol><p>Changing a global variable affects every template using it. Editing variables requires <i>templates.edit</i>.</p>`,
     },
     {
       id: 'company-profile', title: 'Company profile', group: 'Documents', routes: [],
@@ -56,15 +56,15 @@
 
     {
       id: 'data-forms', title: 'Data Forms', group: 'Documents', routes: ['form-records'],
-      html: `<p>Open <b>Documents → Data Forms → All Forms</b>, then choose a form.</p><ol><li>Use search, status and period filters to find records.</li><li>Use <b>New record</b> to complete the form's fields and save. The record gets an automatic number.</li><li>Open a record to review it; use available edit, approval and print actions for that form.</li></ol><p>Browsing and editing a section's records requires <i>forms.manage.&lt;section&gt;</i>. General unscoped forms require all four section permissions. Uploading a file uses All Files instead.</p>`,
+      html: `<p><b>Documents → Data Forms</b> is the hub for versioned entries, connected values and linked print layouts.</p><ol><li>Choose a form, then use search, favorites/recents, columns or saved filters.</li><li>Complete the original schema’s fields; connected selections save reviewed source values and calculations are recomputed by the server. Save Draft to continue later.</li><li>An Inventory entry user needs <i>forms.fill.inventory</i> and that form’s Access role/account grant; existing managers retain their section access. Entry access is not design, delete or approval access.</li><li>Submit only after review. A sales-enabled form links to one open sales order; use <b>Review sales order</b> for subsequent sales changes. The submitted source record is locked.</li><li>Check revision history before corrections. Archived forms block new records; authorized historical corrections require a reason. CSV preview lists rejected source lines and requires consent for partial import.</li></ol><p>A form called Invoice does not itself issue a posted accounting invoice or move stock.</p>`,
     },
     {
       id: 'payroll-records', title: 'Payroll records', group: 'HR', routes: [],
-      html: `<p><b>HR → Payroll</b> opens the <b>HR Payroll</b> Data Form. Browsing records needs <i>forms.manage.hr</i>.</p><ol><li>Generate payslips from a populated cutoff in <b>HR → Time Keeping</b> first (needs <i>hr.manage</i>).</li><li>Choose the period, expand its employee records, and check earnings and deductions against attendance.</li><li>Print payslips with the linked template. Review manual cash advances and other deductions.</li><li>Use <b>Post to GL</b> after the cutoff is final; it is separate from generating payslips and needs <i>accounting.manage</i>.</li></ol><p>Paid payslips are locked against regeneration. Rest-day overtime is computed from attendance; a manually changed value is overwritten when regenerated.</p>`,
+      html: `<p><b>HR → Payroll</b> uses the HR Payroll Data Form.</p><ol><li>Generate from a populated cutoff, then compare earnings/deductions with attendance and approved requests.</li><li>Preview deduction overrides, then explicitly save. Inspect the before/after history, actor and reason. Paid slips reject edits; archived corrections require a reason.</li><li>An earlier correction flags later same-month cutoffs. Review/regenerate unpaid later cutoffs oldest first; manual amounts and paid locks need separate review.</li><li>Paid records are finalized; employee draft payroll/timekeeping is watermarked and may change. Final payslip download is available only while Paid.</li><li>Use <b>Post to GL</b> explicitly and check any re-posting flag after recalculation. Payment and ledger posting are separate checkpoints.</li></ol>`,
     },
     {
       id: 'hr-forms', title: 'HR request forms and notices', group: 'HR', routes: [],
-      html: `<p><b>HR → Memos &amp; Notices</b> opens HR Data Forms, including leave, overtime, offset, undertime and notices.</p><ol><li>Choose the form and create or review its records (needs <i>forms.manage.hr</i>).</li><li>Complete the employee, date and request details, then use the available approval actions.</li><li>In <b>Time Keeping</b>, link the approved request to the appropriate attendance day. Saving a form alone does not attach it to attendance.</li></ol>`,
+      html: `<p><b>HR → HR Forms</b> opens HR Data Forms, including leave, overtime, offset, undertime and notices.</p><ol><li>Choose the form and create or review its records (needs <i>forms.manage.hr</i>).</li><li>Complete the employee, date and request details, then use the available approval actions.</li><li>In <b>Time Keeping</b>, link the approved request to the appropriate attendance day. Saving a form alone does not attach it to attendance.</li></ol>`,
     },
     {
       id: 'stock-movements', title: 'Stock Movements', group: 'Inventory', routes: ['inventory-movements'],
@@ -117,11 +117,11 @@
     },
     {
       id: 'hr-overview', title: 'Human Resources overview', group: 'HR', routes: ['hr'],
-      html: `<p>HR → Overview summarises employees, attendance and HR work.</p><ol><li>Open an attendance summary to view the matching Daily Report.</li><li>Use Employees for staff records and Time Keeping for cutoff attendance and payroll.</li><li>Payroll and Memos & Notices open their respective Data Forms.</li></ol>`,
+      html: `<p>HR → Overview summarises employees, attendance and HR work.</p><ol><li>Open an attendance summary to view the matching Daily Report.</li><li>Use Employees for staff records and Time Keeping for cutoff attendance and payroll.</li><li>Payroll and HR Forms open their respective Data Forms.</li></ol>`,
     },
     {
       id: 'kiosk', title: 'Time-in Kiosk', group: 'HR', routes: ['hr-kiosk'],
-      html: `<p>HR → Time Keeping → Time-in Kiosk records live attendance punches on the office monitor.</p><ol><li>If this PC needs approval, ask an HR manager to approve it as an office kiosk.</li><li>Allow camera access. Employees scan the rotating QR from the phone app, or enter their employee number on the kiosk.</li><li>Check the displayed confirmation after each punch.</li><li>Field Work records separate departures and returns; it does not change payroll hours. Import or reconcile attendance in Time Keeping for payroll.</li></ol>`,
+      html: `<p>HR → Time Keeping → Time-in Kiosk records live attendance punches on the office monitor.</p><ol><li>If this PC needs approval, ask an HR manager to approve it as an office kiosk.</li><li>Use the displayed QR or employee-number action supported by this kiosk. Employees follow the phone time-clock prompts for required photos.</li><li>Check the displayed confirmation and time after each punch. Authorized kiosk cards show punch photos; No photo or Unavailable does not by itself mean the punch was absent.</li><li>Field Work records separate departures and returns; it does not change payroll hours. Import or reconcile attendance in Time Keeping for payroll.</li></ol>`,
     },
     {
       id: 'daily-report', title: 'Daily Report', group: 'HR', routes: ['hr-daily-report'],
@@ -133,15 +133,15 @@
     },
     {
       id: 'production-qc', title: 'QC / QA', group: 'Manufacturing', routes: ['production-qc'],
-      html: `<p>Production → QC / QA handles inspection and its history.</p><ol><li>Open Inspection Queue and choose the job order and unit to inspect.</li><li>Complete the required checklist, then record Pass or Fail with remarks. A failure needs a disposition; repair sends the unit to rework.</li><li>Use Findings & Reports to search, filter and export past inspections.</li><li>Manage Checklists requires checklist configuration access. A final pass queues output for Products In; it does not add stock.</li></ol>`,
+      html: `<p><b>Production → QC / QA</b> separates inspection from receiving.</p><ol><li>Choose a unit on your authorized QC or QA stage. A single-stage job combines the checks; two stages enforce separate permissions.</li><li>Complete required checks; N/A does not satisfy a required check. Fail/hold needs the unit’s evidence photo.</li><li>Choose Pass, repair/rectification or terminal rejection. Final QA holds need an authorized hold decision; they do not enter RTS while unresolved.</li><li>Settle repair-part requests and re-inspect. Informational issue reports alone never advance or block the inspection.</li><li>Final-passed units go to <b>Products In</b>; passing does not add stock.</li></ol>`,
     },
     {
       id: 'repairs', title: 'Repairs & Parts Requests', group: 'Manufacturing', routes: ['repairs'],
-      html: `<p>Production → Repairs & Parts Requests handles parts needed for failed units.</p><ol><li>Raise an add or replace request from the repair panel on the job order.</li><li>Warehouse staff review the request and accept it from a stock location, or reject it with a reason.</li><li>Accepting moves the parts; a replacement records the removed part as damage.</li><li>Settle every open request before re-inspecting the unit in QC / QA.</li></ol>`,
+      html: `<p><b>Repairs &amp; Parts Requests</b> supplies extra/replacement parts for inspection rework or a customer return repair.</p><ol><li>Raise the request with the exact part, quantity and fault reason. Available stock is held for it.</li><li>The clerk selects an approved storage source and issues only the approved part and quantity. Escalate shortages.</li><li>A changed part or quantity needs a formal revision approved by the requester or independent supervisor; the proposer cannot approve it.</li><li>Settle all requests before reinspection. A manufacturing unit returns to QC/QA; returned customer goods need repair completion and a fresh warehouse return inspection.</li></ol>`,
     },
     {
       id: 'products-in', title: 'Products In', group: 'Manufacturing', routes: ['production-receiving'],
-      html: `<p>Production → Products In receives built output into stock.</p><ol><li>Open Ready to Receive and choose the job order.</li><li>Select the units or enter the batch quantity actually counted, then choose the destination location and post.</li><li>Use Receipt History to review previous receiving records.</li><li>Only received output becomes stock available to sell or reserve. Posting needs <i>production.receive</i> or <i>inventory.adjust</i>.</li></ol>`,
+      html: `<p><b>Products In / RTS recording</b> is the stock-in checkpoint after quality.</p><ol><li>Choose ready units and actual whole-number batch quantities. Desktop can combine units and multiple batches into one receipt at one storage location.</li><li>Verify the physical output and exact destination. Total capacity, duplicate serials, invalid/transit locations and product-data mismatches may block posting.</li><li>Post once and check Receipt History. Phone groups save per-job receipt attempts before submission; recover unknown results with their original key.</li><li>A site-PC acknowledgement remains pending until sync confirms. Transfer received stock if the sale ships from a different location.</li></ol><p>Do not use Products In for customer return reinspection; that has its own return workflow.</p>`,
     },
     {
       id: 'finished-goods', title: 'Finished Goods', group: 'Manufacturing', routes: ['finished-goods'],
@@ -167,6 +167,14 @@
         </ul>
         <p>Help always opens to the screen you're on. Use the picker above to read any
         other topic.</p>`,
+    },
+    {
+      id: 'sales-overview', title: 'Sales pipeline', group: 'Orders', routes: ['sales-overview'], workflow: 'sales',
+      html: `<p><b>Sales → Pipeline</b> follows customer orders from CSR review through warehouse acceptance, release and shipment. The stages come from sale orders and release slips, so refreshing shows the current record. Order values are not cash received. Open Sales → Orders to create or edit an order; Inventory → Order Tracking is read-only, and Sales → Releasing handles warehouse fulfillment.</p>`,
+    },
+    {
+      id: 'sales-service', title: 'Customer service', group: 'Orders', routes: ['sales-service'], workflow: 'sales',
+      html: `<p><b>Sales → Customer Service</b> is the CSR follow-up desk. Search an order or customer, filter by its actual order/release stage, and open the sale directly. New sale order starts an open draft; stock review and approval happen on that order. Customer records live under Sales → Customers.</p>`,
     },
     {
       id: 'analytics', title: 'Reports (operational dashboards)', group: 'Basics', routes: ['analytics'],
@@ -304,46 +312,7 @@
     },
     {
       id: 'job-orders', title: 'Job Orders (production)', group: 'Manufacturing',
-      routes: ['job-orders'], html: `
-        <p>A Job Order builds N units of a finished product. <b>Production</b>'s tabs run in
-        the order a build actually happens: Overview → Product Setup → Job Orders →
-        Scheduling → QC / QA → Repairs → Products In → Batches / Lots → Finished Goods.
-        <b>Overview</b> is the home screen — a summary of what's overdue, in rework, or
-        waiting on you, with a short production report.</p>
-        <ol>
-          <li><b>Create</b> it: choose the product and quantity. It starts as a draft.</li>
-          <li><b>Release</b> it: the BOM parts are consumed from the source location. You
-              can still add or remove components manually for one-off builds.</li>
-          <li><b>Accept the parts kit</b>: the production lead counts the released components
-              and clicks <b>Accept job order</b>. Report a problem if the kit is short or damaged;
-              output cannot be recorded until the kit is accepted.</li>
-          <li><b>Track</b> progress: mark units done or scrapped. <b>Pause</b> or
-              <b>cancel</b> anytime — cancelling returns the <i>unused</i> parts only. This
-              doesn't post to stock yet — see Products In below.</li>
-          <li><b>QC/QA</b>: inspectors record pass / fail per unit, with remarks on
-              failures. You can require one or two QC stages. <b>Production → QC / QA</b> is
-              QC/QA's home — <b>Inspection Queue</b> lists every unit waiting across all job
-              orders, <b>Findings &amp; Reports</b> is the full pass/fail history (filterable,
-              exportable), and <b>Manage Checklists</b> is where the named checklists
-              themselves get built.</li>
-          <li><b>Failed units</b>: pick a disposition — <i>scrap / dispose / recycle</i>
-              (terminal, counts as scrapped) or <i>repair</i>. A <b>repair</b> unit goes
-              to rework: raise <b>parts requests</b> to the warehouse (add a missing part,
-              or replace one — the old part is booked into its damage record). The
-              warehouse <b>accepts</b> each request (that's when the <i>parts</i> move) on the
-              <b>Repairs &amp; Parts Requests</b> screen. The unit can only be
-              re-inspected once its requests are settled.</li>
-          <li><b>Products In</b>: a QC pass (or, with no QC stages, recorded progress) only
-              queues output as <i>receivable</i> — it isn't stock yet. <b>Production →
-              Products In</b> lists everything waiting; tick units or enter a batch's counted
-              quantity, pick the destination location (this is also how a unit lands in a
-              different warehouse than the job order's default), and post. Mirrors
-              Purchasing's Goods Receipt. A unit only becomes sellable/reservable once
-              received here.</li>
-          <li>Record each serialized unit's <b>identifier</b> (serial / chassis / motor no.)
-              while recording production. The serialized-unit recording form on desktop and phone requires a build photo; this action needs a connection. Once received, it shows up in <b>Finished Goods</b> and can be
-              <b>exploded</b> to show every serial.</li>
-        </ol>`,
+      routes: ['job-orders'], html: `<p>Production builds from an approved job through warehouse kit handover, output recording, quality and receiving.</p><ol><li>Create/review the draft and component snapshot. A <i>production.approve</i> holder approves; edits withdraw approval and reset pre-release acceptance/picks.</li><li>Warehouse uses <b>Accept (warehouse)</b>, <b>Pick / review kit</b>, then <b>Release &amp; issue slip</b>. Partial picks hold stock; the numbered parts slip deducts it. Sale-linked jobs use the sale’s stock review for combined purchasing.</li><li>Production counts and accepts the released kit before recording. Record serialized units individually with identifier + photo; use batch quantities only for non-serialized jobs.</li><li>Inspect through configured QC/QA stages. Issues and photos are informational; use authorized Pause to stop work.</li><li>Only <b>Products In</b> receives output into stock. Close early preserves pending/rework/held output and repair requests for completion; it is different from cancellation.</li></ol><p>For uncertain mobile saves, recover the original saved attempt rather than add the same unit or receipt again.</p>`,
     },
     {
       id: 'production-batches', title: 'Batches / lots & records', group: 'Manufacturing',
@@ -400,32 +369,7 @@
     },
     {
       id: 'orders', title: 'Sale Orders', group: 'Orders',
-      routes: ['orders'], workflow: 'sales', html: `
-        <p><b>Inventory → Orders → Sale Orders</b> stores customer orders, numbered SO-….</p>
-        <ol><li>Click <b>New Sale Order</b>, choose Customer (on file) or enter walk-in details,
-        set Ship from, and add the line items, quantities and prices.</li><li>Save the order, then open its status control to approve it.
-        A stock shortfall offers trim, production/purchase drafts or backorder approval.</li>
-        <li>Use the phone's <b>Work → Release SOs</b> to reserve the goods; the office confirms/completes
-        the order after delivery to post stock out.</li></ol>
-        <h4>Sale-order release</h4>
-        <p>A sale order runs <b>open → approved → released → confirmed/completed</b>.
-        <b>Approving is blocked if a line can't be met from stock</b> — you're prompted to
-        <i>trim the order to what's available</i>, <i>create job orders for the shortfall</i>
-        (which also checks whether the components are on hand to build it),
-        <i>draft purchase orders for the shortfall</i> (one per supplier, for the parts that
-        have to be bought), or <i>approve as a backorder</i>. The toolbar's <b>Backorders</b>
-        toggle lists every approved order still waiting on stock, and those rows carry a
-        ⚠ badge. Moving it to <b>approved</b> unlocks the warehouse: on the phone
-        (<i>Work → Release SOs</i>) the releaser opens the order and <b>scans every
-        unit's printed QR label</b> to add it (and types a quantity for non-serialized
-        lines). Scanned units go to <b>reserved</b> — earmarked for the order but still
-        on hand. Once every line is covered the order flips to <b>released</b>. Stock
-        actually leaves inventory (and COGS posts, when the ledger is on) when the order
-        reaches <b>confirmed/completed</b>. Each line shows released / shipped progress.
-        Cancelling or re-opening a released order returns its reserved units to stock.</p>
-        <p>When a <b>delivery</b> for the order is completed on the phone, the driver is
-        offered <i>"mark SO-xxxx completed?"</i> — one tap ships the remaining stock and
-        closes the order.</p>`,
+      routes: ['orders'], workflow: 'sales', html: `<p><b>Sales → Orders → Sale Orders</b> connects customer demand to stock, production, purchasing and trip releases.</p><ol><li>Save an open order with the exact item, price and build state: Fully built, Semi-built or CKD. Services remain non-stock.</li><li>Open <b>Review stock &amp; approval</b>: check the exact ship-from location, commitments, kit/repair holds and linked supply. <b>Awaiting release</b> is unpicked firm demand, not just shortages.</li><li>Draft only uncovered CKD-parts production/purchases. An eligible complete semi-built package can use <b>Finish a semi-built RTS unit</b>; do not issue its BOM again.</li><li>Approve separately and issue current release authority. Warehouse accepts and allocates exact lines; each vehicle gets its own slip and linked trip.</li><li>Further loads stay on the same SO. Cancel only unshipped remaining demand with a reason; shipped returns use the original slip.</li></ol><p>Drafts and allocations are not stock-out. A trip slip deducts only its physical load.</p>`,
     },
     {
       id: 'purchasing', title: 'Purchasing — receiving & vendor bills', group: 'Orders',
@@ -459,12 +403,15 @@
           <li><b>Dispute</b> parks a bill with a reason; editing a disputed bill returns
               it to draft.</li>
         </ul>
-        <p>The phone's <b>Work → Receive PR</b> posts stock directly without a GRN. It does not cover
-        billed quantities for the desktop three-way match; avoid posting the same delivery twice.</p>
+        <p><b>Internal Purchase Requests</b> are separate: staff propose items and a budget;
+        an authorized internal-request approver (purchasing.approve_requests) approves a budget and chooses requester cash or a buyer. The buyer uploads receipts
+        and actual purchases, then the internal-request approver checks liquidation and closes the request. A PR
+        does not create a supplier order or post stock. The phone's old <b>Receive PR</b> action
+        handles supplier deliveries, not these internal spending requests.</p>
         <p>Use the <b>Match tolerance</b> button on Goods Receipts or Vendor Bills to review price percentage,
-        flat-peso and quantity tolerances. Editing and saving require <i>orders.edit</i>; the price percentage defaults to 2%.</p>
+        flat-peso and quantity tolerances. Editing and saving require <i>purchasing.manage</i>; the price percentage defaults to 2%.</p>
         <p><b>Who can do what:</b> receiving needs <i>Adjust inventory</i>; raising and
-        approving bills needs <i>Edit orders</i> — so the warehouse receives and
+        approving bills needs <i>Manage purchasing</i> — so the warehouse receives and
         accounting approves.</p>`,
     },
     {
@@ -676,25 +623,18 @@
     },
     {
       id: 'form-builder', title: 'Form Builder', group: 'Documents',
-      routes: ['form-builder'], html: `
-        <p>Open <b>Form Builder</b> within HR, Inventory, Admin or Accounting.
-        You need that section's <i>forms.manage.&lt;section&gt;</i> permission.</p>
-        <ol><li>Use the <b>Forms</b> tab to create or edit a form definition: name, slug, number prefix and fields.</li>
-        <li>Set each field's type, required flag, choices and default; save the definition.</li>
-        <li>Use <b>Global Variables</b> for reusable values. HR also offers quick starting forms.</li>
-        <li>Open <b>Documents → Data Forms → All Forms</b> to fill in records; definitions and records are separate.</li></ol>
-      `,
+      routes: ['form-builder'], html: `<p><b>Form Builder</b> designs fields, access and optional automation.</p><ol><li>Choose the form section and add typed fields. Use <b>Sales invoice starter</b> for the Inventory invoice layout, dates, customer, product rows and payment terms.</li><li>Connect safe permissioned product/customer/employee/etc. sources. Configure editable or locked values and calculations. Review matching currency and source permissions.</li><li>For Inventory entry staff, configure <b>Access</b> role/account grants in addition to their account’s Enter Inventory forms permission.</li><li>In Automation map <b>Create a draft sales order on submission</b> only when wanted. Submission still needs sales and source permissions.</li><li>Save the versioned definition and review its linked print layout. Archived forms retain records/layouts but block new entries; existing records keep their original schema.</li></ol>`,
     },
     {
       id: 'templates', title: 'Document Templates', group: 'Documents',
       routes: ['templates'], html: `
         <p><b>Documents → Templates</b> controls printed orders, payslips, IDs and forms.
         Viewing needs <i>templates.view</i>; editing needs <i>templates.edit</i>.</p>
-        <ol><li>Click <b>New template</b> and choose a starting layout, or open a template to edit it.</li>
-        <li>Use <b>Visual</b> to type and format, or <b>HTML / CSS</b> to edit the source.</li>
-        <li>Use <b>Insert → { } Variable</b> for record fields and <code>{{company.*}}</code> details.
-        Repeating item rows and formulas have their own sections in the editor's <b>?</b> guide.</li>
-        <li>Check <b>Layout → Preview</b> with sample data, then <b>Save</b>. Print a real record to check its actual values.</li></ol>
+        <ol><li>Click <b>Create template</b> and choose a starting layout, or open a template to edit it.</li>
+        <li>Use <b>Edit</b> to type and format. Advanced source editing is under <b>More → Edit HTML / CSS</b>.</li>
+        <li>Use <b>Insert → Field</b> or the Fields sidebar for record fields and <code>{{company.*}}</code> details.
+        Repeating item rows and formulas have their own sections in the editor’s <b>Guide</b>.</li>
+        <li>Check <b>Print preview</b> for measured sheets and <b>Preview data</b> in the Print grid sidebar for sample values, then <b>Save</b>. Print a real record to check its actual values.</li></ol>
         <p><b>Company profile</b> updates shared company details (needs <i>templates.company</i>).
         The <b>Variables</b> button manages reusable custom values and formulas.</p>
       `,
@@ -741,20 +681,7 @@
     },
     {
       id: 'mobile-app', title: 'Mobile Warehouse App', group: 'Tools', routes: [],
-      html: `
-        <p>A phone version at <code>/m</code> for the stockroom and shop floor: scan items, move stock, count, release orders or receive output.
-        Warehouse tools need <i>inventory.mobile</i> and the permissions for each action;
-        linked employees can also use the phone for their own HR tasks.</p>
-        <ul>
-          <li>Open the normal system address on a phone; you're sent to the mobile app
-              automatically. Needs the <b>mobile warehouse</b> permission.</li>
-          <li>Supported stock moves, counts, QC decisions, parts requests, receipts and release scans
-              <b>queue</b> offline using cached data. They are pending until the server accepts them.
-              Recording a serialized unit with its photo, time punches and delivery proof need a connection.
-              Open <b>Pending sync</b> to check errors and retry.
-              Don't clear the browser's site data while the queue has items.</li>
-          <li>The camera scanner needs HTTPS; otherwise you get manual code entry.</li>
-        </ul>`,
+      html: `<p>Open the workspace’s <code>/m</code> phone app for role- and permission-filtered <b>Work</b> queues. Work refreshes effective access; a role name alone does not grant a task.</p><ul><li>Release orders and Kit releases are separate; the old Pick route no longer moves stock.</li><li>Stock moves/counts and eligible QC decisions may queue using cached data. Serialized photos, kit release, final warehouse-out and RTS receipts require their online confirmation flow. Read pending states rather than assume background completion.</li><li>Saved attempts/evidence for production, receipts, handoff, delivery and courier pickup survive supported recovery paths. After a lost response use the original saved attempt; site-local results remain pending until sync confirms.</li><li>Returns, Semi-finishing, unit Issues and photos, exact line/build-state allocation and per-slip Deliveries have their own workflows.</li><li>Use HTTPS for the camera; keep site data while any saved work or queue remains unresolved.</li></ul>`,
     },
     {
       id: 'email', title: 'Sending email', group: 'Tools', routes: [],
@@ -782,18 +709,33 @@
     },
     {
       id: 'account', title: 'My Account', group: 'Basics', routes: ['account'],
-      html: `
-        <p>Open <b>My Account → Profile → My Account</b> for your login details.</p>
-        <ol><li>Edit <b>Display name</b>, then click <b>Save profile</b>.</li>
-        <li>To change your password, enter the current password, a new password of at least six characters,
-        and its confirmation, then click <b>Update password</b>.</li></ol>
-        <p>Username, role and department are managed by an administrator.
-        If you have message access, the page also shows your message attachment storage usage.</p>
-      `,
+      html: `<p>Open <b>My Account</b> for profile and login credentials.</p><ol><li>Edit the display name and Save profile.</li><li>Change username using the current password; the new name must be unique and use the supported characters. Renaming retains your account/Company ID and calling session, while other sessions are revoked.</li><li>Change password using the current password and matching confirmation. Follow the current on-screen password requirements.</li></ol><p>Company ID and workspace identity are separate from your username. Administrators manage role and department.</p>`,
     },
   ];
 
   // Task checkpoints shared by the drawer and Guide Center.
+  TOPICS.push(
+    {id:'release-orders',title:'Release Sale Orders',group:'Orders',routes:['releasing'],html:'<p>Release Queue accepts approved sales and allocates exact serials, batches or bulk quantities to their sale lines/build states. Release Slips chooses each vehicle’s actual load, authority, package evidence and required goods photo. Only that slip load leaves stock. Later trips remain on the same SO. Book own delivery or courier pickup per slip. Record returned goods against the original slip; receiving a return does not restock or refund it.</p>'},
+    {id:'contact-verification',title:'Contact Verification',group:'HR',routes:['hr-contact-verification'],html:'<p>Review employee contact verification status. Open the relevant employee and follow the available verification actions. Check the employee record before correcting contact details.</p>'},
+    {id:'company-assets',title:'Company Assets',group:'HR',routes:['hr-assets'],html:'<p>Review company assets and their employee assignments. Use the available actions to record changes and check the saved assignment before handing over an asset.</p>'},
+    {id:'hr-approvals',title:'HR Approvals',group:'HR',routes:['hr-approvals'],html:'<p>Open a pending request and review its dates, details and attachments before approving or rejecting it. Follow the available actions for your role; a request must complete its approval process before it is treated as approved.</p>'},
+    {id:'sync',title:'Sync',group:'Admin',routes:['sync'],html:'<p>Review synchronization status and connection details. Check reported errors before retrying. Synchronization configuration affects this installation; ask the administrator responsible for its connected systems before changing it.</p>'},
+    {id:'hr-requests',title:'My HR requests',group:'HR',routes:['hr-requests'],html:'<p>Review your HR requests and their approval status. Open the request you need to inspect, or create a request using an available form. Access depends on your linked employee account and the forms enabled for your workspace.</p>'},
+    {id:'confidential-reports',title:'Confidential reports',group:'HR',routes:['confidential-reports'],html:'<p>Use the available filters to find a confidential report and open its details. This screen requires confidential-report access; ask an administrator if you cannot open it.</p>'},
+    {id:'identified-reports',title:'Identified reports',group:'HR',routes:['identified-reports'],html:'<p>Open a case sent or assigned to you to review its number, incident details, evidence and history. The selected recipient or assigned handler can update status, assign another active staff member and reply; the employee sees these updates in My identified reports. Access is limited to the reporter, recipient and assigned handler.</p>'},
+    {id:'stock-discrepancies',title:'Stock review',group:'Inventory',routes:['stock-discrepancies'],html:'<p>Review offline stock discrepancies and possible duplicate deductions from older direct sales. Count the physical stock and check movement evidence before a normal stock adjustment. Marking a case reviewed never changes stock.</p>'},
+    {id:'stock-counts',title:'Physical counts',group:'Inventory',routes:['stock-counts'],html:'<p>Planned checks assign an item, exact location and build state to a worker with a due date. Coverage shows active stock positions without a plan or reconciled count. The assigned worker records untracked quantity, physically present serials and each batch count. A different authorized person approves it; only correction or verification completes the task. Rejected counts can be repeated, and repeating plans create the next check after completion. Resolve serialized differences through exact-unit workflows.</p>'},
+    {id:'support',title:'Contact OTOM',group:'Tools',routes:['support'],html:'<p>Use Contact OTOM to review support requests and contact the service team. Include the affected screen, what you expected and what happened. Review the request before submitting.</p>'},
+    {id:'billing',title:'Workspace billing',group:'Admin',routes:['billing'],html:'<p>Review the invoices and payment instructions for this workspace. Report a payment with the requested reference and supporting receipt. A reported payment must be verified before it is treated as settled. Self-hosted installations may have no workspace billing.</p>'}
+  );
+  {const p = window.GUIDE && GUIDE.byId["split-trips"]; if(p) TOPICS.push({id:"sales-trips",title:"Trip releases and courier pickup",group:"Orders",routes:[],workflow:"split-trips",html:`<p>${p.intro}</p><ol>${p.steps.map(s=>`<li><b>${s.title}</b> — ${s.body}<p><i>Result:</i> ${s.result}</p></li>`).join('')}</ol>`});}
+  {const p = window.GUIDE && GUIDE.byId["customer-return"]; if(p) TOPICS.push({id:"customer-returns",title:"Customer returns and credit",group:"Inventory",routes:[],workflow:"customer-return",html:`<p>${p.intro}</p><ol>${p.steps.map(s=>`<li><b>${s.title}</b> — ${s.body}<p><i>Result:</i> ${s.result}</p></li>`).join('')}</ol>`});}
+  {const p = window.GUIDE && GUIDE.byId["ckd-sale"]; if(p) TOPICS.push({id:"ckd-shipping",title:"CKD whole-kit sales",group:"Orders",routes:[],workflow:"ckd-sale",html:`<p>${p.intro}</p><ol>${p.steps.map(s=>`<li><b>${s.title}</b> — ${s.body}<p><i>Result:</i> ${s.result}</p></li>`).join('')}</ol>`});}
+  {const p = window.GUIDE && GUIDE.byId["semi-finishing"]; if(p) TOPICS.push({id:"semi-finishing",title:"Finish a semi-built RTS unit",group:"Manufacturing",routes:[],workflow:"semi-finishing",html:`<p>${p.intro}</p><ol>${p.steps.map(s=>`<li><b>${s.title}</b> — ${s.body}<p><i>Result:</i> ${s.result}</p></li>`).join('')}</ol>`});}
+  {const p = window.GUIDE && GUIDE.byId["connected-invoice"]; if(p) TOPICS.push({id:"connected-invoice",title:"Connected invoice and sales submission",group:"Documents",routes:[],workflow:"connected-invoice",html:`<p>${p.intro}</p><ol>${p.steps.map(s=>`<li><b>${s.title}</b> — ${s.body}<p><i>Result:</i> ${s.result}</p></li>`).join('')}</ol>`});}
+  {const p = window.GUIDE && GUIDE.byId["payroll-correction"]; if(p) TOPICS.push({id:"payroll-corrections",title:"Payroll correction history",group:"HR",routes:[],workflow:"payroll-correction",html:`<p>${p.intro}</p><ol>${p.steps.map(s=>`<li><b>${s.title}</b> — ${s.body}<p><i>Result:</i> ${s.result}</p></li>`).join('')}</ol>`});}
+  TOPICS.push({"id": "purchase-requests", "title": "Internal Purchase Requests", "group": "Orders", "routes": ["purchase-requests"], "workflow": "budgeted-purchase-request", "html": "<p><b>Inventory → Purchase Requests</b> authorizes internal spending, not supplier receiving.</p><ol><li>With purchasing.request, submit items, quantities and expected costs; non-catalogue items are allowed.</li><li>An approver needs <b>purchasing.approve_requests</b>, separate from supplier purchasing.manage. Approve the total budget and choose requester cash or an eligible buyer.</li><li>Record actual cash handed over separately. The assigned buyer uploads receipts and actual spending, which must stay within the approved overall budget.</li><li>Submit liquidation. The approver reviews evidence, records exact change/reimbursement and closes, or returns it with a correction reason.</li></ol><p>No step automatically creates a PO, receives stock or pays a supplier. Mobile <b>Receive PR</b> means supplier goods receipt and is a different workflow.</p>"});
+  TOPICS.push({"id": "legacy-unit-intake", "title": "Pre-system unit intake", "group": "Manufacturing", "routes": [], "workflow": "legacy-unit-intake", "html": "<p>In mobile <b>RTS recording → Enter or resume pre-system unit</b>, record one already-existing physical unit with product, distinct identifier, location, photo, reason and valuation.</p><p>The LI record is inspection-only: no BOM release or stock is created. QC then QA must both pass. Inspectors match the physical identifier before inspection, without requiring a sticker yet. At Products In, print, attach and scan the sticker and verify storage before stock-in.</p><p>Recover saved original attempts after uncertainty; do not recreate the intake or Add unit again.</p>"});
   const CHECKPOINTS = {
     'barcode-labels': ['Select the items and confirm the printer label size.', 'Review the print sheet, then print one test label before the full batch.', 'If labels are clipped, match paper size and scale in the print dialog.'],
     'products-in': ['Confirm QC/QA is complete, or that the order requires no inspection.', 'Posted output appears in Receipt History and stock at the selected location.', 'If output is missing, check inspection status and whether it was already received.'],

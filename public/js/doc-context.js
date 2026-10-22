@@ -49,7 +49,13 @@ function _format(value, dataType) {
 function baseDocContext(order, company, user) {
   order = order || {};
   const items = (order.items || []).map((it) => ({
-    name: it.name, sku: it.sku || '', description: it.description || '',
+    name: order.type === 'sale' && it.fulfillment_mode === 'semi_built' ? `${it.name} (Semi-built)`
+      : order.type === 'sale' && it.fulfillment_mode === 'ckd' ? `${it.name} (CKD)`
+        : it.name,
+    fulfillment_label: it.fulfillment_mode === 'semi_built' ? 'Semi-built'
+      : it.fulfillment_mode === 'ckd' ? 'CKD'
+        : it.fulfillment_mode === 'ckd_component' ? 'CKD part' : 'Fully built / standard',
+    sku: it.sku || '', description: it.description || '',
     quantity: it.quantity, unit: it.unit || '',
     unit_price: _money(it.unit_price), line_total: _money(it.line_total),
   }));
@@ -59,7 +65,7 @@ function baseDocContext(order, company, user) {
     company: company || {},
     order: {
       no: order.number || '',
-      type: order.type === 'job' ? 'Job Order' : order.type === 'purchase' ? 'Purchase Request' : 'Sale Order',
+      type: order.type === 'job' ? 'Job Order' : order.type === 'purchase' ? 'Supplier Purchase Order' : 'Sale Order',
       date: order.order_date || '', status: order.status || '',
       customer_name: order.customer_name || '', customer_contact: order.customer_contact || '',
       notes: order.notes || '', currency: order.currency || 'PHP',

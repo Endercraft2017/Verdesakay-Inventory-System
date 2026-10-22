@@ -1,6 +1,8 @@
 /** SaaS phase 6: plan quotas at the create endpoints + trial/past-due read-only gating.
     The `default` tenant is unlimited and never gated. */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import { setupApp, cleanup, login, type TestContext } from './helpers';
 
 let ctx: TestContext;
@@ -39,7 +41,7 @@ describe('plan quotas on a named tenant', () => {
 
   it('blocks the 6th user with a 402', async () => {
     const mk = (n: number) => ctx.api.post('/api/users').set(asTenant('capco')).set('Authorization', `Bearer ${tkn}`)
-      .send({ username: `capuser${n}`, full_name: `Cap User ${n}`, password: 'secret1' });
+      .send({ username: `capuser${n}`, full_name: `Cap User ${n}`, password: 'secret123' });
     for (let i = 2; i <= 5; i++) expect((await mk(i)).status).toBe(201); // 1 (admin) + 4 = 5
     const sixth = await mk(6);
     expect(sixth.status).toBe(402);
@@ -51,6 +53,30 @@ describe('plan quotas on a named tenant', () => {
     expect(r.body.plan).toBe('trial');
     expect(r.body.limits.users).toBe(5);
     expect(r.body.usage.users).toBe(5);
+  });
+
+  it('counts uploaded bytes once at the tenant storage limit', async () => {
+    const dir = path.join(ctx.tmpDir, 'uploads', 'capco');
+    fs.mkdirSync(dir, { recursive: true });
+    const filler = path.join(dir, 'quota-filler');
+    fs.writeFileSync(filler, '');
+    fs.truncateSync(filler, 199 * 1024 * 1024);
+    try {
+      const headers = { ...asTenant('capco'), Authorization: `Bearer ${tkn}` };
+      const atLimit = await ctx.api.post('/api/forms').set(headers)
+        .attach('file', Buffer.alloc(1024 * 1024), 'one-megabyte.bin');
+      expect(atLimit.status).toBe(201);
+      const { withTenant, queryOne } = await import('../src/shared/db');
+      const stored = withTenant('capco', () => queryOne<{ stored_name: string }>(
+        'SELECT stored_name FROM forms WHERE id = ?', atLimit.body.id
+      )!.stored_name);
+      fs.unlinkSync(path.join(dir, stored));
+      const overLimit = await ctx.api.post('/api/forms').set(headers)
+        .attach('file', Buffer.from('x'), 'too-much.bin');
+      expect(overLimit.status).toBe(402);
+    } finally {
+      fs.unlinkSync(filler);
+    }
   });
 });
 

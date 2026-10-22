@@ -38,6 +38,9 @@ async function releasedMO(prefix: string, qty: number, qc_stages: number, checkl
   });
   const mo = (await ctx.api.post('/api/job-orders').set(H())
     .send({ product_item_id: product, qty_ordered: qty, qc_stages })).body.id;
+  await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+  await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+  await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
   await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
   return { mo, product };
@@ -55,6 +58,11 @@ describe('qc.configure permission', () => {
 });
 
 describe('checklist library CRUD', () => {
+  it('rejects duplicate labels even when only case or whitespace differs', async () => {
+    const r = await ctx.api.post('/api/qc/checklists').set(H()).send({ name: 'Ambiguous checks', stage: 1,
+      items: [{ label: 'Voltage', required: true }, { label: ' voltage ', required: true }] });
+    expect(r.status).toBe(400);
+  });
   it('starts empty and round-trips a checklist', async () => {
     expect((await ctx.api.get('/api/qc/checklists').set(H())).body).toEqual([]);
     const id = await makeChecklist('Frame QC', [
@@ -94,6 +102,37 @@ describe('checklist library CRUD', () => {
 });
 
 describe('per-product resolution + enforcement', () => {
+  it('blocks release when a combined QC/QA pass would have duplicate labels', async () => {
+    const qc = await makeChecklist('Duplicate QC', [{ label: 'Serial legible', required: true }], { stage: 1 });
+    const qa = await makeChecklist('Duplicate QA', [{ label: 'Serial legible', required: true }], { stage: 2 });
+    const product = await mkItem('QCOLLIDE Product');
+    const part = await mkItem('QCOLLIDE Part', 10);
+    await ctx.api.put(`/api/finished-products/${product}`).set(H()).send({ components: [{ component_item_id: part, quantity: 1 }],
+      qc_checklist_qc_id: qc, qc_checklist_qa_id: qa });
+    const mo = (await ctx.api.post('/api/job-orders').set(H()).send({ product_item_id: product, qty_ordered: 1, qc_stages: 1 })).body.id;
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+    await ctx.api.post('/api/job-orders/warehouse-accept').set(H()).send({ job_order_ids: [mo] });
+    await ctx.api.post('/api/job-orders/prepare').set(H()).send({ job_orders: [{ id: mo }] });
+    const r = await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
+    expect(r.status).toBe(409);
+    expect(r.body.blocked).toBe('checklist');
+    expect((await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body.status).toBe('draft');
+  });
+  it('keeps the checklist captured at kit release when the library is edited later', async () => {
+    const qc = await makeChecklist('Frozen QC', [{ label: 'Original check', required: true }], { stage: 1 });
+    const { mo } = await releasedMO('QFREEZE', 1, 2, { qc });
+    const before = (await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body;
+    expect(before.qc_checklist_qc.items[0].label).toBe('Original check');
+    await ctx.api.put(`/api/qc/checklists/${qc}`).set(H()).send({ name: 'Changed QC', stage: 1,
+      items: [{ label: 'New check', required: true }] });
+    const after = (await ctx.api.get(`/api/job-orders/${mo}`).set(H())).body;
+    expect(after.qc_checklist_qc.items[0].label).toBe('Original check');
+    const [unit] = await addSerializedUnits(ctx.api, token, mo, 1, 'QFREEZE');
+    const pass = await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H()).send({
+      unit_ids: [unit], result: 'pass', checklist: [{ label: 'Original check', ok: true }],
+    });
+    expect(pass.status).toBe(200);
+  });
   it('falls back to the default checklist when the product has none attached', async () => {
     const def = await makeChecklist('Company default', [{ label: 'Serial number legible', required: true }], { is_default: true, stage: 1 });
     const { mo } = await releasedMO('QDEF', 2, 1); // no checklist attached to the product

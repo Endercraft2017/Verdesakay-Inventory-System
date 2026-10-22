@@ -67,11 +67,11 @@ describe('adding a future version', () => {
 });
 
 describe('RBAC', () => {
-  it('hr.view can read but not write; unrelated roles get nothing', async () => {
+  it('payroll.view can read tables; HR alone has no pay access', async () => {
     const hrView = await createEmployee(ctx.api, token, { role: 'accounting' }); // no hr.*
     expect((await ctx.api.get('/api/hr/payroll-tables').set('Authorization', `Bearer ${hrView.token}`)).status).toBe(403);
 
     const hr = await createEmployee(ctx.api, token, { role: 'hr' }); // hr.view + hr.manage
-    expect((await ctx.api.get('/api/hr/payroll-tables').set('Authorization', `Bearer ${hr.token}`)).status).toBe(200);
+    expect((await ctx.api.get('/api/hr/payroll-tables').set('Authorization', `Bearer ${hr.token}`)).status).toBe(403);
   });
 });

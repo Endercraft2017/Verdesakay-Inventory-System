@@ -5,6 +5,8 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     env: { NODE_ENV: 'test' },
+    // Before any test file's imports: never let a test reach the real db/ folder.
+    setupFiles: ['tests/setup-safe-paths.ts'],
     // Integration tests share one SQLite file via DB_PATH, so run serially
     // to keep assertions deterministic.
     fileParallelism: false,

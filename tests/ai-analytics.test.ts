@@ -113,9 +113,11 @@ describe('ai-analytics: attendance reports', () => {
 
     // A leave form covering one more day so it isn't counted as an absence.
     const fd = db.run("INSERT INTO form_definitions (name, slug) VALUES ('Leave Request', 'leave_request')").lastInsertRowid;
-    // The summary filters creation dates; pin this fixture inside the requested range
-    // instead of relying on today's date (which eventually moves outside Aug–Sep 2026).
-    const fr = db.run("INSERT INTO form_records (form_def_id, number, data, created_at) VALUES (?, 'LR-1', '{}', '2026-08-08 09:00:00')", fd).lastInsertRowid;
+    // Dated inside the period it excuses: left to default to "today", leave_ot_summary's
+    // fixed August–September range stopped finding it on 2026-10-01.
+    const fr = db.run(
+      "INSERT INTO form_records (form_def_id, number, data, created_at) VALUES (?, 'LR-1', '{}', '2026-08-07 08:00:00')", fd,
+    ).lastInsertRowid;
     day('2026-08-08', null, Number(fr)); // excused
   });
 
@@ -192,6 +194,9 @@ describe('ai-analytics: manufacturing reports', () => {
     const c = (await ctx.api.post('/api/inventory').set(authHdr()).send({ name: 'AA MFG Part', quantity: 100 })).body.id;
     await ctx.api.put(`/api/finished-products/${p}`).set(authHdr()).send({ components: [{ component_item_id: c, quantity: 1 }] });
     const mo = (await ctx.api.post('/api/job-orders').set(authHdr()).send({ product_item_id: p, qty_ordered: 3, qc_stages: 1 })).body.id;
+    await ctx.api.post(`/api/job-orders/${mo}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [mo] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: mo }] });
     await ctx.api.post(`/api/job-orders/${mo}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${mo}/accept`).set(authHdr());
     await addSerializedUnits(ctx.api, token, mo, 3, 'AAMFG');
@@ -214,12 +219,9 @@ describe('ai-analytics: manufacturing reports', () => {
 });
 
 describe('ai-analytics: run_analytics_query', () => {
-  it('runs a read-only SELECT', () => {
-    const r = exec('run_analytics_query', { sql: 'SELECT COUNT(*) AS n FROM inventory_items LIMIT 1' }, admin()) as {
-      success: boolean; data: { rows: Array<{ n: number }> };
-    };
-    expect(r.success).toBe(true);
-    expect(typeof r.data.rows[0]!.n).toBe('number');
+  it('rejects arbitrary SQL even for an administrator', () => {
+    const r = exec('run_analytics_query', {sql:'SELECT COUNT(*) AS n FROM inventory_items'}, admin());
+    expect(r.success).toBe(false);
   });
 
   it('rejects writes, stacked statements, and users/sessions access', () => {

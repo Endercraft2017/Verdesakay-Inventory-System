@@ -38,11 +38,16 @@ callers only ever use indirectly through `DocEditor.open()`.
   `<style data-docpage>` page-setup tag).
 - `getVariables()` → `[{ category, label, token|key }]` — variable catalog for the
   Insert-Variable picker, the formula builder's field list, and `{{` autocomplete.
+- `getTemplateId()` → the current saved template ID (or null for a draft). Enables
+  **Linked forms** for accounts with form-management permissions. The dialog links
+  existing forms, assigns default print layouts, and unlinks without deleting the
+  template, using the existing scoped form APIs. Drafts offer **Save template and
+  continue**. Fields from linked forms join the Insert → Field catalog automatically when opening a saved template and after changing links. Form links apply immediately; document edits still require saving.
 - `sampleContext` — a context object used to live-evaluate formulas in the formula
   builder's preview and to drive `renderPreview`.
 - `renderPreview(body)` → HTML string — used by the movable preview panel; if omitted, the
   preview shows `<p>No preview</p>`.
-- `onManageVars({ refresh })` — if provided, shows a `⚙` button in the top bar; clicking it
+- `onManageVars({ refresh })` — if provided, shows **Manage fields** in Insert; clicking it
   hands control to the caller (e.g. opens a "manage variables" modal), and the editor
   expects the caller to call `refresh()` when done so the live preview updates.
 - The top bar also has an always-present `?` button (`[data-help]`) → `docEditorHelpDialog()`,
@@ -58,7 +63,7 @@ callers only ever use indirectly through `DocEditor.open()`.
   shots are hardcoded light to match `.doc-chip`/`.doc-table`'s actual theme-independent
   styling on the white "paper". Pure reference — takes no editor handles, no `opts` toggle,
   and only touches its own dialog DOM (no side effects on the editor underneath).
-- `onSave({ name, type, period, body })` → `true` (or `undefined`) to close on success, a
+- `onSave({ name, type, period, body, studioVersion, ...printSettings })` → `true` (or `undefined`) to mark saved while keeping the editor open, a
   `string` to show as an inline error toast and keep the editor open, or a rejected Promise
   (caught, shown via `UI.toast(err.message, 'error')`, editor stays open).
 - Returns `{ close, _history }`. `_history` is the snapshot undo/redo controller
@@ -98,6 +103,11 @@ callers only ever use indirectly through `DocEditor.open()`.
 ## Internal structure
 
 ### 1. Body ↔ canvas conversion
+- Field chips support click to select, double-click or Enter to change the field
+  or edit a formula, and formatting/deletion through the normal editor controls.
+  Replacing a chip preserves its inline styling and participates in undo/redo; locked
+  and tracked content remains protected. Repetition/condition tokens explain their
+  purpose and direct users to Source for paired edits.
 - **`tokenChip(token)`** — builds one `<span class="doc-chip ...">` for a `{{token}}`.
   Control tokens (`#items`, `/items`, …) get `doc-chip-ctrl`; formula tokens (`=expr`) get
   `doc-chip-fx` and have their `=` sigil stripped from the *displayed* text (the sigil is
@@ -330,25 +340,13 @@ Key sub-concerns:
     is not shown (a toast points the user at a specific block instead). This is the fix for
     the "I promoted `<div class="doc">` and now the whole document is one un-editable block
     I can't get out of" trap.
-- **Floating objects — islanded floats (text box / promoted table / promoted block)** — the
-  editable interior (`islandOf(f)`: `.doc-float-body` for a textbox, `firstElementChild` for
-  table/text) fills the wrapper, so the select ↔ edit interaction is **Word-style two-stage**:
-  - **Press 1** on an un-selected islanded float (anywhere, interior included) → `selectFloat`
-    + `e.preventDefault()` to *swallow the caret* → "move mode": a **12 px grab frame** (CSS
-    `padding` on `.doc-float.selected[data-float-kind="text"|"table"|"textbox"]`, press it to
-    move — it targets the wrapper), 8 handles, and a solid accent outline **on the interior**
-    (`> :first-child`) so the object visually fills its selection box.
-    - **`selectFloat` also force-clears any caret already inside the float's interior**
-      (`window.getSelection().removeAllRanges()` when the anchor is inside `islandOf()`)
-      before it returns. Without this, `promoteToFloat` landed straight in `.editing` —
-      the click that opened the promote bar already drops a caret in the cell/paragraph,
-      that caret survives into the wrapped island, and the async `updateEditing` listener
-      would flip it to `.editing` before the user ever saw the move frame or 7 of the 8
-      handles (regression: "moving/resizing a promoted table is broken" — it wasn't broken,
-      it silently opened directly in edit mode with only the corner grip live).
-  - **Press 2** on the interior (now already selected) → not prevented → the browser drops a
+- **Floating objects — editable interiors (text boxes, promoted tables/blocks)** — clicking
+  the interior selects the object and lets the browser place a caret immediately. Selection
+  does not change padding or text wrapping. Drag the explicit **Move** toolbar grip to position
+  the object; resize handles remain available outside text editing.
+  - A press on the interior is not prevented; the browser drops a
     caret → a `selectionchange` listener (`updateEditing`) sees the caret inside `islandOf()`
-    and adds `.editing`, whose CSS **removes the grab frame + 7 of the 8 handles** — the **SE
+    and adds `.editing`, whose CSS **hides 7 of the 8 handles** — the **SE
     handle stays** as a blue corner grip (bigger, filled): **drag it to resize** while editing,
     or **click it** (no drag — `endFloatDrag` sees `!moved` on a `resize` state) to drop
     `.editing` and get the full move/resize chrome back. The toolbar stays visible too.
@@ -565,8 +563,7 @@ Key sub-concerns:
   groups (move + delete as one, collapse back to single), the `showPromoteBar`
   page-spanning-container refusal, snapshot undo/redo (Ctrl+Z/Y/Shift+Z + the ↶/↷ buttons +
   the `disabled` states, incl. undoing a float insert and a float move), a promoted table's
-  vertical (south-handle) resize, the two-stage islanded press (press 1 selects + swallows the
-  caret, press 2 lets it through), two-stage Escape (edit → move → deselect), the edit-mode
+  vertical (south-handle) resize, the direct text-box caret entry and the separate Move grip, two-stage Escape (edit → move → deselect), the edit-mode
   corner grip (drag = resize + stay editing, tap = back to move handles), the regression
   guard that promoting a table with a stray caret already inside it starts in move mode
   (not `.editing`) with all 8 handles, and the
@@ -655,3 +652,218 @@ Key sub-concerns:
   panel drag are still `mousedown`/`mousemove`** — deliberately left alone (they work and
   are out of scope). If you unify them later, the float pointer-capture pattern is the one
   to copy.
+
+
+## Reliability and workspace refinement (October 2026)
+
+The visible editing mode is labeled **Design** (internal mode remains `visual`). The
+workspace separates document identity, labeled metadata, ribbon commands and the paper;
+its status bar shows paper dimensions and zoom. Save state remains visible on desktop.
+Consistent SVG icons replace platform-dependent emoji in the main ribbon and actions.
+The library uses document rows with layout summaries and independently gated company controls.
+
+Code mode switches only after CodeMirror initializes and receives the existing body.
+Metadata edits participate in dirty tracking, and dirty/pending saves protect browser unload.
+Edits made while a save is pending keep the editor open; a newly created template's ID and
+revision are retained so a subsequent save updates it instead of creating another copy.
+Undo snapshots now include every print-grid setting. Keyboard undo in metadata/modal inputs
+retains native behavior. The studio tools described below add draft recovery, local history,
+layers, page controls, and server-backed collaboration described below.
+
+Single-row item loops use the existing repeat-row representation. Other table-level control
+boundaries use encoded comments so HTML table parsing cannot move them outside their table.
+Serialization restores the tokens at their original boundaries, including multi-row loops and
+non-item datasets. Logical table occupancy handles colspan/rowspan and excludes nested tables;
+merges that cut through another span or table section are refused.
+
+Paste handling enforces the tag allowlist regardless of class, normalizes ignored URL controls,
+and uses explicit scheme checks. Preview iframes are sandboxed without script execution.
+`UI.documentCss` supplies common typography/table styling for editor and output. Standalone
+output translates full-paper percentage float coordinates to physical content coordinates;
+tiled output keeps floats relative to their cells and uses the selected physical content width.
+
+Regression coverage: `tests/doc-editor-reliability.test.ts`, `tests/templates-ui.test.ts`,
+`tests/templates.test.ts`, and `tests/form-builder.test.ts` alongside existing editor/render tests.
+
+## Studio tools and interaction improvements
+
+The **Tools** button shows or hides a persistent sidebar. On narrow screens it starts
+collapsed to preserve canvas space. Saving now keeps the editor open. Ribbon commands
+use click events, so keyboard activation works; their mouse press preserves the caret.
+Selected objects can be nudged with arrow keys (0.1% of the containing page), or Shift
+and an arrow for a 1% step. Inputs retain their own navigation and deletion behavior.
+
+- **Properties:** edit position and dimensions for floating objects; font, line height,
+  spacing, alignment and colors for selected blocks. Changes enter the same undo history
+  as text, page settings and print-grid settings.
+- **Layers:** select, name, reorder, hide and lock floating objects. Shift-click objects
+  and choose Group; Ungroup restores their absolute positions. Hidden layers are hidden
+  in output too. Locking prevents object movement/deletion and disables editable interiors.
+- **Data:** insert fields, conditional blocks and repeating tables; check unmatched blocks,
+  unknown fields, missing preview values and formula parse errors. Preview scenarios cover
+  long strings, empty values/collections, and 50-row collections. Real record IDs load through
+  existing order/form APIs and their access checks. JSON contexts are also supported. Preview
+  data is transient and never becomes template content.
+- **Pages:** insert explicit page breaks, running header/footer text and printed page numbers;
+  check floating objects that extend outside the paper. Automatic canvas guides are approximate:
+  browser pagination, rendered data and table fragmentation determine final printed pages.
+- **Library:** save and reuse selected styles and blocks/assets, with names and deletion controls.
+- **History:** recover automatically saved drafts (700 ms debounce), create checkpoints,
+  and restore up to 20 saved/opened versions. Recovery includes metadata, paper dimensions,
+  margins and grid settings and can be undone. Successful saves create checkpoints; the
+  draft clears only if no newer edits occurred while saving.
+
+Local fallback history and personal asset/style collections use **local browser storage**, scoped by origin, user,
+workspace identity when available, and document key. They are not shared server backups;
+clearing browser data removes them. Storage failures produce a visible message. Callers supply
+`documentKey`; template creation additionally supplies `getDocumentKey()` so local history moves
+to the permanent template identity on the first successful save. Form templates begin with the form ID and shared server data migrates to the linked template ID on publication.
+Custom/real preview contexts are deliberately excluded from local checkpoints.
+
+`UI.printableHtml` repeats table headers and uses paged-media margin boxes for running text and
+page counters. This is verified in Chromium; browser support for margin boxes varies. Running
+header/footer output uses text with fixed print styling. Saved floating groups retain child
+percentages; only the outermost float is mapped from paper coordinates to physical print units.
+Measured pagination and shared history are described below.
+
+Additional regression coverage: `tests/doc-editor-studio.test.ts` and real Chromium checks of
+responsive controls, grouped objects, and a two-page A4 PDF with running text and counters.
+
+## Server-backed studio and measured pages
+
+`doc-studio.js` connects template and form editors to tenant-local `/templates/studio`
+endpoints. Drafts belong to the authenticated user and persist across devices. Optimistic
+versions protect drafts from stale replacement. Local recovery remains a fallback. Saved
+template history retains the latest 100 body/metadata/print-setting snapshots; custom
+variable registries and company values are not included in those snapshots. Restoring a
+version is an undoable edit and requires Save to publish.
+
+Saved templates have a shared working session polled every two seconds, editor presence,
+and block-anchored comments. Stable `data-doc-node` IDs and `doc-sync` comments support
+three-way merges of independent blocks and metadata. Simultaneous changes to the same
+block or document structure require explicit review in Shared; local work is preserved.
+Publishing checks both the saved revision and working-session version. New standalone
+templates use private drafts until first save. Form-scoped permissions apply to form editors.
+
+Library includes company assets, reusable styles, and brand font/color defaults. Company
+publication and deletion require `templates.company`; optimistic versions reject stale writes.
+Private drafts and shared sessions are distinct from the published template used by records.
+
+`doc-pagination.js` measures rendered content after fonts/images load. Pages mode and
+`UI.loadPrintFrame` use the same physical sheets as `UI.printFrame`. Long text and tables
+fragment into available space; table headers repeat and rowspan groups stay together.
+Running text and page counters appear on each sheet. Complex oversized atomic layouts
+fall back visibly to native browser pagination with the original content preserved. Tiled
+and payslip layouts retain their existing fitters. Page preview clicks return to the
+corresponding block in Design. Continuous canvas guides remain approximate.
+
+Coverage includes `tests/doc-studio.test.ts` and real Chromium sessions with separate
+authenticated users, independent edits, comments, mobile controls, and a six-page A4
+PDF containing every row of a 90-row table.
+
+## Choosing form layouts
+
+Form Builder's template action opens **Print templates**. Users can create, link, edit,
+duplicate, make default, or unlink layouts within their form-management scope. Shared
+layouts show a reuse count and explain that edits affect all linked forms; duplicate for
+independent changes. New layout editors use separate private draft identities and switch
+to the permanent template identity after Save. Editing an alternative never changes the
+form's default. Copies retain source-scoped custom variables and print settings.
+
+Record printing loads the current linked layouts. With multiple layouts, **Choose print
+layout** preselects the default; another selection affects only that print. This applies to
+single and bulk records, including payslips. Payslip record details and email use the assigned
+default. The specialized payslip pairing layout is retained. Template variables still must
+match the destination form's fields; the form editor exposes those fields in its picker.
+
+Page setup parsing accepts DOM-normalized `data-docpage=""` attributes and strips duplicate
+setup tags when loading, preventing remote restoration from accumulating page rules or
+leaving a completed new-template save marked unsaved.
+
+
+### Grid spacing and table properties
+
+Layout → Print Grid provides horizontal and vertical gaps in millimetres (0–30; default
+6 preserves existing templates). Zero packs cells together. Settings travel with template
+copies, shared sessions, drafts and history; previews and each grid print path use the
+same values. Fitting considers width and height and never enlarges content.
+
+Select a table cell, open the Table tab, then Properties to configure table width,
+alignment, auto/fixed column layout, border color/style/width, cell padding, current
+cell vertical alignment, current row minimum height and keeping that row together.
+First-row header formatting uses a semantic thead for repeated pagination headers.
+Equal columns distributes widths while respecting merged cells. Existing merge/split,
+row/column operations, cell shading, table styles and drag resizing remain available.
+
+
+### Balanced editor update
+
+Editor chrome follows the shared Segoe UI font stack, theme surfaces, accent, border,
+radius and shadow tokens. Paper content remains independent of the application theme.
+Home → Spacing sets line spacing, space before/after, left indent and first-line indent
+for selected paragraphs. Outline navigates semantic headings. Browser spellcheck is
+enabled. The status bar counts document words, excluding variable chips and editor tools.
+
+Properties adds rotation, opacity and corner radius for floating objects. Page alignment
+operates on the active object or multiple Shift-selected objects. Horizontal/vertical
+distribution requires at least three unlocked objects with the same parent. Changes use
+the existing undo, draft, history, collaboration and publication paths. Paste sanitization
+preserves supported paragraph, table and object styling.
+
+
+### File conversion and picture tools
+
+The header's Import and export button opens Word export, HTML export, print/PDF preview
+and DOCX import. Export includes the current unsaved snapshot; choose editable template fields or the
+current preview data. Word export converts
+supported semantic HTML to genuine DOCX structures (headings, formatted runs, lists,
+links/bookmarks, tables, page setup and embedded PNG/JPEG/GIF/BMP images). Floating
+geometry, custom CSS, image effects and linked/unsupported images produce conversion
+notes; no remote resources are fetched by the server. Repeating/conditional template
+logic does not round-trip through Word; HTML export retains template CSS, classes and
+logic while removing executable HTML. Grid settings apply to printing.
+
+DOCX import accepts one file up to 8 MB and checks archive counts/expanded size before
+Mammoth conversion. Editor permissions use the existing document identity resolver.
+Converted content is sanitized, shown in a sandboxed preview and applied by appending
+or replacing as an undoable unsaved edit. Replacing is blocked if the document changed
+during conversion. The original can be downloaded unchanged. Import does not overwrite
+a saved template or its page/grid settings.
+
+Select an image (or floating image) and open Properties → Picture settings. The preview
+shows fit/crop/stretch, masks, focal point, radius and basic filters before Apply. Inline
+images have editable frame dimensions. Replacement preserves frame/effect settings;
+replacing a variable-bound image intentionally removes its source binding. Alternative
+text is saved with the image. CSS settings survive drafts, saved layouts and printing.
+
+Outline → Insert contents list creates links to semantic headings. Titles update with
+heading edits and targets survive DOCX conversion. Measured previews fill contents page numbers from actual heading sheets. Word exports
+use an updateable contents field; native column pagination does not guess numbers. Grid printing suffixes heading IDs and their links separately in each cell.
+
+
+## Structured documents and design pages
+
+Pages → Create design pages wraps existing content as the first page. Add page, Duplicate,
+Move earlier/later, Delete, names and backgrounds are undoable. Graphics are scoped to their
+own page, including movement, resizing, snapping and grouping. Design pages share the main
+page setup; sections can set their own size/margins. A second page or forced page boundary
+resets rows/columns/repeat to 1 and Continuous to off and disables grid controls. Older saved
+incompatible layouts bypass grids rather than being squeezed into a cell.
+
+Styles applies named paragraph styles. Edit updates all paragraphs using that style;
+direct formatting remains until that definition changes. Hierarchical numbering works on
+numbered lists, with the existing Indent/Outdent tools controlling levels.
+
+Review tracks typing, plain-text paste and simple deletion/replacement within one unlocked
+paragraph. Reviewer names are descriptive metadata, not proof of identity. Structural edits,
+format changes and composition input require tracking off. Accept/reject can target a change
+or all changes and supports undo. Comparison shows text from the opening snapshot alongside
+current proposed text. Prints hide deleted text; editable DOCX preserves actual Word revisions.
+
+Pages → Section / columns wraps selected sibling paragraphs or inserts a new section. Size,
+margin, columns/gap, start and background are persisted in HTML metadata. Different page setup
+forces a new page. One-column sections use measured sheets; column sections keep native
+browser pagination and surface that fact in preview. Pages → Insert footnote adds a linked
+reference and editable note at the document end; numbering follows reference order. Word
+export creates real footnotes. Import uses proposed Word text and does not retain review
+history or section/style metadata; the original remains available.

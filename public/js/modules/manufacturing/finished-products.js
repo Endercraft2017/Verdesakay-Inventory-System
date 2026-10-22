@@ -2,9 +2,12 @@
    filter.open = <product id> deep-links straight into that product's detail (used by
    Finished Goods to reuse this file's Sell / Move action instead of duplicating it). */
 App.register('finished-products', async (view, filter) => {
-  const canWrite = App.hasPermission('inventory.edit');
+  const canWrite = App.hasPermission('production.configure');
   const canConfigQc = App.hasPermission('qc.configure');
-  const canAdjust = App.hasPermission('inventory.adjust');
+  const canSell = App.hasPermission('orders.direct_sale') && App.hasPermission('orders.release') && (!App.hasModule || App.hasModule('sales'));
+  const canMove = App.hasPermission('inventory.transfer');
+  const canAdjust = canSell || canMove;
+  const canCreate = App.hasPermission('inventory.create');
   let list = [];
   let allItems = [];
   let checklists = [];
@@ -74,17 +77,35 @@ App.register('finished-products', async (view, filter) => {
     });
   }
 
-  function componentSelect(productId, selected) {
-    return '<option value="">— component —</option>' +
-      allItems
-        .filter((i) => String(i.id) !== String(productId))
-        .map((i) => `<option value="${i.id}" ${String(i.id) === String(selected) ? 'selected' : ''}>${UI.esc(i.name)}${i.sku ? ' (' + UI.esc(i.sku) + ')' : ''}</option>`)
-        .join('');
+  // UI.combo escapes labels itself, so these stay raw.
+  const itemLabel = (i) => i.name + (i.sku ? ' (' + i.sku + ')' : '');
+  // Items that can become a new finished product — ones already flagged would have their BOM
+  // silently replaced, so those are edited from the table instead.
+  const productOptions = () => allItems
+    .filter((i) => !list.some((p) => p.id === i.id))
+    .map((i) => ({ value: i.id, label: itemLabel(i) }));
+  // Any item can be a component except the product being built.
+  const componentOptions = (productId) => allItems
+    .filter((i) => String(i.id) !== String(productId))
+    .map((i) => ({ value: i.id, label: itemLabel(i) }));
+
+  // Create a bare inventory item (name only) straight from a picker; the rest of its details
+  // can be filled in later from Inventory.
+  async function createItem(name) {
+    if (!name) { UI.toast('Type the new item\'s name first', 'error'); return null; }
+    try {
+      const r = await API.post('/inventory', { name });
+      const item = { id: Number(r.id), name, sku: null };
+      allItems.push(item);
+      allItems.sort((a, b) => a.name.localeCompare(b.name));
+      UI.toast(`Created item "${name}"`);
+      return item;
+    } catch (e) { UI.toast(e.message, 'error'); return null; }
   }
 
-  function compRow(productId, c) {
-    return `<div class="bom-row">
-      <select data-c="item">${componentSelect(productId, c && c.component_item_id)}</select>
+  function compRow(c) {
+    return `<div class="bom-row" data-sel="${c && c.component_item_id || ''}">
+      <div data-c="item"></div>
       <input data-c="qty" type="number" min="1" step="1" value="${c ? c.quantity : 1}" style="width:90px" title="Quantity per 1 finished unit" />
       <input data-c="notes" placeholder="Notes (optional)" value="${UI.esc(c && c.notes || '')}" />
       <button type="button" class="icon-btn danger" data-c="rm" title="Remove">${UI.icon('trash')}</button>
@@ -99,6 +120,7 @@ App.register('finished-products', async (view, filter) => {
     let currentChecklistQcId = '';
     let currentLabor = '';
     let currentOverhead = '';
+    let currentMarkup = '';
     if (existing) {
       const full = await API.get('/finished-products/' + existing.id).catch(() => null);
       bom = (full && full.bom) || [];
@@ -106,15 +128,16 @@ App.register('finished-products', async (view, filter) => {
       currentChecklistQcId = (full && full.qc_checklist_qc_id) || '';
       if (full && Number(full.std_labor_cost)) currentLabor = full.std_labor_cost;
       if (full && Number(full.std_overhead_cost)) currentOverhead = full.std_overhead_cost;
+      if (full && full.selling_markup_percent != null) currentMarkup = full.selling_markup_percent;
     }
+    // What must leave with each unit (release-auth.ts): one item per line, "*" = required.
+    const pkgItems = existing ? await API.get('/finished-products/' + existing.id + '/package').catch(() => []) : [];
+    const pkgText = pkgItems.map((p) => (p.required ? '* ' : '') + p.label).join('\n');
 
     const pickerHTML = existing
       ? `<p class="muted" style="margin-top:0">Product: <strong>${UI.esc(existing.name)}</strong></p>`
       : `<div class="form-field span2"><div class="field-label"><label>Item to build <span class="req">*</span></label></div>
-          <select data-f="product">
-            <option value="">— pick an item —</option>
-            ${allItems.map((i) => `<option value="${i.id}">${UI.esc(i.name)}${i.sku ? ' (' + UI.esc(i.sku) + ')' : ''}</option>`).join('')}
-          </select></div>`;
+          <div id="fp-product-combo"></div></div>`;
 
     const copyFromHTML = list.length ? `
       <div class="field-row" style="align-items:flex-end;gap:8px;margin:10px 0">
@@ -132,13 +155,17 @@ App.register('finished-products', async (view, filter) => {
         ${opts.map((c) => `<option value="${c.id}" ${String(c.id) === String(currentId) ? 'selected' : ''}>${UI.esc(c.name)}${c.is_default ? ' (default)' : ''}</option>`).join('')}`;
     };
     const checklistHTML = `
-      <div class="field-row" style="margin-top:6px">
+      <div class="field-row" style="margin-top:12px">
         <div><label>QC checklist</label><select data-f="checklist-qc">${checklistOptions(1, currentChecklistQcId)}</select></div>
         <div><label>QA checklist</label><select data-f="checklist-qa">${checklistOptions(2, currentChecklistQaId)}</select></div>
-      </div>`;
+      </div>
+      <div class="form-field span2" style="margin-top:12px"><div class="field-label"><label>Release package checklist</label></div>
+        <textarea data-f="package" rows="4" placeholder="* Charger and cable&#10;* Keys (2)&#10;Sticker sheet">${UI.esc(pkgText)}</textarea>
+        <p class="muted" style="font-size:11px;margin:4px 0 0">One item per line that must leave with each unit. Start a line with * to make it required —
+          the warehouse confirms each one before warehouse-out.</p></div>`;
 
     const costHTML = `
-      <div class="form-field span2" style="margin-top:6px"><div class="field-label"><label>Standard costs per unit (optional)</label></div>
+      <div class="form-field span2" style="margin-top:16px"><div class="field-label"><label>Standard costs per unit (optional)</label></div>
         <div class="field-row">
           <div><label class="muted" style="font-size:12px">Labor</label>
             <input data-f="labor" type="number" min="0" step="0.01" value="${currentLabor}" placeholder="0.00" /></div>
@@ -147,6 +174,16 @@ App.register('finished-products', async (view, filter) => {
         </div>
         <p class="muted" style="font-size:11px;margin:4px 0 0">Added on top of the rolled-up material cost when set — used for the standard unit cost and to value finished units into stock.</p>
       </div>`;
+    const pricingHTML = `
+      <div class="form-field span2" style="margin-top:12px"><div class="field-label"><label for="fp-markup">Suggested selling price (optional)</label></div>
+        <div class="field-row"><div><label class="muted" for="fp-markup" style="font-size:12px">Markup on standard unit cost %</label>
+          <input id="fp-markup" data-f="markup" type="number" min="0" max="10000" step="0.01" value="${UI.esc(String(currentMarkup))}" placeholder="e.g. 25" /></div></div>
+        <p class="muted" style="font-size:11px;margin:4px 0 0">Suggestion = (BOM materials + labor + overhead) × (1 + markup ÷ 100). It excludes tax and order fees. Leave blank to disable; sales chooses whether to use it on each order.</p>
+      </div>`;
+
+    // Shared by onOpen (wires the pickers) and onConfirm (reads them).
+    const rowCombos = new Map(); // .bom-row element → UI.combo handle
+    let pidNow = () => productId;
 
     UI.modal({
       title: existing ? `Bill of materials — ${existing.name}` : 'New finished product',
@@ -154,30 +191,75 @@ App.register('finished-products', async (view, filter) => {
       size: 'lg',
       bodyHTML: `
         ${pickerHTML}
-        ${checklistHTML}
-        ${costHTML}
         ${copyFromHTML}
         <h4 style="margin:14px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)">Components (per 1 unit)</h4>
-        <div id="bom-rows">${(bom.length ? bom : [null]).map((c) => compRow(productId, c)).join('')}</div>
-        <button type="button" class="btn secondary small" id="bom-add" style="margin-top:8px">${UI.icon('plus')} Add component</button>`,
+        <div id="bom-rows">${(bom.length ? bom : [null]).map((c) => compRow(c)).join('')}</div>
+        <button type="button" class="btn secondary small" id="bom-add" style="margin-top:8px">${UI.icon('plus')} Add component</button>
+        ${costHTML}
+        ${pricingHTML}
+        ${checklistHTML}`,
       confirmText: existing ? 'Save BOM' : 'Create',
       onOpen: (ov) => {
+        if (!App.hasPermission('inventory.costs')) ['labor','overhead','markup'].forEach(k=>{const input=ov.querySelector('[data-f="'+k+'"]');if(input)input.disabled=true;});
+        if (!canConfigQc) ['checklist-qa','checklist-qc'].forEach(k=>{const input=ov.querySelector('[data-f="'+k+'"]');if(input)input.disabled=true;});
         const rowsEl = ov.querySelector('#bom-rows');
-        const prodSel = ov.querySelector('[data-f="product"]');
-        const pidNow = () => (prodSel ? prodSel.value : productId);
+        const productHost = ov.querySelector('#fp-product-combo');
+        let productCombo = null;
+        pidNow = () => (productCombo ? productCombo.getValue() : productId);
+        const refreshOptions = () => {
+          if (productCombo) productCombo.setOptions(productOptions());
+          rowCombos.forEach((cb) => cb.setOptions(componentOptions(pidNow())));
+        };
+        const wireRow = (rowEl) => {
+          const cb = UI.combo(rowEl.querySelector('[data-c="item"]'), componentOptions(pidNow()), {
+            selected: rowEl.dataset.sel ? Number(rowEl.dataset.sel) : null,
+            placeholder: 'Type to search parts…',
+            emptyText: 'No matching item',
+            action: canCreate ? {
+              label: '+ Create new item',
+              onClick: async (typed) => {
+                const item = await createItem(typed);
+                if (!item) return;
+                refreshOptions();
+                cb.setSelected(item.id);
+              },
+            } : undefined,
+          });
+          rowCombos.set(rowEl, cb);
+        };
+        rowsEl.querySelectorAll('.bom-row').forEach(wireRow);
+
+        if (productHost) {
+          productCombo = UI.combo(productHost, productOptions(), {
+            placeholder: 'Type to search items, or a new product name…',
+            emptyText: 'No matching item',
+            // Keep component options in sync with the chosen product (exclude self).
+            onSelect: (pid) => {
+              rowCombos.forEach((cb) => { if (String(cb.getValue()) === String(pid)) cb.setSelected(null); });
+              refreshOptions();
+            },
+            action: canCreate ? {
+              label: '+ Create new product item',
+              onClick: async (typed) => {
+                const item = await createItem(typed);
+                if (!item) return;
+                refreshOptions();
+                productCombo.setSelected(item.id);
+              },
+            } : undefined,
+          });
+        }
+
         ov.querySelector('#bom-add').onclick = () => {
-          rowsEl.insertAdjacentHTML('beforeend', compRow(pidNow(), null));
+          rowsEl.insertAdjacentHTML('beforeend', compRow(null));
+          wireRow(rowsEl.lastElementChild);
         };
         rowsEl.addEventListener('click', (e) => {
           const rm = e.target.closest('[data-c="rm"]');
-          if (rm) rm.closest('.bom-row').remove();
-        });
-        // Keep component options in sync with the chosen product (exclude self).
-        if (prodSel) prodSel.addEventListener('change', () => {
-          rowsEl.querySelectorAll('[data-c="item"]').forEach((sel) => {
-            const keep = sel.value;
-            sel.innerHTML = componentSelect(prodSel.value, keep);
-          });
+          if (!rm) return;
+          const row = rm.closest('.bom-row');
+          rowCombos.delete(row);
+          row.remove();
         });
         // Copy the BOM of another product into the editor (as a starting point).
         const copyBtn = ov.querySelector('#bom-copy');
@@ -189,21 +271,22 @@ App.register('finished-products', async (view, filter) => {
             const src = await API.get('/finished-products/' + from);
             const lines = (src.bom || []);
             if (!lines.length) { UI.toast('That product has no components', 'error'); return; }
-            rowsEl.innerHTML = lines.map((c) => compRow(pidNow(), {
+            rowCombos.clear();
+            rowsEl.innerHTML = lines.map((c) => compRow({
               component_item_id: c.component_item_id, quantity: c.quantity, notes: c.notes,
             })).join('');
+            rowsEl.querySelectorAll('.bom-row').forEach(wireRow);
             UI.toast(`Copied ${lines.length} component${lines.length === 1 ? '' : 's'} — review and save`);
           } catch (e) { UI.toast(e.message, 'error'); }
           finally { copyBtn.disabled = false; }
         };
       },
       onConfirm: async (ov, showErr) => {
-        const prodSel = ov.querySelector('[data-f="product"]');
-        const pid = prodSel ? prodSel.value : productId;
+        const pid = pidNow();
         if (!pid) { showErr('Pick an item to build'); return false; }
         const components = [];
         for (const row of ov.querySelectorAll('.bom-row')) {
-          const item = row.querySelector('[data-c="item"]').value;
+          const item = rowCombos.get(row).getValue();
           const qty = parseInt(row.querySelector('[data-c="qty"]').value, 10);
           const notes = row.querySelector('[data-c="notes"]').value.trim();
           if (!item) continue;
@@ -220,11 +303,19 @@ App.register('finished-products', async (view, filter) => {
         const qc_checklist_qc_id = ov.querySelector('[data-f="checklist-qc"]').value || null;
         const laborRaw = ov.querySelector('[data-f="labor"]').value.trim();
         const overheadRaw = ov.querySelector('[data-f="overhead"]').value.trim();
+        const markupRaw = ov.querySelector('[data-f="markup"]').value.trim();
         await API.put('/finished-products/' + pid, {
-          components, qc_checklist_qa_id, qc_checklist_qc_id,
-          std_labor_cost: laborRaw === '' ? null : Number(laborRaw),
+          components, ...(canConfigQc ? {qc_checklist_qa_id,qc_checklist_qc_id} : {}),
+          ...(App.hasPermission('inventory.costs') ? {std_labor_cost: laborRaw === '' ? null : Number(laborRaw),
           std_overhead_cost: overheadRaw === '' ? null : Number(overheadRaw),
+          selling_markup_percent: markupRaw === '' ? null : Number(markupRaw)} : {}),
         });
+        const pkgLines = ov.querySelector('[data-f="package"]').value.split('\n').map((l) => l.trim()).filter(Boolean);
+        if (pkgLines.length || pkgItems.length) {
+          await API.put('/finished-products/' + pid + '/package', {
+            items: pkgLines.map((l) => ({ label: l.replace(/^\*\s*/, '').slice(0, 120), required: l.startsWith('*') })),
+          });
+        }
         UI.toast(existing ? 'BOM saved' : 'Finished product created');
         load();
       },
@@ -252,11 +343,12 @@ App.register('finished-products', async (view, filter) => {
   }
 
   async function detailModal(id) {
-    const [p, units, explodeRes, costRes] = await Promise.all([
+    const [p, units, explodeRes, costRes, priceRes] = await Promise.all([
       API.get('/finished-products/' + id),
       API.get('/finished-products/' + id + '/units?status=in_stock').catch(() => []),
       API.get('/finished-products/' + id + '/explode?qty=1').catch(() => null),
       API.get('/finished-products/' + id + '/cost').catch(() => null),
+      API.get('/finished-products/' + id + '/price-suggestion').catch(() => null),
     ]);
     const bom = p.bom || [];
     const subIds = new Set((explodeRes && explodeRes.subassemblies || []).map((s) => s.item_id));
@@ -295,6 +387,8 @@ App.register('finished-products', async (view, filter) => {
           ${Number(cost.unit_labor_cost) ? `<div><span class="muted">Std. labor / unit</span><div>${UI.money(cost.unit_labor_cost)}</div></div>` : ''}
           ${Number(cost.unit_overhead_cost) ? `<div><span class="muted">Std. overhead / unit</span><div>${UI.money(cost.unit_overhead_cost)}</div></div>` : ''}
           <div><span class="muted">Std. unit cost</span><div><strong>${stdTotal != null ? UI.money(stdTotal) : '—'}</strong></div></div>
+          <div><span class="muted">Selling markup</span><div>${p.selling_markup_percent != null ? UI.esc(String(p.selling_markup_percent)) + '%' : 'Not configured'}</div></div>
+          <div><span class="muted">Suggested selling price</span><div>${priceRes?.available ? UI.money(priceRes.suggested_unit_price) : UI.esc(priceRes?.reason || 'Unavailable')}</div></div>
           <div><span class="muted">QC checklist</span><div>${p.qc_checklist_qc_name ? UI.esc(p.qc_checklist_qc_name) : 'Default'}</div></div>
           <div><span class="muted">QA checklist</span><div>${p.qc_checklist_qa_name ? UI.esc(p.qc_checklist_qa_name) : 'Default'}</div></div>
         </div>
@@ -404,7 +498,7 @@ App.register('finished-products', async (view, filter) => {
     return {
       product: { name: product.name, sku: product.sku || '', model: product.product_group || '', variant: attrs.spec || '' },
       code, sub: opts.sub || '', batch: opts.batch || {},
-      qr_src: qrDataUrl(code || product.sku || product.name),
+      qr_src: qrDataUrl(opts.qrCode || code || product.sku || product.name),
       date: new Date().toISOString().slice(0, 10),
     };
   }
@@ -426,8 +520,9 @@ App.register('finished-products', async (view, filter) => {
     const w = window.open('', '_blank');
     if (!w) { showErr && showErr('Allow pop-ups to open the print sheet'); return false; }
     w.document.write(`<!doctype html><html><head><title>${UI.esc(title)}</title><style>${LABEL_SHEET_CSS}</style></head>`
-      + `<body><div class="sheet">${cells.join('')}</div><script>window.onload=function(){window.print()}<\/script></body></html>`);
+      + `<body><div class="sheet">${cells.join('')}</div></body></html>`);
     w.document.close();
+    UI.printWhenLoaded(w);
     return true;
   }
 
@@ -453,7 +548,7 @@ App.register('finished-products', async (view, filter) => {
         const cells = [];
         const push = (ctx) => { for (let i = 0; i < copies; i++) cells.push(`<div class="lbl">${window.renderTemplate(tpl, ctx)}</div>`); };
         if (pickedUnits.length) {
-          pickedUnits.forEach((u) => push(labelContext(product, { code: u.ident, sub: 'Unit #' + u.id })));
+          pickedUnits.forEach((u) => push(labelContext(product, { code: u.ident, qrCode: 'VDS:UNIT:' + u.id, sub: 'Unit #' + u.id })));
         } else {
           const n = Math.max(1, parseInt(ov.querySelector('[data-f="batch"]').value, 10) || 1);
           for (let i = 0; i < n; i++) push(labelContext(product, { code: product.sku, sub: '' }));
@@ -509,35 +604,73 @@ App.register('finished-products', async (view, filter) => {
       title: 'Sell / move units — ' + product.name,
       bodyHTML: `
         <div class="field-row">
-          <label class="check"><input type="radio" name="act" value="sell" checked/> Sell (remove from stock)</label>
-          <label class="check"><input type="radio" name="act" value="move"/> Move to another location</label>
+          ${canSell ? '<label class="check"><input type="radio" name="act" value="sell" checked/> Sell (remove from stock)</label>' : ''}
+          ${canMove ? `<label class="check"><input type="radio" name="act" value="move" ${canSell ? '' : 'checked'}/> Move to another location</label>` : ''}
         </div>
         <p class="muted">${pickedUnits.length
           ? `${pickedUnits.length} unit${pickedUnits.length === 1 ? '' : 's'} selected.`
-          : `No units ticked — enter a quantity of bulk/untracked units (${bulkAvail} available).`}</p>
+          : 'No units ticked — enter a quantity of bulk/untracked units in the selected build state.'}</p>
+        <p class="muted">Selling removes these units from stock now. The sale still needs warehouse acceptance and a release slip; that slip will not deduct these units again.</p>
+        <div><label>Build state</label><select data-f="mode"><option value="assembled" ${pickedUnits[0]?.build_mode === 'semi_built' ? '' : 'selected'}>Fully built</option><option value="semi_built" ${pickedUnits[0]?.build_mode === 'semi_built' ? 'selected' : ''}>Semi-built</option></select></div>
         ${pickedUnits.length ? '' : `<div><label>Quantity</label><input data-f="qty" type="number" min="1" value="1" /></div>`}
         <div data-f="orderwrap"><label>Sales order</label>
           <select data-f="order"><option value="">— select —</option>
             ${orders.map((o) => `<option value="${o.id}">${UI.esc(o.number)}${o.customer_name ? ' · ' + UI.esc(o.customer_name) : ''}</option>`).join('')}
           </select></div>
+        <div data-f="linewrap" style="display:none"><label>Sale line</label><select data-f="line"></select>
+          <div class="muted" data-f="linehint" style="font-size:12px"></div></div>
         <div data-f="locwrap" style="display:none"><label>Destination location</label>
           <select data-f="loc"><option value="">— select —</option>
-            ${locs.map((l) => `<option value="${l.id}">${UI.esc(l.name)}</option>`).join('')}
+            ${locs.map((l) => `<option value="${l.id}">${UI.esc(l.path || l.name)}</option>`).join('')}
           </select></div>
         <div><label>Note (optional)</label><input data-f="note" /></div>`,
       confirmText: 'Apply',
       onOpen: (ov) => {
+        let lineRequest = 0;
+        const refreshLines = async () => {
+          const orderId = Number(ov.querySelector('[data-f="order"]').value);
+          const wrap = ov.querySelector('[data-f="linewrap"]');
+          const select = ov.querySelector('[data-f="line"]');
+          const hint = ov.querySelector('[data-f="linehint"]');
+          const act = ov.querySelector('input[name="act"]:checked').value;
+          const request = ++lineRequest;
+          wrap.style.display = act === 'sell' && orderId ? '' : 'none';
+          select.innerHTML = '<option value="">Select a sale line</option>';
+          if (act !== 'sell' || !orderId) return;
+          hint.textContent = 'Loading sale lines…';
+          try {
+            const order = await API.get('/orders/' + orderId);
+            if (request !== lineRequest || !ov.isConnected) return;
+            const mode = ov.querySelector('[data-f="mode"]').value;
+            const lines = (order.items || []).filter((line) => Number(line.item_id) === Number(product.id)
+              && (line.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled') === mode
+              && line.fulfillment_mode !== 'ckd' && line.fulfillment_mode !== 'ckd_component');
+            select.innerHTML = '<option value="">Select a sale line</option>' + lines.map((line) => {
+              const dispatched = Number(line.dispatched_qty || 0);
+              const shippedSerials = Math.max(0, dispatched - Number(line.dispatched_bulk_qty || 0));
+              const heldSerials = Number(line.reserved_qty || 0) + Math.max(0, Number(line.allocated_qty || 0) - shippedSerials);
+              const heldBulk = Math.max(0, Number(line.released_qty || 0) - Number(line.dispatched_bulk_qty || 0));
+              const left = Number(line.quantity) - Number(line.cancelled_qty || 0) - dispatched - heldSerials - heldBulk;
+              return `<option value="${line.id}" ${left <= 0 ? 'disabled' : ''}>${UI.esc(line.name)} · ${UI.esc(String(line.unit_price))} · ${UI.esc(String(Math.max(0, left)))} remaining</option>`;
+            }).join('');
+            if (lines.length === 1 && !select.options[1].disabled) select.value = String(lines[0].id);
+            hint.textContent = lines.length ? 'Choose the exact price/build-state line for these units.' : 'This order has no matching product and build-state line.';
+          } catch (e) { if (request === lineRequest) hint.textContent = e.message || 'Sale lines unavailable.'; }
+        };
         const sync = () => {
           const act = ov.querySelector('input[name="act"]:checked').value;
           ov.querySelector('[data-f="locwrap"]').style.display = act === 'move' ? '' : 'none';
           ov.querySelector('[data-f="orderwrap"]').querySelector('label').textContent = act === 'move' ? 'Sales order (optional)' : 'Sales order';
+          void refreshLines();
         };
         ov.querySelectorAll('input[name="act"]').forEach((r) => r.onchange = sync);
+        ov.querySelector('[data-f="order"]').onchange = refreshLines;
+        ov.querySelector('[data-f="mode"]').onchange = refreshLines;
         sync();
       },
       onConfirm: async (ov, showErr) => {
         const action = ov.querySelector('input[name="act"]:checked').value;
-        const body = { action, reason: ov.querySelector('[data-f="note"]').value.trim() || null };
+        const body = { action, build_mode: ov.querySelector('[data-f="mode"]').value, reason: ov.querySelector('[data-f="note"]').value.trim() || null };
         if (pickedUnits.length) body.unit_ids = pickedUnits.map((u) => u.id);
         else {
           const q = parseInt(ov.querySelector('[data-f="qty"]').value, 10);
@@ -547,6 +680,11 @@ App.register('finished-products', async (view, filter) => {
         const orderId = ov.querySelector('[data-f="order"]').value;
         if (action === 'sell' && !orderId) { showErr('Pick the sales order'); return false; }
         if (orderId) body.order_id = Number(orderId);
+        if (action === 'sell') {
+          const lineId = Number(ov.querySelector('[data-f="line"]').value);
+          if (!lineId) { showErr('Choose a matching sale line with remaining quantity'); return false; }
+          body.order_item_id = lineId;
+        }
         if (action === 'move') {
           const loc = ov.querySelector('[data-f="loc"]').value;
           if (!loc) { showErr('Pick a destination'); return false; }

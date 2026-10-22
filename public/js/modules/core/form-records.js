@@ -1,7 +1,9 @@
 /* Form Records: index of all custom forms, or records list for a specific form.
    Route: form-records.  filter.form_id = <id> to open a specific form directly. */
-const FORM_RECORDS_SCOPE_LABELS = { hr: 'HR', inventory: 'Inventory', admin: 'Admin', accounting: 'Accounting' };
-const FORM_RECORDS_SCOPE_ORDER = ['hr', 'inventory', 'admin', 'accounting', null];
+const HR_REQUEST_SLUGS = ['leave_request','overtime_request','undertime_request','halfday_request','offset_form','lunch_offset_form','holiday_work_request','travel_order','coe_request','reimbursement_request','loan_application','training_request','incident_report','information_change','rest_day_work_request','rest_day_change'];
+const FORM_RECORDS_SCOPE_LABELS = DataForms.labels;
+const FORM_RECORDS_SCOPE_ORDER = [...DataForms.scopes, null];
+const formRecordViews = new WeakMap();
 
 // Set by App.openFormRecordDraft just before navigating here; consumed once by
 // renderFormView to pop a pre-filled "New record" modal. Kept off the URL filter so a big
@@ -15,14 +17,19 @@ App.register('form-records', async (view, filter) => {
   if (filter.slug && !filter.form_id) {
     try {
       const forms = await API.get('/form-definitions');
-      const f = forms.find((x) => x.slug === filter.slug);
-      if (f) { await renderFormView(view, f.id, filter.period || '', filter.status || ''); return; }
-    } catch { /* fall through to the index */ }
+      const f = forms.find(x => x.slug === filter.slug);
+      if (!f) throw new Error('This form has not been configured. Ask HR to set it up in Form Builder.');
+      await renderFormView(view, f.id, filter.period || '', filter.status || '', filter); return;
+    } catch (e) {
+      view.innerHTML = `<div class="panel">${UI.emptyState({icon:'alert',title:'Couldn’t open the requested form',hint:e.message,action:'<button class="btn secondary" id="fr-retry-destination">Try again</button>'})}</div>`;
+      view.querySelector('#fr-retry-destination').onclick = () => App.navigate('form-records', filter);
+      return;
+    }
   }
   if (filter.form_id) {
-    await renderFormView(view, Number(filter.form_id), filter.period || '', filter.status || '');
+    await renderFormView(view, Number(filter.form_id), filter.period || '', filter.status || '', filter);
   } else {
-    await renderIndex(view, filter.scope || '');
+    await renderIndex(view, filter.scope || '', filter.q || '', filter.view || 'all');
   }
 });
 
@@ -43,73 +50,129 @@ App.openFormRecordDraft = async function (proposal) {
   App.navigate('form-records', { form_id: String(id) });
 };
 
-function formCardHTML(f) {
-  return `<div class="form-card clickable" data-id="${f.id}">
-    <div class="form-card-icon">${UI.icon(f.icon || 'file', 32)}</div>
-    <div class="form-card-info">
-      <div class="form-card-name">${UI.esc(f.name)}</div>
-      <div class="form-card-meta">${f.fields.length} field${f.fields.length !== 1 ? 's' : ''} · ${f.record_count} record${f.record_count !== 1 ? 's' : ''}</div>
-      <div class="form-card-prefix muted mono">${UI.esc(f.number_prefix)}-#####</div>
-    </div>
-  </div>`;
+function formCardHTML(f, favorite = false) {
+  return `<tr class="form-card-item">
+    <td><button type="button" class="form-card clickable" data-id="${f.id}" aria-label="Open ${UI.esc(f.name)}">
+      <span class="form-card-icon">${UI.icon(f.icon || 'file', 19)}</span><span class="form-card-name">${UI.esc(f.name)}</span>
+    </button></td>
+    <td class="num">${Number(f.record_count) || 0}</td>
+    <td class="num">${f.fields.length}</td>
+    <td class="mono">${UI.esc(f.number_prefix)}-#####</td>
+    <td>${f.updated_at || f.created_at ? UI.esc(UI.fmtDateShort(f.updated_at || f.created_at)) : '—'}</td>
+    <td><button type="button" class="form-favorite icon-btn" data-favorite="${f.id}" aria-pressed="${favorite}" aria-label="${favorite ? 'Remove' : 'Add'} ${UI.esc(f.name)} ${favorite ? 'from' : 'to'} favorites">${favorite ? '★' : '☆'}</button></td>
+  </tr>`;
 }
 
 /* ── Form index: pick which form to open, grouped by the section that owns it ────── */
-async function renderIndex(view, onlyScope) {
-  const heading = onlyScope
-    ? `${FORM_RECORDS_SCOPE_LABELS[onlyScope] || onlyScope} Forms`
-    : 'Data Forms';
+async function renderIndex(view, onlyScope, initialQuery, initialView = 'all') {
+  const owner = {};
+  formRecordViews.set(view, owner);
+  if (onlyScope && !DataForms.canBrowseScope(onlyScope === 'general' ? null : onlyScope)) {
+    view.innerHTML = '<div class="empty">You do not have access to this area.</div>';
+    return;
+  }
+  let personal = await DataForms.preferences();
+  const heading = 'Data Forms';
+  const manageableScope = (onlyScope !== 'general' && DataForms.canManage(onlyScope) && onlyScope) || DataForms.scopes.find((scope) => DataForms.canManage(scope));
   view.innerHTML = `
-    <div class="topbar"><h2>${UI.esc(heading)}</h2></div>
+    <div class="topbar"><h2>${UI.esc(heading)}</h2><div class="grow"></div>
+      <div class="search-box search">${UI.icon('search', 16)}<input id="fr-index-search" placeholder="Search forms…" aria-label="Search forms" /></div>
+      <select id="fr-index-scope" aria-label="Form section"><option value="">All sections</option>${FORM_RECORDS_SCOPE_ORDER.filter((scope) => DataForms.canBrowseScope(scope)).map((scope) => `<option value="${scope || 'general'}">${FORM_RECORDS_SCOPE_LABELS[scope || 'general']}</option>`).join('')}</select>
+      <select id="fr-index-view" aria-label="Form collection"><option value="all">Active forms</option><option value="favorites">Favorites</option><option value="recent">Recent forms</option><option value="archived">Archived forms</option></select>
+      ${manageableScope ? `<button class="btn secondary" id="fr-goto-builder">${UI.icon('edit')} Form Builder</button>` : ''}
+    </div>
     <div class="panel"><div id="fr-index"></div></div>`;
   const el = view.querySelector('#fr-index');
   el.innerHTML = '<div class="empty">Loading…</div>';
-
-  let forms = await API.get('/form-definitions');
-  if (onlyScope) forms = forms.filter((f) => f.scope === onlyScope);
-  // Which section (if any) this user could jump into Form Builder for, for the empty-state
-  // shortcut below — every Form Builder entry now requires a scope, so "open Form Builder" with
-  // none no longer resolves to anything.
-  const manageableScope = ['hr', 'inventory', 'admin', 'accounting'].find((s) => App.hasPermission('forms.manage.' + s));
-
-  if (!forms.length) {
-    el.innerHTML = UI.emptyState({
-      icon: 'file',
-      title: 'No forms defined yet',
-      hint: manageableScope ? 'Go to Form Builder (in its section’s nav) to create your first form.' : 'Ask an admin to create a form.',
-      action: manageableScope
-        ? `<button class="btn" id="fr-goto-builder">${UI.icon('edit')} Open Form Builder</button>` : '',
-    });
-    const btn = el.querySelector('#fr-goto-builder');
-    if (btn) btn.onclick = () => App.navigate('form-builder', { scope: manageableScope });
+  const builder = view.querySelector('#fr-goto-builder');
+  if (builder) builder.onclick = () => {
+    const chosen = view.querySelector('#fr-index-scope').value;
+    App.navigate('form-builder', { scope: chosen || manageableScope });
+  };
+  const search = view.querySelector('#fr-index-search');
+  const section = view.querySelector('#fr-index-scope');
+  search.value = initialQuery || '';
+  section.value = onlyScope || '';
+  const collection = view.querySelector('#fr-index-view'); collection.value = initialView;
+  let sortKey = 'name', sortDirection = 1, sortTouched = false;
+  if (builder) builder.hidden = !!onlyScope && !DataForms.canManage(onlyScope === 'general' ? null : onlyScope);
+  let forms;
+  try {
+    forms = (await API.get('/form-definitions')).filter((form) =>
+      (form.slug === 'hr_payroll' ? App.hasPermission('payroll.view') : (form.records_allowed ?? DataForms.canManage(form.scope))));
+  } catch (error) {
+    if (formRecordViews.get(view) !== owner) return;
+    el.innerHTML = UI.emptyState({ icon: 'alert', title: 'Could not load forms', hint: error.message || 'Please try again.', action: '<button class="btn secondary" type="button" id="fr-index-retry">Retry</button>' });
+    el.querySelector('#fr-index-retry').onclick = () => App.navigate('form-records', { ...(onlyScope ? { scope: onlyScope } : {}), ...(initialQuery ? { q: initialQuery } : {}) });
     return;
   }
-
-  const groups = {};
-  forms.forEach((f) => { const k = f.scope || 'general'; (groups[k] = groups[k] || []).push(f); });
-  const order = [...FORM_RECORDS_SCOPE_ORDER.map((s) => s || 'general')];
-  el.innerHTML = order.filter((k) => groups[k] && groups[k].length).map((k) => `
-    <div class="fr-scope-group">
-      <div class="fr-scope-heading">${UI.esc(FORM_RECORDS_SCOPE_LABELS[k] || 'General')}</div>
-      <div class="form-card-grid">${groups[k].map(formCardHTML).join('')}</div>
-    </div>`).join('');
-
-  el.querySelectorAll('.form-card[data-id]').forEach((card) =>
-    card.onclick = () => App.navigate('form-records', { form_id: card.dataset.id }));
+  if (formRecordViews.get(view) !== owner) return;
+  function render() {
+    const q = search.value.trim().toLowerCase();
+    const chosenScope = section ? section.value : '';
+    if (builder) builder.hidden = !!chosenScope && !DataForms.canManage(chosenScope === 'general' ? null : chosenScope);
+    const matches = forms.filter((form) =>
+      (collection.value === 'archived' ? !!form.archived_at : !form.archived_at) &&
+      (collection.value !== 'favorites' || personal.favorites.includes(form.id)) &&
+      (collection.value !== 'recent' || personal.recent.some(row => row.form_id === form.id)) &&
+      (!chosenScope || (form.scope || 'general') === chosenScope) &&
+      (!q || `${form.name} ${form.slug} ${form.number_prefix}`.toLowerCase().includes(q)));
+    if (!matches.length) {
+      el.innerHTML = UI.emptyState({
+        icon: 'file', title: q ? 'No matching forms' : chosenScope ? 'No forms in this section' : 'No forms defined yet',
+        hint: forms.length ? 'Try a different search or section.' : manageableScope ? 'Open Form Builder to create a form in this section.' : 'Ask an admin for access to forms.',
+      });
+      return;
+    }
+    if (collection.value === 'recent' && !sortTouched) matches.sort((a,b) => personal.recent.findIndex(row=>row.form_id===a.id)-personal.recent.findIndex(row=>row.form_id===b.id));
+    else matches.sort((a,b) => {
+      const value = (form) => sortKey === 'records' ? Number(form.record_count) || 0 : sortKey === 'fields' ? form.fields.length : sortKey === 'updated' ? form.updated_at || form.created_at || '' : form.name.toLocaleLowerCase();
+      const aValue = value(a), bValue = value(b);
+      return ((aValue < bValue ? -1 : aValue > bValue ? 1 : 0) * sortDirection) || a.name.localeCompare(b.name);
+    });
+    const groups = {};
+    matches.forEach((form) => { const key = form.scope || 'general'; (groups[key] = groups[key] || []).push(form); });
+    el.innerHTML = FORM_RECORDS_SCOPE_ORDER.map((scope) => scope || 'general')
+      .filter((key) => groups[key]).map((key) => `
+        <div class="fr-scope-group"><div class="fr-scope-heading">${UI.esc(FORM_RECORDS_SCOPE_LABELS[key])}</div>
+        <div class="form-explorer-scroll" role="region" tabindex="0" aria-label="${UI.esc(FORM_RECORDS_SCOPE_LABELS[key])} forms"><table class="form-explorer">
+          <thead><tr>${[['name','Form name'],['records','Records'],['fields','Fields']].map(([key,label]) => `<th ${key !== 'name' ? 'class="num"' : ''} ${sortTouched || collection.value !== 'recent' ? `aria-sort="${sortKey === key ? sortDirection === 1 ? 'ascending' : 'descending' : 'none'}"` : ''}><button type="button" class="form-explorer-sort" data-form-sort="${key}">${label}${sortKey === key && (sortTouched || collection.value !== 'recent') ? sortDirection === 1 ? ' ↑' : ' ↓' : ''}</button></th>`).join('')}<th>Number format</th><th ${sortTouched || collection.value !== 'recent' ? `aria-sort="${sortKey === 'updated' ? sortDirection === 1 ? 'ascending' : 'descending' : 'none'}"` : ''}><button type="button" class="form-explorer-sort" data-form-sort="updated">Updated${sortKey === 'updated' ? sortDirection === 1 ? ' ↑' : ' ↓' : ''}</button></th><th><span class="sr-only">Favorite</span></th></tr></thead>
+          <tbody>${groups[key].map(form => formCardHTML(form, personal.favorites.includes(form.id))).join('')}</tbody>
+        </table></div><p class="form-explorer-hint muted">Swipe the list sideways to see more columns.</p></div>`).join('');
+    el.querySelectorAll('.form-card[data-id]').forEach((card) =>
+      card.onclick = () => {
+        const selected = forms.find(form => String(form.id) === card.dataset.id);
+        App.navigate('form-records', { form_id: card.dataset.id, ...(selected?.slug === 'hr_payroll' ? { slug: 'hr_payroll' } : {}), ...(collection.value !== 'all' ? {index_view:collection.value} : {}), ...(section.value ? { scope: section.value } : { index_scope: 'all' }), ...(search.value.trim() ? { index_q: search.value.trim() } : {}) });
+      });
+    el.querySelectorAll('[data-favorite]').forEach(button => button.onclick = async () => { button.disabled = true; try { personal = await DataForms.savePreference({action:'favorite',form_id:Number(button.dataset.favorite),enabled:!personal.favorites.includes(Number(button.dataset.favorite))}); render(); } catch(error) { button.disabled = false; UI.toast(error.message,'error'); } });
+    el.querySelectorAll('[data-form-sort]').forEach(button => button.onclick = () => { const key = button.dataset.formSort; sortDirection = sortKey === key && sortTouched ? -sortDirection : 1; sortKey = key; sortTouched = true; render(); el.querySelector(`[data-form-sort="${key}"]`)?.focus(); });
+  }
+  function refreshIndex() {
+    App.replaceFilters?.('form-records', { ...(collection.value !== 'all' ? {view:collection.value} : {}), ...(section.value ? { scope: section.value } : {}), ...(search.value.trim() ? { q: search.value.trim() } : {}) });
+    render();
+  }
+  search.oninput = refreshIndex;
+  section.onchange = refreshIndex; collection.onchange = refreshIndex;
+  render();
 }
 
 /* ── Per-form records view ───────────────────────────────────────────────── */
-async function renderFormView(view, formId, initialPeriod, initialStatus) {
+async function renderFormView(view, formId, initialPeriod, initialStatus, navigation = {}) {
+  const owner = {};
+  formRecordViews.set(view, owner);
   let formDef = null;
+  let formVersions = new Map();
   let searchTimer;
   let currentRecords = [];
   let selectedIds = new Set();
-  const state = { q: '', status: initialStatus || '', period: initialPeriod || '' };
+  const state = { q: navigation.q || '', status: initialStatus || '', period: initialPeriod || '' };
   // Payroll "All periods" view: attendance_periods rows (id/dates), matched to a payslip's
   // free-text `period` label — that label is independently editable at Generate Payslips time
   // (see hr.routes.ts), so a match isn't guaranteed. A bundle with no match still shows its
   // stats, just without the id-dependent quick actions (Export CSV, Post to GL).
   let periodsMeta = [];
+  let periodCombo = null; // payroll's Period filter (UI.combo); load() refreshes its options
+  const periodOptions = (labels) => [{ value: '', label: 'All periods' }, ...labels.map((p) => ({ value: p, label: p }))];
   const expandedBundles = new Set(); // period labels the user has toggled open
   // Defaults the most-recent bundle open exactly once, on the very first render — without
   // this flag, collapsing that same bundle empties the set again, and the "default open"
@@ -119,18 +182,16 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
 
   try { formDef = await API.get('/form-definitions/' + formId); }
   catch { view.innerHTML = '<div class="empty">Form not found.</div>'; return; }
+  if (formRecordViews.get(view) !== owner) return;
   if (window.Help) Help.rememberForm(formDef);
 
-  // Browsing a section's records needs the same forms.manage.<scope> permission as managing
-  // them — there's no separate view-only tier for this system (mirrors the server-side gate in
-  // form-builder.routes.ts's canManageScope). Checked client-side too so a user without access
-  // gets a clean message instead of a raw 403 from the records fetch below.
-  const canBrowse = formDef.scope
-    ? App.hasPermission('forms.manage.' + formDef.scope)
-    : ['hr', 'inventory', 'admin', 'accounting'].every((s) => App.hasPermission('forms.manage.' + s));
+  // The server supplies the current form-specific entry decision. Payroll keeps its
+  // independent permission; management rights alone continue to cover the owning section.
+  const entryOnly = formDef.scope === 'inventory' && !DataForms.canManage('inventory');
+  const canBrowse = formDef.records_allowed ?? (formDef.slug === 'hr_payroll' ? App.hasPermission('payroll.view') : DataForms.canManage(formDef.scope));
   if (!canBrowse) {
     view.innerHTML = `<div class="topbar">
-        <button class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} All Forms</button>
+        <button class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} Data Forms</button>
         <h2 style="margin-left:10px">${UI.esc(formDef.name)}</h2>
       </div>
       <div class="panel">${UI.emptyState({
@@ -138,12 +199,21 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         title: 'No access to this form’s records',
         hint: 'Filed one yourself? Open Requests in the mobile app to see your own submissions and their status.',
       })}</div>`;
-    view.querySelector('#fr-back').onclick = () => App.navigate('form-records');
+  view.querySelector('#fr-back').onclick = () => App.navigate('form-records', { ...(navigation.index_view && navigation.index_view !== 'all' ? {view:navigation.index_view} : {}), ...(navigation.index_scope === 'all' ? {} : (navigation.scope || formDef.scope) ? { scope: navigation.scope || formDef.scope } : {}), ...(navigation.index_q ? { q: navigation.index_q } : {}) });
     return;
   }
 
+  // HR records retain the section's visual treatment even when opened by form id.
+  if (formDef.scope === 'hr') view.dataset.section = 'hr';
+  const versions = await API.get('/form-definitions/' + formId + '/versions').catch(()=>[]);
+  if(Array.isArray(versions))formVersions=new Map(versions.map(version=>[version.version,version.definition]));
+  let personal = await DataForms.preferences();
+  let viewPreferences = personal.views[String(formId)] || {};
+  DataForms.savePreference({action:'recent',form_id:formId}).catch(()=>{});
   const isPayroll = formDef.slug === 'hr_payroll';
-  const canManagePayroll = isPayroll && App.hasPermission('hr.manage');
+  const canManagePayroll = isPayroll && App.hasPermission('payroll.manage');
+  const canPay = isPayroll && App.hasPermission('payroll.pay');
+  const canApprovePayroll = isPayroll && App.hasPermission('payroll.approve');
   // Any other form with a linked print template gets the same "Print All"/"Print selected"
   // bulk actions payroll has always had — payroll keeps its own dedicated 2-up slip buttons.
   const canBulkPrint = !isPayroll && !!formDef.template_id;
@@ -155,44 +225,130 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     return employeesCache;
   }
 
-  view.innerHTML = `
-    <div class="topbar">
-      <button class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} All Forms</button>
-      <h2 style="margin-left:10px">${UI.esc(formDef.name)}</h2>
-      <div class="grow"></div>
-      <div class="search-box search">${UI.icon('search', 16)}<input id="fr-search" placeholder="${isPayroll ? 'Search employee name…' : 'Search number…'}" /></div>
-      <select id="fr-status" style="margin-left:8px">
+  // Payslip writes need payroll.manage server-side (form-builder.routes.ts canAccessRecords); a
+  // payroll.view-only reader browses, prints and exports. Every other form reaches this point
+  // with management or assigned entry access; entry-only writes are limited to active drafts.
+  const canWrite = !isPayroll || canManagePayroll;
+  const statusOptions = `
         <option value="" ${state.status ? '' : 'selected'}>All statuses</option>
         ${['pending', 'draft', 'submitted', 'approved', 'rejected', 'completed'].concat(isPayroll ? ['paid'] : [])
-          .map((s) => `<option value="${s}" ${state.status === s ? 'selected' : ''}>${s}</option>`).join('')}
-      </select>
-      ${isPayroll ? `
-        <select id="fr-period" style="margin-left:8px;padding:6px 8px;border:1px solid var(--border-strong,#c6d4e6);border-radius:6px;background:var(--surface,#fff);color:var(--text,#16243d);font-size:13px" title="Filter by payroll period">
-          <option value="">All periods</option>
-        </select>
-        <button class="btn secondary" id="fr-import-csv" style="margin-left:8px">${UI.icon('upload')} Upload CSV</button>
-        <button class="btn secondary" id="fr-print-slips" style="margin-left:8px">${UI.icon('printer')} Print All</button>` : ''}
-      ${canBulkPrint ? `<button class="btn secondary" id="fr-print-all-tpl" style="margin-left:8px">${UI.icon('printer')} Print All</button>` : ''}
-      <button class="btn secondary" id="fr-download-csv" style="margin-left:8px" title="${isPayroll ? 'Download the currently filtered payslips as a styled Excel workbook, with summary and per-department totals' : 'Download the currently filtered records as a CSV file'}">${UI.icon('download')} ${isPayroll ? 'Download Excel' : 'Download CSV'}</button>
-      <button class="btn secondary danger" id="fr-del-all" style="margin-left:8px" title="Delete all currently visible records">${UI.icon('trash')} Delete Period</button>
-      <button class="btn" id="fr-new" style="margin-left:8px">${UI.icon('plus')} New Record</button>
+          .map((s) => `<option value="${s}" ${state.status === s ? 'selected' : ''}>${s}</option>`).join('')}`;
+
+  // Payroll gets a heading row (context + primary action), a separate filter / print-export
+  // row, and its rare import/cleanup tools behind an inline disclosure. Other forms keep the
+  // original single toolbar unchanged.
+  const headerHTML = isPayroll ? `
+    <div class="topbar">
+      <button type="button" class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} HR Forms</button>
+      <div>
+        <h2>${UI.esc(formDef.name)}</h2>
+        <div class="sub">Payslips grouped by cutoff — open one to see how its pay was computed.</div>
+      </div>
+      <div class="grow"></div>
+      ${canManagePayroll ? `
+        <button type="button" class="btn secondary" id="fr-more-toggle" aria-expanded="false" aria-controls="fr-more">${UI.icon('settings')} Import &amp; cleanup</button>
+        <button type="button" class="btn secondary" id="fr-reconcile-owner">Review legacy owners</button>
+        <button type="button" class="btn" id="fr-new">${UI.icon('plus')} New Record</button>` : ''}
     </div>
+    ${canManagePayroll ? `<div class="hr-tools" id="fr-more" hidden>
+      <div class="hr-tools-group" role="group" aria-labelledby="fr-more-import">
+        <span class="hr-tools-label" id="fr-more-import">Import</span>
+        <button type="button" class="btn secondary small" id="fr-import-csv">${UI.icon('upload', 14)} Upload CSV</button>
+      </div>
+      <div class="hr-tools-group" role="group" aria-labelledby="fr-more-clean">
+        <span class="hr-tools-label" id="fr-more-clean">Cleanup</span>
+        <button type="button" class="btn secondary small danger" id="fr-del-all" title="Delete all currently visible records">${UI.icon('trash', 14)} Delete visible</button>
+      </div>
+    </div>` : ''}
+    <div class="hr-filters hr-filters-bar">
+      <div class="search-box search">
+        <span class="ic">${UI.icon('search', 15)}</span>
+        <label class="hr-sr-only" for="fr-search">Search payslips by employee name</label>
+        <input type="search" id="fr-search" placeholder="Search employee name…" autocomplete="off" />
+      </div>
+      <div class="fld"><label for="fr-status">Status</label><select id="fr-status">${statusOptions}</select></div>
+      <div class="fld"><label for="fr-period">Period</label><div id="fr-period-combo"></div></div>
+      <button type="button" class="btn secondary small" id="fr-filter-reset" hidden>Reset</button>
+      <div class="grow"></div>
+      <div class="hr-tools-group" role="group" aria-label="Print and export the payslips in view">
+        <button type="button" class="btn secondary small" id="fr-print-slips">${UI.icon('printer', 14)} Print visible</button>
+        <button type="button" class="btn secondary small" id="fr-print-summary" title="Print a payroll summary (totals, department subtotals, full payroll list) for the payslips in view">${UI.icon('printer', 14)} Print Summary</button>
+        <button type="button" class="btn secondary small" id="fr-download-csv" title="Download the currently filtered payslips as a styled Excel workbook, with summary and per-department totals">${UI.icon('download', 14)} Download Excel</button>
+      </div>
+    </div>` : `
+    <div class="topbar">
+      <button class="btn secondary small" id="fr-back">${UI.icon('arrow-left', 14)} Data Forms</button>
+      <h2 style="margin-left:10px">${UI.esc(formDef.name)}</h2>
+      <div class="grow"></div>
+      <div class="search-box search">${UI.icon('search', 16)}<input id="fr-search" placeholder="Search number…" /></div>
+      <select id="fr-status" aria-label="Record status" style="margin-left:8px">${statusOptions}
+      </select>
+      ${canBulkPrint ? `<button class="btn secondary" id="fr-print-all-tpl" style="margin-left:8px">${UI.icon('printer')} Print visible</button>` : ''}
+      <button class="btn secondary" id="fr-download-csv" style="margin-left:8px" title="Download the currently filtered records as a CSV file">${UI.icon('download')} Download CSV</button>
+      ${entryOnly ? '' : HR_REQUEST_SLUGS.includes(formDef.slug) ? '<button class="btn secondary" id="fr-open-approvals">Open Approvals</button>' : `<button class="btn secondary danger" id="fr-del-all" style="margin-left:8px" title="Delete all currently visible records">${UI.icon('trash')} Delete visible</button>`}
+      <button class="btn" id="fr-new" style="margin-left:8px">${UI.icon('plus')} New Record</button>
+    </div>`;
+
+  view.innerHTML = `${headerHTML}
     <div id="fr-bulk-bar" style="display:none;align-items:center;gap:8px;padding:7px 16px;background:var(--accent-weak,#e7f1ff);border-bottom:1px solid var(--border,#dce6f2);flex-shrink:0">
       <span id="fr-sel-count" style="font-weight:700;font-size:13px;color:var(--accent,#2b7fff)">0 selected</span>
       <div style="flex:1"></div>
       ${isPayroll ? `<button class="btn secondary small" id="fr-bulk-print">${UI.icon('printer')} Print selected</button>` : ''}
       ${canBulkPrint ? `<button class="btn secondary small" id="fr-bulk-print-tpl">${UI.icon('printer')} Print selected</button>` : ''}
-      <button class="btn secondary small" id="fr-bulk-status">${UI.icon('edit', 14)} Change status</button>
-      ${isPayroll && canManagePayroll ? `
+      ${canWrite && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="btn secondary small" id="fr-bulk-status">${UI.icon('edit', 14)} Change status</button>` : ''}
+      ${canPay ? `
         <button class="btn secondary small" id="fr-bulk-mark-paid">${UI.icon('check')} Mark paid</button>
         <button class="btn secondary small" id="fr-bulk-unmark-paid">${UI.icon('reply', 15)} Unmark paid</button>` : ''}
-      <button class="btn secondary small danger" id="fr-bulk-del">${UI.icon('trash')} Delete selected</button>
+      ${canWrite && !entryOnly && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="btn secondary small danger" id="fr-bulk-del">${UI.icon('trash')} Delete selected</button>` : ''}
       <button class="btn secondary small" id="fr-bulk-clear">${UI.icon('close', 12)} Clear</button>
     </div>
     <div class="panel"><div id="fr-table"></div></div>`;
 
-  view.querySelector('#fr-back').onclick = () => App.navigate('form-records');
-  view.querySelector('#fr-new').onclick = () => recordModal(null);
+  const tools = document.createElement('div'); tools.className = 'form-view-tools panel';
+  tools.innerHTML = `<button type="button" class="btn secondary small" id="fr-columns">Choose columns</button><label for="fr-saved-filter">Saved view</label><select id="fr-saved-filter"><option value="">Current filters</option></select><button type="button" class="btn secondary small" id="fr-save-filter">Save current filters</button><button type="button" class="btn secondary small" id="fr-remove-filter" disabled>Remove saved view</button><span id="fr-personal-status" role="status"></span>`;
+  view.querySelector('#fr-bulk-bar').before(tools);
+  const savedSelect = tools.querySelector('#fr-saved-filter');
+  function renderSavedViews(selected = '') {
+    savedSelect.innerHTML = '<option value="">Current filters</option>' + (viewPreferences.filters || []).map(filter => `<option value="${UI.esc(filter.id)}">${UI.esc(filter.name)}</option>`).join('');
+    savedSelect.value = selected; tools.querySelector('#fr-remove-filter').disabled = !selected;
+    if (personal.unavailable) tools.querySelector('#fr-personal-status').textContent = 'Saved preferences are temporarily unavailable.';
+  }
+  async function savePersonal(change) {
+    personal = await DataForms.savePreference({ ...change, form_id: formId });
+    viewPreferences = personal.views[String(formId)] || {}; return personal;
+  }
+  function columnFields() {
+    const fields = new Map(formDef.fields.map(field => [field.key, field]));
+    currentRecords.forEach(record => (record.schema?.fields || []).forEach(field => { if (!fields.has(field.key)) fields.set(field.key, {...field,label:field.label+' (earlier version)'}); }));
+    return fields;
+  }
+  tools.querySelector('#fr-columns').onclick = () => {
+    const choices = [...columnFields().values()], selected = viewPreferences.columns || formDef.fields.slice(0,4).map(field=>field.key);
+    UI.modal({ title:'Choose record columns', bodyHTML:`<p>These columns apply to your account for this form. Number, status and date remain visible.</p>${choices.map(field=>`<label class="form-column-choice"><input type="checkbox" data-column="${UI.esc(field.key)}" ${selected.includes(field.key)?'checked':''}> ${UI.esc(field.label)}</label>`).join('')}<p class="muted">Choose up to 12 field columns.</p><label><input type="checkbox" id="fr-column-defaults"> Restore the default columns</label>`,confirmText:'Save columns',onConfirm:async(overlay,showError)=>{
+      const columns = overlay.querySelector('#fr-column-defaults').checked ? null : [...overlay.querySelectorAll('[data-column]:checked')].map(input=>input.dataset.column);
+      if(columns && columns.length>12){showError('Choose no more than 12 columns.');return false;}
+      await savePersonal({action:'columns',columns}); renderRecords(currentRecords); tools.querySelector('#fr-personal-status').textContent='Column preferences saved';
+    }});
+  };
+  savedSelect.onchange = () => {
+    const chosen=(viewPreferences.filters||[]).find(filter=>filter.id===savedSelect.value);
+    tools.querySelector('#fr-remove-filter').disabled=!chosen; if(!chosen)return;
+    state.q=chosen.q;state.status=chosen.status;state.period=chosen.period;
+    view.querySelector('#fr-search').value=state.q;view.querySelector('#fr-status').value=state.status;periodCombo?.setSelected(state.period);load();
+  };
+  tools.querySelector('#fr-save-filter').onclick=()=>UI.modal({title:'Save this filtered view',bodyHTML:`<label for="fr-filter-name">Name *</label><input id="fr-filter-name" maxlength="80"><p class="muted">Search: ${UI.esc(state.q||'All')} · Status: ${UI.esc(state.status||'All')} · Period: ${UI.esc(state.period||'All')}</p>`,confirmText:'Save view',onConfirm:async(overlay,showError)=>{
+    const name=overlay.querySelector('input').value.trim();if(!name){showError('Enter a name for this view.');return false;}
+    const id=String(Date.now())+'-'+Math.random().toString(36).slice(2);
+    await savePersonal({action:'save_filter',filter:{id,name,...state}});renderSavedViews(id);tools.querySelector('#fr-personal-status').textContent='Filtered view saved';
+  }});
+  tools.querySelector('#fr-remove-filter').onclick=async()=>{if(!savedSelect.value)return;try{await savePersonal({action:'delete_filter',filter_id:savedSelect.value});renderSavedViews();tools.querySelector('#fr-personal-status').textContent='Saved view removed';}catch(error){UI.toast(error.message,'error');}};
+  renderSavedViews();
+
+  view.querySelector('#fr-back').onclick = () => App.navigate('form-records', isPayroll ? { scope: 'hr' } : { ...(navigation.index_view && navigation.index_view !== 'all' ? {view:navigation.index_view} : {}), ...(navigation.index_scope === 'all' ? {} : (navigation.scope || formDef.scope) ? { scope: navigation.scope || formDef.scope } : {}), ...(navigation.index_q ? { q: navigation.index_q } : {}) });
+  view.querySelector('#fr-search').value = state.q;
+  const newBtn = view.querySelector('#fr-new');
+  if (formDef.archived_at) { view.querySelectorAll('#fr-new,#fr-import-csv,#fr-del-all,#fr-bulk-del').forEach(button=>button.disabled=true); const notice=document.createElement('p');notice.className='panel';notice.textContent='Archived form — no new entries. Existing records may be corrected with a reason and are kept as revisions.';view.querySelector('#fr-bulk-bar').before(notice); }
+  if (newBtn) newBtn.onclick = () => isPayroll ? App.navigate('hr-timekeeping') : recordModal(null);
   view.querySelector('#fr-search').addEventListener('input', (e) => {
     clearTimeout(searchTimer);
     state.q = e.target.value.trim();
@@ -203,13 +359,65 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     load();
   });
   if (isPayroll) {
-    view.querySelector('#fr-import-csv').onclick = () => importCsvModal();
+    if (canManagePayroll) view.querySelector('#fr-reconcile-owner').onclick = () => reconcileLegacyOwners();
+    const moreToggle = view.querySelector('#fr-more-toggle');
+    if (moreToggle) moreToggle.onclick = () => {
+      const open = moreToggle.getAttribute('aria-expanded') !== 'true';
+      moreToggle.setAttribute('aria-expanded', String(open));
+      view.querySelector('#fr-more').hidden = !open;
+    };
+    const importBtn = view.querySelector('#fr-import-csv');
+    if (importBtn) importBtn.onclick = () => importCsvModal();
     view.querySelector('#fr-print-slips').onclick = () => printSlips();
+    view.querySelector('#fr-print-summary').onclick = () => printSummary();
     view.querySelector('#fr-bulk-print').onclick = () => printSelected();
-    view.querySelector('#fr-period').addEventListener('change', (e) => {
-      state.period = e.target.value;
-      load();
+    // Type-to-search instead of a <select>: the cutoff list only grows (two a month).
+    periodCombo = UI.combo(view.querySelector('#fr-period-combo'), periodOptions([]), {
+      selected: state.period,
+      placeholder: 'Type a period…',
+      emptyText: 'No matching period',
+      onSelect: (value) => {
+        if ((value || '') === state.period) return;
+        state.period = value || '';
+        load();
+      },
     });
+    view.querySelector('#fr-period-combo .combo-input').id = 'fr-period';
+    view.querySelector('#fr-filter-reset').onclick = () => clearPayrollFilters();
+  }
+  async function reconcileLegacyOwners() {
+    try {
+      const [records, employees] = await Promise.all([API.get('/hr/payroll/legacy-unresolved'), API.get('/hr/payroll/reconciliation-employees')]);
+      if (!records.length) { UI.toast('All legacy payslips have an identified owner.'); return; }
+      const listModal = UI.modal({
+        title: `Unidentified payslips (${records.length})`, size: 'lg', cancelText: 'Close',
+        bodyHTML: `<p class="muted">Review the original payroll record before assigning an employee. The pay amounts stay locked; this correction changes who can see the payslip and how reports group it.</p>
+          <div style="max-height:45vh;overflow:auto" tabindex="0" role="region" aria-label="Unidentified payslips">${records.map(r => `<div class="tool-row"><span><strong>${UI.esc(r.number)}</strong> · ${UI.esc(r.employee_name || 'No name')}<br><small>${UI.esc(r.period || 'No period')} · ${UI.esc(r.status)} · Net ${UI.money(r.net_pay)}</small></span><button type="button" class="btn secondary small" data-reconcile="${r.id}">Review &amp; assign</button></div>`).join('')}</div>`,
+        onOpen: overlay => overlay.querySelectorAll('[data-reconcile]').forEach(button => button.onclick = () => {
+          const record = records.find(r => r.id === Number(button.dataset.reconcile));
+          if (!record) return;
+          UI.modal({
+            title: `Assign owner · ${record.number}`, confirmText: 'Assign employee', cancelText: 'Cancel',
+            bodyHTML: `<p>Legacy name: <strong>${UI.esc(record.employee_name || '—')}</strong><br>Period: ${UI.esc(record.period || '—')} · Status: ${UI.esc(record.status)} · Net: ${UI.money(record.net_pay)}</p>
+              <details><summary>Review original payslip fields</summary><div style="max-height:28vh;overflow:auto" tabindex="0" role="region" aria-label="Original payslip fields">${Object.entries(record.data || {}).map(([key, value]) => `<div class="tool-row"><strong>${UI.esc(key.replaceAll('_', ' '))}</strong><span>${UI.esc(typeof value === 'object' ? JSON.stringify(value) : String(value ?? '—'))}</span></div>`).join('')}</div></details>
+              <label for="fr-legacy-employee">Verified employee *</label><select id="fr-legacy-employee"><option value="">Select employee…</option>${employees.map(e => `<option value="${e.id}">${UI.esc(e.employee_no || '')} · ${UI.esc(e.name)}</option>`).join('')}</select>
+              <label for="fr-legacy-reason">Evidence and reason *</label><textarea id="fr-legacy-reason" maxlength="1000" placeholder="How did you verify this employee owns the payslip?"></textarea>`,
+            onConfirm: async (ov, showError) => {
+              const employee_id = Number(ov.querySelector('#fr-legacy-employee').value);
+              const reason = ov.querySelector('#fr-legacy-reason').value.trim();
+              if (!employee_id || reason.length < 10) { showError('Select the employee and enter at least 10 characters explaining your evidence.'); return false; }
+              try {
+                await API.post(`/hr/payroll/${record.id}/reconcile-owner`, { employee_id, record_number: record.number, reason });
+                UI.toast(`${record.number} assigned to the selected employee`);
+                listModal.close();
+                load();
+                return true;
+              } catch (error) { showError(error.message || 'Could not assign the owner.'); return false; }
+            },
+          });
+        }),
+      });
+    } catch (error) { UI.toast(error.message || 'Could not load unidentified payslips', 'error'); }
   }
   if (canBulkPrint) {
     view.querySelector('#fr-print-all-tpl').onclick = () => printRecordsViaTemplate(currentRecords);
@@ -217,11 +425,26 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       printRecordsViaTemplate(currentRecords.filter((r) => selectedIds.has(r.id)));
   }
   view.querySelector('#fr-download-csv').onclick = () => downloadCsv();
-  view.querySelector('#fr-del-all').onclick = () => delAll();
-  view.querySelector('#fr-bulk-del').onclick = () => delSelected();
+  const approvalsBtn = view.querySelector('#fr-open-approvals'); if (approvalsBtn) approvalsBtn.onclick = () => App.navigate('hr-approvals', { slug: formDef.slug });
+  const delAllBtn = view.querySelector('#fr-del-all');
+  if (delAllBtn) delAllBtn.onclick = () => delAll();
+  const bulkDelBtn = view.querySelector('#fr-bulk-del');
+  if (bulkDelBtn) bulkDelBtn.onclick = () => delSelected();
   view.querySelector('#fr-bulk-clear').onclick = () => { selectedIds.clear(); syncSelection(); };
-  view.querySelector('#fr-bulk-status').onclick = () => bulkChangeStatus();
-  if (isPayroll && canManagePayroll) {
+  const bulkStatusBtn = view.querySelector('#fr-bulk-status');
+  if (bulkStatusBtn) bulkStatusBtn.onclick = () => bulkChangeStatus();
+
+  // Payroll's Reset / "Clear filters": drop search, status and period together, then reload.
+  function clearPayrollFilters() {
+    clearTimeout(searchTimer);
+    state.q = ''; state.status = ''; state.period = '';
+    view.querySelector('#fr-search').value = '';
+    view.querySelector('#fr-status').value = '';
+    periodCombo.setSelected('');
+    load();
+    view.querySelector('#fr-search').focus();
+  }
+  if (isPayroll && canPay) {
     view.querySelector('#fr-bulk-mark-paid').onclick = () => bulkSetPaid(true);
     view.querySelector('#fr-bulk-unmark-paid').onclick = () => bulkSetPaid(false);
   }
@@ -253,92 +476,108 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     updateBulkBar();
   }
 
-  // Item 5: one "are you sure" per record, not a single combined confirm for the whole batch —
-  // each delete is its own irreversible action, so a rushed single "yes" can't take out more
-  // than the user actually meant to. Cancelling one skips just that record and moves on.
-  async function delSelected() {
-    if (!selectedIds.size) return;
-    const targets = currentRecords.filter((r) => selectedIds.has(r.id));
-    let deleted = 0, skipped = 0, failed = 0;
-    for (const r of targets) {
-      const ok = await UI.confirmDialog(`Delete record ${r.number}? Cannot be undone.`, 'Delete');
-      if (!ok) { skipped++; continue; }
-      try { await API.del('/form-records/' + r.id); deleted++; }
-      catch (e) { failed++; UI.toast(`${r.number}: ${e.message}`, 'error'); }
-    }
-    selectedIds.clear();
-    if (deleted) UI.toast(`${deleted} record${deleted === 1 ? '' : 's'} deleted${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''}`);
-    else if (skipped) UI.toast('Nothing deleted');
-    load();
-  }
-
-  // Batch status change — works for any form's records (not just payroll). Same one-confirm-
-  // per-record convention as delSelected() above: a rushed single "yes" can't apply a status
-  // change to more records than the user actually meant to, and cancelling one just skips it.
-  // A record already paid is locked (server 423s the generic PUT — see form-builder.routes.ts)
-  // and is skipped without even asking; 'paid' itself isn't offered here — that's only ever set
-  // via the dedicated Mark Paid action, same restriction the single-record editor already has.
-  async function bulkChangeStatus() {
-    if (!selectedIds.size) { UI.toast('No records selected', 'error'); return; }
-    const targets = currentRecords.filter((r) => selectedIds.has(r.id));
-
-    const statusOpts = ['draft', 'submitted', 'approved', 'rejected', 'completed'];
-    // Same resolve(true/false)-on-[data-close] wrapping UI.confirmDialog itself uses (ui.js) —
-    // the only supported way to read "confirmed vs cancelled" out of a modal that also needs
-    // to hand back a value (the picked status), not just a yes/no.
-    const newStatus = await new Promise((resolve) => {
-      const m = UI.modal({
-        title: `Change status — ${targets.length} record${targets.length === 1 ? '' : 's'}`,
-        bodyHTML: `<label>New status</label>
-          <select data-f="status">${statusOpts.map((s) => `<option value="${s}">${s}</option>`).join('')}</select>
-          <p class="muted" style="font-size:12px;margin-top:8px">Asks separately for each record — cancel any single one to leave it as-is.</p>`,
-        confirmText: 'Continue',
-        onConfirm: (ov) => { resolve(ov.querySelector('[data-f="status"]').value); },
-      });
-      m.overlay.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => resolve(null)));
+  function batchPlan(targets, operation, nextStatus) {
+    return targets.map((record) => {
+      let reason = '';
+      if(entryOnly&&(operation==='delete'||record.status!=='draft'||formDef.archived_at)) reason='Form entry permits changes to active drafts only';
+      else if(record.sales_order_id && ['delete','status'].includes(operation)) reason='Linked to a sales order; review it there';
+      else if (formDef.archived_at && operation === 'delete') reason = 'Archived records must be retained';
+      else if (operation === 'paid' && record.status === 'paid') reason = 'Already paid';
+      else if (operation === 'unpaid' && record.status !== 'paid') reason = 'Not marked paid';
+      else if (isPayroll && record.status === 'paid' && operation !== 'unpaid') reason = 'Paid payslip is locked';
+      else if (operation === 'status' && !nextStatus) reason = 'Choose a target status';
+      else if (operation === 'status' && record.status === nextStatus) reason = 'Already has this status';
+      return { record, reason };
     });
-    if (!newStatus) return; // cancelled
-
-    let changed = 0, skipped = 0, failed = 0;
-    for (const r of targets) {
-      if (r.status === newStatus) { skipped++; continue; }
-      if (r.status === 'paid') { skipped++; continue; } // locked — unmark paid first
-      const ok = await UI.confirmDialog(`Set ${r.number} to "${newStatus}"?`, 'Change');
-      if (!ok) { skipped++; continue; }
-      try { await API.put('/form-records/' + r.id, { data: r.data, status: newStatus }); changed++; }
-      catch (e) { failed++; UI.toast(`${r.number}: ${e.message}`, 'error'); }
-    }
-    selectedIds.clear();
-    if (changed) UI.toast(`${changed} record${changed === 1 ? '' : 's'} updated${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''}`);
-    else if (skipped) UI.toast('Nothing changed');
-    load();
   }
 
-  // Batch Mark/Unmark Paid (payroll only). Same per-record confirm convention as above — a
-  // payslip already in the target state is skipped without asking (nothing to confirm).
-  async function bulkSetPaid(toPaid) {
-    if (!selectedIds.size) { UI.toast('No records selected', 'error'); return; }
-    const targets = currentRecords.filter((r) => selectedIds.has(r.id));
-    const verb = toPaid ? 'Mark' : 'Unmark';
-    const endpoint = toPaid ? 'mark-paid' : 'unmark-paid';
-    let changed = 0, skipped = 0, failed = 0;
-    for (const r of targets) {
-      const already = toPaid ? r.status === 'paid' : r.status !== 'paid';
-      if (already) { skipped++; continue; }
-      const ok = await UI.confirmDialog(`${verb} ${r.number} as paid?`, verb);
-      if (!ok) { skipped++; continue; }
-      try { await API.post(`/hr/payroll/${r.id}/${endpoint}`, {}); changed++; }
-      catch (e) { failed++; UI.toast(`${r.number}: ${e.message}`, 'error'); }
-    }
-    selectedIds.clear();
-    if (changed) UI.toast(`${changed} payslip${changed === 1 ? '' : 's'} ${toPaid ? 'marked' : 'unmarked'} paid${skipped ? `, ${skipped} skipped` : ''}${failed ? `, ${failed} failed` : ''}`);
-    else if (skipped) UI.toast('Nothing changed');
-    load();
+  function reviewBatch(targets, operation) {
+    const deleting = operation === 'delete';
+    const verb = deleting ? 'Delete' : operation === 'paid' ? 'Mark paid' : operation === 'unpaid' ? 'Unmark paid' : 'Change status';
+    return new Promise((resolve) => {
+      const modal = UI.modal({
+        title: `${verb} — review ${targets.length} record${targets.length === 1 ? '' : 's'}`,
+        bodyHTML: `${operation === 'status' ? `<label for="fr-batch-status">New status</label><select id="fr-batch-status"><option value="">Choose a status…</option>${(entryOnly||(formDef.actions||[]).some(action=>action.type==='create_sales_draft')?['draft','submitted']:['draft', 'pending', 'submitted', 'approved', 'rejected', 'completed']).map(status => `<option value="${status}">${status}</option>`).join('')}</select>` : ''}
+          <p class="muted">${UI.esc(formDef.name)}${state.period ? ' · Period: ' + UI.esc(state.period) : ''}${state.status ? ' · Status: ' + UI.esc(state.status) : ''}${state.q ? ' · Search: ' + UI.esc(state.q) : ''}</p>
+          <p>${deleting ? 'Deletion cannot be undone.' : 'Only the eligible records below will change.'}</p>
+          <p id="fr-batch-count" aria-live="polite"></p>
+          ${formDef.archived_at ? '<label for="fr-batch-reason">Reason for archived-record corrections *</label><textarea id="fr-batch-reason" maxlength="1000"></textarea>' : ''}
+          <div id="fr-batch-review" tabindex="0" role="region" aria-label="Affected records" style="max-height:320px;overflow:auto"></div>`,
+        confirmText: deleting ? 'Delete records' : 'Apply changes',
+        onOpen: (overlay) => {
+          function renderReview() {
+            const nextStatus = overlay.querySelector('#fr-batch-status')?.value;
+            const plan = batchPlan(targets, operation, nextStatus);
+            const eligible = plan.filter(entry => !entry.reason).length;
+            overlay.querySelector('#fr-batch-count').textContent = `${eligible} will change · ${plan.length - eligible} excluded`;
+            overlay.querySelector('#fr-batch-review').innerHTML = `<table><thead><tr><th>Record</th><th>Employee / item</th><th>Current status</th><th>Result</th></tr></thead><tbody>${plan.map(({record, reason}) => `<tr><td>${UI.esc(record.number)}</td><td>${UI.esc(record.data.employee_name || record.data.item || '—')}</td><td>${UI.esc(record.status)}</td><td>${UI.esc(reason || (operation === 'status' ? nextStatus : verb))}</td></tr>`).join('')}</tbody></table>`;
+            overlay.querySelector('[data-confirm]').disabled = eligible === 0;
+          }
+          overlay.querySelector('#fr-batch-status')?.addEventListener('change', renderReview);
+          renderReview();
+        },
+        onConfirm: (overlay,showError) => {
+          const reason=overlay.querySelector('#fr-batch-reason')?.value.trim();
+          if(formDef.archived_at&&!reason){showError('Enter a reason for these archived-record corrections.');return false;}
+          const status = overlay.querySelector('#fr-batch-status')?.value;
+          resolve({ status, reason, plan: batchPlan(targets, operation, status) });
+        },
+        onCancel: () => resolve(null),
+      });
+    });
   }
+
+  let batchBusy = false;
+  async function runBatch(targets, operation) {
+    if (batchBusy) return;
+    if (!targets.length) { UI.toast('No records selected', 'error'); return; }
+    const review = await reviewBatch(targets, operation);
+    if (!review) return;
+    batchBusy = true;
+    const controls = [...view.querySelectorAll('button, input, select')];
+    const previousDisabled = new Map(controls.map(control => [control, control.disabled]));
+    controls.forEach(control => { control.disabled = true; });
+    const eligible = review.plan.filter(entry => !entry.reason);
+    const excluded = review.plan.filter(entry => entry.reason);
+    const failures = [], warnings = [];
+    let changed = 0;
+    try {
+      for (const { record } of eligible) {
+        try {
+          const response = operation === 'delete' ? await API.del('/form-records/' + record.id)
+            : operation === 'status' ? await API.put('/form-records/' + record.id, { data: record.data, status: review.status, change_reason:review.reason,expected_revision:record.revision || 1 })
+            : await API.post(`/hr/payroll/${record.id}/${operation === 'paid' ? 'mark-paid' : 'unmark-paid'}`, {});
+          changed++;
+          if (response?.action_warnings?.length) warnings.push({ record, message: response.action_warnings.join('; ') });
+        } catch (error) { failures.push({ record, message: error.message || 'Operation failed' }); }
+      }
+    } finally {
+      controls.forEach(control => { control.disabled = previousDisabled.get(control); });
+      batchBusy = false;
+    }
+    await load();
+    if (formRecordViews.get(view) !== owner || !view.querySelector('#fr-table')) {
+      UI.toast(`${changed} records changed, ${excluded.length} excluded, ${failures.length} failed`, failures.length ? 'error' : 'success');
+      return;
+    }
+    selectedIds = new Set(failures.filter(entry => currentRecords.some(record => record.id === entry.record.id)).map(entry => entry.record.id));
+    syncSelection();
+    UI.modal({
+      title: 'Bulk operation results', cancelText: 'Close',
+      bodyHTML: `<p role="status">${changed} ${operation === 'delete' ? 'deleted' : 'updated'} · ${excluded.length} excluded · ${failures.length} failed</p>
+        ${excluded.length ? `<h4>Excluded</h4><ul>${excluded.map(({record, reason}) => `<li>${UI.esc(record.number)}: ${UI.esc(reason)}</li>`).join('')}</ul>` : ''}
+        ${failures.length ? `<h4>Failed records</h4><p>These records remain selected when visible. Review the errors before retrying.</p><ul>${failures.map(({record, message}) => `<li>${UI.esc(record.number)}: ${UI.esc(message)}</li>`).join('')}</ul>` : ''}
+        ${warnings.length ? `<h4>Action warnings</h4><ul>${warnings.map(({record, message}) => `<li>${UI.esc(record.number)}: ${UI.esc(message)}</li>`).join('')}</ul>` : ''}`,
+    });
+  }
+
+  function delSelected() { return runBatch(currentRecords.filter(record => selectedIds.has(record.id)), 'delete'); }
+  function bulkChangeStatus() { return runBatch(currentRecords.filter(record => selectedIds.has(record.id)), 'status'); }
+  function bulkSetPaid(toPaid) { return runBatch(currentRecords.filter(record => selectedIds.has(record.id)), toPaid ? 'paid' : 'unpaid'); }
 
   async function printSelected() {
     if (!selectedIds.size) { UI.toast('No records selected', 'error'); return; }
-    const list = currentRecords.filter((r) => selectedIds.has(r.id)).map((r) => r.data);
+    const list = currentRecords.filter((r) => selectedIds.has(r.id)).map(payrollPrintData);
     printSlips(list);
   }
 
@@ -394,18 +633,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  async function delAll() {
-    if (!currentRecords.length) { UI.toast('No records visible to delete', 'error'); return; }
-    const n = currentRecords.length;
-    const periodLabel = state.period ? `period "${state.period}"` : (state.q || state.status ? 'current filter' : 'all periods');
-    if (!await UI.confirmDialog(`Delete all ${n} record${n === 1 ? '' : 's'} for ${periodLabel}? Cannot be undone.`, 'Delete')) return;
-    let failed = 0;
-    await Promise.all(currentRecords.map((r) => API.del('/form-records/' + r.id).catch(() => { failed++; })));
-    selectedIds.clear();
-    // If we deleted a specific period, reset the period filter since it no longer exists.
-    if (state.period) { state.period = ''; }
-    UI.toast(failed ? `Deleted with ${failed} error${failed === 1 ? '' : 's'}` : `${n - failed} record${n - failed === 1 ? '' : 's'} deleted`);
-    load();
+  function delAll() {
+    return runBatch([...currentRecords], 'delete');
   }
 
   // Opens a floating preview (modal + iframe, no auto print) with a Print button the
@@ -415,25 +644,38 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
   // (from a row's Print button) to preview just that one employee's slip.
   // The per-slip HTML comes from the "HR Payroll Slip" document template (editable later
   // under Documents > Templates), not hardcoded — falls back to a plain layout if missing.
-  async function printSlips(dataList) {
-    const list = dataList || currentRecords.map((r) => r.data);
+  async function loadPrintContext(templateId){
+    const [company,globals,variables]=await Promise.all([API.get('/templates/company'),API.get('/global-variables'),API.get('/templates/variables?template_id='+templateId)]);
+    return {company,global:Object.fromEntries(globals.map(v=>[v.key,v.value])),variables};
+  }
+
+  async function choosePrintLayout(print) {
+    try {
+      const layouts=await API.get(`/form-definitions/${formDef.id}/templates`);
+      if(!layouts.length){UI.toast('No print template linked. Open Form Builder → Print templates.','error');return;}
+      const defaultId=layouts.find(t=>t.is_default)?.id||layouts[0].id;
+      if(layouts.length===1)return await print(defaultId);
+      UI.modal({title:'Choose print layout',bodyHTML:`<label>Template<select id="fr-print-layout">${layouts.map(t=>`<option value="${t.id}" ${t.id===defaultId?'selected':''}>${UI.esc(t.name)}${t.is_default?' (Default)':''}</option>`).join('')}</select></label><p class="muted">This choice applies to this print only. Change the default in Form Builder.</p>`,cancelText:'Cancel',confirmText:'Preview',onConfirm:async ov=>{const id=Number(ov.querySelector('#fr-print-layout').value);await print(id);return true;}});
+    }catch(err){UI.toast(err.message||'Could not load print layouts','error');}
+  }
+
+  function payrollPrintData(r){return {...r.data,number:r.number,record:{number:r.number,status:r.status,created_at:r.created_at},today:new Date().toLocaleDateString()};}
+  async function printSlips(dataList,templateId) {
+    if(!templateId)return choosePrintLayout(id=>printSlips(dataList,id));
+    const list = dataList || currentRecords.map(payrollPrintData);
     if (!list.length) { UI.toast('No records to print', 'error'); return; }
     if (typeof buildPayrollSlipsHtml === 'undefined') { UI.toast('Print module failed to load', 'error'); return; }
 
-    let templateBody;
-    try {
-      const templates = await API.get('/templates');
-      const meta = templates.find((t) => t.name === 'HR Payroll Slip');
-      if (meta) templateBody = (await API.get('/templates/' + meta.id)).body;
-    } catch { /* fall back to the built-in default layout */ }
-
-    const html = buildPayrollSlipsHtml(list, templateBody);
-    const full = UI.printableHtml(html, formDef.name);
+    const tpl=await API.get('/templates/'+templateId),context=await loadPrintContext(templateId);
+    const render=data=>renderSlip({...data,company:context.company,global:context.global},tpl.body,context.variables);
+    const tiled=buildTiledPagesHtml(list,render,{copiesPerRecord:tpl.copies_per_record,recordsPerPage:tpl.records_per_page,tileFill:tpl.tile_fill,continuous:!!tpl.tile_continuous,gapXmm:tpl.grid_gap_x_mm,gapYmm:tpl.grid_gap_y_mm,repeatCount:tpl.repeat_count,pageContentHeightMm:pageContentHeightMm(tpl.body)});
+    const html=tiled||list.map((data,i)=>`<div${i<list.length-1?' style="break-after:page"':''}>${render(data)}</div>`).join('');
+    const full=UI.printableHtml(html,formDef.name);
 
     UI.modal({
       title: 'Payslip Preview',
       size: 'xl',
-      bodyHTML: `<iframe id="payslip-preview-frame" style="width:100%;height:70vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+      bodyHTML: `<iframe title="Payslip print preview" id="payslip-preview-frame" style="width:100%;height:70vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
       cancelText: 'Close',
       confirmText: 'Print…',
       onOpen: (ov) => {
@@ -441,14 +683,50 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         // Once the slip HTML has actually rendered (real layout needed — scrollHeight is
         // meaningless before then), shrink any cell whose content overflows its fixed-height
         // grid cell instead of leaving it silently clipped by .payslip-grid's overflow:hidden.
-        ifr.onload = () => { if (typeof fitPayslipCells === 'function') fitPayslipCells(ifr.contentDocument); };
-        ifr.srcdoc = full;
+        UI.loadPrintFrame(ifr,full,tiled?fitTiledCells:undefined);
       },
-      onConfirm: (ov) => {
+      onConfirm: async (ov) => {
         const ifr = ov.querySelector('#payslip-preview-frame');
+        await UI.printFrame(ifr);
+        return false; // keep the preview open — printing shouldn't close it
+      },
+    });
+  }
+
+  // Printable payroll summary for one period (or whatever's filtered) — same records and
+  // totals as Download Excel (hr-payroll-export.js buildPayrollSummaryHtml), same preview-
+  // modal + iframe pattern as printSlips() above. `records`/`labelHint` come from a period
+  // bundle's own button; the header button prints what's currently in view.
+  async function printSummary(records, labelHint) {
+    const list = records || currentRecords;
+    if (!list.length) { UI.toast('No records to print', 'error'); return; }
+    if (typeof buildPayrollSummaryHtml === 'undefined') { UI.toast('Print module failed to load', 'error'); return; }
+    const period = labelHint || state.period;
+    const cutoffId = currentRecords.find(r => r.period === period && r.data && r.data.cutoff_id)?.data.cutoff_id;
+    const meta = period ? periodsMeta.find(p => cutoffId ? p.id === Number(cutoffId) : p.label === period) : null;
+    const company = await API.get('/templates/company').catch(() => null);
+    const subtitle = `${list.length} payslip${list.length === 1 ? '' : 's'}` +
+      (!labelHint && state.status ? ` — status "${state.status}"` : '') +
+      (!labelHint && state.q ? ` — search "${state.q}"` : '');
+    const html = buildPayrollSummaryHtml(list, formDef, {
+      title: period || formDef.name,
+      subtitle,
+      company,
+      dateRange: meta ? `${meta.start_date} – ${meta.end_date}` : '',
+      printedAt: new Date().toLocaleString(),
+    });
+    UI.modal({
+      title: 'Payroll Summary Preview',
+      size: 'xl',
+      bodyHTML: `<iframe id="payroll-summary-frame" style="width:100%;height:70vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+      cancelText: 'Close',
+      confirmText: 'Print…',
+      onOpen: (ov) => { ov.querySelector('#payroll-summary-frame').srcdoc = UI.printableHtml(html, `Payroll Summary - ${period || formDef.name}`); },
+      onConfirm: (ov) => {
+        const ifr = ov.querySelector('#payroll-summary-frame');
         ifr.contentWindow.focus();
         ifr.contentWindow.print();
-        return false; // keep the preview open — printing shouldn't close it
+        return false;
       },
     });
   }
@@ -486,26 +764,21 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
   // the server route that reruns the exact resolution+compute generate-payslips itself used, so
   // these numbers can never disagree with what's actually on the payslip. Never opens an
   // editable form — Edit (the pencil icon, stopPropagation'ed) is the only way into that now.
-  async function payslipDetailModal(r) {
+  async function payslipDetailModal(r, openAdjustments = false) {
     let detail;
     try {
       detail = await API.get(`/hr/payroll/${r.id}/detail`);
     } catch (err) {
-      UI.modal({
-        title: `Payslip — ${r.data.employee_name || 'Unknown employee'}`,
-        bodyHTML: `<p class="muted">${UI.esc(err.message)}</p>`,
-        cancelText: 'Close',
-      });
-      return;
+      // Imported/legacy slips can lack a matching employee or attendance cutoff.
+      // Keep their saved slip review available without pretending to have attendance data.
+      detail = { employee_name: r.data.employee_name || 'Unknown employee', days: [], late_exempt: false, warning: err.message };
     }
 
-    let templateBody;
+    let slipHtml='',templateBody,printContext={company:{},global:{},variables:[]};
     try {
-      const templates = await API.get('/templates');
-      const meta = templates.find((t) => t.name === 'HR Payroll Slip');
-      if (meta) templateBody = (await API.get('/templates/' + meta.id)).body;
-    } catch { /* fall back to renderSlip's own built-in default layout */ }
-    const slipHtml = typeof renderSlip === 'function' ? renderSlip(r.data, templateBody) : '';
+      const form=await API.get('/form-definitions/'+formDef.id);
+      if(form.template_id){const tpl=await API.get('/templates/'+form.template_id),context=await loadPrintContext(tpl.id);templateBody=tpl.body;printContext=context;slipHtml=renderSlip({...payrollPrintData(r),company:context.company,global:context.global},tpl.body,context.variables);}
+    } catch(err){UI.toast(err.message||'Could not load the default payslip layout','error');}
 
     const rows = detail.days.map((d) => `
       <tr>
@@ -514,6 +787,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         <td>${UI.esc(d.time_out || '—')}</td>
         <td>${detailDayTag(d) || '<span class="muted">—</span>'}</td>
         <td>${d.late_minutes ? `${d.late_minutes} min<div class="muted" style="font-size:11px">${detail.late_exempt ? 'exempt' : UI.money(d.late_pay)}</div>` : '—'}</td>
+        <td>${d.undertime_minutes ? `${d.undertime_minutes} min<div class="muted" style="font-size:11px">${UI.money(-d.undertime_pay)}</div>` : '—'}</td>
         <td>${d.ot_hours ? `${d.ot_hours.toFixed(2)} hr<div class="muted" style="font-size:11px">${UI.money(d.ot_pay)}</div>` : '—'}</td>
         <td>${d.day_premium_pay ? UI.money(d.day_premium_pay) : '—'}</td>
         <td>${d.night_diff_pay ? UI.money(d.night_diff_pay) : '—'}</td>
@@ -521,19 +795,22 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
 
     const locked = r.status === 'paid';
     const DED_LABELS = { sss: 'SSS', philhealth: 'PhilHealth', pagibig: 'Pag-IBIG', withholding_tax: 'Withholding Tax' };
-    const dedSection = canManagePayroll ? `
-      <div class="panel" style="margin-bottom:14px;padding:12px 14px">
-        <strong>Statutory Deductions</strong>
-        <p class="muted" style="font-size:12px;margin:2px 0 10px">Turn off any deduction that shouldn't apply to
-          this one payslip — the slip above updates instantly as you toggle (withholding tax's own taxable base
-          moves too), nothing is saved until you click Save.</p>
-        <div style="display:flex;flex-wrap:wrap;gap:16px">
-          ${Object.keys(DED_LABELS).map((k) => `
-            <label style="display:flex;align-items:center;gap:6px;font-weight:normal">
-              <input type="checkbox" data-ded="${k}" style="width:auto" ${r.data[k + '_applied'] !== false ? 'checked' : ''} ${locked ? 'disabled' : ''} />
-              ${DED_LABELS[k]}
-            </label>`).join('')}
-        </div>
+    const dedSection = canManagePayroll && !detail.warning ? `
+      <details class="panel pd-adjustments" style="margin-bottom:14px;padding:12px 14px">
+        <summary>Adjust payslip deductions${locked ? ' — locked' : ''}</summary>
+        <div><strong>Statutory Deductions</strong>
+        <p class="muted">Adjust deductions for this payslip only. Enter an amount to override automatic calculation; leave it blank to use automatic calculation. Zero is a valid override. Employee deductions only; employer contributions remain automatic. Totals update in the preview; click Save Deductions to persist changes.</p>
+        <div class="statutory-adjustments">${Object.keys(DED_LABELS).map((k) => `
+          <div data-validation-field class="statutory-adjustment">
+            <label><input type="checkbox" data-ded="${k}" ${r.data[k + '_applied'] !== false ? 'checked' : ''} ${locked ? 'disabled' : ''}> ${DED_LABELS[k]}</label>
+            <label for="pd-override-${k}">Override amount</label>
+            <input id="pd-override-${k}" data-ded-override="${k}" type="number" min="0" max="10000000" step="0.01" placeholder="Automatic" value="${r.data.statutory_overrides?.[k] != null ? UI.esc(String(r.data.statutory_overrides[k])) : ''}" ${locked ? 'disabled' : ''}>
+            <span data-ded-amount="${k}" class="muted">${UI.money(r.data[k])} · ${r.data.statutory_overrides?.[k] != null ? 'Manual' : 'Automatic'}</span>
+            ${!locked ? `<button type="button" class="btn secondary small" data-ded-reset="${k}">Use automatic</button>` : ''}
+          </div>`).join('')}</div>
+        ${!locked ? `<label for="pd-change-reason">Reason for deduction change${formDef.archived_at ? ' *' : ' (optional)'}</label><textarea id="pd-change-reason" maxlength="1000" rows="2" ${formDef.archived_at ? 'aria-required="true"' : ''}></textarea>` : ''}
+        <p id="pd-save-state" role="status">Saved</p><div id="pd-later-cutoffs" class="muted"></div>
+        <p id="pd-ded-error" class="form-error hidden" role="alert"></p>
         <hr style="margin:14px 0;border:none;border-top:1px solid var(--border,#dce6f2)" />
         <strong>Other Deductions</strong>
         <p class="muted" style="font-size:12px;margin:2px 0 10px">Ad-hoc lines for this one payslip — Cash Advance,
@@ -549,28 +826,50 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         ${locked
           ? `<p class="muted" style="font-size:12px;margin-top:8px">This payslip is marked Paid — unmark it first to change its deductions.</p>`
           : `<button type="button" class="btn small" id="pd-ded-save" style="margin-top:14px">Save Deductions</button>`}
-      </div>` : '';
+      </div></details>` : '';
 
-    UI.modal({
+    let deductionsDirty = false;
+    const payslipModal = UI.modal({
+      protectChanges: true, isDirty: () => deductionsDirty,
       title: `Payslip — ${detail.employee_name}`,
       size: 'xl',
-      headActionHTML: `<button type="button" class="btn secondary small" id="pd-print">${UI.icon('printer')} Print</button>`,
+      headActionHTML: `${detail.warning && canManagePayroll && r.status !== 'paid' ? '<button type="button" class="btn secondary small" id="pd-edit-imported">Adjust imported values</button>' : ''}<button type="button" class="btn secondary small" id="pd-history">Deduction history</button><button type="button" class="btn secondary small" id="pd-print">${UI.icon('printer')} Print</button>`,
       bodyHTML: `
+        ${detail.notice ? `<p class="hr-workflow-notice" role="status">${UI.esc(detail.notice)}</p>` : ''}
         <div id="pd-slip" style="border:1px solid var(--border-strong);border-radius:8px;padding:8px;margin-bottom:14px;background:#fff;color:#111">${slipHtml}</div>
         ${detail.late_exempt ? `<p class="muted" style="font-size:12px;margin:0 0 8px">This employee is exempt from late deductions —
           late minutes are still shown below for reference, but never subtracted from pay.</p>` : ''}
+        ${detail.always_whole_day ? `<p class="muted" style="font-size:12px;margin:0 0 8px">This employee is always paid a whole day —
+          any day with both a time in and a time out counts in full, with no half day, late or undertime.</p>` : ''}
+        ${detail.warning ? `<p class="form-error">${UI.esc(detail.warning)}</p>` : ''}
         ${dedSection}
-        <div class="line-items"><table class="line-table"><thead><tr>
-          <th>Date</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Late</th><th>OT</th><th>Holiday/Rest-Day Premium</th><th>Night Diff</th>
-        </tr></thead><tbody>${rows || '<tr><td colspan="8" class="muted">No attendance recorded for this period</td></tr>'}</tbody></table></div>`,
+        <div class="line-items" tabindex="0" role="region" aria-label="Attendance breakdown"><table class="line-table"><thead><tr>
+          <th>Date</th><th>Time In</th><th>Time Out</th><th>Day Type</th><th>Late</th><th>Undertime</th><th>OT</th><th>Holiday/Rest-Day Premium</th><th>Night Diff</th>
+        </tr></thead><tbody>${rows || '<tr><td colspan="9" class="muted">No attendance recorded for this period</td></tr>'}</tbody></table></div>`,
       cancelText: 'Close',
       onOpen: (ov) => {
         // Local working copy — the print button and any live edits below use this, never
         // mutating the caller's own `r.data` unless/until Save actually persists it, so
         // closing without saving leaves the record (and the list behind this modal) untouched.
+        if (openAdjustments) ov.querySelector('.pd-adjustments')?.setAttribute('open', '');
+        ov.querySelector('#pd-history').onclick = async () => { try {
+          const history=await API.get(`/hr/payroll/${r.id}/deductions-history`);
+          UI.modal({title:'Deduction history — '+r.number,size:'lg',cancelText:'Close',bodyHTML:history.length?history.map(entry=>`<section class="form-history-entry"><p><strong>${UI.esc(entry.changed_by_name)}</strong> · ${UI.esc(DataForms.displayTime(entry.created_at))}</p><p>${UI.esc(entry.reason||'No reason provided')}</p><table><thead><tr><th>Deduction</th><th>Before</th><th>After</th></tr></thead><tbody>${Object.entries(DED_LABELS).map(([key,label])=>`<tr><td>${label}</td><td>${UI.money(entry.before_values[key])}<small> · ${entry.before_values.applied?.[key]===false?'Off':entry.before_values.overrides?.[key]!=null?'Manual':'Automatic'}</small></td><td>${UI.money(entry.after_values[key])}<small> · ${entry.after_values.applied?.[key]===false?'Off':entry.after_values.overrides?.[key]!=null?'Manual':'Automatic'}</small></td></tr>`).join('')}<tr><td>Total deductions</td><td>${UI.money(entry.before_values.total_deductions)}</td><td>${UI.money(entry.after_values.total_deductions)}</td></tr><tr><td>Net pay</td><td>${UI.money(entry.before_values.net_pay)}</td><td>${UI.money(entry.after_values.net_pay)}</td></tr></tbody></table></section>`).join(''):'<p>No manual deduction changes have been recorded yet.</p>'});
+        }catch(error){UI.toast(error.message,'error');} };
         let liveData = { ...r.data };
+        const saveState=ov.querySelector('#pd-save-state');
+        const markUnsaved=()=>{if(saveState)saveState.textContent='Unsaved changes';};
+        ov.addEventListener('input', () => { deductionsDirty = true; markUnsaved(); });
+        ov.addEventListener('change', () => { deductionsDirty = true; markUnsaved(); });
+        ov.querySelector('#pd-edit-imported')?.addEventListener('click', () => { payslipModal.close(); recordModal(r); });
         const btn = ov.querySelector('#pd-print');
-        if (btn) btn.onclick = () => printSlips([liveData]);
+        if (btn) btn.onclick = async () => {
+          btn.disabled = true;
+          try {
+            if (deductionsDirty && dedCheckboxes.length && !await refreshPreview()) return;
+            if (ov.isConnected) await printSlips([{...payrollPrintData(r),...liveData}]);
+          } finally { btn.disabled = false; }
+        };
 
         const dedCheckboxes = ov.querySelectorAll('[data-ded]');
         if (!dedCheckboxes.length) return;
@@ -613,36 +912,82 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
           };
         }
 
-        const currentApplied = () => {
-          const applied = { other_deductions: otherDeductions };
+        const currentApplied = (requireReason = false) => {
+          const applied = { other_deductions: otherDeductions, statutory_overrides: {}, change_reason:ov.querySelector('#pd-change-reason')?.value.trim(), expected_revision:r.revision || 1 };
+          const errors = [];
+          if(requireReason&&formDef.archived_at&&!applied.change_reason) errors.push({control:ov.querySelector('#pd-change-reason'),message:'A reason is required for this archived payslip correction.'});
+          ov.querySelectorAll('[data-ded-override]').forEach(input => {
+            if (input.validity.badInput || (input.value !== '' && (!input.validity.valid || !Number.isFinite(Number(input.value))))) {
+              errors.push({ control: input, message: DED_LABELS[input.dataset.dedOverride] + ' must be between 0 and 10,000,000 with at most two decimal places.' });
+            }
+            applied.statutory_overrides[input.dataset.dedOverride] = input.value === '' ? null : Number(input.value);
+          });
+          if (!FormValidation.show(ov, errors, ov.querySelector('#pd-ded-error'))) {
+            const error = new Error('Correct the deduction amounts before continuing.'); error.fieldValidation = true; throw error;
+          }
           dedCheckboxes.forEach((cb) => { applied[cb.dataset.ded + '_applied'] = cb.checked; });
           return applied;
         };
         // Re-renders the ACTUAL slip visual with the recomputed numbers — this is the one
         // thing the user is looking at, not a separate summary table off to the side.
         const applyPreview = (vals) => {
-          liveData = { ...liveData, ...vals };
-          slipEl.innerHTML = typeof renderSlip === 'function' ? renderSlip(liveData, templateBody) : slipEl.innerHTML;
+          const {revision,ok,later_cutoffs,...amounts}=vals;
+          liveData = { ...liveData, ...amounts };
+          Object.keys(DED_LABELS).forEach(key => {
+            ov.querySelector(`[data-ded-amount="${key}"]`).textContent = `${UI.money(liveData[key])} · ${liveData.statutory_overrides?.[key] != null ? 'Manual' : 'Automatic'}`;
+          });
+          if(templateBody)slipEl.innerHTML=renderSlip({...liveData,record:{number:r.number,status:r.status,created_at:r.created_at},company:printContext.company,global:printContext.global},templateBody,printContext.variables);
         };
+        let previewGeneration = 0;
         const refreshPreview = async () => {
+          ov.querySelector('#pd-ded-error').classList.add('hidden');
+          deductionsDirty = true; markUnsaved();
+          const generation = ++previewGeneration;
           dedCheckboxes.forEach((cb) => { cb.disabled = locked; });
-          try { applyPreview(await API.post(`/hr/payroll/${r.id}/preview-deductions`, currentApplied())); }
-          catch (err) { UI.toast(err.message, 'error'); }
+          try {
+            const values = await API.post(`/hr/payroll/${r.id}/preview-deductions`, currentApplied());
+            if (generation === previewGeneration && ov.isConnected) { applyPreview(values); return true; }
+            return false;
+          }
+          catch (err) { if (!err.fieldValidation) { const error = ov.querySelector('#pd-ded-error'); error.hidden = false; error.textContent = err.message; error.classList.remove('hidden'); } return false; }
         };
         dedCheckboxes.forEach((cb) => cb.addEventListener('change', refreshPreview));
+        ov.querySelectorAll('[data-ded-override]').forEach(input => input.addEventListener('change', refreshPreview));
+        ov.querySelectorAll('[data-ded-reset]').forEach(button => button.onclick = () => {
+          ov.querySelector(`[data-ded-override="${button.dataset.dedReset}"]`).value = ''; refreshPreview();
+        });
 
         const saveBtn = ov.querySelector('#pd-ded-save');
         if (saveBtn) {
           saveBtn.onclick = async () => {
-            saveBtn.disabled = true;
+            ov.querySelector('#pd-ded-error').classList.add('hidden');
+            let applied;
+            try { applied = currentApplied(true); } catch { return; }
+            ++previewGeneration;
+            const editControls = [...ov.querySelectorAll('[data-ded], [data-ded-override], [data-ded-reset], [data-other-ded-del], #pd-other-ded-label, #pd-other-ded-amount, #pd-other-ded-add, #pd-change-reason')];
+            editControls.forEach(control => { control.disabled = true; });
+            saveBtn.disabled = true; if(saveState)saveState.textContent='Saving…';
+            ov.__setSaving(true);
+            let finishSave;
+            ov.__whenSaved = new Promise(resolve => { finishSave = resolve; });
             try {
-              const vals = await API.put(`/hr/payroll/${r.id}/deductions`, currentApplied());
+              const vals = await API.put(`/hr/payroll/${r.id}/deductions`, applied);
               applyPreview(vals);
+              r.revision = vals.revision || r.revision;
+              if(saveState)saveState.textContent='Saved';
+              const later=ov.querySelector('#pd-later-cutoffs');
+              if(later && vals.later_cutoffs?.length){later.innerHTML='<p>Review later cutoffs in this month after changing earlier deductions. Regenerate unpaid cutoffs in date order; paid slips stay locked.</p>'+vals.later_cutoffs.map(cutoff=>`<button type="button" class="btn secondary small" data-later-cutoff="${UI.esc(cutoff.label)}">${UI.esc(cutoff.label)} · ${UI.esc(cutoff.status)}</button>`).join('');later.querySelectorAll('[data-later-cutoff]').forEach(button=>button.onclick=()=>App.navigate('form-records',{form_id:formId,period:button.dataset.laterCutoff}));}
+              if(ov.querySelector('#pd-change-reason'))ov.querySelector('#pd-change-reason').value='';
               r.data = liveData; // so the row behind this modal reflects it once it closes
+              deductionsDirty = false;
+              payslipModal.markSaved();
               UI.toast('Deductions saved');
               load();
-            } catch (err) { UI.toast(err.message, 'error'); }
-            finally { saveBtn.disabled = false; }
+            } catch (err) { if(saveState)saveState.textContent='Could not save — your changes are still here'; const error = ov.querySelector('#pd-ded-error'); error.hidden = false; error.textContent = err.message; error.classList.remove('hidden'); }
+            finally {
+              saveBtn.disabled = false; editControls.forEach(control => { control.disabled = locked; });
+              ov.__setSaving(false); ov.__whenSaved = null; finishSave();
+            }
           };
         }
       },
@@ -657,19 +1002,19 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
   // template opts into a grid (Layout tab > Print Grid: rows/columns/fill mode), records are
   // tiled N-up instead via print-tiling.js's buildTiledPagesHtml — the same layout
   // hr-payroll-print.js hand-built for payroll, generalized for any template.
-  async function printRecordsViaTemplate(records) {
-    if (!formDef.template_id) { UI.toast('No print template linked to this form', 'error'); return; }
+  async function printRecordsViaTemplate(records,templateId) {
+    if(!templateId)return choosePrintLayout(id=>printRecordsViaTemplate(records,id));
+    if (!templateId) { UI.toast('No print template linked to this form', 'error'); return; }
     if (!records.length) { UI.toast('No records to print', 'error'); return; }
     let tpl;
-    try { tpl = await API.get('/templates/' + formDef.template_id); }
+    try { tpl = await API.get('/templates/' + templateId); }
     catch { UI.toast('The linked template could not be loaded', 'error'); return; }
-    let company = {};
-    try { company = await API.get('/templates/company'); } catch { /* optional */ }
-    const renderRecord = (r) => renderTemplate(tpl.body, { ...r.data, record: { number: r.number, status: r.status, created_at: r.created_at }, company });
+    const context=await loadPrintContext(templateId);
+    const renderRecord = r => renderTemplate(tpl.body,applyVariables({...r.data,fields:r.data,number:r.number,today:new Date().toLocaleDateString(),record:{number:r.number,status:r.status,created_at:r.created_at},company:context.company,global:context.global},context.variables));
     const tiled = (typeof buildTiledPagesHtml === 'function')
       ? buildTiledPagesHtml(records, renderRecord, {
         copiesPerRecord: tpl.copies_per_record, recordsPerPage: tpl.records_per_page, tileFill: tpl.tile_fill,
-        continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count,
+        continuous: !!tpl.tile_continuous, gapXmm:tpl.grid_gap_x_mm,gapYmm:tpl.grid_gap_y_mm,repeatCount: tpl.repeat_count,
         pageContentHeightMm: typeof pageContentHeightMm === 'function' ? pageContentHeightMm(tpl.body) : undefined,
       })
       : '';
@@ -685,7 +1030,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       size: 'lg',
       bodyHTML: `
         ${canAttach ? `<div style="margin-bottom:8px"><button type="button" class="btn secondary small" id="fr-attach-pdf">${UI.icon('upload', 14)} Attach saved PDF to Files</button></div>` : ''}
-        <iframe id="fr-tpl-preview-frame" style="width:100%;height:65vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
+        <iframe id="fr-tpl-preview-frame" title="${UI.esc(title)} print preview" style="width:100%;height:65vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
       cancelText: 'Close',
       confirmText: 'Print…',
       onOpen: (ov) => {
@@ -694,15 +1039,13 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         // tiled template: once the tiled grid has actually rendered (real layout needed),
         // shrink any cell whose content overflows its fixed-height grid cell instead of
         // leaving it silently clipped by .tiled-grid's overflow:hidden.
-        if (tiled) ifr.onload = () => { if (typeof fitTiledCells === 'function') fitTiledCells(ifr.contentDocument); };
-        ifr.srcdoc = full;
+        UI.loadPrintFrame(ifr, full, tiled && typeof fitTiledCells === 'function' ? fitTiledCells : undefined);
         const attachBtn = ov.querySelector('#fr-attach-pdf');
         if (attachBtn) attachBtn.onclick = () => attachPdfModal(records[0]);
       },
-      onConfirm: (ov) => {
+      onConfirm: async (ov) => {
         const ifr = ov.querySelector('#fr-tpl-preview-frame');
-        ifr.contentWindow.focus();
-        ifr.contentWindow.print();
+        await UI.printFrame(ifr);
         return false; // keep the preview open — printing shouldn't close it
       },
     });
@@ -716,6 +1059,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     const deptOpts = '<option value="">All staff (shared)</option>' +
       App.getDepartments().map((d) => `<option value="${d.id}">${UI.esc(d.name)} only</option>`).join('');
     UI.modal({
+      protectChanges: true,
       title: 'Attach saved PDF to Files',
       bodyHTML: `
         <p class="muted" style="margin-top:0">Print the document and choose <strong>Save as PDF</strong> as the destination, then pick that saved file below.</p>
@@ -738,62 +1082,126 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
   }
 
   function importCsvModal() {
+    let reviewed = null;
+    let reviewedSignature = '';
+    function payload(overlay, preview) {
+      const file = overlay.querySelector('[data-f=file]').files[0];
+      const period = overlay.querySelector('[data-f=period]').value.trim();
+      if (!period || !file) throw new Error('Choose a CSV file and enter the payroll period.');
+      const date = overlay.querySelector('[data-f=pay_date]').value;
+      const signature = JSON.stringify([period, date, file.name, file.size, file.lastModified]);
+      const data = new FormData(); data.append('file', file); data.append('period', period); data.append('pay_date', date);
+      if (preview) data.append('dry_run', '1');
+      else {
+        if (overlay.querySelector('#fr-import-duplicates')?.checked) data.append('allow_duplicates', '1');
+        if (overlay.querySelector('#fr-import-partial')?.checked) data.append('allow_partial','1');
+      }
+      return { data, signature };
+    }
     UI.modal({
-      title: 'Upload payroll CSV',
-      bodyHTML: `
-        <p class="muted" style="margin-top:0">Upload the payroll "Summary" CSV for a cutoff — employee, rate, hours, earnings and deductions are pulled from the sheet automatically.</p>
-        <div><label>Payroll Period * <span class="muted" style="font-weight:400">(e.g. "1st Half June 2026")</span></label>
-          <input data-f="period" placeholder="e.g. 1st Half June 2026" autocomplete="off" /></div>
-        <div style="margin-top:10px"><label>CSV file *</label><input type="file" accept=".csv,text/csv" data-f="file" /></div>
-        <div style="margin-top:10px"><label>Pay Date <span class="muted">(applied to every record — not in the sheet)</span></label><input type="date" data-f="pay_date" /></div>`,
-      confirmText: 'Upload',
-      onConfirm: async (ov, showErr) => {
-        const period = ov.querySelector('[data-f="period"]').value.trim();
-        if (!period) { showErr('Payroll period label is required'); return false; }
-        const fileEl = ov.querySelector('[data-f="file"]');
-        if (!fileEl.files.length) { showErr('Please choose a CSV file'); return false; }
-        const fd = new FormData();
-        fd.append('file', fileEl.files[0]);
-        fd.append('period', period);
-        fd.append('pay_date', ov.querySelector('[data-f="pay_date"]').value);
-        const res = await API.upload('/form-definitions/' + formId + '/import', fd);
-        UI.toast(`Imported ${res.created} record${res.created === 1 ? '' : 's'} for "${res.period}"`);
-        // Auto-select the newly imported period.
-        state.period = res.period;
-        load();
+      protectChanges: true, title: 'Review payroll CSV',
+      bodyHTML: `<p>Upload the payroll Summary CSV. Review employees, period and totals before importing.</p>
+        <label>Payroll period *</label><input data-f="period" placeholder="e.g. October 1–15, 2026">
+        <label>CSV file *</label><input type="file" accept=".csv,text/csv" data-f="file">
+        <label>Pay date</label><input type="date" data-f="pay_date">
+        <div id="fr-import-review" aria-live="polite"></div>`,
+      confirmText: 'Preview import',
+      isConfirmDisabled:()=>reviewed?.count===0,
+      onOpen: overlay => {
+        overlay.addEventListener('change', event => {
+          if (!event.target.matches('[data-f]')) return;
+          reviewed = null; reviewedSignature = '';
+          overlay.querySelector('#fr-import-review').innerHTML = '';
+          overlay.querySelector('[data-confirm]').textContent = 'Preview import';overlay.querySelector('[data-confirm]').disabled=false;
+        });
+      },
+      onConfirm: async (overlay, showError) => {
+        const request = payload(overlay, !reviewed);
+        if (!reviewed || reviewedSignature !== request.signature) {
+          const previewRequest = payload(overlay, true);
+          reviewed = await API.upload('/form-definitions/' + formId + '/import', previewRequest.data);
+          reviewedSignature = previewRequest.signature;
+          overlay.querySelector('#fr-import-review').innerHTML = `<h4>${reviewed.count} payslips · ${UI.esc(reviewed.period)}</h4><p>Gross ${UI.money(reviewed.total_earnings)} · Deductions ${UI.money(reviewed.total_deductions)} · Net ${UI.money(reviewed.net_pay)}</p>
+            ${reviewed.rejected_count ? `<div class="form-error"><p>${reviewed.rejected_count} row(s) need correction.</p><button type="button" class="btn secondary small" id="fr-rejected-download">Download rejected rows with explanations</button><ul>${reviewed.rejected.map(row=>`<li>Row ${row.line}: ${UI.esc(row.error)}</li>`).join('')}</ul><label><input type="checkbox" id="fr-import-partial"> Import only the ${reviewed.count} valid rows; rejected rows will not be saved.</label></div>` : ''}
+            ${reviewed.duplicate_count ? `<div class="form-error"><p>${reviewed.duplicate_count} row(s) match existing payslips in this period. Importing will add more records; existing payslips will not be replaced.</p><label><input id="fr-import-duplicates" type="checkbox"> I confirm importing these matching rows as additional payslips.</label></div>` : ''}
+            <div class="fr-import-table" tabindex="0" role="region" aria-label="Import preview"><table><thead><tr><th>Employee</th><th>Gross</th><th>Deductions</th><th>Net</th><th>Existing matches</th></tr></thead><tbody>${reviewed.rows.map(row => `<tr><td>${UI.esc(row.employee_name)}</td><td>${UI.money(row.total_earnings)}</td><td>${UI.money(row.total_deductions)}</td><td>${UI.money(row.net_pay)}</td><td>${UI.esc(row.matched_numbers.join(', ') || 'None')}</td></tr>`).join('')}</tbody></table></div>`;
+          const download=overlay.querySelector('#fr-rejected-download');
+          if(download)download.onclick=()=>{const blob=new Blob([reviewed.rejected_csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='payroll-rejected-rows.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+          overlay.querySelector('[data-confirm]').textContent = reviewed.count ? 'Import reviewed payslips' : 'Fix rejected rows first';
+          overlay.querySelector('[data-confirm]').disabled = !reviewed.count;
+          return false;
+        }
+        if(reviewed.rejected_count&&!overlay.querySelector('#fr-import-partial')?.checked){showError('Confirm importing valid rows only, or correct the rejected file first.');return false;}
+        if (reviewed.duplicate_count && !overlay.querySelector('#fr-import-duplicates').checked) { showError('Confirm the duplicate import before continuing.'); return false; }
+        let result;
+        try { result = await API.upload('/form-definitions/' + formId + '/import', request.data); }
+        catch (error) {
+          reviewed = null; reviewedSignature = '';
+          overlay.querySelector('#fr-import-review').innerHTML = '';
+          overlay.querySelector('[data-confirm]').textContent = 'Preview import';
+          showError(error.message + ' Review the file again before importing.');
+          return false;
+        }
+        state.period = result.period; await load(); UI.toast(`${result.created} payslips imported`);
       },
     });
   }
 
+  let loadGeneration = 0;
+  let hasLoadedRecords = false;
   async function load() {
+    if (formRecordViews.get(view) !== owner || !view.querySelector('#fr-table')) return;
+    App.replaceFilters?.('form-records', { ...navigation, form_id: String(formId), q: state.q, status: state.status, period: state.period });
+    const generation = ++loadGeneration;
     const el = view.querySelector('#fr-table');
     if (!el) return;
-    el.innerHTML = '<div class="empty">Loading…</div>';
+    view.querySelector('#fr-load-error')?.remove();
+    if (!hasLoadedRecords) el.innerHTML = '<div class="empty">Loading…</div>';
+    el.setAttribute('aria-busy', 'true');
+    const actionControls = [...view.querySelectorAll('#fr-new, #fr-del-all, #fr-download-csv, #fr-import-csv, #fr-print-slips, #fr-print-all-tpl, #fr-bulk-bar button, #fr-table button, #fr-table input')];
+    const disabledBefore = new Map(actionControls.map((control) => [control, control.disabled]));
+    actionControls.forEach((control) => { control.disabled = true; });
     const params = new URLSearchParams();
     if (state.q) params.set('q', state.q);
     if (state.status) params.set('status', state.status);
     if (state.period) params.set('period', state.period);
-    const records = await API.get('/form-definitions/' + formId + '/records?' + params.toString());
+    if (isPayroll) view.querySelector('#fr-filter-reset').hidden = !(state.q || state.status || state.period);
+    const periodsReq = isPayroll && periodCombo ? API.get('/form-definitions/' + formId + '/periods').catch(() => null) : null;
+    const periodsMetaReq = isPayroll && !state.period ? API.get('/hr/payroll/cutoffs').catch(() => []) : null;
+    let records;
+    try {
+      records = await API.get('/form-definitions/' + formId + '/records?' + params.toString());
+    } catch (error) {
+      if (generation !== loadGeneration || !el.isConnected) return;
+      el.setAttribute('aria-busy', 'false');
+      if (!hasLoadedRecords) el.innerHTML = '';
+      const message = document.createElement('div');
+      message.id = 'fr-load-error';
+      message.className = 'form-error';
+      message.setAttribute('role', 'alert');
+      message.innerHTML = `<p>Could not load records. ${UI.esc(error.message || 'Please try again.')}${hasLoadedRecords ? ' Previously loaded records are shown; actions are unavailable until refresh succeeds.' : ''}</p><button class="btn secondary" type="button">Retry</button>`;
+      message.querySelector('button').onclick = () => load();
+      el.before(message);
+      return;
+    }
+    if (generation !== loadGeneration || !el.isConnected) return;
+    el.setAttribute('aria-busy', 'false');
+    actionControls.forEach((control) => { control.disabled = disabledBefore.get(control); });
+    // These toolbar actions remain disabled after an error until a successful retry.
+    view.querySelectorAll('#fr-new, #fr-del-all, #fr-download-csv, #fr-import-csv, #fr-print-slips, #fr-print-all-tpl, #fr-bulk-bar button').forEach((control) => { control.disabled = !!formDef.archived_at && ['fr-new','fr-del-all','fr-import-csv','fr-bulk-del'].includes(control.id); });
+    hasLoadedRecords = true;
+    records.forEach(record => { record.schema = formVersions.get(record.definition_version) || record.schema; });
     currentRecords = records;
     selectedIds.clear();
     updateBulkBar();
-    // Refresh the period dropdown with known periods (preserving selection).
-    if (isPayroll) {
-      const periodSel = view.querySelector('#fr-period');
-      if (periodSel) {
-        try {
-          const periods = await API.get('/form-definitions/' + formId + '/periods');
-          const cur = state.period;
-          periodSel.innerHTML = '<option value="">All periods</option>' +
-            periods.map((p) => `<option value="${UI.esc(p)}" ${p === cur ? 'selected' : ''}>${UI.esc(p)}</option>`).join('');
-        } catch { /* non-critical */ }
-      }
-      // Only needed for the grouped "All periods" bundle view below — skip the extra request
-      // otherwise (a single period selected already scopes everything, no grouping to do).
-      if (!state.period) {
-        periodsMeta = await API.get('/hr/periods').catch(() => []);
-      }
+    // Refresh the period picker with known periods (preserving selection).
+    const periods = await periodsReq;
+    if (periodCombo && periods) {
+      periodCombo.setOptions(periodOptions(periods));
+      periodCombo.setSelected(state.period);
     }
+    if (periodsMetaReq) periodsMeta = await periodsMetaReq;
+    if (generation !== loadGeneration || !el.isConnected) return;
     renderRecords(records);
   }
 
@@ -836,7 +1244,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
   // caller give its own "select all" checkbox a distinct hook (a literal id would collide once
   // there's more than one table on screen).
   function tableHTML(records, checkAllAttr) {
-    const visibleFields = formDef.fields.slice(0, 4);
+    const available = columnFields();
+    const visibleFields = Array.isArray(viewPreferences.columns) ? viewPreferences.columns.map(key=>available.get(key)).filter(Boolean) : formDef.fields.slice(0,4);
     return `<table>
       <thead><tr>
         <th style="width:36px;text-align:center"><input type="checkbox" ${checkAllAttr} title="Select all" /></th>
@@ -846,20 +1255,23 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       </tr></thead>
       <tbody>${records.map((r) => `
         <tr class="clickable" data-id="${r.id}">
-          <td style="text-align:center"><input type="checkbox" data-row-check="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''} /></td>
-          <td><strong>${UI.esc(r.number)}</strong></td>
-          ${visibleFields.map((f) => `<td>${UI.esc(String(r.data[f.key] ?? ''))}</td>`).join('')}
+          <td style="text-align:center"><input type="checkbox" data-row-check="${r.id}" ${selectedIds.has(r.id) ? 'checked' : ''}${isPayroll ? ` aria-label="Select ${UI.esc(r.number)}"` : ''} /></td>
+          <td>${isPayroll
+            // A real button, so Tab + Enter opens the payslip detail; its click bubbles to the row.
+            ? `<button type="button" class="hr-row-open" title="View payslip details">${UI.esc(r.number)}</button>`
+            : `<strong>${UI.esc(r.number)}</strong>`}<small class="muted"> · v${r.definition_version || 1} / r${r.revision || 1}</small>${isPayroll && Number(r.data.net_pay) < -0.005 ? '<span class="badge-pill low" title="Review deductions and recovery before marking paid">Negative net pay</span>' : ''}</td>
+          ${visibleFields.map((f) => `<td>${UI.esc(DataForms.displayValue(r.data[f.key],f))}</td>`).join('')}
           <td><span class="badge-pill status-${UI.esc(r.status)}">${UI.esc(r.status)}</span></td>
           <td>${UI.esc(UI.fmtDateShort(r.created_at))}</td>
-          <td class="actions">
-            ${isPayroll ? `<button class="icon-btn" data-print="${r.id}" title="Print this slip">${UI.icon('printer')}</button>` : ''}
+          <td class="actions"><button type="button" class="icon-btn" data-history="${r.id}" title="Change history" aria-label="Change history for ${UI.esc(r.number)}">${UI.icon('clock')}</button>
+            ${isPayroll ? `<button class="icon-btn" data-print="${r.id}" title="Print this slip" aria-label="Print payslip ${UI.esc(r.number)}">${UI.icon('printer')}</button>` : ''}
             ${!isPayroll && formDef.template_id ? `<button class="icon-btn" data-print-tpl="${r.id}" title="Print">${UI.icon('printer')}</button>` : ''}
-            ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-email="${r.id}" title="Email this payslip">${UI.icon('mail')}</button>` : ''}
-            ${isPayroll && canManagePayroll ? (r.status === 'paid'
-              ? `<button class="icon-btn" data-unpaid="${r.id}" title="Unmark Paid (unlock for editing)">${UI.icon('reply', 15)}</button>`
-              : `<button class="icon-btn" data-paid="${r.id}" title="Mark as Paid (locks this payslip)">${UI.icon('check')}</button>`) : ''}
-            ${r.status !== 'paid' ? `<button class="icon-btn" data-edit="${r.id}" title="Edit">${UI.icon('edit')}</button>` : ''}
-            ${r.status !== 'paid' ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete">${UI.icon('trash')}</button>` : ''}
+            ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-email="${r.id}" title="Email this payslip" aria-label="Email payslip ${UI.esc(r.number)}">${UI.icon('mail')}</button>` : ''}
+            ${canPay ? (r.status === 'paid'
+              ? `<button class="icon-btn" data-unpaid="${r.id}" title="Unmark Paid (unlock for editing)" aria-label="Unmark payslip ${UI.esc(r.number)} as paid">${UI.icon('reply', 15)}</button>`
+              : `<button class="icon-btn" data-paid="${r.id}" title="Mark as Paid (locks this payslip)" aria-label="Mark payslip ${UI.esc(r.number)} as paid">${UI.icon('check')}</button>`) : ''}
+            ${r.status !== 'paid' && canWrite && (!entryOnly || (r.status==='draft'&&!formDef.archived_at)) ? `<button class="icon-btn" data-edit="${r.id}" title="Edit"${isPayroll ? ` aria-label="Edit payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('edit')}</button>` : ''}
+            ${!entryOnly && !formDef.archived_at && r.status !== 'paid' && canWrite && !HR_REQUEST_SLUGS.includes(formDef.slug) ? `<button class="icon-btn danger" data-del="${r.id}" title="Delete"${isPayroll ? ` aria-label="Delete payslip ${UI.esc(r.number)}"` : ''}>${UI.icon('trash')}</button>` : ''}
           </td>
         </tr>`).join('')}
       </tbody></table>`;
@@ -888,7 +1300,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       groups.get(label).push(r);
     }
     const bundles = [...groups.entries()].map(([label, recs]) => ({
-      label, records: recs, meta: periodsMeta.find((p) => p.label === label) || null,
+      label, records: recs, meta: periodsMeta.find(p => recs[0]?.data?.cutoff_id ? p.id === Number(recs[0].data.cutoff_id) : p.label === label) || null,
     }));
     // Most recent cutoff first — by its real start_date when known, else fall back to the
     // label itself (periods endpoint already returns labels in DESC order server-side).
@@ -903,31 +1315,38 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
     // the last open bundle back down to zero, undoing their own click.
     if (!bundlesDefaultApplied && bundles.length) { expandedBundles.add(bundles[0].label); bundlesDefaultApplied = true; }
 
-    return bundles.map((b) => {
+    return bundles.map((b, i) => {
       const open = expandedBundles.has(b.label);
       const t = payslipTotals(b.records);
+      const negativeNet = b.records.filter(r => Number(r.data.net_pay) < -0.005).length;
       const dateRange = b.meta ? `${UI.esc(b.meta.start_date)} – ${UI.esc(b.meta.end_date)} · ` : '';
+      // The caret + label is a real disclosure <button> (keyboard + screen-reader state); a
+      // click anywhere else on the header still toggles via [data-bundle-toggle] below.
       return `<div class="panel payroll-bundle" style="margin-bottom:10px;padding:0;overflow:hidden">
         <div class="payroll-bundle-head clickable" data-bundle-toggle="${UI.esc(b.label)}"
              style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px">
-          <span style="font-size:12px;width:14px;flex-shrink:0">${open ? '▾' : '▸'}</span>
-          <div style="min-width:170px">
-            <strong>${UI.esc(b.label)}</strong>
-            <div class="muted" style="font-size:11.5px">${dateRange}${b.records.length} payslip${b.records.length === 1 ? '' : 's'}</div>
-          </div>
+          <button type="button" class="payroll-bundle-toggle" aria-expanded="${open}" aria-controls="fr-bundle-${i}">
+            <span class="payroll-bundle-caret" aria-hidden="true">${open ? '▾' : '▸'}</span>
+            <span>
+              <strong>${UI.esc(b.label)}</strong>
+              <span class="muted payroll-bundle-meta">${dateRange}${b.records.length} payslip${b.records.length === 1 ? '' : 's'}</span>
+              ${negativeNet ? `<span class="badge-pill low" title="Review deductions and recovery before marking paid">${negativeNet} negative net</span>` : ''}
+            </span>
+          </button>
           <div style="display:flex;gap:22px;flex-wrap:wrap">
             <div><div class="muted" style="font-size:10.5px">Gross</div><div style="font-weight:700;font-size:13px">${UI.money(t.gross)}</div></div>
             <div><div class="muted" style="font-size:10.5px">Deductions</div><div style="font-weight:700;font-size:13px">${UI.money(t.totalDeductions)}</div></div>
             <div><div class="muted" style="font-size:10.5px">Net Pay</div><div style="font-weight:700;font-size:13px">${UI.money(t.net)}</div></div>
           </div>
           <div class="grow"></div>
-          <div class="payroll-bundle-actions" data-bundle-actions style="display:flex;gap:6px" onclick="event.stopPropagation()">
-            <button type="button" class="btn secondary small" data-bundle-print="${UI.esc(b.label)}">${UI.icon('printer', 13)} Print All</button>
+          <div class="payroll-bundle-actions" data-bundle-actions style="display:flex;gap:6px">
+            <button type="button" class="btn secondary small" data-bundle-print="${UI.esc(b.label)}">${UI.icon('printer', 13)} Print visible</button>
+            <button type="button" class="btn secondary small" data-bundle-summary="${UI.esc(b.label)}">${UI.icon('printer', 13)} Print Summary</button>
             <button type="button" class="btn secondary small" data-bundle-csv="${UI.esc(b.label)}">${UI.icon('download', 13)} Export Excel</button>
-            ${canManagePayroll && b.meta ? `<button type="button" class="btn secondary small" data-bundle-post-gl="${b.meta.id}" data-bundle-post-gl-label="${UI.esc(b.label)}">${UI.icon('building', 13)} Post to GL</button>` : ''}
+            ${canApprovePayroll && b.meta ? `<button type="button" class="btn secondary small" data-bundle-post-gl="${b.meta.id}" data-bundle-post-gl-label="${UI.esc(b.label)}">${UI.icon('building', 13)} Post to GL</button>` : ''}
           </div>
         </div>
-        <div ${open ? '' : 'hidden'} data-bundle-body="${UI.esc(b.label)}" style="border-top:1px solid var(--border,#dce6f2)">
+        <div ${open ? '' : 'hidden'} id="fr-bundle-${i}" data-bundle-body="${UI.esc(b.label)}" style="border-top:1px solid var(--border,#dce6f2)">
           ${tableHTML(b.records, `data-check-all="${UI.esc(b.label)}"`)}
         </div>
       </div>`;
@@ -936,13 +1355,33 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
 
   function renderRecords(records) {
     const el = view.querySelector('#fr-table');
+    if (!records.length && isPayroll) {
+      // Payroll counts the period filter too, offers one-step recovery, and only offers New
+      // Record to someone who can write payslips.
+      const filtered = !!(state.q || state.status || state.period);
+      el.innerHTML = UI.emptyState({
+        icon: formDef.icon || 'file',
+        title: filtered ? 'No payslips match these filters' : 'No payslips yet',
+        hint: filtered
+          ? 'Try a different name, status or period.'
+          : 'Generate payslips from a Time Keeping cutoff, or upload a payroll CSV.',
+        action: filtered
+          ? '<button type="button" class="btn secondary" id="fr-empty-clear">Clear filters</button>'
+          : (canManagePayroll && !formDef.archived_at ? `<button type="button" class="btn" id="fr-empty-new">${UI.icon('plus')} New Record</button>` : ''),
+      });
+      const clear = el.querySelector('#fr-empty-clear');
+      if (clear) clear.onclick = () => clearPayrollFilters();
+      const en = el.querySelector('#fr-empty-new');
+      if (en) en.onclick = () => recordModal(null);
+      return;
+    }
     if (!records.length) {
       el.innerHTML = UI.emptyState({
         icon: formDef.icon || 'file',
         title: state.q || state.status ? 'No matching records' : `No ${formDef.name} records yet`,
         hint: state.q || state.status ? 'Try a different search or status.' : 'Create the first record to get started.',
-        action: !state.q && !state.status
-          ? `<button class="btn" id="fr-empty-new">${UI.icon('plus')} New Record</button>` : '',
+        action: !formDef.archived_at && !state.q && !state.status
+          ? `<button class="btn" id="fr-empty-new">${UI.icon('plus')} ${isPayroll ? 'Generate payslips' : 'New Record'}</button>` : '',
       });
       const en = el.querySelector('#fr-empty-new');
       if (en) en.onclick = () => recordModal(null);
@@ -960,10 +1399,19 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         const label = head.dataset.bundleToggle;
         if (expandedBundles.has(label)) expandedBundles.delete(label); else expandedBundles.add(label);
         renderRecords(records); // cheap re-render — just flips which bundle bodies are hidden
+        // The re-render replaced the button a keyboard user just pressed; put focus back on it.
+        const again = [...el.querySelectorAll('[data-bundle-toggle]')].find((h) => h.dataset.bundleToggle === label);
+        const toggleBtn = again && again.querySelector('.payroll-bundle-toggle');
+        if (toggleBtn) toggleBtn.focus();
       });
       el.querySelectorAll('[data-bundle-print]').forEach((b) => b.onclick = (e) => {
         e.stopPropagation();
-        printSlips(records.filter((r) => (r.period || '(no period)') === b.dataset.bundlePrint).map((r) => r.data));
+        printSlips(records.filter((r) => (r.period || '(no period)') === b.dataset.bundlePrint).map(payrollPrintData));
+      });
+      el.querySelectorAll('[data-bundle-summary]').forEach((b) => b.onclick = (e) => {
+        e.stopPropagation();
+        const label = b.dataset.bundleSummary;
+        printSummary(records.filter((r) => (r.period || '(no period)') === label), label);
       });
       el.querySelectorAll('[data-bundle-csv]').forEach((b) => b.onclick = (e) => {
         e.stopPropagation();
@@ -1007,7 +1455,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       b.onclick = (e) => {
         e.stopPropagation();
         const r = records.find((x) => String(x.id) === String(b.dataset.print));
-        if (r) printSlips([r.data]);
+        if (r) printSlips([payrollPrintData(r)]);
       });
     el.querySelectorAll('[data-print-tpl]').forEach((b) =>
       b.onclick = (e) => {
@@ -1047,7 +1495,8 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
         } catch (err) { UI.toast(err.message, 'error'); }
       });
     el.querySelectorAll('[data-edit]').forEach((b) =>
-      b.onclick = (e) => { e.stopPropagation(); openRecord(b.dataset.edit, records); });
+      b.onclick = (e) => { e.stopPropagation(); openRecord(b.dataset.edit, records, true); });
+    el.querySelectorAll('[data-history]').forEach(button=>button.onclick=event=>{event.stopPropagation();DataForms.recordHistory(records.find(record=>String(record.id)===button.dataset.history)).catch(error=>UI.toast(error.message,'error'));});
     el.querySelectorAll('[data-del]').forEach((b) =>
       b.onclick = (e) => { e.stopPropagation(); delRecord(b.dataset.del, records); });
     el.querySelectorAll('tr[data-id]').forEach((tr) =>
@@ -1066,9 +1515,9 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       });
   }
 
-  function openRecord(id, records) {
+  function openRecord(id, records, adjust = false) {
     const r = records.find((x) => String(x.id) === String(id));
-    if (r) recordModal(r);
+    if (r) { if (isPayroll) payslipDetailModal(r, adjust); else recordModal(r); }
   }
 
   async function delRecord(id, records) {
@@ -1088,15 +1537,32 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
   // `prefill` (a plain data object) seeds a brand-new record — used by the AI assistant's
   // "Review & issue" flow so a proposed memo/NTE opens here for the user to confirm.
   async function recordModal(existing, prefill) {
+    if (view.querySelector('#fr-load-error') || view.querySelector('#fr-table')?.getAttribute('aria-busy') === 'true') {
+      UI.toast('Refresh records before editing.', 'error');
+      return;
+    }
+    if (!existing && formDef.archived_at) { UI.toast('Restore this form before creating records.', 'error'); return; }
     const editing = !!existing;
+    if(entryOnly&&existing&&(existing.status!=='draft'||formDef.archived_at)){
+      UI.modal({title:existing.number,cancelText:'Close',bodyHTML:`<p>Status: ${UI.esc(existing.status)}. Entry users can edit active drafts only.</p>${(existing.schema?.fields||formDef.fields).map(field=>`<p><strong>${UI.esc(field.label)}</strong>: ${UI.esc(DataForms.displayValue(existing.data[field.key],field))}</p>`).join('')}`});return;
+    }
+    const linkedOrder=existing?.sales_order_id||existing?.sales_order?.order_id;
+    if(linkedOrder){UI.modal({title:'Submitted '+existing.number,cancelText:'Close',bodyHTML:`<p>This record created sales order ${UI.esc(existing.sales_order_number||existing.sales_order?.order_number||'')}. Its submitted values are retained. Review and correct the draft through Sales Orders.</p>${App.hasPermission('orders.view')?'<button type="button" class="btn" data-open-linked-order>Review sales order</button>':''}`,onOpen:overlay=>{overlay.querySelector('[data-open-linked-order]')?.addEventListener('click',()=>App.navigate('orders',{type:'sale',id:linkedOrder}));}});return;}
+    let saveKey=FormConnections.key(),pendingSave=null;
+    const recordDefinition = existing?.schema || formDef;
+    const request = HR_REQUEST_SLUGS.includes(formDef.slug);
+    if (request && existing && (existing.status !== 'pending' || formDef.slug === 'information_change')) {
+      UI.modal({title: `${formDef.name} — ${existing.number}`,cancelText:'Close',bodyHTML:`<p>Status: ${UI.esc(existing.status)}</p><p class="muted">HR requests are decided in Approvals. Decided requests cannot be edited.</p>${Object.entries(existing.data || {}).map(([k,v])=>`<div class="tool-row"><strong>${UI.esc(k.replace(/_/g,' '))}</strong><span>${UI.esc(String(v ?? ''))}</span></div>`).join('')}`});
+      return;
+    }
     const data = editing ? { ...existing.data } : { ...(prefill || {}) };
-    const statusOpts = ['draft', 'submitted', 'approved', 'rejected', 'completed']
+    const statusOpts = (request ? ['pending'] : entryOnly||(recordDefinition.actions||[]).some(action=>action.type==='create_sales_draft')?['draft','submitted']:['draft', 'submitted', 'approved', 'rejected', 'completed'])
       .map((s) => `<option value="${s}" ${(existing ? existing.status : 'draft') === s ? 'selected' : ''}>${s}</option>`)
       .join('');
-    const employees = formDef.fields.some((f) => f.type === 'employee') ? await getEmployees() : [];
+    const employees = recordDefinition.fields.some((f) => f.type === 'employee') ? await getEmployees() : [];
 
     // For payroll records, append a Net Pay field so users can correct the value.
-    const netPayField = isPayroll ? `
+    const netPayField = isPayroll && !recordDefinition.fields.some((field) => field.key === 'net_pay') ? `
       <div style="margin-bottom:12px;padding:10px;background:var(--surface-2,#f5f7fa);border-radius:8px">
         <label for="fr-field-net_pay" style="font-weight:600">Net Pay</label>
         <input data-field="net_pay" id="fr-field-net_pay" type="number" step="0.01"
@@ -1105,21 +1571,37 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       </div>` : '';
 
     UI.modal({
+      protectChanges: true,
       title: editing ? `Edit ${existing.number}` : `New ${formDef.name}`,
-      size: formDef.fields.length > 6 ? 'lg' : undefined,
+      size: recordDefinition.fields.length > 6 ? 'lg' : undefined,
       bodyHTML: `
+        ${entryOnly||(recordDefinition.actions||[]).some(action=>action.type==='create_sales_draft')?'<p class="panel">Save as Draft to continue editing. Submitting creates an open sales order for review and preserves these submitted values. Stock and accounting follow the sales order workflow.</p>':''}
         <div style="margin-bottom:14px">
-          <label>Status</label>
-          <select data-f="status">${statusOpts}</select>
+          ${editing
+            ? `<span class="muted">Status: ${UI.esc(existing.status)}. To change it, select the record and choose Change status.</span>`
+            : `<label for="fr-record-status">Status</label><select id="fr-record-status" ${request ? 'disabled' : ''} data-f="status">${statusOpts}</select>`}
         </div>
-        ${formDef.fields.map((field) => renderFieldInput(field, data, employees)).join('')}
+        ${isPayroll ? ['Employee and period','Earnings and attendance','Deductions','Totals'].map((group,index) => `<fieldset class="payroll-edit-group"><legend>${group}</legend>${recordDefinition.fields.filter(field => {
+          const totals = ['total_earnings','total_deductions','net_pay']; const deductions = ['sss','philhealth','pagibig','withholding_tax','cash_advance','late_absences']; const identity = ['employee_name','dept_position','payroll_period','pay_date'];
+          return index === 0 ? identity.includes(field.key) : index === 2 ? deductions.includes(field.key) : index === 3 ? totals.includes(field.key) : !identity.includes(field.key) && !deductions.includes(field.key) && !totals.includes(field.key);
+        }).map(field => renderFieldInput(field,data,employees)).join('')}</fieldset>`).join('') : recordDefinition.fields.map(field => renderFieldInput(field,data,employees)).join('')}
+        ${editing ? `<label for="fr-change-reason">Reason for correction${formDef.archived_at ? ' *' : ' (optional)'}</label><textarea id="fr-change-reason" maxlength="1000" ${formDef.archived_at ? 'aria-required="true"' : ''}></textarea><p class="muted">Record revision ${existing.revision || 1} · Form version ${existing.definition_version || 1}. Previous revisions stay in Change history.</p>` : ''}
         ${netPayField}
-        ${formDef.fields.length === 0 && !isPayroll
+        ${recordDefinition.fields.length === 0 && !isPayroll
           ? '<div class="muted" style="text-align:center;padding:20px">This form has no fields yet. Edit it in Form Builder to add fields.</div>'
           : ''}`,
       onOpen: (ov) => {
+        FormConnections.mount(ov,recordDefinition.fields,data);
+        function recalculate(){try{
+          const values={...data};
+          for(const field of recordDefinition.fields)if(field.type==='line_items')values[field.key]=FormItems.collect(ov,field);else if(field.type==='number')values[field.key]=ov.querySelector(`[data-field="${field.key}"]`)?.value;
+          const calculated=FormMath.calculate(recordDefinition.fields,values);
+          for(const field of recordDefinition.fields.filter(field=>field.type==='calculated'))ov.querySelector(`[data-field="${field.key}"]`).value=calculated[field.key];
+        }catch{/* Invalid rows show their local errors; saving validates them again. */}}
+        if(recordDefinition.fields.some(field=>field.type==='line_items'))FormItems.mount(ov,recordDefinition.fields,data,recalculate);
+        ov.addEventListener('input',recalculate);ov.addEventListener('change',recalculate);recalculate();
         ov.querySelectorAll('select[data-field]').forEach((sel) => {
-          const field = formDef.fields.find((f) => f.key === sel.dataset.field);
+          const field = recordDefinition.fields.find((f) => f.key === sel.dataset.field);
           if (!field || field.type !== 'employee') return;
           sel.addEventListener('change', () => {
             const emp = employees.find((e) => e.name === sel.value);
@@ -1133,9 +1615,18 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       },
       confirmText: editing ? 'Save' : 'Create',
       onConfirm: async (ov, showErr) => {
+        await FormConnections.ready(ov);
         // Collect field values from the modal.
-        const collected = {};
-        for (const field of formDef.fields) {
+        // Keep generated values and metadata that are not represented by editable fields.
+        const collected = { ...data };
+        const errors = [];
+        for (const field of recordDefinition.fields) {
+          if(field.type==='line_items'){
+            const itemErrors=FormItems.validate(ov,field);
+            errors.push(...itemErrors);
+            if(!itemErrors.length)collected[field.key]=FormItems.collect(ov,field);
+            continue;
+          }
           const inp = ov.querySelector(`[data-field="${field.key}"]`);
           if (!inp) continue;
           if (field.type === 'checkbox') {
@@ -1143,21 +1634,34 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
           } else {
             collected[field.key] = inp.value;
           }
-          if (field.required && !collected[field.key] && collected[field.key] !== false) {
-            showErr(`"${field.label}" is required`); return false;
+          if (field.required && (field.type === 'checkbox' ? !inp.checked : !String(collected[field.key] ?? '').trim())) {
+            errors.push({ control: inp, message: `${field.label} is required` });
+          } else if (inp.willValidate && !inp.validity.valid) {
+            errors.push({ control: inp, message: `${field.label}: ${inp.validationMessage}` });
           }
         }
+        const reason = ov.querySelector('#fr-change-reason')?.value.trim();
+        if (editing && formDef.archived_at && !reason) errors.push({control:ov.querySelector('#fr-change-reason'),message:'A reason is required for this archived record correction.'});
+        if (!FormValidation.show(ov, errors, ov.querySelector('[data-modal-error]'))) return false;
+        try{Object.assign(collected,FormMath.calculate(recordDefinition.fields,collected));}catch(error){showErr(error.message);return false;}
         // For payroll forms, also capture the net_pay value.
         if (isPayroll) {
           const netPayInp = ov.querySelector('[data-field="net_pay"]');
           if (netPayInp) collected.net_pay = netPayInp.value ? Number(netPayInp.value) : 0;
         }
-        const status = ov.querySelector('[data-f="status"]').value;
+        const status = editing ? existing.status : ov.querySelector('[data-f="status"]').value;
 
-        const res = editing
-          ? await API.put('/form-records/' + existing.id, { data: collected, status })
-          : await API.post('/form-records', { form_def_id: formId, data: collected, status });
-        UI.toast(editing ? 'Record saved' : 'Record created');
+        let res;
+        const payload={form_def_id:formId,expected_definition_version:formDef.version||1,data:collected,status};
+        try{
+          if(!editing&&!pendingSave)pendingSave=payload;
+          res=editing?await API.put('/form-records/'+existing.id,{data:collected,expected_revision:existing.revision||1,change_reason:reason}):await API.post('/form-records',pendingSave,{idempotencyKey:saveKey});
+        }catch(error){
+          if(!editing&&error.status&&error.status<500){pendingSave=null;saveKey=FormConnections.key();ov.querySelectorAll('input,select,textarea,[data-add-item],[data-remove-item],[data-lookup-retry]').forEach(input=>input.disabled=request&&input.dataset.f==='status');}
+          else if(!editing){ov.querySelectorAll('input,select,textarea,[data-add-item],[data-remove-item],[data-lookup-retry]').forEach(input=>input.disabled=true);error.message+=' — Retry Save to check the original request. Your values are kept; avoid creating another record.';}
+          throw error;
+        }
+        UI.toast(API.syncLocal?.(res)?'Saved on this PC — awaiting synchronization':res.sales_order?'Record submitted — draft sales order '+res.sales_order.order_number+' is ready for review':editing ? 'Record saved' : 'Record created');
         const warns = (res && res.action_warnings) || [];
         if (warns.length) UI.toast('Some actions were skipped: ' + warns.join('; '), 'error');
         load();
@@ -1167,22 +1671,25 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
 
   function renderFieldInput(field, data, employees) {
     const val = data[field.key] ?? field.default ?? '';
+    if(field.type==='line_items')return FormItems.render(field);
+    if(field.type==='calculated')return `<div data-validation-field><label for="fr-field-${field.key}">${UI.esc(field.label)}${field.format==='currency'?' ('+UI.esc(field.currency||'PHP')+')':''}</label><input id="fr-field-${field.key}" data-field="${field.key}" type="number" step="any" readonly value="${UI.esc(String(val||0))}"><small class="muted">Calculated automatically</small></div>`;
+    if(['reference','system'].includes(field.type))return FormConnections.render(field,val);
     const id = `fr-field-${field.key}`;
     const req = field.required ? '<span class="req">*</span>' : '';
     let input = '';
     if (field.type === 'textarea') {
-      input = `<textarea data-field="${UI.esc(field.key)}" id="${id}" rows="3">${UI.esc(String(val))}</textarea>`;
+      input = `<textarea data-field="${UI.esc(field.key)}" id="${id}" ${field.required ? 'aria-required="true"' : ''} rows="3">${UI.esc(String(val))}</textarea>`;
     } else if (field.type === 'checkbox') {
       input = `<label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-        <input type="checkbox" data-field="${UI.esc(field.key)}" id="${id}" ${val ? 'checked' : ''} />
+        <input type="checkbox" data-field="${UI.esc(field.key)}" id="${id}" ${field.required ? 'aria-required="true"' : ''} ${val === true || val === 'Yes' ? 'checked' : ''} />
         <span>${UI.esc(field.label)}${req}</span>
       </label>`;
-      return `<div style="margin-bottom:12px">${input}</div>`;
+      return `<div data-validation-field style="margin-bottom:12px">${input}</div>`;
     } else if (field.type === 'select') {
       const opts = (field.options || []).map((o) =>
         `<option value="${UI.esc(o)}" ${String(val) === o ? 'selected' : ''}>${UI.esc(o)}</option>`
       ).join('');
-      input = `<select data-field="${UI.esc(field.key)}" id="${id}">
+      input = `<select data-field="${UI.esc(field.key)}" id="${id}" ${field.required ? 'aria-required="true"' : ''}>
         <option value="">— select —</option>${opts}
       </select>`;
     } else if (field.type === 'employee') {
@@ -1191,15 +1698,15 @@ async function renderFormView(view, formId, initialPeriod, initialStatus) {
       const opts = (employees || []).map((e) =>
         `<option value="${UI.esc(e.name)}" ${String(val) === e.name ? 'selected' : ''}>${UI.esc(e.name)}</option>`
       ).join('');
-      input = `<select data-field="${UI.esc(field.key)}" id="${id}">
+      input = `<select data-field="${UI.esc(field.key)}" id="${id}" ${field.required ? 'aria-required="true"' : ''}>
         <option value="">— select employee —</option>${opts}
       </select>`;
     } else {
-      input = `<input data-field="${UI.esc(field.key)}" id="${id}" type="${field.type}"
+      input = `<input data-field="${UI.esc(field.key)}" id="${id}" ${field.required ? 'aria-required="true"' : ''} type="${field.type}" ${field.type === 'number' ? 'step="any"' : ''}
         value="${UI.esc(String(val))}" />`;
     }
-    return `<div style="margin-bottom:12px">
-      <label for="${id}">${UI.esc(field.label)}${req}</label>
+    return `<div data-validation-field style="margin-bottom:12px">
+      <label for="${id}">${UI.esc(field.label)}${field.format==='currency'?' ('+UI.esc(field.currency||'PHP')+')':''}${req}</label>
       ${input}
     </div>`;
   }

@@ -18,7 +18,7 @@ describe('POST /api/users by an HR user', () => {
     const hdr = { Authorization: `Bearer ${hr.token}` };
 
     const res = await ctx.api.post('/api/users').set(hdr)
-      .send({ username: 'floor.worker', full_name: 'Floor Worker', password: 'secret1', role: 'warehouse' });
+      .send({ username: 'floor.worker', full_name: 'Floor Worker', password: 'secret123', role: 'warehouse' });
     expect(res.status).toBe(201);
 
     const emp = await ctx.api.post('/api/hr/employees').set(hdr)
@@ -31,29 +31,29 @@ describe('POST /api/users by an HR user', () => {
     const hdr = { Authorization: `Bearer ${hr.token}` };
     for (const role of ['admin', 'admin_staff', 'hr', 'accounting']) {
       const res = await ctx.api.post('/api/users').set(hdr)
-        .send({ username: `priv.${role}`, full_name: 'Nope', password: 'secret1', role });
+        .send({ username: `priv.${role}`, full_name: 'Nope', password: 'secret123', role });
       expect(res.status).toBe(403);
     }
   });
 
-  it('lets HR add staff-level access on top of the base role, but nothing privileged', async () => {
+  it('HR can onboard staff but only permission administrators change grants', async () => {
     const hr = await createEmployee(ctx.api, adminToken, { username: 'hraccess', role: 'hr' });
     const hdr = { Authorization: `Bearer ${hr.token}` };
     const acct = await ctx.api.post('/api/users').set(hdr)
-      .send({ username: 'multi.role', full_name: 'Multi Role', password: 'secret1', role: 'qc_inspector' });
+      .send({ username: 'multi.role', full_name: 'Multi Role', password: 'secret123', role: 'qc_inspector' });
 
     const cat = await ctx.api.get('/api/users/permissions/catalog').set(hdr);
     expect(cat.status).toBe(200);
-    expect(cat.body.grantable).toContain('production.inspect_qa');
+    expect(cat.body.grantable).toEqual([]);
     expect(cat.body.grantable).not.toContain('users.manage');
     expect(cat.body.assignableRoles).not.toContain('admin');
 
     // QC inspector who also does QA and releasing — a staff-level combination.
     const ok = await ctx.api.put(`/api/users/${acct.body.id}/permissions`).set(hdr)
       .send({ overrides: { 'production.inspect_qa': true, 'orders.release': true } });
-    expect(ok.status).toBe(200);
+    expect(ok.status).toBe(403);
     const access = await ctx.api.get(`/api/users/${acct.body.id}/access`).set(hdr);
-    expect(JSON.parse(access.body.permission_overrides)).toEqual({ 'production.inspect_qa': true, 'orders.release': true });
+    expect(JSON.parse(access.body.permission_overrides)).toEqual({});
 
     for (const key of ['users.manage', 'hr.manage', 'accounting.view']) {
       const bad = await ctx.api.put(`/api/users/${acct.body.id}/permissions`).set(hdr)
@@ -73,7 +73,7 @@ describe('POST /api/users by an HR user', () => {
   it('still refuses users without users.manage or hr.manage', async () => {
     const staff = await createEmployee(ctx.api, adminToken, { username: 'plainstaff', role: 'warehouse' });
     const res = await ctx.api.post('/api/users').set({ Authorization: `Bearer ${staff.token}` })
-      .send({ username: 'sneaky', full_name: 'Nope', password: 'secret1', role: 'warehouse' });
+      .send({ username: 'sneaky', full_name: 'Nope', password: 'secret123', role: 'warehouse' });
     expect(res.status).toBe(403);
   });
 });

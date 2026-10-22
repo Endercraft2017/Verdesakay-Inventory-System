@@ -31,15 +31,15 @@ App.register('dashboard', async (view) => {
       <div><h2>Welcome back, ${UI.esc(me.full_name.split(' ')[0])}</h2>
       <div class="sub">Here's what's happening across the office.</div></div>
       <div class="grow"></div>
-      <button class="btn secondary" data-go="inventory">${UI.icon('plus')} Item</button>
+      ${canInv ? `<button class="btn secondary" data-go="inventory">${UI.icon('plus')} Item</button>` : ''}
       <button class="btn secondary" data-go="forms">${UI.icon('upload')} Upload</button>
       <button class="btn" data-go="messages">${UI.icon('edit')} Message</button>
     </div>
 
     <div class="cards">
-      ${statCard('', 'inventory', 'Inventory items', stats.items)}
-      ${statCard('warn', 'alert', 'Low stock', stats.low_stock || 0)}
-      ${statCard('alert', 'alert', 'Out of stock', stats.out_of_stock || 0)}
+      ${canInv ? statCard('', 'inventory', 'Inventory items', stats.items) : ''}
+      ${canInv ? statCard('warn', 'alert', 'Low stock', stats.low_stock || 0) : ''}
+      ${canInv ? statCard('alert', 'alert', 'Out of stock', stats.out_of_stock || 0) : ''}
       ${statCard('', 'forms', 'Files available', forms.length)}
       ${statCard('', 'messages', 'Unread messages', unread.count)}
       ${canUsers ? statCard('', 'users', 'Staff accounts', users.length) : ''}
@@ -47,7 +47,7 @@ App.register('dashboard', async (view) => {
     </div>
 
     <div class="grid-2">
-      <div class="panel">
+      ${canInv ? `<div class="panel">
         <div class="panel-head"><h3>Items needing restock</h3><div class="grow"></div>
           <button class="btn small secondary" data-go="inventory">View all</button></div>
         <div>${items.length ? `<table><tbody>${items.map((i) => `
@@ -55,7 +55,7 @@ App.register('dashboard', async (view) => {
           <td class="right"><span class="badge-pill low">${i.quantity} ${UI.esc(i.unit || '')}</span>
           <div class="muted" style="font-size:11px;margin-top:2px">min ${i.min_quantity}</div></td></tr>`).join('')}
           </tbody></table>` : UI.emptyState({ icon: 'inventory', title: 'Everything is well stocked', hint: 'No items are at or below their reorder level.' })}</div>
-      </div>
+      </div>` : ''}
 
       <div class="panel">
         <div class="panel-head"><h3>Recent messages</h3><div class="grow"></div>

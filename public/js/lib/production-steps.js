@@ -20,6 +20,7 @@
     qa: 'In QA',
     qc_qa: 'In QC/QA',
     rework: 'In Rework',
+    hold: 'QA Hold',
     rts_recording: 'Awaiting RTS Recording',
     ready_to_sell: 'Ready to Sell',
     sold: 'Sold',
@@ -36,6 +37,7 @@
     qa: 'status-open',
     qc_qa: 'status-open',
     rework: 'status-confirmed',
+    hold: 'status-confirmed',
     rts_recording: 'status-confirmed',
     ready_to_sell: 'status-completed',
     sold: 'status-completed',
@@ -63,6 +65,7 @@
       case 'passed': return make('rts_recording');
       case 'failed': return make('failed');
       case 'rework': return make('rework');
+      case 'hold': return make('hold');
       case 'pending': {
         const totalStages = Math.max(1, qcStages || 1);
         return make(passStep((unit.stage || 0) + 1, totalStages));
@@ -98,6 +101,7 @@
     const pending = jo.units_pending || 0;
     const passed = jo.units_passed || 0;
     const receivable = jo.batches_receivable || 0;
+    if ((jo.units_hold || 0) > 0) return make('hold');
     if (rework > 0) return make('rework');
     if (pending > 0) {
       const totalStages = Math.max(1, jo.qc_stages || 1);

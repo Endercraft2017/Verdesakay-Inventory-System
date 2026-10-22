@@ -8,6 +8,7 @@ const App = (() => {
   // Active chrome selection (which primary/subtab the tree+subnav reflect).
   let activePrimaryId = null;
   let activeSubtabId = null;
+  let renderedLocation = null;
   let suppressHash = false; // guard so programmatic hash changes don't re-navigate
 
   function register(name, renderFn) { routes[name] = renderFn; }
@@ -58,31 +59,116 @@ const App = (() => {
   const appScreen = () => document.getElementById('app-screen');
 
   function showLogin() {
+    window.SlowLoading?.ready();
     me = null;
+    document.getElementById('tenant-name').textContent = 'Workspace';
+    document.title = 'Otom';
     if (window.ChatWS) ChatWS.disconnect();
+    if (window.SyncStatus) SyncStatus.stop();
     appScreen().classList.add('hidden');
     loginScreen().classList.remove('hidden');
     document.getElementById('login-password').value = '';
   }
 
-  async function showApp() {
+  function requireNewPassword() {
+    appScreen().classList.add('hidden');
+    loginScreen().classList.remove('hidden');
+    if (window.ChatWS) ChatWS.disconnect();
+    let saved = false, resume = false;
+    UI.modal({
+      title: 'Choose your new password', cancelText: 'Sign out', confirmText: 'Save new password',
+      protectChanges: false,
+      // All successful dismissal paths share the modal's saving guard, including Escape.
+      onCancel: logout,
+      onClose: () => {
+        if (resume) showApp().catch(error => UI.toast(AuthControls.errorMessage(error), 'error'));
+      },
+      bodyHTML: `<p>Your temporary password must be replaced before you can access the workspace.</p>
+        <label for="required-current">Temporary password</label><input id="required-current" data-f="current" data-label="temporary password" type="password" autocomplete="current-password" />
+        <label for="required-new">New password</label><input id="required-new" data-f="new" data-label="new password" type="password" autocomplete="new-password" maxlength="128" aria-describedby="required-policy" />
+        <label for="required-confirm">Confirm new password</label><input id="required-confirm" data-f="confirm" data-label="confirmation password" type="password" autocomplete="new-password" maxlength="128" />
+        <p id="required-policy" class="muted auth-help">Use 8–128 characters. Common passwords are not accepted. Choose a password different from the temporary one.</p>
+        <p class="auth-status" role="status" data-password-status></p>`,
+      onOpen: ov => AuthControls.passwords(ov),
+      onConfirm: async (ov, showErr) => {
+        const button = ov.querySelector('[data-confirm]');
+        if (!saved) {
+          const current = ov.querySelector('[data-f="current"]');
+          const next = ov.querySelector('[data-f="new"]');
+          const confirm = ov.querySelector('[data-f="confirm"]');
+          if (!current.value) { showErr('Enter your temporary password.'); current.focus(); return false; }
+          if (next.value.length < 8 || next.value.length > 128) { showErr('Use 8–128 characters.'); next.focus(); return false; }
+          if (next.value !== confirm.value) { showErr('Passwords do not match.'); confirm.focus(); return false; }
+          button.textContent = 'Saving…';
+          try {
+            await API.post('/auth/change-password', { current_password: current.value, new_password: next.value });
+            saved = true;
+            ov.querySelectorAll('input').forEach(input => { input.value = ''; input.disabled = true; });
+            ov.querySelector('[data-password-status]').textContent = 'Password saved. Reopening your workspace…';
+          } catch (error) {
+            showErr(AuthControls.errorMessage(error)); button.textContent = 'Save new password'; return false;
+          }
+        }
+        button.textContent = 'Opening…';
+        try {
+          me = (await API.get('/auth/me')).user;
+          resume = true;
+          return true; // Close before showApp can open another required authentication dialog.
+        } catch {
+          showErr('Your password was saved, but the workspace could not be loaded. Retry access or sign out and use your new password.');
+          button.textContent = 'Retry access';
+          return false;
+        }
+      },
+    });
+  }
+
+  /** The workspace requires two-step sign-in for this account and it isn't set up yet: the
+      server allows nothing else until it is (src/shared/mfa.ts). */
+  async function requireMfaSetup() {
+    appScreen().classList.add('hidden');
+    loginScreen().classList.remove('hidden');
+    if (window.ChatWS) ChatWS.disconnect();
+    if (!(await Mfa.setup({ forced: true }))) { logout(); return; }
+    me = (await API.get('/auth/me')).user;
+    await showApp();
+  }
+
+  async function showApp(departmentsReq) {
+    window.SlowLoading?.ready();
+    if (me && me.password_change_required) { requireNewPassword(); return; }
+    if (me && me.mfa_setup_required) { requireMfaSetup(); return; }
     loginScreen().classList.add('hidden');
     appScreen().classList.remove('hidden');
 
     document.getElementById('me-name').textContent = me.full_name;
-    document.getElementById('me-role').textContent = me.role;
+    document.getElementById('me-role').textContent = me.role_label || me.role;
     document.getElementById('me-dept').textContent = me.department_name || 'No dept';
     document.getElementById('me-avatar').textContent = UI.initials(me.full_name);
 
-    try { departments = await API.get('/users/departments/list'); } catch { departments = []; }
+    // Signed up online and not paid yet: the server only answers sign-in, Billing and Support, so
+    // show just the Billing screen until the first payment is confirmed (src/platform/billing.ts).
+    let ws = null;
+    try { ws = await API.get('/tenant'); } catch { /* no workspace info: carry on normally */ }
+    if (ws) {
+      document.getElementById('tenant-name').textContent = ws.name || 'Workspace';
+      document.title = `${ws.name || 'Workspace'} · Otom`;
+      document.getElementById('tenant-name').title = ws.company_id ? 'Company ID: ' + ws.company_id : '';
+    }
+    appScreen().classList.toggle('awaiting-payment', !!(ws && ws.awaiting_payment));
+    if (ws && ws.awaiting_payment) { showAwaitingPayment(ws); return; }
+
+    try { departments = await (departmentsReq || API.get('/users/departments/list')); } catch { departments = []; }
 
     renderPrimaryNav(); // (re)build chrome; honours admin-only visibility
     // The AI Assistant bubble is a per-tenant feature module.
     const aiFab = document.getElementById('ai-fab');
     if (aiFab) aiFab.classList.toggle('hidden', !hasModule('ai'));
-    showWorkspaceBanner();
+    await showWorkspaceBanner();
 
     refreshUnread();
+    // Installed PCs only: the sync status pill (lib/sync-status.js hides itself elsewhere).
+    if (window.SyncStatus) SyncStatus.start();
     if (App._unreadTimer) clearInterval(App._unreadTimer);
     // Live push (ChatWS) keeps the badge current when connected; this poll is the
     // fallback for whenever it isn't (reconnecting, blocked by a proxy, ...).
@@ -100,56 +186,128 @@ const App = (() => {
     navigate(start, parsed.route === start ? parsed.filter : undefined);
   }
 
+  /** The locked shell for a workspace awaiting its first payment: a banner and the Billing screen. */
+  function showAwaitingPayment(ws) {
+    const aiFab = document.getElementById('ai-fab');
+    if (aiFab) aiFab.classList.add('hidden');
+    paintBanner(`Welcome, ${ws.name}! Your workspace opens once your first payment is confirmed.`, 'warn', false);
+    const view = document.getElementById('view');
+    if (routes.billing) routes.billing(view);
+  }
+
   async function showWorkspaceBanner() {
     let t;
     try { t = await API.get('/tenant'); } catch { return; }
-    document.getElementById('ws-banner')?.remove();
+    const tenantName = t.name || 'Workspace';
+    document.getElementById('tenant-name').textContent = tenantName;
+    document.title = `${tenantName} · Otom`;
     let msg = '', tone = 'warn';
     if (t.read_only) { msg = `${t.name} is past due — the workspace is read-only until billing is resolved.`; tone = 'danger'; }
     else if (t.status === 'suspended') { msg = `${t.name} is suspended.`; tone = 'danger'; }
     else if (t.trial_days_left != null && t.trial_days_left <= 14) {
       msg = t.trial_days_left <= 0 ? `${t.name}'s trial has ended.`
         : `${t.name} — trial: ${t.trial_days_left} day${t.trial_days_left === 1 ? '' : 's'} left.`;
+    } else if (t.billing && t.billing.open) {
+      // Our unpaid invoices to this workspace (only sent to users.manage — see Admin → Billing).
+      msg = t.billing.overdue
+        ? `${t.billing.overdue} overdue invoice${t.billing.overdue === 1 ? '' : 's'} for ${t.name}.`
+        : `${t.billing.open} unpaid invoice${t.billing.open === 1 ? '' : 's'} for ${t.name}.`;
+      if (t.billing.overdue) tone = 'danger';
     }
-    if (!msg) return;
+    document.getElementById('ws-banner')?.remove();
+    if (msg) paintBanner(msg, tone, !!t.billing);
+  }
+
+  function paintBanner(msg, tone, billingLink) {
+    document.getElementById('ws-banner')?.remove();
     const bar = document.createElement('div');
     bar.id = 'ws-banner';
     bar.style.cssText = `padding:6px 14px;font-size:13px;text-align:center;color:#fff;`
       + `background:${tone === 'danger' ? 'var(--danger,#d64545)' : 'var(--warn,#b8860b)'}`;
     bar.textContent = msg;
+    if (billingLink) {
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.textContent = 'View billing';
+      link.style.cssText = 'margin-left:10px;background:transparent;border:1px solid #fff;color:#fff;border-radius:6px;padding:1px 8px;font-size:12px;cursor:pointer';
+      link.onclick = () => navigate('billing');
+      bar.appendChild(link);
+    }
     appScreen().prepend(bar);
   }
 
-  async function refreshUnread() {
+  /* Notification history (GET /api/notifications — release reports, parts, QA holds …): the
+     rail bell's badge counts unread; the panel lists them, opens the record (link.route) and
+     marks it read. */
+  async function refreshNotificationBadge() {
     try {
-      const { count } = await API.get('/messages/unread-count');
-      const badge = document.getElementById('msg-badge');
+      const { count } = await API.get('/notifications/unread-count');
+      const b = document.getElementById('notif-badge');
+      if (b) { b.textContent = count; b.classList.toggle('hidden', !count); }
+    } catch { /* ignore */ }
+  }
+  async function openNotifications() {
+    let data;
+    try { data = await API.get('/notifications?limit=50'); } catch (e) { UI.toast(e.message, 'error'); return; }
+    const items = data.items || [];
+    const m = UI.modal({
+      title: 'Notifications',
+      size: 'lg',
+      cancelText: 'Close',
+      confirmText: data.unread ? 'Mark all read' : null,
+      bodyHTML: items.length ? `<table><tbody>${items.map((n) => `
+        <tr class="${n.link ? 'clickable' : ''}" data-n="${n.id}">
+          <td style="width:8px">${n.read_at ? '' : '<span class="badge-pill warn" title="Unread">new</span>'}</td>
+          <td><strong>${UI.esc(n.title)}</strong>${n.body ? `<div class="muted">${UI.esc(n.body)}</div>` : ''}</td>
+          <td class="muted" style="white-space:nowrap">${UI.esc(UI.fmtDate ? UI.fmtDate(n.created_at + 'Z') : n.created_at)}</td>
+        </tr>`).join('')}</tbody></table>`
+        : UI.emptyState({ icon: 'bell', title: 'No notifications', hint: 'Release reports, parts and QA holds that concern you appear here.' }),
+      onOpen: (ov) => {
+        ov.querySelectorAll('tr[data-n]').forEach((tr) => tr.onclick = async () => {
+          const n = items.find((x) => String(x.id) === tr.dataset.n);
+          if (!n.read_at) { try { await API.post('/notifications/' + n.id + '/read', {}); } catch { /* ignore */ } }
+          refreshNotificationBadge();
+          if (n.link?.route === 'tasks' && window.PersonalTools) { m.close(); window.PersonalTools.openScheduler(); }
+          else if (n.link && routes[n.link.route]) { m.close(); navigate(n.link.route, n.link.params || undefined); }
+        });
+      },
+      onConfirm: async () => {
+        await API.post('/notifications/read-all', {});
+        refreshNotificationBadge();
+      },
+    });
+  }
+
+  /** Rail badges: messages, notifications and (admins) open bug reports — fetched together,
+      not one after another, so a refresh costs one round trip. */
+  async function refreshUnread() {
+    const setBadge = (id, count) => {
+      const badge = document.getElementById(id);
       if (badge) {
         badge.textContent = count;
         badge.classList.toggle('hidden', !count);
       }
-    } catch { /* ignore */ }
-    if (hasPermission('users.manage')) {
-      try {
-        const { count } = await API.get('/bug-reports/open-count');
-        const bugBadge = document.getElementById('bug-badge');
-        if (bugBadge) {
-          bugBadge.textContent = count;
-          bugBadge.classList.toggle('hidden', !count);
-        }
-      } catch { /* ignore */ }
-    }
+    };
+    await Promise.all([
+      API.get('/messages/unread-count').then(({ count }) => setBadge('msg-badge', count)).catch(() => {}),
+      refreshNotificationBadge(),
+      hasPermission('users.manage')
+        ? API.get('/bug-reports/open-count').then(({ count }) => setBadge('bug-badge', count)).catch(() => {})
+        : null,
+    ]);
   }
 
   /* ---------- Nav-config helpers ---------- */
 
-  /** Visible primaries — filtered by adminOnly (legacy), requiredPermission, requiredModule. */
+  /** Visible primaries — filtered by adminOnly (legacy), requiredPermission, requiredModule, and
+      dropped when none of their subtabs is visible (e.g. Inventory for an HR-only account). */
   function visiblePrimaries() {
     return NAV.filter((p) => {
       if (p.adminOnly && !isAdmin()) return false;
       if (p.requiredPermission && !hasPermission(p.requiredPermission)) return false;
+      if (p.requiredAnyPermission && !p.requiredAnyPermission.some(hasPermission)) return false;
       if (p.requiredModule && !hasModule(p.requiredModule)) return false;
-      return true;
+      return visibleSubtabs(p).length > 0;
     });
   }
 
@@ -157,6 +315,7 @@ const App = (() => {
   function visibleSubtabs(primary) {
     return (primary.subtabs || []).filter((s) =>
       (!s.requiredPermission || hasPermission(s.requiredPermission)) &&
+      (!s.requiredAnyPermission || s.requiredAnyPermission.some(hasPermission)) &&
       (!s.requiredModule || hasModule(s.requiredModule)));
   }
 
@@ -167,17 +326,38 @@ const App = (() => {
     return ak.every((k) => String(ax[k]) === String(bx[k]));
   }
 
+  function canAccessRoute(route, filter) {
+    const loc = findLeaf(route, filter);
+    if (!loc) return !!routes[route];
+    return visiblePrimaries().includes(loc.primary) && visibleSubtabs(loc.primary).includes(loc.subtab);
+  }
+
   /** Find the first {primary, subtab, leaf} matching a route (+ optional filter). */
   function findLeaf(route, filter) {
+    // Form records live in their owning section. Preserve HR chrome for payroll and HR forms,
+    // including filtered/deep-linked record views; other forms retain the Documents hub.
+    if (route === 'form-records') {
+      if (hasPermission('hr.view') && (filter?.slug === 'hr_payroll' || filter?.scope === 'hr')) {
+        const primary = NAV.find((item) => item.id === 'hr');
+        const hrTab = filter?.slug === 'hr_payroll' || !hasPermission('forms.manage.hr') ? 'payroll' : 'form-setup';
+        const subtab = primary?.subtabs.find((item) => item.id === hrTab);
+        const leaf = subtab?.tree.find((item) => item.route === route);
+        if (leaf) return { primary, subtab, leaf };
+      }
+      const primary = NAV.find((item) => item.id === 'docs');
+      const subtab = primary?.subtabs.find((item) => item.id === 'custom-forms');
+      const leaf = subtab?.tree.find((item) => item.route === route);
+      if (leaf) return { primary, subtab, leaf };
+    }
     let routeFallback = null;
     for (const primary of NAV) {
       for (const subtab of primary.subtabs) {
         for (const leaf of subtab.tree) {
           if (leaf.route !== route) continue;
+          if (!routeFallback) routeFallback = { primary, subtab, leaf };
           if (filter === undefined) {
-            if (!routeFallback) routeFallback = { primary, subtab, leaf };
             if (!leaf.filter) return { primary, subtab, leaf };
-          } else if (filtersEqual(leaf.filter, filter)) {
+          } else if (filtersEqual(leaf.filter, filter) || (leaf.filter && Object.keys(leaf.filter).every(key => String(leaf.filter[key]) === String(filter[key])))) {
             return { primary, subtab, leaf };
           }
         }
@@ -237,7 +417,7 @@ const App = (() => {
     if (!primary) { el.innerHTML = ''; return; }
     const subs = visibleSubtabs(primary);
     el.innerHTML = subs.map((s) =>
-      `<button class="subtab ${s.id === activeSubtabId ? 'active' : ''}" data-subtab="${s.id}">${UI.esc(s.label)}</button>`
+      `<button class="subtab ${s.id === activeSubtabId ? 'active' : ''}" ${s.id === activeSubtabId ? 'aria-current="page"' : ''} data-subtab="${s.id}">${UI.esc(s.label)}</button>`
     ).join('');
     el.querySelectorAll('[data-subtab]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -252,8 +432,8 @@ const App = (() => {
     if (!el) return;
     if (!primary || !subtab) { el.innerHTML = ''; return; }
     const leaves = subtab.tree.map((leaf) => {
-      const on = leaf.route === activeRoute && filtersEqual(leaf.filter, activeFilter);
-      return `<button class="tree-leaf ${on ? 'active' : ''}" data-route="${leaf.route}"
+      const on = leaf.route === activeRoute && (!leaf.filter || filtersEqual(leaf.filter, activeFilter) || (leaf.filter && Object.keys(leaf.filter).every(key => String(leaf.filter[key]) === String((activeFilter || {})[key]))));
+      return `<button class="tree-leaf ${on ? 'active' : ''}" ${on ? 'aria-current="page"' : ''} data-route="${leaf.route}"
         data-filter='${leaf.filter ? UI.esc(JSON.stringify(leaf.filter)) : ''}'>
         ${UI.icon(leaf.icon, 16)}<span>${UI.esc(leaf.label)}</span></button>`;
     }).join('');
@@ -266,13 +446,26 @@ const App = (() => {
   }
 
   function setActivePrimaryHighlight() {
-    document.querySelectorAll('#primary-nav [data-primary]').forEach((b) =>
-      b.classList.toggle('active', b.dataset.primary === activePrimaryId));
+    document.querySelectorAll('#primary-nav [data-primary]').forEach((b) => {
+      const active = b.dataset.primary === activePrimaryId;
+      b.classList.toggle('active', active);
+      if (active) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
+    });
   }
 
   /* ---------- Navigation ---------- */
 
   function navigate(name, filter) {
+    if (me && me.password_change_required) return;
+    const dialogs = [...document.querySelectorAll('.modal-overlay')].reverse();
+    const savingDialog = dialogs.find(dialog => dialog.__whenSaved);
+    if (savingDialog) { savingDialog.__whenSaved.then(() => navigate(name, filter)); return; }
+    if (dialogs.some(dialog => dialog.__canDismiss && !dialog.__canDismiss())) {
+      if (renderedLocation) history.replaceState(null, '', '#' + hashFor(renderedLocation.name, renderedLocation.filter));
+      return;
+    }
+    dialogs.forEach(dialog => dialog.__close ? dialog.__close() : dialog.remove());
     if (!routes[name]) { name = 'dashboard'; filter = undefined; }
 
     // Resolve where this lives in the nav tree (for chrome highlighting).
@@ -287,11 +480,16 @@ const App = (() => {
     if (loc) {
       activePrimaryId = loc.primary.id;
       activeSubtabId = loc.subtab.id;
+    } else {
+      activePrimaryId = null;
+      activeSubtabId = null;
     }
 
+    renderedLocation = { name, filter };
     // Reflect in the URL without triggering a re-navigation.
     suppressHash = true;
     location.hash = hashFor(name, filter);
+    renderedLocation = { name, route: name, filter };
     suppressHash = false;
 
     // Repaint chrome.
@@ -302,11 +500,21 @@ const App = (() => {
     renderTree(primary, subtab, name, filter);
 
     // Render the view.
-    const view = document.getElementById('view');
+    const previousView = document.getElementById('view');
+    const view = previousView.cloneNode(false);
+    previousView.replaceWith(view);
+    window.SlowLoading?.navigation();
+    view.dataset.route = name;
+    view.dataset.section = activePrimaryId || '';
     view.innerHTML = '<div class="empty">Loading…</div>';
     Promise.resolve(routes[name](view, filter)).catch((e) => {
       view.innerHTML = `<div class="empty">Failed to load: ${UI.esc(e.message)}</div>`;
     });
+  }
+
+  function replaceFilters(name, filter) {
+    history.replaceState(null, '', '#' + hashFor(name, filter));
+    renderedLocation = { name, route: name, filter };
   }
 
   /* ---------- Menu search + site map ---------- */
@@ -391,10 +599,17 @@ const App = (() => {
       }));
   }
 
-  async function login(username, password) {
-    const data = await API.post('/auth/login', { username, password });
-    API.setToken(data.token);
-    me = data.user;
+  // shared = borrowed/shared computer: a short session whose token lives in sessionStorage
+  // (ends with the tab) — see src/shared/auth.ts.
+  async function login(username, password, shared) {
+    const body = { username, password };
+    if (shared) body.shared = true;
+    const data = await API.post('/auth/login', body);
+    // Two-step sign-in: the password alone opened nothing; the code finishes it (lib/mfa.js).
+    const signedIn = data.mfa_required ? await Mfa.askCode(data.mfa_token) : data;
+    if (!signedIn) return;
+    API.setToken(signedIn.token, { shared: !!shared });
+    me = signedIn.user;
     await showApp();
   }
 
@@ -406,57 +621,103 @@ const App = (() => {
   }
 
   function forgotPassword() {
-    UI.modal({
-      title: 'Reset your password',
-      bodyHTML: `<p class="muted" style="margin-top:0">Enter your username or email. If we have an
-        address on file and email is set up, you'll get a reset link.</p>
-        <label>Username or email</label><input data-f="id" autocomplete="username" />`,
-      confirmText: 'Send reset link',
-      onConfirm: async (ov, showErr) => {
-        const id = ov.querySelector('[data-f="id"]').value.trim();
-        if (!id) { showErr('Enter your username or email.'); return false; }
-        const r = await API.post('/auth/forgot-password', { identifier: id });
-        UI.toast(r.sent ? 'Check your email for the reset link.'
-          : (r.reason ? 'Could not send: ' + r.reason : 'If that account exists, a link is on its way.'),
-          r.sent ? 'success' : 'error');
-      },
-    });
+      let completed = false;
+      const m = UI.modal({ title: 'Recover your login', confirmText: 'Send reset link', protectChanges: true,
+          bodyHTML: '<p class="muted" style="margin-top:0">Enter your username or email. If we have an address on file and email is set up, you will receive your username and a password reset link.</p><label for="recovery-identifier">Username or email</label><input id="recovery-identifier" data-f="id" autocomplete="username" maxlength="200" required aria-describedby="recovery-help"/><p id="recovery-help" class="muted auth-help">No email on your account? Ask your administrator to help you recover your login.</p>',
+          onClose: () => { if (completed)
+              document.getElementById('login-username')?.focus(); },
+          onConfirm: async (ov, showErr) => { const input = ov.querySelector('[data-f=id]'); const id = input.value.trim(); if (!id) {
+              showErr('Enter your username or email.');
+              input.setAttribute('aria-invalid', 'true');
+              input.focus();
+              return false;
+          } const button = ov.querySelector('[data-confirm]'); button.textContent = 'Sending…'; ov.setAttribute('aria-busy', 'true'); try {
+              const r = await API.post('/auth/forgot-password', { identifier: id });
+              if (r.reason) {
+                  showErr(r.reason);
+                  return false;
+              }
+              completed = true;
+              m.markSaved();
+              ov.querySelector('.modal-body').innerHTML = '<div role="status"><h4>Request received</h4><p>' + UI.esc(r.message || 'If that account exists and has an email address on file, a reset link is on its way. Otherwise ask your administrator to reset your password.') + '</p><p class="muted">Check your inbox and spam folder. Any reset link you receive is valid for one hour. This message does not confirm whether an account or email exists.</p></div>';
+              button.hidden = true;
+              ov.querySelector('.modal-foot [data-close]').textContent = 'Back to sign in';
+              return false;
+          }
+          catch (e) {
+              showErr(AuthControls.errorMessage(e));
+              return false;
+          }
+          finally {
+              button.textContent = 'Send reset link';
+              ov.removeAttribute('aria-busy');
+          } } });
   }
-
   function setNewPassword(token) {
-    UI.modal({
-      title: 'Set a new password',
-      bodyHTML: `<label>New password</label>
-        <input data-f="pw" type="password" autocomplete="new-password" placeholder="at least 6 characters" />`,
-      confirmText: 'Save & sign in',
-      cancelText: 'Cancel',
-      onConfirm: async (ov, showErr) => {
-        const pw = ov.querySelector('[data-f="pw"]').value;
-        if ((pw || '').length < 6) { showErr('Password must be at least 6 characters.'); return false; }
-        try {
-          await API.post('/auth/reset-password', { token, new_password: pw });
-        } catch (e) { showErr(e.message); return false; }
-        history.replaceState(null, '', location.pathname + location.hash);
-        UI.toast('Password updated — please sign in.', 'success');
-      },
-    });
+      let completed = false;
+      const m = UI.modal({ title: 'Set a new password', confirmText: 'Save password', protectChanges: true,
+          bodyHTML: '<p class="muted auth-help" id="password-policy">Use 8–128 characters. Common passwords are not accepted. You will sign in after saving.</p><label for="reset-password">New password</label><input id="reset-password" data-f="pw" data-label="new password" type="password" autocomplete="new-password" aria-describedby="password-policy" minlength="8" maxlength="128" required/><label for="reset-confirm">Confirm new password</label><input id="reset-confirm" data-f="confirm" data-label="confirmation password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required/><button type="button" class="btn secondary small" data-another-link hidden style="margin-top:12px">Request another reset link</button>',
+          onClose: () => { if (completed)
+              document.getElementById('login-username')?.focus(); },
+          onOpen: ov => { AuthControls.passwords(ov); ov.querySelector('[data-another-link]').onclick = () => { m.markSaved(); m.close(); forgotPassword(); }; },
+          onConfirm: async (ov, showErr) => { const input = ov.querySelector('[data-f=pw]'), confirm = ov.querySelector('[data-f=confirm]'); if (input.value.length < 8 || input.value.length > 128) {
+              showErr('Password must be 8–128 characters.');
+              input.setAttribute('aria-invalid', 'true');
+              input.focus();
+              return false;
+          } if (input.value !== confirm.value) {
+              showErr('The passwords do not match.');
+              confirm.setAttribute('aria-invalid', 'true');
+              confirm.focus();
+              return false;
+          } const button = ov.querySelector('[data-confirm]'); button.textContent = 'Saving…'; ov.setAttribute('aria-busy', 'true'); try {
+              await API.post('/auth/reset-password', { token, new_password: input.value });
+              completed = true;
+              m.markSaved();
+              history.replaceState(null, '', location.pathname + location.hash);
+              ov.querySelector('.modal-body').innerHTML = '<div role="status"><h4>Password updated</h4><p>Sign in with your new password. For your account protection, existing sessions have ended.</p></div>';
+              button.hidden = true;
+              ov.querySelector('.modal-foot [data-close]').textContent = 'Back to sign in';
+              return false;
+          }
+          catch (e) {
+              showErr(AuthControls.errorMessage(e));
+              if (/reset link|expired/i.test(e.message))
+                  ov.querySelector('[data-another-link]').hidden = false;
+              return false;
+          }
+          finally {
+              button.textContent = 'Save password';
+              ov.removeAttribute('aria-busy');
+          } } });
   }
 
   async function boot() {
-    // Wire login form
-    document.getElementById('login-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const errEl = document.getElementById('login-error');
-      errEl.classList.add('hidden');
-      const u = document.getElementById('login-username').value.trim();
-      const p = document.getElementById('login-password').value;
-      try {
-        await login(u, p);
-      } catch (err) {
-        errEl.textContent = err.message;
+    AuthControls.passwords(document.getElementById("login-form"));
+    let loginPending = false;
+    document.getElementById('login-form').addEventListener('submit', async (e) => { e.preventDefault(); if (loginPending)
+        return; const form = e.target, button = form.querySelector('[type=submit]'), errEl = document.getElementById('login-error'), user = document.getElementById('login-username'), pw = document.getElementById('login-password'), sharedBox = document.getElementById('login-shared'); errEl.classList.add('hidden'); if (!user.value.trim()) {
+        errEl.textContent = 'Enter your username.';
         errEl.classList.remove('hidden');
-      }
-    });
+        user.setAttribute('aria-invalid', 'true');
+        user.focus();
+        return;
+    } loginPending = true; button.disabled = true; button.textContent = 'Signing in…'; form.setAttribute('aria-busy', 'true'); document.getElementById('login-status').textContent = 'Signing in. Please wait.'; try {
+        await login(user.value.trim(), pw.value, !!sharedBox.checked);
+        sharedBox.checked = false;
+    }
+    catch (e) {
+        errEl.textContent = AuthControls.errorMessage(e);
+        errEl.classList.remove('hidden');
+        errEl.focus();
+    }
+    finally {
+        loginPending = false;
+        button.disabled = false;
+        button.textContent = 'Sign in';
+        form.removeAttribute('aria-busy');
+        document.getElementById('login-status').textContent = '';
+    } });
 
     const forgotLink = document.getElementById('forgot-link');
     if (forgotLink) forgotLink.addEventListener('click', forgotPassword);
@@ -464,6 +725,7 @@ const App = (() => {
     // Arriving from a "reset your password" email link.
     const resetToken = new URLSearchParams(location.search).get('reset');
     if (resetToken) setNewPassword(resetToken);
+    else if (new URLSearchParams(location.search).has("recover")) forgotPassword();
 
     // Utility bar: menu search + site map + pin glyph.
     document.getElementById('menu-search')
@@ -476,9 +738,13 @@ const App = (() => {
     const railMsg = document.getElementById('rail-messages');
     railMsg.insertAdjacentHTML('afterbegin', UI.icon('messages'));
     railMsg.addEventListener('click', () => navigate('messages'));
-    const railAcct = document.getElementById('rail-account');
-    railAcct.innerHTML = UI.icon('user'); // default profile image icon
-    railAcct.addEventListener('click', () => navigate('account'));
+    const railNotif = document.getElementById('rail-notifications');
+    if (railNotif) {
+      railNotif.insertAdjacentHTML('afterbegin', UI.icon('bell'));
+      railNotif.addEventListener('click', openNotifications);
+    }
+    // The header profile is the entry point for My Account.
+    document.getElementById('account-btn').addEventListener('click', () => navigate('account'));
     const logoutBtn = document.getElementById('logout-btn');
     logoutBtn.innerHTML = UI.icon('logout');
     logoutBtn.addEventListener('click', logout);
@@ -489,15 +755,18 @@ const App = (() => {
     window.addEventListener('hashchange', () => {
       if (suppressHash || !me) return;
       const parsed = parseHash();
+      if (renderedLocation && parsed.route === renderedLocation.name && filtersEqual(parsed.filter, renderedLocation.filter)) return;
       if (routes[parsed.route]) navigate(parsed.route, parsed.filter);
     });
 
     // Resume session if token present.
     if (API.getToken()) {
+      const departmentsReq = API.get('/users/departments/list');
+      departmentsReq.catch(() => {}); // awaited (and its failure handled) in showApp
       try {
         const { user } = await API.get('/auth/me');
         me = user;
-        await showApp();
+        await showApp(departmentsReq);
         return;
       } catch { API.clearToken(); }
     }
@@ -514,7 +783,7 @@ const App = (() => {
   }
 
   return {
-    register, navigate, getMe, getDepartments, isAdmin, hasPermission, hasModule, showLogin, refreshUnread,
+    register, navigate, replaceFilters, canAccessRoute, getMe, getDepartments, isAdmin, hasPermission, hasModule, showLogin, refreshUnread,
     logout, boot, reloadDepartments, setMe, currentLocation,
     _routeNames: () => Object.keys(routes), // test/debug seam
   };

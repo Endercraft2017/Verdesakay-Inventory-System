@@ -35,17 +35,20 @@ describe('GET /api/hr/pending-requests', () => {
   });
 
   it('counts only pending records, grouped by form type, and lists them in recent', async () => {
+    for (const name of ['Ana Cruz','Ben Reyes','Cy Santos']) await ctx.api.post('/api/hr/employees').set(A()).send({ employee_no: name.replaceAll(' ','-'), name });
     const leaveId = await formIdBySlug('leave_request');
     const otId = await formIdBySlug('overtime_request'); // auto-seeded by src/db.ts
 
     const leave = await ctx.api.post('/api/form-records').set(A())
-      .send({ form_def_id: leaveId, data: { employee_name: 'Ana Cruz' }, status: 'pending' });
+      .send({ form_def_id: leaveId, data: { employee_name: 'Ana Cruz', date_from: '2026-06-01', date_to: '2026-06-01', reason: 'Pending leave', with_pay: 'Yes' }, status: 'pending' });
     expect(leave.status).toBe(201);
     // Already decided — must not be counted as pending.
+    const decided = await ctx.api.post('/api/form-records').set(A())
+      .send({ form_def_id: leaveId, data: { employee_name: 'Ben Reyes', date_from: '2026-06-01', date_to: '2026-06-01', reason: 'Decided leave', with_pay: 'Yes' }, status: 'pending' });
+    const reviewer = await createEmployee(ctx.api, adminToken, { role: 'hr' });
+    expect((await ctx.api.post(`/api/me/approvals/requests/${decided.body.id}/decide`).set({ Authorization: `Bearer ${reviewer.token}` }).send({ decision: 'approved' })).status).toBe(200);
     await ctx.api.post('/api/form-records').set(A())
-      .send({ form_def_id: leaveId, data: { employee_name: 'Ben Reyes' }, status: 'approved' });
-    await ctx.api.post('/api/form-records').set(A())
-      .send({ form_def_id: otId, data: { employee_name: 'Cy Santos' }, status: 'pending' });
+      .send({ form_def_id: otId, data: { employee_name: 'Cy Santos', work_date: '2026-06-01', reason: 'Pending overtime' }, status: 'pending' });
 
     const res = await ctx.api.get('/api/hr/pending-requests').set(A());
     expect(res.status).toBe(200);

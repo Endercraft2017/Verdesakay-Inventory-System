@@ -2,13 +2,12 @@
     job end-to-end against an in-process fake S3 server (src/shared/s3.ts, src/platform/offsite.ts). */
 import fs from 'node:fs';
 import path from 'node:path';
-import http from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { setupApp, cleanup, login, type TestContext } from './helpers';
 import { signV4 } from '../src/shared/s3';
 import { isRetentionManagedUpload } from '../src/shared/backup';
+import { fakeS3, listen } from './fake-s3';
 
 const EMPTY = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 const AWS = { region: 'us-east-1', accessKeyId: 'AKIAIOSFODNN7EXAMPLE', secretAccessKey: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', payloadHash: EMPTY };
@@ -28,36 +27,6 @@ describe('SigV4 signer (AWS S3 documentation examples)', () => {
   });
 });
 
-/** A tiny path-style S3 fake: one bucket, objects in a Map. `deny` makes every call 403. */
-function fakeS3() {
-  const objects = new Map<string, { body: Buffer; at: string }>();
-  const state = { deny: false };
-  const server = http.createServer((req, res) => {
-    const url = new URL(req.url!, 'http://x');
-    const [, bucket, ...rest] = url.pathname.split('/');
-    const key = rest.map(decodeURIComponent).join('/');
-    if (state.deny || bucket !== 'bk' || !String(req.headers.authorization || '').startsWith('AWS4-HMAC-SHA256')) {
-      res.writeHead(403); res.end('<Error><Code>AccessDenied</Code><Message>nope</Message></Error>'); return;
-    }
-    const chunks: Buffer[] = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => {
-      if (req.method === 'PUT') { objects.set(key, { body: Buffer.concat(chunks), at: new Date().toISOString() }); res.end(); return; }
-      if (req.method === 'DELETE') { objects.delete(key); res.writeHead(204); res.end(); return; }
-      if (req.method === 'GET' && !key) {
-        const prefix = url.searchParams.get('prefix') || '';
-        const items = [...objects].filter(([k]) => k.startsWith(prefix))
-          .map(([k, o]) => `<Contents><Key>${k}</Key><Size>${o.body.length}</Size><LastModified>${o.at}</LastModified></Contents>`).join('');
-        res.end(`<ListBucketResult><IsTruncated>false</IsTruncated>${items}</ListBucketResult>`); return;
-      }
-      const o = objects.get(key);
-      if (!o) { res.writeHead(404); res.end('<Error><Code>NoSuchKey</Code></Error>'); return; }
-      res.end(o.body);
-    });
-  });
-  return { server, objects, state };
-}
-
 let ctx: TestContext;
 let fake: ReturnType<typeof fakeS3>;
 let offsite: typeof import('../src/platform/offsite');
@@ -67,11 +36,10 @@ beforeAll(async () => {
   ctx = await setupApp();
   await login(ctx.api);
   fake = fakeS3();
-  await new Promise<void>((r) => fake.server.listen(0, '127.0.0.1', r));
-  const port = (fake.server.address() as AddressInfo).port;
+  const endpoint = await listen(fake.server);
   Object.assign(process.env, {
     BACKUP_S3_T1_BUCKET: 'bk',
-    BACKUP_S3_T1_ENDPOINT: `http://127.0.0.1:${port}`,
+    BACKUP_S3_T1_ENDPOINT: endpoint,
     BACKUP_S3_T1_KEY_ID: 'id',
     BACKUP_S3_T1_SECRET: 'secret',
     BACKUP_S3_T1_REGION: 'us-east-005',

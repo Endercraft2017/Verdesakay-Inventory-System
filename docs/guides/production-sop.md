@@ -44,9 +44,13 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
    order, for monitoring at a glance — schedule/team fields live on the job order itself,
    Scheduling isn't where you set them, just where you watch them.
 
-4. **Release (parts out)** — reserves + deducts the planned components from the source
-   location (fails with a shortfall list, no partial release). With the GL on, material
-   value moves Inventory → Work in Process. Records who released it.
+4. **Approve, pick, and release the parts kit** — a production approver signs off the
+   draft. The warehouse accepts it, then records component quantities picked. A partial
+   pick is saved without moving stock; staff can correct the count before release. When
+   the whole kit is prepared, **Release & issue slip** rechecks free stock at the source
+   after other kit picks and repair holds, deducts the planned components, and creates
+   a numbered parts release slip. A shortage blocks the slip and stock movement. With
+   the GL on, material value moves Inventory → Work in Process.
 
 4a. **Accept the parts kit (production lead)** — on the job order (desktop or phone), the
    production lead counts the released kit against the **Components** list, ticks *I
@@ -95,9 +99,10 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
 9. **Completion & returns** — production completion tracks the *build*, not receiving: once
    every ordered unit is accounted for (built + scrapped) and nothing is pending or in
    rework, the job order **completes** and unused reserved components return to the source
-   location — even if some output is still awaiting Products In. **Close (finish early)** /
-   **Cancel** do the return manually; either way, whatever was already built still needs to
-   be received.
+   location — even if some output is still awaiting Products In. **Close (finish early)**
+   stops unbuilt output and returns unused parts, keeping built units for QC/QA, rework,
+   hold review and Products In. Open repair-parts requests remain active. **Cancel** is a
+   separate write-off action for unresolved units. Output already passed still needs receipt.
 
 10. **Labels & QR** — print QR labels per unit (identifier) or per batch (`BATCH-#####`).
     Edit the layout under **Label design** (model, variant, code, batch fields, QR). Scanning
@@ -113,7 +118,7 @@ Finished Goods.** Steps 1–2 are one-time setup, not part of the day-to-day flo
     move. Only received (in-stock) units can be sold or moved; the same Sell / Move action
     used at receiving handles a later transfer too. **Sell / Move → Sell** deducts stock
     immediately and can link the unit to a sale order. This differs from **Release SOs**:
-    that reserves the units, and stock leaves only when the order is confirmed/completed.
+    that reserves the units, and only the goods on each issued trip release slip leave stock; later trips keep the same sales order.
 
 ## Watch out
 

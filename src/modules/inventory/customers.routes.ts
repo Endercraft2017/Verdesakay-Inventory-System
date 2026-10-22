@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import { queryOne, queryAll, run } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
+import { syncClass } from '../../sync';
 import { parseBody, createCustomerSchema, updateCustomerSchema } from '../../shared/validation';
 import type { Customer } from '../../shared/types';
 
@@ -43,7 +44,7 @@ router.get('/:id', requirePermission('orders.view'), (req, res) => {
 });
 
 // POST /api/customers
-router.post('/', requirePermission('orders.create'), (req, res) => {
+router.post('/', requirePermission('orders.create'), syncClass('merge'), (req, res) => {
   const b = parseBody(createCustomerSchema, req.body);
   const info = run(
     `INSERT INTO customers (name, contact_person, phone, email, address, tin, payment_terms_days, notes, archived)
@@ -55,7 +56,7 @@ router.post('/', requirePermission('orders.create'), (req, res) => {
 });
 
 // PUT /api/customers/:id
-router.put('/:id', requirePermission('orders.edit'), (req, res) => {
+router.put('/:id', requirePermission('orders.edit'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const cur = queryOne<Customer>('SELECT * FROM customers WHERE id = ?', id);
   if (!cur) { res.status(404).json({ error: 'Customer not found' }); return; }
@@ -77,7 +78,7 @@ router.put('/:id', requirePermission('orders.edit'), (req, res) => {
 });
 
 // DELETE /api/customers/:id — sale orders keep their history; their customer_id goes NULL (FK).
-router.delete('/:id', requirePermission('orders.delete'), (req, res) => {
+router.delete('/:id', requirePermission('orders.delete'), syncClass('claim'), (req, res) => {
   const info = run('DELETE FROM customers WHERE id = ?', Number(req.params.id));
   if (info.changes === 0) { res.status(404).json({ error: 'Customer not found' }); return; }
   res.json({ ok: true });

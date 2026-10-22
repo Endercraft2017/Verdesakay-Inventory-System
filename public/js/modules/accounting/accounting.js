@@ -44,13 +44,14 @@ App.register('accounting', async (view) => {
   ];
 
   const card = (c) => {
-    const locked = c[4] && !canManage;
+    const payrollCards=['BIR 1601-C','BIR 1604-C','BIR 1604-C Alphalist','BIR 2316','Contribution schedule','Statutory deductions'];
+    const locked = payrollCards.includes(c[1]) && !App.hasPermission('payroll.view') || c[4] && !App.hasPermission('payroll.rates');
     return `<div class="${locked ? '' : 'clickable'}" data-card="${c[1]}"
         style="border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:16px;background:var(--surface-2)${locked ? ';opacity:.55' : ''}">
         <div style="color:var(--text-faint);margin-bottom:9px">${UI.icon(c[0], 22)}</div>
         <div style="font-weight:600;margin-bottom:3px">${UI.esc(c[1])}</div>
         <div class="muted" style="font-size:12.5px">${UI.esc(c[2])}</div>
-        ${locked ? '<span class="badge-pill muted" style="margin-top:8px;display:inline-block">Needs Accounting: manage</span>' : ''}
+        ${locked ? '<span class="badge-pill muted" style="margin-top:8px;display:inline-block">Needs payroll authority</span>' : ''}
       </div>`;
   };
 
@@ -77,7 +78,7 @@ App.register('accounting', async (view) => {
 
 /* ── Tax codes — VAT / withholding classifications ───────────────────────── */
 async function taxCodesModal() {
-  const canManage = App.hasPermission('accounting.manage');
+  const canManage = App.hasPermission('accounting.configure');
   const KINDS = ['output_vat', 'input_vat', 'exempt', 'zero_rated', 'ewt'];
   const KIND_LABEL = {
     output_vat: 'Output VAT', input_vat: 'Input VAT', exempt: 'VAT-exempt',
@@ -203,8 +204,13 @@ async function statutoryDeductionsModal() {
       <div style="max-height:52vh;overflow:auto;border:1px solid var(--border);border-radius:8px">
         <table class="line-table"><thead><tr>
           <th>Employee</th>${COLS.map((c) => `<th class="right" style="width:96px">${c[1]}</th>`).join('')}
+          <th class="right" style="width:110px" title="SSS / Pag-IBIG on the employee's fixed monthly rate instead of the month's actual pay — only with the employee's written agreement">Fixed basis</th>
         </tr></thead><tbody id="sd-body"></tbody></table>
-      </div>`,
+      </div>
+      <p class="muted" style="font-size:12px;margin:8px 0 0"><strong>Fixed basis</strong> — off (default): SSS and
+        Pag-IBIG follow the law, computed on what the employee actually earned that month. On: computed on the
+        employee's fixed monthly rate (monthly rate, or daily rate × the monthly rate divisor) every month,
+        whatever the attendance. Tick it only for an employee who has agreed to this in writing.</p>`,
     onOpen: (ov) => {
       const body = ov.querySelector('#sd-body');
       const q = ov.querySelector('#sd-q');
@@ -215,12 +221,16 @@ async function statutoryDeductionsModal() {
           .map((r) => `<tr data-id="${r.id}">
             <td>${UI.esc(r.name)}<div class="muted mono" style="font-size:11px">${UI.esc(r.employee_no || '')}${r.department_name ? ' · ' + UI.esc(r.department_name) : ''}</div></td>
             ${COLS.map((c) => `<td class="right"><input type="checkbox" data-f="${c[0]}" ${r[c[0]] ? 'checked' : ''} /></td>`).join('')}
+            <td class="right"><input type="checkbox" data-basis ${r.contribution_basis === 'fixed' ? 'checked' : ''} /></td>
           </tr>`).join('');
         body.querySelectorAll('tr[data-id]').forEach((tr) => {
           const r = rows.find((x) => x.id === Number(tr.dataset.id));
           tr.querySelectorAll('[data-f]').forEach((cb) => cb.onchange = () => {
             r[cb.dataset.f] = cb.checked; dirty.add(r.id);
           });
+          tr.querySelector('[data-basis]').onchange = (e) => {
+            r.contribution_basis = e.target.checked ? 'fixed' : 'actual'; dirty.add(r.id);
+          };
         });
       }
       q.oninput = draw;
@@ -241,6 +251,7 @@ async function statutoryDeductionsModal() {
           employee_id: id,
           deduct_sss: r.deduct_sss, deduct_philhealth: r.deduct_philhealth,
           deduct_pagibig: r.deduct_pagibig, deduct_withholding_tax: r.deduct_withholding_tax,
+          contribution_basis: r.contribution_basis === 'fixed' ? 'fixed' : 'actual',
         };
       });
       try {
@@ -1197,9 +1208,8 @@ async function bir2316Modal() {
       async function printOne(row) {
         try {
           const detail = await API.get(`/accounting/bir-2316/${row.employee_id}?year=${yearSel.value}`);
-          const meta = templates.find((t) => t.name === 'BIR 2316');
-          if (!meta) { UI.toast('BIR 2316 template not found (Documents → Templates)', 'error'); return; }
-          const tpl = await API.get('/templates/' + meta.id);
+          const tpl = await API.get('/templates/defaults/bir_2316');
+          const variables=await API.get('/templates/variables?template_id='+tpl.id);
           const tplBody = tpl.body;
           const g = detail.figures;
           const f = {};
@@ -1208,13 +1218,13 @@ async function bir2316Modal() {
           f.thirteenth_month_ceiling = accPeso(g.thirteenth_month_ceiling);
           f.over_withheld_label = g.over_withheld >= 0 ? 'OVER-WITHHELD (refund to employee)' : 'TAX STILL DUE FROM EMPLOYEE';
           f.over_withheld_abs = accPeso(Math.abs(g.over_withheld));
-          const ctx = { company: detail.company || {}, employee: detail.employee || {}, f, year: detail.year, today: new Date().toLocaleDateString() };
+          const ctx = applyVariables({ company: detail.company || {}, employee: detail.employee || {}, f, year: detail.year, today: new Date().toLocaleDateString() },variables);
           // Same opt-in Print Grid tiling as form-linked templates (public/js/print-tiling.js) —
           // e.g. 2 copies of the 2316 (one for BIR filing, one for the employee's file).
           const tiled = typeof buildTiledPagesHtml === 'function'
             ? buildTiledPagesHtml([detail], () => renderTemplate(tplBody, ctx), {
               copiesPerRecord: tpl.copies_per_record, recordsPerPage: tpl.records_per_page, tileFill: tpl.tile_fill,
-              continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count,
+              continuous: !!tpl.tile_continuous, repeatCount: tpl.repeat_count, gapXmm:tpl.grid_gap_x_mm,gapYmm:tpl.grid_gap_y_mm,
               pageContentHeightMm: typeof pageContentHeightMm === 'function' ? pageContentHeightMm(tplBody) : undefined,
             })
             : '';
@@ -1224,10 +1234,9 @@ async function bir2316Modal() {
             bodyHTML: `<iframe id="b16-frame" style="width:100%;height:56vh;border:1px solid var(--border-strong);border-radius:8px;background:#fff"></iframe>`,
             onOpen: (o2) => {
               const ifr = o2.querySelector('#b16-frame');
-              if (tiled) ifr.onload = () => { if (typeof fitTiledCells === 'function') fitTiledCells(ifr.contentDocument); };
-              ifr.srcdoc = full;
+              UI.loadPrintFrame(ifr, full, tiled && typeof fitTiledCells === 'function' ? fitTiledCells : undefined);
             },
-            onConfirm: (o2) => { const ifr = o2.querySelector('#b16-frame'); ifr.contentWindow.focus(); ifr.contentWindow.print(); return false; },
+            onConfirm: async (o2) => { const ifr = o2.querySelector('#b16-frame'); await UI.printFrame(ifr); return false; },
           });
         } catch (e) { UI.toast(e.message, 'error'); }
       }

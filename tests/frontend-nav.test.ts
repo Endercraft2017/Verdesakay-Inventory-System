@@ -9,8 +9,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 type Leaf = { label: string; icon: string; route: string; filter?: Record<string, string> };
-type Subtab = { id: string; label: string; requiredPermission?: string; tree: Leaf[] };
-type Primary = { id: string; label: string; icon: string; adminOnly?: boolean; requiredPermission?: string; subtabs: Subtab[] };
+type Subtab = { id: string; label: string; requiredPermission?: string; requiredAnyPermission?: string[]; tree: Leaf[] };
+type Primary = { id: string; label: string; icon: string; adminOnly?: boolean; requiredPermission?: string; requiredAnyPermission?: string[]; subtabs: Subtab[] };
 
 function loadNavConfig(): { NAV: Primary[]; ROUTE_NAMES: string[] } {
   const file = path.join(import.meta.dirname, '../public/js/nav-config.js');
@@ -22,7 +22,7 @@ function loadNavConfig(): { NAV: Primary[]; ROUTE_NAMES: string[] } {
 }
 
 // The routes actually registered by the view modules (public/js/modules/*/*.js).
-const REGISTERED_ROUTES = ['dashboard', 'analytics', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'announcements', 'sop'];
+const REGISTERED_ROUTES = ['dashboard', 'analytics', 'sales-overview', 'sales-service', 'accounting', 'accounting-petty-cash', 'accounting-ledger', 'accounting-receivables', 'inventory', 'inventory-movements', 'suppliers', 'customers', 'locations', 'finished-products', 'finished-goods', 'production-overview', 'job-orders', 'production-qc', 'production-receiving', 'repairs', 'production-batches', 'production-schedule', 'production-teams', 'production-record', 'forms', 'orders', 'purchase-requests', 'releasing', 'purchasing', 'templates', 'messages', 'admin', 'activity', 'account', 'form-builder', 'form-records', 'hr', 'hr-employees', 'hr-timekeeping', 'hr-kiosk', 'hr-daily-report', 'hr-contact-verification', 'hr-assets', 'hr-approvals', 'hr-requests', 'confidential-reports', 'identified-reports', 'announcements', 'sop', 'sync', 'stock-discrepancies', 'stock-counts', 'support', 'billing'];
 
 const { NAV, ROUTE_NAMES } = loadNavConfig();
 
@@ -33,6 +33,15 @@ describe('nav-config: ROUTE_NAMES', () => {
 });
 
 describe('nav-config: structure', () => {
+  it('places commercial and release desks in Sales while Inventory tracks orders', () => {
+    const sales = NAV.find((p) => p.id === 'sales') as Primary & { requiredModule?: string };
+    const inventory = NAV.find((p) => p.id === 'inventory');
+    expect(sales.requiredModule).toBe('sales');
+    expect(sales.subtabs.flatMap((tab) => tab.tree.map((leaf) => leaf.route))).toContain('sales-service');
+    expect(sales.subtabs.flatMap((tab) => tab.tree.map((leaf) => leaf.route))).toContain('releasing');
+    expect(inventory?.subtabs.flatMap((tab) => tab.tree.filter((leaf) => leaf.route === 'orders').map((leaf) => leaf.filter?.mode))).toEqual(['track', 'track', undefined]);
+    expect(inventory?.subtabs.flatMap((tab) => tab.tree.map((leaf) => leaf.route))).not.toContain('releasing');
+  });
   it('every primary has at least one subtab with at least one leaf', () => {
     expect(NAV.length).toBeGreaterThan(0);
     for (const p of NAV) {
@@ -75,9 +84,9 @@ describe('nav-config: structure', () => {
     }
   });
 
-  it('the Admin section requires users.manage permission', () => {
+  it('the Admin section admits only its explicit administration duties', () => {
     const adminSection = NAV.find((p) => p.id === 'admin');
-    expect(adminSection?.requiredPermission).toBe('users.manage');
+    expect(adminSection?.requiredAnyPermission).toEqual(expect.arrayContaining(['users.manage','audit.view']));
   });
 
   it('primary and subtab ids are unique', () => {
@@ -88,4 +97,11 @@ describe('nav-config: structure', () => {
       expect(new Set(sids).size, `duplicate subtab id in ${p.label}`).toBe(sids.length);
     }
   });
+});
+
+it('quality navigation keeps inspection, hold decisions and broad findings under their respective duties', () => {
+  const tabs=NAV.find(p=>p.id==='production')!.subtabs;
+  expect(tabs.find(s=>s.id==='qc')?.requiredAnyPermission).toContain('production.inspect_qc');
+  expect(tabs.find(s=>s.id==='qa-holds')?.requiredAnyPermission).toEqual(['production.inspect_qa','production.qa_review']);
+  expect(tabs.find(s=>s.id==='qc-findings')?.requiredPermission).toBe('production.view');
 });

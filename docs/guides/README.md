@@ -18,7 +18,10 @@ session.
 
 | Guide | For | What it covers |
 |---|---|---|
+| [Workflow roadmaps](workflow-roadmaps.md) | All teams | Thirteen connected business processes, team handoffs, recovery branches and completion checks |
+| [Capturing a sales order](sales-order-intake.md) | Sales / CSR / order entry | Record customer details, choose explicit inventory or non-stock lines, correct validation errors, and save an open order before approval |
 | [Bulk import & export (CSV)](csv-import-export.md) | Inventory / HR staff | Load or update many items, suppliers, or employees from a spreadsheet; export data back out. Fill-in [templates/](templates/) included. |
+| [Sales stock review & approval](sales-stock-approval.md) | Sales / warehouse / production / purchasing | Check warehouse ATP, draft missing supply, approve explicitly and follow pending sync states. [Mobile gaps](../../MOBILE-INVENTORY-HANDOFF.md). |
 | [SOP — Production, end to end](production-sop.md) | Production / shop floor / QA/QC / warehouse | The full flow: BOM → job order + team + schedule → release → accept kit → progress → QC/QA → repair/rework → Products In → batch → finished stock → labels/QR/dossier → sale-order allocation. Mirrors Home → Help / SOP. |
 | [SOP — Parts release to delivery (shop-floor roles)](shop-floor-to-delivery-sop.md) | Warehouse, production leads, QC, QA, product clerks, releasing clerks, drivers | Role-by-role steps from releasing parts to a job order through recording units (serial + photo), QC → QA, repair parts requests, Products In / RTS, SO release by QR scan, and delivery with proof of delivery. Includes a photos/scans checklist. |
 | [Multi-level BOMs, costing & where-used](multi-level-bom.md) | Production / purchasing | Explode a product through sub-assemblies to raw materials, roll up standard cost, find where a part is used |
@@ -62,3 +65,48 @@ expected result in the rendered app, and run `npm run check`. Automated checks
 validate registered routes, explicit help-topic references, workflow references,
 and feedback behavior; they do not prove that every instruction matches a deployed
 screen or that physical devices work.
+
+### Workflows & Pipelines
+
+In **Guide Center → Workflows & Pipelines**, or the phone Guides section, follow a roadmap across modules. [The current roadmap index](workflow-roadmaps.md) covers all thirteen flows, including trip releases, CKD, semi-finishing, customer returns, physical counts, connected invoice forms and payroll corrections.
+
+The core roadmaps are:
+
+- **Sales → parts → production → delivery → payment** covers stock review,
+  production approval, warehouse parts-kit picking and release, production
+  acceptance, output recording, inspections, Products In, customer release,
+  delivery and customer payment. Existing stock skips the build. Repairs and
+  additional/replacement parts requests branch from inspection failures.
+- **Purchasing → stock → bill → payment → ledger** connects purchase planning,
+  receipts, invoice matching, supplier settlement and ledger review.
+- **Attendance → approvals → payroll → accounting** connects the cutoff roster,
+  attendance and approved forms, payslip review, actual payment, explicit ledger
+  posting and compliance worksheets.
+
+Each checkpoint lists the responsible team, prerequisites, action and result
+handed to the next team. Select a roadmap checkpoint to read its details. Screen
+links respect your account's access; the roadmap explains other teams' work even
+when you cannot open their screens. Reading a guide never posts a transaction.
+
+### Describe a task to find instructions
+
+In the webapp Guide Center or mobile Guides, use **What do you want to do?** and
+**Find instructions**. For example: “A customer returned a damaged unit”, “I need
+a budget to buy tools”, or “old stock before the system”.
+
+Search retrieves published guide steps with their prerequisites, results and
+source guide/step. Broad “receive goods” or “PR” searches offer clarification
+choices. Use **Read this guide** to open the existing instructions; this does not
+open a business screen or perform a transaction. Available-screen and handoff
+labels help distinguish your work from another team's responsibilities.
+
+This is local keyword retrieval with curated synonyms and intent hints, without
+an LLM, generated procedures or an AI API. Questions are not stored by this feature
+or sent to a search service. It works with the loaded guide library offline; the
+mobile app precaches its search assets. Account module filters still apply, and
+reading a procedure never grants permission to execute its actions.
+
+It is not general conversation or an unrestricted semantic search. If there is no
+close match, rephrase with the action/item or browse the library. New terminology
+may need another synonym or authored guide. Run `node scripts/test-guide-retrieval-ux.mjs`
+for real-browser retrieval checks after changing the search or guide content.

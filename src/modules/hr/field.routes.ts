@@ -6,19 +6,20 @@
  */
 import { Router } from 'express';
 import { queryOne, queryAll } from '../../shared/db';
-import { requireAuth, requirePermission } from '../../shared/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '../../shared/auth';
 import { parseBody, kioskPunchSchema } from '../../shared/validation';
-import { isValidKioskCode } from './clock';
+import { isValidKioskCode, punchBlockedReason } from './clock';
 import { recordFieldPunch } from './field';
-import { punchPhotoRoutes } from './punch-photos';
+import { photoIdsForPunches, punchPhotoRoutes } from './punch-photos';
 import { requireKioskDevice } from './kiosk-devices';
+import { syncClass } from '../../sync';
 
 const router = Router();
 router.use(requireAuth);
 
 interface EmpRow { id: number; name: string; status: string; employee_no: string }
 
-router.get('/recent', requirePermission('hr.view'), (req, res) => {
+router.get('/recent', requireAnyPermission(['hr.view','hr.timekeeping.view','hr.kiosk']), (req, res) => {
   const sinceId = Number(req.query.since_id) || 0;
   const rows = queryAll<{
     id: number; ts: string; kind: string; source: string; name: string; employee_no: string | null;
@@ -28,10 +29,11 @@ router.get('/recent', requirePermission('hr.view'), (req, res) => {
      WHERE p.id > ? ORDER BY p.id DESC LIMIT 20`,
     sinceId
   );
-  res.json(rows);
+  const photos = photoIdsForPunches('field', rows.map((r) => r.id));
+  res.json(rows.map((r) => ({ ...r, photo_id: photos.get(r.id) ?? null })));
 });
 
-router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, (req, res) => {
+router.post('/kiosk-punch', requireAnyPermission(['hr.view','hr.timekeeping.view','hr.kiosk']), requireKioskDevice, syncClass('physical'), (req, res) => {
   const { code, employee_no } = parseBody(kioskPunchSchema, req.body);
   if (!isValidKioskCode(code)) {
     res.status(400).json({ error: 'That code is not current. Use the code on the screen.' });
@@ -45,8 +47,9 @@ router.post('/kiosk-punch', requirePermission('hr.view'), requireKioskDevice, (r
     res.status(404).json({ error: `No employee with number "${employee_no}".` });
     return;
   }
-  if (emp.status === 'resigned' || emp.status === 'terminated') {
-    res.status(403).json({ error: 'That employee record is inactive.' });
+  const blocked = punchBlockedReason(emp.status, 'kiosk');
+  if (blocked) {
+    res.status(403).json({ error: blocked });
     return;
   }
   res.json(recordFieldPunch(emp, 'kiosk'));

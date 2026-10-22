@@ -16,6 +16,7 @@ import crypto from 'node:crypto';
 import type { RequestHandler } from 'express';
 import { getSetting, setSetting, queryOne, queryAll, run } from '../../shared/db';
 import { BEHIND_PROXY } from '../../shared/hosting';
+import { isInstalledCopy } from '../../sync';
 
 export interface KioskDevice {
   id: number;
@@ -66,7 +67,9 @@ export function kioskDeviceFor(token: string | undefined): { id: number; name: s
   const dev = queryOne<{ id: number; name: string }>(
     'SELECT id, name FROM kiosk_devices WHERE token_hash = ? AND revoked_at IS NULL', hash(token)
   );
-  if (dev) {
+  // An installed PC never stamps it: "last seen" is the cloud's own observation (it records it
+  // when it replays the kiosk's punches), so the PC's row stays identical to the cloud's.
+  if (dev && !isInstalledCopy()) {
     // At most one write per 5 minutes per device — the kiosk polls every few seconds.
     run(`UPDATE kiosk_devices SET last_seen_at = datetime('now')
          WHERE id = ? AND (last_seen_at IS NULL OR last_seen_at < datetime('now', '-5 minutes'))`, dev.id);

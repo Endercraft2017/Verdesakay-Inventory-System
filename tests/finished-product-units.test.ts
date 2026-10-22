@@ -11,6 +11,7 @@ const H = () => ({ Authorization: `Bearer ${token}` });
 beforeAll(async () => {
   ctx = await setupApp();
   token = await login(ctx.api);
+  await ctx.api.put('/api/release-slips/policy').set(H()).send({authorization_required:false});
 });
 afterAll(() => cleanup(ctx));
 
@@ -27,6 +28,9 @@ async function buildUnits(prefix: string, qty: number, qc_stages = 1) {
     .send({ components: [{ component_item_id: part, quantity: 1 }] });
   const mo = (await ctx.api.post('/api/job-orders').set(H())
     .send({ product_item_id: product, qty_ordered: qty, qc_stages })).body.id;
+  await ctx.api.post(`/api/job-orders/${mo}/approve`).set(H());
+  await ctx.api.post(`/api/job-orders/warehouse-accept`).set(H()).send({ job_order_ids: [mo] });
+  await ctx.api.post(`/api/job-orders/prepare`).set(H()).send({ job_orders: [{ id: mo }] });
   await ctx.api.post(`/api/job-orders/${mo}/release`).set(H());
   await ctx.api.post(`/api/job-orders/${mo}/accept`).set(H());
   if (qc_stages > 0) await addSerializedUnits(ctx.api, token, mo, qty, prefix);
@@ -49,10 +53,10 @@ async function receiveAll(mo: number): Promise<void> {
   }
 }
 
-async function saleOrder(): Promise<number> {
+async function saleOrder(product: number): Promise<number> {
   const r = await ctx.api.post('/api/orders').set(H()).send({
-    type: 'sale', customer_name: 'ACME',
-    items: [{ name: 'widget', quantity: 1, unit_price: 100 }],
+    type: 'sale', status:'approved', force:true, customer_name: 'ACME',
+    items: [{ name: 'widget', item_id: product, quantity: 3, unit_price: 100 }],
   });
   return r.body.id as number;
 }
@@ -84,7 +88,7 @@ describe('sell / move units', () => {
     await receiveAll(mo);
     expect(await onHand(product)).toBe(3);
 
-    const so = await saleOrder();
+    const so = await saleOrder(product);
     const before = (await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body;
     const sell = await ctx.api.post(`/api/finished-products/${product}/units/allocate`).set(H())
       .send({ action: 'sell', unit_ids: [before[0].id, before[1].id], order_id: so });
@@ -106,7 +110,7 @@ describe('sell / move units', () => {
     expect((await ctx.api.post(`/api/finished-products/${product}/units/allocate`).set(H())
       .send({ action: 'sell', quantity: 1 })).status).toBe(400);
     // a pending (not in_stock) unit
-    const so = await saleOrder();
+    const so = await saleOrder(product);
     const r = await ctx.api.post(`/api/finished-products/${product}/units/allocate`).set(H())
       .send({ action: 'sell', unit_ids: [pend[0]!.id], order_id: so });
     expect(r.status).toBe(409);
@@ -120,7 +124,7 @@ describe('sell / move units', () => {
     await receiveAll(mo);
 
     const so = (await ctx.api.post('/api/orders').set(H()).send({
-      type: 'sale', customer_name: 'ACME',
+      type: 'sale', status:'approved', force:true, customer_name: 'ACME',
       items: [{ name: 'ALLOC Product', item_id: product, quantity: 5, unit_price: 200 }],
     })).body.id;
 
@@ -133,6 +137,52 @@ describe('sell / move units', () => {
 
     detail = (await ctx.api.get(`/api/orders/${so}`).set(H())).body;
     expect(detail.items[0].allocated_qty).toBe(2);
+  });
+
+  it('caps direct unit sales at the selected commercial line when a SKU repeats', async () => {
+    const { product, mo } = await buildUnits('DIRECT-LINES', 3);
+    const pending = await pendingUnits(mo);
+    await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
+      .send({ unit_ids: pending.map((u) => u.id), result: 'pass' });
+    await receiveAll(mo);
+    const so = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', status:'approved', force:true, customer_name: 'ACME', items: [
+      { name: 'DIRECT-LINES Product', item_id: product, quantity: 1, unit_price: 50 },
+      { name: 'DIRECT-LINES Product', item_id: product, quantity: 1, unit_price: 60 },
+    ] })).body.id;
+    const lines = (await ctx.api.get(`/api/orders/${so}`).set(H())).body.items;
+    const units = (await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body;
+    const path = `/api/finished-products/${product}/units/allocate`;
+    const first = await ctx.api.post(path).set(H()).send({ action: 'sell', unit_ids: [units[0].id], order_id: so, order_item_id: lines[0].id });
+    expect(first.status).toBe(200);
+    const over = await ctx.api.post(path).set(H()).send({ action: 'sell', unit_ids: [units[1].id], order_id: so, order_item_id: lines[0].id });
+    expect(over.status).toBe(409);
+    expect(over.body.code).toBe('line_full');
+    const second = await ctx.api.post(path).set(H()).send({ action: 'sell', unit_ids: [units[1].id], order_id: so, order_item_id: lines[1].id });
+    expect(second.status).toBe(200);
+    expect((await ctx.api.get(`/api/orders/${so}`).set(H())).body.items.map((l: { allocated_qty: number }) => l.allocated_qty)).toEqual([1, 1]);
+    expect(await onHand(product)).toBe(1);
+  });
+
+  it('replays a lost direct-sale response with the same key without a second stock-out', async () => {
+    const { product, mo } = await buildUnits('DIRECT-RETRY', 1);
+    const pending = await pendingUnits(mo);
+    await ctx.api.post(`/api/job-orders/${mo}/units/inspect`).set(H())
+      .send({ unit_ids: pending.map((u) => u.id), result: 'pass' });
+    await receiveAll(mo);
+    const so = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', status:'approved', force:true, customer_name: 'ACME', items: [
+      { name: 'DIRECT-RETRY Product', item_id: product, quantity: 1, unit_price: 50 },
+    ] })).body.id;
+    const unit = (await ctx.api.get(`/api/finished-products/${product}/units`).set(H())).body[0];
+    const path = `/api/finished-products/${product}/units/allocate`;
+    const payload = { action: 'sell', unit_ids: [unit.id], order_id: so };
+    const key = `direct-retry-${so}-${unit.id}`;
+    const first = await ctx.api.post(path).set(H()).set('Idempotency-Key', key).send(payload);
+    expect(first.status).toBe(200);
+    const replay = await ctx.api.post(path).set(H()).set('Idempotency-Key', key).send(payload);
+    expect(replay.status).toBe(200);
+    expect(replay.headers['idempotency-replayed']).toBe('true');
+    expect(replay.body).toEqual(first.body);
+    expect(await onHand(product)).toBe(0);
   });
 
   it('moves units to another location without changing the grand total', async () => {

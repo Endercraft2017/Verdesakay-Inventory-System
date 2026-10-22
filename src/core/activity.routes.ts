@@ -1,7 +1,8 @@
-/** Activity log (admin-only, `audit.view`): read the app-wide action history + prune old rows.
- *  Rows are also swept automatically after ACTIVITY_LOG_RETENTION_DAYS by cleanupSessions(). */
+import { safeAuditMeta } from '../shared/audit-privacy';
+/** Activity log (admin-only, `audit.view`): read the app-wide action history. Read-only: rows
+ *  are removed only by the retention sweep after ACTIVITY_LOG_RETENTION_DAYS (cleanupSessions). */
 import { Router } from 'express';
-import { queryOne, queryAll, run } from '../shared/db';
+import { queryOne, queryAll } from '../shared/db';
 import { requireAuth, requirePermission } from '../shared/auth';
 import type { ActivityLogRow } from '../shared/types';
 
@@ -16,7 +17,7 @@ function clampInt(v: unknown, def: number, min: number, max: number): number {
 
 // GET /api/activity — filtered, paginated feed (newest first)
 router.get('/', (req, res) => {
-  const { user_id, entity, action, from, to, q } = req.query;
+  const { user_id, entity, action, from, to, q, ip, device_id } = req.query;
   const where: string[] = [];
   const params: unknown[] = [];
 
@@ -25,10 +26,12 @@ router.get('/', (req, res) => {
   if (typeof action === 'string' && action.trim()) { where.push('action = ?'); params.push(action.trim()); }
   if (typeof from === 'string' && from.trim()) { where.push('created_at >= ?'); params.push(from.trim()); }
   if (typeof to === 'string' && to.trim()) { where.push('created_at <= ?'); params.push(to.trim()); }
+  if (typeof ip === 'string' && ip.trim()) { where.push('ip = ?'); params.push(ip.trim()); }
+  if (typeof device_id === 'string' && device_id.trim()) { where.push('device_id = ?'); params.push(device_id.trim()); }
   if (typeof q === 'string' && q.trim()) {
-    where.push('(summary LIKE ? OR path LIKE ? OR user_name LIKE ?)');
+    where.push('(summary LIKE ? OR path LIKE ? OR user_name LIKE ? OR ip LIKE ? OR device LIKE ?)');
     const like = `%${q.trim()}%`;
-    params.push(like, like, like);
+    params.push(like, like, like, like, like);
   }
   const whereSql = where.length ? ' WHERE ' + where.join(' AND ') : '';
   const limit = clampInt(req.query.limit, 100, 1, 500);
@@ -41,7 +44,7 @@ router.get('/', (req, res) => {
     limit,
     offset
   );
-  res.json({ rows, total, limit, offset });
+  res.json({ rows: rows.map(r => ({ ...r, meta: safeAuditMeta(r.meta, r.path) })), total, limit, offset });
 });
 
 // GET /api/activity/options — distinct values for the filter dropdowns
@@ -60,15 +63,7 @@ router.get('/options', (_req, res) => {
   res.json({ entities, actions, users });
 });
 
-// DELETE /api/activity?before=<ISO datetime> — prune entries older than the cutoff
-router.delete('/', (req, res) => {
-  const before = typeof req.query.before === 'string' ? req.query.before.trim() : '';
-  if (!before) {
-    res.status(400).json({ error: 'A "before" date is required' });
-    return;
-  }
-  const info = run('DELETE FROM activity_log WHERE created_at < ?', before);
-  res.json({ deleted: info.changes });
-});
+// No DELETE: the audit trail is what catches misuse by the people who can read it, so nothing in
+// the app removes entries early — only the retention sweep (cleanupSessions) does.
 
 export default router;

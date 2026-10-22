@@ -15,8 +15,10 @@ import type { Server as HttpServer, IncomingMessage } from 'node:http';
 import type { Server as HttpsServer } from 'node:https';
 import { WebSocketServer, WebSocket } from 'ws';
 import { userFromToken } from './auth';
-import { resolveTenantSlug } from '../platform/platform';
+import { resolveTenantSlug, getTenant, retiredDefaultTenant } from '../platform/platform';
+import { tenantPath, onTenantPathHost } from '../platform/tenant-path';
 import { tenantStore, getDb } from './db';
+import { sideEffectsSuppressed } from './sync-context';
 
 export interface ChatEvent {
   type: string;
@@ -51,6 +53,7 @@ function unregister(slug: string, userId: number, ws: WebSocket): void {
 /** Push `event` to every open socket for each of `userIds` in tenant `slug`. Called by
  *  routes after a DB mutation commits (message send/edit/unsend/react/read). */
 export function broadcast(slug: string, userIds: number[], event: ChatEvent): void {
+  if (sideEffectsSuppressed('broadcast')) return; // the authority broadcasts once, on replay
   const tenant = connections.get(slug);
   if (!tenant) return;
   const payload = JSON.stringify(event);
@@ -71,16 +74,25 @@ export function attachWebSocket(server: HttpServer | HttpsServer): void {
 
   server.on('upgrade', (req: IncomingMessage, socket, head) => {
     const url = new URL(req.url || '', 'http://placeholder');
-    if (url.pathname !== '/ws') {
+    const route = tenantPath(req.headers.host, url.pathname);
+    if ((route?.url ?? url.pathname) !== '/ws'
+      || (!route && onTenantPathHost(req.headers.host) && process.env.DEFAULT_TENANT_REDIRECT)) {
       socket.destroy();
       return;
     }
     const xTenant = req.headers['x-tenant'];
-    const slug = resolveTenantSlug(
+    const slug = route?.slug ?? resolveTenantSlug(
       req.headers.host,
       Array.isArray(xTenant) ? xTenant[0] : xTenant,
       url.searchParams.get('tenant')
     );
+    if (slug === 'default' && retiredDefaultTenant()) { socket.destroy(); return; }
+    if (slug !== 'default') {
+      const tenant = getTenant(slug);
+      if (!tenant || tenant.status === 'suspended' || tenant.status === 'purged') {
+        socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return;
+      }
+    }
     // userFromToken() resolves the tenant DB off tenantStore (see db.ts's `db` proxy) —
     // without this it would silently fall back to the default tenant's DB and accept
     // (or reject) tokens that belong to a completely different workspace.

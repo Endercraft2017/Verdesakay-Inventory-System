@@ -2,7 +2,7 @@
    planned start … due date, coloured by status, filterable by team / work centre, with
    an advisory per-day capacity check. */
 App.register('production-schedule', async (view) => {
-  const canWrite = App.hasPermission('inventory.adjust');
+  const canWrite = App.hasPermission('production.plan');
   const state = { month: new Date(), team: '', wc: '' };
   let jobs = [];
   let teams = [];

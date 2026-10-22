@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import { queryOne, queryAll, run } from '../../shared/db';
 import { requireAuth, requirePermission } from '../../shared/auth';
+import { syncClass } from '../../sync';
 import { parseBody, createSupplierSchema, updateSupplierSchema, csvImportSchema } from '../../shared/validation';
 import { toCsv } from '../../shared/csv';
 import { resolveImport, importLoop } from '../../shared/csv-import';
@@ -42,7 +43,7 @@ router.get('/export', requirePermission('inventory.view'), (_req, res) => {
 });
 
 // POST /api/suppliers/import — create/update suppliers from CSV. Upsert key: name.
-router.post('/import', requirePermission('inventory.create'), (req, res) => {
+router.post('/import', requirePermission('inventory.create'), syncClass('claim'), (req, res) => {
   const { csv, dry_run } = parseBody(csvImportSchema, req.body);
   let resolved;
   try {
@@ -109,7 +110,7 @@ router.get('/:id', requirePermission('inventory.view'), (req, res) => {
 });
 
 // POST /api/suppliers
-router.post('/', requirePermission('inventory.create'), (req, res) => {
+router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req, res) => {
   const input = parseBody(createSupplierSchema, req.body);
   const info = run(
     `INSERT INTO suppliers (name, contact_person, phone, email, address, tin, notes)
@@ -126,7 +127,7 @@ router.post('/', requirePermission('inventory.create'), (req, res) => {
 });
 
 // PUT /api/suppliers/:id
-router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
+router.put('/:id', requirePermission('inventory.edit'), syncClass('claim'), (req, res) => {
   const id = Number(req.params.id);
   const existing = queryOne<Supplier>('SELECT * FROM suppliers WHERE id = ?', id);
   if (!existing) {
@@ -152,7 +153,7 @@ router.put('/:id', requirePermission('inventory.edit'), (req, res) => {
 });
 
 // DELETE /api/suppliers/:id — items keep their history; their supplier_id goes NULL (FK).
-router.delete('/:id', requirePermission('inventory.delete'), (req, res) => {
+router.delete('/:id', requirePermission('inventory.delete'), syncClass('claim'), (req, res) => {
   const info = run('DELETE FROM suppliers WHERE id = ?', Number(req.params.id));
   if (info.changes === 0) {
     res.status(404).json({ error: 'Supplier not found' });

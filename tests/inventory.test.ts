@@ -61,6 +61,15 @@ describe('inventory', () => {
     expect(detail.body.history[0].balance_after).toBe(25); // newest first
   });
 
+  it('refuses the legacy phone Pick adjustment so a later release cannot deduct twice', async () => {
+    const { body } = await createItem({ name: 'Legacy pick guard', quantity: 4 });
+    const blocked = await ctx.api.post(`/api/inventory/${body.id}/adjust`).set(authHdr())
+      .send({ change: -2, reason: 'Picked for order SO-00042' });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe('use_release_workflow');
+    expect((await ctx.api.get(`/api/inventory/${body.id}`).set(authHdr())).body.quantity).toBe(4);
+  });
+
   it('refuses to take stock below zero', async () => {
     const { body } = await createItem({ name: 'Staplers', quantity: 3 });
     const res = await ctx.api.post(`/api/inventory/${body.id}/adjust`).set(authHdr()).send({ change: -10 });
@@ -80,6 +89,38 @@ describe('inventory', () => {
     expect(res.status).toBe(200);
     expect(res.body.every((i: { low_stock: number }) => i.low_stock === 1)).toBe(true);
     expect(res.body.some((i: { name: string }) => i.name === 'LowItem')).toBe(true);
+  });
+
+  it('separates parts from finished products without changing item identity or stock', async () => {
+    const part = await createItem({ name: 'Kind-filter part', quantity: 3 });
+    const product = await createItem({ name: 'Kind-filter product', quantity: 2 });
+    const { run } = await import('../src/shared/db');
+    run('UPDATE inventory_items SET is_finished_product=1 WHERE id=?', product.body.id);
+    const fetch = async (kind: string) => ctx.api.get(`/api/inventory?kind=${kind}&q=Kind-filter`).set(authHdr());
+    const parts = await fetch('parts');
+    const finished = await fetch('finished');
+    const all = await fetch('all');
+    expect(parts.body.map((x: { id: number }) => x.id)).toContain(part.body.id);
+    expect(parts.body.map((x: { id: number }) => x.id)).not.toContain(product.body.id);
+    expect(finished.body.map((x: { id: number }) => x.id)).toContain(product.body.id);
+    expect(finished.body.map((x: { id: number }) => x.id)).not.toContain(part.body.id);
+    expect(all.body.map((x: { id: number }) => x.id)).toEqual(expect.arrayContaining([part.body.id, product.body.id]));
+    expect(finished.body.find((x: { id: number }) => x.id === product.body.id).quantity).toBe(2);
+    expect((await fetch('unexpected')).status).toBe(400);
+  });
+
+  it('does not let loose parts acquire semi-built stock through generic stock actions', async () => {
+    const part = await createItem({ name: 'Loose controller component', quantity: 3 });
+    const id = part.body.id;
+    expect((await ctx.api.post(`/api/inventory/${id}/adjust`).set(authHdr()).send({ change: 1, build_mode: 'semi_built' })).status).toBe(400);
+    expect((await ctx.api.post(`/api/inventory/${id}/damage`).set(authHdr()).send({ quantity: 1, build_mode: 'semi_built' })).status).toBe(400);
+    const locations = (await ctx.api.get('/api/locations').set(authHdr())).body;
+    if (locations.length > 1) {
+      expect((await ctx.api.post(`/api/inventory/${id}/transfer`).set(authHdr()).send({
+        from_location_id: locations[0].id, to_location_id: locations[1].id, amount: 1, build_mode: 'semi_built',
+      })).status).toBe(400);
+    }
+    expect((await ctx.api.get(`/api/inventory/${id}`).set(authHdr())).body.quantity).toBe(3);
   });
 
   it('searches by name/sku', async () => {
@@ -394,6 +435,10 @@ describe('inventory: item image', () => {
     const detail = await ctx.api.get(`/api/inventory/${body.id}`).set(authHdr());
     expect(detail.body.image_path).toBe(up.body.image_path);
 
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    fs.unlinkSync(path.join(ctx.tmpDir, 'uploads', up.body.image_path));
+
     const img = await ctx.api.get(`/api/inventory/${body.id}/image`).set(authHdr());
     expect(img.status).toBe(200);
     expect(img.headers['content-type']).toContain('image/png');
@@ -464,8 +509,9 @@ describe('inventory: RBAC on mutations', () => {
     expect((await ctx.api.delete(`/api/inventory/${item.body.id}`).set(hdr)).status).toBe(403);
   });
 
-  it('admin_staff (no inventory.delete by default) can create/edit/adjust but not delete', async () => {
+  it('an explicitly delegated stock clerk can create/edit/adjust but not delete', async () => {
     const staff = await createEmployee(ctx.api, token, { username: 'rbac_staff', role: 'admin_staff' });
+    await ctx.api.put('/api/users/'+staff.id+'/permissions').set(authHdr()).send({overrides:{'inventory.create':true,'inventory.edit':true,'inventory.adjust':true}});
     const hdr = { Authorization: `Bearer ${staff.token}` };
     const created = await ctx.api.post('/api/inventory').set(hdr).send({ name: 'Staff Item', quantity: 2, unit: 'pcs', min_quantity: 0 });
     expect(created.status).toBe(201);

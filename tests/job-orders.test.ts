@@ -55,6 +55,34 @@ const createMO = (body: Record<string, unknown>) =>
   ctx.api.post('/api/job-orders').set(authHdr()).send(body);
 
 describe('job orders', () => {
+  it('suggests a separate controller build for a parent BOM and requires acceptance', async () => {
+    const board = await mkItem('Nested board');
+    const chip = await mkItem('Nested chip', 4);
+    const bike = await mkItem('Nested bike');
+    expect((await ctx.api.put(`/api/finished-products/${board}`).set(authHdr()).send({
+      components: [{ component_item_id: chip, quantity: 2 }],
+    })).status).toBe(200);
+    expect((await ctx.api.put(`/api/finished-products/${bike}`).set(authHdr()).send({
+      components: [{ component_item_id: board, quantity: 1 }],
+    })).status).toBe(200);
+    const parent = await createMO({ product_item_id: bike, qty_ordered: 2 });
+    expect(parent.status).toBe(201);
+    let suggestions = (await ctx.api.get(`/api/job-orders/${parent.body.id}/subassembly-suggestions`).set(authHdr())).body;
+    expect(suggestions).toEqual([expect.objectContaining({ component_item_id: board, short: 2, suggested_qty: 2, buildable_now: 2 })]);
+    expect((await ctx.api.get(`/api/job-orders/${parent.body.id}`).set(authHdr())).body.components)
+      .toEqual([expect.objectContaining({ component_item_id: board, qty_planned: 2 })]);
+    expect((await ctx.api.post(`/api/job-orders/${parent.body.id}/subassembly-jobs`).set(authHdr())
+      .send({ component_item_id: board, quantity: 3 })).status).toBe(409);
+    const child = await ctx.api.post(`/api/job-orders/${parent.body.id}/subassembly-jobs`).set(authHdr())
+      .send({ component_item_id: board, quantity: 2 });
+    expect(child.status).toBe(201);
+    expect(child.body.parent_job_order_id).toBe(parent.body.id);
+    expect((await ctx.api.get(`/api/job-orders/${child.body.id}`).set(authHdr())).body.components)
+      .toEqual([expect.objectContaining({ component_item_id: chip, qty_planned: 4 })]);
+    suggestions = (await ctx.api.get(`/api/job-orders/${parent.body.id}/subassembly-suggestions`).set(authHdr())).body;
+    expect(suggestions[0]).toEqual(expect.objectContaining({ planned: 2, uncovered: 0, suggested_qty: 0 }));
+  });
+
   it('creates a draft that snapshots the BOM (planned = per-unit * qty)', async () => {
     const { product } = await setupProduct('Draft');
     const res = await createMO({ product_item_id: product, qty_ordered: 10 });
@@ -83,6 +111,9 @@ describe('job orders', () => {
     const jo = (await ctx.api.get(`/api/job-orders/${mo.body.id}`).set(authHdr())).body;
     expect(jo.components).toEqual([]);
 
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [mo.body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: mo.body.id }] });
     const rel = await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${mo.body.id}/accept`).set(authHdr());
     expect(rel.status).toBe(200);
@@ -109,6 +140,9 @@ describe('job orders', () => {
     expect(line.qty_planned).toBe(8);
     expect(line.qty_per_unit).toBe(2); // 8 / 4 ordered
 
+    await ctx.api.post(`/api/job-orders/${body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: body.id }] });
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     expect(await onHand(extra)).toBe(42); // 50 − 8 reserved
@@ -124,6 +158,9 @@ describe('job orders', () => {
     const jo = (await ctx.api.get(`/api/job-orders/${body.id}`).set(authHdr())).body;
     expect(jo.components.find((c: { component_item_id: number }) => c.component_item_id === bolt).qty_planned).toBe(14);
 
+    await ctx.api.post(`/api/job-orders/${body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: body.id }] });
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     const after = await ctx.api.put(`/api/job-orders/${body.id}/components`).set(authHdr())
@@ -135,6 +172,9 @@ describe('job orders', () => {
     const { product, bolt, panel } = await setupProduct('Release', 50, 50);
     const { body } = await createMO({ product_item_id: product, qty_ordered: 10 }); // 20 bolts, 30 panels
 
+    await ctx.api.post(`/api/job-orders/${body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: body.id }] });
     const rel = await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     expect(rel.status).toBe(200);
@@ -143,18 +183,26 @@ describe('job orders', () => {
     expect(await onHand(panel)).toBe(20);
   });
 
-  it('release fails (no stock change) when a component is short', async () => {
+  it('a short component stops the pick, so the kit is never released (no stock change)', async () => {
     const { product, bolt } = await setupProduct('Short', 5, 100); // only 5 bolts, need 20
     const { body } = await createMO({ product_item_id: product, qty_ordered: 10 });
+    await ctx.api.post(`/api/job-orders/${body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [body.id] });
+    const prep = await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: body.id }] });
+    expect(prep.status).toBe(400);
+    expect(prep.body.shortfalls.length).toBeGreaterThan(0);
     const rel = await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
-    await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
-    expect(rel.status).toBe(400);
+    expect(rel.status).toBe(409);
+    expect(rel.body.needs_prepare).toBe(true);
     expect(await onHand(bolt)).toBe(5); // untouched
   });
 
   it('progress consumes components, adds finished stock, and auto-completes', async () => {
     const { product, bolt, panel } = await setupProduct('Progress', 100, 100);
     const { body } = await createMO({ product_item_id: product, qty_ordered: 4 }); // 8 bolts, 12 panels
+    await ctx.api.post(`/api/job-orders/${body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: body.id }] });
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
 
@@ -178,6 +226,9 @@ describe('job orders', () => {
   it('rejects progress beyond the ordered quantity', async () => {
     const { product } = await setupProduct('Over');
     const { body } = await createMO({ product_item_id: product, qty_ordered: 2 });
+    await ctx.api.post(`/api/job-orders/${body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: body.id }] });
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     const r = await ctx.api.post(`/api/job-orders/${body.id}/progress`).set(authHdr()).send({ done_delta: 3 });
@@ -187,6 +238,9 @@ describe('job orders', () => {
   it('close (finish early) returns the unconsumed components', async () => {
     const { product, bolt, panel } = await setupProduct('Close', 100, 100);
     const { body } = await createMO({ product_item_id: product, qty_ordered: 10 }); // 20 bolts / 30 panels reserved
+    await ctx.api.post(`/api/job-orders/${body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: body.id }] });
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     expect(await onHand(bolt)).toBe(80);
@@ -203,6 +257,9 @@ describe('job orders', () => {
   it('cancel after release returns everything not yet consumed', async () => {
     const { product, bolt } = await setupProduct('Cancel', 100, 100);
     const { body } = await createMO({ product_item_id: product, qty_ordered: 5 });
+    await ctx.api.post(`/api/job-orders/${body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: body.id }] });
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr()); // -10 bolts
     await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     expect(await onHand(bolt)).toBe(90);
@@ -215,6 +272,9 @@ describe('job orders', () => {
   it('pause / resume toggle status with no stock movement', async () => {
     const { product, bolt } = await setupProduct('Pause');
     const { body } = await createMO({ product_item_id: product, qty_ordered: 2 });
+    await ctx.api.post(`/api/job-orders/${body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: body.id }] });
     await ctx.api.post(`/api/job-orders/${body.id}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${body.id}/accept`).set(authHdr());
     const before = await onHand(bolt);
@@ -230,6 +290,9 @@ describe('job orders', () => {
     expect((await ctx.api.delete(`/api/job-orders/${a.body.id}`).set(authHdr())).status).toBe(200);
 
     const b = await createMO({ product_item_id: product, qty_ordered: 1 });
+    await ctx.api.post(`/api/job-orders/${b.body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [b.body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: b.body.id }] });
     await ctx.api.post(`/api/job-orders/${b.body.id}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${b.body.id}/accept`).set(authHdr());
     expect((await ctx.api.delete(`/api/job-orders/${b.body.id}`).set(authHdr())).status).toBe(409);
@@ -278,6 +341,9 @@ describe('job orders → manufacturing WIP in the GL (Phase 3b)', () => {
   it('release moves component cost from Inventory into Work in Process', async () => {
     const { product } = await costedProduct('WIP-A');
     const mo = await createMO({ product_item_id: product, qty_ordered: 10 }); // 20 bolts (₱100) + 30 panels (₱300) = ₱400
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [mo.body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: mo.body.id }] });
     await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${mo.body.id}/accept`).set(authHdr());
 
@@ -293,6 +359,9 @@ describe('job orders → manufacturing WIP in the GL (Phase 3b)', () => {
     const wipBefore = await acctBalance('1152');
     const { product } = await costedProduct('WIP-B');
     const mo = await createMO({ product_item_id: product, qty_ordered: 5 }); // released value ₱200
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [mo.body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: mo.body.id }] });
     await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${mo.body.id}/accept`).set(authHdr());
     const done = await ctx.api.post(`/api/job-orders/${mo.body.id}/progress`).set(authHdr())
@@ -312,6 +381,9 @@ describe('job orders → manufacturing WIP in the GL (Phase 3b)', () => {
     const varBefore = await acctBalance('5150');
     const { product } = await costedProduct('WIP-C');
     const mo = await createMO({ product_item_id: product, qty_ordered: 10 }); // released ₱400, ₱40/unit
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [mo.body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: mo.body.id }] });
     await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${mo.body.id}/accept`).set(authHdr());
     const r = await ctx.api.post(`/api/job-orders/${mo.body.id}/progress`).set(authHdr())
@@ -327,6 +399,9 @@ describe('job orders → manufacturing WIP in the GL (Phase 3b)', () => {
   it('cancelling a released job order returns the whole WIP charge to Inventory', async () => {
     const { product } = await costedProduct('WIP-D');
     const mo = await createMO({ product_item_id: product, qty_ordered: 4 }); // released ₱160
+    await ctx.api.post(`/api/job-orders/${mo.body.id}/approve`).set(authHdr());
+    await ctx.api.post(`/api/job-orders/warehouse-accept`).set(authHdr()).send({ job_order_ids: [mo.body.id] });
+    await ctx.api.post(`/api/job-orders/prepare`).set(authHdr()).send({ job_orders: [{ id: mo.body.id }] });
     await ctx.api.post(`/api/job-orders/${mo.body.id}/release`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${mo.body.id}/accept`).set(authHdr());
     await ctx.api.post(`/api/job-orders/${mo.body.id}/cancel`).set(authHdr());

@@ -116,6 +116,80 @@ export function pagIbigContribution(monthlyComp: number, p: PagIbigParams): Spli
   return { employee, employer, total: round2(employee + employer) };
 }
 
+/* ------------------------------------------------ Contribution bases --- */
+/* Each fund defines the pay its contribution is computed on differently:
+ *   SSS        RA 11199 §8(f) + IRR: "all actual remuneration for employment" in the month.
+ *              For hourly/daily/weekly-paid employees the month runs to the end of the last
+ *              payroll period ending in it, so the base is the sum of the cutoffs ending in it.
+ *   Pag-IBIG   RA 9679 §3: basic salary plus mandated COLA, actually received in the month.
+ *   PhilHealth Circular 2020-0005: the fixed "monthly basic salary" — NOT reduced by absences,
+ *              tardiness, undertime or leave without pay. Daily-paid: DOLE's estimated
+ *              equivalent monthly rate (daily rate × working days a year ÷ 12). */
+
+/** The payslip (`hr_payroll` record) figures the bases are read from. */
+export interface PayslipEarnings {
+  total_earnings?: unknown;
+  late_absences?: unknown;
+  overtime_pay?: unknown;
+  night_diff_pay?: unknown;
+  special_holiday_30?: unknown;
+  rest_day_ot?: unknown;
+}
+
+const n = (v: unknown): number => Number(v) || 0;
+
+/** One cutoff's SSS compensation: everything earned, less the late/undertime deduction (pay
+    that was never actually earned). */
+export function sssCompensation(s: PayslipEarnings): number {
+  return Math.max(0, round2(n(s.total_earnings) - n(s.late_absences)));
+}
+
+/** One cutoff's Pag-IBIG compensation: SSS compensation less overtime, night differential and
+    rest-day / special-holiday premiums. (Regular-holiday pay stays in — it is mandated wage;
+    the record doesn't split out its worked-day premium, which only matters under ₱10,000.) */
+export function pagIbigCompensation(s: PayslipEarnings): number {
+  return Math.max(0, round2(
+    sssCompensation(s) - n(s.overtime_pay) - n(s.night_diff_pay) - n(s.special_holiday_30) - n(s.rest_day_ot)
+  ));
+}
+
+/** DOLE estimated equivalent monthly rate of a daily wage: 313 days a year for a 6-day week,
+    261 for a 5-day week, 365 when paid every day — i.e. 365 − 52 × rest days per week. */
+export function equivalentMonthlyRate(dailyRate: number, restDaysPerWeek: number): number {
+  const rest = clamp(Math.round(restDaysPerWeek), 0, 6);
+  return round2((dailyRate * (365 - 52 * rest)) / 12);
+}
+
+/** PhilHealth monthly basic salary: the monthly rate for monthly-paid, the DOLE equivalent
+    monthly rate for daily-paid. */
+export function philHealthMonthlyBasic(
+  e: { rate_type: 'daily' | 'monthly'; monthly_rate: number | null; daily_rate: number },
+  restDaysPerWeek: number
+): number {
+  return e.rate_type === 'monthly' && e.monthly_rate
+    ? round2(e.monthly_rate)
+    : equivalentMonthlyRate(e.daily_rate, restDaysPerWeek);
+}
+
+/** What one cutoff deducts of a monthly amount when the month's earlier cutoffs already took
+    `alreadyDeducted`: the remainder, never negative. */
+export function monthRemainder(monthlyDue: number, alreadyDeducted: number): number {
+  return Math.max(0, round2(monthlyDue - alreadyDeducted));
+}
+
+/** The base a cutoff computes a month-accruing contribution (SSS, Pag-IBIG) on:
+ *  - the month is complete (its last cutoff), or a later cutoff this month still deducts this
+ *    fund and will true it up → the month-to-date actual compensation;
+ *  - this is the month's last cutoff that deducts the fund but the month isn't over yet → the
+ *    month's actual total isn't knowable, so the employee's full-month rate stands in (never
+ *    less than what has actually been earned so far). */
+export function contributionBasis(
+  monthToDate: number, opts: { monthComplete: boolean; laterCutoffDeducts: boolean; fullMonthEstimate: number }
+): number {
+  if (opts.monthComplete || opts.laterCutoffDeducts) return round2(monthToDate);
+  return round2(Math.max(monthToDate, opts.fullMonthEstimate));
+}
+
 /* --------------------------------------------------- Withholding tax --- */
 
 /** Taxable compensation for the period = gross − non-taxable items − the employee's own
@@ -137,8 +211,8 @@ export function withholdingTax(taxableForPeriod: number, frequency: PayFrequency
   return round2(chosen.base + (taxableForPeriod - chosen.over) * chosen.rate);
 }
 
-/** All three employee-side contributions for a monthly run, plus their sum — the value
-    that feeds `taxableCompensation`. */
+/** All three employee-side contributions on one flat monthly figure, plus their sum. Payslip
+    generation uses the per-fund bases above instead (see computeEmployeeStatutory). */
 export function statutoryDeductions(
   monthlyComp: number,
   monthlyBasic: number,

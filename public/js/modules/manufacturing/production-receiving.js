@@ -6,7 +6,7 @@
    needed. See src/routes/job-orders.routes.ts GET /:id/receivable, POST /:id/products-in.
    filter.tab = 'queue' (default) | 'history' */
 App.register('production-receiving', async (view, filter) => {
-  const canReceive = App.hasPermission('inventory.adjust') || App.hasPermission('production.receive');
+  const canReceive = App.hasPermission('production.receive');
   const tab = filter && filter.tab === 'history' ? 'history' : 'queue';
   const LABEL = 'margin:16px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted)';
 
@@ -19,7 +19,33 @@ App.register('production-receiving', async (view, filter) => {
       </div>
       <div class="panel"><div id="pi-table"><div class="empty">Loading…</div></div></div>`;
     const tableEl = view.querySelector('#pi-table');
-    const rows = await API.get('/job-orders').catch(() => []);
+    let rows;
+    try {
+      if (App.hasPermission('production.view')) {
+        rows = await API.get('/job-orders');
+      } else {
+        // Receiving clerks read only receivable output, never the broad job-order list.
+        const queue = await API.get('/rts/queue');
+        const jobs = new Map();
+        for (const [kind, entries] of [['units', queue.units || []], ['batches', queue.batches || []]]) {
+          for (const entry of entries) {
+            let job = jobs.get(entry.job_order_id);
+            if (!job) {
+              job = { id: entry.job_order_id, number: entry.job_order_number, product_name: entry.product_name, units_passed: 0, batches_receivable: 0 };
+              jobs.set(job.id, job);
+            }
+            if (kind === 'units') job.units_passed++;
+            else job.batches_receivable++;
+          }
+        }
+        rows = [...jobs.values()];
+      }
+    }
+    catch (e) {
+      tableEl.innerHTML = `<div class="empty"><strong>Unable to load Products In</strong><p>${UI.esc(e.message || 'Please try again.')}</p><button class="btn" id="pi-retry">Retry</button></div>`;
+      tableEl.querySelector('#pi-retry').onclick = renderQueue;
+      return;
+    }
     const need = (rows || []).filter((j) => ((j.units_passed || 0) > 0 || (j.batches_receivable || 0) > 0) && j.status !== 'cancelled');
 
     if (!need.length) {
@@ -54,8 +80,12 @@ App.register('production-receiving', async (view, filter) => {
     try { rec = await API.get('/job-orders/' + joId + '/receivable'); }
     catch (e) { UI.toast(e.message, 'error'); return; }
     if (!rec.units.length && !rec.batches.length) { UI.toast('Nothing left to receive on this job order', 'error'); return; }
-    const locations = await API.get('/locations').catch(() => []);
-    const def = locations.find((l) => String(l.id) === String(rec.output_location_id)) || locations.find((l) => l.is_default) || locations[0];
+    let locations;
+    try { locations = await API.get('/locations'); }
+    catch (e) { UI.toast(e.message || 'Unable to load storage locations', 'error'); return; }
+    const storage = locations.filter((l) => l.type !== 'truck');
+    const def = storage.find((l) => String(l.id) === String(rec.output_location_id)) || storage.find((l) => l.is_default) || storage[0];
+    let attempt = null;
 
     const m = UI.modal({
       title: 'Record Products In',
@@ -65,8 +95,9 @@ App.register('production-receiving', async (view, filter) => {
         <div class="field-row">
           <div><label>Received date</label><input data-f="date" type="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
           <div style="flex:1"><label>Received into <span class="req">*</span></label>
-            <select data-f="loc">${locations.map((l) => `<option value="${l.id}" ${def && l.id === def.id ? 'selected' : ''}>${UI.esc(l.name)}</option>`).join('')}</select></div>
+            <select data-f="loc"><option value="">Choose storage location</option>${storage.map((l) => `<option value="${l.id}" ${def && l.id === def.id ? 'selected' : ''}>${UI.esc(l.path || l.name)}${l.capacity == null ? '' : ` · ${Math.max(0, l.capacity - l.total_units)} free`}</option>`).join('')}</select></div>
         </div>
+        <p class="muted" style="margin:0 0 12px">One receipt will post every selected unit and batch quantity into this exact location. Storage capacity is checked again when you post.</p>
         <div><label>Note</label><input data-f="note" placeholder="Count discrepancy, condition…" /></div>
         ${rec.units.length ? `
           <h4 style="${LABEL}">Units</h4>
@@ -98,20 +129,31 @@ App.register('production-receiving', async (view, filter) => {
           notes: ov.querySelector('[data-f="note"]').value.trim() || null,
         };
         const unitIds = Array.from(ov.querySelectorAll('.pi-u:checked')).map((c) => Number(c.value));
-        const batchLines = Array.from(ov.querySelectorAll('tr[data-batch]'))
-          .map((tr) => ({ batch_id: Number(tr.dataset.batch), quantity: parseFloat(tr.querySelector('[data-bq]').value) }))
-          .filter((b) => b.quantity > 0);
+        const batchLines = [];
+        for (const tr of ov.querySelectorAll('tr[data-batch]')) {
+          const raw = tr.querySelector('[data-bq]').value.trim();
+          if (raw === '') { showErr('Enter a quantity for each batch, or 0 to skip it'); return false; }
+          const qty = Number(raw);
+          if (!Number.isSafeInteger(qty) || qty < 0 || qty > Number(tr.dataset.remaining)) {
+            showErr('Batch quantity must be a whole number from 0 to the remaining amount'); return false;
+          }
+          if (qty) batchLines.push({ batch_id: Number(tr.dataset.batch), quantity: qty });
+        }
         if (!unitIds.length && !batchLines.length) { showErr('Nothing selected to receive'); return false; }
+        const payload = { ...body, unit_ids: unitIds, batches: batchLines };
+        const signature = JSON.stringify(payload);
+        if (!attempt || attempt.signature !== signature) {
+          attempt = { signature, key: 'products-in-' + (globalThis.crypto?.randomUUID?.() || Date.now() + '-' + Math.random().toString(36).slice(2)) };
+        }
         try {
-          if (unitIds.length) {
-            await API.post('/job-orders/' + joId + '/products-in', { ...body, unit_ids: unitIds });
-          }
-          for (const b of batchLines) {
-            await API.post('/job-orders/' + joId + '/products-in', { ...body, batch_id: b.batch_id, quantity: b.quantity });
-          }
-          UI.toast('Received');
-          renderQueue();
-        } catch (e) { showErr(e.message); return false; }
+          const result = await API.post('/job-orders/' + joId + '/products-in', payload, { idempotencyKey: attempt.key });
+          UI.toast(API.syncLocal(result) ? 'Saved on this PC; awaiting site confirmation' : 'Products In receipt ' + result.number + ' posted');
+          await renderQueue();
+        } catch (e) {
+          if (!e.offline) attempt = null;
+          showErr(e.offline ? 'Connection lost. Retry this unchanged receipt to confirm the result, or close and reopen to refresh the queue.' : e.message);
+          return false;
+        }
       },
     });
     const all = m.overlay.querySelector('#pi-all');
@@ -125,7 +167,13 @@ App.register('production-receiving', async (view, filter) => {
       </div>
       <div class="panel"><div id="pi-hist"></div></div>`;
     const tableEl = view.querySelector('#pi-hist');
-    const rows = await API.get('/job-orders/production-receipts').catch(() => []);
+    let rows;
+    try { rows = await API.get('/job-orders/production-receipts'); }
+    catch (e) {
+      tableEl.innerHTML = `<div class="empty"><strong>Unable to load receipt history</strong><p>${UI.esc(e.message || 'Please try again.')}</p><button class="btn" id="pi-history-retry">Retry</button></div>`;
+      tableEl.querySelector('#pi-history-retry').onclick = renderHistory;
+      return;
+    }
     if (!rows.length) {
       tableEl.innerHTML = UI.emptyState({ icon: 'sheet', title: 'No receipts yet', hint: 'Post a Products In receipt and it shows up here.' });
       return;

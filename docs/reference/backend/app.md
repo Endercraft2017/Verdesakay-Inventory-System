@@ -5,6 +5,15 @@ The Express application factory. Assembles all middleware, mounts every route mo
 
 ## Exports / Public API
 
+Optional path tenancy: `TENANT_PATH_HOST` recognizes `/<slug>` on one configured
+host and normalizes URLs before API, anonymous-report audit exclusions and sync
+capture. Existing status/auth/module checks still apply. HTML shells inject
+`VDS_BASE_PATH` and prefix asset URLs; manifests and worker scopes are tenant-specific.
+`DEFAULT_TENANT_REDIRECT`, after verified adoption, retires original-company root
+and API aliases while retaining health and the owner console. Default-host static
+and console requests use the adopted database rather than opening the retained
+source. See `platform/tenant-path.ts` and `docs/VERDESAKAY-TENANT-CUTOVER.md`.
+
 ```ts
 export function createApp(): express.Express
 ```

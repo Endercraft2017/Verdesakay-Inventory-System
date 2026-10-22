@@ -76,7 +76,8 @@ describe('reporting: create_report_document tool', () => {
     const files = (r.data as { files: Array<{ name: string; url: string; format: string; bytes: number }> }).files;
     expect(files.map((f) => f.format).sort()).toEqual(['docx', 'html']);
     for (const f of files) {
-      expect(f.name).toMatch(/^ai-report-weekly-ops-\d+-[a-f0-9]+\.(html|docx)$/);
+      // The owner's id leads the name — only they can download it.
+      expect(f.name).toMatch(/^ai-report-u\d+-weekly-ops-\d+-[a-f0-9]+\.(html|docx)$/);
       expect(f.url).toBe(`/api/ai/reports/${f.name}`);
       expect(fs.existsSync(path.join(ctx.tmpDir, 'uploads', f.name))).toBe(true);
       expect(f.bytes).toBeGreaterThan(100);
@@ -93,6 +94,7 @@ describe('reporting: GET /api/ai/reports/:name', () => {
   it('serves a generated report, rejects junk names, 404s missing, 401s without auth', async () => {
     const r = await exec('create_report_document', { title: 'DL Test', content: MD, format: 'html' }, someUser);
     const name = (r.data as { files: Array<{ name: string }> }).files[0]!.name;
+    fs.unlinkSync(path.join(ctx.tmpDir, 'uploads', name));
 
     const ok = await ctx.api.get(`/api/ai/reports/${name}`).set(authHdr());
     expect(ok.status).toBe(200);

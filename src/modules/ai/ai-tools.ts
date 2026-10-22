@@ -1,3 +1,4 @@
+import { redactInventoryCosts } from '../../shared/cost-visibility';
 /**
  * AI Agent tool definitions and executor.
  *
@@ -5,10 +6,14 @@
  * Personal tools (notes, tasks) require no special permission — any authenticated user.
  * Tools are filtered to those the calling user actually holds before being sent to the LLM.
  */
+import { moduleEnabled } from '../../shared/modules';
 import { db, queryOne, queryAll, run, getSetting, setSetting } from '../../shared/db';
+import { endUserSessions } from '../../shared/auth';
+import { getRole } from '../../shared/roles';
+import { canOnOrder, visibleOrderTypes } from '../inventory/order-access';
 import { applyStockChange, stockAt, getDefaultLocationId } from '../inventory/inventory-stock';
 import { parseBody, createUserSchema, updateUserSchema, createItemSchema, updateItemSchema } from '../../shared/validation';
-import { visibilityClause } from '../../core/forms.routes';
+import { visibilityClause } from '../../core/file-visibility';
 import { analyticsToolsForUser, isAnalyticsTool, executeAnalyticsTool } from './ai-analytics';
 import { reportingToolsForUser, isReportingTool, executeReportingTool } from './ai-reporting';
 import { ragToolsForUser, isRagTool, executeRagTool } from './ai-rag';
@@ -71,8 +76,8 @@ const TOOL_PERMISSION: Record<ToolName, Permission | null> = {
   mark_message_read: 'messages.view',
   get_forms: 'forms.view',
   list_users: 'users.manage',
-  create_user: 'users.manage',
-  update_user: 'users.manage',
+  create_user: 'users.permissions',
+  update_user: 'users.permissions',
   get_notes: null,
   create_note: null,
   update_note: null,
@@ -439,12 +444,7 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
           password: { type: 'string', description: 'Initial password (min 6 characters).' },
           role: {
             type: 'string',
-            enum: [
-              'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
-              'parts_clerk', 'production_lead', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
-              'releasing_clerk',
-            ],
-            description: 'Role determines default permissions.',
+            description: "Role key (a permission bundle the workspace defines under Admin → Roles), e.g. 'warehouse', 'hr', 'admin_staff'. Defaults to admin_staff.",
           },
           department_id: { type: 'number' },
         },
@@ -463,14 +463,7 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
         properties: {
           id: { type: 'number', description: 'User ID.' },
           full_name: { type: 'string' },
-          role: {
-            type: 'string',
-            enum: [
-              'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
-              'parts_clerk', 'production_lead', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
-              'releasing_clerk',
-            ],
-          },
+          role: { type: 'string', description: 'Role key — one the workspace defines under Admin → Roles.' },
           department_id: { type: 'number' },
           active: { type: 'boolean', description: 'Set false to deactivate the account.' },
         },
@@ -596,8 +589,23 @@ const TOOL_SPECS: Record<ToolName, CerebrasTool> = {
 // Public API
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Preserve role permissions, while removing capabilities the tenant has disabled. */
+function entitledUser(user: AuthUser): AuthUser {
+  return { ...user, permissions: user.permissions.filter(p => {
+    if (/^inventory\./.test(p) || p === 'forms.manage.inventory') return moduleEnabled('inventory');
+    if (/^(orders|delivery)\./.test(p)) return moduleEnabled('sales');
+    if (/^(production|qc)\./.test(p)) return moduleEnabled('manufacturing');
+    if (p.startsWith('purchasing.')) return moduleEnabled('purchasing');
+    if (/^(hr|payroll)\./.test(p) || p === 'forms.manage.hr') return moduleEnabled('hr');
+    if (p.startsWith('accounting.') || p === 'forms.manage.accounting') return moduleEnabled('accounting');
+    if (p.startsWith('mail.')) return moduleEnabled('email');
+    return true;
+  }) };
+}
+
 /** Return the subset of tools the authenticated user is permitted to call. */
 export function getToolsForUser(user: AuthUser): CerebrasTool[] {
+  user = entitledUser(user);
   const core = (Object.keys(TOOL_SPECS) as ToolName[])
     .filter((name) => {
       const perm = TOOL_PERMISSION[name];
@@ -620,7 +628,8 @@ type LineItem = {
 };
 
 /** Execute one tool call. Always returns a ToolResult — never throws. */
-export async function executeTool(name: string, args: unknown, user: AuthUser): Promise<ToolResult> {
+async function executeToolInternal(name: string, args: unknown, user: AuthUser): Promise<ToolResult> {
+  user = entitledUser(user);
   const a = (args ?? {}) as Record<string, unknown>;
 
   // Permission guard (defence-in-depth — the LLM only receives allowed tools)
@@ -697,6 +706,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
 
       case 'create_inventory_item': {
         const input = parseBody(createItemSchema, a);
+        if(input.quantity && !user.permissions.includes('inventory.adjust')) return {success:false,error:'Starting stock requires inventory.adjust'};
         if (input.sku) {
           const dupe = queryOne('SELECT id FROM inventory_items WHERE sku = ?', input.sku);
           if (dupe) return { success: false, error: 'An item with that SKU already exists.' };
@@ -785,7 +795,10 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       case 'search_orders': {
         const where: string[] = [];
         const p: unknown[] = [];
+        const types = visibleOrderTypes(user); // purchase orders need purchasing.view (order-access.ts)
+        if (a.type && !types.includes(a.type as never)) return { success: false, error: 'Permission denied.' };
         if (a.type) { where.push('o.type = ?'); p.push(a.type); }
+        else { where.push(`o.type IN (${types.map(() => '?').join(', ')})`); p.push(...types); }
         if (a.query) {
           where.push('(o.number LIKE ? OR o.customer_name LIKE ?)');
           const like = `%${a.query}%`;
@@ -807,14 +820,17 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
           a.id,
         );
         if (!order) return { success: false, error: 'Order not found.' };
+        if (!canOnOrder(user, (order as { type: string }).type, 'view')) return { success: false, error: 'Permission denied.' };
         const items = queryAll('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort', a.id);
         return { success: true, data: { ...order, items } };
       }
 
       case 'create_order': {
+        if (String(a.type||'sale') !== 'purchase' && a.status && !['open','draft'].includes(String(a.status).toLowerCase()) && !user.permissions.includes('orders.approve')) return {success:false,error:'Sales approval permission is required'};
         const type = String(a.type ?? 'sale');
         if (type !== 'sale' && type !== 'job' && type !== 'purchase')
           return { success: false, error: "type must be 'sale', 'job', or 'purchase'." };
+        if (!canOnOrder(user, type, 'create')) return { success: false, error: 'Permission denied.' };
         const seqKey = `order_seq_${type}`;
         const next = ((getSetting<number>(seqKey) ?? 0) + 1);
         setSetting(seqKey, next);
@@ -849,8 +865,11 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       case 'update_order': {
-        if (!queryOne('SELECT id FROM orders WHERE id = ?', a.id))
-          return { success: false, error: 'Order not found.' };
+        const existingOrder = queryOne<{ type: string; status:string }>('SELECT type,status FROM orders WHERE id = ?', a.id);
+        if (!existingOrder) return { success: false, error: 'Order not found.' };
+        if (!['open','draft'].includes(existingOrder.status) || a.status && !['open','draft'].includes(String(a.status))) return {success:false,error:'Use the order review screen for status decisions or changes to approved orders.'};
+        if (queryOne('SELECT 1 FROM goods_receipts WHERE order_id=? LIMIT 1',a.id) || queryOne('SELECT 1 FROM release_slips WHERE order_id=? LIMIT 1',a.id)) return {success:false,error:'Use the order review screen for an order with physical activity.'};
+        if (!canOnOrder(user, existingOrder.type, 'edit')) return { success: false, error: 'Permission denied.' };
         const lineItems = (a.items as LineItem[]) ?? [];
         const subtotal = lineItems.reduce((s, i) => s + i.quantity * i.unit_price, 0);
         const taxPct = Number(a.tax_percent ?? 0);
@@ -882,8 +901,10 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       case 'delete_order': {
-        const order = queryOne<{ number: string }>('SELECT number FROM orders WHERE id = ?', a.id);
+        const order = queryOne<{ number: string; type: string; status:string }>('SELECT number,type,status FROM orders WHERE id = ?', a.id);
         if (!order) return { success: false, error: 'Order not found.' };
+        if (!canOnOrder(user, order.type, 'delete')) return { success: false, error: 'Permission denied.' };
+        if (!['open','draft'].includes(order.status) || queryOne('SELECT 1 FROM goods_receipts WHERE order_id=? LIMIT 1',a.id) || queryOne('SELECT 1 FROM release_slips WHERE order_id=? LIMIT 1',a.id)) return {success:false,error:'Use the order review screen for an approved order or one with physical activity.'};
         run('DELETE FROM orders WHERE id = ?', a.id);
         return { success: true, data: { deleted: true, number: order.number } };
       }
@@ -971,7 +992,9 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       case 'create_user': {
+        if (!user.permissions.includes('users.permissions')) return {success:false,error:'Permission-management authority is required to create accounts through the assistant.'};
         const input = parseBody(createUserSchema, a);
+        if (!getRole(input.role)) return { success: false, error: `Unknown role "${input.role}".` };
         const exists = queryOne('SELECT id FROM users WHERE username = ?', input.username);
         if (exists) return { success: false, error: 'Username already taken.' };
         const { hashSync } = await import('bcryptjs');
@@ -984,9 +1007,11 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
       }
 
       case 'update_user': {
+        if (!user.permissions.includes('users.permissions')) return {success:false,error:'Permission-management authority is required to change accounts through the assistant.'};
         const existing = queryOne<{ role: string; active: number }>('SELECT role, active FROM users WHERE id = ?', a.id);
         if (!existing) return { success: false, error: 'User not found.' };
         const input = parseBody(updateUserSchema, a);
+        if (input.role !== undefined && !getRole(input.role)) return { success: false, error: `Unknown role "${input.role}".` };
         const role = input.role ?? existing.role;
         const active = input.active !== undefined ? (input.active ? 1 : 0) : existing.active;
 
@@ -1009,7 +1034,7 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
         if (input.active !== undefined) { cols.push('active = ?'); vals.push(active); }
         if (!cols.length) return { success: false, error: 'Nothing to update.' };
         run(`UPDATE users SET ${cols.join(', ')} WHERE id = ?`, ...vals, a.id);
-        if (active === 0) run('DELETE FROM sessions WHERE user_id = ?', a.id);
+        if (active === 0) endUserSessions(Number(a.id), 'deactivated');
         return { success: true, data: { updated: true } };
       }
 
@@ -1084,4 +1109,9 @@ export async function executeTool(name: string, args: unknown, user: AuthUser): 
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/** AI results use the same field visibility as HTTP responses. */
+export async function executeTool(name: string, args: unknown, user: AuthUser): Promise<ToolResult> {
+  return redactInventoryCosts(await executeToolInternal(name,args,user),user);
 }

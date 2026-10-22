@@ -21,6 +21,7 @@ Start here. This folder has two layers:
 | [PH-PAYROLL-COMPLIANCE.md](PH-PAYROLL-COMPLIANCE.md) | Current (2026) SSS / PhilHealth / Pag-IBIG / withholding-tax figures, the BIR & agency outputs a customer must file (2316, 1601-C, 1604-C, Alphalist, R-3, RF-1, MCRF), and the phased plan to build the statutory payroll engine. |
 | [ACCOUNTING-SYSTEM-PLAN.md](ACCOUNTING-SYSTEM-PLAN.md) | Research-backed plan for a full double-entry accounting module (chart of accounts, GL, journals, AR/AP, VAT/EWT registers, PFRS-for-SMEs financial statements, BIR books of accounts / CAS). Today's "Accounting" section is tax reporting only; this is the roadmap to a real ledger. |
 | [guides/](guides/) | **User-facing how-tos** — plain-language, task-focused guides for training staff on each feature. One per feature, added when the feature ships. |
+| [OWNER-ACTIONS.md](OWNER-ACTIONS.md) | **Owner checklist** — the setup and security tasks only the owner can do (phone, password manager, Cloudflare/Backblaze/Railway dashboards), each with why, steps and how to tell it worked. |
 | [DECISIONS.md](DECISIONS.md) | Why the stack is what it is (TypeScript, `tsx`, `node:sqlite`, `zod`, `vitest`, etc.) — the reasoning behind big choices, not a changelog. |
 
 ## Reference docs (per source file)

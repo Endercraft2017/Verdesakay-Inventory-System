@@ -88,3 +88,14 @@ describe('guide-data: route map', () => {
     expect(GUIDE.forRoute('definitely-not-a-route')).toBeNull();
   });
 });
+
+it('separates internal spending authority from supplier purchasing and preserves the legacy quality path',()=>{
+ const pr=GUIDE.byId['budgeted-purchase-request']!;
+ expect(pr.steps.map(s=>s.role).join(' ')).toContain('purchasing.approve_requests');
+ expect(pr.steps.every(s=>s.to?.route==='purchase-requests')).toBe(true);
+ expect(pr.steps.map(s=>s.body).join(' ')).toContain('within the overall approved budget');
+ const legacy=GUIDE.byId['legacy-unit-intake']!;
+ expect(legacy.steps.map(s=>s.title)).toEqual(['Enter the existing physical unit','Verify identity and perform QC','Perform final QA','Print, attach, scan and receive']);
+ expect(legacy.steps[0]!.body).toContain('saved original attempt');
+ expect(legacy.steps[3]!.body).toContain('camera-scan');
+});

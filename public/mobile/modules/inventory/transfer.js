@@ -1,83 +1,20 @@
-/* Stock Transfer — wraps POST /api/inventory/:id/transfer. */
-(function () {
-  function form(view, item) {
-    MApp.setTitle('Transfer');
-    view.innerHTML = '';
-
-    var f = mEl(
-      '<form class="m-form">' +
-      '  <div class="m-picked"><b>' + mEsc(item.name) + '</b>' +
-      (item.sku ? '<span>#' + mEsc(item.sku) + '</span>' : '') +
-      '    <button type="button" class="m-change" data-change>Change</button></div>' +
-      '  <div data-from></div>' +
-      '  <div data-to></div>' +
-      '  <div data-qty></div>' +
-      '  <label class="m-field"><span class="m-label">Note (optional)</span>' +
-      '    <input type="text" class="m-input" data-note maxlength="200" /></label>' +
-      '  <div class="m-actions"><button class="m-btn" type="submit">Confirm transfer</button></div>' +
-      '</form>'
-    );
-    f.querySelector('[data-change]').onclick = function () { pick(view); };
-
-    var qty = mQtyField('Amount', 1);
-    f.querySelector('[data-qty]').appendChild(qty.el);
-
-    mLocations.load()
-      .then(function () { return API.get('/inventory/' + item.id + '/stock'); })
-      .then(function (breakdown) {
-        var byLoc = {};
-        (breakdown || []).forEach(function (b) { byLoc[b.location_id] = b.quantity; });
-        var from = mLocations.select({ label: 'From', stockByLoc: byLoc });
-        var to = mLocations.select({ label: 'To', stockByLoc: byLoc });
-        // default the "to" select to a different location than "from"
-        if (to.select.options.length > 1 && to.select.value === from.select.value) to.select.selectedIndex = 1;
-        f.querySelector('[data-from]').appendChild(from.el);
-        f.querySelector('[data-to]').appendChild(to.el);
-
-        f.onsubmit = function (e) {
-          e.preventDefault();
-          if (from.value() === to.value()) { mToast('Pick two different locations', 'err'); return; }
-          var n = qty.value();
-          if (n < 1) { mToast('Enter an amount', 'err'); return; }
-          var btn = f.querySelector('button[type=submit]');
-          btn.disabled = true;
-          var fromName = from.select.options[from.select.selectedIndex].text.split(' — ')[0];
-          var toName = to.select.options[to.select.selectedIndex].text.split(' — ')[0];
-          mSubmit('/inventory/' + item.id + '/transfer', {
-            from_location_id: from.value(),
-            to_location_id: to.value(),
-            amount: n,
-            reason: f.querySelector('[data-note]').value.trim() || null,
-          }, { label: 'Transfer — ' + item.name + ' ×' + n + ' (' + fromName + '→' + toName + ')' })
-            .then(function (r) {
-              var head = n + ' ' + (item.unit || '') + ' of ' + item.name;
-              mSuccess(view, {
-                title: r.queued ? 'Saved — will sync' : 'Transfer done',
-                lines: r.queued
-                  ? [head, fromName + ' → ' + toName, 'You’re offline. It will send when back online.']
-                  : [head, fromName + ': ' + r.response.from + ' left', toName + ': ' + r.response.to + ' now'],
-                actions: [
-                  { label: 'Another transfer', onClick: function () { pick(view); } },
-                  { label: 'Home', secondary: true, onClick: function () { MApp.go('home'); } },
-                ],
-              });
-            })
-            .catch(function (ex) { mToast(ex.message || 'Failed', 'err'); btn.disabled = false; });
-        };
-      })
-      .catch(function (ex) { view.innerHTML = '<div class="m-error">' + mEsc(ex.message) + '</div>'; });
-
-    view.appendChild(f);
+/* Transfers preserve build state and exact physical serial identity. */
+(function(){
+  async function form(view,item){
+    var route='transfer',hash=location.hash;view.innerHTML=RoleUI.skeleton(2);
+    try{var s=await mWorkflow.draft(route);if(hash!==location.hash||!mWorkflow.owns(s))return;if(s.operation.state!=='draft'){mWorkflow.paint(view,s);return;}s.batch.item=item;await mWorkflow.save(s);await mLocations.load(true);
+      var results=await Promise.all([API.get('/inventory/'+item.id+'/stock'),API.get('/finished-products/'+item.id+'/units?status=in_stock')]),stock=results[0],units=results[1];if(hash!==location.hash||!mWorkflow.owns(s))return;
+      MApp.setTitle('Transfer');view.innerHTML='<form class="m-form"><div class="m-picked"><b>'+mEsc(item.name)+'</b><button type="button" class="m-change" data-change-item>Change item</button></div><label class="m-field">Build state<select class="m-select" data-build><option value="assembled">Fully built / standard</option><option value="semi_built">Semi-built</option></select></label><div data-from></div><div data-to></div><div data-stock class="m-hint"></div><div data-units></div><label class="m-field">Quantity<input class="m-input" type="number" min="0.001" step="any" data-qty value="'+(s.batch.quantity||1)+'"></label><label class="m-field">Reason<input class="m-input" data-note maxlength="500"></label><button class="m-btn" type="submit">Review and confirm transfer</button></form>';
+      var f=view.querySelector('form'),from=mLocations.select({label:'From'}),to=mLocations.select({label:'To'});f.querySelector('[data-change-item]').onclick=async function(){await mProductionDrafts.remove(s);MApp.go('transfer');};f.querySelector('[data-from]').appendChild(from.el);f.querySelector('[data-to]').appendChild(to.el);if(to.select.options.length>1)to.select.selectedIndex=1;if(s.batch.from)from.select.value=s.batch.from;if(s.batch.to)to.select.value=s.batch.to;f.querySelector('[data-build]').value=s.batch.build_mode||'assembled';f.querySelector('[data-note]').value=s.batch.reason||'';
+      function candidates(){return units.filter(function(u){return u.location_id===from.value()&&(u.build_mode||'assembled')===f.querySelector('[data-build]').value;});}
+      function collect(){s.batch.from=from.value();s.batch.to=to.value();s.batch.build_mode=f.querySelector('[data-build]').value;s.batch.quantity=Number(f.querySelector('[data-qty]').value);s.batch.reason=f.querySelector('[data-note]').value.trim();s.batch.unit_ids=Array.prototype.map.call(f.querySelectorAll('[data-unit]:checked'),function(e){return Number(e.dataset.unit);});return mWorkflow.save(s);}
+      function paint(){var rows=candidates(),row=stock.find(function(r){return r.location_id===from.value();}),mode=f.querySelector('[data-build]').value;f.querySelector('[data-stock]').textContent=(row?Number(row[mode==='semi_built'?'semi_built_quantity':'assembled_quantity']||0):0)+' on hand in this build state';f.querySelector('[data-qty]').disabled=rows.length>0;
+        f.querySelector('[data-units]').innerHTML=rows.length?'<p>Select exact serials at this source:</p>'+rows.map(function(u){return '<label class="rk-check-row"><input type="checkbox" data-unit="'+u.id+'" '+((s.batch.unit_ids||[]).indexOf(u.id)!==-1?'checked':'')+'>'+mEsc(u.identifier||'Unit #'+u.id)+'</label>';}).join(''):'';
+        f.querySelectorAll('[data-unit]').forEach(function(e){e.onchange=function(){collect().catch(function(e){mToast(e.message,'err');});};});}
+      from.select.onchange=paint;f.querySelector('[data-build]').onchange=paint;f.querySelector('[data-qty]').onchange=collect;f.querySelector('[data-note]').onchange=collect;to.select.onchange=collect;paint();
+      f.onsubmit=async function(e){e.preventDefault();var btn=f.querySelector('button[type=submit]');try{await collect();if(from.value()===to.value())throw new Error('Choose different source and destination locations.');var tracked=candidates().length>0;if(tracked&&!s.batch.unit_ids.length)throw new Error('Choose the exact physical serials to move.');if(!tracked&&(!Number.isFinite(s.batch.quantity)||s.batch.quantity<=0))throw new Error('Enter a positive quantity.');btn.disabled=true;var payload=tracked?{action:'move',unit_ids:s.batch.unit_ids,to_location_id:to.value(),build_mode:s.batch.build_mode,reason:s.batch.reason||null}:{from_location_id:from.value(),to_location_id:to.value(),amount:s.batch.quantity,build_mode:s.batch.build_mode,reason:s.batch.reason||null};await mWorkflow.start(s,{path:tracked?'/finished-products/'+item.id+'/units/allocate':'/inventory/'+item.id+'/transfer',payload:payload,title:'Transfer '+item.name+' · '+s.batch.build_mode+' · '+(tracked?s.batch.unit_ids.length:s.batch.quantity),reviewRoute:route,reviewPath:'/inventory/'+item.id});mWorkflow.paint(view,s);}catch(ex){mToast(ex.message,'err');btn.disabled=false;}};
+    }catch(e){view.innerHTML='';view.appendChild(RoleUI.error(e,function(){form(view,item);}));}
   }
-
-  function pick(view) {
-    MApp.setTitle('Transfer');
-    view.innerHTML = '';
-    var picker = mItemPicker({ label: 'Which item?', onPick: function (it) { form(view, it); } });
-    view.appendChild(picker.el);
-    picker.focus();
-  }
-
-  MApp.route('transfer', function (view) { pick(view); });
-  window.mTransferForm = form; // also used from the item-detail screen
+  async function pick(view){var s=await mWorkflow.draft('transfer');if(s.operation.state!=='draft'){mWorkflow.paint(view,s);return;}if(s.batch.item){form(view,s.batch.item);return;}MApp.setTitle('Transfer');view.innerHTML='';var picker=mItemPicker({label:'Which item?',onPick:function(item){form(view,item);}});view.appendChild(picker.el);picker.focus();}
+  MApp.route('transfer',function(view){pick(view).catch(function(e){mToast(e.message,'err');});});window.mTransferForm=form;
 })();

@@ -1,0 +1,122 @@
+/**
+ * The seam between shared infrastructure and the offline-first sync layer (src/sync/, see
+ * docs/OFFLINE-FIRST.md). Shared code never imports src/sync/; instead it reads the current
+ * sync context from here and calls the hooks src/sync/ registers at startup. With no sync
+ * installed (every cloud tenant today) the context is empty and every hook is a no-op, so
+ * nothing about a normal request changes.
+ */
+import { AsyncLocalStorage } from 'node:async_hooks';
+import type { DatabaseSync, StatementSync } from 'node:sqlite';
+import type { Request } from 'express';
+import type { AuthUser } from './types';
+
+/** One entry of a command's allocation plan: what it was given where it was first run, so a
+ *  replay elsewhere produces the same row ids and document numbers (OFFLINE-FIRST §7.2). */
+export type PlanEntry =
+  | { t: 'id'; table: string; id: number }
+  | { t: 'seq'; key: string; value: string; provisional: boolean };
+
+export interface SyncContext {
+  /**
+   * record  — a node running a command optimistically (side effects discarded)
+   * rebase  — a node re-running one of its pending commands on top of confirmed effects
+   * replay  — the authority running a received command for real
+   * guard   — a mutating request on a node with no sync class: replicated writes are refused
+   */
+  mode: 'record' | 'rebase' | 'replay' | 'guard';
+  /** The command being recorded / replayed (uploaded files are named after it, §18). */
+  commandId?: string;
+  /** SQLite-format UTC time ('YYYY-MM-DD HH:MM:SS.SSS') that 'now' means for this command. */
+  clock?: string;
+  plan: PlanEntry[];
+  /** Next id / sequence plan entry to consume (rebase / replay), counted per entry kind. */
+  cursor: { id: number; seq: number };
+  /** Anonymous-channel command: allocations are local only and never enter the plan. */
+  unattributed?: boolean;
+  /** Plan entries that could not be honoured on replay (table mismatch, id already taken). */
+  planMisses?: number;
+  /** Side effects a node skipped during an optimistic run (for tests / diagnostics). */
+  skippedEffects?: string[];
+  /** Set when a site host replays a LAN PC's command: the host isn't the final authority,
+   *  so emails / pushes / broadcasts wait for the cloud's replay. */
+  suppressEffects?: boolean;
+  /** Cloud replay of a command made at a site: that site's host node number. */
+  decidingSite?: number | null;
+  /** Cloud replay of a `claim` on a record the deciding site owns: its decision stands (D6). */
+  siteFinal?: boolean;
+  /** Where a site host replays a LAN PC's command it records what it actually allocated, so the
+   *  cloud's replay reproduces the host's ids and numbers rather than the PC's guesses. */
+  effective?: PlanEntry[];
+  /** Files a route wrote itself during this command (commandFileName). */
+  fileSeq?: number;
+  /** Canonical facts the originating server validated, retained in command context.
+   * These are populated by handlers, never copied from client request bodies. */
+  validatedSnapshots?: Record<string,unknown>;
+}
+
+export const syncStore = new AsyncLocalStorage<SyncContext>();
+
+export function syncContext(): SyncContext | undefined {
+  return syncStore.getStore();
+}
+
+/** The current time: the command's clock while a command is being recorded or replayed,
+ *  otherwise the real time. Use in handlers instead of `new Date()` for business times. */
+export function now(): Date {
+  const clock = syncStore.getStore()?.clock;
+  return clock ? new Date(clock.replace(' ', 'T') + 'Z') : new Date();
+}
+
+/** True while a synced command runs (a node's optimistic run or rebase re-run, or the
+ *  authority's replay). A `physical` route uses it to accept a stock-out beyond recorded stock
+ *  and flag it instead of refusing it (docs/OFFLINE-FIRST.md decision D1); a direct request
+ *  to the cloud keeps the normal checks. */
+export function inSyncedCommand(): boolean {
+  const mode = syncStore.getStore()?.mode;
+  return mode === 'record' || mode === 'rebase' || mode === 'replay';
+}
+
+/** True while a recorded command is re-run (the authority's replay, or a node's rebase): the
+ *  request was authenticated where it was first made. A route that re-checks a secret the
+ *  command does not carry (a `redact`ed password) relies on that check instead. */
+export function reRunOfRecordedCommand(): boolean {
+  const mode = syncStore.getStore()?.mode;
+  return mode === 'replay' || mode === 'rebase';
+}
+
+/** A name for a file a route writes itself (not an upload), the same wherever the command runs,
+ *  so the authority's copy and the PC's agree: `<prefix>-<command id>-w<n><ext>`. Null outside a
+ *  synced command; the caller then uses its usual unique name. */
+export function commandFileName(prefix: string, ext: string): string | null {
+  const ctx = syncStore.getStore();
+  if (!ctx?.commandId || !inSyncedCommand()) return null;
+  ctx.fileSeq = (ctx.fileSeq ?? 0) + 1;
+  return `${prefix}-${ctx.commandId.toLowerCase()}-w${ctx.fileSeq}${ext}`;
+}
+
+/** True when the cloud is replaying a site host's decision on a record that site owns
+ *  (decision D6): a route lets a check fail that only fails because data changed elsewhere
+ *  meanwhile — and flags it (src/sync/sites.ts recordSiteClash) — instead of refusing. Only
+ *  checks a route explicitly marks this way; permissions and validation always apply. */
+export function siteDecisionStands(): boolean {
+  return syncStore.getStore()?.siteFinal === true;
+}
+
+/** True while a node runs a command optimistically or re-runs it during rebase: emails, push
+ *  notifications and live broadcasts must not fire there — the authority fires them once. */
+export function sideEffectsSuppressed(kind: string): boolean {
+  const ctx = syncStore.getStore();
+  if (!ctx || (ctx.mode !== 'record' && ctx.mode !== 'rebase' && !ctx.suppressEffects)) return false;
+  (ctx.skippedEffects ??= []).push(kind);
+  return true;
+}
+
+/** Hooks src/sync/ installs. Absent ⇒ behaviour is exactly as before sync existed. */
+export const syncHooks: {
+  /** Wrap a freshly prepared statement (ID allocation, write guard). */
+  prepare?: (conn: DatabaseSync, sql: string, stmt: StatementSync) => StatementSync;
+  /** Issue a document number; return undefined to fall through to the normal counter. */
+  nextSequence?: (key: string, prefix: string, pad: number) => string | undefined;
+  /** An authenticated user for an internal replay request, or undefined for a normal request. */
+  replayUser?: (req: Request) => AuthUser | undefined;
+} = {};

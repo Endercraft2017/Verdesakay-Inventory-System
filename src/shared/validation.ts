@@ -3,7 +3,10 @@
  * Routes call parseBody(schema, req.body); invalid input throws a ValidationError
  * which the central error handler turns into a 400 response.
  */
+import { newPasswordSchema } from './password-policy';
 import { z } from 'zod';
+import { MODULES } from './modules';
+import { isMultiPageDocument, MULTIPAGE_GRID_ERROR } from './document-layout';
 
 export class ValidationError extends Error {
   status = 400;
@@ -26,6 +29,7 @@ export function parseBody<T>(schema: z.ZodType<T>, data: unknown): T {
 }
 
 const trimmed = z.string().trim();
+const realCalendarDate = trimmed.refine(v => /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v + 'T00:00:00Z')) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v, 'Enter a real YYYY-MM-DD date');
 const optionalText = trimmed.max(2000).optional().nullable();
 
 /** Accepts number, numeric string, '', null or missing -> number | null. */
@@ -47,19 +51,40 @@ const intCoerce = z.coerce.number().int();
 export const loginSchema = z.object({
   username: trimmed.min(1, 'Username is required'),
   password: z.string().min(1, 'Password is required'),
+  /** Borrowed-phone sign-in: a short, idle-limited session with no push (src/shared/auth.ts). */
+  shared: z.boolean().optional(),
+});
+
+export const changeUsernameSchema = z.object({
+  current_password: z.string().min(1, 'Current password is required'),
+  new_username: z.string().trim().toLowerCase().regex(/^[a-z0-9._-]{3,30}$/, 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen'),
 });
 
 export const changePasswordSchema = z.object({
   current_password: z.string().min(1, 'Current password is required'),
-  new_password: z.string().min(6, 'New password must be at least 6 characters'),
+  new_password: newPasswordSchema('New password'),
 });
 
 // ---- Users / departments ----
-const roleEnum = z.enum([
-  'admin', 'admin_staff', 'accounting', 'warehouse', 'releasing', 'csr', 'hr', 'marketing',
-  'parts_clerk', 'production_lead', 'qc_inspector', 'qa_inspector', 'receiving_clerk',
-  'releasing_clerk',
-]);
+// A key from the tenant's roles table — routes check it exists (src/shared/roles.ts getRole).
+const roleEnum = z.string().trim().min(1, 'Role is required').max(40);
+
+/** POST /api/roles. The key is derived from the label when omitted (roles.routes.ts). */
+export const createRoleSchema = z.object({
+  label: trimmed.min(1, 'Role name is required').max(60),
+  key: z.string().trim().toLowerCase()
+    .regex(/^[a-z][a-z0-9_]{1,39}$/, 'Role key must be 2-40 chars: lowercase letters, numbers, underscore')
+    .optional(),
+  description: trimmed.max(200).optional().default(''),
+  permissions: z.array(z.string()).max(200).default([]),
+});
+
+/** PUT /api/roles/:key — any subset; the key itself never changes (accounts hold it). */
+export const updateRoleSchema = z.object({
+  label: trimmed.min(1, 'Role name is required').max(60).optional(),
+  description: trimmed.max(200).optional(),
+  permissions: z.array(z.string()).max(200).optional(),
+});
 
 const emailOpt = z.union([z.literal(''), z.string().trim().toLowerCase().email('Enter a valid email')])
   .optional().nullable();
@@ -70,9 +95,10 @@ export const createUserSchema = z.object({
     .regex(/^[a-z0-9._-]{3,30}$/, 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen'),
   full_name: trimmed.min(1, 'Full name is required').max(120),
   email: emailOpt,
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: newPasswordSchema('Password'),
   role: roleEnum.default('admin_staff'),
   department_id: optionalId,
+  employee_id: optionalId.optional(),
 });
 
 export const updateUserSchema = z.object({
@@ -84,7 +110,7 @@ export const updateUserSchema = z.object({
 });
 
 export const resetPasswordSchema = z.object({
-  new_password: z.string().min(6, 'New password must be at least 6 characters'),
+  new_password: newPasswordSchema('New password'),
 });
 
 /** POST /api/auth/forgot-password — username or email. Always answered with 200. */
@@ -95,7 +121,7 @@ export const forgotPasswordSchema = z.object({
 /** POST /api/auth/reset-password — the emailed token + a new password. */
 export const selfResetPasswordSchema = z.object({
   token: trimmed.min(10).max(200),
-  new_password: z.string().min(6, 'New password must be at least 6 characters'),
+  new_password: newPasswordSchema('New password'),
 });
 
 export const createDepartmentSchema = z.object({
@@ -137,7 +163,8 @@ export const createItemSchema = z.object({
   department_id: optionalId,
   supplier_id: optionalId,
   location_id: optionalId, // where the starting stock lands (default: the default location)
-  quantity: intCoerce.default(0),
+  new_location_levels: z.array(trimmed.min(1).max(120)).max(4).optional(), // optional children beneath location_id
+  quantity: intCoerce.min(0).default(0),
   unit: trimmed.max(40).optional().nullable(),
   min_quantity: intCoerce.min(0).default(0),
   unit_cost: z.coerce.number().min(0).default(0), // standard cost — values raw materials / finished goods in the GL
@@ -156,6 +183,7 @@ export const updateItemSchema = z.object({
   category: optionalText,
   department_id: optionalId,
   supplier_id: optionalId,
+  preferred_location_id: optionalId.optional(),
   unit: trimmed.max(40).optional().nullable(),
   min_quantity: intCoerce.min(0).optional(),
   unit_cost: z.coerce.number().min(0).optional(),
@@ -183,13 +211,33 @@ export const aiConfigSchema = z.object({
   token_cap: z.coerce.number().min(0).max(1_000_000_000).optional(),
 });
 
+/** Operator-created workspaces: sandbox accounts may omit their recovery email and slug. */
+export const platformCreateTenantSchema = z.object({
+  name: trimmed.min(1, 'Company name is required').max(120),
+  slug: trimmed.toLowerCase().optional(),
+  admin_username: trimmed.toLowerCase().regex(/^[a-z0-9._-]{3,30}$/, 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen'),
+  admin_password: newPasswordSchema('Password'),
+  admin_email: z.union([z.literal(''), z.string().trim().toLowerCase().email('Enter a valid owner email address')]).optional(),
+  is_sandbox: z.boolean().default(false),
+  plan: trimmed.optional(),
+  modules: z.array(z.string()).optional(),
+  awaiting_payment: z.boolean().optional(),
+  inquiry_id: z.number().int().positive().optional(),
+}).superRefine((v, ctx) => {
+  if (!v.is_sandbox && !v.admin_email) {
+    ctx.addIssue({ code: 'custom', path: ['admin_email'], message: 'Owner email is required for regular accounts' });
+  }
+});
+
 /** POST /api/signup — create a new tenant workspace (self-serve, gated by SIGNUPS_OPEN). */
 export const signupSchema = z.object({
   company_name: trimmed.min(1, 'Company name is required').max(120),
   slug: trimmed.toLowerCase().regex(/^[a-z][a-z0-9-]{1,30}$/, 'Workspace name: a letter then letters/numbers/hyphens, 2–31 chars'),
   admin_username: trimmed.toLowerCase().regex(/^[a-z0-9._-]{3,30}$/, 'Username must be 3-30 chars: letters, numbers, dot, underscore, hyphen'),
-  admin_password: z.string().min(6, 'Password must be at least 6 characters'),
+  admin_password: newPasswordSchema('Password'),
   admin_email: z.union([z.literal(''), z.string().trim().email()]).optional(),
+  modules: z.array(z.enum(MODULES)).min(1).optional(),
+  seats: z.number().int().min(1).max(500).optional(),
 });
 /** @deprecated alias — use csvImportSchema. */
 export const importInventorySchema = csvImportSchema;
@@ -230,10 +278,13 @@ export const updateCustomerSchema = createCustomerSchema.partial().extend({
 const locationType = z.enum(['warehouse', 'branch', 'store', 'truck', 'other']);
 export const createLocationSchema = z.object({
   name: trimmed.min(1, 'Location name is required').max(120),
+  parent_id: optionalId,
   type: locationType.default('warehouse'),
   address: trimmed.max(500).optional().nullable(),
   notes: optionalText,
   is_default: boolish.optional(),
+  // Room in units of stock; null / empty clears it (no limit).
+  capacity: z.preprocess((v) => (v === '' ? null : v), z.coerce.number().int().positive('Capacity must be a positive whole number').max(10_000_000).nullable()).optional(),
 });
 export const updateLocationSchema = createLocationSchema.partial().extend({
   name: trimmed.min(1, 'Location name is required').max(120).optional(),
@@ -244,6 +295,7 @@ export const transferStockSchema = z.object({
   to_location_id: z.coerce.number().int().positive(),
   amount: z.coerce.number().int().positive('Amount must be a positive whole number'),
   reason: optionalText,
+  build_mode: z.enum(['assembled', 'semi_built']).default('assembled'),
 });
 
 // ---- Bill of materials (finished products) ----
@@ -268,6 +320,8 @@ export const saveBomSchema = z.object({
   // Absent = leave unchanged; null = clear.
   std_labor_cost: z.coerce.number().min(0).max(1e12).optional().nullable(),
   std_overhead_cost: z.coerce.number().min(0).max(1e12).optional().nullable(),
+  // Percentage on top of the fully loaded standard cost; a suggestion only.
+  selling_markup_percent: z.coerce.number().min(0).max(10000).optional().nullable(),
 });
 
 /** PATCH /api/finished-products/:id/checklist — assign (or clear, via null) one stage's
@@ -282,9 +336,11 @@ export const assignChecklistSchema = z.object({
 export const allocateUnitsSchema = z
   .object({
     action: z.enum(['sell', 'move']),
+    build_mode: z.enum(['assembled', 'semi_built']).default('assembled'),
     unit_ids: z.array(z.coerce.number().int().positive()).max(500).optional(),
     quantity: z.coerce.number().int().positive().max(500).optional(),
     order_id: optionalId,
+    order_item_id: optionalId,
     to_location_id: optionalId,
     reason: optionalText,
   })
@@ -307,6 +363,7 @@ const jobOrderDate = trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-
 export const createJobOrderSchema = z.object({
   product_item_id: z.coerce.number().int().positive(),
   qty_ordered: z.coerce.number().int().positive('Quantity to build must be at least 1'),
+  build_mode: z.enum(['assembled', 'semi_built']).default('assembled'),
   order_id: optionalId,
   source_location_id: optionalId,
   output_location_id: optionalId,
@@ -317,6 +374,25 @@ export const createJobOrderSchema = z.object({
   priority: z.coerce.number().int().min(0).max(9).optional(),
   work_center: trimmed.max(80).optional().nullable(),
   notes: optionalText,
+});
+
+// Finishing a semi-built RTS package consumes its already-included parts. One
+// physical unit is selected per request so its identity stays auditable.
+export const convertSemiBuiltSchema = z.object({
+  product_item_id: z.coerce.number().int().positive(),
+  order_id: optionalId,
+  source_location_id: z.coerce.number().int().positive(),
+  output_location_id: z.coerce.number().int().positive(),
+  source_unit_id: optionalId,
+  source_batch_id: optionalId,
+  identifier: trimmed.min(1).max(120),
+  confirmed_complete_kit: z.preprocess((v) => v === true || v === 'true' || v === '1', z.literal(true)),
+  finishing_cost: z.coerce.number().min(0).max(1_000_000_000).default(0),
+  notes: optionalText,
+}).refine((v) => !(v.source_unit_id && v.source_batch_id), 'Choose either a unit or a batch, not both.');
+export const cancelSemiConversionSchema = z.object({
+  confirmed_repacked: z.preprocess((v) => v === true || v === 'true' || v === '1', z.literal(true)),
+  reason: trimmed.min(1).max(500),
 });
 
 export const updateJobOrderSchema = z.object({
@@ -367,6 +443,10 @@ export const jobOrderComponentsSchema = z.object({
 export const acceptJobOrderSchema = z.object({
   notes: trimmed.max(500).optional().nullable(),
 });
+/** Approval signs the reviewed draft; live stock can still change independently. */
+export const approveJobOrderSchema = acceptJobOrderSchema.extend({
+  expected_revision: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+});
 
 export const jobOrderProgressSchema = z
   .object({
@@ -375,6 +455,8 @@ export const jobOrderProgressSchema = z
     // Serialized job orders only: give this progress entry a batch/lot label. A
     // non-serialized job order always batches each progress entry automatically.
     batch_label: trimmed.max(80).optional().nullable(),
+    // Why the units were scrapped (mobile scrap screen) — kept on each scrapped unit's remarks.
+    reason: trimmed.max(300).optional().nullable(),
   })
   .refine((d) => d.done_delta + d.scrapped_delta > 0, 'Enter a finished or scrapped quantity');
 
@@ -383,6 +465,53 @@ export const jobOrderProgressSchema = z
     separate from jobOrderProgressSchema's bulk done_delta. batch_label is optional —
     same grouping label a bulk progress entry used to take, just applied one unit at a
     time (repeat calls with the same label add to that job order's open batch of it). */
+// ---- Job-order parts release (warehouse) + floor tools ----
+
+const idList = z.array(z.coerce.number().int().positive()).min(1, 'Pick at least one job order').max(200);
+
+/** POST /job-orders/warehouse-accept — take on one or more approved drafts. */
+export const jobOrderIdsSchema = z.object({ job_order_ids: idList });
+
+/** POST /job-orders/prepare — picked quantities for one or more job orders. Leaving `lines`
+ *  out picks that job order's whole planned kit. */
+export const prepareJobOrdersSchema = z.object({
+  job_orders: z.array(z.object({
+    id: z.coerce.number().int().positive(),
+    lines: z.array(z.object({
+      component_item_id: z.coerce.number().int().positive(),
+      qty_picked: z.coerce.number().int().min(0),
+    })).optional(),
+  })).min(1, 'Pick at least one job order').max(200),
+});
+
+/** POST /job-orders/:id/release — issuing the parts release slip. */
+export const releaseJobOrderSchema = z.object({
+  received_by: trimmed.max(160).optional().nullable(),
+  notes: optionalText,
+});
+
+export const pauseJobOrderSchema = z.object({
+  reason: trimmed.max(500).optional().nullable(),
+});
+
+const ISSUE_SEVERITIES = ['low', 'normal', 'high', 'critical'] as const;
+export const createProductionIssueSchema = z.object({
+  job_order_id: z.coerce.number().int().positive(),
+  unit_id: z.coerce.number().int().positive().optional().nullable(),
+  category: trimmed.min(1, 'Pick what the issue is about').max(80),
+  severity: z.enum(ISSUE_SEVERITIES).optional(),
+  description: trimmed.min(1, 'Describe the issue').max(4000),
+});
+export const updateProductionIssueSchema = z.object({
+  unit_id: z.coerce.number().int().positive().optional().nullable(),
+  category: trimmed.min(1).max(80).optional(),
+  severity: z.enum(ISSUE_SEVERITIES).optional(),
+  description: trimmed.min(1).max(4000).optional(),
+});
+export const resolveProductionIssueSchema = z.object({
+  resolution: trimmed.max(2000).optional().nullable(),
+});
+
 export const addUnitSchema = z.object({
   identifier: trimmed.min(1, 'An identifier is required for each unit').max(120),
   batch_label: trimmed.max(80).optional().nullable(),
@@ -401,28 +530,58 @@ const checklistResultSchema = z.object({
   label: trimmed.min(1).max(200),
   ok: boolish,
   note: trimmed.max(500).optional().nullable(),
+  // Mobile V2 inspection (Figma 69:* / 72:*): Pass / Issue / Not applicable per item, and the
+  // reading for a measurement item (e.g. battery voltage). A required item counts only as 'pass'.
+  status: z.enum(['pass', 'issue', 'na']).optional(),
+  value: trimmed.max(60).optional().nullable(),
 });
 
 export const inspectUnitsSchema = z
   .object({
     unit_ids: z.array(z.coerce.number().int().positive()).min(1).max(500),
+    // Required when an inspector holds both permissions and wants to inspect QA first.
+    inspection_stage: z.coerce.number().int().min(1).max(2).optional(),
     result: z.enum(['pass', 'fail']),
     remarks: trimmed.max(2000).optional().nullable(),
     identifier: unitIdentifier,
     checklist: z.array(checklistResultSchema).max(60).optional(),
     // Required on a fail: what to do with the unit. 'repair' sends it to rework;
     // the others are terminal (the unit counts as scrapped).
-    disposition: z.enum(['scrap', 'dispose', 'recycle', 'repair']).optional(),
+    // 'hold' (final / QA pass only): held for review; decided later via /units/:unitId/hold-decision.
+    disposition: z.enum(['scrap', 'dispose', 'recycle', 'repair', 'hold']).optional(),
+    // Evidence photos already uploaded as `attachments` kind 'qc_unit' on the unit(s); the phone app
+    // and desktop must send at least one per failed unit; dedicated inspectors need this
+    // even when an API caller omits X-Client.
+    evidence_ids: z.array(z.coerce.number().int().positive()).max(60).optional(),
+    // With disposition 'repair': the structured repair / rectification order (the remarks
+    // carry the instruction). Kept per QC record in qc_repair_details.
+    repair: z.object({
+      category: trimmed.max(120).optional().nullable(),
+      station: trimmed.max(120).optional().nullable(),
+      priority: trimmed.max(40).optional().nullable(),
+    }).optional(),
   })
   .refine((v) => v.result !== 'fail' || !!v.disposition, {
-    message: 'Pick what to do with the failed unit (scrap / dispose / recycle / repair)',
+    message: 'Pick what to do with the failed unit (scrap / dispose / recycle / repair / hold)',
     path: ['disposition'],
   });
 
-/** POST /job-orders/:id/products-in — receive finished output into stock. Either
-    serialized `unit_ids` (units at status 'passed'), or a non-serialized `batch_id` +
-    the `quantity` of it being received (a batch's un-received qty may be received across
-    more than one receipt). */
+/** POST /job-orders/:id/units/:unitId/hold-decision — release a unit QA held for review. */
+export const holdDecisionSchema = z.object({
+  expected_hold_record_id: z.coerce.number().int().positive().optional(),
+  outcome: z.enum(['pass', 'rectify', 'fail']),
+  checklist: z.array(checklistResultSchema).max(60).optional(),
+  disposition: z.enum(['scrap', 'dispose', 'recycle']).optional(),
+  remarks: trimmed.min(3, 'Give the reason for the decision').max(2000),
+  repair: z.object({
+    category: trimmed.max(120).optional().nullable(),
+    station: trimmed.max(120).optional().nullable(),
+    priority: trimmed.max(40).optional().nullable(),
+  }).optional(),
+});
+
+/** POST /job-orders/:id/products-in — one receipt can combine passed units and bulk batches.
+    The singular batch fields remain supported for existing mobile clients. */
 export const productsInSchema = z
   .object({
     received_date: trimmed.max(40).optional().nullable(),
@@ -430,12 +589,16 @@ export const productsInSchema = z
     notes: optionalText,
     unit_ids: z.array(z.coerce.number().int().positive()).max(500).optional(),
     batch_id: z.coerce.number().int().positive().optional(),
-    quantity: z.coerce.number().min(0).optional(),
+    quantity: z.coerce.number().int().positive().optional(),
+    batches: z.array(z.object({ batch_id: z.coerce.number().int().positive(), quantity: z.coerce.number().int().positive() })).max(500).optional(),
   })
-  .refine(
-    (v) => (v.unit_ids && v.unit_ids.length > 0) || (v.batch_id != null && (v.quantity || 0) > 0),
-    'Select at least one unit, or a batch and a received quantity'
-  );
+  .superRefine((v, ctx) => {
+    if ((v.batch_id == null) !== (v.quantity == null)) ctx.addIssue({ code: 'custom', message: 'Batch and quantity must be supplied together' });
+    if (v.batch_id != null && v.batches?.length) ctx.addIssue({ code: 'custom', message: 'Use either batch_id or batches' });
+    if (!v.unit_ids?.length && v.batch_id == null && !v.batches?.length) ctx.addIssue({ code: 'custom', message: 'Select at least one unit or batch' });
+    if (new Set(v.unit_ids ?? []).size !== (v.unit_ids ?? []).length) ctx.addIssue({ code: 'custom', message: 'A unit can only appear once in a receipt' });
+    if (new Set((v.batches ?? []).map(b => b.batch_id)).size !== (v.batches ?? []).length) ctx.addIssue({ code: 'custom', message: 'A batch can only appear once in a receipt' });
+  });
 
 // ---- Repair / rework parts requests (src/routes/production.routes.ts) ----
 const repairFault = z.enum(['assembler', 'production', 'supplier', 'wear', 'other']);
@@ -453,6 +616,26 @@ export const repairRequestSchema = z.object({
 export const repairAcceptSchema = z.object({
   from_location_id: optionalId,
   warehouse_remarks: trimmed.max(1000).optional().nullable(),
+  // Exact-request rule (mobile Parts clerk, 83:206): when given, the scanned label must be the
+  // requested item's SKU and the picked quantity must equal the requested quantity.
+  scanned_code: trimmed.max(120).optional().nullable(),
+  picked_quantity: z.coerce.number().int().positive().max(9999).optional(),
+});
+
+/** Parts clerk proposes a different part and/or quantity; someone else approves it. */
+export const repairRevisionSchema = z.object({
+  component_item_id: optionalId,
+  quantity: z.coerce.number().int().positive().max(9999),
+  reason: trimmed.min(1, 'Give the revision reason').max(1000),
+});
+
+export const repairRevisionDecisionSchema = z.object({
+  approve: z.boolean(),
+  note: trimmed.max(1000).optional().nullable(),
+});
+
+export const repairShortageSchema = z.object({
+  note: trimmed.max(1000).optional().nullable(),
 });
 
 export const repairRejectSchema = z.object({
@@ -486,8 +669,8 @@ export const batchInspectSchema = z
     path: ['disposition'],
   });
 
-/** POST/PUT /api/qc/checklists/:id — one named, reusable QA/QC checklist. Belongs to one
-    stage as a whole: 1 = QA (first pass), 2 = QC (final pass). */
+/** POST/PUT /api/qc/checklists/:id — one named, reusable QC/QA checklist. Belongs to one
+    stage as a whole: 1 = QC (first pass), 2 = QA (final pass). */
 export const qcChecklistSchema = z.object({
   name: trimmed.min(1, 'Give the checklist a name').max(120),
   stage: z.coerce.number().int().min(1).max(2).default(1),
@@ -497,9 +680,21 @@ export const qcChecklistSchema = z.object({
       z.object({
         label: trimmed.min(1, 'Each check needs a label').max(200),
         required: boolish.default(false),
+        // Optional: the step this check belongs to (mobile shows one step per group, in order)
+        // and, for a measurement, its unit (e.g. 'V') — the inspector records a reading.
+        group: trimmed.max(80).optional().nullable(),
+        measure: trimmed.max(20).optional().nullable(),
+        hint: trimmed.max(160).optional().nullable(),
       })
     )
     .max(60, 'Keep the checklist under 60 items'),
+}).superRefine((value, ctx) => {
+  const seen = new Set<string>();
+  value.items.forEach((item, index) => {
+    const key = item.label.trim().toLocaleLowerCase();
+    if (seen.has(key)) ctx.addIssue({ code: 'custom', path: ['items', index, 'label'], message: 'Checklist labels must be unique within a stage' });
+    seen.add(key);
+  });
 });
 
 export const setUnitIdentifierSchema = z.object({
@@ -523,6 +718,7 @@ export const adjustStockSchema = z.object({
   change: intCoerce.refine((n) => n !== 0, 'Change must be a non-zero whole number'),
   reason: optionalText,
   location_id: optionalId, // defaults server-side to the default location
+  build_mode: z.enum(['assembled', 'semi_built']).default('assembled'),
 });
 
 /** Report damaged stock: moves `quantity` units out of the item into its "damage twin"
@@ -531,6 +727,19 @@ export const damageStockSchema = z.object({
   quantity: z.coerce.number().int().positive('Quantity must be a positive whole number'),
   reason: optionalText,
   location_id: optionalId, // defaults server-side to the default location
+  build_mode: z.enum(['assembled', 'semi_built']).default('assembled'),
+});
+
+/** Close a stock discrepancy (an offline stock-out accepted beyond recorded stock, D1 in
+    docs/OFFLINE-FIRST.md): what the supervisor found / did. See
+    POST /api/inventory/discrepancies/:id/resolve. */
+export const resolveDiscrepancySchema = z.object({
+  note: z.string().trim().min(1, 'Say what was found or done (e.g. counted, adjusted to 12)').max(500),
+});
+
+export const directSaleStockoutReviewSchema = z.object({
+  evidence_hash: z.string().regex(/^[a-f0-9]{64}$/, 'Invalid audit evidence'),
+  note: z.string().trim().min(10, 'Describe the count and what you found').max(1000),
 });
 
 /** Draft purchase orders for items at/under their reorder level. `item_ids` restricts to
@@ -545,7 +754,7 @@ export const reorderPoSchema = z.object({
 export const sendMessageSchema = z.object({
   recipient_id: z.coerce.number().int().positive('Recipient is required'),
   subject: trimmed.max(200).optional().nullable(),
-  body: trimmed.min(1, 'Message body is required').max(5000),
+  body: trimmed.max(5000).default(''),
   reply_to_id: z.coerce.number().int().positive().optional(),
 });
 
@@ -560,9 +769,16 @@ export const reactSchema = z.object({
 });
 
 // ---- Personal tools (notes / tasks / bookmarks) ----
+export const checklistItemSchema = z.object({ id: trimmed.min(1).max(80), text: trimmed.min(1).max(500), done: z.boolean() });
 export const noteSchema = z.object({
   title: trimmed.max(200).optional().nullable(),
-  body: trimmed.min(1, 'Note cannot be empty').max(20000),
+  body: trimmed.max(20000).default(''),
+  checklist: z.array(checklistItemSchema).max(200).optional()
+    .refine(items => !items || new Set(items.map(i => i.id)).size === items.length, 'Checklist IDs must be unique'),
+}).refine(v => !!v.body || !!v.checklist?.length, 'Add a note or a checklist item');
+export const scheduleNoteSchema = z.object({
+  due_date: trimmed.refine(v => /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})?$/.test(v) && realCalendarDate.safeParse(v.slice(0, 10)).success && (!v.slice(11) || /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v.slice(11))), 'Choose a valid due date and time'),
+  remind_at: z.string().datetime({ offset: true }).optional().nullable(),
 });
 
 export const taskSchema = z.object({
@@ -602,19 +818,93 @@ export const updateBugReportSchema = z.object({
   status: z.enum(['open', 'resolved']),
 });
 
+// ---- Employee self-service profile (see src/modules/hr/employee-profile.ts) ----
+/** Blank → null; otherwise a Philippine mobile number (09xxxxxxxxx / +639xxxxxxxxx / 639…),
+ *  normalized to +639xxxxxxxxx, or any other international number written with a leading +. */
+const phoneOpt = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+  z.string().trim().max(24).transform((s, ctx) => {
+    const digits = s.replace(/[\s().-]/g, '');
+    let m: RegExpExecArray | null;
+    if ((m = /^(?:\+?63|0)(9\d{9})$/.exec(digits))) return '+63' + m[1];
+    if (/^\+[1-9]\d{7,14}$/.test(digits)) return digits;
+    ctx.addIssue({ code: 'custom', message: 'Enter a mobile number like 0917 123 4567 or +63 917 123 4567' });
+    return z.NEVER;
+  }).optional().nullable()
+);
+const blankToNull = (max: number) => z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+  trimmed.max(max).optional().nullable()
+);
+export const selfProfileSchema = z.object({
+  // Re-authentication: floor phones get shared, so a contact/emergency change needs the password.
+  current_password: z.string().min(1, 'Enter your current password to save changes').max(200),
+  preferred_name: blankToNull(60),
+  mobile_phone: phoneOpt,
+  personal_email: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+    z.string().trim().toLowerCase().email('Enter a valid email').max(160).optional().nullable()
+  ),
+  home_address: blankToNull(500),
+  emergency_contact_name: blankToNull(120),
+  emergency_contact_relation: blankToNull(60),
+  emergency_contact_phone: phoneOpt,
+}).strict(); // unknown keys (e.g. name, position, daily_rate) are rejected, not silently ignored
+
+// ---- Confidential (anonymous) reports (see src/core/confidential-reports.ts) ----
+export const REPORT_STATUSES = ['new', 'triaged', 'investigating', 'resolved', 'closed'] as const;
+export const REPORT_CATEGORIES = [
+  'Workplace concern', 'Harassment or misconduct', 'Safety risk', 'Payroll or attendance',
+  'Equipment or facility', 'Stock or operations', 'System support', 'Other',
+] as const;
+const isoDateOpt = z.preprocess(
+  (v) => (v === '' ? null : v),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a YYYY-MM-DD date').optional().nullable()
+);
+export const anonymousReportSchema = z.object({
+  ticket: trimmed.min(10, 'Submission ticket missing').max(200),
+  category: z.enum(REPORT_CATEGORIES, { message: 'Choose a category' }),
+  subject: trimmed.max(160).optional().nullable(),
+  description: trimmed.min(10, 'Describe the concern (at least 10 characters)').max(5000),
+  incident_date: isoDateOpt,
+  location: trimmed.max(160).optional().nullable(),
+});
+export const anonymousLookupSchema = z.object({
+  number: trimmed.min(1, 'Enter the report number').max(20),
+  access_code: trimmed.min(10, 'Enter the access code').max(40),
+});
+export const anonymousPhotoSchema = anonymousLookupSchema.extend({
+  photo_id: z.coerce.number().int().positive('Choose a photo'),
+});
+export const anonymousFollowupSchema = anonymousLookupSchema.extend({
+  body: trimmed.min(1, 'Write a message').max(3000),
+});
+export const confidentialStatusSchema = z.object({
+  status: z.enum(REPORT_STATUSES),
+});
+export const confidentialReplySchema = z.object({
+  body: trimmed.min(1, 'Write a message').max(3000),
+});
+
 // ---- Documents: orders + templates ----
 const numCoerce = z.coerce.number();
 
 const orderItemSchema = z.object({
   item_id: optionalId,
+  fulfillment_mode: z.enum(['assembled', 'semi_built', 'ckd']).default('assembled'),
   name: trimmed.min(1, 'Line item name is required').max(200),
   sku: optionalText,
   description: optionalText,
-  quantity: numCoerce.min(0, 'Quantity cannot be negative').default(1),
+  quantity: numCoerce.positive('Quantity must be greater than zero').max(Number.MAX_SAFE_INTEGER, 'Quantity is too large').default(1),
   unit: trimmed.max(40).optional().nullable(),
   unit_price: numCoerce.min(0, 'Price cannot be negative').default(0),
   tax_code_id: optionalId,   // per-line VAT classification for mixed-rate documents
 });
+
+const orderDate = z.preprocess(
+  (v) => v === '' ? null : v,
+  z.iso.date('Enter a valid date (YYYY-MM-DD)').optional().nullable()
+);
 
 const orderFields = {
   customer_name: optionalText,
@@ -622,15 +912,16 @@ const orderFields = {
   customer_id: optionalId,
   location_id: optionalId,   // sale orders: ship-from location for stock draw-down + COGS
   tax_code_id: optionalId,
-  order_date: trimmed.max(40).optional().nullable(),
+  order_date: orderDate,
   status: trimmed.max(40).optional().nullable(),
   notes: optionalText,
-  currency: trimmed.max(10).optional().nullable(),
+  currency: z.preprocess((v) => typeof v === 'string' && !v.trim() ? null : v,
+    trimmed.regex(/^[A-Za-z]{3}$/, 'Use a three-letter currency code, such as PHP').transform((v) => v.toUpperCase()).optional().nullable()),
   tax_percent: numCoerce.min(0).max(100).default(0),
   items: z.array(orderItemSchema).min(1, 'Add at least one line item').max(300),
   // Purchase orders: which supplier + expected delivery date.
   supplier_id: optionalId,
-  expected_date: trimmed.max(40).optional().nullable(),
+  expected_date: orderDate,
   // Sale orders: override the stock-availability gate when moving to a firm status
   // (approve / confirm / complete) — creates an explicit backorder.
   force: boolish.optional(),
@@ -641,11 +932,17 @@ export const createOrderSchema = z.object({
   ...orderFields,
 });
 
-export const updateOrderSchema = z.object(orderFields);
+export const updateOrderSchema = z.object(orderFields).extend({
+  items: z.array(orderItemSchema).min(1, 'Add at least one line item').max(300).optional(),
+  expected_revision: z.string().regex(/^[a-f0-9]{64}$/, 'Invalid order revision').optional(),
+});
 
 // ---- Sale-order status-only change (no line-item body) — used by the delivery→fulfil
 // prompt and any "just advance the order" action. Runs the same availability gate. ----
-export const orderStatusSchema = z.object({
+export const shortfallActionSchema = z.object({
+  expected_revision: z.string().regex(/^[a-f0-9]{64}$/, 'Invalid order revision').optional(),
+});
+export const orderStatusSchema = shortfallActionSchema.extend({
   status: trimmed.min(1).max(40),
   force: boolish.optional(),
 });
@@ -656,10 +953,14 @@ export const releaseOrderSchema = z
     // Serialized finished units — by id and/or by scanned QR-label text (identifier).
     unit_ids: z.array(z.coerce.number().int().positive()).max(2000).optional(),
     codes: z.array(trimmed.min(1).max(120)).max(2000).optional(),
+    // Selects the commercial line for serialized scans when item/build state is repeated.
+    order_item_id: z.coerce.number().int().positive().optional(),
     // Non-serialized (bulk) lines — { item_id, quantity } to add to that line's released_qty.
     bulk: z.array(z.object({
       item_id: z.coerce.number().int().positive(),
+      order_item_id: z.coerce.number().int().positive().optional(),
       quantity: numCoerce.positive().max(1_000_000),
+      batch_id: z.coerce.number().int().positive().optional(),
     })).max(300).optional(),
   })
   .refine((v) => (v.unit_ids?.length || v.codes?.length || v.bulk?.length), {
@@ -669,9 +970,88 @@ export const releaseOrderSchema = z
 export const unreserveOrderSchema = z.object({
   unit_ids: z.array(z.coerce.number().int().positive()).max(2000).optional(),
   bulk: z.array(z.object({
+    allocation_id:z.coerce.number().int().positive().optional(),
+    untracked:z.boolean().optional(),
     item_id: z.coerce.number().int().positive(),
+    order_item_id: z.coerce.number().int().positive().optional(),
     quantity: numCoerce.positive().max(1_000_000),
+  }).refine(v=>!(v.allocation_id&&v.untracked),'Choose either an exact batch allocation or untracked goods.')).max(300).optional(),
+}).refine((v) => (v.unit_ids?.length || v.bulk?.length), {
+  message: 'Choose an allocated unit or quantity to undo',
+});
+
+// Issuing a release slip — who physically collected the goods, and the vehicle they left in.
+export const releaseSlipSchema = z.object({
+  previous_slip_id: optionalId,
+  delivery_id: optionalId,
+  lines: z.array(z.object({
+    order_item_id: z.coerce.number().int().positive(),
+    quantity: numCoerce.positive().max(1_000_000),
+    unit_ids: z.array(z.coerce.number().int().positive()).max(1000).optional(),
+    batches: z.array(z.object({allocation_id:z.coerce.number().int().positive(),quantity:numCoerce.positive()})).max(1000).optional(),
+  })).min(1).max(300).optional(),
+  collected_by: trimmed.min(1, 'Enter who collected the goods').max(160),
+  vehicle_plate: optionalText,
+  notes: optionalText,
+  // Warehouse-out rules (modules/inventory/release-auth.ts): the token the recipient presents,
+  // each package item confirmed, the seal / tag, the handoff area and the recipient's acknowledgement.
+  authorization_token: trimmed.max(40).optional().nullable(),
+  package: z.array(z.object({
+    item_id: z.coerce.number().int().positive(),
+    label: trimmed.min(1).max(120),
+    ok: z.boolean(),
   })).max(300).optional(),
+  seal_tag: trimmed.max(80).optional().nullable(),
+  handoff_area: trimmed.max(80).optional().nullable(),
+  acknowledged: z.boolean().optional(),
+  // Handoff photos uploaded first as `attachments` kind 'release_proof' on the order; the slip
+  // takes them over. The phone and desktop apps must send at least one (isAppClient).
+  evidence_ids: z.array(z.coerce.number().int().positive()).max(20).optional(),
+});
+
+/** Releaser asks a supervisor to release without the token the recipient can't present. */
+export const releaseOverrideRequestSchema = z.object({
+  reason: trimmed.min(5, 'Say why the token can’t be presented').max(500),
+});
+
+/** A supervisor (inventory.adjust) approves or declines releasing without the token — with a reason. */
+export const releaseOverrideDecisionSchema = z.object({
+  approve: z.boolean().default(true),
+  reason: trimmed.min(5, 'Give the reason for the override').max(500),
+});
+
+/** Sales issues who may receive an order's goods (release-auth.ts). */
+export const releaseAuthorizationSchema = z.object({
+  mode: z.enum(['pickup', 'delivery']),
+  recipient_name: trimmed.min(1, 'Enter the approved recipient').max(120),
+  // Only the last 4 characters are kept — never the full ID number.
+  id_reference: trimmed.max(40).optional().nullable(),
+  valid_hours: z.coerce.number().min(1).max(24 * 14).default(24),
+  handoff_area: trimmed.max(80).optional().nullable(),
+  partial_allowed: z.boolean().optional(),
+  notes: optionalText,
+});
+
+export const revokeReleaseAuthorizationSchema = z.object({
+  reason: trimmed.min(1, 'Give a reason').max(300),
+});
+
+export const releaseReportSchema = z.object({
+  kind: z.enum(['authorization', 'identity', 'unit_mismatch', 'package_missing', 'partial_request', 'other']),
+  description: trimmed.min(1, 'Describe the problem').max(1500),
+  unit_identifier: trimmed.max(120).optional().nullable(),
+});
+
+export const resolveReleaseReportSchema = z.object({
+  resolution: trimmed.max(1000).optional().nullable(),
+});
+
+/** A finished product's package checklist (what leaves with each unit). */
+export const packageItemsSchema = z.object({
+  items: z.array(z.object({
+    label: trimmed.min(1).max(120),
+    required: z.boolean().default(true),
+  })).max(40),
 });
 
 // ---- Purchasing: goods receipts + vendor bills (3-way match) ----
@@ -735,6 +1115,7 @@ export const statutoryDeductionsSchema = z.object({
     deduct_philhealth: boolish.optional(),
     deduct_pagibig: boolish.optional(),
     deduct_withholding_tax: boolish.optional(),
+    contribution_basis: z.enum(['actual', 'fixed']).optional(),
   })).min(1).max(2000),
 });
 
@@ -835,6 +1216,35 @@ export const creditNoteSchema = z.object({
   tax_amount: numCoerce.min(0).default(0),
 });
 
+// A physical customer return is one slip line per receipt. Serialised receipts
+// identify the exact shipped unit; inspection alone can put it back on hand.
+export const salesReturnReceiveSchema = z.object({
+  batch_id: optionalId,
+  slip_id: z.coerce.number().int().positive(),
+  slip_item_id: z.coerce.number().int().positive(),
+  quantity: numCoerce.positive(),
+  unit_id: optionalId,
+  reason: trimmed.min(5).max(500),
+  evidence_ids: z.array(z.coerce.number().int().positive()).min(1).max(12),
+});
+export const salesReturnInspectSchema = z.object({
+  decision: z.enum(['restock', 'reject']),
+  condition_note: trimmed.min(5).max(500),
+  location_id: optionalId,
+});
+export const salesReturnDispositionSchema = z.object({
+  decision: z.enum(['repair', 'salvage', 'dispose']),
+  note: trimmed.min(5).max(500),
+  location_id: optionalId,
+});
+export const salesReturnRepairCompleteSchema = z.object({
+  note: trimmed.min(5).max(500),
+});
+export const salesReturnReinspectSchema = salesReturnInspectSchema;
+export const salesReturnCreditLinkSchema = z.object({
+  credit_note_id: z.coerce.number().int().positive(),
+});
+
 // ---- Tax codes (Phase 2): VAT / withholding classifications ----
 export const taxCodeSchema = z.object({
   code: trimmed.min(1, 'Code is required').max(20),
@@ -878,10 +1288,17 @@ export const matchToleranceSchema = z.object({
 });
 
 export const templateSchema = z.object({
+  studio_version: z.number().int().nonnegative().optional(),
+  expected_revision: trimmed.regex(/^[a-f0-9]{64}$/).optional(),
+  source_template_id: optionalId,
+  source_revision: trimmed.regex(/^[a-f0-9]{64}$/).optional(),
   name: trimmed.min(1, 'Template name is required').max(120),
   type: z.enum(['sale', 'job', 'purchase', 'generic']).default('generic'),
   period: trimmed.max(60).optional().nullable(),
-  body: trimmed.min(1, 'Template body cannot be empty').max(5000000),
+  body: trimmed.min(1, 'Template body cannot be empty').max(5000000).refine((body) => {
+    const content = body.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<!--[\s\S]*?-->/g, '');
+    return !!content.replace(/<[^>]+>/g, '').replace(/&nbsp;|\s/g, '') || /<(?:img|table|hr)\b|class=["'][^"']*doc-float/i.test(content);
+  }, 'Template body cannot be empty'),
   // N-up print tiling (SCHEMA_VERSION 30/32) — the template editor shows these as Grid Rows /
   // Grid Columns / Fill mode. Both grid dimensions default to 1 (today's plain
   // one-record-per-page behavior). Capped at 6 each and 12 combined — past that a real page
@@ -892,6 +1309,8 @@ export const templateSchema = z.object({
   // specific record (HR Payroll Slip's "2 employees x 2 copies"). 'repeat': cycle back through
   // the printed records to fill every cell — right for repeating ONE design across its whole
   // grid (print one record as a 3x3 sheet of itself).
+  grid_gap_x_mm: z.coerce.number().finite().min(0).max(30).default(6),
+  grid_gap_y_mm: z.coerce.number().finite().min(0).max(30).default(6),
   tile_fill: z.enum(['blank', 'repeat']).default('blank'),
   // (SCHEMA_VERSION 35) Continuous tiling: repeat_count is only consulted when tile_continuous
   // is on — copies_per_record/records_per_page then become a fixed page shape instead of the
@@ -903,19 +1322,26 @@ export const templateSchema = z.object({
 }).refine((v) => v.copies_per_record * v.records_per_page <= 12, {
   message: 'Copies per record × records per page can\'t exceed 12',
   path: ['copies_per_record'],
-});
+}).refine(v => !isMultiPageDocument(v.body) || (v.copies_per_record === 1 && v.records_per_page === 1 && !v.tile_continuous), {message: MULTIPAGE_GRID_ERROR, path: ['copies_per_record']});
 
 // ---- Form builder ----
 
 // 'employee' renders as a live dropdown of current employees (never a stale, form-design-time
 // options list) — its stored value is still just the employee's name, the same plain string
 // convention every other form already relies on (e.g. matching attendance to a form record).
-const fieldTypeEnum = z.enum(['text', 'number', 'date', 'select', 'textarea', 'checkbox', 'employee']);
+const fieldTypeEnum = z.enum(['text', 'number', 'date', 'time', 'select', 'textarea', 'checkbox', 'employee', 'reference', 'system', 'line_items', 'calculated']);
 
 export const fieldDefSchema = z.object({
   key: trimmed.min(1).max(64).regex(/^[a-z0-9_]+$/, 'Key must be lowercase letters, numbers, or underscores'),
   label: trimmed.min(1).max(120),
   type: fieldTypeEnum,
+  price_editable: z.boolean().optional(),
+  format: z.literal('currency').optional(),
+  currency: trimmed.regex(/^[A-Z]{3}$/, 'Use a three-letter currency code').optional(),
+  calculation:z.object({operator:z.enum(['sum','multiply','subtract','percent']),operands:z.array(trimmed.regex(/^[a-z0-9_]+(?:\.(?:quantity|unit_price|discount_amount|line_total))?$/)).min(1).max(20)}).optional(),
+  source: z.enum(['product','customer','employee','sales_order','supplier','location','account','tax_code','company','user']).optional(),
+  property: trimmed.regex(/^[a-z_]+$/).optional(),
+  binding: z.object({field:trimmed.regex(/^[a-z0-9_]+$/),property:trimmed.regex(/^[a-z_]+$/),editable:z.boolean().default(false)}).optional(),
   required: boolish.default(false),
   options: z.array(trimmed.max(200)).max(100).default([]),
   default: trimmed.max(500).default(''),
@@ -924,9 +1350,16 @@ export const fieldDefSchema = z.object({
 export const formActionSchema = z.object({
   type: z.enum([
     'notify_employee', 'save_to_201', 'email_employee',
-    'notify_hr', 'create_followup_task', 'apply_no_work',
+    'notify_hr', 'create_followup_task', 'apply_no_work', 'create_sales_draft',
   ]),
-  run_on: z.enum(['create', 'approved']).default('create'),
+  run_on: z.enum(['create', 'approved', 'submitted']).default('create'),
+  customer_field:trimmed.regex(/^[a-z0-9_]+$/).optional(),
+  items_field:trimmed.regex(/^[a-z0-9_]+$/).optional(),
+  tax_field:trimmed.regex(/^[a-z0-9_]+$/).optional(),
+  total_field:trimmed.regex(/^[a-z0-9_]+$/).optional(),
+  date_field:trimmed.regex(/^[a-z0-9_]+$/).optional(),
+  notes_field:trimmed.regex(/^[a-z0-9_]+$/).optional(),
+  currency:trimmed.regex(/^[A-Z]{3}$/).optional(),
   subject: trimmed.max(200).optional(),
   body: trimmed.max(4000).optional(),
   due_field: trimmed.max(64).optional(),
@@ -934,6 +1367,8 @@ export const formActionSchema = z.object({
 });
 
 export const formDefinitionSchema = z.object({
+  expected_version: z.number().int().positive().optional(),
+  change_reason: trimmed.max(1000).optional(),
   name: trimmed.min(1, 'Form name is required').max(120),
   slug: trimmed.min(1).max(60).regex(/^[a-z0-9_]+$/, 'Slug must be lowercase letters, numbers, or underscores'),
   number_prefix: trimmed.min(1).max(10).regex(/^[A-Z0-9]+$/, 'Prefix must be uppercase letters or numbers').default('FM'),
@@ -956,16 +1391,23 @@ export const linkFormTemplateSchema = z.object({
 // round-tripped by the generic PUT" reasoning.
 const formFieldScalar = z.union([z.string().max(10000), z.number(), z.boolean(), z.null()]);
 const formFieldObject = z.record(z.string().max(64), formFieldScalar);
-const formFieldValue = z.union([formFieldScalar, formFieldObject, z.array(formFieldObject).max(50)]);
+const formFieldValue = z.union([formFieldScalar, formFieldObject, z.array(formFieldObject).max(50), z.string().max(500000)]);
+const formRecordData = z.record(z.string().max(64), formFieldValue).superRefine((data, ctx) => {
+  for (const [key, value] of Object.entries(data)) if (key !== '_calculation_snapshot' && typeof value === 'string' && value.length > 10000)
+    ctx.addIssue({ code: 'custom', path: [key], message: 'Field must not exceed 10000 characters' });
+});
 
 export const createFormRecordSchema = z.object({
+  expected_definition_version: z.number().int().positive().optional(),
   form_def_id: z.coerce.number().int().positive('Form definition is required'),
-  data: z.record(z.string().max(64), formFieldValue).default({}),
+  data: formRecordData.default({}),
   status: trimmed.max(40).default('draft'),
 });
 
 export const updateFormRecordSchema = z.object({
-  data: z.record(z.string().max(64), formFieldValue).default({}),
+  expected_revision: z.number().int().positive().optional(),
+  change_reason: trimmed.max(1000).optional(),
+  data: formRecordData.default({}),
   status: trimmed.max(40).optional(),
 });
 
@@ -1000,7 +1442,7 @@ export const docVariableSchema = z.object({
 
 // ---- HR: Employees / Time Keeping ----
 
-const employeeStatusEnum = z.enum(['probationary', 'regular', 'resigned', 'terminated']);
+const employeeStatusEnum = z.enum(['probationary', 'regular', 'suspended', 'resigned', 'terminated']);
 const optionalIdText = trimmed.max(40).optional().nullable();
 // A fixed peso amount replacing a computed statutory deduction (SSS/PhilHealth/Pag-IBIG/
 // withholding tax) for one employee. '' / null / omitted -> null (use the normal computed
@@ -1009,6 +1451,25 @@ const optionalOverrideAmount = (label: string) => z.preprocess(
   (v) => (v === '' || v === undefined || v === null ? null : v),
   numCoerce.min(0, `${label} override cannot be negative`).nullable()
 ).optional();
+
+/** Civil status values on the employee record (PSA categories; "Divorced" covers foreign and
+ *  Shari'a divorces recognized in the Philippines). */
+export const CIVIL_STATUSES = ['Single', 'Married', 'Widowed', 'Legally separated', 'Annulled', 'Divorced'] as const;
+
+/** Why a birth date can't be right, or null: YYYY-MM-DD, a real calendar date, 1900 or later,
+ *  and at least 15 years ago (the minimum working age). */
+export function birthDateError(v: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return 'Use a YYYY-MM-DD date';
+  const d = new Date(v + 'T00:00:00Z');
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== v) return 'That date doesn’t exist';
+  if (v < '1900-01-01') return 'Birth date is too far in the past';
+  const latest = new Date();
+  latest.setUTCFullYear(latest.getUTCFullYear() - 15);
+  if (v > latest.toISOString().slice(0, 10)) return 'Birth date must be at least 15 years ago';
+  return null;
+}
+
+const rateEffectiveDate = trimmed.pipe(z.iso.date());
 
 export const employeeSchema = z.object({
   employee_no: trimmed.min(1, 'Employee number is required').max(40),
@@ -1025,7 +1486,7 @@ export const employeeSchema = z.object({
   // Only used when this save actually changes the effective daily rate — logs it to
   // employee_rate_history instead of just overwriting the flat current value. Not persisted as
   // an employees column. See src/employee-rate-history.ts and hr.routes.ts PUT /employees/:id.
-  rate_effective_date: trimmed.max(10).optional().nullable(),
+  rate_effective_date: rateEffectiveDate.or(trimmed.length(0)).optional().nullable(),
   rate_change_note: trimmed.max(200).optional().nullable(),
   status: employeeStatusEnum.default('probationary'),
   start_date: trimmed.max(40).optional().nullable(),
@@ -1033,6 +1494,18 @@ export const employeeSchema = z.object({
   philhealth_no: optionalIdText,
   pagibig_no: optionalIdText,
   tin_no: optionalIdText,
+  // Omitted ⇒ unchanged on update (CSV import and older clients don't send them); '' ⇒ cleared.
+  birth_date: z.preprocess(
+    (v) => (v === '' ? null : v),
+    trimmed.nullable().superRefine((v, ctx) => {
+      const err = v == null ? null : birthDateError(v);
+      if (err) ctx.addIssue({ code: 'custom', message: err });
+    })
+  ).optional(),
+  civil_status: z.preprocess(
+    (v) => (v === '' ? null : v),
+    z.enum(CIVIL_STATUSES, { message: `Civil status must be one of: ${CIVIL_STATUSES.join(', ')}` }).nullable()
+  ).optional(),
   leave_days_per_year: numCoerce.min(0).max(366).default(5),
   leave_days_used: numCoerce.min(0).default(0),
   rest_days: z.array(z.number().int().min(0).max(6)).max(7).nullable().optional(),
@@ -1042,6 +1515,9 @@ export const employeeSchema = z.object({
   // Exempt from overtime pay entirely — real OT hours still show on the payslip detail, it
   // just never adds pay. See src/hr-payroll-compute.ts.
   ot_exempt: boolish.optional(),
+  // Always paid a whole day for any day with both a time-in and a time-out (no half day, late,
+  // undertime). Omitted on update ⇒ unchanged. See src/modules/payroll/hr-payroll-compute.ts.
+  always_whole_day: boolish.optional(),
   // May time in from anywhere (field staff) — exempt from the office location lock, and may
   // punch without the kiosk QR. Omitted on update ⇒ unchanged. See clock-geofence.ts.
   clock_anywhere: boolish.optional(),
@@ -1060,6 +1536,9 @@ export const employeeSchema = z.object({
   sss_override: optionalOverrideAmount('SSS'),
   philhealth_override: optionalOverrideAmount('PhilHealth'),
   pagibig_override: optionalOverrideAmount('Pag-IBIG'),
+  // SSS / Pag-IBIG on the month's actual pay ('actual', the law's default) or on the fixed
+  // monthly rate ('fixed', by the employee's written agreement). Omitted on update = unchanged.
+  contribution_basis: z.enum(['actual', 'fixed']).optional(),
   photo: z.preprocess(
     (v) => (v === '' ? null : v),
     z.string().max(2_000_000).regex(/^data:image\//, 'Photo must be an image').optional().nullable()
@@ -1067,6 +1546,21 @@ export const employeeSchema = z.object({
 }).refine(
   (v) => v.rate_type !== 'monthly' || (v.monthly_rate != null && v.monthly_rate > 0),
   { message: 'Monthly rate is required when rate type is monthly', path: ['monthly_rate'] }
+);
+
+/** HR → Employees → Edit → Pay → Change rate (POST /api/hr/employees/:id/rate-change). */
+export const rateChangeSchema = z.object({
+  rate_type: z.enum(['daily', 'monthly']),
+  daily_rate: numCoerce.min(0, 'Daily rate cannot be negative').default(0),
+  monthly_rate: numCoerce.min(0, 'Monthly rate cannot be negative').optional().nullable(),
+  effective_date: rateEffectiveDate,
+  note: trimmed.max(200).optional().nullable(),
+}).refine(
+  (v) => v.rate_type !== 'monthly' || (v.monthly_rate != null && v.monthly_rate > 0),
+  { message: 'Monthly rate is required when rate type is monthly', path: ['monthly_rate'] }
+).refine(
+  (v) => v.rate_type !== 'daily' || v.daily_rate > 0,
+  { message: 'Daily rate is required', path: ['daily_rate'] }
 );
 
 // ---- HR: Asset issuance (company property issued to an employee) ----
@@ -1094,19 +1588,19 @@ export const returnAssetItemSchema = z.object({
 export const attendancePeriodSchema = z
   .object({
     label: trimmed.min(1, 'Cutoff label is required').max(120),
-    start_date: trimmed.min(1, 'Start date is required').max(40),
-    end_date: trimmed.min(1, 'End date is required').max(40),
+    start_date: realCalendarDate,
+    end_date: realCalendarDate,
   })
   .refine((v) => v.end_date >= v.start_date, {
     message: 'End date must be on or after the start date',
     path: ['end_date'],
-  });
+  }).refine(v => (Date.parse(v.end_date) - Date.parse(v.start_date)) / 86400000 < 366, 'A cutoff must not exceed 366 days');
 
-const timeOfDay = z.union([trimmed.max(20), z.null()]).optional();
+const timeOfDay = z.union([trimmed.refine(v => v === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(v), 'Time must be HH:MM, 24-hour'), z.null()]).optional();
 const nullableId = z.coerce.number().int().positive().nullable().optional();
 
 const attendanceDaySchema = z.object({
-  work_date: trimmed.min(1).max(40),
+  work_date: realCalendarDate,
   time_in: timeOfDay,
   // Lunch-break bracket — display-only (payroll subtracts PayrollPolicy.lunch_break_minutes,
   // it never reads these). Split from the raw punches on reconcile, or hand-typed in the grid.
@@ -1138,7 +1632,7 @@ const attendanceDaySchema = z.object({
 export const saveAttendanceSchema = z.object({
   employee_id: z.coerce.number().int().positive('Employee is required'),
   days: z.array(attendanceDaySchema).max(62),
-});
+}).refine(v => new Set(v.days.map(d => d.work_date)).size === v.days.length, 'Each attendance date must appear only once');
 
 export const addRosterEmployeeSchema = z.object({
   employee_id: z.coerce.number().int().positive('Employee is required'),
@@ -1192,9 +1686,12 @@ export const payrollPolicySchema = z.object({
   grace_minutes: z.coerce.number().int().min(0).max(240).default(10),
   late_unit: z.enum(['minute', 'hour']).default('hour'),
   ot_unit: z.enum(['minute', '30min', 'hour']).default('hour'),
+  // 0 (default) = off for both — see PayrollPolicy.ot_grace_minutes / ot_min_minutes.
+  ot_grace_minutes: z.coerce.number().int().min(0).max(59).default(0),
+  ot_min_minutes: z.coerce.number().int().min(0).max(480).default(0),
   ot_rate_percent: z.coerce.number().min(0).max(1000).default(125),
   require_ot_form: boolish.default(true),
-  night_diff_enabled: boolish.default(false),
+  night_diff_enabled: boolish.default(true),
   night_diff_percent: z.coerce.number().min(0).max(200).default(10),
   night_start: hhmm.default('22:00'),
   night_end: hhmm.default('06:00'),
@@ -1227,12 +1724,22 @@ export const payrollPolicySchema = z.object({
   // 'none' (default) preserves the pre-2026-09 behavior — holiday pay is never withheld for an
   // adjacent-day absence unless HR explicitly opts in.
   holiday_adjacency_requirement: z.enum(['none', 'before', 'after', 'both']).default('none'),
+  // false (default) keeps the rest-day premium automatic — same opt-in-by-default convention.
+  require_rest_day_form: boolish.default(false),
 });
 
 // POST /api/hr/payroll/:recordId/preview-deductions, PUT .../deductions — which of the four
 // statutory deductions apply to ONE payslip record. All optional; an omitted key keeps whatever
 // that deduction's current applied state already is (not reset to on).
 export const payrollDeductionTogglesSchema = z.object({
+  expected_revision: z.number().int().positive().optional(),
+  change_reason: trimmed.max(1000).optional(),
+  statutory_overrides: z.object({
+    sss: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),
+    philhealth: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),
+    pagibig: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),
+    withholding_tax: z.number().finite().min(0).max(10_000_000).multipleOf(0.01).nullable().optional(),
+  }).optional(),
   sss_applied: boolish.optional(),
   philhealth_applied: boolish.optional(),
   pagibig_applied: boolish.optional(),
@@ -1298,6 +1805,14 @@ export const phonePunchSchema = z.object({
   }).optional().nullable(),
 });
 
+/** Phone punch step 2 (POST /api/hr/clock/punch/selfie, multipart): the hold from step 1's scan
+ *  and the slot the employee picked (the kiosk's four: In / Afternoon Out / Afternoon In / Out);
+ *  the selfie itself is the "photo" file. */
+export const phoneSelfieSchema = z.object({
+  hold_id: z.coerce.number().int().positive('Scan the office code first'),
+  slot: z.enum(['in', 'lunchOut', 'lunchIn', 'out'], { message: 'Choose time in, afternoon out, afternoon in or time out' }),
+});
+
 /** Approve this browser as a time-in kiosk (src/modules/hr/kiosk-devices.ts). */
 export const kioskDeviceSchema = z.object({
   name: trimmed.min(1, 'Name this kiosk, e.g. "Front desk PC"').max(60),
@@ -1355,7 +1870,7 @@ const clockTime = z.preprocess(
 
 export const timeCorrectionSchema = z
   .object({
-    work_date: trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'work_date must be YYYY-MM-DD'),
+    work_date: realCalendarDate,
     requested_in: clockTime,
     requested_out: clockTime,
     reason: trimmed.min(3, 'A short reason is required').max(1000),
@@ -1378,7 +1893,11 @@ const ymd = trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD').opti
 const geo = z.coerce.number().min(-180).max(180).optional().nullable();
 
 export const createDeliverySchema = z.object({
+  release_slip_id: optionalId.optional(),
   order_id: optionalId,
+  delivery_mode: z.enum(['own', 'courier']).default('own'),
+  courier_name: trimmed.max(160).optional().nullable(),
+  tracking_number: trimmed.max(160).optional().nullable(),
   customer_name: trimmed.max(200).optional().nullable(),
   address: trimmed.max(500).optional().nullable(),
   contact_phone: trimmed.max(40).optional().nullable(),
@@ -1394,8 +1913,9 @@ export const deliveryStatusSchema = z.object({
 });
 
 export const deliveryCompleteSchema = z.object({
-  outcome: z.enum(['delivered', 'failed']),
+  outcome: z.enum(['delivered', 'failed', 'courier_handoff']),
   recipient: trimmed.max(160).optional().nullable(),
+  tracking_number: trimmed.max(160).optional().nullable(),
   note: trimmed.max(1000).optional().nullable(),
   lat: geo,
   lng: geo,

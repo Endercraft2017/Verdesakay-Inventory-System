@@ -4,10 +4,14 @@
  *   npm run backup                                    snapshot every DB + uploads now
  *   npm run backup:list                               list snapshots on disk
  *   npm run backup:restore -- <name> <file> --yes     restore one DB (STOP THE SERVER FIRST)
+ *   npm run backup:drill                              restore every off-site copy into a temp file + check it
+ *   npm run backup:health                             list backup problems; alerts BACKUP_ALERT_WEBHOOK if any
+ *   npm run backup:health -- --test-alert             send a test message to BACKUP_ALERT_WEBHOOK
  *
  * <name> is `default` (data.db), a tenant slug, or `_platform` (platform.db).
  */
 import { runManualBackup, listBackups, restoreBackup, liveFileFor } from '../src/platform/backups';
+import { runRestoreDrill, checkBackupHealth, sendBackupAlert } from '../src/platform/backup-health';
 import { backupDir } from '../src/shared/backup';
 
 const [cmd = 'now', ...args] = process.argv.slice(2);
@@ -51,7 +55,24 @@ if (cmd === 'now') {
     console.error(`Restore failed: ${(e as Error).message}`);
     process.exit(1);
   }
+} else if (cmd === 'drill') {
+  const run = await runRestoreDrill();
+  if (!run.results.length) console.log('No off-site target is configured (BACKUP_S3_<NAME>_*), so there is nothing to drill.');
+  for (const r of run.results) {
+    if (r.ok) console.log(`  ✓ ${r.target}: ${r.key} restored, integrity ok, ${r.tables} tables`);
+    else console.error(`  ✗ ${r.target}/${r.name}: ${r.error}`);
+  }
+  process.exit(run.ok ? 0 : 1);
+} else if (cmd === 'health') {
+  if (args.includes('--test-alert')) {
+    const sent = await sendBackupAlert('Test alert from Verdesakay backups', 'If you can read this, backup alerts reach you.', false);
+    console.log(sent ? 'Test alert sent.' : 'Not sent — set BACKUP_ALERT_WEBHOOK (see docs/DEPLOY-RAILWAY.md Part 5).');
+    process.exit(sent ? 0 : 1);
+  }
+  const state = await checkBackupHealth();
+  console.log(state.ok ? 'Backups are healthy.' : state.problems.map((p) => `  ✗ ${p}`).join('\n'));
+  process.exit(state.ok ? 0 : 1);
 } else {
-  console.error(`Unknown command "${cmd}". Use: now | list | restore`);
+  console.error(`Unknown command "${cmd}". Use: now | list | restore | drill | health`);
   process.exit(2);
 }

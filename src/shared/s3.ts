@@ -111,6 +111,14 @@ export class S3Client {
     return Buffer.from(await res.arrayBuffer());
   }
 
+  /** The object's bytes, or null if there is no such key. */
+  async getIfExists(key: string): Promise<Buffer | null> {
+    const res = await this.request('GET', key);
+    if (res.status === 404) { await res.arrayBuffer(); return null; }
+    if (!res.ok) await S3Client.fail('GET', key, res);
+    return Buffer.from(await res.arrayBuffer());
+  }
+
   async delete(key: string): Promise<void> {
     const res = await this.request('DELETE', key);
     if (!res.ok && res.status !== 404) await S3Client.fail('DELETE', key, res);

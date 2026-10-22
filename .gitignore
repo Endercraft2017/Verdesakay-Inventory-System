@@ -13,3 +13,10 @@ dist/
 coverage/
 .tmp/
 tests/.tmp/
+
+# Desktop app (offline-first phase 3d): installer output and the code-signing certificate.
+dist-desktop/
+certs-desktop/
+
+# Local browser audit reports, traces and downloaded reference material
+/work/

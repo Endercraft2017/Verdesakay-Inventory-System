@@ -1,3 +1,4 @@
+import { safeAuditMeta } from './audit-privacy';
 /**
  * Database connection, schema creation, and first-run seeding.
  * Uses Node's built-in SQLite (node:sqlite). The DB file path can be overridden with
@@ -10,6 +11,13 @@
  * With a single tenant (the default), everything behaves exactly as before.
  */
 import path from 'node:path';
+import { createRequire } from 'node:module';
+const {field:printFormField}=createRequire(import.meta.url)('../../public/js/lib/form-print.js') as {field:(field:{key:string;label:string;type?:string;source?:string;format?:string;currency?:string},classes:{row:string;label:string;value:string})=>string};
+import { createDocumentDefaultsSchema, initializeDocumentDefaults } from './document-defaults';
+import { createFormTemplateSchema } from './form-template-schema';
+import { createFormHistorySchema } from './form-history-schema';
+import { configureFormHistoryConnection } from './form-history-context';
+import { createStudioSchema } from './doc-studio-schema';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -17,7 +25,9 @@ import { DatabaseSync } from 'node:sqlite';
 import bcrypt from 'bcryptjs';
 import { SSS_2026, PHILHEALTH_2026, PAGIBIG_2026, RWT_2026 } from '../modules/payroll/ph-statutory';
 import { DEFAULT_COA } from '../modules/accounting/ledger';
-import { preMigrationSnapshot } from './backup';
+import { preMigrationSnapshot, backupDir, mirrorDir } from './backup';
+import { BUILTIN_ROLES, ADMIN_ROLE, roleDefaults } from './permissions';
+import { syncHooks } from './sync-context';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
 
@@ -50,6 +60,8 @@ function openConnection(slug: string): DatabaseSync {
   const dbFile = connectionPath(slug);
   fs.mkdirSync(path.dirname(dbFile), { recursive: true });
   const conn = new DatabaseSync(dbFile);
+  // Persisted history triggers can run during migration, before history schema setup.
+  configureFormHistoryConnection(conn);
   conn.exec('PRAGMA journal_mode = WAL;');
   conn.exec('PRAGMA foreign_keys = ON;');
   return conn;
@@ -58,7 +70,43 @@ function openConnection(slug: string): DatabaseSync {
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
     (cheap but not free) PRAGMA-probe pass on every cold open. `createSchema()` and
     `seed()` are always safe to re-run (`… IF NOT EXISTS`, count-guarded). */
-export const SCHEMA_VERSION = 47; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+// 94: link optional subassembly job orders to their parent job order.
+// 93: restrict PR budget approval and liquidation closure to designated authorities.
+// 92: budgeted staff purchase requests, assigned buyers, receipt-backed liquidation.
+// 91: inspection-only legacy unit intake provenance, immutable keys and recorded valuation.
+// 90: planned cycle-count assignments, recurrence, and exact-count linkage.
+// 89: bind linked issue closure to an applied count and captured sale-audit evidence.
+// 88: structured location/build-state stock counts and supervised resolution.
+// 87: record human reviews of historical direct-sale stock-out candidates.
+// 86: permit a serialized unit to return once per separate sale shipment.
+// 85: mark units sold directly before a trip slip so stock-out is not repeated.
+// 84: same-order partial trip manifests and delivery records.
+// 83: bind sale-unit and batch allocations to a specific commercial order line.
+// 82: per-form Inventory entry grants and access revision.
+// 81: courier booking and handoff metadata on existing delivery records.
+// 80: connected forms, sales draft links and sync-safe template history IDs.
+// 79: preserve exact semi-built batch identity when a bulk package enters finishing.
+// 78: trace semi-built packages finished into fully built stock without BOM reissue,
+//     and preserve each serialized unit's received cost for that conversion.
+// 77: exact batch/location stock, sales allocations, verified counts and return provenance.
+// 76: form versions/revisions, archive state, deduction audit and personal views.
+// 75: track fully built and semi-built stock separately per item/location and tag job orders.
+// 74: keep a commercial CKD line with a frozen physical-component manifest.
+// 73: remember an item's preferred storage location even when it has no stock.
+// 72: optional five-level inventory location hierarchy.
+// 71: link job-order component-shortage purchase drafts so retries and partial receipts
+//     create only remaining procurement demand.
+// 70: bind JSON idempotency keys to the original request payload.
+// 69: freeze job-order QC/QA checklists when the parts kit is released.
+// 68: rejected-return disposition and reinspection.
+// 67: slip-linked sales returns and the shipped unit-cost snapshot.
+// 66: recoverable file bytes for all tenant upload modules.
+// 65: durable message attachment bytes.
+// 64: checklist notes and linked personal scheduler tasks.
+// 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
+// 96: job recording assignments and the one-time role/CSR/privacy migration.
+// 97: financial draft editor attribution and targeted default-role corrections.
+export const SCHEMA_VERSION = 97; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -149,8 +197,61 @@ export const SCHEMA_VERSION = 47; // 20: employees.late_exempt; 21: attendance_r
 // (field staff may punch from anywhere, without the QR) and time_punches.lat / lng / accuracy_m /
 // distance_m / geo_site (where each phone punch came from, for HR review). The policy itself is
 // the clock_geofence setting; off by default, so existing installs punch exactly as before.
+// 48: durable document drafts/versions, shared company library, comments, working rooms and presence.
 // 47: kiosk_devices -- office PCs an HR manager approved to run the time-in kiosk. With the
 // kiosk lock on (default when internet-facing), the kiosk endpoints refuse any other browser.
+// 48: sale-order releasing -- orders.warehouse_accepted_by / warehouse_accepted_at (the warehouse
+// takes on an approved SO before picking; /release requires it) + release_slips /
+// release_slip_items (numbered record of what physically left, snapshotting lines + unit
+// serials; issuing one confirms the SO, which is when stock goes out). Older approved/released
+// SOs are backfilled as accepted so in-flight picks aren't blocked.
+// 49: job_orders.approved_by / approved_at / approve_notes -- a production.approve holder signs
+// off a draft before the warehouse may release its parts (job-orders.routes.ts POST /:id/approve).
+// No backfill: drafts already in the queue simply need approving; released ones are past it.
+// 50: job-order parts release, warehouse side + the line lead's floor tools --
+// job_orders.warehouse_accepted_by/_at + prepared_by/_at (warehouse takes on an approved draft,
+// then picks the kit; several can be picked together), job_order_components.qty_picked,
+// parts_release_slips / parts_release_slip_items (numbered record of the kit handed to
+// production; issuing one IS the release, when stock is deducted), job_orders.paused_by/_at +
+// pause_reason, and production_issues (issue reports per job order or per unit, editable while
+// open). No backfill: drafts in the queue go through accept + prepare; released ones are past it.
+// 51: time_punch_holds -- a phone punch is now two steps (scan the QR, then take a selfie); the
+// scan parks a hold stamped with the server's time, and the selfie turns it into the real
+// time_punches row AT that scan time, so the extra step never makes anyone late
+// (src/modules/hr/clock.routes.ts POST /punch/scan + /punch/selfie).
+// 52: employees.birth_date (YYYY-MM-DD) / civil_status -- now on the record, so an approved
+// information-change request for either is applied directly (src/modules/hr/info-change.ts)
+// instead of leaving HR to update it by hand. No backfill: both start NULL.
+// 53: employees.status gains 'suspended' -- still employed (stays on rosters and payroll) but
+// barred from clocking in and from production staffing. SQLite can't alter a CHECK in place, so
+// the table is rebuilt from its own stored CREATE statement with just that constraint widened.
+// 54: the insert-only "BIR 2316" template gains a Date of Birth row (employees.birth_date, v52),
+// added by surgical string insert after the TIN row -- same approach as the v16 payroll-slip patch.
+// 55: session + device tracking (src/shared/auth.ts, src/shared/device.ts). sessions gain sid
+// (public id; the token never leaves the server's hands again), device_id / ip / user_agent at
+// sign-in, last_seen_at / last_ip, shared + idle_minutes (borrowed-phone sign-in), and
+// ended_at / end_reason -- a sign-out now ENDS the row instead of deleting it, so the account's
+// sign-in history survives (swept after SESSION_HISTORY_DAYS). activity_log gains device_id +
+// device (label); push_subscriptions gains device_id (dropped on sign-out from that device);
+// time_punches gains device_id / device_flag / device_user_id (punch from a borrowed phone or
+// from a device another employee usually uses).
+// 56: data repair, no columns -- employee_rate_history rows at ₱0 that precede every real rate
+// take the employee's first real rate. A ₱0 rate is "not set yet": an employee created without
+// a rate and given one later had every cutoff day before that edit's effective date (default:
+// today) still paying ₱0. See employee-rate-history.ts fillUnsetRate().
+// 57: employees.always_whole_day -- any day with both a time-in and a time-out pays the full
+// daily basic: no half day, late, undertime or Undertime Day (hr-payroll-compute.ts).
+// 58: employees.contribution_basis ('actual' | 'fixed') -- SSS / Pag-IBIG on the month's actual
+// pay (the law's default) or, by written agreement, on the employee's fixed monthly rate
+// (computeEmployeeStatutory in hr.routes.ts; docs/PH-PAYROLL-COMPLIANCE.md §1).
+// 59: data, no columns -- pay split from HR records: every role / per-account grant holding
+//     hr.view (hr.manage) also gets payroll.view (payroll.manage), once, so no one loses access
+// 60: data, no columns -- production screens split from inventory.view: every role / per-account
+//     grant holding inventory.view also gets production.view, once
+// 61: data, no columns -- purchasing split from orders.*: orders.view grants purchasing.view and
+//     orders.create / orders.edit grant purchasing.manage, once
+
+// 62: users temporary_password_expires_at / password_change_required for owner recovery.
 
 /** The connection for `slug`, opening + creating/migrating its schema on first use. */
 export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
@@ -180,8 +281,31 @@ export function getDb(slug: string = DEFAULT_TENANT): DatabaseSync {
       migrate();
       setSetting('schema_version', SCHEMA_VERSION);
     }
+    hashLegacySessionTokens(conn);
+    createStudioSchema(conn);
+    createFormTemplateSchema(conn);
+    createFormHistorySchema(conn);
+    createDocumentDefaultsSchema(conn);
     ensureUploadDir();
+    const previousForms=new Set((conn.prepare('SELECT id FROM form_definitions').all() as Array<{id:number}>).map(f=>f.id));
     seed();
+    initializeDocumentDefaults(conn);
+    if(!getSetting('payroll_print_grid_initialized')){conn.exec("UPDATE doc_templates SET copies_per_record=2,records_per_page=2 WHERE name='HR Payroll Slip' AND copies_per_record=1 AND records_per_page=1 AND tile_continuous=0 AND repeat_count=1");setSetting('payroll_print_grid_initialized',true);}
+    const linksInitialized=!!getSetting('form_template_links_initialized');
+    const newForms=(conn.prepare('SELECT id FROM form_definitions').all() as Array<{id:number}>).some(f=>!previousForms.has(f.id));
+    if (!linksInitialized || newForms) {
+      const slip = conn.prepare("SELECT id FROM doc_templates WHERE name='HR Payroll Slip' ORDER BY id LIMIT 1").get() as {id:number}|undefined;
+      const payroll=conn.prepare("SELECT id FROM form_definitions WHERE slug='hr_payroll' AND template_id IS NULL").get() as {id:number}|undefined;
+      if (slip && payroll && (!linksInitialized||!previousForms.has(payroll.id)))conn.prepare('UPDATE form_definitions SET template_id=? WHERE id=?').run(slip.id,payroll.id);
+      const forms=conn.prepare('SELECT id,name,fields FROM form_definitions WHERE template_id IS NULL').all() as Array<{id:number;name:string;fields:string}>;
+      for(const form of forms){
+        if(linksInitialized&&previousForms.has(form.id))continue;
+        const tpl=conn.prepare("INSERT INTO doc_templates(name,type,body) VALUES(?,'generic',?)").run(form.name+' Template',memoTemplateBody(form.name,JSON.parse(form.fields)));
+        conn.prepare('UPDATE form_definitions SET template_id=? WHERE id=?').run(tpl.lastInsertRowid,form.id);
+      }
+      conn.exec('INSERT OR IGNORE INTO form_template_links SELECT id,template_id FROM form_definitions WHERE template_id IS NOT NULL');
+      setSetting('form_template_links_initialized',true);
+    }
   });
   return conn;
 }
@@ -193,6 +317,10 @@ export function forceMigrate(slug: string): void {
     createSchema();
     migrate();
     setSetting('schema_version', SCHEMA_VERSION);
+    createStudioSchema(activeDb());
+    createFormTemplateSchema(activeDb());
+    createFormHistorySchema(activeDb());
+    createDocumentDefaultsSchema(activeDb());
   });
 }
 
@@ -211,7 +339,13 @@ export function withTenant<T>(slug: string, fn: () => T): T {
     the tenant. Only `.prepare()` / `.exec()` are ever used on it. */
 export const db: DatabaseSync = new Proxy({} as DatabaseSync, {
   get(_target, prop) {
-    const real = activeDb() as unknown as Record<string | symbol, unknown>;
+    const conn = activeDb();
+    // src/sync/ wraps statements (ID allocation, node write guard); a no-op unless installed.
+    if (prop === 'prepare' && syncHooks.prepare) {
+      const hook = syncHooks.prepare;
+      return (sql: string) => hook(conn, sql, conn.prepare(sql));
+    }
+    const real = conn as unknown as Record<string | symbol, unknown>;
     const value = real[prop];
     return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(real) : value;
   },
@@ -233,6 +367,16 @@ export function queryAll<T>(sql: string, ...params: unknown[]): T[] {
 /** Execute an INSERT/UPDATE/DELETE and return the run result. */
 export function run(sql: string, ...params: unknown[]) {
   return db.prepare(sql).run(...(params as Param[]));
+}
+
+/** Close every open tenant connection and forget it (a later call reopens on demand). For the
+    test harness: Windows can't delete a database file that's still open, so tests/helpers.ts
+    cleanup() closes first — otherwise each test file leaves its %TEMP%\vds-test-* folder behind. */
+export function closeAllConnections(): void {
+  for (const conn of registry.values()) {
+    try { conn.close(); } catch { /* already closed */ }
+  }
+  registry.clear();
 }
 
 /** Open (if needed) + migrate the default tenant's database. Safe to call repeatedly. */
@@ -264,6 +408,19 @@ function createSchema(): void {
       created_at           TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- The workspace's roles: named permission bundles (src/shared/roles.ts). users.role holds a
+    -- key from here. Seeded once from permissions.ts BUILTIN_ROLES; 'admin' always resolves to
+    -- every permission whatever its row says.
+    CREATE TABLE IF NOT EXISTS roles (
+      key         TEXT PRIMARY KEY,
+      label       TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      permissions TEXT NOT NULL DEFAULT '[]',
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- One-time password-reset tokens (hashed). See src/routes/auth.routes.ts.
     CREATE TABLE IF NOT EXISTS password_resets (
       token_hash TEXT PRIMARY KEY,
@@ -290,6 +447,7 @@ function createSchema(): void {
       path        TEXT NOT NULL,
       status_code INTEGER NOT NULL,
       response    TEXT NOT NULL,
+      request_hash TEXT,
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -401,6 +559,7 @@ function createSchema(): void {
     CREATE TABLE IF NOT EXISTS locations (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       name        TEXT NOT NULL,
+      parent_id   INTEGER REFERENCES locations(id) ON DELETE RESTRICT,
       type        TEXT NOT NULL DEFAULT 'warehouse',
       address     TEXT,
       notes       TEXT,
@@ -420,6 +579,7 @@ function createSchema(): void {
       unit          TEXT DEFAULT 'pcs',
       min_quantity  INTEGER NOT NULL DEFAULT 0,
       location      TEXT,
+      preferred_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       notes         TEXT,
       attributes    TEXT,
       image_path    TEXT,
@@ -490,6 +650,47 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_ai_messages_user ON ai_messages(user_id, id);
 
+    -- A data-changing AI tool call waiting for the person to confirm it (ai.routes.ts): the
+    -- assistant never changes data on its own, so text it reads can't make it act.
+    CREATE TABLE IF NOT EXISTS ai_pending_actions (
+      id          TEXT PRIMARY KEY,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      tool        TEXT NOT NULL,
+      args        TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','done','failed','cancelled')),
+      result      TEXT,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      decided_at  TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_pending_actions_user ON ai_pending_actions(user_id, created_at);
+
+    -- Two-step sign-in (src/core/mfa.ts). secret: the authenticator-app secret, encrypted with
+    -- the server key (shared/secrets.ts); enabled_at NULL while being set up; last_step: the
+    -- last 30-second step accepted, so a code can't be used twice.
+    CREATE TABLE IF NOT EXISTS user_mfa (
+      user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      secret     TEXT NOT NULL,
+      enabled_at TEXT,
+      last_step  INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    -- One-time recovery codes (SHA-256 of each; shown to the person once).
+    CREATE TABLE IF NOT EXISTS user_mfa_recovery (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      code_hash TEXT NOT NULL,
+      used_at   TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_mfa_recovery_user ON user_mfa_recovery(user_id);
+    -- "Password accepted, now the code": a short-lived challenge from POST /auth/login.
+    CREATE TABLE IF NOT EXISTS mfa_challenges (
+      token_hash TEXT PRIMARY KEY,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      shared     INTEGER NOT NULL DEFAULT 0,
+      attempts   INTEGER NOT NULL DEFAULT 0,
+      expires_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS orders (
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
       type             TEXT NOT NULL CHECK (type IN ('sale','job','purchase')),
@@ -523,11 +724,75 @@ function createSchema(): void {
       sort        INTEGER NOT NULL DEFAULT 0
     );
 
+    -- Internal spending requests are not supplier orders and never post stock.
+    CREATE TABLE IF NOT EXISTS purchase_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      number TEXT NOT NULL UNIQUE,
+      requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reason TEXT NOT NULL,
+      needed_by TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected','liquidation_submitted','closed')),
+      requested_budget REAL NOT NULL CHECK(requested_budget >= 0),
+      approved_budget REAL,
+      purchase_mode TEXT CHECK(purchase_mode IN ('requester_cash','assigned_buyer')),
+      buyer_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_at TEXT,
+      decision_note TEXT,
+      cash_issued REAL,
+      cash_issued_at TEXT,
+      cash_issued_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      actual_total REAL,
+      liquidation_note TEXT,
+      submitted_at TEXT,
+      closed_at TEXT,
+      closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      close_note TEXT,
+      cash_returned REAL,
+      reimbursed_amount REAL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_purchase_requests_status ON purchase_requests(status, created_at);
+    CREATE TABLE IF NOT EXISTS purchase_request_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL REFERENCES purchase_requests(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      quantity REAL NOT NULL CHECK(quantity > 0),
+      estimated_unit_price REAL NOT NULL CHECK(estimated_unit_price >= 0),
+      note TEXT
+    );
+    CREATE TABLE IF NOT EXISTS purchase_liquidation_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL REFERENCES purchase_requests(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      quantity REAL NOT NULL CHECK(quantity > 0),
+      actual_unit_price REAL NOT NULL CHECK(actual_unit_price >= 0)
+    );
+    CREATE TABLE IF NOT EXISTS purchase_receipt_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL REFERENCES purchase_requests(id) ON DELETE CASCADE,
+      file_name TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_purchase_receipt_request ON purchase_receipt_files(request_id);
+
+    -- Durable sales → procurement planning links; drafts are never stock or fulfilment.
+    CREATE TABLE IF NOT EXISTS sale_shortfall_purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      purchase_order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_shortfall_purchase_source ON sale_shortfall_purchases(source_order_id);
+
     -- Manufacturing job orders (Phase B). Consume a product's BOM to build N units.
     CREATE TABLE IF NOT EXISTS job_orders (
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,
       number             TEXT NOT NULL UNIQUE,
       order_id           INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      parent_job_order_id INTEGER REFERENCES job_orders(id) ON DELETE SET NULL,
       product_item_id    INTEGER REFERENCES inventory_items(id) ON DELETE SET NULL,
       product_name       TEXT NOT NULL,
       qty_ordered        INTEGER NOT NULL,
@@ -537,6 +802,8 @@ function createSchema(): void {
       source_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       output_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       qc_stages          INTEGER NOT NULL DEFAULT 0,
+      qc_checklist_qc_snapshot TEXT,
+      qc_checklist_qa_snapshot TEXT,
       team_id            INTEGER REFERENCES production_teams(id) ON DELETE SET NULL,
       planned_start      TEXT,
       due_date           TEXT,
@@ -546,6 +813,9 @@ function createSchema(): void {
       created_by         INTEGER REFERENCES users(id) ON DELETE SET NULL,
       released_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
       released_at        TEXT,
+      approved_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      approved_at        TEXT,
+      approve_notes      TEXT,
       accepted_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
       accepted_at        TEXT,
       accept_notes       TEXT,
@@ -553,6 +823,15 @@ function createSchema(): void {
       created_at         TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- Durable manufacturing → procurement planning links. A draft PO is pending supply,
+    -- never component stock; receipts at the job's source location close the shortage.
+    CREATE TABLE IF NOT EXISTS job_shortfall_purchases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_order_id INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+      purchase_order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_shortfall_purchase_job ON job_shortfall_purchases(job_order_id);
 
     CREATE TABLE IF NOT EXISTS job_order_components (
       id                INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -633,6 +912,44 @@ function createSchema(): void {
       quantity   REAL NOT NULL DEFAULT 1
     );
 
+    CREATE TABLE IF NOT EXISTS production_batch_stock (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL REFERENCES production_batches(id),
+      location_id INTEGER NOT NULL REFERENCES locations(id),
+      quantity REAL NOT NULL DEFAULT 0,
+      received REAL NOT NULL DEFAULT 0,
+      UNIQUE(batch_id,location_id)
+    );
+    CREATE TABLE IF NOT EXISTS production_batch_allocations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL REFERENCES production_batches(id),
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id),
+      location_id INTEGER NOT NULL REFERENCES locations(id),
+      quantity REAL NOT NULL CHECK(quantity > 0),
+      state TEXT NOT NULL CHECK(state IN ('reserved','shipped')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS production_batch_counts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL REFERENCES production_batches(id),
+      location_id INTEGER NOT NULL REFERENCES locations(id),
+      before_quantity REAL NOT NULL,
+      counted_quantity REAL NOT NULL,
+      reason TEXT NOT NULL,
+      counted_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS production_batch_return_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_id INTEGER NOT NULL UNIQUE REFERENCES sales_returns(id),
+      batch_id INTEGER NOT NULL REFERENCES production_batches(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_batch_stock_location ON production_batch_stock(location_id,batch_id);
+    CREATE INDEX IF NOT EXISTS idx_batch_allocations_stock ON production_batch_allocations(batch_id,location_id,state);
+    CREATE INDEX IF NOT EXISTS idx_batch_allocations_order ON production_batch_allocations(order_id,item_id,state);
+
     -- Phase C: one row per physical unit produced by a job order, plus its QA/QC log.
     -- status: pending | in_stock | failed | scrapped | sold | rework. order_id ties a
     -- sold / relocated unit to the sales order that consumed or moved it. disposition
@@ -646,6 +963,8 @@ function createSchema(): void {
       stage           INTEGER NOT NULL DEFAULT 0,
       location_id     INTEGER REFERENCES locations(id) ON DELETE SET NULL,
       order_id        INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      order_item_id   INTEGER REFERENCES order_items(id) ON DELETE SET NULL,
+      direct_sold_at  TEXT,
       batch_id        INTEGER REFERENCES production_batches(id) ON DELETE SET NULL,
       disposition     TEXT,
       remarks         TEXT,
@@ -743,6 +1062,127 @@ function createSchema(): void {
       quantity    INTEGER NOT NULL DEFAULT 0,
       UNIQUE(item_id, location_id)
     );
+    CREATE TABLE IF NOT EXISTS inventory_variant_stock (
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+      build_mode TEXT NOT NULL CHECK (build_mode IN ('assembled', 'semi_built')),
+      quantity REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (item_id, location_id, build_mode)
+    );
+
+    -- A location's stock went below zero because an offline stock-out (a sync command,
+    -- docs/OFFLINE-FIRST.md decision D1) was accepted beyond recorded stock: the goods
+    -- physically left, so the records were behind. Each row is a count-or-correct task for a
+    -- supervisor; resolving it records what was done and moves no stock by itself.
+    CREATE TABLE IF NOT EXISTS stock_discrepancies (
+      id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id                INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      location_id            INTEGER REFERENCES locations(id) ON DELETE SET NULL,
+      transaction_id         INTEGER REFERENCES inventory_transactions(id) ON DELETE SET NULL,
+      change                 INTEGER NOT NULL,
+      location_balance_after INTEGER NOT NULL,
+      reason                 TEXT,
+      created_by             INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at             TEXT NOT NULL DEFAULT (datetime('now')),
+      status                 TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+      resolution_note        TEXT,
+      resolved_by            INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      resolved_at            TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_stock_discrepancies_status ON stock_discrepancies(status, item_id);
+
+    CREATE TABLE IF NOT EXISTS direct_sale_stockout_reviews (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id       INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      item_id        INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      evidence_hash  TEXT NOT NULL,
+      note           TEXT NOT NULL,
+      reviewed_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reviewed_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_direct_sale_stockout_review_case ON direct_sale_stockout_reviews(order_id,item_id,id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_direct_sale_stockout_review_evidence ON direct_sale_stockout_reviews(order_id,item_id,evidence_hash);
+
+    CREATE TABLE IF NOT EXISTS stock_count_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+      build_mode TEXT NOT NULL CHECK(build_mode IN ('assembled','semi_built')),
+      assigned_to INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      due_date TEXT NOT NULL,
+      repeat_days INTEGER CHECK(repeat_days BETWEEN 1 AND 365),
+      note TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','completed','cancelled')),
+      planned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      planned_at TEXT NOT NULL DEFAULT (datetime('now')),
+      previous_task_id INTEGER REFERENCES stock_count_tasks(id) ON DELETE SET NULL,
+      completed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      completed_at TEXT,
+      cancel_note TEXT,
+      cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      cancelled_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_count_tasks_open_position
+      ON stock_count_tasks(item_id,location_id,build_mode) WHERE status='open';
+    CREATE INDEX IF NOT EXISTS idx_stock_count_tasks_queue ON stock_count_tasks(status,due_date,assigned_to);
+    CREATE TABLE IF NOT EXISTS stock_counts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+      build_mode TEXT NOT NULL CHECK(build_mode IN ('assembled','semi_built')),
+      book_quantity REAL NOT NULL,
+      book_serial_ids TEXT NOT NULL,
+      book_batches TEXT NOT NULL,
+      counted_untracked REAL NOT NULL,
+      counted_serial_ids TEXT NOT NULL,
+      counted_batches TEXT NOT NULL,
+      note TEXT NOT NULL,
+      source_kind TEXT NOT NULL CHECK(source_kind IN ('manual','discrepancy','direct_sale')),
+      source_id INTEGER,
+      source_evidence_hash TEXT,
+      source_closed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      source_closed_at TEXT,
+      source_close_note TEXT,
+      task_id INTEGER REFERENCES stock_count_tasks(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted','approved','applied','rejected')),
+      counted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      counted_at TEXT NOT NULL DEFAULT (datetime('now')),
+      reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      reviewed_at TEXT,
+      review_note TEXT,
+      transaction_id INTEGER REFERENCES inventory_transactions(id) ON DELETE SET NULL,
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_stock_counts_status ON stock_counts(status, counted_at, id);
+    CREATE TABLE IF NOT EXISTS stock_count_movements (
+      count_id INTEGER NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE,
+      transaction_id INTEGER NOT NULL REFERENCES inventory_transactions(id) ON DELETE RESTRICT,
+      batch_id INTEGER REFERENCES production_batches(id) ON DELETE SET NULL,
+      PRIMARY KEY(count_id,transaction_id)
+    );
+
+    -- Offline sync home sites (docs/OFFLINE-FIRST.md §16): which site host decides a location's
+    -- records while the internet is down. A location with no row — and company-wide records —
+    -- belong to the main site (setting 'sync_main_host'); with none set, only the cloud decides.
+    CREATE TABLE IF NOT EXISTS location_sites (
+      location_id  INTEGER PRIMARY KEY REFERENCES locations(id) ON DELETE CASCADE,
+      host_node_no INTEGER NOT NULL
+    );
+    -- A site host's decision on its own site's records that the cloud kept although its own
+    -- check would now fail, because data changed elsewhere meanwhile (decision D6). A task for an
+    -- admin to look at; resolving it changes nothing by itself.
+    CREATE TABLE IF NOT EXISTS site_decision_clashes (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      host_node_no  INTEGER,
+      route         TEXT NOT NULL,
+      summary       TEXT NOT NULL,
+      actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      status        TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+      resolution_note TEXT,
+      resolved_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      resolved_at   TEXT
+    );
 
     CREATE TABLE IF NOT EXISTS activity_log (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -784,6 +1224,45 @@ function createSchema(): void {
       created_at   TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- Identified employee reports have a case lifecycle separate from personal messages and
+    -- from identity-free anonymous reports. Only reporter, selected recipient and assignee read.
+    CREATE TABLE IF NOT EXISTS identified_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      number TEXT UNIQUE,
+      reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      recipient_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      category TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      description TEXT NOT NULL,
+      incident_date TEXT,
+      incident_time TEXT,
+      location TEXT,
+      status TEXT NOT NULL DEFAULT 'new',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_identified_reports_reporter ON identified_reports(reporter_id, id);
+    CREATE INDEX IF NOT EXISTS idx_identified_reports_recipient ON identified_reports(recipient_id, status);
+    CREATE INDEX IF NOT EXISTS idx_identified_reports_assignee ON identified_reports(assignee_id, status);
+    CREATE TABLE IF NOT EXISTS identified_report_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id INTEGER NOT NULL REFERENCES identified_reports(id) ON DELETE CASCADE,
+      actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      kind TEXT NOT NULL,
+      body TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_identified_report_events_report ON identified_report_events(report_id, id);
+    CREATE TABLE IF NOT EXISTS identified_report_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id INTEGER NOT NULL REFERENCES identified_reports(id) ON DELETE CASCADE,
+      stored_name TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL
+    );
+
     -- Files/images/documents attached to a message. Counted against the sender's
     -- per-user storage cap (see MESSAGE_STORAGE_CAP in messages.routes.ts); freed
     -- automatically when the parent message is deleted (ON DELETE CASCADE).
@@ -794,9 +1273,19 @@ function createSchema(): void {
       original_name TEXT NOT NULL,
       mime_type     TEXT,
       size_bytes    INTEGER NOT NULL DEFAULT 0,
+      data          BLOB,
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id);
+
+    -- Recoverable bytes for files owned by the other tenant modules. The filename is
+    -- relative to this tenant's uploadDir; deleted files are removed from this table.
+    CREATE TABLE IF NOT EXISTS durable_uploads (
+      name       TEXT PRIMARY KEY,
+      data       BLOB NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      saved_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
 
     -- One emoji reaction per user per message (SCHEMA_VERSION 44). Re-reacting with the
     -- same emoji toggles it off; a different emoji replaces it (see UNIQUE below).
@@ -846,6 +1335,18 @@ function createSchema(): void {
       updated_at  TEXT
     );
 
+    -- Every Mark Paid / Unmark Paid of a payslip (hr.routes.ts). A payslip with any row here was
+    -- paid at some point, so it is part of the payroll record and can no longer be deleted
+    -- (form-builder.routes.ts) — only corrected. No FK: the history must outlive the record.
+    CREATE TABLE IF NOT EXISTS payslip_paid_history (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      record_id  INTEGER NOT NULL,
+      action     TEXT NOT NULL CHECK (action IN ('paid','unpaid')),
+      by_user_id INTEGER,
+      at         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_payslip_paid_history_record ON payslip_paid_history(record_id);
+
     CREATE TABLE IF NOT EXISTS global_variables (
       key        TEXT PRIMARY KEY,
       label      TEXT NOT NULL,
@@ -882,7 +1383,7 @@ function createSchema(): void {
       position      TEXT,
       daily_rate    REAL NOT NULL DEFAULT 0,
       status        TEXT NOT NULL DEFAULT 'probationary'
-                      CHECK (status IN ('probationary','regular','resigned','terminated')),
+                      CHECK (status IN ('probationary','regular','suspended','resigned','terminated')),
       start_date    TEXT,
       sss_no        TEXT,
       philhealth_no TEXT,
@@ -1068,6 +1569,267 @@ function createSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_attachments_ref ON attachments(kind, ref_id);
 
+    -- Confidential (anonymous) reporting — src/core/confidential-reports.ts. Deliberately NO
+    -- reporter column of any kind (user, IP, device), and dates only, never times. Tickets are
+    -- single-use submission tokens (hash only, no user column); access_hash is the SHA-256 of
+    -- the one-time code the reporter follows up with. Created here (not migrate()) so it needs
+    -- no SCHEMA_VERSION bump.
+    CREATE TABLE IF NOT EXISTS anonymous_report_tickets (
+      token_hash TEXT PRIMARY KEY,
+      expires_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS anonymous_reports (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      number        TEXT NOT NULL UNIQUE,
+      category      TEXT NOT NULL,
+      subject       TEXT,
+      description   TEXT NOT NULL,
+      incident_date TEXT,
+      location      TEXT,
+      status        TEXT NOT NULL DEFAULT 'new'
+                      CHECK (status IN ('new','triaged','investigating','resolved','closed')),
+      access_hash   TEXT NOT NULL,
+      created_on    TEXT NOT NULL,
+      updated_on    TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_anonymous_reports_status ON anonymous_reports(status, id);
+    -- A report filed on an installed PC gets a provisional number there (derived from its sync
+    -- command, never from the PC); the cloud keeps it here as a permanent alias of the real one,
+    -- so the reporter's follow-ups keep working with either (docs/OFFLINE-FIRST.md §25).
+    CREATE TABLE IF NOT EXISTS anonymous_report_aliases (
+      alias     TEXT PRIMARY KEY,
+      report_id INTEGER NOT NULL REFERENCES anonymous_reports(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS anonymous_report_messages (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id  INTEGER NOT NULL REFERENCES anonymous_reports(id) ON DELETE CASCADE,
+      author     TEXT NOT NULL CHECK (author IN ('reporter','handler')),
+      handler_id INTEGER REFERENCES users(id) ON DELETE SET NULL,  -- staff only; NULL for the reporter
+      body       TEXT NOT NULL,
+      created_on TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_anonymous_report_messages ON anonymous_report_messages(report_id, id);
+    -- Photos on an anonymous report (message_id NULL = sent with the report itself). Stored as
+    -- BLOBs, not files under UPLOAD_DIR, so there's no filename and no file-system timestamp to
+    -- date the submission; bytes are metadata-stripped on the way in (shared/image-metadata.ts).
+    -- No original filename column on purpose (phone names like IMG_20260928_143012 carry a time).
+    CREATE TABLE IF NOT EXISTS anonymous_report_attachments (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id  INTEGER NOT NULL REFERENCES anonymous_reports(id) ON DELETE CASCADE,
+      message_id INTEGER REFERENCES anonymous_report_messages(id) ON DELETE CASCADE,
+      mime_type  TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      data       BLOB NOT NULL,
+      created_on TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_anonymous_report_attachments ON anonymous_report_attachments(report_id, id);
+    -- Highest photo id a case handler has loaded, per report. The reporter may remove a photo
+    -- only while its id is above this (i.e. no handler has seen it yet). No date/time kept.
+    CREATE TABLE IF NOT EXISTS anonymous_report_handler_seen (
+      report_id     INTEGER PRIMARY KEY REFERENCES anonymous_reports(id) ON DELETE CASCADE,
+      last_photo_id INTEGER NOT NULL
+    );
+
+    -- Structured repair / rectification order behind a QC or QA 'repair' result (mobile V2,
+    -- Figma 69:323 / 72:322): defect category, responsible station, priority. The instruction
+    -- is the record's remarks. One row per qc_records row. createSchema, no version bump.
+    CREATE TABLE IF NOT EXISTS qc_repair_details (
+      qc_record_id INTEGER PRIMARY KEY REFERENCES qc_records(id) ON DELETE CASCADE,
+      category     TEXT,
+      station      TEXT,
+      priority     TEXT
+    );
+
+    -- Sale-order warehouse-out rules (mobile Releasing, Figma 78:*; modules/inventory/release-auth.ts).
+    -- createSchema, no version bump.
+    -- Who may receive an order's goods: issued by Sales, presented as a token at handoff. Only the
+    -- last 4 of the recipient's ID reference is stored. A new one revokes the previous.
+    CREATE TABLE IF NOT EXISTS release_authorizations (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id        INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      mode            TEXT NOT NULL CHECK (mode IN ('pickup', 'delivery')),
+      recipient_name  TEXT NOT NULL,
+      id_last4        TEXT,
+      token           TEXT NOT NULL,
+      valid_until     TEXT NOT NULL,
+      handoff_area    TEXT,
+      partial_allowed INTEGER NOT NULL DEFAULT 0,
+      notes           TEXT,
+      issued_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      issued_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      revoked_at      TEXT,
+      revoked_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      revoke_reason   TEXT,
+      used_slip_id    INTEGER REFERENCES release_slips(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_release_authorizations_order ON release_authorizations(order_id, id);
+    -- What must leave with each unit of a finished product (charger, keys, documents…).
+    CREATE TABLE IF NOT EXISTS product_package_items (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id  INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      label    TEXT NOT NULL,
+      required INTEGER NOT NULL DEFAULT 1,
+      sort     INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_product_package_items ON product_package_items(item_id, sort);
+    -- The handoff facts of a release slip: authorization used, recipient, confirmed package
+    -- (JSON [{item_id,label,ok}]), seal tag, recipient acknowledgement, a partial release's backorder.
+    CREATE TABLE IF NOT EXISTS release_slip_details (
+      slip_id            INTEGER PRIMARY KEY REFERENCES release_slips(id) ON DELETE CASCADE,
+      authorization_id   INTEGER REFERENCES release_authorizations(id) ON DELETE SET NULL,
+      mode               TEXT,
+      recipient_name     TEXT,
+      handoff_area       TEXT,
+      seal_tag           TEXT,
+      package            TEXT,
+      acknowledged       INTEGER NOT NULL DEFAULT 0,
+      backorder_order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL
+    );
+    -- Problems the releaser raises for Sales (wrong unit, missing package item, identity, a
+    -- partial-release request). Records only; Sales resolves them on the sale order.
+    CREATE TABLE IF NOT EXISTS release_reports (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id        INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      kind            TEXT NOT NULL CHECK (kind IN ('authorization', 'identity', 'unit_mismatch', 'package_missing', 'partial_request', 'other')),
+      description     TEXT NOT NULL,
+      unit_identifier TEXT,
+      status          TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+      resolution      TEXT,
+      reported_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      resolved_at     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_release_reports_order ON release_reports(order_id, status);
+    -- Supervisor override of the release token (the recipient can't present it): requested by the
+    -- releaser or made directly by a supervisor (inventory.adjust), always with a reason. An
+    -- approved one stands in for the token on that authorization's slip, once.
+    CREATE TABLE IF NOT EXISTS release_token_overrides (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id         INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      authorization_id INTEGER NOT NULL REFERENCES release_authorizations(id) ON DELETE CASCADE,
+      status           TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested', 'approved', 'declined', 'used')),
+      reason           TEXT NOT NULL,
+      requested_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      requested_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      decided_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_at       TEXT,
+      decision_note    TEXT,
+      used_slip_id     INTEGER REFERENCES release_slips(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_release_token_overrides ON release_token_overrides(authorization_id, id);
+
+    -- Repair-parts requests (mobile Parts clerk, Figma 83:*; production.routes.ts). createSchema,
+    -- no version bump. A formal revision of a request's part or quantity: proposed by the parts
+    -- clerk, approved by the requester or a supervisor (never the proposer). While one is pending
+    -- the request can't be issued.
+    CREATE TABLE IF NOT EXISTS repair_revisions (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id        INTEGER NOT NULL REFERENCES repair_part_requests(id) ON DELETE CASCADE,
+      proposed_item_id  INTEGER REFERENCES inventory_items(id) ON DELETE SET NULL,
+      proposed_name     TEXT NOT NULL,
+      proposed_quantity INTEGER NOT NULL,
+      reason            TEXT NOT NULL,
+      status            TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+      proposed_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decision_note     TEXT,
+      created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+      decided_at        TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_repair_revisions_request ON repair_revisions(request_id, status);
+    -- Audit trail of a request beyond accept/reject: shortage escalations, revisions, notes.
+    CREATE TABLE IF NOT EXISTS repair_request_events (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL REFERENCES repair_part_requests(id) ON DELETE CASCADE,
+      kind       TEXT NOT NULL,
+      details    TEXT,
+      actor_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_repair_request_events ON repair_request_events(request_id, id);
+    -- Stock an open repair-parts request holds at one approved source until it is issued, rejected
+    -- or cancelled (modules/manufacturing/stock-holds.ts). None while the request is a shortage.
+    CREATE TABLE IF NOT EXISTS repair_part_holds (
+      request_id  INTEGER PRIMARY KEY REFERENCES repair_part_requests(id) ON DELETE CASCADE,
+      item_id     INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+      location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+      quantity    REAL NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_repair_part_holds_item ON repair_part_holds(item_id, location_id);
+    -- Evidence photos (attachments kind 'qc_unit') behind a failing / held QC-QA result; each photo
+    -- backs one record only. createSchema, no version bump.
+    CREATE TABLE IF NOT EXISTS qc_evidence (
+      attachment_id INTEGER PRIMARY KEY REFERENCES attachments(id) ON DELETE CASCADE,
+      qc_record_id  INTEGER NOT NULL REFERENCES qc_records(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_qc_evidence_record ON qc_evidence(qc_record_id);
+    -- Each person's notification history (shared/push.ts notifyUser; core/notifications.routes.ts):
+    -- written once, where the authority runs, whether or not the person has push set up. url = a
+    -- phone route to the record; link = JSON {route, params} for the desktop when it has a screen.
+    CREATE TABLE IF NOT EXISTS notifications (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title      TEXT NOT NULL,
+      body       TEXT,
+      url        TEXT,
+      link       TEXT,
+      tag        TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      read_at    TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, id);
+    -- Optional room per location, in units of stock (the sum of inventory_stock there). Ready-to-sell
+    -- posting (manufacturing/rts.ts) refuses what wouldn't fit. No row = no limit. createSchema.
+    CREATE TABLE IF NOT EXISTS location_capacities (
+      location_id INTEGER PRIMARY KEY REFERENCES locations(id) ON DELETE CASCADE,
+      max_units   REAL NOT NULL,
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- Job-order line decisions (pause / resume / close early) — append-only audit history with
+    -- actor and reason; job_orders.pause_* only hold the CURRENT hold. createSchema, no bump.
+    CREATE TABLE IF NOT EXISTS job_order_events (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_order_id INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+      action       TEXT NOT NULL CHECK (action IN ('pause','resume','close_early')),
+      reason       TEXT,
+      actor_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_job_order_events ON job_order_events(job_order_id, id);
+
+    -- Employee self-service profile (src/modules/hr/employee-profile.ts): preferred name and
+    -- personal contact details the employee edits themselves, kept apart from the HR-owned
+    -- employees row (legal name, position, pay…). verified_at is cleared whenever a contact
+    -- field changes and set again by HR (hr.manage). One history row per changed field.
+    CREATE TABLE IF NOT EXISTS employee_profiles (
+      employee_id                INTEGER PRIMARY KEY REFERENCES employees(id) ON DELETE CASCADE,
+      preferred_name             TEXT,
+      mobile_phone               TEXT,
+      personal_email             TEXT,
+      home_address               TEXT,
+      emergency_contact_name     TEXT,
+      emergency_contact_relation TEXT,
+      emergency_contact_phone    TEXT,
+      updated_at                 TEXT,
+      updated_by                 INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      verified_at                TEXT,
+      verified_by                INTEGER REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS employee_profile_changes (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      field       TEXT NOT NULL,
+      old_value   TEXT,
+      new_value   TEXT,
+      changed_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      source      TEXT NOT NULL DEFAULT 'self',   -- 'self' | 'hr_verify' | 'info_change' (approved request)
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_employee_profile_changes ON employee_profile_changes(employee_id, id);
+
     -- In-app bug reports: any signed-in user can file one (title + steps to reproduce +
     -- up to 5 screenshots); users.manage reviews/resolves them. See
     -- src/routes/bug-reports.routes.ts.
@@ -1108,6 +1870,9 @@ function createSchema(): void {
       contact_phone  TEXT,
       scheduled_date TEXT,
       assigned_to    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      delivery_mode  TEXT NOT NULL DEFAULT 'own' CHECK (delivery_mode IN ('own','courier')),
+      courier_name   TEXT,
+      tracking_number TEXT,
       status         TEXT NOT NULL DEFAULT 'pending'
                        CHECK (status IN ('pending','out_for_delivery','delivered','failed','cancelled')),
       notes          TEXT,
@@ -1399,6 +2164,34 @@ function createSchema(): void {
 
 /** Idempotent schema upgrades for databases created before a column existed. */
 function migrate(): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS job_order_assignees (
+    job_order_id INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY(job_order_id,user_id)
+  )`);
+  const formCols = new Set((db.prepare('PRAGMA table_info(form_definitions)').all() as {name:string}[]).map(c=>c.name));
+  for (const [name, type] of Object.entries({entry_access:"TEXT NOT NULL DEFAULT '{\"roles\":[],\"users\":[]}'",access_revision:'INTEGER NOT NULL DEFAULT 1',version:'INTEGER NOT NULL DEFAULT 1',updated_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',version_reason:'TEXT',archived_at:'TEXT',archived_by:'INTEGER REFERENCES users(id) ON DELETE SET NULL',archive_reason:'TEXT'})) {
+    if (!formCols.has(name)) db.exec(`ALTER TABLE form_definitions ADD COLUMN ${name} ${type}`);
+  }
+  const recordCols = new Set((db.prepare('PRAGMA table_info(form_records)').all() as {name:string}[]).map(c=>c.name));
+  if (!recordCols.has('definition_version')) db.exec('ALTER TABLE form_records ADD COLUMN definition_version INTEGER');
+  if (!recordCols.has('revision')) db.exec('ALTER TABLE form_records ADD COLUMN revision INTEGER NOT NULL DEFAULT 1');
+
+  // 97: preserve the original creator while tracking who last prepared a financial draft.
+  for (const table of ['journal_entries', 'vendor_bills', 'form_records']) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!cols.some(c => c.name === 'last_edited_by')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN last_edited_by INTEGER REFERENCES users(id) ON DELETE SET NULL`);
+    }
+  }
+
+  // 73: item placement preference is separate from stock held at any one location.
+  const preferredLocCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
+  if (!preferredLocCols.some((c) => c.name === 'preferred_location_id')) db.exec('ALTER TABLE inventory_items ADD COLUMN preferred_location_id INTEGER REFERENCES locations(id) ON DELETE SET NULL');
+  // 72: optional location hierarchy; existing locations remain top-level.
+  const hierarchyCols = db.prepare('PRAGMA table_info(locations)').all() as { name: string }[];
+  if (!hierarchyCols.some((c) => c.name === 'parent_id')) db.exec('ALTER TABLE locations ADD COLUMN parent_id INTEGER REFERENCES locations(id) ON DELETE RESTRICT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_locations_parent ON locations(parent_id)');
   const itemCols = db.prepare('PRAGMA table_info(inventory_items)').all() as { name: string }[];
   if (!itemCols.some((c) => c.name === 'attributes')) {
     db.exec('ALTER TABLE inventory_items ADD COLUMN attributes TEXT');
@@ -1416,11 +2209,16 @@ function migrate(): void {
   db.exec('CREATE INDEX IF NOT EXISTS idx_bom_product ON bom_components(product_item_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_bom_component ON bom_components(component_item_id)');
 
+  // v64: checklist notes and a durable, one-to-one scheduler link.
+  const noteCols = db.prepare('PRAGMA table_info(notes)').all() as { name: string }[];
+  if (!noteCols.some(c => c.name === 'checklist')) db.exec("ALTER TABLE notes ADD COLUMN checklist TEXT NOT NULL DEFAULT '[]'");
   // ---- Tasks: scheduling + reminders ----
   const taskCols = db.prepare('PRAGMA table_info(tasks)').all() as { name: string }[];
   if (!taskCols.some((c) => c.name === 'notes')) db.exec('ALTER TABLE tasks ADD COLUMN notes TEXT');
   if (!taskCols.some((c) => c.name === 'remind_at')) db.exec('ALTER TABLE tasks ADD COLUMN remind_at TEXT');
   if (!taskCols.some((c) => c.name === 'remind_sent')) db.exec('ALTER TABLE tasks ADD COLUMN remind_sent INTEGER NOT NULL DEFAULT 0');
+  if (!taskCols.some(c => c.name === 'note_id')) db.exec('ALTER TABLE tasks ADD COLUMN note_id INTEGER REFERENCES notes(id) ON DELETE SET NULL');
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_note ON tasks(note_id) WHERE note_id IS NOT NULL');
 
   // ---- Per-location stock (Phase 4) ----
   const txnCols = db.prepare('PRAGMA table_info(inventory_transactions)').all() as { name: string }[];
@@ -1566,6 +2364,9 @@ function migrate(): void {
 
   // (SCHEMA_VERSION 35) See the version-history comment above. Defaults (1 / 0) reproduce
   // every existing template's current output exactly — continuous mode is opt-in.
+  for (const column of ['grid_gap_x_mm','grid_gap_y_mm']) {
+    if (!tplCols.some(c => c.name === column)) db.exec(`ALTER TABLE doc_templates ADD COLUMN ${column} REAL NOT NULL DEFAULT 6`);
+  }
   if (!tplCols.some((c) => c.name === 'repeat_count')) {
     db.exec('ALTER TABLE doc_templates ADD COLUMN repeat_count INTEGER NOT NULL DEFAULT 1');
   }
@@ -1613,7 +2414,7 @@ function migrate(): void {
         position      TEXT,
         daily_rate    REAL NOT NULL DEFAULT 0,
         status        TEXT NOT NULL DEFAULT 'probationary'
-                        CHECK (status IN ('probationary','regular','resigned','terminated')),
+                        CHECK (status IN ('probationary','regular','suspended','resigned','terminated')),
         start_date    TEXT,
         sss_no        TEXT,
         philhealth_no TEXT,
@@ -2189,6 +2990,13 @@ function migrate(): void {
     db.exec('ALTER TABLE messages ADD COLUMN deleted_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
   }
 
+  // (SCHEMA_VERSION 65) Keep attachment bytes with the message so a replaced app
+  // filesystem cannot silently break photos that still appear in a conversation.
+  const attachmentCols = db.prepare('PRAGMA table_info(message_attachments)').all() as { name: string }[];
+  if (!attachmentCols.some((c) => c.name === 'data')) {
+    db.exec('ALTER TABLE message_attachments ADD COLUMN data BLOB');
+  }
+
   // (SCHEMA_VERSION 45) Production lead accepts a released job order's parts kit.
   const joAccCols = db.prepare('PRAGMA table_info(job_orders)').all() as { name: string }[];
   if (!joAccCols.some((c) => c.name === 'accepted_by')) {
@@ -2212,6 +3020,15 @@ function migrate(): void {
     if (!punchGeoCols.some((c) => c.name === col)) db.exec(`ALTER TABLE time_punches ADD COLUMN ${col} ${decl}`);
   }
 
+  // (SCHEMA_VERSION 62) Temporary owner recovery passwords require replacement.
+  const recoveryUserCols = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+  if (!recoveryUserCols.some((c) => c.name === 'password_change_required')) {
+    db.exec('ALTER TABLE users ADD COLUMN password_change_required INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!recoveryUserCols.some((c) => c.name === 'temporary_password_expires_at')) {
+    db.exec('ALTER TABLE users ADD COLUMN temporary_password_expires_at TEXT');
+  }
+
   // (SCHEMA_VERSION 47) Approved time-in kiosk devices (src/modules/hr/kiosk-devices.ts). Only a
   // SHA-256 of each device's token is kept; revoking sets revoked_at rather than deleting, so the
   // list of who approved what stays on record.
@@ -2226,6 +3043,676 @@ function migrate(): void {
       revoked_at   TEXT
     )
   `);
+
+  // (SCHEMA_VERSION 48) Sale-order releasing: the warehouse accepts an approved SO before
+  // picking, and a release slip records what physically left (and is when stock goes out).
+  const ordRelCols = db.prepare('PRAGMA table_info(orders)').all() as { name: string }[];
+  if (!ordRelCols.some((c) => c.name === 'warehouse_accepted_by')) {
+    db.exec('ALTER TABLE orders ADD COLUMN warehouse_accepted_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  }
+  if (!ordRelCols.some((c) => c.name === 'warehouse_accepted_at')) {
+    db.exec('ALTER TABLE orders ADD COLUMN warehouse_accepted_at TEXT');
+    // SOs already mid-release predate the acceptance step — don't block their picking.
+    db.exec(`UPDATE orders SET warehouse_accepted_at = COALESCE(released_at, updated_at, datetime('now')),
+               warehouse_accepted_by = released_by
+             WHERE type = 'sale' AND LOWER(status) IN ('approved', 'released')`);
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS release_slips (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      number         TEXT NOT NULL UNIQUE,
+      order_id       INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      released_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      released_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      collected_by   TEXT,
+      vehicle_plate  TEXT,
+      notes          TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_release_slips_order ON release_slips(order_id);
+    CREATE TABLE IF NOT EXISTS release_slip_items (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      slip_id          INTEGER NOT NULL REFERENCES release_slips(id) ON DELETE CASCADE,
+      order_item_id    INTEGER,
+      item_id          INTEGER,
+      name             TEXT NOT NULL,
+      sku              TEXT,
+      unit             TEXT,
+      quantity         REAL NOT NULL,
+      unit_identifiers TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_release_slip_items_slip ON release_slip_items(slip_id);
+  `);
+
+  // v67: a return is a physical receiving/inspection record. Credit notes remain a
+  // separate accounting decision; neither a receipt nor a rejected item changes stock.
+  const slipItemCols = db.prepare('PRAGMA table_info(release_slip_items)').all() as { name: string }[];
+  if (!slipItemCols.some((c) => c.name === 'unit_cost')) db.exec('ALTER TABLE release_slip_items ADD COLUMN unit_cost REAL');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sales_returns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      number TEXT NOT NULL UNIQUE,
+      slip_id INTEGER NOT NULL REFERENCES release_slips(id) ON DELETE RESTRICT,
+      slip_item_id INTEGER NOT NULL REFERENCES release_slip_items(id) ON DELETE RESTRICT,
+      item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE RESTRICT,
+      quantity REAL NOT NULL CHECK (quantity > 0),
+      unit_id INTEGER REFERENCES job_order_units(id) ON DELETE RESTRICT,
+      unit_cost REAL,
+      status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received','restocked','rejected')),
+      reason TEXT NOT NULL,
+      condition_note TEXT,
+      location_id INTEGER REFERENCES locations(id) ON DELETE RESTRICT,
+      credit_note_id INTEGER UNIQUE REFERENCES credit_notes(id) ON DELETE RESTRICT,
+      received_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      received_at TEXT NOT NULL DEFAULT (datetime('now')),
+      inspected_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      inspected_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_sales_returns_slip_item ON sales_returns(slip_item_id);
+    CREATE INDEX IF NOT EXISTS idx_sales_returns_slip ON sales_returns(slip_id);
+    CREATE TABLE IF NOT EXISTS sales_return_credit_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_id INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE RESTRICT,
+      credit_note_id INTEGER NOT NULL REFERENCES credit_notes(id) ON DELETE RESTRICT,
+      linked_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      linked_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(return_id, credit_note_id)
+    );
+  `);
+
+  // v68: rejected customer goods stay outside sellable stock while they are repaired,
+  // salvaged, or disposed. This lifecycle is separate from the original job-order receipt.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sales_return_dispositions (
+      return_id INTEGER PRIMARY KEY REFERENCES sales_returns(id) ON DELETE RESTRICT,
+      state TEXT NOT NULL CHECK (state IN ('repair','awaiting_inspection','completed','salvaged','disposed')),
+      decision_note TEXT NOT NULL,
+      repair_note TEXT,
+      location_id INTEGER REFERENCES locations(id) ON DELETE RESTRICT,
+      decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      decided_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      completed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS sales_return_disposition_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_id INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE RESTRICT,
+      action TEXT NOT NULL,
+      note TEXT NOT NULL,
+      actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_sales_return_disposition_events_return
+      ON sales_return_disposition_events(return_id, id);
+  `);
+  const repairReturnCols = db.prepare('PRAGMA table_info(repair_part_requests)').all() as { name: string }[];
+  if (!repairReturnCols.some((c) => c.name === 'sales_return_id')) {
+    db.exec('ALTER TABLE repair_part_requests ADD COLUMN sales_return_id INTEGER REFERENCES sales_returns(id) ON DELETE RESTRICT');
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_repair_part_requests_sales_return ON repair_part_requests(sales_return_id)');
+
+  // (SCHEMA_VERSION 49) Job-order approval before the warehouse releases parts.
+  const joApvCols = db.prepare('PRAGMA table_info(job_orders)').all() as { name: string }[];
+  for (const [col, decl] of [
+    ['approved_by', 'INTEGER REFERENCES users(id) ON DELETE SET NULL'], ['approved_at', 'TEXT'], ['approve_notes', 'TEXT'],
+  ]) {
+    if (!joApvCols.some((c) => c.name === col)) db.exec(`ALTER TABLE job_orders ADD COLUMN ${col} ${decl}`);
+  }
+
+  // (SCHEMA_VERSION 50) Job-order parts release (warehouse accept → prepare → slip), pause
+  // reason, and production issue reports.
+  const joWhCols = db.prepare('PRAGMA table_info(job_orders)').all() as { name: string }[];
+  for (const [col, decl] of [
+    ['warehouse_accepted_by', 'INTEGER REFERENCES users(id) ON DELETE SET NULL'], ['warehouse_accepted_at', 'TEXT'],
+    ['prepared_by', 'INTEGER REFERENCES users(id) ON DELETE SET NULL'], ['prepared_at', 'TEXT'],
+    ['paused_by', 'INTEGER REFERENCES users(id) ON DELETE SET NULL'], ['paused_at', 'TEXT'], ['pause_reason', 'TEXT'],
+  ]) {
+    if (!joWhCols.some((c) => c.name === col)) db.exec(`ALTER TABLE job_orders ADD COLUMN ${col} ${decl}`);
+  }
+  const jocPickCols = db.prepare('PRAGMA table_info(job_order_components)').all() as { name: string }[];
+  if (!jocPickCols.some((c) => c.name === 'qty_picked')) {
+    db.exec('ALTER TABLE job_order_components ADD COLUMN qty_picked INTEGER NOT NULL DEFAULT 0');
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS parts_release_slips (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      number        TEXT NOT NULL UNIQUE,
+      job_order_id  INTEGER NOT NULL UNIQUE REFERENCES job_orders(id) ON DELETE CASCADE,
+      released_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      released_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      received_by   TEXT,
+      notes         TEXT
+    );
+    CREATE TABLE IF NOT EXISTS parts_release_slip_items (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      slip_id           INTEGER NOT NULL REFERENCES parts_release_slips(id) ON DELETE CASCADE,
+      component_item_id INTEGER,
+      name              TEXT NOT NULL,
+      sku               TEXT,
+      unit              TEXT,
+      quantity          REAL NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_parts_release_slip_items_slip ON parts_release_slip_items(slip_id);
+    CREATE TABLE IF NOT EXISTS production_issues (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_order_id  INTEGER NOT NULL REFERENCES job_orders(id) ON DELETE CASCADE,
+      unit_id       INTEGER REFERENCES job_order_units(id) ON DELETE SET NULL,
+      category      TEXT NOT NULL,
+      severity      TEXT NOT NULL DEFAULT 'normal' CHECK (severity IN ('low','normal','high','critical')),
+      description   TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')),
+      resolution    TEXT,
+      reported_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      resolved_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      resolved_at   TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_production_issues_jo ON production_issues(job_order_id);
+    CREATE INDEX IF NOT EXISTS idx_production_issues_unit ON production_issues(unit_id);
+  `);
+
+  // (SCHEMA_VERSION 51) Phone punch holds: the QR scan (step 1) waits here for the selfie
+  // (step 2), which records the punch at scanned_at. Short-lived; used or expired rows are deleted.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS time_punch_holds (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+      user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      scanned_at  TEXT NOT NULL,     -- office-local 'YYYY-MM-DD HH:MM:SS' -- becomes the punch's ts
+      scanned_ms  INTEGER NOT NULL,  -- epoch ms of the same moment, for expiry
+      source      TEXT NOT NULL,     -- 'phone' (QR) | 'remote' (clock_anywhere, no QR)
+      lat         REAL,
+      lng         REAL,
+      accuracy_m  REAL,
+      distance_m  REAL,
+      geo_site    TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_punch_holds_emp ON time_punch_holds(employee_id);
+  `);
+
+  // (SCHEMA_VERSION 52) Birth date + civil status on the employee record.
+  const empPersonalCols = db.prepare('PRAGMA table_info(employees)').all() as { name: string }[];
+  if (!empPersonalCols.some((c) => c.name === 'birth_date')) db.exec('ALTER TABLE employees ADD COLUMN birth_date TEXT');
+  if (!empPersonalCols.some((c) => c.name === 'civil_status')) db.exec('ALTER TABLE employees ADD COLUMN civil_status TEXT');
+
+  // (SCHEMA_VERSION 53) 'suspended' employee status. Rebuilt from the table's own stored CREATE
+  // statement (every column added by ALTER over the years is already in it) with only the status
+  // CHECK widened, so no column list is repeated here to drift. Indexes are re-created from
+  // their stored SQL; employees has no triggers or views. Foreign keys OFF for the same reason as
+  // the older employees rebuild above.
+  const empTableSql = (db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='employees'"
+  ).get() as { sql: string } | undefined)?.sql ?? '';
+  // No status CHECK at all (a very old hand-shaped table) already accepts 'suspended' — no rebuild.
+  const statusCheck = /CHECK\s*\(\s*status\s+IN\s*\(([^)]*)\)\s*\)/;
+  if (statusCheck.test(empTableSql) && !empTableSql.includes("'suspended'")) {
+    const createNew = empTableSql
+      .replace(/^CREATE TABLE\s+"?employees"?\s*\(/, 'CREATE TABLE employees_new (')
+      .replace(statusCheck, (_m, list: string) => `CHECK (status IN (${list.replace("'regular'", "'regular','suspended'")}))`);
+    if (!createNew.startsWith('CREATE TABLE employees_new (') || !createNew.includes("'suspended'")) {
+      throw new Error('Cannot add the suspended employee status: unexpected employees table definition.');
+    }
+    const indexSql = (db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='employees' AND sql IS NOT NULL"
+    ).all() as { sql: string }[]).map((r) => r.sql);
+    db.exec('PRAGMA foreign_keys = OFF;');
+    try {
+      db.exec('BEGIN;');
+      db.exec(createNew);
+      db.exec('INSERT INTO employees_new SELECT * FROM employees;');
+      db.exec('DROP TABLE employees;');
+      db.exec('ALTER TABLE employees_new RENAME TO employees;');
+      for (const sql of indexSql) db.exec(sql);
+      db.exec('COMMIT;');
+    } catch (e) {
+      db.exec('ROLLBACK;');
+      throw e;
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON;');
+    }
+  }
+
+  // (SCHEMA_VERSION 54) Date of Birth row on the insert-only "BIR 2316" template. Inserted after
+  // the untouched default TIN row only; a template edited so that row is gone is left alone.
+  // (A fresh install has no template yet here — seed() inserts the new body.)
+  const tpl2316 = db.prepare("SELECT id, body FROM doc_templates WHERE name = 'BIR 2316'").get() as
+    { id: number; body: string } | undefined;
+  const tinRow = '<span class="v">{{employee.tin_no}}</span></div>';
+  if (tpl2316 && !tpl2316.body.includes('employee.birth_date') && tpl2316.body.includes(tinRow)) {
+    db.prepare("UPDATE doc_templates SET body = ?, updated_at = datetime('now') WHERE id = ?").run(
+      tpl2316.body.replace(tinRow, tinRow +
+        '\n  <div class="row"><span class="l">Date of Birth (MM/DD/YYYY)</span><span class="v">{{employee.birth_date_mdy}}</span></div>'),
+      tpl2316.id
+    );
+  }
+
+  // (SCHEMA_VERSION 55) Session + device tracking. Existing sessions get a random sid and stay
+  // valid; their device/IP columns stay NULL until they sign in again.
+  const sessCols = db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[];
+  const addSessCol = (name: string, ddl: string) => {
+    if (!sessCols.some((c) => c.name === name)) db.exec(`ALTER TABLE sessions ADD COLUMN ${name} ${ddl}`);
+  };
+  addSessCol('sid', 'TEXT');
+  addSessCol('device_id', 'TEXT');
+  addSessCol('ip', 'TEXT');
+  addSessCol('user_agent', 'TEXT');
+  addSessCol('last_seen_at', 'TEXT');
+  addSessCol('last_ip', 'TEXT');
+  addSessCol('shared', 'INTEGER NOT NULL DEFAULT 0');
+  addSessCol('idle_minutes', 'INTEGER');
+  addSessCol('ended_at', 'TEXT');
+  addSessCol('end_reason', 'TEXT');
+  db.exec("UPDATE sessions SET sid = lower(hex(randomblob(8))) WHERE sid IS NULL");
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_sid ON sessions(sid)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(device_id)');
+
+  const actCols = db.prepare('PRAGMA table_info(activity_log)').all() as { name: string }[];
+  if (!actCols.some((c) => c.name === 'device_id')) db.exec('ALTER TABLE activity_log ADD COLUMN device_id TEXT');
+  if (!actCols.some((c) => c.name === 'device')) db.exec('ALTER TABLE activity_log ADD COLUMN device TEXT');
+
+  const pushCols = db.prepare('PRAGMA table_info(push_subscriptions)').all() as { name: string }[];
+  if (!pushCols.some((c) => c.name === 'device_id')) db.exec('ALTER TABLE push_subscriptions ADD COLUMN device_id TEXT');
+
+  const punchDevCols = db.prepare('PRAGMA table_info(time_punches)').all() as { name: string }[];
+  if (!punchDevCols.some((c) => c.name === 'device_id')) db.exec('ALTER TABLE time_punches ADD COLUMN device_id TEXT');
+  if (!punchDevCols.some((c) => c.name === 'device_flag')) db.exec('ALTER TABLE time_punches ADD COLUMN device_flag TEXT');
+  if (!punchDevCols.some((c) => c.name === 'device_user_id')) {
+    db.exec('ALTER TABLE time_punches ADD COLUMN device_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  }
+
+  // (SCHEMA_VERSION 56) ₱0 rate-history rows ahead of an employee's first real rate take that
+  // rate — from their first non-zero history row, else (rate set by CSV import, which never
+  // logged history before) their current employees.daily_rate. Idempotent.
+  const unsetRate = db.prepare(
+    `SELECT DISTINCT h.employee_id FROM employee_rate_history h
+      WHERE h.daily_rate = 0
+        AND NOT EXISTS (SELECT 1 FROM employee_rate_history p
+                         WHERE p.employee_id = h.employee_id AND p.daily_rate > 0 AND p.effective_from < h.effective_from)`
+  ).all() as { employee_id: number }[];
+  for (const { employee_id } of unsetRate) {
+    const first = (db.prepare(
+      `SELECT rate_type, daily_rate, monthly_rate FROM employee_rate_history
+        WHERE employee_id = ? AND daily_rate > 0 ORDER BY effective_from LIMIT 1`
+    ).get(employee_id) ?? db.prepare(
+      'SELECT rate_type, daily_rate, monthly_rate FROM employees WHERE id = ? AND daily_rate > 0'
+    ).get(employee_id)) as { rate_type: string; daily_rate: number; monthly_rate: number | null } | undefined;
+    if (!first) continue;
+    db.prepare(
+      `UPDATE employee_rate_history SET rate_type = ?, daily_rate = ?, monthly_rate = ?
+        WHERE employee_id = ? AND daily_rate = 0
+          AND NOT EXISTS (SELECT 1 FROM employee_rate_history p
+                           WHERE p.employee_id = employee_rate_history.employee_id
+                             AND p.daily_rate > 0 AND p.effective_from < employee_rate_history.effective_from)`
+    ).run(first.rate_type, first.daily_rate, first.monthly_rate, employee_id);
+  }
+
+  // (SCHEMA_VERSION 57) Per-employee "always a whole day": a day with both a time-in and a
+  // time-out pays the full daily basic whatever the times. Default 0 (ordinary rules).
+  const empWholeDayCols = db.prepare('PRAGMA table_info(employees)').all() as { name: string }[];
+  if (!empWholeDayCols.some((c) => c.name === 'always_whole_day')) {
+    db.exec('ALTER TABLE employees ADD COLUMN always_whole_day INTEGER NOT NULL DEFAULT 0');
+  }
+
+  // (SCHEMA_VERSION 58) Which pay SSS / Pag-IBIG are computed on: 'actual' (default — the
+  // month's actual remuneration, RA 11199 / RA 9679) or 'fixed' (the employee's fixed monthly
+  // rate, chosen in Accounting → Statutory Deductions once the employee agrees in writing).
+  if (!empWholeDayCols.some((c) => c.name === 'contribution_basis')) {
+    db.exec("ALTER TABLE employees ADD COLUMN contribution_basis TEXT NOT NULL DEFAULT 'actual'");
+  }
+
+  // (SCHEMA_VERSION 59) Pay became its own permissions (payroll.view / payroll.manage,
+  // modules/payroll/pay-access.ts). Whoever could see / manage HR before keeps seeing / running
+  // payroll: roles holding hr.view / hr.manage, and per-account grants of them. Once only (flag),
+  // so an admin who later takes pay away from a role doesn't get it handed back on an upgrade.
+  if (!getSetting<boolean>('migrated_payroll_permission_split')) {
+    // The AI search index stored every form record (payslips included) under forms.view; drop
+    // those chunks and mark it stale so the next search rebuilds them with modules/ai/rag.ts's
+    // per-form ACL (payroll.view for payslips).
+    if (db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'doc_chunks'").get()) {
+      db.exec("DELETE FROM doc_chunks WHERE source_type = 'form_record'");
+    }
+    db.prepare("DELETE FROM settings WHERE key = 'rag_indexed_at'").run();
+  }
+  grantOnce('migrated_payroll_permission_split', [['hr.view', 'payroll.view'], ['hr.manage', 'payroll.manage']]);
+
+  // (SCHEMA_VERSION 60) The production screens got their own read permission (production.view);
+  // they used to share inventory.view. Same once-only grant as the pay split above.
+  grantOnce('migrated_production_view_split', [['inventory.view', 'production.view']], ['csr', 'releasing']);
+
+  // (SCHEMA_VERSION 61) Purchase orders, goods receipts and vendor bills got their own pair
+  // (purchasing.view / purchasing.manage — inventory/order-access.ts); they used orders.*.
+  grantOnce('migrated_purchasing_split', [
+    ['orders.view', 'purchasing.view'], ['orders.create', 'purchasing.manage'], ['orders.edit', 'purchasing.manage'],
+  ], ['csr', 'releasing']);
+  grantOnce('migrated_purchasing_requests', [['mobile.access', 'purchasing.request']]);
+
+  // 93: supplier-order managers are not automatically authorized to approve staff spending.
+  // Preserve the office/admin and accounting desks on existing tenants, once only. Admin
+  // always has every permission; other authorities can be chosen in the role editor.
+  if (!getSetting<boolean>('migrated_pr_approval_authority')) {
+    for (const r of db.prepare("SELECT key,permissions FROM roles WHERE key IN ('admin_staff','accounting')").all() as Array<{ key: string; permissions: string }>) {
+      let permissions: string[];
+      try { permissions = JSON.parse(r.permissions); } catch { continue; }
+      if (permissions.includes('purchasing.manage') && !permissions.includes('purchasing.approve_requests')) {
+        db.prepare('UPDATE roles SET permissions=? WHERE key=?').run(JSON.stringify([...permissions, 'purchasing.approve_requests']), r.key);
+      }
+    }
+    setSetting('migrated_pr_approval_authority', true);
+  }
+
+  // Sales desk split: narrow only roles that still match the former built-in bundle.
+  // Tenant-customized roles keep their explicit grants for an administrator to review.
+  if (!getSetting<boolean>('migrated_sales_desk_roles')) {
+    const baseline = ['mobile.access','messages.view','messages.send','purchasing.request'];
+    const legacy: Record<string,string[]> = {
+      releasing: [...baseline,'inventory.view','production.view','inventory.adjust','orders.view','orders.create','orders.edit','purchasing.view','purchasing.manage','forms.view','forms.upload','templates.view','delivery.run','delivery.manage'],
+      csr: [...baseline,'inventory.view','production.view','orders.view','orders.create','orders.edit','purchasing.view','purchasing.manage','forms.view','forms.upload','templates.view'],
+    };
+    for (const role of BUILTIN_ROLES.filter((r) => r.key === 'csr' || r.key === 'releasing')) {
+      const row = db.prepare('SELECT permissions FROM roles WHERE key=?').get(role.key) as {permissions:string}|undefined;
+      if (!row) continue;
+      try {
+        const current = JSON.parse(row.permissions);
+        const old = legacy[role.key];
+        if (Array.isArray(current) && old && current.length === old.length && old.every((p) => current.includes(p))) {
+          db.prepare('UPDATE roles SET permissions=?, description=? WHERE key=?').run(JSON.stringify(role.permissions),role.description,role.key);
+        }
+      } catch { /* leave an invalid customized role for admin review */ }
+    }
+    setSetting('migrated_sales_desk_roles', true);
+  }
+
+  // (SCHEMA_VERSION 66) Preserve surviving older uploads before the next filesystem
+  // replacement. Only files still referenced by a record enter the durable store.
+  if ((getSetting<number>('schema_version') ?? 0) < 66) {
+    const slug = tenantStore.getStore()?.slug ?? DEFAULT_TENANT;
+    const tenantPart = slug === DEFAULT_TENANT ? '' : slug;
+    const roots = [backupDir(), mirrorDir()].filter((root): root is string => !!root);
+    const source = (name: string): string | null => {
+      if (!name || path.basename(name) !== name || name.startsWith('.')) return null;
+      const primary = path.join(uploadDir(), name);
+      if (fs.existsSync(primary)) return primary;
+      for (const root of roots) {
+        const candidate = path.join(root, 'uploads', tenantPart, name);
+        if (fs.existsSync(candidate)) return candidate;
+      }
+      return null;
+    };
+    const keep = db.prepare('INSERT OR IGNORE INTO durable_uploads (name, data, size_bytes) VALUES (?, ?, ?)');
+    for (const [table, column, prefix] of [
+      ['forms', 'stored_name', ''], ['employee_documents', 'stored_name', ''],
+      ['attachments', 'image_path', ''], ['inventory_items', 'image_path', ''],
+      ['bug_report_attachments', 'stored_name', ''], ['punch_photos', 'file_name', 'kiosk-punches/'],
+    ]) {
+      for (const row of db.prepare(`SELECT ${column} AS name FROM ${table} WHERE ${column} IS NOT NULL`).all() as Array<{ name: string }>) {
+        if (!row.name || path.basename(row.name) !== row.name || row.name.startsWith('.')) continue;
+        const fileName = `${prefix}${row.name}`;
+        const rootName = prefix ? row.name : fileName;
+        const file = prefix ? [path.join(uploadDir(), prefix, rootName), ...roots.map((root) => path.join(root, 'uploads', tenantPart, prefix, rootName))].find((p) => fs.existsSync(p)) : source(rootName);
+        if (file) { const bytes = fs.readFileSync(file); keep.run(fileName, bytes, bytes.length); }
+      }
+    }
+    for (const row of db.prepare('SELECT id, stored_name FROM message_attachments WHERE data IS NULL').all() as Array<{ id: number; stored_name: string }>) {
+      const file = source(row.stored_name);
+      if (file) db.prepare('UPDATE message_attachments SET data = ? WHERE id = ?').run(fs.readFileSync(file), row.id);
+    }
+    const aiDirs = [uploadDir(), ...roots.map((root) => path.join(root, 'uploads', tenantPart))];
+    for (const name of new Set(aiDirs.filter((dir) => fs.existsSync(dir)).flatMap((dir) => fs.readdirSync(dir)))) {
+      if (!/^ai-report-[A-Za-z0-9-]+\.(html|docx)$/.test(name)) continue;
+      const file = source(name);
+      if (file) { const bytes = fs.readFileSync(file); keep.run(name, bytes, bytes.length); }
+    }
+    // Pending offline commands can still reference blobs created before this upgrade.
+    const blobDirs = aiDirs.map((dir) => path.join(dir, '.sync-blobs'));
+    for (const name of new Set(blobDirs.filter((dir) => fs.existsSync(dir)).flatMap((dir) => fs.readdirSync(dir)))) {
+      if (!/^[0-9a-f]{64}$/.test(name)) continue;
+      const file = blobDirs.map((dir) => path.join(dir, name)).find((candidate) => fs.existsSync(candidate));
+      if (file) { const bytes = fs.readFileSync(file); keep.run(`.sync-blobs/${name}`, bytes, bytes.length); }
+    }
+  }
+  // (SCHEMA_VERSION 69) New releases snapshot the exact QC and QA requirements. Older
+  // released jobs have no reliable historical checklist version, so their null snapshots
+  // keep the previous live-resolution behavior until completed.
+  const joChecklistCols = db.prepare('PRAGMA table_info(job_orders)').all() as Array<{ name: string }>;
+  for (const col of ['qc_checklist_qc_snapshot', 'qc_checklist_qa_snapshot']) {
+    if (!joChecklistCols.some((c) => c.name === col)) db.exec(`ALTER TABLE job_orders ADD COLUMN ${col} TEXT`);
+  }
+  // 91: existing physical units enter mandatory QC/QA without a manufacturing kit.
+  const legacyCols = db.prepare('PRAGMA table_info(job_orders)').all() as Array<{ name: string }>;
+  for (const [name, declaration] of Object.entries({ intake_origin: "TEXT NOT NULL DEFAULT 'production'", legacy_intake_key: 'TEXT', legacy_intake_hash: 'TEXT', legacy_unit_cost: 'REAL' })) {
+    if (!legacyCols.some(c => c.name === name)) db.exec(`ALTER TABLE job_orders ADD COLUMN ${name} ${declaration}`);
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_legacy_intake_key ON job_orders(legacy_intake_key) WHERE legacy_intake_key IS NOT NULL');
+  // 95: preserve deliberate Daily Time unlinks during automatic leave attachment.
+  const unlinkCols = db.prepare('PRAGMA table_info(attendance_records)').all() as Array<{ name: string }>;
+  if (!unlinkCols.some(c => c.name === 'excluded_form_record_ids')) db.exec('ALTER TABLE attendance_records ADD COLUMN excluded_form_record_ids TEXT');
+  // 94: child builds remain separate drafts, but retain their parent JO for planning
+  // and for avoiding repeated suggestions after an accepted subassembly plan.
+  const parentCols = db.prepare('PRAGMA table_info(job_orders)').all() as Array<{ name: string }>;
+  if (!parentCols.some((c) => c.name === 'parent_job_order_id')) db.exec('ALTER TABLE job_orders ADD COLUMN parent_job_order_id INTEGER REFERENCES job_orders(id) ON DELETE SET NULL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_job_orders_parent ON job_orders(parent_job_order_id)');
+  const idemCols = db.prepare('PRAGMA table_info(idempotency_keys)').all() as Array<{ name: string }>;
+  if (!idemCols.some((c) => c.name === 'request_hash')) db.exec('ALTER TABLE idempotency_keys ADD COLUMN request_hash TEXT');
+  // 74: one sale SKU can ship as a built unit or as its frozen CKD component list.
+  const saleLineCols = db.prepare('PRAGMA table_info(order_items)').all() as Array<{ name: string }>;
+  if (!saleLineCols.some((c) => c.name === 'fulfillment_mode'))
+    db.exec("ALTER TABLE order_items ADD COLUMN fulfillment_mode TEXT NOT NULL DEFAULT 'assembled'");
+  if (!saleLineCols.some((c) => c.name === 'parent_order_item_id'))
+    db.exec('ALTER TABLE order_items ADD COLUMN parent_order_item_id INTEGER REFERENCES order_items(id) ON DELETE CASCADE');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_order_items_parent ON order_items(parent_order_item_id)');
+  const saleUnitCols = db.prepare('PRAGMA table_info(job_order_units)').all() as Array<{ name: string }>;
+  if (!saleUnitCols.some((c) => c.name === 'order_item_id')) db.exec('ALTER TABLE job_order_units ADD COLUMN order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL');
+  if (!saleUnitCols.some((c) => c.name === 'direct_sold_at')) db.exec('ALTER TABLE job_order_units ADD COLUMN direct_sold_at TEXT');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sale_unit_line ON job_order_units(order_item_id,status)');
+  db.exec(`UPDATE job_order_units AS u SET order_item_id = (
+    SELECT oi.id FROM order_items oi WHERE oi.order_id = u.order_id AND oi.item_id = u.product_item_id
+      AND oi.fulfillment_mode NOT IN ('ckd', 'ckd_component') LIMIT 1)
+    WHERE u.order_item_id IS NULL AND u.order_id IS NOT NULL AND u.status IN ('reserved', 'sold')
+      AND (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = u.order_id AND oi.item_id = u.product_item_id
+        AND oi.fulfillment_mode NOT IN ('ckd', 'ckd_component')) = 1`);
+  const saleBatchCols = db.prepare('PRAGMA table_info(production_batch_allocations)').all() as Array<{ name: string }>;
+  if (!saleBatchCols.some((c) => c.name === 'order_item_id')) db.exec('ALTER TABLE production_batch_allocations ADD COLUMN order_item_id INTEGER REFERENCES order_items(id) ON DELETE SET NULL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sale_batch_line ON production_batch_allocations(order_item_id,state)');
+  db.exec(`UPDATE production_batch_allocations AS a SET order_item_id = (
+    SELECT oi.id FROM order_items oi WHERE oi.order_id = a.order_id AND oi.item_id = a.item_id
+      AND oi.fulfillment_mode != 'ckd' LIMIT 1)
+    WHERE a.order_item_id IS NULL
+      AND (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = a.order_id AND oi.item_id = a.item_id
+        AND oi.fulfillment_mode != 'ckd') = 1`);
+  const deliveryCols = db.prepare('PRAGMA table_info(deliveries)').all() as Array<{ name: string }>;
+  if (!deliveryCols.some((c) => c.name === 'delivery_mode')) db.exec("ALTER TABLE deliveries ADD COLUMN delivery_mode TEXT NOT NULL DEFAULT 'own'");
+  if (!deliveryCols.some((c) => c.name === 'courier_name')) db.exec('ALTER TABLE deliveries ADD COLUMN courier_name TEXT');
+  if (!deliveryCols.some((c) => c.name === 'tracking_number')) db.exec('ALTER TABLE deliveries ADD COLUMN tracking_number TEXT');
+  // 75: keep fully and semi-built stock distinct while retaining one commercial SKU.
+  const buildCols = db.prepare('PRAGMA table_info(job_orders)').all() as Array<{ name: string }>;
+  if (!buildCols.some((c) => c.name === 'build_mode'))
+    db.exec("ALTER TABLE job_orders ADD COLUMN build_mode TEXT NOT NULL DEFAULT 'assembled'");
+  db.exec(`CREATE TABLE IF NOT EXISTS inventory_variant_stock (
+    item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+    location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+    build_mode TEXT NOT NULL CHECK (build_mode IN ('assembled', 'semi_built')),
+    quantity REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (item_id, location_id, build_mode))`);
+  if (!getSetting<boolean>('variant_stock_seeded')) {
+    db.exec(`INSERT OR IGNORE INTO inventory_variant_stock (item_id, location_id, build_mode, quantity)
+      SELECT item_id, location_id, 'assembled', quantity FROM inventory_stock`);
+    setSetting('variant_stock_seeded', true);
+  }
+  // A semi-built package contains the whole kit. Finishing it changes the build
+  // state of that physical unit; it must never issue the BOM components again.
+  db.exec(`CREATE TABLE IF NOT EXISTS semi_build_conversions (
+    job_order_id INTEGER PRIMARY KEY REFERENCES job_orders(id) ON DELETE CASCADE,
+    source_unit_id INTEGER REFERENCES job_order_units(id) ON DELETE RESTRICT,
+    source_batch_id INTEGER REFERENCES production_batches(id) ON DELETE RESTRICT,
+    source_cost REAL NOT NULL DEFAULT 0,
+    finishing_cost REAL NOT NULL DEFAULT 0,
+    cancel_reason TEXT,
+    cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    cancelled_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  const conversionCols = db.prepare('PRAGMA table_info(semi_build_conversions)').all() as Array<{ name: string }>;
+  if (!conversionCols.some((c) => c.name === 'source_batch_id')) db.exec('ALTER TABLE semi_build_conversions ADD COLUMN source_batch_id INTEGER REFERENCES production_batches(id) ON DELETE RESTRICT');
+  if (!conversionCols.some((c) => c.name === 'cancel_reason')) db.exec('ALTER TABLE semi_build_conversions ADD COLUMN cancel_reason TEXT');
+  if (!conversionCols.some((c) => c.name === 'cancelled_by')) db.exec('ALTER TABLE semi_build_conversions ADD COLUMN cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL');
+  if (!conversionCols.some((c) => c.name === 'cancelled_at')) db.exec('ALTER TABLE semi_build_conversions ADD COLUMN cancelled_at TEXT');
+  const unitConversionCols = db.prepare('PRAGMA table_info(job_order_units)').all() as Array<{ name: string }>;
+  if (!unitConversionCols.some((c) => c.name === 'conversion_source_unit_id'))
+    db.exec('ALTER TABLE job_order_units ADD COLUMN conversion_source_unit_id INTEGER REFERENCES job_order_units(id) ON DELETE RESTRICT');
+  if (!unitConversionCols.some((c) => c.name === 'received_unit_cost'))
+    db.exec('ALTER TABLE job_order_units ADD COLUMN received_unit_cost REAL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_unit_conversion_source ON job_order_units(conversion_source_unit_id) WHERE conversion_source_unit_id IS NOT NULL');
+  // v84: immutable per-trip manifests; the commercial order and reserved remainder stay put.
+  const tripLineCols = db.prepare('PRAGMA table_info(order_items)').all() as Array<{name:string}>;
+  for (const col of ['dispatched_qty','dispatched_bulk_qty','cancelled_qty'])
+    if (!tripLineCols.some(c=>c.name===col)) db.exec(`ALTER TABLE order_items ADD COLUMN ${col} REAL NOT NULL DEFAULT 0`);
+  const tripDeliveryCols = db.prepare('PRAGMA table_info(deliveries)').all() as Array<{name:string}>;
+  if (!tripDeliveryCols.some(c=>c.name==='release_slip_id')) db.exec('ALTER TABLE deliveries ADD COLUMN release_slip_id INTEGER REFERENCES release_slips(id) ON DELETE RESTRICT');
+  const tripBatchCols = db.prepare('PRAGMA table_info(production_batch_allocations)').all() as Array<{name:string}>;
+  if (!tripBatchCols.some(c=>c.name==='release_slip_id')) db.exec('ALTER TABLE production_batch_allocations ADD COLUMN release_slip_id INTEGER REFERENCES release_slips(id) ON DELETE RESTRICT');
+  db.exec(`CREATE TABLE IF NOT EXISTS release_slip_units (
+    slip_item_id INTEGER NOT NULL REFERENCES release_slip_items(id) ON DELETE CASCADE,
+    unit_id INTEGER NOT NULL REFERENCES job_order_units(id) ON DELETE RESTRICT,
+    PRIMARY KEY(slip_item_id,unit_id));
+    CREATE INDEX IF NOT EXISTS idx_release_slip_units_unit ON release_slip_units(unit_id);
+    CREATE TABLE IF NOT EXISTS order_remainder_cancellations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL REFERENCES orders(id),
+    reason TEXT NOT NULL, cancelled_by INTEGER REFERENCES users(id), cancelled_at TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_delivery_slip ON deliveries(release_slip_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_active_trip ON deliveries(release_slip_id)
+      WHERE release_slip_id IS NOT NULL AND status NOT IN ('failed','cancelled');`);
+  if (!getSetting('trip_manifest_backfilled_v84')) {
+    db.exec(`UPDATE order_items SET dispatched_qty=COALESCE((SELECT SUM(li.quantity) FROM release_slip_items li WHERE li.order_item_id=order_items.id),
+      CASE WHEN EXISTS(SELECT 1 FROM orders o WHERE o.id=order_items.order_id AND o.fulfilled_at IS NOT NULL) THEN quantity ELSE 0 END);
+      UPDATE order_items SET dispatched_bulk_qty=MIN(released_qty,dispatched_qty);
+      UPDATE production_batch_allocations SET release_slip_id=(SELECT id FROM release_slips s WHERE s.order_id=production_batch_allocations.order_id)
+        WHERE state='shipped' AND (SELECT COUNT(*) FROM release_slips s WHERE s.order_id=production_batch_allocations.order_id)=1;
+      INSERT OR IGNORE INTO release_slip_units(slip_item_id,unit_id) SELECT li.id,u.id FROM release_slip_items li
+        JOIN job_order_units u ON u.order_item_id=li.order_item_id AND u.status='sold'
+        WHERE (SELECT COUNT(*) FROM release_slips s JOIN release_slip_items x ON x.slip_id=s.id WHERE x.order_item_id=li.order_item_id)=1;
+      UPDATE deliveries SET release_slip_id=(SELECT id FROM release_slips s WHERE s.order_id=deliveries.order_id)
+        WHERE (SELECT COUNT(*) FROM release_slips s WHERE s.order_id=deliveries.order_id)=1
+        AND (SELECT COUNT(*) FROM deliveries d WHERE d.order_id=deliveries.order_id)=1;`);
+    setSetting('trip_manifest_backfilled_v84',true);
+  }
+  // The v84 trip backfill identifies already-shipped serials. A sold serial on an
+  // unfulfilled sale without a slip-unit link was deducted by the older direct
+  // Sell action, including when an earlier partial trip exists on the same order.
+  db.exec(`UPDATE job_order_units AS u SET direct_sold_at=COALESCE(u.updated_at,u.created_at)
+    WHERE u.direct_sold_at IS NULL AND u.status='sold' AND u.order_id IS NOT NULL
+      AND EXISTS(SELECT 1 FROM orders o WHERE o.id=u.order_id AND o.type='sale' AND o.fulfilled_at IS NULL)
+      AND (NOT EXISTS(SELECT 1 FROM release_slips s WHERE s.order_id=u.order_id)
+        OR COALESCE(u.updated_at,u.created_at)>(SELECT MAX(s.released_at) FROM release_slips s WHERE s.order_id=u.order_id))
+      AND NOT EXISTS(SELECT 1 FROM release_slip_units su WHERE su.unit_id=u.id)`);
+  // v86: a serial may return once per separate sale shipment, rather than once forever.
+  const returnsSql=queryOne<{sql:string}>("SELECT sql FROM sqlite_master WHERE type='table' AND name='sales_returns'")!.sql;
+  if(/unit_id INTEGER UNIQUE/.test(returnsSql)){
+    const cols=(db.prepare('PRAGMA table_info(sales_returns)').all() as {name:string}[]).map(c=>'"'+c.name+'"').join(',');
+    db.exec('PRAGMA foreign_keys=OFF');
+    try{
+      db.exec('BEGIN');
+      db.exec(returnsSql.replace(/CREATE TABLE(?: IF NOT EXISTS)? ["`\[]?sales_returns["`\]]?/i, 'CREATE TABLE sales_returns_v86').replace('unit_id INTEGER UNIQUE','unit_id INTEGER'));
+      db.exec(`INSERT INTO sales_returns_v86(${cols}) SELECT ${cols} FROM sales_returns; DROP TABLE sales_returns; ALTER TABLE sales_returns_v86 RENAME TO sales_returns;`);
+      db.exec('COMMIT');
+    }catch(e){db.exec('ROLLBACK');throw e;}finally{db.exec('PRAGMA foreign_keys=ON');}
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_sales_returns_slip_item ON sales_returns(slip_item_id);
+    CREATE INDEX IF NOT EXISTS idx_sales_returns_slip ON sales_returns(slip_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_return_serial_shipment ON sales_returns(slip_id,unit_id) WHERE unit_id IS NOT NULL;`);
+
+  // v87: keep audit reviews separate from stock corrections.
+  db.exec(`CREATE TABLE IF NOT EXISTS direct_sale_stockout_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+    evidence_hash TEXT NOT NULL, note TEXT NOT NULL,
+    reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TEXT NOT NULL DEFAULT (datetime('now')));
+    CREATE INDEX IF NOT EXISTS idx_direct_sale_stockout_review_case ON direct_sale_stockout_reviews(order_id,item_id,id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_direct_sale_stockout_review_evidence ON direct_sale_stockout_reviews(order_id,item_id,evidence_hash)`);
+
+  // v88: a count records a book snapshot and physical evidence before a separate approval.
+  db.exec(`CREATE TABLE IF NOT EXISTS stock_counts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+    location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+    build_mode TEXT NOT NULL CHECK(build_mode IN ('assembled','semi_built')),
+    book_quantity REAL NOT NULL, book_serial_ids TEXT NOT NULL, book_batches TEXT NOT NULL,
+    counted_untracked REAL NOT NULL, counted_serial_ids TEXT NOT NULL, counted_batches TEXT NOT NULL,
+    note TEXT NOT NULL, source_kind TEXT NOT NULL CHECK(source_kind IN ('manual','discrepancy','direct_sale')),
+    source_id INTEGER, status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted','approved','applied','rejected')),
+    counted_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    counted_at TEXT NOT NULL DEFAULT (datetime('now')),
+    reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TEXT, review_note TEXT,
+    transaction_id INTEGER REFERENCES inventory_transactions(id) ON DELETE SET NULL,
+    completed_at TEXT);
+    CREATE INDEX IF NOT EXISTS idx_stock_counts_status ON stock_counts(status,counted_at,id)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS stock_count_movements (
+    count_id INTEGER NOT NULL REFERENCES stock_counts(id) ON DELETE CASCADE,
+    transaction_id INTEGER NOT NULL REFERENCES inventory_transactions(id) ON DELETE RESTRICT,
+    batch_id INTEGER REFERENCES production_batches(id) ON DELETE SET NULL,
+    PRIMARY KEY(count_id,transaction_id))`);
+
+  // v89: bind source closure to the observed audit evidence and the applied count.
+  const countCols = new Set((db.prepare('PRAGMA table_info(stock_counts)').all() as {name:string}[]).map(c=>c.name));
+  for(const [name,type] of [
+    ['source_evidence_hash','TEXT'],
+    ['source_closed_by','INTEGER REFERENCES users(id) ON DELETE SET NULL'],
+    ['source_closed_at','TEXT'],
+    ['source_close_note','TEXT'],
+  ] as const) if(!countCols.has(name)) db.exec(`ALTER TABLE stock_counts ADD COLUMN ${name} ${type}`);
+
+  // v90: one open assignment per exact item/location/build state; rejected observations
+  // remain in count history while the same assignment can be counted again.
+  db.exec(`CREATE TABLE IF NOT EXISTS stock_count_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+    location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
+    build_mode TEXT NOT NULL CHECK(build_mode IN ('assembled','semi_built')),
+    assigned_to INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    due_date TEXT NOT NULL,
+    repeat_days INTEGER CHECK(repeat_days BETWEEN 1 AND 365),
+    note TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','completed','cancelled')),
+    planned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    planned_at TEXT NOT NULL DEFAULT (datetime('now')),
+    previous_task_id INTEGER REFERENCES stock_count_tasks(id) ON DELETE SET NULL,
+    completed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    completed_at TEXT,
+    cancel_note TEXT,
+    cancelled_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    cancelled_at TEXT);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_count_tasks_open_position
+      ON stock_count_tasks(item_id,location_id,build_mode) WHERE status='open';
+    CREATE INDEX IF NOT EXISTS idx_stock_count_tasks_queue ON stock_count_tasks(status,due_date,assigned_to)`);
+  const taskLink = (db.prepare('PRAGMA table_info(stock_counts)').all() as {name:string}[]).some(c=>c.name==='task_id');
+  if(!taskLink) db.exec('ALTER TABLE stock_counts ADD COLUMN task_id INTEGER REFERENCES stock_count_tasks(id) ON DELETE SET NULL');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_stock_counts_task ON stock_counts(task_id,id)');
+
+}
+
+/** One-time permission split: every role and per-account grant holding `from` also gets `to`.
+    Flagged in settings so an admin who later removes `to` doesn't get it back on an upgrade. */
+function grantOnce(flag: string, pairs: Array<[string, string]>, excludeRoles: string[] = []): void {
+  if (getSetting<boolean>(flag)) return;
+  for (const r of db.prepare('SELECT key, permissions FROM roles').all() as Array<{ key: string; permissions: string }>) {
+    if (excludeRoles.includes(r.key)) continue;
+    let perms: string[] = [];
+    try { perms = JSON.parse(r.permissions); } catch { continue; }
+    const next = [...perms];
+    for (const [from, to] of pairs) if (perms.includes(from) && !next.includes(to)) next.push(to);
+    if (next.length !== perms.length) db.prepare('UPDATE roles SET permissions = ? WHERE key = ?').run(JSON.stringify(next), r.key);
+  }
+  for (const u of db.prepare("SELECT id, permission_overrides FROM users WHERE permission_overrides != '{}'").all() as Array<{ id: number; permission_overrides: string }>) {
+    let ov: Record<string, boolean> = {};
+    try { ov = JSON.parse(u.permission_overrides); } catch { continue; }
+    let changed = false;
+    for (const [from, to] of pairs) if (ov[from] === true && ov[to] === undefined) { ov[to] = true; changed = true; }
+    if (changed) db.prepare('UPDATE users SET permission_overrides = ? WHERE id = ?').run(JSON.stringify(ov), u.id);
+  }
+  setSetting(flag, true);
 }
 
 /** Read a JSON-encoded setting, or undefined if unset / unparseable. */
@@ -2255,12 +3742,91 @@ export function setSetting(key: string, value: unknown): void {
  * records, and HR employees — so the counter logic can't drift out of sync between them.
  */
 export function nextSequence(key: string, prefix: string, pad = 5): string {
+  const synced = syncHooks.nextSequence?.(key, prefix, pad); // provisional / replayed numbers
+  if (synced !== undefined) return synced;
   const next = (getSetting<number>(key) || 0) + 1;
   setSetting(key, next);
   return `${prefix}-${String(next).padStart(pad, '0')}`;
 }
 
+/** Record numbers are unique across forms, even when administrators reuse a prefix.
+ * Start with the shared prefix series and skip legacy numbers without renumbering history. */
+export function nextFormRecordNumber(prefix:string):string {
+  let number:string;
+  do {number=nextSequence('form_record_seq_'+prefix,prefix);}while(queryOne('SELECT 1 FROM form_records WHERE number=?',number));
+  return number;
+}
+
+/** Roles: the built-in bundles the first time (empty table), so a tenant can then edit or delete
+    them freely without seeing them come back. Always ensures the fixed 'admin' row, and a row for
+    any role key an existing account holds (so no account is left on a role nobody can see). */
+function seedRoles(): void {
+  const insert = db.prepare(
+    'INSERT OR IGNORE INTO roles (key, label, description, permissions, sort_order) VALUES (?, ?, ?, ?, ?)');
+  const count = (db.prepare('SELECT COUNT(*) AS c FROM roles').get() as { c: number }).c;
+  const seeds = count === 0 ? BUILTIN_ROLES : BUILTIN_ROLES.filter((r) => r.key === ADMIN_ROLE);
+  seeds.forEach((r) => insert.run(r.key, r.label, r.description, JSON.stringify(r.permissions), BUILTIN_ROLES.indexOf(r)));
+  // Apply the reviewed built-in profiles once. Custom role keys and all account overrides stay intact.
+  if (!getSetting('role_audit_profiles_v1')) {
+    db.exec('BEGIN');
+    try {
+      const before = db.prepare('SELECT key,label,description,permissions FROM roles').all();
+      setSetting('role_audit_profiles_before_v1', before);
+      const update = db.prepare("UPDATE roles SET label=?,description=?,permissions=?,updated_at=datetime('now') WHERE key=?");
+      const reviewedExistingKeys = new Set(['admin','admin_staff','accounting','warehouse','releasing','csr','hr','marketing',
+        'parts_clerk','production_lead','production_manager','qc_inspector','qa_inspector','receiving_clerk','releasing_clerk']);
+      for (const profile of BUILTIN_ROLES) {
+        const created=insert.run(profile.key,profile.label,profile.description,JSON.stringify(profile.permissions),BUILTIN_ROLES.indexOf(profile));
+        // A tenant may already use a newly introduced profile key for a custom role.
+        if (reviewedExistingKeys.has(profile.key) || Number(created.changes)>0) {
+          update.run(profile.label,profile.description,JSON.stringify(profile.permissions),profile.key);
+        }
+      }
+      setSetting('role_audit_profiles_v1',true);
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
+  // Update only unchanged default bundles. Preserve owner-customized or deleted roles.
+  if (!getSetting('role_permission_followup_v1')) {
+    const additions: Record<string, string[]> = {
+      production_manager: ['production.approve'],
+      csr_supervisor: ['forms.upload'],
+      warehouse_supervisor: ['forms.view', 'forms.fill.inventory'],
+    };
+    db.exec('BEGIN');
+    try {
+      for (const [key, added] of Object.entries(additions)) {
+        const profile = BUILTIN_ROLES.find(r => r.key === key)!;
+        const row = db.prepare('SELECT permissions, description FROM roles WHERE key=?').get(key) as {permissions:string;description:string}|undefined;
+        if (!row) continue;
+        let current: string[];
+        try { current = JSON.parse(row.permissions); } catch { continue; }
+        const previous = profile.permissions.filter(p => !added.includes(p));
+        if (!Array.isArray(current) || current.length !== previous.length || !previous.every(p => current.includes(p))) continue;
+        const description = key === 'production_manager' && row.description === 'Lead + pause / resume / close early + QA hold decisions.'
+          ? profile.description : row.description;
+        db.prepare("UPDATE roles SET permissions=?,description=?,updated_at=datetime('now') WHERE key=?")
+          .run(JSON.stringify(profile.permissions), description, key);
+      }
+      setSetting('role_permission_followup_v1', true);
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
+  if (!getSetting('audit_metadata_privacy_v1')) {
+    const rows = db.prepare('SELECT id,path,meta FROM activity_log WHERE meta IS NOT NULL').all() as Array<{id:number;path:string;meta:string}>;
+    const update = db.prepare('UPDATE activity_log SET meta=? WHERE id=?');
+    for (const row of rows) update.run(safeAuditMeta(row.meta,row.path),row.id);
+    setSetting('audit_metadata_privacy_v1',true);
+  }
+  const orphans = db.prepare(
+    'SELECT DISTINCT role FROM users WHERE role NOT IN (SELECT key FROM roles)').all() as Array<{ role: string }>;
+  for (const { role } of orphans) {
+    insert.run(role, role.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()), '', JSON.stringify(roleDefaults(role)), 100);
+  }
+}
+
 function seed(): void {
+  seedRoles();
   const deptCount = (db.prepare('SELECT COUNT(*) AS c FROM departments').get() as { c: number }).c;
   if (deptCount === 0) {
     const insertDept = db.prepare('INSERT INTO departments (name) VALUES (?)');
@@ -2274,20 +3840,22 @@ function seed(): void {
     const adminDept = db
       .prepare('SELECT id FROM departments WHERE name = ?')
       .get('Administration') as { id: number } | undefined;
-    const password = process.env.ADMIN_PASSWORD || 'admin123';
+    const password = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === 'test' ? process.env.VDS_TEST_ADMIN_PASSWORD : undefined);
+    if (!password) throw new Error('ADMIN_PASSWORD is required before creating the default admin account');
     const hash = bcrypt.hashSync(password, 10);
+    // The configured first-boot password must be replaced at first sign-in (shared/auth.ts).
+    // Tests use a separate fixture variable. Provisioning clears the flag when the operator
+    // sets the owner's own password (platform/provisioning.ts).
     db.prepare(
-      `INSERT INTO users (username, full_name, password_hash, role, department_id)
-       VALUES (?, ?, ?, 'admin', ?)`
-    ).run('admin', 'System Administrator', hash, adminDept ? adminDept.id : null);
+      `INSERT INTO users (username, full_name, password_hash, role, department_id, password_change_required)
+       VALUES (?, ?, ?, 'admin', ?, ?)`
+    ).run('admin', 'System Administrator', hash, adminDept ? adminDept.id : null, process.env.NODE_ENV === 'test' ? 0 : 1);
 
     if (!process.env.DB_PATH) {
-      // Only print credentials for a real server start, not during tests.
       console.log('========================================================');
       console.log('  Default admin account created:');
       console.log('     username: admin');
-      console.log(`     password: ${password}`);
-      console.log('  >> Log in and change this password immediately. <<');
+      console.log('  Use the configured ADMIN_PASSWORD and change it at first sign-in.');
       console.log('========================================================');
     }
   }
@@ -2517,6 +4085,10 @@ function seedHrRequestForms(): void {
         // at 2h/day but the boss okayed 4h today), this day's OT is capped at THIS number
         // instead. Doesn't lower the cap if set below policy.max_ot_hours — only ever raises it.
         { key: 'approved_hours', label: 'Approved OT Hours (overrides the daily OT cap for this day only — leave blank to use the policy max)', type: 'number', required: false, options: [], default: '' },
+        // Read by the compute engine: ticked, time before the shift start counts as OT too when
+        // the time-in was 1 h+ early (EARLY_OT_MIN_MINUTES), sharing the day's OT cap with
+        // after-shift OT. The Daily Time grid only offers it on such a day.
+        { key: 'early_ot', label: 'Early OT — count the time before the shift start (timed in 1 hour or more early)', type: 'checkbox', required: false, options: [], default: '' },
       ],
     },
     {
@@ -2614,6 +4186,53 @@ function seedHrRequestForms(): void {
         area('reason', 'What was reported', true),
       ],
     },
+    {
+      // Authorizes working a rest day. With PayrollPolicy.require_rest_day_form on, the rest-day
+      // premium is paid only when an APPROVED one is linked to that day (hr-payroll-compute.ts);
+      // off, it is the paper trail. See src/modules/hr/rest-day.ts.
+      name: 'Rest Day Work Request', slug: 'rest_day_work_request', prefix: 'RDW', icon: 'calendar',
+      fields: [
+        { ...employeeField },
+        dateField('work_date', 'Rest Day to Work'),
+        area('reason', 'Reason', true),
+      ],
+    },
+    {
+      // Moves a rest day. Once APPROVED and linked to either date on the Daily Time grid,
+      // original_rest_day counts as a working day and new_rest_day as the rest day, for payroll
+      // and the grid alike (restDaySwapsFor in src/modules/hr/rest-day.ts). HR's per-day Rest Day
+      // dropdown still overrides it.
+      name: 'Change of Rest Day', slug: 'rest_day_change', prefix: 'RDC', icon: 'calendar',
+      fields: [
+        { ...employeeField },
+        dateField('original_rest_day', 'Rest Day Being Worked'),
+        dateField('new_rest_day', 'New Rest Day'),
+        area('reason', 'Reason', true),
+      ],
+    },
+    {
+      name: 'Schedule Change Request', slug: 'schedule_change', prefix: 'SCH', icon: 'calendar',
+      fields: [
+        { ...employeeField },
+        dateField('work_date', 'Published work date'),
+        { key: 'requested_shift_id', label: 'Requested shift', type: 'select', required: true, options: [], default: '' },
+        area('reason', 'Reason', true),
+      ],
+    },
+    {
+      // Correction to an authoritative HR field (legal name, gov IDs, …) — applied only when an
+      // hr.manage approver approves it (src/modules/hr/info-change.ts). Options must match
+      // INFO_CHANGE_FIELDS there (pinned by tests/info-change.test.ts). Keys avoid position/
+      // department, which the mobile form auto-fills from the signed-in employee.
+      name: 'Employee Information Change', slug: 'information_change', prefix: 'IC', icon: 'user',
+      fields: [
+        { ...employeeField },
+        { key: 'field', label: 'Information to change', type: 'select', required: true, default: '',
+          options: ['Legal name', 'SSS number', 'PhilHealth number', 'Pag-IBIG number', 'TIN', 'Birth date', 'Civil status', 'Other official record'] },
+        { key: 'requested_value', label: 'Correct value', type: 'text', required: true, options: [], default: '' },
+        area('reason', 'Reason / supporting document', true),
+      ],
+    },
   ];
   for (const f of FORMS) {
     const existing = db.prepare('SELECT id, fields FROM form_definitions WHERE slug = ?').get(f.slug) as
@@ -2641,16 +4260,15 @@ function seedHrRequestForms(): void {
       } catch { /* leave as-is if the stored fields are somehow unparseable */ }
     }
     // Same self-correcting touch-up for an install that already had overtime_request seeded
-    // before approved_hours (the per-day OT-cap override) existed.
+    // before approved_hours (the per-day OT-cap override) or early_ot (Early OT) existed.
     if (f.slug === 'overtime_request') {
       try {
         const fields = JSON.parse(existing.fields) as { key: string }[];
-        if (!fields.some((fl) => fl.key === 'approved_hours')) {
-          const approvedHours = (f.fields as { key: string }[]).find((fl) => fl.key === 'approved_hours');
-          if (approvedHours) {
-            fields.push(approvedHours);
-            db.prepare('UPDATE form_definitions SET fields = ? WHERE id = ?').run(JSON.stringify(fields), existing.id);
-          }
+        const missing = (f.fields as { key: string }[])
+          .filter((fl) => (fl.key === 'approved_hours' || fl.key === 'early_ot') && !fields.some((x) => x.key === fl.key));
+        if (missing.length) {
+          fields.push(...missing);
+          db.prepare('UPDATE form_definitions SET fields = ? WHERE id = ?').run(JSON.stringify(fields), existing.id);
         }
       } catch { /* leave as-is if the stored fields are somehow unparseable */ }
     }
@@ -2764,10 +4382,9 @@ function seedMemoForms(): void {
     then one labelled line per form field ({{key}} placeholders the form-record print flow
     and src/form-actions.ts both substitute). Deliberately minimal; HR edits it in the doc
     editor from Form Builder. */
-function memoTemplateBody(title: string, fields: Array<{ key: string; label: string }>): string {
-  const rows = fields
-    .map((f) => `  <div class="mm-row"><span class="mm-l">${f.label}</span><span class="mm-v">{{${f.key}}}</span></div>`)
-    .join('\n');
+export function memoTemplateBody(title: string, fields: Array<{ key: string; label: string; type?:string;source?:string;format?:string;currency?:string }>): string {
+  const escape=(value:string)=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
+  const rows=fields.map(field=>printFormField(field,{row:'mm-row',label:'mm-l',value:'mm-v'})).join('\n');
   return `<style>
   .memo { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; max-width: 720px; margin: 0 auto; }
   .memo h1 { font-size: 15px; text-align: center; letter-spacing: .04em; margin: 0 0 2px; }
@@ -2782,13 +4399,13 @@ function memoTemplateBody(title: string, fields: Array<{ key: string; label: str
 <div class="memo">
   <h1>{{company.name}}</h1>
   <div class="co">{{company.address}}</div>
-  <h2>${title.toUpperCase()}</h2>
+  <h2>${escape(title.toUpperCase())}</h2>
   <div class="mm-row"><span class="mm-l">Reference No.</span><span class="mm-v">{{number}}</span></div>
   <div class="mm-row"><span class="mm-l">Date Issued</span><span class="mm-v">{{today}}</span></div>
 ${rows}
   <div class="sig">
-    <div>Issued by (HR)</div>
-    <div>Received by (Employee)</div>
+    <div>Issued by</div>
+    <div>Received by</div>
   </div>
 </div>`;
 }
@@ -2845,7 +4462,7 @@ function seedCompanyHolidaysForm(): void {
     `INSERT INTO form_records (form_def_id, number, data, status) VALUES (?, ?, ?, 'approved')`
   );
   for (const [date, name, type] of seedRows) {
-    const number = nextSequence(`form_seq_${formId}`, 'HOL');
+    const number = nextFormRecordNumber('HOL');
     insertRecord.run(formId, number, JSON.stringify({ date, name, type }));
   }
 }
@@ -2857,21 +4474,19 @@ function seedTemplates(): void {
   const insert = db.prepare('INSERT INTO doc_templates (name, type, body) VALUES (?, ?, ?)');
   const hasType = (type: string) =>
     (db.prepare('SELECT COUNT(*) AS c FROM doc_templates WHERE type = ?').get(type) as { c: number }).c > 0;
-  if (!hasType('sale') && !hasType('job') && !hasType('purchase')) {
-    insert.run('Sale Order', 'sale', orderTemplateBody('SALES ORDER'));
-    insert.run('Job Order', 'job', orderTemplateBody('JOB ORDER'));
-    insert.run('Purchase Request', 'purchase', orderTemplateBody('PURCHASE REQUEST'));
-  }
-  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('HR Payroll Slip')) {
+  if(!hasType('sale'))insert.run('Sale Order','sale',orderTemplateBody('SALES ORDER'));
+  if(!hasType('job'))insert.run('Job Order','job',orderTemplateBody('JOB ORDER'));
+  if(!hasType('purchase'))insert.run('Purchase Request','purchase',orderTemplateBody('PURCHASE REQUEST'));
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('HR Payroll Slip') && !db.prepare("SELECT t.id FROM form_definitions f JOIN doc_templates t ON t.id=f.template_id WHERE f.slug='hr_payroll'").get()) {
     insert.run('HR Payroll Slip', 'generic', payrollSlipTemplateBody());
   }
-  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Employee ID Card')) {
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Employee ID Card') && !db.prepare("SELECT t.id FROM document_defaults d JOIN doc_templates t ON t.id=d.template_id WHERE d.key='employee_id'").get()) {
     insert.run('Employee ID Card', 'generic', employeeIdTemplateBody());
   }
-  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('BIR 2316')) {
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('BIR 2316') && !db.prepare("SELECT t.id FROM document_defaults d JOIN doc_templates t ON t.id=d.template_id WHERE d.key='bir_2316'").get()) {
     insert.run('BIR 2316', 'generic', bir2316TemplateBody());
   }
-  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Asset Issuance Form')) {
+  if (!db.prepare('SELECT id FROM doc_templates WHERE name = ?').get('Asset Issuance Form') && !db.prepare("SELECT t.id FROM document_defaults d JOIN doc_templates t ON t.id=d.template_id WHERE d.key='asset_issuance'").get()) {
     insert.run('Asset Issuance Form', 'generic', assetIssuanceTemplateBody());
   }
 }
@@ -2902,6 +4517,7 @@ function bir2316TemplateBody(): string {
   <div class="part">Part I &mdash; Employee</div>
   <div class="row"><span class="l">Name</span><span class="v">{{employee.name}}</span></div>
   <div class="row"><span class="l">TIN</span><span class="v">{{employee.tin_no}}</span></div>
+  <div class="row"><span class="l">Date of Birth (MM/DD/YYYY)</span><span class="v">{{employee.birth_date_mdy}}</span></div>
   <div class="row"><span class="l">Employee No.</span><span class="v">{{employee.employee_no}}</span></div>
   <div class="row"><span class="l">Position / Department</span><span class="v">{{employee.position}} / {{employee.department}}</span></div>
   <div class="row"><span class="l">SSS / PhilHealth / Pag-IBIG</span><span class="v">{{employee.sss_no}} / {{employee.philhealth_no}} / {{employee.pagibig_no}}</span></div>
@@ -3165,15 +4781,32 @@ function orderTemplateBody(title: string): string {
 </div>`;
 }
 
-/** How long the app-wide activity_log is kept. Rows older than this are swept on the
-    housekeeping timer; admins can still prune earlier by hand via DELETE /api/activity. */
-export const ACTIVITY_LOG_RETENTION_DAYS = 31;
+/** How long the app-wide activity_log (the audit trail) is kept: 5 years by default, the span
+    PH payroll and accounting records are kept for. Rows older than this are swept on the
+    housekeeping timer; nothing in the app can delete them sooner. ACTIVITY_LOG_RETENTION_DAYS
+    overrides it (never below 31). ~60 MB per busy company-year at current volumes. */
+export const ACTIVITY_LOG_RETENTION_DAYS = Math.max(31, Number(process.env.ACTIVITY_LOG_RETENTION_DAYS) || 1827);
+
+/** How long an ended or expired session row is kept as sign-in history (account "Where
+    you're signed in" / admin view). Live sessions are never swept. */
+export const SESSION_HISTORY_DAYS = 90;
 
 export function cleanupSessions(): void {
   // Runs on a timer, outside any request — sweep every open tenant connection.
   for (const slug of registry.keys()) {
     withTenant(slug, () => {
-      db.prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
+      // Expired-but-never-ended rows are stamped so history shows how they finished.
+      db.prepare(
+        "UPDATE sessions SET ended_at = expires_at, end_reason = 'expired' WHERE ended_at IS NULL AND expires_at < datetime('now')"
+      ).run();
+      db.prepare(
+        `UPDATE sessions SET ended_at = datetime('now'), end_reason = 'idle'
+         WHERE ended_at IS NULL AND idle_minutes IS NOT NULL
+           AND COALESCE(last_seen_at, created_at) < datetime('now', '-' || idle_minutes || ' minutes')`
+      ).run();
+      db.prepare(
+        `DELETE FROM sessions WHERE ended_at IS NOT NULL AND ended_at < datetime('now', '-${SESSION_HISTORY_DAYS} days')`
+      ).run();
       // Idempotency keys are only useful for as long as a client might still be retrying;
       // a week is far more than enough for a flaky-LAN offline queue.
       db.prepare("DELETE FROM idempotency_keys WHERE created_at < datetime('now', '-7 days')").run();
@@ -3188,6 +4821,31 @@ export function cleanupSessions(): void {
 
 export function newToken(): string {
   return crypto.randomBytes(32).toString('hex');
+}
+
+/** What is stored for a bearer token (sessions, platform_sessions): its SHA-256, prefixed so a
+ *  stored value can never be mistaken for — or presented as — a raw token. A copy of the
+ *  database then holds no usable sign-in. */
+export const TOKEN_DIGEST_PREFIX = 'h1:';
+export function tokenDigest(token: string): string {
+  return TOKEN_DIGEST_PREFIX + crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/** One-time, idempotent: sessions stored before tokens were hashed get their digest, so
+ *  everyone stays signed in across the upgrade. Rows already prefixed are skipped. */
+export function hashLegacySessionTokens(conn: DatabaseSync, table = 'sessions'): number {
+  const rows = conn.prepare(`SELECT rowid AS r, token FROM ${table} WHERE token NOT LIKE '${TOKEN_DIGEST_PREFIX}%'`).all() as Array<{ r: number; token: string }>;
+  if (!rows.length) return 0;
+  const update = conn.prepare(`UPDATE ${table} SET token = ? WHERE rowid = ?`);
+  conn.exec('BEGIN');
+  try {
+    for (const row of rows) update.run(tokenDigest(row.token), row.r);
+    conn.exec('COMMIT');
+  } catch (e) {
+    conn.exec('ROLLBACK');
+    throw e;
+  }
+  return rows.length;
 }
 
 function ensureUploadDir(): void {

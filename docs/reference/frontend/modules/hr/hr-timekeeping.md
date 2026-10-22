@@ -1,4 +1,22 @@
-# `public/js/views/hr-timekeeping.js`
+# `public/js/modules/hr/hr-timekeeping.js`
+
+## Desktop UX refinement (2026-10-09)
+
+- Cutoffs: separate heading/primary action, inline Calendar & tools disclosure, labeled local
+  search/year filters, result count, Reset/Clear filters, and retryable load failures.
+- Cutoff names are real buttons (keyboard-accessible); row clicking remains a convenience.
+  Delete buttons name the cutoff. Empty states distinguish no data from no matching results.
+- Rosters: separate Cutoff tools from the primary action, retain search/sort/group controls,
+  add Show filters and Reset, label row actions, and distinguish missing cutoffs from failed loads.
+- Cutoff/roster create, edit, import and removal controls require `hr.manage`; pay actions require
+  `payroll.manage`, and rates require `payroll.view`. The backend remains the authority.
+- Shared presentation uses scoped `hr-*` styles in `public/css/styles.css`, with current light/dark
+  theme tokens. Payroll-specific list refinements are in `modules/core/form-records.js`;
+  ordinary forms keep their original toolbar. API contracts and payroll calculations are unchanged.
+- Regression coverage: `tests/frontend-hr-ux.test.ts`. Verification results and limits: root `HANDOFF.md`.
+
+The historical function notes below are partial. In particular, current payslip generation computes
+attendance/pay automatically; it is not a blank manual-payroll initializer.
 
 ## Purpose
 Time Keeping: manage pay "cutoff" periods (`attendance_periods`) and, per cutoff, a roster of employees with a daily time-in/time-out grid (`attendance_records`). Also drives "Generate Payslips", which bulk-creates/updates records in the `hr_payroll` custom form so payroll can be filled in and printed via the existing Form Records flow. Route: `hr-timekeeping`.
@@ -56,7 +74,9 @@ Mirrors the `pickInventory()` picker pattern used in `orders.js`. Builds an `onR
 - `GET /users/departments/list` — department options for the Add Employee picker's filter.
 
 ## Permissions honored
-No `App.hasPermission` calls in this file — like `hr-employees.js`, every action is offered unconditionally in the UI, and enforcement is entirely server-side (`hr.view` read / `hr.manage` write on all `/api/hr/periods*` routes).
+`hr.view` gates the route; cutoff/roster mutations are offered to `hr.manage`, with payroll actions
+and pay rates separately gated by `payroll.manage` / `payroll.view`. Server-side permission checks
+remain mandatory; hiding a frontend control is never authorization.
 
 ## Dependencies
 - `App.register`, `App.navigate`.

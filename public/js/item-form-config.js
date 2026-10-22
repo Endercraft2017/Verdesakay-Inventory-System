@@ -36,12 +36,12 @@
    ============================================================================ */
 
 const ITEM_FORM_TABS = [
-  { id: 'default', label: 'Default' },
-  { id: 'info', label: 'Item Information' },
-  { id: 'qty', label: 'Qty' },
-  { id: 'price', label: 'Price' },
-  { id: 'cost', label: 'Cost' },
-  { id: 'additional', label: 'Additional Information' },
+  { id: 'default', label: 'Item details' },
+  { id: 'price', label: 'Pricing' },
+  { id: 'qty', label: 'Stock & location' },
+  { id: 'info', label: 'More details' },
+  { id: 'additional', label: 'Other information' },
+  { id: 'cost', label: 'Advanced costs' },
   { id: 'management', label: 'Management' },
 ];
 
@@ -87,13 +87,13 @@ const ITEM_FORM_DEFAULTS = [
   { key: 'bundle_item_status', label: 'Bundle Item Status', tab: 'default', section: 'manufacturing', type: 'radio', options: USE_NOUSE, default: 'Do Not Use', visible: false, required: false, help: 'Whether this item is a bundle made up of other items.' },
   { key: 'inv_qty_management', label: 'Inv. Quantity Management', tab: 'default', section: 'stock', type: 'radio', options: USE_NOUSE, default: 'Use', visible: false, required: false, help: 'Track stock quantity for this item. Turn off for non-stock items.' },
   { key: 'production_process', label: 'Production Process', tab: 'default', section: 'manufacturing', type: 'search', visible: false, required: false, placeholder: 'Production Proc', help: 'Production routing/process associated with this item.' },
-  { key: 'currency', label: 'Currency', tab: 'default', section: 'pricing', type: 'combobox', source: 'currencies', default: 'PHP', visible: true, required: false, placeholder: 'Type a code or name…', help: 'Currency for this item\'s purchase and sale prices. Type to search all ISO 4217 currencies.' },
-  { key: 'purchase_price', label: 'Purchase Price', tab: 'default', section: 'pricing', type: 'money', visible: true, required: false, placeholder: 'Purchase Price', help: 'Default price you pay to buy this item.' },
-  { key: 'purchase_price_tax_incl', label: 'Purchase Price — Tax Included', tab: 'default', section: 'tax', type: 'checkbox', default: false, visible: false, required: false, help: 'Tick if the purchase price already includes tax.' },
-  { key: 'sale_price', label: 'Sale Price', tab: 'default', section: 'pricing', type: 'money', visible: true, required: false, placeholder: 'Sale Price', help: 'Default price you sell this item for. Prefills the price when this item is added to an order.' },
-  { key: 'unit_cost', label: 'Standard Cost', tab: 'default', section: 'pricing', type: 'money', core: true, default: 0, visible: true, required: false, placeholder: 'Standard Cost', help: 'Standard unit cost used to value this item as a raw material into Work in Process and as finished goods out of it when a job order posts to the general ledger (Accounting → Books). 0 until set.' },
-  { key: 'sale_price_tax_incl', label: 'Sale Price — Tax Included', tab: 'default', section: 'tax', type: 'checkbox', default: false, visible: false, required: false, help: 'Tick if the sale price already includes tax.' },
-  { key: 'quantity', label: 'Inventory Qty', tab: 'default', section: 'stock', type: 'number', core: true, default: 0, visible: true, required: false, help: 'Starting stock quantity recorded when the item is first created. Later changes go through Stock In/Out.' },
+  { key: 'currency', label: 'Currency', tab: 'price', section: 'pricing', type: 'combobox', source: 'currencies', default: 'PHP', visible: true, required: false, placeholder: 'Type a code or name…', help: 'Currency for this item\'s purchase and sale prices. Type to search all ISO 4217 currencies.' },
+  { key: 'purchase_price', label: 'Purchase Price', tab: 'price', section: 'pricing', type: 'money', visible: true, required: false, placeholder: 'Purchase Price', help: 'Default price you pay to buy this item.' },
+  { key: 'purchase_price_tax_incl', label: 'Purchase Price — Tax Included', tab: 'price', section: 'tax', type: 'checkbox', default: false, visible: false, required: false, help: 'Tick if the purchase price already includes tax.' },
+  { key: 'sale_price', label: 'Sale Price', tab: 'price', section: 'pricing', type: 'money', visible: true, required: false, placeholder: 'Sale Price', help: 'Default price you sell this item for. Prefills the price when this item is added to an order.' },
+  { key: 'unit_cost', label: 'Standard Cost', tab: 'price', section: 'pricing', type: 'money', core: true, default: 0, visible: true, required: false, placeholder: 'Standard Cost', help: 'Standard unit cost used to value this item as a raw material into Work in Process and as finished goods out of it when a job order posts to the general ledger (Accounting → Books). 0 until set.' },
+  { key: 'sale_price_tax_incl', label: 'Sale Price — Tax Included', tab: 'price', section: 'tax', type: 'checkbox', default: false, visible: false, required: false, help: 'Tick if the sale price already includes tax.' },
+  { key: 'quantity', label: 'Opening stock quantity', tab: 'qty', section: 'stock', type: 'number', core: true, default: 0, visible: true, required: false, help: 'Starting stock quantity recorded when the item is first created. Later changes go through Stock In/Out.' },
 
   // ---------------- Item Information ----------------
   { key: 'tax_rate_sales', label: 'Tax Rate (Sales)', tab: 'info', section: 'tax', type: 'percent', visible: false, required: false, placeholder: 'Tax Rate (Sales)', help: 'Tax percentage applied when selling this item.' },
@@ -128,12 +128,12 @@ const ITEM_FORM_DEFAULTS = [
   { key: 'cportal_min_so_unit', label: 'C-Portal Min. S/O Unit', tab: 'qty', section: 'customer-portal', type: 'select', options: USE_NOUSE, default: 'Do Not Use', visible: false, required: false, help: 'Unit used for the customer-portal minimum order quantity.' },
   { key: 'lead_time', label: 'Lead Time', tab: 'qty', section: 'purchasing', type: 'number', visible: false, required: false, placeholder: 'Lead Time', help: 'Days between ordering this item and receiving it.' },
   { key: 'min_purchase_qty', label: 'Min. Purchase Qty', tab: 'qty', section: 'purchasing', type: 'number', visible: false, required: false, placeholder: 'Min. Purchase Qty', help: 'Smallest quantity you can purchase at one time.' },
-  { key: 'vendor', label: 'Vendor (legacy free-text)', tab: 'qty', section: 'purchasing', type: 'search', visible: false, required: false, placeholder: 'Vendor', help: 'Superseded by the Supplier picker on the Default tab. Kept for items entered before the Suppliers registry existed.' },
+  { key: 'vendor', label: 'Vendor (legacy free-text)', tab: 'qty', section: 'purchasing', type: 'search', visible: false, required: false, placeholder: 'Vendor', help: 'Superseded by the Supplier picker on Item details. Kept for items entered before the Suppliers registry existed.' },
 
   // ---------------- Price — "Advanced pricing" (hidden until enabled) ----------------
-  // Currency lives on the Default tab beside the price fields; the rest below are
+  // Currency and everyday prices live above on this tab; the rest below are
   // channel/guardrail prices a bigger operation switches on as a group.
-  { key: 'base_sale_price', label: 'Base Sale Price', tab: 'price', section: 'advanced-pricing', type: 'money', visible: false, required: false, placeholder: 'Base Sale Price', help: 'Standard selling price before any discounts. Overlaps "Sale Price" on the Default tab.' },
+  { key: 'base_sale_price', label: 'Base Sale Price', tab: 'price', section: 'advanced-pricing', type: 'money', visible: false, required: false, placeholder: 'Base Sale Price', help: 'Standard selling price before any discounts. Overlaps the usual Sale Price on this tab.' },
   { key: 'min_sale_price', label: 'Minimum Sale Price', tab: 'price', section: 'advanced-pricing', type: 'money', visible: false, required: false, placeholder: 'Minimum Sale Price', help: 'Lowest price this item may be sold for — a guardrail for negotiated sales.' },
   { key: 'wholesale_price', label: 'Wholesale Price', tab: 'price', section: 'advanced-pricing', type: 'money', visible: false, required: false, placeholder: 'Wholesale Price', help: 'Price offered to wholesale customers.' },
 
@@ -149,7 +149,7 @@ const ITEM_FORM_DEFAULTS = [
   { key: 'std_oe_cost', label: 'Standard O/E Cost', tab: 'cost', section: 'standard-costing', type: 'money', default: '0.00', visible: false, required: false, help: 'Standard outsourcing / external cost per unit.' },
 
   // ---------------- Additional Information ----------------
-  { key: 'location', label: 'Location', tab: 'additional', section: 'stock', type: 'text', core: true, visible: true, required: false, placeholder: 'Location', help: 'Where the item is stored (shelf, bin, or warehouse).' },
+  { key: 'location', label: 'Legacy location note', tab: 'additional', section: 'stock', type: 'text', core: true, visible: true, required: false, placeholder: 'Old shelf or bin note', help: 'Descriptive note only. Use Starting-stock location and stock moves for counted warehouse, room, shelf or bin quantities.' },
   { key: 'manufacturer', label: 'Manufacturer', tab: 'additional', section: 'purchasing', type: 'text', visible: true, required: false, placeholder: 'Manufacturer', help: 'Company that makes this item.' },
   { key: 'model_no', label: 'Model No.', tab: 'additional', section: 'purchasing', type: 'text', visible: true, required: false, placeholder: 'Model No.', help: 'Manufacturer model or part number.' },
   { key: 'warranty_months', label: 'Warranty (months)', tab: 'additional', section: 'purchasing', type: 'number', visible: false, required: false, help: 'Warranty length in months.' },

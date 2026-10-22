@@ -16,6 +16,9 @@ export interface TestContext {
   app: Express;
   api: supertest.Agent;
   tmpDir: string;
+  /** Closes this test file's database handles so cleanup() can delete tmpDir (Windows refuses to
+      delete an open SQLite file, which used to leave every %TEMP%ds-test-* folder behind). */
+  closeDb?: () => void;
 }
 
 export async function setupApp(): Promise<TestContext> {
@@ -36,12 +39,14 @@ export async function setupApp(): Promise<TestContext> {
   platform._resetPlatformDb(); // drop any cached handle from a previous test file
   const { createApp } = await import('../src/app');
   const app = createApp();
-  return { app, api: supertest(app), tmpDir };
+  const closeDb = () => { db.closeAllConnections(); platform._resetPlatformDb(); };
+  return { app, api: supertest(app), tmpDir, closeDb };
 }
 
 export function cleanup(ctx: TestContext): void {
+  try { ctx.closeDb?.(); } catch { /* best effort */ }
   try {
-    fs.rmSync(ctx.tmpDir, { recursive: true, force: true });
+    fs.rmSync(ctx.tmpDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   } catch {
     /* best effort */
   }
@@ -73,13 +78,13 @@ export async function addSerializedUnits(
 ): Promise<number[]> {
   const ids: number[] = [];
   for (let i = 0; i < count; i++) {
-    const res = await api
+    // Identifier + the required photo travel together as one multipart request.
+    let req = api
       .post(`/api/job-orders/${jobOrderId}/units`)
       .set('Authorization', `Bearer ${token}`)
-      .send({
-        identifier: `${identifierPrefix}-${Date.now()}-${i}-${Math.floor(Math.random() * 1e6)}`,
-        ...(batchLabel ? { batch_label: batchLabel } : {}),
-      });
+      .field('identifier', `${identifierPrefix}-${Date.now()}-${i}-${Math.floor(Math.random() * 1e6)}`);
+    if (batchLabel) req = req.field('batch_label', batchLabel);
+    const res = await req.attach('image', Buffer.from('unit-photo'), 'unit.png');
     if (res.status !== 201) throw new Error(`Failed to add unit: ${JSON.stringify(res.body)}`);
     ids.push(res.body.id as number);
   }
@@ -93,7 +98,7 @@ export async function createEmployee(
   overrides: Record<string, unknown> = {}
 ): Promise<{ id: number; token: string; username: string; password: string }> {
   const username = (overrides.username as string) || 'emp' + Math.floor(Math.random() * 1e6);
-  const password = (overrides.password as string) || 'secret1';
+  const password = (overrides.password as string) || 'secret123';
   const res = await api
     .post('/api/users')
     .set('Authorization', `Bearer ${adminToken}`)
@@ -101,4 +106,28 @@ export async function createEmployee(
   if (res.status !== 201) throw new Error('Failed to create employee: ' + JSON.stringify(res.body));
   const token = await login(api, username, password);
   return { id: res.body.id, token, username, password };
+}
+
+/** A tiny stand-in selfie: JPEG start/end markers around a label, enough for the upload filter. */
+export function fakeJpeg(label = 'selfie'): Buffer {
+  return Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(label), Buffer.from([0xff, 0xd9])]);
+}
+
+/** A phone punch the way the app makes one (src/modules/hr/punch-holds.ts): scan (`body` is the
+ *  scan's { code?, location? }), then the selfie for `slot` -- by default the slot the Clock
+ *  screen highlights as next (GET /my-status next_slot; 'out' once the day is done). Returns the
+ *  scan's response when the scan is refused, otherwise the selfie's (the punch result). */
+export async function phonePunch(
+  api: supertest.Agent,
+  headers: Record<string, string>,
+  body: Record<string, unknown> = {},
+  slot?: 'in' | 'lunchOut' | 'lunchIn' | 'out'
+): Promise<supertest.Response> {
+  const scan = await api.post('/api/hr/clock/punch/scan').set(headers).send(body);
+  if (scan.status !== 200) return scan;
+  const pick = slot ?? (((await api.get('/api/hr/clock/my-status').set(headers)).body.next_slot as string | null) || 'out');
+  return api.post('/api/hr/clock/punch/selfie').set(headers)
+    .field('hold_id', String(scan.body.hold_id))
+    .field('slot', pick)
+    .attach('photo', fakeJpeg(), { filename: 'selfie.jpg', contentType: 'image/jpeg' });
 }

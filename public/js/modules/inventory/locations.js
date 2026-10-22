@@ -38,14 +38,16 @@ App.register('locations', async (view) => {
       <table>
         <thead><tr>
           <th>Location</th><th>Type</th><th>Address</th>
-          <th class="right">Units</th><th class="right">Items</th><th></th>
+          <th class="right">Units here</th><th class="right">All levels</th><th class="right">Capacity here</th><th class="right">Items here</th><th></th>
         </tr></thead>
         <tbody>${all.map((l) => `
           <tr class="clickable" data-open="${l.id}">
-            <td><strong>${UI.esc(l.name)}</strong> ${l.is_default ? '<span class="badge-pill ok">default</span>' : ''}</td>
+            <td><strong>${UI.esc(l.path || l.name)}</strong> ${l.is_default ? '<span class="badge-pill ok">default</span>' : ''}</td>
             <td style="text-transform:capitalize">${UI.esc(l.type)}</td>
             <td>${UI.esc(l.address || '—')}</td>
             <td class="right">${l.total_units || 0}</td>
+            <td class="right">${l.subtree_units ?? l.total_units ?? 0}</td>
+            <td class="right">${l.capacity ? `<span class="${(l.total_units || 0) >= l.capacity ? 'danger' : 'muted'}">${l.capacity}${(l.total_units || 0) >= l.capacity ? ' · full' : ''}</span>` : '<span class="muted">—</span>'}</td>
             <td class="right">${l.item_count || 0}</td>
             <td class="actions">
               ${canWrite ? `
@@ -72,18 +74,26 @@ App.register('locations', async (view) => {
     });
   }
 
-  function locationModal(l) {
+  async function locationModal(l) {
+    const choices = await API.get('/locations');
+    const parents = choices.filter((p) => p.id !== l?.id && !(l && p.path && p.path.startsWith((l.path || l.name) + ' / ')));
     const typeOpts = TYPES.map((t) =>
       `<option value="${t}" ${l && l.type === t ? 'selected' : ''}>${t[0].toUpperCase() + t.slice(1)}</option>`).join('');
-    UI.modal({
+    const modal = UI.modal({
       title: l ? 'Edit location' : 'New location',
       bodyHTML: `<div class="form-grid">
         <div class="form-field span2"><div class="field-label"><label>Name <span class="req">*</span></label></div>
           <input data-f="name" value="${UI.esc(l ? l.name : '')}" /></div>
+        <div class="form-field span2"><button type="button" class="btn secondary small" data-add-parent style="${l?.parent_id ? 'display:none' : ''}">+ Add under a location</button>
+          <div data-parent-wrap style="${l?.parent_id ? '' : 'display:none'}"><label for="loc-parent">Parent location (optional)</label>
+            <select id="loc-parent" data-f="parent_id"><option value="">Top level</option>${parents.map((p) => `<option value="${p.id}" ${l?.parent_id === p.id ? 'selected' : ''}>${UI.esc(p.path || p.name)}</option>`).join('')}</select>
+            <p class="muted" style="font-size:12px">Up to five levels. Stock is counted at the selected location.</p></div></div>
         <div class="form-field"><div class="field-label"><label>Type</label></div>
           <select data-f="type">${typeOpts}</select></div>
         <div class="form-field inline"><label class="check-opt">
           <input type="checkbox" data-f="is_default" ${l && l.is_default ? 'checked' : ''} /> Default location</label></div>
+        <div class="form-field"><div class="field-label"><label>Capacity (units)</label></div>
+          <input data-f="capacity" type="number" min="1" step="1" placeholder="No limit" value="${l && l.capacity ? l.capacity : ''}" /></div>
         <div class="form-field span2"><div class="field-label"><label>Address</label></div>
           <input data-f="address" value="${UI.esc(l && l.address || '')}" /></div>
         <div class="form-field span2"><div class="field-label"><label>Notes</label></div>
@@ -94,8 +104,11 @@ App.register('locations', async (view) => {
         const g = (k) => overlay.querySelector(`[data-f="${k}"]`);
         const body = {
           name: g('name').value.trim(), type: g('type').value,
+          parent_id: g('parent_id').value ? Number(g('parent_id').value) : null,
           address: g('address').value.trim(), notes: g('notes').value.trim(),
           is_default: g('is_default').checked,
+          // Ready-to-sell posting refuses what wouldn't fit; empty = no limit.
+          capacity: g('capacity').value.trim() ? Number(g('capacity').value) : null,
         };
         if (!body.name) { showErr('Name is required'); return false; }
         if (l) await API.put('/locations/' + l.id, body);
@@ -103,6 +116,11 @@ App.register('locations', async (view) => {
         UI.toast(l ? 'Location updated' : 'Location created');
         load();
       },
+    });
+    modal.overlay.querySelector('[data-add-parent]')?.addEventListener('click', (event) => {
+      event.currentTarget.style.display = 'none';
+      modal.overlay.querySelector('[data-parent-wrap]').style.display = '';
+      modal.overlay.querySelector('[data-f="parent_id"]').focus();
     });
   }
 
@@ -116,12 +134,14 @@ App.register('locations', async (view) => {
       confirmText: canWrite ? 'Edit location' : null,
       onConfirm: canWrite ? () => locationModal(l) : undefined,
       bodyHTML: `
-        <h3 style="margin:0 0 4px">${UI.esc(l.name)} ${l.is_default ? '<span class="badge-pill ok">default</span>' : ''}</h3>
+        <h3 style="margin:0 0 4px">${UI.esc(l.path || l.name)} ${l.is_default ? '<span class="badge-pill ok">default</span>' : ''}</h3>
         <div class="kv" style="margin-top:12px">
           <div><span class="muted">Type</span><div style="text-transform:capitalize">${UI.esc(l.type)}</div></div>
           <div><span class="muted">Address</span><div>${UI.esc(l.address || '—')}</div></div>
-          <div><span class="muted">Total units</span><div>${l.total_units || 0}</div></div>
-          <div><span class="muted">Items held</span><div>${l.item_count || 0}</div></div>
+          <div><span class="muted">Units here</span><div>${l.total_units || 0}</div></div>
+          <div><span class="muted">Units at all levels</span><div>${l.subtree_units ?? l.total_units ?? 0}</div></div>
+          <div><span class="muted">Items here</span><div>${l.item_count || 0}</div></div>
+          <div><span class="muted">Distinct items at all levels</span><div>${l.subtree_item_count ?? l.item_count ?? 0}</div></div>
         </div>
         ${l.notes ? `<h4 style="margin:14px 0 4px">Notes</h4><p style="white-space:pre-wrap;margin:0">${UI.esc(l.notes)}</p>` : ''}
         <h4 style="margin:16px 0 4px">Stock here (${items.length})</h4>

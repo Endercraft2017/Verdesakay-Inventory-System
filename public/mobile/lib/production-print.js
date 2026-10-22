@@ -6,7 +6,7 @@
    index.html) and the same qr_src/{{code}}/{{sub}} convention as
    public/js/modules/manufacturing/finished-products.js's labelContext(), so a unit printed
    from a phone looks identical to one printed from the desktop. The QR encodes the unit's
-   plain identifier (never a URL) — scanning it anywhere in the app (mobile/lib/scanner.js +
+   immutable VDS:UNIT:<id> or VDS:BATCH:<id> identity (never a URL) — scanning it anywhere in the app (mobile/lib/scanner.js +
    inventory/lookup) already resolves back to this unit and offers "Open production record",
    same as every other QR/barcode in this app. */
 (function () {
@@ -31,7 +31,7 @@
     return {
       product: { name: p.name || '', sku: p.sku || '', model: p.model || '', variant: p.variant || '' },
       code: code, sub: subParts.join(' · '), batch: {},
-      qr_src: qrDataUrl(code),
+      qr_src: qrDataUrl('VDS:UNIT:' + u.id),
       date: u.created_at ? String(u.created_at).slice(0, 10) : new Date().toISOString().slice(0, 10),
     };
   }
@@ -49,12 +49,23 @@
     '.lbl-sub{color:#888;font-size:7.5pt}' +
     '@media print{.lbl{border-color:#999}}';
 
+  /* Print once the sheet's QR images have loaded — triggered from here, because a <script>
+     inside the written pop-up would be blocked by the Content-Security-Policy it inherits
+     (same as UI.printWhenLoaded on desktop). */
+  function printWhenLoaded(w) {
+    var done = false;
+    var go = function () { if (done) return; done = true; try { w.focus(); w.print(); } catch (e) { /* closed */ } };
+    if (w.document.readyState === 'complete') setTimeout(go, 50);
+    else { w.addEventListener('load', go, { once: true }); setTimeout(go, 1500); }
+  }
+
   function openSheet(title, cells) {
     var w = window.open('', '_blank');
     if (!w) { mToast('Allow pop-ups to open the print sheet', 'err'); return false; }
     w.document.write('<!doctype html><html><head><title>' + mEsc(title) + '</title><style>' + SHEET_CSS + '</style></head>' +
-      '<body><div class="sheet">' + cells.join('') + '</div><script>window.onload=function(){window.print()}<\/script></body></html>');
+      '<body><div class="sheet">' + cells.join('') + '</div></body></html>');
     w.document.close();
+    printWhenLoaded(w);
     return true;
   }
 
@@ -62,8 +73,9 @@
       using the same editable template as desktop. Returns a Promise<boolean>. */
   function printUnitRecords(dossiers) {
     if (!window.renderTemplate) { mToast('Label renderer failed to load', 'err'); return Promise.resolve(false); }
-    return API.get('/production/label-templates').catch(function () { return {}; }).then(function (tpl) {
-      var body = tpl.unit || '';
+    return API.get('/production/label-templates').then(function (tpl) {
+      if (!tpl.unit || !tpl.unit.trim()) throw new Error('Unit label template unavailable');
+      var body = tpl.unit;
       var cells = dossiers.map(function (d) {
         return '<div class="lbl">' + window.renderTemplate(body, unitLabelContext(d)) + '</div>';
       });
@@ -73,5 +85,21 @@
     });
   }
 
-  window.mProductionPrint = { qrDataUrl: qrDataUrl, unitLabelContext: unitLabelContext, printUnitRecords: printUnitRecords };
+  function batchLabelContext(d) {
+    var b = d.batch, p = d.product || {}, jo = d.job_order || {};
+    return {
+      product: { name: p.name || jo.product_name || '', sku: p.sku || '', variant: p.variant || '' },
+      batch: b, code: b.number, sub: b.identifier || '', qr_src: qrDataUrl('VDS:BATCH:' + b.id),
+      date: String(b.created_at || '').slice(0, 10),
+    };
+  }
+  function printBatchRecord(d) {
+    if (!window.renderTemplate) return Promise.reject(new Error('Label renderer failed to load'));
+    return API.get('/production/label-templates').then(function (tpl) {
+      if (!tpl.batch) throw new Error('Batch label template unavailable');
+      return openSheet('Batch label', ['<div class="lbl">' + window.renderTemplate(tpl.batch, batchLabelContext(d)) + '</div>']);
+    });
+  }
+
+  window.mProductionPrint = { qrDataUrl: qrDataUrl, unitLabelContext: unitLabelContext, batchLabelContext: batchLabelContext, printUnitRecords: printUnitRecords, printBatchRecord: printBatchRecord };
 })();

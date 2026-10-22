@@ -4,6 +4,7 @@
  *  `bug_reports` / `bug_report_attachments`. Mounted at /api/bug-reports. */
 import path from 'node:path';
 import fs from 'node:fs';
+import { storeDurableUpload, resolveDurableUploadAsync } from '../shared/durable-uploads';
 import crypto from 'node:crypto';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
@@ -12,6 +13,8 @@ import { requireAuth, requirePermission } from '../shared/auth';
 import { parseBody, createBugReportSchema, updateBugReportSchema } from '../shared/validation';
 import { enforceQuota } from '../platform/quota';
 import type { BugReport } from '../shared/types';
+import { syncClass } from '../sync';
+import { syncUpload } from '../sync/files';
 
 const router = Router();
 router.use(requireAuth);
@@ -85,22 +88,22 @@ router.get('/:id', requirePermission('users.manage'), (req, res) => {
 });
 
 // GET /api/bug-reports/:id/screenshots/:attId — stream a screenshot, admin only
-router.get('/:id/screenshots/:attId', requirePermission('users.manage'), (req, res) => {
+router.get('/:id/screenshots/:attId', requirePermission('users.manage'), async (req, res) => {
   const att = queryOne<{ stored_name: string; original_name: string; mime_type: string | null }>(
     'SELECT stored_name, original_name, mime_type FROM bug_report_attachments WHERE id = ? AND bug_report_id = ?',
     Number(req.params.attId),
     Number(req.params.id)
   );
   if (!att) { res.status(404).json({ error: 'Screenshot not found' }); return; }
-  const filePath = path.join(uploadDir(), att.stored_name);
-  if (!fs.existsSync(filePath)) { res.status(410).json({ error: 'File is missing on disk' }); return; }
+  const filePath = await resolveDurableUploadAsync(att.stored_name);
+  if (!filePath) { res.status(410).json({ error: 'File is no longer available' }); return; }
   if (att.mime_type) res.type(att.mime_type);
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(att.original_name)}"`);
   res.sendFile(filePath);
 });
 
 // POST /api/bug-reports — file a report; any signed-in user; up to 5 screenshots (field `screenshots`)
-router.post('/', upload.array('screenshots', MAX_SCREENSHOTS), (req, res) => {
+router.post('/', syncClass('merge'), syncUpload(upload.array('screenshots', MAX_SCREENSHOTS)), (req, res) => {
   const files = (req.files as Express.Multer.File[]) || [];
   let parsed: { title: string; steps_to_reproduce: string; description?: string | null; page_context?: string | null };
   try {
@@ -112,7 +115,7 @@ router.post('/', upload.array('screenshots', MAX_SCREENSHOTS), (req, res) => {
   const addingBytes = files.reduce((sum, f) => sum + f.size, 0);
   if (addingBytes > 0) {
     try {
-      enforceQuota('storage_mb', addingBytes);
+      enforceQuota('storage_mb');
     } catch (e) {
       unlinkAll(files);
       throw e;
@@ -136,12 +139,13 @@ router.post('/', upload.array('screenshots', MAX_SCREENSHOTS), (req, res) => {
       f.mimetype,
       f.size
     );
+    storeDurableUpload(f.filename);
   }
   res.status(201).json({ id: reportId, screenshots: files.length });
 });
 
 // PUT /api/bug-reports/:id — mark open/resolved, admin only
-router.put('/:id', requirePermission('users.manage'), (req, res) => {
+router.put('/:id', requirePermission('users.manage'), syncClass('claim'), (req, res) => {
   const input = parseBody(updateBugReportSchema, req.body);
   const id = Number(req.params.id);
   const info =

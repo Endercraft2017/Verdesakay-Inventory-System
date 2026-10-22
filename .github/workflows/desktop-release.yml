@@ -1,0 +1,55 @@
+# Build the Windows desktop installer and attach it to a DRAFT GitHub Release
+# (docs/OFFLINE-FIRST.md §17). Nothing is published until someone reviews the draft and clicks
+# "Publish release" on GitHub — the app is still in progress.
+#
+# Trigger: push a tag like `desktop-v1.0.0` (match it to "version" in package.json), or run it by
+# hand from the Actions tab. Signing: set the repository secrets DESKTOP_CSC_LINK (base64 of the
+# .pfx from `npm run desktop:cert`) and DESKTOP_CSC_KEY_PASSWORD; without them the installer is
+# unsigned. D7 TODO: a real code-signing certificate before installing at customers.
+name: Desktop release
+
+on:
+  push:
+    tags: ['desktop-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Smoke-test the desktop app
+        run: npm run desktop:smoke
+      - name: Build the installer
+        run: npx electron-builder --win nsis --publish never
+        env:
+          CSC_LINK: ${{ secrets.DESKTOP_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.DESKTOP_CSC_KEY_PASSWORD }}
+      - name: Keep the installer as a run artifact (manual runs)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: verdesakay-desktop-installer
+          path: dist-desktop/*.exe
+          retention-days: 14
+      - name: Attach it to a draft release (tag pushes)
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          prerelease: true
+          name: Verdesakay desktop ${{ github.ref_name }}
+          body: |
+            Draft build of the Verdesakay desktop app (work in progress — not for customers yet).
+            Unsigned unless the signing secrets are set. Install by copying the .exe to the PC; if
+            Windows warns, right-click → Properties → Unblock (decision D7).
+          files: dist-desktop/*.exe
