@@ -1,6 +1,10 @@
-# Inventory and production: mobile integration gaps
+# Mobile inventory, production, and Sales handoff
 
-## Mobile implementation status — candidate v139 (2026-10-20)
+Read **Mobile implementation status** for the current branch. The older
+requirements and test notes further down are retained for traceability; some
+of their requested screens have since been implemented.
+
+## Mobile implementation status — candidate v139 (updated 2026-10-22)
 
 The new requirements below have been integrated on
 `restructure/module-architecture` after upstream `0400314`. Their original
@@ -43,8 +47,14 @@ Validation includes 192 focused Vitest checks, TypeScript checking, and real
 local-backend Playwright suites for Work/Sales, internal PRs, Work guides and
 legacy intake through QR/RTS. Detailed evidence and scope are recorded in
 `docs/reviews/mobile-attention-validation.md`. Physical phone/printer and site-PC
-installation checks are still separate acceptance work; no deployment or push
-is claimed by this update.
+installation checks are still separate acceptance work. This branch status
+does not establish that the candidate is deployed.
+
+## Historical requirements and prior test notes
+
+The dated sections below preserve the original handoff and earlier verification.
+Read the current implementation status above before treating an item below as
+unfinished work.
 
 ## Sales ownership, warehouse tracking, and subassembly builds (2026-10-20)
 
