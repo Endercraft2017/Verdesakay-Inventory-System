@@ -54,6 +54,16 @@ try {
   await page.locator('[data-pp-group]').selectOption('orders');
   await page.locator('.toast').waitFor({ state: 'detached' });
   await page.screenshot({ path: path.join(output, 'desktop.png') });
+  await page.locator('[data-pp-details]').check();
+  assert.equal(await page.locator('[data-pp-key="orders.create"]').locator('..').locator('..').locator('.pp-description').isVisible(), true);
+  await page.locator('[data-pp-key="orders.delete"]').locator('..').locator('..').locator('.pp-text').click();
+  assert.equal(await page.locator('[data-pp-key="orders.delete"]').isChecked(), true);
+  await page.locator('[data-pp-show="off"]').click();
+  assert.equal(await page.locator('[data-pp-key="orders.delete"]').count(), 0);
+  await page.screenshot({ path: path.join(output, 'permission-explanations.png') });
+  await page.locator('[data-pp-show="all"]').click();
+  await page.locator('[data-pp-details]').uncheck();
+  await page.locator('#perm-reset').click();
   console.log('PASS desktop grouping, hover, keyboard help, focus preservation, and toolbar scrolling');
 
   for (const viewport of [{ width: 390, height: 844 }, { width: 360, height: 640 }]) {
@@ -84,6 +94,53 @@ try {
     }
   }
   console.log('PASS account and role editors at 390px and 360px: tap help, visible footer, usable list, no horizontal overflow');
+  await page.locator('.drawer-access.open [data-close]').click();
+  await page.locator('.drawer-access').waitFor({ state: 'detached' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.evaluate(() => App.navigate('admin'));
+  await page.locator('#add-user').click();
+  const modal = page.locator('.modal-overlay').last();
+  await modal.locator('[data-f="full_name"]').fill('Unsaved role selection');
+  const choose = modal.locator('.role-picker-trigger');
+  await choose.click();
+  const search = modal.getByRole('searchbox', { name: 'Find a role' });
+  await search.fill('inventory.receive');
+  await modal.locator('[data-role-choice="warehouse"]').waitFor();
+  await search.fill('csr');
+  // Normal buttons support keyboard selection without committing the account form.
+  await modal.locator('[data-role-choice="csr"]').focus(); await page.keyboard.press('Enter');
+  assert.equal(await modal.locator('[data-f="role"]').inputValue(), 'csr');
+  assert.equal(await choose.getAttribute('aria-expanded'), 'false');
+  assert.equal(await choose.evaluate(el => el === document.activeElement), true);
+  await modal.locator('.role-preview summary').click();
+  assert.match(await modal.locator('.role-preview-groups').textContent(), /Create orders/);
+  assert.doesNotMatch(await modal.locator('.role-preview-groups').textContent(), /Administer roles and permissions/);
+  await choose.click(); await search.fill('no matching role here');
+  await modal.locator('[data-role-clear]').click();
+  assert.equal(await modal.locator('[data-role-choice]').count(), await modal.locator('[data-f="role"] option').count());
+  await search.focus(); await page.keyboard.press('Escape');
+  assert.equal(await modal.count(), 1); assert.equal(await modal.locator('[data-f="role"]').inputValue(), 'csr');
+  assert.equal(await modal.locator('[data-f="full_name"]').inputValue(), 'Unsaved role selection');
+  await page.screenshot({ path: path.join(output, 'role-preview-desktop.png') });
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate(theme => document.documentElement.setAttribute('data-theme', theme), theme);
+    await page.setViewportSize({ width: 360, height: 640 });
+    await choose.tap(); await search.fill('csr');
+    await modal.locator('[data-role-choice="csr_supervisor"]').scrollIntoViewIfNeeded();
+    assert.equal(await modal.evaluate(el => el.scrollWidth > el.clientWidth), false);
+    assert.equal(await modal.locator('.role-picker-results').evaluate(el => el.scrollWidth > el.clientWidth), false);
+    await page.screenshot({ path: path.join(output, `role-choice-360-${theme}.png`) });
+    await modal.locator('[data-role-choice="csr_supervisor"]').tap();
+    assert.equal(await modal.locator('[data-f="role"]').inputValue(), 'csr_supervisor');
+    const foot = await modal.locator('.modal-foot').boundingBox(); assert(foot.y + foot.height <= 641);
+  }
+  page.once('dialog', dialog => dialog.accept()); // Explicitly discard this synthetic account draft.
+  await modal.locator('.modal-head [data-close]').click();
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.locator(`tr[data-open="${user.id}"] td`).first().click();
+  await page.locator('#edit-perm-btn').waitFor();
+  assert.equal(await page.locator('[data-f="role"]').inputValue(), 'csr');
+  console.log('PASS searchable role choice, permission preview, keyboard selection, Escape preserving account drafts, touch/light/dark layout; role browsing makes no account changes');
   assert.deepEqual(errors, []);
 } finally {
   await browser?.close(); server.kill('SIGTERM'); clearTimeout(watchdog);

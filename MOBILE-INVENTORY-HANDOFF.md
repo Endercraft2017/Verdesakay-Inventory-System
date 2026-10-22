@@ -4,6 +4,17 @@ Read **Mobile implementation status** for the current branch. The older
 requirements and test notes further down are retained for traceability; some
 of their requested screens have since been implemented.
 
+## Home preview branch integration — cache v142 (2026-10-22)
+
+Integrated upstream through `ba6ea1d`, preserving its timekeeping, permission-editor
+and repository-skill changes alongside the Home preview. Both CSS additions are
+retained. The combined mobile shell uses cache v142 because upstream and the Home
+candidate independently used v141. The merged branch passed all 14 focused Home
+Playwright scenarios again, TypeScript checking, and 64 focused frontend tests.
+Merged-run traces, screenshots and network evidence remain local under
+`work/home-preview-verification/merged/`. These checks do not establish deployment
+or physical-device acceptance.
+
 ## Home preview Playwright re-verification (2026-10-22)
 
 Fresh disposable DB/API/browser verification passed 14 scenarios, with separate

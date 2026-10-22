@@ -703,6 +703,30 @@ tr.tk-incomplete input, tr.tk-incomplete select { border-color: var(--warn); }
 /* The AI bubble (z-index 120) sits over a drawer's footer buttons — step it aside while one is open. */
 body:has(.drawer.open) .ai-fab { opacity: 0; pointer-events: none; }
 .role-hint { font-size: 12px; margin: 6px 0 0; min-height: 1em; }
+.role-picker { min-width: 0; }
+.role-picker-trigger { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 42px; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.role-picker-trigger span { overflow-wrap: anywhere; }
+.role-picker-trigger:disabled { opacity: .6; cursor: not-allowed; }
+.role-picker-panel { margin-top: 8px; padding: 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-2); }
+.role-picker-panel[hidden] { display: none; }
+.role-picker-panel .search-box input { min-width: 0; width: 100%; }
+.role-picker-count { margin: 8px 0; color: var(--text-muted); font-size: 11px; }
+.role-picker-results { max-height: 230px; overflow: auto; overscroll-behavior: contain; }
+.role-picker-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px; border: 1px solid transparent; border-radius: 8px; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.role-picker-option small { display: block; margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--text-muted); overflow-wrap: anywhere; }
+.role-picker-option .role-picker-meta { font-size: 11px; color: var(--accent); }
+.role-picker-option:hover { background: var(--surface); }
+.role-picker-option[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-weak); }
+.role-picker-mark { flex-shrink: 0; color: var(--accent); }
+.role-picker-trigger:focus-visible, .role-picker-option:focus-visible, .role-preview summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.role-picker-empty { margin: 8px 0; font-size: 13px; color: var(--text-muted); }
+.role-preview { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: 12px; }
+.role-preview-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.role-preview p { margin: 6px 0; line-height: 1.6; color: var(--text-muted); }
+.role-preview .role-preview-trust { color: var(--text); }
+.role-preview summary { padding: 6px 0; color: var(--accent); cursor: pointer; }
+.role-preview-groups { max-height: 210px; overflow: auto; margin-top: 6px; }
+.role-preview-groups > div { border-top: 1px solid var(--border); padding: 10px 0; }
 .pp-rolecard {
   margin: 12px 0; padding: 10px 12px; border: 1px solid var(--border);
   border-radius: var(--radius-sm); background: var(--surface-2); font-size: 13px;
@@ -719,6 +743,16 @@ body:has(.drawer.open) .ai-fab { opacity: 0; pointer-events: none; }
 .pp-overview select { width: auto; max-width: 100%; font-size: 12px; padding: 7px 28px 7px 9px; }
 .pp-summary { font-size: 12px; color: var(--text-muted); }
 .pp-hint { flex-shrink: 0; font-size: 11.5px; color: var(--text-muted); margin: 8px 0 12px; }
+.pp-helpbar { display: flex; flex-shrink: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin: 8px 0 10px; }
+.pp-helpbar .pp-hint { margin: 0; }
+.pp-details-toggle { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text-muted); font-size: 11.5px; font-weight: 400; white-space: nowrap; cursor: pointer; }
+.pp-details-toggle input { width: 14px; height: 14px; flex: 0 0 14px; margin: 0; accent-color: var(--accent); }
+.pp-description { display: none; margin: 5px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.pp-description span { display: block; margin-top: 4px; font-size: 11px; }
+.pp-show-details .pp-description { display: block; }
+.pp-state { min-width: 20px; font-size: 11px; color: var(--text-muted); }
+.pp-row.is-on .pp-state { color: var(--accent); font-weight: 600; }
+.pp-clear { display: block; margin: 0 auto 16px; }
 .pp-summary .pp-added { color: var(--success); }
 .pp-summary .pp-removed { color: var(--danger); }
 .pp-group { border: 1px solid var(--border); border-radius: var(--radius-sm); margin-bottom: 10px; overflow: hidden; }
@@ -736,7 +770,8 @@ body:has(.drawer.open) .ai-fab { opacity: 0; pointer-events: none; }
 .pp-row.is-added { box-shadow: inset 3px 0 0 var(--success); }
 .pp-row.is-removed { box-shadow: inset 3px 0 0 var(--danger); }
 .pp-row.is-locked .pp-text { opacity: 0.65; }
-.pp-text { flex: 1; min-width: 0; }
+.pp-text { flex: 1; min-width: 0; margin: 0; cursor: pointer; }
+.pp-row.is-locked .pp-text { cursor: not-allowed; }
 .pp-label { font-size: 13px; font-weight: 600; color: var(--text); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pp-row:not(.is-on) .pp-label { font-weight: 500; color: var(--text-muted); }
 .pp-tag { font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; }
@@ -763,6 +798,7 @@ body:has(.drawer.open) .ai-fab { opacity: 0; pointer-events: none; }
   .pp-row { gap: 8px; padding: 10px; }
   .pp-row .help-icon { width: 32px; height: 32px; }
   .pp-search { flex-basis: 100%; }
+  .pp-seg button { min-height: 34px; }
 }
 
 /* ---------- Context menu ---------- */

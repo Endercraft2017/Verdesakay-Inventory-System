@@ -154,11 +154,13 @@ App.register('hr-employees', async (view, filter) => {
           <div><label>Base role *</label><select id="na-role">${roleOpts}</select></div>
           <div><label>Department</label><select id="na-dept">${deptOpts}</select></div>
         </div>
+        <div data-role-preview></div>
         <div style="margin-top:10px"><label>Email <span class="muted">(for password resets)</span></label>
           <input id="na-email" type="email" placeholder="name@company.com" /></div>
         <div style="margin-top:10px"><label>Temporary password *</label><input id="na-pw" class="mono" value="${tempPassword()}" /></div>
         <p class="muted" style="font-size:12px">Share this with the employee; they can change it under My Account. The account is created and linked to the saved employee immediately. Cancel does not undo account creation. Need more access than one role gives? Add it afterwards with the <strong>Access</strong> button next to the linked account.</p>`,
       confirmText: 'Create account',
+      onOpen: (ov) => AccessEditor.enhanceRoleSelect(ov.querySelector('#na-role'), catalog, ov.querySelector('[data-role-preview]')),
       onConfirm: async (ov, showErr) => {
         const val = (id) => ov.querySelector(id).value.trim();
         const body = {

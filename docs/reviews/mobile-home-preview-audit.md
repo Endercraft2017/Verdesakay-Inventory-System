@@ -139,3 +139,14 @@ The 12-second deadline bounds UI reads; it does not cancel an already sent HTTP
 request. Its late result is ignored. Pending figures are refreshed snapshots, not
 stock reservations or a promise that another employee cannot act meanwhile; the
 detail and destination workflow must continue to verify current state.
+
+## Branch integration verification
+
+Before the requested push, upstream through `ba6ea1d` was merged. The appended
+Home and timekeeping CSS were both retained, and the shared shell cache was
+advanced to v142 to distinguish the combined assets from both v141 candidates.
+All 14 focused Home Playwright scenarios passed again against the merged tree;
+TypeScript and 64 focused frontend tests also passed. Merged-run evidence is in
+`work/home-preview-verification/merged/`. Imported vendor skill files contain
+upstream whitespace warnings; application and documentation diffs pass whitespace
+checking. No vendor files were rewritten.

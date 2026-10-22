@@ -183,16 +183,98 @@ window.AccessEditor = (() => {
 
   function roleOf(catalog, key) { return (catalog.roles || []).find((r) => r.key === key) || null; }
 
+  /** Enhance an existing select without changing its options or submitted value. The native
+      control remains the source of truth, including for callers that disable it. */
+  let rolePickerId = 0;
+  function enhanceRoleSelect(select, catalog, preview) {
+    const id = `role-choices-${++rolePickerId}`;
+    const host = document.createElement('div');
+    host.className = 'role-picker';
+    host.innerHTML = `
+      <button type="button" class="role-picker-trigger" aria-label="Choose role" aria-expanded="false" aria-controls="${id}"></button>
+      <div class="role-picker-panel" id="${id}" hidden>
+        <div class="search-box">${UI.icon('search', 15)}<input type="search" data-role-query aria-label="Find a role" placeholder="Search roles or permissions…" /></div>
+        <p class="role-picker-count" role="status" aria-live="polite"></p>
+        <div class="role-picker-results" role="group" aria-label="Available roles"></div>
+      </div>`;
+    select.after(host);
+    select.hidden = true;
+    const trigger = host.querySelector('.role-picker-trigger');
+    const panel = host.querySelector('.role-picker-panel');
+    const query = host.querySelector('[data-role-query]');
+    const results = host.querySelector('.role-picker-results');
+    const available = () => [...select.options].map((option) => ({ option, role: roleOf(catalog, option.value) })).filter((x) => x.role && !x.option.disabled);
+    function close() { panel.hidden = true; trigger.setAttribute('aria-expanded', 'false'); }
+    function render() {
+      const words = query.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const roles = available();
+      const shown = roles.filter(({ role }) => {
+        const keys = new Set(role.permissions || []);
+        const hay = [role.key, role.label, role.description, ...(catalog.groups || []).flatMap((g) => g.items.filter((i) => role.fixed || keys.has(i.key)).map((i) => `${g.label} ${i.label} ${i.key}`))].join(' ').toLowerCase();
+        return words.every((word) => hay.includes(word));
+      });
+      host.querySelector('.role-picker-count').textContent = `${shown.length} of ${roles.length} roles`;
+      results.innerHTML = shown.map(({ role: r }) => `<button type="button" class="role-picker-option" data-role-choice="${UI.esc(r.key)}" aria-pressed="${r.key === select.value}">
+        <span><strong>${UI.esc(r.label)}</strong><small>${UI.esc(r.description || roleSummary(catalog, r.key))}</small><small class="role-picker-meta">${r.fixed ? 'Every permission' : `${(r.permissions || []).length} permissions`}</small></span>
+        <span class="role-picker-mark" aria-hidden="true">${r.key === select.value ? '✓' : '→'}</span>
+      </button>`).join('') || '<p class="role-picker-empty">No matching roles.</p><button type="button" class="btn secondary small" data-role-clear>Clear search</button>';
+    }
+    function paint() {
+      const r = roleOf(catalog, select.value);
+      trigger.disabled = select.disabled;
+      const label = r ? r.label : select.selectedOptions[0]?.textContent || 'Choose a role…';
+      trigger.setAttribute('aria-label', `Choose role: ${label}`);
+      trigger.innerHTML = `<span>${UI.esc(label)}</span><span aria-hidden="true">▾</span>`;
+      if (select.disabled) close();
+      if (!preview) return;
+      preview.classList.add('role-preview');
+      if (!r) { preview.innerHTML = '<span class="muted">Choose a role to preview its permissions.</span>'; return; }
+      const keys = new Set(r.permissions || []);
+      const groups = (catalog.groups || []).map((g) => ({ ...g, items: g.items.filter((i) => r.fixed || keys.has(i.key)) })).filter((g) => g.items.length);
+      preview.innerHTML = `<div class="role-preview-head"><strong>${UI.esc(r.label)}</strong><span class="badge-pill">${r.fixed ? 'Every permission' : `${keys.size} permissions`}</span></div>
+        ${r.description ? `<p>${UI.esc(r.description)}</p>` : ''}
+        ${keys.has('users.permissions') || r.fixed ? '<p class="role-preview-trust">Includes full access administration, including assigning Administrator.</p>' : ''}
+        <details><summary>View permissions by work area</summary><div class="role-preview-groups">${groups.map((g) => `<div><strong>${UI.esc(g.label)}</strong><p>${g.items.map((i) => UI.esc(i.label)).join(' · ')}</p></div>`).join('') || '<p>No permissions yet.</p>'}</div></details>`;
+    }
+    trigger.onclick = () => {
+      if (!panel.hidden) { close(); return; }
+      query.value = ''; render(); panel.hidden = false;
+      trigger.setAttribute('aria-expanded', 'true'); query.focus();
+    };
+    // Searching is navigation; only changing the selected role dirties the account form.
+    query.addEventListener('input', (e) => { e.stopPropagation(); render(); });
+    query.addEventListener('change', (e) => e.stopPropagation());
+    host.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !panel.hidden) { e.preventDefault(); e.stopPropagation(); close(); trigger.focus(); }
+    });
+    host.addEventListener('focusout', (e) => { if (!host.contains(e.relatedTarget)) close(); });
+    results.onclick = (e) => {
+      const choice = e.target.closest('[data-role-choice]');
+      if (choice && !select.disabled && available().some(({ role }) => role.key === choice.dataset.roleChoice)) {
+        if (select.value !== choice.dataset.roleChoice) {
+          select.value = choice.dataset.roleChoice;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        close(); trigger.focus();
+      } else if (e.target.closest('[data-role-clear]')) { query.focus(); query.value = ''; render(); }
+    };
+    select.addEventListener('change', paint);
+    paint();
+    return { refresh: paint };
+  }
+
   /* ---------- Permission picker ----------
      renderPicker(container, {
        catalog,
        isOn(key) -> bool,
-       change(key) -> 'added' | 'removed' | null   (account mode: difference from the role)
+       change(key) -> 'added' | 'removed' | null   (account exceptions, or role draft changes)
+       changeScope -> 'role'                     (otherwise labels describe one person)
        lockReason(key) -> string | null            (shown instead of a usable switch)
        onToggle(key, on), onReset(key)?
      }) -> { refresh() }
-     Search, an "On / Changed" filter, per-section "All / None" and live counts. */
+     Search, On / Off / Changed filters, per-section bulk changes and live counts. */
   function renderPicker(container, o) {
+    const inputPrefix = `permission-${++rolePickerId}-`;
     const ui = { q: '', show: 'all', group: '' };
     const showChanged = typeof o.change === 'function';
     container.innerHTML = `
@@ -201,6 +283,7 @@ window.AccessEditor = (() => {
         <div class="pp-seg" role="group" aria-label="Show">
           <button type="button" data-pp-show="all" class="on" aria-pressed="true">All</button>
           <button type="button" data-pp-show="on" aria-pressed="false">On</button>
+          <button type="button" data-pp-show="off" aria-pressed="false">Off</button>
           ${showChanged ? '<button type="button" data-pp-show="changed" aria-pressed="false">Changed</button>' : ''}
         </div>
       </div>
@@ -211,7 +294,7 @@ window.AccessEditor = (() => {
         </select>
         <div class="pp-summary" data-pp-summary role="status" aria-live="polite"></div>
       </div>
-      <p class="pp-hint">Hover or tap a <b>?</b> for what each permission allows.</p>
+      <div class="pp-helpbar"><p class="pp-hint">Hover or tap <b>?</b> for help.</p><label class="pp-details-toggle"><input type="checkbox" data-pp-details /> Show explanations</label></div>
       <div class="pp-list" data-pp-list role="region" aria-label="Permissions" tabindex="0"></div>`;
     const list = container.querySelector('[data-pp-list]');
     const summary = container.querySelector('[data-pp-summary]');
@@ -219,6 +302,7 @@ window.AccessEditor = (() => {
     function matches(i, g) {
       if (ui.group && ui.group !== g.id) return false;
       if (ui.show === 'on' && !o.isOn(i.key)) return false;
+      if (ui.show === 'off' && o.isOn(i.key)) return false;
       if (ui.show === 'changed' && !(showChanged && o.change(i.key))) return false;
       if (!ui.q) return true;
       const hay = `${g.label} ${i.label} ${i.desc || ''} ${(i.where || []).join(' ')} ${i.key}`.toLowerCase();
@@ -233,18 +317,20 @@ window.AccessEditor = (() => {
       return `
         <div class="pp-row${on ? ' is-on' : ''}${lock ? ' is-locked' : ''}${ch ? ' is-' + ch : ''}">
           <label class="pp-switch" ${lock ? `data-tip="${UI.esc(lock)}"` : ''}>
-            <input type="checkbox" data-pp-key="${UI.esc(i.key)}" ${on ? 'checked' : ''} ${lock ? 'disabled' : ''} aria-label="${UI.esc(i.label)}" aria-description="${UI.esc(explanation)}" />
+            <input type="checkbox" id="${inputPrefix}${UI.esc(i.key)}" data-pp-key="${UI.esc(i.key)}" ${on ? 'checked' : ''} ${lock ? 'disabled' : ''} aria-label="${UI.esc(i.label)}" aria-description="${UI.esc(explanation)}" />
             <span class="pp-track"></span>
           </label>
-          <div class="pp-text">
-            <div class="pp-label" data-tip="${UI.esc(explanation)}">${UI.esc(i.label)}
-              ${ch === 'added' ? '<span class="pp-tag added">Added for this person</span>' : ''}
-              ${ch === 'removed' ? '<span class="pp-tag removed">Removed for this person</span>' : ''}
+          <label class="pp-text" for="${inputPrefix}${UI.esc(i.key)}">
+            <span class="pp-label" data-tip="${UI.esc(explanation)}">${UI.esc(i.label)}
+              ${ch === 'added' ? `<span class="pp-tag added">${o.changeScope === 'role' ? 'Added to role' : 'Added for this person'}</span>` : ''}
+              ${ch === 'removed' ? `<span class="pp-tag removed">${o.changeScope === 'role' ? 'Removed from role' : 'Removed for this person'}</span>` : ''}
               ${lock ? `<span class="pp-tag locked">${UI.esc(lock)}</span>` : ''}
-            </div>
-          </div>
+            </span>
+            <span class="pp-description">${UI.esc(i.desc || '')}${i.where?.length ? `<span>Screens: ${UI.esc(i.where.join('; '))}</span>` : ''}</span>
+          </label>
+          <span class="pp-state" aria-hidden="true">${on ? 'On' : 'Off'}</span>
           ${UI.helpIcon(`${i.label}. ${explanation}`)}
-          ${ch && o.onReset && !lock ? `<button type="button" class="pp-undo" data-pp-reset="${UI.esc(i.key)}" title="Back to the role's setting">Undo</button>` : ''}
+          ${ch && o.onReset && !lock ? `<button type="button" class="pp-undo" data-pp-reset="${UI.esc(i.key)}" title="${o.changeScope === 'role' ? 'Restore saved role setting' : "Back to the role's setting"}">Undo</button>` : ''}
         </div>`;
     }
 
@@ -257,7 +343,11 @@ window.AccessEditor = (() => {
       const changes = showChanged ? all.filter((i) => o.change(i.key)) : [];
       const added = changes.filter((i) => o.change(i.key) === 'added').length;
       summary.innerHTML = `<b>${onCount}</b> of ${all.length} on`
-        + (showChanged && changes.length ? ` · <span class="pp-added">${added} added</span> · <span class="pp-removed">${changes.length - added} removed</span> for this person` : '');
+        + (showChanged && changes.length ? ` · <span class="pp-added">${added} added</span> · <span class="pp-removed">${changes.length - added} removed</span>${o.changeScope === 'role' ? ' in this draft' : ' for this person'}` : '');
+      container.querySelectorAll('[data-pp-group] option').forEach((option) => {
+        const g = o.catalog.groups.find((x) => x.id === option.value);
+        if (g) option.textContent = `${g.label} · ${g.items.filter((i) => o.isOn(i.key)).length}/${g.items.length} on`;
+      });
 
       let visibleCount = 0;
       const html = o.catalog.groups.map((g) => {
@@ -278,7 +368,7 @@ window.AccessEditor = (() => {
             ${items.map(row).join('')}
           </section>`;
       }).join('');
-      list.innerHTML = html || UI.emptyState({ icon: 'search', title: 'Nothing matches', hint: ui.show === 'all' ? 'Try another word.' : 'Switch the filter back to All.' });
+      list.innerHTML = html || `${UI.emptyState({ icon: 'search', title: ui.show === 'changed' && !changes.length ? 'No permission changes' : 'Nothing matches', hint: 'Clear the filters to see all permissions.' })}<button type="button" class="btn secondary small pp-clear" data-pp-clear>Clear filters</button>`;
       if (ui.q || ui.group || ui.show !== 'all') summary.innerHTML += ` · ${visibleCount} shown`;
       if (focusKey) {
         const next = [...list.querySelectorAll('[data-pp-key], [data-pp-reset], [data-pp-bulk]')].find((x) => x.dataset[focusKey] === focusValue && (focusKey !== 'ppBulk' || x.dataset.on === focused.dataset.on));
@@ -299,10 +389,19 @@ window.AccessEditor = (() => {
           refresh();
         };
       });
+      const clear = list.querySelector('[data-pp-clear]');
+      if (clear) clear.onclick = () => {
+        ui.q = ''; ui.group = ''; ui.show = 'all';
+        container.querySelector('[data-pp-q]').value = '';
+        container.querySelector('[data-pp-group]').value = '';
+        container.querySelector('[data-pp-show="all"]').click();
+        container.querySelector('[data-pp-q]').focus();
+      };
     }
 
     container.querySelector('[data-pp-q]').addEventListener('input', (e) => { ui.q = e.target.value.trim().toLowerCase(); refresh(); });
     container.querySelector('[data-pp-group]').addEventListener('change', (e) => { ui.group = e.target.value; refresh(); list.scrollTop = 0; });
+    container.querySelector('[data-pp-details]').addEventListener('change', (e) => container.classList.toggle('pp-show-details', e.target.checked));
     container.querySelectorAll('[data-pp-show]').forEach((b) => {
       b.onclick = () => {
         ui.show = b.dataset.ppShow;
@@ -391,6 +490,7 @@ window.AccessEditor = (() => {
     const src = role || copyFrom;
     // A brand-new role starts with the phone app and messaging, like every built-in one.
     const selected = new Set(src ? src.permissions : ['mobile.access', 'messages.view', 'messages.send']);
+    const baseline = new Set(selected);
     const staff = new Set(catalog.staffPermissions || []);
     const name = isNew ? (copyFrom ? `${copyFrom.label} (copy)` : '') : role.label;
 
@@ -428,6 +528,9 @@ window.AccessEditor = (() => {
     renderPicker(el.querySelector('[data-picker]'), {
       catalog,
       isOn: (k) => selected.has(k),
+      changeScope: 'role',
+      change: (k) => selected.has(k) === baseline.has(k) ? null : selected.has(k) ? 'added' : 'removed',
+      onReset: (k) => { if (baseline.has(k)) selected.add(k); else selected.delete(k); paintNote(); },
       onToggle: (k, on) => { if (on) selected.add(k); else selected.delete(k); paintNote(); },
     });
     el.querySelector('#role-save').onclick = async () => {
@@ -461,5 +564,5 @@ window.AccessEditor = (() => {
     return parts.length ? parts.join(' · ') : 'No permissions yet';
   }
 
-  return { ROLE_LABELS, roleLabel, open, editRole, getCatalog, renderPicker, roleSummary, PERMISSION_GROUPS };
+  return { ROLE_LABELS, roleLabel, open, editRole, getCatalog, renderPicker, roleSummary, enhanceRoleSelect, PERMISSION_GROUPS };
 })();
