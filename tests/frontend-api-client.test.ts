@@ -80,3 +80,16 @@ describe('api.js remembered GETs', () => {
     expect(API.peek('/hr/employees?')).toBeNull();
   });
 });
+
+describe('api.js cancellable capture fetches', () => {
+  it('passes an opted-in signal to upload and makes no retry when it is aborted', async () => {
+    localStorage.clear();
+    const fetcher = vi.fn((_url: unknown, init: any) => new Promise((_resolve, reject) => { init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true }); }));
+    vi.stubGlobal('fetch', fetcher);
+    const API = loadApi() as ApiClient & { upload: (p: string, b: FormData, opts: { signal: AbortSignal }) => Promise<unknown> };
+    const controller = new AbortController(), body = new FormData(); body.append('slot', 'out');
+    const result = API.upload('/hr/clock/punch/selfie', body, { signal: controller.signal }); controller.abort();
+    await expect(result).rejects.toMatchObject({ offline: true });
+    expect(fetcher).toHaveBeenCalledOnce(); expect(fetcher.mock.calls[0]?.[1].signal).toBe(controller.signal); expect(fetcher.mock.calls[0]?.[1].body).toBe(body);
+  });
+});

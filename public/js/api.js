@@ -114,9 +114,12 @@ const API = (() => {
     let res;
     try {
       const url = base() + (path.startsWith('/api/') ? path : '/api' + path);
+      // Capture flows can cancel a stale or timed-out fetch without replaying its write.
+      const init = { method, headers, body: payload };
+      if (opts && opts.signal) init.signal = opts.signal;
       res = isForm && opts && opts.onProgress
         ? await uploadResponse(url, method, headers, payload, opts.onProgress)
-        : await fetch(url, { method, headers, body: payload });
+        : await fetch(url, init);
     } catch (e) {
       // fetch only throws on a genuine network failure (offline, DNS, connection reset).
       const err = new Error('Network unavailable');

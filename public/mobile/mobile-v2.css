@@ -938,3 +938,16 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 .m-requests-v2 .m-request-inline-actions{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:.8rem}
 .m-requests-v2 .m-request-refresh{margin-top:1rem}
 .m-requests-v2 .m-request-back:disabled{opacity:.5;cursor:wait}
+
+/* Clock recovery uses the existing cards, tiles and scanner camera chrome. */
+.m-clock-capture .m-clock-feedback{margin:14px 0;padding:14px 16px;border:1px solid var(--v2-line);border-radius:18px;background:var(--v2-surface);color:var(--v2-text);font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.m-clock-capture .m-clock-feedback.m-error{border-color:var(--v2-danger);color:var(--v2-danger)}
+.m-clock-capture .m-clock-work-date{font-size:12px;color:var(--v2-muted);margin:12px 6px}
+.m-clock-capture .m-clock-refresh{margin-top:14px}
+.m-clock-capture .m-clock-ot h2{font-size:16px;margin-top:22px}
+.m-clock-capture .v2-clock-slot:disabled{opacity:.6;cursor:wait;transform:none}
+.m-selfie .m-selfie-error{margin:12px 16px;padding:12px;border:1px solid #b57c76;border-radius:16px;color:#ffc7c0;background:#352421;font-size:13px;line-height:1.5}
+.m-selfie .m-selfie-off{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#17211b;color:#c8d8cd;font-size:15px}
+.m-selfie .m-selfie-off span{font-size:54px;line-height:1.2}
+.m-selfie [hidden]{display:none!important}
+.m-selfie .m-scan-msg{font-size:13px;line-height:1.5}
