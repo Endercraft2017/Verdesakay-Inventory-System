@@ -117,3 +117,23 @@ describe('the cloud decided meanwhile (D6)', () => {
     expect(clashes.some((c) => c.summary.includes(`Payslip #${first!.id} was marked paid on the cloud and at the main site`))).toBe(true);
   });
 });
+
+it('refuses local duplicate release, then retains a valid accepted offline payment with a flagged cloud source clash',async()=>{
+  const label='Release source clash 2031';
+  const p=(await ok(api().post('/api/hr/periods').set(T.cloudHdr()).send({label,start_date:'2031-02-01',end_date:'2031-02-02'}),201)).body.id;
+  await ok(api().post(`/api/hr/periods/${p}/employees`).set(T.cloudHdr()).send({employee_id:emp}),201);
+  await ok(api().post(`/api/hr/periods/${p}/generate-payslips`).set(T.cloudHdr()).send({payroll_period:label}),201);
+  const cloud=T.cloudDb(),original=cloud.prepare('SELECT * FROM form_records WHERE period=?').get(label) as {id:number;form_def_id:number;data:string};
+  const duplicate=()=>Number(cloud.prepare("INSERT INTO form_records(form_def_id,number,data,status,period,created_by) VALUES(?,? ,?,'draft',?,1)").run(original.form_def_id,'RELEASE-DUP-'+Date.now(),original.data,label).lastInsertRowid);
+  const first=duplicate();await T.hostRound();T.cutOff('host');
+  const before=T.hostDb().prepare('SELECT COUNT(*) AS n FROM sync_commands').get()?.n;
+  expect((await api().post(`/api/hr/payroll/${original.id}/mark-paid`).set(T.hostHdr()).send({})).status).toBe(409);
+  expect(T.hostDb().prepare('SELECT COUNT(*) AS n FROM sync_commands').get()?.n).toBe(before);
+  cloud.prepare('DELETE FROM form_records WHERE id=?').run(first);T.reconnect('host');await T.hostRound();T.cutOff('host');
+  await ok(api().post(`/api/hr/payroll/${original.id}/mark-paid`).set(T.hostHdr()).send({}));duplicate();
+  T.reconnect('host');const round=await T.hostRound();expect(round.pushed.filter(x=>x.state!=='confirmed')).toEqual([]);
+  expect(cloud.prepare('SELECT status FROM form_records WHERE id=?').get(original.id)?.status).toBe('paid');
+  const clashes=(await ok(api().get('/api/sync/clashes').set(T.cloudHdr()))).body as Array<{summary:string}>;
+  expect(clashes.some(c=>c.summary.includes(`Payslip #${original.id} paid decision retained with source review required`))).toBe(true);
+  expect((await api().post(`/api/hr/payroll/${original.id}/email`).set(T.cloudHdr()).send({})).status).toBe(409);
+});

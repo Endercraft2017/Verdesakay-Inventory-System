@@ -406,3 +406,13 @@ and SQLite rollback. [Implementation scope](../operations/payroll-cutoff-recover
 financial/calculation data and refuses transfers, paid/posted/closed history and duplicates.
 Label consistency and evidence attestation do not independently establish historical truth,
 issued-copy/filing status, accounting/legal compliance or malicious-insider resistance.
+
+
+## Payroll release source checks — 22 October 2026
+
+[Four primary sources](payroll-release-research.md) guide per-request resource checks, final
+execution gates, proportionate accurate disclosure and transactional paid/history/clash writes.
+[Implementation limits](../operations/payroll-release.md) explicitly retain unknown legacy
+linkage, current-replica/offline visibility, unresolved source adjustments, unlogged issued
+copies, reviewed/durable email and actual settlement/filing evidence. This does not satisfy
+the complete sensitive-action, privacy lifecycle or financial accounting controls.

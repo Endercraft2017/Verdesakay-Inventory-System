@@ -1,6 +1,15 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 20 October 2026 — missing/invalid payroll cutoff IDs can now be recovered
+Latest follow-up: 22 October 2026 — paid marking, email and employee list/PDF/timekeeping
+now share current payroll source holds. Draft email is refused; malformed JSON cannot crash
+the employee candidate read. Known duplicate/identity/cutoff conflicts hold, including custom
+aliases. Previously accepted offline payment decisions remain under D6, with atomic source
+clashes and current-replica issuance holds. See [contract](../operations/payroll-release.md),
+[research](payroll-release-research.md) and [verification](evidence/payroll-release-verification.json).
+True duplicate adjustments, unknown legacy linkage, recipient/fresh-proof/durable email design
+and payment/filing evidence remain. Whole controls and release hold remain unchanged.
+
+Previous follow-up: 20 October 2026 — missing/invalid payroll cutoff IDs can now be recovered
 through a fresh, online reviewed correction when the existing labels uniquely agree. Only the
 ID changes, with atomic attributed revision history. Paid/released, duplicate/unresolved,
 posted, closed-period and known email cases remain held. Valid-ID transfers are refused to
@@ -90,7 +99,7 @@ applicable issue before changing behavior:
 | High | AI privacy/adversarial evaluation, interrupted audit outcomes and hard spend allocation | Isolation/leakage/abuse/cancellation tests and real provider budget acceptance |
 | High | Reliable onboarding notification delivery and broader creation admission/reconciliation | Completed keyed HTTP receipts and signup outbox/worker implemented; other API/import retry receipts, provider reconciliation/reviewed resend, external backlog escalation, mixed signup capacity/storage acceptance, legacy/new-key recovery and imported-state acceptance remain. See operations/workspace-onboarding.md |
 | High | Native/Electron distribution and supported-client acceptance | APK/installer builds, signed artifacts, actual Windows/Android vault/backup/logout/upgrade checks |
-| High | Payroll source/ledger/payment/filing reconciliation | Stable-ID grouping, duplicate holds, atomic journal replacement and bounded current-source comparison implemented. Reviewed duplicate/malformed/cutoff transfers (only consistent missing/invalid IDs recoverable), eligibility, historical snapshots, accrual/payment dates, retry-safe posting and bank/remittance/filing evidence remain. See operations/payroll-report-identity.md |
+| High | Payroll source/ledger/payment/filing reconciliation | Stable-ID grouping, generation/reporting/issuance source holds, paid-only email, atomic journal replacement and bounded current-source comparison implemented. Reviewed duplicate/malformed/cutoff transfers (only consistent missing/invalid IDs recoverable), eligibility, historical snapshots, accrual/payment dates, retry-safe posting and bank/remittance/filing evidence remain. See operations/payroll-report-identity.md |
 | High | Integration lifecycle and accounting reconciliation acceptance | Local generation/scoping, refresh admission, export exclusion and durable uncertain-write handling implemented 2026-10-18; actual Intuit sandbox, legacy adoption/repair tooling, interrupted-claim reconciliation, operational alerting and accountant acceptance remain. See operations/quickbooks-lifecycle.md |
 | High | Resolve or explicitly disposition vulnerable dependencies and historical-secret gates | Upstream/compatible fix or approved expiring risk record; verified revocation without exposing the old bearer |
 | Medium–High | Remaining resilience, concurrency, accessibility, observability and handbook requirements | Risk-ordered evidence for applicable controls; architectural/commercial choices agreed explicitly |

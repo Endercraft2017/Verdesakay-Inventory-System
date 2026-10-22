@@ -709,11 +709,16 @@ for the internet (it uses the company's mail server, which only the cloud has).
    and regenerate. A recomputed cutoff whose payroll was already posted to the GL is flagged for
    re-posting (stage 4). Cutoffs with no payslip yet just use the new rate when generated.
 3a. **Finalize & release** (`hr` → `payroll` → `core/me`) — HR marks the payslip Paid (locks
-   it). Draft and Paid records both appear in the employee's list, but only Paid records receive
+   it). Current source identity/cutoff/duplicate/money-shape/date holds are checked before the
+   normal paid transition and at every employee read. Eligible Draft and Paid records appear
+   in the employee's list, but only eligible Paid records receive
    `finalized: true` and a `download_url`, and
    `GET /api/me/payslips/:id/pdf` render it (`payroll/payslip-pdf.ts`), re-checking ownership
    and Paid at download time and logging each download. Branch: HR un-marks Paid to correct
-   it → download hidden (404) until re-marked.
+   it → download hidden (404) until re-marked. Email is also Paid-only and source-checked.
+   Previously accepted offline paid decisions stand under D6 with source clashes recorded and
+   current-replica issuance held. Unknown legacy linkage, actual settlement and reviewed email
+   intent remain separate; see `docs/operations/payroll-release.md`.
 3b. **Recover a missing/invalid cutoff ID** (`hr`) — online payroll managers verify original
    records and review/confirm a consistent unique existing label destination with fresh proof.
    Only the ID changes under mandatory revision history. Paid/released, duplicate/unresolved,

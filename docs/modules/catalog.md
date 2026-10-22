@@ -335,6 +335,10 @@ distribution route, icon artwork.
 
 ## core/ — ungated baseline
 
+Employee payroll reads (`me.routes.ts`) use the shared payroll source/release index; held
+records are withheld with the established response projection. Unrelated invalid JSON cannot
+crash candidate selection. See [contract](../operations/payroll-release.md).
+
 Assisted authenticator recovery is owned by `shared/account-recovery.ts` and exposed through
 `core/users.routes.ts` (fresh password + enrolled factor, no self-reset) and the platform owner
 console (solo operator with advance email notice, a server-enforced 24-hour wait, cancellation and fresh password verification). `account_recoveries` is cloud-only and
@@ -775,6 +779,7 @@ doc_template, SCHEMA_VERSION 43; company-wide register `GET /api/hr/assets` with
 people-who-left filters + CSV, UI `public/js/modules/hr/hr-assets.js` at HR → Employees →
 Company Assets, tests `tests/hr-assets.test.ts`), `clock.routes.ts`, `field.routes.ts`,
 `employee-profile.ts` + `employee-profile.routes.ts` (self-service profile, below).
+**Payroll release (22 October 2026):** `payroll/payroll-release.ts` gates paid marking and online email; employee list/PDF/timekeeping withhold held records. Paid/history/source-clash writes are atomic; existing D6 accepted decisions remain. Draft email is disabled/refused. [Contract](../operations/payroll-release.md) records legacy, replica and settlement limits.
 **Payroll source reconciliation (20 October 2026):** generation and rate recomputation use
 `payroll/payroll-source.ts` to reject duplicate/ambiguous source slots. Rate-change failures
 roll back employee/rate history. A `payroll.view` read-only comparison route and Cutoff tools
@@ -900,7 +905,7 @@ from `hr` and `accounting` specifically because both of those modules depended o
 *and on each other* through it (a two-way `hr` ↔ `accounting` coupling found during
 the reorg's import-graph survey). Owning it as its own module resolves that: both `hr`
 and `accounting` now depend one-directionally on `payroll`, not on each other.
-**Owned files:** `payroll-source.ts` (shared stable employee/cutoff identity, recorded legacy aliases and duplicate holds), `hr-payroll-compute.ts`, `hr-payroll-import.ts`,
+**Owned files:** `payroll-release.ts` (shared current-source issuance checks and per-read cutoff cache), `payroll-source.ts` (shared stable employee/cutoff identity, recorded legacy aliases and duplicate holds), `hr-payroll-compute.ts`, `hr-payroll-import.ts`,
 `employee-rate-history.ts`, `payroll-tables.ts`, `ph-2316.ts`, `ph-alphalist.ts`,
 `ph-contributions.ts`, `ph-final-pay.ts`, `ph-income-tax.ts`,
 `ph-payroll-report-data.ts`, `ph-statutory.ts`, `ph-vat-ewt.ts`, `statutory-month.ts`

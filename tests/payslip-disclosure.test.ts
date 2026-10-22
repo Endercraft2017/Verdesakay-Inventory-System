@@ -37,10 +37,10 @@ describe('payslip disclosure identity',()=>{
  });
  it('does not email an ambiguous legacy name to the current name holder',async()=>{
   const res=await ctx.api.post(`/api/hr/payroll/${legacy}/email`).set(hdr(admin));
-  expect(res.status).toBe(400);expect(res.body.error).toMatch(/ownership cannot be verified/);expect(mail.send).not.toHaveBeenCalled();
+  expect(res.status).toBe(409);expect(res.body.error).toMatch(/unresolved employee ownership/);expect(mail.send).not.toHaveBeenCalled();
  });
  it('does not fall back to a name when a stamped employee no longer exists',async()=>{
-  expect((await ctx.api.post(`/api/hr/payroll/${dangling}/email`).set(hdr(admin))).status).toBe(400);expect(mail.send).not.toHaveBeenCalled();
+  expect((await ctx.api.post(`/api/hr/payroll/${dangling}/email`).set(hdr(admin))).status).toBe(409);expect(mail.send).not.toHaveBeenCalled();
  });
  it('emails stamped and uniquely resolved former names to the correct linked account',async()=>{
   for(const [id,email] of [[stamped,'old-owner@example.test'],[unique,'unique-owner@example.test']] as const){expect((await ctx.api.post(`/api/hr/payroll/${id}/email`).set(hdr(admin))).status).toBe(200);expect(mail.send).toHaveBeenLastCalledWith(expect.objectContaining({to:email}),expect.any(Number));}

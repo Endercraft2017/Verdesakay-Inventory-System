@@ -1,0 +1,153 @@
+{
+  "date": "2026-10-22",
+  "base_commit": "6667c52235cabcc6937b01949bde2d0c16053427",
+  "scope": "Current-source gates for payroll paid marking, Paid-only email and employee list/PDF/timekeeping; safe corrupt-JSON reads; accepted offline payment source-clash replay; persistent staff hold dialog",
+  "research": {
+    "decisions": "../payroll-release-research.md",
+    "sources_retrieved": [
+      "https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html",
+      "https://cheatsheetseries.owasp.org/cheatsheets/Transaction_Authorization_Cheat_Sheet.html",
+      "https://privacy.gov.ph/data-privacy-act/",
+      "https://www.sqlite.org/lang_transaction.html"
+    ],
+    "legal_security_or_accounting_certification_inferred": false,
+    "search_limit": "NPC page retrieved; uppercase Accurate search had no match; section 11(c)-(d) is the page reference"
+  },
+  "full_run": {
+    "files_passed": 317,
+    "files_failed": 0,
+    "tests_passed": 3364,
+    "tests_failed": 0,
+    "duration_seconds": 606.19
+  },
+  "focused": {
+    "files_passed": 9,
+    "files_failed": 0,
+    "tests_passed": 212,
+    "tests_failed": 0,
+    "duration_seconds": 64.92
+  },
+  "new_api_cases": 16,
+  "new_sync_cases": 1,
+  "playwright": {
+    "passed": 55,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "duration_seconds": 130.6881
+  },
+  "new_browser_cases": 3,
+  "earlier_browser_runs": {
+    "before_alias": {
+      "passed": 55,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "duration_seconds": 133.1996
+    },
+    "before_persistent_dialog": {
+      "passed": 55,
+      "failed": 0,
+      "flaky": 0,
+      "skipped": 0,
+      "duration_seconds": 130.8697
+    }
+  },
+  "scoped_axe": "Passed final persistent hold dialog and existing full-suite scans; no all-screen/native/manual assistive-technology acceptance inferred",
+  "visual_inspection": "Initial screenshot exposed transient faded toast; persistent dismissible hold dialog added and final screenshot inspected",
+  "typecheck": "passed",
+  "delivered_JS_syntax": "node --check public/js/modules/core/form-records.js passed",
+  "tool_versions": {
+    "platform": "Linux-6.18.55-x86_64-with-glibc2.41",
+    "node": "v24.19.0",
+    "npm": "11.9.0",
+    "playwright": "Version 1.64.1",
+    "gitleaks": "8.24.3"
+  },
+  "schema_and_dependencies": "unchanged; db:types and fresh dependency advisory scan not repeated",
+  "source_files_sha256": {
+    "src/modules/payroll/payroll-release.ts": "14ba6202c7d1d8f559921982edb4b0e05e75d7b15caa9fffe7d6900ffe1117d6",
+    "src/modules/payroll/payroll-source.ts": "b5b0f41f32e1f1680e31574cfd491ccd9b2b677450c7ffb2f78ade0e7aa31328",
+    "src/modules/hr/hr.routes.ts": "a258ad442805d9c5d3619f0be1d7dd247aa31cd944e219d2d0f64cceea431317",
+    "src/core/me.routes.ts": "0afcac34772d170f5f7dd83274d946d0ffe047c5e2324f12fd3a7213722872cc",
+    "public/js/modules/core/form-records.js": "5764e6c410c71f487c7cd11040e0eec811e25fdf535f5dceda962f81b37fdf8c",
+    "tests/payroll-release.test.ts": "2c0247bd8fbaa483073ffaaa8a504115b98eba84b971ef3bb0e353e77ba65378",
+    "tests/payslip-disclosure.test.ts": "3ad49bdb8f3875d11c37ff28da0f6a1aaf39c470f1f7263775da6c32dc161ac3",
+    "tests/hr.test.ts": "60745e3c5c2fc9772f2bf09b71dfcd415570899b917c8a5ddfd04788732edd4f",
+    "tests/sync-payroll.test.ts": "dd7a408dd64979e5138c5e99ca27edb62966e8e37a31c3eceb2bd8c2d387e1dc",
+    "tests/e2e/payroll-cutoff.spec.ts": "a0e70b25e8277e263a7b2161d1b8245f1fcab5a784ce895e49b16b56900a402d",
+    "tests/e2e/server.ts": "3c0078aff5cc3cd3629760f014fed3baf9a3bc855d2349b43e46a896b2ee9647",
+    "tests/e2e/payroll-release.spec.ts": "93b428a059f1ddeb342a6d0590aacfd2bdd0df7ec377c8bc4ab3cd0a933f86d6"
+  },
+  "failed_or_preliminary_runs": [
+    {
+      "run": "before implementation",
+      "result": "10 failed / 3 passed in 13 new API cases; nine behavior failures plus one unrelated test-fixture 403/404 expectation"
+    },
+    {
+      "run": "initial focused",
+      "result": "8 files passed / 1 failed, 208 passed / 1 failed; other-user fixture had no linked employee and correctly returned 403. Linked the synthetic other employee; no production 403 policy change"
+    },
+    {
+      "run": "pre-alias focused",
+      "result": "9 files / 210 passed. Final 212 includes custom-alias hold and concurrent paid-transition cases"
+    },
+    {
+      "run": "earlier full browsers",
+      "result": "55 passed before alias refinement, then 55 passed before persistent dialog. Both retained; final run uses frozen delivered code"
+    }
+  ],
+  "artifact_source_sha256_before_text_normalization": {
+    "payroll-release-full.txt": "1bc9f587ff10da3ec519c384e20b0bb2d560a0a64af87fdbec09e1a9ddb08f20",
+    "payroll-release-focused-final.txt": "0dbacd3fe164179e387a6f82d4682126233fd2e79059321dddc19a9904c30916",
+    "payroll-release-focused.txt": "5db9d64744d2da45297cf16a8936e18cc5e2668264cc27acb7e52bf978f7dfa9",
+    "payroll-release-focused-prealias.txt": "3629820fa30fef88fb662278a39a04b29d590044f1b6583e1b4758e34a60d19d",
+    "payroll-release-before.txt": "a5570809eb445d5522bf72a348c6b4a4bcb9b4ba0ed3c5a279db3e809b5f10f3",
+    "payroll-release-typecheck.txt": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+    "payroll-release-candidate.json": "cf6312dc7da5256b7df284bcc2f6c958721c9b45e59b3e8e7cb3e1b38b209929",
+    "payroll-release-tool-versions.json": "4beb094d9a3d633d002a4097dbee9f413718d5774658c8c98ffb66500c7af93c",
+    "payroll-release-playwright-final.txt": "83fdf7c1b47642c90f68c902a4b95a49ae36032e1758dcdaf23f5ca6f22c1d45",
+    "payroll-release-playwright-final.json": "967f0d7b641c873c4ffdfff488f52a5df4f26657c1858b10ad5b209daf7826fa",
+    "payroll-release-playwright-prealias.txt": "5d63a3f2109f45fe694eb4982f23aec20f0febd5c61cec87d43e4ef9501280ba",
+    "payroll-release-playwright-prealias.json": "cf5ca00c876aa532591ac70927c35ba0d5f86b483423a12bca6f4e3b52124b90",
+    "payroll-release-playwright-before-dialog.txt": "4bece457695e1dd31f47db90205a4287256bc6907b05c71f537d55bbe1874895",
+    "payroll-release-playwright-before-dialog.json": "6ad4aba4d90508c30a8904e9a81455c29fc6aff30655ef7429d4f094a19b91e2",
+    "payroll-release-hold.png": "9669cab2d3d545a479f83b058c6e65709b150b34ec261e35e8c84f39af25fead",
+    "payroll-release-gitleaks.txt": "d0a2fb31b88a2d39a0e7295ab72a44260d97acb1847a329075b897928e771781"
+  },
+  "artifact_sha256": {
+    "payroll-release-before.txt": "91948cab42817978f7baa6040e5f57fecd9453ee2e1639208026737067b7590a",
+    "payroll-release-candidate.json": "cf6312dc7da5256b7df284bcc2f6c958721c9b45e59b3e8e7cb3e1b38b209929",
+    "payroll-release-focused-final.txt": "d8ac40b7c348a56a1bf2d3109ccff75e92d6797867a342ec0b1123521567f109",
+    "payroll-release-focused-prealias.txt": "f9dbc04ecb632c3b8ac17e0a03b174471450534072847f43036f7cf72548462d",
+    "payroll-release-focused.txt": "dc2679705a374e2e1cd5255db64a5b9c26bdbd452f0dbd5e3427d0d7d4c135ae",
+    "payroll-release-full.txt": "06216f700854bc3157c488f0c0012c1ac3a57222a3265a34d6513bcfd7e853a2",
+    "payroll-release-hold.png": "9669cab2d3d545a479f83b058c6e65709b150b34ec261e35e8c84f39af25fead",
+    "payroll-release-playwright-before-dialog.json": "6ad4aba4d90508c30a8904e9a81455c29fc6aff30655ef7429d4f094a19b91e2",
+    "payroll-release-playwright-before-dialog.txt": "4bece457695e1dd31f47db90205a4287256bc6907b05c71f537d55bbe1874895",
+    "payroll-release-playwright-final.json": "967f0d7b641c873c4ffdfff488f52a5df4f26657c1858b10ad5b209daf7826fa",
+    "payroll-release-playwright-final.txt": "83fdf7c1b47642c90f68c902a4b95a49ae36032e1758dcdaf23f5ca6f22c1d45",
+    "payroll-release-playwright-prealias.json": "cf5ca00c876aa532591ac70927c35ba0d5f86b483423a12bca6f4e3b52124b90",
+    "payroll-release-playwright-prealias.txt": "5d63a3f2109f45fe694eb4982f23aec20f0febd5c61cec87d43e4ef9501280ba",
+    "payroll-release-tool-versions.json": "4beb094d9a3d633d002a4097dbee9f413718d5774658c8c98ffb66500c7af93c",
+    "payroll-release-typecheck.txt": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+    "payroll-release-gitleaks.txt": "d0a2fb31b88a2d39a0e7295ab72a44260d97acb1847a329075b897928e771781"
+  },
+  "evidence_formatting": "Text removes ANSI colors/trailing whitespace/blank EOF lines; raw and retained hashes recorded. JSON/images unchanged; authenticated transient trace ZIPs not published.",
+  "whole_control_statuses_changed": false,
+  "deployment_command_run": false,
+  "not_established": [
+    "True duplicate/malformed/paid/posted adjustment or actual cutoff transfer",
+    "Complete legacy cutoff linkage, arithmetic/contribution/filing eligibility or settlement proof",
+    "Staff preview/print/Excel final-release controls; existing preview behavior retained",
+    "Reviewed source/recipient transaction approval, recent local proof, durable uncertain-mail/exactly-once delivery",
+    "Independent audit protection, instant replica convergence, malicious-node resistance or recall of old copies",
+    "Native Windows/physical-office/hosted/provider/large-history acceptance; no new process-kill or power-loss test"
+  ],
+  "workflow_limit": "Referenced /home/agent/.claude/CLAUDE.md absent; repository CLAUDE/catalog/pipelines followed",
+  "staged_secret_scan": {
+    "status": "passed",
+    "command": "gitleaks git --pre-commit --staged --redact --no-banner",
+    "mandatory_commit_hook": "Repeats the staged scan at commit; not bypassed"
+  }
+}

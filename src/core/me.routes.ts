@@ -10,7 +10,8 @@ import { requireAuth } from '../shared/auth';
 import { parseBody, timeCorrectionSchema, approvalDecisionSchema, selfProfileSchema } from '../shared/validation';
 import { getProfile, updateProfile, profileHistory, PROFILE_FIELDS } from '../modules/hr/employee-profile';
 import { INFO_CHANGE_SLUG, applyInfoChange } from '../modules/hr/info-change';
-import { payslipOwnerResolver } from '../modules/payroll/payslip-owner';
+import {payrollSourceIndex} from '../modules/payroll/payroll-source';
+import {payrollReleaseProblems, type ReleaseCutoffCache} from '../modules/payroll/payroll-release';
 import { notifyUser, notifyPermission } from '../shared/push';
 import { myClockStatus } from '../modules/hr/clock';
 import { unrecordedOtMinutes, type AttendanceDay } from '../modules/payroll/hr-payroll-compute';
@@ -129,21 +130,12 @@ const isFinalPayslip = (status: string) => status === 'paid';
 /** Stamped records, or legacy records with an unambiguous current/former name.
  *  Name reuse must never grant access to someone else's older payroll. */
 function myPayslips(emp: Emp, id?: number): FormRecord[] {
-  const form = queryOne<FormDefinition>("SELECT id FROM form_definitions WHERE slug = 'hr_payroll'");
-  if (!form) return [];
-  const owner = payslipOwnerResolver();
-  const names = owner.namesFor(emp.id);
-  return queryAll<FormRecord>(
-    `SELECT id, number, period, status, data, created_at, updated_at
-     FROM form_records
-     WHERE form_def_id = ?
-       AND (json_extract(data, '$.employee_id') = ? OR json_extract(data, '$.employee_id') = ?
-            OR (json_extract(data, '$.employee_id') IS NULL
-                AND json_extract(data, '$.employee_name') IN (${names.map(() => '?').join(',') || 'NULL'})))
-       ${id != null ? 'AND id = ?' : ''}
-     ORDER BY id DESC`,
-    form.id, emp.id, String(emp.id), ...names, ...(id != null ? [id] : [])
-  ).filter(record => owner.idOf(parse(record.data)) === emp.id);
+  const index=payrollSourceIndex(),cache:ReleaseCutoffCache=new Map();
+  return index.rows.filter(source=>source.employee_id===emp.id&&(id==null||source.raw.id===id)&&!payrollReleaseProblems(index,source,cache).issues.length)
+    .map(({raw})=>{const {id,number,period,status,data,created_at,updated_at}=raw;
+      // Preserve the existing employee response projection; staff metadata stays private.
+      return {id,number,period,status,data,created_at,updated_at} as FormRecord;
+    }).reverse();
 }
 
 // GET /api/me/payslips — employees can inspect their own current payroll previews.

@@ -197,6 +197,11 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
   DataForms.savePreference({action:'recent',form_id:formId}).catch(()=>{});
   const isPayroll = formDef.slug === 'hr_payroll';
   const canManagePayroll = isPayroll && App.hasPermission('payroll.manage');
+  function payrollActionFailure(error) {
+    if(error.status===409)UI.modal({title:'Payroll review required',cancelText:'Close',guide:false,
+      bodyHTML:`<p role="alert">${UI.esc(error.message)}</p><p>Preserve the source records. Review the listed payslips with payroll before trying again.</p>`});
+    else UI.toast(error.message,'error');
+  }
   // Any other form with a linked print template gets the same "Print All"/"Print selected"
   // bulk actions payroll has always had — payroll keeps its own dedicated 2-up slip buttons.
   const canBulkPrint = !isPayroll && !!formDef.template_id;
@@ -1215,7 +1220,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
             ${!isPayroll && formDef.template_id ? `<button class="icon-btn" data-print-tpl="${r.id}" title="Print">${UI.icon('printer')}</button>` : ''}
             ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-owner="${r.id}" title="Review payslip owner" aria-label="Review owner of payslip ${UI.esc(r.number)}">${UI.icon('user')}</button>` : ''}
             ${isPayroll && canManagePayroll && r.status === 'draft' ? `<button class="icon-btn" data-cutoff-recovery="${r.id}" title="Recover missing cutoff ID" aria-label="Recover cutoff of payslip ${UI.esc(r.number)}">${UI.icon('calendar')}</button>` : ''}
-            ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-email="${r.id}" title="Email this payslip" aria-label="Email payslip ${UI.esc(r.number)}">${UI.icon('mail')}</button>` : ''}
+            ${isPayroll && canManagePayroll ? `<button class="icon-btn" data-email="${r.id}" ${r.status==='paid'?'':'disabled'} title="${r.status==='paid'?'Email this payslip':'Mark paid before emailing'}" aria-label="Email payslip ${UI.esc(r.number)}">${UI.icon('mail')}</button>` : ''}
             ${isPayroll && canManagePayroll ? (r.status === 'paid'
               ? `<button class="icon-btn" data-unpaid="${r.id}" title="Unmark Paid (unlock for editing)" aria-label="Unmark payslip ${UI.esc(r.number)} as paid">${UI.icon('reply', 15)}</button>`
               : `<button class="icon-btn" data-paid="${r.id}" title="Mark as Paid (locks this payslip)" aria-label="Mark payslip ${UI.esc(r.number)} as paid">${UI.icon('check')}</button>`) : ''}
@@ -1504,7 +1509,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           await API.post(`/hr/payroll/${b.dataset.email}/email`, {});
           UI.toast('Payslip emailed');
         } catch (err) {
-          UI.toast(err.message, 'error');
+          payrollActionFailure(err);
         } finally {
           b.disabled = false;
         }
@@ -1516,7 +1521,7 @@ async function renderFormView(view, formId, initialPeriod, initialStatus, naviga
           await API.post(`/hr/payroll/${b.dataset.paid}/mark-paid`, {});
           UI.toast('Payslip marked as paid');
           load();
-        } catch (err) { UI.toast(err.message, 'error'); }
+        } catch (err) { payrollActionFailure(err); }
       });
     el.querySelectorAll('[data-unpaid]').forEach((b) =>
       b.onclick = async (e) => {

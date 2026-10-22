@@ -111,3 +111,13 @@ Research: [OWASP API1:2023](https://owasp.org/API-Security/editions/2023/en/0xa1
 retrieved 20 October 2026. It recommends server-side authorization for access to each
 object and regression tests. Applying that principle to legacy identity ambiguity
 is this project's engineering decision, not a claim of certification.
+
+
+## Source eligibility follow-up — 22 October 2026
+
+[Paid/issuance source guards](payroll-release.md) now supplement ownership. Known source
+conflicts withhold employee JSON/PDF/timekeeping; email requires Paid and uses 409 for
+unresolved ownership/source conflicts. Safe shared indexing also handles unrelated corrupt
+JSON without a candidate-query failure. This narrows earlier disclosure/finalization gaps;
+unknown legacy linkage, true adjustments, raw-field minimization, recipient/fresh-proof/
+durable email and already-issued copies remain separate work.

@@ -219,3 +219,15 @@ references are audit data; do not paste sensitive source documents or credential
 Unlogged issued copies and filings require separate evidence; retention, independent audit
 protection and actual transfers remain open. See [contract](../operations/payroll-cutoff-recovery.md)
 and [primary-source decisions](../audits/payroll-cutoff-research.md).
+
+
+## Payroll issuance source holds — 22 October 2026
+
+Known duplicate/identity/cutoff source conflicts now hold paid marking and issuance reads;
+email requires Paid. Employee list/PDF/timekeeping withhold held records with no staff record
+IDs or conflict details. The existing employee response projection is preserved; raw payroll
+field minimization is broader work. Paid/history and applicable D6 source-clash writes are
+atomic. Current replica state cannot revoke old PDF/email/print copies or prove unrecorded
+settlement/filings. Unknown legacy linkage, independent audit protection, recipient approval,
+retention/rights and actual adjustments remain. See [contract](../operations/payroll-release.md)
+and [research](../audits/payroll-release-research.md).

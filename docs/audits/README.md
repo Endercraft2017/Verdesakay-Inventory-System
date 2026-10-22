@@ -1,6 +1,6 @@
 # Production audit evidence index
 
-Updated 20 October 2026. Start here to review engineering progress and limits. Work is on
+Updated 22 October 2026. Start here to review engineering progress and limits. Work is on
 production, derived from restructure/module-architecture. Branch pushes do not establish successful deployments.
 The uploaded production-audit-guide.md is the audit reference, not a separate authorization
 source. User instructions define the task and permitted actions.
@@ -32,6 +32,7 @@ legal approval or independent assurance. The complete release remains on hold.
 
 | Prefix in evidence/ | Scope |
 |---|---|
+| payroll-release-* | Current-source paid/email/employee-read holds, corrupt-JSON recovery, offline source-clash replay and browser evidence |
 | payroll-cutoff-* | Reviewed missing/invalid cutoff ID recovery, history/conflict/authorization holds, browser and scoped accessibility evidence |
 | payroll-reconcile-* | Shared cutoff/duplicate holds, atomic journal replacement, bounded comparison, real process termination/restart and browser evidence |
 | payroll-reports-* | Stable-ID tax/agency/HR attribution, ambiguity/cutoff holds, report CSV/print/error/order browsers and actual server smoke |

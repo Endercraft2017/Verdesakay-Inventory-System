@@ -400,3 +400,14 @@ posted, closed-period and known email cases hold. Valid-ID transfers are refused
 [contract](../operations/payroll-cutoff-recovery.md), [research](payroll-cutoff-research.md)
 and [verification](evidence/payroll-cutoff-verification.json). This is a narrow correction;
 whole controls remain 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A and release stays on hold.
+
+
+### Payroll paid marking and issuance — 22 October 2026
+
+Current-source holds now guard paid marking, email and employee list/PDF/timekeeping reads.
+Draft email is refused, and unrelated corrupt JSON no longer crashes the employee candidate
+read. Offline accepted payment decisions remain under D6 with source-review clashes and
+current-replica issuance holds. See [contract](../operations/payroll-release.md),
+[research](payroll-release-research.md) and [verification](evidence/payroll-release-verification.json).
+Unknown legacy linkage, true duplicate adjustments, recipient/fresh-proof/durable email and
+settlement/filing acceptance remain. Whole-control counts and release hold are unchanged.

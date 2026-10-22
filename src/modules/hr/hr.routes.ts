@@ -59,6 +59,8 @@ import type { PayslipYearRow } from '../payroll/ph-2316';
 import { computeFinalPay, type FinalPayInput } from '../payroll/ph-final-pay';
 import { yearPayslipRowsByEmployee, companyProfile } from '../payroll/ph-payroll-report-data';
 import {payrollSourceIndex, cutoffPayrollSources, assertCutoffPayroll} from '../payroll/payroll-source';
+import {PayrollSourceError} from '../payroll/payroll-source';
+import {assertPayrollRelease} from '../payroll/payroll-release';
 import {payrollReconciliation} from '../accounting/payroll-reconciliation';
 import { payslipOwnerResolver } from '../payroll/payslip-owner';
 import { redactPay, canChangePay, PAY_FIELDS } from '../payroll/pay-access';
@@ -2622,9 +2624,17 @@ router.post('/payroll/:recordId/mark-paid', requirePermission('payroll.manage'),
     }
     res.status(400).json({ error: 'Already marked paid' }); return;
   }
-  recordPaidChange(rec.id, 'paid', req.user!.id, () =>
-    run("UPDATE form_records SET status = 'paid', updated_at = datetime('now') WHERE id = ?", rec.id));
-  res.json({ ok: true });
+  let clash=false;
+  recordPaidChange(rec.id, 'paid', req.user!.id, () => {
+    try{assertPayrollRelease(payrollSourceIndex(),rec.id);}catch(error){
+      if(!(error instanceof PayrollSourceError)||!siteDecisionStands())throw error;
+      // A previously accepted site decision stands (D6); current issuance still holds.
+      recordSiteClash(req,`Payslip #${rec.id} paid decision retained with source review required: ${error.issues.join(', ')}.`);clash=true;
+    }
+    const result=run("UPDATE form_records SET status = 'paid', updated_at = ? WHERE id = ? AND status = ?",now().toISOString().slice(0,19).replace('T',' '),rec.id,rec.status);
+    if(Number(result.changes)!==1)throw Object.assign(new Error('This payslip changed. Reopen it before marking paid.'),{status:409});
+  });
+  res.json({ ok: true,...(clash?{clash:true,release_held:true}:{}) });
 });
 
 /** Apply a paid/unpaid status change together with its payslip_paid_history row, so a payslip
@@ -2912,7 +2922,8 @@ router.post('/payroll/:recordId/email', requirePermission('payroll.manage'), syn
       Number(req.params.recordId)
     );
     if (!rec || rec.slug !== 'hr_payroll') { res.status(404).json({ error: 'Payslip not found' }); return; }
-    const data = JSON.parse(rec.data as string) as Record<string, unknown>;
+    const source=assertPayrollRelease(payrollSourceIndex(),rec.id,true);
+    const data = source.data!;
     const employeeName = String(data.employee_name || '');
     const ownerId = payslipOwnerResolver().idOf(data);
     if (ownerId == null) {

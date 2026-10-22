@@ -21,9 +21,9 @@ test('reviews the authoritative cutoff, preserves original money and creates att
 test('cancelling review sends no correction and retains the original stamp',async({page})=>{
  let confirms=0;page.on('request',r=>{if(r.url().endsWith('/cutoff-recovery/confirm'))confirms++;});const dialog=await review(page,'CUTOFF-CANCEL');page.once('dialog',d=>d.accept());await dialog.getByRole('button',{name:'Cancel',exact:true}).click();await expect(dialog).toBeHidden();expect(confirms).toBe(0);expect((await record(page,'CUTOFF-CANCEL')).data.cutoff_id).toBe('broken');
 });
-test('a new paid state is refused with an accessible error at confirmation',async({page})=>{
- const dialog=await review(page,'CUTOFF-STALE'),before=await record(page,'CUTOFF-STALE');await page.evaluate(async id=>{await(window as any).API.post(`/hr/payroll/${id}/mark-paid`,{});},before.id);
- await dialog.getByRole('button',{name:'Confirm cutoff recovery',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('never been paid');expect((await record(page,'CUTOFF-STALE')).data.cutoff_id).toBe('broken');await expect(dialog).toBeVisible();
+test('a changed payroll record is refused with an accessible error at confirmation',async({page})=>{
+ const dialog=await review(page,'CUTOFF-STALE'),before=await record(page,'CUTOFF-STALE');await page.evaluate(async record=>{await(window as any).API.put(`/form-records/${record.id}`,{data:{...record.data,net_pay:900},expected_revision:record.revision});},before);
+ await dialog.getByRole('button',{name:'Confirm cutoff recovery',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('changed');expect((await record(page,'CUTOFF-STALE')).data.cutoff_id).toBe('broken');await expect(dialog).toBeVisible();
 });
 test('leaving the payroll view discards its reviewed correction without submitting',async({page})=>{
  const dialog=await review(page,'CUTOFF-CONTEXT');let confirms=0;page.on('request',r=>{if(r.url().endsWith('/cutoff-recovery/confirm'))confirms++;});

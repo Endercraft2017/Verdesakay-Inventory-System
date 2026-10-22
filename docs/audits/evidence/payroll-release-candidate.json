@@ -1,0 +1,17 @@
+{
+  "base_commit": "6667c52235cabcc6937b01949bde2d0c16053427",
+  "files": {
+    "src/modules/payroll/payroll-release.ts": "14ba6202c7d1d8f559921982edb4b0e05e75d7b15caa9fffe7d6900ffe1117d6",
+    "src/modules/payroll/payroll-source.ts": "b5b0f41f32e1f1680e31574cfd491ccd9b2b677450c7ffb2f78ade0e7aa31328",
+    "src/modules/hr/hr.routes.ts": "a258ad442805d9c5d3619f0be1d7dd247aa31cd944e219d2d0f64cceea431317",
+    "src/core/me.routes.ts": "0afcac34772d170f5f7dd83274d946d0ffe047c5e2324f12fd3a7213722872cc",
+    "public/js/modules/core/form-records.js": "5764e6c410c71f487c7cd11040e0eec811e25fdf535f5dceda962f81b37fdf8c",
+    "tests/payroll-release.test.ts": "2c0247bd8fbaa483073ffaaa8a504115b98eba84b971ef3bb0e353e77ba65378",
+    "tests/payslip-disclosure.test.ts": "3ad49bdb8f3875d11c37ff28da0f6a1aaf39c470f1f7263775da6c32dc161ac3",
+    "tests/hr.test.ts": "60745e3c5c2fc9772f2bf09b71dfcd415570899b917c8a5ddfd04788732edd4f",
+    "tests/sync-payroll.test.ts": "dd7a408dd64979e5138c5e99ca27edb62966e8e37a31c3eceb2bd8c2d387e1dc",
+    "tests/e2e/payroll-cutoff.spec.ts": "a0e70b25e8277e263a7b2161d1b8245f1fcab5a784ce895e49b16b56900a402d",
+    "tests/e2e/server.ts": "3c0078aff5cc3cd3629760f014fed3baf9a3bc855d2349b43e46a896b2ee9647",
+    "tests/e2e/payroll-release.spec.ts": "93b428a059f1ddeb342a6d0590aacfd2bdd0df7ec377c8bc4ab3cd0a933f86d6"
+  }
+}

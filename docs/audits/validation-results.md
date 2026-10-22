@@ -1169,3 +1169,41 @@ production certification. No live customer/provider mutation or deployment occur
 referenced ~/.claude/CLAUDE.md resolves to /home/agent/.claude/CLAUDE.md and is absent; repository workflow
 instructions, catalog and pipelines were followed. Whole controls remain 36 PASS / 58 FAIL /
 126 UNVERIFIED / 13 N/A; release hold remains.
+
+
+## Payroll paid marking and employee issuance — 22 October 2026
+
+Base `6667c52235cabcc6937b01949bde2d0c16053427`. See [contract](../operations/payroll-release.md),
+[four-source research](payroll-release-research.md) and [manifest](evidence/payroll-release-verification.json).
+
+- Full suite: **317 files / 3364 passed**, 606.19 seconds.
+  Final runtime/test SHA256 values frozen and rechecked. Final focused: **9 files /
+  212 passed**, 64.92 seconds.
+- **16 new API cases** cover duplicate/unresolved/invalid-stamp/shape/date/status holds, same-shape
+  employee projection, private no-store, foreign tenant/owner isolation, unknown legacy compatibility,
+  unrelated corrupt JSON, late source changes, concurrent paid marking and audit-write rollback.
+- One new in-process offline case: local duplicate refusal creates no command; subsequent valid
+  accepted offline payment survives a later cloud duplicate, confirms replay, records a source clash
+  and holds cloud email. Existing paid D6 and offline GL regressions also pass.
+- Final complete Playwright: **55 passed**, 130.6881 seconds. Three new journeys cover
+  persistent duplicate hold and scoped axe, disabled draft email/valid paid transition, and employee
+  withholding of paid duplicates. Earlier full browser runs each passed 55 before alias and dialog
+  refinements; retained separately. Final full Vitest does not overlap browser execution.
+- Before implementation: **10 failed / 3 passed**; nine behavior failures and one unrelated fixture
+  expectation. Initial focused: **208 passed / 1 failed** because the other user lacked a linked
+  employee (correctly 403). Linked that synthetic fixture, preserving production 403 behavior.
+  Preliminary focused then passed 210; final 212 adds alias and concurrent-transition cases.
+- Existing unresolved email assertions now expect 409. The missing-recipient email test first marks
+  the generated valid slip Paid. The old cutoff-recovery stale browser case now edits payroll normally,
+  since new Mark Paid correctly refuses its invalid-stamp fixture; API paid-history coverage stays.
+- Typecheck, delivered JS syntax and final screenshot inspection passed. No schema/dependency change;
+  db:types and a fresh advisory scan not run. Linux environment/tool versions retained. API mail is
+  mocked; browser cases do not send mail. No live customer/provider write or deployment command was performed.
+  Text logs normalize ANSI/whitespace with raw and retained hashes. Final staged secret scanning passed;
+  the mandatory commit hook repeats the scan at commit.
+
+Current source checks preserve unknown legacy cutoff compatibility and the existing raw employee
+data projection. They do not certify arithmetic, actual settlement/filings, true duplicate adjustment,
+instant replica convergence, independent audit, staff print/Excel final-release controls, reviewed/durable email or native/hosted/office
+acceptance. The referenced global workflow file is absent; repository instructions were followed.
+Whole controls remain 36 PASS / 58 FAIL / 126 UNVERIFIED / 13 N/A; release hold remains.

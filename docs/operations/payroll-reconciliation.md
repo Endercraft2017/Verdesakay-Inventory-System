@@ -165,3 +165,13 @@ history and fresh online review. This narrows the earlier blanket reconstruction
 Actual transfers, duplicate disposition, malformed/unknown history, released/posted adjustments
 and settlement/remittance/filing acceptance remain. No source totals or release status are
 certified by recovering an ID.
+
+
+## Paid marking and issuance follow-up — 22 October 2026
+
+[Current-source release guards](payroll-release.md) now cover paid marking, Paid-only email
+and employee list/PDF/timekeeping, including known alias conflicts. This narrows the earlier
+release/email gap; it does not supply true duplicate disposition, complete legacy linkage,
+version-bound/fresh-proof recipient approval, durable uncertain-mail handling or settlement/
+filing evidence. Accepted offline paid decisions still stand under D6 with source clashes
+and current-replica disclosure holds; synchronization and old issued copies remain material.

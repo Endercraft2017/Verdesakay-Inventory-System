@@ -1355,6 +1355,7 @@ describe('generate-payslips computes real numbers from attendance + linked forms
     const recs = await ctx.api.get(`/api/form-definitions/${gen.body.form_id}/records`).query({ period: 'Email Cutoff' }).set(hdr());
     const recId = recs.body.find((r: { data: { employee_name: string } }) => r.data.employee_name === 'Email Test Employee').id;
 
+    expect((await ctx.api.post(`/api/hr/payroll/${recId}/mark-paid`).set(hdr())).status).toBe(200);
     const res = await ctx.api.post(`/api/hr/payroll/${recId}/email`).set(hdr());
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/linked user account/i);

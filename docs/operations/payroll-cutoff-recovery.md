@@ -132,3 +132,11 @@ filing eligibility, accounting dates, source snapshots, retry-safe posting and s
 remittance/filing evidence remain in the [handoff](../audits/engineering-handoff.md). Native
 Windows/device, independent-user and hosted recovery acceptance also remain. Release hold and
 whole-control statuses are unchanged.
+
+
+## Release gate follow-up — 22 October 2026
+
+The [new paid/issuance source gate](payroll-release.md) refuses normal Mark Paid for the
+invalid-stamp records this workflow repairs. The stale-review browser case therefore now
+uses an ordinary payroll data edit, preserving its stale fingerprint assertion. Paid-history
+refusal remains an API case. Earlier archived browser evidence is dated to its original code.

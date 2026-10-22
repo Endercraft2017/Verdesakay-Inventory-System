@@ -2109,10 +2109,10 @@
   "remediation_date": "2026-10-16",
   "audit_scope": "production merge of current source plus security fixes; local verification and read-only connected-service metadata; no production mutation",
   "latest_follow_up": {
-    "date": "2026-10-20",
-    "scope": "Reviewed missing/invalid payroll cutoff ID recovery with consistent-label, draft/history/duplicate/journal/closed-period/mail holds; five-source research",
-    "base_commit": "42e332041569c192dfb9496e3c3b84e0b8103b6f",
-    "verification": "evidence/payroll-cutoff-verification.json",
+    "date": "2026-10-22",
+    "scope": "Current-source payroll paid/email/employee disclosure guards, corrupt JSON handling and offline accepted-payment source clashes; four-source research",
+    "base_commit": "6667c52235cabcc6937b01949bde2d0c16053427",
+    "verification": "evidence/payroll-release-verification.json",
     "whole_control_statuses_changed": false
   }
 }

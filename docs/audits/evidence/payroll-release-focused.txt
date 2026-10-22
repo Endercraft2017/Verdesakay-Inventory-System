@@ -1,0 +1,51 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payroll-release.test.ts > accepts valid draft payment and permits only its owner to download the resulting paid slip
+{"timestamp":"2026-10-22T00:17:23.790Z","level":"info","event":"http_request","request_id":"bcf6f352-77f0-43c3-a3e6-e61ea9b34fb4","tenant":"default","method":"POST","path":"/api/hr/payroll/22/mark-paid","status":200,"duration_ms":2}
+
+stdout | tests/payroll-release.test.ts > accepts valid draft payment and permits only its owner to download the resulting paid slip
+{"timestamp":"2026-10-22T00:17:23.807Z","level":"info","event":"http_request","request_id":"934cdedd-0004-4a3d-93b0-90d3e388a027","tenant":"default","method":"GET","path":"/api/me/payslips/22/pdf","status":200,"duration_ms":15}
+
+stdout | tests/payroll-release.test.ts > accepts valid draft payment and permits only its owner to download the resulting paid slip
+{"timestamp":"2026-10-22T00:17:23.818Z","level":"info","event":"http_request","request_id":"db275840-6033-47c4-924b-7df1e9d90155","tenant":"default","method":"GET","path":"/api/me/payslips/22/pdf","status":403,"duration_ms":2}
+
+stdout | tests/payroll-release.test.ts
+{"timestamp":"2026-10-22T00:17:22.258Z","level":"info","event":"http_request","request_id":"20612d84-4863-419a-a58a-659e687ebc4a","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":367}
+
+stdout | tests/payroll-release.test.ts
+{"timestamp":"2026-10-22T00:17:22.765Z","level":"info","event":"http_request","request_id":"9231fbea-7deb-42c1-a066-4014649c99fa","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":471}
+
+stdout | tests/payroll-release.test.ts
+{"timestamp":"2026-10-22T00:17:23.081Z","level":"info","event":"http_request","request_id":"9bb6916a-7ae3-43aa-91de-58f29b992e1e","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":313}
+
+stdout | tests/payroll-release.test.ts
+{"timestamp":"2026-10-22T00:17:23.396Z","level":"info","event":"http_request","request_id":"27b510cc-7ea4-4dea-9a57-c77e503102a6","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":312}
+
+stdout | tests/payroll-release.test.ts
+{"timestamp":"2026-10-22T00:17:23.754Z","level":"info","event":"http_request","request_id":"379a1777-206d-4a1e-98b7-30a0dae95d6f","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":356}
+
+ ❯ tests/payroll-release.test.ts (13 tests | 1 failed) 5309ms
+   × accepts valid draft payment and permits only its owner to download the resulting paid slip 34ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payroll-release.test.ts > accepts valid draft payment and permits only its owner to download the resulting paid slip
+AssertionError: expected 403 to be 404 // Object.is equality
+
+- Expected
++ Received
+
+- 404
++ 403
+
+ ❯ tests/payroll-release.test.ts:33:233
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 8 passed (9)
+      Tests  1 failed | 208 passed (209)
+   Start at  00:17:18
+   Duration  59.42s (transform 2.09s, setup 98ms, import 650ms, tests 57.70s, environment 1ms)
