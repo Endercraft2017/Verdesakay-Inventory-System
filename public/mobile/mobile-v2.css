@@ -951,3 +951,45 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 .m-selfie .m-selfie-off span{font-size:54px;line-height:1.2}
 .m-selfie [hidden]{display:none!important}
 .m-selfie .m-scan-msg{font-size:13px;line-height:1.5}
+
+/* Punch corrections retain the existing mobile fields, cards and navigation. */
+.m-time-fix h1{font-size:23px;line-height:1.25;letter-spacing:-.02em;margin:0 0 10px}
+.m-time-fix h2{font-size:15px;margin:0}
+.m-time-fix .m-tf-intro{color:var(--v2-muted);font-size:13px;line-height:1.6;margin:0 0 18px}
+.m-time-fix .m-tf-section-line{display:flex;justify-content:space-between;align-items:center;margin:24px 0 12px;gap:12px}
+.m-time-fix .m-tf-text-button{border:0;background:none;color:var(--v2-green);padding:10px 0 10px 12px;font:inherit;font-size:13px;text-decoration:underline;min-height:44px}
+.m-time-fix .m-tf-requests{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.m-time-fix .m-tf-request{background:var(--v2-surface);border:1px solid var(--v2-line);border-radius:var(--v2-radius-lg);padding:16px;text-align:left;width:100%;font:inherit;color:var(--v2-text);cursor:pointer;display:flex;flex-direction:column;gap:9px}
+.m-time-fix .m-tf-request>span{font-size:12px}
+.m-time-fix .m-tf-row-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.m-time-fix .m-tf-row-top b{font-size:15px}
+.m-time-fix .m-tf-request small{font-size:11px;color:var(--v2-muted)}
+.m-time-fix .m-tf-state{font-size:11px;border-radius:999px;padding:4px 9px;font-weight:600;background:var(--v2-surface-soft);color:var(--v2-muted);white-space:nowrap}
+.m-time-fix .m-tf-state.pending{background:var(--v2-warn-soft);color:var(--v2-warn-text)}
+.m-time-fix .m-tf-state.approved{background:var(--v2-green-soft);color:var(--v2-green)}
+.m-time-fix .m-tf-state.rejected{color:var(--v2-danger)}
+.m-time-fix .m-tf-feedback{padding:14px 16px;background:var(--v2-surface);border:1px solid var(--v2-line);border-radius:var(--v2-radius-md);font-size:12px;line-height:1.65;margin:14px 0;overflow-wrap:anywhere}
+.m-time-fix .m-tf-feedback p{margin:6px 0 12px}
+.m-time-fix .m-tf-feedback.m-error{border-color:var(--v2-danger);color:var(--v2-danger)}
+.m-time-fix .m-tf-field-error{color:var(--v2-danger);font-size:12px}
+.m-time-fix .m-tf-field-error:empty{display:none}
+.m-time-fix .m-input{background:var(--v2-surface);border-color:var(--v2-line);color:var(--v2-text);width:100%;min-height:46px;font-family:inherit;box-sizing:border-box}
+.m-time-fix .m-input[aria-invalid=true]{border-color:var(--v2-danger)}
+.m-time-fix .m-label{color:var(--v2-text);font-size:13px;font-weight:600}
+.m-time-fix .m-field .m-hint{margin:0}
+.m-time-fix .m-hint{color:var(--v2-muted);font-size:12px;line-height:1.6}
+.m-time-fix .m-tf-actions{display:grid;gap:10px;margin-top:16px}
+.m-time-fix .m-btn{min-height:44px;font-size:14px}
+.m-time-fix .m-btn-secondary{background:var(--v2-surface-soft);color:var(--v2-text)}
+.m-time-fix .m-btn-warn{background:var(--v2-warn-soft);color:var(--v2-warn-text);border:1px solid var(--v2-warn-line)}
+.m-time-fix .m-tf-details{list-style:none;margin:18px 0;padding:0;border:1px solid var(--v2-line);border-radius:var(--v2-radius-lg);background:var(--v2-surface);overflow:hidden}
+.m-time-fix .m-tf-details li{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:12px 14px;font-size:12px}
+.m-time-fix .m-tf-details li+li{border-top:1px solid var(--v2-line)}
+.m-time-fix .m-tf-details span{color:var(--v2-muted)}
+.m-time-fix .m-tf-details b{text-align:right;font-weight:600;overflow-wrap:anywhere}
+.m-time-fix .m-tf-copy{margin:22px 0}
+.m-time-fix .m-tf-copy p{font-size:13px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}
+.m-time-fix .m-tf-meta{display:flex;gap:12px;align-items:center;font-size:12px;color:var(--v2-muted)}
+.m-time-fix :is(button,input,textarea):focus-visible,.m-time-fix [tabindex='-1']:focus-visible{outline:3px solid var(--v2-green);outline-offset:3px}
+:root[data-theme=dark] .m-time-fix .m-btn:not(.m-btn-secondary):not(.m-btn-warn){color:var(--v2-bg)}
+:root[data-theme=dark] .m-time-fix .m-tf-state.approved{color:var(--v2-text)}

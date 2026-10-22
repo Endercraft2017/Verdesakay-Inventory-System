@@ -160,11 +160,13 @@
   /** Submit a write, falling back to the offline queue on a network failure. */
   function mSubmit(path, body, opts) {
     opts = opts || {};
-    var key = 'idem-' + uuid();
-    return API.post(path, body, { idempotencyKey: key })
+    var key = opts.idempotencyKey || 'idem-' + uuid();
+    var request = { idempotencyKey: key };
+    if (opts.signal) request.signal = opts.signal;
+    return API.post(path, body, request)
       .then(function (response) { return { ok: true, response: response, local: API.syncLocal(response) }; })
       .catch(function (err) {
-        if (err && err.offline) {
+        if (err && err.offline && (!opts.isCurrent || opts.isCurrent())) {
           return mQueue.enqueue({ key: key, method: 'POST', path: path, body: body, label: opts.label || path })
             .then(function () { return { queued: true }; });
         }

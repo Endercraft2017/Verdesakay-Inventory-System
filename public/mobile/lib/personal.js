@@ -22,6 +22,8 @@
         mToast(entry.options?.busyText?.() || 'Please wait for saving to finish.');
         restore(); return false;
       }
+      // Opted-in screens restore their in-memory draft when the app repaints this route.
+      if (!nextHash && destination === entry.hash && entry.options?.preserveOnRender) return true;
       if (entry.dirty() && entry.options?.confirmLeave) {
         restore();
         entry.options.confirmLeave(function () {
