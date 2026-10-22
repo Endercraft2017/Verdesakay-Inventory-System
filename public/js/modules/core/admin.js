@@ -36,7 +36,7 @@ App.register('admin', async (view, filter) => {
   if (!view.isConnected) return;
   const { roleLabel } = AccessEditor;
 
-  // Role picker for the account modals, with a live line saying what the chosen role covers.
+  // Keep the native value for submissions; the shared chooser adds search and a grant preview.
   function roleSelect(field, selected) {
     return `<select data-f="${field}">${
       catalog.roles.filter(r=>canGrant || catalog.assignableRoles.includes(r.key)).map((r) =>
@@ -46,14 +46,9 @@ App.register('admin', async (view, filter) => {
   function wireRoleHint(overlay) {
     const sel = overlay.querySelector('[data-f="role"]');
     const hint = overlay.querySelector('[data-role-hint]');
-    const paint = () => {
-      const r = catalog.roles.find((x) => x.key === sel.value);
-      hint.textContent = r ? `${r.description ? r.description + ' — ' : ''}${AccessEditor.roleSummary(catalog, r.key)}` : '';
-    };
-    sel.addEventListener('change', paint);
-    paint();
+    AccessEditor.enhanceRoleSelect(sel, catalog, hint);
   }
-  const ROLE_HINT = '<p class="muted role-hint" data-role-hint></p>';
+  const ROLE_HINT = '<div data-role-hint></div>';
   function overrideCount(u) {
     try { return Object.keys(JSON.parse(u.permission_overrides || '{}')).length; } catch { return 0; }
   }
@@ -277,9 +272,9 @@ App.register('admin', async (view, filter) => {
         </button>`,
       confirmText: 'Save',
       onOpen: (overlay) => {
+        overlay.querySelector('[data-f="role"]').disabled = !canGrant;
         wireRoleHint(overlay);
         overlay.querySelector('#edit-perm-btn').hidden = !canGrant;
-        overlay.querySelector('[data-f="role"]').disabled = !canGrant;
         overlay.querySelector('#edit-perm-btn').onclick = () => openPermEditor(u);
         overlay.querySelector('#edit-sessions-btn').onclick = () => openSessions(u);
       },
