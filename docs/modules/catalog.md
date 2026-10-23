@@ -795,6 +795,7 @@ Company Assets, tests `tests/hr-assets.test.ts`), `clock.routes.ts`, `field.rout
 roll back employee/rate history. A `payroll.view` read-only comparison route and Cutoff tools
 → Reconcile payroll show source/journal state with separate payment evidence. See
 [contract](../operations/payroll-reconciliation.md). Existing company claim classes remain.
+**Payroll GL retries (23 October 2026):** `hr/payroll-post-receipts.ts` supplies tenant/actor/request-bound, permission-checked acknowledgements atomic with posting; the existing node-local receipt table retains the `payroll-gl:v1:` namespace beyond generic cleanup. Only this synchronous JSON claim route opts into `sync/capture.ts` atomic source/receipt/command persistence. The desktop dialog keeps one attempt key through uncertain responses and a 20-second deadline; actual account/company/view changes invalidate it. [Recovery and limits](../operations/payroll-post-retries.md) cover keyless/legacy clients, lost keys, different servers and separate authority replay/effect-stream crash work. No reviewed source-version approval or global exactly-once guarantee is added.
 **Payroll worksheets:** 13th month and final pay use stable employee-ID groups from `payroll`,
 not name lookups. Unresolved/unreadable source data blocks affected reports with 409. The
 13th-month dialog clears stale results and disables CSV on pending/failed reads. See

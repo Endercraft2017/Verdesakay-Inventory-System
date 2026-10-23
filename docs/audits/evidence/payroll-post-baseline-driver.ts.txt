@@ -1,0 +1,26 @@
+import {beforeAll,afterAll,it,expect} from 'vitest';
+import fs from 'node:fs';
+import {setupApp,cleanup,login,type TestContext} from '../tests/helpers';
+let ctx:TestContext,token:string,db:typeof import('../src/shared/db'),form:number,employee:number,seq=0;
+const seen:unknown[]=[];
+beforeAll(async()=>{ctx=await setupApp();token=await login(ctx.api);db=await import('../src/shared/db');
+ employee=Number(db.run("INSERT INTO employees(employee_no,name) VALUES('GL-BEFORE','Synthetic posting audit')").lastInsertRowid);
+ form=db.queryOne<{id:number}>("SELECT id FROM form_definitions WHERE slug='hr_payroll'")!.id;
+ expect((await ctx.api.post('/api/accounting/ledger/setup').auth(token,{type:'bearer'}).send({fiscal_year_start:'2026-01-01'})).status).toBe(201);
+});
+afterAll(()=>{fs.writeFileSync('work/payroll-post-before-observations.json',JSON.stringify(seen,null,2)+'\n');cleanup(ctx);});
+function source(){const label='GL-BEFORE-'+(++seq),id=Number(db.run("INSERT INTO attendance_periods(label,start_date,end_date) VALUES(?,'2026-07-01','2026-07-15')",label).lastInsertRowid);
+ db.run("INSERT INTO form_records(form_def_id,number,data,status,period,created_by) VALUES(?,?,?,'draft',?,1)",form,label,JSON.stringify({employee_id:employee,employee_name:'Synthetic posting audit',cutoff_id:id,payroll_period:label,pay_date:'2026-07-15',total_earnings:1000,net_pay:1000}),label);return{id,label};}
+function failReceipt(){db.run("CREATE TRIGGER gl_before_receipt BEFORE INSERT ON idempotency_keys BEGIN SELECT RAISE(ABORT,'synthetic receipt failure'); END");}
+const post=(p:{id:number;label:string},key:string)=>ctx.api.post(`/api/hr/periods/${p.id}/post-payroll-gl`).auth(token,{type:'bearer'}).set('Idempotency-Key',key).send({payroll_period:p.label});
+const journals=(p:{id:number})=>db.queryAll("SELECT id,number,reverses_id FROM journal_entries WHERE source_type='payroll_run' AND source_id=? ORDER BY id",p.id);
+it('does not acknowledge posting when its retry receipt cannot commit',async()=>{const p=source();failReceipt();let r;
+ try{r=await post(p,'gl-before-receipt-atomic');}finally{db.run('DROP TRIGGER gl_before_receipt');}
+ seen.push({case:'receipt failure',status:r.status,journals:journals(p)});
+ expect(r.status).toBeGreaterThanOrEqual(500);expect(journals(p)).toHaveLength(0);
+});
+it('does not turn a retry after missing bookkeeping into a new reversal and replacement',async()=>{const p=source();failReceipt();let first;
+ try{first=await post(p,'gl-before-missing-receipt');}finally{db.run('DROP TRIGGER gl_before_receipt');}
+ const second=await post(p,'gl-before-missing-receipt');seen.push({case:'same-key retry',first:first.status,second:second.status,journals:journals(p)});
+ expect(journals(p)).toHaveLength(1);
+});

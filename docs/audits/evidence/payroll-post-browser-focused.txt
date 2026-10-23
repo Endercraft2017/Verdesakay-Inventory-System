@@ -1,0 +1,19 @@
+[WebServer] (node:15378) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:15391) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:15402) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 6 tests using 1 worker
+
+(node:15411) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e/payroll-post-retries.spec.ts:15:1 › a committed response lost in transit recovers its original journal with the same attempt (2.4s)
+  ✓  2 tests/e2e/payroll-post-retries.spec.ts:27:1 › a hung response reaches its deadline and retains the committed attempt for retry (2.2s)
+  ✓  3 tests/e2e/payroll-post-retries.spec.ts:40:46 › changed actor invalidates an open posting before any submission (2.1s)
+  ✓  4 tests/e2e/payroll-post-retries.spec.ts:40:46 › changed company invalidates an open posting before any submission (2.0s)
+  ✓  5 tests/e2e/payroll-post-retries.spec.ts:40:46 › changed view invalidates an open posting before any submission (1.9s)
+  ✓  6 tests/e2e/payroll-post-retries.spec.ts:47:1 › posting confirmation is labelled, accessible and usable at supported desktop widths and themes (6.5s)
+
+  6 passed (27.3s)

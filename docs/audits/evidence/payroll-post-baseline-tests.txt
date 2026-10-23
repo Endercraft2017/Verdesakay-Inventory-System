@@ -1,0 +1,168 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System/work/payroll-post-baseline
+
+stdout | work/payroll-post-sync-before.test.ts > rolls back a local payroll post if its durable sync command cannot be recorded
+{"timestamp":"2026-10-23T05:49:30.911Z","level":"info","event":"http_request","request_id":"4871e990-f261-4650-ab4a-286172d52d42","tenant":"trio-host","method":"POST","path":"/api/hr/periods/1/post-payroll-gl","status":201,"duration_ms":6}
+
+stderr | work/payroll-post-sync-before.test.ts > rolls back a local payroll post if its durable sync command cannot be recorded
+[sync] failed to record a command: Error: synthetic command recording failure
+    at insertCommand (/workspace/Verdesakay-Inventory-System/work/payroll-post-baseline/src/sync/commands.ts:86:109)
+    at ServerResponse.finish (/workspace/Verdesakay-Inventory-System/work/payroll-post-baseline/src/sync/capture.ts:256:7)
+    at Object.onceWrapper (node:events:630:28)
+    at ServerResponse.emit (node:events:521:24)
+    at onFinish (node:_http_outgoing:1079:10)
+    at callback (node:internal/streams/writable:764:21)
+    at afterWrite (node:internal/streams/writable:708:5)
+    at afterWriteTick (node:internal/streams/writable:694:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:89:21) {
+  code: 'ERR_SQLITE_ERROR',
+  errcode: 1811,
+  errstr: 'constraint failed'
+}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:29.313Z","level":"info","event":"http_request","request_id":"cba5622a-84de-41de-95eb-8d5e0d29567c","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":336}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:29.325Z","level":"info","event":"http_request","request_id":"2f4be7ea-f84b-4e80-adbc-d38cf43678d7","tenant":"default","method":"POST","path":"/api/accounting/ledger/setup","status":201,"duration_ms":7}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:29.332Z","level":"info","event":"http_request","request_id":"54ceb92d-8f77-4b4d-868b-68df9226c3e5","tenant":"default","method":"POST","path":"/api/hr/employees","status":201,"duration_ms":4}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:29.337Z","level":"info","event":"http_request","request_id":"66793bd0-b9a0-4177-b927-3fffa15766db","tenant":"default","method":"POST","path":"/api/hr/periods","status":201,"duration_ms":2}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:29.342Z","level":"info","event":"http_request","request_id":"ca8d066a-6734-45a6-a956-5f20a77b4347","tenant":"default","method":"POST","path":"/api/hr/periods/1/employees","status":201,"duration_ms":3}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:29.347Z","level":"info","event":"http_request","request_id":"cd16b69e-5c5b-404d-b9ca-948b6f9da8ff","tenant":"default","method":"PUT","path":"/api/hr/periods/1/attendance","status":200,"duration_ms":4}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:29.356Z","level":"info","event":"http_request","request_id":"4404c4e2-a505-4fb4-8920-8dcd5101a154","tenant":"default","method":"POST","path":"/api/hr/periods/1/generate-payslips","status":201,"duration_ms":7}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:29.712Z","level":"info","event":"http_request","request_id":"9744b1c3-fb55-4dcc-990e-b8be3487d602","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":342}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:29.760Z","level":"info","event":"http_request","request_id":"09327565-7d43-4969-aa61-3c758e00c785","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":39}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:29.807Z","level":"info","event":"http_request","request_id":"b7042b9b-97c6-42a1-bcb6-20af88c55b0e","tenant":"default","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":42}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.139Z","level":"info","event":"http_request","request_id":"1aadd85c-e057-4b6a-b03d-030410250db9","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":310}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.144Z","level":"info","event":"http_request","request_id":"0e5dbf4c-3f5a-4e8a-b656-1b97c5e5703a","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":1}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.150Z","level":"info","event":"http_request","request_id":"85e53a42-7625-467f-be7f-e02d6840a996","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":2}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.154Z","level":"info","event":"http_request","request_id":"c2690a7d-fddd-4224-b69b-1e6146a55826","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":1}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.157Z","level":"info","event":"http_request","request_id":"80b49271-0e91-4e0f-bd1a-5580f863f6cd","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":1}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.160Z","level":"info","event":"http_request","request_id":"4941787f-fd88-4f3a-8d46-e11975ba5bf2","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":0}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.203Z","level":"info","event":"http_request","request_id":"84f75921-b4da-4632-b8d2-6cc576d2c102","tenant":"trio-host","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":40}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.536Z","level":"info","event":"http_request","request_id":"b308f00d-6f38-48a2-8bd5-4d329708f538","tenant":"trio-host","method":"POST","path":"/api/auth/login","status":200,"duration_ms":316}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.880Z","level":"info","event":"http_request","request_id":"98c41610-83f3-43d7-a5de-6d2f5d08e965","tenant":"trio-lan","method":"POST","path":"/api/auth/login","status":200,"duration_ms":340}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.885Z","level":"info","event":"http_request","request_id":"11628ebe-91ae-41fb-a170-0d3907de6405","tenant":"default","method":"PUT","path":"/api/sync/sites","status":200,"duration_ms":2}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.889Z","level":"info","event":"http_request","request_id":"97de515f-16e2-45cc-b97a-9a3b5c9ef43f","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":1}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.893Z","level":"info","event":"http_request","request_id":"188bd161-50e6-4a52-9b8f-f40f1a586480","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":1}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.896Z","level":"info","event":"http_request","request_id":"e4df3f83-c49d-4d6c-a000-d83656d78e1e","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":1}
+
+stdout | work/payroll-post-sync-before.test.ts
+{"timestamp":"2026-10-23T05:49:30.899Z","level":"info","event":"http_request","request_id":"6de491fa-0e30-470b-bcfa-c321738d06a9","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":0}
+
+ ❯ work/payroll-post-sync-before.test.ts (1 test | 1 failed) 4768ms
+   × rolls back a local payroll post if its durable sync command cannot be recorded 14ms
+stdout | work/payroll-post-before.test.ts > does not acknowledge posting when its retry receipt cannot commit
+{"timestamp":"2026-10-23T05:49:32.860Z","level":"info","event":"http_request","request_id":"8451e1c7-bd78-41d3-b2f9-19b3d7dd28e3","tenant":"default","method":"POST","path":"/api/hr/periods/1/post-payroll-gl","status":201,"duration_ms":7}
+
+stdout | work/payroll-post-before.test.ts > does not turn a retry after missing bookkeeping into a new reversal and replacement
+{"timestamp":"2026-10-23T05:49:32.868Z","level":"info","event":"http_request","request_id":"96fc0dbb-64b4-4da9-8ff1-40aaa674e11f","tenant":"default","method":"POST","path":"/api/hr/periods/2/post-payroll-gl","status":201,"duration_ms":3}
+
+stdout | work/payroll-post-before.test.ts > does not turn a retry after missing bookkeeping into a new reversal and replacement
+{"timestamp":"2026-10-23T05:49:32.873Z","level":"info","event":"http_request","request_id":"feab2af9-7d9d-4290-8a1b-c24cf158d196","tenant":"default","method":"POST","path":"/api/hr/periods/2/post-payroll-gl","status":201,"duration_ms":2}
+
+stdout | work/payroll-post-before.test.ts
+{"timestamp":"2026-10-23T05:49:32.835Z","level":"info","event":"http_request","request_id":"25b8ad86-3a5e-45f2-9c61-fdadf291e297","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":333}
+
+stdout | work/payroll-post-before.test.ts
+{"timestamp":"2026-10-23T05:49:32.848Z","level":"info","event":"http_request","request_id":"238122f9-b32d-4a1c-80f7-536add1a8b93","tenant":"default","method":"POST","path":"/api/accounting/ledger/setup","status":201,"duration_ms":6}
+
+ ❯ work/payroll-post-before.test.ts (2 tests | 2 failed) 1765ms
+   × does not acknowledge posting when its retry receipt cannot commit 13ms
+   × does not turn a retry after missing bookkeeping into a new reversal and replacement 15ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  work/payroll-post-before.test.ts > does not acknowledge posting when its retry receipt cannot commit
+AssertionError: expected 201 to be greater than or equal to 500
+ ❯ work/payroll-post-before.test.ts:20:19
+     18|  try{r=await post(p,'gl-before-receipt-atomic');}finally{db.run('DROP …
+     19|  seen.push({case:'receipt failure',status:r.status,journals:journals(p…
+     20|  expect(r.status).toBeGreaterThanOrEqual(500);expect(journals(p)).toHa…
+       |                   ^
+     21| });
+     22| it('does not turn a retry after missing bookkeeping into a new reversa…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  work/payroll-post-before.test.ts > does not turn a retry after missing bookkeeping into a new reversal and replacement
+AssertionError: expected [ { id: 2, …(2) }, …(2) ] to have a length of 1 but got 3
+
+- Expected
++ Received
+
+- 1
++ 3
+
+ ❯ work/payroll-post-before.test.ts:25:22
+     23|  try{first=await post(p,'gl-before-missing-receipt');}finally{db.run('…
+     24|  const second=await post(p,'gl-before-missing-receipt');seen.push({cas…
+     25|  expect(journals(p)).toHaveLength(1);
+       |                      ^
+     26| });
+     27|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  work/payroll-post-sync-before.test.ts > rolls back a local payroll post if its durable sync command cannot be recorded
+AssertionError: expected 201 to be greater than or equal to 500
+ ❯ work/payroll-post-sync-before.test.ts:27:26
+     25|  const command=response.headers['x-sync-command'];const recorded=comma…
+     26|  fs.writeFileSync('work/payroll-post-sync-before-observations.json',JS…
+     27|  expect(response.status).toBeGreaterThanOrEqual(500);expect(journals).…
+       |                          ^
+     28| });
+     29|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  3 failed (3)
+   Start at  05:49:25
+   Duration  6.96s (transform 1.50s, setup 35ms, import 154ms, tests 6.53s, environment 0ms)
+
+
+PROCESS_EXIT=1

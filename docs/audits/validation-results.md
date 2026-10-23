@@ -2,6 +2,8 @@
 
 Latest dated dependency evidence: see the 23 October follow-up at the end of this
 record. Candidate and final original-dependency runs are distinguished there.
+The subsequent 23 October payroll GL retry follow-up records the newer application
+tree and complete regression; broader release holds are unchanged.
 
 Source cutoff: `restructure/module-architecture` at
 `495db101c3efbe4e4546221fed2db3af233b00aa`, merged into `production` with the audit fixes.
@@ -1350,3 +1352,67 @@ staged pre-commit scan, both exit 0. Actual logs and checksums are retained. The
 mandatory commit hook remains active and scans the final staged revision again;
 its actual outcome is reported after committing. These scoped checks do not attest
 clean historical secrets or verified revocation.
+
+## Payroll GL retry and originating-command follow-up — 23 October 2026
+
+Baseline `0de7c12021c16b17499a03d6535c4269d299a4aa`. Scope: keyed acknowledgements
+and originating-node source/receipt/command commit, with browser retry/context guards.
+See [contract and findings](payroll-post-retry-contract.md),
+[six-source research and reproduction](payroll-post-research.md),
+[recovery procedure](../operations/payroll-post-retries.md) and
+[verification manifest](evidence/payroll-post-verification.json).
+
+Before fixing, SQL faults demonstrated 201 after missing receipt persistence,
+same-key original/reversal/replacement after that failure, and local 201/command header
+without a durable sync command. Three required correctness assertions fail on an
+isolated unchanged baseline checkout. Before/after observations, drivers and failing
+logs are retained. These are synthetic test records, not real financial incidents.
+
+| Final check | Result |
+|---|---|
+| Full `npm test -- --fileParallelism --maxWorkers=2` | **323 files / 3,491 tests passed**, 662.78s, exit 0 |
+| Focused posting/reconciliation/idempotency/offline/route-class regression | **6 files / 65 tests passed**, 21.93s, exit 0 |
+| Complete Playwright suite | **78 passed**, 201.66s; zero skipped, unexpected or flaky |
+| New posting browser scenarios | Six passed: committed response loss, deadline, changed actor/company/view, responsive/theme accessibility |
+| Real process/concurrency comparison | Baseline violates four of five cases; fixed source satisfies all five; already-committed receipt case passes on both |
+| TypeScript / delivered JS syntax | Passed; final source/test hashes unchanged |
+| Runtime dependency audit | Exit 1, **one high node-forge**, no moderate; manifests unchanged; remains a release blocker |
+
+Database assertions cover same-key concurrency, intentional different-key/keyless re-post,
+changed body/cutoff, revoked session/permission, identical IDs/key across tenant databases,
+known legacy/corrupt receipts, retained financial references and raw-key/bearer absence.
+Node tests cover command-write rollback, same-command retries, missing/conflicting commands,
+permission changes during capture-lock wait and normal offline post/re-post/cloud replay.
+
+The actual server-process drill kills before/after receipt insertion, after commit before
+HTTP emission and at node command insertion, and coordinates two processes after both
+receipt misses. It inspects rows/commands after restart on the same local database.
+Node 24.19.0 / SQLite 3.53.3, WAL and synchronous=2 were observed. This establishes the
+scoped process-interruption behavior on this Linux filesystem; it is not physical
+power-loss, real Windows/LAN, backup-restore or independent hosted acceptance.
+
+Earlier failed runs remain visible: the production crash harness initially omitted the
+required Manila TZ; test-only TypeScript header bindings were corrected; browser testing
+found the incorrect account accessor and two test assumptions (toast selector/navigation
+closes modal). A theme-transition contrast observation was resolved by waiting for actual
+transition completion before scanning, without disabling axe rules. Eight final dialog
+scans at 1440/1024/768/390 in light/dark show no violations, with incomplete contrast checks
+retained for manual review. The narrow dark and wide light screenshots were visually
+inspected. No complete accessibility certification is claimed.
+
+Evidence text removes ANSI/trailing whitespace with raw/retained SHA-256 values recorded.
+Authenticated traces, private databases and keys are excluded. Staged content and an
+export of staged files passed Gitleaks (exit 0, no leaks); the mandatory commit hook runs
+again. An initial scan flagged 36 source-checksum map entries. Every flagged value
+matched its file's computed SHA-256; the manifest now separates path/hash fields,
+without scanner exceptions. Raw/retained hashes preserve that representation change.
+These checks do not close historical secrets or the node-forge advisory.
+
+The fix retains claim/main-host and D6 authority. Source-version-bound one-use approval,
+offline factor/origin binding and cloud authority dispatch/effect-stream/verdict/rebase
+interruption recovery remain engineering work. The demonstrated access tests do not
+establish full multi-process authorization-revocation linearization. Lost-page/key,
+older/keyless clients, different actors/servers and uncertain command recovery require
+reconciliation. Financial policy/retention and real runtime/device/restore acceptance
+need independent review or external verification. No new owner engineering task is
+required now; whole-control totals and the complete release hold remain unchanged.

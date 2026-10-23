@@ -66,6 +66,13 @@ for(const kind of ['GOOD','DUP']){
   const employee=Number(db.run('INSERT INTO employees(employee_no,name) VALUES(?,?)',label,'Synthetic Reconciliation '+kind).lastInsertRowid);
   for(let i=0;i<(kind==='DUP'?2:1);i++)db.run("INSERT INTO form_records(form_def_id,number,data,status,period,created_by) VALUES(?,?,?,'draft',?,1)",disclosureForm.id,label+'-'+i,JSON.stringify({employee_id:employee,employee_name:'Synthetic Reconciliation '+kind,cutoff_id:cutoff,pay_date:'2024-06-15',basic_salary:1000,total_earnings:1000,net_pay:1000}),label);
 }
+// Posting retries have their own sources, separate from reconciliation and tax fixtures.
+for(const kind of ['LOST','TIMEOUT','ACTOR','COMPANY','VIEW','ACCESS']){
+ const label='GL-POST-BROWSER-'+kind;
+ const cutoff=Number(db.run("INSERT INTO attendance_periods(label,start_date,end_date) VALUES(?,'2039-07-01','2039-07-15')",label).lastInsertRowid);
+ const employee=Number(db.run('INSERT INTO employees(employee_no,name) VALUES(?,?)',label,'Synthetic GL retry '+kind).lastInsertRowid);
+ db.run("INSERT INTO form_records(form_def_id,number,data,status,period,created_by) VALUES(?,?,?,'draft',?,1)",disclosureForm.id,label,JSON.stringify({employee_id:employee,employee_name:'Synthetic GL retry '+kind,cutoff_id:cutoff,pay_date:'2039-07-15',total_earnings:1000,net_pay:1000}),label);
+}
 // Separate statutory fixtures: identical names, different IDs and pay amounts in a clean year.
 for (const [i, amount] of [12000,24000].entries()) {
   const id = Number(db.run('INSERT INTO employees(employee_no,name,tin_no,sss_no) VALUES(?,?,?,?)', 'REPORT-BROWSER-'+i, 'Synthetic Report Twin', 'REPORT-TIN-'+i, 'REPORT-SSS-'+i).lastInsertRowid);

@@ -1,0 +1,7 @@
+{
+  "node": "v24.19.0",
+  "sqlite": {
+    "version": "3.53.3"
+  },
+  "platform": "linux"
+}

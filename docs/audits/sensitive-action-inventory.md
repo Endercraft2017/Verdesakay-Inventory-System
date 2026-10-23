@@ -66,3 +66,16 @@ post/re-post/cloud-replay test supplements the existing paid-clash checks. See
 These are integrity safeguards; reviewed one-use/source-version-bound approval, retry-safe
 posting, local-factor/command binding, release/email controls and payment/filing receipt models
 remain. Existing company claim classes were retained. No whole AUTHZ control is promoted.
+
+## Payroll GL retry follow-up — 23 October 2026
+
+The retry-safe posting gap above is partially closed for supplied keys on the same
+originating server: posting/receipt are atomic, and the office's synchronous JSON
+claim route persists its command in that transaction. Current permissions precede
+acknowledgement; key/request/access conflicts and missing/conflicting commands hold.
+The browser retains its attempt through uncertainty and checks actual account/company/
+view context. [Contract](payroll-post-retry-contract.md) and
+[recovery](../operations/payroll-post-retries.md) cover tested boundaries and limitations.
+Reviewed source-version one-use approval, local factor/command origin, cloud replay/
+effect-stream/verdict crash recovery, different-server/keyless cases and independent
+financial acceptance remain. This does not promote AUTHZ-15 or authorize a release.

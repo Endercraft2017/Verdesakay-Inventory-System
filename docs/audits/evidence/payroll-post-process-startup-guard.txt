@@ -1,0 +1,3 @@
+
+Refusing to start: set the TZ variable to the office time zone (e.g. TZ=Asia/Manila).
+Cloud servers run on UTC, which would record attendance and payroll dates on the wrong day.

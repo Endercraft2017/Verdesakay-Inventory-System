@@ -1,0 +1,28 @@
+import {beforeAll,afterAll,it,expect} from 'vitest';
+import fs from 'node:fs';
+import {setupSiteTrio,type SiteTrio} from '../tests/sync-helpers';
+import {cleanup} from '../tests/helpers';
+let trio:SiteTrio,period:number;
+const label='GL-SYNC-BEFORE';
+beforeAll(async()=>{
+ trio=await setupSiteTrio(async({api,cloudHdr})=>{
+  expect((await api.post('/api/accounting/ledger/setup').set(cloudHdr()).send({fiscal_year_start:'2026-01-01'})).status).toBe(201);
+  const employee=(await api.post('/api/hr/employees').set(cloudHdr()).send({employee_no:'GL-SYNC-BEFORE',name:'Synthetic offline posting',daily_rate:600,rate_type:'daily',status:'regular'})).body.id;
+  period=(await api.post('/api/hr/periods').set(cloudHdr()).send({label,start_date:'2026-07-01',end_date:'2026-07-01'})).body.id;
+  await api.post(`/api/hr/periods/${period}/employees`).set(cloudHdr()).send({employee_id:employee});
+  await api.put(`/api/hr/periods/${period}/attendance`).set(cloudHdr()).send({employee_id:employee,days:[{work_date:'2026-07-01',time_in:'08:00',time_out:'17:00',notes:''}]});
+  expect((await api.post(`/api/hr/periods/${period}/generate-payslips`).set(cloudHdr()).send({payroll_period:label,pay_date:'2026-07-02'})).status).toBe(201);
+ });
+ expect((await trio.ctx.api.put('/api/sync/sites').set(trio.cloudHdr()).send({main_host:trio.hostNo})).status).toBe(200);
+ await trio.hostRound();trio.cutOff('host');
+},90000);
+afterAll(()=>{trio?.close();if(trio)cleanup(trio.ctx);});
+it('rolls back a local payroll post if its durable sync command cannot be recorded',async()=>{
+ const conn=trio.hostDb();const local=(conn.prepare('SELECT id FROM attendance_periods WHERE label=?').get(label) as{id:number}).id;
+ conn.exec("CREATE TRIGGER gl_before_sync BEFORE INSERT ON sync_commands WHEN NEW.path LIKE '%/post-payroll-gl' BEGIN SELECT RAISE(ABORT,'synthetic command recording failure'); END");
+ let response;try{response=await trio.ctx.api.post(`/api/hr/periods/${local}/post-payroll-gl`).set(trio.hostHdr()).send({payroll_period:label});}finally{conn.exec('DROP TRIGGER gl_before_sync');}
+ const journals=conn.prepare("SELECT id,number FROM journal_entries WHERE source_type='payroll_run' AND source_id=?").all(local);
+ const command=response.headers['x-sync-command'];const recorded=command?!!conn.prepare('SELECT id FROM sync_commands WHERE id=?').get(command):false;
+ fs.writeFileSync('work/payroll-post-sync-before-observations.json',JSON.stringify({status:response.status,journals,headerCommand:command,recorded},null,2)+'\n');
+ expect(response.status).toBeGreaterThanOrEqual(500);expect(journals).toHaveLength(0);expect(recorded).toBe(false);
+});

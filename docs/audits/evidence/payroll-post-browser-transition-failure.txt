@@ -1,0 +1,147 @@
+[WebServer] (node:14703) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:14716) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:14727) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 6 tests using 1 worker
+
+(node:14765) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 tests/e2e/payroll-post-retries.spec.ts:15:1 › a committed response lost in transit recovers its original journal with the same attempt (2.3s)
+  ✓  2 tests/e2e/payroll-post-retries.spec.ts:27:1 › a hung response reaches its deadline and retains the committed attempt for retry (2.4s)
+  ✓  3 tests/e2e/payroll-post-retries.spec.ts:40:46 › changed actor invalidates an open posting before any submission (2.3s)
+  ✓  4 tests/e2e/payroll-post-retries.spec.ts:40:46 › changed company invalidates an open posting before any submission (2.1s)
+  ✓  5 tests/e2e/payroll-post-retries.spec.ts:40:46 › changed view invalidates an open posting before any submission (1.9s)
+  ✘  6 tests/e2e/payroll-post-retries.spec.ts:47:1 › posting confirmation is labelled, accessible and usable at supported desktop widths and themes (5.4s)
+
+
+  1) tests/e2e/payroll-post-retries.spec.ts:47:1 › posting confirmation is labelled, accessible and usable at supported desktop widths and themes
+
+    Error: expect(received).toEqual(expected) // deep equality
+
+    - Expected  -  1
+    + Received  + 93
+
+    - Array []
+    + Array [
+    +   Object {
+    +     "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+    +     "help": "Elements must meet minimum color contrast ratio thresholds",
+    +     "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=playwright",
+    +     "id": "color-contrast",
+    +     "impact": "serious",
+    +     "nodes": Array [
+    +       Object {
+    +         "all": Array [],
+    +         "any": Array [
+    +           Object {
+    +             "data": Object {
+    +               "bgColor": "#fbfcff",
+    +               "contrastRatio": 1.16,
+    +               "expectedContrastRatio": "4.5:1",
+    +               "fgColor": "#ece9f6",
+    +               "fontSize": "9.8pt (13px)",
+    +               "fontWeight": "normal",
+    +               "messageKey": null,
+    +             },
+    +             "id": "color-contrast",
+    +             "impact": "serious",
+    +             "message": "Element has insufficient color contrast of 1.16 (foreground color: #ece9f6, background color: #fbfcff, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+    +             "relatedNodes": Array [
+    +               Object {
+    +                 "html": "<button type=\"button\" class=\"btn secondary small guide-entry\" data-guide-open=\"\" title=\"Guides and shortcuts (Alt + Shift + G)\">",
+    +                 "target": Array [
+    +                   ".modal-head-actions > .guide-entry.small[data-guide-open=\"\"]",
+    +                 ],
+    +               },
+    +             ],
+    +           },
+    +         ],
+    +         "failureSummary": "Fix any of the following:
+    +   Element has insufficient color contrast of 1.16 (foreground color: #ece9f6, background color: #fbfcff, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+    +         "html": "<button type=\"button\" class=\"btn secondary small guide-entry\" data-guide-open=\"\" title=\"Guides and shortcuts (Alt + Shift + G)\">",
+    +         "impact": "serious",
+    +         "none": Array [],
+    +         "target": Array [
+    +           ".modal-head-actions > .guide-entry.small[data-guide-open=\"\"]",
+    +         ],
+    +       },
+    +       Object {
+    +         "all": Array [],
+    +         "any": Array [
+    +           Object {
+    +             "data": Object {
+    +               "bgColor": "#fbfcff",
+    +               "contrastRatio": 1.16,
+    +               "expectedContrastRatio": "4.5:1",
+    +               "fgColor": "#ece9f6",
+    +               "fontSize": "10.1pt (13.5px)",
+    +               "fontWeight": "normal",
+    +               "messageKey": null,
+    +             },
+    +             "id": "color-contrast",
+    +             "impact": "serious",
+    +             "message": "Element has insufficient color contrast of 1.16 (foreground color: #ece9f6, background color: #fbfcff, font size: 10.1pt (13.5px), font weight: normal). Expected contrast ratio of 4.5:1",
+    +             "relatedNodes": Array [
+    +               Object {
+    +                 "html": "<button class=\"btn secondary\" data-close=\"\">Cancel</button>",
+    +                 "target": Array [
+    +                   ".secondary.btn[data-close=\"\"]",
+    +                 ],
+    +               },
+    +             ],
+    +           },
+    +         ],
+    +         "failureSummary": "Fix any of the following:
+    +   Element has insufficient color contrast of 1.16 (foreground color: #ece9f6, background color: #fbfcff, font size: 10.1pt (13.5px), font weight: normal). Expected contrast ratio of 4.5:1",
+    +         "html": "<button class=\"btn secondary\" data-close=\"\">Cancel</button>",
+    +         "impact": "serious",
+    +         "none": Array [],
+    +         "target": Array [
+    +           ".secondary.btn[data-close=\"\"]",
+    +         ],
+    +       },
+    +     ],
+    +     "tags": Array [
+    +       "cat.color",
+    +       "wcag2aa",
+    +       "wcag143",
+    +       "TTv5",
+    +       "TT13.c",
+    +       "EN-301-549",
+    +       "EN-9.1.4.3",
+    +       "ACT",
+    +       "RGAAv4",
+    +       "RGAA-3.2.1",
+    +     ],
+    +   },
+    + ]
+
+      50 |   await page.setViewportSize({width,height:900});await page.evaluate(theme=>document.documentElement.setAttribute('data-theme',theme),theme);
+      51 |   await expect(dialog.getByLabel('Payroll period label')).toBeVisible();const button=dialog.getByRole('button',{name:'Post to GL',exact:true});await expect(button).toBeInViewport();
+    > 52 |   const result=await new AxeBuilder({page}).include('[role="dialog"]').analyze();expect(result.violations).toEqual([]);results.push({theme,width,incomplete:result.incomplete.map(x=>({id:x.id,impact:x.impact}))});
+         |                                                                                                            ^
+      53 |   await page.screenshot({path:`work/payroll-post-${theme}-${width}.png`});
+      54 |  }
+      55 |  const fs=await import('node:fs');fs.writeFileSync('work/payroll-post-browser-accessibility.json',JSON.stringify(results,null,2)+'\n');
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-post-retries.spec.ts:52:108
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-post-retries-posti-23ed4-d-desktop-widths-and-themes/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-post-retries-posti-23ed4-d-desktop-widths-and-themes/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-post-retries-posti-23ed4-d-desktop-widths-and-themes/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-post-retries-posti-23ed4-d-desktop-widths-and-themes/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    tests/e2e/payroll-post-retries.spec.ts:47:1 › posting confirmation is labelled, accessible and usable at supported desktop widths and themes
+  5 passed (26.3s)

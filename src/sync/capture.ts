@@ -128,6 +128,9 @@ export function syncRequestMiddleware(req: Request, res: Response, next: NextFun
 }
 
 export interface SyncClassOptions {
+  /** Opt-in for synchronous JSON handlers: business changes and the originating
+   *  node command commit together before acknowledgement. Currently payroll GL only. */
+  atomic?: boolean;
   /** Anonymous channel: the command carries no actor, device, node, time or planned ids. */
   unattributed?: boolean;
   /** Whose record it is (§16). `claim`: who may decide it (default: company-wide, the main site).
@@ -214,8 +217,94 @@ export function syncClass(cls: SyncClass, opts: SyncClassOptions = {}): RequestH
         return;
       }
     }
-    recordCommand(conn, cfg, cls, opts, req, res, next).catch(next);
+    (opts.atomic ? recordAtomicCommand : recordCommand)(conn, cfg, cls, opts, req, res, next).catch(next);
   };
+}
+
+/** A deliberately narrow alternative to the legacy finish-event capture. The
+ * handler must be synchronous and respond with JSON, without network/file work.
+ * Replay/rebase retain their existing orchestrator path; their crash/effect-stream
+ * boundary is separate from this originating-node capture guarantee. */
+async function recordAtomicCommand(
+  conn: DatabaseSync, cfg: SyncConfig, cls: SyncClass, opts: SyncClassOptions,
+  req: Request, res: Response, next: NextFunction,
+): Promise<void> {
+  const release = await lockSync(conn);
+  let session: ReturnType<DatabaseSync['createSession']> | undefined;
+  let open = false, done = false;
+  const stop = (rollback: boolean) => {
+    if (done) return;
+    if (!rollback) {
+      session?.close(); session = undefined;
+      // Keep rollback possible if releasing/committing the savepoint fails.
+      conn.exec('RELEASE sync_atomic_command'); open = false;
+      done = true; release(); return;
+    }
+    done = true;
+    try { session?.close(); session = undefined; }
+    finally {
+      try {
+        if (open) {
+          if (rollback) conn.exec('ROLLBACK TO sync_atomic_command');
+          conn.exec('RELEASE sync_atomic_command');
+          open = false;
+        }
+      } finally { release(); }
+    }
+  };
+  try {
+    // Authority can change while this request waits behind another command.
+    const current = syncConfigOf(conn);
+    const refusal = !current || current.role !== 'node'
+      ? 'The office authority changed. Refresh before retrying.'
+      : cls === 'claim' ? claimRefusal(conn, current, req, opts) : null;
+    if (refusal) { stop(true); res.status(503).json({ error: refusal }); return; }
+    cfg = current!;
+    const occurred = new Date(), commandId = ulid(occurred.getTime());
+    const ctx: SyncContext = { mode: 'record', commandId, clock: sqliteTime(occurred), plan: [], cursor: { id: 0, seq: 0 } };
+    conn.exec('SAVEPOINT sync_atomic_command'); open = true;
+    session = conn.createSession();
+    res.setHeader('X-Sync-State', 'local');
+    res.setHeader('X-Sync-Command', commandId);
+    const json = res.json.bind(res);
+    res.json = (body: unknown) => {
+      if (done) return json(body);
+      try {
+        // Prepare serializable response data before committing, not after it.
+        const prepared = JSON.parse(JSON.stringify(body));
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          stop(true);
+          res.removeHeader('X-Sync-State'); res.removeHeader('X-Sync-Command');
+          return json(prepared);
+        }
+        const changes = filterChangeset(session!.changeset(), isReplicated);
+        if (changes.length) {
+          const stamp = stampLocal(conn, cfg.nodeNo);
+          insertCommand(conn, {
+            id: commandId, node_no: cfg.nodeNo, node_seq: stamp.node_seq, hlc: stamp.hlc,
+            occurred_at: occurred.toISOString(), occurred_date: occurred.toISOString().slice(0, 10),
+            actor_user_id: req.user?.id ?? null, device_id: deviceIdOf(req),
+            method: req.method, path: req.originalUrl, body: redactBody(commandBody(req), opts.redact),
+            sync_class: cls, allocation_plan: JSON.stringify(ctx.plan), app_version: APP_VERSION,
+            unattributed: 0, context: requestContext(req),
+          }, { state: 'local', local_changeset: changes, response_status: res.statusCode });
+        }
+        stop(false);
+        return json(prepared);
+      } catch {
+        // A failed command write must not leave acknowledged, unsendable payroll.
+        try { stop(true); } catch { /* the safe error does not assert rollback succeeded */ }
+        res.removeHeader('X-Sync-State'); res.removeHeader('X-Sync-Command');
+        console.error('[sync] atomic command persistence failed');
+        return json.call(res.status(500), { error: 'This action could not be recorded safely. Retry the same attempt.' });
+      }
+    };
+    res.once('close', () => { if (!done) stop(true); });
+    syncStore.run(ctx, next);
+  } catch (error) {
+    try { stop(true); } catch { /* preserve the originating error */ }
+    throw error;
+  }
 }
 
 async function recordCommand(

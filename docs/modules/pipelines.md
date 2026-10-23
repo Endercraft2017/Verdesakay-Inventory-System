@@ -746,6 +746,14 @@ for the internet (it uses the company's mail server, which only the cloud has).
    Live entries exclude reversal rows. Read-only HR/accounting reconciliation compares current
    expected accounts/parties/date/amounts to the journal; it does not verify bank/remittance/
    filing evidence. See `docs/operations/payroll-reconciliation.md`.
+   **Retry boundary (23 October):** updated desktop submissions retain a per-dialog key.
+   Originating-server journal and keyed receipt commit together; at an installed node,
+   the claim route also commits its durable command before responding. A same-key retry
+   returns the original journal/command after current permission checks. Missing/conflicting
+   commands and known legacy receipts hold for reconciliation. This preserves offline
+   main-host authority; normal post/re-post/cloud replay is tested. Source-version approval
+   and authority replay/effect-stream/verdict crash atomicity remain separate open work.
+   See `docs/operations/payroll-post-retries.md` for lost-key/server-change recovery.
    Earlier-month computation also refuses first/newest duplicate selection and holds unlinked
    relevant-month history. Rate recomputation rolls back its employee/history change on a hold.
 5. **Statutory filing** (`accounting`, under Tax & Compliance) — `payroll`'s

@@ -175,7 +175,7 @@ const API = (() => {
       const url = requestBase + (path.startsWith('/api/') ? path : '/api' + path);
       res = isForm && opts && opts.onProgress
         ? await uploadResponse(url, method, headers, payload, opts.onProgress)
-        : await fetch(url, { method, headers, body: payload, credentials: cookies() ? 'same-origin' : 'omit' });
+        : await fetch(url, { method, headers, body: payload, credentials: cookies() ? 'same-origin' : 'omit', ...(opts && opts.signal ? { signal: opts.signal } : {}) });
     } catch (e) {
       // fetch only throws on a genuine network failure (offline, DNS, connection reset).
       const err = new Error('Network unavailable');

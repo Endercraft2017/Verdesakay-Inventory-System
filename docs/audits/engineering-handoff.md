@@ -1,5 +1,19 @@
 # Engineering handoff and release hold
 
+Latest payroll GL retry follow-up: 23 October 2026 — demonstrated receipt-write and
+originating-node command-write failures could acknowledge unsafely committed payroll
+journals. Keyed posting/receipt writes are now atomic; this synchronous claim route
+also commits local source/receipt/command before success. Concurrent or lost-response
+same-key retries recover the original acknowledgement. Current access, tenant and
+original-command checks hold unsafe replays. The desktop retains one attempt key and
+enforces a response deadline and actual account/company/view guards. See
+[contract/evidence](payroll-post-retry-contract.md) and [recovery](../operations/payroll-post-retries.md).
+No owner engineering action is needed now. Reviewed source-version approval, offline
+factor binding, global/cross-server retry protection and the existing authority dispatch/
+effect-stream/verdict crash boundaries remain engineering work. Broader release holds,
+including the existing node-forge advisory and independent/hosted/device acceptance,
+stay open. Whole-control counts are unchanged.
+
 Latest dependency follow-up: 23 October 2026 — the formatter advisory was withdrawn
 upstream. Fresh runtime and explicit full-root npm scans return one high/zero moderate;
 the reduction is not credited to a delivered package fix. An experimentally verified

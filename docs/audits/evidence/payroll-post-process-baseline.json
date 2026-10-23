@@ -1,0 +1,124 @@
+{
+  "mode": "before-fix reproduction",
+  "node": "v24.19.0",
+  "journal_mode": {
+    "journal_mode": "wal"
+  },
+  "synchronous": {
+    "synchronous": 2
+  },
+  "cases": [
+    {
+      "name": "before receipt insert SIGKILL",
+      "contract_satisfied": false,
+      "first_status": null,
+      "interrupted_rows": [
+        {
+          "id": 1,
+          "number": "JV-000001",
+          "reverses_id": null
+        }
+      ],
+      "retry_status": 201,
+      "final_rows": [
+        {
+          "id": 1,
+          "number": "JV-000001",
+          "reverses_id": null
+        },
+        {
+          "id": 2,
+          "number": "JV-000002",
+          "reverses_id": 1
+        },
+        {
+          "id": 3,
+          "number": "JV-000003",
+          "reverses_id": null
+        }
+      ]
+    },
+    {
+      "name": "after receipt insert SIGKILL",
+      "contract_satisfied": false,
+      "first_status": null,
+      "interrupted_rows": [
+        {
+          "id": 4,
+          "number": "JV-000004",
+          "reverses_id": null
+        }
+      ],
+      "retry_status": 201,
+      "final_rows": [
+        {
+          "id": 4,
+          "number": "JV-000004",
+          "reverses_id": null
+        },
+        {
+          "id": 5,
+          "number": "JV-000005",
+          "reverses_id": 4
+        },
+        {
+          "id": 6,
+          "number": "JV-000006",
+          "reverses_id": null
+        }
+      ]
+    },
+    {
+      "name": "committed response lost to SIGKILL",
+      "contract_satisfied": true,
+      "first_status": null,
+      "retry_status": 201,
+      "final_rows": [
+        {
+          "id": 7,
+          "number": "JV-000007",
+          "reverses_id": null
+        }
+      ]
+    },
+    {
+      "name": "two real processes after concurrent cache misses",
+      "contract_satisfied": false,
+      "statuses": [
+        201,
+        201
+      ],
+      "final_rows": [
+        {
+          "id": 8,
+          "number": "JV-000008",
+          "reverses_id": null
+        },
+        {
+          "id": 9,
+          "number": "JV-000009",
+          "reverses_id": 8
+        },
+        {
+          "id": 10,
+          "number": "JV-000010",
+          "reverses_id": null
+        }
+      ]
+    },
+    {
+      "name": "originating node command insert SIGKILL",
+      "contract_satisfied": false,
+      "first_status": 201,
+      "retry_status": 201,
+      "command": null,
+      "final_rows": [
+        {
+          "id": 137438953473,
+          "number": "JV-P1-0001",
+          "reverses_id": null
+        }
+      ]
+    }
+  ]
+}

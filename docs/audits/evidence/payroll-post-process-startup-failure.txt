@@ -1,0 +1,15 @@
+{"timestamp":"2026-10-23T06:04:03.865Z","level":"info","event":"http_request","request_id":"36777128-9596-4e72-82b6-9cf0a437ec6c","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":317}
+{"timestamp":"2026-10-23T06:04:03.876Z","level":"info","event":"http_request","request_id":"94cab7a3-1470-4455-954e-e8307294fffa","tenant":"default","method":"POST","path":"/api/accounting/ledger/setup","status":201,"duration_ms":5}
+/workspace/Verdesakay-Inventory-System/scripts/payroll-post-crash-drill.ts:26
+async function ready(port:number,child:ChildProcess){await until(async()=>{if(child.exitCode!==null||child.signalCode!==null)throw Error('Server exited during startup');try{return(await fetch(`http://127.0.0.1:${port}/api/health`,{signal:AbortSignal.timeout(500)})).ok;}catch{return false;}},'server health');}
+                                                                                                                                   ^
+
+Error: Server exited during startup
+    at <anonymous> (/workspace/Verdesakay-Inventory-System/scripts/payroll-post-crash-drill.ts:26:132)
+    at until (/workspace/Verdesakay-Inventory-System/scripts/payroll-post-crash-drill.ts:21:139)
+    at async ready (/workspace/Verdesakay-Inventory-System/scripts/payroll-post-crash-drill.ts:26:54)
+    at async <anonymous> (/workspace/Verdesakay-Inventory-System/scripts/payroll-post-crash-drill.ts:36:34)
+
+Node.js v24.19.0
+
+PROCESS_EXIT=1

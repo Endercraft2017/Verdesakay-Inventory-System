@@ -1,0 +1,19 @@
+[
+  {
+    "case": "receipt failure",
+    "status": 500,
+    "journals": []
+  },
+  {
+    "case": "same-key retry",
+    "first": 500,
+    "second": 201,
+    "journals": [
+      {
+        "id": 1,
+        "number": "JV-000001",
+        "reverses_id": null
+      }
+    ]
+  }
+]

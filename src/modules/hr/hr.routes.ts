@@ -3,6 +3,7 @@ import payrollIdentityRoutes from './payroll-identity.routes';
 import payrollCutoffRoutes from './payroll-cutoff.routes';
 import payrollCopyRoutes from './payroll-copy.routes';
 import payrollEmailRoutes from './payroll-email.routes';
+import {replayPayrollPost,postPayrollWithReceipt} from './payroll-post-receipts';
 import { correctRecord } from '../../core/data-forms/history';
 import { recordDeductionChange, deductionHistory } from '../payroll/deduction-history';
 import { effectiveHrForm } from './request-policy';
@@ -2580,19 +2581,21 @@ router.get('/periods/:id/payroll-reconciliation', requirePermission('payroll.vie
 // aggregate journal entry (Payroll Journal). A deliberate, separate action from
 // generate-payslips itself (see src/accounting-autopost.ts's maybeAutoPostPayroll for why) —
 // safe to click again after a regenerate, which reverses the prior entry and posts fresh.
-router.post('/periods/:id/post-payroll-gl', requirePermission('payroll.manage'), syncClass('claim'), (req, res) => {
-  if (!ledgerEnabled()) { res.status(400).json({ error: 'The General Ledger isn’t enabled — turn it on under Accounting → Books first.' }); return; }
+router.post('/periods/:id/post-payroll-gl', requirePermission('payroll.manage'), replayPayrollPost, syncClass('claim',{atomic:true}), requireAuth, requirePermission('payroll.manage'), (req, res) => {
+ postPayrollWithReceipt(req,res,()=>{
+  if (!ledgerEnabled()) return {status:400,body:{error:'The General Ledger isn’t enabled — turn it on under Accounting → Books first.'}};
   const periodId = Number(req.params.id);
   const period = queryOne<AttendancePeriod>('SELECT * FROM attendance_periods WHERE id = ?', periodId);
-  if (!period) { res.status(404).json({ error: 'Cutoff not found' }); return; }
+  if (!period) return {status:404,body:{error:'Cutoff not found'}};
   // Same payroll_period label generate-payslips used for this cutoff — not re-validated as
   // strictly as generatePayslipsSchema (that one requires it non-empty for a *new* generate);
   // here it's optional and just needs to match whatever records are already sitting there.
   const payrollPeriod = (typeof req.body?.payroll_period === 'string' && req.body.payroll_period.trim()) || period.label;
   const outcome = maybeAutoPostPayroll(periodId, payrollPeriod, req.user!.id);
-  if (outcome.error) { res.status(400).json(outcome); return; }
-  if (!outcome.posted) { res.status(400).json({ ...outcome, error: outcome.skipped === 'nothing_to_post' ? 'No payslips to post for this period yet — generate payslips first.' : `Not posted (${outcome.skipped}).` }); return; }
-  res.status(201).json(outcome);
+  if (outcome.error) return {status:400,body:{...outcome}};
+  if (!outcome.posted) return {status:400,body:{...outcome,error:outcome.skipped === 'nothing_to_post' ? 'No payslips to post for this period yet — generate payslips first.' : `Not posted (${outcome.skipped}).`}};
+  return {status:201,body:{...outcome}};
+ });
 });
 
 // POST /api/hr/payroll/:recordId/mark-paid — locks a generated payslip: generate-payslips

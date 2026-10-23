@@ -1,0 +1,258 @@
+{
+  "findings": 36,
+  "all_match_computed_file_checksums": true,
+  "review": [
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 14,
+      "source_path": "public/js/api.js",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 33,
+      "source_path": "public/js/lib/access-editor.js",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 240,
+      "source_path": "scripts/check-account-credentials-ux.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 261,
+      "source_path": "scripts/vendor-console-passkeys.mjs",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 269,
+      "source_path": "src/core/auth.routes.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 307,
+      "source_path": "src/desktop/pc-secret.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 357,
+      "source_path": "src/modules/inventory/order-access.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 360,
+      "source_path": "src/modules/inventory/release-auth.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 381,
+      "source_path": "src/modules/payroll/pay-access.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 421,
+      "source_path": "src/platform/platform-passkeys.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 437,
+      "source_path": "src/shared/auth.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 440,
+      "source_path": "src/shared/common-passwords.txt",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 446,
+      "source_path": "src/shared/desk-access.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 465,
+      "source_path": "src/shared/password-hash.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 466,
+      "source_path": "src/shared/password-policy.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 467,
+      "source_path": "src/shared/password-work.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 480,
+      "source_path": "src/shared/secrets.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 509,
+      "source_path": "tests/access-matrix.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 510,
+      "source_path": "tests/account-credentials.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 517,
+      "source_path": "tests/adopt-default-tenant-api.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 532,
+      "source_path": "tests/auth-reset.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 533,
+      "source_path": "tests/auth.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 564,
+      "source_path": "tests/desktop-pc-secret.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 591,
+      "source_path": "tests/e2e/passkeys.spec.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 620,
+      "source_path": "tests/form-entry-access.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 623,
+      "source_path": "tests/form-studio-key-migration.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 627,
+      "source_path": "tests/frontend-api-client.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 643,
+      "source_path": "tests/frontend-media-api.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 712,
+      "source_path": "tests/native-api-credentials.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 715,
+      "source_path": "tests/native-credentials.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 731,
+      "source_path": "tests/password-hash.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 732,
+      "source_path": "tests/password-login-races.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 733,
+      "source_path": "tests/password-policy.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 734,
+      "source_path": "tests/password-work.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 775,
+      "source_path": "tests/platform-passkeys.test.ts",
+      "verified_as_source_sha256": true
+    },
+    {
+      "rule": "generic-api-key",
+      "file": "docs/audits/evidence/payroll-post-source-freeze.json",
+      "line": 810,
+      "source_path": "tests/release-auth.test.ts",
+      "verified_as_source_sha256": true
+    }
+  ]
+}

@@ -2774,19 +2774,41 @@ async function renderPeriod(view, periodId, initialEmployeeId) {
   }
 
   function postGlModal() {
+    const actor = App.getMe(), scope = API.serverScope(), token = API.getToken(), invoker = glBtn;
+    const live = ov => ov.isConnected && invoker.isConnected && App.getMe() === actor && API.serverScope() === scope && API.getToken() === token;
+    let key = null, submittedLabel = null;
     UI.modal({
       title: 'Post payroll to the General Ledger',
       bodyHTML: `
         <p class="muted" style="margin-top:0">Books this cutoff's generated payslips as one aggregate journal entry
           (Salaries & Wages, statutory payables, Net Pay Payable). Posting again after a regenerate reverses the
           previous entry and saves its replacement together. If validation or saving fails, the prior journal is preserved.</p>
-        <div><label>Payroll period label</label><input data-f="payroll_period" value="${UI.esc(lastPayrollPeriod)}" /></div>`,
+        <div><label for="tk-gl-payroll-period">Payroll period label</label><input id="tk-gl-payroll-period" data-f="payroll_period" value="${UI.esc(lastPayrollPeriod)}" /></div>
+        <p class="muted">If confirmation is lost, retry this same attempt. Before starting another posting, check the payroll journal in Reconcile payroll.</p>
+        <p data-post-state role="status"></p>`,
       confirmText: 'Post to GL',
       onConfirm: async (ov, showErr) => {
-        const payroll_period = ov.querySelector('[data-f="payroll_period"]').value.trim();
+        if (!live(ov)) { ov.querySelector('[data-f="payroll_period"]').value = ''; showErr('Sign-in, company or cutoff changed. Close this dialog and review the posting again.'); return false; }
+        const input = ov.querySelector('[data-f="payroll_period"]'), payroll_period = input.value.trim();
         if (!payroll_period) { showErr('Payroll period label is required'); return false; }
-        const res = await API.post(`/hr/periods/${periodId}/post-payroll-gl`, { payroll_period });
-        UI.toast(`Posted to GL — journal entry ${res.entry ? res.entry.number : ''}`.trim());
+        if (submittedLabel != null && submittedLabel !== payroll_period) { showErr('This attempt already uses another label. Check the journal before starting another posting.'); return false; }
+        if (!key) {
+          try { key = Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join(''); }
+          catch { showErr('A posting reference could not be created. Reload before trying again.'); return false; }
+        }
+        submittedLabel = payroll_period; input.disabled = true;
+        const state = ov.querySelector('[data-post-state]'), controller = new AbortController();
+        state.textContent = 'Saving posting…';
+        const timeout = setTimeout(() => controller.abort(), 20000);
+        try {
+          const res = await API.post(`/hr/periods/${periodId}/post-payroll-gl`, { payroll_period }, { idempotencyKey: key, signal: controller.signal });
+          if (!live(ov)) return false;
+          const local = API.syncLocal(res);
+          UI.toast(`${res.replayed ? 'Recovered the original posting' : local ? 'Saved on this PC; cloud sync is pending' : 'Posted to GL'} — journal entry ${res.entry ? res.entry.number : ''}`.trim());
+        } catch (error) {
+          if (live(ov)) { state.textContent = 'Posting was not confirmed here. Retry this same attempt; check reconciliation before starting another.'; showErr(error.message || 'Confirmation unavailable. Retry this same attempt.'); }
+          return false;
+        } finally { clearTimeout(timeout); }
       },
     });
   }

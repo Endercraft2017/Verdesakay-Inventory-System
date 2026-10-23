@@ -1,0 +1,35 @@
+[
+  {
+    "case": "receipt failure",
+    "status": 201,
+    "journals": [
+      {
+        "id": 1,
+        "number": "JV-000001",
+        "reverses_id": null
+      }
+    ]
+  },
+  {
+    "case": "same-key retry",
+    "first": 201,
+    "second": 201,
+    "journals": [
+      {
+        "id": 2,
+        "number": "JV-000002",
+        "reverses_id": null
+      },
+      {
+        "id": 3,
+        "number": "JV-000003",
+        "reverses_id": 2
+      },
+      {
+        "id": 4,
+        "number": "JV-000004",
+        "reverses_id": null
+      }
+    ]
+  }
+]

@@ -39,6 +39,8 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
   // Multipart bodies are parsed later: their key identifies the whole upload; only
   // JSON requests can additionally compare parsed payloads here.
   if (/^\/api\/(auth|signup|sync)(?:\/|$)/i.test(req.originalUrl.split('?')[0] ?? '')) return next();
+  // Payroll GL receipts commit with their journal and check current route authority.
+  if (/\/api\/hr\/periods\/[^/]+\/post-payroll-gl\/?$/i.test(req.originalUrl.split('?')[0] ?? '')) return next();
   // Ephemeral review credentials must not be persisted in HTTP receipts or replayed
   // ahead of their fresh-proof gate. Confirmation has its own atomic revision guard.
   if (/\/api\/hr\/payroll\/[^/]+\/(?:identity|cutoff-recovery|email)(?:\/|$)/i.test(req.originalUrl.split('?')[0] ?? '')) return next();

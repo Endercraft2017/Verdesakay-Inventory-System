@@ -1,0 +1,136 @@
+[WebServer] (node:13824) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:13837) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] (node:13848) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 6 tests using 1 worker
+
+(node:13949) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 tests/e2e/payroll-post-retries.spec.ts:15:1 › a committed response lost in transit recovers its original journal with the same attempt (7.7s)
+(node:14118) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 tests/e2e/payroll-post-retries.spec.ts:27:1 › a hung response reaches its deadline and retains the committed attempt for retry (2.4s)
+  ✘  3 tests/e2e/payroll-post-retries.spec.ts:40:46 › changed actor invalidates an open posting before any submission (7.1s)
+(node:14250) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  4 tests/e2e/payroll-post-retries.spec.ts:40:46 › changed company invalidates an open posting before any submission (1.8s)
+  ✘  5 tests/e2e/payroll-post-retries.spec.ts:40:46 › changed view invalidates an open posting before any submission (30.3s)
+(node:14386) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  6 tests/e2e/payroll-post-retries.spec.ts:46:1 › posting confirmation is labelled, accessible and usable at supported desktop widths and themes (6.5s)
+
+
+  1) tests/e2e/payroll-post-retries.spec.ts:15:1 › a committed response lost in transit recovers its original journal with the same attempt
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: locator('#toast-root')
+    Expected substring: "Recovered the original posting"
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toContainText" locator('#toast-root') with timeout 5000ms
+      - waiting for locator('#toast-root')
+
+
+      23 |  await expect(dialog.getByRole('status')).toContainText('Posting was not confirmed');await expect(confirm).toBeEnabled();await expect(dialog.getByLabel('Payroll period label')).toBeDisabled();
+      24 |  await confirm.click();await expect(dialog).toBeHidden();expect(keys).toHaveLength(2);expect(keys[0]).toMatch(/^[a-f0-9]{32}$/);expect(keys[1]).toBe(keys[0]);expect(recovered).toBe(original);
+    > 25 |  await expect(page.locator('#toast-root')).toContainText('Recovered the original posting');
+         |                                            ^
+      26 | });
+      27 | test('a hung response reaches its deadline and retains the committed attempt for retry',async({page})=>{
+      28 |  await page.clock.install();let release:(()=>void)|undefined,committed!:()=>void;const saved=new Promise<void>(r=>{committed=r;});let key:string|undefined,original:number|undefined,attempts=0;
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-post-retries.spec.ts:25:44
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-post-retries-a-com-b6ef6-urnal-with-the-same-attempt/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-post-retries-a-com-b6ef6-urnal-with-the-same-attempt/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-post-retries-a-com-b6ef6-urnal-with-the-same-attempt/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-post-retries-a-com-b6ef6-urnal-with-the-same-attempt/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) tests/e2e/payroll-post-retries.spec.ts:40:46 › changed actor invalidates an open posting before any submission
+
+    Error: expect(locator).toContainText(expected) failed
+
+    Locator: getByRole('dialog', { name: 'Post payroll to the General Ledger', exact: true }).getByRole('alert')
+    Expected substring: "changed"
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toContainText" getByRole('dialog', { name: 'Post payroll to the General Ledger', exact: true }).getByRole('alert') with timeout 5000ms
+      - waiting for getByRole('dialog', { name: 'Post payroll to the General Ledger', exact: true }).getByRole('alert')
+
+
+      42 |  const dialog=await open(page,kind);
+      43 |  await page.evaluate(async kind=>{const w=window as any;if(kind==='ACTOR')w.App.setMe({full_name:'Changed synthetic operator'});else if(kind==='COMPANY')w.VDS_BASE_PATH='/other-company';else await w.App.navigate('hr');},kind);
+    > 44 |  await dialog.getByRole('button',{name:'Post to GL',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('changed');await expect(dialog.getByLabel('Payroll period label')).toHaveValue('');expect(writes).toBe(0);
+         |                                                                                                                  ^
+      45 | });
+      46 | test('posting confirmation is labelled, accessible and usable at supported desktop widths and themes',async({page})=>{
+      47 |  const dialog=await open(page,'ACCESS'),results=[];
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-post-retries.spec.ts:44:114
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-post-retries-chang-64ccf-sting-before-any-submission/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-post-retries-chang-64ccf-sting-before-any-submission/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-post-retries-chang-64ccf-sting-before-any-submission/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-post-retries-chang-64ccf-sting-before-any-submission/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) tests/e2e/payroll-post-retries.spec.ts:40:46 › changed view invalidates an open posting before any submission
+
+    Test timeout of 30000ms exceeded.
+
+    Error: locator.click: Test timeout of 30000ms exceeded.
+    Call log:
+      - waiting for getByRole('dialog', { name: 'Post payroll to the General Ledger', exact: true }).getByRole('button', { name: 'Post to GL', exact: true })
+
+
+      42 |  const dialog=await open(page,kind);
+      43 |  await page.evaluate(async kind=>{const w=window as any;if(kind==='ACTOR')w.App.setMe({full_name:'Changed synthetic operator'});else if(kind==='COMPANY')w.VDS_BASE_PATH='/other-company';else await w.App.navigate('hr');},kind);
+    > 44 |  await dialog.getByRole('button',{name:'Post to GL',exact:true}).click();await expect(dialog.getByRole('alert')).toContainText('changed');await expect(dialog.getByLabel('Payroll period label')).toHaveValue('');expect(writes).toBe(0);
+         |                                                                  ^
+      45 | });
+      46 | test('posting confirmation is labelled, accessible and usable at supported desktop widths and themes',async({page})=>{
+      47 |  const dialog=await open(page,'ACCESS'),results=[];
+        at /workspace/Verdesakay-Inventory-System/tests/e2e/payroll-post-retries.spec.ts:44:66
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-post-retries-chang-82ff3-sting-before-any-submission/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: work/playwright-artifacts/payroll-post-retries-chang-82ff3-sting-before-any-submission/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    work/playwright-artifacts/payroll-post-retries-chang-82ff3-sting-before-any-submission/trace.zip
+    Usage:
+
+        npx playwright show-trace work/playwright-artifacts/payroll-post-retries-chang-82ff3-sting-before-any-submission/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3 failed
+    tests/e2e/payroll-post-retries.spec.ts:15:1 › a committed response lost in transit recovers its original journal with the same attempt
+    tests/e2e/payroll-post-retries.spec.ts:40:46 › changed actor invalidates an open posting before any submission
+    tests/e2e/payroll-post-retries.spec.ts:40:46 › changed view invalidates an open posting before any submission
+  3 passed (1.2m)

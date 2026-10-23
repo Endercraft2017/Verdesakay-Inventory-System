@@ -4533,7 +4533,8 @@ export function cleanupSessions(): void {
       ).run();
       // Idempotency keys are only useful for as long as a client might still be retrying;
       // a week is far more than enough for a flaky-LAN offline queue.
-      db.prepare("DELETE FROM idempotency_keys WHERE created_at < datetime('now', '-7 days')").run();
+      // Financial posting references must not expire into a second reversal/re-post.
+      db.prepare("DELETE FROM idempotency_keys WHERE created_at < datetime('now', '-7 days') AND key NOT LIKE 'payroll-gl:v1:%'").run();
       db.prepare("DELETE FROM password_resets WHERE used = 1 OR expires_at < datetime('now')").run();
       // Cap the audit trail at roughly a month so it can't grow without bound.
       db.prepare(

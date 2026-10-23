@@ -1,0 +1,85 @@
+{
+  "mode": "fixed source",
+  "node": "v24.19.0",
+  "journal_mode": {
+    "journal_mode": "wal"
+  },
+  "synchronous": {
+    "synchronous": 2
+  },
+  "cases": [
+    {
+      "name": "before receipt insert SIGKILL",
+      "contract_satisfied": true,
+      "first_status": null,
+      "interrupted_rows": [],
+      "retry_status": 201,
+      "final_rows": [
+        {
+          "id": 1,
+          "number": "JV-000001",
+          "reverses_id": null
+        }
+      ]
+    },
+    {
+      "name": "after receipt insert SIGKILL",
+      "contract_satisfied": true,
+      "first_status": null,
+      "interrupted_rows": [],
+      "retry_status": 201,
+      "final_rows": [
+        {
+          "id": 2,
+          "number": "JV-000002",
+          "reverses_id": null
+        }
+      ]
+    },
+    {
+      "name": "committed response lost to SIGKILL",
+      "contract_satisfied": true,
+      "first_status": null,
+      "retry_status": 201,
+      "final_rows": [
+        {
+          "id": 3,
+          "number": "JV-000003",
+          "reverses_id": null
+        }
+      ]
+    },
+    {
+      "name": "two real processes after concurrent cache misses",
+      "contract_satisfied": true,
+      "statuses": [
+        201,
+        201
+      ],
+      "final_rows": [
+        {
+          "id": 4,
+          "number": "JV-000004",
+          "reverses_id": null
+        }
+      ]
+    },
+    {
+      "name": "originating node command insert SIGKILL",
+      "contract_satisfied": true,
+      "first_status": null,
+      "retry_status": 201,
+      "command": {
+        "id": "01M5KP9YCYCF3C953QZ7QMYX1C",
+        "state": "local"
+      },
+      "final_rows": [
+        {
+          "id": 137438953473,
+          "number": "JV-P1-0001",
+          "reverses_id": null
+        }
+      ]
+    }
+  ]
+}

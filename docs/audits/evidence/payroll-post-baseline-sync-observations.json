@@ -1,0 +1,11 @@
+{
+  "status": 201,
+  "journals": [
+    {
+      "id": 137438953473,
+      "number": "JV-P1-0001"
+    }
+  ],
+  "headerCommand": "01M5KMXACVKWWX2XQN5MQDN9JN",
+  "recorded": false
+}
