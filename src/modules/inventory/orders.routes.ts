@@ -311,7 +311,12 @@ router.get('/:id', (req, res) => {
      FROM order_items oi WHERE oi.order_id = ? ORDER BY oi.sort, oi.id`,
     order.id
   );
-  res.json({ ...order, revision: orderRevision(order.id), ...(order.type==='sale'?{fulfillment:tripSummary(order.id),trips:queryAll('SELECT id,number,released_at FROM release_slips WHERE order_id=? ORDER BY id',order.id)}:{}) });
+  res.json({ ...order, revision: orderRevision(order.id), ...(order.type==='sale'?{
+    fulfillment:tripSummary(order.id), trips:queryAll('SELECT id,number,released_at FROM release_slips WHERE order_id=? ORDER BY id',order.id),
+    delivery_events: queryAll(`SELECT d.id, d.number, d.delivery_mode, d.status, d.delivered_at, s.number AS release_slip_number
+      FROM deliveries d LEFT JOIN release_slips s ON s.id=d.release_slip_id
+      WHERE d.order_id=? ORDER BY d.id`, order.id),
+  }:{}) });
 });
 
 /* ---------------------------------------------------- sale-order release / pick --- */
@@ -870,10 +875,77 @@ function canPlanShortfall(order: Order, res: Response): boolean {
   return true;
 }
 
+type DraftSupply = { line: string; job_order_id: number; number: string; qty: number; buildable: boolean; component_shortfalls: unknown[] };
+
+/** Called inside the approval transaction. Duplicate sale lines share one supply pool and
+ * linked work is counted once per product/build state at the ship-from location. */
+function planApprovedSale(id: number, order: Order, av: ReturnType<typeof orderAvailability>, userId: number):
+  { created: DraftSupply[]; blocked: string[]; backorders: string[] } {
+  const groups = new Map<string, { lines: typeof av.lines; shortfall: number }>();
+  const backorders: string[] = [];
+  for (const line of av.lines) {
+    if (line.shortfall <= 0) continue;
+    if (!line.is_finished_product || line.fulfillment_mode === 'ckd_component') {
+      backorders.push(`${line.name}: ${line.shortfall} short at ${av.location_name || 'the ship-from location'}`);
+      continue;
+    }
+    const mode = line.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled';
+    const key = `${line.item_id}:${mode}`;
+    const group = groups.get(key) ?? { lines: [], shortfall: 0 };
+    group.lines.push(line); group.shortfall += line.shortfall; groups.set(key, group);
+  }
+  const blocked: string[] = [];
+  const wants: { line: typeof av.lines[number]; qty: number; mode: 'assembled' | 'semi_built' }[] = [];
+  for (const [key, group] of groups) {
+    const line = group.lines[0];
+    if (!line) continue;
+    const covered = line.linked_job_orders.reduce((sum, jo) => sum + Math.max(0, jo.remaining), 0);
+    const needed = Math.max(0, Math.ceil(group.shortfall - covered));
+    if (!needed) continue;
+    if (av.location_id == null) {
+      blocked.push(`${line.name}: choose a ship-from stock location in Inventory → Locations, then refresh.`);
+      continue;
+    }
+    if (!moduleEnabled('manufacturing')) {
+      blocked.push(`${line.name}: enable the Production module or transfer suitable RTS stock, then refresh.`);
+      continue;
+    }
+    if (!line.has_bom) {
+      blocked.push(`${line.name}: ${needed} unit(s) need a BOM. Add its recipe in Production → Finished Products, or transfer suitable RTS stock to ${av.location_name || 'the ship-from location'}, then refresh.`);
+      continue;
+    }
+    wants.push({ line, qty: needed, mode: key.endsWith(':semi_built') ? 'semi_built' : 'assembled' });
+  }
+  if (blocked.length) return { created: [], blocked, backorders };
+  const created: DraftSupply[] = [];
+  for (const want of wants) {
+    const jo = createDraftJobOrder({ productId: want.line.item_id, productName: want.line.name, qty: want.qty, orderId: id,
+      buildMode: want.mode, sourceLocationId: av.location_id!, outputLocationId: av.location_id!,
+      notes: `Shortfall for ${order.number}`, userId });
+    created.push({ line: want.line.name, job_order_id: jo.id, number: jo.number, qty: want.qty,
+      buildable: want.line.buildable, component_shortfalls: want.line.component_shortfalls });
+  }
+  return { created, blocked, backorders };
+}
+
+function prepareFirmSupply(id: number, order: Order, userId: number, force: boolean, req: Request):
+  { created: DraftSupply[]; availability: ReturnType<typeof orderAvailability> } | { error: string; code: string; availability: ReturnType<typeof orderAvailability> } {
+  const availability = orderAvailability(id);
+  if (availability.ok) return { created: [], availability };
+  // Inspect the whole plan before writing jobs. The surrounding sale transaction rolls
+  // back both the order decision and all drafts if any required build is impossible.
+  const plan = planApprovedSale(id, order, availability, userId);
+  if (plan.blocked.length) return { error: plan.blocked.join(' '), code: 'build_unplannable', availability };
+  if (plan.backorders.length && !force && !shortageStands(req, order.number, availability.short_lines)) {
+    return { error: `${plan.backorders.join('; ')}. Transfer or purchase these goods, or explicitly approve a backorder after reviewing stock.`, code: 'stock_shortage', availability };
+  }
+  return { created: plan.created, availability };
+}
+
 // POST /api/orders/:id/produce-shortfall — for each finished-product line that's short,
 // raise a draft job order (linked to this sale order) for the missing quantity. Reports
 // per line whether the components are on hand to actually build it.
-router.post('/:id/produce-shortfall', requireModule('sales'), requireModule('manufacturing'), requirePermission('inventory.adjust'), syncClass('claim', orderSite), (req, res) => {
+router.post('/:id/produce-shortfall', requireModule('sales'), requireModule('manufacturing'), requirePermission('production.plan'), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
   const order = queryOne<Order>('SELECT * FROM orders WHERE id = ?', id);
   if (!order || order.type !== 'sale') { res.status(404).json({ error: 'Sale order not found' }); return; }
@@ -892,11 +964,19 @@ router.post('/:id/produce-shortfall', requireModule('sales'), requireModule('man
 
   db.exec('BEGIN');
   try {
+    const grouped = new Map<string, { line: typeof av.lines[number]; shortfall: number }>();
     for (const l of av.lines) {
       if (l.shortfall <= 0) continue;
-      if (!l.is_finished_product) { skipped.push({ line: l.name, reason: 'not a finished product — adjust the line or restock' }); continue; }
+      if (!l.is_finished_product || l.fulfillment_mode === 'ckd_component') { skipped.push({ line: l.name, reason: 'not a finished-product build — transfer or purchase stock' }); continue; }
+      const mode = l.fulfillment_mode === 'semi_built' ? 'semi_built' : 'assembled';
+      const key = `${l.item_id}:${mode}`;
+      const group = grouped.get(key) ?? { line: l, shortfall: 0 };
+      group.shortfall += l.shortfall; grouped.set(key, group);
+    }
+    for (const group of grouped.values()) {
+      const l = group.line;
       const alreadyCovered = l.linked_job_orders.reduce((s, jo) => s + Math.max(0, jo.remaining), 0);
-      const need = Math.max(0, Math.ceil(l.shortfall) - alreadyCovered);
+      const need = Math.max(0, Math.ceil(group.shortfall - alreadyCovered));
       if (need <= 0) { skipped.push({ line: l.name, reason: `already covered by ${l.linked_job_orders.map((j) => j.number).join(', ')}` }); continue; }
       if (!l.has_bom) { skipped.push({ line: l.name, reason: 'no bill of materials — define its BOM first' }); continue; }
       const jo = createDraftJobOrder({
@@ -982,20 +1062,17 @@ router.post('/', requireAnyPermission(['orders.create', 'purchasing.manage']), c
       total,
       req.user!.id,
       input.type === 'purchase' ? (input.supplier_id ?? null) : null,
-      input.type === 'purchase' ? (input.expected_date ?? null) : null
+      input.type !== 'job' ? (input.expected_date ?? null) : null
     );
     const newId = Number(info.lastInsertRowid);
     insertItems(newId, lines);
 
     // Stock-availability gate — a sale order created straight into a firm status.
-    if (input.type === 'sale' && ['approved', 'confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'].includes(String(input.status || '').toLowerCase()) && !input.force) {
-      const av = orderAvailability(newId);
-      if (!av.ok) {
+    if (input.type === 'sale' && ['approved', 'confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'].includes(String(input.status || '').toLowerCase())) {
+      const supply = prepareFirmSupply(newId, queryOne<Order>('SELECT * FROM orders WHERE id=?', newId)!, req.user!.id, !!input.force, req);
+      if ('error' in supply) {
         db.exec('ROLLBACK');
-        res.status(409).json({
-          error: `${av.short_lines} line(s) don't have enough stock. Save as open, then trim / produce the shortfall / approve as a backorder.`,
-          availability: av,
-        });
+        res.status(409).json(supply);
         return;
       }
     }
@@ -1024,7 +1101,7 @@ router.post('/:id/status', requireModule('sales'), requirePermission('orders.app
   if (!recordReview) return;
   const cur = String(order.status || '').toLowerCase();
   const next = saleStatus(status, cur);
-  if (next === cur) { recordReview(); res.json({ ok: true, status: order.status }); return; }
+  if (next === cur) { recordReview(); res.json({ ok: true, status: order.status, production_drafts: [] }); return; }
   if (shippedSaleCannotReopen(id, next, cur)) {
     res.status(409).json({ error: 'This sale has a release slip. Record a return or correction instead of reopening or cancelling the physical handoff.', code: 'already_shipped' });
     return;
@@ -1038,17 +1115,16 @@ router.post('/:id/status', requireModule('sales'), requirePermission('orders.app
     && !['released', 'confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'].includes(cur);
 
   db.exec('BEGIN');
+  let productionDrafts: DraftSupply[] = [];
   try {
-    if (goingFirm && !force) {
-      const av = orderAvailability(id);
-      if (!av.ok && !shortageStands(req, order.number, av.short_lines)) {
+    if (goingFirm) {
+      const supply = prepareFirmSupply(id, order, req.user!.id, !!force, req);
+      if ('error' in supply) {
         db.exec('ROLLBACK');
-        res.status(409).json({
-          error: `${av.short_lines} line(s) don't have enough stock. Produce or purchase the shortfall, or confirm as a backorder.`,
-          availability: av,
-        });
+        res.status(409).json(supply);
         return;
       }
+      productionDrafts = supply.created;
     }
     run("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?", next, id);
     recordReview();
@@ -1063,7 +1139,7 @@ router.post('/:id/status', requireModule('sales'), requirePermission('orders.app
   if ((next === 'cancelled' || next === 'open') && cur !== 'cancelled' && cur !== 'open') {
     releaseTeardown(id);
   }
-  res.json({ ok: true, status: next });
+  res.json({ ok: true, status: next, production_drafts: productionDrafts });
   const needsWarehouse = queryOne('SELECT 1 FROM order_items WHERE order_id=? AND item_id IS NOT NULL AND quantity > COALESCE(released_qty,0) LIMIT 1', id);
   if (next === 'approved' && needsWarehouse) {
     void notifyAnyPermission(['orders.release'], {
@@ -1075,6 +1151,13 @@ router.post('/:id/status', requireModule('sales'), requirePermission('orders.app
       title: `Sale order to track — ${order.number}`,
       body: 'Warehouse can review this sale and prepare stock; a releaser with orders.release completes the handoff.',
       url: `#/order-tracking?id=${id}`, link: { route: 'orders', params: { type: 'sale', mode: 'track', id } }, tag: `sale-track-${id}`,
+    });
+  }
+  if (productionDrafts.length) {
+    void notifyPermission('production.plan', {
+      title: `Production planning needed — ${order.number}`,
+      body: `${productionDrafts.map((job) => `${job.number} × ${job.qty}`).join(', ')} drafted for the uncovered sale quantity. Review and approve in Production.`,
+      url: '#/job-orders', link: { route: 'job-orders' }, tag: `sale-production-${id}`,
     });
   }
   maybeAutoPush(id,req.user!);
@@ -1163,7 +1246,7 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
       tax_amount,
       total,
       order.type === 'purchase' ? (input.supplier_id ?? null) : null,
-      order.type === 'purchase' ? (input.expected_date ?? null) : null,
+      order.type !== 'job' ? (input.expected_date ?? null) : null,
       id
     );
     if (!lockLines && input.items) {
@@ -1179,14 +1262,11 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
     const goingFirm = order.type === 'sale'
       && ['approved', 'confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'].includes(newStatus) && newStatus !== cur
       && !['released', 'confirmed', 'completed', 'fulfilled', 'invoiced', 'paid'].includes(cur);
-    if (goingFirm && !input.force) {
-      const av = orderAvailability(id);
-      if (!av.ok && !shortageStands(req, order.number, av.short_lines)) {
+    if (goingFirm) {
+      const supply = prepareFirmSupply(id, order, req.user!.id, !!input.force, req);
+      if ('error' in supply) {
         db.exec('ROLLBACK');
-        res.status(409).json({
-          error: `${av.short_lines} line(s) don't have enough stock. Trim the order, produce the shortfall, or approve as a backorder.`,
-          availability: av,
-        });
+        res.status(409).json(supply);
         return;
       }
     }
