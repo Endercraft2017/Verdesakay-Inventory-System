@@ -1,6 +1,7 @@
 /**
- * Which permission an order needs, by its type. Sale and job orders are the orders module's
- * (orders.view / orders.create / orders.edit / orders.delete); purchase orders belong to
+ * Which permission an order needs, by its type. Sale and customer job documents use
+ * orders.*, with production.plan additionally required to author customer jobs.
+ * Purchase orders belong to
  * purchasing (purchasing.view to see, purchasing.manage to create / change / delete), the same
  * permissions as their goods receipts and vendor bills (modules/purchasing/purchasing.routes.ts).
  * One `orders` table holds all three types, so the routes check this per order.
@@ -16,7 +17,11 @@ export function orderPermission(type: OrderType | string, action: OrderAction): 
 }
 
 export function canOnOrder(user: Pick<AuthUser, 'permissions'>, type: OrderType | string, action: OrderAction): boolean {
-  return moduleEnabled(type === 'purchase' ? 'purchasing' : 'sales') && user.permissions.includes(orderPermission(type, action));
+  return moduleEnabled(type === 'purchase' ? 'purchasing' : 'sales')
+    && user.permissions.includes(orderPermission(type, action))
+    // Customer JO documents remain visible in Sales, but only a production planner
+    // may author one. This does not give Sales any manufacturing or stock authority.
+    && (type !== 'job' || action === 'view' || moduleEnabled('manufacturing') && user.permissions.includes('production.plan'));
 }
 
 /** Order types this user may list. */

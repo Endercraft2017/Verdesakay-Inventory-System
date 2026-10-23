@@ -1,5 +1,39 @@
 # Mobile inventory, production, and Sales handoff
 
+## Action for phone owner — sale capture and approval handoff (2026-10-23)
+
+Desktop and API now use `orders.expected_date` as an optional **target delivery
+date** for sales. The phone New sale order and open-order edit should offer the
+same optional field, including a clear label that it is a target. Show actual
+**customer delivery** from `GET /api/orders/:id` `delivery_events[].delivered_at`
+for `delivery_mode=own` and status `delivered`; label the same timestamp **courier
+pickup / handoff** when `delivery_mode=courier`. Do not let Sales pre-enter an
+actual date or call courier handoff customer delivery. Multiple trips may have
+separate events; show their release-slip numbers and dates.
+
+Use a keyboard/phone-searchable customer picker with explicit **existing customer**
+selection (`customer_id`) and **walk-in** entry (`customer_id: null` plus
+`customer_name/contact`). Clear a stale ID if the user edits the selected name.
+Do not show a raw status field during capture. New orders save `open`; an
+`orders.approve` user reviews `/api/orders/:id/availability` and calls
+`POST /api/orders/:id/status` with `status: approved` and `expected_revision`.
+Approval now drafts linked production jobs for uncovered finished-product demand
+and returns `production_drafts`; display their number/quantity and say Production
+still approves, kits, inspects and receives them. A 409 `build_unplannable` names
+the missing BOM/location/Production setup and must keep the order open with a
+refresh/retry action. A part or CKD shortage still needs the existing explicit
+`force` backorder decision. Stale review (`stale_order`) requires fresh availability.
+
+Sales and CSR may read linked job numbers/status through sale availability, but
+must not show New Customer JO or New Production JO. Backend now requires
+`production.plan` for customer JO writes and `/produce-shortfall`; direct
+manufacturing JO writes already had that gate. No `inventory.adjust` or Production
+grant should be added to Sales. Production planners receive a new draft-work
+notice after approval. Phone owner should verify 390px capture, walk-in/existing
+selection, no-BOM and stale-stock messages, repeat approval, direct link/permission
+revocation, own-delivery versus courier labels, and offline queued approval
+acknowledgement. Mobile source is intentionally left with the mobile owner.
+
 Read **Mobile implementation status** for the current branch. The older
 requirements and test notes further down are retained for traceability; some
 of their requested screens have since been implemented.

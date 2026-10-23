@@ -402,8 +402,10 @@ way into the built-in roles — nobody loses access; trim it under Admin → Rol
 - **Purchasing** (`purchasing.view` / `purchasing.manage`, `modules/inventory/order-access.ts`):
   purchase orders (per-type checks on `/api/orders` — the list is now gated, it used to be open
   to every account), goods-receipt reads, vendor bills, tolerance, reorder / shortfall POs, the
-  QuickBooks push of a PO. Receiving still needs inventory.adjust. orders.* now means sale and job
-  orders. Job-order purchase-shortfall keeps its production gate (inventory.adjust).
+  QuickBooks push of a PO. Receiving still needs inventory.adjust. `orders.view` can read
+  sale and customer JO documents; customer JO writes also require `production.plan`.
+  Manufacturing JO writes likewise require `production.plan`. Job-order purchase-shortfall
+  keeps its production gate (inventory.adjust).
 Tests: `tests/roles.test.ts`, `tests/permissions.test.ts`, `tests/users-hr-create.test.ts`,
 `tests/payroll-permission.test.ts`, `tests/production-view-permission.test.ts`,
 `tests/purchasing-permission.test.ts`.
@@ -577,7 +579,8 @@ UI: Inventory → Stock Movements → Discrepancies (`public/js/modules/inventor
 route `stock-discrepancies`).
 
 Order intake is handled by `orders.routes.ts` and `public/js/modules/inventory/orders.js`:
-explicit stock links, positive line quantities, date/reference validation, one stock
+customer type-to-search or explicit walk-in selection, optional sale target date,
+recorded delivery/courier handoff timestamps, explicit stock links, positive line quantities, date/reference validation, one stock
 line per sale item, customer defaults, permission-aware controls, visible approved-line
 locks, and a responsive editor with inline errors and keyboard dialog handling.
 Validation/interaction coverage: `tests/orders.test.ts`, `tests/orders-ui.test.ts`;
@@ -594,7 +597,10 @@ editor saves. `src/app.ts` mounts order-save idempotency after mutation permissi
 **Sales stock approval refinement:** `order-availability.ts` is the shared warehouse ATP
 and supply-planning calculation; `orders.routes.ts` re-exports it. Desktop saved orders have
 an explicit stock review with local/elsewhere stock, commitments and kit/repair holds.
-Approval and shortage actions use optional revision checks; drafting supply never clears ATP.
+Approval and shortage actions use optional revision checks; approval atomically drafts
+only uncovered finished-product quantities at ship-from and never treats drafts as ATP.
+Unplannable builds block approval with an actionable 409; CKD/parts and fees retain their
+separate paths. Sales can view linked JO summaries without production write grants.
 Existing job snapshots and unreceived output cover planned production. Purchase cover is tracked
 by `sale_shortfall_purchases`, current PO lines and receipts; repeated actions draft incremental
 requirements only, atomically across suppliers/jobs. Mobile implementation remains unchanged;
