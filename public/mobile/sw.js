@@ -294,7 +294,12 @@ async function drainQueue() {
     }
     var lease = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2);
     var op = await queueStore.claim(candidate.key,owner,lease,false);
-    if (!op) continue;
+    if (!op) {
+      // Do not consume the background-sync tag while another sender might close.
+      var remaining = await queueStore.request('ops','readonly',function (store) { return store.get(candidate.key); });
+      if (remaining && queueStore.owns(remaining,owner) && !remaining.error && !remaining.local_command) pending = true;
+      continue;
+    }
     await queueChanged();
     try {
       var sent = await queueFetch(owner,op.path,{

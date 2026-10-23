@@ -67,9 +67,14 @@ describe('browser tenancy', () => {
     const deleted: string[] = [];
     const context = vm.createContext({
       TENANT_BASE: '/verdesakay', URL,
-      self: { location: { origin: 'https://otom.afkcube.com' }, clients: { claim: async () => {} }, addEventListener: (name: string, callback: (event: unknown) => void) => { listeners[name] = callback; } },
+      location: { origin: 'https://otom.afkcube.com' }, clients: { claim: async () => {} }, addEventListener: (name: string, callback: (event: unknown) => void) => { listeners[name] = callback; },
       caches: { keys: async () => ['vds-m:/verdesakay:v67', 'vds-m:/verdesakay-industries:v67', 'vds-m:/otherco:v67', 'vds-m-v67'], delete: async (key: string) => { deleted.push(key); } },
     });
+    context.self = context;
+    context.importScripts = (source: string) => {
+      expect(source).toBe('/verdesakay/mobile/lib/queue-store.js');
+      vm.runInContext(fs.readFileSync(path.join(publicRoot, 'mobile/lib/queue-store.js'), 'utf8'), context);
+    };
     vm.runInContext(fs.readFileSync(path.join(publicRoot, 'mobile/sw.js'), 'utf8'), context);
     let pending: Promise<unknown> | undefined;
     listeners.activate!({ waitUntil: (promise: Promise<unknown>) => { pending = promise; } });
