@@ -1,23 +1,23 @@
-# Playwright verification
+# Playwright verification — v0.2.0
 
-Final result: **8 passed, 0 failed** (7.2 seconds), Playwright 1.64.1 and its bundled Chromium, Linux, 2026-10-22.
+Final result: **11 passed, 0 failed** in 10.8 seconds, Playwright 1.64.1 with its bundled Chromium on Linux, 2026-10-23.
 
-The real unpacked Manifest V3 extension was loaded into Chromium using `launchPersistentContext`. The fixture intercepts a ChatGPT URL and supplies synthetic sidebar HTML. Chrome storage was real; no real OpenAI account was used.
+The actual unpacked Manifest V3 extension was loaded with `launchPersistentContext`. Real Chrome extension storage and temporary profiles were used. Network routing supplied synthetic ChatGPT pages; no real account or authenticated conversations were used.
 
 Verified:
 
-1. `/local/` and `/c/` recognition; folder creation/assignment; collapse after reload; link navigation.
-2. Rename and duplicate-name validation; search; deleting folders unfiles links while preserving native rows and controls.
-3. Dynamically added/removed rows, native title changes, sidebar replacement, and panel remounting.
-4. Backup export/import using Chrome storage; invalid JSON; filtering unsafe URLs and treating HTML-like labels as text.
-5. Changes propagate between tabs; keyboard creation works.
-6. Native controls remain clickable; screenshot captured; panel foreground/background adapt to light and dark color schemes.
-7. Panel waits for a late sidebar and ignores session links appearing only in conversation content.
+1. `/local/` and `/c/` session recognition, folder creation/assignment, collapse/reload, and navigation.
+2. Rename/duplicate-name validation, search, unfiling on folder deletion, and preservation of native controls.
+3. Dynamic and virtualized sidebar rows, title changes, replacement, and remounting.
+4. JSON backup export/import, invalid JSON, unsafe URL filtering, and inert HTML-like labels.
+5. Updates between browser tabs and keyboard folder creation.
+6. Native controls and light/dark color schemes.
+7. Delayed sidebar mounting and ignoring session links in conversation content.
+8. Separate global rail/chat-history/main-pane layout: compact initial height, sidebar boundaries, narrowing/hiding/restoring, retained folders.
+9. Hide button, restore launcher, persistence across reloads, Escape, and keyboard focus recovery.
+10. Real pointer move/resize, saved position and dimensions after reload, and viewport shrinking to 400×400 with reachable close/restore controls.
+11. Keyboard move/resize, docking, retained folders after sidebar removal, and restoring in floating mode when the native sidebar is unavailable.
 
-8. Regression fixture with a separate global icon rail, broad outer sidebar wrapper, fixed chat history, and conversation pane: verifies deepest suitable container, collapsed initial height under 60px, no horizontal overlap, hidden/expanded sidebar transitions, and retained folder state.
+`preview.png` shows the floating glass panel. `preview-docked.png` shows its compact initial docked state. Both are synthetic fixtures.
 
-Screenshot: `preview.png` is a synthetic fixture, not the user's account.
-
-Limit: authenticated live Codex compatibility, branded browsers, multiple simultaneous edits, and future sidebar redesigns were not verified. This is a tested preview, not a guarantee that every production sidebar layout is supported.
-
-Version 0.1.1 addresses the live overlap reported in the user screenshots. The regression reconstructs that layout; authenticated DOM access was still unavailable.
+Limits: the user's authenticated live DOM and Opera were not directly tested. Changes to Codex markup may require selector adjustments. Simultaneous edits in different tabs remain last-write-wins. Passing fixture tests does not establish live compatibility.

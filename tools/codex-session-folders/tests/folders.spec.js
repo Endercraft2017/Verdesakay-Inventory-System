@@ -108,7 +108,7 @@ test('captures preview and leaves native controls interactive',async({page})=>{
  expect(colors.bg).not.toBe('rgb(255, 255, 255)');
  await page.screenshot({path:path.resolve(__dirname,'../test-results/preview.png'),fullPage:true});
  await page.evaluate(()=>document.documentElement.style.colorScheme='light');
- await expect.poll(()=>page.locator('#csf-panel').evaluate(n=>getComputedStyle(n).backgroundColor)).toBe('rgb(255, 255, 255)');
+ await expect.poll(()=>page.locator('#csf-panel').evaluate(n=>getComputedStyle(n).colorScheme)).toBe('light');
  await expect.poll(()=>page.locator('#csf-panel').evaluate(n=>getComputedStyle(n).color)).toBe('rgb(0, 0, 0)');
 });
 
@@ -149,4 +149,55 @@ test('regression: separate global rail, chat sidebar and main; compact default, 
  await p.evaluate(()=>document.querySelector('#chat-history').style.width='64px');await expect(panel).toHaveCount(0);
  await p.evaluate(()=>document.querySelector('#chat-history').style.width='340px');await expect(panel).toHaveCount(1);
  await p.getByRole('button',{name:'Toggle session folders',exact:true}).click();await expect(p.getByRole('button',{name:'Toggle UI',exact:true})).toBeVisible();
+});
+
+test('hide, restore, Escape and reload preserve folders without covering the page',async({page})=>{
+ await folder(page,'Keep my folders');
+ await page.getByRole('button',{name:'Hide panel',exact:true}).click();
+ await expect(page.locator('#csf-panel')).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Show session folders',exact:true})).toBeVisible();
+ await page.reload();
+ await expect(page.getByRole('button',{name:'Show session folders',exact:true})).toBeVisible();
+ await expect(page.locator('#csf-panel')).toHaveCount(0);
+ await page.getByRole('button',{name:'Show session folders',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Toggle Keep my folders',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Hide panel',exact:true}).focus();await page.keyboard.press('Escape');
+ await expect(page.locator('#csf-panel')).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Show session folders',exact:true})).toBeFocused();
+});
+
+test('floating panel moves and resizes with real pointers, survives reload, fits smaller viewport',async({page})=>{
+ await folder(page,'Verdesakay');await folder(page,'Research');
+ await page.getByRole('button',{name:'Float panel',exact:true}).click();
+ const panel=page.locator('#csf-panel');await expect(panel).toHaveAttribute('data-mode','floating');
+ const before=await panel.boundingBox();
+ const grip=await page.getByRole('button',{name:'Move panel',exact:true}).boundingBox();
+ await page.mouse.move(grip.x+grip.width/2,grip.y+grip.height/2);await page.mouse.down();await page.mouse.move(grip.x+grip.width/2+190,grip.y+grip.height/2+100,{steps:10});await page.mouse.up();
+ const moved=await panel.boundingBox();expect(moved.x).toBeGreaterThan(before.x+150);expect(moved.y).toBeGreaterThan(before.y+70);
+ const handle=await page.getByRole('button',{name:'Resize panel',exact:true}).boundingBox();
+ await page.mouse.move(handle.x+handle.width/2,handle.y+handle.height/2);await page.mouse.down();await page.mouse.move(handle.x+handle.width/2+90,handle.y+handle.height/2+60,{steps:10});await page.mouse.up();
+ const resized=await panel.boundingBox();expect(resized.width).toBeGreaterThan(moved.width+70);expect(resized.height).toBeGreaterThan(moved.height+40);
+ await page.reload();await expect(panel).toHaveAttribute('data-mode','floating');
+ const restored=await panel.boundingBox();expect(Math.abs(restored.x-resized.x)).toBeLessThan(2);expect(Math.abs(restored.width-resized.width)).toBeLessThan(2);
+ await page.screenshot({path:path.resolve(__dirname,'../test-results/floating-glass.png'),fullPage:true});
+ await page.setViewportSize({width:400,height:400});
+ await expect.poll(async()=>{const r=await panel.boundingBox();return r.x+r.width<=400 && r.y+r.height<=400 && r.x>=0 && r.y>=0;}).toBe(true);
+ await expect(page.getByRole('button',{name:'Hide panel',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Hide panel',exact:true}).click();await expect(page.getByRole('button',{name:'Show session folders',exact:true})).toBeVisible();
+});
+
+test('keyboard geometry, docking and restore when the native sidebar disappears',async({page})=>{
+ await folder(page,'Portable');await page.getByRole('button',{name:'Float panel',exact:true}).click();
+ const panel=page.locator('#csf-panel');const before=await panel.boundingBox();
+ await page.getByRole('button',{name:'Move panel',exact:true}).focus();await page.keyboard.press('ArrowRight');
+ await expect.poll(async()=>Math.round((await panel.boundingBox()).x)).toBe(Math.round(before.x+12));
+ await page.getByRole('button',{name:'Resize panel',exact:true}).focus();await page.keyboard.press('ArrowRight');
+ await expect.poll(async()=>Math.round((await panel.boundingBox()).width)).toBe(Math.round(before.width+12));
+ await page.getByRole('button',{name:'Dock panel',exact:true}).click();
+ await expect(page.locator('aside #csf-panel')).toHaveCount(1);await expect(panel).toHaveAttribute('data-mode','docked');
+ await page.evaluate(()=>document.querySelector('aside').remove());
+ await expect(panel).toHaveCount(0);await expect(page.getByRole('button',{name:'Show session folders',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Show session folders',exact:true}).click();
+ await expect(panel).toHaveAttribute('data-mode','floating');await expect(page.getByRole('button',{name:'Toggle Portable',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Dock panel',exact:true}).click();await expect(page.getByRole('status')).toContainText('Open the chat sidebar');
 });

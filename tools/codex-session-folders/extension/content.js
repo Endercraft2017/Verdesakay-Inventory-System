@@ -4,8 +4,9 @@
   window.__codexSessionFolders = true;
   const KEY = 'codex-session-folders-v1';
   const PANEL = 'csf-panel';
-  let state = { folders: [], assignments: {}, sessions: {}, collapsed: {}, uiOpen: false };
-  let sidebar, panel, timer;
+  const defaultLayout = () => ({ mode: 'docked', hidden: false, x: 90, y: 90, width: 360, height: 460 });
+  let state = { folders: [], assignments: {}, sessions: {}, collapsed: {}, uiOpen: false, layout: defaultLayout() };
+  let sidebar, panel, launcher, timer;
   let saveQueue = Promise.resolve();
   const el = (tag, text, cls) => {
     const node = document.createElement(tag);
@@ -26,9 +27,16 @@
     } catch { return null; }
   }
   function validate(raw) {
-    const next = { folders: [], assignments: {}, sessions: {}, collapsed: {}, uiOpen: false };
+    const next = { folders: [], assignments: {}, sessions: {}, collapsed: {}, uiOpen: false, layout: defaultLayout() };
     if (!raw || typeof raw !== 'object') return next;
     next.uiOpen = raw.uiOpen === true;
+    if (raw.layout && typeof raw.layout === 'object') {
+      next.layout.mode = raw.layout.mode === 'floating' ? 'floating' : 'docked';
+      next.layout.hidden = raw.layout.hidden === true;
+      for (const key of ['x', 'y', 'width', 'height']) {
+        if (Number.isFinite(raw.layout[key])) next.layout[key] = Math.max(-10000, Math.min(10000, raw.layout[key]));
+      }
+    }
     next.collapsed[''] = raw.collapsed?.[''] === true;
     const ids = new Set();
     for (const f of Array.isArray(raw.folders) ? raw.folders.slice(0, 100) : []) {
@@ -67,13 +75,68 @@
     });
     return valid.find(node => !valid.some(other => other !== node && node.contains(other))) || null;
   }
+  function ensureLauncher() {
+    if (!launcher || !launcher.isConnected) {
+      launcher = button('▦ Folders', 'Show session folders', () => {
+        state.layout.hidden = false;
+        if (!findSidebar()) state.layout.mode = 'floating';
+        state.uiOpen = true; change();
+      });
+      launcher.id = 'csf-launcher'; document.body.append(launcher);
+    }
+    const needed = state.layout.hidden || (state.layout.mode === 'docked' && !sidebar);
+    launcher.hidden = !needed;
+  }
   function mount() {
     panel?.remove(); panel = el('div'); panel.id = PANEL;
+    if (state.layout.mode === 'floating') { document.body.append(panel); return; }
     const heading = [...sidebar.querySelectorAll('h1,h2,h3,h4,[role="heading"],[data-app-action-sidebar-section-heading]')]
       .find(node => !node.closest('#' + PANEL) && /^(Recents|Recent chats|Your chats)$/i.test(node.textContent.trim()));
     if (heading) heading.before(panel); else sidebar.prepend(panel);
   }
+  const clamp = (n, low, high) => Math.max(low, Math.min(n, Math.max(low, high)));
+  function fitLayout() {
+    const l = state.layout, margin = 12;
+    l.width = clamp(l.width, Math.min(280, innerWidth - margin * 2), innerWidth - margin * 2);
+    l.height = clamp(l.height, Math.min(260, innerHeight - margin * 2), innerHeight - margin * 2);
+    l.x = clamp(l.x, margin, innerWidth - l.width - margin);
+    l.y = clamp(l.y, margin, innerHeight - (state.uiOpen ? l.height : 50) - margin);
+  }
+  function applyLayout() {
+    if (!panel) return;
+    fitLayout(); const l = state.layout;
+    panel.dataset.mode = l.mode; panel.dataset.open = String(state.uiOpen);
+    panel.style.setProperty('--csf-x', `${l.x}px`); panel.style.setProperty('--csf-y', `${l.y}px`);
+    panel.style.setProperty('--csf-width', `${l.width}px`); panel.style.setProperty('--csf-height', `${l.height}px`);
+  }
+  function geometryControl(node, resize) {
+    node.addEventListener('pointerdown', event => {
+      if (state.layout.mode !== 'floating' || event.button !== 0) return;
+      event.preventDefault(); fitLayout();
+      const start = { ...state.layout, px: event.clientX, py: event.clientY };
+      node.setPointerCapture(event.pointerId);
+      const move = e => {
+        const dx = e.clientX - start.px, dy = e.clientY - start.py;
+        if (resize) { state.layout.width = start.width + dx; state.layout.height = start.height + dy; }
+        else { state.layout.x = start.x + dx; state.layout.y = start.y + dy; }
+        applyLayout();
+      };
+      const end = () => {
+        node.removeEventListener('pointermove', move); node.removeEventListener('pointerup', end);
+        node.removeEventListener('pointercancel', end); node.removeEventListener('lostpointercapture', end); save();
+      };
+      node.addEventListener('pointermove', move); node.addEventListener('pointerup', end);
+      node.addEventListener('pointercancel', end); node.addEventListener('lostpointercapture', end);
+    });
+    node.addEventListener('keydown', event => {
+      if (state.layout.mode !== 'floating' || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) return;
+      event.preventDefault(); const delta = event.shiftKey ? 32 : 12;
+      const axis = event.key === 'ArrowLeft' || event.key === 'ArrowRight' ? (resize ? 'width' : 'x') : (resize ? 'height' : 'y');
+      state.layout[axis] += ['ArrowLeft','ArrowUp'].includes(event.key) ? -delta : delta; applyLayout(); save();
+    });
+  }
   function collect() {
+    if (!sidebar) return;
     let changed = false;
     for (const a of sidebar.querySelectorAll('a[href]')) {
       if (a.closest('#' + PANEL)) continue;
@@ -104,18 +167,29 @@
     d.append(form); document.body.append(d); d.addEventListener('close', () => d.remove());
     d.showModal(); input.focus(); input.select();
   }
-  function change() { save(); render(); }
+  function change() { save(); refresh(true); }
   function render() {
     if (!panel) return;
     const section = el('section'); section.setAttribute('aria-label', 'Codex session folders');
     const header = el('div', undefined, 'csf-header');
+    if (state.layout.mode === 'floating') {
+      const grip = button('⠿', 'Move panel', () => {}); grip.className = 'csf-drag';
+      grip.title = 'Drag to move · arrow keys also work'; geometryControl(grip, false); header.append(grip);
+    }
     const togglePanel = button(`${state.uiOpen ? '▾' : '▸'} Session folders`, 'Toggle session folders', () => { state.uiOpen = !state.uiOpen; change(); });
-    togglePanel.setAttribute('aria-expanded', String(state.uiOpen)); header.append(togglePanel);
+    togglePanel.setAttribute('aria-expanded', String(state.uiOpen)); togglePanel.className = 'csf-title'; header.append(togglePanel);
     header.append(button('+', 'Create folder', () => {
       if (state.folders.length >= 100) return status('Maximum 100 folders.');
       state.uiOpen = true;
       dialog('Folder name', '', name => { state.folders.push({ id: 'f-' + crypto.randomUUID(), name }); change(); });
-    })); section.append(header);
+    }));
+    header.append(button(state.layout.mode === 'floating' ? '↙' : '↗', state.layout.mode === 'floating' ? 'Dock panel' : 'Float panel', () => {
+      if (state.layout.mode === 'floating' && !findSidebar()) { status('Open the chat sidebar before docking.'); return; }
+      state.layout.mode = state.layout.mode === 'floating' ? 'docked' : 'floating';
+      state.uiOpen = true; change();
+    }));
+    header.append(button('×', 'Hide panel', () => { state.layout.hidden = true; change(); launcher?.focus(); }));
+    section.append(header);
     const body = el('div', undefined, 'csf-body'); body.hidden = !state.uiOpen; section.append(body);
     const search = el('input'); search.type = 'search'; search.placeholder = 'Find saved sessions';
     search.setAttribute('aria-label', 'Find saved sessions'); body.append(search);
@@ -177,26 +251,38 @@
         const raw = JSON.parse(await upload.text());
         if (raw.version !== 1 || !Array.isArray(raw.folders) || !raw.sessions || typeof raw.sessions !== 'object') throw Error('Invalid backup.');
         if (!confirm('Replace this browser’s folder organization with the backup? Codex chats are unchanged.')) return;
-        const wasOpen = state.uiOpen; state = validate(raw); state.uiOpen = wasOpen; change();
+        const wasOpen = state.uiOpen, layout = state.layout; state = validate(raw); state.uiOpen = wasOpen; state.layout = layout; change();
       } catch { status('Import failed. Choose a valid version 1 folder backup.'); }
       file.value = '';
     }); footer.append(file); body.append(footer);
     body.append(el('p', 'Saved in this browser profile. Original Recents stay unchanged. Scroll Recents to discover older links.', 'csf-note'));
     const notice = el('p', '', 'csf-status'); notice.setAttribute('role', 'status'); body.append(notice);
-    panel.replaceChildren(section);
+    if (state.layout.mode === 'floating' && state.uiOpen) {
+      const handle = button('◢', 'Resize panel', () => {}); handle.className = 'csf-resize';
+      handle.title = 'Drag to resize · arrow keys also work'; geometryControl(handle, true); section.append(handle);
+    }
+    section.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { event.preventDefault(); state.layout.hidden = true; change(); launcher?.focus(); }
+    });
+    panel.replaceChildren(section); applyLayout();
   }
-  function refresh() {
-    const found = findSidebar(); if (!found) { panel?.remove(); panel = null; sidebar = null; return; }
-    sidebar = found;
-    if (!panel || !panel.isConnected || !sidebar.contains(panel)) {
+  function refresh(force = false) {
+    sidebar = findSidebar();
+    // Only activate on a Codex session or a page with recognizable session history.
+    if (!sidebar && !sessionPath(location.href) && !panel) return;
+    ensureLauncher();
+    if (state.layout.hidden || (state.layout.mode === 'docked' && !sidebar)) {
+      panel?.remove(); panel = null; return;
+    }
+    const floating = state.layout.mode === 'floating';
+    if (!panel || !panel.isConnected || panel.dataset.mode !== state.layout.mode || (!floating && !sidebar.contains(panel))) {
       mount(); collect(); render(); return;
     }
-    // Avoid rerendering while someone is searching, selecting, or editing.
-    const before = JSON.stringify(state.sessions); collect();
-    if (before !== JSON.stringify(state.sessions) && !panel.contains(document.activeElement)) render();
+    const before = JSON.stringify(state.sessions); collect(); applyLayout();
+    if (force || (before !== JSON.stringify(state.sessions) && !panel.contains(document.activeElement))) render();
   }
   const observer = new MutationObserver(records => {
-    if (records.every(r => (r.target instanceof Element ? r.target : r.target.parentElement)?.closest('#' + PANEL))) return;
+    if (records.every(r => (r.target instanceof Element ? r.target : r.target.parentElement)?.closest('#' + PANEL + ', #csf-launcher'))) return;
     clearTimeout(timer); timer = setTimeout(refresh, 150);
   });
   window.addEventListener('resize', () => { clearTimeout(timer); timer = setTimeout(refresh, 150); });
@@ -208,7 +294,7 @@
       if (area !== 'local' || !changes[KEY]) return;
       const next = validate(changes[KEY].newValue);
       if (JSON.stringify(next) === JSON.stringify(state)) return;
-      state = next; render();
+      state = next; refresh(true);
     });
   })();
 })();

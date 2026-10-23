@@ -1,4 +1,4 @@
-# Codex Session Folders — browser extension, v0.1.1
+# Codex Session Folders — browser extension, v0.2.0
 
 A small Manifest V3 extension adding a folder panel above Codex web's session list. It supports `/local/<id>` and ordinary `/c/<id>` links on `https://chatgpt.com`. Coding continues wherever Codex already runs; the extension does not run a coding agent, model, server, or desktop helper.
 
@@ -11,15 +11,21 @@ A small Manifest V3 extension adding a folder panel above Codex web's session li
 
 Chromium was tested. Chrome, Edge, Opera, and Brave installation paths are provided for their Chromium extension interfaces; those branded browsers were not separately tested. Firefox and Safari packaging is not provided. This is an unpacked preview, not a store-published extension.
 
-## Update from 0.1.0 without losing folders
+## Update from 0.1.x without losing folders
 
 Replace the files inside your **existing loaded extension folder** with the new `extension` folder's files. Keep the same folder path. Open `opera://extensions` (or your browser's Extensions page), click the extension's **Reload** control, then refresh the Codex tab. Do not uninstall or load it from a different path if you want to retain its storage. Export a backup first if you have saved important folders.
 
-Version 0.1.1 fixes overly broad sidebar selection and inherited layout styles. It rejects the narrow icon rail and broad wrappers, stays within a 220–440px history sidebar, defaults to a single collapsed row, and hides when no suitable sidebar is visible. If the sidebar markup or size cannot be recognized safely, it will not mount.
+Version 0.2.0 adds hide/restore, floating mode, pointer and keyboard move/resize, saved geometry, viewport recovery, and a restrained translucent glass surface. It preserves the existing folder storage key and assignments. Layout preferences are included in backup exports, but importing a folder backup preserves the current window layout so an old backup cannot unexpectedly hide or move the panel.
+
+Docked mode rejects the narrow icon rail and broad wrappers, fits a 220–440px history sidebar, and starts as a collapsed row. If that sidebar cannot be recognized, a small **Folders** restore button remains available on session pages. Restoring without a visible sidebar opens floating mode.
 
 ## Use
 
 - Click **Session folders** to expand or collapse the entire panel. Its open state persists.
+- The header **×** hides the entire panel. Restore it with the small **Folders** button at the bottom-right of the window. Pressing **Escape** while focused in the panel also hides it.
+- **↗ Float panel** detaches it from the sidebar; **↙ Dock panel** returns it to the sidebar. Open the native sidebar before docking.
+- In floating mode, drag the dotted grip at the top-left to move it. Drag the bottom-right corner to resize it. Position and size persist across reloads and are clamped to the current viewport.
+- Keyboard: focus the drag grip or resize corner and use arrow keys; hold Shift for larger steps.
 
 - Press **+** to create a folder.
 - Use the menu next to a saved session to choose its folder or **Unfiled**.
@@ -38,7 +44,7 @@ Folder data is local to this browser profile, not your OpenAI account. It is not
 
 ## Verification and compatibility limits
 
-Playwright loads the real unpacked extension in headless Chromium with temporary profiles and actual Chrome extension storage. A routed synthetic page at `https://chatgpt.com/local/...` supplies representative sidebar markup. Tests cover folder creation, assignment, rename, duplicate validation, collapse/reload, session navigation, search, folder deletion, native controls, delayed/remounted sidebars, virtualized rows, native title changes, backup import/export, unsafe URL filtering, inert labels, and updates between tabs. See `TEST-REPORT.md`.
+Playwright loads the real unpacked extension in headless Chromium with temporary profiles and actual Chrome extension storage. A routed synthetic page at `https://chatgpt.com/local/...` supplies representative sidebar markup. Tests cover folder creation, assignment, rename, duplicate validation, collapse/reload, session navigation, search, folder deletion, native controls, delayed/remounted sidebars, virtualized rows, native title changes, backup import/export, unsafe URL filtering, inert labels, updates between tabs, hide/restore, Escape focus recovery, pointer and keyboard drag/resize, docking, persisted geometry, and smaller viewport recovery. See `TEST-REPORT.md`.
 
 **Your authenticated Codex sidebar has not been tested.** Its selectors may differ from the fixture, and future UI updates can require adjustments. A successful fixture test is not proof of compatibility with a live account. If the panel does not appear, disable the extension and report the browser/version and a screenshot; do not paste credentials or session tokens.
 
