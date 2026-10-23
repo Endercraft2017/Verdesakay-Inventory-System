@@ -111,7 +111,7 @@ const NAV = [
       { id: 'sales-overview', label: 'Pipeline', requiredPermission: 'orders.view', requiredAnyPermission: ['orders.create', 'orders.edit'], tree: [{ label: 'Sales pipeline', icon: 'sheet', route: 'sales-overview' }] },
       { id: 'sales-orders', label: 'Orders', requiredPermission: 'orders.view', requiredAnyPermission: ['orders.create', 'orders.edit'], tree: [
         { label: 'Sale Orders', icon: 'forms', route: 'orders', filter: { type: 'sale' } },
-        { label: 'Customer Job Orders', icon: 'printer', route: 'orders', filter: { type: 'job' } },
+        { label: 'Customer JO Records', icon: 'printer', route: 'orders', filter: { type: 'job' } },
       ] },
       { id: 'sales-service', label: 'Customer Service', requiredPermission: 'orders.view', requiredAnyPermission: ['orders.create', 'orders.edit'], tree: [{ label: 'CSR desk', icon: 'users', route: 'sales-service' }] },
       { id: 'sales-customers', label: 'Customers', requiredPermission: 'orders.view', requiredAnyPermission: ['orders.create', 'orders.edit'], tree: [{ label: 'Customers', icon: 'users', route: 'customers' }] },

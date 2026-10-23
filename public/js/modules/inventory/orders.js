@@ -3,6 +3,9 @@
 App.register('orders', async (view, filter) => {
   const type = filter && filter.type === 'job' ? 'job' : filter && filter.type === 'purchase' ? 'purchase' : 'sale';
   const tracking = filter && filter.mode === 'track' && type !== 'purchase';
+  // Customer JO documents are legacy records to inspect from Sales. New build
+  // work is drafted from sale approval or planned under Production instead.
+  const readOnlyJob = type === 'job';
   const noun = type === 'sale' ? 'Sale Order' : type === 'job' ? 'Customer Job Order' : 'Supplier Purchase Order';
   const state = { q: String(filter?.search || ''), backorder: false };
   const qbDoc = type === 'purchase' ? 'Bill' : 'Invoice';
@@ -12,10 +15,10 @@ App.register('orders', async (view, filter) => {
   // the server checks the same per order (src/modules/inventory/order-access.ts).
   const canWrite = (action) => App.hasPermission(type === 'purchase' ? 'purchasing.manage' : 'orders.' + action)
     && (type !== 'job' || action === 'view' || App.hasPermission('production.plan'));
-  const canCreate = !tracking && canWrite('create');
-  const canEdit = !tracking && canWrite('edit');
-  const canDelete = !tracking && canWrite('delete');
-  const canQbPush = qb.connected && App.hasPermission(type === 'purchase' ? 'purchasing.approve_bills' : 'orders.approve');
+  const canCreate = !tracking && !readOnlyJob && canWrite('create');
+  const canEdit = !tracking && !readOnlyJob && canWrite('edit');
+  const canDelete = !tracking && !readOnlyJob && canWrite('delete');
+  const canQbPush = !readOnlyJob && qb.connected && App.hasPermission(type === 'purchase' ? 'purchasing.approve_bills' : 'orders.approve');
 
   let suppliers = [];
   if (type === 'purchase') { try { suppliers = await API.get('/suppliers'); } catch { /* optional */ } }
@@ -32,7 +35,7 @@ App.register('orders', async (view, filter) => {
 
   view.innerHTML = `
     <div class="topbar">
-      <h2>${tracking ? noun + 's · Fulfillment tracking' : noun + 's'}</h2>
+      <h2>${tracking ? noun + 's · Fulfillment tracking' : noun + 's' + (readOnlyJob ? ' · View only' : '')}</h2>
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="ord-search" aria-label="Search orders by number or ${partyLabel.toLowerCase()}" placeholder="Search number, ${partyLabel.toLowerCase()}…" value="${UI.esc(state.q)}" /></div>
       ${type === 'sale' ? `<button class="btn secondary" id="ord-backorder" title="Show firm orders with stock lines still awaiting picking">${UI.icon('alert', 15)} Awaiting release</button>` : ''}
@@ -95,11 +98,8 @@ App.register('orders', async (view, filter) => {
             ${tracking ? '' : `<td class="right">${UI.esc(o.currency || '')} ${money(o.total)}</td>`}
             <td><span class="badge-pill status-${UI.esc(o.status)}">${UI.esc(o.status)}</span>${o.release_slip_number ? ` <span class="badge-pill" title="Goods left on release slip ${UI.esc(o.release_slip_number)}">Shipped · ${UI.esc(o.release_slip_number)}</span>` : ''}${o.backordered ? ' <span class="badge-pill low" title="Stock lines still await picking">⚠ awaiting pick</span>' : ''}</td>
             <td class="actions">
-              ${type === 'job' && !tracking && App.hasPermission('production.plan')
-                ? (o.job_order_id
-                  ? `<button class="icon-btn" title="View in Production — ${UI.esc(o.job_order_number)}" data-view-jo="${o.job_order_id}">${UI.icon('eye')}</button>`
-                  : `<button class="icon-btn" title="Start production" data-produce="${o.id}">${UI.icon('adjust')}</button>`)
-                : ''}
+              ${type === 'job' && o.job_order_id && App.hasPermission('production.view')
+                ? `<button class="icon-btn" title="View in Production — ${UI.esc(o.job_order_number)}" data-view-jo="${o.job_order_id}">${UI.icon('eye')}</button>` : ''}
               ${type === 'purchase' ? `<button class="icon-btn" title="Receiving & bills" data-purch="${o.id}">${UI.icon('inbox')}</button>` : ''}
               ${type === 'sale' && !tracking && ['approved', 'released'].includes(String(o.status).toLowerCase()) && App.hasPermission('orders.authorize') && window.ReleaseAuth
                 ? `<button class="icon-btn" title="Release authorization (who may collect)" data-relauth="${o.id}" data-num="${UI.esc(o.number)}">${UI.icon('key')}</button>` : ''}

@@ -34,6 +34,11 @@ selection, no-BOM and stale-stock messages, repeat approval, direct link/permiss
 revocation, own-delivery versus courier labels, and offline queued approval
 acknowledgement. Mobile source is intentionally left with the mobile owner.
 
+Desktop Sales now treats the separate Customer JO Records list as view-only even
+when an administrator opens it. Phone Sales should do the same for that list;
+show any linked production JO as a view action from the sale, and keep manual
+production planning in the Production desk.
+
 Read **Mobile implementation status** for the current branch. The older
 requirements and test notes further down are retained for traceability; some
 of their requested screens have since been implemented.

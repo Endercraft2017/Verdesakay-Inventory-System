@@ -35,6 +35,9 @@ try {
     const page = await context.newPage(), errors = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.goto(base + '/app'); await page.waitForFunction(() => typeof App !== 'undefined' && App.getMe());
+    await page.evaluate(() => App.navigate('orders', { type: 'job' }));
+    await page.getByText('Customer Job Orders · View only').waitFor();
+    assert.equal(await page.locator('#ord-new, #ord-empty-new, [data-produce]').count(), 0);
     await page.evaluate(() => App.navigate('orders', { type: 'sale' }));
     await page.locator('#ord-new').click();
     const search = page.locator('#ord-customer-search');

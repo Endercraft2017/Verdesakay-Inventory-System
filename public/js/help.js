@@ -27,7 +27,7 @@
     },
     {
       id: 'job-documents', title: 'Job Order documents', group: 'Orders', routes: [],
-      html: `<p><b>Sales → Orders → Customer Job Orders</b> stores customer work documents, numbered JO-….</p><ol><li>Click <b>New Job Order</b>, enter the customer, work/items, quantities and prices, and save.</li><li>Open the row to review or print the document.</li><li>For a build, use the row's <b>Start production</b> action, choose the finished product, build quantity, source and output locations, then create the linked production order.</li><li>Manage that build under <b>Production → Job Orders</b>; the JO document and the production order are separate records.</li></ol><p>Stock-kit release, acceptance, inspection and Products In belong to the production order, not this document.</p>`,
+      html: `<p><b>Sales → Orders → Customer JO Records</b> is a read-only list of earlier customer work documents, numbered JO-…. Open a row to review or print it.</p><p>For new sales, save and approve a Sale Order. Approval drafts production work only for finished-product quantities that RTS stock cannot cover. Review linked builds in the sale's stock review; Production approves, kits and completes them under <b>Production → Job Orders</b>. Authorized planners can also create buffer-stock jobs there.</p>`,
     },
     {
       id: 'new-item', title: 'New / Edit item', group: 'Inventory', routes: [],

@@ -71,6 +71,18 @@ describe('sales order intake UI', () => {
     expect(doc.querySelector('[data-confirm]')?.textContent).toBe('Create order');
     expect((doc.querySelector('[data-f="currency"]') as HTMLInputElement).disabled).toBe(false);
   });
+  it('keeps customer JO records read-only in Sales even for an administrator', async () => {
+    const permissions = ['orders.view', 'orders.create', 'orders.edit', 'orders.delete', 'orders.approve', 'production.plan', 'production.view'];
+    const order = { id: 1, number: 'JO-00001', type: 'job', status: 'open', items: [{ name: 'Legacy work', quantity: 1, unit_price: 100 }] };
+    const { doc, api, click } = await setup(permissions, order, {}, 'job');
+    expect(doc.querySelector('.topbar h2')?.textContent).toContain('View only');
+    expect(doc.querySelector('#ord-new')).toBeNull();
+    expect(doc.querySelector('#ord-empty-new')).toBeNull();
+    expect(doc.querySelector('[data-edit], [data-del], [data-produce], [data-qbpush]')).toBeNull();
+    click('tr[data-open="1"]'); await flush();
+    expect(doc.querySelector('.order-editor [data-confirm]')).toBeNull();
+    expect(api.post).not.toHaveBeenCalled();
+  });
   it('starts with an open order and explains the next checkpoint', async () => {
     const { doc, click } = await setup();
     click('#ord-new');

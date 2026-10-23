@@ -54,8 +54,11 @@ existing customized role retains its grants until an administrator reviews it.
    are explicit selections, while services/charges remain non-stock
    even when their name matches an inventory item. Positive quantities, valid dates,
    existing linked records, and one line per stock item are validated before saving.
-   Sales can inspect customer JO documents and linked production summaries but cannot
-   author either JO type without `production.plan`. The editor identifies stock/non-stock lines, reports field errors without dropping
+   Sales can inspect linked production summaries and earlier customer JO documents. The
+   Sales customer-JO list is view-only even for administrators; new production work comes
+   from sale approval or Production planning. The backend still requires `production.plan`
+   for any legacy customer-JO API write, so Sales-only roles cannot author either JO type.
+   The editor identifies stock/non-stock lines, reports field errors without dropping
    unnamed lines, and visibly locks lines/tax after approval. New/edit/delete controls
    follow their respective permissions; view-only users can still inspect orders.
    The legacy direct-to-sale unit allocation shortcut is removed from intake; use the
