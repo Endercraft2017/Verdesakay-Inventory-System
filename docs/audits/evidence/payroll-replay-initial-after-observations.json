@@ -1,0 +1,26 @@
+[
+  {
+    "fault": "effect",
+    "failed": true,
+    "journals": [],
+    "command": {
+      "id": "01M5KV9TN4CKEKSYYTDPHJWF5E",
+      "state": "received",
+      "authority_seq": null,
+      "response_status": null
+    },
+    "effects": []
+  },
+  {
+    "fault": "verdict",
+    "failed": true,
+    "journals": [],
+    "command": {
+      "id": "01M5KV9TP7ACNF5WMJHHR7V6FD",
+      "state": "received",
+      "authority_seq": null,
+      "response_status": null
+    },
+    "effects": []
+  }
+]

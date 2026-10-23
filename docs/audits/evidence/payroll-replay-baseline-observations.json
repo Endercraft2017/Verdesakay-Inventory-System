@@ -1,0 +1,43 @@
+[
+  {
+    "fault": "effect",
+    "failed": true,
+    "journals": [
+      {
+        "id": 137438953473,
+        "number": "JV-000001",
+        "reverses_id": null
+      }
+    ],
+    "command": {
+      "id": "01M5KTZQGYVG89541W7Y1HZZMG",
+      "state": "received",
+      "authority_seq": null,
+      "response_status": null
+    },
+    "effects": []
+  },
+  {
+    "fault": "verdict",
+    "failed": true,
+    "journals": [
+      {
+        "id": 137438953474,
+        "number": "JV-000002",
+        "reverses_id": null
+      }
+    ],
+    "command": {
+      "id": "01M5KTZQHVP86RFFKG8GQW81Q3",
+      "state": "received",
+      "authority_seq": null,
+      "response_status": null
+    },
+    "effects": [
+      {
+        "authority_seq": 2,
+        "command_id": "01M5KTZQHVP86RFFKG8GQW81Q3"
+      }
+    ]
+  }
+]

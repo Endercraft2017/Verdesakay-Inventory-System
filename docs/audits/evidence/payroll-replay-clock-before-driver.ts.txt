@@ -1,0 +1,11 @@
+import {beforeAll,afterAll,it,expect} from 'vitest';
+import fs from 'node:fs';
+import {setupApp,cleanup,login,type TestContext} from '../tests/helpers';
+let ctx:TestContext,token:string,db:typeof import('../src/shared/db'),period:number;
+beforeAll(async()=>{ctx=await setupApp();token=await login(ctx.api);expect((await ctx.api.post('/api/accounting/ledger/setup').auth(token,{type:'bearer'}).send({fiscal_year_start:'2026-01-01'})).status).toBe(201);db=await import('../src/shared/db');const e=Number(db.run("INSERT INTO employees(employee_no,name) VALUES('REPLAY-OLD-CLOCK','Synthetic old-clock payroll')").lastInsertRowid),f=db.queryOne<{id:number}>("SELECT id FROM form_definitions WHERE slug='hr_payroll'")!.id;period=Number(db.run("INSERT INTO attendance_periods(label,start_date,end_date) VALUES('REPLAY-OLD-CLOCK','2026-07-01','2026-07-15')").lastInsertRowid);db.run("INSERT INTO form_records(form_def_id,number,data,status,period,created_by) VALUES(?,?,?,'draft','REPLAY-OLD-CLOCK',1)",f,'REPLAY-OLD-CLOCK',JSON.stringify({employee_id:e,employee_name:'Synthetic old-clock payroll',cutoff_id:period,pay_date:'2026-07-15',total_earnings:1000,net_pay:1000}));const s=await import('../src/sync');s.enableSync(db.activeDb(),{role:'cloud',nodeNo:0});});
+afterAll(()=>cleanup(ctx));
+it('does not immediately compact a newly confirmed command because its business clock is old',async()=>{
+ const s=await import('../src/sync'),{compactCommands}=await import('../src/sync/maintenance'),id='01M5KCLOCK00000000000000001';
+ const result=await s.acceptCommand('default',{id,node_no:9,node_seq:1,hlc:null,occurred_at:'2010-01-01T00:00:00Z',occurred_date:'2010-01-01',actor_user_id:1,device_id:null,method:'POST',path:`/api/hr/periods/${period}/post-payroll-gl`,body:'{"payroll_period":"REPLAY-OLD-CLOCK"}',sync_class:'claim',allocation_plan:'[]',app_version:'1.0.0',unattributed:0});expect(result.state).toBe('confirmed');
+ const verdict=db.queryOne('SELECT updated_at FROM sync_commands WHERE id=?',id),effect=db.queryOne('SELECT created_at FROM sync_effects WHERE command_id=?',id),removed=compactCommands(db.activeDb(),30);fs.writeFileSync('work/payroll-replay-clock-observation.json',JSON.stringify({verdict,effect,removed},null,2)+'\n');expect(removed).toBe(0);
+});

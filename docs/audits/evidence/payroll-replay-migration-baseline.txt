@@ -1,0 +1,8 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System/work/payroll-replay-baseline
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  08:10:47
+   Duration  22.92s (transform 1.94s, setup 31ms, import 81ms, tests 22.69s, environment 0ms)

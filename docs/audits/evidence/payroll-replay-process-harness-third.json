@@ -1,0 +1,196 @@
+{
+  "error": "Error: Expected child termination was not observed: {\"status\":200,\"body\":{\"results\":[{\"id\":\"01M5KW0YATX7DQEMEGPD9G5JKK\",\"state\":\"confirmed\",\"authority_seq\":6,\"response_status\":201,\"error\":null}]}}",
+  "completed": [
+    {
+      "name": "before command effect insert",
+      "contract_satisfied": true,
+      "first_status": null,
+      "interrupted": {
+        "journals": [],
+        "command": {
+          "state": "received",
+          "authority_seq": null,
+          "response_status": null
+        },
+        "effects": []
+      },
+      "retry_status": 200,
+      "final": {
+        "journals": [
+          {
+            "id": 137438953473,
+            "number": "JV-000001",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 2,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 2,
+            "command_id": "01M5KW0C7DWFMZKDDHAYXAJHDV"
+          }
+        ]
+      },
+      "replica": {
+        "converged": true,
+        "host_journals": [
+          {
+            "id": 137438953473,
+            "number": "JV-000001",
+            "reverses_id": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "before confirmed verdict update",
+      "contract_satisfied": true,
+      "first_status": null,
+      "interrupted": {
+        "journals": [],
+        "command": {
+          "state": "received",
+          "authority_seq": null,
+          "response_status": null
+        },
+        "effects": []
+      },
+      "retry_status": 200,
+      "final": {
+        "journals": [
+          {
+            "id": 137438953474,
+            "number": "JV-000002",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 3,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 3,
+            "command_id": "01M5KW0GYJK4VDMNSY6Y5ZMWW2"
+          }
+        ]
+      },
+      "replica": {
+        "converged": true,
+        "host_journals": [
+          {
+            "id": 137438953474,
+            "number": "JV-000002",
+            "reverses_id": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "after confirmed verdict update before commit",
+      "contract_satisfied": true,
+      "first_status": null,
+      "interrupted": {
+        "journals": [],
+        "command": {
+          "state": "received",
+          "authority_seq": null,
+          "response_status": null
+        },
+        "effects": []
+      },
+      "retry_status": 200,
+      "final": {
+        "journals": [
+          {
+            "id": 137438953475,
+            "number": "JV-000003",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 4,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 4,
+            "command_id": "01M5KW0NC5Y0GH57R07FVWG25Q"
+          }
+        ]
+      },
+      "replica": {
+        "converged": true,
+        "host_journals": [
+          {
+            "id": 137438953475,
+            "number": "JV-000003",
+            "reverses_id": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "internal response lost after handler commit",
+      "contract_satisfied": true,
+      "first_status": null,
+      "interrupted": {
+        "journals": [
+          {
+            "id": 137438953476,
+            "number": "JV-000004",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 5,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 5,
+            "command_id": "01M5KW0SWNJ7HPRNQR0ARKEASS"
+          }
+        ]
+      },
+      "retry_status": 200,
+      "final": {
+        "journals": [
+          {
+            "id": 137438953476,
+            "number": "JV-000004",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 5,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 5,
+            "command_id": "01M5KW0SWNJ7HPRNQR0ARKEASS"
+          }
+        ]
+      },
+      "replica": {
+        "converged": true,
+        "host_journals": [
+          {
+            "id": 137438953476,
+            "number": "JV-000004",
+            "reverses_id": null
+          }
+        ]
+      }
+    }
+  ]
+}

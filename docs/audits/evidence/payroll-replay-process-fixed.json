@@ -1,0 +1,300 @@
+{
+  "mode": "fixed source",
+  "node": "v24.19.0",
+  "sqlite": {
+    "version": "3.53.3"
+  },
+  "journal_mode": {
+    "journal_mode": "wal"
+  },
+  "synchronous": {
+    "synchronous": 2
+  },
+  "cases": [
+    {
+      "name": "before command effect insert",
+      "contract_satisfied": true,
+      "first_status": null,
+      "interrupted": {
+        "journals": [],
+        "command": {
+          "state": "received",
+          "authority_seq": null,
+          "response_status": null
+        },
+        "effects": []
+      },
+      "retry_status": 200,
+      "final": {
+        "journals": [
+          {
+            "id": 137438953473,
+            "number": "JV-000001",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 2,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 2,
+            "command_id": "01M5KYK882YCD4211MMZQ7WH0P"
+          }
+        ]
+      },
+      "replica": {
+        "converged": true,
+        "host_journals": [
+          {
+            "id": 137438953473,
+            "number": "JV-000001",
+            "reverses_id": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "before confirmed verdict update",
+      "contract_satisfied": true,
+      "first_status": null,
+      "interrupted": {
+        "journals": [],
+        "command": {
+          "state": "received",
+          "authority_seq": null,
+          "response_status": null
+        },
+        "effects": []
+      },
+      "retry_status": 200,
+      "final": {
+        "journals": [
+          {
+            "id": 137438953474,
+            "number": "JV-000002",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 3,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 3,
+            "command_id": "01M5KYKCKAQEKKPGW01JEHAE15"
+          }
+        ]
+      },
+      "replica": {
+        "converged": true,
+        "host_journals": [
+          {
+            "id": 137438953474,
+            "number": "JV-000002",
+            "reverses_id": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "after confirmed verdict update before commit",
+      "contract_satisfied": true,
+      "first_status": null,
+      "interrupted": {
+        "journals": [],
+        "command": {
+          "state": "received",
+          "authority_seq": null,
+          "response_status": null
+        },
+        "effects": []
+      },
+      "retry_status": 200,
+      "final": {
+        "journals": [
+          {
+            "id": 137438953475,
+            "number": "JV-000003",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 4,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 4,
+            "command_id": "01M5KYKGW3B4950MPZF9WFWM5G"
+          }
+        ]
+      },
+      "replica": {
+        "converged": true,
+        "host_journals": [
+          {
+            "id": 137438953475,
+            "number": "JV-000003",
+            "reverses_id": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "internal response lost after handler commit",
+      "contract_satisfied": true,
+      "first_status": null,
+      "interrupted": {
+        "journals": [
+          {
+            "id": 137438953476,
+            "number": "JV-000004",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 5,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 5,
+            "command_id": "01M5KYKN5B5ZQHZXE7JDFT5MJB"
+          }
+        ]
+      },
+      "retry_status": 200,
+      "final": {
+        "journals": [
+          {
+            "id": 137438953476,
+            "number": "JV-000004",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 5,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 5,
+            "command_id": "01M5KYKN5B5ZQHZXE7JDFT5MJB"
+          }
+        ]
+      },
+      "replica": {
+        "converged": true,
+        "host_journals": [
+          {
+            "id": 137438953476,
+            "number": "JV-000004",
+            "reverses_id": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "outer command response lost after complete decision",
+      "contract_satisfied": true,
+      "first_status": null,
+      "interrupted": {
+        "journals": [
+          {
+            "id": 137438953477,
+            "number": "JV-000005",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 6,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 6,
+            "command_id": "01M5KYKSCE6595H3QZF9KTMYK6"
+          }
+        ]
+      },
+      "retry_status": 200,
+      "final": {
+        "journals": [
+          {
+            "id": 137438953477,
+            "number": "JV-000005",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 6,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 6,
+            "command_id": "01M5KYKSCE6595H3QZF9KTMYK6"
+          }
+        ]
+      },
+      "replica": {
+        "converged": true,
+        "host_journals": [
+          {
+            "id": 137438953477,
+            "number": "JV-000005",
+            "reverses_id": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "two processes observing the same received command",
+      "contract_satisfied": true,
+      "statuses": [
+        200,
+        200
+      ],
+      "final": {
+        "journals": [
+          {
+            "id": 137438953478,
+            "number": "JV-000006",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 7,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 7,
+            "command_id": "01M5KYKXFXZNPAEJX3VV3ES3EC"
+          }
+        ]
+      },
+      "replica": {
+        "converged": true,
+        "host_journals": [
+          {
+            "id": 137438953478,
+            "number": "JV-000006",
+            "reverses_id": null
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -79,15 +79,18 @@ router.get('/status', requireAuth, (req, res) => {
 
 router.get('/command/:id', requireAuth, (req, res) => {
   const conn = activeDb();
-  if (syncConfigOf(conn)?.role !== 'node') {
-    // The cloud (or a normal install) decided it already: nothing on this copy waits.
+  const cfg=syncConfigOf(conn);
+  if (!cfg) {
+    // A non-sync install has no queued command protocol; preserve its legacy response.
     res.json({ state: 'confirmed' });
     return;
   }
   const row = conn.prepare('SELECT state, error, actor_user_id FROM sync_commands WHERE id = ?').get(String(req.params.id)) as
     { state: string; error: string | null; actor_user_id: number | null } | undefined;
   if (!row || (!seesAll(req) && row.actor_user_id !== req.user!.id)) { res.status(404).json({ error: 'Action not found' }); return; }
-  res.json({ state: row.state, error: row.error });
+  // A cloud inbox can still be received/rejected; never invent confirmation for it.
+  // Preserve the historical successful cloud response shape.
+  res.json(cfg.role==='cloud'&&row.error==null?{state:row.state}:{state:row.state,error:row.error});
 });
 
 router.get('/activity', requireAuth, (req, res) => {

@@ -1,0 +1,41 @@
+{"timestamp":"2026-10-23T07:48:22.414Z","level":"info","event":"http_request","request_id":"897c8640-c5b2-4aa1-a9dd-58e48e65780b","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":346}
+{"timestamp":"2026-10-23T07:48:22.428Z","level":"info","event":"http_request","request_id":"789ed318-97b4-49b9-8473-99d6c1120983","tenant":"default","method":"POST","path":"/api/accounting/ledger/setup","status":201,"duration_ms":6}
+{"timestamp":"2026-10-23T07:48:22.846Z","level":"info","event":"http_request","request_id":"7f5e30eb-0bea-4ffc-a55d-3bdd2dfce42e","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":401}
+{"timestamp":"2026-10-23T07:48:22.897Z","level":"info","event":"http_request","request_id":"948a81f7-3b99-48bf-9a61-140c6d123778","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":43}
+{"timestamp":"2026-10-23T07:48:22.949Z","level":"info","event":"http_request","request_id":"19def7a4-8e22-44f3-a082-504820df0910","tenant":"default","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":48}
+{"timestamp":"2026-10-23T07:48:23.334Z","level":"info","event":"http_request","request_id":"671b5447-7121-4782-8774-082c46b2c749","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":361}
+{"timestamp":"2026-10-23T07:48:23.338Z","level":"info","event":"http_request","request_id":"63f707df-5290-4b3b-af91-b51dbaa18b72","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":1}
+{"timestamp":"2026-10-23T07:48:23.345Z","level":"info","event":"http_request","request_id":"51e6e1c4-31b8-45d3-a490-8149dfe15655","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":2}
+{"timestamp":"2026-10-23T07:48:23.353Z","level":"info","event":"http_request","request_id":"e5e470e5-59b3-4499-88bd-a9dcceb0b34a","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T07:48:23.357Z","level":"info","event":"http_request","request_id":"7a049113-8c41-4514-ac02-1362a4f39d0f","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T07:48:23.362Z","level":"info","event":"http_request","request_id":"61210b89-b8cc-48ea-845e-b4aab0d768f0","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T07:48:23.410Z","level":"info","event":"http_request","request_id":"d4b2eed9-15d5-4e80-bd5b-83ecb4f83e6e","tenant":"trio-host","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":45}
+{"timestamp":"2026-10-23T07:48:23.792Z","level":"info","event":"http_request","request_id":"4674d441-702e-43b3-ba1c-d429aa0e5c1e","tenant":"trio-host","method":"POST","path":"/api/auth/login","status":200,"duration_ms":359}
+{"timestamp":"2026-10-23T07:48:24.107Z","level":"info","event":"http_request","request_id":"d9ab954a-8591-42ed-86f3-856f22a22596","tenant":"trio-lan","method":"POST","path":"/api/auth/login","status":200,"duration_ms":311}
+{"timestamp":"2026-10-23T07:48:24.111Z","level":"info","event":"http_request","request_id":"9e1991d0-af94-426e-bb58-6e301d7d5574","tenant":"default","method":"PUT","path":"/api/sync/sites","status":200,"duration_ms":2}
+{"timestamp":"2026-10-23T07:48:24.115Z","level":"info","event":"http_request","request_id":"6e4c55bd-a60a-4ed6-a12e-d7ff9d9e7060","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T07:48:24.117Z","level":"info","event":"http_request","request_id":"063a6675-f8bd-4a2e-9b7f-1739f36542ff","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":0}
+{"timestamp":"2026-10-23T07:48:24.120Z","level":"info","event":"http_request","request_id":"8d1628c3-aaf6-4912-9e07-35a1278c63c2","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T07:48:24.123Z","level":"info","event":"http_request","request_id":"4ab27cf2-fa66-435d-8e07-7fb1a6e49689","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T07:48:24.135Z","level":"info","event":"http_request","request_id":"ffab5318-e934-46a0-a5e5-fcd460a9ba14","tenant":"trio-host","method":"POST","path":"/api/hr/periods/1/post-payroll-gl","status":201,"duration_ms":9}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ undefined
+- 'received'
+
+    at <anonymous> (/workspace/Verdesakay-Inventory-System/scripts/payroll-replay-crash-drill.ts:43:123)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: undefined,
+  expected: 'received',
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.19.0

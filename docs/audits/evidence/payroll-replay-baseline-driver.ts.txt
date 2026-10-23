@@ -1,0 +1,24 @@
+import {beforeAll,afterAll,it,expect} from 'vitest';
+import fs from 'node:fs';
+import {setupSiteTrio,type SiteTrio} from '../tests/sync-helpers';
+import {cleanup} from '../tests/helpers';
+let trio:SiteTrio;const periods:number[]=[],observations:unknown[]=[];
+beforeAll(async()=>{
+ trio=await setupSiteTrio(async({api,cloudHdr})=>{
+  expect((await api.post('/api/accounting/ledger/setup').set(cloudHdr()).send({fiscal_year_start:'2026-01-01'})).status).toBe(201);
+  const d=await import('../src/shared/db'),employee=Number(d.run("INSERT INTO employees(employee_no,name) VALUES('GL-REPLAY-BEFORE','Synthetic replay audit')").lastInsertRowid);
+  const form=d.queryOne<{id:number}>("SELECT id FROM form_definitions WHERE slug='hr_payroll'")!.id;
+  for(let i=0;i<2;i++){const label='GL-REPLAY-BEFORE-'+i,id=Number(d.run("INSERT INTO attendance_periods(label,start_date,end_date) VALUES(?,'2026-07-01','2026-07-15')",label).lastInsertRowid);periods.push(id);
+   d.run("INSERT INTO form_records(form_def_id,number,data,status,period,created_by) VALUES(?,?,?,'draft',?,1)",form,label,JSON.stringify({employee_id:employee,employee_name:'Synthetic replay audit',cutoff_id:id,pay_date:'2026-07-15',total_earnings:1000,net_pay:1000}),label);}
+ });
+ expect((await trio.ctx.api.put('/api/sync/sites').set(trio.cloudHdr()).send({main_host:trio.hostNo})).status).toBe(200);await trio.hostRound();trio.cutOff('host');
+},90000);
+afterAll(()=>{fs.writeFileSync('work/payroll-replay-before-observations.json',JSON.stringify(observations,null,2)+'\n');trio?.close();if(trio)cleanup(trio.ctx);});
+for(const [i,fault] of ['effect','verdict'].entries())it(`keeps the cloud posting uncommitted when its ${fault} cannot commit`,async()=>{
+ const id=periods[i]!,label='GL-REPLAY-BEFORE-'+i,r=await trio.ctx.api.post(`/api/hr/periods/${id}/post-payroll-gl`).set(trio.hostHdr()).set('Idempotency-Key','gl-replay-before-'+i).send({payroll_period:label});expect(r.status).toBe(201);
+ const cmd=trio.sync.pendingCommands(trio.hostSlug).find(c=>c.id===r.headers['x-sync-command'])!,conn=trio.cloudDb();expect(cmd).toBeTruthy();
+ conn.exec(fault==='effect'?"CREATE TRIGGER replay_before_fault BEFORE INSERT ON sync_effects WHEN NEW.command_id IS NOT NULL BEGIN SELECT RAISE(ABORT,'synthetic effect fault'); END":"CREATE TRIGGER replay_before_fault BEFORE UPDATE ON sync_commands WHEN NEW.state='confirmed' BEGIN SELECT RAISE(ABORT,'synthetic verdict fault'); END");
+ let result:unknown,failed=false;try{result=await trio.sync.acceptCommand('default',cmd);}catch{failed=true;}finally{conn.exec('DROP TRIGGER replay_before_fault');}
+ const journals=conn.prepare("SELECT id,number,reverses_id FROM journal_entries WHERE source_type='payroll_run' AND source_id=? ORDER BY id").all(id),command=conn.prepare('SELECT id,state,authority_seq,response_status FROM sync_commands WHERE id=?').get(cmd.id),effects=conn.prepare('SELECT authority_seq,command_id FROM sync_effects WHERE command_id=?').all(cmd.id);
+ observations.push({fault,failed,result,journals,command,effects});expect(journals).toHaveLength(0);expect(effects).toHaveLength(0);
+});

@@ -79,3 +79,14 @@ view context. [Contract](payroll-post-retry-contract.md) and
 Reviewed source-version one-use approval, local factor/command origin, cloud replay/
 effect-stream/verdict crash recovery, different-server/keyless cases and independent
 financial acceptance remain. This does not promote AUTHZ-15 or authorize a release.
+
+## Payroll cloud replay follow-up — 23 October 2026
+
+The synchronous payroll GL cloud replay now commits its journal/effect/verdict together;
+immutable server-owned inbox markers support same-command retries and hold ambiguous
+legacy received rows. Fault, crash, concurrency and normal LAN/host/cloud checks are
+in the [contract](payroll-replay-contract.md) and
+[recovery procedure](../operations/payroll-cloud-replay.md). This narrows the payroll
+cloud persistence gap; other authority/site-host/rebase interruption, source-version
+approval, offline origin/factor proof, historical repair and independent acceptance
+remain. No whole authorization control or release status is promoted.

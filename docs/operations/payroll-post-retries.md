@@ -42,8 +42,9 @@ an old success receipt is not authorization.
 Office authority remains the existing company claim/main-host decision. This route
 does not add cloud-only MFA to accepted offline work. Internal replay uses existing
 actor/permission and D6 semantics. Normal offline post, explicit re-post and cloud
-replay are tested; authority-dispatch/effect-stream/verdict crash atomicity is still
-separate unfinished engineering work.
+replay are tested. The subsequent [cloud payroll protocol](payroll-cloud-replay.md)
+commits that route's source, effect and verdict together. Other authority routes/
+site-host acceptance and node rebase interruption remain unfinished engineering work.
 
 ## Reconciliation and exceptional recovery
 
@@ -88,8 +89,9 @@ Node-local receipt tables are not part of replicated business state. Do not move
 retry to a new server or infer portable retry protection from snapshot enrollment.
 
 Only this synchronous JSON route opts into atomic originating-node capture. Source,
-receipt and command commit before JSON is emitted. Other capture routes and the
-authority replay/rebase orchestration retain their existing behavior. This route
+receipt and command commit before JSON is emitted. Cloud payroll replay has its own
+bounded transaction; other capture/replay routes and node rebase retain their existing
+behavior. This route
 does not yet bind a one-use approval to a reviewed source version. SQLite process
 termination tests use WAL/FULL on this Linux filesystem; they do not certify storage
 power-loss behavior, Windows packaging, backup restore or mixed-version deployment.

@@ -3,7 +3,8 @@
 Latest dated dependency evidence: see the 23 October follow-up at the end of this
 record. Candidate and final original-dependency runs are distinguished there.
 The subsequent 23 October payroll GL retry follow-up records the newer application
-tree and complete regression; broader release holds are unchanged.
+tree and complete regression; broader release holds are unchanged. The latest cloud
+payroll replay/status follow-up at the end records the final transaction/retention tree.
 
 Source cutoff: `restructure/module-architecture` at
 `495db101c3efbe4e4546221fed2db3af233b00aa`, merged into `production` with the audit fixes.
@@ -1416,3 +1417,85 @@ older/keyless clients, different actors/servers and uncertain command recovery r
 reconciliation. Financial policy/retention and real runtime/device/restore acceptance
 need independent review or external verification. No new owner engineering task is
 required now; whole-control totals and the complete release hold remain unchanged.
+
+## Cloud payroll replay and honest status — 23 October 2026
+
+Baseline `a92de92c173c41280a52ed734bad913f441f68a5`. This follow-up covers cloud
+confirmation of an office's payroll GL command, its status read and retention metadata.
+See [contract/states](payroll-replay-contract.md),
+[primary-source research and failed experiments](payroll-replay-research.md),
+[recovery](../operations/payroll-cloud-replay.md) and the
+[verification/hash manifest](evidence/payroll-replay-verification.json).
+
+Two unchanged-source SQL fault assertions failed: journal rows survived effect/verdict
+persistence failure, leaving received commands with incomplete durable decisions. The
+fix creates a server-owned immutable inbox marker and commits payroll writes, its
+changeset and final verdict in one synchronous cloud transaction. Infrastructure faults
+stay pending/retryable; genuine authorization/validation refusals keep no new posting.
+Old received rows without protocol proof hold for reviewed reconciliation. Two additional
+real HTTP assertions showed received/unknown cloud IDs falsely returned confirmed;
+status now uses the stored row with ownership/management checks and unknown IDs return 404.
+
+| Final verification | Actual result |
+|---|---|
+| Standard full `npm test -- --fileParallelism --maxWorkers=2` | **325 files / 3,511 tests passed**, 675.76s, exit 0 |
+| Complete Playwright regression | **78 passed**, 203.03s; zero skipped/unexpected/flaky |
+| Final clock/maintenance/status/offline focused set | **5 files / 37 tests passed**, 20.50s |
+| Earlier boundary sets | 4 files / 45 tests and 7 files / 53 tests passed; final full run covers their delivered source |
+| Actual cloud process interruption/concurrency | **Six of six satisfy the contract**, including office replica convergence |
+| TypeScript including crash drill | Passed using the full project context plus the drill; no compiler flags weakened |
+| Schema generation | Passed, no ordinary business-schema type change; optional sync table added with IF NOT EXISTS |
+| Runtime dependency audit | Exit 1: **one high node-forge**, no moderate; manifests unchanged, release blocker remains |
+
+The process cases kill before effect insert, before/after confirmed-verdict update, at
+internal response emission and at outer response emission, then restart and retry. The
+sixth pauses two real processes after both observe the same received command. The old
+server creates original/reversal/replacement in five cases; final code leaves one journal,
+one effect and its confirmed verdict. The baseline's complete-decision/lost-response
+control preserves its source correctly; it passes including replica convergence when run
+on fresh data. Earlier deliberately broken baseline effects contaminate later sequence
+pulls, so aggregate six-case failure is not six independent defects.
+
+Normal office→cloud→LAN and LAN-origin local→host-confirmed→cloud-confirmed flows pass.
+Tests cover immutable body/method/path/actor/plan/context binding, pending and decided
+retries, missing/legacy protocol proof, trimmed-command tombstones, real snapshot scrubbing,
+permission refusal, source validation and recorder isolation. Real HTTP/cloud status checks
+cover received/rejected/confirmed, unknown IDs, authentication and another actor's privacy.
+Node 24.19.0, SQLite 3.53.3, WAL and synchronous=2 were observed on this Linux filesystem.
+
+The first complete run failed only the real tenant-migration integration test at its
+20-second timeout (323 files/3,503 tests passed). Isolated updated/baseline runs pass near
+that limit. Only that test's explicit budget is now 60 seconds; every assertion and body
+statement is byte-for-byte preserved after removing that argument/comment, with proof
+retained. No production performance fix or global timeout increase is claimed.
+
+An intermediate 325-file/3,510-test green run preceded the delayed-clock check. That check
+then demonstrated a high implementation defect: replay's original clock backdated new
+technical effect/verdict metadata to 2010, and cleanup immediately deleted the newly
+confirmed command. The final correction binds server confirmation time for retention
+while preserving payroll business time. Exact failing/passing timestamps, the intermediate
+run and final reruns remain evidence. A green earlier suite is not credited to this fix.
+
+Other failed experiments are retained: wrong helper argument before any crash request,
+wrong original/router-relative response hook, changed-method policy escape, and initial
+script-only typing without the full project context. One concurrent server startup exited
+on a schema/seed database lock after five cases passed. The final race starts each server
+first, then still submits concurrent barrier-controlled requests. Simultaneous cold-start
+availability remains open. The initial sandbox tsx IPC denial survives in the tool transcript;
+its overwritten first stderr is not represented as an independently retained raw file.
+
+Final regression metadata binds its exit-zero run to all **869 unchanged input hashes**.
+Text artifacts remove ANSI/trailing whitespace/extra EOF blank lines with raw/retained
+SHA-256 values. Private databases, keys, node/session tokens and authenticated browser
+traces are excluded. Staged and exported-directory Gitleaks scans passed with no leaks (exit 0); the mandatory
+commit hook also scans final staged content. See the final logs/manifest. Historical-secret
+findings stay open.
+
+These results establish the scoped cloud payroll transaction, retry, retention and honest
+status behavior under the tested faults. They do not establish one-use reviewed source
+approval, offline factor/origin proof, full cross-process revocation linearization, other
+route/site-host replay or node rebase crash recovery. Historical financial repair,
+simultaneous startup, physical power-loss, Windows/hosting/storage/restore/mixed-build
+acceptance and independent accounting/security/accessibility review remain. Complete
+control totals and the broader release hold are unchanged; no new owner engineering task
+is required for this increment.

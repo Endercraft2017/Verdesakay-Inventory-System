@@ -32,6 +32,7 @@ import { rememberReplayContext, replayRequestOf, setReplayActor } from './replay
 import { deciderOf, siteOfNode, siteOfThisPc, type Home } from './sites';
 import { linkStatusOf } from './client';
 import { commandBody, indexFiles } from './files';
+import {atomicCloudPayrollReplay} from './payroll-replay';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -203,6 +204,7 @@ export function syncClass(cls: SyncClass, opts: SyncClassOptions = {}): RequestH
           && deciderOf(opts.home ? opts.home(req) : 'company') === ctx.decidingSite) {
         ctx.siteFinal = true;
       }
+      if(opts.atomic&&ctx?.mode==='replay')return atomicCloudPayrollReplay(conn,req,res,next);
       return next();
     }
     if (ctx?.mode === 'replay' || ctx?.mode === 'rebase') return next(); // the orchestrator captures

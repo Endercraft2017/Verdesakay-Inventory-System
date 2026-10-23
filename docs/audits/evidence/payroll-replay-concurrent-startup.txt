@@ -1,0 +1,39 @@
+{"timestamp":"2026-10-23T08:35:25.349Z","level":"info","event":"http_request","request_id":"34a76f93-a5af-4a42-ad55-244c6e73368b","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":422}
+{"timestamp":"2026-10-23T08:35:25.360Z","level":"info","event":"http_request","request_id":"008d56f7-e976-4542-ad9c-3147d5dd4023","tenant":"default","method":"POST","path":"/api/accounting/ledger/setup","status":201,"duration_ms":5}
+{"timestamp":"2026-10-23T08:35:25.867Z","level":"info","event":"http_request","request_id":"3c17440d-c3b8-48fd-86f4-0f70220f1cb0","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":491}
+{"timestamp":"2026-10-23T08:35:25.938Z","level":"info","event":"http_request","request_id":"98464eb3-94b3-40ed-9a82-7718911e3cbf","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":63}
+{"timestamp":"2026-10-23T08:35:26.009Z","level":"info","event":"http_request","request_id":"e6fc6ad4-c888-4a52-9718-d744af6788ce","tenant":"default","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":66}
+{"timestamp":"2026-10-23T08:35:26.402Z","level":"info","event":"http_request","request_id":"b4165f23-5993-4db3-ad01-c5b9425f2bdc","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":364}
+{"timestamp":"2026-10-23T08:35:26.408Z","level":"info","event":"http_request","request_id":"ff1db6da-af14-404a-b006-5d0bcf4fd7d8","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":1}
+{"timestamp":"2026-10-23T08:35:26.414Z","level":"info","event":"http_request","request_id":"f765ceea-1fa8-43b1-a1f4-f15e2731430b","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T08:35:26.419Z","level":"info","event":"http_request","request_id":"0396885b-094f-461c-bab8-08e8d15a4388","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T08:35:26.422Z","level":"info","event":"http_request","request_id":"39c5fc31-72ad-4618-b821-72409fb713da","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":0}
+{"timestamp":"2026-10-23T08:35:26.426Z","level":"info","event":"http_request","request_id":"db5172a1-d3eb-42c5-9609-b68178962c89","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":0}
+{"timestamp":"2026-10-23T08:35:26.497Z","level":"info","event":"http_request","request_id":"c4a0de36-2a48-4b48-abfc-918c95b91fa6","tenant":"trio-host","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":67}
+{"timestamp":"2026-10-23T08:35:27.179Z","level":"info","event":"http_request","request_id":"3511f3c0-d221-4d40-a5b0-171d92a4d046","tenant":"trio-host","method":"POST","path":"/api/auth/login","status":200,"duration_ms":638}
+{"timestamp":"2026-10-23T08:35:27.627Z","level":"info","event":"http_request","request_id":"1eb21b7f-57a0-4fff-9797-04f3c91e6a3c","tenant":"trio-lan","method":"POST","path":"/api/auth/login","status":200,"duration_ms":440}
+{"timestamp":"2026-10-23T08:35:27.633Z","level":"info","event":"http_request","request_id":"99f17869-b007-4823-af1c-845374c47a8f","tenant":"default","method":"PUT","path":"/api/sync/sites","status":200,"duration_ms":2}
+{"timestamp":"2026-10-23T08:35:27.637Z","level":"info","event":"http_request","request_id":"a0c4a7e7-db63-486c-a539-3e0dda2db733","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T08:35:27.642Z","level":"info","event":"http_request","request_id":"33f0d8c5-3c6e-40fe-b789-b1b0d37f6d5e","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T08:35:27.645Z","level":"info","event":"http_request","request_id":"589ad434-e53c-4ab9-8313-ca6c71d7d6bd","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T08:35:27.648Z","level":"info","event":"http_request","request_id":"7368bbf0-1447-4a2e-a129-4110162c00e6","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":0}
+{"timestamp":"2026-10-23T08:35:27.664Z","level":"info","event":"http_request","request_id":"0bd56e16-0bac-419d-95e6-9dd053ee97d0","tenant":"trio-host","method":"POST","path":"/api/hr/periods/1/post-payroll-gl","status":201,"duration_ms":11}
+{"timestamp":"2026-10-23T08:35:33.075Z","level":"info","event":"http_request","request_id":"cc9db6fb-088f-4b70-b126-6711c1ff873c","tenant":"trio-host","method":"POST","path":"/api/hr/periods/2/post-payroll-gl","status":201,"duration_ms":5}
+{"timestamp":"2026-10-23T08:35:37.721Z","level":"info","event":"http_request","request_id":"c49b3cb5-9086-4dfc-9c7b-d437767e2319","tenant":"trio-host","method":"POST","path":"/api/hr/periods/3/post-payroll-gl","status":201,"duration_ms":5}
+{"timestamp":"2026-10-23T08:35:42.518Z","level":"info","event":"http_request","request_id":"ac1b48f5-c7a6-4914-ac7c-2bf8f041e783","tenant":"trio-host","method":"POST","path":"/api/hr/periods/4/post-payroll-gl","status":201,"duration_ms":5}
+{"timestamp":"2026-10-23T08:35:47.424Z","level":"info","event":"http_request","request_id":"eff683cb-a8ae-4349-bd80-76a03f3a7b3c","tenant":"trio-host","method":"POST","path":"/api/hr/periods/5/post-payroll-gl","status":201,"duration_ms":5}
+{"timestamp":"2026-10-23T08:35:52.066Z","level":"info","event":"http_request","request_id":"9c9853e3-1b2d-45f5-ae68-358be947ed1c","tenant":"trio-host","method":"POST","path":"/api/hr/periods/6/post-payroll-gl","status":201,"duration_ms":7}
+/workspace/Verdesakay-Inventory-System/scripts/payroll-replay-crash-drill.ts:33
+async function ready(port:number,c:ChildProcess){await until(async()=>{if(c.exitCode!==null||c.signalCode!==null)throw Error('Server exited');try{return(await fetch(`http://127.0.0.1:${port}/api/health`,{signal:AbortSignal.timeout(500)})).ok;}catch{return false;}},'server health');}
+                                                                                                                       ^
+
+Error: Server exited
+    at <anonymous> (/workspace/Verdesakay-Inventory-System/scripts/payroll-replay-crash-drill.ts:33:120)
+    at until (/workspace/Verdesakay-Inventory-System/scripts/payroll-replay-crash-drill.ts:31:139)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at process.processTimers (node:internal/timers:568:9)
+    at async ready (/workspace/Verdesakay-Inventory-System/scripts/payroll-replay-crash-drill.ts:33:50)
+    at async Promise.all (index 1)
+    at async <anonymous> (/workspace/Verdesakay-Inventory-System/scripts/payroll-replay-crash-drill.ts:58:53)
+
+Node.js v24.19.0

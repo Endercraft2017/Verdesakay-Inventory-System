@@ -751,8 +751,10 @@ for the internet (it uses the company's mail server, which only the cloud has).
    the claim route also commits its durable command before responding. A same-key retry
    returns the original journal/command after current permission checks. Missing/conflicting
    commands and known legacy receipts hold for reconciliation. This preserves offline
-   main-host authority; normal post/re-post/cloud replay is tested. Source-version approval
-   and authority replay/effect-stream/verdict crash atomicity remain separate open work.
+   main-host authority; normal post/re-post/cloud replay is tested. Cloud payroll replay
+   now commits journal/effect/verdict together with immutable inbox binding and legacy
+   undecided holds; see `docs/operations/payroll-cloud-replay.md`. Source-version approval,
+   other authority/site-host routes and node rebase interruption remain open work.
    See `docs/operations/payroll-post-retries.md` for lost-key/server-change recovery.
    Earlier-month computation also refuses first/newest duplicate selection and holds unlinked
    relevant-month history. Rate recomputation rolls back its employee/history change on a hold.
@@ -814,6 +816,11 @@ LAN (e.g. a stock withdrawal, a punch, a QC result).
    `authority_seq`, keeps site-issued IDs/numbers, and returns effects from other sites. Badge:
    "Synced". *(Built: `sync/authority.ts` `acceptCommand` / `pullFor`, `sync/rebase.ts`
    `applyConfirmed` — undo pending, apply effects, record verdicts, re-run pending.)*
+   **Scoped durability follow-up (23 October):** only payroll GL cloud replay commits
+   source/effect/verdict together at its synchronous route gate. Its server-owned inbox
+   marker distinguishes protocol retries from ambiguous old received work. Other authority
+   routes/site-host acceptance and node rebase interruption retain their existing boundaries;
+   do not infer general crash atomicity from the normal pipeline above.
 4. **Side effects** (cloud only) — requested where the command becomes final. External delivery
    guarantees depend on each integration; there is no general exactly-once guarantee. Reviewed
    payslip email uses its separate online intent/claim/recovery workflow and never a node replay.

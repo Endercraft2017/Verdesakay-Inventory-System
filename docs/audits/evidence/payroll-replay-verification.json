@@ -1,0 +1,562 @@
+{
+  "scope": "Cloud payroll GL source/effect/verdict atomicity, immutable inbox binding, legacy holds and honest cloud command status; other authority/node rebase boundaries remain open",
+  "date_manila": "2026-10-23",
+  "baseline": "a92de92c173c41280a52ed734bad913f441f68a5",
+  "source_freeze": "docs/audits/evidence/payroll-replay-source-freeze.json",
+  "source_files_checked": 869,
+  "frozen_inputs_unchanged": true,
+  "final": {
+    "full": {
+      "files": 325,
+      "tests": 3511,
+      "duration_seconds": 675.76,
+      "process_exit": 0
+    },
+    "playwright": {
+      "startTime": "2026-10-23T08:35:20.061Z",
+      "duration": 203033.59,
+      "expected": 78,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "pre_clock_status_and_replay_focused": {
+      "files": 3,
+      "tests": 26,
+      "seconds": 13.3
+    },
+    "earlier_focused_sets": [
+      {
+        "files": 4,
+        "tests": 45,
+        "seconds": 17.03
+      },
+      {
+        "files": 7,
+        "tests": 53,
+        "seconds": 28.17
+      }
+    ],
+    "pre_clock_lan_origin_file": {
+      "tests": 13,
+      "seconds": 6.7
+    },
+    "final_clock_focused": {
+      "files": 5,
+      "tests": 37,
+      "seconds": 20.5
+    },
+    "typecheck_with_drill_exit": 0,
+    "schema_types_generation_exit": 0,
+    "generated_business_types_changed": false,
+    "process_experiments": 6,
+    "process_experiments_satisfied": 6
+  },
+  "initial_full": {
+    "files_passed": 323,
+    "tests_passed": 3503,
+    "failed": 1,
+    "failure": "tenant migration integration timed out at 20000ms",
+    "seconds": 682.07,
+    "exit": 1,
+    "retained": true
+  },
+  "intermediate_before_clock_full": {
+    "files": 325,
+    "tests": 3510,
+    "seconds": 669.51,
+    "exit": 0,
+    "not_final_source": true
+  },
+  "delayed_clock_reproduction": {
+    "before_retention_removed_new_command": 1,
+    "before_effect_and_verdict_timestamp": "2010-01-01 00:00:00",
+    "after_retention_removed": 0,
+    "original_payroll_business_time_preserved": true,
+    "classification": "High implementation defect caught after intermediate green suite; corrected before final verification"
+  },
+  "migration_budget_correction": {
+    "isolated_updated_file_seconds": 21.49,
+    "isolated_baseline_file_seconds": 22.92,
+    "note": "These file totals include setup; both isolated tests passed near their per-test limit. Only this real CLI migration test now uses 60000ms. Every assertion and body statement is preserved; no production performance fix is claimed."
+  },
+  "baseline_defects": {
+    "initial_persistence_assertions_failed": 2,
+    "status_assertions_failed": 2,
+    "journal_reversal_replacement_cases": 5,
+    "process_sequence_cases": 6,
+    "baseline_control_fresh_case_passes": true,
+    "baseline_sequence_replica_contamination": "Earlier deliberate stream failures contaminate later pulls. The already-decided lost-response control is separately tested on fresh data and passes baseline. Do not claim six independent baseline defects."
+  },
+  "runtime": {
+    "node": "v24.19.0",
+    "sqlite": {
+      "version": "3.53.3"
+    },
+    "journal_mode": {
+      "journal_mode": "wal"
+    },
+    "synchronous": {
+      "synchronous": 2
+    }
+  },
+  "npm_runtime": {
+    "exit": 1,
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 1,
+      "critical": 0,
+      "total": 1
+    },
+    "manifests_changed": false
+  },
+  "secrets": {
+    "staged_exit": 0,
+    "exported_directory_exit": 0,
+    "commit_hook_required": true
+  },
+  "failures_and_limits": [
+    "SQL faults reproduced before fixing; raw failed observations retained",
+    "changed method escaped first binding implementation; failed test retained and corrected",
+    "wrong connection argument in first process harness sent no command; not crash coverage",
+    "outer-response hook initially used router-relative URL; failed run retained, corrected to original URL",
+    "script-only initial typecheck omitted project context and reported unrelated QuickBooks inference; final full-context plus script typecheck passes",
+    "initial tsx schema-generation IPC denial is in tool transcript; the first local stderr was overwritten, so no independent original raw file is claimed",
+    "first full test timed out; only per-test CLI migration budget changed, then complete regression rerun",
+    "delayed business clock backdated technical retention in first implementation; failing reproduction retained and corrected before final full run",
+    "concurrent server startup hit a schema lock; final request race starts each server first, preserving actual concurrent requests"
+  ],
+  "open": [
+    "legacy undecided financial reconciliation requires original evidence and reviewed recovery",
+    "site-host acceptance, other replay routes, direct-cloud effect capture and node rebase interruption",
+    "simultaneous server schema/seed startup availability: observed SQLite lock, no repair claimed",
+    "source-version one-use approval, offline factor/origin proof and full cross-process revocation linearization",
+    "real Windows/hosted/runtime/storage/power-loss/backup-restore/mixed-build acceptance",
+    "independent accounting/security/accessibility review",
+    "existing high node-forge advisory and complete release hold"
+  ],
+  "sensitive_data_excluded": [
+    "node/session tokens",
+    "authenticated traces",
+    "private databases and keys",
+    "real customer or payroll data"
+  ],
+  "normalization": "ANSI, trailing whitespace and extra EOF blank lines removed from text; empty logs stay empty. Raw/retained artifact hashes follow; verification excludes its own recursive hash.",
+  "artifacts": [
+    {
+      "source": "work/payroll-replay-concurrent-startup.txt",
+      "file": "docs/audits/evidence/payroll-replay-concurrent-startup.txt",
+      "raw_sha256": "2cab85667cef4f2cdbd39cd86179bd58f65ea146c3ae926e95fb5ed5d0dbe0b0",
+      "retained_sha256": "2cab85667cef4f2cdbd39cd86179bd58f65ea146c3ae926e95fb5ed5d0dbe0b0",
+      "bytes": 6768
+    },
+    {
+      "source": "work/payroll-replay-concurrent-startup-failed.json",
+      "file": "docs/audits/evidence/payroll-replay-concurrent-startup-failed.json",
+      "raw_sha256": "94c239cbc8730ce4c6483fafb1ce9660a35279249a7babb3777a347bb4429564",
+      "retained_sha256": "94c239cbc8730ce4c6483fafb1ce9660a35279249a7babb3777a347bb4429564",
+      "bytes": 5719
+    },
+    {
+      "source": "work/payroll-replay-concurrent-startup-server.txt",
+      "file": "docs/audits/evidence/payroll-replay-concurrent-startup-server.txt",
+      "raw_sha256": "13309f0fe0e44edb4c4ad7013846c2c0953f1b5970a1912ed0efbcfe1b6234fc",
+      "retained_sha256": "13309f0fe0e44edb4c4ad7013846c2c0953f1b5970a1912ed0efbcfe1b6234fc",
+      "bytes": 1182
+    },
+    {
+      "source": "work/payroll-replay-full-run.json",
+      "file": "docs/audits/evidence/payroll-replay-full-run.json",
+      "raw_sha256": "7439a1ceb36c1aaa7964f888a34cba182602984ef9d0e5ddbff7e73f5556e6c0",
+      "retained_sha256": "7439a1ceb36c1aaa7964f888a34cba182602984ef9d0e5ddbff7e73f5556e6c0",
+      "bytes": 272
+    },
+    {
+      "source": "work/payroll-replay-final-browser-inputs.json",
+      "file": "docs/audits/evidence/payroll-replay-final-browser-inputs.json",
+      "raw_sha256": "54de33e460f9b614d3f60f484c583967ed0d4e5557cd4ef56bad4329b033149c",
+      "retained_sha256": "54de33e460f9b614d3f60f484c583967ed0d4e5557cd4ef56bad4329b033149c",
+      "bytes": 250
+    },
+    {
+      "source": "work/payroll-replay-clock-before.txt",
+      "file": "docs/audits/evidence/payroll-replay-clock-before.txt",
+      "raw_sha256": "a3a622f51aa4341bfe889c9eb5ec3f39f5bd8b37bc828574164ed4ab8c60b1ef",
+      "retained_sha256": "c904c6f3648b536bb188f09aa0ba7edfd24a20f7e46277f48e1a1006f8c0dba7",
+      "bytes": 1760
+    },
+    {
+      "source": "work/payroll-replay-clock-before.test.ts",
+      "file": "docs/audits/evidence/payroll-replay-clock-before-driver.ts.txt",
+      "raw_sha256": "688a076f7e0a99ecd1c6f4f1a15517c3aba8b381e7d54fa44d67c2912890e5fd",
+      "retained_sha256": "688a076f7e0a99ecd1c6f4f1a15517c3aba8b381e7d54fa44d67c2912890e5fd",
+      "bytes": 2265
+    },
+    {
+      "source": "work/payroll-replay-clock-before.config.ts",
+      "file": "docs/audits/evidence/payroll-replay-clock-before-config.ts.txt",
+      "raw_sha256": "6710a3954e13e70f6136c0c53b22dcfc0aa1be1629e1c039a2ed8b92b846ff44",
+      "retained_sha256": "6710a3954e13e70f6136c0c53b22dcfc0aa1be1629e1c039a2ed8b92b846ff44",
+      "bytes": 239
+    },
+    {
+      "source": "work/payroll-replay-clock-before-observation.json",
+      "file": "docs/audits/evidence/payroll-replay-clock-before-observation.json",
+      "raw_sha256": "234fcaa7903c77c664c7448c61de4f0b1538dd8d6a4b0b9df8c855ad8c6df007",
+      "retained_sha256": "234fcaa7903c77c664c7448c61de4f0b1538dd8d6a4b0b9df8c855ad8c6df007",
+      "bytes": 138
+    },
+    {
+      "source": "work/payroll-replay-clock-after.txt",
+      "file": "docs/audits/evidence/payroll-replay-clock-after.txt",
+      "raw_sha256": "334bf1758685713fdac22f8c3682c2899f6efbc5920627580a5fccc590629b6e",
+      "retained_sha256": "618f86a05f798457c6d3c3677240f62aea918c9c4db59fcbc36ff78daf333dfd",
+      "bytes": 223
+    },
+    {
+      "source": "work/payroll-replay-clock-observation.json",
+      "file": "docs/audits/evidence/payroll-replay-clock-after-observation.json",
+      "raw_sha256": "38e17e0c2e9d8232d90a85eaa019a61e04643d32ef03d55788d3f27e269da0e4",
+      "retained_sha256": "38e17e0c2e9d8232d90a85eaa019a61e04643d32ef03d55788d3f27e269da0e4",
+      "bytes": 146
+    },
+    {
+      "source": "work/payroll-replay-clock-focused-final.txt",
+      "file": "docs/audits/evidence/payroll-replay-clock-focused.txt",
+      "raw_sha256": "72eccc8acc979ac514f0430ed5f3b9a1aad0db9e59842dfcc426c8049a3e37bd",
+      "retained_sha256": "e24b7468b6994ab41e352e58d7d64d520943294d9599012d5922dc6ba5d75ef6",
+      "bytes": 227
+    },
+    {
+      "source": "work/payroll-replay-full-before-clock.txt",
+      "file": "docs/audits/evidence/payroll-replay-full-before-clock.txt",
+      "raw_sha256": "ce5a3860efababebd7291786f9a30f63612b41cd54da41d62e8f61f7425513e8",
+      "retained_sha256": "0b7f1a9a9cea23e5b90a01c286df4b983b4fcd2e1c1a50f742eda5f8a93cbd2b",
+      "bytes": 634
+    },
+    {
+      "source": "work/payroll-replay-source-freeze-before-clock.json",
+      "file": "docs/audits/evidence/payroll-replay-source-freeze-before-clock.json",
+      "raw_sha256": "4dbf20980168aafd7c9012d6e0b70a02e0ba992f567c42cfa1127f3d0444df6c",
+      "retained_sha256": "4dbf20980168aafd7c9012d6e0b70a02e0ba992f567c42cfa1127f3d0444df6c",
+      "bytes": 126571
+    },
+    {
+      "source": "work/payroll-replay-migration-assertion-proof.json",
+      "file": "docs/audits/evidence/payroll-replay-migration-assertion-proof.json",
+      "raw_sha256": "a644ce2db09a300d1d1495e413cb2fc3963f84f2f249b58a2344f76e80a92e13",
+      "retained_sha256": "a644ce2db09a300d1d1495e413cb2fc3963f84f2f249b58a2344f76e80a92e13",
+      "bytes": 363
+    },
+    {
+      "source": "work/payroll-replay-status-before.txt",
+      "file": "docs/audits/evidence/payroll-replay-status-before.txt",
+      "raw_sha256": "087fd34896c6041202c3fe9d707d69d35a1215b741800e94de5156b6a2e3af4b",
+      "retained_sha256": "f5d077b9fc836caf57841cd0b5da38de67c6b3973138f1efff3f0de15bb27546",
+      "bytes": 2144
+    },
+    {
+      "source": "work/payroll-replay-status-before.test.ts",
+      "file": "docs/audits/evidence/payroll-replay-status-before-driver.ts.txt",
+      "raw_sha256": "d6a36bf3f9181d59ae2f7efcb6ca09aa6a13501353c0062c9182246cc4cef3f4",
+      "retained_sha256": "d6a36bf3f9181d59ae2f7efcb6ca09aa6a13501353c0062c9182246cc4cef3f4",
+      "bytes": 1209
+    },
+    {
+      "source": "work/payroll-replay-status-before.config.ts",
+      "file": "docs/audits/evidence/payroll-replay-status-before-config.ts.txt",
+      "raw_sha256": "b568d7ec6dab8682f1d104176bbce6325a2f37adf02bad8c91886505e8f4f85a",
+      "retained_sha256": "b568d7ec6dab8682f1d104176bbce6325a2f37adf02bad8c91886505e8f4f85a",
+      "bytes": 240
+    },
+    {
+      "source": "work/payroll-replay-final-status-focused.txt",
+      "file": "docs/audits/evidence/payroll-replay-status-focused.txt",
+      "raw_sha256": "ee6afb8f77d4bf0a22c2e05f5e88a1ce1743759e02c6ad4e0869c5477c280dd0",
+      "retained_sha256": "9d109d91428b4c6793b62567eca5d463f53e3707305b69c51957afc1b4c46e12",
+      "bytes": 227
+    },
+    {
+      "source": "work/payroll-replay-source-freeze-first.json",
+      "file": "docs/audits/evidence/payroll-replay-source-freeze-first.json",
+      "raw_sha256": "2f3ce8245cad8193cf814f52f3a4ff34797c8f896f4f6f9ab589371d96847709",
+      "retained_sha256": "2f3ce8245cad8193cf814f52f3a4ff34797c8f896f4f6f9ab589371d96847709",
+      "bytes": 126422
+    },
+    {
+      "source": "work/payroll-replay-before.txt",
+      "file": "docs/audits/evidence/payroll-replay-baseline-tests.txt",
+      "raw_sha256": "16822dece0a15b86d9291d2356ffbceaf096df2841d5603b129691bc36af5148",
+      "retained_sha256": "d19dfbb59c121f2403e50e40e2604c7cff99be5b14e65bed530e53a247a6072c",
+      "bytes": 7732
+    },
+    {
+      "source": "work/payroll-replay-baseline-observations.json",
+      "file": "docs/audits/evidence/payroll-replay-baseline-observations.json",
+      "raw_sha256": "b79c0050fdf7e9b1c579f853a797ed3e9aca3d0a9f1d6e2cd7ce33dbcf33512a",
+      "retained_sha256": "b79c0050fdf7e9b1c579f853a797ed3e9aca3d0a9f1d6e2cd7ce33dbcf33512a",
+      "bytes": 804
+    },
+    {
+      "source": "work/payroll-replay-before.test.ts",
+      "file": "docs/audits/evidence/payroll-replay-baseline-driver.ts.txt",
+      "raw_sha256": "811781491643c01244e27253db68f37bc458cc48b39babacd84c040750015690",
+      "retained_sha256": "811781491643c01244e27253db68f37bc458cc48b39babacd84c040750015690",
+      "bytes": 3102
+    },
+    {
+      "source": "work/payroll-replay-before.config.ts",
+      "file": "docs/audits/evidence/payroll-replay-baseline-config.ts.txt",
+      "raw_sha256": "de983837eb54c22e57fefbc515f4d2c17e331b96eb4436d1f1021bc2c3ac3a4b",
+      "retained_sha256": "de983837eb54c22e57fefbc515f4d2c17e331b96eb4436d1f1021bc2c3ac3a4b",
+      "bytes": 270
+    },
+    {
+      "source": "work/payroll-replay-first-after.txt",
+      "file": "docs/audits/evidence/payroll-replay-initial-after.txt",
+      "raw_sha256": "d5ff5e735f2c43a66be4d5afe7f7842132d94e891e41e2761ed5ba10b58d03be",
+      "retained_sha256": "be447c03c5d978e24961eeccca16294427b713fe237e8b92d42e860761e918bd",
+      "bytes": 222
+    },
+    {
+      "source": "work/payroll-replay-before-observations.json",
+      "file": "docs/audits/evidence/payroll-replay-initial-after-observations.json",
+      "raw_sha256": "d46bd54b75926f4c2abdc87761c28423e130775598b119548175e2f095be4d63",
+      "retained_sha256": "d46bd54b75926f4c2abdc87761c28423e130775598b119548175e2f095be4d63",
+      "bytes": 488
+    },
+    {
+      "source": "work/payroll-replay-command-binding-before.txt",
+      "file": "docs/audits/evidence/payroll-replay-command-binding-failure.txt",
+      "raw_sha256": "c67b74ad032106e1b98646b391c86baf7b9ec0967e2800ae83191d748fa00c38",
+      "retained_sha256": "e5d75e63a7aaf1f8b7dce656b0101d7f523d453081afbf83f461288643933118",
+      "bytes": 7041
+    },
+    {
+      "source": "work/payroll-replay-focused-final.txt",
+      "file": "docs/audits/evidence/payroll-replay-focused.txt",
+      "raw_sha256": "713257cd2eb59dd5716b5a0c204ae8bdc353bde434924ef549c3f6d7dd5b576d",
+      "retained_sha256": "6685a5059b8ecfb3c00a0ebb9b175828c0dc86ff7d4fcfde65a108a3ba0b77e1",
+      "bytes": 227
+    },
+    {
+      "source": "work/payroll-replay-boundaries.txt",
+      "file": "docs/audits/evidence/payroll-replay-boundaries.txt",
+      "raw_sha256": "df15b1c4d69aa0fdd183b8d7d1e974b69c9de0c06bf579a16e4dc07bb685fbcd",
+      "retained_sha256": "73f0e8a9dee0ab019c437471c0eb8f7fcf5b0f011009a233441d12b6ebd9176b",
+      "bytes": 227
+    },
+    {
+      "source": "work/payroll-replay-lan-final.txt",
+      "file": "docs/audits/evidence/payroll-replay-lan-origin.txt",
+      "raw_sha256": "1865195c5bc9839c204e599842fa46b4e6f9ae7a75bd6caddd33c08aa85da2c0",
+      "retained_sha256": "34f230340c7ec370a6a3f500e5bc1e22e77af51fc97c6a87f4f8eba0935e3606",
+      "bytes": 224
+    },
+    {
+      "source": "work/payroll-replay-typecheck-final-with-drill.txt",
+      "file": "docs/audits/evidence/payroll-replay-typecheck.txt",
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "source": "work/payroll-replay-drill-typecheck.txt",
+      "file": "docs/audits/evidence/payroll-replay-script-typecheck-initial.txt",
+      "raw_sha256": "c2abbf8669ab495061ba16af685b6c5b6d502a019332bb2856ec4b6d4b422ec4",
+      "retained_sha256": "c2abbf8669ab495061ba16af685b6c5b6d502a019332bb2856ec4b6d4b422ec4",
+      "bytes": 344
+    },
+    {
+      "source": "work/payroll-replay-drill-types.json",
+      "file": "docs/audits/evidence/payroll-replay-script-types-config.json",
+      "raw_sha256": "cc85b5299e5a05be5e5e1b466e973c9b06af394a96ad83751c28485324a93549",
+      "retained_sha256": "cc85b5299e5a05be5e5e1b466e973c9b06af394a96ad83751c28485324a93549",
+      "bytes": 213
+    },
+    {
+      "source": "work/payroll-replay-dbtypes.txt",
+      "file": "docs/audits/evidence/payroll-replay-dbtypes.txt",
+      "raw_sha256": "95a6e92b2fe4b24716f2881d542f8421c9f986eb4e48af9846a07d174b99a02c",
+      "retained_sha256": "95a6e92b2fe4b24716f2881d542f8421c9f986eb4e48af9846a07d174b99a02c",
+      "bytes": 83
+    },
+    {
+      "source": "work/payroll-replay-crash-initial.txt",
+      "file": "docs/audits/evidence/payroll-replay-process-harness-first.txt",
+      "raw_sha256": "1d5a6a8095812a7c656305a328195727a85647908be1d3888f0a93ea8ab284c0",
+      "retained_sha256": "1d5a6a8095812a7c656305a328195727a85647908be1d3888f0a93ea8ab284c0",
+      "bytes": 5009
+    },
+    {
+      "source": "work/payroll-replay-harness-initial-failed.json",
+      "file": "docs/audits/evidence/payroll-replay-process-harness-first.json",
+      "raw_sha256": "1ef3b9c0ecde11a2dc6826d4a9e0b257cbb6524c5decd2792a265ae4ef7f2d46",
+      "retained_sha256": "1ef3b9c0ecde11a2dc6826d4a9e0b257cbb6524c5decd2792a265ae4ef7f2d46",
+      "bytes": 158
+    },
+    {
+      "source": "work/payroll-replay-crash-second.txt",
+      "file": "docs/audits/evidence/payroll-replay-process-harness-second.txt",
+      "raw_sha256": "4f2d2c8e41285c8a103ce4d4aa2edc6ae2113b402c9176c3cf10d0c4dd9b30e5",
+      "retained_sha256": "4f2d2c8e41285c8a103ce4d4aa2edc6ae2113b402c9176c3cf10d0c4dd9b30e5",
+      "bytes": 5057
+    },
+    {
+      "source": "work/payroll-replay-harness-second-failed.json",
+      "file": "docs/audits/evidence/payroll-replay-process-harness-second.json",
+      "raw_sha256": "1ce30c90dc196c1c1e614d174245aa3f7e2f0dc9e8444c88340d46ff4281bb36",
+      "retained_sha256": "1ce30c90dc196c1c1e614d174245aa3f7e2f0dc9e8444c88340d46ff4281bb36",
+      "bytes": 120
+    },
+    {
+      "source": "work/payroll-replay-harness-second-progress.json",
+      "file": "docs/audits/evidence/payroll-replay-process-harness-second-progress.json",
+      "raw_sha256": "8fcc601f257846d3a5d2c3b202f11ee36d832999030d3c5153bad493c5f2879c",
+      "retained_sha256": "8fcc601f257846d3a5d2c3b202f11ee36d832999030d3c5153bad493c5f2879c",
+      "bytes": 130
+    },
+    {
+      "source": "work/payroll-replay-crash-third.txt",
+      "file": "docs/audits/evidence/payroll-replay-process-harness-third.txt",
+      "raw_sha256": "70d4be17df841957520e4c9b7358089b2e211b6b037332b187512ef1b30abd47",
+      "retained_sha256": "70d4be17df841957520e4c9b7358089b2e211b6b037332b187512ef1b30abd47",
+      "bytes": 6135
+    },
+    {
+      "source": "work/payroll-replay-harness-third-failed.json",
+      "file": "docs/audits/evidence/payroll-replay-process-harness-third.json",
+      "raw_sha256": "019f244ded852d6af2efeb4319143d9a3904f4968c7c926d84b2543aa984ca28",
+      "retained_sha256": "019f244ded852d6af2efeb4319143d9a3904f4968c7c926d84b2543aa984ca28",
+      "bytes": 4622
+    },
+    {
+      "source": "work/payroll-replay-crash-final-source.txt",
+      "file": "docs/audits/evidence/payroll-replay-process-fixed.txt",
+      "raw_sha256": "cdbe3031a98118c1cced2b3c2a836f353334f02fc38173833d65b6b81af57f45",
+      "retained_sha256": "cdbe3031a98118c1cced2b3c2a836f353334f02fc38173833d65b6b81af57f45",
+      "bytes": 5787
+    },
+    {
+      "source": "work/payroll-replay-crash/results.json",
+      "file": "docs/audits/evidence/payroll-replay-process-fixed.json",
+      "raw_sha256": "999f615142f9b7fc74a3ef528985d644a6a79359d91a982f67792c7e05384aa4",
+      "retained_sha256": "999f615142f9b7fc74a3ef528985d644a6a79359d91a982f67792c7e05384aa4",
+      "bytes": 6700
+    },
+    {
+      "source": "work/payroll-replay-crash-baseline.txt",
+      "file": "docs/audits/evidence/payroll-replay-process-baseline.txt",
+      "raw_sha256": "777dff66062ff04e7e8ab2e24ac1607ffa6519b38fa05f2b9363b97b548976ef",
+      "retained_sha256": "777dff66062ff04e7e8ab2e24ac1607ffa6519b38fa05f2b9363b97b548976ef",
+      "bytes": 5795
+    },
+    {
+      "source": "work/payroll-replay-crash-before/results.json",
+      "file": "docs/audits/evidence/payroll-replay-process-baseline.json",
+      "raw_sha256": "9f415c46ba32fb959c8d1fb2df59ff8d36f88c1f4db19404350e10e86834c4d5",
+      "retained_sha256": "9f415c46ba32fb959c8d1fb2df59ff8d36f88c1f4db19404350e10e86834c4d5",
+      "bytes": 7966
+    },
+    {
+      "source": "work/payroll-replay-crash-baseline-control.txt",
+      "file": "docs/audits/evidence/payroll-replay-process-baseline-control.txt",
+      "raw_sha256": "dc39c16f71d1388a67944bf60f14090c155907316bc4657a4730b657bb85e123",
+      "retained_sha256": "dc39c16f71d1388a67944bf60f14090c155907316bc4657a4730b657bb85e123",
+      "bytes": 4602
+    },
+    {
+      "source": "work/payroll-replay-crash-before-case-4/results.json",
+      "file": "docs/audits/evidence/payroll-replay-process-baseline-control.json",
+      "raw_sha256": "610972ef8536bed553a47650d7aeb1b46a0694c1e53c71f639654a51a5c909b2",
+      "retained_sha256": "610972ef8536bed553a47650d7aeb1b46a0694c1e53c71f639654a51a5c909b2",
+      "bytes": 1506
+    },
+    {
+      "source": "work/payroll-replay-playwright.txt",
+      "file": "docs/audits/evidence/payroll-replay-playwright-first.txt",
+      "raw_sha256": "dfacdfb34ad528845a3bc9c9be957b8f841f89443622e2da3035421db1da669b",
+      "retained_sha256": "dfacdfb34ad528845a3bc9c9be957b8f841f89443622e2da3035421db1da669b",
+      "bytes": 11987
+    },
+    {
+      "source": "work/payroll-replay-playwright-final.txt",
+      "file": "docs/audits/evidence/payroll-replay-playwright.txt",
+      "raw_sha256": "1887c5b435ff964216a5c74b047f1842985b326cd7f0573bc77d8929af9633b3",
+      "retained_sha256": "1887c5b435ff964216a5c74b047f1842985b326cd7f0573bc77d8929af9633b3",
+      "bytes": 11985
+    },
+    {
+      "source": "work/payroll-replay-playwright-stats.json",
+      "file": "docs/audits/evidence/payroll-replay-playwright-stats.json",
+      "raw_sha256": "0d676e5c054d7457e7348bb07190e75d956646ea2ec1ed15960276e3e37ca547",
+      "retained_sha256": "0d676e5c054d7457e7348bb07190e75d956646ea2ec1ed15960276e3e37ca547",
+      "bytes": 138
+    },
+    {
+      "source": "work/payroll-replay-source-freeze.json",
+      "file": "docs/audits/evidence/payroll-replay-source-freeze.json",
+      "raw_sha256": "3d1f914ca0ab0e327c0584725453f03d3fafd2e0f759fa125be63ec5670cc719",
+      "retained_sha256": "3d1f914ca0ab0e327c0584725453f03d3fafd2e0f759fa125be63ec5670cc719",
+      "bytes": 126571
+    },
+    {
+      "source": "work/payroll-replay-browser-freeze-comparison.json",
+      "file": "docs/audits/evidence/payroll-replay-browser-freeze-comparison.json",
+      "raw_sha256": "897d818607d7c1e7cd670b707bcda4530f095213561e14a9a37913d714460881",
+      "retained_sha256": "897d818607d7c1e7cd670b707bcda4530f095213561e14a9a37913d714460881",
+      "bytes": 636
+    },
+    {
+      "source": "work/payroll-replay-npm-runtime.json",
+      "file": "docs/audits/evidence/payroll-replay-npm-runtime.json",
+      "raw_sha256": "0d3348e8276fdbd67a119ecf6550b9fb54fffbfa50761073dbb4fe1f0e4d6712",
+      "retained_sha256": "0d3348e8276fdbd67a119ecf6550b9fb54fffbfa50761073dbb4fe1f0e4d6712",
+      "bytes": 1180
+    },
+    {
+      "source": "work/payroll-replay-full.txt",
+      "file": "docs/audits/evidence/payroll-replay-full-first.txt",
+      "raw_sha256": "2531a04236188addb9bd2bc6cc8997049bd512da464bd32bee66375a8a5ba9ad",
+      "retained_sha256": "a68a5f5966395bd5ccce28a6c43db13a48ea7607a97296fb696277cb6081eb5c",
+      "bytes": 3752
+    },
+    {
+      "source": "work/payroll-replay-full-final.txt",
+      "file": "docs/audits/evidence/payroll-replay-full.txt",
+      "raw_sha256": "b55ea2e7a468450b59a81c360e1c1bd59e1685c0112c403c2179a03aba534bfe",
+      "retained_sha256": "50d70b0af666d6d122f866d0ae4516bcd25afc78eb590d1a783cb63ceef9e1f4",
+      "bytes": 634
+    },
+    {
+      "source": "work/payroll-replay-migration-investigation.txt",
+      "file": "docs/audits/evidence/payroll-replay-migration-investigation.txt",
+      "raw_sha256": "33fb835517b40d78affd4a61a4acd0ea127a6ef0cb5ef7bbf9e6fbe8dd10ad60",
+      "retained_sha256": "836f44d4ee8c7bd7ccc7f5f9745ad31d80080afcda7b613f5e32d92d5f7041ce",
+      "bytes": 225
+    },
+    {
+      "source": "work/payroll-replay-migration-baseline.txt",
+      "file": "docs/audits/evidence/payroll-replay-migration-baseline.txt",
+      "raw_sha256": "983bae0dd60f4bbe614295cb3232b7ce72b0f78bd3d9d65b24ade4b3af482c83",
+      "retained_sha256": "d009144fe384aa031598e7b4de93bb337ceace007f04e5349cf6c405c905c4ca",
+      "bytes": 253
+    },
+    {
+      "source": "work/payroll-replay-gitleaks-staged.txt",
+      "file": "docs/audits/evidence/payroll-replay-gitleaks-staged.txt",
+      "raw_sha256": "d05d3091c49c4d9b63159a481ea57df020769fb775cb1479e15ba9f14fe87a85",
+      "retained_sha256": "d05d3091c49c4d9b63159a481ea57df020769fb775cb1479e15ba9f14fe87a85",
+      "bytes": 110
+    },
+    {
+      "source": "work/payroll-replay-gitleaks-directory.txt",
+      "file": "docs/audits/evidence/payroll-replay-gitleaks-directory.txt",
+      "raw_sha256": "33eebaf7abd8ea14d2c19b4087bfb8976be53024ba812d316a045eeaa6796b31",
+      "retained_sha256": "33eebaf7abd8ea14d2c19b4087bfb8976be53024ba812d316a045eeaa6796b31",
+      "bytes": 80
+    }
+  ]
+}

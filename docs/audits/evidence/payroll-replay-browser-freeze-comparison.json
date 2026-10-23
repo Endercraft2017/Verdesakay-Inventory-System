@@ -1,0 +1,15 @@
+{
+  "application_inputs_identical": true,
+  "later_changes": [
+    "scripts/payroll-replay-crash-drill.ts",
+    "tests/payroll-replay.test.ts"
+  ],
+  "reason": "Added LAN-origin coverage and isolated baseline control selector before full Vitest; no browser application/test inputs changed.",
+  "comparison_scope": "First Playwright versus first full regression, before cloud status correction",
+  "final_source_change_requiring_new_verification": [
+    "src/sync/status.ts",
+    "tests/payroll-replay-status.test.ts",
+    "tests/adopt-default-tenant-api.test.ts"
+  ],
+  "final_browser_run": "work/payroll-replay-playwright-final.txt"
+}

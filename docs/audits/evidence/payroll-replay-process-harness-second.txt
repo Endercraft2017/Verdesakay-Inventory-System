@@ -1,0 +1,29 @@
+{"timestamp":"2026-10-23T07:52:08.029Z","level":"info","event":"http_request","request_id":"2fe6583b-a5ed-46a8-bda5-bfb90c11d35b","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":365}
+{"timestamp":"2026-10-23T07:52:08.044Z","level":"info","event":"http_request","request_id":"729a58d4-0b66-4c4f-96e9-0772e376d616","tenant":"default","method":"POST","path":"/api/accounting/ledger/setup","status":201,"duration_ms":7}
+{"timestamp":"2026-10-23T07:52:08.386Z","level":"info","event":"http_request","request_id":"0f159c38-ed5c-4f44-b462-7c3b6cfa8df5","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":325}
+{"timestamp":"2026-10-23T07:52:08.440Z","level":"info","event":"http_request","request_id":"d1e867e7-d077-44c2-9dd8-2578636a487c","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":44}
+{"timestamp":"2026-10-23T07:52:08.487Z","level":"info","event":"http_request","request_id":"7d90dc3a-4557-474d-9332-168165a8d833","tenant":"default","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":44}
+{"timestamp":"2026-10-23T07:52:08.832Z","level":"info","event":"http_request","request_id":"d73bf0e3-8da0-474a-8a58-7ff145cdea1d","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":320}
+{"timestamp":"2026-10-23T07:52:08.838Z","level":"info","event":"http_request","request_id":"c1a5aac5-0c60-45d6-891d-4d0534325c59","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":2}
+{"timestamp":"2026-10-23T07:52:08.847Z","level":"info","event":"http_request","request_id":"60208d84-cf30-4f25-b336-4f64b9abffad","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":3}
+{"timestamp":"2026-10-23T07:52:08.852Z","level":"info","event":"http_request","request_id":"e24524da-5065-4e34-95af-012207f2a849","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T07:52:08.855Z","level":"info","event":"http_request","request_id":"28112366-0aa3-4bfc-9b2b-65a7cd7ba5dd","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T07:52:08.859Z","level":"info","event":"http_request","request_id":"cc17bf45-d1de-4bda-8876-92cac53aed33","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T07:52:08.898Z","level":"info","event":"http_request","request_id":"5aceede9-e48b-497d-ac81-2fef7e0618be","tenant":"trio-host","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":37}
+{"timestamp":"2026-10-23T07:52:09.242Z","level":"info","event":"http_request","request_id":"5bc879dc-e91d-46fa-b1bb-6b5b649da5b4","tenant":"trio-host","method":"POST","path":"/api/auth/login","status":200,"duration_ms":326}
+{"timestamp":"2026-10-23T07:52:09.563Z","level":"info","event":"http_request","request_id":"4443aa0e-d9d3-45e1-b107-d4df13e1c6ed","tenant":"trio-lan","method":"POST","path":"/api/auth/login","status":200,"duration_ms":317}
+{"timestamp":"2026-10-23T07:52:09.569Z","level":"info","event":"http_request","request_id":"af482039-1c3e-4249-b25e-2691ee914981","tenant":"default","method":"PUT","path":"/api/sync/sites","status":200,"duration_ms":2}
+{"timestamp":"2026-10-23T07:52:09.573Z","level":"info","event":"http_request","request_id":"a3e6426c-76cf-4312-a831-084191c039bc","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":0}
+{"timestamp":"2026-10-23T07:52:09.577Z","level":"info","event":"http_request","request_id":"56b62628-0494-49e7-ab23-80d7a1d25ba8","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":0}
+{"timestamp":"2026-10-23T07:52:09.580Z","level":"info","event":"http_request","request_id":"8f105adc-81cc-4b32-a5e3-80e97ff250a3","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T07:52:09.583Z","level":"info","event":"http_request","request_id":"b7c59eca-d4be-4e69-af77-90310613297b","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T07:52:09.595Z","level":"info","event":"http_request","request_id":"59c8170f-1f80-4f2f-9ed8-c3c3da085b97","tenant":"trio-host","method":"POST","path":"/api/hr/periods/1/post-payroll-gl","status":201,"duration_ms":9}
+/workspace/Verdesakay-Inventory-System/scripts/payroll-replay-crash-drill.ts:44
+  await Promise.race([died,pause(5000).then(()=>{throw Error('Expected child termination was not observed: '+JSON.stringify(first));})]);
+                                                       ^
+
+Error: Expected child termination was not observed: {"status":null,"body":null}
+    at <anonymous> (/workspace/Verdesakay-Inventory-System/scripts/payroll-replay-crash-drill.ts:44:56)
+    at async <anonymous> (/workspace/Verdesakay-Inventory-System/scripts/payroll-replay-crash-drill.ts:44:3)
+
+Node.js v24.19.0

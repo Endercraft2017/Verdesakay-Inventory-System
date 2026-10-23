@@ -1,0 +1,33 @@
+{"timestamp":"2026-10-23T07:53:29.469Z","level":"info","event":"http_request","request_id":"48894bf2-e807-4c36-b99e-c0aa521a6c6d","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":380}
+{"timestamp":"2026-10-23T07:53:29.485Z","level":"info","event":"http_request","request_id":"cdd534c6-5deb-4eb3-8139-eb48237d5895","tenant":"default","method":"POST","path":"/api/accounting/ledger/setup","status":201,"duration_ms":8}
+{"timestamp":"2026-10-23T07:53:29.879Z","level":"info","event":"http_request","request_id":"d0fcb5d6-f940-4e06-9ea4-8270e5178984","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":372}
+{"timestamp":"2026-10-23T07:53:29.935Z","level":"info","event":"http_request","request_id":"1836485b-a378-4fbf-8a67-c56e9af07bed","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":46}
+{"timestamp":"2026-10-23T07:53:29.987Z","level":"info","event":"http_request","request_id":"359d8d54-980b-4222-8efe-97e9e93ab7ac","tenant":"default","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":47}
+{"timestamp":"2026-10-23T07:53:30.340Z","level":"info","event":"http_request","request_id":"f7e1ce00-aaee-41d9-92a0-4e427f412b33","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":329}
+{"timestamp":"2026-10-23T07:53:30.345Z","level":"info","event":"http_request","request_id":"39bbc2df-9a23-407f-aed9-015e9362fde7","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":1}
+{"timestamp":"2026-10-23T07:53:30.351Z","level":"info","event":"http_request","request_id":"f139c566-6c1d-4adc-acf1-732967791bd9","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":2}
+{"timestamp":"2026-10-23T07:53:30.355Z","level":"info","event":"http_request","request_id":"dcb1e0c2-56c2-47e2-89a0-2d4fec6f97b8","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T07:53:30.358Z","level":"info","event":"http_request","request_id":"be7d1e9d-1c5c-4f56-acfe-6a60d32b6792","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":0}
+{"timestamp":"2026-10-23T07:53:30.361Z","level":"info","event":"http_request","request_id":"bb30f3aa-48f8-4a56-a5ac-85cabbd56da2","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":0}
+{"timestamp":"2026-10-23T07:53:30.400Z","level":"info","event":"http_request","request_id":"4747e559-ecee-47ba-9e2d-db0fed6cd67b","tenant":"trio-host","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":36}
+{"timestamp":"2026-10-23T07:53:30.747Z","level":"info","event":"http_request","request_id":"fa6c9b02-3563-4258-88c9-10cb86d017df","tenant":"trio-host","method":"POST","path":"/api/auth/login","status":200,"duration_ms":330}
+{"timestamp":"2026-10-23T07:53:31.085Z","level":"info","event":"http_request","request_id":"8c503438-4c25-430b-91c7-b1c1b070a925","tenant":"trio-lan","method":"POST","path":"/api/auth/login","status":200,"duration_ms":333}
+{"timestamp":"2026-10-23T07:53:31.090Z","level":"info","event":"http_request","request_id":"cd877e23-8714-4957-94a3-fa5c72690e0a","tenant":"default","method":"PUT","path":"/api/sync/sites","status":200,"duration_ms":2}
+{"timestamp":"2026-10-23T07:53:31.094Z","level":"info","event":"http_request","request_id":"c896b70e-864e-4b0a-96ff-6c2d71fef40c","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":0}
+{"timestamp":"2026-10-23T07:53:31.098Z","level":"info","event":"http_request","request_id":"fb3c65ab-842b-49c0-bc34-a1b3897a0d39","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":1}
+{"timestamp":"2026-10-23T07:53:31.100Z","level":"info","event":"http_request","request_id":"d23db6e7-d50c-4407-a325-36f796f13196","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":0}
+{"timestamp":"2026-10-23T07:53:31.107Z","level":"info","event":"http_request","request_id":"8f326de4-0138-4e35-83bb-2b659164969b","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":0}
+{"timestamp":"2026-10-23T07:53:31.123Z","level":"info","event":"http_request","request_id":"5254ea8c-9771-4ca1-b877-1aa036ab761a","tenant":"trio-host","method":"POST","path":"/api/hr/periods/1/post-payroll-gl","status":201,"duration_ms":10}
+{"timestamp":"2026-10-23T07:53:35.958Z","level":"info","event":"http_request","request_id":"c495897e-b139-4624-9443-2430a678658f","tenant":"trio-host","method":"POST","path":"/api/hr/periods/2/post-payroll-gl","status":201,"duration_ms":6}
+{"timestamp":"2026-10-23T07:53:40.488Z","level":"info","event":"http_request","request_id":"d031d04b-8957-4380-a154-e1972fd945e6","tenant":"trio-host","method":"POST","path":"/api/hr/periods/3/post-payroll-gl","status":201,"duration_ms":5}
+{"timestamp":"2026-10-23T07:53:45.112Z","level":"info","event":"http_request","request_id":"4486c3f8-5eb5-4bcf-8e16-a69c17e8b79f","tenant":"trio-host","method":"POST","path":"/api/hr/periods/4/post-payroll-gl","status":201,"duration_ms":5}
+{"timestamp":"2026-10-23T07:53:49.662Z","level":"info","event":"http_request","request_id":"232cee7c-1ad8-41c0-9532-91054969e5d5","tenant":"trio-host","method":"POST","path":"/api/hr/periods/5/post-payroll-gl","status":201,"duration_ms":7}
+/workspace/Verdesakay-Inventory-System/scripts/payroll-replay-crash-drill.ts:44
+  await Promise.race([died,pause(5000).then(()=>{throw Error('Expected child termination was not observed: '+JSON.stringify(first));})]);
+                                                       ^
+
+Error: Expected child termination was not observed: {"status":200,"body":{"results":[{"id":"01M5KW0YATX7DQEMEGPD9G5JKK","state":"confirmed","authority_seq":6,"response_status":201,"error":null}]}}
+    at <anonymous> (/workspace/Verdesakay-Inventory-System/scripts/payroll-replay-crash-drill.ts:44:56)
+    at async <anonymous> (/workspace/Verdesakay-Inventory-System/scripts/payroll-replay-crash-drill.ts:44:3)
+
+Node.js v24.19.0

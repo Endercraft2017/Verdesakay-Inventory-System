@@ -13,6 +13,8 @@ afterAll(() => {
   cleanup(ctx);
 });
 
+// Two real CLI launches, integrity/copy checks and a backup can exceed the shared
+// 20-second unit-test budget on a loaded runner. Keep every assertion and bound it here.
 it('runs the migration CLI on a real app database and serves its existing company at the new URL', async () => {
   const token = await login(ctx.api);
   const item = await ctx.api.post('/api/inventory').set('Authorization', `Bearer ${token}`).send({ name: 'Original company item', quantity: 7 });
@@ -52,4 +54,4 @@ it('runs the migration CLI on a real app database and serves its existing compan
   expect(fs.readFileSync(process.env.DB_PATH!)).toEqual(source);
   expect(fs.readFileSync(path.join(process.env.UPLOAD_DIR!, 'original-document.pdf'), 'utf8')).toBe('original document bytes');
   expect(fs.readFileSync(path.join(process.env.UPLOAD_DIR!, 'verdesakay', 'original-document.pdf'), 'utf8')).toBe('original document bytes');
-});
+},60_000);

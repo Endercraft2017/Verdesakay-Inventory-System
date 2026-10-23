@@ -1,0 +1,7 @@
+{
+  "file": "tests/adopt-default-tenant-api.test.ts",
+  "all_body_statements_and_assertions_unchanged": true,
+  "change": "Only explanatory comment and final timeout argument 60000ms",
+  "before_sha256": "9780648dd4e0e32ee086725037a7c0bd944e031f2d24295e955811cb3ce4c606",
+  "delivered_sha256": "d86bea027c04d85e7e23792c5b7a05f4ba69eeb0485db624e0bd42ebc7412f67"
+}

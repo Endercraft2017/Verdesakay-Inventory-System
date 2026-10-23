@@ -4,6 +4,9 @@ Baseline: production `0de7c12021c16b17499a03d6535c4269d299a4aa`.
 Scope is the explicit payroll-to-GL POST's retry receipt and originating office
 command persistence. Source-version approval, offline factor design, recognition
 policy, settlement and broader sync resilience remain separate open work.
+Subsequent evidence for the cloud payroll replay boundary is in the
+[cloud replay contract](payroll-replay-contract.md). It does not extend to other
+authority routes, site-host replay or node rebase interruption.
 
 ## Demonstrated gaps before application changes
 

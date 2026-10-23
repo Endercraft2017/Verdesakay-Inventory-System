@@ -1,0 +1,7 @@
+import {beforeAll,afterAll,it,expect} from 'vitest';
+import {setupApp,cleanup,login,type TestContext} from '../tests/helpers';
+let ctx:TestContext,token:string;
+beforeAll(async()=>{ctx=await setupApp();token=await login(ctx.api);const d=await import('../src/shared/db'),s=await import('../src/sync');s.enableSync(d.activeDb(),{role:'cloud',nodeNo:0});const {insertCommand}=await import('../src/sync/commands');insertCommand(d.activeDb(),{id:'01M5KSTATUS0000000000000001',node_no:9,node_seq:1,hlc:null,occurred_at:'2026-10-23T00:00:00Z',occurred_date:'2026-10-23',actor_user_id:1,device_id:null,method:'POST',path:'/api/hr/periods/1/post-payroll-gl',body:'{}',sync_class:'claim',allocation_plan:'[]',app_version:'1.0.0',unattributed:0},{state:'received'});});
+afterAll(()=>cleanup(ctx));
+it('does not call a received cloud command confirmed',async()=>{const r=await ctx.api.get('/api/sync/command/01M5KSTATUS0000000000000001').auth(token,{type:'bearer'});expect(r.status).toBe(200);expect(r.body.state).toBe('received');});
+it('does not call an unknown cloud command confirmed',async()=>{expect((await ctx.api.get('/api/sync/command/unknown-payroll-command').auth(token,{type:'bearer'})).status).toBe(404);});

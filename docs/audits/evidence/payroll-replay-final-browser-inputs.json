@@ -1,0 +1,7 @@
+{
+  "application_inputs_unchanged_since_final_browser_run": true,
+  "only_later_change": [
+    "scripts/payroll-replay-crash-drill.ts"
+  ],
+  "reason": "Serialize test server startup; actual command-request concurrency remains barrier-controlled."
+}

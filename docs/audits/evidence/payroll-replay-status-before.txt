@@ -1,0 +1,48 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | work/payroll-replay-status-before.test.ts > does not call a received cloud command confirmed
+{"timestamp":"2026-10-23T08:14:16.686Z","level":"info","event":"http_request","request_id":"14355201-dd74-4fc5-a656-71b043d88860","tenant":"default","method":"GET","path":"/api/sync/command/01M5KSTATUS0000000000000001","status":200,"duration_ms":2}
+
+stdout | work/payroll-replay-status-before.test.ts > does not call an unknown cloud command confirmed
+{"timestamp":"2026-10-23T08:14:16.694Z","level":"info","event":"http_request","request_id":"7a772a53-f3a2-4b11-a158-ec9c6749bb4a","tenant":"default","method":"GET","path":"/api/sync/command/unknown-payroll-command","status":200,"duration_ms":1}
+
+stdout | work/payroll-replay-status-before.test.ts
+{"timestamp":"2026-10-23T08:14:16.633Z","level":"info","event":"http_request","request_id":"4b4e4c2f-1ce2-46a8-8dfa-be309e4901d2","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":323}
+
+ ❯ work/payroll-replay-status-before.test.ts (2 tests | 2 failed) 3162ms
+   × does not call a received cloud command confirmed 11ms
+   × does not call an unknown cloud command confirmed 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  work/payroll-replay-status-before.test.ts > does not call a received cloud command confirmed
+AssertionError: expected 'confirmed' to be 'received' // Object.is equality
+
+Expected: "received"
+Received: "confirmed"
+
+ ❯ work/payroll-replay-status-before.test.ts:6:216
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  work/payroll-replay-status-before.test.ts > does not call an unknown cloud command confirmed
+AssertionError: expected 200 to be 404 // Object.is equality
+
+- Expected
++ Received
+
+- 404
++ 200
+
+ ❯ work/payroll-replay-status-before.test.ts:7:173
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  08:14:13
+   Duration  3.39s (transform 1.42s, setup 31ms, import 75ms, tests 3.16s, environment 0ms)

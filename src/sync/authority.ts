@@ -23,6 +23,7 @@ import { drainRecorder, isAuthority, isReplicated, syncConfigOf, type SyncConfig
 import { dispatchCommand } from './replay';
 import { indexFiles, parseMultipart } from './files';
 import { replayable } from './maintenance';
+import {isAtomicPayrollReplay,preparePayrollReplay,payrollReplayUnavailable,hasPayrollReplayMarker} from './payroll-replay';
 
 /** Move what the recorder captured since the last flush into `sync_effects`. Returns the new
  *  effect's sequence number, or null when nothing replicated changed (or a transaction is open —
@@ -84,7 +85,11 @@ export async function acceptCommand(slug: string, cmd: SyncCommand): Promise<Com
   const host = cfg.role === 'node';
   const release = await lockSync(conn); // stored and replayed in one turn: the site order
   try {
-    const existing = getCommand(conn, cmd.id);
+    const known=getCommand(conn,cmd.id);
+    // A changed method/path must not escape the original command's binding policy.
+    const atomicPayroll=cfg.role==='cloud'&&(isAtomicPayrollReplay(cmd)
+      ||known&&isAtomicPayrollReplay(known)||hasPayrollReplayMarker(conn,cmd.id));
+    const existing = atomicPayroll?preparePayrollReplay(conn,cmd):known;
     if (existing && existing.state !== 'received') return resultOf(conn, cmd.id, host);
     if (!existing) insertCommand(conn, cmd, { state: 'received' });
 
@@ -97,6 +102,18 @@ export async function acceptCommand(slug: string, cmd: SyncCommand): Promise<Com
     }
     flushEffects(conn, null); // anything before this command is not its effect
     const r = await dispatchCommand(slug, cmd, 'replay');
+    if(atomicPayroll){
+      const decided=getCommand(conn,cmd.id);
+      if(decided&&['confirmed','rejected'].includes(decided.state))return resultOf(conn,cmd.id,false);
+      // A permission/module/route refusal can occur before the synchronous class gate.
+      // The business handler never ran; record that genuine refusal, not a 5xx outage.
+      if(r.status>=400&&r.status<500){
+        const error=r.body&&typeof r.body==='object'&&'error' in r.body?String((r.body as {error:unknown}).error):`HTTP ${r.status}`;
+        conn.prepare("UPDATE sync_commands SET state='rejected',response_status=?,error=?,updated_at=datetime('now') WHERE id=? AND state='received'").run(r.status,error,cmd.id);
+        return resultOf(conn,cmd.id,false);
+      }
+      throw payrollReplayUnavailable();
+    }
     const seq = flushEffects(conn, cmd.id);
     if (parseMultipart(cmd.body)) indexFiles(conn, slug, true); // its uploads, for this authority's PCs
     const ok = r.status < 400;

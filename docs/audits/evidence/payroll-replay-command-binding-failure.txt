@@ -1,0 +1,102 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/payroll-replay.test.ts > rejects reuse of a decided command ID with changed immutable fields
+{"timestamp":"2026-10-23T07:45:18.536Z","level":"info","event":"http_request","request_id":"164266c0-fd17-4a90-8434-dd07a367f853","tenant":"trio-host","method":"POST","path":"/api/hr/periods/5/post-payroll-gl","status":201,"duration_ms":4}
+
+stdout | tests/payroll-replay.test.ts > rejects reuse of a decided command ID with changed immutable fields
+{"timestamp":"2026-10-23T07:45:18.541Z","level":"info","event":"http_request","request_id":"a369817a-633e-4d15-b410-062bf467fb50","tenant":"default","method":"POST","path":"/api/hr/periods/5/post-payroll-gl","status":201,"duration_ms":2}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:16.705Z","level":"info","event":"http_request","request_id":"a05e427e-3539-4d2d-ba90-a0c31ee68df1","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":353}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:16.719Z","level":"info","event":"http_request","request_id":"501cc6a9-6f3f-4092-ac93-262382292505","tenant":"default","method":"POST","path":"/api/accounting/ledger/setup","status":201,"duration_ms":8}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:17.073Z","level":"info","event":"http_request","request_id":"a8524667-77f0-49a7-a181-6dbf48866179","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":332}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:17.125Z","level":"info","event":"http_request","request_id":"037a6d88-8a63-4df3-bbe7-65ee97a2d2b7","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":43}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:17.181Z","level":"info","event":"http_request","request_id":"af0a85e1-fe42-4fcf-983e-ef0a4b0cdc1f","tenant":"default","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":51}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:17.536Z","level":"info","event":"http_request","request_id":"67e79aff-f999-4660-a4b2-fa5915c5ecd2","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":317}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:17.542Z","level":"info","event":"http_request","request_id":"093a74d6-9806-459e-9c5c-fb93eaa93740","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":2}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:17.549Z","level":"info","event":"http_request","request_id":"bd2efa6e-2bcd-4315-addd-57943ec29d3b","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":2}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:17.554Z","level":"info","event":"http_request","request_id":"fc748dd1-a1b2-4030-a385-77da9686d8e0","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":1}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:17.559Z","level":"info","event":"http_request","request_id":"8bd6d5c4-cbcc-4ec6-a2eb-d63c890267f9","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":1}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:17.564Z","level":"info","event":"http_request","request_id":"274c3403-fafd-4cbe-b5f1-bdb18df171e4","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":1}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:17.606Z","level":"info","event":"http_request","request_id":"02539c9b-17e3-4a3e-90bf-36e37f647617","tenant":"trio-host","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":38}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:17.985Z","level":"info","event":"http_request","request_id":"88cbc4a3-9692-43ec-aeaf-78c0ad065a08","tenant":"trio-host","method":"POST","path":"/api/auth/login","status":200,"duration_ms":361}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:18.326Z","level":"info","event":"http_request","request_id":"66c2b8a4-a69c-41fb-8807-9826926c805a","tenant":"trio-lan","method":"POST","path":"/api/auth/login","status":200,"duration_ms":336}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:18.334Z","level":"info","event":"http_request","request_id":"aa6e76e1-ce2b-4ef9-a522-85fa2f92edeb","tenant":"default","method":"PUT","path":"/api/sync/sites","status":200,"duration_ms":5}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:18.339Z","level":"info","event":"http_request","request_id":"e1a40fcf-0547-4868-9b4d-37230b685dbf","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":2}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:18.343Z","level":"info","event":"http_request","request_id":"83ea98f5-e509-401a-86a3-899e4370bf91","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":1}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:18.346Z","level":"info","event":"http_request","request_id":"61dda2c8-3af7-4ecb-8cb4-bdca2e2916e6","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":1}
+
+stdout | tests/payroll-replay.test.ts
+{"timestamp":"2026-10-23T07:45:18.349Z","level":"info","event":"http_request","request_id":"9b8b4b24-4c03-42b1-a87c-31e3606ed77a","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":0}
+
+ ❯ tests/payroll-replay.test.ts (12 tests | 1 failed) 5379ms
+   × rejects reuse of a decided command ID with changed immutable fields 17ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/payroll-replay.test.ts > rejects reuse of a decided command ID with changed immutable fields
+AssertionError: promise resolved "{ …(5) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "authority_seq": 8,
++   "error": null,
++   "id": "01M5KVHB6690SNA8YZC9XN1TY3",
++   "response_status": 201,
++   "state": "confirmed",
+  }
+
+ ❯ tests/payroll-replay.test.ts:45:71
+     43|  const cmd=await command(4);await trio.sync.acceptCommand('default',cm…
+     44|  for(const altered of [{body:'{}'},{actor_user_id:999},{allocation_pla…
+     45|   await expect(trio.sync.acceptCommand('default',{...cmd,...altered}))…
+       |                                                                       ^
+     46|  }
+     47|  expect(journals(4)).toEqual(before);expect(effects(cmd.id)).toHaveLen…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 11 passed (12)
+   Start at  07:45:13
+   Duration  5.64s (transform 1.66s, setup 31ms, import 97ms, tests 5.38s, environment 0ms)

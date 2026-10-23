@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "../server.ts",
+    "../src/**/*.ts",
+    "../tests/**/*.ts",
+    "../vitest.config.ts",
+    "../scripts/payroll-replay-crash-drill.ts"
+  ],
+  "exclude": []
+}

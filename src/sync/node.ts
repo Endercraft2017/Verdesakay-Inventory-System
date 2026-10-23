@@ -125,6 +125,13 @@ const SCHEMA = `
     context          TEXT                        -- allow-listed request facts a replay needs (§20)
   );
   CREATE INDEX IF NOT EXISTS idx_sync_commands_state ON sync_commands(state, node_seq);
+  -- Server-owned proof that a payroll inbox item entered the atomic replay protocol.
+  -- Missing markers on old undecided commands require reconciliation, never blind replay.
+  CREATE TABLE IF NOT EXISTS sync_payroll_replays (
+    command_id   TEXT PRIMARY KEY,
+    request_hash TEXT NOT NULL,
+    protocol     INTEGER NOT NULL DEFAULT 1 CHECK (protocol = 1)
+  );
   -- The PCs this authority accepts: on the cloud, every enrolled PC (a host's LAN PCs carry
   -- its node number in host_node_no); on a site host, its LAN PCs, copied from the cloud
   -- (GET /api/sync/members). Node numbers are never reused. Only the token's SHA-256 is kept.

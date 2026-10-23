@@ -1,0 +1,7 @@
+{
+  "freeze_sha256": "3d1f914ca0ab0e327c0584725453f03d3fafd2e0f759fa125be63ec5670cc719",
+  "started_utc": "2026-10-23T08:41:03.707223+00:00",
+  "command": "npm test -- --fileParallelism --maxWorkers=2",
+  "exit": 0,
+  "completed_utc": "2026-10-23T08:52:19.927220+00:00"
+}

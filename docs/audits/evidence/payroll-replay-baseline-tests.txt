@@ -1,0 +1,111 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | work/payroll-replay-before.test.ts > keeps the cloud posting uncommitted when its effect cannot commit
+{"timestamp":"2026-10-23T07:35:41.349Z","level":"info","event":"http_request","request_id":"f3c903d9-f79c-47cb-a59c-90a2a27395d5","tenant":"trio-host","method":"POST","path":"/api/hr/periods/1/post-payroll-gl","status":201,"duration_ms":10}
+
+stdout | work/payroll-replay-before.test.ts > keeps the cloud posting uncommitted when its effect cannot commit
+{"timestamp":"2026-10-23T07:35:41.358Z","level":"info","event":"http_request","request_id":"324201a6-dc12-437f-8c50-c8ba70e6f29a","tenant":"default","method":"POST","path":"/api/hr/periods/1/post-payroll-gl","status":201,"duration_ms":2}
+
+stdout | work/payroll-replay-before.test.ts > keeps the cloud posting uncommitted when its verdict cannot commit
+{"timestamp":"2026-10-23T07:35:41.374Z","level":"info","event":"http_request","request_id":"196953e5-b33a-4d1b-8ed6-60e8d4c88627","tenant":"trio-host","method":"POST","path":"/api/hr/periods/2/post-payroll-gl","status":201,"duration_ms":5}
+
+stdout | work/payroll-replay-before.test.ts > keeps the cloud posting uncommitted when its verdict cannot commit
+{"timestamp":"2026-10-23T07:35:41.381Z","level":"info","event":"http_request","request_id":"87260747-eae9-45b9-8400-0ba378f68216","tenant":"default","method":"POST","path":"/api/hr/periods/2/post-payroll-gl","status":201,"duration_ms":2}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:39.482Z","level":"info","event":"http_request","request_id":"801e4a79-bd69-42f8-89ea-99905c066a4b","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":361}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:39.499Z","level":"info","event":"http_request","request_id":"c89a1868-ef7a-40e6-9f25-9861795f4f98","tenant":"default","method":"POST","path":"/api/accounting/ledger/setup","status":201,"duration_ms":7}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:39.881Z","level":"info","event":"http_request","request_id":"c1a08ea4-a2f8-4d53-a56d-bb36754985e1","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":365}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:39.943Z","level":"info","event":"http_request","request_id":"0274e208-d50d-46e9-8e6e-a5b3918c7e23","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":53}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:39.995Z","level":"info","event":"http_request","request_id":"1b5619bb-95bb-423a-a9df-132706b35887","tenant":"default","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":47}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:40.387Z","level":"info","event":"http_request","request_id":"ebb11b05-8e39-4662-abcc-0b47e8c44918","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":365}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:40.392Z","level":"info","event":"http_request","request_id":"9814fa84-ccda-49a4-bada-978aa562b011","tenant":"default","method":"POST","path":"/api/sync/nodes","status":201,"duration_ms":2}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:40.399Z","level":"info","event":"http_request","request_id":"df147aaa-e3a7-4eb7-9c0c-a3352c17672f","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":2}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:40.405Z","level":"info","event":"http_request","request_id":"7a47689b-78ce-4126-834d-0db9fb52196f","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":2}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:40.407Z","level":"info","event":"http_request","request_id":"2a959439-016c-4d76-9dbe-0ba6b93eb8fe","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":1}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:40.412Z","level":"info","event":"http_request","request_id":"83eb5a3e-f465-4f1c-834d-b62d22980979","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":1}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:40.477Z","level":"info","event":"http_request","request_id":"4d7e4004-5b02-4aeb-9ad6-10c6ad9d3405","tenant":"trio-host","method":"GET","path":"/api/sync/snapshot","status":200,"duration_ms":45}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:40.937Z","level":"info","event":"http_request","request_id":"540b4ab7-acc0-4c39-9eb2-d4de2066c462","tenant":"trio-host","method":"POST","path":"/api/auth/login","status":200,"duration_ms":428}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:41.315Z","level":"info","event":"http_request","request_id":"17a9b096-6d1e-4e66-9ca4-876daf7254ad","tenant":"trio-lan","method":"POST","path":"/api/auth/login","status":200,"duration_ms":374}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:41.321Z","level":"info","event":"http_request","request_id":"b7bd7a2b-ebcd-441b-a768-94b8260d1cd8","tenant":"default","method":"PUT","path":"/api/sync/sites","status":200,"duration_ms":3}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:41.325Z","level":"info","event":"http_request","request_id":"e21c537b-5ce0-4d6d-a4e9-af6680eeaf88","tenant":"default","method":"GET","path":"/api/sync/pull","status":200,"duration_ms":1}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:41.329Z","level":"info","event":"http_request","request_id":"fcad6cc5-db8a-454d-8b12-4a8e50cd3156","tenant":"default","method":"GET","path":"/api/sync/files","status":200,"duration_ms":0}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:41.332Z","level":"info","event":"http_request","request_id":"e6971a6b-77c4-48ae-8bb0-a6b8b1b0562b","tenant":"default","method":"GET","path":"/api/sync/members","status":200,"duration_ms":1}
+
+stdout | work/payroll-replay-before.test.ts
+{"timestamp":"2026-10-23T07:35:41.335Z","level":"info","event":"http_request","request_id":"1106adbb-fda6-48a2-b315-1f2ec1bb96a9","tenant":"default","method":"POST","path":"/api/sync/sequence-blocks","status":200,"duration_ms":1}
+
+ ❯ work/payroll-replay-before.test.ts (2 tests | 2 failed) 5506ms
+   × keeps the cloud posting uncommitted when its effect cannot commit 29ms
+   × keeps the cloud posting uncommitted when its verdict cannot commit 18ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  work/payroll-replay-before.test.ts > keeps the cloud posting uncommitted when its effect cannot commit
+AssertionError: expected [ { id: 137438953473, …(2) } ] to have a length of +0 but got 1
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ work/payroll-replay-before.test.ts:23:85
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  work/payroll-replay-before.test.ts > keeps the cloud posting uncommitted when its verdict cannot commit
+AssertionError: expected [ { id: 137438953474, …(2) } ] to have a length of +0 but got 1
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ work/payroll-replay-before.test.ts:23:85
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  07:35:35
+   Duration  5.82s (transform 1.75s, setup 37ms, import 126ms, tests 5.51s, environment 0ms)

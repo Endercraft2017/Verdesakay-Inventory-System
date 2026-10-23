@@ -1,0 +1,1 @@
+import {defineConfig} from 'vitest/config';export default defineConfig({test:{environment:'node',include:['work/payroll-replay-clock-before.test.ts'],setupFiles:['tests/setup-safe-paths.ts'],env:{NODE_ENV:'test'},fileParallelism:false}});

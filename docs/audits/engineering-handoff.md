@@ -1,5 +1,22 @@
 # Engineering handoff and release hold
 
+Latest cloud payroll replay follow-up: 23 October 2026 — SQL faults and real process
+interruptions demonstrated committed journals without complete effects/verdicts,
+followed by unintended reversal/replacement on replay. The synchronous payroll GL
+cloud route now commits its journal, command-linked effect and verdict together.
+A server-owned inbox marker binds immutable command data and distinguishes safe
+new-protocol retries from uncertain old received work, which holds for reconciliation.
+Cloud command status now reads actual received/rejected/confirmed state with existing
+ownership checks; unknown IDs return 404 instead of invented confirmation.
+No transaction spans awaited loopback dispatch. Office/host/LAN claim authority remains;
+normal LAN-origin host-confirmed→cloud-confirmed convergence is covered. See
+[contract](payroll-replay-contract.md), [research](payroll-replay-research.md) and
+[recovery](../operations/payroll-cloud-replay.md). This supersedes the prior cloud
+payroll GL persistence limitation only. Other routes/site-host acceptance, direct-cloud
+capture, node rebase interruption, reviewed approval, historical financial repair,
+real deployment/device/restore acceptance and independent review remain open. There
+is no new owner engineering task now; whole-control totals and release hold are unchanged.
+
 Latest payroll GL retry follow-up: 23 October 2026 — demonstrated receipt-write and
 originating-node command-write failures could acknowledge unsafely committed payroll
 journals. Keyed posting/receipt writes are now atomic; this synchronous claim route

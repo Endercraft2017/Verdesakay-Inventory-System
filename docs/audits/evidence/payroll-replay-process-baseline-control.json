@@ -1,0 +1,71 @@
+{
+  "mode": "unchanged baseline",
+  "node": "v24.19.0",
+  "sqlite": {
+    "version": "3.53.3"
+  },
+  "journal_mode": {
+    "journal_mode": "wal"
+  },
+  "synchronous": {
+    "synchronous": 2
+  },
+  "cases": [
+    {
+      "name": "outer command response lost after complete decision",
+      "contract_satisfied": true,
+      "first_status": null,
+      "interrupted": {
+        "journals": [
+          {
+            "id": 137438953473,
+            "number": "JV-000001",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 2,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 2,
+            "command_id": "01M5KWAPTA1BS92GES3GCBZDGJ"
+          }
+        ]
+      },
+      "retry_status": 200,
+      "final": {
+        "journals": [
+          {
+            "id": 137438953473,
+            "number": "JV-000001",
+            "reverses_id": null
+          }
+        ],
+        "command": {
+          "state": "confirmed",
+          "authority_seq": 2,
+          "response_status": 201
+        },
+        "effects": [
+          {
+            "authority_seq": 2,
+            "command_id": "01M5KWAPTA1BS92GES3GCBZDGJ"
+          }
+        ]
+      },
+      "replica": {
+        "converged": true,
+        "host_journals": [
+          {
+            "id": 137438953473,
+            "number": "JV-000001",
+            "reverses_id": null
+          }
+        ]
+      }
+    }
+  ]
+}
