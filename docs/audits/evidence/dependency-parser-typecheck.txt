@@ -1,0 +1,6 @@
+
+> otom@1.0.0 typecheck
+> tsc --noEmit
+
+
+PROCESS_EXIT=0

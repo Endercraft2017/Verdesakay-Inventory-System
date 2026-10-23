@@ -952,6 +952,12 @@ Trigger: a form manager opens Print templates, or an editor opens the document l
    Conversion failures preserve authored limit feedback but hide dependency exceptions;
    generic import failures (400) and unexpected export failures (500) carry request IDs.
 
+Dependency review (23 October 2026): original dependencies and this workflow remain
+unchanged after upstream withdrew the formatter advisory. An actual-app browser
+regression covers malformed Word recovery, preview-before-Apply and undo. See
+[decision/evidence](../audits/dependency-parser-contract.md); the separate high Forge
+finding and broader production gates remain open.
+
 Failures: permission/stale-revision/shared-version errors retain local work; retry after
 reviewing the latest document. Server private/shared working tables are cloud-only and
 are excluded from offline replication; publication follows the existing claim workflow.

@@ -1,0 +1,10 @@
+{
+  "mode": "after",
+  "mammoth": "1.13.0",
+  "parser": "2.0.1",
+  "parserDependencies": {},
+  "runtimeFormatters": [],
+  "apiHtml": "passed",
+  "apiText": "passed",
+  "cli": "passed"
+}

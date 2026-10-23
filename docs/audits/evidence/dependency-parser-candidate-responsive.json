@@ -1,0 +1,50 @@
+[
+  {
+    "theme": "light",
+    "width": 1440,
+    "file": "editor-light-1440.png",
+    "controlsVisible": true
+  },
+  {
+    "theme": "light",
+    "width": 1024,
+    "file": "editor-light-1024.png",
+    "controlsVisible": true
+  },
+  {
+    "theme": "light",
+    "width": 768,
+    "file": "editor-light-768.png",
+    "controlsVisible": true
+  },
+  {
+    "theme": "light",
+    "width": 390,
+    "file": "editor-light-390.png",
+    "controlsVisible": true
+  },
+  {
+    "theme": "dark",
+    "width": 1440,
+    "file": "editor-dark-1440.png",
+    "controlsVisible": true
+  },
+  {
+    "theme": "dark",
+    "width": 1024,
+    "file": "editor-dark-1024.png",
+    "controlsVisible": true
+  },
+  {
+    "theme": "dark",
+    "width": 768,
+    "file": "editor-dark-768.png",
+    "controlsVisible": true
+  },
+  {
+    "theme": "dark",
+    "width": 390,
+    "file": "editor-dark-390.png",
+    "controlsVisible": true
+  }
+]

@@ -1,0 +1,114 @@
+
+> otom@1.0.0 test:editor:ux
+> node scripts/test-editor-ux.mjs
+
+desktop-light-home: 0 violations, 2 manual-review rules
+desktop-light-insert: 0 violations, 2 manual-review rules
+desktop-light-layout: 0 violations, 2 manual-review rules
+desktop-light-more: 0 violations, 2 manual-review rules
+desktop-light-Properties: 0 violations, 2 manual-review rules
+desktop-light-Pages: 0 violations, 2 manual-review rules
+desktop-light-Layers: 0 violations, 2 manual-review rules
+desktop-light-Outline: 0 violations, 2 manual-review rules
+desktop-light-Styles: 0 violations, 2 manual-review rules
+desktop-light-Data: 0 violations, 2 manual-review rules
+desktop-light-Library: 0 violations, 2 manual-review rules
+desktop-light-Review: 0 violations, 2 manual-review rules
+desktop-light-History: 0 violations, 2 manual-review rules
+desktop-light-Shared: 0 violations, 2 manual-review rules
+desktop-light-Template: 0 violations, 2 manual-review rules
+desktop-light-Print: 0 violations, 2 manual-review rules
+desktop-dark-home: 0 violations, 2 manual-review rules
+desktop-dark-insert: 0 violations, 2 manual-review rules
+desktop-dark-layout: 0 violations, 2 manual-review rules
+desktop-dark-more: 0 violations, 2 manual-review rules
+desktop-dark-Properties: 0 violations, 2 manual-review rules
+desktop-dark-Pages: 0 violations, 2 manual-review rules
+desktop-dark-Layers: 0 violations, 2 manual-review rules
+desktop-dark-Outline: 0 violations, 2 manual-review rules
+desktop-dark-Styles: 0 violations, 2 manual-review rules
+desktop-dark-Data: 0 violations, 2 manual-review rules
+desktop-dark-Library: 0 violations, 2 manual-review rules
+desktop-dark-Review: 0 violations, 2 manual-review rules
+desktop-dark-History: 0 violations, 2 manual-review rules
+desktop-dark-Shared: 0 violations, 2 manual-review rules
+desktop-dark-Template: 0 violations, 2 manual-review rules
+desktop-dark-Print: 0 violations, 2 manual-review rules
+PASS Save and Close remain visible across responsive widths
+phone-light-home: 0 violations, 2 manual-review rules
+phone-light-insert: 0 violations, 2 manual-review rules
+phone-light-layout: 0 violations, 2 manual-review rules
+phone-light-Template: 0 violations, 2 manual-review rules
+phone-light-Print: 0 violations, 2 manual-review rules
+phone-light-more: 0 violations, 2 manual-review rules
+phone-dark-home: 0 violations, 2 manual-review rules
+phone-dark-insert: 0 violations, 2 manual-review rules
+phone-dark-layout: 0 violations, 2 manual-review rules
+phone-dark-Template: 0 violations, 2 manual-review rules
+phone-dark-Print: 0 violations, 2 manual-review rules
+phone-dark-more: 0 violations, 2 manual-review rules
+PASS Assistant launcher does not cover the canvas and remains available
+PASS Layout leads to a separate print-grid sidebar without changing document content
+header-divider-light: 0 violations, 2 manual-review rules
+header-divider-dark: 0 violations, 2 manual-review rules
+PASS Company header divider supports direct selection, styling, removal and Undo
+dialog-variable-manager: 0 violations, 1 manual-review rules
+PASS Variable bank copies complete tokens and field management returns to the editor
+PASS Insert ribbon Variable shortcut inserts at the remembered caret and supports Undo
+dialog-settings: 0 violations, 1 manual-review rules
+PASS Settings opens by keyboard, traps focus, and returns to its invoker
+dialog-file: 0 violations, 1 manual-review rules
+dialog-linked-forms: 0 violations, 1 manual-review rules
+PASS A payslip layout can be linked and made default without removing other layouts
+dialog-insert-table: 0 violations, 1 manual-review rules
+desktop-dark-table: 0 violations, 2 manual-review rules
+dialog-table-properties: 0 violations, 1 manual-review rules
+dialog-image-light-1440: 0 violations, 1 manual-review rules
+dialog-link-light-1440: 0 violations, 1 manual-review rules
+dialog-symbol-light-1440: 0 violations, 2 manual-review rules
+dialog-variable-light-1440: 0 violations, 0 manual-review rules
+dialog-formula-light-1440: 0 violations, 1 manual-review rules
+dialog-picture-light-1440: 0 violations, 1 manual-review rules
+find-light-1440: 0 violations, 2 manual-review rules
+dialog-paragraph-light-1440: 0 violations, 1 manual-review rules
+dialog-style-light-1440: 0 violations, 1 manual-review rules
+dialog-section-light-1440: 0 violations, 1 manual-review rules
+dialog-image-light-390: 0 violations, 1 manual-review rules
+dialog-link-light-390: 0 violations, 1 manual-review rules
+dialog-symbol-light-390: 0 violations, 2 manual-review rules
+dialog-variable-light-390: 0 violations, 0 manual-review rules
+dialog-formula-light-390: 0 violations, 1 manual-review rules
+dialog-picture-light-390: 0 violations, 1 manual-review rules
+find-light-390: 0 violations, 2 manual-review rules
+dialog-paragraph-light-390: 0 violations, 1 manual-review rules
+dialog-style-light-390: 0 violations, 1 manual-review rules
+dialog-section-light-390: 0 violations, 1 manual-review rules
+dialog-image-dark-1440: 0 violations, 1 manual-review rules
+dialog-link-dark-1440: 0 violations, 1 manual-review rules
+dialog-symbol-dark-1440: 0 violations, 2 manual-review rules
+dialog-variable-dark-1440: 0 violations, 0 manual-review rules
+dialog-formula-dark-1440: 0 violations, 1 manual-review rules
+dialog-picture-dark-1440: 0 violations, 1 manual-review rules
+find-dark-1440: 0 violations, 2 manual-review rules
+dialog-paragraph-dark-1440: 0 violations, 1 manual-review rules
+dialog-style-dark-1440: 0 violations, 1 manual-review rules
+dialog-section-dark-1440: 0 violations, 1 manual-review rules
+dialog-image-dark-390: 0 violations, 1 manual-review rules
+dialog-link-dark-390: 0 violations, 1 manual-review rules
+dialog-symbol-dark-390: 0 violations, 2 manual-review rules
+dialog-variable-dark-390: 0 violations, 0 manual-review rules
+dialog-formula-dark-390: 0 violations, 1 manual-review rules
+dialog-picture-dark-390: 0 violations, 1 manual-review rules
+find-dark-390: 0 violations, 2 manual-review rules
+dialog-paragraph-dark-390: 0 violations, 1 manual-review rules
+dialog-style-dark-390: 0 violations, 1 manual-review rules
+dialog-section-dark-390: 0 violations, 1 manual-review rules
+PASS Symbol picker inserts by keyboard and Undo restores writing
+PASS Everyday ribbon tools format, copy/cut/paste fields, replace and insert page furniture
+PASS Dark select hover keeps a themed surface and a custom arrow
+PASS Page size swaps and undo restores both dimensions
+print-preview-sidebar: 0 violations, 1 manual-review rules
+PASS Print-grid controls remain usable beside the measured preview and preserve proportional scaling
+PASS Repeated saves with delayed shared polling persist text and reopen cleanly
+PASS A multipage design disables grid printing
+{"scans":94,"violations":0,"checks":15,"failed":0,"errors":0}

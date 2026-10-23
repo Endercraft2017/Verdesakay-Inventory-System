@@ -370,6 +370,13 @@ and self-service request types; composed by `form-builder.routes.ts`), routes: `
 `templates.routes.ts`, `doc-studio.routes.ts`, `doc-template-version.ts`,
 `document-conversion.ts`, `doc-studio-merge.ts`, `me.routes.ts`, `announcements.routes.ts`, `activity.routes.ts`,
 `analytics.routes.ts`, `push.routes.ts`.
+
+**Word conversion dependency review (23 October 2026):** original dependencies are
+retained after upstream withdrew the formatter advisory; no major parser override is
+shipped. `tests/e2e/document-conversion.spec.ts` checks actual malformed-upload recovery,
+preview-before-Apply and undo without premature publication. Existing conversion,
+message-attachment and exception-redaction tests provide API regression evidence.
+See [decision and remaining high finding](../audits/dependency-parser-contract.md).
 **Offline (sync/, phase 4i, §28):** chat, personal notes / tasks / bookmarks and bug reports `merge` (files
 travel with the command); announcements, templates, departments and bug triage `claim`s at the main site; user
 accounts, access and passwords `online` (credentials, D8). Sign-in / sign-out / push / tickets / activity-log

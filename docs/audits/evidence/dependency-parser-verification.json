@@ -1,0 +1,589 @@
+{
+  "scope": "Runtime dependency review; advisory withdrawn; candidate discarded; original manifests/app unchanged; one real Word-import browser regression retained",
+  "date_manila": "2026-10-23",
+  "baseline": "212ff016a87849541b1a05b317b7e431a89eef10",
+  "source_freeze": "docs/audits/evidence/dependency-parser-source-freeze.json",
+  "final": {
+    "focused": {
+      "files": 4,
+      "tests": 86,
+      "duration_seconds": 27.01,
+      "process_exit": 0
+    },
+    "full": {
+      "files": 321,
+      "tests": 3467,
+      "duration_seconds": 642.9,
+      "process_exit": 0
+    },
+    "playwright": {
+      "startTime": "2026-10-23T05:09:34.888Z",
+      "duration": 183865.728,
+      "expected": 72,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "runtime_npm": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 1,
+      "critical": 0,
+      "total": 1
+    },
+    "full_npm": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 1,
+      "critical": 0,
+      "total": 1
+    },
+    "npm_exit": 1,
+    "application_or_manifest_changes": false
+  },
+  "discarded_candidate": {
+    "focused": {
+      "files": 5,
+      "tests": 96,
+      "duration_seconds": 29.61,
+      "process_exit": null
+    },
+    "full": {
+      "files": 322,
+      "tests": 3477,
+      "duration_seconds": 630.44,
+      "process_exit": null
+    },
+    "full_exit_note": "Execution handle unavailable after user turn; complete summary retained, no independent process exit code",
+    "playwright": {
+      "startTime": "2026-10-22T07:44:07.170Z",
+      "duration": 192729.525,
+      "expected": 72,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "editor": {
+      "scans": 94,
+      "violations": 0,
+      "checks": 15,
+      "failed": 0,
+      "errors": 0
+    },
+    "not_delivered": true
+  },
+  "advisory_withdrawal": {
+    "id": "GHSA-hp3w-g68c-fv3c",
+    "withdrawn_at_utc": "2026-10-22T19:21:04Z",
+    "url": "https://github.com/advisories/GHSA-hp3w-g68c-fv3c",
+    "count_reduction_attribution": "upstream withdrawal; no delivered package fix"
+  },
+  "open": [
+    "node-forge high; no fixed version offered; no risk exception",
+    "independent code/security review",
+    "launcher/mobile scans not refreshed",
+    "historical-secret revocation",
+    "real provider/hosting/restore/native/mixed-build acceptance",
+    "all other historical scorecard release gates"
+  ],
+  "secrets": {
+    "gitleaks_version": "8.24.3",
+    "directory_scan": "see retained actual log",
+    "staged_scan": "see retained actual log",
+    "commit_hook": "mandatory; actual result reported after commit, not predicted here"
+  },
+  "normalization": "ANSI removed; trailing whitespace/blank EOF removed; empty stays empty; raw and retained SHA-256 indexed",
+  "exclusions": [
+    "authenticated trace ZIPs",
+    "temporary databases",
+    "private TLS keys",
+    "live customer data"
+  ],
+  "artifacts": [
+    {
+      "source": "work/dependency-followup-runtime-before.json",
+      "file": "docs/audits/evidence/dependency-parser-runtime-before.json",
+      "raw_sha256": "7b451910db7f5967f937beaf452236368dcbb96dafa4552cc084c131133565d4",
+      "retained_sha256": "7b451910db7f5967f937beaf452236368dcbb96dafa4552cc084c131133565d4",
+      "bytes": 2921
+    },
+    {
+      "source": "work/dependency-followup-audit-full-before.json",
+      "file": "docs/audits/evidence/dependency-parser-full-npm-before.json",
+      "raw_sha256": "9e336428d82a82ece1b6db9e78b08d21cb078cdbd10eecd054506c771f377758",
+      "retained_sha256": "9e336428d82a82ece1b6db9e78b08d21cb078cdbd10eecd054506c771f377758",
+      "bytes": 6149
+    },
+    {
+      "source": "work/dependency-followup-runtime-after.json",
+      "file": "docs/audits/evidence/dependency-parser-runtime-candidate.json",
+      "raw_sha256": "c992a2ba6d0e19ac2be68be4ea05c7a338404dc00b5118476edff21b1f30fcaf",
+      "retained_sha256": "c992a2ba6d0e19ac2be68be4ea05c7a338404dc00b5118476edff21b1f30fcaf",
+      "bytes": 1180
+    },
+    {
+      "source": "work/dependency-followup-audit-full-after.json",
+      "file": "docs/audits/evidence/dependency-parser-full-npm-candidate.json",
+      "raw_sha256": "73e47ad95f226e569f9de9cf6c8ae830325aad0eb800ecb269397eac25058679",
+      "retained_sha256": "73e47ad95f226e569f9de9cf6c8ae830325aad0eb800ecb269397eac25058679",
+      "bytes": 5284
+    },
+    {
+      "source": "work/dependency-followup-runtime-final-original.json",
+      "file": "docs/audits/evidence/dependency-parser-runtime-final.json",
+      "raw_sha256": "0d3348e8276fdbd67a119ecf6550b9fb54fffbfa50761073dbb4fe1f0e4d6712",
+      "retained_sha256": "0d3348e8276fdbd67a119ecf6550b9fb54fffbfa50761073dbb4fe1f0e4d6712",
+      "bytes": 1180
+    },
+    {
+      "source": "work/dependency-followup-full-audit-final-original.json",
+      "file": "docs/audits/evidence/dependency-parser-full-npm-final.json",
+      "raw_sha256": "0d3348e8276fdbd67a119ecf6550b9fb54fffbfa50761073dbb4fe1f0e4d6712",
+      "retained_sha256": "0d3348e8276fdbd67a119ecf6550b9fb54fffbfa50761073dbb4fe1f0e4d6712",
+      "bytes": 1180
+    },
+    {
+      "source": "work/dependency-followup-full-audit-fresh-cache.json",
+      "file": "docs/audits/evidence/dependency-parser-post-withdrawal-fresh-cache.json",
+      "raw_sha256": "c992a2ba6d0e19ac2be68be4ea05c7a338404dc00b5118476edff21b1f30fcaf",
+      "retained_sha256": "c992a2ba6d0e19ac2be68be4ea05c7a338404dc00b5118476edff21b1f30fcaf",
+      "bytes": 1180
+    },
+    {
+      "source": "work/dependency-followup-withdrawal-advisory.json",
+      "file": "docs/audits/evidence/dependency-parser-withdrawal-advisory.json",
+      "raw_sha256": "8b38d34184b48da30a2684924f1a5bf56905f155cfef73ce8434beaa518920b6",
+      "retained_sha256": "8b38d34184b48da30a2684924f1a5bf56905f155cfef73ce8434beaa518920b6",
+      "bytes": 6513
+    },
+    {
+      "source": "work/dependency-followup-argparse-metadata.json",
+      "file": "docs/audits/evidence/dependency-parser-candidate-argparse-metadata.json",
+      "raw_sha256": "aa834851c5372911562d7c621a18e58bfe48c8809fbedf55705c47287669f473",
+      "retained_sha256": "aa834851c5372911562d7c621a18e58bfe48c8809fbedf55705c47287669f473",
+      "bytes": 249
+    },
+    {
+      "source": "work/dependency-followup-before-tests.txt",
+      "file": "docs/audits/evidence/dependency-parser-before-tests.txt",
+      "raw_sha256": "ace1cb8300803c92827283a3ccbadacb84d8ae3ef4bc94c26fc50f920df9328f",
+      "retained_sha256": "c9df9538ba45f2f125a5b54ada2d33d15e3f605d4892d32a29053a898f65d204",
+      "bytes": 1308
+    },
+    {
+      "source": "work/dependency-followup-before-sandbox-denied.txt",
+      "file": "docs/audits/evidence/dependency-parser-before-sandbox-denied.txt",
+      "raw_sha256": "0e2aad2c9779c27a91a196ead85d93e61843118de40f0f515a9f93f6c0a26f79",
+      "retained_sha256": "55a03963a3275c544b944e992ba384bb2d42321dd449b8c1740b163fa274fae3",
+      "bytes": 11664
+    },
+    {
+      "source": "work/dependency-followup-before-fixture-errors.txt",
+      "file": "docs/audits/evidence/dependency-parser-before-fixture-errors.txt",
+      "raw_sha256": "089d9d06be04b994a2ec81fa3782a71a503db6f4757ff29e3a805038762e4cc2",
+      "retained_sha256": "34199760e42c41b52b96c0b840e405a531cb3ce7d69ae82370f3f1b3fa33a72a",
+      "bytes": 3635
+    },
+    {
+      "source": "work/dependency-followup-before-fixture-wording.txt",
+      "file": "docs/audits/evidence/dependency-parser-before-fixture-wording.txt",
+      "raw_sha256": "26b5fa162a425714804ab8efaf7ecd0ea41496cbbd8fd0ffe0cc209e1877d27e",
+      "retained_sha256": "70a21c1be95c9b21d62eca317c530f1196e49b02c927400b65b1480146e21b4d",
+      "bytes": 3944
+    },
+    {
+      "source": "work/dependency-followup-focused-ambient-assertion.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-ambient-assertion.txt",
+      "raw_sha256": "31adfd8166583a9449f23075507510e97c80002925a7d13479aa0b93d975a0e3",
+      "retained_sha256": "ad4a24a74be4f36b3f415189d3562f731bfd87146b03975a1ce66a71c9797486",
+      "bytes": 1134
+    },
+    {
+      "source": "work/dependency-followup-ambient-module.json",
+      "file": "docs/audits/evidence/dependency-parser-candidate-ambient-module.json",
+      "raw_sha256": "b0adad41672f70f33fea4a525a1c4cbbbb708a556c43152fa814f860c7f30b3c",
+      "retained_sha256": "b0adad41672f70f33fea4a525a1c4cbbbb708a556c43152fa814f860c7f30b3c",
+      "bytes": 127
+    },
+    {
+      "source": "work/dependency-followup-formatter-all.json",
+      "file": "docs/audits/evidence/dependency-parser-candidate-development-formatter.json",
+      "raw_sha256": "ed47a42de137407f92af15d696c2daf820f530a022378beef9e9f74885a9513a",
+      "retained_sha256": "ed47a42de137407f92af15d696c2daf820f530a022378beef9e9f74885a9513a",
+      "bytes": 1606
+    },
+    {
+      "source": "work/dependency-followup-install-override-rejected.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-install-rejected.txt",
+      "raw_sha256": "ccddfdd9702601caedef95eb0baf80b0861f83713b19bc9d6d5d5f3c24b3d1a6",
+      "retained_sha256": "ccddfdd9702601caedef95eb0baf80b0861f83713b19bc9d6d5d5f3c24b3d1a6",
+      "bytes": 211
+    },
+    {
+      "source": "work/dependency-followup-install.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-install-stale.txt",
+      "raw_sha256": "762de9473822ab39f84febdc7ce8958859d0b5761ee3cfc83f4a6a06c863b762",
+      "retained_sha256": "762de9473822ab39f84febdc7ce8958859d0b5761ee3cfc83f4a6a06c863b762",
+      "bytes": 21
+    },
+    {
+      "source": "work/dependency-followup-update.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-update-stale.txt",
+      "raw_sha256": "a5c2ae78facbe8329a7d49b7a894a6b9f848239bb15531a6339a3a81279b6f12",
+      "retained_sha256": "a5c2ae78facbe8329a7d49b7a894a6b9f848239bb15531a6339a3a81279b6f12",
+      "bytes": 21
+    },
+    {
+      "source": "work/dependency-followup-lock-resolve.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-lock-stale.txt",
+      "raw_sha256": "a4744eebf9526c105956d52fab46f2db302712cc2488a94e3c0feb9ee3a1bc72",
+      "retained_sha256": "a4744eebf9526c105956d52fab46f2db302712cc2488a94e3c0feb9ee3a1bc72",
+      "bytes": 21
+    },
+    {
+      "source": "work/dependency-followup-targeted-resolve.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-lock-resolved.txt",
+      "raw_sha256": "56cb28cb44290219b70e01281f7497c987bb909beb9743e9346f87f9a048e212",
+      "retained_sha256": "56cb28cb44290219b70e01281f7497c987bb909beb9743e9346f87f9a048e212",
+      "bytes": 21
+    },
+    {
+      "source": "work/dependency-followup-stale-install-tree.json",
+      "file": "docs/audits/evidence/dependency-parser-candidate-invalid-tree.json",
+      "raw_sha256": "f3ebd0b3a1b656cef412e55cfc18abcdaaf06405c4a84c332d50850e8f1354f4",
+      "retained_sha256": "f3ebd0b3a1b656cef412e55cfc18abcdaaf06405c4a84c332d50850e8f1354f4",
+      "bytes": 1209
+    },
+    {
+      "source": "work/dependency-followup-stale-install-tree-stderr.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-invalid-tree-stderr.txt",
+      "raw_sha256": "c76b607708188837adae599e2104492acc7b69dacdff9c4428048ddbc4b323fe",
+      "retained_sha256": "c76b607708188837adae599e2104492acc7b69dacdff9c4428048ddbc4b323fe",
+      "bytes": 258
+    },
+    {
+      "source": "work/dependency-followup-ci.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-ci.txt",
+      "raw_sha256": "ec4a78ee1c7f6285a77ed3139c967b8a31cdacc1c11f538fd8812e82bc53269b",
+      "retained_sha256": "ec4a78ee1c7f6285a77ed3139c967b8a31cdacc1c11f538fd8812e82bc53269b",
+      "bytes": 759
+    },
+    {
+      "source": "work/dependency-followup-ci-before.txt",
+      "file": "docs/audits/evidence/dependency-parser-clean-baseline-ci.txt",
+      "raw_sha256": "465505c6c46c19e6115f3c6910b756f1f1b3f9e1aeb2c367b3c4c6e086126e8d",
+      "retained_sha256": "465505c6c46c19e6115f3c6910b756f1f1b3f9e1aeb2c367b3c4c6e086126e8d",
+      "bytes": 26
+    },
+    {
+      "source": "work/dependency-followup-ci-after.txt",
+      "file": "docs/audits/evidence/dependency-parser-clean-candidate-ci.txt",
+      "raw_sha256": "dd5468d4d38fd2969dcc27c662f540fd666bbea8984970e91263743253aac898",
+      "retained_sha256": "dd5468d4d38fd2969dcc27c662f540fd666bbea8984970e91263743253aac898",
+      "bytes": 26
+    },
+    {
+      "source": "work/dependency-followup-clean-results.json",
+      "file": "docs/audits/evidence/dependency-parser-clean-results.json",
+      "raw_sha256": "09f5812e17c74adc806112de2cb495e7a4bcbe1ed469e7f4a7bfd16e14aac437",
+      "retained_sha256": "09f5812e17c74adc806112de2cb495e7a4bcbe1ed469e7f4a7bfd16e14aac437",
+      "bytes": 476
+    },
+    {
+      "source": "work/dependency-followup-probe-before.json",
+      "file": "docs/audits/evidence/dependency-parser-clean-baseline-probe.json",
+      "raw_sha256": "e6610efcad5cf16fc4faaccd053b76911e3f772eaaea221104a2f5316d20119e",
+      "retained_sha256": "e6610efcad5cf16fc4faaccd053b76911e3f772eaaea221104a2f5316d20119e",
+      "bytes": 442
+    },
+    {
+      "source": "work/dependency-followup-probe-after.json",
+      "file": "docs/audits/evidence/dependency-parser-clean-candidate-probe.json",
+      "raw_sha256": "f82915fb2cf1b87a41724fc6e9ec49dd6463dd2ffcc6335a3c9a057bd1c23811",
+      "retained_sha256": "f82915fb2cf1b87a41724fc6e9ec49dd6463dd2ffcc6335a3c9a057bd1c23811",
+      "bytes": 186
+    },
+    {
+      "source": "work/dependency-followup-tree-before.json",
+      "file": "docs/audits/evidence/dependency-parser-tree-before.json",
+      "raw_sha256": "b77e83c51bf1fa8658a5dde8554699c8c955676716bcaef0647f9976fa357d42",
+      "retained_sha256": "b77e83c51bf1fa8658a5dde8554699c8c955676716bcaef0647f9976fa357d42",
+      "bytes": 832
+    },
+    {
+      "source": "work/dependency-followup-tree-after.json",
+      "file": "docs/audits/evidence/dependency-parser-tree-candidate.json",
+      "raw_sha256": "b3148a8da54a548869943dae7b69f7f119274adbe6a291ac133b085e38963448",
+      "retained_sha256": "b3148a8da54a548869943dae7b69f7f119274adbe6a291ac133b085e38963448",
+      "bytes": 588
+    },
+    {
+      "source": "work/dependency-followup-tree-final-original.json",
+      "file": "docs/audits/evidence/dependency-parser-tree-final.json",
+      "raw_sha256": "b77e83c51bf1fa8658a5dde8554699c8c955676716bcaef0647f9976fa357d42",
+      "retained_sha256": "b77e83c51bf1fa8658a5dde8554699c8c955676716bcaef0647f9976fa357d42",
+      "bytes": 832
+    },
+    {
+      "source": "work/dependency-followup-lock-delta.json",
+      "file": "docs/audits/evidence/dependency-parser-candidate-lock-delta.json",
+      "raw_sha256": "22034fe91d80b2bfc849d7f3e862f66bbfaef9d3829bc2b031877e430eb54d83",
+      "retained_sha256": "22034fe91d80b2bfc849d7f3e862f66bbfaef9d3829bc2b031877e430eb54d83",
+      "bytes": 343
+    },
+    {
+      "source": "work/dependency-followup-candidate-dependencies.json",
+      "file": "docs/audits/evidence/dependency-parser-discarded-candidate-patch.json",
+      "raw_sha256": "c0542f8d5b0a34f20138bdc71c6ea392fee3b979630b4dfe711bec88299eddb5",
+      "retained_sha256": "c0542f8d5b0a34f20138bdc71c6ea392fee3b979630b4dfe711bec88299eddb5",
+      "bytes": 2453
+    },
+    {
+      "source": "work/dependency-followup-candidate.test.ts",
+      "file": "docs/audits/evidence/dependency-parser-discarded-candidate.test.ts",
+      "raw_sha256": "60f2003f5362e52423ccc02e9db20221d19504dfabec90f53c2ecb98f40d4bea",
+      "retained_sha256": "60f2003f5362e52423ccc02e9db20221d19504dfabec90f53c2ecb98f40d4bea",
+      "bytes": 5930
+    },
+    {
+      "source": "work/dependency-followup-install-probe.mjs",
+      "file": "docs/audits/evidence/dependency-parser-clean-install-probe.mjs",
+      "raw_sha256": "2d88df0418fc7fb7b0ffaac311904e712baf9d2be0e072c5703d2559f0e1d818",
+      "retained_sha256": "2d88df0418fc7fb7b0ffaac311904e712baf9d2be0e072c5703d2559f0e1d818",
+      "bytes": 2189
+    },
+    {
+      "source": "work/dependency-followup-clean-installs.py",
+      "file": "docs/audits/evidence/dependency-parser-clean-installs.py",
+      "raw_sha256": "faf7c3bba6b1acdf6764a11f79057858407a87d1ced45d4e884752b353298839",
+      "retained_sha256": "faf7c3bba6b1acdf6764a11f79057858407a87d1ced45d4e884752b353298839",
+      "bytes": 1998
+    },
+    {
+      "source": "work/dependency-followup-clean.docx",
+      "file": "docs/audits/evidence/dependency-parser-clean-fixture.docx",
+      "raw_sha256": "98e3513a4816465e8841213c55959995c5d024e6541e189b36073e76b378fd8b",
+      "retained_sha256": "98e3513a4816465e8841213c55959995c5d024e6541e189b36073e76b378fd8b",
+      "bytes": 8555
+    },
+    {
+      "source": "work/dependency-followup-ci-final-original.txt",
+      "file": "docs/audits/evidence/dependency-parser-final-original-ci.txt",
+      "raw_sha256": "a7ecfb8b587895a53d2a5c0fccee3149cfda971d95fe4ac766118dd893611105",
+      "retained_sha256": "a7ecfb8b587895a53d2a5c0fccee3149cfda971d95fe4ac766118dd893611105",
+      "bytes": 759
+    },
+    {
+      "source": "work/dependency-followup-focused-candidate.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-focused.txt",
+      "raw_sha256": "c6022840f29c3ce856e7d5a76a8f9fdd74d73ba2db6f638ae76eff13cdfa15a9",
+      "retained_sha256": "e7dec785632fc68499e2c80fa48c2a6799e0f66297de9e7d363ba0e9b6165d87",
+      "bytes": 227
+    },
+    {
+      "source": "work/dependency-followup-playwright-candidate.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-playwright.txt",
+      "raw_sha256": "acc41190b89273af97a950828146dbd25a5207846f24c5d8d5d28d71802fffdb",
+      "retained_sha256": "acc41190b89273af97a950828146dbd25a5207846f24c5d8d5d28d71802fffdb",
+      "bytes": 11178
+    },
+    {
+      "source": "work/dependency-followup-playwright-candidate.json",
+      "file": "docs/audits/evidence/dependency-parser-candidate-playwright.json",
+      "raw_sha256": "98861ce05881e766a2b078f5888f4878d88cdc3ed06b6d523201cbe6b7acec14",
+      "retained_sha256": "b2aeafcb63a1e03bf230134ab668e0ab836c6248c58630bdba77184de862ce52",
+      "bytes": 84279
+    },
+    {
+      "source": "work/dependency-followup-editor-candidate.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-editor.txt",
+      "raw_sha256": "3449c477faee37993f5229067922b811b55bdef02008b2c4f5c687057a63348a",
+      "retained_sha256": "3449c477faee37993f5229067922b811b55bdef02008b2c4f5c687057a63348a",
+      "bytes": 6748
+    },
+    {
+      "source": "work/dependency-followup-editor-candidate.json",
+      "file": "docs/audits/evidence/dependency-parser-candidate-editor.json",
+      "raw_sha256": "9e8fdd038f11028c4dcd8c311aef52960f36ec10da65729a8aefb2d27d2dabd1",
+      "retained_sha256": "188d3b0ee5d1ecd1d69f147cde5a136d4bbf65d303f816821d7f80715cbff87c",
+      "bytes": 409219
+    },
+    {
+      "source": "work/dependency-followup-full-candidate.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-full.txt",
+      "raw_sha256": "46b3083172089b6f9cdaf87815f73787770a3cf22804aa731061575a644cc1c4",
+      "retained_sha256": "46b3083172089b6f9cdaf87815f73787770a3cf22804aa731061575a644cc1c4",
+      "bytes": 841
+    },
+    {
+      "source": "work/dependency-followup-full-environment-interrupted.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-full-interrupted.txt",
+      "raw_sha256": "09a17ba7db881976fed5ad795986a27adc25d1e586e3922d04513f040e1ef50b",
+      "retained_sha256": "9e9824ea08a5f8443b050154d95095d893c8d6dc0f52f93b46189f2ad130ca87",
+      "bytes": 120
+    },
+    {
+      "source": "work/dependency-followup-source-freeze-candidate.json",
+      "file": "docs/audits/evidence/dependency-parser-candidate-source-freeze.json",
+      "raw_sha256": "b8bcca2e0a3d8d5cc4176c3e433c0f0e9215f54577811312adabbe7fb6e4340c",
+      "retained_sha256": "b8bcca2e0a3d8d5cc4176c3e433c0f0e9215f54577811312adabbe7fb6e4340c",
+      "bytes": 1317
+    },
+    {
+      "source": "work/dependency-followup-source-freeze-final.json",
+      "file": "docs/audits/evidence/dependency-parser-source-freeze.json",
+      "raw_sha256": "add459d30305234a4718ea3bf95edfbe2ba3df82c7863ab8ff722357d6f275b6",
+      "retained_sha256": "add459d30305234a4718ea3bf95edfbe2ba3df82c7863ab8ff722357d6f275b6",
+      "bytes": 1254
+    },
+    {
+      "source": "work/dependency-followup-focused-final.txt",
+      "file": "docs/audits/evidence/dependency-parser-focused.txt",
+      "raw_sha256": "69a4f4c1eaf9da49b9a6140f96c780ce683cc1a80d93e2937aacda901e2c5c53",
+      "retained_sha256": "69a4f4c1eaf9da49b9a6140f96c780ce683cc1a80d93e2937aacda901e2c5c53",
+      "bytes": 244
+    },
+    {
+      "source": "work/dependency-followup-playwright-final.txt",
+      "file": "docs/audits/evidence/dependency-parser-playwright.txt",
+      "raw_sha256": "4130c1caab1c6f7ab0c32204eae23192fa2206e9d9a3e2b6148a79312e09ae85",
+      "retained_sha256": "4130c1caab1c6f7ab0c32204eae23192fa2206e9d9a3e2b6148a79312e09ae85",
+      "bytes": 11186
+    },
+    {
+      "source": "work/dependency-followup-playwright-final.json",
+      "file": "docs/audits/evidence/dependency-parser-playwright.json",
+      "raw_sha256": "68f9294578f5a0f4235ae09438286d25af5564c8199fb89f231733bc6ec0cd83",
+      "retained_sha256": "5a05b307ffbeca7a4734a6ba0a8022c81ef309ec043d96127f4894d21824e8f4",
+      "bytes": 84277
+    },
+    {
+      "source": "work/dependency-followup-typecheck-final.txt",
+      "file": "docs/audits/evidence/dependency-parser-typecheck.txt",
+      "raw_sha256": "c4d2b2ce3b664230102a75fede289074f1ed9f438ef07777ed36604efbba40ac",
+      "retained_sha256": "c4d2b2ce3b664230102a75fede289074f1ed9f438ef07777ed36604efbba40ac",
+      "bytes": 56
+    },
+    {
+      "source": "work/dependency-followup-full-final-original.txt",
+      "file": "docs/audits/evidence/dependency-parser-full.txt",
+      "raw_sha256": "b7c38b47226373e3163fb594b5aea9806afbc735de6f5125e378c8e2e88fd7ad",
+      "retained_sha256": "b7c38b47226373e3163fb594b5aea9806afbc735de6f5125e378c8e2e88fd7ad",
+      "bytes": 651
+    },
+    {
+      "source": "work/dependency-followup-responsive.mjs",
+      "file": "docs/audits/evidence/dependency-parser-candidate-responsive.mjs",
+      "raw_sha256": "2dcf0ce904e416e73fbeaaa8c4e41799d004d5c653abf1b3b9bc7076ad980a58",
+      "retained_sha256": "2dcf0ce904e416e73fbeaaa8c4e41799d004d5c653abf1b3b9bc7076ad980a58",
+      "bytes": 4037
+    },
+    {
+      "source": "work/dependency-followup-responsive.txt",
+      "file": "docs/audits/evidence/dependency-parser-candidate-responsive.txt",
+      "raw_sha256": "6b30c26692ebfb214fea563bb6918fcf056540dd694d7f4dfa2b663a7f73fcb8",
+      "retained_sha256": "6b30c26692ebfb214fea563bb6918fcf056540dd694d7f4dfa2b663a7f73fcb8",
+      "bytes": 66
+    },
+    {
+      "source": "work/dependency-followup-light-sheet.png",
+      "file": "docs/audits/evidence/dependency-parser-candidate-light-sheet.png",
+      "raw_sha256": "f2b35f6bf77a926c2737bc28b3c4467a2c7f5c8dc480c0f295742b20f7f688cb",
+      "retained_sha256": "f2b35f6bf77a926c2737bc28b3c4467a2c7f5c8dc480c0f295742b20f7f688cb",
+      "bytes": 166680
+    },
+    {
+      "source": "work/dependency-followup-dark-sheet.png",
+      "file": "docs/audits/evidence/dependency-parser-candidate-dark-sheet.png",
+      "raw_sha256": "37c50e32b48d2c08027d1c4ff6f05386717c55407a887e0d07661b33dbc360dc",
+      "retained_sha256": "37c50e32b48d2c08027d1c4ff6f05386717c55407a887e0d07661b33dbc360dc",
+      "bytes": 187923
+    },
+    {
+      "source": "work/dependency-followup-gitleaks-directory.txt",
+      "file": "docs/audits/evidence/dependency-parser-gitleaks-directory.txt",
+      "raw_sha256": "11263ebc3bf8994b4379bcef4fdd36ac77ce42ba3808eb3be2842604ae762cfb",
+      "retained_sha256": "11263ebc3bf8994b4379bcef4fdd36ac77ce42ba3808eb3be2842604ae762cfb",
+      "bytes": 96
+    },
+    {
+      "source": "work/dependency-followup-gitleaks-staged.txt",
+      "file": "docs/audits/evidence/dependency-parser-gitleaks-staged.txt",
+      "raw_sha256": "2b599921a053b3b389ba87f789b3ac64448494023876522402989b1d516d69e6",
+      "retained_sha256": "2b599921a053b3b389ba87f789b3ac64448494023876522402989b1d516d69e6",
+      "bytes": 126
+    },
+    {
+      "source": "work/dependency-followup-responsive/results.json",
+      "file": "docs/audits/evidence/dependency-parser-candidate-responsive.json",
+      "raw_sha256": "034be1ec920068a5c36075c0c4280ab89f30701f515fb4ff748927994af05d70",
+      "retained_sha256": "034be1ec920068a5c36075c0c4280ab89f30701f515fb4ff748927994af05d70",
+      "bytes": 907
+    },
+    {
+      "source": "work/dependency-followup-responsive/editor-light-1440.png",
+      "file": "docs/audits/evidence/dependency-parser-candidate-editor-light-1440.png",
+      "raw_sha256": "453eedd01e518f76b466d2c15e712fbc5dd6957d95340438f52aaf389834110e",
+      "retained_sha256": "453eedd01e518f76b466d2c15e712fbc5dd6957d95340438f52aaf389834110e",
+      "bytes": 80763
+    },
+    {
+      "source": "work/dependency-followup-responsive/editor-light-1024.png",
+      "file": "docs/audits/evidence/dependency-parser-candidate-editor-light-1024.png",
+      "raw_sha256": "ada0f8b49f779ce0e4eb80f43272cffb20fe6f6be8183b94c5d361b590e67f17",
+      "retained_sha256": "ada0f8b49f779ce0e4eb80f43272cffb20fe6f6be8183b94c5d361b590e67f17",
+      "bytes": 76163
+    },
+    {
+      "source": "work/dependency-followup-responsive/editor-dark-1440.png",
+      "file": "docs/audits/evidence/dependency-parser-candidate-editor-dark-1440.png",
+      "raw_sha256": "2267d7e77057a81b2583074630cb12a2662d89b2ee608ce0eea2d0f56d58bdf1",
+      "retained_sha256": "2267d7e77057a81b2583074630cb12a2662d89b2ee608ce0eea2d0f56d58bdf1",
+      "bytes": 81328
+    },
+    {
+      "source": "work/dependency-followup-responsive/editor-dark-390.png",
+      "file": "docs/audits/evidence/dependency-parser-candidate-editor-dark-390.png",
+      "raw_sha256": "ecb1464d284515a854325ade24a9ff0ac52a9c025d52d32b315f361791512067",
+      "retained_sha256": "ecb1464d284515a854325ade24a9ff0ac52a9c025d52d32b315f361791512067",
+      "bytes": 38705
+    },
+    {
+      "source": "work/dependency-followup-responsive/editor-light-768.png",
+      "file": "docs/audits/evidence/dependency-parser-candidate-editor-light-768.png",
+      "raw_sha256": "0ce9d26a3766660e9b6c7624e7f8af4c155762a5dfd45c150567602faf604ee7",
+      "retained_sha256": "0ce9d26a3766660e9b6c7624e7f8af4c155762a5dfd45c150567602faf604ee7",
+      "bytes": 69824
+    },
+    {
+      "source": "work/dependency-followup-responsive/editor-dark-1024.png",
+      "file": "docs/audits/evidence/dependency-parser-candidate-editor-dark-1024.png",
+      "raw_sha256": "ed2786bec375d704515a061d817a898e9c1a7e6c4a512a01c4c38b455015b79a",
+      "retained_sha256": "ed2786bec375d704515a061d817a898e9c1a7e6c4a512a01c4c38b455015b79a",
+      "bytes": 76799
+    },
+    {
+      "source": "work/dependency-followup-responsive/editor-dark-768.png",
+      "file": "docs/audits/evidence/dependency-parser-candidate-editor-dark-768.png",
+      "raw_sha256": "986fd2f9a777e98daf7623f03364a6417102d428845689f158e2f056ed2420c5",
+      "retained_sha256": "986fd2f9a777e98daf7623f03364a6417102d428845689f158e2f056ed2420c5",
+      "bytes": 70640
+    },
+    {
+      "source": "work/dependency-followup-responsive/editor-light-390.png",
+      "file": "docs/audits/evidence/dependency-parser-candidate-editor-light-390.png",
+      "raw_sha256": "e8a32124b23d68bd9645f7e6703905df89e8b27fb13ccffffd24eb91a58e3ff7",
+      "retained_sha256": "e8a32124b23d68bd9645f7e6703905df89e8b27fb13ccffffd24eb91a58e3ff7",
+      "bytes": 37864
+    },
+    {
+      "source": "work/playwright-artifacts/document-conversion-real-W-19606--apply-and-remains-undoable/word-reviewed-before-apply.png",
+      "file": "docs/audits/evidence/dependency-parser-word-reviewed-before-apply.png",
+      "raw_sha256": "a77808846d0f1aa5f146e65e95731e0993b51ba29cc5cdf1f02be746d884dfc1",
+      "retained_sha256": "a77808846d0f1aa5f146e65e95731e0993b51ba29cc5cdf1f02be746d884dfc1",
+      "bytes": 120292
+    }
+  ]
+}

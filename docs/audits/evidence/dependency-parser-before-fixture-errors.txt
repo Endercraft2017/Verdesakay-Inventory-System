@@ -1,0 +1,84 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+ ❯ tests/mammoth-dependency.test.ts (10 tests | 5 failed) 1221ms
+     × does not install the advisory-affected formatter on the Mammoth parser path 5ms
+     × honors both style-map and output-format options 264ms
+     × rejects 'missing document' with a usage error rather than converting 96ms
+     × rejects 'invalid format' with a usage error rather than converting 103ms
+     × rejects 'mutually exclusive destinations' with a usage error rather than converting 142ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth dependency security contract > does not install the advisory-affected formatter on the Mammoth parser path
+AssertionError: expected { 'sprintf-js': '~1.0.2' } to not have property "sprintf-js"
+
+- Expected:
+undefined
+
++ Received:
+"~1.0.2"
+
+ ❯ tests/mammoth-dependency.test.ts:46:43
+     44|   it('does not install the advisory-affected formatter on the Mammoth …
+     45|     const parser = mammothRequire('argparse/package.json');
+     46|     expect(parser.dependencies || {}).not.toHaveProperty('sprintf-js');
+       |                                           ^
+     47|     const parserRequire = createRequire(mammothRequire.resolve('argpar…
+     48|     expect(() => parserRequire.resolve('sprintf-js')).toThrow();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > honors both style-map and output-format options
+AssertionError: expected '# Compatibility heading\n\nUnicode ca…' to contain '**bold text**'
+
+- Expected
++ Received
+
+- **bold text**
++ # Compatibility heading
++
++ Unicode café 🌱 & __bold text__
++
++ ![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO\+a3ioAAAAASUVORK5CYII=)
++
++
+
+ ❯ tests/mammoth-dependency.test.ts:84:29
+     82|     expect(markdown.status).toBe(0);
+     83|     expect(markdown.stdout).toContain('# Compatibility heading');
+     84|     expect(markdown.stdout).toContain('**bold text**');
+       |                             ^
+     85|   });
+     86|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > rejects 'missing document' with a usage error rather than converting
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > rejects 'invalid format' with a usage error rather than converting
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > rejects 'mutually exclusive destinations' with a usage error rather than converting
+AssertionError: expected 'usage: mammoth [-h] [--output-dir OUT…' to be '' // Object.is equality
+
+- Expected
++ Received
+
++ usage: mammoth [-h] [--output-dir OUTPUT_DIR]
++                [--output-format {html,markdown}] [--style-map STYLE_MAP]
++                docx-path [output-path]
++
+
+ ❯ tests/mammoth-dependency.test.ts:104:27
+    102|     const result = run(args());
+    103|     expect(result.status).toBe(2);
+    104|     expect(result.stdout).toBe('');
+       |                           ^
+    105|     expect(result.stderr).toMatch(expected);
+    106|     expect(fs.existsSync(path.join(dir, 'conflicting.html'))).toBe(fal…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 5 passed (10)
+   Start at  07:35:06
+   Duration  1.49s (transform 32ms, setup 28ms, import 91ms, tests 1.22s, environment 0ms)

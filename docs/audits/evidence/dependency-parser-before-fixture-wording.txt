@@ -1,0 +1,95 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+ ❯ tests/mammoth-dependency.test.ts (10 tests | 4 failed) 1156ms
+     × does not install the advisory-affected formatter on the Mammoth parser path 6ms
+     × rejects 'missing document' with a usage error rather than converting 93ms
+     × rejects 'invalid format' with a usage error rather than converting 103ms
+     × rejects 'mutually exclusive destinations' with a usage error rather than converting 98ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth dependency security contract > does not install the advisory-affected formatter on the Mammoth parser path
+AssertionError: expected { 'sprintf-js': '~1.0.2' } to not have property "sprintf-js"
+
+- Expected:
+undefined
+
++ Received:
+"~1.0.2"
+
+ ❯ tests/mammoth-dependency.test.ts:46:43
+     44|   it('does not install the advisory-affected formatter on the Mammoth …
+     45|     const parser = mammothRequire('argparse/package.json');
+     46|     expect(parser.dependencies || {}).not.toHaveProperty('sprintf-js');
+       |                                           ^
+     47|     const parserRequire = createRequire(mammothRequire.resolve('argpar…
+     48|     expect(() => parserRequire.resolve('sprintf-js')).toThrow();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > rejects 'missing document' with a usage error rather than converting
+AssertionError: expected 'mammoth: error: too few arguments\n' to match /required/
+
+- Expected:
+/required/
+
++ Received:
+"mammoth: error: too few arguments
+"
+
+ ❯ tests/mammoth-dependency.test.ts:105:27
+    103|     expect(result.status).toBe(2);
+    104|     expect(result.stdout).not.toContain('Compatibility heading');
+    105|     expect(result.stderr).toMatch(expected);
+       |                           ^
+    106|     expect(fs.existsSync(path.join(dir, 'conflicting.html'))).toBe(fal…
+    107|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > rejects 'invalid format' with a usage error rather than converting
+AssertionError: expected 'mammoth: error: argument "--output-fo…' to match /invalid choice/
+
+- Expected:
+/invalid choice/
+
++ Received:
+"mammoth: error: argument \"--output-format\": Invalid choice: pdf (choose from [html, markdown])
+"
+
+ ❯ tests/mammoth-dependency.test.ts:105:27
+    103|     expect(result.status).toBe(2);
+    104|     expect(result.stdout).not.toContain('Compatibility heading');
+    105|     expect(result.stderr).toMatch(expected);
+       |                           ^
+    106|     expect(fs.existsSync(path.join(dir, 'conflicting.html'))).toBe(fal…
+    107|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > rejects 'mutually exclusive destinations' with a usage error rather than converting
+AssertionError: expected 'mammoth: error: argument "--output-di…' to match /not allowed/
+
+- Expected:
+/not allowed/
+
++ Received:
+"mammoth: error: argument \"--output-dir\": Not allowed with argument \"output-path\".
+"
+
+ ❯ tests/mammoth-dependency.test.ts:105:27
+    103|     expect(result.status).toBe(2);
+    104|     expect(result.stdout).not.toContain('Compatibility heading');
+    105|     expect(result.stderr).toMatch(expected);
+       |                           ^
+    106|     expect(fs.existsSync(path.join(dir, 'conflicting.html'))).toBe(fal…
+    107|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 6 passed (10)
+   Start at  07:35:38
+   Duration  1.39s (transform 32ms, setup 27ms, import 94ms, tests 1.16s, environment 0ms)

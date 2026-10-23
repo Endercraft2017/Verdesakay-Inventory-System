@@ -1,0 +1,148 @@
+{
+  "ghsa_id": "GHSA-hp3w-g68c-fv3c",
+  "cve_id": "CVE-2026-97058",
+  "url": "https://api.github.com/advisories/GHSA-hp3w-g68c-fv3c",
+  "html_url": "https://github.com/advisories/GHSA-hp3w-g68c-fv3c",
+  "summary": "Withdrawn Advisory: sprintf-js vulnerable to denial of service through unbounded precision specifiers",
+  "description": "### Withdrawn Advisory\nThis advisory has been withdrawn because it is the responsibility of an application to handle exceptions appropriately. This link is maintained to preserve external references.\n\n### Original Description\nsprintf-js through 1.1.3 passes unbounded precision specifiers to toFixed, toExponential, and toPrecision methods without validation, causing uncaught RangeError exceptions. Attackers who control format strings can inject precision values exceeding ECMAScript limits to abort calling operations with minimal payload.",
+  "type": "reviewed",
+  "severity": "medium",
+  "repository_advisory_url": null,
+  "source_code_location": "https://github.com/alexei/sprintf.js",
+  "identifiers": [
+    {
+      "value": "GHSA-hp3w-g68c-fv3c",
+      "type": "GHSA"
+    },
+    {
+      "value": "CVE-2026-97058",
+      "type": "CVE"
+    }
+  ],
+  "references": [
+    "https://nvd.nist.gov/vuln/detail/CVE-2026-97058",
+    "https://github.com/alexei/sprintf.js/issues/237",
+    "https://github.com/alexei/sprintf.js/blob/3a0d8c26d291b5bd9f1974877ecc50739921d6f5/src/sprintf.js#L17",
+    "https://github.com/alexei/sprintf.js/blob/3a0d8c26d291b5bd9f1974877ecc50739921d6f5/src/sprintf.js#L84-L90",
+    "https://www.vulncheck.com/advisories/sprintf-js-through-1.1.3-denial-of-service-via-unbounded-precision",
+    "https://github.com/alexei/sprintf.js/issues/237#issuecomment-6159075240",
+    "https://github.com/advisories/GHSA-hp3w-g68c-fv3c"
+  ],
+  "published_at": "2026-09-24T15:31:31Z",
+  "updated_at": "2026-10-22T19:21:09Z",
+  "github_reviewed_at": "2026-10-05T23:47:34Z",
+  "nvd_published_at": "2026-09-24T14:18:21Z",
+  "withdrawn_at": "2026-10-22T19:21:04Z",
+  "vulnerabilities": [
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "sprintf-js"
+      },
+      "vulnerable_version_range": "<= 1.1.3",
+      "first_patched_version": null,
+      "vulnerable_functions": [
+
+      ]
+    }
+  ],
+  "cvss_severities": {
+    "cvss_v3": {
+      "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+      "score": 5.3
+    },
+    "cvss_v4": {
+      "vector_string": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:L/SC:N/SI:N/SA:N",
+      "score": 6.9
+    }
+  },
+  "cwes": [
+    {
+      "cwe_id": "CWE-1284",
+      "name": "Improper Validation of Specified Quantity in Input"
+    }
+  ],
+  "credits": [
+    {
+      "user": {
+        "login": "rkunjappan",
+        "id": 210441229,
+        "node_id": "U_kgDODIsUDQ",
+        "avatar_url": "https://avatars.githubusercontent.com/u/210441229?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/rkunjappan",
+        "html_url": "https://github.com/rkunjappan",
+        "followers_url": "https://api.github.com/users/rkunjappan/followers",
+        "following_url": "https://api.github.com/users/rkunjappan/following{/other_user}",
+        "gists_url": "https://api.github.com/users/rkunjappan/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/rkunjappan/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/rkunjappan/subscriptions",
+        "organizations_url": "https://api.github.com/users/rkunjappan/orgs",
+        "repos_url": "https://api.github.com/users/rkunjappan/repos",
+        "events_url": "https://api.github.com/users/rkunjappan/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/rkunjappan/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "type": "analyst"
+    },
+    {
+      "user": {
+        "login": "jdesulme",
+        "id": 1392291,
+        "node_id": "MDQ6VXNlcjEzOTIyOTE=",
+        "avatar_url": "https://avatars.githubusercontent.com/u/1392291?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/jdesulme",
+        "html_url": "https://github.com/jdesulme",
+        "followers_url": "https://api.github.com/users/jdesulme/followers",
+        "following_url": "https://api.github.com/users/jdesulme/following{/other_user}",
+        "gists_url": "https://api.github.com/users/jdesulme/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/jdesulme/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/jdesulme/subscriptions",
+        "organizations_url": "https://api.github.com/users/jdesulme/orgs",
+        "repos_url": "https://api.github.com/users/jdesulme/repos",
+        "events_url": "https://api.github.com/users/jdesulme/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/jdesulme/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "type": "analyst"
+    },
+    {
+      "user": {
+        "login": "BlackishGreen33",
+        "id": 103036558,
+        "node_id": "U_kgDOBiQ2jg",
+        "avatar_url": "https://avatars.githubusercontent.com/u/103036558?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/BlackishGreen33",
+        "html_url": "https://github.com/BlackishGreen33",
+        "followers_url": "https://api.github.com/users/BlackishGreen33/followers",
+        "following_url": "https://api.github.com/users/BlackishGreen33/following{/other_user}",
+        "gists_url": "https://api.github.com/users/BlackishGreen33/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/BlackishGreen33/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/BlackishGreen33/subscriptions",
+        "organizations_url": "https://api.github.com/users/BlackishGreen33/orgs",
+        "repos_url": "https://api.github.com/users/BlackishGreen33/repos",
+        "events_url": "https://api.github.com/users/BlackishGreen33/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/BlackishGreen33/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "type": "analyst"
+    }
+  ],
+  "comments": 0,
+  "cvss": {
+    "vector_string": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L",
+    "score": 5.3
+  },
+  "epss": {
+    "percentage": 0.00398,
+    "percentile": 0.32038
+  }
+}

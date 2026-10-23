@@ -1,6 +1,27 @@
 # Engineering handoff and release hold
 
-Latest follow-up: 22 October 2026 — all staff payroll print/summary/Excel paths reload saved
+Latest dependency follow-up: 23 October 2026 — the formatter advisory was withdrawn
+upstream. Fresh runtime and explicit full-root npm scans return one high/zero moderate;
+the reduction is not credited to a delivered package fix. An experimentally verified
+parser override was dropped after its rationale changed. Manifests and application
+source remain unchanged; a real Word-import recovery/preview/Apply/undo browser test
+is retained. node-forge remains an open high finding with no offered upstream fix.
+See [decision/research](dependency-parser-contract.md), [procedure](../operations/dependency-parser-upgrade.md)
+and dated validation. Candidate evidence is separated from final restored-graph results.
+No risk exception or complete release approval is implied.
+
+Payslip email follow-up: 22 October 2026 — exact tenant/actor/session/recipient/saved-content
+review now precedes durable confirmation and a separately claimed cloud send. Source/permission/
+session changes invalidate stale approval. Accepted, not accepted and uncertain SMTP outcomes
+are distinct; uncertain work is not automatically resent. Actual TLS capture, concurrent
+requests/workers, process termination, offline correction and sanitized node exports are
+covered. See [contract](payroll-email-contract.md), [verification](evidence/payroll-email-verification.json)
+and [recovery](../operations/payroll-email-release.md). This supersedes the older statements
+below that durable reviewed email remains unimplemented. Real-provider acceptance/mailbox
+delivery, hosting, restore and mixed-build/device rollout still need separate external
+acceptance. Local SMTP tests do not verify the real provider. Whole controls remain open.
+
+Previous follow-up: 22 October 2026 — all staff payroll print/summary/Excel paths reload saved
 payroll with current-source holds and bounded batches. Print rechecks saved preview state;
 stale/held frames clear and Print remains disabled. Draft copies have visible labels; unsaved
 deduction edits must be saved. Account/company/view guards reject late output. See

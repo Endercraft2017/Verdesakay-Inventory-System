@@ -1,0 +1,20 @@
+[
+  {
+    "path": "",
+    "before": "1.0.0",
+    "after": "1.0.0"
+  },
+  {
+    "path": "node_modules/argparse",
+    "before": "2.0.1",
+    "after": "2.0.1"
+  },
+  {
+    "path": "node_modules/mammoth/node_modules/argparse",
+    "before": "1.0.10"
+  },
+  {
+    "path": "node_modules/mammoth/node_modules/sprintf-js",
+    "before": "1.0.3"
+  }
+]

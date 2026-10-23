@@ -1,0 +1,289 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+ ❯ tests/mammoth-dependency.test.ts (10 tests | 9 failed) 1000ms
+     × does not install the advisory-affected formatter on the Mammoth parser path 6ms
+     × offers help without requiring a document 106ms
+     × converts a positional path with spaces to UTF-8 HTML on stdout 127ms
+     × writes a positional output file instead of conversion text on stdout 126ms
+     × honors both style-map and output-format options 134ms
+     × writes separately referenced image bytes to the requested output directory 127ms
+     × rejects 'missing document' with a usage error rather than converting 86ms
+     × rejects 'invalid format' with a usage error rather than converting 99ms
+     × rejects 'mutually exclusive destinations' with a usage error rather than converting 99ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth dependency security contract > does not install the advisory-affected formatter on the Mammoth parser path
+AssertionError: expected { 'sprintf-js': '~1.0.2' } to not have property "sprintf-js"
+
+- Expected:
+undefined
+
++ Received:
+"~1.0.2"
+
+ ❯ tests/mammoth-dependency.test.ts:46:43
+     44|   it('does not install the advisory-affected formatter on the Mammoth …
+     45|     const parser = mammothRequire('argparse/package.json');
+     46|     expect(parser.dependencies || {}).not.toHaveProperty('sprintf-js');
+       |                                           ^
+     47|     const parserRequire = createRequire(mammothRequire.resolve('argpar…
+     48|     expect(() => parserRequire.resolve('sprintf-js')).toThrow();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > offers help without requiring a document
+AssertionError: expected Error: spawnSync /opt/codex/runtimes/code… { …(5) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+Error {
+  "message": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node EPERM",
+  "errno": -1,
+  "code": "EPERM",
+  "syscall": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "spawnargs": [
+    "/workspace/Verdesakay-Inventory-System/node_modules/mammoth/bin/mammoth",
+    "--help",
+  ],
+}
+
+ ❯ run tests/mammoth-dependency.test.ts:38:24
+     36|     encoding: 'utf8', timeout: 10_000, maxBuffer: 2 * 1024 * 1024,
+     37|   });
+     38|   expect(result.error).toBeUndefined();
+       |                        ^
+     39|   expect(result.signal).toBeNull();
+     40|   return result;
+ ❯ tests/mammoth-dependency.test.ts:54:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > converts a positional path with spaces to UTF-8 HTML on stdout
+AssertionError: expected Error: spawnSync /opt/codex/runtimes/code… { …(5) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+Error {
+  "message": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node EPERM",
+  "errno": -1,
+  "code": "EPERM",
+  "syscall": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "spawnargs": [
+    "/workspace/Verdesakay-Inventory-System/node_modules/mammoth/bin/mammoth",
+    "/tmp/vds-mammoth-compat-4idCB3/Word source with spaces.docx",
+  ],
+}
+
+ ❯ run tests/mammoth-dependency.test.ts:38:24
+     36|     encoding: 'utf8', timeout: 10_000, maxBuffer: 2 * 1024 * 1024,
+     37|   });
+     38|   expect(result.error).toBeUndefined();
+       |                        ^
+     39|   expect(result.signal).toBeNull();
+     40|   return result;
+ ❯ tests/mammoth-dependency.test.ts:60:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > writes a positional output file instead of conversion text on stdout
+AssertionError: expected Error: spawnSync /opt/codex/runtimes/code… { …(5) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+Error {
+  "message": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node EPERM",
+  "errno": -1,
+  "code": "EPERM",
+  "syscall": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "spawnargs": [
+    "/workspace/Verdesakay-Inventory-System/node_modules/mammoth/bin/mammoth",
+    "/tmp/vds-mammoth-compat-4idCB3/Word source with spaces.docx",
+    "/tmp/vds-mammoth-compat-4idCB3/Output with spaces.html",
+  ],
+}
+
+ ❯ run tests/mammoth-dependency.test.ts:38:24
+     36|     encoding: 'utf8', timeout: 10_000, maxBuffer: 2 * 1024 * 1024,
+     37|   });
+     38|   expect(result.error).toBeUndefined();
+       |                        ^
+     39|   expect(result.signal).toBeNull();
+     40|   return result;
+ ❯ tests/mammoth-dependency.test.ts:69:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > honors both style-map and output-format options
+AssertionError: expected Error: spawnSync /opt/codex/runtimes/code… { …(5) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+Error {
+  "message": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node EPERM",
+  "errno": -1,
+  "code": "EPERM",
+  "syscall": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "spawnargs": [
+    "/workspace/Verdesakay-Inventory-System/node_modules/mammoth/bin/mammoth",
+    "--style-map",
+    "/tmp/vds-mammoth-compat-4idCB3/Custom style map.txt",
+    "/tmp/vds-mammoth-compat-4idCB3/Word source with spaces.docx",
+  ],
+}
+
+ ❯ run tests/mammoth-dependency.test.ts:38:24
+     36|     encoding: 'utf8', timeout: 10_000, maxBuffer: 2 * 1024 * 1024,
+     37|   });
+     38|   expect(result.error).toBeUndefined();
+       |                        ^
+     39|   expect(result.signal).toBeNull();
+     40|   return result;
+ ❯ tests/mammoth-dependency.test.ts:78:18
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > writes separately referenced image bytes to the requested output directory
+AssertionError: expected Error: spawnSync /opt/codex/runtimes/code… { …(5) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+Error {
+  "message": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node EPERM",
+  "errno": -1,
+  "code": "EPERM",
+  "syscall": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "spawnargs": [
+    "/workspace/Verdesakay-Inventory-System/node_modules/mammoth/bin/mammoth",
+    "/tmp/vds-mammoth-compat-4idCB3/Word source with spaces.docx",
+    "--output-dir",
+    "/tmp/vds-mammoth-compat-4idCB3/Output directory",
+  ],
+}
+
+ ❯ run tests/mammoth-dependency.test.ts:38:24
+     36|     encoding: 'utf8', timeout: 10_000, maxBuffer: 2 * 1024 * 1024,
+     37|   });
+     38|   expect(result.error).toBeUndefined();
+       |                        ^
+     39|   expect(result.signal).toBeNull();
+     40|   return result;
+ ❯ tests/mammoth-dependency.test.ts:90:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/9]⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > rejects 'missing document' with a usage error rather than converting
+AssertionError: expected Error: spawnSync /opt/codex/runtimes/code… { …(5) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+Error {
+  "message": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node EPERM",
+  "errno": -1,
+  "code": "EPERM",
+  "syscall": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "spawnargs": [
+    "/workspace/Verdesakay-Inventory-System/node_modules/mammoth/bin/mammoth",
+  ],
+}
+
+ ❯ run tests/mammoth-dependency.test.ts:38:24
+     36|     encoding: 'utf8', timeout: 10_000, maxBuffer: 2 * 1024 * 1024,
+     37|   });
+     38|   expect(result.error).toBeUndefined();
+       |                        ^
+     39|   expect(result.signal).toBeNull();
+     40|   return result;
+ ❯ tests/mammoth-dependency.test.ts:102:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/9]⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > rejects 'invalid format' with a usage error rather than converting
+AssertionError: expected Error: spawnSync /opt/codex/runtimes/code… { …(5) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+Error {
+  "message": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node EPERM",
+  "errno": -1,
+  "code": "EPERM",
+  "syscall": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "spawnargs": [
+    "/workspace/Verdesakay-Inventory-System/node_modules/mammoth/bin/mammoth",
+    "/tmp/vds-mammoth-compat-4idCB3/Word source with spaces.docx",
+    "--output-format",
+    "pdf",
+  ],
+}
+
+ ❯ run tests/mammoth-dependency.test.ts:38:24
+     36|     encoding: 'utf8', timeout: 10_000, maxBuffer: 2 * 1024 * 1024,
+     37|   });
+     38|   expect(result.error).toBeUndefined();
+       |                        ^
+     39|   expect(result.signal).toBeNull();
+     40|   return result;
+ ❯ tests/mammoth-dependency.test.ts:102:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/9]⎯
+
+ FAIL  tests/mammoth-dependency.test.ts > Mammoth public CLI compatibility > rejects 'mutually exclusive destinations' with a usage error rather than converting
+AssertionError: expected Error: spawnSync /opt/codex/runtimes/code… { …(5) } to be undefined
+
+- Expected:
+undefined
+
++ Received:
+Error {
+  "message": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node EPERM",
+  "errno": -1,
+  "code": "EPERM",
+  "syscall": "spawnSync /opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "path": "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+  "spawnargs": [
+    "/workspace/Verdesakay-Inventory-System/node_modules/mammoth/bin/mammoth",
+    "/tmp/vds-mammoth-compat-4idCB3/Word source with spaces.docx",
+    "/tmp/vds-mammoth-compat-4idCB3/conflicting.html",
+    "--output-dir",
+    "/tmp/vds-mammoth-compat-4idCB3",
+  ],
+}
+
+ ❯ run tests/mammoth-dependency.test.ts:38:24
+     36|     encoding: 'utf8', timeout: 10_000, maxBuffer: 2 * 1024 * 1024,
+     37|   });
+     38|   expect(result.error).toBeUndefined();
+       |                        ^
+     39|   expect(result.signal).toBeNull();
+     40|   return result;
+ ❯ tests/mammoth-dependency.test.ts:102:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/9]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  9 failed | 1 passed (10)
+   Start at  07:34:42
+   Duration  1.25s (transform 51ms, setup 28ms, import 108ms, tests 1000ms, environment 0ms)

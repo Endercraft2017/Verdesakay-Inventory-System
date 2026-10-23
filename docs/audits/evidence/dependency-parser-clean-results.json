@@ -1,0 +1,30 @@
+[
+  {
+    "mode": "before",
+    "install_exit": 0,
+    "probe_exit": 0,
+    "full_audit_exit": 1,
+    "full_audit": {
+      "info": 0,
+      "low": 0,
+      "moderate": 10,
+      "high": 1,
+      "critical": 0,
+      "total": 11
+    }
+  },
+  {
+    "mode": "after",
+    "install_exit": 0,
+    "probe_exit": 0,
+    "full_audit_exit": 1,
+    "full_audit": {
+      "info": 0,
+      "low": 0,
+      "moderate": 8,
+      "high": 1,
+      "critical": 0,
+      "total": 9
+    }
+  }
+]

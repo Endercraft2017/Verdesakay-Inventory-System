@@ -1,0 +1,21 @@
+{
+  "mode": "before",
+  "mammoth": "1.13.0",
+  "parser": "1.0.10",
+  "parserDependencies": {
+    "sprintf-js": "~1.0.2"
+  },
+  "runtimeFormatters": [
+    {
+      "name": "node_modules/mammoth/node_modules/sprintf-js",
+      "version": "1.0.3"
+    }
+  ],
+  "precisionProbe": {
+    "name": "RangeError",
+    "message": "toFixed() digits argument must be between 0 and 100"
+  },
+  "apiHtml": "passed",
+  "apiText": "passed",
+  "cli": "passed"
+}

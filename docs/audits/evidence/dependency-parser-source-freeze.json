@@ -1,0 +1,39 @@
+{
+  "baseline": "212ff016a87849541b1a05b317b7e431a89eef10",
+  "created_at": "2026-10-23T05:11:04.839Z",
+  "node": "v24.19.0",
+  "changed_code": [
+    {
+      "path": "tests/e2e/document-conversion.spec.ts",
+      "sha256": "de21d0b6fbf42c1516d1611f018977c54917ec8071fc3638bdf53f71470988c2"
+    }
+  ],
+  "unchanged_manifests": [
+    {
+      "path": "package.json",
+      "sha256": "23e2f22b7df1d08d86d2d56b378b9b19c404d060e9d997cbfd82aebfea234f4f"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "28736bcfdeb7197f61fbebfb2b553115e7b503bff9016ded4d75d578c790b51c"
+    }
+  ],
+  "executed_dependencies": [
+    {
+      "path": "node_modules/mammoth/bin/mammoth",
+      "sha256": "a622f9c8831310bc4d1c92749b3d35e3b654ee8d7b4e2eb54259fda4cae90ef5"
+    },
+    {
+      "path": "node_modules/mammoth/lib/index.js",
+      "sha256": "4dfe8f0ef60d694b9ae115da1e3b7b508ce9f5ae5981bd32e195b15fb0b77723"
+    },
+    {
+      "path": "node_modules/mammoth/node_modules/argparse/index.js",
+      "sha256": "190d2c0b07376e8dd3bbf2001b20d27b8929245b0b731d79e222edb0944f58f5"
+    },
+    {
+      "path": "node_modules/mammoth/node_modules/sprintf-js/src/sprintf.js",
+      "sha256": "9904b0d448280bfdfcb0329bdac995883033597727404f9c058d051d9174b7c7"
+    }
+  ]
+}

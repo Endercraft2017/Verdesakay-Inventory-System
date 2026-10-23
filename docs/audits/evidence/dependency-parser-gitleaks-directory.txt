@@ -1,0 +1,4 @@
+5:24AM INF scanned ~1147086 bytes (1.15 MB) in 64.4ms
+5:24AM INF no leaks found
+
+PROCESS_EXIT=0

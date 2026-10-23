@@ -2,6 +2,13 @@
 
 # Production readiness audit — 16 October 2026
 
+23 October dependency follow-up: the formatter advisory was withdrawn upstream.
+Fresh runtime and explicit full-root npm scans return **one high / zero moderate**;
+the earlier moderate counts were not cleared by a delivered fix. The candidate
+parser override was discarded; original dependencies remain. See
+[disposition](dependency-audit.md), [research/decision](dependency-parser-contract.md)
+and [validation](validation-results.md). The overall release hold remains.
+
 **Release decision: not yet approved for unrestricted production use.** This branch contains audited hardening and reproducible tests, not a certificate that all 233 controls are satisfied. Remaining security, operational and owner/legal decisions are listed explicitly in the scorecard. A passing test suite does not establish production readiness by itself.
 
 ## Scope and source

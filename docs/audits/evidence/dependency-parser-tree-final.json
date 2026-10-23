@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "name": "otom",
+  "dependencies": {
+    "mammoth": {
+      "version": "1.13.0",
+      "resolved": "https://registry.npmjs.org/mammoth/-/mammoth-1.13.0.tgz",
+      "overridden": false,
+      "dependencies": {
+        "argparse": {
+          "version": "1.0.10",
+          "resolved": "https://registry.npmjs.org/argparse/-/argparse-1.0.10.tgz",
+          "overridden": false,
+          "dependencies": {
+            "sprintf-js": {
+              "version": "1.0.3",
+              "resolved": "https://registry.npmjs.org/sprintf-js/-/sprintf-js-1.0.3.tgz",
+              "overridden": false
+            }
+          }
+        }
+      }
+    },
+    "node-forge": {
+      "version": "1.4.0",
+      "resolved": "https://registry.npmjs.org/node-forge/-/node-forge-1.4.0.tgz",
+      "overridden": false
+    }
+  }
+}

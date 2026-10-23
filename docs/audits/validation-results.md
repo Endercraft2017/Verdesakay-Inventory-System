@@ -1,5 +1,8 @@
 # Second-pass validation — 16 October 2026
 
+Latest dated dependency evidence: see the 23 October follow-up at the end of this
+record. Candidate and final original-dependency runs are distinguished there.
+
 Source cutoff: `restructure/module-architecture` at
 `495db101c3efbe4e4546221fed2db3af233b00aa`, merged into `production` with the audit fixes.
 Current delivery scope and remaining work: [engineering-handoff.md](engineering-handoff.md). Earlier reports describe older trees. The verification summary in
@@ -1288,3 +1291,62 @@ TLS keys and temporary databases are excluded. Git's required staged Gitleaks ho
 active; its actual outcome is reported with the commit. Historical-secret revocation and all
 other broader release blockers remain open. Real-provider/hosting/restore, mixed-build/native
 rollout, independent review and legal/retention/payroll acceptance are not established here.
+
+## 23 October 2026 — runtime dependency review and Word import
+
+Final decision: **retain original dependencies**. The formatter advisory was
+withdrawn upstream at 2026-10-22T19:21:04Z (23 October, 03:21 Manila). Primary
+GitHub API/page evidence and fresh-cache npm scans explain the changed counts.
+See [contract/decision](dependency-parser-contract.md),
+[verification manifest](evidence/dependency-parser-verification.json) and
+[installation/re-evaluation](../operations/dependency-parser-upgrade.md).
+
+The scoped parser candidate was tested, then removed after withdrawal invalidated
+its original justification. No major override, advisory suppression, application
+source change or schema migration is delivered. Manifests match baseline 212ff016
+byte for byte. The final addition is a real Word-import browser regression: a bad
+archive preserves the draft, a real DOCX previews before Apply, Apply stays local,
+and Undo restores the draft while the saved template remains unchanged.
+
+| Final restored-graph verification | Result |
+|---|---|
+| Clean npm ci, scripts disabled | Original Mammoth 1.13.0 / argparse 1.0.10 / sprintf-js 1.0.3 runtime graph restored; no overrides |
+| Existing focused application regression | 4 files / 86 tests passed, exit 0; 27.01 seconds |
+| Full Playwright regression | 72 expected passes; zero failures/flaky/skipped, exit 0; 183.865728 seconds |
+| TypeScript | Passed, exit 0 |
+| Full Vitest regression | 321 files / 3467 tests passed, exit 0; 642.90 seconds |
+| Final runtime and explicit full-root npm scans | Both exit 1: one high / zero moderate; node-forge remains open |
+
+Discarded-candidate results are retained separately: 5 files/96 focused tests,
+72 Playwright scenarios, 94 editor scans/15 workflows and 322 files/3477 full Vitest
+tests. The candidate full run lasted 630.44 seconds and has complete pass totals;
+its tool session handle was unavailable afterward, so no independently retained
+process exit is asserted. A prior attempt was interrupted by the environment restart
+before totals. Neither attempt is substituted for final restored-graph verification.
+
+Before-change tests demonstrate the then-flagged dependency's presence and a clean
+probe reproduces its RangeError. They do not establish an application HTTP exploit.
+The record preserves npm's rejected/misleading-success install experiments and
+corrected fixture assumptions about CLI wording, valid Markdown and ambient dev
+module resolution. The proposed patch/test/source hashes remain experiment artifacts.
+
+The candidate editor gate retained contrast incompletes in 90 scans/512 nodes and
+label-name incompletes in 55 scans/358 nodes. Eight viewport/theme screenshots were
+reviewed at 1440/1024/768/390px; Save/Close bounds passed and narrow controls wrapped.
+Gradient/custom-select backgrounds and symbolic formatting labels still require
+independent manual accessibility checks. UI/editor bytes are unchanged in the final
+result; these candidate scans are not presented as a rerun on original dependencies.
+No complete WCAG or assistive-technology acceptance is claimed.
+
+The high Forge finding, independent review, historical secrets and broader release
+hold remain. The old moderate build-chain entries disappeared through upstream
+withdrawal, not an implementation fix. Launcher/mobile were not rescanned here.
+No live-provider, hosted restore/capacity, native/mixed-build or legal/payroll acceptance
+is established. Historical 233-control totals remain unchanged. Authenticated trace
+ZIPs, temporary databases, private TLS keys and real customer files are excluded.
+
+Gitleaks 8.24.3 passed a directory scan of 78 exported staged files and a subsequent
+staged pre-commit scan, both exit 0. Actual logs and checksums are retained. The
+mandatory commit hook remains active and scans the final staged revision again;
+its actual outcome is reported after committing. These scoped checks do not attest
+clean historical secrets or verified revocation.

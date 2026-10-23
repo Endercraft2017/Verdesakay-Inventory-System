@@ -1,5 +1,10 @@
 # Dependency audit — second pass, 16 October 2026
 
+Latest review: 23 October — original dependencies are retained after upstream
+withdrawal of the formatter advisory. Fresh runtime/full-root scans report one high
+and zero moderate; no delivered fix caused the feed change. See the dated follow-up
+below and [decision/evidence](dependency-parser-contract.md). Earlier counts are historical.
+
 The user explicitly approved npm advisory lookups. All three lockfiles were scanned again after
 merging the newer source. Compatible patches were applied with `npm audit fix --ignore-scripts`;
 no blanket forced major-version downgrade was accepted. In particular, npm's proposed old Mammoth
@@ -72,3 +77,39 @@ Exit 1: node-forge high; mammoth, argparse and sprintf-js moderate (four total).
 these findings remain broader release blockers. The explicit axe-core 4.14.0 test dependency
 points to the same previously installed transitive package; its lock edge was added offline
 without installation scripts. This audit does not certify a clean dependency graph.
+
+### 23 October 2026 — withdrawal verified; original dependencies retained
+
+The formatter advisory GHSA-hp3w-g68c-fv3c was withdrawn upstream at 2026-10-22T19:21:04Z
+(23 October, 03:21 Manila), verified against the primary notice and API on 23 October. Fresh npm lookups, including an
+explicit full-root `--include=dev` scan and a fresh cache, now return **one high /
+zero moderate**. The high node-forge finding remains; all scans correctly exit 1.
+
+The prior 22 October raw snapshots are retained: original root runtime one high/three
+moderate; original full root one high/ten moderate. A proposed parser override removed
+Mammoth's formatter edge and the candidate full root then had one high/eight moderate.
+Those eight build-tool entries disappeared from the feed after withdrawal, with no
+build-tool fix. Counts must not be attributed to code when the advisory feed changed.
+
+A harmless clean baseline probe reproduced sprintf-js's precision RangeError, but
+source review demonstrated no application route supplying the affected format string.
+A thrown library exception alone did not demonstrate an application vulnerability.
+The candidate kept Mammoth 1.13.0 and selected argparse 2.0.1; real CLI/API and broad
+regressions passed. Once its advisory rationale was withdrawn, the major override
+was abandoned. **The final package.json and package-lock.json are identical to the
+baseline, and the original installed dependency graph is verified.** No private
+package patch, forced old Mammoth downgrade or advisory suppression is delivered.
+
+See [decision/research and failed experiments](dependency-parser-contract.md),
+[verification manifest](evidence/dependency-parser-verification.json) and
+[installation/re-evaluation procedure](../operations/dependency-parser-upgrade.md).
+The retained browser regression covers real malformed-file recovery, reviewed Word
+conversion, local Apply and undo, with no premature template publication. Candidate
+results and final restored-graph results are labeled separately.
+
+node-forge still has no offered fixed version. Its limited observed certificate-generation
+use remains a reachability assessment, not an approved risk exception. CI's actual
+high-advisory gate stays enabled and failing. Launcher/mobile were not rescanned here;
+this supersedes their old formatter severity interpretation only through the cited
+upstream withdrawal, not a fresh scan of those lockfiles. Native/build-chain assurance,
+historical secrets and all broader production gates remain open.
