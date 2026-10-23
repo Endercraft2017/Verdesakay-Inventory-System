@@ -505,14 +505,7 @@ describe('mobile bootstrap', () => {
     expect(win.document.body.textContent).toContain('a selfie is needed to finish');
   });
 
-  it('maps the Schedule route to approved Figma node 46:606 and keeps its live API/request flow', () => {
-    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/hr/schedule.js'), 'utf8');
-    expect(source).toContain("view.setAttribute('data-figma-node', '46:606')");
-    expect(source).toContain("API.get('/me/schedule')");
-    expect(source).toContain("MApp.go('requests', { type: 'schedule_change', date: target })");
-    expect(source).toContain('Request schedule change');
-  });
-
+  // Schedule API/date behavior is exercised in frontend-mobile-pay-schedule-ux.test.ts.
 
   it('maps universal Requests to the approved center, form, and detail Figma nodes', () => {
     const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/hr/requests.js'), 'utf8');
@@ -2331,23 +2324,8 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
   });
 
 
-  it('maps Payslips and Payslip Detail to Figma with a fail-closed download gate', () => {
-    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/hr/payslips.js'), 'utf8');
-    expect(source).toContain("shell(view, '46:895'");
-    expect(source).toContain("shell(view, '46:924'");
-    expect(source).toContain("API.get('/me/payslips')");
-    expect(source).toContain("record.finalized === true");
-    expect(source).toContain("typeof record.download_url === 'string'");
-    expect(source).toContain('API.download(record.download_url');
-    expect(source).toContain('Payroll is still being finalized');
-    expect(source).toContain('DRAFT · NOT FINALIZED');
-    expect(source).toContain("classList.add('is-draft')");
-    expect(source).toContain("API.get('/me/payslips/' + record.id + '/timekeeping')");
-    const css = fs.readFileSync(path.join(ROOT, 'public/mobile/mobile-v2.css'), 'utf8');
-    expect(css).toContain('.m-payslip-v2.is-draft::after');
-    expect(css).toContain('.m-payslip-time-panel.is-draft::after');
-  });
-
+  // Payslip gates, Figma markers and timekeeping behavior have runtime coverage
+  // in frontend-mobile-pay-schedule-ux.test.ts (rather than source-spelling checks).
 
   it('maps Profile & Settings to Figma and preserves employee-safe controls', () => {
     const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/core/settings.js'), 'utf8');

@@ -1004,3 +1004,34 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 .m-time-fix :is(button,input,textarea):focus-visible,.m-time-fix [tabindex='-1']:focus-visible{outline:3px solid var(--v2-green);outline-offset:3px}
 :root[data-theme=dark] .m-time-fix .m-btn:not(.m-btn-secondary):not(.m-btn-warn){color:var(--v2-bg)}
 :root[data-theme=dark] .m-time-fix .m-tf-state.approved{color:var(--v2-text)}
+
+/* Schedule and payslips: preserve the V2 cards and use readable theme surfaces. */
+.m-schedule-week-controls{display:flex;justify-content:space-between;gap:.5rem;margin-bottom:.75rem}
+.m-schedule-week-controls button{min-height:44px;padding:.5rem .75rem;font-size:.75rem}
+.m-schedule-v2 .m-schedule-week,.m-schedule-v2 .m-schedule-detail,.m-schedule-v2 .m-schedule-detail.is-rest{background:var(--v2-surface-soft);border-color:var(--v2-line);box-shadow:none;backdrop-filter:none}
+.m-schedule-v2 .m-schedule-day{color:var(--v2-text-2)}
+.m-schedule-v2 .m-schedule-day.is-selected{background:var(--v2-green-deep);color:#fff;box-shadow:none}
+.m-schedule-v2 .m-schedule-status{max-width:50%;white-space:normal;text-align:center;background:var(--v2-surface);border-color:var(--v2-line);color:var(--v2-text)}
+.m-schedule-v2 .m-schedule-detail .m-v2-eyebrow,.m-schedule-v2 .m-schedule-meta{color:var(--v2-text-2)}
+.m-schedule-v2 .m-schedule-meta:empty{display:none}
+.m-schedule-v2 .m-schedule-row-copy b,.m-schedule-v2 .m-schedule-row-copy small{white-space:normal}
+.m-schedule-v2 .m-schedule-row-copy small{color:var(--v2-muted)}
+.m-schedule-v2 .m-schedule-row{border-color:var(--v2-line)}
+.m-schedule-recorded,.m-schedule-hint,.m-payslip-hint{font-size:.75rem;line-height:1.65;color:var(--v2-muted);margin:.75rem 0}
+.m-schedule-recorded{color:var(--v2-text-2)}
+.m-schedule-refresh,.m-payslip-refresh{width:100%;min-height:44px;margin-top:1rem}
+.m-schedule-feedback,.m-payslip-feedback{padding:.85rem 1rem;border:1px solid var(--v2-line);border-radius:var(--v2-radius-md);font-size:.75rem;line-height:1.65;overflow-wrap:anywhere}
+.m-schedule-feedback.m-error,.m-payslip-feedback.m-error{border-color:var(--v2-danger);color:var(--v2-danger)}
+.m-payslip-v2 .m-payslip-row b,.m-payslip-v2 .m-payslip-row small{white-space:normal;overflow-wrap:anywhere}
+.m-payslip-v2 .m-payslip-row.ready small,.m-payslip-v2 .m-payslip-rule,.m-payslip-time-grid small,.m-payslip-time-day p{color:var(--v2-text-2)}
+.m-payslip-v2 .m-payslip-back{min-width:36px;min-height:44px}
+.m-payslip-v2 .m-v2-primary,.m-payslip-v2 .m-v2-secondary,.m-schedule-v2 .m-v2-primary,.m-schedule-v2 .m-v2-secondary,.m-payslip-time-panel button{min-height:44px;line-height:1.4}
+.m-payslip-time-panel header button{min-width:44px}
+.m-payslip-time-panel .m-v2-secondary{width:100%}
+.m-payslip-ot-followup{margin:1rem 0}.m-payslip-ot-followup h2{font-size:.95rem;margin:0 0 .65rem}
+.m-payslip-v2 .m-payslip-download-note,.m-payslip-time-notice{line-height:1.6}
+.m-payslip-v2 .m-payslip-lines>div:nth-last-child(-n+2) span{font-weight:400}
+.m-schedule-v2 button:focus-visible,.m-payslip-v2 button:focus-visible,.m-payslip-time-panel button:focus-visible{outline:3px solid var(--v2-green);outline-offset:3px}
+:root[data-theme="dark"] .m-schedule-v2 .m-v2-primary,:root[data-theme="dark"] .m-payslip-v2 .m-v2-primary,:root[data-theme="dark"] .m-payslip-ot button{background:var(--v2-green);color:var(--v2-bg)}
+:root[data-theme="dark"] .m-payslip-v2 .m-payslip-row em.final{color:var(--v2-text)}
+@media(max-width:360px){.m-schedule-v2 .m-schedule-detail{padding:1rem}.m-schedule-v2 .m-schedule-detail-top{gap:.5rem}}

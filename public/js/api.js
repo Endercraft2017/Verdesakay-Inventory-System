@@ -90,6 +90,16 @@ const API = (() => {
     if (method !== 'GET') remembered.clear();
     const headers = {};
     const token = getToken();
+    // Employee views opt in so a response from a previous sign-in cannot clear
+    // the new account's token (including a late 401).
+    const checkCurrent = () => {
+      if (opts?.isCurrent && (!opts.isCurrent() || token !== getToken())) {
+        const error = new Error('Request cancelled.');
+        error.cancelled = true;
+        throw error;
+      }
+    };
+    checkCurrent();
     if (token) headers['Authorization'] = 'Bearer ' + token;
     if (!/^\/anonymous-reports/.test(path)) headers['X-Device-Id'] = deviceId();
     // Which app this is (src/shared/device.ts): both are held to the evidence-photo rules.
@@ -127,6 +137,7 @@ const API = (() => {
       throw err;
     }
 
+    checkCurrent();
     // A 401 from the sign-in endpoints means wrong credentials, not an expired session —
     // fall through so the server's own message ("Invalid username or password") is shown.
     if (res.status === 401 && !/^\/auth\/(login|forgot-password|reset-password)\b/.test(path)) {
@@ -167,11 +178,18 @@ const API = (() => {
   }
 
   /** Fetch a binary endpoint with auth and return an object URL (caller revokes it). */
-  async function blobUrl(path, mimeOverride) {
+  async function blobUrl(path, mimeOverride, opts) {
     const token = getToken();
     const headers = { 'X-Device-Id': deviceId() };
     if (token) headers.Authorization = 'Bearer ' + token;
-    const res = await fetch(base() + (path.startsWith('/api/') ? path : '/api' + path), { headers });
+    const checkCurrent = () => {
+      if (opts && (opts.signal?.aborted || (opts.isCurrent && !opts.isCurrent()) || token !== getToken())) {
+        throw new Error('File preparation cancelled.');
+      }
+    };
+    checkCurrent();
+    const res = await fetch(base() + (path.startsWith('/api/') ? path : '/api' + path), { headers, ...(opts?.signal ? { signal: opts.signal } : {}) });
+    checkCurrent();
     if (res.status === 401) {
       clearToken();
       if (window.App) window.App.showLogin();
@@ -182,12 +200,17 @@ const API = (() => {
       throw new Error((data && data.error) || ('Request failed (' + res.status + ')'));
     }
     const blob = await res.blob();
+    checkCurrent();
     return URL.createObjectURL(mimeOverride ? new Blob([blob], { type: mimeOverride }) : blob);
   }
 
-  /** Fetch an auth'd endpoint that returns a file (CSV / DAT / etc.) and save it. */
-  async function download(path, filename) {
-    const url = await blobUrl(path);
+  /** Fetch an auth'd file and save it. Optional signal/isCurrent bind delivery to its owning screen. */
+  async function download(path, filename, opts) {
+    const url = await blobUrl(path, undefined, opts);
+    if (opts && (opts.signal?.aborted || (opts.isCurrent && !opts.isCurrent()))) {
+      URL.revokeObjectURL(url);
+      throw new Error('File preparation cancelled.');
+    }
     const a = document.createElement('a');
     a.href = url;
     a.download = filename || 'download';
