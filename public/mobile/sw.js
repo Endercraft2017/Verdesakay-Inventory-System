@@ -6,8 +6,10 @@
 
    Bump CACHE_VERSION whenever the shell file list or any cached asset changes. */
 var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
+importScripts(TENANT_BASE + '/mobile/lib/queue-store.js');
+var queueStore = MobileQueueStore.create(TENANT_BASE);
 var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
-var CACHE_VERSION = CACHE_PREFIX + 'v145';
+var CACHE_VERSION = CACHE_PREFIX + 'v146';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -67,6 +69,7 @@ var SHELL = [
   '/mobile/lib/recent.js',
   '/mobile/lib/photo.js',
   '/mobile/lib/signature.js',
+  '/mobile/lib/queue-store.js',
   '/mobile/lib/queue.js',
   '/mobile/lib/production-drafts.js',
   '/mobile/lib/workflow-attempt.js',
@@ -241,84 +244,78 @@ self.addEventListener('message', function (e) {
   if (e.data === 'flush') e.waitUntil(replayQueue());
 });
 
-function idb() {
-  return new Promise(function (resolve, reject) {
-    var r = indexedDB.open('vds_mobile' + TENANT_BASE, 2);
-    r.onsuccess = function () { resolve(r.result); };
-    r.onerror = function () { reject(r.error); };
-  });
+// The shared protocol also guards page/worker races and crash recovery.
+var queueReplay;
+function replayQueue() {
+  if (queueReplay) return queueReplay;
+  queueReplay = drainQueue().finally(function () { queueReplay = null; });
+  return queueReplay;
 }
-function idbAll(db, store) {
-  return new Promise(function (resolve, reject) {
-    var req = db.transaction(store, 'readonly').objectStore(store).getAll();
-    req.onsuccess = function () { resolve(req.result || []); };
-    req.onerror = function () { reject(req.error); };
-  });
-}
-function idbGet(db, store, key) {
-  return new Promise(function (resolve) {
-    try {
-      var req = db.transaction(store, 'readonly').objectStore(store).get(key);
-      req.onsuccess = function () { resolve(req.result); };
-      req.onerror = function () { resolve(undefined); };
-    } catch (err) { resolve(undefined); }
-  });
-}
-function idbDel(db, store, key) {
-  return new Promise(function (resolve) {
-    var t = db.transaction(store, 'readwrite');
-    t.objectStore(store).delete(key);
-    t.oncomplete = resolve; t.onerror = resolve;
-  });
-}
-function idbPut(db, store, val) {
-  return new Promise(function (resolve) {
-    var t = db.transaction(store, 'readwrite');
-    t.objectStore(store).put(val);
-    t.oncomplete = resolve; t.onerror = resolve;
-  });
-}
-
-async function replayQueue() {
-  var db;
-  try { db = await idb(); } catch (e) { return; }
-  var ops = await idbAll(db, 'ops');
-  var tokenRow = await idbGet(db, 'meta', 'token');
-  var token = tokenRow && tokenRow.v;
-  var tokenUser = tokenRow ? tokenRow.user_id : null;
-  var stillPending = false;
-  if (!token) return; // signed out — nothing replays until someone signs in (queue.js)
-
-  var headers = { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token };
-  if (tokenRow.device_id) headers['X-Device-Id'] = tokenRow.device_id;
-
-  for (var i = 0; i < ops.length; i++) {
-    var op = ops[i];
-    if (op.error) continue; // needs the user's attention — leave it
-    // Only ever replay an op as the account that queued it (legacy unstamped ops excepted).
-    if (op.user_id != null && op.user_id !== tokenUser) continue;
-    try {
-      var res = await fetch(TENANT_BASE + '/api' + op.path, {
-        method: op.method || 'POST',
-        headers: Object.assign({ 'Idempotency-Key': op.key }, headers),
-        body: JSON.stringify(op.body),
-      });
-      if (res.ok) {
-        await idbDel(db, 'ops', op.key);
-      } else if (res.status >= 400 && res.status < 500 && res.status !== 401 && res.status !== 429) {
-        var body = await res.json().catch(function () { return {}; });
-        op.error = (body && body.error) || ('Rejected (' + res.status + ')');
-        await idbPut(db, 'ops', op);
-      } else {
-        stillPending = true; // 5xx / auth / rate-limit — try again on the next sync
-      }
-    } catch (err) {
-      stillPending = true; // offline again
-    }
-  }
-
+async function queueChanged() {
   var clients = await self.clients.matchAll();
-  clients.forEach(function (c) { c.postMessage('queue-changed'); });
-
-  if (stillPending) throw new Error('retry'); // ask the browser to fire the sync again later
+  clients.forEach(function (client) { client.postMessage('queue-changed'); });
+}
+async function queueFetch(owner, path, init) {
+  var controller = new AbortController(), timeout = setTimeout(function () { controller.abort(); },15000);
+  try {
+    var response = await fetch((owner.api_base || TENANT_BASE) + '/api' + path,Object.assign({},init,{signal:controller.signal}));
+    var body = await response.json().catch(function (error) { if (controller.signal.aborted) throw error; return null; });
+    return {response:response,body:body};
+  }
+  finally { clearTimeout(timeout); }
+}
+async function drainQueue() {
+  var owner = await queueStore.token();
+  if (!owner?.v || owner.user_id == null) return;
+  owner.api_base = owner.api_base || '';
+  var rows = await queueStore.all(), pending = false;
+  var headers = {'Content-Type':'application/json',Authorization:'Bearer '+owner.v,'X-Client':'mobile'};
+  if (owner.device_id) headers['X-Device-Id'] = owner.device_id;
+  for (var candidate of rows) {
+    if (!queueStore.owns(candidate,owner)) continue;
+    var token = await queueStore.token();
+    if (!token || token.v !== owner.v || token.user_id !== owner.user_id || (token.api_base || '') !== owner.api_base) break;
+    if (candidate.local_command) {
+      // A local acknowledgement is never posted again as a fresh operation.
+      try {
+        var checked = await queueFetch(owner,'/sync/command/'+encodeURIComponent(candidate.local_command),{headers:headers}), check = checked.response;
+        if (!check.ok) { pending = true; continue; }
+        var status = checked.body;
+        if (!status || typeof status.state !== 'string') { pending = true; continue; }
+        await queueStore.edit(candidate.key,function (row) {
+          if (!row || row.local_command !== candidate.local_command) return {};
+          if (status.state === 'confirmed') return {remove:true};
+          row.local_state = status.state || row.local_state; row.local_error = status.error || null;
+          return {row:row};
+        });
+        if (!['confirmed','rejected','conflict','failed'].includes(status.state)) pending = true;
+      } catch (error) { pending = true; }
+      continue;
+    }
+    var lease = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2);
+    var op = await queueStore.claim(candidate.key,owner,lease,false);
+    if (!op) continue;
+    await queueChanged();
+    try {
+      var sent = await queueFetch(owner,op.path,{
+        method:op.method || 'POST',headers:Object.assign({'Idempotency-Key':op.key},headers),body:JSON.stringify(op.body)
+      });
+      var response = sent.response, body = sent.body;
+      if (response.ok) {
+        var local = response.headers.get('X-Sync-State') === 'local' && (response.headers.get('X-Sync-Command') || 'local');
+        await queueStore.settle(op.key,lease,local ? {local_command:local,local_state:'local',error:null,uncertain:false}
+          : body?.applied === false ? {error:body.message || 'The server did not apply this action. Review the existing record.',uncertain:false} : null);
+        if (local) pending = true;
+      } else {
+        var retryable = response.status >= 500 || [401,403,429].includes(response.status);
+        await queueStore.settle(op.key,lease,{error:retryable ? null : body?.error || 'Rejected ('+response.status+')',uncertain:retryable,attempts:(op.attempts || 0)+1});
+        if (retryable) { pending = true; break; }
+      }
+    } catch (error) {
+      await queueStore.settle(op.key,lease,{error:null,uncertain:true,attempts:(op.attempts || 0)+1});
+      pending = true; break;
+    } finally { await queueChanged(); }
+  }
+  await queueChanged();
+  if (pending) throw new Error('retry');
 }

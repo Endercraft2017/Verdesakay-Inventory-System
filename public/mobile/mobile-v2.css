@@ -1122,3 +1122,30 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 :root[data-theme=dark] .rk-page:has([data-work-back]) .rk-btn.primary{color:var(--v2-bg);background:var(--v2-green)}
 @media(max-width:360px){.work-desk-heading{flex-wrap:wrap;gap:4px}.v2-work .v2-work-row em{max-width:70px}.v2-work .v2-work-title>span{max-width:105px;text-align:right}}
 .m-directory [data-directory-feedback]>.m-hint{color:var(--v2-muted);font-size:12px;line-height:1.65}
+
+/* Scan and Pending sync retain the existing scanner, picked item and queue cards. */
+.m-scan-page h1,.m-queue-page h1{font-size:24px;line-height:1.3;margin:0 0 16px}
+.m-scan-page .m-picked .scan-item-title{font-size:14px;line-height:1.5;margin:0;min-width:0;overflow-wrap:anywhere;color:var(--v2-text)}
+.m-scan-page .m-picked{flex-wrap:wrap;gap:8px}.m-scan-page .m-picked>span{color:var(--v2-text)}
+.m-scan-page .m-hint,.m-scan-page .m-scan-intro p,.m-scan-page .m-choose-qty,.m-queue-page .m-hint{color:var(--v2-muted);line-height:1.65}
+.m-scan-page .m-choose-qty{font-size:16px}.m-scan-page .m-actions button{min-height:44px}
+.scan-feedback,.queue-feedback{padding:14px;border:1px solid var(--v2-line);border-radius:12px;background:var(--v2-surface);color:var(--v2-text);font-size:13px;line-height:1.7;overflow-wrap:anywhere;margin:12px 0}
+.scan-feedback.error,.queue-feedback.error{background:var(--v2-warn-soft);border-color:var(--v2-warn-line);color:var(--v2-warn-text)}
+.m-scan .m-scan-x,.m-scan .m-scan-torch{min-width:44px;min-height:44px}.m-scan .m-scan-x{font-size:26px}
+.m-scan .m-scan-manual{align-items:flex-end;flex-wrap:wrap;flex:none}.m-scan .m-scan-manual label{min-width:0;flex:1 1 180px;font-size:13px;line-height:1.6}
+.m-scan .m-scan-manual input{display:block;width:100%;min-width:0;box-sizing:border-box;margin-top:6px}.m-scan .m-scan-manual button{min-height:44px}
+.m-scan .m-scan-msg{line-height:1.6;flex:none}.m-scan .m-scanner-error{color:#ffc4c4;padding:0 16px;font-size:13px;flex:none}
+.m-scan .m-camera-retry{margin:0 16px 18px;padding:12px;min-height:44px;flex:none;border:1px solid #666;border-radius:10px;background:#222;color:#fff;font:inherit}
+.m-scan button:focus-visible,.m-scan input:focus-visible,.queue-confirm-layer button:focus-visible{outline:3px solid var(--v2-green);outline-offset:3px}
+.m-queue-page .m-list{padding:0;list-style:none}.m-queue-page .m-q-row{flex-direction:column;align-items:stretch;padding:14px;gap:12px}
+.m-queue-page .m-q-main b{white-space:normal;overflow-wrap:anywhere;line-height:1.5;color:var(--v2-text)}
+.m-queue-page .m-q-main small{display:block;font-size:11px;margin:6px 0;color:var(--v2-muted)}.m-queue-page .m-q-main span{font-size:13px;line-height:1.6;color:var(--v2-muted)}
+.m-queue-page .m-q-row.err .m-q-main span{color:var(--v2-warn-text)}.m-queue-page .m-q-row.err{border-color:var(--v2-warn-line)}
+.m-queue-page .m-q-btns{justify-content:flex-end;gap:10px;flex-wrap:wrap}.m-queue-page .m-q-btns button{min-height:44px;min-width:72px}
+.m-queue-page .queue-flush{width:100%;min-height:48px}.m-queue-page button:disabled{opacity:.6}
+.queue-confirm-layer{position:fixed;inset:0;z-index:210;background:#00191099;display:flex;align-items:center;justify-content:center;padding:18px;overflow:auto;box-sizing:border-box}
+.queue-confirm-card{width:100%;max-width:420px;max-height:100%;overflow:auto;border-radius:16px;border:1px solid var(--v2-line);background:var(--v2-surface);padding:20px;color:var(--v2-text);box-sizing:border-box;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.queue-confirm-card h2{font-size:20px;line-height:1.4}.queue-confirm-card .m-btn{min-height:44px}.queue-confirm-card .m-btn.m-btn-danger{background:var(--v2-warn-text);color:var(--v2-surface);border-color:var(--v2-warn-text)}
+:root[data-theme=dark] .m-scan-page .m-btn:not(.m-btn-secondary),:root[data-theme=dark] .m-queue-page .m-btn:not(.m-btn-secondary),:root[data-theme=dark] .m-scan .m-btn{color:var(--v2-bg)}
+
+.m-scan-page .m-hint,.m-scan-page .m-picked>span{overflow-wrap:anywhere;min-width:0}

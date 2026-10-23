@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
+import { IDBFactory } from 'fake-indexeddb';
 
 const ROOT = path.join(import.meta.dirname, '..');
 const PUBLIC = path.join(ROOT, 'public');
@@ -14,45 +15,8 @@ const html = fs.readFileSync(path.join(PUBLIC, 'mobile', 'index.html'), 'utf8');
 const srcs = [...html.matchAll(/<script src="(\/[^"]+)"><\/script>/g)].map((m) => m[1] as string);
 const code = srcs.map((s) => fs.readFileSync(path.join(PUBLIC, s.replace(/^\//, '')), 'utf8')).join('\n;\n');
 
-/** Just enough IndexedDB for public/mobile/lib/queue.js (one shared instance per test). */
-function fakeIndexedDB() {
-  const dbs: Record<string, Record<string, { keyPath: string; rows: Map<unknown, unknown> }>> = {};
-  const clone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
-  return {
-    open(name: string) {
-      const req: Record<string, any> = {};
-      setTimeout(() => {
-        const isNew = !dbs[name];
-        const stores = (dbs[name] ||= {});
-        req.result = {
-          objectStoreNames: { contains: (n: string) => n in stores },
-          createObjectStore: (n: string, o: { keyPath: string }) => { stores[n] = { keyPath: o.keyPath, rows: new Map() }; },
-          transaction: (n: string) => {
-            const store = stores[n]!;
-            const t: Record<string, any> = {};
-            const mk = (fn: () => unknown) => {
-              const r: Record<string, any> = { result: fn() };
-              setTimeout(() => r.onsuccess && r.onsuccess());
-              return r;
-            };
-            t.objectStore = () => ({
-              put: (v: Record<string, unknown>) => mk(() => { store.rows.set(v[store.keyPath], clone(v)); }),
-              get: (k: unknown) => mk(() => clone(store.rows.get(k))),
-              getAll: () => mk(() => [...store.rows.values()].map(clone)),
-              delete: (k: unknown) => mk(() => { store.rows.delete(k); }),
-              count: () => mk(() => store.rows.size),
-            });
-            setTimeout(() => t.oncomplete && t.oncomplete());
-            return t;
-          },
-        };
-        if (isNew && req.onupgradeneeded) req.onupgradeneeded();
-        if (req.onsuccess) req.onsuccess();
-      });
-      return req;
-    },
-  };
-}
+/** Real IndexedDB transaction scheduling is needed for page/worker queue leases. */
+function fakeIndexedDB() { return new IDBFactory(); }
 
 interface Call { url: string; headers: Record<string, string>; body: any }
 type Responder = (url: string, body: any) => unknown;

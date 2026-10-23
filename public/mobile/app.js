@@ -332,7 +332,7 @@ window.MApp = (function () {
     signOutPending = Promise.resolve().then(async function () {
       var q = window.mQueue, shared = API.isSharedSession(), count = null;
       if (q && navigator.onLine) { try { await q.flush(); } catch (ignore) {} }
-      try { count = q ? await q.count() : 0; } catch (ignore) {}
+      try { count = q ? await (q.unsentCount ? q.unsentCount() : q.count()) : 0; } catch (ignore) {}
       if ((count === null || count > 0) && !await confirmUnsent(count, shared)) return false;
       if (window.mPush && mPush.release) { try { await mPush.release(); } catch (ignore) {} }
       try { await API.post('/auth/logout'); } catch (ignore) {}
