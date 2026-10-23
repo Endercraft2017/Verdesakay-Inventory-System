@@ -63,9 +63,13 @@ Actual-source Chromium passed 54 checks and 12 targeted axe scans without violat
 all four surfaces in light/dark themes, failure states, five viewport widths, long
 names/metadata and a short-screen Guide. A disposable server browser run passed four
 account/permission checks and explained all 42 displayed admin entries without
-JavaScript errors. Source-only checks used fictional data; the server run created
-only disposable fixture accounts. No live business records or messages were changed.
+JavaScript errors. Source-only checks used fictional data; all server-backed checks used
+disposable fixture data. No live business records or messages were changed.
 
-Final verification: `npm run check` passed TypeScript and all 3,163 tests across
-301 files. The final focused run passed 200 tests across four files, including the
-new navigation regressions, mobile bootstrap/personal behavior and Guide runtime.
+Final verification on the combined branch: `npm run check` passed TypeScript and
+all 3,171 tests across 301 files. Upstream sales changes in `6d2ca13f` were merged
+without conflicts; the Chunk 22 UI files remained identical to implementation
+commit `b1fe17a3`. The final focused run passed 200 tests across four files, including
+navigation regressions, mobile bootstrap/personal behavior and Guide runtime. Six
+additional disposable-server browser checks confirmed exact workflow navigation,
+changed-record recovery, revoked access and personal-only boundaries after the merge.
