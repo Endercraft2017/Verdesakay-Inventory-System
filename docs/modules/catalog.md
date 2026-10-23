@@ -489,6 +489,16 @@ read-only sale/JO tracking for warehouse staff. The current source files still l
 under `src/modules/inventory/` and `public/js/modules/inventory/`; moving them is a
 separate code-organization task, not a prerequisite for this workflow.
 
+Customer service extension (schema 98): `customer-cases.ts` owns access, validation and
+append-only events; `customer-cases.routes.ts` provides shared inquiry/complaint records,
+next actions and the work queue. Existing Customers and sale intake link records without
+copying sales. Customer/case routes are gated by Sales. Case ownership uses tenant-edited
+role permissions; fresh CSR/CSR Supervisor seeds include case access, and existing roles
+remain administrator-controlled. Case writes are online-only on installed sync nodes;
+normal hosted writes use atomic version checks. Core image attachments inherit case
+access. Frontend: `customer-cases.js`, `customers.js`, `orders.js`, route `customer-work`.
+See `docs/CSR-IMPLEMENTATION.md` and `docs/guides/customer-service.md`.
+
 ## modules/inventory
 
 **Inventory UI review (Chunk 1):** the existing desktop layout is retained. List filters

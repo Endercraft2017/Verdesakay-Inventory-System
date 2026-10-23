@@ -33,6 +33,9 @@ interface StoredRow {
 }
 
 export function idempotency(req: Request, res: Response, next: NextFunction): void {
+  // Case writes use their own transaction-bound request keys, ownership and versions.
+  // General attachment/order retries retain the upstream authenticated cache behavior.
+  if (/^\/customer-cases(\/|$)/i.test(req.path)) return next();
   const key = req.get('Idempotency-Key');
   if (!key || !MUTATING.has(req.method)) return next();
   if (!KEY_RE.test(key)) {

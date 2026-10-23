@@ -259,6 +259,8 @@ export const updateSupplierSchema = createSupplierSchema.partial().extend({
 
 // ---- Customers (AR-side party registry) ----
 export const createCustomerSchema = z.object({
+  facebook_name: trimmed.max(160).optional().nullable(),
+  facebook_url: z.union([z.literal(''), z.url().regex(/^https?:\/\//, 'Use an http(s) URL')]).optional().nullable(),
   name: trimmed.min(1, 'Customer name is required').max(160),
   contact_person: trimmed.max(160).optional().nullable(),
   phone: trimmed.max(80).optional().nullable(),
@@ -271,6 +273,7 @@ export const createCustomerSchema = z.object({
 });
 
 export const updateCustomerSchema = createCustomerSchema.partial().extend({
+  version: z.number().int().positive(),
   name: trimmed.min(1, 'Customer name is required').max(160).optional(),
 });
 
@@ -929,6 +932,9 @@ const orderFields = {
 
 export const createOrderSchema = z.object({
   type: z.enum(['sale', 'job', 'purchase']),
+  request_key: trimmed.min(8).max(100).optional(),
+  case_id: z.number().int().positive().optional(),
+  case_version: z.number().int().positive().optional(),
   ...orderFields,
 });
 
@@ -1923,3 +1929,21 @@ export const deliveryCompleteSchema = z.object({
 }).refine((v) => v.outcome !== 'failed' || (v.note && v.note.trim().length >= 3), {
   message: 'Say why the delivery failed', path: ['note'],
 });
+
+// Customer service cases: stored against the existing customer registry.
+const caseId = z.number().int().positive();
+const caseText = z.string().trim();
+const caseFields = {
+  summary: caseText.min(1).max(2000),
+  status: z.enum(['open','in_progress','waiting','resolved','cancelled']),
+  owner_id: caseId,
+  next_action: caseText.max(1000).nullable(),
+  due_at: z.iso.datetime({ offset: true }).nullable().transform(v => v ? new Date(v).toISOString() : null),
+  sale_order_id: caseId.nullable(),
+  resolution: caseText.max(4000).nullable(),
+};
+export const createCustomerCaseSchema = z.object({
+  ...caseFields, customer_id: caseId, kind: z.enum(['inquiry','complaint']),
+  request_key: caseText.min(8).max(100), note: caseText.max(4000).optional(),
+});
+export const updateCustomerCaseSchema = z.object({ ...caseFields, version: caseId, note: caseText.max(4000).optional() });

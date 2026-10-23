@@ -12,6 +12,8 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import multer from 'multer';
 import { queryOne, queryAll, run, uploadDir } from '../shared/db';
 import { requireAuth } from '../shared/auth';
+import { moduleEnabled } from '../shared/modules';
+import { canReadCases, canEditCase, type CustomerCase } from '../modules/inventory/customer-cases';
 import { LINE, INSPECT, RTS, UNIT_PHOTOS } from '../shared/desk-access';
 import { enforceQuota } from '../platform/quota';
 import type { Permission } from '../shared/types';
@@ -22,11 +24,12 @@ import { sideEffectsSuppressed, siteDecisionStands } from '../shared/sync-contex
 const router = Router();
 router.use(requireAuth);
 
-const KINDS = new Set(['qc_unit', 'damage', 'problem', 'delivery', 'signature', 'release', 'release_proof', 'sales_return_proof', 'sales_return', 'parts_release', 'production_issue']);
+const KINDS = new Set(['qc_unit', 'damage', 'problem', 'delivery', 'signature', 'release', 'release_proof', 'sales_return_proof', 'sales_return', 'parts_release', 'production_issue', 'customer_case']);
 const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
 /** Which permission(s) a kind needs. `[]` = any authenticated user. */
 const READ_PERMS: Record<string, Permission[]> = {
+  customer_case: ['cases.view'],
   // A unit's photos (build photo, QC/QA evidence): production screens and the desks handling it.
   qc_unit: ['inventory.view', 'production.view', ...UNIT_PHOTOS],
   damage: ['inventory.view'],
@@ -50,6 +53,7 @@ const FLOOR_PERMS: Permission[] = [
   'production.record', 'production.inspect_qc', 'production.inspect_qa',
 ];
 const WRITE_PERMS: Record<string, Permission[]> = {
+  customer_case: ['cases.edit'],
   qc_unit: FLOOR_PERMS,
   damage: ['inventory.adjust'],
   problem: [],
@@ -78,6 +82,13 @@ function deliveryEvidenceAccess(req: Request, refId: number): { found: boolean; 
     status: delivery?.status ?? null };
 }
 const deliveryEvidence = (kind: string): boolean => kind === 'delivery' || kind === 'signature';
+
+function caseAccess(req: Request, kind: string, refId: number, write = false): boolean {
+  if (kind !== 'customer_case') return true;
+  if (!moduleEnabled('sales') || !canReadCases(req.user!)) return false;
+  const c = queryOne<CustomerCase>('SELECT * FROM customer_cases WHERE id=?', refId);
+  return !!c && (!write || canEditCase(req.user!, c));
+}
 
 export const imageUpload = multer({
   storage: multer.diskStorage({
@@ -109,7 +120,7 @@ router.get('/', (req, res) => {
     res.status(400).json({ error: 'kind and ref_id are required' });
     return;
   }
-  if (!allows(req, READ_PERMS[kind] ?? ['inventory.view'])) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (!caseAccess(req,kind,refId) || !allows(req, READ_PERMS[kind] ?? ['inventory.view'])) { res.status(403).json({ error: 'Forbidden' }); return; }
   if (deliveryEvidence(kind)) {
     const access = deliveryEvidenceAccess(req, refId);
     if (!access.found) { res.status(404).json({ error: 'Delivery not found' }); return; }
@@ -131,7 +142,7 @@ router.get('/:id/image', async (req, res) => {
   const row = queryOne<Row>('SELECT kind, ref_id, image_path, uploaded_by FROM attachments WHERE id = ?', Number(req.params.id));
   if (!row) { res.status(404).json({ error: 'Attachment not found' }); return; }
   if (row.kind === 'problem' && row.uploaded_by !== req.user!.id && !req.user!.permissions.includes('evidence.manage')) {res.status(403).json({error:'This evidence belongs to another account'});return;}
-  if (!allows(req, READ_PERMS[row.kind] ?? ['inventory.view'])) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (!caseAccess(req,row.kind,row.ref_id) || !allows(req, READ_PERMS[row.kind] ?? ['inventory.view'])) { res.status(403).json({ error: 'Forbidden' }); return; }
   if (deliveryEvidence(row.kind) && !deliveryEvidenceAccess(req, row.ref_id).allowed) {
     res.status(403).json({ error: 'Not your delivery' }); return;
   }
@@ -152,7 +163,7 @@ router.post('/', syncClass('physical'), syncUpload(imageUpload.single('image')),
     res.status(400).json({ error: 'kind and ref_id are required' });
     return;
   }
-  if (!allows(req, WRITE_PERMS[kind] ?? ['inventory.adjust'])) {
+  if (!caseAccess(req, kind, refId, true) || !allows(req, WRITE_PERMS[kind] ?? ['inventory.adjust'])) {
     if (req.file) unlink(req.file.filename);
     res.status(403).json({ error: 'Forbidden' });
     return;
@@ -208,7 +219,7 @@ router.delete('/:id', syncClass('claim'), (req, res) => {
   if (!row) { res.status(404).json({ error: 'Attachment not found' }); return; }
   if (row.kind === 'problem' && row.uploaded_by !== req.user!.id && !req.user!.permissions.includes('evidence.manage')) {res.status(403).json({error:'This evidence belongs to another account'});return;}
   if (row.uploaded_by !== req.user!.id && !req.user!.permissions.includes('evidence.manage')) {res.status(403).json({error:'Only the uploader or an evidence custodian may remove this photo'});return;}
-  if (!allows(req, WRITE_PERMS[row.kind] ?? ['inventory.adjust'])) { res.status(403).json({ error: 'Forbidden' }); return; }
+  if (!caseAccess(req,row.kind,row.ref_id,true) || !allows(req, WRITE_PERMS[row.kind] ?? ['inventory.adjust'])) { res.status(403).json({ error: 'Forbidden' }); return; }
   if (deliveryEvidence(row.kind)) {
     const access = deliveryEvidenceAccess(req, row.ref_id);
     if (!access.allowed) { res.status(403).json({ error: 'Not your delivery' }); return; }

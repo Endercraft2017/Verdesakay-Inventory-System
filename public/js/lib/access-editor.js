@@ -18,6 +18,11 @@ window.AccessEditor = (() => {
   // `where` names screens a permission opens that the desktop menu can't tell us (phone app,
   // buttons inside a screen); desktop menu entries are added from nav-config.js automatically.
   const PERMISSION_GROUPS = [
+    { id: 'customer-cases', label: 'Customer cases', items: [
+      { key: 'cases.view', label: 'View cases', desc: 'Read shared customer cases and history (also needs orders.view)' },
+      { key: 'cases.edit', label: 'Handle cases', desc: 'Create and update own cases, including handover' },
+      { key: 'cases.assign', label: 'Supervise cases', desc: 'Use the team queue and update or reassign any case' },
+    ] },
     { id: 'basics', label: 'Phone app & messaging', items: [
       {"key": "mobile.access", "label": "Use the phone app", "desc": "Sign in at /m — Home, Clock, Inbox, payslips, requests, schedule and Profile", "where": ["Phone: Home, Clock, Inbox, Profile"]},
       {"key": "messages.view", "label": "Read messages", "desc": "Read in-app chat", "where": ["Phone: Inbox"]},

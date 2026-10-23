@@ -18,6 +18,7 @@ import rolesRoutes from './core/roles.routes';
 import inventoryRoutes from './modules/inventory/inventory.routes';
 import suppliersRoutes from './modules/inventory/suppliers.routes';
 import customersRoutes from './modules/inventory/customers.routes';
+import customerCasesRoutes from './modules/inventory/customer-cases.routes';
 import locationsRoutes from './modules/inventory/locations.routes';
 import bomRoutes from './modules/manufacturing/bom.routes';
 import jobOrdersRoutes from './modules/manufacturing/job-orders.routes';
@@ -419,6 +420,7 @@ export function createApp() {
   app.use('/api/inventory', requireModule('inventory'), inventoryRoutes);
   app.use('/api/suppliers', requireModule('inventory'), suppliersRoutes);
   app.use('/api/customers', requireModule('sales'), customersRoutes);
+  app.use('/api/customer-cases', requireModule('sales'), customerCasesRoutes);
   app.use('/api/locations', requireModule('inventory'), locationsRoutes);
   app.use('/api/finished-products', requireModule('manufacturing'), bomRoutes);
   app.use('/api/job-orders', requireModule('manufacturing'), jobOrdersRoutes);

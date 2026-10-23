@@ -68,7 +68,7 @@ it('rejects invalid workflow statuses and archived customers while preserving du
  const disposable=(await ctx.api.post('/api/customers').set(auth()).send({name:'Temporary customer'})).body.id;
  const created=await ctx.api.post('/api/form-records').set(auth()).send(body('draft',{customer:disposable}));expect(created.status).toBe(201);
  const saved=(await ctx.api.get('/api/form-records/'+created.body.id).set(auth())).body;
- await ctx.api.put('/api/customers/'+disposable).set(auth()).send({archived:true});
+ await ctx.api.put('/api/customers/'+disposable).set(auth()).send({archived:true,version:1});
  expect((await ctx.api.put('/api/form-records/'+created.body.id).set(auth()).send({data:saved.data,status:'submitted',expected_revision:saved.revision})).status).toBe(400);
  const unchanged=(await ctx.api.get('/api/form-records/'+created.body.id).set(auth())).body;expect(unchanged.status).toBe('draft');expect(unchanged.revision).toBe(saved.revision);expect(unchanged.sales_order).toBeNull();
 });

@@ -7,6 +7,7 @@ import { allocateBatch, batchBalances, undoBatchAllocations } from './batch-stoc
 import { moduleEnabled, requireModule } from '../../shared/modules';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { createHash } from 'node:crypto';
+import { caseError, getCase, canEditCase, recordCaseEvent, terminalCase } from './customer-cases';
 import { idempotency } from '../../shared/idempotency';
 import { notifyAnyPermission, notifyPermission } from '../../shared/push';
 import { db, queryOne, queryAll, run, nextSequence } from '../../shared/db';
@@ -182,6 +183,7 @@ function resolveCustomer(
   const c = queryOne<{ name: string; contact_person: string | null; phone: string | null }>(
     'SELECT name, contact_person, phone FROM customers WHERE id = ?', input.customer_id
   );
+  if (!c) caseError(400, 'Customer not found; choose a valid customer');
   return {
     customer_id: c ? input.customer_id : null,
     customer_name: input.customer_name?.trim() || c?.name || null,
@@ -939,8 +941,14 @@ router.post('/:id/purchase-shortfall', requireModule('sales'), requireModule('pu
   } catch (e) { db.exec('ROLLBACK'); throw e; }
 });
 
+// Case links/events are authority writes until an offline case workflow is specified.
+function caseSaleOnline(req: Request, res: Response, next: NextFunction): void {
+  if (req.body?.case_id != null) { syncClass('online')(req,res,next); return; }
+  next();
+}
+
 // POST /api/orders — create with auto number + computed totals
-router.post('/', requireAnyPermission(['orders.create', 'purchasing.manage']), createAccess, idempotency, syncClass('merge'), (req, res) => {
+router.post('/', requireAnyPermission(['orders.create', 'purchasing.manage']), createAccess, idempotency, caseSaleOnline, syncClass('merge'), (req, res) => {
   const input = parseBody(createOrderSchema, req.body);
   if (input.type !== 'purchase' && !['open','draft'].includes(String(input.status||'open').toLowerCase()) && !req.user!.permissions.includes('orders.approve')) { res.status(403).json({error:'Sales approval permission is required for this status'}); return; }
   if (input.type === 'sale' && input.items.some((line) => line.item_id != null)
@@ -955,10 +963,35 @@ router.post('/', requireAnyPermission(['orders.create', 'purchasing.manage']), c
   validateOrderLinks(input.type, input);
   const { lines, subtotal, tax_amount, total } = computeTotals(input.items, input.tax_percent);
 
-  const cust = resolveCustomer(input.type, input);
-
-  db.exec('BEGIN');
+  const requestKey = input.request_key || req.get('Idempotency-Key');
+  if (requestKey && !/^[A-Za-z0-9._:-]{8,100}$/.test(requestKey)) caseError(400, 'Invalid sale request key');
+  const creationKey = requestKey ? `${req.user!.id}:${requestKey}` : null;
+  const { case_version: _version, request_key: _key, ...fingerprint } = input;
+  const creationHash = createHash('sha256').update(JSON.stringify(fingerprint)).digest('hex');
+  db.exec('BEGIN IMMEDIATE');
   try {
+    const c = input.case_id ? getCase(input.case_id) : null;
+    if (c) {
+      if (!canEditCase(req.user!, c)) caseError(403, 'Only the case owner or supervisor can create its sale');
+      if (input.type !== 'sale' || c.kind !== 'inquiry') caseError(400, 'Only an inquiry can create a sale');
+      if (input.customer_id != null && input.customer_id !== c.customer_id) caseError(400, 'Sale customer must match the inquiry');
+      if (c.sale_order_id) {
+        const prior = queryOne<{ id: number; number: string; creation_hash: string }>('SELECT id,number,creation_hash FROM orders WHERE id=?', c.sale_order_id)!;
+        if (prior.creation_hash !== creationHash) caseError(409, 'Inquiry already has a sale. Open the linked order instead.');
+        db.exec('COMMIT'); res.json({ id: prior.id, number: prior.number, replayed: true }); return;
+      }
+      if (c.version !== input.case_version) caseError(409, 'Inquiry changed. Reopen it before creating a sale.');
+      if (terminalCase(c.status)) caseError(409, 'Reopen this inquiry before creating a sale');
+      input.customer_id = c.customer_id;
+    }
+    if (creationKey) {
+      const prior = queryOne<{ id: number; number: string; creation_hash: string }>('SELECT id,number,creation_hash FROM orders WHERE creation_key=?', creationKey);
+      if (prior) {
+        if (prior.creation_hash !== creationHash) caseError(409, 'This request already created an order with different details. Open that order.');
+        db.exec('COMMIT'); res.json({ id: prior.id, number: prior.number, replayed: true }); return;
+      }
+    }
+    const cust = resolveCustomer(input.type, input);
     const number = nextOrderNumber(input.type);
     const info = run(
       `INSERT INTO orders
@@ -998,6 +1031,11 @@ router.post('/', requireAnyPermission(['orders.create', 'purchasing.manage']), c
         });
         return;
       }
+    }
+    run('UPDATE orders SET creation_key=?,creation_hash=? WHERE id=?', creationKey, creationHash, newId);
+    if (c) {
+      run("UPDATE customer_cases SET sale_order_id=?,version=version+1,updated_at=? WHERE id=?", newId, now().toISOString(), c.id);
+      recordCaseEvent(c.id, req.user!, 'sale_linked', `Created ${number}`);
     }
     db.exec('COMMIT');
     if (input.type === 'sale') {
@@ -1122,6 +1160,8 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
   }
   if (order.type === 'sale' && (directStockOut || order.released_at || order.fulfilled_at)) input.location_id = order.location_id;
   const cust = resolveCustomer(order.type, input);
+  if (cust.customer_id !== order.customer_id && queryOne('SELECT id FROM customer_cases WHERE sale_order_id=?', id))
+    caseError(409, 'This sale is linked to customer cases; its customer cannot be changed');
   const storedItems = queryAll<OrderItem>('SELECT * FROM order_items WHERE order_id = ? ORDER BY sort, id', id);
   const existingCkd = new Map<number, CkdPart[]>();
   for (const parent of storedItems.filter((line) => line.fulfillment_mode === 'ckd')) {
@@ -1212,6 +1252,7 @@ router.put('/:id', requireAnyPermission(['orders.edit', 'purchasing.manage']), e
 // DELETE /api/orders/:id (cascades items)
 router.delete('/:id', requireAnyPermission(['orders.delete', 'purchasing.manage']), syncClass('claim', orderSite), (req, res) => {
   const id = Number(req.params.id);
+  if (queryOne('SELECT id FROM customer_cases WHERE sale_order_id=?', id)) caseError(409, 'Sale has customer case history; cancel rather than delete it');
   const kind = queryOne<{ type: string }>('SELECT type FROM orders WHERE id = ?', id);
   if (kind && !canOnOrder(req.user!, kind.type, 'delete')) {
     res.status(403).json({ error: 'Forbidden: insufficient permissions' });

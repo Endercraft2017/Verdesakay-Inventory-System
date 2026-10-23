@@ -9,7 +9,6 @@ const App = (() => {
   let activePrimaryId = null;
   let activeSubtabId = null;
   let renderedLocation = null;
-  let suppressHash = false; // guard so programmatic hash changes don't re-navigate
 
   function register(name, renderFn) { routes[name] = renderFn; }
 
@@ -487,10 +486,9 @@ const App = (() => {
 
     renderedLocation = { name, filter };
     // Reflect in the URL without triggering a re-navigation.
-    suppressHash = true;
-    location.hash = hashFor(name, filter);
+    const nextHash = '#' + hashFor(name, filter);
+    if (location.hash !== nextHash) history.pushState(null, '', nextHash);
     renderedLocation = { name, route: name, filter };
-    suppressHash = false;
 
     // Repaint chrome.
     const primary = NAV.find((p) => p.id === activePrimaryId);
@@ -753,7 +751,7 @@ const App = (() => {
 
     // Browser back/forward or manual hash edits.
     window.addEventListener('hashchange', () => {
-      if (suppressHash || !me) return;
+      if (!me) return;
       const parsed = parseHash();
       if (renderedLocation && parsed.route === renderedLocation.name && filtersEqual(parsed.filter, renderedLocation.filter)) return;
       if (routes[parsed.route]) navigate(parsed.route, parsed.filter);

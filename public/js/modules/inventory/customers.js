@@ -1,6 +1,8 @@
 /* Orders → Customers: the AR-side party registry. Sale orders link to a customer. */
-App.register('customers', async (view) => {
-  const canWrite = App.hasPermission('orders.create') || App.hasPermission('orders.edit');
+App.register('customers', async (view, filter) => {
+  const routeAtRender = location.hash;
+  const canCreate = App.hasPermission('orders.create');
+  const canWrite = App.hasPermission('orders.edit');
   const canDelete = App.hasPermission('orders.delete');
   let all = [];
   let q = '';
@@ -12,7 +14,7 @@ App.register('customers', async (view) => {
       <div class="grow"></div>
       <label class="check" style="margin-right:8px"><input type="checkbox" id="cus-arch" /> Show archived</label>
       <div class="search-box search">${UI.icon('search', 16)}<input id="cus-search" placeholder="Search name, contact, TIN…" /></div>
-      ${canWrite ? `<button class="btn" id="cus-add">${UI.icon('plus')} New customer</button>` : ''}
+      ${canCreate ? `<button class="btn" id="cus-add">${UI.icon('plus')} New customer</button>` : ''}
     </div>
     <div class="panel"><div id="cus-table"></div></div>`;
 
@@ -33,7 +35,7 @@ App.register('customers', async (view) => {
         icon: 'building',
         title: q ? 'No matching customers' : 'No customers yet',
         hint: q ? 'Try a different search.' : 'Add the customers you sell to, then raise sale orders against them.',
-        action: (!q && canWrite) ? `<button class="btn" id="cus-empty-add">${UI.icon('plus')} New customer</button>` : '',
+        action: (!q && canCreate) ? `<button class="btn" id="cus-empty-add">${UI.icon('plus')} New customer</button>` : '',
       });
       const ea = tableEl.querySelector('#cus-empty-add');
       if (ea) ea.onclick = () => customerModal(null);
@@ -84,6 +86,10 @@ App.register('customers', async (view) => {
           <input data-f="name" value="${UI.esc(c ? c.name : '')}" /></div>
         ${field('Contact person', 'contact_person', c && c.contact_person)}
         ${field('Phone', 'phone', c && c.phone)}
+        ${field('Facebook display name', 'facebook_name', c && c.facebook_name)}
+        ${field('Facebook profile / reference URL', 'facebook_url', c && c.facebook_url)}
+        <div class="span2" data-matches aria-live="polite"></div>
+        ${!c ? '<label class="span2 check"><input type="checkbox" data-separate /> This is a separate customer from any suggested matches.</label>' : ''}
         ${field('Email', 'email', c && c.email, 'email')}
         ${field('TIN', 'tin', c && c.tin)}
         <div class="form-field"><div class="field-label"><label>Payment terms (days)</label></div>
@@ -95,10 +101,28 @@ App.register('customers', async (view) => {
           <textarea data-f="notes">${UI.esc(c && c.notes || '')}</textarea></div>
       </div>`,
       confirmText: c ? 'Save changes' : 'Create customer',
+      onOpen: overlay => {
+        let timer, sequence=0;
+        const find=async()=>{
+          const current=++sequence;
+          const values={exclude:c?c.id:0};
+          ['name','phone','email','facebook_name'].forEach(k=>values[k]=overlay.querySelector(`[data-f="${k}"]`).value);
+          try {
+            const matches=await API.get('/customers/matches?'+new URLSearchParams(values));
+            if(current!==sequence || !overlay.isConnected)return;
+            const target=overlay.querySelector('[data-matches]');
+            target.innerHTML=matches.length ? '<p>Possible existing customers — check before creating another profile:</p>'+matches.map(m=>`<button type="button" class="btn secondary small" data-match="${m.id}">${UI.esc(m.name)} · ${UI.esc(m.phone||m.email||m.facebook_name||'')}${m.archived?' (archived)':''}</button>`).join('') : '';
+            target.querySelectorAll('[data-match]').forEach(b=>b.onclick=()=>{overlay.remove();detailModal({id:Number(b.dataset.match)}).catch(e=>UI.toast(e.message,'error'));});
+          } catch(e){overlay.querySelector('[data-matches]').textContent='Matching unavailable: '+e.message;}
+        };
+        ['name','phone','email','facebook_name'].forEach(k=>overlay.querySelector(`[data-f="${k}"]`).addEventListener('input',()=>{clearTimeout(timer);sequence++;timer=setTimeout(find,250);}));
+      },
       onConfirm: async (overlay, showErr) => {
         const g = (k) => overlay.querySelector(`[data-f="${k}"]`);
         const body = {
           name: g('name').value.trim(),
+          facebook_name: g('facebook_name').value.trim(),
+          facebook_url: g('facebook_url').value.trim(),
           contact_person: g('contact_person').value.trim(),
           phone: g('phone').value.trim(),
           email: g('email').value.trim(),
@@ -107,8 +131,13 @@ App.register('customers', async (view) => {
           notes: g('notes').value.trim(),
           payment_terms_days: Number(g('payment_terms_days').value) || 0,
         };
+        if (c) body.version = c.version;
         if (c) body.archived = !!(g('archived') && g('archived').checked);
         if (!body.name) { showErr('Name is required'); return false; }
+        if (!c && !overlay.querySelector('[data-separate]').checked) {
+          const matches = await API.get('/customers/matches?' + new URLSearchParams({name:body.name,phone:body.phone,email:body.email,facebook_name:body.facebook_name}));
+          if (matches.length) { showErr('Possible existing customer found. Open a match below or confirm this is a separate customer.'); return false; }
+        }
         if (c) await API.put('/customers/' + c.id, body);
         else await API.post('/customers', body);
         UI.toast(c ? 'Customer updated' : 'Customer created');
@@ -118,18 +147,22 @@ App.register('customers', async (view) => {
   }
 
   async function detailModal(row) {
-    const c = await API.get('/customers/' + row.id).catch(() => row);
+    if (location.hash !== routeAtRender) return;
+    const c = await API.get('/customers/' + row.id);
+    if (location.hash !== routeAtRender) return;
     const orders = Array.isArray(c.orders) ? c.orders : [];
-    UI.modal({
+    const modal = UI.modal({
       title: 'Customer details',
       size: 'lg',
       cancelText: 'Close',
       confirmText: canWrite ? 'Edit customer' : null,
       onConfirm: canWrite ? () => customerModal(c) : undefined,
       bodyHTML: `
-        <h3 style="margin:0 0 4px">${UI.esc(c.name)}</h3>
+        <h3 style="margin:0 0 4px">${UI.esc(c.name)}${c.archived ? ' (archived)' : ''}</h3>
+        ${App.hasPermission('cases.view') ? `<div><button class="btn secondary" data-new-case="inquiry">New inquiry</button> <button class="btn secondary" data-new-case="complaint">New complaint</button></div><h4>Customer cases</h4><div data-customer-cases></div><button class="btn secondary small" data-more-cases>More cases</button>` : ''}
         <div class="kv" style="margin-top:12px">
           <div><span class="muted">Contact</span><div>${UI.esc(c.contact_person || '—')}</div></div>
+          <div><span class="muted">Facebook</span><div>${UI.esc(c.facebook_name || '—')} ${c.facebook_url ? `<a href="${UI.esc(c.facebook_url)}" target="_blank" rel="noopener noreferrer">Open reference</a>` : ''}</div></div>
           <div><span class="muted">Phone</span><div>${UI.esc(c.phone || '—')}</div></div>
           <div><span class="muted">Email</span><div>${UI.esc(c.email || '—')}</div></div>
           <div><span class="muted">TIN</span><div>${UI.esc(c.tin || '—')}</div></div>
@@ -139,15 +172,49 @@ App.register('customers', async (view) => {
         ${c.notes ? `<h4 style="margin:14px 0 4px">Notes</h4><p style="white-space:pre-wrap;margin:0">${UI.esc(c.notes)}</p>` : ''}
         <h4 style="margin:16px 0 4px">Recent sale orders (${orders.length})</h4>
         ${orders.length ? `<table><thead><tr><th>No.</th><th>Date</th><th>Status</th><th class="right">Total</th></tr></thead>
-          <tbody>${orders.map((o) => `<tr><td class="mono">${UI.esc(o.number)}</td><td>${UI.esc(o.order_date || '—')}</td>
+          <tbody>${orders.map((o) => `<tr><td><button class="btn secondary small" data-sale="${o.id}">${UI.esc(o.number)}</button></td><td>${UI.esc(o.order_date || '—')}</td>
           <td class="muted">${UI.esc(o.status)}</td><td class="right">${UI.money(o.total)}</td></tr>`).join('')}</tbody></table>`
-          : '<div class="empty">No sale orders yet.</div>'}`,
+          : '<div class="empty">No sale orders yet.</div>'}
+        <h4>Customer history</h4><div data-customer-history></div><button class="btn secondary small" data-more-history>More history</button>`,
+      onOpen: ov => {
+        const refresh=async()=>{modal.close();await detailModal(c);await load();};
+        ov.querySelectorAll('[data-sale]').forEach(b=>b.onclick=()=>{modal.close();App.navigate('orders',{type:'sale',id:Number(b.dataset.sale)});});
+        ov.querySelectorAll('[data-new-case]').forEach(b=>{
+          b.hidden=!App.hasPermission('cases.edit');
+          b.onclick=()=>CustomerCases.create(c.id,b.dataset.newCase,refresh).catch(e=>UI.toast(e.message,'error'));
+        });
+        if(App.hasPermission('cases.view')) {
+          let offset=0;
+          const more=ov.querySelector('[data-more-cases]');
+          const cases=async()=>{
+            const rows=await API.get(`/customers/${c.id}/cases?offset=${offset}`);
+            const root=ov.querySelector('[data-customer-cases]');root.insertAdjacentHTML('beforeend',CustomerCases.rows(rows.slice(0,50)));CustomerCases.bind(root,refresh);
+            offset+=50;more.hidden=rows.length<=50;
+          };
+          more.onclick=()=>cases().catch(e=>UI.toast(e.message,'error'));
+          cases().catch(e=>{ov.querySelector('[data-customer-cases]').textContent=e.message;});
+        }
+        let offset=0;
+        const more=ov.querySelector('[data-more-history]');
+        const history=async()=>{
+          const rows=await API.get(`/customers/${c.id}/history?offset=${offset}`);
+          const root=ov.querySelector('[data-customer-history]');
+          root.insertAdjacentHTML('beforeend',rows.slice(0,50).map(e=>`<p><button class="btn secondary small" data-history-kind="${e.kind}" data-ref="${e.ref_id}">${UI.esc(e.title)}</button> · ${UI.esc(e.event_type)} · ${UI.esc(e.actor_name||'')} · ${UI.esc(new Date(e.occurred_at).toLocaleString())}<br>${UI.esc(e.note||'')}</p>`).join('') || '<p class="muted">No history yet.</p>');
+          root.querySelectorAll('[data-ref]').forEach(b=>b.onclick=()=>{
+            if(b.dataset.historyKind==='sale'){modal.close();App.navigate('orders',{type:'sale',id:Number(b.dataset.ref)});}
+            else CustomerCases.open(Number(b.dataset.ref),refresh).catch(e=>UI.toast(e.message,'error'));
+          });
+          offset+=50;more.hidden=rows.length<=50;
+        };
+        more.onclick=()=>history().catch(e=>UI.toast(e.message,'error'));
+        history().catch(e=>{ov.querySelector('[data-customer-history]').textContent=e.message;});
+      },
     });
   }
 
   async function del(c) {
     const ok = await UI.confirmDialog(
-      `Delete "${c.name}"?${c.order_count ? ` ${c.order_count} sale order(s) will keep their history but lose the customer link.` : ''} Consider archiving instead.`,
+      `Delete "${c.name}"?${c.order_count ? ` ${c.order_count} sale order(s) are linked. Customers with history must be archived.` : ''} Consider archiving instead.`,
       'Delete'
     );
     if (!ok) return;
@@ -164,4 +231,5 @@ App.register('customers', async (view) => {
   if (addBtn) addBtn.onclick = () => customerModal(null);
 
   await load();
+  if(filter && filter.id) await detailModal({id:Number(filter.id)});
 });

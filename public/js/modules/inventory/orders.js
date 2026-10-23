@@ -23,6 +23,7 @@ App.register('orders', async (view, filter) => {
   const lookupWarnings = [];
   if (type === 'sale') {
     try { customers = await API.get('/customers'); } catch { lookupWarnings.push('Customer records could not be loaded. You can enter walk-in details manually.'); }
+    if (filter && filter.customer_id && !customers.some(c => c.id == filter.customer_id)) customers.push(await API.get('/customers/' + filter.customer_id));
     try { locations = await API.get('/locations'); } catch { lookupWarnings.push('Stock locations could not be loaded. The existing or default ship-from location will be kept.'); }
   }
   let taxCodes = [];
@@ -368,7 +369,10 @@ App.register('orders', async (view, filter) => {
     const lines = editing ? (order.items || []).filter((it) => !it.parent_order_item_id)
       .map((it) => ({ ...it, ckd_parts: partsByParent.get(it.id) || [] })) : [];
     const priceSuggestions = new Map();
-    const get = (k, d) => (editing && order[k] != null ? order[k] : d);
+    const preset = !editing && filter && filter.case_id ? customers.find(c => c.id == filter.customer_id) : null;
+    const requestKey = UI.operationKey();
+    const defaults = preset ? {customer_id:preset.id,customer_name:preset.name,customer_contact:preset.contact_person || preset.phone || ''} : {};
+    const get = (k,d) => editing && order[k] != null ? order[k] : (defaults[k] != null ? defaults[k] : d);
     let initialized = false;
     let saveAttempt;
     const preservedOption = (value, choices, label) => value && !choices.some((c) => String(c.id) === String(value))
@@ -467,6 +471,7 @@ App.register('orders', async (view, filter) => {
         const shipFrom = ov.querySelector('[data-f="location_id"]');
         if (shipFrom && editing && (order.released_at || order.fulfilled_at)) shipFrom.disabled = true;
         const customerEl = ov.querySelector('[data-f="customer_id"]');
+        if(preset && customerEl) customerEl.disabled=true;
         if (customerEl && !readOnly) customerEl.onchange = () => {
           const customer = customers.find((c) => String(c.id) === customerEl.value);
           ov.querySelector('[data-f="customer_name"]').value = customer ? customer.name : '';
@@ -703,6 +708,9 @@ App.register('orders', async (view, filter) => {
           if (locations.length) body.location_id = fOpt('location_id') || null;
         }
         body.tax_code_id = taxCodes.length ? fOpt('tax_code_id') || null : get('tax_code_id', null);
+        if (!editing) { body.request_key=requestKey;
+          if(filter && filter.case_id) {body.case_id=Number(filter.case_id);body.case_version=Number(filter.case_version);}
+        }
 
         const needsApprovalReview = type === 'sale' && editing && ['open', 'cancelled'].includes(String(order.status).toLowerCase()) && body.status === 'approved';
         if (needsApprovalReview) body.status = 'open';
@@ -914,4 +922,5 @@ App.register('orders', async (view, filter) => {
   // filter.id deep-links straight into one order's edit modal (used by the AI assistant's
   // created-record links) — openOrder() only needs the id, it fetches the rest itself.
   if (filter && filter.id) openOrder(filter.id);
+  else if(filter && filter.case_id) orderModal(null);
 });

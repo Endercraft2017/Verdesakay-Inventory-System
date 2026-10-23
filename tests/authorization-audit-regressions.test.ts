@@ -126,7 +126,7 @@ it('AUDIT-14: inventory.create-only CSV import cannot change existing inventory 
 it('CSR prepares customer sales and tracks them; a supervisor approves, while operations remain separate',async()=>{
   const csr=await createEmployee(ctx.api,admin,{role:'csr'}),sup=await createEmployee(ctx.api,admin,{role:'csr_supervisor'});
   const customer=await ctx.api.post('/api/customers').set(H(csr.token)).send({name:'CSR Customer'});expect(customer.status).toBe(201);
-  expect((await ctx.api.put(`/api/customers/${customer.body.id}`).set(H(csr.token)).send({phone:'09171234567'})).status).toBe(200);
+  expect((await ctx.api.put(`/api/customers/${customer.body.id}`).set(H(csr.token)).send({phone:'09171234567',version:1})).status).toBe(200);
   const sale=await ctx.api.post('/api/orders').set(H(csr.token)).send({type:'sale',customer_id:customer.body.id,customer_name:'CSR Customer',items:[{name:'Service',quantity:1,unit_price:10}]});expect(sale.status).toBe(201);
   expect((await ctx.api.put(`/api/orders/${sale.body.id}`).set(H(csr.token)).send({notes:'Customer follow-up'})).status).toBe(200);
   expect((await ctx.api.get(`/api/orders/${sale.body.id}`).set(H(csr.token))).status).toBe(200);

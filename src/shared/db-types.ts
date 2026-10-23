@@ -249,6 +249,36 @@ export interface CreditNotes {
   tax_code_id: number | null;
 }
 
+export interface CustomerCaseEvents {
+  id: Generated<number>;
+  case_id: number;
+  actor_id: number | null;
+  actor_name: string;
+  event_type: string;
+  note: string | null;
+  snapshot: string;
+  created_at: Generated<string>;
+}
+
+export interface CustomerCases {
+  id: Generated<number>;
+  customer_id: number;
+  kind: string;
+  summary: string;
+  status: Generated<string>;
+  owner_id: number;
+  next_action: string | null;
+  due_at: string | null;
+  sale_order_id: number | null;
+  resolution: string | null;
+  version: Generated<number>;
+  create_key: string | null;
+  create_hash: string | null;
+  created_by: number | null;
+  created_at: Generated<string>;
+  updated_at: Generated<string>;
+}
+
 export interface Customers {
   id: Generated<number>;
   name: string;
@@ -262,6 +292,11 @@ export interface Customers {
   archived: Generated<number>;
   created_at: Generated<string>;
   updated_at: Generated<string>;
+  facebook_name: string | null;
+  facebook_url: string | null;
+  phone_normalized: Generated<string>;
+  email_normalized: Generated<string>;
+  version: Generated<number>;
 }
 
 export interface Deliveries {
@@ -1049,6 +1084,8 @@ export interface Orders {
   released_by: number | null;
   warehouse_accepted_by: number | null;
   warehouse_accepted_at: string | null;
+  creation_key: string | null;
+  creation_hash: string | null;
 }
 
 export interface PartsReleaseSlipItems {
@@ -1914,6 +1951,8 @@ export interface DB {
   bug_report_attachments: BugReportAttachments;
   bug_reports: BugReports;
   credit_notes: CreditNotes;
+  customer_case_events: CustomerCaseEvents;
+  customer_cases: CustomerCases;
   customers: Customers;
   deliveries: Deliveries;
   departments: Departments;

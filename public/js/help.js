@@ -109,7 +109,11 @@
     },
     {
       id: 'customers', title: 'Customers', group: 'Inventory', routes: ['customers'],
-      html: `<p>Inventory → Customers stores the customer records used by sale orders.</p><ol><li>Click New customer and enter the customer and contact details, then save.</li><li>Search by customer details; open a row to inspect the record.</li><li>Use Edit to update details. Creating and editing customers requires <i>orders.edit</i>; deleting requires <i>orders.delete</i>.</li></ol>`,
+      html: `<p>Sales → Customers stores contact details once and connects inquiries, sales and complaints.</p><ol><li>Search name, phone or Facebook name before creating a customer. Check suggested matches, including archived customers. Confirm a separate person explicitly when necessary.</li><li>Open the customer to record an inquiry or complaint. Each open case needs an owner, next action and due time.</li><li>Open an inquiry and choose Create sale from inquiry to use the normal sale-order workflow with the customer selected. You can also link an existing sale.</li><li>Archive customers with history; linked customers cannot be deleted. Contact edits never rewrite old order snapshots.</li></ol><p>Customer creation needs orders.create, editing needs orders.edit, and case access needs cases.view plus orders.view.</p>`,
+    },
+    {
+      id: 'customer-work', title: 'Customer work', group: 'Inventory', routes: ['customer-work'],
+      html: `<p>Sales → Customer work lists open inquiries and complaints from the same records shown in Customers. Messenger remains separate.</p><ol><li>Use My cases, Overdue or Due through today to find the next action. Supervisors with cases.assign can use Team cases.</li><li>Open your case to record an interaction, set the next action or hand it over to another active CSR. Save before creating a sale.</li><li>Resolve or cancel with a reason. The case leaves the open queue but stays in customer history.</li><li>If another CSR changed the record, your save is refused. Keep your note, close and reopen the case, review the changes and retry.</li></ol><p>Times use your browser’s time zone. The queue works without push notifications. Personal tasks remain private.</p>`,
     },
     {
       id: 'announcements', title: 'Announcements', group: 'Basics', routes: ['announcements'],

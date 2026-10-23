@@ -19,6 +19,11 @@ const UI = (() => {
       .replaceAll("'", '&#39;');
   }
 
+  // getRandomValues also works on an office LAN's HTTP fallback, unlike randomUUID.
+  function operationKey() {
+    return Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+  }
+
   function toast(message, type = 'success') {
     const el = document.createElement('div');
     el.className = 'toast ' + type;
@@ -784,7 +789,7 @@ const UI = (() => {
   }
 
   return {
-    nameControls, esc, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, modalTask, confirmDialog, PLACEHOLDER_PHOTO,
+    nameControls, esc, operationKey, toast, fmtDate, fmtDateShort, fmtBytes, money, initials, modal, modalTask, confirmDialog, PLACEHOLDER_PHOTO,
     drawer, contextMenu, closeContextMenu, printableHtml, printWhenLoaded, documentCss, loadPrintFrame, printFrame, combo,
     icon, helpIcon, emptyState, fileIconName, downloadCsv, csvImportModal,
   };

@@ -14,6 +14,7 @@ export type Permission =
   | 'mobile.access'
   | 'inventory.view' | 'inventory.create' | 'inventory.edit' | 'inventory.delete'
   | 'inventory.adjust' | 'inventory.configure' | 'inventory.mobile'
+  | 'cases.view' | 'cases.edit' | 'cases.assign'
   | 'orders.view' | 'orders.create' | 'orders.edit' | 'orders.delete'
   // Purchase orders, goods receipts and vendor bills (split from orders.*; inventory/order-access.ts).
   | 'purchasing.view' | 'purchasing.manage' | 'purchasing.request' | 'purchasing.approve_requests'
@@ -171,6 +172,11 @@ export interface Supplier {
 }
 
 export interface Customer {
+  facebook_name: string | null;
+  facebook_url: string | null;
+  phone_normalized: string;
+  email_normalized: string;
+  version: number;
   id: number;
   name: string;
   contact_person: string | null;

@@ -20,6 +20,7 @@ session.
 |---|---|---|
 | [Workflow roadmaps](workflow-roadmaps.md) | All teams | Thirteen connected business processes, team handoffs, recovery branches and completion checks |
 | [Capturing a sales order](sales-order-intake.md) | Sales / CSR / order entry | Record customer details, choose explicit inventory or non-stock lines, correct validation errors, and save an open order before approval |
+| [Customer service](customer-service.md) | CSRs / supervisors | Find customers, record inquiries and complaints, link sales, hand over work and preserve history; acceptance script included. |
 | [Bulk import & export (CSV)](csv-import-export.md) | Inventory / HR staff | Load or update many items, suppliers, or employees from a spreadsheet; export data back out. Fill-in [templates/](templates/) included. |
 | [Sales stock review & approval](sales-stock-approval.md) | Sales / warehouse / production / purchasing | Check warehouse ATP, draft missing supply, approve explicitly and follow pending sync states. [Mobile gaps](../../MOBILE-INVENTORY-HANDOFF.md). |
 | [SOP — Production, end to end](production-sop.md) | Production / shop floor / QA/QC / warehouse | The full flow: BOM → job order + team + schedule → release → accept kit → progress → QC/QA → repair/rework → Products In → batch → finished stock → labels/QR/dossier → sale-order allocation. Mirrors Home → Help / SOP. |

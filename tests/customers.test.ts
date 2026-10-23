@@ -44,23 +44,23 @@ describe('customers', () => {
   });
 
   it('archives without deleting; archived hidden by default', async () => {
-    await ctx.api.put(`/api/customers/${id}`).set(hdr()).send({ archived: true });
+    await ctx.api.put(`/api/customers/${id}`).set(hdr()).send({ archived: true, version: 1 });
     const def = await ctx.api.get('/api/customers').set(hdr());
     expect(def.body.some((x: { id: number }) => x.id === id)).toBe(false);
     const all = await ctx.api.get('/api/customers?archived=1').set(hdr());
     expect(all.body.some((x: { id: number }) => x.id === id)).toBe(true);
-    await ctx.api.put(`/api/customers/${id}`).set(hdr()).send({ archived: false });
+    await ctx.api.put(`/api/customers/${id}`).set(hdr()).send({ archived: false, version: 2 });
   });
 
-  it('deleting a customer leaves its sale orders (customer_id -> NULL)', async () => {
+  it('prevents deleting a customer with sale history', async () => {
     const c = await ctx.api.post('/api/customers').set(hdr()).send({ name: 'Temp Buyer' });
     const so = await ctx.api.post('/api/orders').set(hdr()).send({
       type: 'sale', customer_id: c.body.id, status: 'open',
       items: [{ name: 'X', quantity: 1, unit_price: 10 }],
     });
-    expect((await ctx.api.delete(`/api/customers/${c.body.id}`).set(hdr())).status).toBe(200);
+    expect((await ctx.api.delete(`/api/customers/${c.body.id}`).set(hdr())).status).toBe(409);
     const detail = await ctx.api.get(`/api/orders/${so.body.id}`).set(hdr());
     expect(detail.status).toBe(200);
-    expect(detail.body.customer_id).toBeNull();
+    expect(detail.body.customer_id).toBe(c.body.id);
   });
 });

@@ -13,6 +13,7 @@
 import type { Role, Permission } from './types';
 
 export const ALL_PERMISSIONS: Permission[] = [
+  'cases.view', 'cases.edit', 'cases.assign',
   'mobile.access',
   'inventory.receive', 'inventory.transfer', 'inventory.count', 'inventory.review_counts', 'inventory.costs', 'production.work_all', 'production.plan', 'production.kit_release', 'production.configure', 'evidence.manage', 'orders.approve', 'orders.authorize', 'orders.configure', 'orders.override_release', 'orders.direct_sale', 'purchasing.approve_bills', 'purchasing.override_match', 'purchasing.issue_cash', 'purchasing.settle_requests', 'accounting.post', 'accounting.record_payments', 'accounting.configure', 'payroll.approve', 'payroll.pay', 'payroll.rates', 'payroll.configure', 'users.permissions', 'security.manage', 'workspace.manage', 'returns.receive', 'returns.inspect', 'returns.dispose', 'forms.variables', 'hr.timekeeping.view', 'hr.timekeeping.manage', 'hr.kiosk',
   'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.delete',
@@ -75,7 +76,7 @@ export const BUILTIN_ROLES: RoleSeed[] = [
   { key: 'releasing', label: 'Releasing', description: 'Physical fulfillment of approved sales. Commercial approval, purchasing and stock correction are separate.',
     permissions: [...BASELINE, 'orders.view', 'orders.release', 'inventory.view', 'returns.receive'] },
   { key: 'csr', label: 'CSR — Customer Service', description: 'Customers, sales-order preparation, tracking and customer follow-up. No purchasing, stock movement, approval or financial posting.',
-    permissions: [...BASELINE, 'inventory.view', 'orders.view', 'orders.create', 'orders.edit', 'forms.view', 'forms.upload', 'templates.view'] },
+    permissions: [...BASELINE, 'cases.view', 'cases.edit', 'inventory.view', 'orders.view', 'orders.create', 'orders.edit', 'forms.view', 'forms.upload', 'templates.view'] },
   { key: 'hr', label: 'HR', description: 'Personnel, timekeeping, memos and anonymous reports. Payroll is a separate role.',
     permissions: [
       ...BASELINE,
@@ -119,7 +120,7 @@ export const BUILTIN_ROLES: RoleSeed[] = [
   { key: 'releasing_clerk', label: 'Releasing Clerk', description: 'Scans approved sale orders out.',
     permissions: [...BASELINE, 'orders.view', 'orders.release'] },
   { key: 'employee', label: 'Employee', description: 'Personal employee services and purchase requests.', permissions: [...BASELINE] },
-  { key: 'csr_supervisor', label: 'CSR Supervisor', description: 'Reviews sales and authorizes customer release; does not release stock or run purchasing.', permissions: [...BASELINE, 'inventory.view', 'orders.view', 'orders.create', 'orders.edit', 'orders.approve', 'orders.authorize', 'forms.view', 'forms.upload', 'templates.view'] },
+  { key: 'csr_supervisor', label: 'CSR Supervisor', description: 'Reviews sales and authorizes customer release; does not release stock or run purchasing.', permissions: [...BASELINE, 'cases.view', 'cases.edit', 'cases.assign', 'inventory.view', 'orders.view', 'orders.create', 'orders.edit', 'orders.approve', 'orders.authorize', 'forms.view', 'forms.upload', 'templates.view'] },
   { key: 'warehouse_supervisor', label: 'Warehouse Supervisor', description: 'Stock corrections and count review, with separate counter and reviewer.', permissions: [...BASELINE, 'inventory.view', 'inventory.mobile', 'inventory.adjust', 'inventory.receive', 'inventory.transfer', 'inventory.count', 'inventory.review_counts', 'production.kit_release', 'production.repairs', 'orders.view', 'purchasing.view', 'returns.receive', 'forms.view', 'forms.fill.inventory'] },
   { key: 'buyer', label: 'Buyer', description: 'Prepares supplier purchase orders and bills; approval and cash custody are separate.', permissions: [...BASELINE, 'purchasing.view', 'purchasing.manage', 'inventory.view', 'inventory.costs'] },
   { key: 'purchase_approver', label: 'Purchase Approver', description: 'Approves independent purchase requests and vendor bills; no purchasing preparation.', permissions: [...BASELINE, 'purchasing.view', 'purchasing.approve_requests', 'purchasing.approve_bills', 'inventory.costs'] },
@@ -149,6 +150,7 @@ export const ROLES: Role[] = BUILTIN_ROLES.map((r) => r.key);
     an admin, another HR user or accounting. (This is exactly what the built-in staff roles carried
     before roles became editable, plus the phone-app baseline.) */
 export const STAFF_PERMISSIONS: Permission[] = [
+  'cases.view', 'cases.edit',
   'mobile.access', 'messages.view', 'messages.send',
   'inventory.view', 'inventory.create', 'inventory.edit', 'inventory.adjust', 'inventory.mobile',
   'inventory.receive','inventory.transfer','inventory.count','production.kit_release','returns.receive',

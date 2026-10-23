@@ -27,6 +27,28 @@ Real end-to-end business processes, as ordered module stages. See
 feature pipelines" section of `~/.claude/CLAUDE.md` — when placing a new feature,
 find its pipeline and stage here before deciding where the code goes.
 
+## Customer service: inquiry to sale and complaint resolution
+
+**Trigger:** a CSR records an external Messenger interaction (`inventory`).
+**Status:** working with synthetic integration/browser validation; operational CSR validation pending.
+
+1. **Identify customer** — search existing/archived profiles; inspect normalized-contact
+   duplicate suggestions. Explicitly create a separate profile if needed; no automatic merge.
+2. **Inquiry intake** — create a linked customer case with owner, next action and due time.
+3. **Sale** — create from the inquiry through the existing order handler (atomic case link,
+   stable retry), or link an existing sale of that customer. Continue the existing sales
+   fulfillment pipeline below; case actions never bypass stock/release/accounting checks.
+4. **Complaint branch** — separate case under the same customer, optionally linked to a sale;
+   record interactions and supporting authenticated images.
+5. **Handover / waiting** — case owner or supervisor updates assignment/next action. The
+   queue reads that same case; no copied private task. Versions reject stale edits.
+6. **Resolve / cancel** — reason required, pending action cleared, immutable history retained.
+
+**Terminal states:** resolved/cancelled; reopening needs owner/next action/due time.
+**Failure/retry:** state + event + sale link roll back together on save failure; inquiry
+sale retries cannot spawn another order. Archived customers keep history and open work.
+See `docs/guides/customer-service.md` and `docs/CSR-IMPLEMENTATION.md`.
+
 ## Sales order fulfillment
 
 **Offline (phase 4c, docs/OFFLINE-FIRST.md §22):** the whole run, from intake to proof of delivery, works at a

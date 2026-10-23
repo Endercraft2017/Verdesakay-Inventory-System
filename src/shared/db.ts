@@ -28,6 +28,7 @@ import { DEFAULT_COA } from '../modules/accounting/ledger';
 import { preMigrationSnapshot, backupDir, mirrorDir } from './backup';
 import { BUILTIN_ROLES, ADMIN_ROLE, roleDefaults } from './permissions';
 import { syncHooks } from './sync-context';
+import { normalizePhone, normalizeEmail } from './contact';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
 
@@ -106,7 +107,7 @@ function openConnection(slug: string): DatabaseSync {
 // 63: document studio recovery, linked layouts, built-in defaults and configurable grid gaps.
 // 96: job recording assignments and the one-time role/CSR/privacy migration.
 // 97: financial draft editor attribution and targeted default-role corrections.
-export const SCHEMA_VERSION = 97; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
+export const SCHEMA_VERSION = 98; // 20: employees.late_exempt; 21: attendance_records.min_hours_decision;
 // 22: HR Payroll Slip template gains Half/Undertime Days, Undertime Day Pay, Night
 // Differential, itemized Other Deductions rows
 // 23: HR Payroll Slip template drops the always-on "Cash Advance" deduction row (a cash
@@ -3691,6 +3692,7 @@ function migrate(): void {
   if(!taskLink) db.exec('ALTER TABLE stock_counts ADD COLUMN task_id INTEGER REFERENCES stock_count_tasks(id) ON DELETE SET NULL');
   db.exec('CREATE INDEX IF NOT EXISTS idx_stock_counts_task ON stock_counts(task_id,id)');
 
+  migrateCustomerService();
 }
 
 /** One-time permission split: every role and per-account grant holding `from` also gets `to`.
@@ -3713,6 +3715,79 @@ function grantOnce(flag: string, pairs: Array<[string, string]>, excludeRoles: s
     if (changed) db.prepare('UPDATE users SET permission_overrides = ? WHERE id = ?').run(JSON.stringify(ov), u.id);
   }
   setSetting(flag, true);
+
+}
+
+function migrateCustomerService(): void {
+  // 98: additive customer service records; existing financial and form records are untouched.
+  const customerCols = queryAll<{ name: string }>('PRAGMA table_info(customers)');
+  for (const [name, type] of [
+    ['facebook_name', 'TEXT'], ['facebook_url', 'TEXT'],
+    ['phone_normalized', "TEXT NOT NULL DEFAULT ''"], ['email_normalized', "TEXT NOT NULL DEFAULT ''"],
+    ['version', 'INTEGER NOT NULL DEFAULT 1'],
+  ]) {
+    if (!customerCols.some(c => c.name === name)) db.exec(`ALTER TABLE customers ADD COLUMN ${name} ${type}`);
+  }
+  for (const c of queryAll<{ id: number; phone: string | null; email: string | null }>('SELECT id, phone, email FROM customers')) {
+    run('UPDATE customers SET phone_normalized = ?, email_normalized = ? WHERE id = ?', normalizePhone(c.phone), normalizeEmail(c.email), c.id);
+  }
+  const csrOrderCols = queryAll<{ name: string }>('PRAGMA table_info(orders)');
+  for (const name of ['creation_key', 'creation_hash']) {
+    if (!csrOrderCols.some(c => c.name === name)) db.exec(`ALTER TABLE orders ADD COLUMN ${name} TEXT`);
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone_normalized);
+    CREATE INDEX IF NOT EXISTS idx_customers_email ON customers(email_normalized);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_creation_key ON orders(creation_key);
+    CREATE TABLE IF NOT EXISTS customer_cases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+      kind TEXT NOT NULL CHECK(kind IN ('inquiry','complaint')),
+      summary TEXT NOT NULL CHECK(length(trim(summary)) > 0),
+      status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','in_progress','waiting','resolved','cancelled')),
+      owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      next_action TEXT,
+      due_at TEXT,
+      sale_order_id INTEGER REFERENCES orders(id) ON DELETE RESTRICT,
+      resolution TEXT,
+      version INTEGER NOT NULL DEFAULT 1,
+      create_key TEXT UNIQUE,
+      create_hash TEXT,
+      created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      CHECK(status IN ('resolved','cancelled') OR (length(trim(coalesce(next_action,''))) > 0 AND due_at IS NOT NULL)),
+      CHECK(status NOT IN ('resolved','cancelled') OR length(trim(coalesce(resolution,''))) > 0)
+    );
+    CREATE INDEX IF NOT EXISTS idx_cases_customer ON customer_cases(customer_id,id);
+    CREATE INDEX IF NOT EXISTS idx_cases_queue ON customer_cases(owner_id,status,due_at);
+    CREATE TABLE IF NOT EXISTS customer_case_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      case_id INTEGER NOT NULL REFERENCES customer_cases(id) ON DELETE RESTRICT,
+      actor_id INTEGER REFERENCES users(id) ON DELETE RESTRICT,
+      actor_name TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      note TEXT,
+      snapshot TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_case_events_case ON customer_case_events(case_id,id);
+    CREATE TRIGGER IF NOT EXISTS protect_customer_history BEFORE DELETE ON customers
+    WHEN EXISTS(SELECT 1 FROM orders WHERE customer_id=OLD.id)
+      OR EXISTS(SELECT 1 FROM customer_cases WHERE customer_id=OLD.id)
+      OR EXISTS(SELECT 1 FROM payments WHERE party_type='customer' AND party_id=OLD.id)
+      OR EXISTS(SELECT 1 FROM credit_notes WHERE kind='customer' AND party_id=OLD.id)
+      OR EXISTS(SELECT 1 FROM journal_lines WHERE party_type='customer' AND party_id=OLD.id)
+    BEGIN SELECT RAISE(ABORT,'Customer has history; archive instead'); END;
+    CREATE TRIGGER IF NOT EXISTS protect_case_sale_customer BEFORE UPDATE OF customer_id ON orders
+    WHEN EXISTS(SELECT 1 FROM customer_cases WHERE sale_order_id=OLD.id AND customer_id IS NOT NEW.customer_id)
+    BEGIN SELECT RAISE(ABORT,'Sale customer is linked to a case'); END;
+    CREATE TRIGGER IF NOT EXISTS protect_case_events_update BEFORE UPDATE OF case_id,actor_id,actor_name,event_type,note,snapshot,created_at ON customer_case_events
+    BEGIN SELECT RAISE(ABORT,'Case history is append-only'); END;
+    CREATE TRIGGER IF NOT EXISTS protect_case_events_delete BEFORE DELETE ON customer_case_events
+    BEGIN SELECT RAISE(ABORT,'Case history is append-only'); END;
+  `);
+
 }
 
 /** Read a JSON-encoded setting, or undefined if unset / unparseable. */
