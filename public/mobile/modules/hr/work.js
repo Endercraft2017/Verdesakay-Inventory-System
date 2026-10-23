@@ -228,37 +228,37 @@
   }
 
   var OPS = [
-    { label: 'Receive supplier delivery', sub: 'Goods arriving against supplier orders', route: 'receive', permission: 'inventory.receive', count: function () { return openCount('/orders?type=purchase'); } },
+    { label: 'Receive supplier delivery', sub: 'Goods arriving against supplier orders', route: 'receive', permission: 'inventory.receive', count: function (read) { return openCount('/orders?type=purchase',read); } },
     { label: 'Release orders', sub: 'Allocated units ready for handoff', route: 'so', permission: 'orders.release',
-      count: function () { return API.get('/release-slips/queue').then(function (q) {
+      count: function (read) { return (read || API.get)('/release-slips/queue').then(function (q) {
         return (q.to_accept || []).length + (q.releasing || []).length;
       }); } },
     { label: 'Customer service', sub: 'Search and follow up sale orders', route: 'sales-service', all: ['orders.view'], any: ['orders.create','orders.edit'], action: true },
     { label: 'New sale order', sub: 'Prepare an open customer order', route: 'sales-new', all: ['orders.view','orders.create'], action: true },
     { label: 'Kit releases', sub: 'Pick and release job-order kits', route: 'kit-release', permission: 'production.kit_release',
-      count: function () { return API.get('/job-orders?stage=awaiting_release').then(function (rows) { return (rows || []).length; }); } },
+      count: function (read) { return (read || API.get)('/job-orders?stage=awaiting_release').then(function (rows) { return (rows || []).length; }); } },
     { label: 'Allocate units', sub: 'Assign passed units to orders', route: 'allocate', any: ['inventory.transfer','orders.direct_sale'] },
     { label: 'Parts requests', sub: 'Issue parts for repair or rework', route: 'repairs', permission: 'production.repairs',
-      count: function () { return API.get('/production/repairs?status=requested').then(function (r) { return (r || []).length; }); } },
+      count: function (read) { return (read || API.get)('/production/repairs?status=requested').then(function (r) { return (r || []).length; }); } },
     { label: 'RTS recording', sub: 'Record QA-passed finished goods', route: 'receiving', permission: 'production.receive',
-      count: function () { return readyToReceive(); } },
+      count: function (read) { return readyToReceive(read); } },
     { label: 'Awaiting production approval', sub: 'Review draft quantities, components and stock', route: 'job-orders', params: { view: 'approval' }, permission: 'production.approve',
-      count: function () { return API.get('/job-orders?stage=awaiting_approval').then(function (rows) { return mProductionDrafts.approvalCount(rows || []); }); } },
+      count: function (read) { return (read || API.get)('/job-orders?stage=awaiting_approval').then(function (rows) { return mProductionDrafts.approvalCount(rows || []); }); } },
     { label: 'Production job orders', sub: 'Accept kits and record active work', route: 'job-orders', permission: 'production.record',
-      count: function () { return API.get('/job-orders').then(function (rows) {
+      count: function (read) { return (read || API.get)('/job-orders').then(function (rows) {
         return (rows || []).filter(function (x) { return x.status === 'released' || x.status === 'in_progress'; }).length;
       }); } },
     { label: 'Saved unit issue reports', sub: 'Resume reports and their photos', route: 'unit-issues', any: ['production.inspect_qc', 'production.inspect_qa', 'production.record', 'production.manage'],
-      count: function () { return mProductionDrafts.listActions('unit-issue', 'issue').then(function (saved) { return saved.length; }); } },
+      count: function (read) { return mProductionDrafts.listActions('unit-issue', 'issue').then(function (saved) { return saved.length; }); } },
     { label: 'QC technical inspection', sub: 'Inspect units waiting for QC', route: 'qc', params: { role: 'qc' }, permission: 'production.inspect_qc',
-      count: function () { return actionableInspection('qc'); } },
+      count: function (read) { return actionableInspection('qc',read); } },
     { label: 'QA appearance inspection', sub: 'Inspect units waiting for QA', route: 'qc', params: { role: 'qa' }, permission: 'production.inspect_qa',
-      count: function () { return actionableInspection('qa'); } },
+      count: function (read) { return actionableInspection('qa',read); } },
     // Someone who decides QA holds without inspecting (production.qa_review, e.g. the Production Manager).
     { label: 'QA holds', sub: 'Decide units QA held for review', route: 'qc', params: { role: 'qa', tab: 'hold' }, any: ['production.qa_review','production.inspect_qa'],
-      count: function () { return Promise.all([API.get('/qc/holds'), mProductionDrafts.listActions('hold-decision', 'hold')]).then(function (both) { return new Set(both[0].map(function (h) { return h.id; }).concat(both[1].map(function (a) { return a.id; }))).size; }); } },
+      count: function (read) { return Promise.all([(read || API.get)('/qc/holds'), mProductionDrafts.listActions('hold-decision', 'hold')]).then(function (both) { return new Set(both[0].map(function (h) { return h.id; }).concat(both[1].map(function (a) { return a.id; }))).size; }); } },
     { label: 'Deliveries', sub: 'Field drops and proof of delivery', route: 'deliveries', any: ['delivery.run', 'delivery.manage'],
-      count: function () { return API.get('/deliveries?mine=1').then(function (rows) {
+      count: function (read) { return (read || API.get)('/deliveries?mine=1').then(function (rows) {
         return (rows || []).filter(function (x) { return x.status === 'pending' || x.status === 'out_for_delivery'; }).length;
       }); } }
   ];
@@ -268,7 +268,7 @@
     {label:'Semi-built finishing',sub:'Send a complete semi-built package to finishing',route:'semi-finishing',any:['production.approve','production.manage']}
   );
 
-  OPS.push({label:'My planned checks',sub:'Assigned physical counts and overdue shelves',route:'stock-count-tasks',permission:'inventory.count',count:function(){return API.get('/inventory/stock-counts/tasks?status=open&mine=1').then(function(rows){return rows.length;});}});
+  OPS.push({label:'My planned checks',sub:'Assigned physical counts and overdue shelves',route:'stock-count-tasks',permission:'inventory.count',count:function(read){return (read || API.get)('/inventory/stock-counts/tasks?status=open&mine=1').then(function(rows){return rows.length;});}});
 
   OPS.push(
     {label:'Make PR',sub:'Request a budget for any purchase',route:'purchase-requests',params:{step:'new'},permission:'purchasing.request',strict:true},
@@ -292,19 +292,19 @@
     {label:'Assign QR label',sub:'Link an item to its stock label',route:'assign-qr',permission:'inventory.adjust'}
   ];
 
-  function openCount(path) {
-    return API.get(path).then(function (rows) {
+  function openCount(path, read) {
+    return (read || API.get)(path).then(function (rows) {
       return (rows || []).filter(function (x) {
         return ['cancelled', 'closed', 'completed'].indexOf(String(x.status).toLowerCase()) === -1;
       }).length;
     });
   }
   // Counted from the desk's own queue: a floor desk can't list every job order (shared/desk-access.ts).
-  function actionableInspection(role) {
-    return API.get('/qc/queue?role=' + role).then(function (q) { return ((q && q.units) || []).length; });
+  function actionableInspection(role, read) {
+    return (read || API.get)('/qc/queue?role=' + role).then(function (q) { return ((q && q.units) || []).length; });
   }
-  function readyToReceive() {
-    return API.get('/rts/queue').then(function (q) {
+  function readyToReceive(read) {
+    return (read || API.get)('/rts/queue').then(function (q) {
       return mRtsRecovery.count(q);
     });
   }
@@ -319,15 +319,16 @@
     var me = MApp.getMe() || {};
     return String(me.role_label || me.role || 'employee').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
   }
-  function opRow(op) {
+  function opRow(op, scope, deferredCount) {
+    var owner=mReadScope.identity();
     var row = mEl(
       '<button type="button" class="v2-work-row"><span><b>' + mEsc(op.label) + '</b>' +
       '<small>' + mEsc(op.sub) + '</small></span><em data-count>' + (op.action ? 'GO' : 'OPEN') + '</em>' +
       '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button>'
     );
     explain(row,helpKey(op),op.label);
-    row.onclick = function () { MApp.go(op.route, op.params); };
-    if (op.count) op.count().then(function (n) {
+    row.onclick = function () { if (row.isConnected && !row.closest('.hidden,[hidden]') && owner===mReadScope.identity() && (!scope || scope.current()) && allowed(op)) MApp.go(op.route, op.params); };
+    if (op.count && !deferredCount) op.count().then(function (n) {
       var e = row.querySelector('[data-count]');
       if (e) e.textContent = n ? n + ' WAITING' : 'CLEAR';
     }).catch(function () {
@@ -335,33 +336,13 @@
     });
     return row;
   }
-  function commonTool(label, route) {
+  function commonTool(label, route, scope) {
+    var owner=mReadScope.identity();
     var b = mEl('<button type="button" class="v2-work-tool">' + mEsc(label) + '</button>');
     explain(b,route,label);
-    b.onclick = function () { MApp.go(route); };
+    b.onclick = function () { if (b.isConnected && !b.closest('.hidden,[hidden]') && owner===mReadScope.identity() && (!scope || scope.current()) && MApp.canOpen(route)) MApp.go(route); };
     return b;
   }
-  function employeeTasks(host) {
-    API.get('/tasks').then(function (rows) {
-      var open = (rows || []).filter(function (x) { return !x.done; }).slice(0, 3);
-      host.innerHTML = '';
-      if (!open.length) {
-        host.appendChild(mEl('<div class="v2-work-empty">No personal tasks waiting.</div>'));
-        return;
-      }
-      open.forEach(function (x) {
-        var r = mEl(
-          '<button type="button" class="v2-work-row"><span><b>' + mEsc(x.title) + '</b>' +
-          '<small>' + mEsc(x.due_date ? 'Due ' + x.due_date : 'No due date') + '</small></span>' +
-          '<em>TO DO</em><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button>'
-        );
-        explain(r,'personal-task',x.title);
-        r.onclick = function () { MApp.go('tasks', { id: x.id }); };
-        host.appendChild(r);
-      });
-    }).catch(function () { host.innerHTML = '<div class="v2-work-empty">Tasks are unavailable offline.</div>'; });
-  }
-
   function mWorkQueue() {
     var wrap = mEl('<div class="v2-work-list"></div>');
     OPS.filter(allowed).forEach(function (op) { wrap.appendChild(opRow(op)); });
@@ -409,20 +390,41 @@
     else if(source&&source.key==='release')state=r.warehouse_accepted_at?'Picking / release':'Awaiting warehouse acceptance';
     return [r.work_kind==='batch'?r.remaining_qty+' pcs remaining':null,r.component_name?('Qty '+r.quantity+' · '+r.component_name):r.customer_name||r.product_name||r.reason||r.name,state,r.expected_date&&'Due '+r.expected_date].filter(Boolean).join(' · ');
   }
-  function attentionRow(source,r){
+  function attentionRow(source,r,scope,personalDirect){
     var row=mEl('<button type="button" class="v2-work-row" data-attention="'+mEsc(source.key)+'"><span><b>'+mEsc(attentionTitle(r))+'</b><small>'+mEsc(source.title+' · '+(blockedInspection(source,r)?'Waiting for parts · ':'')+attentionMeta(r,source))+'</small></span><em>REVIEW ›</em></button>');
-    row.onclick=function(){MApp.go('work',{task:source.key,record:attentionId(r)});};return row;
+    var direct=personalDirect&&source.key==='personal';if(direct)explain(row,'personal-task',r.title);
+    var owner=mReadScope.identity();row.onclick=function(){if(row.isConnected&&owner===mReadScope.identity()&&(!scope||scope.current())&&(direct||attentionSources().some(function(s){return s.key===source.key;}))){if(direct)MApp.go('tasks',{id:r.id});else MApp.go('work',{task:source.key,record:attentionId(r)});}};return row;
   }
-  async function attentionDetail(view,params){
+  function workResponse(path, value) {
+    var rows;
+    if (path === '/release-slips/queue') {
+      if (!value || !Array.isArray(value.to_accept) || !Array.isArray(value.releasing)) throw new Error('The releasing queue could not be verified.');
+      rows=value.to_accept.concat(value.releasing);
+    } else if (/^\/qc\/queue/.test(path)) rows=value?.units;
+    else if (path === '/rts/queue') {
+      if (!value || !Array.isArray(value.units) || !Array.isArray(value.batches)) throw new Error('The receiving queue could not be verified.');
+      rows=value.units.concat(value.batches);
+    } else if (path === '/notifications') rows=value?.items;
+    else rows=value;
+    if (!Array.isArray(rows) || rows.some(function(r){return !r || !Number.isInteger(Number(r.id)) || Number(r.id)<=0;})) throw new Error('The server returned an invalid queue. Refresh to check current work.');
+    return value;
+  }
+  function workReader(scope) {
+    var reads=new Map();
+    return function(path) {
+      if (!reads.has(path)) reads.set(path,scope.run(function(opts){return API.get(path,opts);}).then(function(value){return workResponse(path,value);}));
+      return reads.get(path);
+    };
+  }
+  function attentionDetail(view,params) {
     view.innerHTML='';var body=RoleUI.page(view,{role:'Work',title:'Attention item',subtitle:'Checking current status and assigned access'});
-    var source=attentionSources().find(function(s){return s.key===params.task;});
-    function back(){var b=mEl('<button type="button" class="rk-btn secondary">Back to Work</button>');b.onclick=function(){MApp.go('work');};body.appendChild(b);}
-    if(!source){body.innerHTML=RoleUI.note('warn','This duty is no longer available with your current access.');back();return;}
-    try{
-      var hash=location.hash,rows=await readAttention(source);if(!body.isConnected||hash!==location.hash)return;
-      var record=rows.find(function(r){return attentionId(r)===params.record;});
-      if(!record){body.innerHTML=RoleUI.note('info','This item no longer needs attention in this queue. It may have been completed, reassigned or moved to another stage. Refresh Work for the latest items.');back();return;}
-      body.innerHTML=RoleUI.jobHead({number:attentionTitle(record),name:source.title,meta:attentionMeta(record,source)})+
+    var page=body.closest('.rk-page'),scope=mReadScope.create(page),record=null,source=null,busy=false,error='',status='';
+    function subtitle(text){var el=page.querySelector('.rk-head>p');el.setAttribute('role','status');el.textContent=text;}
+    function available(){return attentionSources().find(function(s){return s.key===params.task;});}
+    function draw() {
+      if(!scope.current())return;
+      subtitle(busy?'Checking current status and assigned access':error?'Current record needs checking':record?'Latest record checked':'Current access checked');
+      body.innerHTML=(record?RoleUI.jobHead({number:attentionTitle(record),name:source.title,meta:attentionMeta(record,source)})+
         RoleUI.note('info','Review this record, then open its workflow to see the actions your permissions allow. Stock and status change only when you confirm an action there.')+
         (blockedInspection(source,record)?RoleUI.note('warn','Waiting for parts: the warehouse must resolve the open request before reinspection.'):'')+
         (record.work_kind==='batch'?RoleUI.field('Batch quantity remaining',record.remaining_qty+' pcs'):'')+
@@ -432,37 +434,98 @@
         (record.summary?RoleUI.field('Order contents',(record.summary.first_name||'')+' · '+record.summary.lines+' line(s)'):'')+
         (record.qty_ordered!=null?RoleUI.field('Outstanding / currently picked',record.qty_ordered+' / '+record.qty_released):'')+
         (record.authorization?RoleUI.field('Release authorization',record.authorization.state||record.authorization.status||'Review in workflow'):'')+
-        (record.qc_result?RoleUI.field('QC result',(record.qc_result.result||record.qc_result)):'')+(record.qa_result?RoleUI.field('QA result',(record.qa_result.result||record.qa_result)):'')+
-        RoleUI.actions([{id:'work-open-action',label:'Open '+source.title,kind:'primary'}]);
-      body.querySelector('#work-open-action').onclick=async function(){
-        var button=this;button.disabled=true;
-        try{await MApp.refreshAccess();var current=attentionSources().find(function(s){return s.key===source.key;});if(!current){MApp.render();return;}
-          var live=(await readAttention(current)).find(function(r){return attentionId(r)===params.record;});
-          if(!body.isConnected||hash!==location.hash)return;
-          if(!live){MApp.render();return;}MApp.go(current.route,current.params(live));
-        }catch(e){button.disabled=false;mToast('Could not verify current work: '+e.message,'err');}
-      };back();
-    }catch(e){if(!body.isConnected)return;body.innerHTML=RoleUI.note('warn','Live details could not be loaded. Reconnect and retry before acting.');body.appendChild(RoleUI.error(e,function(){attentionDetail(view,params);}));back();}
+        (record.qc_result?RoleUI.field('QC result',record.qc_result.result||record.qc_result):'')+
+        (record.qa_result?RoleUI.field('QA result',record.qa_result.result||record.qa_result):''):'')+
+        (error?'<p class="work-feedback error" id="work-check-error" role="alert" tabindex="-1">'+mEsc(error)+'</p>':status?'<p class="work-feedback" role="status">'+mEsc(status)+'</p>':'')+
+        (record?'<button type="button" class="rk-btn primary" id="work-open-action"'+(busy||error?' disabled':'')+'>'+(busy?'Checking access…':'Open '+mEsc(source.title))+'</button>':'')+
+        (error?'<button type="button" class="rk-btn secondary" data-work-retry'+(busy?' disabled':'')+'>Try again</button>':'')+
+        '<button type="button" class="rk-btn secondary" data-work-back>Back to Work</button>';
+      body.querySelector('#work-open-action')?.addEventListener('click',function(){if(this.isConnected&&scope.current())check(true);});
+      body.querySelector('[data-work-retry]')?.addEventListener('click',function(){if(this.isConnected&&scope.current())check(false);});
+      body.querySelector('[data-work-back]').onclick=function(){if(this.isConnected&&scope.current())MApp.go('work');};
+    }
+    async function check(open) {
+      if(busy||!scope.current())return;busy=true;error='';status='';draw();
+      try {
+        if(open)await scope.run(function(){return MApp.refreshAccess({required:true});});
+        if(!scope.current())return;
+        source=available();
+        if(!source){record=null;status='This duty is no longer available with your current access.';return;}
+        var rows=await readAttention(source,false,workReader(scope));
+        if(!scope.current())return;
+        // Access may have changed while the queue was loading.
+        var current=available();if(!current){record=null;status='This duty is no longer available with your current access.';return;}
+        record=rows.find(function(r){return attentionId(r)===params.record;})||null;
+        if(!record){status='This item no longer needs attention in this queue. It may have been completed, reassigned or moved to another stage. Refresh Work for the latest items.';return;}
+        status='Latest record and assigned access checked just now.';
+        if(open){MApp.go(current.route,current.params(record));}
+      } catch(e) {
+        if(e.cancelled||!scope.current())return;
+        if(e.status===401||e.status===403)record=null;
+        error=(open?'Could not verify current work. Nothing was opened. ':'The current record could not be checked. ')+(e.message||'Reconnect and retry.');
+      } finally {
+        busy=false;if(scope.current()){draw();if(error)body.querySelector('[role=alert]')?.focus({preventScroll:true});}
+      }
+    }
+    check(false);
   }
-  function attentionFeed(page){
+  function attentionFeed(page) {
     page.appendChild(mEl('<div class="v2-work-title"><h2>Needs my attention</h2><button type="button" class="rk-back" data-attention-refresh>Refresh</button></div>'));
-    var host=mEl('<div class="v2-work-list" aria-live="polite"></div>');page.appendChild(host);
-    var run=0,timer;
-    async function refresh(){clearTimeout(timer);var token=++run;host.innerHTML='<div class="v2-work-empty">Loading live work…</div>';var sources=attentionSources();
-      var result=await Promise.all(sources.map(async function(source){try{return {source:source,rows:source.select(await API.get(source.path))};}catch(e){return {source:source,error:e};}}));
-      if(token!==run||!host.isConnected)return;host.innerHTML='';var count=0;
-      result.forEach(function(part){if(part.error){host.appendChild(mEl('<div class="v2-work-empty" role="status">'+mEsc(part.source.title)+': unavailable — retry to check. Count unknown.</div>'));return;}
-        part.rows.forEach(function(r){host.appendChild(attentionRow(part.source,r));count++;});});
-      timer=setTimeout(function(){if(host.isConnected)refresh();},30000);
-      if(!count)host.prepend(mEl('<div class="v2-work-empty">'+(result.some(function(p){return p.error;})?'No items from the queues that loaded. Other queues could not be checked.':'No items need your attention right now.')+'</div>'));
+    var host=mEl('<div class="v2-work-list" data-work-attention></div>');page.appendChild(host);return host;
+  }
+  function startWorkFeed(page,host,countRows,scope,personalDirect) {
+    var groups=new Map(),running=false,poll;
+    function group(source) {
+      var g=groups.get(source.key);
+      if(!g){g={source:source,rows:[],loaded:false,pending:true,error:'',el:mEl('<section class="work-desk" data-work-desk="'+mEsc(source.key)+'"></section>')};groups.set(source.key,g);host.appendChild(g.el);}
+      return g;
+    }
+    function draw(g) {
+      if(!scope.current())return;
+      var state=g.pending?'Checking…':g.error?(g.loaded?'Last loaded · Not refreshed':'Count unknown'):'Checked just now';
+      g.el.innerHTML='<div class="work-desk-heading"><h3>'+mEsc(g.source.title)+'</h3><span role="status">'+state+'</span></div>'+
+        (g.error?'<p class="work-feedback error" role="status">'+mEsc(g.error)+' '+(g.loaded?'Showing last loaded records. Open an item to check its current status.':'Pending work could not be checked.')+'</p>':'')+
+        (!g.loaded&&g.pending?'<p class="m-hint" role="status">Loading this queue…</p>':g.loaded&&!g.rows.length?'<p class="m-hint">No items waiting in this queue.</p>':'');
+      g.rows.forEach(function(r){g.el.appendChild(attentionRow(g.source,r,scope,personalDirect));});
+    }
+    function count(entry,text){var label=entry.row.querySelector('[data-count]');if(label&&scope.current())label.textContent=text;}
+    async function refresh() {
+      if(running||!scope.current())return;scope.cancelTimer(poll);running=true;
+      var button=page.querySelector('[data-attention-refresh]');button.disabled=true;button.textContent='Refreshing…';
+      var sources=attentionSources();
+      if(personalDirect&&!sources.some(function(s){return s.key==='personal';}))sources.push({key:'personal',title:'Personal task',route:'tasks',path:'/tasks',select:function(rows){return rows.filter(function(r){return !r.done;});}});
+      var read=workReader(scope),keys=sources.map(function(s){return s.key;});
+      groups.forEach(function(g,key){if(!keys.includes(key)){g.el.remove();groups.delete(key);}});
+      if(!sources.length)host.innerHTML='<p class="v2-work-empty">No current queues are available with your assigned access.</p>';
+      var jobs=sources.map(async function(source){
+        var g=group(source);g.pending=true;g.error='';draw(g);
+        try {
+          var rows=await readAttention(source,false,read);if(!scope.current())return;
+          if(!(personalDirect&&source.key==='personal')&&!attentionSources().some(function(s){return s.key===source.key;})){g.el.remove();groups.delete(source.key);return;}
+          g.rows=rows;g.loaded=true;
+        } catch(e) {
+          if(e.cancelled||!scope.current())return;
+          g.error=e.message||'Could not refresh this queue.';
+          if(e.status===401||e.status===403){g.rows=[];g.loaded=false;}
+        } finally {g.pending=false;draw(g);}
+      });
+      countRows.forEach(function(entry){
+        if(!entry.op.count)return;count(entry,'CHECKING');
+        jobs.push(scope.run(function(){return entry.op.count(read);}).then(function(n){
+          if(!Number.isInteger(n)||n<0)throw new Error('Count unavailable');
+          if(!allowed(entry.op)){entry.row.remove();return;}count(entry,n?n+' WAITING':'CLEAR');
+        }).catch(function(){count(entry,'UNKNOWN');}));
+      });
+      await Promise.allSettled(jobs);
+      if(!scope.current())return;running=false;button.disabled=false;button.textContent='Refresh';poll=scope.later(refresh,30000);
     }
     page.querySelector('[data-attention-refresh]').onclick=refresh;refresh();
   }
 
   // Reads are bounded and validated: a successful HTTP response is not proof of a valid queue.
-  function readAttention(source, context) {
+  function readAttention(source, context, reader) {
     var strict=['kits','parts','qc','qa','holds','rts'].includes(source.key),timer;
-    var request=Promise.resolve().then(function(){return API.get(source.path);}).then(function(q){
+    var request=Promise.resolve().then(function(){return (reader || API.get)(source.path);}).then(function(q){
       if(strict){
         var valid=source.key==='qc'||source.key==='qa'?q&&Array.isArray(q.units):source.key==='rts'?q&&Array.isArray(q.units)&&Array.isArray(q.batches):Array.isArray(q);
         if(!valid)throw new Error('The server returned an invalid queue. Refresh to check current work.');
@@ -536,14 +599,15 @@
       '</strong><p>' + (ops.length ? mEsc(ops[0].sub) : 'Personal tasks and employee services') + '</p></section>'
     ));
 
-    attentionFeed(page);
-    var taskHead = mEl('<div class="v2-work-title"><h2>My authorized queues</h2><span>' + (ops.length ? ops.length + ' authorized queue' + (ops.length === 1 ? '' : 's') : 'Today') + '</span></div>');
+    var feed=attentionFeed(page);
+    var taskHead = mEl('<div class="v2-work-title"><h2>' + (ops.length ? 'My authorized queues' : 'My personal work') + '</h2><span>' + (ops.length ? ops.length + ' authorized queue' + (ops.length === 1 ? '' : 's') : 'Today') + '</span></div>');
     page.appendChild(taskHead);
     var list = mEl('<div class="v2-work-list"></div>');
     page.appendChild(list);
-    if (ops.length) ops.forEach(function (op) { list.appendChild(opRow(op)); });
-    else employeeTasks(list);
-    var notices=commonTool('Notifications & history','notifications');page.appendChild(notices);
+    var countRows=[];
+    if (ops.length) ops.forEach(function(op){var row=opRow(op,null,true);list.appendChild(row);countRows.push({op:op,row:row});});
+    else list.innerHTML='<p class="m-hint">Open a personal task above, or use Tasks &amp; reminders below.</p>';
+    var notices=commonTool('Notifications & history','notifications');notices.classList.add('v2-work-wide-tool');page.appendChild(notices);
 
     var blocker = mEl(
       '<button type="button" class="v2-work-row blocker"><span><b>Report a blocker</b>' +
@@ -551,11 +615,11 @@
       '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button>'
     );
     explain(blocker,'report-problem','Report a blocker');
-    blocker.onclick = function () { MApp.go('report-problem'); };
+    blocker.onclick = function () { if (blocker.isConnected && scope.current()) MApp.go('report-problem'); };
     page.appendChild(blocker);
     if(stockTools.length){
       page.appendChild(mEl('<div class="v2-work-title"><h2>Inventory tools</h2><span>From your assigned access</span></div>'));
-      var stockList=mEl('<div class="v2-work-list"></div>');stockTools.forEach(function(op){stockList.appendChild(opRow(op));});page.appendChild(stockList);
+      var stockList=mEl('<div class="v2-work-list"></div>');stockTools.forEach(function(op){stockList.appendChild(opRow(op,null,true));});page.appendChild(stockList);
     }
 
     page.appendChild(mEl('<div class="v2-work-title tools"><h2>My tools</h2></div>'));
@@ -575,6 +639,8 @@
       page.appendChild(approve);
     }
     view.appendChild(page);
+    var scope=mReadScope.create(page);
+    startWorkFeed(page,feed,countRows,scope,!ops.length);
     MApp.refreshAccess();
   });
 })();

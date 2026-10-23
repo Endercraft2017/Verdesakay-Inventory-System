@@ -1,0 +1,104 @@
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
+import fs from 'node:fs';
+import {JSDOM} from 'jsdom';
+const read=(p:string)=>fs.readFileSync(new URL('../public/'+p,import.meta.url),'utf8');
+const tick=async()=>{for(let i=0;i<35;i++)await Promise.resolve();};
+const defer=()=>{let resolve!:(v:any)=>void,reject!:(v:any)=>void;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{promise,resolve,reject};};
+let dom:JSDOM,w:any,view:HTMLElement,routes:any,get:any,navigate:any,token:string,me:any;
+const release=(rows:any[]=[{id:11,number:'SO-11',customer_name:'Fictional customer',status:'pending'}])=>({to_accept:rows,releasing:[]});
+const users=[{id:1,full_name:'Self',active:1},{id:2,full_name:'Fictional Ana',department_name:'HR',role:'hr_staff',active:1},{id:3,full_name:'Fictional Ben',department_name:'Warehouse',role:'warehouse'},{id:4,full_name:'Inactive',active:0}];
+const task={id:21,title:'Private task',done:false};
+async function boot(route='work',params:any={},personal=false){
+ dom=new JSDOM('<div id="m-app"><button id="m-guide-start">Guide</button><span id="m-title"></span><main id="m-view"></main></div><div id="m-toasts"></div>',{runScripts:'outside-only',url:'https://review.example/m/#/'+route,pretendToBeVisual:true});w=dom.window;token='one';me={id:1,role:'employee',permissions:personal?['mobile.access']:['mobile.access','orders.release'],modules:null};routes={};navigate=vi.fn();
+ get=vi.fn(async(p:string)=>p==='/release-slips/queue'?release():p==='/notifications'?{items:[]}:p==='/tasks'?[task]:p==='/users'?users:[]);
+ w.API={get:(...args:any[])=>get(...args),base:()=>'',getToken:()=>token,isSharedSession:()=>false};
+ w.MApp={route:(n:string,f:any)=>routes[n]=f,setTitle:(s:string)=>w.document.querySelector('#m-title').textContent=s,getMe:()=>me,can:(p:string)=>me.permissions.includes(p),canOpen:()=>true,canApprove:()=>false,refreshAccess:vi.fn(async()=>true),go:navigate,currentLocation:()=>({name:route,params})};
+ w.requestAnimationFrame=()=>0;w.mCompose=vi.fn();
+ for(const file of ['mobile/lib/dom.js','mobile/lib/read-scope.js','mobile/lib/role-ui.js','mobile/modules/hr/work.js','mobile/modules/hr/directory.js','mobile/lib/guides.js','js/guide-tour.js'])w.eval(read(file));
+ view=w.document.querySelector('main');routes[route](view,params);await tick();
+}
+function click(s:string){const el=w.document.querySelector(s);expect(el,s).not.toBeNull();el.focus();el.click();return el;}
+function text(){return view.textContent||'';}
+function badge(){return [...view.querySelectorAll('.v2-work-row')].find((e:any)=>e.querySelector('b')?.textContent==='Release orders')?.querySelector('[data-count]')?.textContent;}
+function search(value:string){const el=view.querySelector('#m-dir-q') as HTMLInputElement;el.value=value;el.dispatchEvent(new w.Event('input',{bubbles:true}));}
+beforeEach(()=>vi.useFakeTimers());
+afterEach(()=>{w?.GuideTour?.close();dom?.window.close();vi.useRealTimers();});
+
+it('shares the same queue read for records and badges, updates both, and rejects repeated Refresh',async()=>{
+ await boot();expect(get.mock.calls.filter((c:any)=>c[0]==='/release-slips/queue')).toHaveLength(1);expect(badge()).toBe('1 WAITING');
+ const slow=defer();get.mockImplementation((p:string)=>p==='/release-slips/queue'?slow.promise:Promise.resolve(p==='/notifications'?{items:[]}:[]));
+ const old=click('[data-attention-refresh]');old.click();old.dispatchEvent(new w.MouseEvent('click'));await tick();expect(get.mock.calls.filter((c:any)=>c[0]==='/release-slips/queue')).toHaveLength(2);expect(badge()).toBe('CHECKING');
+ slow.resolve(release([]));await tick();expect(badge()).toBe('CLEAR');expect(text()).not.toContain('SO-11');
+});
+it('loads each desk independently and keeps known records through an ordinary refresh failure',async()=>{
+ await boot();const slow=defer();get.mockImplementation((p:string)=>p==='/release-slips/queue'?slow.promise:Promise.resolve(p==='/tasks'?[{...task,title:'New task'}]:{items:[]}));click('[data-attention-refresh]');await tick();expect(text()).toContain('New task');expect(text()).toContain('SO-11');expect(badge()).toBe('CHECKING');
+ slow.reject(new Error('Server unavailable'));await tick();expect(text()).toContain('Last loaded · Not refreshed');expect(text()).toContain('SO-11');expect(badge()).toBe('UNKNOWN');
+});
+it('bounds stuck Work reads and does not convert unknown into a clear count',async()=>{
+ await boot();get.mockImplementation(()=>new Promise(()=>{}));click('[data-attention-refresh]');await tick();await vi.advanceTimersByTimeAsync(12000);expect(text()).toContain('timed out');expect(badge()).toBe('UNKNOWN');expect((view.querySelector('[data-attention-refresh]') as HTMLButtonElement).disabled).toBe(false);
+});
+it('rejects malformed successful queues and permits recovery on Refresh',async()=>{
+ await boot();get.mockResolvedValue({to_accept:[],releasing:'invalid'});click('[data-attention-refresh]');await tick();expect(badge()).toBe('UNKNOWN');expect(text()).toContain('SO-11');get.mockImplementation(async(p:string)=>p==='/release-slips/queue'?release([]):p==='/notifications'?{items:[]}:[]);click('[data-attention-refresh]');await tick();expect(badge()).toBe('CLEAR');
+});
+it('keeps the 30-second poll single-flight and stops it when the owning screen leaves',async()=>{
+ await boot();const count=get.mock.calls.length;await vi.advanceTimersByTimeAsync(30000);expect(get.mock.calls.length).toBeGreaterThan(count);const after=get.mock.calls.length;view.replaceChildren();await tick();await vi.advanceTimersByTimeAsync(60000);expect(get.mock.calls).toHaveLength(after);
+});
+it('clears affected cached records on a permission refusal',async()=>{
+ await boot();get.mockRejectedValue(Object.assign(new Error('Access refused'),{status:403}));click('[data-attention-refresh]');await tick();expect(text()).not.toContain('SO-11');expect(text()).not.toContain('Private task');expect(badge()).toBe('UNKNOWN');
+});
+it('cancels pending reads and removes private content after an account change',async()=>{
+ await boot();const slow=defer();get.mockImplementation(()=>slow.promise);click('[data-attention-refresh]');await tick();const opts=get.mock.calls.at(-1)[1];token='two';me={...me,id:2};w.dispatchEvent(new w.Event('storage'));await tick();expect(opts.signal.aborted).toBe(true);expect(text()).not.toContain('SO-11');slow.resolve(release());await tick();expect(text()).not.toContain('SO-11');expect(opts.isCurrent()).toBe(false);
+});
+it('suppresses late results and detached controls after route replacement',async()=>{
+ await boot();const old=view.querySelector('[data-attention="release"]') as HTMLButtonElement;const slow=defer();get.mockImplementation(()=>slow.promise);click('[data-attention-refresh]');view.innerHTML='<h1>Another route</h1>';old.click();slow.resolve(release());await tick();expect(text()).toBe('Another route');expect(navigate).not.toHaveBeenCalled();
+});
+it('preserves personal-only direct task navigation and Guide explanations',async()=>{
+ await boot('work',{},true);expect(text().match(/Private task/g)).toHaveLength(1);const steps=w.MobileGuide.steps(view);expect(steps.find((s:any)=>s.title==='Private task').body).toContain('personal task');click('[data-attention="personal"]');expect(navigate).toHaveBeenCalledWith('tasks',{id:21});
+});
+it('preserves local draft semantics in queue counts instead of copying the server attention count',async()=>{
+ await boot('work',{},true);me={...me,permissions:['mobile.access','production.approve','production.qa_review']};w.mProductionDrafts={approvalCount:()=>3,listActions:async()=>[{id:99}]};get.mockImplementation(async(p:string)=>p==='/job-orders?stage=awaiting_approval'?[{id:10,number:'JO-10'}]:p==='/qc/holds'?[{id:20}]:p==='/notifications'?{items:[]}:[]);routes.work(view,{});await tick();const titles=[...view.querySelectorAll('.v2-work-row')];expect(titles.find((e:any)=>e.querySelector('b')?.textContent==='Awaiting production approval')?.querySelector('[data-count]')?.textContent).toBe('3 WAITING');expect(titles.find((e:any)=>e.querySelector('b')?.textContent==='QA holds')?.querySelector('[data-count]')?.textContent).toBe('2 WAITING');
+});
+
+it('shows the checked detail, allows one Open verification and opens the exact fresh record',async()=>{
+ await boot('work',{task:'release',record:'record:11'});expect(text()).toContain('Latest record checked');const slow=defer();w.MApp.refreshAccess.mockImplementation(()=>slow.promise);const old=click('#work-open-action');old.click();await tick();expect(w.MApp.refreshAccess).toHaveBeenCalledTimes(1);expect(w.MApp.refreshAccess).toHaveBeenCalledWith({required:true});expect(text()).toContain('Checking access…');slow.resolve(true);await tick();expect(navigate).toHaveBeenCalledWith('so',{id:11});
+});
+it('keeps detail identity with an inline verification error and recovers through Retry',async()=>{
+ await boot('work',{task:'release',record:'record:11'});w.MApp.refreshAccess.mockRejectedValue(new Error('Connection failed'));click('#work-open-action');await tick();expect(text()).toContain('SO-11');expect(text()).toContain('Nothing was opened');expect(navigate).not.toHaveBeenCalled();expect(w.document.activeElement.id).toBe('work-check-error');click('[data-work-retry]');await tick();expect(text()).toContain('Latest record checked');expect((view.querySelector('#work-open-action') as HTMLButtonElement).disabled).toBe(false);
+});
+it.each(['moved','revoked'])('removes the workflow action after a fresh %s response',async kind=>{
+ await boot('work',{task:'release',record:'record:11'});if(kind==='moved')get.mockResolvedValue(release([]));else w.MApp.refreshAccess.mockImplementation(async()=>{me.permissions=['mobile.access'];return true;});click('#work-open-action');await tick();expect(view.querySelector('#work-open-action')).toBeNull();expect(text()).not.toContain('SO-11');expect(navigate).not.toHaveBeenCalled();
+});
+it('times out a non-production detail check with a usable Retry and Back',async()=>{
+ await boot('work',{task:'release',record:'record:11'});get.mockImplementation(()=>new Promise(()=>{}));click('#work-open-action');await tick();await vi.advanceTimersByTimeAsync(12000);expect(text()).toContain('timed out');expect(view.querySelector('[data-work-retry]')).not.toBeNull();expect(view.querySelector('[data-work-back]')).not.toBeNull();
+});
+it('does not open a workflow when an old verification finishes under a different sign-in',async()=>{
+ await boot('work',{task:'release',record:'record:11'});const slow=defer();w.MApp.refreshAccess.mockImplementation(()=>slow.promise);click('#work-open-action');token='two';me.id=2;slow.resolve(true);await tick();expect(navigate).not.toHaveBeenCalled();expect(text()).not.toContain('SO-11');
+});
+
+it('filters self/inactive accounts but keeps ordinary staff payloads that omit active',async()=>{
+ await boot('directory');expect(text()).toContain('2 colleagues');expect(text()).not.toContain('Inactive');expect(view.querySelectorAll('.m-directory-person')).toHaveLength(2);expect(text()).toContain('HR Staff');
+});
+it('searches the readable role and keeps query/results during failed Refresh, then retries and clears',async()=>{
+ await boot('directory');search('HR staff');expect(text()).toContain('Fictional Ana');expect(text()).not.toContain('Fictional Ben');get.mockRejectedValue(new Error('Network unavailable'));click('[data-directory-refresh]');await tick();expect((view.querySelector('#m-dir-q') as HTMLInputElement).value).toBe('HR staff');expect(text()).toContain('Fictional Ana');expect(text()).toContain('last loaded colleagues');get.mockResolvedValue(users);click('[data-directory-retry]');await tick();expect(text()).toContain('Directory checked just now');click('[data-directory-clear]');expect(text()).toContain('2 colleagues');expect(w.document.activeElement.id).toBe('m-dir-q');
+});
+it('distinguishes no matches, an empty directory and an initial read failure',async()=>{
+ await boot('directory');search('missing');expect(text()).toContain('No colleagues match');get.mockResolvedValue([]);click('[data-directory-clear]');click('[data-directory-refresh]');await tick();expect(text()).toContain('No other active colleagues');
+});
+it('shares directory reads, bounds timeouts and retains last-loaded colleagues',async()=>{
+ await boot('directory');get.mockImplementation(()=>new Promise(()=>{}));const old=click('[data-directory-refresh]');old.click();await tick();expect(get).toHaveBeenCalledTimes(2);await vi.advanceTimersByTimeAsync(12000);expect(text()).toContain('timed out');expect(text()).toContain('Fictional Ana');
+});
+it('opens one existing conversation for repeated taps and re-enables navigation if opening fails',async()=>{
+ await boot('directory');const slow=defer();w.mCompose.mockImplementation(()=>slow.promise);const old=click('.m-directory-person');old.click();await tick();expect(w.mCompose).toHaveBeenCalledTimes(1);slow.reject(new Error('Opening failed'));await tick();expect(text()).toContain('Opening failed');expect((view.querySelector('.m-directory-person') as HTMLButtonElement).disabled).toBe(false);
+});
+it('clears directory records on access refusal and ignores detached person controls',async()=>{
+ await boot('directory');const old=view.querySelector('.m-directory-person') as HTMLButtonElement;get.mockRejectedValue(Object.assign(new Error('Access refused'),{status:403}));click('[data-directory-refresh]');await tick();old.click();expect(text()).not.toContain('Fictional Ana');expect(w.mCompose).not.toHaveBeenCalled();
+});
+it.each(['work','directory'])('guards an old %s read 401 before it can clear the new token',async route=>{
+ await boot(route);const slow=defer();w.fetch=()=>slow.promise;w.eval(read('js/api.js'));w.API.setToken('fictional-old-token');routes[route](view,{});await tick();w.API.setToken('fictional-new-token');me.id=2;view.textContent='New screen';slow.resolve({status:401,ok:false,headers:{get:()=> 'application/json'},json:async()=>({error:'Old session expired'})});await tick();expect(w.API.getToken()).toBe('fictional-new-token');expect(text()).toBe('New screen');
+});
+it('keeps the Work guide modeless, supports jump/minimize/Escape and restores focus',async()=>{
+ await boot();click('#m-guide-start');w.MobileGuide.start();const picker=w.document.querySelector('[data-act=jump]');expect(picker).not.toBeNull();expect(w.document.querySelector('.guide-coach-body').tabIndex).toBe(0);picker.value='1';picker.dispatchEvent(new w.Event('change'));expect(w.document.querySelector('.guide-coach').getAttribute('aria-modal')).toBeNull();expect(w.document.querySelector('.guide-coach-text').textContent).toContain('Stock effect');click('[data-act=minimize]');expect(w.document.querySelector('[data-act=minimize]').getAttribute('aria-expanded')).toBe('false');w.document.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));expect(w.document.querySelector('.guide-coach')).toBeNull();expect(w.document.activeElement.id).toBe('m-guide-start');
+});
+it.each(['hidden','account','departure'])('closes the Work guide on %s and prevents detached steps from affecting another guide',async kind=>{
+ await boot('work',{},true);w.MobileGuide.start();const old=w.document.querySelector('[data-act=next]');if(kind==='hidden')w.document.querySelector('#m-app').classList.add('hidden');if(kind==='account'){token='two';me.id=2;w.dispatchEvent(new w.Event('storage'));}if(kind==='departure')w.dispatchEvent(new w.Event('pagehide'));await tick();expect(w.document.querySelector('.guide-coach')).toBeNull();old.click();expect(w.document.querySelector('.guide-coach')).toBeNull();
+});

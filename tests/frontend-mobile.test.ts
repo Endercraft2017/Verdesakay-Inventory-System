@@ -188,6 +188,28 @@ describe('mobile bootstrap', () => {
     expect(text).not.toContain('Products In');
   });
 
+  it('shares a fresh access check between Work callers and propagates required failures', async () => {
+    const me={id:188,role:'employee',permissions:['mobile.access'],modules:null};
+    const win=await bootAs(me);let reject!:(error:Error)=>void,calls=0;
+    win.fetch=()=>{calls++;return new Promise((_resolve,fail)=>{reject=fail;});};
+    const background=win.MApp.refreshAccess(),required=win.MApp.refreshAccess({required:true});
+    const failed=expect(required).rejects.toThrow('Network unavailable');
+    reject(new Error('Fictional connection failure'));await failed;expect(await background).toBe(false);expect(calls).toBe(1);expect(win.MApp.getMe().id).toBe(188);win.close();
+  });
+
+  it('does not let an earlier access-profile 401 clear a newer sign-in', async () => {
+    const win=await bootAs({id:189,role:'employee',permissions:['mobile.access'],modules:null});let finish!:(response:any)=>void;
+    win.fetch=()=>new Promise(resolve=>{finish=resolve;});const old=win.MApp.refreshAccess();win.API.setToken('fictional-next-sign-in');
+    finish({status:401,ok:false,headers:{get:()=> 'application/json'},json:async()=>({error:'Old session expired'})});
+    expect(await old).toBe(false);expect(win.API.getToken()).toBe('fictional-next-sign-in');win.close();
+  });
+
+  it('confirms a fresh access profile to a required workflow check', async () => {
+    const me={id:190,role:'employee',permissions:['mobile.access'],modules:null};const win=await bootAs(me);let calls=0;
+    win.fetch=()=>{calls++;return Promise.resolve({status:200,ok:true,headers:{get:()=> 'application/json'},json:async()=>({user:me})});};
+    expect(await win.MApp.refreshAccess({required:true})).toBe(true);expect(calls).toBe(1);win.close();
+  });
+
   it('a floor desk without the warehouse phone tools (inventory.mobile) still gets its own desk', async () => {
     // The built-in floor roles carry only the phone app + their desk permission (permissions.ts).
     const win = await bootAs({
