@@ -141,13 +141,8 @@ body { background: var(--v2-bg); color: var(--v2-text); }
   color: white; background: var(--v2-green); border: 0; border-radius: 50%;
   box-shadow: var(--v2-shadow-float); cursor: grab; touch-action: none;
 }
-.v2-orbit-grip {
-  position: absolute; top: 5px; left: 50%; transform: translateX(-50%);
-  color: currentColor; opacity: .7; font-size: 11px; line-height: 1; letter-spacing: -2px;
-}
-.v2-orbit-plus { margin-top: 5px; font-size: 30px; line-height: 1; transition: transform .18s ease; }
-.v2-orbit.open .v2-orbit-plus { margin-top: 0; transform: rotate(45deg); }
-.v2-orbit.open .v2-orbit-grip { opacity: 0; }
+.v2-orbit-plus { display: grid; place-items: center; width: 28px; height: 28px; transition: transform .18s ease; }
+.v2-orbit.open .v2-orbit-plus { transform: rotate(45deg); }
 .v2-orbit.is-dragging .v2-orbit-handle { cursor: grabbing; }
 .v2-orbit-overlay { position: fixed; inset: 0; z-index: 1600; overscroll-behavior: contain; }
 .v2-orbit-backdrop {
