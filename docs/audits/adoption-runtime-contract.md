@@ -1,5 +1,11 @@
 # Offline adoption: current-Node copy compatibility
 
+Later **873a820** CI is complete with all four Node regression jobs passing.
+That independently executed result supports this adoption fix; browser/dependency
+jobs still fail. The clean-checkout browser startup defect is investigated in the
+[25 October follow-up](browser-startup-contract.md). Earlier results below retain
+their original cutoffs and do not imply the whole workflow or release is approved.
+
 Started 24 October 2026 (Manila), baseline production
 `b451ce66d522c249431b2df21fd95766b5bcfc13`. This increment investigates the
 demonstrated original-company adoption failure on supported Node 24.22.1.

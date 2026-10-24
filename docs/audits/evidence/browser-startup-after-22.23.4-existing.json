@@ -1,0 +1,18 @@
+{
+  "mode": "existing",
+  "node": "22.23.4",
+  "cwd": "/tmp/browser-startup-regression-7O1OtD",
+  "exitCode": 0,
+  "signal": null,
+  "observations": [
+    {
+      "status": 200,
+      "body": {
+        "ok": true,
+        "time": "2026-10-24T16:19:57.167Z"
+      }
+    }
+  ],
+  "stdout": "{\"timestamp\":\"2026-10-24T16:19:57.171Z\",\"level\":\"info\",\"event\":\"http_request\",\"request_id\":\"671482c1-cf4d-4d32-be26-b21e8fda6896\",\"tenant\":\"default\",\"method\":\"GET\",\"path\":\"/api/health\",\"status\":200,\"duration_ms\":4}\n{\"timestamp\":\"2026-10-24T16:19:57.528Z\",\"level\":\"info\",\"event\":\"http_request\",\"request_id\":\"cb3a3183-eeaa-4005-b00e-f07c4339acf4\",\"tenant\":\"default\",\"method\":\"GET\",\"path\":\"/api/health\",\"status\":200,\"duration_ms\":1}\n",
+  "stderr": "(node:77058) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+}

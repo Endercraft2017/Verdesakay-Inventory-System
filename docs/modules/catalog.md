@@ -10,6 +10,19 @@ project, today. Entries marked `planned` are recorded designs with no code yet (
 Backend paths are `src/...` unless noted; frontend paths are `public/js/modules/...`
 (desktop) and `public/mobile/modules/...` (mobile), both `working`.
 
+## Production browser verification harness
+
+`tests/e2e/server.ts` owns synthetic temporary app/SMTP fixtures and initializes
+its ignored capture directory before scheduling the SMTP recorder. The real-process
+`tests/e2e-server-startup.test.ts` checks absent/existing/non-directory output paths,
+health continuity, parseable traffic capture and preservation of unrelated contents.
+Existing Playwright assertions, retries/deadlines and backend source remain unchanged.
+The exposed MFA prompt focus race is fixed in `public/js/lib/mfa.js`: reuse the
+shared modal's initial focus without a second delayed refocus. The real-DOM
+`tests/frontend-mfa-focus.test.ts` checks initial focus, preserved user movement
+and distinct password/code submission; MFA authentication/recovery policy is unchanged.
+See `docs/audits/browser-startup-contract.md` and `docs/operations/browser-audit-startup.md`.
+
 ## shared/ — infrastructure, not a business module
 
 **Responsibility:** technical concerns with no business meaning of their own, used by

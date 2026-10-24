@@ -1,0 +1,27 @@
+{
+  "baseline": "873a820ec4839e52030b0d1411bdcda9b12d8566",
+  "fixture_change": "Only one directory-creation statement and its comment; removing them reproduces the exact original source bytes",
+  "regression_and_configs_unchanged_since_red_run": true,
+  "before_fixture_sha256": "15fae8545b500a7f47ecf9c251ce2156a89cae54549083d9b19f372b4a23458e",
+  "after_fixture_sha256": "590d00d88205a487be8a96dacb37680b0abb2d97e681b28db61a313aaee25c78",
+  "after_regression_sha256": "bc55341e2c39d941831ac460112e3c9fc9d5f7251113692ecf69c7bead6e0e4e",
+  "dependency_schema_business_permission_authority_or_budget_changes": false,
+  "typecheck": {
+    "command": "node node_modules/typescript/bin/tsc --noEmit",
+    "node": "24.22.1",
+    "exit_code": 0
+  },
+  "initial_phase_production_source_changes": false,
+  "client_source_changes": [
+    "public/js/lib/mfa.js: remove redundant50ms refocus and unused return binding"
+  ],
+  "backend_source_changes": false,
+  "focus_regression_unchanged_since_red": true,
+  "all_original_browser_specs_byte_identical": true,
+  "mfa_focus_after_sha256": "54b17c1301e25a59fffd64ed9f27812e96c947a03c96f582216d4f526aad85e5",
+  "final_typecheck": {
+    "node": "24.22.1",
+    "exit_code": 0,
+    "log": "typecheck-final.log"
+  }
+}

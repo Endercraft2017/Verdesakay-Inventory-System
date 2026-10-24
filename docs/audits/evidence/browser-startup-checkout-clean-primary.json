@@ -1,0 +1,11 @@
+{
+  "url": "https://raw.githubusercontent.com/actions/checkout/v4/action.yml",
+  "sha256": "6188f6991491ed38977347cdaad0b0cd921a6d6232892363c91f433c22954f4f",
+  "selected_clean_input": [
+    "  clean:",
+    "    description: 'Whether to execute `git clean -ffdx && git reset --hard HEAD` before fetching'",
+    "    default: true",
+    "  filter:"
+  ],
+  "limit": "Current v4 source documents its default; not a recovered exact-action-SHA execution log"
+}

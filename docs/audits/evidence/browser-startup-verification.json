@@ -1,0 +1,60 @@
+{
+  "baseline": "873a820ec4839e52030b0d1411bdcda9b12d8566",
+  "observed_at": "2026-10-24T17:50:30.780270+00:00",
+  "selected_inputs": 976,
+  "root_and_clean_snapshot_inputs_match": true,
+  "startup_before": {
+    "failed": 1,
+    "passed": 2
+  },
+  "startup_after": {
+    "actual_nodes": [
+      "22.23.4",
+      "24.22.1"
+    ],
+    "passed_per_version": 3
+  },
+  "original_regression_assertions_and_configurations_unchanged": true,
+  "full": {
+    "node": "v24.22.1",
+    "files": 331,
+    "passed": 3547,
+    "failed": 0,
+    "pending": 0,
+    "elapsed_seconds": 2116.75
+  },
+  "clean_playwright": {
+    "node": "v24.22.1",
+    "stats": {
+      "startTime": "2026-10-24T17:45:43.828Z",
+      "duration": 272915.819,
+      "expected": 78,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "global_errors": [],
+    "elapsed_seconds": 274.275,
+    "started_without_work_directory": true,
+    "CI": true,
+    "GITHUB_ACTIONS": true,
+    "browser_override": false
+  },
+  "smtp": {
+    "captured_submissions": 3,
+    "recipient_counts": {
+      "browser-good@example.test": 1,
+      "browser-lost@example.test": 1,
+      "browser-unknown@example.test": 1
+    },
+    "sha256": "d0b5f396d3a70bffc6dff96dc5dd39c9f9e98e6a8bf208eae5284a78cb383bf5",
+    "delivery_confirmation": "Not established by local captured traffic"
+  },
+  "scope": "Fixture output initialization plus removal of demonstrated redundant MFA focus timer; backend/schema/dependency/business authority unchanged",
+  "limits": [
+    "Baseline remote stderr unavailable",
+    "Candidate CI requires separate exact-commit observation",
+    "No fresh dependency install claimed for linked local snapshots",
+    "No live-host/provider/Windows certification or independent human review"
+  ]
+}

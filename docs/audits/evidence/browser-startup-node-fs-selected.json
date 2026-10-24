@@ -1,0 +1,179 @@
+[
+  {
+    "textRaw": "`fs.mkdirSync(path[, options])`",
+    "type": "method",
+    "name": "mkdirSync",
+    "meta": {
+      "added": [
+        "v0.1.21"
+      ],
+      "changes": [
+        {
+          "version": [
+            "v13.11.0",
+            "v12.17.0"
+          ],
+          "pr-url": "https://github.com/nodejs/node/pull/31530",
+          "description": "In `recursive` mode, the first created path is returned now."
+        },
+        {
+          "version": "v10.12.0",
+          "pr-url": "https://github.com/nodejs/node/pull/21875",
+          "description": "The second argument can now be an `options` object with `recursive` and `mode` properties."
+        },
+        {
+          "version": "v7.6.0",
+          "pr-url": "https://github.com/nodejs/node/pull/10739",
+          "description": "The `path` parameter can be a WHATWG `URL` object using `file:` protocol."
+        }
+      ]
+    },
+    "signatures": [
+      {
+        "return": {
+          "textRaw": "Returns: {string|undefined}",
+          "name": "return",
+          "type": "string|undefined"
+        },
+        "params": [
+          {
+            "textRaw": "`path` {string|Buffer|URL}",
+            "name": "path",
+            "type": "string|Buffer|URL"
+          },
+          {
+            "textRaw": "`options` {Object|integer}",
+            "name": "options",
+            "type": "Object|integer",
+            "options": [
+              {
+                "textRaw": "`recursive` {boolean} **Default:** `false`",
+                "name": "recursive",
+                "type": "boolean",
+                "default": "`false`"
+              },
+              {
+                "textRaw": "`mode` {string|integer} Not supported on Windows. **Default:** `0o777`.",
+                "name": "mode",
+                "type": "string|integer",
+                "default": "`0o777`",
+                "desc": "Not supported on Windows."
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "desc": "<p>Synchronously creates a directory. Returns <code>undefined</code>, or if <code>recursive</code> is\n<code>true</code>, the first directory path created.\nThis is the synchronous version of <a href=\"#fsmkdirpath-options-callback\"><code>fs.mkdir()</code></a>.</p>\n<p>See the POSIX <a href=\"http://man7.org/linux/man-pages/man2/mkdir.2.html\"><code>mkdir(2)</code></a> documentation for more details.</p>"
+  },
+  {
+    "textRaw": "`fs.writeFileSync(file, data[, options])`",
+    "type": "method",
+    "name": "writeFileSync",
+    "meta": {
+      "added": [
+        "v0.1.29"
+      ],
+      "changes": [
+        {
+          "version": [
+            "v21.0.0",
+            "v20.10.0"
+          ],
+          "pr-url": "https://github.com/nodejs/node/pull/50009",
+          "description": "The `flush` option is now supported."
+        },
+        {
+          "version": "v19.0.0",
+          "pr-url": "https://github.com/nodejs/node/pull/42796",
+          "description": "Passing to the `data` parameter an object with an own `toString` function is no longer supported."
+        },
+        {
+          "version": "v17.8.0",
+          "pr-url": "https://github.com/nodejs/node/pull/42149",
+          "description": "Passing to the `data` parameter an object with an own `toString` function is deprecated."
+        },
+        {
+          "version": "v14.12.0",
+          "pr-url": "https://github.com/nodejs/node/pull/34993",
+          "description": "The `data` parameter will stringify an object with an explicit `toString` function."
+        },
+        {
+          "version": "v14.0.0",
+          "pr-url": "https://github.com/nodejs/node/pull/31030",
+          "description": "The `data` parameter won't coerce unsupported input to strings anymore."
+        },
+        {
+          "version": "v10.10.0",
+          "pr-url": "https://github.com/nodejs/node/pull/22150",
+          "description": "The `data` parameter can now be any `TypedArray` or a `DataView`."
+        },
+        {
+          "version": "v7.4.0",
+          "pr-url": "https://github.com/nodejs/node/pull/10382",
+          "description": "The `data` parameter can now be a `Uint8Array`."
+        },
+        {
+          "version": "v5.0.0",
+          "pr-url": "https://github.com/nodejs/node/pull/3163",
+          "description": "The `file` parameter can be a file descriptor now."
+        }
+      ]
+    },
+    "signatures": [
+      {
+        "return": {
+          "textRaw": "Returns: `undefined`.",
+          "name": "return",
+          "desc": "`undefined`."
+        },
+        "params": [
+          {
+            "textRaw": "`file` {string|Buffer|URL|integer} filename or file descriptor",
+            "name": "file",
+            "type": "string|Buffer|URL|integer",
+            "desc": "filename or file descriptor"
+          },
+          {
+            "textRaw": "`data` {string|Buffer|TypedArray|DataView}",
+            "name": "data",
+            "type": "string|Buffer|TypedArray|DataView"
+          },
+          {
+            "textRaw": "`options` {Object|string}",
+            "name": "options",
+            "type": "Object|string",
+            "options": [
+              {
+                "textRaw": "`encoding` {string|null} **Default:** `'utf8'`",
+                "name": "encoding",
+                "type": "string|null",
+                "default": "`'utf8'`"
+              },
+              {
+                "textRaw": "`mode` {integer} **Default:** `0o666`",
+                "name": "mode",
+                "type": "integer",
+                "default": "`0o666`"
+              },
+              {
+                "textRaw": "`flag` {string} See [support of file system `flags`][]. **Default:** `'w'`.",
+                "name": "flag",
+                "type": "string",
+                "default": "`'w'`",
+                "desc": "See [support of file system `flags`][]."
+              },
+              {
+                "textRaw": "`flush` {boolean} If all data is successfully written to the file, and `flush` is `true`, `fs.fsyncSync()` is used to flush the data.",
+                "name": "flush",
+                "type": "boolean",
+                "desc": "If all data is successfully written to the file, and `flush` is `true`, `fs.fsyncSync()` is used to flush the data."
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "desc": "<p>The <code>mode</code> option only affects the newly created file. See <a href=\"#fsopenpath-flags-mode-callback\"><code>fs.open()</code></a>\nfor more details.</p>\n<p>For detailed information, see the documentation of the asynchronous version of\nthis API: <a href=\"#fswritefilefile-data-options-callback\"><code>fs.writeFile()</code></a>.</p>"
+  }
+]

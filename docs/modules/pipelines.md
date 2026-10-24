@@ -1,5 +1,21 @@
 # Feature pipelines
 
+## Clean-checkout browser verification
+
+Initialize ignored capture output → create isolated tenant/catalog/SMTP fixtures
+→ start recorder → finish fixtures → health-ready HTTP server → actual browser
+scenarios/fresh traffic → stop/cleanup/reports. Missing output must be prepared by
+the fixture; a non-directory collision remains an explicit failure. A failed
+web-server prerequisite means zero tested browser scenarios, even if reporting
+then creates `work/`. This verification pipeline changes no payroll/sync authority.
+Contract/recovery: `docs/audits/browser-startup-contract.md` and
+`docs/operations/browser-audit-startup.md`.
+
+MFA prompt → shared modal initial focus → user moves to the code field → typed
+password/code stay distinct → existing authenticated API verification → existing
+factor-change/session-revocation result. The MFA wrapper must not schedule another
+first-input focus after the user has moved. No factor/recovery policy changes.
+
 ## Original company → registered tenant
 
 1. **Preview** (`platform/adopt-default.ts`, CLI `scripts/adopt-default-tenant.ts`):

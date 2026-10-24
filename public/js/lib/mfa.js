@@ -19,7 +19,7 @@ const Mfa = (() => {
   function ask(opts, onConfirm) {
     return new Promise((resolve) => {
       let result = null;
-      const m = UI.modal({
+      UI.modal({
         ...opts,
         protectChanges: false,
         onConfirm: async (ov, showErr) => {
@@ -30,7 +30,7 @@ const Mfa = (() => {
         },
         onClose: () => resolve(result),
       });
-      setTimeout(() => { const first = m.overlay.querySelector('input'); if (first) first.focus(); }, 50);
+      // UI.modal sets initial focus; preserve the user's subsequent focus movement.
     });
   }
 

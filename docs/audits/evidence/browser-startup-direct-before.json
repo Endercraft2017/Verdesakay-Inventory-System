@@ -1,0 +1,14 @@
+{
+  "command": [
+    "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+    "--import",
+    "tsx",
+    "tests/e2e/server.ts"
+  ],
+  "cwd": "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-baseline",
+  "started_with_work": false,
+  "elapsed_seconds": 16.1,
+  "exit_before_cleanup": 1,
+  "health_observations": [],
+  "observed_at": "2026-10-24T16:13:54.774686+00:00"
+}

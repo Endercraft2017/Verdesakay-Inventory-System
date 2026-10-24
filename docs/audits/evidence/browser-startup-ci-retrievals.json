@@ -1,0 +1,108 @@
+[
+  {
+    "name": "baseline-run",
+    "url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/runs/40097014338",
+    "observed_at": "2026-10-24T16:12:23.960192+00:00",
+    "status": 200,
+    "bytes": 14709,
+    "run": {
+      "id": 40097014338,
+      "head_sha": "873a820ec4839e52030b0d1411bdcda9b12d8566",
+      "status": "completed",
+      "conclusion": "failure",
+      "updated_at": "2026-10-24T13:28:58Z"
+    }
+  },
+  {
+    "name": "baseline-jobs",
+    "url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/runs/40097014338/jobs?per_page=100",
+    "observed_at": "2026-10-24T16:12:23.961720+00:00",
+    "status": 200,
+    "bytes": 17461,
+    "jobs": [
+      {
+        "id": 120881275454,
+        "name": "secrets",
+        "status": "completed",
+        "conclusion": "success",
+        "failed_steps": []
+      },
+      {
+        "id": 120881275571,
+        "name": "tests (24.22.1)",
+        "status": "completed",
+        "conclusion": "success",
+        "failed_steps": []
+      },
+      {
+        "id": 120881275578,
+        "name": "tests (22.22.0)",
+        "status": "completed",
+        "conclusion": "success",
+        "failed_steps": []
+      },
+      {
+        "id": 120881275582,
+        "name": "browser",
+        "status": "completed",
+        "conclusion": "failure",
+        "failed_steps": [
+          "Run npm run test:e2e"
+        ]
+      },
+      {
+        "id": 120881275623,
+        "name": "dependencies",
+        "status": "completed",
+        "conclusion": "failure",
+        "failed_steps": [
+          "Run npm audit --audit-level=high"
+        ]
+      },
+      {
+        "id": 120881275687,
+        "name": "tests (22.23.4)",
+        "status": "completed",
+        "conclusion": "success",
+        "failed_steps": []
+      },
+      {
+        "id": 120881275695,
+        "name": "tests (24.19.0)",
+        "status": "completed",
+        "conclusion": "success",
+        "failed_steps": []
+      }
+    ]
+  },
+  {
+    "name": "baseline-artifacts",
+    "url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/runs/40097014338/artifacts",
+    "observed_at": "2026-10-24T16:12:23.962436+00:00",
+    "status": 200,
+    "bytes": 1502,
+    "artifacts": [
+      {
+        "id": 12561222939,
+        "name": "gitleaks-results.sarif",
+        "size_in_bytes": 6840,
+        "expired": false,
+        "archive_download_url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/artifacts/12561222939/zip"
+      },
+      {
+        "id": 12561173211,
+        "name": "browser-audit",
+        "size_in_bytes": 194777,
+        "expired": false,
+        "archive_download_url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/artifacts/12561173211/zip"
+      }
+    ]
+  },
+  {
+    "name": "baseline-browser-log",
+    "url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/jobs/120881275582/logs",
+    "observed_at": "2026-10-24T16:12:23.963739+00:00",
+    "error": "URLError",
+    "reason": "proxy CONNECT 403"
+  }
+]

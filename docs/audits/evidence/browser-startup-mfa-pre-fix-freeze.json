@@ -1,0 +1,18 @@
+[
+  {
+    "sha256": "9da405bed7ff84a70358d004abdb5387e814bbc9a4141d91cd2836f7f84b59a9",
+    "path": "public/js/lib/mfa.js"
+  },
+  {
+    "sha256": "7c57b8d0010f2a87747d29f033a15c906bea38e79296cf7d2446e5a15256e3de",
+    "path": "tests/frontend-mfa-focus.test.ts"
+  },
+  {
+    "sha256": "bad5762269d30df3243c385c1783972130515b4cb2817f0c43e0fc908976a13c",
+    "path": "tests/e2e/readiness.spec.ts"
+  },
+  {
+    "sha256": "53e7d67fba9f6f01f1b7936dd3f0e55c09c124425fff3b3c817876a87ba1935e",
+    "path": "public/js/ui.js"
+  }
+]

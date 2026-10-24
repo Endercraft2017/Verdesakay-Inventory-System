@@ -1,0 +1,20 @@
+[
+  {
+    "name": "node-fs",
+    "url": "https://nodejs.org/download/release/v24.22.1/docs/api/fs.json",
+    "bytes": 723509,
+    "sha256": "6314af6d5377165e455e791db1826e4d9b4b983b3c3f59788101770b56891bed"
+  },
+  {
+    "name": "node-process",
+    "url": "https://nodejs.org/download/release/v24.22.1/docs/api/process.json",
+    "bytes": 224359,
+    "sha256": "6855ca4e0cb3e0bfe190e957a1ed9d00329d9291375aae615b8f9ccbba8f5251"
+  },
+  {
+    "name": "playwright-webserver",
+    "url": "https://playwright.dev/docs/test-webserver",
+    "bytes": 69899,
+    "sha256": "2e0a92950d939f42f429fabf49ea07bfea3dd6857ff52fceddfa95afeaf4d95e"
+  }
+]

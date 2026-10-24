@@ -6,6 +6,8 @@ import { randomUUID, createHash } from 'node:crypto';
 import {manualUsername,manualPassword,manualToken} from './manual-export-fixture';
 import { stepUpUsername, stepUpPassword, stepUpSessionToken, stepUpRecoveryCode } from './step-up-fixture';
 import { recoveryUsername, recoveryFixtureToken, cancellationId, cancellationNonce } from './recovery-fixture';
+// A clean checkout has no ignored work directory; the SMTP timer writes here before reports exist.
+fs.mkdirSync('work', { recursive: true });
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vds-playwright-'));
 Object.assign(process.env, {
   VDS_TEST_ADMIN_PASSWORD: 'admin123-test-only', NODE_ENV: 'test', TZ: 'Asia/Manila',

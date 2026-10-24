@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/lib/node_modules/npm/bin/npm-cli.js",
+    "test",
+    "--",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile.json=work/browser-startup/full-tests.json"
+  ],
+  "node": "v24.22.1",
+  "cwd": "/workspace/Verdesakay-Inventory-System",
+  "started_at": "2026-10-24T17:10:25.606867+00:00",
+  "selected_inputs": 976,
+  "explicit_environment": {},
+  "work_exists_before_run": true,
+  "exit_code": 0,
+  "elapsed_seconds": 2116.75,
+  "changed_root_inputs": [],
+  "changed_snapshot_inputs": []
+}

@@ -1,0 +1,18 @@
+{
+  "baseline": "873a820ec4839e52030b0d1411bdcda9b12d8566",
+  "baseline_archive_sha256": "f4e47b18500adc4a5b75b5c582c364a053918765e9ab528835432aa8cf14827c",
+  "snapshot": "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-candidate",
+  "archived_scope": "All tracked baseline files, including public, website, web-console and documentation assets",
+  "overlays": [
+    {
+      "sha256": "590d00d88205a487be8a96dacb37680b0abb2d97e681b28db61a313aaee25c78",
+      "path": "tests/e2e/server.ts"
+    },
+    {
+      "sha256": "bc55341e2c39d941831ac460112e3c9fc9d5f7251113692ecf69c7bead6e0e4e",
+      "path": "tests/e2e-server-startup.test.ts"
+    }
+  ],
+  "dependencies": "Symlink to existing unchanged installed lockfile graph; not a fresh install",
+  "work_exists_before_run": false
+}

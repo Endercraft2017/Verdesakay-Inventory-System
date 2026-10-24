@@ -1,5 +1,30 @@
 # Engineering handoff and release hold
 
+Browser fixture startup follow-up, **25 October 2026**, baseline **873a820**:
+the completed baseline CI now independently reports all four Node jobs and secrets
+passing, with browser/dependency failures. A clean local baseline snapshot reproduces
+the browser fixture's missing-output-directory crash: its SMTP timer writes into
+ignored `work/` before that directory exists, and Playwright executes zero cases.
+The fixture now prepares its own output before the timer. The new real-process
+absent/existing/non-directory controls fail before and pass after on current Node
+22/24 with unchanged assertions/configurations. The first full run passes
+330 files/3,546 tests, but its cold browser run exposes one separate MFA input
+focus defect (77 pass/one fail): the helper's redundant 50 ms focus reset appends
+the code to the password; the backend correctly rejects the empty code. A real-DOM
+regression fails before; removing that delayed refocus preserves shared initial
+focus and passes thirteen focused UI/API cases. Backend source/schema, dependencies,
+payroll authority, original browser assertions and budgets remain unchanged.
+Final validation after that client change passes **331 files/3,547 tests** and
+**all 78 Playwright cases**, zero failed/pending/skipped/flaky/global errors.
+The browser starts from a new full source snapshot with no ignored output folder;
+all 976 frozen code/config/runtime-asset inputs remain unchanged. The first failed
+run and authenticated trace remain separate; public input diagnostics expose
+lengths/status instead of credentials. See
+[contract/evidence](browser-startup-contract.md) and
+[startup recovery](../operations/browser-audit-startup.md). Original remote stderr
+remains unavailable; the new exact-commit CI result must be observed separately.
+Broader release holds remain open.
+
 Current-Node adoption follow-up, 24 October 2026, baseline **b451ce6**:
 the subsequent exact-commit CI has three passing Node jobs, but Node 24.22.1
 reports original-company adoption failures; browser and dependency jobs also fail.

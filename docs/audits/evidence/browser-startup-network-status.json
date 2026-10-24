@@ -1,0 +1,10 @@
+{
+  "observations_current": true,
+  "network_policy": {
+    "mode": "unrestricted",
+    "state": "enforced"
+  },
+  "spec_revision": "242",
+  "connectivity": "connected",
+  "network_diagnostics": null
+}

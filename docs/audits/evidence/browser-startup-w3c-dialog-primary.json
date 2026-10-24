@@ -1,0 +1,6 @@
+{
+  "url": "https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/",
+  "sha256": "9cd3863a6369ecb1e2ebbeaa15644f273545db67f690c3d72b3dda1ea234a88e",
+  "bytes": 43147,
+  "requirement": "Initial focus moves inside the dialog; keyboard focus must be usable within the dialog. Retain the shared initial-focus implementation without later overriding user movement."
+}

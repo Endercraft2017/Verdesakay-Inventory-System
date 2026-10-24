@@ -1,0 +1,10 @@
+{
+  "mode": "file",
+  "node": "24.22.1",
+  "cwd": "/tmp/browser-startup-regression-uPzyhl",
+  "exitCode": 1,
+  "signal": null,
+  "observations": [],
+  "stdout": "",
+  "stderr": "node:fs:2482\n    return binding.writeFileUtf8(\n                   ^\n\nError: ENOTDIR: not a directory, open 'work/payroll-email-browser-wire.json'\n    at Object.writeFileSync (node:fs:2482:20)\n    at Timeout._onTimeout (/workspace/Verdesakay-Inventory-System/tests/e2e/server.ts:60:119) {\n  errno: -20,\n  code: 'ENOTDIR',\n  syscall: 'open',\n  path: 'work/payroll-email-browser-wire.json'\n}\n\nNode.js v24.22.1\n"
+}

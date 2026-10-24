@@ -1,5 +1,9 @@
 # Second-pass validation — 16 October 2026
 
+Latest clean-browser/focus evidence: [25 October startup and MFA input focus](browser-startup-contract.md),
+including the original zero-case startup failure, later 77/78 failure and final
+fresh-snapshot result. Local results and candidate CI outcomes remain distinct.
+
 Latest current-Node adoption evidence: [24 October copy compatibility](adoption-runtime-contract.md),
 with the dated entry at the end. The historical browser CI failure remains unexplained;
 local passes on both browser builds do not close that independent gate.
@@ -1738,3 +1742,42 @@ invalid fixture/checker attempts and artifact hashes are retained. No business s
 dependency, payroll authority, existing assertions or test/CI timeout changes occur.
 Actual Windows/host behavior, power-loss/all-stage interruption, independent migration
 review, browser CI cause and broader dependency/release blockers remain open.
+
+
+## Clean browser startup and MFA input focus — 25 October 2026
+
+Baseline **873a820** completed CI reports all four Node jobs/secrets passing,
+browser/dependencies failing. A clean baseline snapshot reproduces `ENOENT` writing
+SMTP capture into missing ignored `work/`, before health; actual Playwright executes
+zero cases. Fixture directory initialization fixes that precondition. Three real
+process controls fail before/pass after on current Node 22/24 with unchanged assertions.
+
+The first fixture-only full regression passes **330 files/3,546 tests**; its cold
+browser run is **77 pass/one MFA failure**. Captured HTTP shows the entered 11-character
+recovery code appended to the 100-character password, leaving code empty; the server
+correctly returns 400. A deterministic real-DOM test reproduces the helper's redundant
+50 ms refocus overriding user focus. The client now reuses the shared modal's initial
+focus. No MFA policy, verification, recovery or session-revocation rule changes.
+
+Final validation after both fixes:
+
+- **331 files/3,547 Vitest cases pass**, zero failed/pending, actual Node 24.22.1,
+  **2,115.86 seconds** Vitest/**2,116.750 seconds** wrapper.
+- **78 Playwright cases pass**, zero unexpected/flaky/skipped/global errors,
+  **274.275 seconds**, managed browser, CI/GitHub flags, a new full source snapshot
+  with `work/` absent at start. Original browser specs remain byte-identical.
+- All **976 selected code/config/runtime-asset inputs** match across working tree
+  and snapshot. Root TypeScript passes. Original and new red-test assertions remain
+  unchanged; no test/CI budget, retry, hashing-cost or dependency changes.
+- Fresh local TLS SMTP capture contains three submissions, one each for ordinary,
+  lost-response and unknown-outcome email fixtures. Delivery is not inferred.
+
+[Contract, source, failed experiments and evidence](browser-startup-contract.md);
+[startup recovery](../operations/browser-audit-startup.md). The original failed run,
+full results and authenticated trace remain separate. Public diagnostics use field
+lengths/status; complete synthetic authenticated trace remains in local work evidence.
+The final index and mandatory hook complement expanded-content secret scans.
+Current-candidate CI must be observed separately; original remote stderr is still
+unavailable. Dependency, native/host/restore/capacity, manual keyboard/assistive and
+independent security/accounting review blockers remain open. Historical control
+totals and production release approval are unchanged.

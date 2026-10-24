@@ -1,0 +1,13 @@
+{
+  "status": 400,
+  "response": {
+    "error": "code: Enter the code from your app",
+    "request_id": "1a5e0975-deb3-4113-80c8-46842d73edd6"
+  },
+  "password_characters": 111,
+  "expected_password_characters": 100,
+  "code_characters": 0,
+  "expected_code_characters": 11,
+  "password_equals_intended_password_plus_entered_code": true,
+  "captured_code_empty": true
+}

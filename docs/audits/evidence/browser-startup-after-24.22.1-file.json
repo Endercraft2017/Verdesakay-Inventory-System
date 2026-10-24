@@ -1,0 +1,10 @@
+{
+  "mode": "file",
+  "node": "24.22.1",
+  "cwd": "/tmp/browser-startup-regression-FO0S97",
+  "exitCode": 1,
+  "signal": null,
+  "observations": [],
+  "stdout": "",
+  "stderr": "node:fs:1410\n  const result = binding.mkdir(\n                         ^\n\nError: EEXIST: file already exists, mkdir 'work'\n    at Object.mkdirSync (node:fs:1410:26)\n    at <anonymous> (/workspace/Verdesakay-Inventory-System/tests/e2e/server.ts:10:4)\n    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)\n    at async node:internal/modules/esm/loader:647:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {\n  errno: -17,\n  code: 'EEXIST',\n  syscall: 'mkdir',\n  path: 'work'\n}\n\nNode.js v24.22.1\n"
+}

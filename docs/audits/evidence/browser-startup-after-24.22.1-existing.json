@@ -1,0 +1,18 @@
+{
+  "mode": "existing",
+  "node": "24.22.1",
+  "cwd": "/tmp/browser-startup-regression-td5l5N",
+  "exitCode": 0,
+  "signal": null,
+  "observations": [
+    {
+      "status": 200,
+      "body": {
+        "ok": true,
+        "time": "2026-10-24T16:19:27.917Z"
+      }
+    }
+  ],
+  "stdout": "{\"timestamp\":\"2026-10-24T16:19:27.921Z\",\"level\":\"info\",\"event\":\"http_request\",\"request_id\":\"de85128f-ecfb-4636-a5a2-12d6e4124bd1\",\"tenant\":\"default\",\"method\":\"GET\",\"path\":\"/api/health\",\"status\":200,\"duration_ms\":4}\n{\"timestamp\":\"2026-10-24T16:19:28.282Z\",\"level\":\"info\",\"event\":\"http_request\",\"request_id\":\"eea3541e-302e-440c-8f27-4ee4c7114e10\",\"tenant\":\"default\",\"method\":\"GET\",\"path\":\"/api/health\",\"status\":200,\"duration_ms\":1}\n",
+  "stderr": ""
+}

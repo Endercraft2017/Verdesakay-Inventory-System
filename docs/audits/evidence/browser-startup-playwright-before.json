@@ -1,0 +1,186 @@
+{
+  "config": {
+    "argv": [
+      "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+      "/workspace/Verdesakay-Inventory-System/node_modules/playwright/cli.js",
+      "test",
+      "--config",
+      "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-baseline/playwright.config.ts"
+    ],
+    "configFile": "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-baseline/playwright.config.ts",
+    "rootDir": "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-baseline/tests/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "ci": {
+        "commitHref": "undefined/undefined/commit/undefined",
+        "buildHref": "undefined/undefined/actions/runs/undefined"
+      },
+      "gitCommit": {
+        "shortHash": "873a820",
+        "hash": "873a820ec4839e52030b0d1411bdcda9b12d8566",
+        "subject": "Preserve exclusive adoption copies on current Node",
+        "body": "Preserve exclusive adoption copies on current Node\n\nCopy the verified upload manifest exclusively after claiming its directory.\nRetain source, collision, SIGKILL/restart and committed-WAL evidence.\nAdd built-in GitHub browser failure annotations without changing test gates.\n\nValidated 3543 tests, 78 browser cases on two Chromium builds, focused checks\non four supported Node versions and finished-index secret scans.\n",
+        "author": {
+          "name": "Kyle Reneg Aduan",
+          "email": "kylereneg1234@gmail.com",
+          "time": 1792847421000
+        },
+        "committer": {
+          "name": "Kyle Reneg Aduan",
+          "email": "kylereneg1234@gmail.com",
+          "time": 1792847421000
+        },
+        "branch": "production"
+      }
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-baseline/work/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "ci": {
+            "commitHref": "undefined/undefined/commit/undefined",
+            "buildHref": "undefined/undefined/actions/runs/undefined"
+          },
+          "gitCommit": {
+            "shortHash": "873a820",
+            "hash": "873a820ec4839e52030b0d1411bdcda9b12d8566",
+            "subject": "Preserve exclusive adoption copies on current Node",
+            "body": "Preserve exclusive adoption copies on current Node\n\nCopy the verified upload manifest exclusively after claiming its directory.\nRetain source, collision, SIGKILL/restart and committed-WAL evidence.\nAdd built-in GitHub browser failure annotations without changing test gates.\n\nValidated 3543 tests, 78 browser cases on two Chromium builds, focused checks\non four supported Node versions and finished-index secret scans.\n",
+            "author": {
+              "name": "Kyle Reneg Aduan",
+              "email": "kylereneg1234@gmail.com",
+              "time": 1792847421000
+            },
+            "committer": {
+              "name": "Kyle Reneg Aduan",
+              "email": "kylereneg1234@gmail.com",
+              "time": 1792847421000
+            },
+            "branch": "production"
+          }
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-baseline/tests/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-baseline/work/playwright-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "ci": {
+            "commitHref": "undefined/undefined/commit/undefined",
+            "buildHref": "undefined/undefined/actions/runs/undefined"
+          },
+          "gitCommit": {
+            "shortHash": "873a820",
+            "hash": "873a820ec4839e52030b0d1411bdcda9b12d8566",
+            "subject": "Preserve exclusive adoption copies on current Node",
+            "body": "Preserve exclusive adoption copies on current Node\n\nCopy the verified upload manifest exclusively after claiming its directory.\nRetain source, collision, SIGKILL/restart and committed-WAL evidence.\nAdd built-in GitHub browser failure annotations without changing test gates.\n\nValidated 3543 tests, 78 browser cases on two Chromium builds, focused checks\non four supported Node versions and finished-index secret scans.\n",
+            "author": {
+              "name": "Kyle Reneg Aduan",
+              "email": "kylereneg1234@gmail.com",
+              "time": 1792847421000
+            },
+            "committer": {
+              "name": "Kyle Reneg Aduan",
+              "email": "kylereneg1234@gmail.com",
+              "time": 1792847421000
+            },
+            "branch": "production"
+          }
+        },
+        "name": "",
+        "testDir": "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-baseline/tests/e2e",
+        "snapshotDir": "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-baseline/tests/e2e",
+        "testIgnore": [],
+        "testMatch": "**/*.spec.ts",
+        "timeout": 30000,
+        "use": {
+          "baseURL": "http://127.0.0.1:4173",
+          "trace": "retain-on-failure",
+          "screenshot": "only-on-failure",
+          "launchOptions": {}
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": ""
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "html",
+        {
+          "open": "never",
+          "outputFolder": "work/playwright-report"
+        }
+      ],
+      [
+        "json",
+        {
+          "outputFile": "work/playwright-results.json"
+        }
+      ],
+      [
+        "github",
+        null
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.64.1",
+    "workers": 1,
+    "webServer": {
+      "command": "npx tsx tests/e2e/server.ts",
+      "url": "http://127.0.0.1:4173/api/health",
+      "reuseExistingServer": false,
+      "timeout": 30000
+    }
+  },
+  "suites": [],
+  "errors": [
+    {
+      "message": "Error: Process from config.webServer was not able to start. Exit code: 1",
+      "stack": "Error: Process from config.webServer was not able to start. Exit code: 1"
+    }
+  ],
+  "stats": {
+    "startTime": "2026-10-24T16:14:36.702Z",
+    "duration": 14769.566,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

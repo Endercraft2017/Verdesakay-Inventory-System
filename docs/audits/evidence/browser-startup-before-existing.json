@@ -1,0 +1,18 @@
+{
+  "mode": "existing",
+  "node": "24.22.1",
+  "cwd": "/tmp/browser-startup-regression-EEnPGG",
+  "exitCode": 0,
+  "signal": null,
+  "observations": [
+    {
+      "status": 200,
+      "body": {
+        "ok": true,
+        "time": "2026-10-24T16:17:54.835Z"
+      }
+    }
+  ],
+  "stdout": "{\"timestamp\":\"2026-10-24T16:17:54.843Z\",\"level\":\"info\",\"event\":\"http_request\",\"request_id\":\"af412c24-3247-4f60-8df4-ff3f08e2e957\",\"tenant\":\"default\",\"method\":\"GET\",\"path\":\"/api/health\",\"status\":200,\"duration_ms\":8}\n{\"timestamp\":\"2026-10-24T16:17:55.209Z\",\"level\":\"info\",\"event\":\"http_request\",\"request_id\":\"505ca121-7728-427b-8128-a0150cb4d497\",\"tenant\":\"default\",\"method\":\"GET\",\"path\":\"/api/health\",\"status\":200,\"duration_ms\":1}\n",
+  "stderr": ""
+}

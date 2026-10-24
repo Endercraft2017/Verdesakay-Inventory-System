@@ -1,0 +1,11 @@
+{
+  "command": [
+    "work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+    "node_modules/typescript/bin/tsc",
+    "--noEmit"
+  ],
+  "node": "24.22.1",
+  "exit_code": 0,
+  "elapsed_seconds": 24.897,
+  "observed_at": "2026-10-24T17:16:56.424495+00:00"
+}

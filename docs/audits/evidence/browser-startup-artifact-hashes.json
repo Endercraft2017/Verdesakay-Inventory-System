@@ -1,0 +1,367 @@
+[
+  {
+    "sha256": "b9d9e52f4f47e7a125dfa6128a251c10fd12e60e4e81275a34664533c0486465",
+    "path": "docs/audits/evidence/browser-startup-after-22.23.4-absent.json",
+    "bytes": 974
+  },
+  {
+    "sha256": "bb5a249ebce4732530ff05486e27ba07438e38a745034b7bbcd5f0d2e8f417ee",
+    "path": "docs/audits/evidence/browser-startup-after-22.23.4-existing.json",
+    "bytes": 976
+  },
+  {
+    "sha256": "3ccd6805b748930af055541826ab9c4e856485c8bae9c6a6a7bc001f90b6bd3d",
+    "path": "docs/audits/evidence/browser-startup-after-22.23.4-file.json",
+    "bytes": 775
+  },
+  {
+    "sha256": "762318d4ca1295f699e8369fb59c8695594be2d7d11f110c80bbf6961c2b7aec",
+    "path": "docs/audits/evidence/browser-startup-after-24.22.1-absent.json",
+    "bytes": 803
+  },
+  {
+    "sha256": "899e71d0025e4d06b93314c6f900b807b7093c0f12553bc7a4923e490a9180c0",
+    "path": "docs/audits/evidence/browser-startup-after-24.22.1-existing.json",
+    "bytes": 805
+  },
+  {
+    "sha256": "7a214f7d16d2f788bd8b56a560db2f201e09d65612cb0151a2b7f6a5a7e7b778",
+    "path": "docs/audits/evidence/browser-startup-after-24.22.1-file.json",
+    "bytes": 741
+  },
+  {
+    "sha256": "a877fd8c0aa0cb1a96159c8e3e16690103b5437e1509696cd4ceda61a38cf714",
+    "path": "docs/audits/evidence/browser-startup-after-startup-22.23.4.log.gz",
+    "bytes": 341
+  },
+  {
+    "sha256": "45ff55d3ab2c89df4cf74954a72c991f0f587a0da8d1d4600231f1412f658960",
+    "path": "docs/audits/evidence/browser-startup-after-startup-24.22.1.log.gz",
+    "bytes": 340
+  },
+  {
+    "sha256": "7d9ffa86260a3e8fec04267bdec03628ea62ee1965f512fb6f4f55c53d735d33",
+    "path": "docs/audits/evidence/browser-startup-assertion-integrity.json",
+    "bytes": 1251
+  },
+  {
+    "sha256": "40135fafe15f050c753d68efb31b1a3a2d7cdde2546c3d42e83a4ba292953e9f",
+    "path": "docs/audits/evidence/browser-startup-baseline-ci-artifacts.json",
+    "bytes": 1502
+  },
+  {
+    "sha256": "a6e170ebc2b6d789ef15a0094b59d246dcd20be296e5e8b76e8825d50f65eb10",
+    "path": "docs/audits/evidence/browser-startup-baseline-ci-jobs.json",
+    "bytes": 17461
+  },
+  {
+    "sha256": "ee4ec1ab17f5e6634a220fbac1997d30fba178d639631effdde0ef5ea637883c",
+    "path": "docs/audits/evidence/browser-startup-baseline-ci-run.json",
+    "bytes": 14709
+  },
+  {
+    "sha256": "00f8760ef0df91a7dae147ef73e9bc6d6c21324642fc91d584672c26a7ea083a",
+    "path": "docs/audits/evidence/browser-startup-baseline-snapshot.json",
+    "bytes": 633
+  },
+  {
+    "sha256": "6148f3c9d7a4a00e912b53bf89ebae35930a56d4d84008cd89fe8052b1fed400",
+    "path": "docs/audits/evidence/browser-startup-before-absent.json",
+    "bytes": 612
+  },
+  {
+    "sha256": "dcb809038db87abb344e84125521400de068b97ab46b1df541297c39fbc66dd1",
+    "path": "docs/audits/evidence/browser-startup-before-direct-server.log.gz",
+    "bytes": 301
+  },
+  {
+    "sha256": "29b1368552d2cf0acb3b9019c4b698df73796929516708d5a7c3002d85b16504",
+    "path": "docs/audits/evidence/browser-startup-before-existing.json",
+    "bytes": 805
+  },
+  {
+    "sha256": "f5ea0f2bf71ab43dada55c0b0591d01447edf1604baa4fdbc02c9317888e0eef",
+    "path": "docs/audits/evidence/browser-startup-before-file.json",
+    "bytes": 603
+  },
+  {
+    "sha256": "6bb23b4dccd11db37d0a488cc3ab9a1ca70bc7a9647951be7a330e5ab9668407",
+    "path": "docs/audits/evidence/browser-startup-before-playwright.log.gz",
+    "bytes": 527
+  },
+  {
+    "sha256": "15a65975bb6d3c2ae752e982ba28621c24e2589b4d11abc6cea7255c6c9d8dff",
+    "path": "docs/audits/evidence/browser-startup-before-startup-tests.log.gz",
+    "bytes": 829
+  },
+  {
+    "sha256": "17320e36868dfcadcebb96927979039a037be29c0467b1fa9aaa2d939e62d7bf",
+    "path": "docs/audits/evidence/browser-startup-candidate-snapshot.json",
+    "bytes": 797
+  },
+  {
+    "sha256": "7caff4e354a6add1255e5e2732bfca4d237007039b0d413f8cffa7a795eca256",
+    "path": "docs/audits/evidence/browser-startup-checkout-clean-primary.json",
+    "bytes": 456
+  },
+  {
+    "sha256": "d1a26c248020d09b85952318bf4272ae89649da5841b9393e6c1b67a18c71768",
+    "path": "docs/audits/evidence/browser-startup-ci-retrievals.json",
+    "bytes": 3124
+  },
+  {
+    "sha256": "f6b3ca5a42aba6a6de5ccfd9d9a8512adc1a55a3c0be611259d001b1b5a1008b",
+    "path": "docs/audits/evidence/browser-startup-clean-playwright-run.json",
+    "bytes": 665
+  },
+  {
+    "sha256": "bda5361b1a481275b8c9508df5e870294d15725736ec37d10eb3bda80c3cb56d",
+    "path": "docs/audits/evidence/browser-startup-clean-playwright.json",
+    "bytes": 94780
+  },
+  {
+    "sha256": "c61e090efc094294aa53f18ac5aec8ba1527fd99dd46e9dcadb29318fea17ae5",
+    "path": "docs/audits/evidence/browser-startup-clean-playwright.log.gz",
+    "bytes": 3725
+  },
+  {
+    "sha256": "d0b5f396d3a70bffc6dff96dc5dd39c9f9e98e6a8bf208eae5284a78cb383bf5",
+    "path": "docs/audits/evidence/browser-startup-clean-smtp-wire.json",
+    "bytes": 27489
+  },
+  {
+    "sha256": "00aa4641057a2b373920f64af016cc8ced832b78f457f64eec3408f570d92401",
+    "path": "docs/audits/evidence/browser-startup-direct-before.json",
+    "bytes": 430
+  },
+  {
+    "sha256": "793b34b67824e66d4f61c041059e5328ccb97d7cc54c26eb6d2da70f98d9ca29",
+    "path": "docs/audits/evidence/browser-startup-final-candidate-snapshot.json",
+    "bytes": 965
+  },
+  {
+    "sha256": "e9c38b758dd46361173a80eaa85267a5e1285569e669d75ffb7666cb79b685c4",
+    "path": "docs/audits/evidence/browser-startup-final-content-secrets.log.gz",
+    "bytes": 93
+  },
+  {
+    "sha256": "d12add41b0ed1fa7b20ab4115f903a923459719e363af902f3990ad7e880e1dc",
+    "path": "docs/audits/evidence/browser-startup-first-assertion-integrity.json",
+    "bytes": 784
+  },
+  {
+    "sha256": "451cd7e3fd033d3997fa04aec377ca406c4e5fee5e496679fb59cb828f733fcf",
+    "path": "docs/audits/evidence/browser-startup-first-cold-playwright-run.json",
+    "bytes": 665
+  },
+  {
+    "sha256": "a82565dcea91f2152ac0639e30703ff3bc38d897baf8079bf341d316da7ed41b",
+    "path": "docs/audits/evidence/browser-startup-first-cold-playwright.json",
+    "bytes": 99598
+  },
+  {
+    "sha256": "ab1235313bd81dc65512cc0f6c29b4642d3553508d0fb083567f34a3b4e9c454",
+    "path": "docs/audits/evidence/browser-startup-first-cold-playwright.log.gz",
+    "bytes": 4478
+  },
+  {
+    "sha256": "45396eaba92c1dcf1fdbea9d128e7635ba8d610ad4770a0fcc32f238c1fa6836",
+    "path": "docs/audits/evidence/browser-startup-first-cold-smtp-wire.json",
+    "bytes": 27489
+  },
+  {
+    "sha256": "59e17ca16c7d2a574630faae3c77e29535d8c1ac13fde3b59341f23185a7e9ec",
+    "path": "docs/audits/evidence/browser-startup-first-full-run.json",
+    "bytes": 684
+  },
+  {
+    "sha256": "f00e5a8fcf6bb50ede5bac9f3b84e77886a4da31d81032cda20612cd3f020342",
+    "path": "docs/audits/evidence/browser-startup-first-full-tests.json",
+    "bytes": 1207163
+  },
+  {
+    "sha256": "3c572baed79bc08855c1fa464de23ad4ce823f92969b6f5a345a63b447a7f625",
+    "path": "docs/audits/evidence/browser-startup-first-full.log.gz",
+    "bytes": 561054
+  },
+  {
+    "sha256": "387b853356ab471a463a36dbcb3aa5c50fc9717bc09c5f04eec16d0245cc38b3",
+    "path": "docs/audits/evidence/browser-startup-first-source-freeze.json",
+    "bytes": 135362
+  },
+  {
+    "sha256": "590d00d88205a487be8a96dacb37680b0abb2d97e681b28db61a313aaee25c78",
+    "path": "docs/audits/evidence/browser-startup-fixture-after.txt",
+    "bytes": 19189
+  },
+  {
+    "sha256": "15fae8545b500a7f47ecf9c251ce2156a89cae54549083d9b19f372b4a23458e",
+    "path": "docs/audits/evidence/browser-startup-fixture-before.txt",
+    "bytes": 19046
+  },
+  {
+    "sha256": "26ad947c1d284cad4c30034da284f9ce900293d1d5d235456ef9688848de2e91",
+    "path": "docs/audits/evidence/browser-startup-focused-commands.json",
+    "bytes": 973
+  },
+  {
+    "sha256": "c300a76ffe40fdd500d62bf64ffc4a0e87669e558ca0f3cdfba4faccbf95721d",
+    "path": "docs/audits/evidence/browser-startup-full-run.json",
+    "bytes": 683
+  },
+  {
+    "sha256": "25d0a12bc6b724c9e7544f2865736ed0331696797543ffefbcf64f8a12be42f3",
+    "path": "docs/audits/evidence/browser-startup-full-tests.json",
+    "bytes": 1207777
+  },
+  {
+    "sha256": "5de9d0b667eb9e58efe95db42379567cc9c94de2c269c9131e6b165a354a3f2c",
+    "path": "docs/audits/evidence/browser-startup-full.log.gz",
+    "bytes": 561620
+  },
+  {
+    "sha256": "54b17c1301e25a59fffd64ed9f27812e96c947a03c96f582216d4f526aad85e5",
+    "path": "docs/audits/evidence/browser-startup-mfa-after-source.txt",
+    "bytes": 6735
+  },
+  {
+    "sha256": "840b7b36862ae28e79b3219090dce5d4d0d6ddf61e9a88efcac4b6596e3049d2",
+    "path": "docs/audits/evidence/browser-startup-mfa-after.log.gz",
+    "bytes": 4172
+  },
+  {
+    "sha256": "9da405bed7ff84a70358d004abdb5387e814bbc9a4141d91cd2836f7f84b59a9",
+    "path": "docs/audits/evidence/browser-startup-mfa-before-source.txt",
+    "bytes": 6767
+  },
+  {
+    "sha256": "f1bca9d13dd7cc5a916f63adc0c8285483f2be2eab4b974507d032f6571e67de",
+    "path": "docs/audits/evidence/browser-startup-mfa-before.log.gz",
+    "bytes": 735
+  },
+  {
+    "sha256": "6498748f092bfe330c3f6771bb197d0c9f851a9613fae91e1c82df670615a74f",
+    "path": "docs/audits/evidence/browser-startup-mfa-delivered-inputs.json",
+    "bytes": 370
+  },
+  {
+    "sha256": "042cb27edc7c32e13d94b516de53fc3e661baf14b1d58a22961867ef8bc2307c",
+    "path": "docs/audits/evidence/browser-startup-mfa-focus-after.json",
+    "bytes": 5178
+  },
+  {
+    "sha256": "634924f70f6c1739aca956c254d3d8b415c581659f7aa31514e3e6f2a97d25bc",
+    "path": "docs/audits/evidence/browser-startup-mfa-focus-before.json",
+    "bytes": 1292
+  },
+  {
+    "sha256": "24222dd3da96463d815bee94d22d8ded552de8ae5ee032b4ff97d11fcf1fd0c3",
+    "path": "docs/audits/evidence/browser-startup-mfa-focus-evidence.json",
+    "bytes": 1135
+  },
+  {
+    "sha256": "02d0a50d2170f729e50f94bdec9cea19830e3c2803d6dfece2991503246fce14",
+    "path": "docs/audits/evidence/browser-startup-mfa-pre-fix-freeze.json",
+    "bytes": 521
+  },
+  {
+    "sha256": "d30613dd3fdc33a40569c2c0987763ac509e9171f1f3e47cde5e86e6f3e46d1b",
+    "path": "docs/audits/evidence/browser-startup-network-status.json",
+    "bytes": 202
+  },
+  {
+    "sha256": "4d3deb1439bc77ed317bfc55085fb27dc1ccc2894fcba9f8707aefd233aa4f91",
+    "path": "docs/audits/evidence/browser-startup-node-fs-selected.json",
+    "bytes": 6682
+  },
+  {
+    "sha256": "0a9f70c8f91ef9e89e1341130d620ed21adc5d4e82a7aec75e49bd47f5f7f26c",
+    "path": "docs/audits/evidence/browser-startup-playwright-before-run.json",
+    "bytes": 931
+  },
+  {
+    "sha256": "36bb654e84583f8b94e918c8a049a6a0172129c399ae6d87923550c88ab6e638",
+    "path": "docs/audits/evidence/browser-startup-playwright-before.json",
+    "bytes": 6965
+  },
+  {
+    "sha256": "3f480ed8615e8f1bf9de593023fd94931182eb5a1aacb034bdc73958d36d243a",
+    "path": "docs/audits/evidence/browser-startup-pre-fix-test-freeze.json",
+    "bytes": 514
+  },
+  {
+    "sha256": "899b5a8c47b141cade1312e92724aa26e9b78588283d676b3eabca7bd05a5a62",
+    "path": "docs/audits/evidence/browser-startup-primary-sources.json",
+    "bytes": 636
+  },
+  {
+    "sha256": "1966f41c502821e7d80e883755f2ac4c88982885d267875ddc418818dd7216ea",
+    "path": "docs/audits/evidence/browser-startup-regression-driver-final-source.txt",
+    "bytes": 3072
+  },
+  {
+    "sha256": "c712523a501f7dd2d2023997743e60bc42b4b44feac40479b76b2e52becca785",
+    "path": "docs/audits/evidence/browser-startup-regression-driver-source.txt",
+    "bytes": 3072
+  },
+  {
+    "sha256": "bc55341e2c39d941831ac460112e3c9fc9d5f7251113692ecf69c7bead6e0e4e",
+    "path": "docs/audits/evidence/browser-startup-regression-source.txt",
+    "bytes": 4474
+  },
+  {
+    "sha256": "5ccf3e92b388ae86d579c0471e178aa7db6ea5200d595bed34b0931093f39530",
+    "path": "docs/audits/evidence/browser-startup-secret-scans.json",
+    "bytes": 4351
+  },
+  {
+    "sha256": "387bcf2009fc5612c239b3711e4e26ce8775f4137b853f30b5f8bac73446e326",
+    "path": "docs/audits/evidence/browser-startup-source-freeze.json",
+    "bytes": 135500
+  },
+  {
+    "sha256": "02a446a79e036c7a6340f9e4c398157c308ec4cc1dcc273ee09a626344fe5d68",
+    "path": "docs/audits/evidence/browser-startup-startup-after-22.23.4.json",
+    "bytes": 1553
+  },
+  {
+    "sha256": "a7aff8fb439bd4f841d3ec105dff28bc9e162f1e7ec4f1c4d7071085d8a93c77",
+    "path": "docs/audits/evidence/browser-startup-startup-after-24.22.1.json",
+    "bytes": 1551
+  },
+  {
+    "sha256": "b25f53d0c1cfbff0dd2703469e4e0af0c25ece24cee3a8567c2397448888d758",
+    "path": "docs/audits/evidence/browser-startup-startup-before-run.json",
+    "bytes": 432
+  },
+  {
+    "sha256": "97930c708a902832f2ab004e8151c9b9cede9c94f6af022b4e5dd5984d0065d1",
+    "path": "docs/audits/evidence/browser-startup-startup-before.json",
+    "bytes": 2247
+  },
+  {
+    "sha256": "aefe13e3e5ab1c534724d3f2defb42e3dad9d0cdb3c0d4aeab827e591b6e2b5f",
+    "path": "docs/audits/evidence/browser-startup-typecheck-final.json",
+    "bytes": 259
+  },
+  {
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec",
+    "path": "docs/audits/evidence/browser-startup-typecheck-final.log.gz",
+    "bytes": 20
+  },
+  {
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec",
+    "path": "docs/audits/evidence/browser-startup-typecheck.log.gz",
+    "bytes": 20
+  },
+  {
+    "sha256": "37726112748f683c7910cdb49f33057ff4aa9797f1c40ab3edd82c13e4c6cbcd",
+    "path": "docs/audits/evidence/browser-startup-verification.json",
+    "bytes": 1768
+  },
+  {
+    "sha256": "a49d8b20a06599c7003f7bf54a0452a4822a4b94a1910df67356427073d44b4c",
+    "path": "docs/audits/evidence/browser-startup-w3c-dialog-primary.json",
+    "bytes": 363
+  }
+]

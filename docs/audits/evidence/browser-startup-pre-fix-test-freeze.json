@@ -1,0 +1,18 @@
+[
+  {
+    "sha256": "bc55341e2c39d941831ac460112e3c9fc9d5f7251113692ecf69c7bead6e0e4e",
+    "path": "tests/e2e-server-startup.test.ts"
+  },
+  {
+    "sha256": "15fae8545b500a7f47ecf9c251ce2156a89cae54549083d9b19f372b4a23458e",
+    "path": "tests/e2e/server.ts"
+  },
+  {
+    "sha256": "d449dba8e4dddf8c08021e7f239c1110beb7d31b7be7007ae562d68c3ed619fa",
+    "path": "playwright.config.ts"
+  },
+  {
+    "sha256": "dfdb54106c7f4e2fad7b1d3b80f3cef0f7db18b6c66cdc03e3fd9fa007b6b10e",
+    "path": "vitest.config.ts"
+  }
+]

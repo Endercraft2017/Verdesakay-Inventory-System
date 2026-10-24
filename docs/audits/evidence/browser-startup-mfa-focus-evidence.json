@@ -1,0 +1,24 @@
+{
+  "diagnostic": {
+    "status": 400,
+    "response": {
+      "error": "code: Enter the code from your app",
+      "request_id": "1a5e0975-deb3-4113-80c8-46842d73edd6"
+    },
+    "password_characters": 111,
+    "expected_password_characters": 100,
+    "code_characters": 0,
+    "expected_code_characters": 11,
+    "password_equals_intended_password_plus_entered_code": true,
+    "captured_code_empty": true
+  },
+  "authenticated_trace": {
+    "sha256": "7359eefb272f3354a3b43dd31d5f10e0190d5248fd6f932fd24cd020bedd4176",
+    "workspace_path": "/workspace/Verdesakay-Inventory-System/work/browser-startup/first-clean-failure/playwright-artifacts/readiness-browser-authenti-7e64d-y-and-mobile-factor-sign-in/trace.zip",
+    "publication": "Retained locally; credential-bearing trace is not staged. Public diagnostic uses lengths/status only."
+  },
+  "before_focus_source": "first-clean-failure/mfa-before-source.txt",
+  "before_regression": "mfa-before.json",
+  "after_regression": "mfa-after.json",
+  "helper_change": "Remove deferred50ms refocus and unused return binding; preserve UI.modal initial focus and all MFA API contracts"
+}

@@ -1,0 +1,25 @@
+{
+  "baseline": "873a820ec4839e52030b0d1411bdcda9b12d8566",
+  "baseline_archive_sha256": "f4e47b18500adc4a5b75b5c582c364a053918765e9ab528835432aa8cf14827c",
+  "snapshot": "/workspace/Verdesakay-Inventory-System/work/browser-startup/final-candidate",
+  "overlays": [
+    {
+      "sha256": "590d00d88205a487be8a96dacb37680b0abb2d97e681b28db61a313aaee25c78",
+      "path": "tests/e2e/server.ts"
+    },
+    {
+      "sha256": "bc55341e2c39d941831ac460112e3c9fc9d5f7251113692ecf69c7bead6e0e4e",
+      "path": "tests/e2e-server-startup.test.ts"
+    },
+    {
+      "sha256": "54b17c1301e25a59fffd64ed9f27812e96c947a03c96f582216d4f526aad85e5",
+      "path": "public/js/lib/mfa.js"
+    },
+    {
+      "sha256": "7c57b8d0010f2a87747d29f033a15c906bea38e79296cf7d2446e5a15256e3de",
+      "path": "tests/frontend-mfa-focus.test.ts"
+    }
+  ],
+  "work_exists_before_run": false,
+  "previous_snapshot_and_failed_run": "clean-candidate and first-clean-failure retained unchanged"
+}

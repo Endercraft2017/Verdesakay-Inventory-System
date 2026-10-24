@@ -1,0 +1,28 @@
+{
+  "command": [
+    "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+    "/workspace/Verdesakay-Inventory-System/node_modules/playwright/cli.js",
+    "test",
+    "--config",
+    "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-baseline/playwright.config.ts"
+  ],
+  "cwd": "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-baseline",
+  "started_with_work": false,
+  "exit_code": 1,
+  "elapsed_seconds": 15.742,
+  "observed_at": "2026-10-24T16:14:51.525167+00:00",
+  "stats": {
+    "startTime": "2026-10-24T16:14:36.702Z",
+    "duration": 14769.566,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "global_errors": [
+    {
+      "message": "Error: Process from config.webServer was not able to start. Exit code: 1",
+      "stack": "Error: Process from config.webServer was not able to start. Exit code: 1"
+    }
+  ]
+}

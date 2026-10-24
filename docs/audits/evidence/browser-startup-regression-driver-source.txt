@@ -1,0 +1,38 @@
+import datetime
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import time
+
+root=Path.cwd();out=root/'work/browser-startup';snapshot=out/'clean-candidate'
+node=root/'work/runtime-support/node-v24.22.1-linux-x64/bin/node'
+npm='/opt/codex/runtimes/codex-primary-runtime/dependencies/node/lib/node_modules/npm/bin/npm-cli.js'
+paths=subprocess.check_output(['git','ls-files','-z','--cached','--others','--exclude-standard']).decode().split('\0')
+prefixes=('src/','public/','tests/','scripts/','electron/','.github/workflows/','web-console/','website/','mobile-app/','launcher/','docs/policies/')
+files=sorted({p for p in paths if p and (p.startswith(prefixes) or p in ('server.ts','package.json','package-lock.json','.npmrc','.node-version','vitest.config.ts','playwright.config.ts','tsconfig.json','.githooks/pre-commit'))})
+def digest(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+freeze=[{'sha256':digest(root/p),'path':p} for p in files]
+(out/'source-freeze.json').write_text(json.dumps(freeze,indent=2)+'\n')
+def changed(base):return [f['path'] for f in freeze if not (base/f['path']).exists() or digest(base/f['path'])!=f['sha256']]
+assert not changed(snapshot) and not (snapshot/'work').exists()
+env={**os.environ,'PATH':str(node.parent)+':'+os.environ['PATH'],'TZ':'Asia/Manila'}
+tasks=[('full',root,[str(node),npm,'test','--','--reporter=default','--reporter=json','--outputFile.json=work/browser-startup/full-tests.json'],{}),
+       ('clean-playwright',snapshot,[str(node),npm,'run','test:e2e'],{'CI':'true','GITHUB_ACTIONS':'true'})]
+for name,cwd,command,extra in tasks:
+    effective={**env,**extra}
+    if name=='clean-playwright':effective.pop('PLAYWRIGHT_CHROMIUM_EXECUTABLE',None)
+    record={'command':command,'node':subprocess.check_output([str(node),'--version']).decode().strip(),'cwd':str(cwd),'started_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'selected_inputs':len(freeze),'explicit_environment':extra,'work_exists_before_run':(cwd/'work').exists()}
+    print(json.dumps({'event':'started','task':name,**record}),flush=True);start=time.monotonic()
+    with (out/(name+'.log')).open('w') as log:p=subprocess.run(command,cwd=cwd,env=effective,stdout=log,stderr=subprocess.STDOUT)
+    record.update(exit_code=p.returncode,elapsed_seconds=round(time.monotonic()-start,3),changed_root_inputs=changed(root),changed_snapshot_inputs=changed(snapshot))
+    (out/(name+'-run.json')).write_text(json.dumps(record,indent=2)+'\n')
+    if name=='clean-playwright':
+        for filename in ['playwright-results.json','payroll-email-browser-wire.json']:
+            source=snapshot/'work'/filename
+            if source.exists():
+                assert source.stat().st_mtime>=datetime.datetime.fromisoformat(record['started_at']).timestamp()
+                (out/filename).write_bytes(source.read_bytes())
+    print(json.dumps({'event':'finished','task':name,**record}),flush=True)
+    if p.returncode or record['changed_root_inputs'] or record['changed_snapshot_inputs']:raise SystemExit(p.returncode or 2)

@@ -1,0 +1,21 @@
+{
+  "baseline": "873a820ec4839e52030b0d1411bdcda9b12d8566",
+  "snapshot": "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-baseline",
+  "archived_paths": [
+    "server.ts",
+    "src",
+    "scripts",
+    "public",
+    "tests",
+    "package.json",
+    "package-lock.json",
+    "playwright.config.ts",
+    "tsconfig.json",
+    "vitest.config.ts",
+    ".npmrc",
+    ".node-version"
+  ],
+  "source_archive_sha256": "2dd6fbe91407675116415cc9122fa62be4fe83fa8fc81eb06516e71104f14d83",
+  "work_directory_exists": false,
+  "dependencies": "Symlink to unchanged existing installed lockfile graph; no fresh install claimed"
+}

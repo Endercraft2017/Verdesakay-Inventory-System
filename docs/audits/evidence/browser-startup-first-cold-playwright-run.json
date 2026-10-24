@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/lib/node_modules/npm/bin/npm-cli.js",
+    "run",
+    "test:e2e"
+  ],
+  "node": "v24.22.1",
+  "cwd": "/workspace/Verdesakay-Inventory-System/work/browser-startup/clean-candidate",
+  "started_at": "2026-10-24T16:57:24.022592+00:00",
+  "selected_inputs": 975,
+  "explicit_environment": {
+    "CI": "true",
+    "GITHUB_ACTIONS": "true"
+  },
+  "work_exists_before_run": false,
+  "exit_code": 1,
+  "elapsed_seconds": 283.313,
+  "changed_root_inputs": [],
+  "changed_snapshot_inputs": []
+}
