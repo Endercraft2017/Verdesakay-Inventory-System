@@ -373,14 +373,15 @@
         (r.status==='liquidation_submitted'&&MApp.can('purchasing.settle_requests')&&(r.buyer_id!==user.id||user.role==='admin'))||
         (r.status==='approved'&&r.buyer_id===user.id);
     });});
-    add('notice','Unread update','notifications',['mobile.access'],'/notifications',function(q){return (q.items||[]).filter(function(n){var match=/^#\/([a-z-]+)/.exec(n.url||'');return !n.read_at&&(!match||MApp.canOpen(match[1]));}).map(function(n){return Object.assign({},n,{title:n.title,name:n.body});});});
+    add('notice','Unread update','notifications',['mobile.access'],'/notifications?unread=1&limit=200',function(q){return (q.items||[]).filter(function(n){var match=/^#\/([a-z-]+)/.exec(n.url||'');return !n.read_at&&(!match||MApp.canOpen(match[1]));}).map(function(n){return Object.assign({},n,{title:n.title,name:n.body});});});
     add('personal','Personal task','tasks',['mobile.access'],'/tasks',function(q){return (q||[]).filter(function(r){return !r.done;});});
     return sources;
   }
   function noticeTarget(url){
     var match=/^#\/([a-z-]+)(?:\?(.*))?$/.exec(url||'');if(!match||!MApp.canOpen(match[1]))return null;
     var params=new URLSearchParams(match[2]||''),route=match[1],key=route==='so'?'release':route==='purchase-requests'?'pr':route==='kit-release'?'kits':route==='repairs'?'parts':route==='deliveries'?'delivery':route==='qc'?(params.get('step')==='hold'?'holds':params.get('role')||'qc'):null;
-    var id=params.get(route==='qc'?'unit':'id');return key&&/^\d+$/.test(id||'')?{task:key,record:'record:'+id}:null;
+    if(route==='receiving')key='rts';else if(route==='job-orders')key=params.get('view')==='approval'?'approval':'production';else if(route==='tasks')key='personal';
+    var id=params.get(route==='qc'?'unit':route==='receiving'?(params.has('batch')?'batch':'unit'):'id'),kind=route==='receiving'?(params.has('batch')?'batch':'unit'):'record';return key&&/^\d+$/.test(id||'')?{task:key,record:kind+':'+id}:null;
   }
   function attentionId(r){return (r.work_kind||'record')+':'+r.id;}
   function attentionTitle(r){return r.identifier||(r.work_kind==='batch'?(r.number||r.batch_number):null)||r.number||r.batch_number||r.title||r.job_order_number||'Record #'+r.id;}
@@ -390,8 +391,9 @@
     else if(source&&source.key==='release')state=r.warehouse_accepted_at?'Picking / release':'Awaiting warehouse acceptance';
     return [r.work_kind==='batch'?r.remaining_qty+' pcs remaining':null,r.component_name?('Qty '+r.quantity+' · '+r.component_name):r.customer_name||r.product_name||r.reason||r.name,state,r.expected_date&&'Due '+r.expected_date].filter(Boolean).join(' · ');
   }
-  function attentionRow(source,r,scope,personalDirect){
+  function attentionRow(source,r,scope,personalDirect,compact){
     var row=mEl('<button type="button" class="v2-work-row" data-attention="'+mEsc(source.key)+'"><span><b>'+mEsc(attentionTitle(r))+'</b><small>'+mEsc(source.title+' · '+(blockedInspection(source,r)?'Waiting for parts · ':'')+attentionMeta(r,source))+'</small></span><em>REVIEW ›</em></button>');
+    if(compact){row.dataset.workRecord=attentionId(r);row.classList.add('work-compact-record');row.querySelector('small').textContent=(blockedInspection(source,r)?'Waiting for parts · ':'')+attentionMeta(r,source);var age=homeWorkTime(source,r);row.querySelector('em').textContent=Number.isFinite(age)?'Since '+new Date(age).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):'Date unknown';row.querySelector('em').setAttribute('aria-label',Number.isFinite(age)?'Waiting since '+new Date(age).toLocaleString():'Waiting date unavailable');}
     var direct=personalDirect&&source.key==='personal';if(direct)explain(row,'personal-task',r.title);
     var owner=mReadScope.identity();row.onclick=function(){if(row.isConnected&&owner===mReadScope.identity()&&(!scope||scope.current())&&(direct||attentionSources().some(function(s){return s.key===source.key;}))){if(direct)MApp.go('tasks',{id:r.id});else MApp.go('work',{task:source.key,record:attentionId(r)});}};return row;
   }
@@ -404,7 +406,7 @@
     else if (path === '/rts/queue') {
       if (!value || !Array.isArray(value.units) || !Array.isArray(value.batches)) throw new Error('The receiving queue could not be verified.');
       rows=value.units.concat(value.batches);
-    } else if (path === '/notifications') rows=value?.items;
+    } else if (/^\/notifications(?:\?|$)/.test(path)) rows=value?.items;
     else rows=value;
     if (!Array.isArray(rows) || rows.some(function(r){return !r || !Number.isInteger(Number(r.id)) || Number(r.id)<=0;})) throw new Error('The server returned an invalid queue. Refresh to check current work.');
     return value;
@@ -469,26 +471,108 @@
     }
     check(false);
   }
+  var workChevron='<svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg>';
+  function queueParams(source){return source.key==='qc'||source.key==='qa'?{role:source.key}:source.key==='holds'?{role:'qa',tab:'hold'}:{};}
+  // A record identity, never a repeated title, is the grouping boundary.
+  function updateIdentity(n){
+    var target=noticeTarget(n.url);if(target)return target.task+':'+target.record;
+    var match=/^#\/([a-z-]+)(?:\?(.*))?$/.exec(n.url||''),p=new URLSearchParams(match?.[2]||'');
+    if(match&&match[1]!=='notifications'&&['id','unit','batch','job'].some(function(k){return p.has(k);})){p.sort();return match[1]+'?'+p.toString();}
+    if(n.link&&n.link.route&&n.link.params&&Object.keys(n.link.params).length)return n.link.route+':'+JSON.stringify(Object.keys(n.link.params).sort().map(function(k){return [k,n.link.params[k]];}));
+    return 'notice:'+n.id;
+  }
   function attentionFeed(page) {
-    page.appendChild(mEl('<div class="v2-work-title"><h2>Needs my attention</h2><button type="button" class="rk-back" data-attention-refresh>Refresh</button></div>'));
-    var host=mEl('<div class="v2-work-list" data-work-attention></div>');page.appendChild(host);return host;
+    page.appendChild(mEl('<section class="work-live-status"><div class="v2-work-title"><h2>Needs action</h2><button type="button" class="rk-back" data-attention-refresh>Refresh</button></div><p class="work-freshness" data-work-freshness role="status">Checking current work…</p><div data-work-recovery></div></section>'));
+    var host=mEl('<div class="v2-work-list" data-work-attention></div>');page.appendChild(host);
+    page.appendChild(mEl('<div class="work-overflow"><p class="v2-work-empty" data-work-empty hidden>No action needed right now. Your checked work queues are clear.</p><details class="work-disclosure" data-work-clear><summary><span data-work-clear-label>Other queues</span>'+workChevron+'</summary><div data-work-clear-list></div></details><details class="work-disclosure" data-work-updates><summary><span data-work-updates-label>Updates · Checking…</span>'+workChevron+'</summary><div data-work-update-list></div></details></div>'));
+    return host;
   }
   function startWorkFeed(page,host,countRows,scope,personalDirect) {
-    var groups=new Map(),running=false,poll;
+    var groups=new Map(),running=false,poll,recoveryPending=false,recoveryError='',recoveryRows=[],noticeBusy=new Set();
+    var clearBox=page.querySelector('[data-work-clear]'),clearHost=page.querySelector('[data-work-clear-list]'),updates=page.querySelector('[data-work-updates]'),updateHost=page.querySelector('[data-work-update-list]'),tracking=page.querySelector('[data-work-tracking]'),recovery=page.querySelector('[data-work-recovery]');
+    function sourceCurrent(source){return scope.current()&&attentionSources().some(function(s){return s.key===source.key;});}
+    function openQueue(source){if(sourceCurrent(source))MApp.go(source.route,queueParams(source));}
     function group(source) {
       var g=groups.get(source.key);
-      if(!g){g={source:source,rows:[],loaded:false,pending:true,error:'',el:mEl('<section class="work-desk" data-work-desk="'+mEsc(source.key)+'"></section>')};groups.set(source.key,g);host.appendChild(g.el);}
+      if(!g){g={source:source,rows:[],held:0,loaded:false,pending:true,error:'',el:mEl('<section class="work-desk" data-work-desk="'+mEsc(source.key)+'"></section>')};groups.set(source.key,g);host.appendChild(g.el);}
       return g;
+    }
+    function sortRows(g){return g.rows.slice().sort(function(a,b){var x=homeWorkTime(g.source,a),y=homeWorkTime(g.source,b);return (x<y?-1:x>y?1:0)||Number(a.id)-Number(b.id);});}
+    function drawUpdates(g){
+      var sig=JSON.stringify([g.rows,g.pending,g.error,g.more,g.showAll,Array.from(groups.values()).map(function(x){return [x.source.key,x.loaded,x.pending,x.error,x.rows.map(attentionId)];})]);if(g.updateSignature===sig)return;g.updateSignature=sig;
+      var focused=g.el.contains(document.activeElement),focusKey=document.activeElement?.dataset.updateGroup;
+      var combined=new Map();g.rows.forEach(function(n){var key=updateIdentity(n);if(!combined.has(key))combined.set(key,[]);combined.get(key).push(n);});
+      g.el.innerHTML=g.error?'<p class="work-feedback error" role="status">Updates could not be refreshed. '+(g.loaded?'Last loaded updates are shown.':'Unread count unknown.')+'</p>':'';
+      Array.from(combined.values()).slice(0,g.showAll?combined.size:3).forEach(function(records){
+        var n=records[0],target=noticeTarget(n.url),live=target&&groups.get(target.task),active=live?.rows.some(function(r){return attentionId(r)===target.record;});
+        var hint=live?.loaded&&!live.error&&!live.pending?(active?'Current work · Opens checked record':'No longer pending here · Check current record'):'Update · Check current record';
+        if(!target)hint='Information / history';
+        var row=mEl('<button type="button" class="v2-work-row work-update" data-attention="notice"><span><b>'+mEsc(n.title)+'</b><small>'+mEsc(n.body||'')+'</small><small>'+mEsc(hint)+' · '+records.length+' unread update'+(records.length===1?'':'s')+'</small></span>'+workChevron+'</button>');
+        row.dataset.updateGroup=updateIdentity(n);
+        row.onclick=async function(){
+          var key=updateIdentity(n);if(!row.isConnected||!sourceCurrent(g.source)||noticeBusy.has(key))return;noticeBusy.add(key);row.disabled=true;
+          async function navigate(){if(!scope.current()||!row.isConnected||!sourceCurrent(g.source))return;if(n.url&&n.url.indexOf('#/notifications')!==0)MApp.go('work',{notice:n.url});else MApp.go('notifications',{id:n.id});}
+          try {await scope.run(function(opts){return Promise.all(records.map(function(item){return API.post('/notifications/'+item.id+'/read',{},opts);}));});await navigate();}
+          catch(e){if(e.cancelled||!scope.current())return;var error=g.el.querySelector('[data-update-error]');if(error)error.remove();error=mEl('<div class="work-feedback error" data-update-error role="alert">Could not save read status. Retry the update or <button type="button" class="work-text-button">open without marking read</button>.</div>');error.querySelector('button').onclick=navigate;g.el.appendChild(error);}
+          finally{noticeBusy.delete(key);if(row.isConnected)row.disabled=false;}
+        };g.el.appendChild(row);
+      });
+      if(!g.pending&&!g.error&&!g.rows.length)g.el.appendChild(mEl('<p class="m-hint">No unread updates.</p>'));
+      if(combined.size>3){var more=mEl('<button type="button" class="work-view-all">'+(g.showAll?'Show fewer updates':'Show all '+combined.size+' update groups')+workChevron+'</button>');more.onclick=function(){g.showAll=!g.showAll;drawUpdates(g);g.el.querySelector('.work-view-all').focus({preventScroll:true});};g.el.appendChild(more);}
+      if(g.more)g.el.appendChild(mEl('<p class="m-hint">Showing the newest 200 unread updates. Older updates appear as these are read.</p>'));
+      var history=commonTool('View notification history','notifications',scope);g.el.appendChild(history);
+      page.querySelector('[data-work-updates-label]').textContent='Updates · '+(g.pending?'Checking…':g.error?'Unknown':g.rows.length+(g.more?'+':'')+' unread');
+      if(g.error)updates.open=true;
+      if(focused){var next=Array.from(g.el.querySelectorAll('[data-update-group]')).find(function(row){return row.dataset.updateGroup===focusKey;});(next||updates.querySelector('summary')).focus({preventScroll:true});}
+    }
+    function arrange(){
+      if(!scope.current())return;
+      var focus=document.activeElement,resumeFocus=focus?.dataset.workResume,all=Array.from(groups.values()),work=all.filter(function(g){return !['notice','csr'].includes(g.source.key);}),priority=function(g){return g.rows.length||g.held?0:g.error?1:g.pending?2:3;};
+      work.sort(function(a,b){var x=sortRows(a)[0],y=sortRows(b)[0],at=x?homeWorkTime(a.source,x):Infinity,bt=y?homeWorkTime(b.source,y):Infinity;return priority(a)-priority(b)||(at<bt?-1:at>bt?1:0)||a.source.key.localeCompare(b.source.key);});
+      var position=0,clearPosition=0;
+      work.forEach(function(g){var empty=g.loaded&&!g.pending&&!g.error&&!g.rows.length&&!g.held,target=empty?clearHost:host,index=empty?clearPosition++:position++;if(target.children[index]!==g.el)target.insertBefore(g.el,target.children[index]||null);});
+      var clear=work.filter(function(g){return g.loaded&&!g.pending&&!g.error&&!g.rows.length&&!g.held;});
+      clearBox.hidden=!clear.length;page.querySelector('[data-work-clear-label]').textContent='Other queues · '+clear.length+' clear';
+      var checking=all.some(function(g){return g.pending;})||recoveryPending||countRows.some(function(e){return e.pending;}),unknown=all.some(function(g){return !!g.error;})||recoveryError||countRows.some(function(e){return e.error;}),extra=countRows.filter(function(e){var key=opSource(e.op),g=groups.get(key);return !e.error&&e.value>0&&(!g||e.value>g.rows.length);});
+      recovery.innerHTML='';
+      if(recoveryError)recovery.appendChild(mEl('<p class="work-feedback error" role="status">Saved work could not be checked. Refresh before starting another attempt.</p>'));
+      recoveryRows.forEach(function(entry){var row=mEl('<button type="button" class="v2-work-row work-recovery"><span><b>'+mEsc(entry.title)+'</b><small>'+mEsc(entry.sub)+'</small></span><em>RESUME</em>'+workChevron+'</button>');row.dataset.workResume=JSON.stringify([entry.source.key,entry.params]);row.onclick=function(){if(row.isConnected&&sourceCurrent(entry.source))MApp.go(entry.source.route,entry.params);};recovery.appendChild(row);});
+      extra.forEach(function(entry){var row=opRow(entry.op,scope,true);row.classList.add('work-recovery');row.dataset.workResume=entry.op.label;row.querySelector('[data-count]').textContent=entry.value+' TO REVIEW';recovery.appendChild(row);});
+      countRows.filter(function(e){return e.error;}).forEach(function(entry){var row=opRow(entry.op,scope,true);row.classList.add('work-recovery');row.dataset.workResume=entry.op.label;row.querySelector('[data-count]').textContent='UNKNOWN';recovery.appendChild(row);});
+      var active=work.some(function(g){return g.rows.length||g.held;}),allClear=!checking&&!unknown&&!active&&!extra.length&&!recoveryRows.length;
+      page.querySelector('[data-work-empty]').hidden=!allClear;
+      page.querySelector('[data-work-freshness]').textContent=checking?'Checking current work…':unknown?'Some work could not be checked · Refresh to retry':'Oldest first · Checked just now';
+      var notice=groups.get('notice');if(notice){drawUpdates(notice);page.querySelectorAll('[data-work-record]').forEach(function(row){var n=notice.rows.filter(function(update){var t=noticeTarget(update.url);return t&&t.task===row.dataset.attention&&t.record===row.dataset.workRecord;}).length,badge=row.querySelector('.work-update-badge');if(!n){if(badge)badge.remove();}else if(!badge){badge=mEl('<span class="work-update-badge"></span>');badge.textContent=n+' new';row.querySelector('b').appendChild(badge);}else if(badge.textContent!==n+' new')badge.textContent=n+' new';});}
+      if(focus?.isConnected&&document.activeElement!==focus)focus.focus({preventScroll:true});
+      else if(resumeFocus){var saved=Array.from(recovery.querySelectorAll('[data-work-resume]')).find(function(row){return row.dataset.workResume===resumeFocus;});(saved||page.querySelector('[data-attention-refresh]')).focus({preventScroll:true});}
     }
     function draw(g) {
       if(!scope.current())return;
-      var state=g.pending?'Checking…':g.error?(g.loaded?'Last loaded · Not refreshed':'Count unknown'):'Checked just now';
-      g.el.innerHTML='<div class="work-desk-heading"><h3>'+mEsc(g.source.title)+'</h3><span role="status">'+state+'</span></div>'+
-        (g.error?'<p class="work-feedback error" role="status">'+mEsc(g.error)+' '+(g.loaded?'Showing last loaded records. Open an item to check its current status.':'Pending work could not be checked.')+'</p>':'')+
-        (!g.loaded&&g.pending?'<p class="m-hint" role="status">Loading this queue…</p>':g.loaded&&!g.rows.length?'<p class="m-hint">No items waiting in this queue.</p>':'');
-      g.rows.forEach(function(r){g.el.appendChild(attentionRow(g.source,r,scope,personalDirect));});
+      if(g.source.key==='notice'){if(g.el.parentNode!==updateHost)updateHost.appendChild(g.el);drawUpdates(g);arrange();return;}
+      if(g.source.key==='csr'&&tracking&&g.el.parentNode!==tracking)tracking.appendChild(g.el);
+      var focused=g.el.contains(document.activeElement),focusedRecord=document.activeElement?.dataset.workRecord;
+      var empty=g.loaded&&!g.pending&&!g.error&&!g.rows.length&&!g.held;
+      g.el.innerHTML='<div class="work-desk-heading"><h3>'+mEsc(g.source.title)+'</h3><span>'+mEsc(g.pending?'Checking…':g.error?'Unknown':homeCount(g.source,g.rows)+(g.held?' · '+g.held+' on hold':''))+'</span></div>'+
+        (g.error?'<p class="work-feedback error" role="status">'+mEsc(g.error)+' '+(g.loaded?'Last loaded · Not refreshed. Open a record to check current status.':'Pending work could not be checked.')+'</p>':'')+
+        (!g.loaded&&g.pending?'<p class="m-hint" role="status">Loading this queue…</p>':'');
+      if(!empty)sortRows(g).slice(0,2).forEach(function(r){g.el.appendChild(attentionRow(g.source,r,scope,personalDirect,true));});
+      if(g.held){var held=mEl('<button type="button" class="work-held">'+g.held+' unit'+(g.held===1?'':'s')+' on hold · View RTS issues '+workChevron+'</button>');held.onclick=function(){if(sourceCurrent(g.source))MApp.go('receiving',{tab:'issues'});};g.el.appendChild(held);}
+      var more=mEl('<button type="button" class="work-view-all">'+(empty?'Open queue':g.rows.length?'View all '+mEsc(homeCount(g.source,g.rows)):'View queue')+' '+workChevron+'</button>');more.onclick=function(){if(more.isConnected)openQueue(g.source);};g.el.appendChild(more);
+      arrange();
+      if(focused){var next=Array.from(g.el.querySelectorAll('[data-work-record]')).find(function(r){return r.dataset.workRecord===focusedRecord;});(empty?clearBox.querySelector('summary'):next||g.el.querySelector('button')||page.querySelector('[data-attention-refresh]')).focus({preventScroll:true});}
     }
+    function opSource(op){return op.route==='qc'?(op.params.tab==='hold'?'holds':op.params.role):op.route==='job-orders'?(op.params?.view==='approval'?'approval':'production'):({'so':'release','kit-release':'kits','repairs':'parts','receiving':'rts','deliveries':'delivery'})[op.route];}
     function count(entry,text){var label=entry.row.querySelector('[data-count]');if(label&&scope.current())label.textContent=text;}
+    async function savedWork(){
+      recoveryPending=true;recoveryError='';
+      try{
+        var source=attentionSources().find(function(s){return s.key==='release';});
+        if(!source||!window.mProductionDrafts?.listActions){recoveryRows=[];return;}
+        var both=await scope.run(function(){return Promise.all([mProductionDrafts.listActions('release-action','release'),mProductionDrafts.listActions('release-handoff','handoff')]);});
+        if(!scope.current())return;
+        recoveryRows=both.flatMap(function(rows,i){return rows.filter(function(r){return r.record?.operation;}).map(function(r){var a=r.record.operation;return {source:source,title:(a.number||'Order #'+r.id)+' · Saved '+(i?'handoff':'release action'),sub:a.state==='draft'?'Resume saved evidence':'Check original result · '+(a.local?'Site confirmation pending':a.state),params:{id:r.id,step:i?'proof':'recovery'}};});});
+      }catch(e){if(!e.cancelled&&scope.current())recoveryError=e.message;}finally{recoveryPending=false;if(scope.current())arrange();}
+    }
     async function refresh() {
       if(running||!scope.current())return;scope.cancelTimer(poll);running=true;
       var button=page.querySelector('[data-attention-refresh]');button.disabled=true;button.textContent='Refreshing…';
@@ -496,28 +580,29 @@
       if(personalDirect&&!sources.some(function(s){return s.key==='personal';}))sources.push({key:'personal',title:'Personal task',route:'tasks',path:'/tasks',select:function(rows){return rows.filter(function(r){return !r.done;});}});
       var read=workReader(scope),keys=sources.map(function(s){return s.key;});
       groups.forEach(function(g,key){if(!keys.includes(key)){g.el.remove();groups.delete(key);}});
-      if(!sources.length)host.innerHTML='<p class="v2-work-empty">No current queues are available with your assigned access.</p>';
+      sources.forEach(function(source){var g=group(source);g.pending=true;g.error='';});
       var jobs=sources.map(async function(source){
-        var g=group(source);g.pending=true;g.error='';draw(g);
+        var g=group(source);draw(g);
         try {
-          var rows=await readAttention(source,false,read);if(!scope.current())return;
-          if(!(personalDirect&&source.key==='personal')&&!attentionSources().some(function(s){return s.key===source.key;})){g.el.remove();groups.delete(source.key);return;}
-          g.rows=rows;g.loaded=true;
+          var result=await readAttention(source,true,read);if(!scope.current())return;
+          if(!(personalDirect&&source.key==='personal')&&!sourceCurrent(source)){g.el.remove();groups.delete(source.key);return;}
+          g.rows=result.rows;g.held=result.held;g.more=result.more;g.loaded=true;
         } catch(e) {
           if(e.cancelled||!scope.current())return;
           g.error=e.message||'Could not refresh this queue.';
-          if(e.status===401||e.status===403){g.rows=[];g.loaded=false;}
+          if(e.status===401||e.status===403){g.rows=[];g.held=0;g.loaded=false;}
         } finally {g.pending=false;draw(g);}
       });
+      jobs.push(savedWork());
       countRows.forEach(function(entry){
-        if(!entry.op.count)return;count(entry,'CHECKING');
+        if(!entry.op.count)return;entry.pending=true;entry.error=false;count(entry,'CHECKING');
         jobs.push(scope.run(function(){return entry.op.count(read);}).then(function(n){
           if(!Number.isInteger(n)||n<0)throw new Error('Count unavailable');
-          if(!allowed(entry.op)){entry.row.remove();return;}count(entry,n?n+' WAITING':'CLEAR');
-        }).catch(function(){count(entry,'UNKNOWN');}));
+          if(!allowed(entry.op)){entry.row.remove();return;}entry.value=n;count(entry,n?n+' WAITING':'CLEAR');
+        }).catch(function(){entry.error=true;entry.value=null;count(entry,'UNKNOWN');}).finally(function(){entry.pending=false;}));
       });
       await Promise.allSettled(jobs);
-      if(!scope.current())return;running=false;button.disabled=false;button.textContent='Refresh';poll=scope.later(refresh,30000);
+      if(!scope.current())return;running=false;button.disabled=false;button.textContent='Refresh';arrange();poll=scope.later(refresh,30000);
     }
     page.querySelector('[data-attention-refresh]').onclick=refresh;refresh();
   }
@@ -534,7 +619,7 @@
       var rows=source.select(q);
       if(strict&&(!Array.isArray(rows)||rows.some(function(r){return !r||!Number.isInteger(Number(r.id))||Number(r.id)<=0;})))throw new Error('The queue records could not be verified.');
       var held=source.key==='rts'?q.units.filter(function(u){return !!u.hold;}):[];
-      return context?{rows:rows,held:held.length,heldRows:held}:rows;
+      return context?{rows:rows,held:held.length,heldRows:held,more:source.key==='notice'&&!!q.has_more}:rows;
     });
     if(!strict)return request;
     return Promise.race([request,new Promise(function(resolve,reject){timer=setTimeout(function(){reject(new Error('Queue check timed out. Reconnect and refresh.'));},12000);})]).finally(function(){clearTimeout(timer);});
@@ -546,7 +631,7 @@
       var batches=rows.filter(function(r){return r.work_kind==='batch';}),units=rows.length-batches.length;
       return (units||!batches.length?amount(units,'unit'):'')+(units&&batches.length?' · ':'')+(batches.length?amount(batches.length,'batch')+' ('+batches.reduce(function(sum,b){return sum+Number(b.remaining_qty);},0)+' pcs)':'');
     }
-    var count=amount(rows.length,source.key==='kits'?'job':source.key==='parts'?'request':source.key==='holds'?'held unit':'unit');
+    var count=amount(rows.length,source.key==='kits'?'job':source.key==='parts'?'request':source.key==='holds'?'held unit':['release','csr'].includes(source.key)?'order':['production','approval'].includes(source.key)?'job':source.key==='delivery'?'trip':source.key==='pr'?'request':source.key==='personal'?'task':'unit');
     var blocked=rows.filter(function(r){return blockedInspection(source,r);}).length;
     return count+(blocked?' · '+blocked+' blocked':'');
   }
@@ -696,21 +781,19 @@
     view.innerHTML = '';
     var page = mEl('<section class="v2-work" data-figma-node="46:548"></section>');
     page.appendChild(mEl('<header class="v2-work-heading"><h1>Work</h1><p>What do I need to do now?</p></header>'));
-    page.appendChild(mEl(
-      '<section class="v2-work-assignment"><span>CURRENT WORK CONTEXT</span><strong>' +
-      mEsc(roleName()) + (me.department_name ? ' · ' + mEsc(me.department_name) : '') +
-      '</strong><p>' + (ops.length ? mEsc(ops[0].sub) : 'Personal tasks and employee services') + '</p></section>'
-    ));
+    page.appendChild(mEl('<p class="work-role">'+mEsc(roleName())+(me.department_name?' · '+mEsc(me.department_name):'')+'</p>'));
 
     var feed=attentionFeed(page);
+    var directory=mEl('<details class="work-disclosure work-tools-disclosure" data-work-tools><summary><span>All queues &amp; tools</span>'+workChevron+'</summary><div data-work-tools-body><div data-work-tracking></div></div></details>');page.appendChild(directory);
+    var toolsBody=directory.querySelector('[data-work-tools-body]');
     var taskHead = mEl('<div class="v2-work-title"><h2>' + (ops.length ? 'My authorized queues' : 'My personal work') + '</h2><span>' + (ops.length ? ops.length + ' authorized queue' + (ops.length === 1 ? '' : 's') : 'Today') + '</span></div>');
-    page.appendChild(taskHead);
+    toolsBody.appendChild(taskHead);
     var list = mEl('<div class="v2-work-list"></div>');
-    page.appendChild(list);
+    toolsBody.appendChild(list);
     var countRows=[];
     if (ops.length) ops.forEach(function(op){var row=opRow(op,null,true);list.appendChild(row);countRows.push({op:op,row:row});});
     else list.innerHTML='<p class="m-hint">Open a personal task above, or use Tasks &amp; reminders below.</p>';
-    var notices=commonTool('Notifications & history','notifications');notices.classList.add('v2-work-wide-tool');page.appendChild(notices);
+    var notices=commonTool('Notifications & history','notifications');notices.classList.add('v2-work-wide-tool');toolsBody.appendChild(notices);
 
     var blocker = mEl(
       '<button type="button" class="v2-work-row blocker"><span><b>Report a blocker</b>' +
@@ -719,13 +802,13 @@
     );
     explain(blocker,'report-problem','Report a blocker');
     blocker.onclick = function () { if (blocker.isConnected && scope.current()) MApp.go('report-problem'); };
-    page.appendChild(blocker);
+    toolsBody.appendChild(blocker);
     if(stockTools.length){
-      page.appendChild(mEl('<div class="v2-work-title"><h2>Inventory tools</h2><span>From your assigned access</span></div>'));
-      var stockList=mEl('<div class="v2-work-list"></div>');stockTools.forEach(function(op){stockList.appendChild(opRow(op,null,true));});page.appendChild(stockList);
+      toolsBody.appendChild(mEl('<div class="v2-work-title"><h2>Inventory tools</h2><span>From your assigned access</span></div>'));
+      var stockList=mEl('<div class="v2-work-list"></div>');stockTools.forEach(function(op){stockList.appendChild(opRow(op,null,true));});toolsBody.appendChild(stockList);
     }
 
-    page.appendChild(mEl('<div class="v2-work-title tools"><h2>My tools</h2></div>'));
+    toolsBody.appendChild(mEl('<div class="v2-work-title tools"><h2>My tools</h2></div>'));
     var tools = mEl('<div class="v2-work-tools"></div>');
     tools.appendChild(commonTool('Tasks & reminders', 'tasks'));
     tools.appendChild(commonTool('Notes / checklists', 'notes'));
@@ -734,12 +817,12 @@
     tools.appendChild(commonTool('Announcements', 'announcements'));
     // Case handlers for the anonymous channel (HR/admin by default).
     if (MApp.can('reports.confidential')) tools.appendChild(commonTool('Anonymous reports', 'confidential-reports'));
-    page.appendChild(tools);
+    toolsBody.appendChild(tools);
 
     if (MApp.canApprove()) {
       var approve = commonTool('Approvals', 'approvals');
       approve.classList.add('v2-work-wide-tool');
-      page.appendChild(approve);
+      toolsBody.appendChild(approve);
     }
     view.appendChild(page);
     var scope=mReadScope.create(page);

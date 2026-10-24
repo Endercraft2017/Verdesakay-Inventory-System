@@ -68,4 +68,28 @@ describe('notification history', () => {
     await ctx.api.post('/api/messages').set(H()).send({ recipient_id: sales.id, body: 'hello' });
     expect((await ctx.api.get('/api/notifications').set(bearer(sales.token))).body.items.length).toBe(before);
   });
+
+  it('filters unread before applying the window, reports truncation, and keeps account isolation', async () => {
+    const { run } = await import('../src/shared/db');
+    run('UPDATE notifications SET read_at = ? WHERE user_id = ?', '2026-10-25', sales.id);
+    const older = run('INSERT INTO notifications(user_id,title) VALUES(?,?)', sales.id, 'Older still unread').lastInsertRowid;
+    for (let i=0;i<51;i++) run('INSERT INTO notifications(user_id,title,read_at) VALUES(?,?,?)', sales.id, 'Already read '+i, '2026-10-25');
+    run('INSERT INTO notifications(user_id,title) VALUES(?,?)', releaser.id, 'Private to another account');
+    const defaultRows = (await ctx.api.get('/api/notifications').set(bearer(sales.token))).body;
+    expect(defaultRows.items.some((n: {id:number}) => n.id === Number(older))).toBe(false);
+    const unreadRows = (await ctx.api.get('/api/notifications?unread=1&limit=1').set(bearer(sales.token))).body;
+    expect(unreadRows).toMatchObject({items:[{id:Number(older),read_at:null}],unread:1,has_more:false});
+    run('INSERT INTO notifications(user_id,title) VALUES(?,?)', sales.id, 'New unread');
+    const limited = (await ctx.api.get('/api/notifications?unread=1&limit=1').set(bearer(sales.token))).body;
+    expect(limited.items).toHaveLength(1);
+    expect(limited).toMatchObject({unread:2,has_more:true});
+    expect(limited.items[0].title).toBe('New unread');
+    const exact = await ctx.api.get('/api/notifications/'+older).set(bearer(sales.token));
+    expect(exact.status).toBe(200);
+    expect(exact.body).toMatchObject({id:Number(older),title:'Older still unread',read_at:null});
+    expect((await ctx.api.get('/api/notifications/'+older).set(bearer(releaser.token))).status).toBe(404);
+    expect((await ctx.api.get('/api/notifications/not-an-id').set(bearer(sales.token))).status).toBe(404);
+    await ctx.api.post('/api/notifications/'+older+'/read').set(bearer(sales.token)).send({});
+    expect((await ctx.api.get('/api/notifications/'+older).set(bearer(sales.token))).body.read_at).toBeTruthy();
+  });
 });

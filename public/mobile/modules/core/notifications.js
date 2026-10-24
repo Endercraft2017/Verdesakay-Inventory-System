@@ -99,10 +99,11 @@
       soft(API.get('/me/requests'), []),
       soft(API.get('/me/payslips'), []),
       soft(API.get('/messages/unread-count'), { count: 0 }),
-      soft(API.get('/announcements'), [])
+      soft(API.get('/announcements'), []),
+      params.id ? soft(API.get('/notifications/' + encodeURIComponent(params.id)), null) : Promise.resolve(null)
     ]).then(function (all) {
       if (!active()) return;
-      if (failed === 5) {
+      if (failed === (params.id ? 6 : 5)) {
         view.innerHTML = '';
         var box = mEl('<div class="m-error">' + mEsc((lastError && lastError.offline)
           ? 'You’re offline — updates can’t be checked right now.'
@@ -119,7 +120,7 @@
       var unread = Number((all4[2] && (all4[2].count != null ? all4[2].count : all4[2].unread)) || 0);
       var announcements = all4[3] || [];
       view.innerHTML = '';
-      var focused = params.id ? ledger.filter(function (n) { return String(n.id) === String(params.id); })[0] : null;
+      var focused = params.id ? all[5] && String(all[5].id) === String(params.id) ? all[5] : ledger.filter(function (n) { return String(n.id) === String(params.id); })[0] : null;
       if (params.id) {
         var back = mEl('<button type="button" class="m-btn m-btn-sm m-btn-secondary">Back to notifications</button>');
         back.onclick = function () { MApp.go('notifications'); }; view.appendChild(back);

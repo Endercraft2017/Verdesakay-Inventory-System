@@ -54,6 +54,7 @@ const PROGRESS_SQL = `
 router.get('/queue', viewGate, (req, res) => {
   const rows = queryAll<Record<string, unknown>>(
     `SELECT o.id, o.number, o.status, o.customer_name, o.order_date, o.expected_date,
+            o.created_at, o.updated_at,
             o.warehouse_accepted_at, wa.full_name AS warehouse_accepted_by_name,
             COALESCE(ship.name, fallback.name) AS location_name,
             ${PROGRESS_SQL}

@@ -26,7 +26,7 @@ const saleOrder = async (lines: Array<Record<string, unknown>>, status = 'approv
   (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', customer_name: 'ACME', status, items: lines })).body.id as number;
 const getOrder = async (id: number) => (await ctx.api.get(`/api/orders/${id}`).set(H())).body;
 const queue = async () => (await ctx.api.get('/api/release-slips/queue').set(H())).body as {
-  to_accept: Array<{ id: number }>; releasing: Array<{ id: number; qty_ordered: number; qty_released: number }>;
+  to_accept: Array<{ id: number; created_at: string; updated_at: string }>; releasing: Array<{ id: number; qty_ordered: number; qty_released: number }>;
 };
 
 /** A finished product with `qty` received, in-stock serialized units labelled PFX-SN-n. */
@@ -71,7 +71,10 @@ describe('warehouse acceptance', () => {
   it('an approved SO waits in "to accept", then moves to "releasing" once accepted', async () => {
     const raw = await mkItem({ name: 'A1 Widget', quantity: 20 });
     const so = await saleOrder([{ name: 'A1 Widget', item_id: raw, quantity: 5, unit_price: 10 }]);
-    expect((await queue()).to_accept.some((o) => o.id === so)).toBe(true);
+    const queued = (await queue()).to_accept.find((o) => o.id === so)!;
+    const original = await getOrder(so);
+    expect(queued).toMatchObject({created_at:original.created_at,updated_at:original.updated_at});
+    expect(queued.created_at).toBeTruthy();
 
     const acc = await ctx.api.post(`/api/orders/${so}/accept-release`).set(H());
     expect(acc.status).toBe(200);

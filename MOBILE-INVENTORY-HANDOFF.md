@@ -1,5 +1,27 @@
 # Mobile inventory, production, and Sales handoff
 
+## Approved compact Work layout — cache v157 (2026-10-25)
+
+Work now follows the approved MagicPath Before/After: a slim role context,
+oldest-first live categories with two previews/full counts, one clear-queue
+disclosure, separate grouped unread Updates, and a collapsed All queues & tools
+directory. Sales follow-up is tracking within that directory. Blockers, RTS
+holds, unknown/stale reads and saved release/handoff recovery remain visible.
+Existing access, record membership, identity/sticker and action checks remain.
+
+Release queue responses now expose their stored dates for reliable ordering.
+Unread filtering happens before the notification window; older-notice details
+load by caller-owned ID. Update groups use record identity and are marked read
+only on explicit opening. Expanding/refreshing does not mark read or move stock.
+
+Thirteen real-backend Work Playwright cases, eleven compact Home regressions,
+the existing notification browser fault suite, focused Vitest regressions and
+TypeScript pass. Empty administrator Work fits a 390×844 viewport versus the
+earlier 4,574px document. Integrated upstream through `5a4a990`; v157 preserves
+its item/QR setup shell assets. See
+`docs/reviews/mobile-work-compact-validation.md` for commands, evidence, tap
+tradeoffs and limits. Physical-device and deployed-site acceptance are separate.
+
 ## Approved compact Home preview — cache v155 (2026-10-25)
 
 Applies the approved MagicPath before/after design to the real mobile app. Clear

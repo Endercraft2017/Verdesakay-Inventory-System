@@ -280,7 +280,7 @@ describe('mobile bootstrap', () => {
       permissions: ['mobile.access', 'messages.view', 'messages.send'] }, (url: string) => { asked.push(url); return url === '/api/auth/me' ? undefined : url === '/api/messages/unread-count' ? { count: 0 } : {}; });
     win.location.hash = '#/work'; win.MApp.render();
     const text = win.document.getElementById('m-view').textContent;
-    expect(text).toContain('Personal tasks and employee services'); expect(text).toContain('Report a blocker');
+    expect(text).toContain('My personal work'); expect(text).toContain('Report a blocker');
     expect(text).not.toContain('Release orders'); expect(text).not.toContain('Deliveries'); expect(text).not.toContain('QC technical inspection');
     win.mQuickOrbit.refresh();
     expect([...win.document.querySelectorAll('.v2-orbit-action')].map((b: any) => b.dataset.route)).toEqual(['requests','report-problem','inbox']);
