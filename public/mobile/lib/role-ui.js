@@ -23,9 +23,10 @@
     /** Mount a role frame: chip + title + subtitle. Returns the body element to fill. */
     page: function (view, opts) {
       var role = ROLES[opts.role] || { label: opts.role, icon: '' };
+      var warehouseTask = ['warehouse','parts','qc','qa','rts','releasing'].includes(opts.role);
       if (opts.title) MApp.setTitle(opts.title);
       view.setAttribute('data-figma-node', opts.node || '');
-      view.innerHTML = '<section class="rk-page' + (role.accent ? ' rk-accent-' + role.accent : '') + '">' +
+      view.innerHTML = '<section class="rk-page' + (role.accent ? ' rk-accent-' + role.accent : '') + (warehouseTask ? ' rk-warehouse-task' : '') + '">' +
         '<header class="rk-head">' +
           (opts.back ? '<button class="rk-back" type="button">‹ ' + e(opts.backLabel || 'Back') + '</button><br>' : '') +
           '<span class="rk-chip">' + (role.icon ? '<img src="' + role.icon + '" alt="">' : role.glyph ? '<span class="glyph" aria-hidden="true">' + role.glyph + '</span>' : '') + e(opts.label || role.label) + '</span>' +
@@ -49,6 +50,25 @@
         return '<button type="button" role="tab" data-tab="' + e(t.id) + '"' + (t.id === active ? ' class="on" aria-selected="true"' : ' aria-selected="false"') + '>' +
           e(t.label) + (t.count != null ? '<b>' + e(t.count) + '</b>' : '') + '</button>';
       }).join('') + '</nav>';
+    },
+    /** Warehouse status filters are native buttons. Keep the current filter on Back/reload
+     * without adding a history entry or reloading records on each selection. */
+    queueTab: function (body, active) {
+      if (!body.isConnected) return;
+      body.closest('.rk-page').classList.add('rk-warehouse-flow');
+      var filters = body.querySelector('.rk-tabs,.rk-segs');
+      if (filters) {
+        filters.setAttribute('role', 'group');
+        filters.setAttribute('aria-label', 'Work status');
+        filters.querySelectorAll('[data-tab]').forEach(function (button) {
+          button.classList.toggle('on', button.dataset.tab === active);
+          button.removeAttribute('role'); button.removeAttribute('aria-selected');
+          button.setAttribute('aria-pressed', String(button.dataset.tab === active));
+        });
+      }
+      var route = location.hash.split('?')[0], params = new URLSearchParams(location.hash.split('?')[1] || '');
+      params.set('tab', active);
+      history.replaceState(history.state, '', route + '?' + params.toString());
     },
     /** A tappable job card. pill: { text, tone: ''|'warn'|'muted' }; warn: tint the card. */
     jobCard: function (o) {

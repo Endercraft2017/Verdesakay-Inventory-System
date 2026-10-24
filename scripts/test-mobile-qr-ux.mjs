@@ -22,7 +22,7 @@ async function api(method, route, body, token = admin, expected) {
     assert(expected ? res.status === expected : res.ok, `${method} ${route}: ${res.status} ${JSON.stringify(value)}`);
     return value;
 }
-async function check(name, fn) { await fn(); report.checks.push({ name, passed: true }); console.log('PASS ' + name); }
+async function check(name, fn) { console.log('START ' + name); await fn(); report.checks.push({ name, passed: true }); console.log('PASS ' + name); }
 async function loginRole(role) { const username = 'audit_' + role; await api('POST', '/users', { username, full_name: role, password: 'test-secret123', role }); return (await api('POST', '/auth/login', { username, password: 'test-secret123' }, null)).token; }
 async function launch(token, camera, crash = false) {
     if (context && abruptRestart && crash) {
@@ -38,6 +38,8 @@ async function launch(token, camera, crash = false) {
     } else await context?.close();
     context = await chromium.launchPersistentContext(profile, { viewport: { width: 390, height: 844 }, permissions: ['camera'], timezoneId: 'Asia/Manila', serviceWorkers: 'block', ...((process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/bin/chromium', '/usr/lib/chromium/chromium'].find(fs.existsSync)) ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || ['/usr/bin/chromium', '/usr/lib/chromium/chromium'].find(fs.existsSync) } : {}), headless: true, args: camera ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--use-file-for-fake-video-capture=' + camera] : [] });
     browser = context.browser();
+    context.setDefaultTimeout(15000); context.setDefaultNavigationTimeout(20000);
+    await context.addInitScript(() => { window.print = () => {}; }); // PDF below validates the sheet; OS print UI is outside this audit.
     await context.addInitScript(t => localStorage.setItem('vds_token', t), token);
     page = await context.newPage();
     for (const old of context.pages()) if (old !== page) await old.close();
@@ -102,9 +104,20 @@ async function captureToReview(so, verified = false) {
     await page.locator('#rel-go').click();
     await page.locator('#m-view[data-figma-node="78:317"]').waitFor();
 }
+async function awaitReleaseAction() {
+    await page.locator('#rel-review-current,.rk-identify').first().waitFor();
+}
+async function continueFreshRelease() {
+    await awaitReleaseAction();
+    if (await page.locator('#rel-review-current').count()) {
+        await page.locator('#rel-review-current').click();
+        await page.waitForURL(url => !url.hash.includes('step=recovery'));
+        await page.locator('#rel-go').click();
+        await page.locator('.rk-identify').waitFor();
+    }
+}
 async function warehouseOut(so) {
-    await page.locator('#rel-review-current').click();
-    await page.locator('#rel-go').click();
+    await continueFreshRelease();
     await captureToReview(so);
     await check('Handoff photos and signature survive a browser restart', async () => {
         const url = page.url(), token = await page.evaluate(() => localStorage.getItem('vds_token'));
@@ -224,8 +237,7 @@ try {
             await launch(release, item.video);
             await go('so?id=' + so.id);
             await page.locator('#rel-go').click();
-            await page.locator('#rel-review-current').click();
-            await page.locator('#rel-go').click();
+            await continueFreshRelease();
             await go('so?id=' + so.id + '&step=unit&code=' + encodeURIComponent('VDS:' + item.kind.toUpperCase() + ':' + item.id));
             const confirm = item.kind === 'batch' ? '#rel-label-ok' : '#rel-ok';
             await cameraVerify(confirm);
@@ -238,7 +250,7 @@ try {
                 await go('so?id=' + so.id);
                 await page.locator('#rel-retry').click();
             }
-            await page.locator('#rel-review-current').waitFor();
+            await awaitReleaseAction();
             const c = await api('GET', `/release-slips/orders/${so.id}/context`, undefined, release);
             if (item.kind === 'batch') {
                 assert.equal(c.batch_allocations.length, 1);
@@ -291,7 +303,7 @@ try {
         await page.getByText(/failed|unavailable|network|connect|fetch/i).last().waitFor({ timeout: 10000 });
         assert.equal(opened, 0);
     });
-    const driver = await loginRole('warehouse');
+    const driver = await loginRole('driver');
     const driverMe = await api('GET','/auth/me',undefined,driver);
     const assigned = driverMe.user || driverMe;
     const delivery = await api('POST','/deliveries',{ order_id: 1, assigned_to: assigned.id, address: 'Acceptance test drop' });
@@ -439,7 +451,7 @@ try {
         assert.equal((await api('GET','/inventory/'+p.id)).quantity,4);
         await page.locator('#rel-review-current').click();await go('so?id='+made.id+'&step=unit&code=VDS:BATCH:'+lot.id);
         await page.locator('[data-label-qty]').waitFor();assert.equal(await page.locator('[data-sale-line]').count(),0);
-        await cameraVerify('#rel-label-ok');await page.locator('#rel-label-ok').click();await page.locator('#rel-review-current').waitFor();
+        await cameraVerify('#rel-label-ok');await page.locator('#rel-label-ok').click();await awaitReleaseAction();
         const context=await api('GET','/release-slips/orders/'+made.id+'/context');assert.deepEqual(context.batch_allocations.map(a=>a.order_item_id).sort(),lines.map(l=>l.id).sort());
         await warehouseOut({id:made.id,auth:auth.token,productId:p.id,quantity:4});
         assert.equal((await api('GET','/inventory/'+p.id)).quantity,0);
@@ -457,7 +469,7 @@ try {
         const src=await page.evaluate(()=>{const q=qrcode(0,'M');q.addData('LINE-MIXED');q.make();return q.createDataURL(8,4);});const video=path.join(output,'mixed-item.y4m');await frame(src,video);
         await launch(release,video);await go('so?id='+made.id+'&step=unit&code=LINE-MIXED');
         await page.locator('[data-sale-line="'+lines[1].id+'"]').click();await page.locator('[data-label-qty]').waitFor();
-        assert.match(await page.locator('#m-view').innerText(),/Semi-built/);await cameraVerify('#rel-label-ok');await page.locator('#rel-label-ok').click();await page.locator('#rel-review-current').waitFor();
+        assert.match(await page.locator('#m-view').innerText(),/Semi-built/);await cameraVerify('#rel-label-ok');await page.locator('#rel-label-ok').click();await awaitReleaseAction();
         const current=await api('GET','/orders/'+made.id);assert.deepEqual(current.items.map(l=>l.released_qty),[0,1]);assert.equal((await api('GET','/inventory/'+p.id)).quantity,5);
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
         await page.screenshot({path:path.join(output,'mixed-build-line-allocation.png'),fullPage:true});
@@ -472,7 +484,7 @@ try {
         await api('POST','/release-slips/orders/'+made.id+'/authorizations',{mode:'pickup',recipient_name:'QR recipient'});
         await api('POST','/orders/'+made.id+'/accept-release');const lines=(await api('GET','/orders/'+made.id)).items;
         await launch(release,video);await go('so?id='+made.id+'&step=unit&code=VDS:UNIT:'+ids[0]);await page.locator('[data-sale-line="'+lines[1].id+'"]').click();await cameraVerify('#rel-ok');
-        await page.locator('#rel-ok').click();await page.locator('#rel-review-current').waitFor();
+        await page.locator('#rel-ok').click();await awaitReleaseAction();
         const context=await api('GET','/release-slips/orders/'+made.id+'/context');assert.equal(context.units[0].order_item_id,lines[1].id);assert.equal(context.lines[0].units,0);assert.equal(context.lines[1].units,1);assert.equal((await api('GET','/inventory/'+p.id)).quantity,2);
     });
     await check('Two mobile vehicle trips keep one sale, hold the remainder and require fresh handoff proof', async()=>{

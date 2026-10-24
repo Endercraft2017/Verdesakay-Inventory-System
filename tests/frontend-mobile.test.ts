@@ -575,7 +575,6 @@ describe('mobile bootstrap', () => {
     const line = { component_item_id: 1, component_name: 'Controller 60 V', need: 12, have: 30, held_elsewhere: 8, available: 22, short: 0, picked: 0 };
     const wait = () => new Promise((r) => setTimeout(r, 80));
     const click = (win: any, id: string) => (win.document.getElementById(id) as HTMLButtonElement).click();
-    const ack = (win: any) => { const el = win.document.getElementById('kr-ack'); el.checked = true; el.dispatchEvent(new win.Event('change')); };
     function fixture(start: Record<string, any> = {}, options: { lost?: string; local?: string; refusal?: any } = {}) {
       const jo: Record<string, any> = { ...BASE, ...start };
       const lines = [{ ...line, picked: jo.prepared_at ? 12 : 0 }];
@@ -606,7 +605,7 @@ describe('mobile bootstrap', () => {
     }
     async function kitReady(win: any, selector: string) { for (let i=0;i<100;i++) { if (win.document.querySelector(selector)) return; await new Promise(r=>setTimeout(r,20)); } throw new Error('Missing kit screen: '+selector); }
     async function open(win: any, step = '') { win.location.hash = '#/kit-release?id=184' + (step ? '&step=' + step : ''); await wait(); await kitReady(win, '.rk-page button'); }
-    async function review(win: any) { click(win, 'kr-review'); await wait(); }
+    async function review(win: any) { if(win.document.getElementById('kr-review')) click(win, 'kr-review'); await wait(); }
 
     it('separates ready, picking, shortage and failed availability checks', async () => {
       const win = await bootAs(WH, (url) => {
@@ -619,7 +618,7 @@ describe('mobile bootstrap', () => {
       });
       win.location.hash = '#/kit-release'; await kitReady(win, '[data-tab="unknown"]');
       const view = win.document.getElementById('m-view');
-      expect(view.textContent).toContain('1 kit ready');
+      expect(view.textContent).toContain('4 jobs to process');
       expect(view.querySelectorAll('[data-id]')).toHaveLength(1);
       view.querySelector('[data-tab="unknown"]').click();
       expect(view.textContent).toContain('Availability unknown');
@@ -627,12 +626,13 @@ describe('mobile bootstrap', () => {
       view.querySelector('[data-tab="preparing"]').click();
       expect(view.textContent).toContain('Awaiting warehouse');
       view.querySelector('[data-tab="blocked"]').click();
-      expect(view.textContent).toContain('1 part short');
+      expect(view.textContent).toContain('1 component line short');
     });
 
     it('accepts separately, saves and corrects partial picks, then issues one slip', async () => {
       const f = fixture(), win = await bootAs(WH, f.respond); await open(win);
       click(win, 'kr-accept'); await wait(); await review(win);
+      expect(win.document.getElementById('kr-review')).toBeNull();
       const input = () => win.document.querySelector('[data-pick]');
       expect(win.document.getElementById('kr-go')).toBeNull();
       input().value = '5'; input().dispatchEvent(new win.Event('input')); click(win, 'kr-save-pick'); await wait(); await review(win);
@@ -641,14 +641,17 @@ describe('mobile bootstrap', () => {
       input().value = '3'; input().dispatchEvent(new win.Event('input')); click(win, 'kr-save-pick'); await wait(); await review(win);
       expect(input().value).toBe('3');
       input().value = '12'; input().dispatchEvent(new win.Event('input')); click(win, 'kr-save-pick'); await wait(); await review(win);
-      expect(win.document.getElementById('kr-save-pick').disabled).toBe(true);
+      await kitReady(win, '#kr-confirm');
+      expect(win.document.getElementById('kr-ack')).toBeNull();
+      expect(win.document.getElementById('m-view').textContent).toContain('Release 12');
+      click(win, 'kr-back'); await wait(); await kitReady(win, '[data-pick]');
       input().value = '11'; input().dispatchEvent(new win.Event('input'));
-      expect(win.document.getElementById('kr-go').disabled).toBe(true);
+      expect(win.document.getElementById('kr-save-pick').textContent).toBe('Save progress');
       input().value = '12'; input().dispatchEvent(new win.Event('input'));
-      expect(win.document.getElementById('kr-go').disabled).toBe(false);
-      click(win, 'kr-go'); await wait();
-      expect(win.document.getElementById('kr-confirm').disabled).toBe(true);
-      ack(win); click(win, 'kr-confirm'); await wait(); await review(win);
+      expect(win.document.getElementById('kr-save-pick').textContent).toBe('Review release');
+      click(win, 'kr-save-pick'); await wait();
+      expect(win.document.getElementById('kr-confirm').disabled).toBe(false);
+      click(win, 'kr-confirm'); await wait(); await review(win);
       expect(win.document.getElementById('m-view').textContent).toContain('Parts released successfully');
       expect(win.document.getElementById('m-view').textContent).toContain('PRS-00007');
       expect(f.requests.map(r => r.path)).toEqual(['/api/job-orders/warehouse-accept', '/api/job-orders/prepare', '/api/job-orders/prepare', '/api/job-orders/prepare', '/api/job-orders/184/release']);
@@ -662,7 +665,7 @@ describe('mobile bootstrap', () => {
       let win = await bootAs(WH, f.respond, factory); await open(win, stage === 'release' ? 'confirm' : '');
       if (stage === 'warehouse-accept') click(win, 'kr-accept');
       else if (stage === 'prepare') { win.document.querySelector('[data-pick]').value = '6'; win.document.querySelector('[data-pick]').dispatchEvent(new win.Event('input')); click(win, 'kr-save-pick'); }
-      else { ack(win); click(win, 'kr-confirm'); }
+      else { click(win, 'kr-confirm'); }
       await wait();
       expect(win.document.getElementById('kr-retry-action')).toBeTruthy();
       win.close(); win = await bootAs(WH, f.respond, factory); await open(win);
@@ -691,7 +694,7 @@ describe('mobile bootstrap', () => {
       const win = await bootAs(WH, f.respond); await open(win);
       for (const value of ['', '-1', '1.5', '13']) { win.document.querySelector('[data-pick]').value = value; win.document.querySelector('[data-pick]').dispatchEvent(new win.Event('input')); click(win, 'kr-save-pick'); }
       expect(f.requests).toHaveLength(0);
-      await open(win, 'confirm'); ack(win);
+      await open(win, 'confirm');
       Object.assign(f.lines[0]!, { available: 2, short: 10 });
       click(win, 'kr-confirm'); await wait();
       expect(win.document.getElementById('kr-confirm')).toBeNull(); expect(f.requests).toHaveLength(0);
@@ -702,7 +705,7 @@ describe('mobile bootstrap', () => {
       { component_name: 'Controller', need: 12, have: 20, held_elsewhere: 16, available: 4, short: 8 },
     ])('renders the refusal quantity shape without inventing a successful release', async (shortfall) => {
       const f = fixture({ warehouse_accepted_at: 'accepted', prepared_at: 'prepared' }, { refusal: { __status: 400, body: { error: 'Stock changed', shortfalls: [shortfall] } } });
-      const win = await bootAs(WH, f.respond); await open(win, 'confirm'); ack(win); click(win, 'kr-confirm'); await wait();
+      const win = await bootAs(WH, f.respond); await open(win, 'confirm'); click(win, 'kr-confirm'); await wait();
       const text = win.document.getElementById('m-view').textContent;
       expect(text).toContain('Free 4'); expect(text).toContain('action was refused'); expect(text).not.toContain('undefined'); expect(text).not.toContain('Parts released successfully');
       await review(win); await kitReady(win, '#kr-save-pick'); expect(win.document.getElementById('kr-save-pick')).toBeTruthy();
@@ -710,7 +713,7 @@ describe('mobile bootstrap', () => {
 
     it('retains a local release and never shows handoff success before confirmation', async () => {
       const f = fixture({ warehouse_accepted_at: 'accepted', prepared_at: 'prepared' }, { local: 'local-kit' });
-      const factory = new IDBFactory(); let win = await bootAs(WH, f.respond, factory); await open(win, 'confirm'); ack(win); click(win, 'kr-confirm'); await wait();
+      const factory = new IDBFactory(); let win = await bootAs(WH, f.respond, factory); await open(win, 'confirm'); click(win, 'kr-confirm'); await wait();
       expect(win.document.getElementById('m-view').textContent).toContain('awaiting confirmation');
       expect(win.document.getElementById('m-view').textContent).not.toContain('Parts released successfully');
       win.close(); win = await bootAs(WH, f.respond, factory); await open(win, 'done');
@@ -723,6 +726,35 @@ describe('mobile bootstrap', () => {
       expect(win.document.getElementById('m-view').textContent).toContain('Availability unknown'); expect(win.document.getElementById('kr-confirm')).toBeNull();
       const cancelled = await bootAs(WH, (url) => url === '/api/job-orders/184' ? { ...BASE, status: 'cancelled', released_at: '2026-10-14 01:00:00', parts_slip_number: 'PRS-HISTORICAL' } : undefined); await open(cancelled, 'done');
       expect(cancelled.document.getElementById('m-view').textContent).toContain('cancelled'); expect(cancelled.document.getElementById('m-view').textContent).not.toContain('Parts released successfully');
+    });
+
+    it('uses bounded cumulative counters and never saves a fractional or over-free count', async () => {
+      const f = fixture({ warehouse_accepted_at: 'accepted' });
+      Object.assign(f.lines[0]!, { have: 1.5, held_elsewhere: 0, available: 1.5, short: 10.5 });
+      const win = await bootAs(WH, f.respond); await open(win);
+      const input = win.document.querySelector('[data-pick]');
+      const plus = win.document.querySelector('[data-pick-change="1"]');
+      expect(input.max).toBe('1'); plus.click(); expect(input.value).toBe('1'); expect(plus.disabled).toBe(true);
+      expect(f.requests).toHaveLength(0);
+      for (const value of ['1.5', '2']) { input.value = value; input.dispatchEvent(new win.Event('input')); expect(win.document.getElementById('kr-save-pick').disabled).toBe(true); }
+      input.value = '1'; input.dispatchEvent(new win.Event('input')); click(win, 'kr-save-pick'); await wait();
+      expect(f.lines[0]!.picked).toBe(1); expect(f.jo.prepared_at).toBeNull(); expect(f.lines[0]!.have).toBe(1.5);
+      expect(win.document.getElementById('kr-confirm')).toBeNull();
+    });
+
+    it('refreshes a changed complete plan before a final release instead of submitting the old review', async () => {
+      const f = fixture({ warehouse_accepted_at: 'accepted', prepared_at: 'prepared', approval_revision: 'review-1' });
+      const win = await bootAs(WH, f.respond); await open(win, 'confirm');
+      Object.assign(f.lines[0]!, { need: 13, picked: 13 }); f.jo.approval_revision = 'review-2';
+      click(win, 'kr-confirm'); await wait();
+      expect(f.requests).toHaveLength(0); expect(win.document.getElementById('m-view').textContent).toContain('Release 13');
+      expect(win.document.getElementById('kr-confirm').disabled).toBe(false);
+    });
+
+    it('returns a cleared shortage link to the picking workspace', async () => {
+      const f = fixture({ warehouse_accepted_at: 'accepted' }), win = await bootAs(WH, f.respond); await open(win, 'blocked');
+      expect(win.document.querySelector('[data-pick]')).toBeTruthy(); expect(win.document.getElementById('kr-report')).toBeNull();
+      expect(f.requests).toHaveLength(0);
     });
   });
 
@@ -1323,8 +1355,9 @@ describe('mobile bootstrap', () => {
         } return undefined;
       };
       function picker(win: any) { win.FormData = globalThis.FormData; win.mPhoto.picker = (opts: any) => { win.issuePicker = opts; return win.document.createElement('div'); }; }
-      let win = await bootAs(QC, respond, factory); picker(win); win.location.hash = '#/unit-issues?unit=501&step=new'; await wait(80);
-      win.document.querySelector('[data-description]').value = 'Original chassis finding'; win.document.querySelector('[data-description]').dispatchEvent(new win.Event('input'));
+      let win = await bootAs(QC, respond, factory); picker(win); win.location.hash = '#/unit-issues?unit=501&step=new';
+      const description = await waitForIssueElement(win, '[data-description]');
+      description.value = 'Original chassis finding'; description.dispatchEvent(new win.Event('input'));
       win.issuePicker.onChange([new Blob(['original-chassis-bytes'], { type: 'image/jpeg' })]); await wait(80); win.document.getElementById('ui-send').click(); await wait(100);
       expect(win.document.getElementById('ui-retry')).toBeTruthy(); expect(win.document.querySelector('[data-description]')).toBeNull(); win.close();
       win = await bootAs(QC, respond, factory); picker(win); win.location.hash = '#/unit-issues?unit=501'; await wait(80); (await waitForIssueElement(win, '[data-saved] [data-id]')).click();
@@ -1701,7 +1734,8 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       });
       win.location.hash = '#/so?id=302&step=scan'; await relElement(win,'[data-bulk="7"]'); await allocateLabel(win);
       (await relElement(win,'#rel-review-current')).click(); (await relElement(win,'#rel-go')).click();
-      const input = await relElement(win,'[data-qty="7"]'); expect(input.value).toBe('1.25'); await allocateLabel(win,1.25); await relElement(win,'#rel-review-current');
+      const input = await relElement(win,'[data-qty="7"]'); expect(input.value).toBe('1.25'); await allocateLabel(win,1.25); await relElement(win,'.rk-identify');
+      expect(win.document.getElementById('rel-review-current')).toBeNull();
       expect(calls).toHaveLength(2); expect(calls[0].key).not.toBe(calls[1].key); expect(calls[1].body.bulk[0].quantity).toBe(1.25);
     });
     it('retains an expired uncertain allocation for reconciliation without reposting', async () => {
@@ -1978,7 +2012,8 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       (doc.querySelector('.rk-identify') as HTMLButtonElement).click();
       (doc.getElementById('rp-go') as HTMLButtonElement).click();
       await wait();
-      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('83:247');
+      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('83:295');
+      expect(doc.getElementById('m-view').textContent).toContain('6 on hand → 5 remaining');
       win.location.hash = '#/repairs?id=81&step=confirm';
       await wait();
       const ok = doc.getElementById('rp-ok') as HTMLInputElement;
@@ -2228,10 +2263,8 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       await element(win, '#rts-go');
       expect(doc.getElementById('m-view').textContent).toContain('FG-A03');
       (doc.getElementById('rts-go') as HTMLButtonElement).click();
-      await element(win, '#rts-one');
-      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('74:186');
-      (doc.getElementById('rts-one') as HTMLButtonElement).click();
       await element(win, '#rts-check');
+      expect(doc.getElementById('rts-one')).toBeNull(); // no other eligible unit: no grouping detour
       (doc.getElementById('rts-check') as HTMLButtonElement).click();
       await element(win, '#rts-post');
       expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('74:316');
@@ -2384,7 +2417,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       releasing: fs.readFileSync(path.join(ROOT, 'public/mobile/modules/inventory/so.js'), 'utf8'),
     };
     expect(files.warehouse).toContain("role: 'parts'");
-    for (const node of ['83:16', '83:68', '83:109', '83:158', '83:206', '83:247', '83:295', '83:332', '83:375', '83:416', '83:452', '83:488']) {
+    for (const node of ['83:16', '83:68', '83:158', '83:206', '83:295', '83:332', '83:375', '83:416', '83:452', '83:488']) {
       expect(files.warehouse).toContain("'" + node + "'");
     }
     for (const call of ["'/production/repairs/' + r.id + '/accept'", "'/production/repairs/' + r.id + '/reject'", "'/production/repairs/' + r.id + '/revision'", "'/production/repairs/' + r.id + '/shortage'"]) {

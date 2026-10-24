@@ -1,7 +1,7 @@
 /* Warehouseman — job-order kit release. Figma page 62:*:
      62:14 Release Queue · 62:79 Verify Kit · 62:150 Confirm Release · 62:205 Short Stock
      62:264 Escalate Shortage · 62:317 Released Handoff · 62:372 Scan Shortcut
-   Backend (job-orders.routes.ts, all inventory.adjust): approved drafts come from
+   Backend (job-orders.routes.ts, production.kit_release): approved drafts come from
    GET /job-orders?stage=awaiting_release, each checked with GET /:id/availability. The phone
    exposes warehouse-accept → prepare (partial or full counts) → release separately —
    each independent: acceptance and picks can save before release fails. A shortage escalation is a tracked
@@ -23,9 +23,32 @@
   function stageLabel(jo, av) {
     if (jo.status !== 'draft') return jo.status;
     if (!jo.approved_at) return 'Awaiting approval';
+    if (av && av.shortfalls.length) return shortageLabel(av.shortfalls);
     if (!jo.warehouse_accepted_at) return 'Awaiting warehouse';
     if (jo.prepared_at) return av && av.releasable ? 'Ready to release' : 'Fully picked';
     return av && av.lines.some(function (l) { return l.picked > 0; }) ? 'Partially picked' : 'Accepted · not picked';
+  }
+  function shortageLabel(lines) {
+    return lines.every(function (l) { return l.have >= l.need; }) ? 'Stock committed' : 'Waiting for parts';
+  }
+  function sourceName(jo) {
+    return jo.source_location_path || jo.source_location_name || 'Default location';
+  }
+  // Purchase quantities cover planning only. Reads never create orders or receive stock.
+  function supplyContext(jo, av) {
+    if (av.supply_planning_order) return R.note('info', '<h3>Sales owns the supply plan</h3>Planning / Purchasing manages components from ' +
+      mEsc(av.supply_planning_order.number || 'the linked sales order') + '. Ask them to review the sale stock plan; do not create a second purchase from this job.' +
+      '<br>Parts must be received at ' + mEsc(sourceName(jo)) + ' before they can be picked here.');
+    var pos = av.linked_purchase_orders || [], requirements = av.purchase_requirements || [];
+    if (!av.shortfalls.length && !pos.length) return '';
+    var html = pos.length ? '<h3>Purchasing status</h3>' + pos.map(function (p) {
+      var line = av.lines.find(function (l) { return l.component_item_id === p.item_id; });
+      return mEsc(p.number) + ' · ' + mEsc(line ? line.component_name : 'Component #' + p.item_id) + ' · ' + Number(p.outstanding) + ' still to receive';
+    }).join('<br>') : '<h3>No outstanding linked purchase supply</h3>Planning / Purchasing needs to review the shortage.';
+    requirements.filter(function (r) { return r.to_purchase > 0; }).forEach(function (r) {
+      html += '<br>' + mEsc(r.component_name) + ' · ' + r.to_purchase + ' not covered by outstanding linked purchases';
+    });
+    return R.note('info', html + '<br>A purchase order is not on-hand stock. Receive at ' + mEsc(sourceName(jo)) + ', then refresh.');
   }
   function released(jo) {
     return !!(jo.released_at && jo.parts_slip_number && ['released', 'in_progress', 'paused', 'completed'].indexOf(jo.status) !== -1);
@@ -101,11 +124,22 @@
       if (r.state === 'confirmed') { op.local = null; op.state = 'confirmed'; mProductionDrafts.save(record).then(function () { guarded(view, record, function () { withJob(view, record.jobId); }); }).catch(function (err) { mToast(err.message, 'err'); }); }
     }));
   }
-  function submit(view, jo, kind, path, payload) {
+  function submit(view, jo, kind, path, payload, after) {
+    if (offline()) { mToast('This warehouse action needs a connection.', 'err'); return; }
     var record = { key: mProductionDrafts.key(actionId(jo.id)), jobId: jo.id, rows: [], operation: {
       kind: kind, path: path, payload: JSON.parse(JSON.stringify(payload)), key: 'kit-' + crypto.randomUUID(), created: Date.now(), state: 'new' } };
     Array.prototype.forEach.call(view.querySelectorAll('input,button'), function (el) { el.disabled = true; });
-    send(record).then(function () { guarded(view, record, function () { withJob(view, jo.id); }); })
+    send(record).then(function () {
+      if (!live(view, record)) return;
+      // Fresh, authoritative success can continue to the reloaded record. Unknown or
+      // site-local results keep the original durable recovery screen and key.
+      if (record.operation.state === 'confirmed' && !record.operation.local) {
+        return mProductionDrafts.remove(record).then(function () {
+          guarded(view, record, function () { if (after) step(jo.id, after); else withJob(view, jo.id); });
+        });
+      }
+      guarded(view, record, function () { withJob(view, jo.id); });
+    })
       .catch(function (err) { guarded(view, record, function () { mToast(err.message, 'err'); withJob(view, jo.id); }); });
   }
   function step(id, name) { MApp.go('kit-release', { id: id, step: name }); }
@@ -125,7 +159,6 @@
   /* ── 62:14 Release queue ─────────────────────────────────────────────────── */
   function queue(view, tab) {
     var render = ++rendering;
-    tab = tab || 'ready';
     var body = R.page(view, { role: 'warehouse', node: '62:14', title: 'Kit releases', subtitle: 'Pick and release complete job-order kits' });
     body.innerHTML = R.skeleton(3);
     Promise.all([
@@ -147,17 +180,19 @@
       var unknown = d.drafts.concat(d.released).filter(function (j) { return j._pending || (j.status === 'draft' && !j._av); });
       var blocked = d.drafts.filter(function (j) { return !j._pending && j._short && j._short.length; });
       var lists = { ready: ready, preparing: preparing, unknown: unknown, blocked: blocked, released: d.released.filter(function (j) { return !j._pending; }) };
+      tab = lists[tab] ? tab : ready.length ? 'ready' : preparing.length ? 'preparing' : unknown.length ? 'unknown' : blocked.length ? 'blocked' : lists.released.length ? 'released' : 'ready';
       body.innerHTML =
-        R.hero('Action needed', ready.length ? ready.length + ' kit' + (ready.length === 1 ? '' : 's') + ' ready' : 'No kits ready',
-          blocked.length ? blocked.length + ' blocked by shortage' : '') +
+        R.hero('Kit release work', (d.drafts.length + d.released.length) + ' job' + (d.drafts.length + d.released.length === 1 ? '' : 's') + ' to process',
+          ready.length + ' ready · ' + preparing.length + ' picking · ' + blocked.length + ' blocked · ' + unknown.length + ' to review') +
         R.tabs([
           { id: 'ready', label: 'Ready', count: ready.length },
           { id: 'preparing', label: 'Picking', count: preparing.length },
-          { id: 'blocked', label: 'Blocked', count: blocked.length },
+          { id: 'blocked', label: 'Waiting', count: blocked.length },
           { id: 'unknown', label: 'Review', count: unknown.length },
           { id: 'released', label: 'Released' },
         ], tab) + '<div class="rk-list" data-list></div>';
       function paint(which) {
+        R.queueTab(body, which);
         var host = body.querySelector('[data-list]');
         var rows = lists[which] || [];
         if (!rows.length) {
@@ -171,8 +206,8 @@
               meta: which === 'unknown' ? (j._pending ? 'Open to recover or review the original action' : 'Open to retry the stock check') : meta(j) });
           }
           if (which === 'blocked') {
-            return R.jobCard({ id: j.id, number: j.number, name: j.product_name, warn: true, pill: { text: 'Blocked', tone: 'warn' },
-              meta: [j.team_name, j._short.length + ' part' + (j._short.length === 1 ? '' : 's') + ' short'].filter(Boolean).join(' · ') });
+            return R.jobCard({ id: j.id, number: j.number, name: j.product_name, warn: true, pill: { text: shortageLabel(j._short), tone: 'warn' },
+              meta: [j.team_name, j._short.length + ' component line' + (j._short.length === 1 ? '' : 's') + ' short'].filter(Boolean).join(' · ') });
           }
           if (which === 'released') {
             return R.jobCard({ id: j.id, number: j.number, name: j.product_name, pill: { text: 'Awaiting acceptance', tone: 'warn' },
@@ -206,55 +241,97 @@
   /* ── 62:79 Verify kit ────────────────────────────────────────────────────── */
   function verify(view, d) {
     var jo = d.jo, av = d.av;
-    var body = R.page(view, { role: 'warehouse', node: '62:79', title: 'Verify job-order kit', subtitle: 'Count the physical kit before release' });
-    body.innerHTML = R.jobHead({ number: jo.number, name: jo.product_name, pill: { text: stageLabel(jo, av) }, meta: meta(jo) }) +
-      R.field('Pick from', jo.source_location_name || 'Default location');
+    var body = R.page(view, { role: 'warehouse', node: '62:79', title: 'Prepare job-order kit', subtitle: 'Save progress now; release the complete kit when ready' });
+    body.innerHTML = R.jobHead({ number: jo.number, name: jo.product_name, pill: { text: stageLabel(jo, av) },
+      meta: 'Pick from ' + sourceName(jo) + (jo.team_name ? ' · ' + jo.team_name : '') + (jo.due_date ? ' · ' + dueText(jo.due_date) : '') });
     if (!jo.approved_at) { body.innerHTML += R.note('warn', 'A production manager must approve this job order first.'); return; }
     if (!av) {
       body.innerHTML += R.note('warn', 'Availability unknown. No release decision can be made until stock is checked.') + R.actions([{ id: 'kr-refresh', label: 'Retry stock check', kind: 'primary' }]);
       body.querySelector('#kr-refresh').onclick = function () { withJob(view, jo.id); }; return;
     }
-    body.innerHTML += R.section('Components · ' + av.lines.length + ' lines') + stockLines(av.lines) +
-      R.note('warn', 'Picking reserves parts; it does not deduct stock. Release is all-or-nothing. Do not hand over a partial kit.');
-    if (!jo.warehouse_accepted_at) {
-      body.innerHTML += R.actions([{ id: 'kr-accept', label: 'Accept for picking', kind: 'primary' }]);
-      body.querySelector('#kr-accept').onclick = function () { submit(view, jo, 'acceptance', '/job-orders/warehouse-accept', { job_order_ids: [jo.id] }); };
-      return;
-    }
-    body.innerHTML += av.lines.map(function (l) {
-      return '<label class="rk-card rk-field"><small>' + mEsc(l.component_name + ' · need ' + l.need + ' · free ' + l.available) + '</small>' +
-        '<input type="number" inputmode="numeric" min="0" max="' + l.need + '" step="1" data-pick="' + l.component_item_id + '" aria-label="Picked ' + mEsc(l.component_name) + '" value="' + (l.picked || 0) + '"></label>';
-    }).join('') + (av.supply_planning_order?R.note('info','Supply is planned by Sales on '+mEsc(av.supply_planning_order.number||'the linked sales order')+'. Do not create duplicate procurement here.'): (av.linked_purchase_orders||[]).length?R.note('info','Pending purchase supply: '+mEsc(av.linked_purchase_orders.map(function(p){return p.number;}).join(', '))+'. It is not on-hand until received into this source location.'):'')+ R.actions([{ id: 'kr-save-pick', label: 'Save picked counts', kind: 'secondary' }]) +
-      (av.shortfalls.length ? R.actions([{ id: 'kr-short', label: 'See shortage', kind: 'secondary' }]) : '') +
-      (av.releasable ? R.actions([{ id: 'kr-go', label: 'Release to production', kind: 'primary', icon: RELEASE_ICON }]) : R.note('info', 'Save the complete picked counts to enable release.'));
-    body.querySelector('#kr-save-pick').onclick = function () {
-      var lines = [], invalid = false;
+    var accepted = !!jo.warehouse_accepted_at, shorts = av.shortfalls || [];
+    if (shorts.length) body.innerHTML += R.note('warn', '<h3>' + shortageLabel(shorts) + '</h3>' +
+      (shorts.some(function (l) { return l.have >= l.need && l.held_elsewhere > 0; }) ? 'Some stock is held by other jobs or repairs. Ask Planning to review commitments; a new purchase may not be needed.<br>' : '') +
+      'Save available picks. Release requires source stock and a complete picked kit.');
+    body.innerHTML += supplyContext(jo, av);
+    if (!accepted) body.innerHTML += R.note('info', 'Accept this job to record who is preparing its kit. Acceptance does not reserve or deduct parts.') +
+      R.actions([{ id: 'kr-accept', label: 'Accept for picking', kind: 'primary' }]);
+    body.innerHTML += R.section('Components · ' + av.lines.length + ' lines') + av.lines.map(function (l) {
+      var id = 'kr-picked-' + l.component_item_id, max = Math.floor(Math.max(0, Math.min(l.need, l.available)));
+      return '<div class="rk-card kr-component"><label for="' + id + '">' + mEsc(l.component_name) + '</label>' +
+        '<p class="kr-stock">Need ' + l.need + ' · On hand ' + l.have + ' · Held elsewhere ' + l.held_elsewhere + ' · Available to this kit ' + l.available + '</p>' +
+        '<div class="kr-counter" role="group" aria-label="' + mEsc(l.component_name) + ' picked count">' +
+        '<button type="button" data-pick-change="-1" data-component="' + l.component_item_id + '" aria-label="Decrease picked ' + mEsc(l.component_name) + '">−</button>' +
+        '<div><input type="number" inputmode="numeric" id="' + id + '" min="0" max="' + max + '" step="1" data-pick="' + l.component_item_id +
+        '" aria-label="Picked ' + mEsc(l.component_name) + '" aria-describedby="' + id + '-help" value="' + (l.picked || 0) + '"><span aria-hidden="true">/ ' + l.need + '</span></div>' +
+        '<button type="button" data-pick-change="1" data-component="' + l.component_item_id + '" aria-label="Increase picked ' + mEsc(l.component_name) + '">+</button></div>' +
+        '<small id="' + id + '-help" data-pick-help="' + l.component_item_id + '">Saved ' + (l.picked || 0) + ' of ' + l.need + ' · ' + Math.max(0, l.need - (l.picked || 0)) + ' remaining to pick</small></div>';
+    }).join('') + '<div id="kr-pick-status" class="rk-note" role="status"></div>' +
+      R.note('info', 'Enter the total physically picked so far, not an additional quantity. Saving picks reserves parts; only final release deducts stock. A partial kit cannot be released.') +
+      (accepted ? R.actions([{ id: 'kr-save-pick', label: 'Save progress', kind: 'primary' }]) : '') +
+      R.actions((shorts.length ? [{ id: 'kr-short', label: 'Shortage details / report', kind: 'secondary' }] : []).concat([{ id: 'kr-refresh', label: 'Refresh stock and purchasing', kind: 'secondary' }]));
+    function picks() {
+      var state = { lines: [], valid: true, complete: true, changed: false, savedComplete: 0 };
       Array.prototype.forEach.call(body.querySelectorAll('[data-pick]'), function (el) {
         var line = av.lines.find(function (l) { return l.component_item_id === Number(el.dataset.pick); });
         var n = el.value.trim() === '' ? NaN : Number(el.value);
-        if (!Number.isSafeInteger(n) || n < 0 || n > line.need || n > line.available) invalid = true;
-        lines.push({ component_item_id: line.component_item_id, qty_picked: n });
+        var numeric = Number.isSafeInteger(n) && n >= 0;
+        var valid = numeric && n <= line.need && n <= line.available;
+        state.valid = state.valid && valid; state.complete = state.complete && valid && n === line.need;
+        state.changed = state.changed || !numeric || n !== (line.picked || 0);
+        if ((line.picked || 0) >= line.need) state.savedComplete++;
+        state.lines.push({ component_item_id: line.component_item_id, qty_picked: n });
+        el.disabled = !accepted; el.setAttribute('aria-invalid', accepted && !valid ? 'true' : 'false');
+        var help = body.querySelector('[data-pick-help="' + line.component_item_id + '"]');
+        help.classList.toggle('kr-pick-error', accepted && !valid);
+        help.textContent = accepted && !valid ? 'Use a whole count from 0 to ' + Math.floor(Math.max(0, Math.min(line.need, line.available))) + '. Check the source stock if it changed.' :
+          'Saved ' + (line.picked || 0) + ' of ' + line.need + ' · ' + Math.max(0, line.need - (line.picked || 0)) + ' remaining to pick';
+        Array.prototype.forEach.call(body.querySelectorAll('[data-component="' + line.component_item_id + '"]'), function (btn) {
+          btn.disabled = !accepted || !numeric || (Number(btn.dataset.pickChange) < 0 ? n <= 0 : n + 1 > Math.min(line.need, line.available));
+        });
       });
-      if (invalid) { mToast('Use whole picked counts between zero and the needed/free quantity.', 'err'); return; }
-      submit(view, jo, 'pick', '/job-orders/prepare', { job_orders: [{ id: jo.id, lines: lines }] });
-    };
-    var go = body.querySelector('#kr-go');
-    if (go) go.onclick = function () { step(jo.id, 'confirm'); };
-    var savePick = body.querySelector('#kr-save-pick');
-    function updatePickActions() {
-      var changed = Array.prototype.some.call(body.querySelectorAll('[data-pick]'), function (input) {
-        var line = av.lines.find(function (l) { return l.component_item_id === Number(input.dataset.pick); });
-        return input.value.trim() === '' || Number(input.value) !== (line.picked || 0);
-      });
-      savePick.disabled = !changed && !(av.lines.length === 0 && !jo.prepared_at);
-      if (go) go.disabled = changed;
+      return state;
+    }
+    function update() {
+      var state = picks(), save = body.querySelector('#kr-save-pick'), label;
+      if (state.complete && !shorts.length) label = state.changed || !jo.prepared_at ? 'Save counts & review release' : 'Review release';
+      else label = 'Save progress';
+      if (save) { save.textContent = label; save.disabled = !state.valid || (!state.changed && !(state.complete && (!jo.prepared_at || av.releasable))); }
+      var message = !accepted ? 'Accept the job before recording counts.' : !state.valid ? 'Correct the highlighted picked counts before saving.' :
+        state.changed ? 'Unsaved counts · save progress before leaving this kit.' :
+        shorts.length ? shortageLabel(shorts) + ' · saved picks are reserved. Refresh after stock arrives or commitments change.' :
+        jo.prepared_at ? 'Complete kit picked and saved. Review once before releasing.' :
+        'Picking incomplete · ' + state.savedComplete + ' of ' + av.lines.length + ' component lines fully picked and saved.';
+      body.querySelector('#kr-pick-status').textContent = message;
+      return state;
     }
     Array.prototype.forEach.call(body.querySelectorAll('[data-pick]'), function (el) {
-      el.oninput = updatePickActions;
+      el.oninput = update;
+      el.onkeydown = function (event) {
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+        event.preventDefault();
+        var btn = body.querySelector('[data-component="' + el.dataset.pick + '"][data-pick-change="' + (event.key === 'ArrowUp' ? 1 : -1) + '"]');
+        if (btn && !btn.disabled) btn.click();
+      };
     });
-    updatePickActions();
-    var sh = body.querySelector('#kr-short');
-    if (sh) sh.onclick = function () { step(jo.id, 'blocked'); };
+    Array.prototype.forEach.call(body.querySelectorAll('[data-pick-change]'), function (btn) {
+      btn.onclick = function () {
+        if (btn.disabled) return;
+        var input = body.querySelector('[data-pick="' + btn.dataset.component + '"]');
+        input.value = String(Number(input.value) + Number(btn.dataset.pickChange)); update();
+      };
+    });
+    var accept = body.querySelector('#kr-accept');
+    if (accept) accept.onclick = function () { submit(view, jo, 'acceptance', '/job-orders/warehouse-accept', { job_order_ids: [jo.id] }); };
+    var save = body.querySelector('#kr-save-pick');
+    if (save) save.onclick = function () {
+      var state = update(); if (save.disabled || !state.valid) return;
+      if (!state.changed && av.releasable) { step(jo.id, 'confirm'); return; }
+      submit(view, jo, 'pick', '/job-orders/prepare', { job_orders: [{ id: jo.id, lines: state.lines }] }, state.complete && !shorts.length ? 'confirm' : null);
+    };
+    body.querySelector('#kr-refresh').onclick = function () { withJob(view, jo.id); };
+    var shortage = body.querySelector('#kr-short'); if (shortage) shortage.onclick = function () { step(jo.id, 'blocked'); };
+    update();
   }
   function load(id) {
     return Promise.all([API.get('/job-orders/' + id), API.get('/job-orders/' + id + '/availability').catch(function () { return null; }), mProductionDrafts.load(actionId(id))])
@@ -262,47 +339,42 @@
   }
 
   /* ── 62:150 Confirm release ──────────────────────────────────────────────── */
-  function confirm(view, jo) {
-    var body = R.page(view, { role: 'warehouse', node: '62:150', title: 'Confirm release', subtitle: 'Final check before stock is deducted' });
-    body.innerHTML =
-      '<div class="rk-jobhead"><span class="rk-no">' + mEsc(jo.number) + '</span><span></span>' +
-        '<span class="rk-name">' + mEsc(jo.product_name + ' · ' + jo.qty_ordered + ' unit' + (jo.qty_ordered === 1 ? '' : 's')) + '</span>' +
-        '<span class="rk-meta">' + mEsc(jo.source_location_name || 'Default location') + '</span></div>' +
-      R.note('info', '<h3>You are about to:</h3><ul><li>Deduct every planned component</li><li>Record your name and release time</li>' +
-        '<li>Hand the complete kit to Production</li><li>Wait for Production Lead acceptance</li></ul>') +
-      R.check('kr-ack', 'I physically picked and counted the complete kit.') +
-      '<div class="rk-note danger"><img src="/mobile/icons/v2/alert.svg" alt=""><span>Release cannot be undone from the phone.</span></div>' +
-      R.actions([{ id: 'kr-confirm', label: 'Confirm release', kind: 'primary' }, { id: 'kr-back', label: 'Go back', kind: 'secondary' }]);
-    var btn = body.querySelector('#kr-confirm');
-    var ack = body.querySelector('#kr-ack');
-    btn.disabled = true;
-    ack.onchange = function () { btn.disabled = !ack.checked; };
-    body.querySelector('#kr-back').onclick = function () { history.back(); };
+  function confirm(view, d) {
+    var jo = d.jo, av = d.av;
+    var body = R.page(view, { role: 'warehouse', node: '62:150', title: 'Release this complete kit?', subtitle: 'Final check before stock is deducted' });
+    body.innerHTML = R.jobHead({ number: jo.number, name: jo.product_name + ' · ' + jo.qty_ordered + ' units', meta: sourceName(jo) }) +
+      R.lines(av.lines.map(function (l) { return { name: l.component_name, qty: 'Release ' + l.need, detail: 'Picked ' + l.picked + ' / ' + l.need + ' · On hand ' + l.have + ' → ' + (l.have - l.need), ok: true }; })) +
+      R.note('info', 'Releasing records your name, creates the parts slip and deducts these components from ' + mEsc(sourceName(jo)) + '. Hand the complete kit to Production; their acceptance records the handoff.') +
+      R.note('warn', 'Release cannot be undone from the phone. Confirm only after physically picking and counting the complete kit.') +
+      R.actions([{ id: 'kr-confirm', label: 'Release complete kit', kind: 'primary' }, { id: 'kr-back', label: 'Edit picked counts', kind: 'secondary' }]);
+    var btn = body.querySelector('#kr-confirm'), back = body.querySelector('#kr-back');
+    back.onclick = function () { MApp.go('kit-release', { id: jo.id }); };
     btn.onclick = function () {
       if (offline()) { mToast('You’re offline — releasing a kit needs a connection.', 'err'); return; }
-      if (!ack.checked) return;
-      btn.disabled = true;
-      ack.disabled = true;
-      body.querySelector('#kr-back').disabled = true;
+      btn.disabled = true; back.disabled = true;
       var owner = mProductionDrafts.key(actionId(jo.id)), routeHash = location.hash;
-      // One physical action, after separately confirmed acceptance and picked counts.
-      load(jo.id).then(function (d) {
-        if (!MApp.getMe() || owner !== mProductionDrafts.key(actionId(jo.id)) || location.hash !== routeHash) return;
-        if (d.record || !d.av || !d.av.releasable || !ack.checked) { withJob(view, jo.id, 'confirm'); return; }
-        submit(view, d.jo, 'release', '/job-orders/' + jo.id + '/release', {});
-      }).catch(function (err) { mToast(err.message, 'err'); btn.disabled = !ack.checked; ack.disabled = false; body.querySelector('#kr-back').disabled = false; });
+      load(jo.id).then(function (fresh) {
+        if (!MApp.getMe() || !body.isConnected || owner !== mProductionDrafts.key(actionId(jo.id)) || location.hash !== routeHash) return;
+        if (fresh.record || !fresh.av || !fresh.av.releasable) { withJob(view, jo.id, 'confirm'); return; }
+        // A changed kit must be reviewed again, even if the new plan is fully picked.
+        var reviewed = JSON.stringify(av.lines.map(function (l) { return [l.component_item_id, l.need, l.picked]; }));
+        var current = JSON.stringify(fresh.av.lines.map(function (l) { return [l.component_item_id, l.need, l.picked]; }));
+        if (reviewed !== current || jo.approval_revision !== fresh.jo.approval_revision) { mToast('The kit changed. Review the current parts before releasing.', 'err'); withJob(view, jo.id, 'confirm'); return; }
+        submit(view, fresh.jo, 'release', '/job-orders/' + jo.id + '/release', {});
+      }).catch(function (err) { if (body.isConnected && location.hash === routeHash) { mToast(err.message, 'err'); btn.disabled = false; back.disabled = false; } });
     };
   }
 
   /* ── 62:205 Release blocked ──────────────────────────────────────────────── */
-  function blocked(view, jo, short) {
+  function blocked(view, d, short) {
+    var jo = d.jo;
     var body = R.page(view, { role: 'warehouse', node: '62:205', title: 'Release blocked', subtitle: 'The kit cannot be partially released' });
     body.innerHTML =
       R.alert(short.length + ' component' + (short.length === 1 ? ' is' : 's are') + ' short', 'Check missing stock and commitments before retrying.') +
       R.lines(short.map(function (s) { return { name: s.component_name, qty: 'Need ' + s.need + ' · Free ' + s.available, detail: 'On hand ' + s.have + ' · Held ' + s.held_elsewhere + ' · Picked ' + (s.picked || 0), ok: false }; }), 'No release slip has been confirmed. Acceptance and picked counts may already be saved.') +
-      R.note('info', '<h3>What to do next</h3><ol><li>Keep the picked kit in its staging area.</li>' +
+      supplyContext(jo, d.av) + R.note('info', '<h3>What to do next</h3><ol><li>Keep the picked kit in its staging area.</li>' +
         '<li>Notify the planner or supervisor.</li><li>If on-hand is adequate but free stock is short, ask for a commitment review. Replenish physically missing stock.</li></ol>') +
-      R.actions([{ id: 'kr-report', label: 'Report shortage', kind: 'primary' }, { id: 'kr-retry', label: 'Retry check', kind: 'secondary' }]);
+      R.actions([{ id: 'kr-report', label: 'Report shortage', kind: 'primary' }, { id: 'kr-retry', label: 'Return to picking / refresh', kind: 'secondary' }]);
     body.querySelector('#kr-report').onclick = function () { step(jo.id, 'report'); };
     body.querySelector('#kr-retry').onclick = function () { MApp.go('kit-release', { id: jo.id }); };
   }
@@ -406,11 +478,12 @@
       if (jo.status !== 'draft') { status(view, jo); return; }
       if (!d.av || !jo.approved_at) { verify(view, d); return; }
       var short = d.av.shortfalls || [];
-      if (name === 'confirm' && d.av.releasable) confirm(view, jo);
-      else if ((name === 'confirm' && short.length) || name === 'blocked') blocked(view, jo, short);
+      if (name === 'confirm' && d.av.releasable) confirm(view, d);
+      else if ((name === 'confirm' || name === 'blocked') && short.length) blocked(view, d, short);
       else if (name === 'report') report(view, jo, short);
       else verify(view, d);
     }).catch(function (err) {
+      if (render !== rendering || !view.isConnected || location.hash !== routeHash || !MApp.getMe() || owner !== mProductionDrafts.key(actionId(id))) return;
       view.innerHTML = '';
       view.appendChild(R.error(err, function () { withJob(view, id, name); }));
     });

@@ -1,7 +1,6 @@
 /* Parts clerk — repair-parts requests (Figma 83:*).
-     83:16 queue (Pending / Shortage / Issued) · 83:68 review request · 83:109 verify repair
-     context · 83:158 select stock source · 83:206 pick the requested part · 83:247 review issue ·
-     83:295 confirm issue · 83:332 part issued · 83:375 reject · 83:416 stock unavailable ·
+     83:16 queue (Pending / Shortage / Issued) · 83:68 review request + repair context · 83:158 select stock source · 83:206 pick the requested part ·
+     83:295 review and confirm issue (83:247 redirects here) · 83:332 part issued · 83:375 reject · 83:416 stock unavailable ·
      83:452 revision required · 83:488 history
    Backend (/api/production): GET /repairs?status=requested, /repairs/:id/context, /repair-history;
    POST /repairs/:id/accept (issues stock; refuses a non-approved source, a pending revision, a
@@ -18,6 +17,7 @@
 (function () {
   var R = window.RoleUI;
   var S = {};   // per request: { loc, scanned, qty, key, result }
+  var renderSerial = 0, owner = null;
   var can = function (p) { return MApp.can(p); };
   var offline = function () { return navigator.onLine === false; };
   var go = function (extra) { MApp.go('repairs', extra || {}); };
@@ -38,7 +38,10 @@
 
   function withRequest(view, id, fn) {
     view.innerHTML = '<section class="rk-page">' + R.skeleton(2) + '</section>';
-    API.get('/production/repairs/' + id + '/context').then(fn).catch(function (err) {
+    var hash = location.hash, account = mProductionDrafts.key('parts-owner'), render = renderSerial;
+    function current() { return view.dataset.route === 'repairs' && hash === location.hash && render === renderSerial && account === mProductionDrafts.key('parts-owner'); }
+    API.get('/production/repairs/' + id + '/context').then(function (c) { if (current()) fn(c); }).catch(function (err) {
+      if (!current()) return;
       view.innerHTML = ''; view.appendChild(R.error(err, function () { withRequest(view, id, fn); }));
     });
   }
@@ -49,14 +52,15 @@
     body.innerHTML = R.skeleton(3);
     Promise.all([API.get('/production/repairs?status=requested'), API.get('/production/repair-history?state=blocked'), API.get('/production/repair-history?state=issued')])
       .then(function (r) {
+        if (!body.isConnected) return;
         var open = r[0] || [], blockedIds = (r[1].rows || []).map(function (x) { return x.id; });
         var shortage = open.filter(function (x) { return blockedIds.indexOf(x.id) !== -1; });
         var pending = open.filter(function (x) { return blockedIds.indexOf(x.id) === -1; });
         var me = (MApp.getMe() || {}).id;
         var issued = (r[2].rows || []).filter(function (x) { return x.decided_by === me && when(x.decided_at) && when(x.decided_at).toDateString() === new Date().toDateString(); });
-        tab = tab || 'pending';
+        tab = ['pending','short','done'].includes(tab) ? tab : pending.length ? 'pending' : shortage.length ? 'short' : 'pending';
         body.innerHTML =
-          R.hero('Action required', open.length + ' request' + (open.length === 1 ? '' : 's'), pending.length + ' ready · ' + shortage.length + ' shortage') +
+          R.hero('Parts requests', open.length + ' request' + (open.length === 1 ? '' : 's'), pending.length + ' to review · ' + shortage.length + ' stock blocked') +
           '<div class="rk-segs" role="tablist">' +
             '<button type="button" data-tab="pending"' + (tab === 'pending' ? ' class="on"' : '') + '>Pending<b>' + pending.length + '</b></button>' +
             '<button type="button" data-tab="short" class="warn' + (tab === 'short' ? ' on' : '') + '">Shortage<b>' + shortage.length + '</b></button>' +
@@ -69,12 +73,13 @@
             '<small' + (tone ? ' class="' + tone + '"' : '') + '>' + mEsc(x.component_name + ' · Qty ' + x.quantity + (tone ? ' · no approved stock' : '')) + '</small><i aria-hidden="true">›</i></button>';
         }
         function paint(which) {
+          R.queueTab(body, which);
           var host = body.querySelector('[data-list]');
           var list = which === 'short' ? shortage : which === 'done' ? issued : pending;
           host.innerHTML = list.length ? list.map(function (x) { return which === 'done'
             ? '<div class="rk-card rk-unitcard" style="cursor:default"><b>' + mEsc(x.number) + '</b><span>' + mEsc((x.sku || x.component_name) + ' · Qty ' + x.quantity) + '</span><small>Issued · ' + mEsc(short(x.unit_identifier) + ' · ' + clock(x.decided_at)) + '</small><i></i></div>'
             : card(x, which === 'short' ? 'warn' : ''); }).join('')
-            : '<div class="rk-empty">' + (which === 'done' ? 'Nothing issued by you today.' : which === 'short' ? 'No requests blocked by stock.' : 'No parts requests waiting.') + '</div>';
+            : '<div class="rk-empty">' + (which === 'done' ? 'Nothing issued by you today.' : which === 'short' ? 'No requests blocked by stock.' : shortage.length ? 'No requests in Pending. Open Shortage for stock-blocked requests.' : 'No parts requests waiting.') + '</div>';
           Array.prototype.forEach.call(host.querySelectorAll('[data-req]'), function (b) { b.onclick = function () { go({ id: b.dataset.req }); }; });
         }
         Array.prototype.forEach.call(body.querySelectorAll('.rk-segs button'), function (b) {
@@ -83,46 +88,35 @@
         paint(tab);
         body.querySelector('#rp-open').onclick = function () { var first = pending[0] || shortage[0]; if (first) go({ id: first.id }); else mToast('No open requests'); };
         body.querySelector('#rp-hist').onclick = function () { go({ step: 'history' }); };
-      }).catch(function (err) { body.innerHTML = ''; body.appendChild(R.error(err, function () { queue(view, tab); })); });
+      }).catch(function (err) { if (!body.isConnected) return;body.innerHTML = ''; body.appendChild(R.error(err, function () { queue(view, tab); })); });
+  }
+
+  function contextChecks(c) {
+    var r = c.request, u = c.unit || {}, ins = c.inspection;
+    return '<div class="rk-checks">' +
+      row(u.status === 'rework' ? 'pass' : 'warn', 'Unit and serial', (u.identifier || 'Unit #' + r.unit_id) + ' · ' + (u.status === 'rework' ? 'In repair' : 'status ' + (u.status || '?'))) +
+      row(ins ? 'pass' : 'warn', 'Source inspection', ins ? (ins.stage === 2 ? 'QA' : 'QC') + '-' + ins.id + (ins.station ? ' · ' + ins.station : '') : 'No failed inspection found') +
+      row(c.item ? 'pass' : 'fail', 'Requested part', c.item ? (c.item.sku || c.item.name) + ' · Qty ' + r.quantity : 'The requested item no longer exists') +
+      row(c.duplicates.length ? 'warn' : 'pass', 'Other open requests', c.duplicates.length ? 'Also open: ' + c.duplicates.map(function (d) { return d.number; }).join(', ') : 'No duplicate active request') + '</div>';
   }
 
   /* ── Review request (83:68) ────────────────────────────────────────────── */
   function review(view, c) {
-    var r = c.request, ins = c.inspection;
-    var body = page(view, '83:68', 'Review request', 'Confirm part, quantity and repair reason');
+    var r = c.request, ins = c.inspection, pending = c.revision && c.revision.status === 'pending';
+    var body = page(view, '83:68', 'Review request', 'Check the request and repair context, then choose stock');
     body.innerHTML =
       R.jobHead({ number: r.number, pill: { text: r.kind === 'replace' ? 'Replace part' : 'Add part', tone: 'muted' }, name: r.component_name,
         meta: 'Qty ' + r.quantity + (ins && ins.priority ? ' · ' + ins.priority : '') + (r.fault ? ' · fault: ' + r.fault : '') }) +
       R.field('Requested for unit', (r.unit_identifier || 'Unit #' + r.unit_id) + (r.job_order_number ? ' · ' + r.job_order_number : '')) +
       R.field('Reason', (ins && ins.remarks) || r.notes || '—') +
-      (c.revision && c.revision.status === 'pending' ? '<div class="rk-rev"><small>Revision waiting for approval</small><b>' + mEsc(c.revision.proposed_name + ' · Qty ' + c.revision.proposed_quantity) + '</b><span>' + mEsc(c.revision.reason) + '</span></div>' : '') +
-      R.note('info', '<h3>Linked workflow evidence</h3>The inspection result, defect photo and repair instruction stay read-only context.') +
+      (pending ? '<div class="rk-rev" role="status"><small>Revision waiting for approval — cannot issue yet</small><b>' + mEsc(c.revision.proposed_name + ' · Qty ' + c.revision.proposed_quantity) + '</b><span>' + mEsc(c.revision.reason) + '</span></div>' : '') +
+      contextChecks(c) +
       (r.status === 'requested'
-        ? R.actions([{ id: 'rp-go', label: 'Verify request context', kind: 'primary' }, { id: 'rp-no', label: 'Reject', kind: 'secondary' }])
+        ? R.actions((pending || !c.item ? [] : [{ id: 'rp-go', label: c.shortage ? 'Review stock shortage' : 'Choose stock source', kind: 'primary' }]).concat([{ id: 'rp-no', label: 'Reject request', kind: 'secondary' }]))
         : R.note('warn', 'This request is already ' + mEsc(r.status) + '.') + R.actions([{ id: 'rp-back', label: 'Back to queue', kind: 'secondary' }]));
-    var g = body.querySelector('#rp-go'); if (g) g.onclick = function () { go({ id: r.id, step: 'context' }); };
+    var g = body.querySelector('#rp-go'); if (g) g.onclick = function () { go({ id: r.id, step: c.shortage ? 'shortage' : 'source' }); };
     var n = body.querySelector('#rp-no'); if (n) n.onclick = function () { go({ id: r.id, step: 'reject' }); };
     var b = body.querySelector('#rp-back'); if (b) b.onclick = function () { go(); };
-  }
-
-  /* ── Verify repair context (83:109) ────────────────────────────────────── */
-  function context(view, c) {
-    var r = c.request, u = c.unit || {}, ins = c.inspection, pend = c.revision && c.revision.status === 'pending';
-    var body = page(view, '83:109', 'Verify repair context', 'Ensure the request is valid and still active');
-    var inRepair = u.status === 'rework';
-    body.innerHTML =
-      '<div class="rk-checks">' +
-        row(inRepair ? 'pass' : 'warn', 'Unit and serial', (u.identifier || 'Unit #' + r.unit_id) + ' · ' + (inRepair ? 'In repair' : 'status ' + (u.status || '?'))) +
-        row(ins ? 'pass' : 'warn', 'Source inspection', ins ? 'QC-' + ins.id + ' · Repair disposition' + (ins.station ? ' · ' + ins.station : '') : 'No failed inspection found') +
-        row(c.item ? 'pass' : 'fail', 'Requested part', c.item ? (c.item.sku || c.item.name) + ' · Qty ' + r.quantity : 'The requested item no longer exists') +
-        row(c.duplicates.length ? 'warn' : 'pass', 'Existing open request', c.duplicates.length ? 'Also open: ' + c.duplicates.map(function (d) { return d.number; }).join(', ') : 'No duplicate active request') +
-        (pend ? row('warn', 'Revision pending', c.revision.proposed_name + ' · Qty ' + c.revision.proposed_quantity + ' — waiting for approval') : '') +
-      '</div>' +
-      R.note('info', '<h3>Permission boundary</h3>This does not grant access to release initial production kits or make general stock adjustments.') +
-      R.actions(pend || !c.item ? [{ id: 'rp-no', label: 'Reject request', kind: 'secondary' }]
-        : [{ id: 'rp-go', label: 'Accept request', kind: 'primary' }, { id: 'rp-no', label: 'Reject request', kind: 'secondary' }]);
-    var g = body.querySelector('#rp-go'); if (g) g.onclick = function () { go({ id: r.id, step: c.shortage ? 'shortage' : 'source' }); };
-    body.querySelector('#rp-no').onclick = function () { go({ id: r.id, step: 'reject' }); };
   }
 
   /* ── Select stock source (83:158) ──────────────────────────────────────── */
@@ -171,6 +165,7 @@
         (err ? '<div class="rk-block"><span class="t">! Different part</span><b>' + mEsc(err) + '</b><span>The request is for ' + mEsc(sku || r.component_name) + '. Use a formal revision to change it.</span></div>' : '') +
         (!sku ? R.note('warn', 'This part has no SKU to scan — confirm it by name and picked quantity.') : '') +
         '<label class="rk-card rk-field"><small>Picked quantity</small><input class="rk-input" data-qty type="number" min="1" inputmode="numeric" value="' + (s.qty || r.quantity) + '"></label>' +
+        '<p class="rk-note warn" data-pick-error role="alert" hidden></p>' +
         R.note('info', '<h3>Exact-request rule</h3>A different SKU or excess quantity is blocked unless the request is formally revised.') +
         R.actions([{ id: 'rp-go', label: 'Review issue', kind: 'primary' }, { id: 'rp-rev', label: err ? 'Request revision' : 'Cancel', kind: 'secondary' }]);
       body.querySelector('.rk-identify').onclick = function () {
@@ -183,32 +178,17 @@
       };
       body.querySelector('#rp-rev').onclick = function () { if (err) go({ id: r.id, step: 'revision' }); else history.back(); };
       body.querySelector('#rp-go').onclick = function () {
-        var q = parseInt(body.querySelector('[data-qty]').value, 10) || 0;
+        var input = body.querySelector('[data-qty]'), q = Number(input.value);
         if (sku && !s.scanned) { mToast('Scan the part label first', 'err'); return; }
-        if (q !== r.quantity) { mToast('Picked ' + q + ' but ' + r.quantity + ' requested — revise the request to change it', 'err'); return; }
-        s.qty = q; go({ id: r.id, step: 'review' });
+        if (!input.value.trim() || !Number.isInteger(q) || q !== r.quantity) {
+          var error = body.querySelector('[data-pick-error]');
+          error.textContent = 'Enter the exact ' + r.quantity + ' requested. A different quantity needs an approved revision.';
+          error.hidden = false; input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', 'rp-pick-error'); error.id = 'rp-pick-error'; input.focus(); return;
+        }
+        s.qty = q; go({ id: r.id, step: 'confirm' });
       };
     }
     paint();
-  }
-
-  /* ── Review issue (83:247) ─────────────────────────────────────────────── */
-  function reviewIssue(view, c) {
-    var r = c.request, s = st(r.id), ins = c.inspection;
-    var src = c.sources.filter(function (l) { return l.id === s.loc; })[0];
-    if (!src || !s.qty) { go({ id: r.id, step: 'source' }); return; }
-    var body = page(view, '83:247', 'Review issue', 'Confirm stock and workflow effects');
-    body.innerHTML =
-      '<div class="rk-hero navy"><small>Repair-parts issue</small><b>1 item · Qty ' + r.quantity + '</b><span>' + mEsc(src.name + ' → ' + short(r.unit_identifier) + ' repair') + '</span></div>' +
-      '<div class="rk-checks">' +
-        row('pass', 'Request', r.number + ' · Active') +
-        row('pass', 'Stock', src.available + ' available → ' + (src.available - r.quantity) + ' remaining' + (c.hold && c.hold.location_id === src.id ? ' · was held for this request' : '')) +
-        row('pass', 'Receiving context', (ins ? 'QC repair' + (ins.station ? ' · ' + ins.station + ' station' : '') : 'Repair') + (r.kind === 'replace' && r.return_to_damage ? ' · old part to damage' : '')) +
-      '</div>' +
-      R.note('info', '<h3>Atomic issue</h3>Stock deduction, request status and repair handoff are saved together.') +
-      R.actions([{ id: 'rp-go', label: 'Continue to confirmation', kind: 'primary' }, { id: 'rp-back', label: 'Back', kind: 'secondary' }]);
-    body.querySelector('#rp-go').onclick = function () { go({ id: r.id, step: 'confirm' }); };
-    body.querySelector('#rp-back').onclick = function () { history.back(); };
   }
 
   /* ── Confirm stock issue (83:295) — online-only, idempotent ────────────── */
@@ -219,9 +199,11 @@
     var body = page(view, '83:295', 'Confirm stock issue', 'Final inventory action for this request');
     body.innerHTML =
       '<div class="rk-block ok"><span class="t">✓ Ready to issue</span><b class="lg">' + mEsc(r.component_name + ' · Qty ' + r.quantity) + '</b>' +
-        '<span style="color:var(--rk-title);font-weight:500">' + mEsc(src.name) + '</span><span>For ' + mEsc(short(r.unit_identifier) + ' · repair') + '</span></div>' +
+        '<span style="color:var(--rk-title);font-weight:500">' + mEsc(r.number + ' · ' + src.name) + '</span><span>For ' + mEsc((r.unit_identifier || 'Unit #' + r.unit_id) + ' · repair') + '</span></div>' +
+      R.field('Stock after issue', src.available + ' on hand → ' + (src.available - r.quantity) + ' remaining') +
+      R.field('Repair handoff', (c.inspection ? (c.inspection.stage === 2 ? 'QA' : 'QC') + ' repair' : 'Repair') + (r.kind === 'replace' && r.return_to_damage ? ' · old part to damage' : '')) +
       R.check('rp-ok', 'I picked and verified the exact requested item') +
-      R.note('info', '<h3>After confirmation</h3>The request becomes Issued and the repair station can continue the tracked repair.') +
+      R.note('info', '<h3>Stock changes here</h3>Confirmation deducts ' + r.quantity + ' from ' + mEsc(src.name) + ' and marks the request Issued together. The repair station can then continue.') +
       R.actions([{ id: 'rp-post', label: 'Confirm issue', kind: 'ink' }, { id: 'rp-cancel', label: 'Cancel', kind: 'secondary' }]);
     body.querySelector('#rp-cancel').onclick = function () { go({ id: r.id }); };
     var btn = body.querySelector('#rp-post'), chk = body.querySelector('#rp-ok');
@@ -413,6 +395,9 @@
   }
 
   MApp.route('repairs', function (view, params) {
+    ++renderSerial;
+    var account = mProductionDrafts.key('parts-owner');
+    if (owner !== account) { S = {}; owner = account; }
     params = params || {};
     var clerk = can('production.repairs');
     var decider = can('production.inspect_qc') || can('production.inspect_qa') || can('production.approve');
@@ -430,10 +415,11 @@
       var step = params.step;
       if (step === 'done') return done(view, c);
       if (c.request.status !== 'requested') return review(view, c);
-      if (step === 'context') context(view, c);
+      if (c.revision && c.revision.status === 'pending' && !['reject','revision'].includes(step)) return review(view, c);
+      if (step === 'context') review(view, c);
       else if (step === 'source') source(view, c);
       else if (step === 'pick') pick(view, c);
-      else if (step === 'review') reviewIssue(view, c);
+      else if (step === 'review') confirm(view, c);
       else if (step === 'confirm') confirm(view, c);
       else if (step === 'reject') reject(view, c);
       else if (step === 'shortage') shortage(view, c);

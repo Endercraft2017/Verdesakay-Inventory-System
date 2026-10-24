@@ -4,6 +4,68 @@ Read **Mobile implementation status** for the current branch. The older
 requirements and test notes further down are retained for traceability; some
 of their requested screens have since been implemented.
 
+## Kit workspace and shortage follow-up — local candidate v145 (2026-10-24)
+
+The reviewed counter/partial-pick sample is now implemented in the mobile kit
+workflow. Per-component − / + controls and direct entry show cumulative picks,
+saved counts and exact source availability. Partial picks reserve stock; complete
+saves go straight to the final release review. That review lists the actual
+components, source and stock deduction and retains an explicit release action;
+the repeated count checkbox and intervening navigation tap were removed.
+
+Waiting for parts, incomplete picking and stock committed elsewhere are distinct.
+The workspace and shortage detail show outstanding linked PO numbers/quantities
+and uncovered planning demand without granting purchasing actions. A PO does not
+add stock; a receipt at another shelf does not fill the source kit. Sale-linked
+jobs identify the sale supply owner. The actual purchase-shortfall endpoint uses
+`purchasing.manage`; kit-only staff can read this context but cannot buy/receive.
+Fresh stock and plan checks still precede release. Unknown/retried/site-local
+attempts retain their original recovery keys and do not automatically advance.
+
+Playwright measured the audited one-component task at **9 → 7 taps** from Home
+through Work to one confirmed parts slip. Twelve additional real API/database/
+browser kit checks passed, including source-location receipts, partial correction,
+separate purchasing/receiving permissions, lost full-pick response/reload and late
+detail failure. The warehouse state suite passed 17 checks and Home passed 14;
+208 focused frontend/backend tests and TypeScript also passed.
+See `docs/reviews/mobile-warehouse-ux-audit.md` for reproducible evidence and limits.
+These are local browser checks; no push, deployment or physical-device acceptance
+is implied.
+
+## Complete warehouse task measurement — local candidate v144 (2026-10-23)
+
+Playwright now measures full tasks from Home to their confirmed results, with
+trusted pointer ledgers and independent stock/status checks. Kit release fell
+from 12 to 9 taps; single-unit RTS from 12 to 11; warehouse-out from 22 to 18
+plus one signature stroke. The measured fixtures use 8 taps for parts issue,
+12 for QC and 12 for QA (two required checks each), and 8 for a seven-piece
+batch receipt. Typing, scrolling, physical counting, printer dialogs and external
+camera/picker actions are excluded. Fresh confirmed actions continue through
+reloaded context; unknown, retry, refused and site-local saves retain recovery.
+Warehouse labels/statuses were corrected for contrast and the batch quantity
+field now has an accessible name. All seven tasks and 62 targeted accessibility
+scans pass; incomplete contrast checks are retained for review. See the follow-up
+section of `docs/reviews/mobile-warehouse-ux-audit.md`. The broader QR suite passed
+warehouse checks, then hit an existing delivery completion policy mismatch;
+that policy is outside this UX change and has not been altered. No employee or
+physical-device usability acceptance, commit, push or deployment is claimed.
+
+## Mobile warehouse UX audit — local candidate v143 (2026-10-23)
+
+Audited the existing mobile kit/parts, QC/QA, RTS and sales-releasing path with
+fresh disposable workflow records and paired Playwright runs against original
+assets from `45d0201`. Queue landing, status retention, blocked-unit wording,
+RTS unit/batch counts and touch targets are clearer. Parts request review now
+includes repair checks; final confirmation includes stock effects, removing two
+read-only navigation transitions (five to three). Source/scan verification,
+explicit confirmation and backend stock/permission checks remain. Picked fractions
+are rejected inline, pending revisions block issue navigation, and delayed parts
+reads cannot replace Home. See `docs/reviews/mobile-warehouse-ux-audit.md` for
+reproduction, validation results and limitations. Final checks passed 17 warehouse
+Playwright scenarios, 14 Home scenarios, 189 focused tests and TypeScript. The
+original browser assets failed 12 of the same 17 warehouse checks. These are local changes, with
+no deployment or employee/physical-device usability acceptance claimed.
+
 ## Home preview branch integration — cache v142 (2026-10-22)
 
 Integrated upstream through `ba6ea1d`, preserving its timekeeping, permission-editor

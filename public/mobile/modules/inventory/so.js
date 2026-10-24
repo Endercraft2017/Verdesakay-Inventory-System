@@ -123,7 +123,7 @@
 
   /* ── Queue (78:16) ─────────────────────────────────────────────────────── */
   function queue(view, tab) {
-    var body = page(view, '78:16', 'Release orders', 'Allocated units ready for handoff');
+    var body = page(view, '78:16', 'Release orders', 'Accept orders, allocate stock, then confirm handoff');
     body.innerHTML = '<div data-recovery></div>' + R.skeleton(3);
     mReleaseActions.cards(body.querySelector('[data-recovery]'));
     mReleaseHandoff.cards(body);
@@ -135,10 +135,10 @@
       var accept = available.filter(function (r) { return !r.warehouse_accepted_at; });
       var allocating = available.filter(function (r) { return r.warehouse_accepted_at && r.qty_released < r.qty_ordered; });
       var ready = available.filter(function (r) { return r.warehouse_accepted_at && r.qty_ordered > 0 && r.qty_released >= r.qty_ordered; });
-      var count = function (m) { return ready.filter(function (r) { return r.authorization && r.authorization.mode === m; }).length; };
-      tab = tab || 'ready';
+      tab = ['accept','allocating','ready','blocked','done'].includes(tab) ? tab : ready.length ? 'ready' : accept.length ? 'accept' : allocating.length ? 'allocating' : blocked.length ? 'blocked' : 'ready';
       body.innerHTML =
-        '<div data-recovery></div>' + R.hero('Ready for handoff', ready.length + ' release' + (ready.length === 1 ? '' : 's'), count('delivery') + ' delivery · ' + count('pickup') + ' pickup') +
+        '<div data-recovery></div>' + R.hero('Warehouse release work', rows.length + ' order' + (rows.length === 1 ? '' : 's') + ' pending',
+          ready.length + ' ready · ' + accept.length + ' to accept · ' + allocating.length + ' allocating · ' + blocked.length + ' blocked') +
         '<div class="rk-segs" role="tablist">' +
           '<button type="button" data-tab="accept"' + (tab === 'accept' ? ' class="on"' : '') + '>To accept<b>' + accept.length + '</b></button>' +
           '<button type="button" data-tab="allocating"' + (tab === 'allocating' ? ' class="on"' : '') + '>Allocating<b>' + allocating.length + '</b></button>' +
@@ -161,6 +161,7 @@
           '<small' + (problem ? ' class="warn"' : '') + '>' + mEsc(meta + ' · Ship from ' + (r.location_name || 'assigned warehouse')) + '</small><i aria-hidden="true">›</i></button>';
       }
       function paint(which) {
+        R.queueTab(body, which);
         var host = body.querySelector('[data-list]');
         if (which === 'done') {
           host.innerHTML = q.completed.length ? q.completed.map(function (s) {
@@ -171,7 +172,7 @@
           return;
         }
         var list = which === 'blocked' ? blocked : which === 'accept' ? accept : which === 'allocating' ? allocating : ready;
-        host.innerHTML = list.length ? list.map(card).join('') : '<div class="rk-empty">' + (which === 'blocked' ? 'No blocked releases.' : 'No sale orders waiting for release.') + '</div>';
+        host.innerHTML = list.length ? list.map(card).join('') : '<div class="rk-empty">' + (which === 'blocked' ? 'No blocked releases.' : which === 'accept' ? 'No orders waiting for warehouse acceptance.' : which === 'allocating' ? 'No orders waiting for allocation.' : 'No orders ready for handoff. Check To accept or Allocating for earlier work.') + '</div>';
         Array.prototype.forEach.call(host.querySelectorAll('[data-order]'), function (b) { b.onclick = function () { go({ id: b.dataset.order }); }; });
       }
       Array.prototype.forEach.call(body.querySelectorAll('.rk-segs button'), function (b) {

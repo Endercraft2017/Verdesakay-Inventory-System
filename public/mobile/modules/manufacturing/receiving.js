@@ -89,7 +89,7 @@
 
   /* ── Queue (74:16) ─────────────────────────────────────────────────────── */
   function queue(view, tab, joFilter) {
-    var body = page(view, '74:16', 'Ready-to-sell intake', 'QA-passed units waiting for stock entry');
+    var body = page(view, '74:16', 'Ready-to-sell intake', 'Receive finished units and batches after required inspections');
     body.innerHTML = '<div data-recovery></div>' + R.skeleton(3);
     mRtsRecovery.cards(body.querySelector('[data-recovery]'));
     loadQueue().then(function (q) {
@@ -97,14 +97,19 @@
       var mine = function (x) { return !joFilter || x.job_order_id === Number(joFilter); };
       var units = q.units.filter(mine), batches = q.batches.filter(mine);
       var ready = units.filter(function (u) { return !u.hold; }), held = units.filter(function (u) { return u.hold; });
+      // Batch rows omit product IDs, so do not invent a combined model count.
       var models = {}; ready.forEach(function (u) { models[u.product_item_id] = (models[u.product_item_id] || 0) + 1; });
       var prio = ready.filter(function (u) { return u.priority > 0; }).length;
       var n = ready.length + batches.length;
-      tab = tab || 'ready';
+      tab = ['ready','issues','done'].includes(tab) ? tab : n ? 'ready' : held.length ? 'issues' : 'ready';
+      function receiptCount(serials, lots) {
+        var text = serials.length || !lots.length ? serials.length + ' unit' + (serials.length === 1 ? '' : 's') : '';
+        return text + (serials.length && lots.length ? ' · ' : '') + (lots.length ? lots.length + ' batch' + (lots.length === 1 ? '' : 'es') + ' (' + lots.reduce(function (sum, b) { return sum + Number(b.remaining_qty); }, 0) + ' pcs)' : '');
+      }
       body.innerHTML =
-        '<div data-recovery></div>' + R.hero('Awaiting RTS record', n + ' ' + (n === 1 ? 'unit' : 'units'), Object.keys(models).length + ' model' + (Object.keys(models).length === 1 ? '' : 's') + ' · ' + prio + ' priority') +
+        '<div data-recovery></div>' + R.hero('Ready for stock entry', receiptCount(ready, batches), prio + ' priority units · ' + held.length + ' on hold') +
         '<div class="rk-segs" role="tablist">' +
-          '<button type="button" data-tab="ready"' + (tab === 'ready' ? ' class="on"' : '') + '>Ready<b>' + n + '</b></button>' +
+          '<button type="button" data-tab="ready"' + (tab === 'ready' ? ' class="on"' : '') + '>Ready<b>' + ready.length + ' unit' + (ready.length === 1 ? '' : 's') + ' · ' + batches.length + ' batch' + (batches.length === 1 ? '' : 'es') + '</b></button>' +
           '<button type="button" data-tab="issues" class="warn' + (tab === 'issues' ? ' on' : '') + '">Issues<b>' + held.length + '</b></button>' +
           '<button type="button" data-tab="done"' + (tab === 'done' ? ' class="on"' : '') + '>Recorded</button></div>' +
         '<div class="rk-list" data-list></div>' +
@@ -116,6 +121,7 @@
           '<small' + (tone ? ' class="' + tone + '"' : '') + '>' + mEsc(meta) + '</small><i aria-hidden="true">›</i></button>';
       }
       function paint(which) {
+        R.queueTab(body, which);
         var host = body.querySelector('[data-list]');
         if (which === 'done') {
           var recorded=q.recorded.filter(mine);
@@ -126,8 +132,9 @@
           return;
         }
         if (!joFilter && which !== 'done') {
-          var groups={};(which==='issues'?held:ready).concat(which==='issues'?[]:batches).forEach(function(u){var g=groups[u.job_order_id]||(groups[u.job_order_id]={u:u,count:0});g.count+=u.remaining_qty||1;});
-          host.innerHTML=Object.keys(groups).map(function(id){var g=groups[id];return card('data-jo="'+id+'"',g.u.job_order_number,g.u.product_name,g.count+' eligible unit(s)'+(g.u.intake_origin==='legacy'?' · Pre-system legacy intake':''));}).join('') || '<div class="rk-empty">No ongoing job orders for RTS receiving.</div>';
+          var groups={};(which==='issues'?held:ready).forEach(function(u){var g=groups[u.job_order_id]||(groups[u.job_order_id]={u:u,units:[],batches:[]});g.units.push(u);});
+          if(which!=='issues')batches.forEach(function(b){var g=groups[b.job_order_id]||(groups[b.job_order_id]={u:b,units:[],batches:[]});g.batches.push(b);});
+          host.innerHTML=Object.keys(groups).map(function(id){var g=groups[id];return card('data-jo="'+id+'"',g.u.job_order_number,g.u.product_name,(which==='issues'?g.units.length+' unit'+(g.units.length===1?'':'s')+' on hold · waiting for correction':receiptCount(g.units,g.batches))+(g.u.intake_origin==='legacy'?' · Pre-system legacy intake':''),which==='issues'?'warn':'');}).join('') || '<div class="rk-empty">'+(which==='issues'?'No units on hold.':'No ongoing job orders ready for stock entry. Units appear after all required inspection passes.')+'</div>';
           if((q.intakes||[]).length)host.innerHTML+='<h3>Pre-system intakes</h3>'+q.intakes.map(function(u){return card('data-intake="'+u.id+'"',u.number+' · '+u.identifier,u.product_name,legacyStage(u));}).join('');
           host.querySelectorAll('[data-jo]').forEach(function(b){b.onclick=function(){go({id:b.dataset.jo,tab:which});};});
           host.querySelectorAll('[data-intake]').forEach(function(b){b.onclick=function(){go({id:b.dataset.intake,step:'legacy-status'});};});return;
@@ -236,7 +243,8 @@
       API.post('/rts/check', { unit_ids: [u.id], location_id: draft.location_id }).then(function (r) {
         if (r.location_error) { draft.locErr = r.location_error; go({ unit: u.id, step: 'location', err: 1 }); return; }
         if (r.blockers.length) { draft.blockers = r.blockers; go({ unit: u.id, step: 'dup' }); return; }
-        go({ unit: u.id, step: 'group' });
+        var others = last.units.some(function (x) { return x.id !== u.id && !x.hold && x.product_item_id === u.product_item_id && (x.build_mode || 'assembled') === (u.build_mode || 'assembled'); });
+        go({ unit: u.id, step: others ? 'group' : 'review' });
       }).catch(fail(btn, 'Continue'));
     };
   }
@@ -516,7 +524,7 @@
       body.innerHTML =
         R.jobHead({ tone: 'ok', number: b.number, pill: { text: b.remaining_qty + ' left', tone: 'ok' }, name: b.product_name, meta: b.job_order_number + (b.sku ? ' · ' + b.sku : '') }) +
         '<div class="rk-stepper"><small>Quantity to record</small><div class="row"><button type="button" data-dec aria-label="Fewer">−</button>' +
-          '<input type="number" min="1" max="' + b.remaining_qty + '" value="' + b.remaining_qty + '" inputmode="numeric"><button type="button" data-inc aria-label="More">+</button></div>' +
+          '<input type="number" aria-label="Quantity to record" min="1" max="' + b.remaining_qty + '" value="' + b.remaining_qty + '" inputmode="numeric"><button type="button" data-inc aria-label="More">+</button></div>' +
           '<p>' + b.remaining_qty + ' produced and not yet in stock</p></div>' +
         '<label class="rk-card rk-field"><small>Finished-goods location</small><select data-loc>' + storage().map(function (l) {
           return '<option value="' + l.id + '"' + (l.id === locId ? ' selected' : '') + '>' + mEsc(mLocations.path(l)) + '</option>'; }).join('') + '</select></label>' +

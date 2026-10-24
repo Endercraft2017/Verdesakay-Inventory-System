@@ -269,7 +269,7 @@
       var ready = units.filter(function (u) { return u.status === 'pending'; });
       var re = units.filter(function (u) { return u.status === 'rework'; });
       var prio = ready.filter(function (u) { return u.priority > 0; }).length;
-      tab = tab || 'ready';
+      tab = ['ready','re','hold','done'].includes(tab) && (tab !== 'hold' || decide) ? tab : ready.length ? 'ready' : re.length ? 're' : decide && (holdCount || !inspects) ? 'hold' : 'ready';
       body.innerHTML =
         R.hero(inspects ? desk.heroLabel : 'QA hold review', inspects ? ready.length + ' unit' + (ready.length === 1 ? '' : 's') : holdError ? 'Count unknown' : holdCount + ' item(s) to review',
           inspects ? prio + ' priority · ' + re.length + ' ' + (desk.role === 'qa' ? 'recheck' : 'reinspection') : 'Review decisions before Products In') +
@@ -283,6 +283,7 @@
         (joFilter ? R.note('info', 'Showing one job order only. <button type="button" class="rk-back" data-all style="padding:0">Show all</button>') : '') +
         (inspects ? R.actions([{ id: 'qc-scan', label: 'Find unit by identifier or job order', kind: 'secondary' }].concat(joFilter && ready.length > 1 ? [{ id: 'qc-bulk', label: 'Pass several', kind: 'secondary' }] : [])) : '');
       function paint(which) {
+        R.queueTab(body, which);
         var host = body.querySelector('[data-list]');
         if (which === 'hold') {
           var savedIds = saved.map(function (a) { return a.id; });
@@ -308,17 +309,17 @@
         }
         var list = which === 're' ? re : ready;
         if (!joFilter) {
-          var groups={};list.forEach(function(u){var g=groups[u.job_order_id]||(groups[u.job_order_id]={u:u,count:0});g.count++;});
-          host.innerHTML=Object.keys(groups).map(function(id){var g=groups[id],u=g.u;return '<button type="button" class="rk-card rk-unitcard" data-jo="'+id+'"><b>'+mEsc(u.job_order_number)+'</b><span>'+mEsc(u.product_name)+'</span><small>'+g.count+' eligible unit(s)'+(u.intake_origin==='legacy'?' · Pre-system legacy intake':'')+'</small><i aria-hidden="true">›</i></button>';}).join('') || '<div class="rk-empty">No ongoing job orders for this inspection stage.</div>';
+          var groups={};list.forEach(function(u){var g=groups[u.job_order_id]||(groups[u.job_order_id]={u:u,count:0,blocked:0});g.count++;if(u.open_part_requests>0)g.blocked++;});
+          host.innerHTML=Object.keys(groups).map(function(id){var g=groups[id],u=g.u;return '<button type="button" class="rk-card rk-unitcard" data-jo="'+id+'"><b>'+mEsc(u.job_order_number)+'</b><span>'+mEsc(u.product_name)+'</span><small'+(g.blocked?' class="warn"':'')+'>'+g.count+' unit'+(g.count===1?'':'s')+' to '+(which==='re'?'reinspect':'inspect')+(g.blocked?' · '+g.blocked+' waiting for parts':'')+(u.intake_origin==='legacy'?' · Pre-system legacy intake':'')+'</small><i aria-hidden="true">›</i></button>';}).join('') || '<div class="rk-empty">No job orders in this status. Check the other status counts above.</div>';
           host.querySelectorAll('[data-jo]').forEach(function(b){b.onclick=function(){go(desk,{jo:b.dataset.jo,tab:which});};});return;
         }
 
         host.innerHTML = list.length ? list.map(function (u) {
-          var meta = which === 're' ? desk.reMeta + (u.open_part_requests ? ' · waiting on parts' : '')
+          var meta = u.open_part_requests > 0 ? 'Waiting for parts · ' + u.open_part_requests + ' open request(s)' : which === 're' ? desk.reMeta
             : (u.priority > 0 ? 'Priority · waiting ' : 'Waiting ') + ago(u.updated_at);
           var line = u.product_name + ' · ' + u.job_order_number + (Number(u.qc_stages)>1?' · QC: '+(u.qc_result||'pending')+' · QA: '+(u.qa_result||'pending'):'');
           return '<button type="button" class="rk-card rk-unitcard" data-unit="' + u.id + '"><b>' + mEsc(label(u)) + '</b><span>' + mEsc(line) + '</span>' +
-            '<small' + (which === 're' ? ' class="re"' : '') + '>' + mEsc(meta) + '</small><i aria-hidden="true">›</i></button>';
+            '<small' + (u.open_part_requests > 0 ? ' class="warn"' : which === 're' ? ' class="re"' : '') + '>' + mEsc(meta) + '</small><i aria-hidden="true">›</i></button>';
         }).join('') : '<div class="rk-empty">' + (which === 're' ? 'No units are back for ' + (desk.role === 'qa' ? 'recheck' : 'reinspection') + '.' : 'Nothing waiting for inspection.') + '</div>';
         Array.prototype.forEach.call(host.querySelectorAll('[data-unit]'), function (b) { b.onclick = function () { go(desk, { unit: b.dataset.unit }); }; });
       }

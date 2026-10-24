@@ -258,3 +258,56 @@ have a separate issues link and do not inflate the ready count. Each desk loads
 independently; failed or timed-out reads show Unknown. Operational queues remain
 available when attendance/employee-summary loading fails. Refresh also rechecks
 updated access.
+
+
+### Warehouse queue navigation and parts issue
+
+Warehouse queues open a status with pending work when you have not requested a
+specific status. Your selected status stays in the URL through Back and refresh.
+An empty status describes that stage; check the other counts for earlier work.
+QC/QA job cards identify units waiting for parts before you open them. RTS counts
+show serialized units separately from batches and their remaining pieces; held
+units are not ready for stock entry.
+
+For repair parts, review the request and repair checks together, choose the source,
+then pick and verify the exact part. The next screen combines the stock summary
+and final confirmation. Stock changes only after the verification checkbox and
+Confirm issue. A pending revision must be approved first; a different or fractional
+picked quantity cannot be silently substituted for the request.
+
+
+After a fresh kit acceptance, saved pick or release is confirmed by the server,
+the app continues to the updated record. Sales acceptance and allocation likewise
+continue to the current stock review. Unknown responses and site-PC saves awaiting
+confirmation still show recovery instructions. RTS skips the optional grouping
+screen when there are no other eligible units of that product/build state.
+
+### Picking an incomplete production kit
+
+Open **Kit releases**, choose the JO and **Accept for picking**. Each component
+has its own **− / +** counter and direct number entry. Enter the total physically
+picked so far, including earlier saved picks. **Save progress** stores a partial
+pick and reserves those parts; it does not deduct stock or release a partial kit.
+Reopening the JO restores the backend's saved counts. Save before leaving when
+the screen says the current counts are unsaved.
+
+**Picking incomplete** means stock can cover the kit but the physical counts are
+not complete. **Waiting for parts** means source stock is short. **Stock committed**
+means the needed stock exists but other kits/repairs hold it; ask Planning to review
+commitments before assuming another purchase is needed. Available quantities on
+the component cards are available to this kit, including its own saved picks.
+
+The same workspace shows outstanding linked PO numbers, components and quantities
+still to receive. **No outstanding linked purchase supply** describes the current
+planning coverage, not whether a PO ever existed. The purchasing information is
+read-only: arranging purchases and receiving goods require their own permissions.
+Sale-linked jobs identify the sale that owns procurement, avoiding a second job
+purchase plan. A PO is never pickable stock. Parts must reach the exact source
+warehouse/shelf; use **Refresh stock and purchasing** after a receipt or change.
+
+Once every component is fully counted, **Save counts & review release** saves the
+picks and opens the final review after authoritative confirmation. Review the
+listed components, quantities, source and stock deduction, then press **Release
+complete kit**. **Edit picked counts** returns to corrections. Saved complete kits
+offer **Review release** without another save. An interrupted save or a pending
+site-PC confirmation remains in recovery; it never automatically releases stock.

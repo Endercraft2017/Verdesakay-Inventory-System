@@ -31,7 +31,16 @@
       location: c.order.location_name || 'Ship-from location #' + c.order.location_id, path: path, payload: JSON.parse(JSON.stringify(payload)), label: label,
       key: 'rel-' + crypto.randomUUID(), created: Date.now(), state: 'new' } };
     await mProductionDrafts.save(s);
-    try { await send(s); } finally { if (scope(s) && hash === location.hash) go(s); }
+    try { await send(s); } finally {
+      if (scope(s) && hash === location.hash) {
+        if (s.operation.state === 'confirmed' && !s.operation.local && ['accept','allocate'].includes(kind)) {
+          // A fresh confirmed action continues through a newly loaded order context.
+          // Retries, refusals, unknown results and site-local saves retain recovery.
+          await mProductionDrafts.remove(s);
+          if (scope(s) && hash === location.hash) MApp.go('so', { id: c.order.id, step: 'scan' });
+        } else go(s);
+      }
+    }
   }
   function paint(view, s) {
     if (!visible(s)) return;

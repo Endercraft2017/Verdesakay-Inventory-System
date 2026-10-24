@@ -1004,3 +1004,41 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 .m-time-fix :is(button,input,textarea):focus-visible,.m-time-fix [tabindex='-1']:focus-visible{outline:3px solid var(--v2-green);outline-offset:3px}
 :root[data-theme=dark] .m-time-fix .m-btn:not(.m-btn-secondary):not(.m-btn-warn){color:var(--v2-bg)}
 :root[data-theme=dark] .m-time-fix .m-tf-state.approved{color:var(--v2-text)}
+
+/* Warehouse status filters remain readable and easy to select on a phone. */
+.rk-warehouse-flow .rk-segs button,
+.rk-warehouse-flow .rk-tabs button { min-height: 44px; height: auto; padding: 10px 12px; font-size: 12px; line-height: 1.4; }
+.rk-warehouse-flow .rk-segs button[aria-pressed="true"] { font-weight: 700; box-shadow: inset 0 0 0 2px var(--rk-green); }
+.rk-warehouse-flow :is(.rk-segs,.rk-tabs) button:focus-visible { outline: 3px solid var(--rk-green); outline-offset: 3px; }
+.rk-warehouse-flow .rk-hero { grid-template-columns: minmax(0, 1fr); }
+.rk-warehouse-flow .rk-hero span { text-align: left; }
+
+/* Measured contrast/readability corrections on the warehouse task surfaces. */
+.rk-page.rk-warehouse-task { --rk-meta: var(--rk-text); --rk-label: var(--rk-text); }
+.rk-warehouse-task .rk-field small, .rk-warehouse-task .rk-stepper small { font-size: 12px; }
+.rk-warehouse-task .rk-note { font-size: 13px; }
+.rk-warehouse-task .rk-block.ok .t { color: var(--rk-green-text); }
+.rk-warehouse-task .rk-readyhero > span { color: var(--rk-text); }
+:root:not([data-theme="dark"]) .rk-warehouse-task.rk-accent-qa .rk-btn.primary { background: var(--rk-warn-text); }
+.rk-page.rk-warehouse-task .rk-no { color: var(--rk-text); }
+.rk-page.rk-warehouse-task .rk-pill.warn,
+.rk-page.rk-warehouse-task .rk-segs button.warn { color: var(--rk-warn-text); }
+.rk-page.rk-warehouse-task .rk-segs button { color: var(--rk-text); }
+.rk-page.rk-warehouse-task .rk-disp.pass b,
+.rk-page.rk-warehouse-task .rk-disp.repair b,
+.rk-page.rk-warehouse-task .rk-disp.fail b { color: var(--rk-text); }
+.rk-page.rk-warehouse-task .m-sign-clear { color: var(--rk-green-text); }
+
+/* Kit counts show cumulative physical picks; stock and saved progress stay separate. */
+.kr-component > label { display:block; font-size:15px; font-weight:700; color:var(--rk-text); }
+.kr-component .kr-stock { color:var(--rk-text); font-size:12px; line-height:1.6; margin:8px 0 12px; }
+.kr-counter { display:flex; align-items:center; gap:10px; justify-content:space-between; border:1px solid var(--rk-line); border-radius:14px; padding:7px; background:var(--rk-soft); }
+.kr-counter > button { min-width:46px; min-height:46px; border:1px solid var(--rk-line); border-radius:10px; background:var(--rk-card); color:var(--rk-green-text); font-family:inherit; font-size:23px; font-weight:600; line-height:1; cursor:pointer; }
+.kr-counter > button:disabled { opacity:.45; cursor:default; }
+.kr-counter > div { display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; }
+.kr-counter input { width:76px; min-width:0; min-height:46px; padding:7px 2px; text-align:center; border:0; border-radius:8px; background:transparent; color:var(--rk-text); font-size:22px; font-weight:650; appearance:textfield; -moz-appearance:textfield; }
+.kr-counter input::-webkit-inner-spin-button, .kr-counter input::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
+.kr-counter span { font-size:14px; color:var(--rk-text); white-space:nowrap; }
+.kr-counter button:focus-visible, .kr-counter input:focus-visible { outline:3px solid var(--rk-green-text); outline-offset:2px; }
+.kr-component > small { display:block; margin-top:10px; font-size:12px; line-height:1.5; color:var(--rk-text); }
+.kr-component > small.kr-pick-error { color:var(--rk-danger-title); }
