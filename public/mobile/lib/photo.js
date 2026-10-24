@@ -15,32 +15,44 @@
       return prepared;
     });
   }
-  function pickFile() {
+  function pickFile(opts) {
+    opts = opts || {};
     return new Promise(function (resolve, reject) {
+      var done = false;
+      function current() { return !opts.signal?.aborted && (!opts.isCurrent || opts.isCurrent()); }
+      function finish(error, file) { if (done) return; done = true; input.remove(); opts.signal?.removeEventListener('abort',abort); if (error) reject(error); else resolve(file); }
+      function abort() { finish(Object.assign(new Error('cancelled'),{cancelled:true})); }
       var input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*';
       input.capture = 'environment';
       input.style.display = 'none';
       document.body.appendChild(input);
+      input.oncancel = abort;
+      opts.signal?.addEventListener('abort',abort,{once:true});
       input.onchange = function () {
         var file = input.files && input.files[0];
         input.remove();
-        if (!file) { reject(new Error('cancelled')); return; }
-        preparePhoto(file).then(resolve).catch(function (err) { mToast(err.message, 'err'); reject(err); });
+        if (!file || !current()) { abort(); return; }
+        preparePhoto(file).then(function(prepared) { if (!current()) abort(); else finish(null,prepared); }).catch(function (err) { if (current()) mToast(err.message, 'err'); finish(err); });
       };
+      if (!current()) { abort(); return; }
       input.click();
     });
   }
 
-  function capture(itemId) {
-    return pickFile().then(function (file) {
+  function capture(itemId, opts) {
+    opts = opts || {};
+    function current() { return !opts.signal?.aborted && (!opts.isCurrent || opts.isCurrent()); }
+    return pickFile(opts).then(function (file) {
+      if (!current()) throw Object.assign(new Error('cancelled'),{cancelled:true});
       var fd = new FormData();
       fd.append('image', file, file.name || 'photo.jpg');
       mToast('Uploading photo…');
-      return API.upload('/inventory/' + itemId + '/image', fd)
-        .then(function (r) { mToast('Photo saved'); return r; })
-        .catch(function (e) { mToast(e.message || 'Upload failed', 'err'); throw e; });
+      opts.onUpload?.();
+      return API.upload('/inventory/' + itemId + '/image', fd, opts)
+        .then(function (r) { if (current()) mToast('Photo saved'); return r; })
+        .catch(function (e) { if (current() && !e.cancelled) mToast(e.message || 'Upload failed', 'err'); throw e; });
     });
   }
 
@@ -56,7 +68,7 @@
     fd.append('ref_id', String(refId));
     if (caption) fd.append('caption', caption);
     return API.upload('/attachments', fd, opts)
-      .catch(function (e) { mToast(e.message || 'Upload failed', 'err'); throw e; });
+      .catch(function (e) { if(!opts?.isCurrent||opts.isCurrent())mToast(e.message || 'Upload failed', 'err'); throw e; });
   }
 
   /** `url` is /api-relative (fetched with the signed-in token), or an already-loaded blob: URL. */
@@ -67,46 +79,41 @@
     else API.blobUrl(url).then(function (u) { ov.querySelector('img').src = u; }).catch(function () {});
     ov.onclick = function () { ov.remove(); };
     root.appendChild(ov);
+    return ov;
   }
 
   /** A horizontal strip of thumbnails + (optionally) an add tile. */
   function thumbs(kind, refId, opts) {
-    opts = opts || {};
-    var strip = mEl('<div class="m-thumbs"></div>');
-
-    function addTile() {
-      if (!opts.editable) return;
-      var t = mEl('<button class="m-thumb m-thumb-add" type="button">＋<span>Photo</span></button>');
-      t.onclick = function () {
-        attach(kind, refId, opts.caption).then(function () { reload(); }).catch(function () {});
-      };
-      strip.appendChild(t);
+    opts=opts||{};var strip=mEl('<div class="m-thumbs"></div>'),busy=false,urls=[],overlays=[];
+    function current(){return !opts.signal?.aborted&&(!opts.scope||opts.scope.current());}
+    function run(invoke,timeout){return opts.scope?opts.scope.run(invoke,timeout):invoke({});}
+    function cleanup(){urls.forEach(function(u){URL.revokeObjectURL(u);});urls=[];overlays.forEach(function(ov){ov.remove();});overlays=[];}
+    opts.signal?.addEventListener('abort',cleanup,{once:true});
+    function addTile(){
+      if(!opts.editable||!current())return;
+      var tile=mEl('<button class="m-thumb m-thumb-add" type="button">＋<span>Photo</span></button>');
+      tile.onclick=async function(){
+        if(busy||!current())return;busy=true;tile.disabled=true;
+        try{var file=await pickFile({signal:opts.signal,isCurrent:current});if(!current())return;
+          await run(function(request){return attachBlob(kind,refId,file,file.name||'photo.jpg',opts.caption,Object.assign({},request,{idempotencyKey:'photo-'+crypto.randomUUID()}));},60000);
+          if(current())reload();
+        }catch(error){if(current()&&!error.cancelled&&error.message!=='cancelled')mToast(error.message||'Photo was not confirmed. Refresh before another upload.','err');}
+        finally{busy=false;if(current())tile.disabled=false;}
+      };strip.appendChild(tile);
     }
-
-    function reload() {
-      strip.innerHTML = '';
-      API.get('/attachments?kind=' + encodeURIComponent(kind) + '&ref_id=' + refId)
-        .then(function (rows) {
-          (rows || []).forEach(function (r) {
-            var cell = mEl('<div class="m-thumb"><img alt="" /></div>');
-            API.blobUrl(r.url).then(function (u) { cell.querySelector('img').src = u; }).catch(function () {});
-            cell.querySelector('img').onclick = function () { view(r.url); };
-            if (opts.editable) {
-              var x = mEl('<button class="m-thumb-x" type="button" aria-label="Remove">×</button>');
-              x.onclick = function () {
-                API.del('/attachments/' + r.id).then(reload).catch(function (e) { mToast(e.message || 'Failed', 'err'); });
-              };
-              cell.appendChild(x);
-            }
-            strip.appendChild(cell);
-          });
-          addTile();
-        })
-        .catch(function () { addTile(); });
+    function reload(){
+      if(!current())return;cleanup();strip.innerHTML='';
+      run(function(request){return API.get('/attachments?kind='+encodeURIComponent(kind)+'&ref_id='+refId,request);}).then(function(rows){
+        if(!current())return;if(!Array.isArray(rows))throw new Error('Photos could not be read.');
+        rows.forEach(function(row){
+          var cell=mEl('<div class="m-thumb"><img alt="Attached photo"></div>');
+          run(function(request){return API.blobUrl(row.url,undefined,request).then(function(url){if(!current()){URL.revokeObjectURL(url);return null;}urls.push(url);return url;});}).then(function(url){if(current()&&url){cell.querySelector('img').src=url;cell.querySelector('img').onclick=function(){if(current())overlays.push(view(url));};}}).catch(function(){});
+          if(opts.editable){var remove=mEl('<button class="m-thumb-x" type="button" aria-label="Remove photo">×</button>');remove.onclick=async function(){if(busy||!current())return;busy=true;remove.disabled=true;try{await run(function(request){return API.del('/attachments/'+row.id,request);});if(current())reload();}catch(error){if(current())mToast(error.message||'Failed','err');}finally{busy=false;if(current())remove.disabled=false;}};cell.appendChild(remove);}
+          strip.appendChild(cell);
+        });addTile();
+      }).catch(function(error){if(!current())return;strip.appendChild(mEl('<span class="m-hint">'+mEsc(error.message||'Photos could not be loaded.')+'</span>'));var retry=mEl('<button class="m-chip" type="button">Retry photos</button>');retry.onclick=reload;strip.appendChild(retry);addTile();});
     }
-    reload();
-    strip.reload = reload;
-    return strip;
+    reload();strip.reload=reload;return strip;
   }
 
   /** Pick photos to send later with a form — kept in memory only, shown as removable thumbnails.

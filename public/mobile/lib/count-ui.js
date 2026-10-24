@@ -1,0 +1,45 @@
+/* Presentation and response contracts for the existing physical-count workflow. */
+(function(){
+  var R=RoleUI, base='/inventory/stock-counts';
+  var states=['submitted','approved','applied','rejected'];
+  function qty(v){return Number.isSafeInteger(v)&&v>=0&&v<=1000000;}
+  function integer(v){return v!==''&&v!=null&&qty(Number(v));}
+  function phase(v){return ({submitted:'Awaiting review',approved:'Approved',applied:'Reconciled',rejected:'Recount needed'})[v]||v;}
+  function mode(v){return v==='semi_built'?'Semi-built':'Fully built';}
+  function navigate(p){if(MApp.nav('stock-counts',p||{})===location.hash)MApp.render();else MApp.go('stock-counts',p||{});}
+  function knownType(v){return [0,1,true,false].includes(v);}
+  function finished(r){return r.is_finished_product===1||r.is_finished_product===true;}
+  function validContext(r){return !!r&&Number.isSafeInteger(r.item_id)&&r.item_id>0&&Number.isSafeInteger(r.location_id)&&r.location_id>0&&typeof r.item_name==='string'&&typeof r.location_name==='string'&&['assembled','semi_built'].includes(r.build_mode)&&Number.isSafeInteger(r.book_quantity)&&Math.abs(r.book_quantity)<=1000000&&Array.isArray(r.serials)&&r.serials.every(function(u){return u&&Number.isSafeInteger(u.id)&&u.id>0&&typeof u.code==='string';})&&Array.isArray(r.batches)&&r.batches.every(function(b){return b&&Number.isSafeInteger(b.batch_id)&&b.batch_id>0&&typeof b.number==='string'&&qty(b.quantity)&&Number.isFinite(b.reserved);});}
+  function validCount(r){return !!r&&Number.isSafeInteger(r.id)&&r.id>0&&typeof r.item_name==='string'&&typeof r.location_name==='string'&&states.includes(r.status)&&['assembled','semi_built'].includes(r.build_mode)&&Number.isFinite(r.book_quantity)&&Number.isSafeInteger(r.counted_quantity)&&Number.isFinite(r.variance);}
+  function kind(a){return a.countAction?.kind||(a.path===base?'submit':(/\/([^/]+)$/.exec(a.path||'')||[])[1])||'submit';}
+  function validResult(a,r){
+    var k=kind(a),expected=({approve:'approved',reject:'rejected',apply:'applied',verify:'applied','close-source':'applied'})[k]||'submitted',id=Number((a.path||'').split('/')[3]),d=a.countAction||{};
+    if(!validCount(r)||r.status!==expected||id&&r.id!==id||!qty(r.counted_untracked)||!Array.isArray(r.counted_serial_codes)||!r.counted_serial_codes.every(function(code){return typeof code==='string'&&code.length>0&&code.length<=120;})||!Array.isArray(r.counted_batches)||!r.counted_batches.every(function(b){return b&&Number.isSafeInteger(b.batch_id)&&b.batch_id>0&&qty(b.quantity);}))return false;
+    if(r.counted_quantity!==r.counted_untracked+r.counted_serial_codes.length+r.counted_batches.reduce(function(n,b){return n+b.quantity;},0)||r.variance!==r.counted_quantity-r.book_quantity)return false;
+    if(d.item_id&&r.item_id!==d.item_id||d.location_id&&r.location_id!==d.location_id||d.build_mode&&r.build_mode!==d.build_mode)return false;
+    if(k==='submit'){var p=a.payload;if(!p||r.item_id!==p.item_id||r.location_id!==p.location_id||r.build_mode!==p.build_mode||r.counted_untracked!==p.counted_untracked||!same(r.counted_serial_codes,p.counted_serial_codes||[])||!same(r.counted_batches.map(function(b){return b.batch_id+':'+b.quantity;}),(p.counted_batches||[]).map(function(b){return b.batch_id+':'+b.quantity;})))return false;}
+    return k!=='close-source'||typeof r.source_closed_at==='string'&&r.source_closed_at.length>0;
+  }
+  function page(view,title){var body=R.page(view,{role:'inventory',title:title});body.closest('.rk-page').classList.add('m-count-page');body.style.gap='12px';MApp.setTitle('Stock counts');return body;}
+  function field(label,input){return '<label class="entry-card"><span>'+mEsc(label)+'</span>'+input+'</label>';}
+  function identity(r){return '<div class="card identity"><span class="micro">Item and stock location</span><b>'+mEsc(r.item_name||r.name||'Original saved item')+'</b><small>'+mEsc([r.sku?'#'+r.sku:null,knownType(r.is_finished_product)?finished(r)?'Finished product':'Part / supply':null,finished(r)?mode(r.build_mode):null].filter(Boolean).join(' · '))+'</small><p>'+mEsc(r.location_name||'Location not stored')+'</p></div>';}
+  function totals(book,found,unit){return '<div class="card totals" aria-label="Count quantities"><div><span>Book · '+mEsc(unit||'pcs')+'</span><b>'+mEsc(book)+'</b></div><div><span>Found · '+mEsc(unit||'pcs')+'</span><output data-found>'+mEsc(found==null?'—':found)+'</output></div><div><span>Difference · '+mEsc(unit||'pcs')+'</span><output data-variance>'+mEsc(found==null?'—':signed(found-book))+'</output></div></div>';}
+  function signed(v){return v>0?'+'+v:String(v);}
+  function get(scope,path,valid){return scope.run(function(opts){return API.get(path,opts);}).then(function(r){if(valid&&!valid(r))throw new Error('The count data could not be read. Retry loading current records.');return r;});}
+  function failure(view,scope,error,retry){if(scope.current()&&!error.cancelled){view.innerHTML='';view.appendChild(R.error(error,retry));}}
+  function action(kind,r,payload){return {kind:kind,item_id:r.item_id,location_id:r.location_id,item_name:r.item_name,sku:r.sku,unit:r.unit,is_finished_product:r.is_finished_product,location_name:r.location_name,build_mode:r.build_mode,found:kind==='submit'?payload.counted_untracked+payload.counted_serial_codes.length+payload.counted_batches.reduce(function(n,b){return n+b.quantity;},0):r.counted_quantity};}
+  async function decision(view,s,scope,path,payload,title,r){if(!scope.current()||!mWorkflow.owns(s))return;var k=path===base?'submit':path.split('/').pop();await mWorkflow.start(s,{path:path,payload:payload,countAction:action(k,r,payload),role:'inventory',discardDraftOnReject:true,title:title,reviewRoute:'stock-counts',reviewParams:k==='submit'?{}:{id:r.id},reviewPath:k==='submit'?base+'?status=all':base+'/'+r.id,resultParam:k==='submit'?'id':null});if(scope.current())mCountResult(view,s);}
+  function formState(b){var c=b.context,extra=String(b.extra==null?(b.codes||[]).filter(function(code){return !c.serials.some(function(u){return u.code.toLowerCase()===code.toLowerCase();});}).join('\n'):b.extra),all=(b.codes||[]).slice(),error='';
+    if(extra.split(/\r?\n/).some(function(code){return c.serials.some(function(u){return u.code.toLowerCase()===code.trim().toLowerCase();});}))error='Use the serial scanner to count a book unit.';
+    if(new Set(all.map(function(code){return code.toLowerCase();})).size!==all.length)error='A serial was counted more than once.';
+    if(all.length>500||all.some(function(code){return !code||code.length>120;}))error='Use at most 500 serial labels, each 1–120 characters.';
+    var quantities=integer(b.untracked)&&c.batches.every(function(batch){return integer((b.batches||{})[batch.batch_id]);});
+    return {valid:quantities&&!error&&typeof b.note==='string'&&b.note.trim().length>=10&&b.note.length<=1000,error:error,found:quantities&&!error?Number(b.untracked)+all.length+c.batches.reduce(function(n,batch){return n+Number(b.batches[batch.batch_id]);},0):null};
+  }
+  function same(a,b){return JSON.stringify(a.slice().sort())===JSON.stringify(b.slice().sort());}
+  function snapshotMatches(r){return r.current_quantity===r.book_quantity&&Array.isArray(r.current_serials)&&same(r.current_serials.map(function(u){return u.id;}),r.book_serial_ids||[])&&same((r.current_batches||[]).map(function(b){return b.batch_id+':'+b.quantity;}),(r.book_batches||[]).map(function(b){return b.batch_id+':'+b.quantity;}));}
+  function serialsMatch(r){return Array.isArray(r.current_serials)&&same(r.current_serials.map(function(u){return u.code;}),r.counted_serial_codes||[]);}
+  function observationMatches(r){return r.current_quantity===r.counted_quantity&&serialsMatch(r)&&same((r.current_batches||[]).map(function(b){return b.batch_id+':'+b.quantity;}),(r.counted_batches||[]).filter(function(b){return b.quantity>0;}).map(function(b){return b.batch_id+':'+b.quantity;}));}
+  function confirm(box,message){if(box.querySelector('[data-count-confirm]'))return Promise.resolve(false);var panel=mEl('<div class="card inline-confirm warn" data-count-confirm><p>'+mEsc(message)+'</p><div class="actions"><button type="button" class="primary" id="count-confirm">Confirm decision</button><button type="button" data-count-cancel>Cancel</button></div></div>');box.appendChild(panel);var prior=document.activeElement;return new Promise(function(resolve){panel.querySelector('#count-confirm').onclick=function(){panel.remove();resolve(true);};panel.querySelector('[data-count-cancel]').onclick=function(){panel.remove();if(prior?.isConnected)prior.focus();resolve(false);};panel.querySelector('#count-confirm').focus();});}
+  window.mCountUI={base:base,qty:qty,integer:integer,phase:phase,mode:mode,navigate:navigate,knownType:knownType,finished:finished,validContext:validContext,validCount:validCount,validResult:validResult,kind:kind,page:page,field:field,identity:identity,totals:totals,signed:signed,get:get,failure:failure,decision:decision,formState:formState,snapshotMatches:snapshotMatches,serialsMatch:serialsMatch,observationMatches:observationMatches,confirm:confirm};
+})();

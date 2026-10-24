@@ -1,0 +1,12 @@
+
+> otom@1.0.0 test
+> vitest run
+
+
+ RUN  v4.1.9 /workspace/Verdesakay-Inventory-System
+
+
+ Test Files  305 passed (305)
+      Tests  3266 passed (3266)
+   Start at  03:45:25
+   Duration  564.40s (transform 5.44s, setup 2.26s, import 39.32s, tests 489.48s, environment 972ms)

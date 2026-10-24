@@ -1,0 +1,73 @@
+{
+  "releaseCommit": "2d4c865fae5450f857e99657b3ea472f52d19b7a",
+  "startedAt": "2026-10-24T03:56:03.654Z",
+  "url": "https://otom.afkcube.com/sandbox/m",
+  "expected": {
+    "settings": "b1fee285158ffe16e19564ad26153a0618b52a9b66f935abcd06728cb91ff1f3",
+    "css": "caa65a64e850a7482db9b9505fdbc448e41a41191ec74f0ebeb94c1264d5e41e"
+  },
+  "cases": [
+    {
+      "name": "Existing installed shell updates to v150 and exposes Profile footer",
+      "status": "pass"
+    },
+    {
+      "name": "Profile footer is reachable above the dock",
+      "status": "pass",
+      "detail": {
+        "height": 48,
+        "aboveDock": true,
+        "hit": true
+      }
+    },
+    {
+      "name": "Live username input/action spacing",
+      "status": "pass",
+      "gap": 16
+    },
+    {
+      "name": "Live footer sign-out ends server session",
+      "status": "pass",
+      "oldTokenStatus": 401
+    },
+    {
+      "name": "Live borrowed footer clears personal marker and ends session",
+      "status": "pass"
+    }
+  ],
+  "pageErrors": [],
+  "cleanup": [
+    {
+      "status": 401,
+      "endedOrAlreadyEnded": true
+    },
+    {
+      "status": 401,
+      "endedOrAlreadyEnded": true
+    }
+  ],
+  "before": {
+    "settings": "7d7ce667aa3c946e09a3db8e44519764afa205df675aa4e0fc9bc8eaa9d4faae",
+    "css": "feaf3026190118738ec90cbc9a93c1a16ab3038b272eecc292330661028f5862",
+    "cacheVersion": "v149",
+    "footerCount": 0,
+    "caches": [
+      "vds-m:/sandbox:v149"
+    ]
+  },
+  "publishedAssets": {
+    "settings": "b1fee285158ffe16e19564ad26153a0618b52a9b66f935abcd06728cb91ff1f3",
+    "css": "caa65a64e850a7482db9b9505fdbc448e41a41191ec74f0ebeb94c1264d5e41e",
+    "cacheVersion": "v150"
+  },
+  "afterCaches": [
+    "vds-m:/sandbox:v150"
+  ],
+  "after": {
+    "settings": "b1fee285158ffe16e19564ad26153a0618b52a9b66f935abcd06728cb91ff1f3",
+    "css": "caa65a64e850a7482db9b9505fdbc448e41a41191ec74f0ebeb94c1264d5e41e",
+    "cacheVersion": "v150"
+  },
+  "status": "pass",
+  "finishedAt": "2026-10-24T03:59:11.721Z"
+}

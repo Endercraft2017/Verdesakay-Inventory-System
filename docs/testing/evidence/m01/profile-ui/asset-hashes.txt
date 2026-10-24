@@ -1,0 +1,3 @@
+b1fee285158ffe16e19564ad26153a0618b52a9b66f935abcd06728cb91ff1f3  public/mobile/modules/core/settings.js
+caa65a64e850a7482db9b9505fdbc448e41a41191ec74f0ebeb94c1264d5e41e  public/mobile/mobile-v2.css
+fdcd7a76c374dd2c3f945bf9eb134059993580b27c443bb75dc8bf687b15162f  public/mobile/sw.js

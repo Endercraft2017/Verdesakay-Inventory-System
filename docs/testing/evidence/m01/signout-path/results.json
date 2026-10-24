@@ -1,0 +1,117 @@
+{
+  "testedAt": "2026-10-24T01:44:09.281Z",
+  "viewport": "390x844",
+  "pageErrors": [],
+  "network": [
+    {
+      "path": "/sandbox/api/auth/login",
+      "method": "POST",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/auth/me",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/messages/unread-count",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/me/today",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/job-orders",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/auth/me",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/qc/queue",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/production/repairs",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/tenant",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/qc/queue",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/me",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/qc/holds",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/rts/queue",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/auth/sessions",
+      "method": "GET",
+      "status": 200
+    },
+    {
+      "path": "/sandbox/api/auth/logout",
+      "method": "POST",
+      "status": 200
+    }
+  ],
+  "status": "pass",
+  "profileAssetBefore": "7d7ce667aa3c946e09a3db8e44519764afa205df675aa4e0fc9bc8eaa9d4faae",
+  "normalMobileRedirect": "/sandbox/m",
+  "desktopPreferenceShell": {
+    "path": "/sandbox/",
+    "sideSignoutMarker": true,
+    "mobileDockMarker": false
+  },
+  "mobileUrl": "https://otom.afkcube.com/sandbox/m",
+  "profileUrl": "https://otom.afkcube.com/sandbox/m#/settings",
+  "securityRow": {
+    "top": 691.765625,
+    "bottom": 765.765625,
+    "width": 328,
+    "height": 74,
+    "inViewport": true
+  },
+  "signoutBeforeScroll": {
+    "top": 1226.078125,
+    "bottom": 1270.078125,
+    "width": 288,
+    "height": 44,
+    "inViewport": false
+  },
+  "signoutAfterScroll": {
+    "top": 507.078125,
+    "bottom": 551.078125,
+    "width": 288,
+    "height": 44,
+    "inViewport": true
+  },
+  "oldTokenStatus": 401,
+  "cleanupStatus": 401,
+  "profileAssetAfter": "7d7ce667aa3c946e09a3db8e44519764afa205df675aa4e0fc9bc8eaa9d4faae",
+  "profileAssetStable": true
+}

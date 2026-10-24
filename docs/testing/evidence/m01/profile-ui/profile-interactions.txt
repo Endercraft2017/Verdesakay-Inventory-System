@@ -1,0 +1,1 @@
+PASS: late profile response preserves draft; preferred-name save guard/validation/persistent result/offline retention; password Show/Hide/mismatch/single submit; session load retry/empty; native modal cancel/failure/retry/success/current-session preservation.

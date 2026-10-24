@@ -1,0 +1,254 @@
+{
+  "phase": "current",
+  "viewportHeights": 844,
+  "cases": [
+    {
+      "name": "320-light Profile footer",
+      "status": "pass",
+      "detail": {
+        "height": 48,
+        "bottom": 588.328125,
+        "dockTop": 757,
+        "hit": true
+      }
+    },
+    {
+      "name": "320-light username form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 16,
+        "inputWidth": 232,
+        "buttonWidth": 232,
+        "overflow": false
+      }
+    },
+    {
+      "name": "320-light password form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 268.375,
+        "inputWidth": 165.46875,
+        "buttonWidth": 232,
+        "overflow": false
+      }
+    },
+    {
+      "name": "320-light Profile sign-out ends server session",
+      "status": "pass",
+      "detail": "One logout request; browser token cleared; old server token rejected (401)."
+    },
+    {
+      "name": "320-dark Profile footer",
+      "status": "pass",
+      "detail": {
+        "height": 48,
+        "bottom": 588.328125,
+        "dockTop": 757,
+        "hit": true
+      }
+    },
+    {
+      "name": "320-dark username form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 16,
+        "inputWidth": 232,
+        "buttonWidth": 232,
+        "overflow": false
+      }
+    },
+    {
+      "name": "320-dark password form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 268.375,
+        "inputWidth": 165.46875,
+        "buttonWidth": 232,
+        "overflow": false
+      }
+    },
+    {
+      "name": "320-dark Profile sign-out ends server session",
+      "status": "pass",
+      "detail": "One logout request; browser token cleared; old server token rejected (401)."
+    },
+    {
+      "name": "390-light Profile footer",
+      "status": "pass",
+      "detail": {
+        "height": 48,
+        "bottom": 587.890625,
+        "dockTop": 757,
+        "hit": true
+      }
+    },
+    {
+      "name": "390-light username form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 16,
+        "inputWidth": 288,
+        "buttonWidth": 288,
+        "overflow": false
+      }
+    },
+    {
+      "name": "390-light password form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 249.78125,
+        "inputWidth": 221.46875,
+        "buttonWidth": 288,
+        "overflow": false
+      }
+    },
+    {
+      "name": "390-light autofill matches Profile theme",
+      "status": "pass",
+      "detail": {
+        "shadow": "rgb(237, 244, 239) 0px 0px 0px 1000px inset",
+        "text": "rgb(19, 39, 27)",
+        "matches": true,
+        "surface": "rgb(237, 244, 239)",
+        "expectedText": "rgb(19, 39, 27)"
+      }
+    },
+    {
+      "name": "390-light Profile sign-out ends server session",
+      "status": "pass",
+      "detail": "One logout request; browser token cleared; old server token rejected (401)."
+    },
+    {
+      "name": "390-dark Profile footer",
+      "status": "pass",
+      "detail": {
+        "height": 48,
+        "bottom": 587.890625,
+        "dockTop": 757,
+        "hit": true
+      }
+    },
+    {
+      "name": "390-dark username form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 16,
+        "inputWidth": 288,
+        "buttonWidth": 288,
+        "overflow": false
+      }
+    },
+    {
+      "name": "390-dark password form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 249.78125,
+        "inputWidth": 221.46875,
+        "buttonWidth": 288,
+        "overflow": false
+      }
+    },
+    {
+      "name": "390-dark autofill matches Profile theme",
+      "status": "pass",
+      "detail": {
+        "shadow": "rgb(34, 49, 40) 0px 0px 0px 1000px inset",
+        "text": "rgb(237, 247, 240)",
+        "matches": true,
+        "surface": "rgb(34, 49, 40)",
+        "expectedText": "rgb(237, 247, 240)"
+      }
+    },
+    {
+      "name": "password mismatch stays local",
+      "status": "pass",
+      "detail": "Mismatch visible; no password mutation sent."
+    },
+    {
+      "name": "Profile sign-out preserves unsent-action cancel",
+      "status": "pass",
+      "detail": "Cancel keeps the account signed in and the unsent action intact."
+    },
+    {
+      "name": "390-dark Profile sign-out ends server session",
+      "status": "pass",
+      "detail": "One logout request; browser token cleared; old server token rejected (401)."
+    },
+    {
+      "name": "658-light Profile footer",
+      "status": "pass",
+      "detail": {
+        "height": 48,
+        "bottom": 587.515625,
+        "dockTop": 757,
+        "hit": true
+      }
+    },
+    {
+      "name": "658-light username form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 16,
+        "inputWidth": 458,
+        "buttonWidth": 458,
+        "overflow": false
+      }
+    },
+    {
+      "name": "658-light password form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 231.1875,
+        "inputWidth": 391.46875,
+        "buttonWidth": 458,
+        "overflow": false
+      }
+    },
+    {
+      "name": "658-light Profile sign-out ends server session",
+      "status": "pass",
+      "detail": "One logout request; browser token cleared; old server token rejected (401)."
+    },
+    {
+      "name": "658-dark Profile footer",
+      "status": "pass",
+      "detail": {
+        "height": 48,
+        "bottom": 587.515625,
+        "dockTop": 757,
+        "hit": true
+      }
+    },
+    {
+      "name": "658-dark username form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 16,
+        "inputWidth": 458,
+        "buttonWidth": 458,
+        "overflow": false
+      }
+    },
+    {
+      "name": "658-dark password form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 231.1875,
+        "inputWidth": 391.46875,
+        "buttonWidth": 458,
+        "overflow": false
+      }
+    },
+    {
+      "name": "658-dark Profile sign-out ends server session",
+      "status": "pass",
+      "detail": "One logout request; browser token cleared; old server token rejected (401)."
+    },
+    {
+      "name": "borrowed Profile sign-out clears personal cache",
+      "status": "pass",
+      "detail": "Borrowed token and personal marker removed; server session ended."
+    }
+  ],
+  "pageErrors": []
+}

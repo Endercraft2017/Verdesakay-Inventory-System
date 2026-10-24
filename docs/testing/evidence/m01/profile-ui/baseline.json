@@ -1,0 +1,137 @@
+{
+  "phase": "baseline",
+  "viewportHeights": 844,
+  "cases": [
+    {
+      "name": "320-light Profile footer",
+      "status": "fail",
+      "error": "Direct Profile sign-out is missing\n\n0 !== 1\n"
+    },
+    {
+      "name": "320-light username form spacing",
+      "status": "fail",
+      "error": "Input/action gap is 0px"
+    },
+    {
+      "name": "320-light password form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 232.375,
+        "inputWidth": 165.46875,
+        "buttonWidth": 232,
+        "overflow": false
+      }
+    },
+    {
+      "name": "320-dark Profile footer",
+      "status": "fail",
+      "error": "Direct Profile sign-out is missing\n\n0 !== 1\n"
+    },
+    {
+      "name": "320-dark username form spacing",
+      "status": "fail",
+      "error": "Input/action gap is 0px"
+    },
+    {
+      "name": "320-dark password form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 232.375,
+        "inputWidth": 165.46875,
+        "buttonWidth": 232,
+        "overflow": false
+      }
+    },
+    {
+      "name": "390-light Profile footer",
+      "status": "fail",
+      "error": "Direct Profile sign-out is missing\n\n0 !== 1\n"
+    },
+    {
+      "name": "390-light username form spacing",
+      "status": "fail",
+      "error": "Input/action gap is 0px"
+    },
+    {
+      "name": "390-light password form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 213.78125,
+        "inputWidth": 221.46875,
+        "buttonWidth": 288,
+        "overflow": false
+      }
+    },
+    {
+      "name": "390-dark Profile footer",
+      "status": "fail",
+      "error": "Direct Profile sign-out is missing\n\n0 !== 1\n"
+    },
+    {
+      "name": "390-dark username form spacing",
+      "status": "fail",
+      "error": "Input/action gap is 0px"
+    },
+    {
+      "name": "390-dark password form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 213.78125,
+        "inputWidth": 221.46875,
+        "buttonWidth": 288,
+        "overflow": false
+      }
+    },
+    {
+      "name": "password mismatch stays local",
+      "status": "pass",
+      "detail": "Mismatch visible; no password mutation sent."
+    },
+    {
+      "name": "658-light Profile footer",
+      "status": "fail",
+      "error": "Direct Profile sign-out is missing\n\n0 !== 1\n"
+    },
+    {
+      "name": "658-light username form spacing",
+      "status": "fail",
+      "error": "Input/action gap is 0px"
+    },
+    {
+      "name": "658-light password form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 195.1875,
+        "inputWidth": 391.46875,
+        "buttonWidth": 458,
+        "overflow": false
+      }
+    },
+    {
+      "name": "658-dark Profile footer",
+      "status": "fail",
+      "error": "Direct Profile sign-out is missing\n\n0 !== 1\n"
+    },
+    {
+      "name": "658-dark username form spacing",
+      "status": "fail",
+      "error": "Input/action gap is 0px"
+    },
+    {
+      "name": "658-dark password form spacing",
+      "status": "pass",
+      "detail": {
+        "gap": 195.1875,
+        "inputWidth": 391.46875,
+        "buttonWidth": 458,
+        "overflow": false
+      }
+    },
+    {
+      "name": "borrowed Profile sign-out clears personal cache",
+      "status": "fail",
+      "error": "Expected values to be strictly equal:\n\n0 !== 1\n"
+    }
+  ],
+  "pageErrors": []
+}

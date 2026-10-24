@@ -46,7 +46,7 @@
         return bounded(job,who,function (opts) { opts.idempotencyKey = op.key; return API.post(op.path,op.body,opts); }).then(function (result) {
           var local = API.syncLocal?.(result);
           return storage().settle(key,lease,local ? {local_command:local,local_state:'local',uncertain:false,error:null}
-            : result?.applied === false ? {error:result.message || 'The server did not apply this action. Review the existing record.',uncertain:false} : null).then(function () { changed(); return false; });
+            : result?.applied === false ? {error:result.message || 'The server did not apply this action. Review the existing record.',uncertain:false} : null,{state:result?.applied===false?'rejected':local?'local':'confirmed',response:result,local:local||null}).then(function () { changed(); return false; });
         }).catch(function (error) {
           var uncertain = !!(error.offline || error.uncertain || error.cancelled || !error.status || error.status >= 500 || error.status === 429);
           return storage().settle(key,lease,{error:uncertain ? null : error.message || 'The server rejected this action.',uncertain:uncertain,attempts:(op.attempts || 0)+1,last_error:error.message || 'Result not confirmed'}).then(function () { changed(); return uncertain; });
@@ -82,6 +82,8 @@
     _every:function () { return storage().all(); },
     _remove:function (key) { return storage().request('ops','readwrite',function (s) { s.delete(key); }).then(changed); },
     _put:function (op) { return storage().request('ops','readwrite',function (s) { s.put(op); }).then(changed); },
+    receipt:function (key) { var who=owner; return storage().request('meta','readonly',function(s) { return s.get('receipt:'+key); }).then(function(row) { if (!current(who)) throw cancellation(); return row&&storage().owns(row,who)?row:null; }); },
+    forgetReceipt:function (key) { var who=owner; return mQueue.receipt(key).then(function(row) { if (row&&current(who)) return storage().request('meta','readwrite',function(s) { return s.delete('receipt:'+key); }); }); },
     snapshot:function () {
       var who = owner;
       return storage().all().then(function (rows) {
@@ -137,7 +139,7 @@
     if (opts.isCurrent) request.isCurrent = opts.isCurrent;
     return API.post(path,body,request).then(function (response) { return {ok:true,response:response,local:API.syncLocal(response)}; }).catch(function (error) {
       if (error.offline && current(who) && (!opts.isCurrent || opts.isCurrent())) {
-        return mQueue.enqueue({key:key,method:'POST',path:path,body:body,label:opts.label || path}).then(function () { return {queued:true}; });
+        return mQueue.enqueue({key:key,method:'POST',path:path,body:body,label:opts.label || path,keep_receipt:!!opts.keepReceipt}).then(function () { return {queued:true}; });
       }
       throw error;
     });

@@ -22,6 +22,9 @@ var SHELL = [
   '/mobile/icons/icon-512.png',
   '/mobile/mobile.css',
   '/mobile/mobile-v2.css',
+  '/mobile/stock.css',
+  '/mobile/stock-actions.css',
+  '/mobile/counts.css',
   '/css/photo-viewer.css',
   '/css/select-controls.css',
   '/mobile/guides.css',
@@ -54,6 +57,7 @@ var SHELL = [
   '/mobile/app.js',
   '/mobile/lib/dom.js',
   '/mobile/lib/read-scope.js',
+  '/mobile/lib/stock-ui.js',
   '/mobile/lib/personal.js',
   '/js/personal-ux.js',
   '/mobile/lib/guides.js',
@@ -73,6 +77,13 @@ var SHELL = [
   '/mobile/lib/queue.js',
   '/mobile/lib/production-drafts.js',
   '/mobile/lib/workflow-attempt.js',
+  '/mobile/lib/stock-action-ui.js',
+  '/mobile/lib/stock-action-form.js',
+  '/mobile/lib/stock-action-result.js',
+  '/mobile/lib/count-ui.js',
+  '/mobile/lib/count-form.js',
+  '/mobile/lib/count-detail.js',
+  '/mobile/lib/count-result.js',
   '/mobile/lib/push.js',
   '/mobile/lib/scanner.js',
   '/mobile/lib/selfie.js',
@@ -310,7 +321,7 @@ async function drainQueue() {
       if (response.ok) {
         var local = response.headers.get('X-Sync-State') === 'local' && (response.headers.get('X-Sync-Command') || 'local');
         await queueStore.settle(op.key,lease,local ? {local_command:local,local_state:'local',error:null,uncertain:false}
-          : body?.applied === false ? {error:body.message || 'The server did not apply this action. Review the existing record.',uncertain:false} : null);
+          : body?.applied === false ? {error:body.message || 'The server did not apply this action. Review the existing record.',uncertain:false} : null,{state:body?.applied===false?'rejected':local?'local':'confirmed',response:body,local:local||null});
         if (local) pending = true;
       } else {
         var retryable = response.status >= 500 || [401,403,429].includes(response.status);

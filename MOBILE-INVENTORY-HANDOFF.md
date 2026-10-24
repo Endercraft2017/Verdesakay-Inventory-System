@@ -14,8 +14,8 @@ The earlier v149 local iteration below is superseded by this approved layout.
 Eleven compact-layout cases, fourteen existing Home cases and all seven complete
 warehouse tasks pass against disposable real API/database/browser fixtures.
 The all-empty presentation fixture measures 142px versus the earlier 421px
-collapsed layout. 183 focused regressions and TypeScript pass before upstream
-integration. Four browser-only defects are detected: false all-clear, expanded
+collapsed layout. After merging upstream through `292049f`, all 25 Home browser
+cases, 7 warehouse tasks, 253 focused regressions and TypeScript pass. Four browser-only defects are detected: false all-clear, expanded
 clear menus, newest-first ordering and extra record previews. The v155 cache
 integrates the newer upstream v154 shell without replacing its assets or recovery.
 See `docs/reviews/mobile-home-compact-validation.md` for integration checks and

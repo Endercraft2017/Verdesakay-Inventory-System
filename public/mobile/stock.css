@@ -1,0 +1,98 @@
+/* Chunk 24: existing stock lookup views, using the shared mobile V2 tokens. */
+#m-view:has(> .m-stock-page) { padding:12px 14px calc(116px + env(safe-area-inset-bottom)); }
+#m-view:has(.m-stock-detail .m-arc-dock) { padding-bottom:calc(212px + env(safe-area-inset-bottom)); }
+body:has(.m-stock-page) .m-topbar .m-icbtn { min-width:44px; min-height:44px; }
+.m-stock-page, .m-stock-picker { color:var(--v2-text); }
+.m-stock-page [hidden], .m-stock-picker [hidden] { display:none!important; }
+.m-stock-page button, .m-stock-picker button { min-height:44px; cursor:pointer; font:inherit; }
+.m-stock-page button:disabled, .m-stock-picker button:disabled { opacity:.6; cursor:default; }
+.m-stock-page :is(button,input,select,summary):focus-visible, .m-stock-picker :is(button,input,select):focus-visible { outline:3px solid var(--v2-green); outline-offset:3px; }
+.m-stock-page .m-input, .m-stock-page .m-select, .m-stock-picker .m-input { width:100%; min-height:44px; padding:10px 12px; color:var(--v2-text); font-size:14px; box-sizing:border-box; }
+.m-stock-page .m-label, .m-stock-picker .m-label { display:block; margin-bottom:4px; font-size:12px; line-height:1.5; color:var(--v2-muted); }
+.m-stock-page .m-field { margin:0 0 8px; }
+.m-stock-page .m-chip, .m-stock-picker .m-chip { padding:8px 10px; color:var(--v2-text); font-size:12px; font-weight:650; }
+.m-stock-tools { display:flex; align-items:center; gap:8px; margin:0 0 8px; }
+.m-stock-filter { flex:1; min-width:0; }
+.m-stock-page .m-stock-refresh { display:inline-grid; place-items:center; width:44px; min-width:44px; height:44px; padding:0; border-radius:10px; flex:none; }
+.m-stock-sr-only { position:absolute!important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.m-stock-meta { display:flex; justify-content:space-between; align-items:baseline; gap:12px; color:var(--v2-muted); font-size:12px; line-height:1.5; margin:8px 0; }
+.m-stock-meta > span:last-child { text-align:right; }
+.m-stock-list, .m-stock-movements { list-style:none; padding:0; margin:0; background:var(--v2-surface); border:1px solid var(--v2-line); border-radius:12px; overflow:hidden; }
+.m-stock-list > li, .m-stock-movements > li { border-bottom:1px solid var(--v2-line); }
+.m-stock-list > li:last-child, .m-stock-movements > li:last-child { border-bottom:0; }
+.m-stock-page .m-stock-row, .m-stock-picker .m-stock-row { display:flex; align-items:center; width:100%; min-height:60px; gap:12px; padding:10px 12px; text-align:left; border:0; background:transparent; color:var(--v2-text); font-size:14px; font-weight:400; line-height:1.35; }
+.m-stock-main { flex:1; min-width:0; }
+.m-stock-main b { display:block; font-weight:650; overflow-wrap:anywhere; }
+.m-stock-main > span { display:block; margin-top:4px; font-size:12px; line-height:1.4; color:var(--v2-muted); overflow-wrap:anywhere; }
+.m-stock-number { flex:none; max-width:42%; text-align:right; font-size:14px; line-height:1.4; font-weight:700; overflow-wrap:anywhere; }
+.m-stock-number b { display:block; }
+.m-stock-number small { display:block; margin-top:4px; font-size:12px; font-weight:400; color:var(--v2-muted); }
+.m-stock-row:focus-visible, .m-stock-movement:focus-visible { outline-offset:-3px!important; }
+.m-stock-feedback { padding:12px; margin:8px 0; border:1px solid var(--v2-line); border-radius:12px; background:var(--v2-surface); color:var(--v2-text); font-size:14px; line-height:1.5; overflow-wrap:anywhere; }
+.m-stock-feedback.error { color:var(--v2-warn-text); border-color:var(--v2-warn-line); background:var(--v2-warn-soft); }
+.m-stock-feedback > button { display:block; margin-top:8px; }
+.m-stock-more { margin-top:8px; }
+.m-stock-path { margin:4px 0 8px; font-size:12px; line-height:1.4; color:var(--v2-muted); overflow-wrap:anywhere; }
+.m-stock-picker .m-picker-row { display:flex; gap:8px; margin:0 0 8px; }
+.m-stock-picker .m-picker-row input { min-width:0; flex:1; }
+.m-stock-picker .m-scan-btn { display:grid; place-items:center; width:44px; min-width:44px; height:44px; padding:0; flex:none; color:var(--v2-text); background:var(--v2-surface); border-color:var(--v2-line); border-radius:10px; }
+.m-stock-kind { display:flex; align-items:center; gap:12px; margin:0 0 8px; font-size:12px; color:var(--v2-muted); }
+.m-stock-kind span { flex:none; }
+.m-stock-kind select { flex:1; min-width:0; }
+.m-stock-picker .m-picker-list { display:block; gap:0; }
+.m-stock-picker .m-picker-item { border-radius:0; }
+.m-stock-picker .m-stock-main { color:var(--v2-text); font-size:14px; }
+.m-stock-picker .m-stock-main b { font-size:14px; }
+.m-stock-picker .m-stock-number { color:var(--v2-text); font-size:14px; }
+.m-stock-picker .m-stock-number b { font-size:14px; }
+.m-stock-identity { display:grid; grid-template-columns:56px minmax(0,1fr) 44px; align-items:center; gap:8px; margin:0 0 12px; }
+.m-stock-identity .m-sr-photo { width:56px; height:56px; border-radius:10px; font-size:12px; color:var(--v2-text); }
+.m-stock-identity .m-sr-name { margin:0; font-size:17px; line-height:1.3; letter-spacing:0; overflow-wrap:anywhere; }
+.m-stock-identity .m-sr-sku { margin:4px 0 0; font-size:12px; line-height:1.5; color:var(--v2-muted); overflow-wrap:anywhere; }
+.m-stock-summary { padding:10px 12px; margin:0 0 12px; border:1px solid var(--v2-line); border-radius:12px; background:var(--v2-surface); }
+.m-stock-summary .m-stock-meta { margin:0; flex-wrap:wrap; gap:8px; }
+.m-stock-primary, .m-stock-secondary { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; margin:8px 0 0; }
+.m-stock-primary > div, .m-stock-secondary > div { min-width:0; }
+.m-stock-primary > div + div, .m-stock-secondary > div + div { padding-left:12px; border-left:1px solid var(--v2-line); }
+.m-stock-summary dt { font-size:12px; line-height:1.4; color:var(--v2-muted); }
+.m-stock-summary dd { margin:2px 0 0; font-size:24px; font-weight:750; line-height:1.2; overflow-wrap:anywhere; }
+.m-stock-summary dd small { font-size:12px; font-weight:500; color:var(--v2-muted); }
+.m-stock-secondary { padding-top:8px; border-top:1px solid var(--v2-line); }
+.m-stock-secondary dd { font-size:14px; font-weight:650; }
+.m-stock-page .m-stock-section { margin:12px 0 6px; font-size:12px; line-height:1.4; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--v2-muted); }
+.m-stock-detail .m-kv { margin:0; }
+.m-stock-detail .m-kv li { min-height:44px; padding:10px 12px; gap:12px; font-size:13px; line-height:1.5; align-items:flex-start; }
+.m-stock-detail .m-kv li > span { min-width:0; color:var(--v2-text); overflow-wrap:anywhere; }
+.m-stock-detail .m-kv b { flex:none; }
+.m-stock-composition { font-size:12px; line-height:1.6; color:var(--v2-muted); }
+.m-stock-composition summary { min-height:44px; padding:10px 0; cursor:pointer; }
+.m-stock-composition p { margin:0 0 8px; overflow-wrap:anywhere; }
+.m-stock-section-line { display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin:12px 0 6px; }
+.m-stock-section-line .m-stock-section { margin:0; }
+.m-stock-section-line > span { font-size:12px; color:var(--v2-muted); }
+.m-stock-page .m-stock-movement { display:grid; grid-template-columns:minmax(0,1fr) max-content; column-gap:10px; row-gap:4px; width:100%; min-height:44px; padding:10px 12px; border:0; background:transparent; color:var(--v2-text); text-align:left; font-size:14px; font-weight:400; line-height:1.4; box-sizing:border-box; }
+.m-stock-movement-name { grid-column:1; grid-row:1; font-weight:650; overflow-wrap:anywhere; }
+.m-stock-delta { grid-column:2; grid-row:1; max-width:80px; min-width:24px; text-align:right; font-weight:700; overflow-wrap:anywhere; }
+.m-stock-reason, .m-stock-movement-meta { grid-column:1/-1; min-width:0; font-size:12px; font-weight:400; color:var(--v2-muted); overflow-wrap:anywhere; }
+.m-stock-movement-meta { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+.m-stock-movement-meta > span { min-width:0; }
+.m-stock-movement-meta time { flex:none; }
+.m-stock-day { padding:8px 12px; background:var(--v2-bg); color:var(--v2-muted); font-size:12px; font-weight:650; }
+.m-stock-scope { margin:4px 0 8px; font-size:12px; line-height:1.5; color:var(--v2-muted); }
+.m-stock-pagination { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:0 0 4px; }
+.m-stock-pagination:last-child { margin:12px 0; }
+.m-stock-pagination p { flex:1; min-width:0; margin:0; font-size:12px; line-height:1.3; }
+.m-stock-pagination p > * { display:block; }
+.m-stock-pagination p span { color:var(--v2-muted); margin-top:2px; }
+.m-stock-pagination > div { display:flex; align-items:center; gap:4px; flex:none; }
+.m-stock-pagination .m-chip { min-width:48px; padding:8px; }
+.m-stock-detail .m-detail-acts { flex-wrap:wrap; gap:6px; margin-top:10px; }
+.m-stock-detail .m-sr-unit { flex-wrap:wrap; color:var(--v2-text); }
+.m-stock-detail .m-sr-unit button { min-width:44px; min-height:44px; }
+.m-stock-detail .m-arc-dock { bottom:calc(96px + env(safe-area-inset-bottom)); }
+.m-stock-detail .m-arc button { min-width:44px; min-height:60px; flex:1; font-size:12px; }
+.m-stock-detail .m-arc button .ic { width:44px; height:44px; }
+.m-stock-detail .m-arc-spacer { height:8px; }
+/* Keep the existing movable shortcut clear of the item action arc. Saved positions remain movable. */
+body:has(.m-stock-detail .m-arc-dock) .v2-orbit:not([style*="top:"]) { bottom:calc(190px + env(safe-area-inset-bottom)); }
+@media(max-width:360px) { .m-stock-pagination > div { gap:2px; } .m-stock-pagination .m-chip { padding:8px 6px; } .m-stock-detail .m-arc button { font-size:11px; } }

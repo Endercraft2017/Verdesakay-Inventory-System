@@ -60,6 +60,7 @@ MApp.route('settings', function (view) {
         else if (action === 'payslips') MApp.go('payslips');
         else if (action === 'requests') MApp.go('requests');
         else if (action === 'report') MApp.go('report-problem');
+        else if (action === 'signout') MApp.signOut();
       };
     });
   }
@@ -74,7 +75,8 @@ MApp.route('settings', function (view) {
       row('◐', 'Appearance & accessibility', 'Theme, language and display', 'appearance') +
       row('?', 'Help & reporting', 'Identified and anonymous channels', 'report') +
       row('⌁', 'Account & security', 'Password, desktop access and sign out', 'security') +
-      '</div>', '46:953');
+      '</div>' +
+      '<button class="m-btn m-btn-secondary m-btn-danger profile-full-button profile-signout" type="button" data-profile-action="signout" data-profile-signout data-out>Sign out</button>', '46:953');
     bindActions(page);
     API.get('/tenant').then(function (tenant) {
       if (!page.isConnected || !tenant.company_id) return;
@@ -256,12 +258,12 @@ MApp.route('settings', function (view) {
     currentSection = 'security';
     var page = mount(
       titleBlock('Account & security', 'Username, password and session controls', true) +
-      '<section class="profile-section"><h2>Change username</h2><p data-current-username>Current username: ' + mEsc(MApp.getMe().username) + '</p><form data-username>' +
+      '<section class="profile-section"><h2>Change username</h2><p data-current-username>Current username: ' + mEsc(MApp.getMe().username) + '</p><form class="m-form profile-account-form" data-username>' +
       '<label class="m-field"><span class="m-label">New username</span><input class="m-input" data-next-username autocomplete="username" minlength="3" maxlength="30" pattern="(?:[A-Za-z0-9._]|-){3,30}" required /></label>' +
       '<p class="profile-note">3–30 letters, numbers, dots, underscores or hyphens. Your Company ID stays the same. Other sessions will be signed out.</p>' +
       '<label class="m-field"><span class="m-label">Current password</span><input type="password" class="m-input" data-username-password autocomplete="current-password" required /></label>' +
       '<button class="m-btn" type="submit">Update username</button></form></section>' +
-      '<section class="profile-section"><h2>Change password</h2><form data-pw>' +
+      '<section class="profile-section"><h2>Change password</h2><form class="m-form profile-account-form" data-pw>' +
       '<label class="m-field"><span class="m-label">Current password</span><input type="password" class="m-input" data-cur data-label="current password" autocomplete="current-password" required /></label>' +
       '<label class="m-field"><span class="m-label">New password</span><input type="password" class="m-input" data-new data-label="new password" autocomplete="new-password" minlength="8" maxlength="128" aria-describedby="m-profile-password-policy" required /></label>' +
       '<label class="m-field"><span class="m-label">Confirm new password</span><input type="password" class="m-input" data-confirm data-label="confirmation password" autocomplete="new-password" maxlength="128" required /></label>' +

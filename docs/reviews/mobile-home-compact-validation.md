@@ -74,10 +74,20 @@ the mutation was applied and there was no unrelated fatal error. Normal sources 
 
 ## Integration and limits
 
-The remote advanced from `a115f0d` to `292049f` during this work, adding seven
-commits for stock screens, shortcuts and recovery. Preserve that work and use
-cache v155, above upstream v154. Integration verification is recorded below after
-merging and checking the actual combined tree.
+Merged upstream through `292049f`, preserving its seven newer commits for stock
+screens, personal shortcuts and recovery. The only conflict was the cache version;
+the combined shell uses v155 above upstream v154 and retains the full upstream
+asset list. Shared styles merged without losing either change.
+
+The actual merged tree passes all **11 compact cases, 14 Home regression cases,
+7 complete warehouse tasks and 253 focused tests**, plus TypeScript. The focused
+run adds shortcut and service-worker regressions to cover the upstream integration.
+Reproduction commands above remain valid; merged evidence is under
+`work/home-compact/merged-layout/`, `merged-regression/`, and `merged-tasks/`.
+Logs are `work/home-compact-merged-unit.log` and
+`work/home-compact-merged-typecheck.log`. Both Home reports' source hashes were
+compared with the final production files and match. The merged layout still
+measures 142px in its all-empty presentation fixture.
 
 This is browser simulation against disposable local data. No physical phone,
 screen reader, printer or representative employee usability session was available.

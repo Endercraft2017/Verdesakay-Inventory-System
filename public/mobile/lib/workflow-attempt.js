@@ -9,10 +9,19 @@
   async function draft(route){return await load(route)||{key:mProductionDrafts.key(slot(route)),rows:[],batch:{},operation:{kind:'workflow',route:route,state:'draft'}};}
   async function save(s){guard(s);await mProductionDrafts.save(s);}
   function classify(e){return !e.status||e.status>=500||[401,403,429].indexOf(e.status)!==-1?'unknown':e.status===409&&/different request|save key/i.test(e.message)?'conflict':'rejected';}
+  function stockRequest(s, invoke) {
+    var owner=mReadScope.identity(), controller=new AbortController(), timer;
+    var opts={idempotencyKey:s.operation.key,signal:controller.signal,isCurrent:function() { return !controller.signal.aborted&&owner===mReadScope.identity()&&owns(s); }};
+    return new Promise(function(resolve,reject) {
+      controller.signal.addEventListener('abort',function() { reject(Object.assign(new Error('The result was not confirmed. Retry the original saved request.'),{uncertain:true})); },{once:true});
+      timer=setTimeout(function() { controller.abort(); },15000);
+      Promise.resolve().then(function() { if(!opts.isCurrent())throw new Error('The sign-in changed. Recover the original action.');return invoke(opts); }).then(function(value) { if(!opts.isCurrent())throw Object.assign(new Error('The sign-in changed. Recover the original action.'),{cancelled:true});resolve(value); }).catch(reject);
+    }).finally(function() { clearTimeout(timer); });
+  }
   async function send(s){
     guard(s);var a=s.operation;
     if(busy[s.key]||a.local||['confirmed','rejected','conflict'].indexOf(a.state)!==-1)return;
-    if(navigator.onLine===false)throw new Error('Reconnect to retry the original action.');
+    if(navigator.onLine===false&&!a.queueOnOffline)throw new Error('Reconnect to retry the original action.');
     if(Date.now()-a.created>=7*86400000){a.state='conflict';a.error='Attempt expired. Supervisor reconciliation is required.';await save(s);return;}
     busy[s.key]=true;
     try{
@@ -26,6 +35,18 @@
       if(!a.multipart&&s.rows.length&&!a.payload.evidence_ids){a.payload.evidence_ids=s.rows.map(function(r){return r.unitId;});await save(s);}
       guard(s);var result;
       if(a.multipart){var fd=new FormData();Object.keys(a.payload).forEach(function(k){if(a.payload[k]!=null)fd.append(k,String(a.payload[k]));});fd.append(a.fileField||'image',s.rows[0].file,s.rows[0].identifier);result=await API.upload(a.path,fd,{idempotencyKey:a.key});}
+      else if(a.stockAction){
+        var response=await stockRequest(s,function(opts){return a.queueOnOffline?mSubmit(a.path,a.payload,Object.assign({},opts,{keepReceipt:true,label:a.title})):API[a.method||'post'](a.path,a.payload,opts);});
+        guard(s);if(a.queueOnOffline&&response.queued){a.phoneQueued=a.key;a.state='queued';await save(s);return;}
+        result=a.queueOnOffline?response.response:response;
+        if(result?.applied===false)throw Object.assign(new Error(result.message||'The server did not apply this action.'),{status:409});
+        if(!mStockActionUI.validResult(a.stockAction,result))throw new Error('The response was incomplete. Retry the original saved request.');
+      }
+      else if(a.route==='stock-counts'&&window.mCountUI){
+        result=await stockRequest(s,function(opts){return API[a.method||'post'](a.path,a.payload,opts);});
+        if(result?.applied===false)throw Object.assign(new Error(result.message||'The server refused this count decision.'),{status:409});
+        if(!mCountUI.validResult(a,result))throw new Error('The response was incomplete. Retry the original saved request.');
+      }
       else result=await API[a.method||'post'](a.path,a.payload,{idempotencyKey:a.key});
       guard(s);a.result=result;a.local=API.syncLocal(result);a.state='confirmed';a.error=null;await save(s);
     }catch(e){if(!owns(s))throw e;a.state=classify(e);a.error=e.message;await save(s);}finally{delete busy[s.key];}
@@ -36,7 +57,8 @@
     await save(s);await send(s);return s;
   }
   function paint(view,s,afterPaint){
-    guard(s);var a=s.operation,hash=location.hash;
+    if(s.operation.route==='stock-counts'&&window.mCountResult){guard(s);mCountResult(view,s);return;}
+    guard(s);if(s.operation.stockAction&&window.mStockActionResult){mStockActionResult(view,s);return;}var a=s.operation,hash=location.hash;
     function visible(){return view.isConnected&&body&&body.isConnected&&hash===location.hash&&owns(s);}
     var final=a.state==='confirmed'&&!a.local;
     view.innerHTML='';var body=RoleUI.page(view,{role:a.role||'releasing',node:a.node||'78:438',title:final?'Action confirmed':'Review saved action',subtitle:a.title||'Operational decision'});
@@ -49,5 +71,5 @@
     body.querySelector('#wf-back').onclick=function(){MApp.go('work');};
     if(a.local)body.querySelector('[data-sync]').appendChild(RoleUI.syncWatch(a.local,function(r){if(!visible())return;if(r.state==='confirmed'){a.local=null;if(a.waitingPhoto!=null){s.rows[a.waitingPhoto].local=null;delete a.waitingPhoto;a.state='new';}else a.state='confirmed';}else if(['failed','rejected','conflict'].indexOf(r.state)!==-1){a.state='conflict';a.error=r.error||'Reconcile the original site command.';}else return;save(s).then(function(){if(visible())paint(view,s,afterPaint);}).catch(function(e){mToast(e.message,'err');});}));
   }
-  window.mWorkflow={owns:function(s){try{return owns(s);}catch(e){return false;}},load:load,draft:draft,save:save,start:start,paint:paint};
+  window.mWorkflow={owns:function(s){try{return owns(s);}catch(e){return false;}},load:load,draft:draft,save:save,start:start,send:send,paint:paint};
 })();
