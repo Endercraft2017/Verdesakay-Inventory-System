@@ -248,7 +248,7 @@ describe('mobile bootstrap', () => {
   });
 
   it('makes inventory viewing discoverable without exposing stock mutation controls', async () => {
-    const win=await bootAs({id:83,role:'employee',employee:true,modules:null,permissions:['mobile.access','inventory.view']},(url)=>url==='/api/inventory/8'?{id:8,name:'Read only stock',quantity:3,min_quantity:1}:url==='/api/inventory/8/stock'?[]:undefined);
+    const win=await bootAs({id:83,role:'employee',employee:true,modules:null,permissions:['mobile.access','inventory.view']},(url)=>url==='/api/inventory/8'?{id:8,name:'Read only stock',quantity:3,min_quantity:1,stock:[],history:[]}:undefined);
     win.location.hash='#/work';win.MApp.render();
     expect(win.document.getElementById('m-view').textContent).toContain('Inventory stock');
     expect(win.document.getElementById('m-view').textContent).not.toContain('Stock in / out');

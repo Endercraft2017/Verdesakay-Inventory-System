@@ -15,32 +15,44 @@
       return prepared;
     });
   }
-  function pickFile() {
+  function pickFile(opts) {
+    opts = opts || {};
     return new Promise(function (resolve, reject) {
+      var done = false;
+      function current() { return !opts.signal?.aborted && (!opts.isCurrent || opts.isCurrent()); }
+      function finish(error, file) { if (done) return; done = true; input.remove(); opts.signal?.removeEventListener('abort',abort); if (error) reject(error); else resolve(file); }
+      function abort() { finish(Object.assign(new Error('cancelled'),{cancelled:true})); }
       var input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*';
       input.capture = 'environment';
       input.style.display = 'none';
       document.body.appendChild(input);
+      input.oncancel = abort;
+      opts.signal?.addEventListener('abort',abort,{once:true});
       input.onchange = function () {
         var file = input.files && input.files[0];
         input.remove();
-        if (!file) { reject(new Error('cancelled')); return; }
-        preparePhoto(file).then(resolve).catch(function (err) { mToast(err.message, 'err'); reject(err); });
+        if (!file || !current()) { abort(); return; }
+        preparePhoto(file).then(function(prepared) { if (!current()) abort(); else finish(null,prepared); }).catch(function (err) { if (current()) mToast(err.message, 'err'); finish(err); });
       };
+      if (!current()) { abort(); return; }
       input.click();
     });
   }
 
-  function capture(itemId) {
-    return pickFile().then(function (file) {
+  function capture(itemId, opts) {
+    opts = opts || {};
+    function current() { return !opts.signal?.aborted && (!opts.isCurrent || opts.isCurrent()); }
+    return pickFile(opts).then(function (file) {
+      if (!current()) throw Object.assign(new Error('cancelled'),{cancelled:true});
       var fd = new FormData();
       fd.append('image', file, file.name || 'photo.jpg');
       mToast('Uploading photo…');
-      return API.upload('/inventory/' + itemId + '/image', fd)
-        .then(function (r) { mToast('Photo saved'); return r; })
-        .catch(function (e) { mToast(e.message || 'Upload failed', 'err'); throw e; });
+      opts.onUpload?.();
+      return API.upload('/inventory/' + itemId + '/image', fd, opts)
+        .then(function (r) { if (current()) mToast('Photo saved'); return r; })
+        .catch(function (e) { if (current() && !e.cancelled) mToast(e.message || 'Upload failed', 'err'); throw e; });
     });
   }
 

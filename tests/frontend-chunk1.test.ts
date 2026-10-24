@@ -81,19 +81,19 @@ describe('Chunk 1 regression coverage', () => {
     expect(requests[4]!.url).toBe('/inventory?kind=parts'); requests[4]!.resolve([]);await tick();
     dom.window.close();
   });
-  it('shows zero stock and honest connection status without inviting unauthorized mobile actions', async () => {
+  it('shows zero stock and loaded freshness without inviting unauthorized mobile actions', async () => {
     const dom = new JSDOM('<div id="view"></div><div id="m-toasts"></div>', { runScripts: 'outside-only' });
     const w = dom.window as any;
     let render: any;
     w.MApp = { route: (_: string, fn: any) => { render = fn; }, setTitle() {}, can: () => false };
-    w.API = { get: (url: string) => Promise.resolve(url.endsWith('/stock')
-      ? [{ location_name: 'Branch Store', quantity: 0 }]
-      : { id: 1, name: 'Bolt', quantity: 0, min_quantity: 5, unit: 'pcs', history: [] }) };
-    w.eval(read('mobile/lib/dom.js') + '\n' + read('mobile/modules/inventory/item-detail.js'));
+    w.API = { get: () => Promise.resolve({ id: 1, name: 'Bolt', quantity: 0, min_quantity: 5, unit: 'pcs', history: [], stock: [{location_id:1,location_name:'Branch Store',quantity:0}] }) };
+    w.eval(['mobile/lib/dom.js','mobile/lib/read-scope.js','mobile/lib/stock-ui.js','mobile/modules/inventory/item-detail.js'].map(read).join('\n'));
     const view = w.document.querySelector('#view'); render(view, { id: 1 }); await tick();
     expect(view.textContent).toContain('Branch Store');
     expect(view.textContent).toContain('No recent stock movements.');
-    expect(view.querySelector('.m-sr-saved').textContent).toContain('Online');
+    expect(view.querySelector('.m-stock-primary dd').textContent).toContain('0');
+    expect(view.querySelector('.m-stock-summary').textContent).toContain('Updated');
+    expect(view.querySelector('.m-sr-saved')).toBeNull();
     expect(view.querySelectorAll('.m-arc button').length).toBe(0);
     expect(view.textContent).not.toContain('Add photo');
     expect(view.textContent).not.toContain('Add QR');
