@@ -1,6 +1,36 @@
 # Mobile inventory, production, and Sales handoff
 
-## Action for phone owner — sale capture and approval handoff (2026-10-23)
+## Phone Sales handoff implemented — cache v148 (2026-10-24)
+
+Both existing mobile sale-entry routes now use an explicit searchable registered
+customer / walk-in choice and optional target delivery date. Editing a selected
+name clears its registry ID. Customer changes preserve notes and dates. Open-sale
+edits retain the revision reviewed when the draft began; a changed sale requires
+loading the current record rather than silently overwriting another employee.
+
+Approval-only employees can reach Sales without create/edit or Production grants.
+Approval uses fresh availability, an expected revision, explicit part/CKD backorder
+consent and a durable immutable attempt. Successful approvals show current linked
+job numbers, planned quantities and read-only details. Unknown responses, retries
+and site-PC pending acknowledgements retain their recovery key; local-only results
+are not shown as final production handoffs. No-BOM and stale-stock refusals retain
+the open sale and lead back to a fresh review. Customer JO records remain view-only.
+
+Sales create/edit permissions now allow a limited item catalog/SKU picker, fixing
+an actual 403 with custom Sales permissions. This does not grant full Inventory,
+cost/supplier fields, production unit/batch reads, planning or stock adjustments.
+Actual delivery dates come only from successful recorded delivery events; courier
+handoff has its own label, and separate trips retain their slip numbers and dates.
+
+Nineteen disposable real API/SQLite/Playwright scenarios pass at 390px, plus twelve
+kit regression cases, 287 focused regressions and two helper regressions. Both
+sale forms pass targeted accessibility checks in both themes. The full 34-case
+QR/release/delivery suite also passes. TypeScript passes.
+See `docs/reviews/mobile-sales-handoff-validation.md` for reproduction and limits.
+The site-PC response/confirmation states were simulated; no physical-device or
+deployed-site acceptance is claimed.
+
+## Source contract — sale capture and approval handoff (2026-10-23)
 
 Desktop and API now use `orders.expected_date` as an optional **target delivery
 date** for sales. The phone New sale order and open-order edit should offer the
@@ -49,8 +79,8 @@ seven complete warehouse tasks; the kit fixture remains seven taps. The focused
 merge run plus the corrected frontend rerun pass 400 tests. Three fixed-delay
 frontend fixtures now wait for their target screen instead of assuming it rendered.
 TypeScript passes. Evidence is under `work/warehouse-merge/`. This does not claim
-deployed or physical-device acceptance. The sale capture/approval phone-owner
-action above remains the next implementation step.
+deployed or physical-device acceptance. The sale capture/approval action from that merge is implemented in the v148
+entry above.
 
 Read **Mobile implementation status** for the current branch. The older
 requirements and test notes further down are retained for traceability; some

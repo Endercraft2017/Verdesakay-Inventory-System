@@ -1,8 +1,10 @@
 /* Mobile Sales: commercial follow-up and open sale creation. Physical stock-out stays in Release orders. */
 (function () {
+  var generation=0;
+  function readOwner(view){var own=++generation,hash=location.hash,identity=mReadScope.identity();return function(){return own===generation&&view.isConnected&&hash===location.hash&&identity===mReadScope.identity();};}
   function permitted(create) {
     return MApp.hasModule('sales') && MApp.can('orders.view') &&
-      (create ? MApp.can('orders.create') : MApp.can('orders.create') || MApp.can('orders.edit'));
+      (create ? MApp.can('orders.create') : MApp.can('orders.create') || MApp.can('orders.edit') || MApp.can('orders.approve'));
   }
   function denied(view) { view.innerHTML = '<div class="m-error">Sales access is required for this screen.</div>'; }
   function loading(view) { view.innerHTML = '<section class="rk-page"><div class="rk-empty">Loading sales…</div></section>'; }
@@ -33,12 +35,13 @@
   }
   // The canonical sales pipeline and customer registry live in inventory/sales.js.
   MApp.route('sales-service', async function (view) {
+    var visible=readOwner(view);
     MApp.setTitle('Customer service');
     if (!permitted(false)) return denied(view);
     loading(view);
     try {
       var data = await Promise.all([API.get('/orders?type=sale'), API.get('/release-slips/queue')]);
-      if (!view.isConnected || location.hash.split('?')[0] !== '#/sales-service') return;
+      if (!visible() || location.hash.split('?')[0] !== '#/sales-service') return;
       var orders = data[0] || [], queue = data[1] || { to_accept: [], releasing: [] };
       view.innerHTML = '<section class="rk-page"><h1>Customer service</h1>' +
         '<p class="m-hint">Find a customer order and check its live handoff stage.</p>' +
@@ -61,10 +64,11 @@
       }
       search.oninput = draw; filter.onchange = draw; draw();
       view.querySelector('#sales-new')?.addEventListener('click', function () { MApp.go('sales-new'); });
-    } catch (error) { if (view.isConnected) problem(view, error); }
+    } catch (error) { if (visible()) problem(view, error); }
   });
 
   MApp.route('sales-order', async function (view, params) {
+    var visible=readOwner(view);
     MApp.setTitle('Sale order');
     if (!permitted(false)) return denied(view);
     var id = Number(params && params.id);
@@ -73,11 +77,11 @@
     try {
       var data = await Promise.all([API.get('/orders/' + id), API.get('/release-slips/queue')]);
       var order = data[0], queue = data[1];
-      if (!view.isConnected || Number(new URLSearchParams(location.hash.split('?')[1] || '').get('id')) !== id) return;
+      if (!visible() || Number(new URLSearchParams(location.hash.split('?')[1] || '').get('id')) !== id) return;
       if (order.type !== 'sale') throw new Error('This is not a sale order.');
       var current = stage(order, queue);
       var next = current === 'CSR review' ? 'CSR review or approval' : current === 'Awaiting warehouse' ? 'Warehouse acceptance' : current === 'Picking & release' ? 'Releasing and trip slip' : 'Follow up on the issued trip';
-      view.innerHTML = '<section class="rk-page"><h1>' + mEsc(order.number) + '</h1>' +
+      view.innerHTML = '<section class="rk-page"><h1>' + mEsc(order.number) + '</h1>' + mSaleUI.deliveryFacts(order) +
         '<div class="rk-card"><b>' + mEsc(order.customer_name || 'Walk-in') + '</b><p>' + mEsc(current) + '</p>' +
         '<small>Next owner: ' + mEsc(next) + '</small></div>' +
         '<div class="rk-card"><h2>Order lines</h2>' + (order.items || []).map(function (line) {
@@ -85,24 +89,27 @@
           return '<div class="m-field"><b>' + mEsc(line.name) + '</b><small>' + mEsc(mode) + ' · ' + mEsc(line.quantity) + ' ' + mEsc(line.unit || '') + ' × ' + mEsc(money(line.unit_price, order.currency)) + '</small></div>';
         }).join('') + '<p><b>Total ' + mEsc(money(order.total, order.currency)) + '</b></p></div>' +
         (order.release_slip_number ? '<p class="m-hint">Latest release slip: ' + mEsc(order.release_slip_number) + '</p>' : '') +
-        '<div class="m-actions"><button type="button" class="m-btn m-btn-secondary" id="sales-back">Customer service</button></div></section>';
+        '<div class="m-actions"><button type="button" class="m-btn" id="sales-current">Open current sale details / actions</button><button type="button" class="m-btn m-btn-secondary" id="sales-back">Customer service</button></div></section>';
+      view.querySelector('#sales-current').onclick = function () { MApp.go('sales', {id:id}); };
       view.querySelector('#sales-back').onclick = function () { MApp.go('sales-service'); };
-    } catch (error) { if (view.isConnected) problem(view, error); }
+    } catch (error) { if (visible()) problem(view, error); }
   });
 
   MApp.route('sales-new', async function (view) {
+    var visible=readOwner(view);
     MApp.setTitle('New sale order');
     if (!permitted(true)) return denied(view);
     loading(view);
     try {
       var attempt = await mWorkflow.draft('sales-new');
-      if (!view.isConnected || location.hash.split('?')[0] !== '#/sales-new') return;
+      if (!visible() || location.hash.split('?')[0] !== '#/sales-new') return;
       if (attempt.operation.state !== 'draft') return mWorkflow.paint(view, attempt);
-      var lines = [], selected = null;
-      view.innerHTML = '<section class="rk-page"><h1>New sale order</h1>' +
+      var draft=attempt.batch, pending=Promise.resolve();
+      var lines = draft.lines || [], selected = null;
+      function persist(){draft.lines=lines;pending=pending.catch(function(){}).then(function(){return mWorkflow.save(attempt);});return pending;}
+      view.innerHTML = '<section class="rk-page sale-order-form"><h1>New sale order</h1>' +
         '<p class="m-hint">Save an open order for Sales review. Warehouse release follows approval; creating this order moves no stock.</p>' +
-        '<label class="m-field"><span class="m-label">Customer name *</span><input class="m-input" data-f="customer" maxlength="160" autocomplete="organization"></label>' +
-        '<label class="m-field"><span class="m-label">Contact</span><input class="m-input" data-f="contact" maxlength="160"></label>' +
+        '<div data-customer-picker></div><label class="m-field"><span class="m-label">Target delivery date (optional)</span><input class="m-input" type="date" data-f="target-date"></label><p class="m-hint">A target only; actual delivery and courier handoff are recorded by their workflows.</p>' +
         '<div data-picker></div><p class="m-hint" data-selected>Choose an item or product to add.</p>' +
         '<div class="m-two"><label class="m-field"><span class="m-label">Quantity</span><input class="m-input" data-f="qty" type="number" inputmode="decimal" min="0.001" step="any" value="1"></label>' +
         '<label class="m-field"><span class="m-label">Unit price (PHP)</span><input class="m-input" data-f="price" type="number" inputmode="decimal" min="0" step="0.01" value="0"></label></div>' +
@@ -116,6 +123,9 @@
         '<label class="m-field"><span class="m-label">Notes</span><textarea class="m-input" data-f="notes" maxlength="2000"></textarea></label>' +
         '<div class="m-actions"><button type="button" class="m-btn" id="sales-save">Save open sale order</button></div></section>';
       var get = function (key) { return view.querySelector('[data-f="' + key + '"]'); };
+      var customerPicker=mSaleUI.customerPicker({value:draft,onChange:function(value){Object.assign(draft,value);persist().catch(function(e){mToast(e.message,'err');});}});view.querySelector('[data-customer-picker]').appendChild(customerPicker.el);
+      get('target-date').value=draft.expected_date||'';get('notes').value=draft.notes||'';
+      [get('target-date'),get('notes')].forEach(function(field){field.oninput=function(){draft.expected_date=get('target-date').value;draft.notes=get('notes').value;persist().catch(function(e){mToast(e.message,'err');});};});
       var picker = mItemPicker({ label: 'Find item / product', onPick: function (item) {
         selected = item;
         view.querySelector('[data-selected]').textContent = item.name + (item.sku ? ' · ' + item.sku : '');
@@ -124,14 +134,14 @@
         var price = Number(item.attributes && item.attributes.sale_price);
         get('price').value = Number.isFinite(price) && price >= 0 ? price.toFixed(2) : '0.00';
       } });
-      view.querySelector('[data-picker]').appendChild(picker.el);
+      picker.el.querySelector('input').setAttribute('aria-label','Find item or finished product');view.querySelector('[data-picker]').appendChild(picker.el);
       function drawLines() {
         view.querySelector('[data-lines]').innerHTML = lines.length ? lines.map(function (line, index) {
           return '<div class="m-field"><b>' + mEsc(line.name) + '</b><small>' + mEsc(line.quantity) + ' × ' + mEsc(money(line.unit_price)) +
             (line.item_id && line.fulfillment_mode !== 'assembled' ? ' · ' + mEsc(line.fulfillment_mode === 'ckd' ? 'CKD' : 'Semi-built') : '') + '</small> ' +
             '<button type="button" class="m-btn m-btn-sm m-btn-secondary" data-remove="' + index + '">Remove</button></div>';
         }).join('') : 'No lines yet.';
-        view.querySelectorAll('[data-remove]').forEach(function (button) { button.onclick = function () { lines.splice(Number(button.dataset.remove), 1); drawLines(); }; });
+        view.querySelectorAll('[data-remove]').forEach(function (button) { button.onclick = function () { lines.splice(Number(button.dataset.remove), 1); drawLines(); persist().catch(function(e){mToast(e.message,'err');}); }; });
         view.querySelector('[data-total]').textContent = 'Subtotal ' + money(lines.reduce(function (sum, line) { return sum + line.quantity * line.unit_price; }, 0));
       }
       view.querySelector('#sales-add-item').onclick = function () {
@@ -139,29 +149,29 @@
         if (!selected) return mToast('Choose an item first.', 'err');
         if (!get('price').value || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price) || price < 0) return mToast('Enter a valid quantity and price.', 'err');
         lines.push({ item_id: selected.id, name: selected.name, sku: selected.sku || null, unit: selected.unit || 'pcs', quantity: qty, unit_price: price,
-          fulfillment_mode: selected.is_finished_product ? get('mode').value : 'assembled' });
+          fulfillment_mode: selected.is_finished_product ? get('mode').value : 'assembled' }); persist().catch(function(e){mToast(e.message,'err');});
         selected = null; view.querySelector('[data-selected]').textContent = 'Choose another item or product to add.'; drawLines();
       };
       view.querySelector('#sales-add-fee').onclick = function () {
         var name = get('fee-name').value.trim(), amount = Number(get('fee-amount').value);
         if (!name || !get('fee-amount').value || !Number.isFinite(amount) || amount < 0) return mToast('Enter a fee name and a valid amount.', 'err');
-        lines.push({ name: name, quantity: 1, unit_price: amount, unit: 'fee' });
+        lines.push({ name: name, quantity: 1, unit_price: amount, unit: 'fee' }); persist().catch(function(e){mToast(e.message,'err');});
         get('fee-name').value = ''; get('fee-amount').value = ''; drawLines();
       };
       view.querySelector('#sales-save').onclick = async function () {
-        var customer = get('customer').value.trim();
+        var identity;try{identity=customerPicker.value();}catch(e){return mToast(e.message,'err');}var customer=identity.customer_name;
         if (!customer || !lines.length) return mToast('Enter a customer and at least one order line.', 'err');
         if (navigator.onLine === false) return mToast('Reconnect before creating a sale order.', 'err');
         var button = this; button.disabled = true;
-        var payload = { type: 'sale', status: 'open', customer_name: customer, customer_contact: get('contact').value.trim() || null,
+        var payload = { type: 'sale', status: 'open', customer_name: customer, customer_contact: identity.customer_contact, customer_id: identity.customer_id, expected_date:get('target-date').value||null,
           notes: get('notes').value.trim() || null, currency: 'PHP', items: lines.map(function (line) { return Object.assign({}, line); }) };
         try {
-          await mWorkflow.start(attempt, { path: '/orders', payload: payload, title: 'Open sale order for ' + customer,
+          await persist();await mWorkflow.start(attempt, { path: '/orders', payload: payload, title: 'Open sale order for ' + customer,
             successLabel: 'Sale order saved for Sales review', role: 'sales', reviewRoute: 'sales-order', reviewPath: '/orders?type=sale', resultParam: 'id' });
-          if (view.isConnected && location.hash.split('?')[0] === '#/sales-new') mWorkflow.paint(view, attempt);
+          if (visible() && location.hash.split('?')[0] === '#/sales-new') mWorkflow.paint(view, attempt);
         } catch (error) { mToast(error.message || 'Sale order could not be saved.', 'err'); button.disabled = false; }
       };
       drawLines();
-    } catch (error) { if (view.isConnected) problem(view, error); }
+    } catch (error) { if (visible()) problem(view, error); }
   });
 })();

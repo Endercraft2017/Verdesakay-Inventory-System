@@ -47,7 +47,7 @@ import { enforceQuota } from '../../platform/quota';
 import { parseCsvTable, toCsv } from '../../shared/csv';
 import { whereUsed } from '../manufacturing/bom-explode';
 import { dbBomResolvers } from '../manufacturing/bom-resolvers';
-import type { InventoryItem, InventoryTransaction } from '../../shared/types';
+import type { InventoryItem, InventoryTransaction, Permission } from '../../shared/types';
 import { findDirectSaleStockoutCase, listDirectSaleStockoutCases } from './direct-sale-stockout-audit';
 import stockCountRoutes from './stock-counts.routes';
 
@@ -120,11 +120,13 @@ function withParsedAttributes<T extends { attributes: unknown }>(item: T): T {
 // open to the desks that make them (shared/desk-access.ts) — those callers get only what a picker
 // shows (id, name, SKU, unit, on hand), not costs, suppliers or notes.
 const viewGate = requirePermission('inventory.view');
-const pickerGate = requireAnyPermission(['inventory.view', ...ITEM_PICKER]);
-const lookupGate = requireAnyPermission(['inventory.view', ...ITEM_PICKER, ...UNIT_RECORD]);
+const SALES_PICKER = ['orders.create', 'orders.edit'] as const;
+const pickerGate = requireAnyPermission(['inventory.view', ...ITEM_PICKER, ...SALES_PICKER]);
+const lookupGate = requireAnyPermission(['inventory.view', ...ITEM_PICKER, ...UNIT_RECORD, ...SALES_PICKER]);
 const pickerView = (req: Request, item: InventoryItem): object => req.user!.permissions.includes('inventory.view')
   ? withParsedAttributes(item)
-  : { id: item.id, name: item.name, sku: item.sku, unit: item.unit, quantity: item.quantity };
+  : { id: item.id, name: item.name, sku: item.sku, unit: item.unit, quantity: item.quantity,
+      ...(SALES_PICKER.some(p => req.user!.permissions.includes(p)) ? { is_finished_product: item.is_finished_product } : {}) };
 
 // GET /api/inventory — list with optional search / filters
 router.get('/', pickerGate, (req, res) => {
@@ -340,6 +342,12 @@ router.get('/lookup', lookupGate, (req, res) => {
   );
   if (item) {
     res.json(pickerView(req, item));
+    return;
+  }
+
+  // Sales capture may identify catalog items; it does not grant production-record reads.
+  if (!['inventory.view', ...ITEM_PICKER, ...UNIT_RECORD].some(p => req.user!.permissions.includes(p as Permission))) {
+    res.status(403).json({ error: 'Production record access is required for unit or batch labels' });
     return;
   }
 

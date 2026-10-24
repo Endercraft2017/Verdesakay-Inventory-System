@@ -35,18 +35,19 @@
     var route=s.operation.route;s.operation=Object.assign({kind:'workflow',route:route,state:'new',key:'workflow-'+crypto.randomUUID(),created:Date.now()},options,{payload:JSON.parse(JSON.stringify(options.payload))});
     await save(s);await send(s);return s;
   }
-  function paint(view,s){
+  function paint(view,s,afterPaint){
     guard(s);var a=s.operation,hash=location.hash;
-    function visible(){return view.isConnected&&hash===location.hash&&owns(s);}
+    function visible(){return view.isConnected&&body&&body.isConnected&&hash===location.hash&&owns(s);}
     var final=a.state==='confirmed'&&!a.local;
     view.innerHTML='';var body=RoleUI.page(view,{role:a.role||'releasing',node:a.node||'78:438',title:final?'Action confirmed':'Review saved action',subtitle:a.title||'Operational decision'});
     body.innerHTML=RoleUI.result(final?(a.successLabel||'Server confirmed'):a.local?'Saved on site PC — confirmation pending':a.state==='rejected'?'Action refused':'Confirmation unresolved',a.title||'',final?'':'queued',final?'✓':'⏳')+
       (a.error?RoleUI.note('warn',mEsc(a.error)):'')+RoleUI.note(final?'info':'warn',final?'The original action was confirmed. Review current records before the next decision.':'The original request, evidence and key are retained. Do not repeat the physical action.')+
       RoleUI.actions((!a.local&&['new','unknown','sending'].indexOf(a.state)!==-1?[{id:'wf-retry',label:'Retry original action',kind:'primary'}]:[]).concat(final||a.state==='rejected'?[{id:'wf-review',label:'Review current record',kind:'primary'}]:[]).concat([{id:'wf-back',label:'Back to Work',kind:'secondary'}]))+'<div data-sync></div>';
-    var retry=body.querySelector('#wf-retry');if(retry)retry.onclick=async function(){retry.disabled=true;try{await send(s);if(visible())paint(view,s);}catch(e){mToast(e.message,'err');retry.disabled=false;}};
+    if(afterPaint)Promise.resolve(afterPaint(body,s,visible)).catch(function(e){if(visible())mToast(e.message,'err');});
+    var retry=body.querySelector('#wf-retry');if(retry)retry.onclick=async function(){retry.disabled=true;try{await send(s);if(visible())paint(view,s,afterPaint);}catch(e){mToast(e.message,'err');retry.disabled=false;}};
     var review=body.querySelector('#wf-review');if(review)review.onclick=async function(){review.disabled=true;try{if(a.reviewPath)await API.get(a.reviewPath);guard(s);if(a.state==='rejected'){if(a.discardDraftOnReject)s.batch={};s.operation={kind:'workflow',route:a.route,state:'draft'};s.rows.forEach(function(r){if(!r.saved)r.local=null;});await save(s);}else await mProductionDrafts.remove(s);if(visible()){var route=a.reviewRoute||a.route,params=Object.assign({},a.reviewParams||{},a.resultParam&&a.result?{[a.resultParam]:a.result.id}:{});if(MApp.nav(route,params)===location.hash)MApp.render();else MApp.go(route,params);}}catch(e){mToast(e.message,'err');review.disabled=false;}};
     body.querySelector('#wf-back').onclick=function(){MApp.go('work');};
-    if(a.local)body.querySelector('[data-sync]').appendChild(RoleUI.syncWatch(a.local,function(r){if(!visible())return;if(r.state==='confirmed'){a.local=null;if(a.waitingPhoto!=null){s.rows[a.waitingPhoto].local=null;delete a.waitingPhoto;a.state='new';}else a.state='confirmed';}else if(['failed','rejected','conflict'].indexOf(r.state)!==-1){a.state='conflict';a.error=r.error||'Reconcile the original site command.';}else return;save(s).then(function(){if(visible())paint(view,s);}).catch(function(e){mToast(e.message,'err');});}));
+    if(a.local)body.querySelector('[data-sync]').appendChild(RoleUI.syncWatch(a.local,function(r){if(!visible())return;if(r.state==='confirmed'){a.local=null;if(a.waitingPhoto!=null){s.rows[a.waitingPhoto].local=null;delete a.waitingPhoto;a.state='new';}else a.state='confirmed';}else if(['failed','rejected','conflict'].indexOf(r.state)!==-1){a.state='conflict';a.error=r.error||'Reconcile the original site command.';}else return;save(s).then(function(){if(visible())paint(view,s,afterPaint);}).catch(function(e){mToast(e.message,'err');});}));
   }
   window.mWorkflow={owns:function(s){try{return owns(s);}catch(e){return false;}},load:load,draft:draft,save:save,start:start,paint:paint};
 })();

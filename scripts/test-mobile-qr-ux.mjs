@@ -371,7 +371,9 @@ try {
         await launch(driver); await page.goto(base+'/m#/deliveries?id='+d.id);
         await page.getByRole('button',{name:'Start delivery',exact:true}).click(); await page.locator('#delivery-review').click();
         await page.getByRole('button',{name:'Complete delivery',exact:true}).click(); await page.locator('[data-ok]').click();
-        await page.locator('#delivery-release').waitFor();
+        await page.locator('#delivery-review').waitFor();
+        assert.equal(await page.locator('#delivery-release').count(),0,'A driver without releasing permission must not receive a release action');
+        assert.match(await page.locator('#m-view').innerText(),/Ask releasing staff to record the warehouse handoff first/);
         assert.equal((await api('GET','/deliveries/'+d.id)).status,'out_for_delivery');
         assert.equal((await api('GET','/inventory/'+batchProduct.id)).quantity,before);
         await api('POST','/orders/'+pendingOrder.id+'/accept-release');
@@ -391,7 +393,9 @@ try {
         await launch(driver); await page.goto(base+'/m#/deliveries?id='+d.id);
         await page.getByRole('button',{name:'Record courier pickup',exact:true}).click();
         assert.equal(await page.getByRole('button',{name:'Start delivery',exact:true}).count(),0);
-        await page.locator('[data-ok]').click(); await page.locator('#delivery-release').waitFor();
+        await page.locator('[data-ok]').click(); await page.locator('#delivery-review').waitFor();
+        assert.equal(await page.locator('#delivery-release').count(),0,'A driver without releasing permission must not receive a release action');
+        assert.match(await page.locator('#m-view').innerText(),/Ask releasing staff to record the warehouse handoff first/);
         assert.equal((await api('GET','/deliveries/'+d.id)).status,'pending');
         assert.equal((await api('GET','/inventory/'+stock.id)).quantity,2);
         await api('POST','/orders/'+so.id+'/accept-release');

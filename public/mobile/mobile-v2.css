@@ -1186,3 +1186,24 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 :root[data-theme=dark] .m-scan-page .m-btn:not(.m-btn-secondary),:root[data-theme=dark] .m-queue-page .m-btn:not(.m-btn-secondary),:root[data-theme=dark] .m-scan .m-btn{color:var(--v2-bg)}
 
 .m-scan-page .m-hint,.m-scan-page .m-picked>span{overflow-wrap:anywhere;min-width:0}
+
+/* Customer identity stays explicit in both mobile sale forms. */
+.sale-customer-picker { padding:16px; }
+.sale-customer-picker [hidden] { display:none!important; }
+.sale-customer-picker .m-field { margin:10px 0; }
+.sale-customer-status { color:var(--rk-text,var(--v2-text)); font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+.sale-customer-results { max-height:220px; overflow:auto; border:1px solid var(--v2-line); border-radius:12px; margin:8px 0; }
+.sale-customer-results button { width:100%; min-height:48px; display:block; text-align:left; border:0; border-bottom:1px solid var(--v2-line); background:var(--v2-surface); color:var(--v2-text); padding:11px 13px; font:inherit; }
+.sale-customer-results button[aria-selected=true],.sale-customer-results button:hover { background:var(--v2-surface-soft); }
+.sale-customer-results small { display:block; margin-top:3px; font-size:12px; color:var(--v2-text-2); }
+.sale-customer-results p { margin:12px; font-size:12px; line-height:1.6; }
+.sale-customer-picker :is(button,input,select):focus-visible { outline:3px solid var(--v2-green); outline-offset:2px; }
+
+.sale-linked-job summary{cursor:pointer;min-height:48px;padding:8px 0;}
+.sale-linked-job summary small{display:block;color:var(--v2-text-2);margin-top:6px;}
+
+.sale-order-form .rk-field>small,.sale-order-form .m-label,.sale-order-form .m-hint{color:var(--v2-text-2);}
+
+.sale-order-form .rk-field>small{font-size:12px;line-height:1.5;}
+
+:root[data-theme=dark] .sale-order-form .m-btn:not(.m-btn-secondary){color:var(--v2-bg);}

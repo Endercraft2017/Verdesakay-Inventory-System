@@ -226,6 +226,20 @@ not grant that approval. **Order tracking** shows warehouse progress read-only,
 with commercial pricing removed by the API for operational viewers. A customer
 job order is a sales document; a production job order remains in Production.
 
+Mobile sale entry offers **Existing registered customer** search or explicit
+**Walk-in / unregistered** entry. Editing a selected name removes its registry
+link. **Target delivery date** is optional; actual delivery/courier dates are
+read-only recorded events. Each completed trip shows its slip and date; a courier
+pickup is labelled as a handoff, not customer delivery.
+
+An approver uses **Review approval**, checks current stock and the production
+handoff, and explicitly agrees to any missing part/CKD backorder. Approval can
+draft linked production jobs; expand their number to view read-only progress.
+Production still approves, kits, builds, inspects and receives the goods. A saved
+site-PC action needs confirmation before it is final. A refused or stale review
+requires current records; interrupted edits cannot overwrite a newer employee edit.
+Customer JO records are view-only, including for administrators.
+
 QC and QA may inspect in either order on two-inspection jobs. Each desk uses its
 own checklist and draft answers. A single pass does not permit RTS receiving;
 both required passes and cleared holds are needed. Legacy intake shows which

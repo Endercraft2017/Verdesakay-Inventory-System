@@ -233,7 +233,7 @@
       count: function (read) { return (read || API.get)('/release-slips/queue').then(function (q) {
         return (q.to_accept || []).length + (q.releasing || []).length;
       }); } },
-    { label: 'Customer service', sub: 'Search and follow up sale orders', route: 'sales-service', all: ['orders.view'], any: ['orders.create','orders.edit'], action: true },
+    { label: 'Customer service', sub: 'Search and follow up sale orders', route: 'sales-service', all: ['orders.view'], any: ['orders.create','orders.edit','orders.approve'], action: true },
     { label: 'New sale order', sub: 'Prepare an open customer order', route: 'sales-new', all: ['orders.view','orders.create'], action: true },
     { label: 'Kit releases', sub: 'Pick and release job-order kits', route: 'kit-release', permission: 'production.kit_release',
       count: function (read) { return (read || API.get)('/job-orders?stage=awaiting_release').then(function (rows) { return (rows || []).length; }); } },
@@ -276,7 +276,7 @@
     {label:'My assigned purchases',sub:'Upload receipts and liquidate your purchases',route:'purchase-requests',params:{view:'assigned'},any:['purchasing.request','purchasing.manage'],strict:true}
   );
 
-  OPS.push({label:'Sales pipeline',sub:'CSR review, customer follow-up and real order stages',route:'sales',all:['orders.view'],any:['orders.create','orders.edit']},
+  OPS.push({label:'Sales pipeline',sub:'CSR review, customer follow-up and real order stages',route:'sales',all:['orders.view'],any:['orders.create','orders.edit','orders.approve']},
     {label:'Customers',sub:'Customer registry and recent sales',route:'customers',permission:'orders.view'},
     {label:'Order tracking',sub:'Read-only sales and warehouse progress',route:'order-tracking',permission:'orders.view'});
 
@@ -357,7 +357,7 @@
     function add(key,title,route,permission,path,select,params){
       if(MApp.canOpen(route)&&permission.some(function(p){return MApp.can(p);}))sources.push({key:key,title:title,route:route,path:path,select:select||function(q){return q||[];},params:params||function(r){return {id:r.id};}});
     }
-    if(MApp.canOpen('sales'))add('csr','Sales follow-up','sales',['orders.create','orders.edit'],'/orders?type=sale',function(q){return (q||[]).filter(function(r){return !['cancelled','completed','fulfilled'].includes(r.status)&&!(r.release_slip_number&&!r.backordered);});});
+    if(MApp.canOpen('sales'))add('csr','Sales follow-up','sales',['orders.create','orders.edit','orders.approve'],'/orders?type=sale',function(q){return (q||[]).filter(function(r){return !['cancelled','completed','fulfilled'].includes(r.status)&&!(r.release_slip_number&&!r.backordered);});});
     add('release','Sales order releasing','so',['orders.release'],'/release-slips/queue',function(q){return (q.to_accept||[]).concat(q.releasing||[]);});
     add('kits','Production kit release','kit-release',['production.kit_release'],'/job-orders?stage=awaiting_release');
     add('parts','Parts request','repairs',['production.repairs'],'/production/repairs?status=requested');

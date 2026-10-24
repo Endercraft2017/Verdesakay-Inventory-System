@@ -152,7 +152,7 @@ window.MApp = (function () {
     'purchase-requests':['purchasing.request','purchasing.manage','purchasing.approve_requests','purchasing.issue_cash','purchasing.settle_requests'],
     returns: ['returns.receive','returns.inspect','returns.dispose','inventory.view','orders.release','orders.view','production.inspect_qc','production.inspect_qa'], 'semi-finishing':['production.approve','production.manage'], allocate: ['inventory.transfer','orders.direct_sale'], batch: ['inventory.adjust'], 'cycle-count': ['inventory.count'], 'stock-counts': ['inventory.count'], 'stock-count-tasks':['inventory.count'],
     damage: ['inventory.adjust'], receive: ['inventory.receive'],
-    'sales-service': ['orders.create','orders.edit'], 'sales-order': ['orders.create','orders.edit'], 'sales-new': ['orders.create'],
+    'sales-service': ['orders.create','orders.edit','orders.approve'], 'sales-order': ['orders.create','orders.edit','orders.approve'], 'sales-new': ['orders.create'],
     'stock-move': ['inventory.adjust'], transfer: ['inventory.transfer'], 'assign-qr': ['inventory.adjust'],
     'new-item': ['inventory.create'],
     'my-log': ['inventory.view'], item: ['inventory.view'], location: ['inventory.view'], 'low-stock': ['inventory.view'],
@@ -185,7 +185,7 @@ window.MApp = (function () {
   };
   function routeEnabled(name) { return (ROUTE_MODULES[name] || []).every(hasModule); }
   function canOpen(name) {
-    if(name==='sales'&&(!can('orders.view')||!(can('orders.create')||can('orders.edit'))))return false;
+    if(name==='sales'&&(!can('orders.view')||!(can('orders.create')||can('orders.edit')||can('orders.approve'))))return false;
     var needs = ROUTE_NEEDS[name] || DESK_NEEDS[name];
     return routeEnabled(name) && (!needs || needs.some(can));
   }
