@@ -9,6 +9,7 @@ import { parseBody, noteSchema, taskSchema, updateTaskSchema, bookmarkSchema } f
 import { syncClass } from '../sync';
 import { db } from '../shared/db';
 import { scheduleNoteSchema } from '../shared/validation';
+import mobileQuickActions from './mobile-quick-actions.routes';
 type CheckItem = { id: string; text: string; done: boolean };
 function atomic<T>(fn: () => T): T {
   db.exec('SAVEPOINT personal_note');
@@ -23,6 +24,7 @@ function linkedTask(note: { title: string | null; body: string; checklist: strin
 
 const router = Router();
 router.use(requireAuth);
+router.use('/mobile/quick-actions', mobileQuickActions);
 
 /* ---------------- Notes ---------------- */
 router.get('/notes', (req, res) => {
