@@ -258,9 +258,23 @@ requester/buyer separation is also enforced by the backend.
 
 ### Pending work on Home
 
+Categories with pending work or holds open automatically. Clear queues share a
+single **Other queues · N clear** disclosure. If every authorized queue has been
+checked successfully and has no work or holds, Home shows **No pending warehouse
+work** and **View all N queues**. Expanding that row reveals direct queue links.
+Failed and loading queues never count as clear; failures remain visibly Unknown.
+
+A manual collapse survives unchanged refreshes; changed work reopens its category.
+Active categories and their single preview record are oldest first. Counts still
+cover the full queue. **View queue** opens the complete existing workflow when the
+record you need is not the oldest preview. Finishing the oldest item advances the
+next one on return or refresh. Home polls every 30 seconds while open; **Refresh**
+checks immediately. Missing dates are labelled rather than invented. Workflow
+screens retain their own priorities and safety checks.
+
 Home shows a quick preview above Quick access for your assigned parts/kit release,
 QC, QA, hold-review and RTS receiving duties. Each desk shows its pending count
-and up to two records. Tap a record for details, then open its authorized workflow,
+and its oldest record. Tap a record for details, then open its authorized workflow,
 or use the queue button for the full list. The preview updates every 30 seconds
 and has a Refresh button. Unknown means the live queue could not be checked.
 Employee-only accounts do not see these operational desks.

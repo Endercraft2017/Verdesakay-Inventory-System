@@ -533,7 +533,8 @@
       }
       var rows=source.select(q);
       if(strict&&(!Array.isArray(rows)||rows.some(function(r){return !r||!Number.isInteger(Number(r.id))||Number(r.id)<=0;})))throw new Error('The queue records could not be verified.');
-      return context?{rows:rows,held:source.key==='rts'?q.units.filter(function(u){return !!u.hold;}).length:0}:rows;
+      var held=source.key==='rts'?q.units.filter(function(u){return !!u.hold;}):[];
+      return context?{rows:rows,held:held.length,heldRows:held}:rows;
     });
     if(!strict)return request;
     return Promise.race([request,new Promise(function(resolve,reject){timer=setTimeout(function(){reject(new Error('Queue check timed out. Reconnect and refresh.'));},12000);})]).finally(function(){clearTimeout(timer);});
@@ -549,39 +550,141 @@
     var blocked=rows.filter(function(r){return blockedInspection(source,r);}).length;
     return count+(blocked?' · '+blocked+' blocked':'');
   }
-  // Home and Work share selectors and exact-record links, but each Home desk resolves independently.
+  // Home orders outstanding work by age, independently of each desk's operational priority.
+  function homeWorkTime(source, record) {
+    var value = source.key === 'kits' ? record.approved_at || record.created_at || record.updated_at :
+      source.key === 'holds' ? record.held_at :
+      source.key === 'rts' ? record.hold?.created_at || record.final_pass?.created_at || record.created_at || record.updated_at :
+      (record.status === 'rework' && record.last_fail?.created_at) || record.created_at || record.updated_at;
+    if (!value) return Infinity;
+    var text = String(value).trim();
+    // SQLite timestamps are UTC. Do not interpret a zone-less server timestamp in the phone's zone.
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(text)) text = text.replace(' ', 'T') + 'Z';
+    var time = Date.parse(text);
+    return Number.isFinite(time) ? time : Infinity;
+  }
   window.mHomeWorkPreview = function(page) {
-    var keys=['kits','parts','qc','qa','holds','rts'],params={qc:{role:'qc'},qa:{role:'qa'},holds:{role:'qa',tab:'hold'}};
-    function sources(){return attentionSources().filter(function(s){return keys.includes(s.key);});}
-    if(!sources().length)return;
-    var owner=(MApp.getMe()||{}).id,run=0,timer;
-    var section=mEl('<section class="v2-home-work" aria-label="Pending work"><div class="v2-work-title"><h2>Pending work</h2><button type="button" class="rk-back" data-home-work-refresh>Refresh</button></div><div data-home-work-list aria-live="polite"></div></section>');
+    var keys = ['kits','parts','qc','qa','holds','rts'], params = {qc:{role:'qc'},qa:{role:'qa'},holds:{role:'qa',tab:'hold'}};
+    function sources() { return attentionSources().filter(function(s) { return keys.includes(s.key); }); }
+    if (!sources().length) return;
+    var owner = mReadScope.identity(), run = 0, timer, groups = new Map();
+    var chevron = '<svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg>';
+    var section = mEl('<section class="v2-home-work" aria-label="Pending work"><div class="v2-work-title"><h2>Pending work</h2><button type="button" class="rk-back" data-home-work-refresh>Refresh</button></div><p class="v2-home-work-context" data-home-work-context>Checking current work…</p><div class="v2-home-work-empty" data-home-work-empty hidden><span aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg></span><div><b>No pending warehouse work</b><small data-home-work-checked></small></div></div><div data-home-work-list></div><div data-home-work-pending hidden></div><details class="v2-home-work-other" data-home-work-other hidden><summary><span data-home-work-other-label>Other queues</span>'+chevron+'</summary><div data-home-work-clear-list></div></details><p class="work-sr-only" role="status" data-home-work-status></p></section>');
     page.appendChild(section);
-    function current(){return section.isConnected&&(MApp.getMe()||{}).id===owner;}
-    async function refresh(){
-      clearTimeout(timer);if(!current())return;MApp.refreshAccess();var token=++run,desks=sources(),host=section.querySelector('[data-home-work-list]');
-      if(!desks.length){section.remove();return;}host.innerHTML='';
-      await Promise.all(desks.map(async function(source){
-        var group=mEl('<section class="v2-home-work-desk" data-home-work="'+mEsc(source.key)+'"><div class="v2-home-work-summary"><h3>'+mEsc(source.title)+'</h3><span data-home-work-count>Loading…</span></div><div data-preview-records></div></section>');host.appendChild(group);
-        function active(){return current()&&token===run&&group.isConnected;}
-        try{
-          var result=await readAttention(source,true);if(!active())return;
-          if(!sources().some(function(s){return s.key===source.key;})){group.remove();return;}
-          group.querySelector('[data-home-work-count]').textContent=homeCount(source,result.rows);
-          var records=group.querySelector('[data-preview-records]');
-          if(!result.rows.length)records.appendChild(mEl('<p class="m-hint">'+(source.key==='rts'?'No units or batches ready for receiving.':'No pending work in this queue.')+'</p>'));
-          result.rows.slice(0,2).forEach(function(record){records.appendChild(attentionRow(source,record));});
-          if(result.held){var held=mEl('<button type="button" class="rk-back">'+result.held+' unit'+(result.held===1?'':'s')+' on hold · View RTS issues</button>');held.onclick=function(){if(sources().some(function(s){return s.key==='rts';}))MApp.go('receiving',{tab:'issues'});else MApp.render();};records.appendChild(held);}
-        }catch(e){if(!active())return;group.querySelector('[data-home-work-count]').textContent='Unknown';group.querySelector('[data-preview-records]').innerHTML='<p class="m-hint" role="status">Queue unavailable. Reconnect and refresh; pending work could not be checked.</p>';}
-        if(!active())return;
-        var open=mEl('<button type="button" class="v2-home-secondary">View '+mEsc(source.title)+' queue</button>');
-        open.onclick=function(){if(!sources().some(function(s){return s.key===source.key;})){MApp.render();return;}MApp.go(source.route,params[source.key]||{});};group.appendChild(open);
+    var host = section.querySelector('[data-home-work-list]'), clearHost=section.querySelector('[data-home-work-clear-list]'), pendingHost=section.querySelector('[data-home-work-pending]');
+    var titles={kits:'Kit release',parts:'Parts requests',holds:'QA holds'};
+    function current() { return section.isConnected && location.hash.split('?')[0] === '#/home' && mReadScope.identity() === owner; }
+    function setOpen(g, value) { g.open = value; g.details.open = value; }
+    function openQueue(g) {
+      if(!current()||!sources().some(function(s){return s.key===g.source.key;})){MApp.render();return;}
+      MApp.go(g.source.route,params[g.source.key]||{});
+    }
+    function group(source) {
+      if (groups.has(source.key)) return groups.get(source.key);
+      var title=titles[source.key]||source.title;
+      var el=mEl('<section class="v2-home-work-group" data-home-work="'+mEsc(source.key)+'"><details class="v2-home-work-desk"><summary class="v2-home-work-summary"><h3>'+mEsc(title)+'</h3><span data-home-work-count>Loading…</span>'+chevron+'<small data-home-work-age hidden></small></summary><div data-home-work-body><div data-preview-records></div></div></details><button type="button" class="v2-home-work-clear" data-home-work-clear hidden><b>'+mEsc(title)+'</b>'+chevron+'</button></section>');
+      var g={source:source,el:el,details:el.querySelector('details'),count:el.querySelector('[data-home-work-count]'),state:'loading',pending:true,oldest:Infinity,open:false,manual:null,fingerprint:null};
+      g.details.addEventListener('toggle', function() {
+        if (g.details.open !== g.open) { g.open = g.details.open; g.manual = g.open; }
+      });
+      el.querySelector('[data-home-work-clear]').onclick=function(){openQueue(g);};
+      groups.set(source.key,g);pendingHost.appendChild(el);return g;
+    }
+    function arrange() {
+      if (!current()) return;
+      var priority={work:0,unavailable:1,loading:2,empty:3};
+      var sorted=Array.from(groups.values()).sort(function(a,b){
+        return priority[a.state]-priority[b.state] || (a.oldest < b.oldest ? -1 : a.oldest > b.oldest ? 1 : 0) || keys.indexOf(a.source.key)-keys.indexOf(b.source.key);
+      });
+      var focus=document.activeElement,positions=new Map();
+      sorted.forEach(function(g){
+        var target=g.state==='empty'?clearHost:g.state==='loading'?pendingHost:host,index=positions.get(target)||0;
+        if(target.children[index]!==g.el)target.insertBefore(g.el,target.children[index]||null);
+        positions.set(target,index+1);
+      });
+      var clear=sorted.filter(function(g){return g.state==='empty'&&!g.pending;}),checking=sorted.filter(function(g){return g.pending;}),work=sorted.filter(function(g){return g.state==='work';}),unknown=sorted.filter(function(g){return g.state==='unavailable'&&!g.pending;});
+      var allClear=sorted.length>0&&clear.length===sorted.length&&!checking.length;
+      section.querySelector('[data-home-work-empty]').hidden=!allClear;
+      section.querySelector('[data-home-work-checked]').textContent='All '+sorted.length+' queue'+(sorted.length===1?'':'s')+' checked';
+      var context=section.querySelector('[data-home-work-context]');
+      context.hidden=allClear;
+      context.textContent=checking.length?'Checking '+checking.length+' queue'+(checking.length===1?'':'s')+'…':work.length?work.length+' queue'+(work.length===1?'':'s')+' need'+(work.length===1?'s':'')+' attention · Oldest first':unknown.length+' queue'+(unknown.length===1?'':'s')+' could not be checked';
+      var other=section.querySelector('[data-home-work-other]');other.hidden=!clear.length;
+      section.querySelector('[data-home-work-other-label]').textContent=allClear?'View all '+clear.length+' queue'+(clear.length===1?'':'s'):'Other queues · '+clear.length+' clear';
+      if(focus&&focus.isConnected&&document.activeElement!==focus){
+        if(focus.closest('[hidden]')){if(other.hidden)section.querySelector('[data-home-work-refresh]').focus({preventScroll:true});else other.querySelector('summary').focus({preventScroll:true});}
+        else focus.focus({preventScroll:true});
+      }
+    }
+    function fingerprint(result) {
+      return result.rows.concat(result.heldRows || []).map(function(r) {
+        return JSON.stringify([attentionId(r),r.status,r.updated_at,r.prepared_at,r.warehouse_accepted_at,r.remaining_qty,r.open_part_requests,r.qc_result,r.qa_result,r.hold?.id]);
+      }).sort().join('|');
+    }
+    function fill(g, result, error) {
+      var wasFocused = g.el.contains(document.activeElement); var clearButton=g.el.querySelector('[data-home-work-clear]');
+      var rows = result ? result.rows.slice().sort(function(a,b) {
+        var x=homeWorkTime(g.source,a), y=homeWorkTime(g.source,b);
+        return (x<y?-1:x>y?1:0) || String(a.work_kind||'').localeCompare(String(b.work_kind||'')) || Number(a.id)-Number(b.id);
+      }) : [];
+      var state = error ? 'unavailable' : rows.length || result.held ? 'work' : 'empty';
+      var signature = state + ':' + (result ? fingerprint(result) : 'unknown');
+      if (g.fingerprint !== signature) g.manual = null;
+      g.fingerprint = signature; g.state = state; g.pending=false;
+      g.oldest = result ? rows.concat(result.heldRows || []).reduce(function(oldest,r) { return Math.min(oldest,homeWorkTime(g.source,r)); },Infinity) : Infinity;
+      g.el.dataset.state = state;
+      g.count.textContent = error ? 'Unknown' : homeCount(g.source, rows);
+      g.details.hidden=state==='empty';clearButton.hidden=state!=='empty';
+      if(state==='empty')clearButton.insertBefore(g.count,clearButton.querySelector('svg'));else g.details.querySelector('summary').insertBefore(g.count,g.details.querySelector('summary>svg'));
+      var age = g.el.querySelector('[data-home-work-age]'); age.hidden = state === 'empty';
+      age.textContent = error ? 'Queue unavailable · Refresh to check work' : state === 'work' ?
+        (result.held ? result.held+' on hold · ' : '')+(Number.isFinite(g.oldest) ? 'Oldest · '+new Date(g.oldest).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',year:'numeric'}) : 'Oldest date unavailable') : '';
+      var body = g.el.querySelector('[data-home-work-body]');
+      body.innerHTML = '<div data-preview-records></div>';
+      var records = body.querySelector('[data-preview-records]');
+      if (error) records.appendChild(mEl('<p class="m-hint" role="status">Queue unavailable. Reconnect and refresh; pending work could not be checked.</p>'));
+      else {
+        if (!rows.length) records.appendChild(mEl('<p class="m-hint">'+(g.source.key==='rts'?'No units or batches ready for receiving.':'No pending work in this queue.')+'</p>'));
+        rows.slice(0,1).forEach(function(record) { records.appendChild(attentionRow(g.source,record)); });
+        if (result.held) {
+          var held=mEl('<button type="button" class="rk-back">'+result.held+' unit'+(result.held===1?'':'s')+' on hold · View RTS issues</button>');
+          held.onclick=function(){if(current()&&sources().some(function(s){return s.key==='rts';}))MApp.go('receiving',{tab:'issues'});else MApp.render();};records.appendChild(held);
+        }
+      }
+      var open = mEl('<button type="button" class="v2-home-work-queue">View '+mEsc(g.source.title)+' queue '+chevron+'</button>');
+      open.onclick=function(){openQueue(g);};body.appendChild(open);
+      setOpen(g, g.manual === null ? state !== 'empty' : g.manual);
+      arrange();
+      if(wasFocused){if(state==='empty')section.querySelector('[data-home-work-other]>summary').focus({preventScroll:true});else g.details.querySelector('summary').focus({preventScroll:true});}
+    }
+    async function refresh() {
+      clearTimeout(timer); if (!current()) return;
+      MApp.refreshAccess();section.querySelector('[data-home-work-status]').textContent='Checking pending work…'; var token=++run, desks=sources(), available=desks.map(function(s){return s.key;});
+      groups.forEach(function(g,key){if(!available.includes(key)){g.el.remove();groups.delete(key);}});
+      if (!desks.length) { section.remove(); return; }
+      desks.forEach(function(source){
+        var g=group(source);g.pending=true;
+        if(g.state==='empty'){g.state='loading';g.el.dataset.state='loading';}
+        g.count.textContent='Loading…';
+        var body=g.el.querySelector('[data-home-work-body]');if(body.contains(document.activeElement))g.details.querySelector('summary').focus({preventScroll:true});body.innerHTML='<p class="m-hint">Checking current work…</p>';
+      });
+      arrange();
+      await Promise.all(desks.map(async function(source) {
+        var g=group(source);
+        function active(){return current()&&token===run&&g.el.isConnected;}
+        try {
+          var result=await readAttention(source,true); if(!active())return;
+          if(!sources().some(function(s){return s.key===source.key;})){g.el.remove();groups.delete(source.key);return;}
+          fill(g,result,null);
+        } catch(e) { if(active())fill(g,null,e); }
       }));
-      if(current()&&token===run)timer=setTimeout(refresh,30000);
+      if(current()&&token===run){
+        section.querySelector('[data-home-work-status]').textContent=Array.from(groups.values()).map(function(g){return g.source.title+': '+g.el.querySelector('[data-home-work-count]').textContent;}).join('. ');
+        timer=setTimeout(refresh,30000);
+      }
     }
     section.querySelector('[data-home-work-refresh]').onclick=refresh;
-    setTimeout(refresh,0);
-    return section;
+    setTimeout(refresh,0); return section;
   };
 
   MApp.route('work', function (view,params) {

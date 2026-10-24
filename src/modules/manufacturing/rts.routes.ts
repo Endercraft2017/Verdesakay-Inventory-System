@@ -98,8 +98,8 @@ router.get('/queue', receiveGate, (req, res) => {
     return { ...u, final_pass: pass ?? null, hold: holds.get(u.id) ?? null };
   });
   const batches = queryAll<{ id: number; number: string; job_order_id: number; job_order_number: string; product_name: string; build_mode: string;
-    sku: string | null; output_location_id: number | null; remaining_qty: number }>(
-    `SELECT pb.id, pb.number, j.id AS job_order_id, j.number AS job_order_number, j.product_name, j.build_mode, j.intake_origin, i.sku, j.output_location_id,
+    sku: string | null; output_location_id: number | null; remaining_qty: number; created_at: string }>(
+    `SELECT pb.id, pb.number, pb.created_at, j.id AS job_order_id, j.number AS job_order_number, j.product_name, j.build_mode, j.intake_origin, i.sku, j.output_location_id,
             pb.qty - COALESCE((SELECT SUM(quantity) FROM production_receipt_items WHERE batch_id = pb.id), 0) AS remaining_qty
      FROM production_batches pb
      JOIN job_orders j ON j.id = pb.job_order_id

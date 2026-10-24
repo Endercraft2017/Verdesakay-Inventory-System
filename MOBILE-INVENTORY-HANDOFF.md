@@ -1,5 +1,48 @@
 # Mobile inventory, production, and Sales handoff
 
+## Approved compact Home preview — cache v155 (2026-10-25)
+
+Applies the approved MagicPath before/after design to the real mobile app. Clear
+queues now share one native disclosure. An all-clear message appears only after
+all authorized queue reads succeed and none contains work or RTS holds. Loading
+and failed checks cannot become clear queues. Active categories stay visible in
+oldest-first order, each showing one oldest-record preview and its full count.
+Clear-queue rows open their existing workflow directly. Existing detail/action
+checks, count nouns, blockers, batch quantities and 30-second polling remain.
+
+The earlier v149 local iteration below is superseded by this approved layout.
+Eleven compact-layout cases, fourteen existing Home cases and all seven complete
+warehouse tasks pass against disposable real API/database/browser fixtures.
+The all-empty presentation fixture measures 142px versus the earlier 421px
+collapsed layout. 183 focused regressions and TypeScript pass before upstream
+integration. Four browser-only defects are detected: false all-clear, expanded
+clear menus, newest-first ordering and extra record previews. The v155 cache
+integrates the newer upstream v154 shell without replacing its assets or recovery.
+See `docs/reviews/mobile-home-compact-validation.md` for integration checks and
+limits. No physical-phone or deployed-site acceptance is implied.
+
+## Home pending-work disclosures — earlier local iteration v149 (2026-10-25)
+
+The existing six Home queue categories are compact native disclosures. Empty
+queues collapse; work and RTS holds open automatically. Manual collapse persists
+across unchanged refreshes, while new/changed work reopens the category. Unknown
+queues remain visibly unknown and open their explanation instead of pretending
+to be empty. Active categories and their two preview records sort oldest first.
+Completion recalculates the order on return, manual refresh or the existing
+30-second Home poll. Workflow action checks and detail links are unchanged.
+
+Age uses the outstanding record's existing date (kit approval, request creation,
+inspection unit/rework, QA hold, RTS pass/hold or batch creation), not unrelated
+modification dates. The RTS batch response now includes its stored creation date.
+Missing dates have a stable fallback position and an explicit unavailable label.
+Eight new real API/database/browser scenarios, the existing fourteen Home cases,
+183 focused tests and TypeScript pass. Two browser-only faults (newest-first
+sorting and expanded empty queues) were detected by their regressions. Both
+themes, native keyboard toggling and narrow/landscape layouts were checked.
+See `docs/reviews/mobile-home-disclosures-validation.md` for evidence and limits.
+This iteration was tested locally before the approved compact layout above;
+its historical evidence does not imply physical-device acceptance.
+
 ## Phone Sales handoff implemented — cache v148 (2026-10-24)
 
 Both existing mobile sale-entry routes now use an explicit searchable registered
