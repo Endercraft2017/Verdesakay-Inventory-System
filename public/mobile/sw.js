@@ -9,7 +9,7 @@ var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
 importScripts(TENANT_BASE + '/mobile/lib/queue-store.js');
 var queueStore = MobileQueueStore.create(TENANT_BASE);
 var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
-var CACHE_VERSION = CACHE_PREFIX + 'v150';
+var CACHE_VERSION = CACHE_PREFIX + 'v151';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -23,6 +23,7 @@ var SHELL = [
   '/mobile/mobile.css',
   '/mobile/mobile-v2.css',
   '/mobile/stock.css',
+  '/mobile/stock-actions.css',
   '/css/photo-viewer.css',
   '/css/select-controls.css',
   '/mobile/guides.css',
@@ -75,6 +76,9 @@ var SHELL = [
   '/mobile/lib/queue.js',
   '/mobile/lib/production-drafts.js',
   '/mobile/lib/workflow-attempt.js',
+  '/mobile/lib/stock-action-ui.js',
+  '/mobile/lib/stock-action-form.js',
+  '/mobile/lib/stock-action-result.js',
   '/mobile/lib/push.js',
   '/mobile/lib/scanner.js',
   '/mobile/lib/selfie.js',
@@ -312,7 +316,7 @@ async function drainQueue() {
       if (response.ok) {
         var local = response.headers.get('X-Sync-State') === 'local' && (response.headers.get('X-Sync-Command') || 'local');
         await queueStore.settle(op.key,lease,local ? {local_command:local,local_state:'local',error:null,uncertain:false}
-          : body?.applied === false ? {error:body.message || 'The server did not apply this action. Review the existing record.',uncertain:false} : null);
+          : body?.applied === false ? {error:body.message || 'The server did not apply this action. Review the existing record.',uncertain:false} : null,{state:body?.applied===false?'rejected':local?'local':'confirmed',response:body,local:local||null});
         if (local) pending = true;
       } else {
         var retryable = response.status >= 500 || [401,403,429].includes(response.status);

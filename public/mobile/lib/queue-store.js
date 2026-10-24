@@ -42,6 +42,7 @@
             if (++count !== 2) return;
             try {
               var change = invoke(item.result, token.result) || {};
+              if (change.receipt) tx.objectStore('meta').put(change.receipt);
               if (change.remove) ops.delete(key);
               else if (change.row) ops.put(change.row);
               result = change.value;
@@ -68,17 +69,22 @@
       claim:function (key, owner, lease, force) {
         return edit(key,function (row,meta) {
           if (!row || !authenticated(meta,owner) || !owns(row,owner) || busy(row) || row.local_command || (!force && row.error)) return {};
+          if(row.keep_receipt&&Date.now()-row.created>=7*86400000){
+            row.error='This saved action expired. Reconcile the original request before recording a replacement.';row.uncertain=true;
+            return {row:row,receipt:{k:'receipt:'+key,user_id:row.user_id,server_base:row.server_base,path:row.path,state:'conflict',error:row.error,created:Date.now()}};
+          }
           row.lease = {id:lease,until:Date.now()+45000}; row.error = null;
           return {row:row,value:row};
         });
       },
-      settle:function (key, lease, patch) {
+      settle:function (key, lease, patch, outcome) {
         return edit(key,function (row) {
           // Never resurrect a discarded copy or overwrite a newer sender's result.
           if (!row || row.lease?.id !== lease) return {};
-          if (patch === null) return {remove:true,value:true};
+          var receipt = row.keep_receipt && outcome ? Object.assign({k:'receipt:'+key,user_id:row.user_id,server_base:row.server_base,path:row.path,created:Date.now()},outcome) : null;
+          if (patch === null) return {remove:true,value:true,receipt:receipt};
           delete row.lease; Object.assign(row,patch);
-          return {row:row,value:true};
+          return {row:row,value:true,receipt:receipt};
         });
       },
       discard:function (key, owner, current) {
@@ -86,7 +92,7 @@
           if (!current() || !authenticated(meta,owner)) throw new Error('The sign-in changed. Reopen Pending sync.');
           if (!row || !owns(row,owner)) return {};
           if (busy(row)) throw new Error('This action is sending. Wait for its result before discarding the phone copy.');
-          return {remove:true,value:true};
+          return {remove:true,value:true,receipt:row.keep_receipt ? {k:'receipt:'+key,user_id:row.user_id,server_base:row.server_base,path:row.path,state:'discarded',created:Date.now()} : null};
         });
       }
     };

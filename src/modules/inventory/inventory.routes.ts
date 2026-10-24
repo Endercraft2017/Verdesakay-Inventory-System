@@ -1,3 +1,5 @@
+import stockOutRoutes from './stock-out.routes';
+import { movementStock } from './movement-stock';
 import { saleHeld } from './sale-holds';
 import { kitPickedAt, repairHeld } from '../manufacturing/stock-holds';
 import { parseProductionLabel } from '../manufacturing/label-code';
@@ -65,6 +67,7 @@ function salesAvailability(itemId:number) {
 const router = Router();
 router.use(requireAuth);
 router.use('/stock-counts', stockCountRoutes);
+router.use('/', stockOutRoutes);
 
 // ---- Item image upload (JPG/PNG/GIF/WebP, 5 MB) — stored under UPLOAD_DIR ----
 const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
@@ -672,7 +675,11 @@ router.get('/:id/stock', requirePermission('inventory.view'), (req, res) => {
     res.status(404).json({ error: 'Item not found' });
     return;
   }
-  res.json(salesStock(id));
+  const movable = new Map(movementStock(id).map(row => [row.location_id, row]));
+  res.json(salesStock(id).map(row => ({ ...row,
+    assembled_movable: movable.get(row.location_id)!.assembled_movable,
+    semi_built_movable: movable.get(row.location_id)!.semi_built_movable,
+  })));
 });
 
 // GET /api/inventory/:id/where-used — finished products / sub-assemblies whose BOM

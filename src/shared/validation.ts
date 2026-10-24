@@ -721,6 +721,24 @@ export const adjustStockSchema = z.object({
   build_mode: z.enum(['assembled', 'semi_built']).default('assembled'),
 });
 
+/** A single item leaving explicitly selected warehouses, committed as one action. */
+export const multiLocationStockOutSchema = z.object({
+  quantity: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  build_mode: z.enum(['assembled', 'semi_built']).default('assembled'),
+  reason: trimmed.min(1, 'Record the adjustment reason').max(500),
+  sources: z.array(z.object({
+    location_id: z.coerce.number().int().positive(),
+    quantity: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  })).min(1).max(100),
+}).superRefine((input, ctx) => {
+  if (new Set(input.sources.map(s => s.location_id)).size !== input.sources.length) {
+    ctx.addIssue({ code: 'custom', message: 'Choose each source location only once', path: ['sources'] });
+  }
+  if (input.sources.reduce((sum, s) => sum + s.quantity, 0) !== input.quantity) {
+    ctx.addIssue({ code: 'custom', message: 'Source quantities must equal the requested quantity', path: ['sources'] });
+  }
+});
+
 /** Report damaged stock: moves `quantity` units out of the item into its "damage twin"
     (a copy row with category 'Damage'). See POST /api/inventory/:id/damage. */
 export const damageStockSchema = z.object({

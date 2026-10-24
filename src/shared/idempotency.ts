@@ -58,56 +58,81 @@ export function idempotency(req: Request, res: Response, next: NextFunction): vo
   // route, so their existing stable-key behavior remains unchanged.
   const requestHash = req.is('application/json') ? createHash('sha256').update(JSON.stringify(req.body)).digest('hex') : null;
 
-  const existing = db
-    .prepare('SELECT status_code, response, user_id, method, path, request_hash FROM idempotency_keys WHERE key = ?')
-    .get(key) as StoredRow | undefined;
-  if (existing) {
-    if (existing.user_id !== user.id || existing.method !== req.method || (existing.path !== path && existing.path !== req.path && existing.path !== legacyPath)) {
-      res.status(409).json({ error: 'This save key belongs to a different request. Start a new save attempt.' });
-      return;
+  const replayExisting = (): boolean => {
+    const existing = db
+      .prepare('SELECT status_code, response, user_id, method, path, request_hash FROM idempotency_keys WHERE key = ?')
+      .get(key) as StoredRow | undefined;
+    if (existing) {
+      if (existing.user_id !== user.id || existing.method !== req.method || (existing.path !== path && existing.path !== req.path && existing.path !== legacyPath)) {
+        res.status(409).json({ error: 'This save key belongs to a different request. Start a new save attempt.' });
+        return true;
+      }
+      if (existing.request_hash && existing.request_hash !== requestHash) {
+        res.status(409).json({ error: 'This save key belongs to a different request body. Review the result and use a new key for a changed decision.' });
+        return true;
+      }
+      requireAuth(req, res, () => {
+        if (!existing.response.startsWith(AUTH_RESPONSE_PREFIX)) {
+          res.status(409).json({ error: 'This saved result predates access verification. Check the existing record before making another save.', code: 'saved_access_changed' }); return;
+        }
+        const saved = JSON.parse(existing.response.slice(AUTH_RESPONSE_PREFIX.length)) as { accessHash: string; response: string };
+        if (saved.accessHash !== accessHash) {
+          res.status(409).json({ error: 'Your access changed since this save. Check the existing record before retrying.', code: 'saved_access_changed' }); return;
+        }
+        res.set('Idempotency-Replayed', 'true');
+        let response = saved.response;
+        if (response.startsWith(LOCAL_RESPONSE_PREFIX)) {
+          const local = JSON.parse(response.slice(LOCAL_RESPONSE_PREFIX.length)) as { response: string; command: string };
+          res.set('X-Sync-State', 'local'); res.set('X-Sync-Command', local.command); response = local.response;
+        }
+        res.status(existing.status_code).type('application/json').send(response);
+      });
+      return true;
     }
-    if (existing.request_hash && existing.request_hash !== requestHash) {
-      res.status(409).json({ error: 'This save key belongs to a different request body. Review the result and use a new key for a changed decision.' });
-      return;
-    }
-    requireAuth(req, res, () => {
-      if (!existing.response.startsWith(AUTH_RESPONSE_PREFIX)) {
-        res.status(409).json({ error: 'This saved result predates access verification. Check the existing record before making another save.', code: 'saved_access_changed' }); return;
-      }
-      const saved = JSON.parse(existing.response.slice(AUTH_RESPONSE_PREFIX.length)) as { accessHash: string; response: string };
-      if (saved.accessHash !== accessHash) {
-        res.status(409).json({ error: 'Your access changed since this save. Check the existing record before retrying.', code: 'saved_access_changed' }); return;
-      }
-      res.set('Idempotency-Replayed', 'true');
-      let response = saved.response;
-      if (response.startsWith(LOCAL_RESPONSE_PREFIX)) {
-        const local = JSON.parse(response.slice(LOCAL_RESPONSE_PREFIX.length)) as { response: string; command: string };
-        res.set('X-Sync-State', 'local'); res.set('X-Sync-Command', local.command); response = local.response;
-      }
-      res.status(existing.status_code).type('application/json').send(response);
-    });
-    return;
-  }
 
-  // Capture the JSON body the handler sends, then persist the outcome.
+    return false;
+  };
+  if (replayExisting()) return;
+  res.locals.replayIdempotentResult = replayExisting;
+
+  // The grouped stock-out stores this receipt inside its stock transaction. Other
+  // routes retain the existing response-time bookkeeping behavior.
+  const persist = (body: unknown) => {
+    let response = JSON.stringify(redactInventoryCosts(body, user, req.originalUrl));
+    if (res.getHeader('X-Sync-State') === 'local') {
+      response = LOCAL_RESPONSE_PREFIX + JSON.stringify({ response, command: String(res.getHeader('X-Sync-Command') || 'local') });
+    }
+    response = AUTH_RESPONSE_PREFIX + JSON.stringify({ accessHash, response });
+    db.prepare(
+      `INSERT OR IGNORE INTO idempotency_keys (key, user_id, method, path, status_code, response, request_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(key, user.id, req.method, path, res.statusCode, response, requestHash);
+  };
+  res.locals.persistIdempotentResult = persist;
   const sendJson = res.json.bind(res);
   res.json = (body: unknown) => {
     if (res.statusCode < 500 && !DONT_STORE.has(res.statusCode)) {
-      try {
-        let response = JSON.stringify(redactInventoryCosts(body,user,req.originalUrl));
-        if (res.getHeader('X-Sync-State') === 'local') {
-          response = LOCAL_RESPONSE_PREFIX + JSON.stringify({ response, command: String(res.getHeader('X-Sync-Command') || 'local') });
-        }
-        response = AUTH_RESPONSE_PREFIX + JSON.stringify({ accessHash, response });
-        db.prepare(
-          `INSERT OR IGNORE INTO idempotency_keys (key, user_id, method, path, status_code, response, request_hash)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).run(key, user.id, req.method, path, res.statusCode, response, requestHash);
-      } catch {
-        /* never let bookkeeping break the response */
-      }
+      try { persist(body); } catch { /* Other routes retain their existing behavior. */ }
     }
     return sendJson(body);
   };
   next();
+}
+
+/** Call only within the mutation's BEGIN IMMEDIATE transaction. The lock closes
+ * the gap between the app-wide lookup and a concurrent connection's commit. */
+export function replayIdempotentResult(res: Response): boolean {
+  if (typeof res.locals.replayIdempotentResult !== 'function') {
+    throw Object.assign(new Error('A valid Idempotency-Key is required for this stock action.'), { status: 400 });
+  }
+  return res.locals.replayIdempotentResult();
+}
+
+/** Persist before COMMIT so a crash cannot leave stock changed without a receipt.
+ * Unlike best-effort response bookkeeping, a storage failure must roll back stock. */
+export function persistIdempotentResult(res: Response, body: unknown): void {
+  if (typeof res.locals.persistIdempotentResult !== 'function') {
+    throw Object.assign(new Error('A valid Idempotency-Key is required for this stock action.'), { status: 400 });
+  }
+  res.locals.persistIdempotentResult(body);
 }
