@@ -42,6 +42,11 @@
         if(result?.applied===false)throw Object.assign(new Error(result.message||'The server did not apply this action.'),{status:409});
         if(!mStockActionUI.validResult(a.stockAction,result))throw new Error('The response was incomplete. Retry the original saved request.');
       }
+      else if(a.route==='stock-counts'&&window.mCountUI){
+        result=await stockRequest(s,function(opts){return API[a.method||'post'](a.path,a.payload,opts);});
+        if(result?.applied===false)throw Object.assign(new Error(result.message||'The server refused this count decision.'),{status:409});
+        if(!mCountUI.validResult(a,result))throw new Error('The response was incomplete. Retry the original saved request.');
+      }
       else result=await API[a.method||'post'](a.path,a.payload,{idempotencyKey:a.key});
       guard(s);a.result=result;a.local=API.syncLocal(result);a.state='confirmed';a.error=null;await save(s);
     }catch(e){if(!owns(s))throw e;a.state=classify(e);a.error=e.message;await save(s);}finally{delete busy[s.key];}
@@ -52,6 +57,7 @@
     await save(s);await send(s);return s;
   }
   function paint(view,s,afterPaint){
+    if(s.operation.route==='stock-counts'&&window.mCountResult){guard(s);mCountResult(view,s);return;}
     guard(s);if(s.operation.stockAction&&window.mStockActionResult){mStockActionResult(view,s);return;}var a=s.operation,hash=location.hash;
     function visible(){return view.isConnected&&body&&body.isConnected&&hash===location.hash&&owns(s);}
     var final=a.state==='confirmed'&&!a.local;

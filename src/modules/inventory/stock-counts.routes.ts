@@ -15,7 +15,7 @@ const router = Router();
 type Mode = 'assembled' | 'semi_built';
 type Batch = { batch_id:number; number:string; quantity:number; reserved:number };
 type Serial = { id:number; code:string; status:string };
-type Snapshot = { item_id:number; item_name:string; sku:string|null; location_id:number; location_name:string;
+type Snapshot = { item_id:number; item_name:string; sku:string|null; unit:string|null; is_finished_product:number; location_id:number; location_name:string;
   build_mode:Mode; book_quantity:number; serials:Serial[]; batches:Batch[]; untracked_quantity:number };
 type Count = { id:number; item_id:number; location_id:number; build_mode:Mode; book_quantity:number;
   book_serial_ids:string; book_batches:string; counted_untracked:number; counted_serial_ids:string;
@@ -60,7 +60,7 @@ type Task={id:number;item_id:number;location_id:number;build_mode:Mode;assigned_
 
 function serialCode(row:{id:number;identifier:string|null}) { return row.identifier?.trim() || `#${row.id}`; }
 function snapshot(itemId:number,locationId:number,mode:Mode):Snapshot|null {
-  const item=queryOne<{id:number;name:string;sku:string|null}>('SELECT id,name,sku FROM inventory_items WHERE id=?',itemId);
+  const item=queryOne<{id:number;name:string;sku:string|null;unit:string|null;is_finished_product:number}>('SELECT id,name,sku,unit,is_finished_product FROM inventory_items WHERE id=?',itemId);
   const loc=queryOne<{id:number}>('SELECT id FROM locations WHERE id=?',locationId);
   if(!item||!loc) return null;
   const serials=queryAll<{id:number;identifier:string|null;status:string}>(`SELECT u.id,u.identifier,u.status FROM job_order_units u
@@ -76,7 +76,7 @@ function snapshot(itemId:number,locationId:number,mode:Mode):Snapshot|null {
     WHERE COALESCE(pb.product_item_id,j.product_item_id)=? AND s.location_id=? AND j.build_mode=? AND s.quantity>0
     ORDER BY s.batch_id`,itemId,locationId,mode);
   const book=variantStockAt(itemId,locationId,mode);
-  return {item_id:itemId,item_name:item.name,sku:item.sku,location_id:locationId,
+  return {item_id:itemId,item_name:item.name,sku:item.sku,unit:item.unit,is_finished_product:item.is_finished_product,location_id:locationId,
     location_name:locationName(locationId),build_mode:mode,book_quantity:book,serials,batches,
     untracked_quantity:book-serials.length-batches.reduce((n,b)=>n+b.quantity,0)};
 }
@@ -125,13 +125,13 @@ function sourceState(c:Count) {
   return !candidate?'missing':candidate.evidence_hash!==c.source_evidence_hash?'changed':candidate.status;
 }
 function detail(c:Count,includeSerialEvidence=true) {
-  const item=queryOne<{name:string;sku:string|null}>('SELECT name,sku FROM inventory_items WHERE id=?',c.item_id);
+  const item=queryOne<{name:string;sku:string|null;unit:string|null;is_finished_product:number}>('SELECT name,sku,unit,is_finished_product FROM inventory_items WHERE id=?',c.item_id);
   const current=snapshot(c.item_id,c.location_id,c.build_mode);
   const movements=queryAll<{transaction_id:number;batch_id:number|null;change:number;reason:string|null}>(
     `SELECT m.transaction_id,m.batch_id,t.change,t.reason FROM stock_count_movements m
       JOIN inventory_transactions t ON t.id=m.transaction_id WHERE m.count_id=? ORDER BY t.id`,c.id);
   const task=c.task_id?taskById(c.task_id):null;
-  return {...c,...(includeSerialEvidence?serialEvidence(c):{}),item_name:item?.name??'(removed)',sku:item?.sku??null,
+  return {...c,...(includeSerialEvidence?serialEvidence(c):{}),item_name:item?.name??'(removed)',sku:item?.sku??null,unit:item?.unit??null,is_finished_product:item?.is_finished_product??null,
     location_name:current?.location_name??'(removed)',counted_quantity:countedTotal(c),
     variance:countedTotal(c)-c.book_quantity,current_quantity:current?.book_quantity??null,
     book_serial_ids:JSON.parse(c.book_serial_ids),book_batches:JSON.parse(c.book_batches),
