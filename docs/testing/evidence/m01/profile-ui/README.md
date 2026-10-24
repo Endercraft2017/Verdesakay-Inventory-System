@@ -34,8 +34,9 @@ shared-phone and PWA files pass. `typecheck.txt`: passed. `full-suite.txt`: all 
 3,266 checks pass after upstream integration (564.40s). `asset-hashes.txt` identifies the final source assets for comparison
 after publication. `git diff --check` also passes.
 
-The patch is local and has not been published to the hosted sandbox. The user remains at M01,
-step 6, awaiting publication and manual comparison. Other mobile/desktop features were not advanced.
+The patch is published as **`2d4c865`** and Railway reports SUCCESS. See `live/` for five passing
+release checks, including update of an existing cached session. The user remains at M01,
+step 6, awaiting manual comparison. Other mobile/desktop features were not advanced.
 
 `publication.json` and `publication-typecheck.txt` repeat the focused release checks after
 upstream integration. `full-suite-pre-integration.txt` retains the earlier 3,220-check result.

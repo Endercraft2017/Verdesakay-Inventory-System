@@ -4,20 +4,21 @@ Updated: 2026-10-24 (Asia/Manila). Desktop testing waits for explicit user instr
 
 ## Resume here
 
-- Branch: `restructure/module-architecture`, now `8b86ddf` plus the Profile UI patch;
-  initial checkout was `ab1b682`.
+- Branch: `restructure/module-architecture`; Profile UI release **`2d4c865`**, based on
+  upstream `8b86ddf`. Initial checkout was `ab1b682`.
 - Round: **M01 — sign-in, session persistence, sign-out**.
-- Active change: F-004/F-005 implemented locally; 29 real-app Playwright checks, 165 focused
+- Active change: F-004/F-005 are **published and live-verified**. 29 real-app Playwright checks, 165 focused
   checks, existing Profile interaction runner and typecheck pass. Final integrated full suite: **3,266 checks
   passed across 305 files** (564.40s).
-  User approved publication, commit and push. Preserving upstream `8b86ddf` and using cache
-  v150; final integration checks passed. Commit/push and live verification in progress.
+  User approved publication, commit and push. Release `2d4c865` is pushed; Railway deployment
+  `c6f03f87-ff64-4748-939c-826229573415` reached **SUCCESS**. All five live release checks passed,
+  including upgrade of an existing v149-controlled session to v150. Live asset hashes match source.
 - Prior hosted baseline: eight session cases and Show/Hide password passed at 390×844. Four relevant
   deployed assets matched the checkout and stayed unchanged across the final hosted run.
   User: switched to mobile and requested the footer action and form correction, with screenshots.
   Side-panel sign-out worked on desktop according to the user. Earlier local suite
   results below apply only to the archived baseline.
-- User checkpoint: **M01, step 6 — Profile sign-out retest pending publication**.
+- User checkpoint: **M01, step 6 — live Profile sign-out/UI retest awaiting user**.
   Prior steps have not been individually confirmed on mobile.
   Do not advance features until results are compared.
 - User URL: `https://otom.afkcube.com/sandbox/m`; account `sandbox`, Administrator, **no employee link**.
@@ -226,8 +227,8 @@ tokens were excluded from evidence; no raw hosted trace was captured.
   one logout request, cleared browser token and old server token rejected with 401. Borrowed
   sign-out clears personal cache. Cancelling the genuine offline unsent-action dialog retains
   both the session and action. Only disposable local test data used.
-- Status: fixed locally; all automated checks, including the full suite, passed. Publication
-  and user retest pending. Publishing affects the shared app for all workspaces.
+- Status: published in `2d4c865`; Railway SUCCESS; existing cached-session update, normal logout
+  and borrowed-phone cleanup passed live. User retest pending. Shared app updated with approval.
 
 ### F-005 — account form controls visually run together (UI defect)
 
@@ -244,8 +245,8 @@ tokens were excluded from evidence; no raw hosted trace was captured.
 - Automated: 16px username gap, no horizontal overflow at 320/390/658px in both themes;
   browser-forced autofill pseudo-state resolves to the exact light/dark Profile background
   and text colors. Password mismatch remains client-side with no credential-change request.
-- Status: fixed locally; all automated checks, including the full suite, passed. Publication,
-  real-phone autofill and user retest pending.
+- Status: published in `2d4c865`; live 16px action gap and matching client CSS verified.
+  Real-phone autofill and user retest pending.
 
 Current validation evidence: `docs/testing/evidence/m01/profile-ui/`; repeat with
 `CHROMIUM_PATH=/usr/lib/chromium/chromium node --import tsx scripts/test-mobile-profile-layout.mjs`.
@@ -268,7 +269,7 @@ Happy path (M01-04, 05, 06):
 3. Expect Home with **Administrator** and **Employee record needed**. Scroll down: **Review pending approvals** is present without refreshing.
 4. Refresh. Expect the same account and approval button.
 5. Open the mobile URL in a fresh tab. Expect the same signed-in account. Close that tab.
-6. After publication, tap bottom **Profile**, scroll to the end of its menu, then tap **Sign out**. Expect sign-in. The Account & security path remains a supported alternative.
+6. Refresh the mobile app, tap bottom **Profile**, scroll to the end of its menu, then tap **Sign out**. Expect sign-in. The Account & security path remains a supported alternative.
 7. Use Back, then refresh. Expect sign-in, with no usable account screen.
 
 Edge cases (M01-01, 02, 03, 07, 08):
@@ -350,3 +351,13 @@ Report pass or the first mismatching step number and visible result; retain M01 
 - Publication checks on `8b86ddf` plus Profile patch: typecheck passed, all 29 Playwright cases passed,
   and **3,266/3,266 checks across 305 files passed** (564.40s). Reconnected Railway account
   successfully verified the correct production service and watched source branch; no staged changes.
+
+- Published UI commit **`2d4c865`** to `origin/restructure/module-architecture`; Railway deployment
+  `c6f03f87-ff64-4748-939c-826229573415` reached **SUCCESS**. The restored Railway connection
+  confirmed the service/source/domain directly; no config/volume/database changes made.
+- Live Playwright: **5/5 passed**, no uncaught JS errors. An existing v149 cached/signed-in
+  browser received v150 and the new footer after refresh; 48px hit target above dock; 16px
+  field/action gap; normal and borrowed footer logout both invalidate server tokens (401),
+  borrowed private marker cleared. Only test-created sessions logged out; all cleaned up.
+- Live evidence: `docs/testing/evidence/m01/profile-ui/live/`. User comparison is still pending;
+  feature M01 is not marked complete and no next-feature/desktop testing started.
