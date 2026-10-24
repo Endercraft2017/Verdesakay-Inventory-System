@@ -29,6 +29,7 @@ import { DEFAULT_COA } from '../modules/accounting/ledger';
 import { preMigrationSnapshot, backupDir, mirrorDir } from './backup';
 import { BUILTIN_ROLES, ADMIN_ROLE, roleDefaults } from './permissions';
 import { syncHooks } from './sync-context';
+import { INITIALIZATION_WAIT_MS, withDatabaseInitialization } from './sqlite-initialization';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
 
@@ -61,11 +62,17 @@ function openConnection(slug: string): DatabaseSync {
   const dbFile = connectionPath(slug);
   fs.mkdirSync(path.dirname(dbFile), { recursive: true });
   const conn = new DatabaseSync(dbFile);
-  // Persisted history triggers can run during migration, before history schema setup.
-  configureFormHistoryConnection(conn);
-  conn.exec('PRAGMA journal_mode = WAL;');
-  conn.exec('PRAGMA foreign_keys = ON;');
-  return conn;
+  try {
+    conn.exec(`PRAGMA busy_timeout = ${INITIALIZATION_WAIT_MS};`);
+    // Persisted history triggers can run during migration, before history schema setup.
+    configureFormHistoryConnection(conn);
+    conn.exec('PRAGMA journal_mode = WAL;');
+    conn.exec('PRAGMA foreign_keys = ON;');
+    return conn;
+  } catch (error) {
+    try { conn.close(); } catch { /* preserve configuration failure */ }
+    throw error;
+  }
 }
 
 /** Bumped whenever `migrate()` gains a step. A DB already at this version skips the
@@ -260,6 +267,10 @@ function tenantConnection(slug: string, initialAdminHash?: string): DatabaseSync
   if (slug !== DEFAULT_TENANT && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(slug)) throw new Error('Invalid workspace identifier');
   const existing = registry.get(slug);
   if (existing) return existing;
+  return withDatabaseInitialization(connectionPath(slug), () => initializeTenantConnection(slug, initialAdminHash));
+}
+
+function initializeTenantConnection(slug: string, initialAdminHash?: string): DatabaseSync {
   const conn = openConnection(slug);
   // Snapshot an existing DB before this release's schema changes touch it (before
   // createSchema too — it can add tables). If the snapshot fails we refuse to open the DB
@@ -310,6 +321,7 @@ function tenantConnection(slug: string, initialAdminHash?: string): DatabaseSync
       conn.exec('INSERT OR IGNORE INTO form_template_links SELECT id,template_id FROM form_definitions WHERE template_id IS NOT NULL');
       setSetting('form_template_links_initialized',true);
     }
+    conn.exec('PRAGMA busy_timeout = 0;');
   }); } catch (error) {
     registry.delete(slug);
     try { conn.close(); } catch { /* preserve the initialization failure */ }

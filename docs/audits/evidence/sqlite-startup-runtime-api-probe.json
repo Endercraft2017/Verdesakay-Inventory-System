@@ -1,0 +1,41 @@
+[
+  {
+    "exit": 0,
+    "stderr": "(node:24297) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+    "probe": {
+      "node": "v22.13.0",
+      "before_type": "undefined",
+      "after_begin_type": "undefined",
+      "after_begin_boolean": false,
+      "nested_begin_rejected": true,
+      "nested_begin_error": "cannot start a transaction within a transaction",
+      "startup_gate_callback_result": true
+    }
+  },
+  {
+    "exit": 0,
+    "stderr": "(node:24316) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+    "probe": {
+      "node": "v22.22.0",
+      "before_type": "boolean",
+      "after_begin_type": "boolean",
+      "after_begin_boolean": true,
+      "nested_begin_rejected": true,
+      "nested_begin_error": "cannot start a transaction within a transaction",
+      "startup_gate_callback_result": true
+    }
+  },
+  {
+    "exit": 0,
+    "stderr": "",
+    "probe": {
+      "node": "v24.19.0",
+      "before_type": "boolean",
+      "after_begin_type": "boolean",
+      "after_begin_boolean": true,
+      "nested_begin_rejected": true,
+      "nested_begin_error": "cannot start a transaction within a transaction",
+      "startup_gate_callback_result": true
+    }
+  }
+]

@@ -1,0 +1,38 @@
+{
+  "version": "1.0.0",
+  "name": "otom",
+  "dependencies": {
+    "express": {
+      "version": "4.22.3",
+      "resolved": "https://registry.npmjs.org/express/-/express-4.22.3.tgz",
+      "overridden": false,
+      "dependencies": {
+        "body-parser": {
+          "version": "1.20.8",
+          "resolved": "https://registry.npmjs.org/body-parser/-/body-parser-1.20.8.tgz",
+          "overridden": false
+        }
+      }
+    },
+    "multer": {
+      "version": "2.4.0",
+      "resolved": "https://registry.npmjs.org/multer/-/multer-2.4.0.tgz",
+      "overridden": false
+    },
+    "node-forge": {
+      "version": "1.4.0",
+      "resolved": "https://registry.npmjs.org/node-forge/-/node-forge-1.4.0.tgz",
+      "overridden": false
+    },
+    "nodemailer": {
+      "version": "10.1.1",
+      "resolved": "https://registry.npmjs.org/nodemailer/-/nodemailer-10.1.1.tgz",
+      "overridden": false
+    },
+    "zod": {
+      "version": "4.4.3",
+      "resolved": "https://registry.npmjs.org/zod/-/zod-4.4.3.tgz",
+      "overridden": false
+    }
+  }
+}

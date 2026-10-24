@@ -1,0 +1,18 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { withDatabaseInitialization } from '../../src/shared/sqlite-initialization.ts';
+
+const db = new DatabaseSync(':memory:');
+const result = { node: process.version, before_type: typeof db.isTransaction };
+db.exec('BEGIN IMMEDIATE');
+result.after_begin_type = typeof db.isTransaction;
+result.after_begin_boolean = Boolean(db.isTransaction);
+try { db.exec('BEGIN IMMEDIATE'); result.nested_begin_rejected = false; }
+catch (error) { result.nested_begin_rejected = true; result.nested_begin_error = error.message; }
+db.exec('ROLLBACK'); db.close();
+const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sqlite-api-probe-'));
+try { result.startup_gate_callback_result = withDatabaseInitialization(path.join(directory, 'probe.db'), () => true); }
+finally { fs.rmSync(directory, { recursive: true, force: true }); }
+console.log(JSON.stringify(result));

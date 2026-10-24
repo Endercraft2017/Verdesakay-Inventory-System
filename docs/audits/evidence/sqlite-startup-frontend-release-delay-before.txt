@@ -1,0 +1,83 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System/work/sqlite-startup/baseline
+
+ ❯ tests/frontend-release-delay-proof.test.ts (130 tests | 4 failed | 126 skipped) 681ms
+       × never shows the token, and continues only after the presented token verifies 348ms
+       × records warehouse-out online only, with the token, package and an idempotency key 140ms
+       × takes an approved supervisor override in place of the token 92ms
+       × lets a supervisor approve a requested override on the phone 97ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend-release-delay-proof.test.ts > mobile bootstrap > Releasing personnel warehouse-out (Figma 78:*) > never shows the token, and continues only after the presented token verifies
+AssertionError: expected null to be '78:68' // Object.is equality
+
+- Expected:
+"78:68"
+
++ Received:
+null
+
+ ❯ tests/frontend-release-delay-proof.test.ts:1721:52
+    1719|       await wait();
+    1720|       const view = doc.getElementById('m-view');
+    1721|       expect(view.getAttribute('data-figma-node')).toBe('78:68');
+       |                                                    ^
+    1722|       expect(view.textContent).toContain('Jordan D. · ID reference ••4…
+    1723|       expect(view.textContent).toContain('PICKUP-••••');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/frontend-release-delay-proof.test.ts > mobile bootstrap > Releasing personnel warehouse-out (Figma 78:*) > records warehouse-out online only, with the token, package and an idempotency key
+TypeError: Cannot set properties of null (setting 'value')
+ ❯ tests/frontend-release-delay-proof.test.ts:1767:63
+    1765|       win.location.hash = '#/so?id=302&step=handoff';
+    1766|       await wait();
+    1767|       (doc.querySelector('[data-token]') as HTMLInputElement).value = …
+       |                                                               ^
+    1768|       (doc.querySelector('[data-verify]') as HTMLButtonElement).click(…
+    1769|       await wait();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/frontend-release-delay-proof.test.ts > mobile bootstrap > Releasing personnel warehouse-out (Figma 78:*) > takes an approved supervisor override in place of the token
+AssertionError: expected '' to contain 'Supervisor override · Sam Supervisor'
+
+- Expected
++ Received
+
+- Supervisor override · Sam Supervisor
+
+ ❯ tests/frontend-release-delay-proof.test.ts:1826:32
+    1824|       await wait();
+    1825|       const view = doc.getElementById('m-view');
+    1826|       expect(view.textContent).toContain('Supervisor override · Sam Su…
+       |                                ^
+    1827|       expect(view.querySelector('[data-token]')).toBeNull();
+    1828|       (doc.getElementById('rel-go') as HTMLButtonElement).click();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/frontend-release-delay-proof.test.ts > mobile bootstrap > Releasing personnel warehouse-out (Figma 78:*) > lets a supervisor approve a requested override on the phone
+AssertionError: expected '' to contain 'Requested by Ana Dela Cruz'
+
+- Expected
++ Received
+
+- Requested by Ana Dela Cruz
+
+ ❯ tests/frontend-release-delay-proof.test.ts:1840:56
+    1838|       win.location.hash = '#/so?id=302&step=override';
+    1839|       await wait();
+    1840|       expect(doc.getElementById('m-view').textContent).toContain('Requ…
+       |                                                        ^
+    1841|       (doc.querySelector('[data-reason]') as HTMLTextAreaElement).valu…
+    1842|       (doc.getElementById('rel-approve') as HTMLButtonElement).click();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 126 skipped (130)
+   Start at  03:30:46
+   Duration  1.75s (transform 206ms, setup 41ms, import 846ms, tests 681ms, environment 0ms)

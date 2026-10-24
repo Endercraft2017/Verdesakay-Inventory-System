@@ -1,0 +1,19 @@
+{
+  "baseline": "0c2ed900239ce50db297ebd957d9f34b6ec0b0cc",
+  "command": [
+    "node",
+    "/workspace/Verdesakay-Inventory-System/node_modules/vitest/vitest.mjs",
+    "run",
+    "tests/sqlite-initialization.test.ts",
+    "-t",
+    "evicts a catalog connection"
+  ],
+  "exit": 1,
+  "seconds": 2.15,
+  "expected_failure": true,
+  "selected_tests": 1,
+  "deselected": 7,
+  "observed": "Original catalog cache returns an unseeded connection after the first seed failure; operator count 0 instead of required 1 on retry",
+  "chronology": "Retrospective old-source failure-state check after the candidate implementation; not a pre-edit reproduction",
+  "same_test_and_worker": true
+}

@@ -1,0 +1,27 @@
+{
+  "encoding": "UTF-8 lines with terminators",
+  "reconstruction": "''.join(lines).encode('utf-8')",
+  "raw_sha256": "0cf1e0c74c5e15a738ebeb040bb7c55330d1147a252ec95cb84670c18b2db6b6",
+  "lines": [
+    "diff --git a/workspace/Verdesakay-Inventory-System/work/sqlite-startup/frontend-mobile-original.ts b/workspace/Verdesakay-Inventory-System/work/sqlite-startup/frontend-delay-before-retained-source.ts\n",
+    "index e1173f0..3f67996 100644\n",
+    "--- a/workspace/Verdesakay-Inventory-System/work/sqlite-startup/frontend-mobile-original.ts\n",
+    "+++ b/workspace/Verdesakay-Inventory-System/work/sqlite-startup/frontend-delay-before-retained-source.ts\n",
+    "@@ -133,6 +133,15 @@ describe('mobile bootstrap', () => {\n",
+    "     // hops through api.js's async request() + boot()'s .catch) \u2014 flush a real macrotask\n",
+    "     // so it's landed before we drive the router.\n",
+    "     await new Promise((r) => setTimeout(r, 0));\n",
+    "+    // Disposable diagnostic only: preserve the real IndexedDB operation, delay its acknowledgement.\n",
+    "+    const actualSave = win.mProductionDrafts.save;\n",
+    "+    win.mProductionDrafts.save = async (...args: any[]) => {\n",
+    "+      const value = await actualSave(...args);\n",
+    "+      fs.appendFileSync(\"/workspace/Verdesakay-Inventory-System/work/sqlite-startup/frontend-delay-before-retained.jsonl\", JSON.stringify({ event: 'committed', at: Date.now(), kind: args[0]?.operation?.kind, state: args[0]?.operation?.state }) + '\\n');\n",
+    "+      await new Promise(resolve => setTimeout(resolve, 250));\n",
+    "+      fs.appendFileSync(\"/workspace/Verdesakay-Inventory-System/work/sqlite-startup/frontend-delay-before-retained.jsonl\", JSON.stringify({ event: 'acknowledged', at: Date.now(), kind: args[0]?.operation?.kind, state: args[0]?.operation?.state }) + '\\n');\n",
+    "+      return value;\n",
+    "+    };\n",
+    "     return win;\n",
+    "   }\n",
+    " \n"
+  ]
+}

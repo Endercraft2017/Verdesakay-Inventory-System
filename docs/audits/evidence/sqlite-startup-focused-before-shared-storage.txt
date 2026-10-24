@@ -1,0 +1,32 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+ ❯ tests/frontend-mobile.test.ts (130 tests | 1 failed) 28484ms
+       × lists ready units and keeps a mismatch-held unit under Issues 217ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend-mobile.test.ts > mobile bootstrap > RTS clerk ready-to-sell intake (Figma 74:*) > lists ready units and keeps a mismatch-held unit under Issues
+AssertionError: expected null to be '74:104' // Object.is equality
+
+- Expected:
+"74:104"
+
++ Received:
+null
+
+ ❯ tests/frontend-mobile.test.ts:2166:52
+    2164|       win.location.hash = '#/receiving?unit=602&step=confirm'; // a he…
+    2165|       await wait();
+    2166|       expect(view.getAttribute('data-figma-node')).toBe('74:104');
+       |                                                    ^
+    2167|       expect(view.textContent).toContain('Mismatch reported');
+    2168|       expect(win.document.getElementById('rts-post')).toBeNull();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 5 passed (6)
+      Tests  1 failed | 168 passed (169)
+   Start at  03:38:24
+   Duration  129.10s (transform 2.61s, setup 107ms, import 1.40s, tests 126.53s, environment 1ms)

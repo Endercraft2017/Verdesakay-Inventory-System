@@ -1,0 +1,13 @@
+{
+  "at_utc": "2026-10-24T02:56:47.748230+00:00",
+  "pid": 27463,
+  "args": [
+    "node",
+    "/workspace/Verdesakay-Inventory-System/node_modules/.bin/vitest",
+    "run",
+    "--fileParallelism",
+    "--maxWorkers=2"
+  ],
+  "reason": "Hands-off run hit MFA test 20s budget; stop failed incomplete run before separately documented harness deadline adjustment. Assertions and production deadlines unchanged.",
+  "signal": "SIGTERM"
+}

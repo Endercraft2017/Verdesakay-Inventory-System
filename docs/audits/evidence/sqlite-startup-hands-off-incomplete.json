@@ -1,0 +1,17 @@
+{
+  "at_utc": "2026-10-24T02:49:38.914128+00:00",
+  "command": [
+    "npm",
+    "test",
+    "--",
+    "--fileParallelism",
+    "--maxWorkers=2"
+  ],
+  "node": "v24.19.0",
+  "source_freeze_sha256": "0cc86e570cf6bb91ca82e6cfdf40bf4246e6f76644b77c92f26bc94b9525b438",
+  "source_files": 872,
+  "scheduling": "Two files at a time; no additional experiments/staging during this final run; no source, test/config or timeout changes",
+  "exit": 143,
+  "seconds": 428.92,
+  "frozen_inputs_unchanged": true
+}

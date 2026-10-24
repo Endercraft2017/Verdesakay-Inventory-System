@@ -1,0 +1,206 @@
+{
+  "at_utc": "2026-10-24T01:39:47.923382+00:00",
+  "scope": "Supplemental unchanged files omitted by the main extension filter, including root server.ts, common-passwords.txt, binary/vendor assets and PowerShell helpers; each matches the pinned baseline manifest. Not claimed as part of the initial selected-file freeze.",
+  "files": [
+    {
+      "path": "public/js/vendor/pdfjs/LICENSE",
+      "sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/VERSION",
+      "sha256": "a8da31dd0dc6e17646e1d0973b374185ed0ccffeaa10997ae0fca3b0dd591769"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/FoxitDingbats.pfb",
+      "sha256": "845c752392b6c914fb989c75a08b7792b88f542d2499042ef2889f8c814a16ed"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/FoxitFixed.pfb",
+      "sha256": "b6c8fe53f134b8b6d4578cd2d544df4cee9624c4efa8d51a560fb40ea296101b"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/FoxitFixedBold.pfb",
+      "sha256": "f1b7159702973f54fc86254ea38bcf3712b2a736eb3a0995751e9f4bb45ad603"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/FoxitFixedBoldItalic.pfb",
+      "sha256": "8a000945843bd31add06aee63bf9fd41b7578b4f3242a4b7cd46349ad9d24d4d"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/FoxitFixedItalic.pfb",
+      "sha256": "5007faf8320fa1fcc08b8894b356ad976f60b992ba29ee5272578bbdebaf3876"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/FoxitSerif.pfb",
+      "sha256": "4f57d2b9d884af8f907bf22df6019b52d86cbf6214fdbd02b1ae05472a543f35"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/FoxitSerifBold.pfb",
+      "sha256": "0bdf4b04e964139818d51eda03d566ba999fc3ba2421b1c6c51f9dc969022e80"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/FoxitSerifBoldItalic.pfb",
+      "sha256": "a406cac82583bf98175cb62c87ed5e95c45fbb34eece63a10b0a13e793cb2e10"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/FoxitSerifItalic.pfb",
+      "sha256": "610ae0687198045c4db5d1a6650fd5e92536631706382eb8b72e38df578d0ae9"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/FoxitSymbol.pfb",
+      "sha256": "47967d055530e7357088a08403115425643ec2cdfd6201ba8af0fbd7116c1539"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/LICENSE_FOXIT",
+      "sha256": "b578cdd2345840ada550bd12519533812320d5f1d21cf4c1c7e1b1b0a31c98b7"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/LICENSE_LIBERATION",
+      "sha256": "d2c4d5b3e115a519cb58eb691aa64538397e2611f9ebe801392cf9667997e7dc"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/LiberationSans-Bold.ttf",
+      "sha256": "361c61b82d575c5c35fd9157fda8b0194bcfcd0d88ea8521a4fb5dd53d33dddc"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/LiberationSans-BoldItalic.ttf",
+      "sha256": "a224075ac17495ad0a3af3bc0a419ac0704a8b3fd1095456201fb9b095fc281d"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/LiberationSans-Italic.ttf",
+      "sha256": "832b4406dbef23628800d3aaad21048534ac84d7e3ad955be83b8172ed8ef512"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf",
+      "sha256": "f8ace1f892b2bd9dc1792ba7f097fa7588f84fed48321480e04de5390828221f"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/wasm/LICENSE_JBIG2",
+      "sha256": "9e66b7f1b934a28b37f3bc4dac97915de1674271e79a0a88182a18ed9731b4d1"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/wasm/LICENSE_OPENJPEG",
+      "sha256": "a6af136f3e15038a666b61f376612a07d9a4e48cb7c01adbf3e33b3f14ab49b6"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/wasm/LICENSE_PDFJS_JBIG2",
+      "sha256": "aad3cce09842e00e9e11ad5e8fef8cc02fbc3a3768fe2f007443b9cee37aaee5"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/wasm/LICENSE_PDFJS_OPENJPEG",
+      "sha256": "717fc62da03292dbb4dd0c8280bd4ce7bb8550dcf31d772bc93455fb50313425"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/wasm/LICENSE_PDFJS_QCMS",
+      "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/wasm/LICENSE_QCMS",
+      "sha256": "36d847ae882f6574ebc72f56a4f354e4f104fde4a584373496482e97d52d31bc"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/wasm/jbig2.wasm",
+      "sha256": "e6bee67724a7b5436fe8162638e3708cfc8d52b6342db69a49715e30ff27cfdc"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/wasm/openjpeg.wasm",
+      "sha256": "004a0e62db930ba9ff2a22212f4554d0bb57a0635a8287caf70f98117cee14ba"
+    },
+    {
+      "path": "public/js/vendor/pdfjs/wasm/qcms_bg.wasm",
+      "sha256": "663d86126d5f5fcb1c61490f94353e2a8375660b8c5498ab3ebab5a34b08800e"
+    },
+    {
+      "path": "public/mobile/icons/icon-192.png",
+      "sha256": "5d1954e33532cf7026de75c118bec558dc0e9f83df449eaeb1aa5a05655b19d8"
+    },
+    {
+      "path": "public/mobile/icons/icon-512.png",
+      "sha256": "ed94dfa52e331e5526151a4c9814f1880d3f46450fe1cf1d1e7e882c33790c0b"
+    },
+    {
+      "path": "public/mobile/icons/icon-maskable-512.png",
+      "sha256": "b776ee4c390d448ed0fb8943f9c03a116fc0c4c1ddedfd199438fe406838bdd2"
+    },
+    {
+      "path": "public/mobile/icons/v2/act-close.svg",
+      "sha256": "e2774cfd3ab7cac757cb48c15dc11f30073df84b4e93ec0124b31d15a93cff6a"
+    },
+    {
+      "path": "public/mobile/icons/v2/act-history.svg",
+      "sha256": "2f8bc7a40eb260ec99c55ae2f60c01bc06c7063ea3af637e5a89953cb635fc0d"
+    },
+    {
+      "path": "public/mobile/icons/v2/act-pause.svg",
+      "sha256": "268f5626970facf647cc5fa171917cab91f36a251e446aa41d6e06c382636bf3"
+    },
+    {
+      "path": "public/mobile/icons/v2/act-resume.svg",
+      "sha256": "44ba8720a6e4d19041735b1e5a4212767d025fa74bcf7ca274bcb7fe8a9a78dd"
+    },
+    {
+      "path": "public/mobile/icons/v2/alert.svg",
+      "sha256": "a84e425e7e12afa88792a54d269a4a5216afcaa8982d5041f0c03f92c3cb7ac9"
+    },
+    {
+      "path": "public/mobile/icons/v2/camera.svg",
+      "sha256": "1fd92d5c1e37d8e13396b4249f9aa3f1305737a36d8e0a6b2ab49fdc1d294987"
+    },
+    {
+      "path": "public/mobile/icons/v2/check-done.svg",
+      "sha256": "9333b8f1232ae556541aa045f465ec34a407c27958dadbd230deacfe152d315b"
+    },
+    {
+      "path": "public/mobile/icons/v2/check-ok.svg",
+      "sha256": "975deb65ba0d3690d255a74ba5d7dc60fc328159c75ac6116e21c01cdda2b6b2"
+    },
+    {
+      "path": "public/mobile/icons/v2/open-chevron.svg",
+      "sha256": "a0eea782ed21acfdf7a3a7d7f36712ab61ea5649b11594f90780cd8998f56ec5"
+    },
+    {
+      "path": "public/mobile/icons/v2/release-box.svg",
+      "sha256": "bb8326fadc3e63d5bdcd82038c66566c3797267514b88f1949b518e666cda64d"
+    },
+    {
+      "path": "public/mobile/icons/v2/role-production-lead.svg",
+      "sha256": "cc3bb41e49327282f1cc4a4aa17f11314cb786008b11ff25cb4bdc48a2b8a8ff"
+    },
+    {
+      "path": "public/mobile/icons/v2/role-production-manager.svg",
+      "sha256": "79948b81732eaa58b6a288cb0b91d33d05e4bc5c60bc716b35d7132dfffaa2cf"
+    },
+    {
+      "path": "public/mobile/icons/v2/role-warehouse.svg",
+      "sha256": "404161f32bb246f275f4a6ca78d4baf2c3a72e3067033cb45f6f7357ed903588"
+    },
+    {
+      "path": "public/mobile/icons/v2/scan.svg",
+      "sha256": "cf4ff5018b1aed8e39e23b0de1a3fe8cd9db7596c3201262c92da3d05906939d"
+    },
+    {
+      "path": "public/mobile/icons/v2/short.svg",
+      "sha256": "cbc169ca48f583ad7312ff05d90126326317898dd58ce0efc21c2cca7614b679"
+    },
+    {
+      "path": "public/mobile/manifest.webmanifest",
+      "sha256": "f107c8374b5831f04d1f01cef60c07912394232d27cd7111ed7aa3e3ab66284a"
+    },
+    {
+      "path": "scripts/desktop-cert.ps1",
+      "sha256": "f5acd34a475d311ee6bbdc91e25fb06732557a76e6d81e65b785c5ad969e69ab"
+    },
+    {
+      "path": "scripts/desktop-trust.ps1",
+      "sha256": "24243447eb376624038050a34e0ce4d3efc8373f85a54bcfc225cf528e9cfbdf"
+    },
+    {
+      "path": "server.ts",
+      "sha256": "99618a9de371a65a1cff0918bc26b525a07b39d70cf06db82387251e457e95d9"
+    },
+    {
+      "path": "src/shared/common-passwords.txt",
+      "sha256": "e70bb645dbeff8428e03161174e44ec3861d7c4b7ca4e5bdcc808388efcd205e"
+    }
+  ]
+}

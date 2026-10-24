@@ -1,0 +1,46 @@
+"""Actual server.ts starts on throwaway paths; no production hooks or provider traffic."""
+import http.client,json,os,socket,sqlite3,subprocess,sys,time
+from pathlib import Path
+root=Path.cwd();label=sys.argv[1];source=root/'work/sqlite-startup/baseline' if label=='baseline' else root
+out=root/'work/sqlite-startup'/('servers-'+label);out.mkdir(exist_ok=False)
+def port():
+ with socket.socket() as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
+def healthy(p):
+ try:
+  c=http.client.HTTPConnection('127.0.0.1',p,timeout=.3);c.request('GET','/api/health');r=c.getresponse();ok=r.status==200;r.read();c.close();return ok
+ except (OSError,http.client.HTTPException):return False
+rows=[]
+for i in range(3):
+ case=out/str(i);case.mkdir();ports=[port(),port()]
+ env=os.environ.copy();env.update(NODE_ENV='test',DEPLOY_MODE='cloud',BEHIND_PROXY='true',TZ='Asia/Manila',PLATFORM_CONSOLE='true',
+  ADMIN_PASSWORD='Synthetic startup server fixture',PLATFORM_ADMIN_USERNAME='startup-operator',PLATFORM_ADMIN_PASSWORD='Synthetic startup console fixture',
+  DB_PATH=str(case/'data.db'),DATA_DIR=str(case/'tenants'),PLATFORM_DB_PATH=str(case/'platform.db'),UPLOAD_DIR=str(case/'uploads'),BACKUP_DIR=str(case/'backups'))
+ logs=[(case/(str(j)+'.log')).open('w') for j in range(2)];children=[];ready=[False,False];deadline=time.monotonic()+30
+ try:
+  for j,p in enumerate(ports):children.append(subprocess.Popen(['node','--import','tsx',str(source/'server.ts')],env={**env,'PORT':str(p)},stdout=logs[j],stderr=subprocess.STDOUT))
+  while time.monotonic()<deadline and not all(ready):
+   for j,c in enumerate(children):
+    if c.poll() is None and not ready[j]:ready[j]=healthy(ports[j])
+   if all(ready[j] or c.poll() is not None for j,c in enumerate(children)):break
+   time.sleep(.05)
+  early=[c.poll() for c in children]
+ finally:
+  for c in children:
+   if c.poll() is None:c.terminate()
+  for c in children:
+   try:c.wait(timeout=5)
+   except subprocess.TimeoutExpired:c.kill();c.wait()
+  for log in logs:log.close()
+ data={'round':i,'health_ready':ready,'early_exit_codes':early}
+ if (case/'data.db').exists():
+  d=sqlite3.connect(f'file:{case}/data.db?mode=ro',uri=True)
+  try:data['admin_count']=d.execute("SELECT COUNT(*) FROM users WHERE username='admin'").fetchone()[0];data['integrity']=d.execute('PRAGMA integrity_check').fetchall()
+  except sqlite3.Error as e:data['db_observation_error']=str(e)
+  d.close()
+ if (case/'platform.db').exists():
+  d=sqlite3.connect(f'file:{case}/platform.db?mode=ro',uri=True)
+  try:data['operator_count']=d.execute('SELECT COUNT(*) FROM platform_users').fetchone()[0]
+  except sqlite3.Error as e:data['catalog_observation_error']=str(e)
+  d.close()
+ rows.append(data);(out/'results.json').write_text(json.dumps({'source':str(source),'label':label,'rounds':rows,'readiness_passes':sum(all(r['health_ready']) for r in rows)},indent=2)+'\n')
+ print(json.dumps(data),flush=True)

@@ -1,0 +1,10 @@
+{
+  "previous_freeze": "source-freeze-before-budget.json",
+  "final_freeze": "source-freeze-final.json",
+  "files": 872,
+  "changed_inputs": [
+    "tests/frontend-mobile.test.ts",
+    "vitest.config.ts"
+  ],
+  "reuse_basis": "Application runtime/assets, package graph and Playwright tests/config are identical. Browser78, actual-server6, schema and Node22 subset evidence remain applicable. Only validation fixture/timing differs;625 assertion expressions remain identical."
+}

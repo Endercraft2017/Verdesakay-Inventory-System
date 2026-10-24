@@ -1,0 +1,7 @@
+
+Otom is running (HTTP):
+   Local:   http://localhost:33835
+   Network: http://172.26.91.252:33835  (for other office devices)
+   Network: http://172.31.0.46:33835  (for other office devices)
+
+[platform-mail] outbox worker failed; inspect durable delivery state

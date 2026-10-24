@@ -1,0 +1,19 @@
+{
+  "baseline_commit": "0c2ed900239ce50db297ebd957d9f34b6ec0b0cc",
+  "query": "SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name,tbl_name,sql",
+  "serialization": "json.dumps(rows, ensure_ascii=True, separators=(comma,colon)); UTF-8",
+  "tenant": {
+    "same_sqlite_master": true,
+    "objects": 413,
+    "sha256": "33bec64670219a61f103abd58e38b0a897212f6c0b6e553d19f6ea38482329a5"
+  },
+  "catalog": {
+    "same_sqlite_master": true,
+    "objects": 33,
+    "sha256": "911db29163305b9bb69e8c2b19c55d233f86117c7167d4dafe52daf04ed5c084"
+  },
+  "technical_gate": {
+    "bytes": 0,
+    "schema_objects": 0
+  }
+}

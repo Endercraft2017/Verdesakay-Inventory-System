@@ -1,0 +1,30 @@
+
+> otom@1.0.0 test
+> vitest run --fileParallelism --maxWorkers=2
+
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/mfa.test.ts > two-step sign-in > refuses the old session-only authenticator bypass
+{"timestamp":"2026-10-24T02:53:25.870Z","level":"info","event":"http_request","request_id":"8797ef84-b72c-4897-bd1e-b5e37f9ac16e","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":467}
+
+stdout | tests/mfa.test.ts > two-step sign-in > refuses the old session-only authenticator bypass
+{"timestamp":"2026-10-24T02:53:26.368Z","level":"info","event":"http_request","request_id":"0208b34b-41cc-43e4-9483-ecea5ed4aa99","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":485}
+
+stdout | tests/mfa.test.ts > two-step sign-in > refuses the old session-only authenticator bypass
+{"timestamp":"2026-10-24T02:53:27.225Z","level":"info","event":"http_request","request_id":"2fd10922-51a7-4853-afe3-f9bef15e22af","tenant":"default","method":"POST","path":"/api/auth/mfa/setup","status":400,"duration_ms":855}
+
+stdout | tests/mfa.test.ts > two-step sign-in > refuses the old session-only authenticator bypass
+{"timestamp":"2026-10-24T02:53:43.220Z","level":"info","event":"http_request","request_id":"e48d5ca3-a29d-4b01-a16f-222f2fede916","tenant":"default","method":"POST","path":"/api/auth/mfa/setup","status":200,"duration_ms":15545}
+
+stdout | tests/mfa.test.ts > two-step sign-in > refuses the old session-only authenticator bypass
+{"timestamp":"2026-10-24T02:53:43.355Z","level":"info","event":"http_request","request_id":"01c7d110-051b-4911-8ca6-6c4d25160ea6","tenant":"default","method":"POST","path":"/api/auth/mfa/enable","status":400,"duration_ms":7}
+
+stdout | tests/mfa.test.ts > two-step sign-in > refuses the old session-only authenticator bypass
+{"timestamp":"2026-10-24T02:53:43.406Z","level":"info","event":"http_request","request_id":"cacab7ca-4a8d-40bf-8970-4b95a94dac74","tenant":"default","method":"POST","path":"/api/auth/mfa/enable","status":200,"duration_ms":36}
+
+stdout | tests/mfa.test.ts
+{"timestamp":"2026-10-24T02:53:14.890Z","level":"info","event":"http_request","request_id":"a1a10393-2f5d-4934-85a0-a93ef29c64e2","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":675}
+
+ ❯ tests/mfa.test.ts (8 tests | 1 failed) 53225ms
+     × refuses the old session-only authenticator bypass 22449ms

@@ -1,0 +1,66 @@
+{
+  "baseline": "0c2ed900239ce50db297ebd957d9f34b6ec0b0cc",
+  "declared_engines": {
+    "node": ">=22.13"
+  },
+  "primary_api": "https://nodejs.org/docs/latest-v22.x/api/sqlite.html#databaseistransaction",
+  "source": [
+    {
+      "path": "src/sync/payroll-replay.ts",
+      "baseline_sha256": "94bf05f8778565f561a2e647a510c242fa35215a3580786d6c1a90da7c67c57b",
+      "current_matches_baseline": true,
+      "uses": [
+        {
+          "line": 43,
+          "text": "}catch(error){if(conn.isTransaction)conn.exec('ROLLBACK');throw error;}"
+        },
+        {
+          "line": 50,
+          "text": "if(!ctx?.commandId||ctx.mode!=='replay'||conn.isTransaction)throw payrollReplayUnavailable();"
+        },
+        {
+          "line": 55,
+          "text": "const rollback=()=>{try{if(open&&conn.isTransaction)conn.exec('ROLLBACK');}finally{open=false;discard();}};"
+        }
+      ]
+    },
+    {
+      "path": "src/sync/authority.ts",
+      "baseline_sha256": "1579d824f1ccbbb56556a82cc3e5e59057a701b707cb80ea65acf541b1e4ad09",
+      "current_matches_baseline": true,
+      "uses": [
+        {
+          "line": 32,
+          "text": "if (conn.isTransaction) return null;"
+        },
+        {
+          "line": 48,
+          "text": "if (conn.isTransaction) throw new Error('withoutReplicating cannot run inside a transaction');"
+        }
+      ]
+    },
+    {
+      "path": "src/sync/node.ts",
+      "baseline_sha256": "c84df6aeacb7d1c97fd8be0773354690a1307c44db90cfba6764827d5378fbe4",
+      "current_matches_baseline": true,
+      "uses": [
+        {
+          "line": 265,
+          "text": "const nested = conn.isTransaction; // first seen inside a handler's transaction: use a savepoint"
+        }
+      ]
+    },
+    {
+      "path": "src/modules/hr/payroll-post-receipts.ts",
+      "baseline_sha256": "fde5ffdd8759a0be92a27b116bb9e323c6d76bb56ba290410d722d24350c2f9c",
+      "current_matches_baseline": true,
+      "uses": [
+        {
+          "line": 53,
+          "text": "const b=binding(req),outer=!activeDb().isTransaction;"
+        }
+      ]
+    }
+  ],
+  "limit": "API incompatibility demonstrated; end-to-end business impact on 22.13 has not been reproduced in this scoped experiment."
+}

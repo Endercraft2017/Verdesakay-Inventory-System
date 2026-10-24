@@ -1,0 +1,20 @@
+{
+  "mode": "seed-after",
+  "first_exit": 0,
+  "second_exit": 0,
+  "both_read_empty": false,
+  "second_completed_before_first_released": false,
+  "first": {
+    "ok": true
+  },
+  "second": {
+    "ok": true
+  },
+  "admin_count": 1,
+  "integrity": [
+    [
+      "ok"
+    ]
+  ],
+  "driver_sha256": "5d0f4e87b8d10fc790a4c4e7a938869d2a9e63865a0ecdc5cc84c769775947c4"
+}

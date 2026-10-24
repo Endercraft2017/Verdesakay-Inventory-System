@@ -1,0 +1,18 @@
+{
+  "tenant": {
+    "same_sqlite_master": true,
+    "objects": 413,
+    "before_sha256": "00e8409ac8441bedd40f974bd4fabf75ecfbbf0e14d97451128b8703f9cab21e",
+    "after_sha256": "00e8409ac8441bedd40f974bd4fabf75ecfbbf0e14d97451128b8703f9cab21e"
+  },
+  "catalog": {
+    "same_sqlite_master": true,
+    "objects": 33,
+    "before_sha256": "e282786a0df867b171dce03beee4a0aeb507c93e78b7f329ac2b669d38495fbf",
+    "after_sha256": "e282786a0df867b171dce03beee4a0aeb507c93e78b7f329ac2b669d38495fbf"
+  },
+  "technical_gate": {
+    "bytes": 0,
+    "schema_objects": 0
+  }
+}

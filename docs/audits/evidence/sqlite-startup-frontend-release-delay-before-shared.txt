@@ -1,0 +1,32 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System/work/sqlite-startup/baseline
+
+ ❯ tests/frontend-release-delay-proof.test.ts (130 tests | 1 failed | 129 skipped) 417ms
+       × lists ready units and keeps a mismatch-held unit under Issues 413ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend-release-delay-proof.test.ts > mobile bootstrap > RTS clerk ready-to-sell intake (Figma 74:*) > lists ready units and keeps a mismatch-held unit under Issues
+AssertionError: expected null to be '74:104' // Object.is equality
+
+- Expected:
+"74:104"
+
++ Received:
+null
+
+ ❯ tests/frontend-release-delay-proof.test.ts:2180:52
+    2178|       win.location.hash = '#/receiving?unit=602&step=confirm'; // a he…
+    2179|       await wait();
+    2180|       expect(view.getAttribute('data-figma-node')).toBe('74:104');
+       |                                                    ^
+    2181|       expect(view.textContent).toContain('Mismatch reported');
+    2182|       expect(win.document.getElementById('rts-post')).toBeNull();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 129 skipped (130)
+   Start at  03:47:46
+   Duration  1.58s (transform 205ms, setup 38ms, import 947ms, tests 417ms, environment 0ms)

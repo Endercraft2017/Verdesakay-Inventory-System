@@ -1,0 +1,17 @@
+{
+  "at_utc": "2026-10-24T03:02:16.214492+00:00",
+  "command": [
+    "npm",
+    "test",
+    "--",
+    "--fileParallelism",
+    "--maxWorkers=2"
+  ],
+  "node": "v24.19.0",
+  "source_freeze_sha256": "82332c00f81d83c3dd1875b5fde3eca64a74649c9c9495722862baed10f2d0fe",
+  "source_files": 872,
+  "scheduling": "Two files at a time; 60000ms default test/hook harness budgets; no additional experiments/staging during full execution; all existing test bodies, explicit timings and application deadlines unchanged",
+  "exit": 1,
+  "seconds": 1035.68,
+  "frozen_inputs_unchanged": true
+}

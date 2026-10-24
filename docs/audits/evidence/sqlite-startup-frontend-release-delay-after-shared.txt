@@ -1,0 +1,48 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System/work/sqlite-startup/baseline
+
+ ❯ tests/frontend-release-delay-proof.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend-release-delay-proof.test.ts [ tests/frontend-release-delay-proof.test.ts ]
+Error: Transform failed with 2 errors:
+
+[PARSE_ERROR] Identifier `html` has already been declared
+    ╭─[ tests/frontend-release-delay-proof.test.ts:63:9 ]
+    │
+ 63 │   const html = fs.readFileSync(path.join(PUBLIC, 'mobile', 'index.html'), 'utf8');
+    │         ──┬─
+    │           ╰─── `html` has already been declared here
+    │
+ 66 │   const html = fs.readFileSync(path.join(PUBLIC, 'mobile', 'index.html'), 'utf8');
+    │         ──┬─
+    │           ╰─── It can not be redeclared here
+────╯
+
+[PARSE_ERROR] Identifier `srcs` has already been declared
+    ╭─[ tests/frontend-release-delay-proof.test.ts:64:9 ]
+    │
+ 64 │   const srcs = [...html.matchAll(/<script src="(\/[^"]+)"><\/script>/g)].map((m) => m[1] as string);
+    │         ──┬─
+    │           ╰─── `srcs` has already been declared here
+    │
+ 67 │   const srcs = [...html.matchAll(/<script src="(\/[^"]+)"><\/script>/g)].map((m) => m[1] as string);
+    │         ──┬─
+    │           ╰─── It can not be redeclared here
+────╯
+
+  Plugin: vite:oxc
+  File: /workspace/Verdesakay-Inventory-System/work/sqlite-startup/baseline/tests/frontend-release-delay-proof.test.ts
+ ❯ transformWithOxc ../../../node_modules/vite/dist/node/chunks/node.js:7581:19
+ ❯ TransformPluginContext.transform ../../../node_modules/vite/dist/node/chunks/node.js:7653:26
+ ❯ EnvironmentPluginContainer.transform ../../../node_modules/vite/dist/node/chunks/node.js:8545:51
+ ❯ loadAndTransform ../../../node_modules/vite/dist/node/chunks/node.js:20184:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  no tests
+   Start at  03:47:49
+   Duration  289ms (transform 27ms, setup 42ms, import 0ms, tests 0ms, environment 0ms)

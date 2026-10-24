@@ -1,0 +1,42 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System/work/sqlite-startup/baseline
+
+ ❯ tests/frontend-mobile-delay-proof.test.ts (130 tests | 2 failed | 128 skipped) 758ms
+       × recovers scrap after commit/response loss and restart with the original payload and key 499ms
+       × creates separate chassis and fairings reports with their own photos (qa) 253ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend-mobile-delay-proof.test.ts > mobile bootstrap > production lead and manager (Figma 66:*) > recovers scrap after commit/response loss and restart with the original payload and key
+AssertionError: expected 'Production leadRecord production scra…' to contain 'Confirmation unknown'
+
+Expected: "Confirmation unknown"
+Received: "Production leadRecord production scrapScrap is counted and never enters inspectionJob orderJO-2026-184 · K4 Electric BikeScrapped nowReasonThis unit will not enter QCThe quantity counts toward job-order output as scrapped and remains auditable.Recording…Cancel"
+
+ ❯ tests/frontend-mobile-delay-proof.test.ts:903:65
+    901|       }
+    902|       await wait(100);
+    903|       expect(win.document.getElementById('m-view').textContent).toCont…
+       |                                                                 ^
+    904|       const restarted = await bootAs(LEAD, respond, factory);
+    905|       restarted.location.hash = '#/job-orders?id=184'; await wait();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/frontend-mobile-delay-proof.test.ts > mobile bootstrap > QC and QA inspection (Figma 69:*, 72:*) > creates separate chassis and fairings reports with their own photos (qa)
+TypeError: Cannot set properties of null (setting 'value')
+ ❯ tests/frontend-mobile-delay-proof.test.ts:1230:72
+    1228|         else win.document.getElementById('ui-another').click();
+    1229|         await wait(80);
+    1230|         const input = win.document.querySelector('[data-area]'); input…
+       |                                                                        ^
+    1231|         const description = win.document.querySelector('[data-descript…
+    1232|         win.issuePicker.onChange([new Blob([area + '-image-bytes'], { …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 128 skipped (130)
+   Start at  03:16:51
+   Duration  2.05s (transform 269ms, setup 55ms, import 1.02s, tests 758ms, environment 0ms)

@@ -15,7 +15,8 @@ Backend paths are `src/...` unless noted; frontend paths are `public/js/modules/
 **Responsibility:** technical concerns with no business meaning of their own, used by
 every module. Not gated by `requireModule()`, not licensed, never disabled.
 **Owned files:** `db.ts` (SQLite connection registry, multi-tenant `tenantStore`,
-schema/migrations), `types.ts`, `validation.ts`, `permissions.ts` (permission catalog + built-in
+schema/migrations), `sqlite-initialization.ts` (bounded process-safe cold tenant/catalog ownership;
+temporary initialization-only busy waits, existing runtime policy restored), `types.ts`, `validation.ts`, `permissions.ts` (permission catalog + built-in
 role seeds, pure), `roles.ts` (the tenant's `roles` table — every account's permissions resolve
 through `userPermissions()` here), `auth.ts`
 (session/login middleware; SCHEMA_VERSION 55: every session records device ID / IP / user

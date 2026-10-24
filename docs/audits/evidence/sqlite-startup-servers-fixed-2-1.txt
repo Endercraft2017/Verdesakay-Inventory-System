@@ -1,0 +1,9 @@
+[backup] daily snapshot for 2026-10-24: 2 database(s) → /workspace/Verdesakay-Inventory-System/work/sqlite-startup/servers-fixed/2/backups
+[backup] PROBLEM: Snapshot of "default" failed: disk I/O error
+
+Otom is running (HTTP):
+   Local:   http://localhost:47155
+   Network: http://172.26.91.252:47155  (for other office devices)
+   Network: http://172.31.0.46:47155  (for other office devices)
+
+{"timestamp":"2026-10-24T01:27:09.345Z","level":"info","event":"http_request","request_id":"85d91075-a325-4e13-9065-28f4130fcc42","tenant":"default","method":"GET","path":"/api/health","status":200,"duration_ms":7}

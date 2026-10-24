@@ -1,0 +1,7 @@
+{
+  "source": "Installed node_modules/jsdom/README.md",
+  "package_version": "29.1.1",
+  "canonical_url": "https://github.com/jsdom/jsdom#closing-down-a-jsdom",
+  "installed_readme_sha256": "ca1557b2978da16037207cfde5d9d9d511ec45ede2ff314ec83bae20f3f487b6",
+  "interpretation": "Close each disposable window to stop its timers/listeners after the case; this is test isolation, not production memory/performance certification."
+}

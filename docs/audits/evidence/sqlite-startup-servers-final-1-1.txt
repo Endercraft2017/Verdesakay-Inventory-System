@@ -1,0 +1,14 @@
+[backup] FAILED "default": database is locked
+[backup] FAILED "_platform": database is locked
+[backup] FAILED "default": database is locked
+[backup] PROBLEM: Snapshot of "default" failed: disk I/O error
+[backup] PROBLEM: Snapshot of "_platform" failed: disk I/O error
+[backup] PROBLEM: Hourly snapshot of "default" failed: database is locked
+[backup] PROBLEM: Hourly snapshots have not succeeded in the last 3 hours
+[backup] PROBLEM: "default" has no daily snapshot in the last 26 hours
+[backup] PROBLEM: "_platform" has no daily snapshot in the last 26 hours
+
+Otom is running (HTTP):
+   Local:   http://localhost:57723
+   Network: http://172.26.91.252:57723  (for other office devices)
+   Network: http://172.31.0.46:57723  (for other office devices)

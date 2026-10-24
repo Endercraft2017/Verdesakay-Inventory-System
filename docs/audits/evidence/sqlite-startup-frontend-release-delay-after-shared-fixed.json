@@ -1,0 +1,19 @@
+{
+  "label": "after-shared-fixed",
+  "application_source": "Unchanged baseline mobile app at 0c2ed900239ce50db297ebd957d9f34b6ec0b0cc",
+  "source_test_sha256": "ee6838789b48d6865f286d3111f3f3eb39316fdcda3db48b495e0ee829db96de",
+  "diagnostic_sha256": "1f3bdd1b8cda30163706cfe6889fc0ed6c4964393823c2a39497af19a9a486d3",
+  "command": [
+    "node",
+    "/workspace/Verdesakay-Inventory-System/node_modules/vitest/vitest.mjs",
+    "run",
+    "tests/frontend-release-delay-proof.test.ts",
+    "-t",
+    "never shows the token|records warehouse-out online only|takes an approved supervisor override|lets a supervisor approve|recovers scrap after|creates separate.*\\(qa\\)|lists ready units and keeps a mismatch-held|times out a stuck hold lookup|shows retained receipts while a live queue request is stuck"
+  ],
+  "exit": 0,
+  "seconds": 21.42,
+  "method": "Before DOMContentLoaded, each fulfilled real mProductionDrafts asynchronous API acknowledgement is delayed 250ms. Values/errors and application source remain unchanged.",
+  "source_snapshot": "frontend-release-delay-after-shared-fixed-source.ts",
+  "diagnostic_diff_against_pinned_original": "frontend-release-delay-after-shared-fixed.patch"
+}

@@ -1,0 +1,21 @@
+{
+  "label": "final",
+  "application_source": "Unchanged baseline mobile app at 0c2ed900239ce50db297ebd957d9f34b6ec0b0cc",
+  "source_test_sha256": "d01dec554566a355e64b4bdc8807f562b988c76bd93b3f30705b12781ca65b4d",
+  "command": [
+    "node",
+    "/workspace/Verdesakay-Inventory-System/node_modules/vitest/vitest.mjs",
+    "run",
+    "tests/frontend-mobile-delay-proof.test.ts",
+    "-t",
+    "recovers scrap after|creates separate.*\\(qa\\)"
+  ],
+  "exit": 0,
+  "seconds": 6.51,
+  "method": "Real mProductionDrafts.save runs unchanged; its successful promise acknowledgement is delayed 250ms in the disposable test copy only",
+  "trace": "frontend-delay-final.jsonl",
+  "diagnostic_source": "work/sqlite-startup/baseline/tests/frontend-mobile-delay-proof.test.ts",
+  "diagnostic_sha256": "1b1e37f239554fa5b55daea9f74ca1a0ba50facb2feb59b29cbc4959afc5d591",
+  "source_snapshot": "frontend-delay-final-source.ts",
+  "diagnostic_diff_against_pinned_original": "frontend-delay-final.patch"
+}

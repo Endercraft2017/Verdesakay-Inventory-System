@@ -1,0 +1,30 @@
+[
+  {
+    "name": "typecheck-verified",
+    "command": [
+      "npm",
+      "run",
+      "typecheck"
+    ],
+    "exit": 0,
+    "seconds": 19.34
+  },
+  {
+    "name": "focused-verified",
+    "command": [
+      "node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "tests/sqlite-initialization.test.ts",
+      "tests/restore-app-drill.test.ts",
+      "tests/mfa.test.ts",
+      "tests/qa-hold.test.ts",
+      "tests/signup-budget.test.ts",
+      "tests/frontend-mobile.test.ts",
+      "--fileParallelism",
+      "--maxWorkers=2"
+    ],
+    "exit": 1,
+    "seconds": 68.53
+  }
+]

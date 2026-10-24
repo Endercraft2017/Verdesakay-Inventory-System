@@ -1,5 +1,44 @@
 # Engineering handoff and release hold
 
+Latest SQLite startup follow-up: 24 October 2026 — reproduced cold-start trigger contention
+and a first-run administrator seed race at `0c2ed900239ce50db297ebd957d9f34b6ec0b0cc`.
+Updated tenant/catalog initializers now coordinate through an adjacent technical SQLite
+file, with bounded acquisition and initialization-only busy waiting. Returned business
+connections retain the previous zero-wait policy. Existing business schemas, migrations,
+backup ordering and offline payroll authority are preserved. Independent-process barriers,
+SIGKILL/retry, persistent contention, failed catalog seed and actual paired server startups
+are covered. Private in-memory connections create no lock file. See the
+[contract/evidence](sqlite-startup-contract.md) and [recovery](../operations/sqlite-startup.md).
+This supersedes the prior simultaneous cold-start availability limitation for cooperating
+updated processes on the tested local file paths only. Mixed builds, arbitrary historical
+migration interruption, other runtime writers, Windows/hosting/shared-storage acceptance
+and independent review remain open; bounded waits do not establish a startup SLA.
+The same check found a pre-existing runtime-support mismatch: declared Node `>=22.13`, but
+payroll/sync guards use `isTransaction` added in 22.16. An official 22.13 API probe demonstrates
+the missing property during a real transaction; full financial impact is untested. Aligning
+runtime declarations/CI and verifying those guards remains engineering work; Node 22.22 and
+24.19 are the tested app versions for this increment. See the contract's retained probe.
+
+Validation-only corrections are recorded separately: Vitest's default execution budgets
+relax 20 → 60 seconds; the mobile fixture waits for its cached actor/local storage and closes each
+window, with bounded state waits at demonstrated transitions. All 625 original mobile matcher
+expressions remain identical/in order. Nine delayed-storage cases include 2 stuck-network
+controls; an unhandled-storage control still fails even while its normal assertions pass.
+These do not fix the observed 11.785/15.545 second authenticated requests or establish production
+latency. Original failures and invalid candidate experiments remain evidence in the contract.
+Final canonical validation passes 326 files / 3,519 tests with all 872 selected input hashes unchanged;
+the retained 78-case Playwright run has identical runtime/e2e inputs. This is local scoped evidence,
+not release approval or independent assurance.
+
+Latest dependency observation: 24 October 2026 — a fresh runtime npm scan reports
+**four high / one moderate / zero critical vulnerable-package entries**, with seven active
+primary advisory records. Manifests and lockfiles are unchanged. Earlier one-high results
+below are historical snapshots. Compatible parser/upload/validator/mail package updates,
+application-specific reproductions and final-graph regression are separate engineering
+follow-up; no approved risk exception or owner implementation task is implied. See
+[current findings](runtime-advisories-2026-10-24.md). The broader release hold and historical
+whole-control totals remain unchanged.
+
 Latest cloud payroll replay follow-up: 23 October 2026 — SQL faults and real process
 interruptions demonstrated committed journals without complete effects/verdicts,
 followed by unintended reversal/replacement on replay. The synchronous payroll GL
@@ -162,7 +201,8 @@ applicable issue before changing behavior:
 | High | Native/Electron distribution and supported-client acceptance | APK/installer builds, signed artifacts, actual Windows/Android vault/backup/logout/upgrade checks |
 | High | Payroll source/ledger/payment/filing reconciliation | Stable-ID grouping, generation/reporting/issuance source holds, paid-only email, atomic journal replacement and bounded current-source comparison implemented. Reviewed duplicate/malformed/cutoff transfers (only consistent missing/invalid IDs recoverable), eligibility, historical snapshots, accrual/payment dates, retry-safe posting and bank/remittance/filing evidence remain. See operations/payroll-report-identity.md |
 | High | Integration lifecycle and accounting reconciliation acceptance | Local generation/scoping, refresh admission, export exclusion and durable uncertain-write handling implemented 2026-10-18; actual Intuit sandbox, legacy adoption/repair tooling, interrupted-claim reconciliation, operational alerting and accountant acceptance remain. See operations/quickbooks-lifecycle.md |
-| High | Resolve or explicitly disposition vulnerable dependencies and historical-secret gates | Upstream/compatible fix or approved expiring risk record; verified revocation without exposing the old bearer |
+| High | Resolve or explicitly disposition vulnerable dependencies and historical-secret gates | Current 24 October runtime snapshot:4 high / 1 moderate package findings,7 active records; reproduce affected app paths and verify compatible fixes or an approved expiring risk record. Verify historical revocation without exposing old bearers. See runtime-advisories-2026-10-24.md |
+| High | Align minimum-runtime declarations/CI with actually required SQLite APIs | Existing `>=22.13` declaration conflicts with `isTransaction` added 22.16. API mismatch is demonstrated; verify affected transaction guards on supported patched runtimes and reproduce financial consequences before claiming disposition |
 | Medium–High | Remaining resilience, concurrency, accessibility, observability and handbook requirements | Risk-ordered evidence for applicable controls; architectural/commercial choices agreed explicitly |
 
 These are outstanding limitations, not assertions that all missing engineering is finished.

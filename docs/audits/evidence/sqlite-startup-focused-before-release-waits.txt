@@ -1,0 +1,83 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+ ❯ tests/frontend-mobile.test.ts (130 tests | 4 failed) 31858ms
+       × never shows the token, and continues only after the presented token verifies 229ms
+       × records warehouse-out online only, with the token, package and an idempotency key 161ms
+       × takes an approved supervisor override in place of the token 211ms
+       × lets a supervisor approve a requested override on the phone 192ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend-mobile.test.ts > mobile bootstrap > Releasing personnel warehouse-out (Figma 78:*) > never shows the token, and continues only after the presented token verifies
+AssertionError: expected null to be '78:68' // Object.is equality
+
+- Expected:
+"78:68"
+
++ Received:
+null
+
+ ❯ tests/frontend-mobile.test.ts:1707:52
+    1705|       await wait();
+    1706|       const view = doc.getElementById('m-view');
+    1707|       expect(view.getAttribute('data-figma-node')).toBe('78:68');
+       |                                                    ^
+    1708|       expect(view.textContent).toContain('Jordan D. · ID reference ••4…
+    1709|       expect(view.textContent).toContain('PICKUP-••••');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  tests/frontend-mobile.test.ts > mobile bootstrap > Releasing personnel warehouse-out (Figma 78:*) > records warehouse-out online only, with the token, package and an idempotency key
+TypeError: Cannot set properties of null (setting 'value')
+ ❯ tests/frontend-mobile.test.ts:1753:63
+    1751|       win.location.hash = '#/so?id=302&step=handoff';
+    1752|       await wait();
+    1753|       (doc.querySelector('[data-token]') as HTMLInputElement).value = …
+       |                                                               ^
+    1754|       (doc.querySelector('[data-verify]') as HTMLButtonElement).click(…
+    1755|       await wait();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  tests/frontend-mobile.test.ts > mobile bootstrap > Releasing personnel warehouse-out (Figma 78:*) > takes an approved supervisor override in place of the token
+AssertionError: expected '' to contain 'Supervisor override · Sam Supervisor'
+
+- Expected
++ Received
+
+- Supervisor override · Sam Supervisor
+
+ ❯ tests/frontend-mobile.test.ts:1812:32
+    1810|       await wait();
+    1811|       const view = doc.getElementById('m-view');
+    1812|       expect(view.textContent).toContain('Supervisor override · Sam Su…
+       |                                ^
+    1813|       expect(view.querySelector('[data-token]')).toBeNull();
+    1814|       (doc.getElementById('rel-go') as HTMLButtonElement).click();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  tests/frontend-mobile.test.ts > mobile bootstrap > Releasing personnel warehouse-out (Figma 78:*) > lets a supervisor approve a requested override on the phone
+AssertionError: expected '' to contain 'Requested by Ana Dela Cruz'
+
+- Expected
++ Received
+
+- Requested by Ana Dela Cruz
+
+ ❯ tests/frontend-mobile.test.ts:1826:56
+    1824|       win.location.hash = '#/so?id=302&step=override';
+    1825|       await wait();
+    1826|       expect(doc.getElementById('m-view').textContent).toContain('Requ…
+       |                                                        ^
+    1827|       (doc.querySelector('[data-reason]') as HTMLTextAreaElement).valu…
+    1828|       (doc.getElementById('rel-approve') as HTMLButtonElement).click();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed | 5 passed (6)
+      Tests  4 failed | 165 passed (169)
+   Start at  03:23:16
+   Duration  68.03s (transform 2.84s, setup 135ms, import 1.69s, tests 132.27s, environment 1ms)

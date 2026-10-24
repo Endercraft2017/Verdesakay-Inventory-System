@@ -1,0 +1,35 @@
+{
+  "date_manila": "2026-10-24",
+  "sources": [
+    {
+      "name": "sqlite-busy-timeout",
+      "url": "https://www.sqlite.org/c3ref/busy_timeout.html",
+      "bytes": 4889,
+      "ok": true,
+      "sha256": "751a6ae8d5a18975af74dbf88f08ce99e0af11e21ba52be879ee11824025d1d1"
+    },
+    {
+      "name": "sqlite-transactions",
+      "url": "https://www.sqlite.org/lang_transaction.html",
+      "bytes": 27068,
+      "ok": true,
+      "sha256": "b65dc308fd9e0ce471844c97366a4f5ad3a1f42833a3b19486ad7d6555a8e24e"
+    },
+    {
+      "name": "sqlite-locking",
+      "url": "https://www.sqlite.org/lockingv3.html",
+      "bytes": 29892,
+      "ok": true,
+      "sha256": "fa67031159fc0658b6e3fcfa4e446c140838c75cb813ff9fafd47fdae927936f"
+    },
+    {
+      "name": "node22-sqlite",
+      "url": "https://nodejs.org/docs/latest-v22.x/api/sqlite.html",
+      "bytes": 95509,
+      "ok": true,
+      "sha256": "ce0c0578f7da5fca4d1136db35fadd41fdeca707f9b0b3ad2c8747b3f8536e41"
+    }
+  ],
+  "web_connector": "Empty isError result; official URLs fetched directly with TLS verification",
+  "text_extraction": "Optional bs4 unavailable; standard-library html/re used instead"
+}

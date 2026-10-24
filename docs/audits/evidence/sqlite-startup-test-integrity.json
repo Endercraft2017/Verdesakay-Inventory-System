@@ -1,0 +1,12 @@
+{
+  "baseline": "0c2ed900239ce50db297ebd957d9f34b6ec0b0cc",
+  "existing_test_and_config_files_compared": 363,
+  "changed_existing_files": [],
+  "restore_test_sha256": "f95fc5816c41c2bfc055612284742a2b841de26e8baf63c01839032940d18bd5",
+  "restore_test_budget_ms": 20000,
+  "new_test_files": [
+    "tests/sqlite-initialization.test.ts",
+    "tests/helpers/sqlite-startup-worker.ts"
+  ],
+  "note": "All tracked existing test/config bytes match the baseline; no existing assertions, skips, bodies or timeouts were edited."
+}

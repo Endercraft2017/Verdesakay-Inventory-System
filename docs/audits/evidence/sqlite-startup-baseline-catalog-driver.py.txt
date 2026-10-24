@@ -1,0 +1,24 @@
+from pathlib import Path
+import json
+import subprocess
+import time
+
+root = Path.cwd()
+out = root / 'work/sqlite-startup'
+baseline = out / 'baseline'
+cmd = ['node', str(root / 'node_modules/vitest/vitest.mjs'), 'run',
+       'tests/sqlite-initialization.test.ts', '-t', 'evicts a catalog connection']
+start = time.monotonic()
+with (out / 'baseline-catalog-failure.log').open('w') as log:
+    result = subprocess.run(cmd, cwd=baseline, stdout=log, stderr=subprocess.STDOUT)
+text = (out / 'baseline-catalog-failure.log').read_text()
+assert result.returncode == 1 and '1 failed' in text, text
+record = {'baseline': '0c2ed900239ce50db297ebd957d9f34b6ec0b0cc', 'command': cmd,
+          'exit': result.returncode, 'seconds': round(time.monotonic() - start, 2),
+          'expected_failure': True, 'selected_tests': 1, 'deselected': 7,
+          'observed': 'Original catalog cache returns an unseeded connection after the first seed failure; operator count 0 instead of required 1 on retry',
+          'chronology': 'Retrospective old-source failure-state check after the candidate implementation; not a pre-edit reproduction',
+          'same_test_and_worker': all((baseline / f).read_bytes() == (root / f).read_bytes()
+                                     for f in ['tests/sqlite-initialization.test.ts', 'tests/helpers/sqlite-startup-worker.ts'])}
+(out / 'baseline-catalog-failure.json').write_text(json.dumps(record, indent=2) + '\n')
+print(json.dumps(record))

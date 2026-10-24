@@ -1,0 +1,15 @@
+{
+  "baseline_application_source": "0c2ed900239ce50db297ebd957d9f34b6ec0b0cc",
+  "test_harness": "Current 60000ms defaults copied; permanent test and worker identical",
+  "command": [
+    "node",
+    "/workspace/Verdesakay-Inventory-System/node_modules/vitest/vitest.mjs",
+    "run",
+    "tests/sqlite-initialization.test.ts",
+    "-t",
+    "waits for competing cold|serializes first-run read-before-insert"
+  ],
+  "exit": 1,
+  "seconds": 24.6,
+  "expected_failure": true
+}

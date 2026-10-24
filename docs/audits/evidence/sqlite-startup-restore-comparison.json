@@ -1,0 +1,14 @@
+[
+  {
+    "source": "baseline",
+    "exit": 0,
+    "seconds": 9.96,
+    "original_test_timeout_ms": 20000
+  },
+  {
+    "source": "candidate",
+    "exit": 0,
+    "seconds": 8.48,
+    "original_test_timeout_ms": 20000
+  }
+]

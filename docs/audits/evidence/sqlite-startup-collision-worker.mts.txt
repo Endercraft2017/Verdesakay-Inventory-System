@@ -1,0 +1,33 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {DatabaseSync} from 'node:sqlite';
+const [mode,rootArg,outputArg]=process.argv.slice(2),root=path.resolve(rootArg),output=path.resolve(outputArg);
+const exec=DatabaseSync.prototype.exec;let held=false;
+if(mode==='hold')DatabaseSync.prototype.exec=function(sql:string){
+ if(!held&&sql.includes('DROP TRIGGER IF EXISTS doc_studio_cleanup_template')){
+  held=true;exec.call(this,'BEGIN IMMEDIATE');fs.writeFileSync(path.join(output,'held'),'held');
+  const deadline=Date.now()+15000;
+  while(!fs.existsSync(path.join(output,'release'))){if(Date.now()>deadline)throw new Error('Startup test barrier expired');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);}
+  try{return exec.call(this,sql);}finally{exec.call(this,'COMMIT');}
+ }
+ return exec.call(this,sql);
+};
+const source=await import(pathToFileURL(path.join(root,'src/shared/db.ts')).href);
+try{
+ if(mode==='second')fs.writeFileSync(path.join(output,'second-started'),'started');
+ const started=Date.now(),db=source.getDb();
+ if(mode==='seed'){
+  source.setSetting('startup_sentinel','Synthetic saved setting');
+  const employee=Number(db.prepare("INSERT INTO employees(employee_no,name) VALUES('STARTUP-1','Synthetic Startup Employee')").run().lastInsertRowid);
+  const period=Number(db.prepare("INSERT INTO attendance_periods(label,start_date,end_date) VALUES('STARTUP-1','2032-01-01','2032-01-15')").run().lastInsertRowid);
+  const form=db.prepare("SELECT id FROM form_definitions WHERE slug='hr_payroll'").get() as {id:number};
+  db.prepare("INSERT INTO form_records(form_def_id,number,data,status,period,created_by) VALUES(?,?,?,'paid','STARTUP-1',1)").run(form.id,'STARTUP-PAYROLL-1',JSON.stringify({employee_id:employee,employee_name:'Synthetic Startup Employee',cutoff_id:period,payroll_period:'STARTUP-1',total_earnings:1000,net_pay:1000}));
+ }
+ fs.writeFileSync(path.join(output,mode+'.json'),JSON.stringify({ok:true,elapsed_ms:Date.now()-started,busy_timeout:db.prepare('PRAGMA busy_timeout').get(),transaction_open:db.isTransaction},null,2)+'\n');
+ source.closeAllConnections();
+}catch(error:any){
+ fs.writeFileSync(path.join(output,mode+'.json'),JSON.stringify({ok:false,errcode:error.errcode,message:error.message,stack:error.stack},null,2)+'\n');
+ try{source.closeAllConnections();}catch{}
+ process.exitCode=1;
+}

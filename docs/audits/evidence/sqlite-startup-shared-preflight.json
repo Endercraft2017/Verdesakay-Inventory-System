@@ -1,0 +1,23 @@
+[
+  {
+    "name": "typecheck-shared-final",
+    "command": [
+      "npm",
+      "run",
+      "typecheck"
+    ],
+    "exit": 0,
+    "seconds": 21.59
+  },
+  {
+    "name": "mobile-shared-final",
+    "command": [
+      "node",
+      "node_modules/vitest/vitest.mjs",
+      "run",
+      "tests/frontend-mobile.test.ts"
+    ],
+    "exit": 0,
+    "seconds": 46.35
+  }
+]

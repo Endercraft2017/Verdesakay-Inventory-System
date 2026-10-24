@@ -1,0 +1,7 @@
+{
+  "at_utc": "2026-10-24T02:15:33.866452+00:00",
+  "pid": 21776,
+  "command": "node /workspace/Verdesakay-Inventory-System/node_modules/.bin/vitest run --fileParallelism --maxWorkers=2 ",
+  "reason": "Retained signup-budget 20-second failure; stop incomplete parallel rerun and use canonical npm test serial scheduling without test changes.",
+  "signal": "SIGTERM"
+}

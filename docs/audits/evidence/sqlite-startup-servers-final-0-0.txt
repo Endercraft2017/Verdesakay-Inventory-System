@@ -1,0 +1,10 @@
+[backup] FAILED "default": disk I/O error
+[backup] PROBLEM: Hourly snapshot of "default" failed: disk I/O error
+[backup] PROBLEM: Hourly snapshots have not succeeded in the last 3 hours
+
+Otom is running (HTTP):
+   Local:   http://localhost:45361
+   Network: http://172.26.91.252:45361  (for other office devices)
+   Network: http://172.31.0.46:45361  (for other office devices)
+
+{"timestamp":"2026-10-24T02:07:06.387Z","level":"info","event":"http_request","request_id":"88042a67-6cae-4e7c-bf57-02db4e41fdad","tenant":"default","method":"GET","path":"/api/health","status":200,"duration_ms":15}

@@ -1,0 +1,9 @@
+[backup] FAILED "default": disk I/O error
+[backup] PROBLEM: Snapshot of "default" failed: disk I/O error
+
+Otom is running (HTTP):
+   Local:   http://localhost:39977
+   Network: http://172.26.91.252:39977  (for other office devices)
+   Network: http://172.31.0.46:39977  (for other office devices)
+
+{"timestamp":"2026-10-24T01:27:09.543Z","level":"info","event":"http_request","request_id":"25191c65-691b-4d2a-b47b-9f8f3be92a93","tenant":"default","method":"GET","path":"/api/health","status":200,"duration_ms":9}

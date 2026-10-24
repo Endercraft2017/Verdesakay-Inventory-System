@@ -1,0 +1,58 @@
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+import sqlite3
+import subprocess
+import sys
+import time
+
+root=Path.cwd()
+out=root/'work/sqlite-startup'/sys.argv[1]
+out.mkdir(parents=True,exist_ok=False)
+driver=out/'worker.mts'
+shutil.copyfile(root/'work/sqlite-startup/worker.mts',driver)
+env=os.environ.copy()
+env.update(NODE_ENV='test',DEPLOY_MODE='cloud',ADMIN_PASSWORD='Synthetic startup audit fixture',DB_PATH=str(out/'data.db'),
+ DATA_DIR=str(out/'tenants'),PLATFORM_DB_PATH=str(out/'platform.db'),UPLOAD_DIR=str(out/'uploads'),BACKUP_DIR=str(out/'backups'))
+def command(mode):return ['node','--import','tsx',str(driver),mode,str(root),str(out)]
+def snapshot():
+ d=sqlite3.connect(f'file:{out}/data.db?mode=ro',uri=True)
+ r={'payroll':d.execute("SELECT id,number,data,status,revision FROM form_records WHERE number='STARTUP-PAYROLL-1'").fetchall(),
+    'setting':d.execute("SELECT value FROM settings WHERE key='startup_sentinel'").fetchall(),
+    'admin_count':d.execute("SELECT count(*) FROM users WHERE username='admin'").fetchone()[0],
+    'integrity':d.execute('PRAGMA integrity_check').fetchall(),'foreign_keys':d.execute('PRAGMA foreign_key_check').fetchall()}
+ d.close();return r
+def wait_for(file,process,seconds=20):
+ until=time.monotonic()+seconds
+ while not file.exists():
+  if process.poll() is not None:raise RuntimeError('Child exited before barrier: '+str(process.returncode))
+  if time.monotonic()>until:raise RuntimeError('Barrier deadline: '+str(file))
+  time.sleep(.01)
+seed=subprocess.run(command('seed'),env=env,capture_output=True,text=True,timeout=30)
+(out/'seed.log').write_text(seed.stdout+seed.stderr)
+assert seed.returncode==0,(out/'seed.log').read_text()
+before=snapshot()
+with (out/'hold.log').open('w') as log_a,(out/'second.log').open('w') as log_b:
+ a=subprocess.Popen(command('hold'),env=env,stdout=log_a,stderr=subprocess.STDOUT)
+ try:
+  wait_for(out/'held',a)
+  b=subprocess.Popen(command('second'),env=env,stdout=log_b,stderr=subprocess.STDOUT)
+  try:
+   wait_for(out/'second-started',b)
+   until=time.monotonic()+.5
+   while b.poll() is None and time.monotonic()<until:time.sleep(.01)
+   completed_while_held=b.poll() is not None
+   (out/'release').write_text('go')
+   a_exit=a.wait(timeout=20);b_exit=b.wait(timeout=20)
+  finally:
+   if b.poll() is None:b.kill();b.wait()
+ finally:
+  if a.poll() is None:a.kill();a.wait()
+result={'baseline_or_fixed':sys.argv[1],'node':subprocess.check_output(['node','--version'],text=True).strip(),
+ 'driver_sha256':hashlib.sha256(driver.read_bytes()).hexdigest(),'first_exit':a_exit,'second_exit':b_exit,
+ 'second_completed_before_first_released':completed_while_held,'first':json.loads((out/'hold.json').read_text()),
+ 'second':json.loads((out/'second.json').read_text()),'saved_data_unchanged':before==snapshot(),'snapshot_after':snapshot()}
+(out/'results.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps({k:result[k] for k in ['baseline_or_fixed','first_exit','second_exit','second_completed_before_first_released','saved_data_unchanged']}))

@@ -1,0 +1,8 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System/work/sqlite-startup/baseline
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed | 126 skipped (130)
+   Start at  03:35:18
+   Duration  10.10s (transform 248ms, setup 64ms, import 937ms, tests 8.87s, environment 0ms)

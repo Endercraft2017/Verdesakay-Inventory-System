@@ -3,7 +3,7 @@
  * order inside jsdom and assert the router boots and every view registers a route.
  * Mirrors frontend.test.ts for the desktop bundle.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
@@ -20,8 +20,49 @@ const EXPECTED_ROUTES = [
 ];
 
 describe('mobile bootstrap', () => {
+  const windows = new Set<Record<string, any>>();
+  const pendingDraftStorage = new Set<Promise<unknown>>();
+
+  // Preserve values and errors on the promise returned to the app. The idle check
+  // only polls the set; it never consumes a rejection or waits on network requests.
+  function trackDraftStorage(win: any) {
+    for (const name of Object.keys(win.mProductionDrafts)) {
+      const actual = win.mProductionDrafts[name];
+      if (typeof actual !== 'function') continue;
+      win.mProductionDrafts[name] = function (...args: any[]) {
+        const result = actual.apply(this, args);
+        if (!result || typeof result.then !== 'function') return result;
+        let tracked: Promise<unknown>;
+        tracked = Promise.resolve(result).finally(() => { pendingDraftStorage.delete(tracked); });
+        pendingDraftStorage.add(tracked);
+        return tracked;
+      };
+    }
+  }
+
+  async function waitForDraftStorage(ms = 40) {
+    await new Promise(resolve => setTimeout(resolve, ms));
+    const deadline = Date.now() + 5000;
+    for (;;) {
+      // Allow settled storage callbacks and hash-change rendering to run first.
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (!pendingDraftStorage.size) return;
+      if (Date.now() >= deadline) throw new Error('Mobile draft storage did not settle');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  }
+
+  afterEach(async () => {
+    try { await waitForDraftStorage(0); }
+    finally {
+      for (const win of windows) win.close();
+      windows.clear();
+      pendingDraftStorage.clear();
+    }
+  });
   const html = fs.readFileSync(path.join(PUBLIC, 'mobile', 'index.html'), 'utf8');
   const srcs = [...html.matchAll(/<script src="(\/[^"]+)"><\/script>/g)].map((m) => m[1] as string);
+
 
   it('uses the approved five-destination V2 dock and keeps Clock universal', () => {
     const tabs = [...html.matchAll(/data-tab="([^"]+)"/g)].map((m) => m[1]);
@@ -68,6 +109,7 @@ describe('mobile bootstrap', () => {
   it('boots the router and registers every view', () => {
     const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://localhost/m' });
     const win = dom.window as unknown as Record<string, any>;
+    windows.add(win);
     win.matchMedia = win.matchMedia || (() => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
     win.fetch = () => Promise.reject(new Error('no network in test'));
 
@@ -104,6 +146,7 @@ describe('mobile bootstrap', () => {
   async function bootAs(me: Record<string, unknown>, respond?: (url: string, init: any) => unknown, factory = new IDBFactory()) {
     const dom = new JSDOM(html, { runScripts: 'outside-only', url: 'https://localhost/m' });
     const win = dom.window as unknown as Record<string, any>;
+    windows.add(win);
     win.indexedDB = factory;
     win.matchMedia = win.matchMedia || (() => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
     win.fetch = (url: string, init: unknown) => {
@@ -128,12 +171,25 @@ describe('mobile bootstrap', () => {
       .map((s) => fs.readFileSync(path.join(PUBLIC, s.replace(/^\//, '')), 'utf8'))
       .join('\n;\n');
     win.eval(code);
+    trackDraftStorage(win);
     win.document.dispatchEvent(new win.Event('DOMContentLoaded'));
     // enterApp() runs at the end of a `/auth/me` rejection chain (a couple of microtask
     // hops through api.js's async request() + boot()'s .catch) — flush a real macrotask
     // so it's landed before we drive the router.
-    await new Promise((r) => setTimeout(r, 0));
+    await vi.waitFor(() => {
+      const ready = win.MApp.getMe();
+      if (!ready || ready.id !== me.id) throw new Error('Cached mobile actor is not ready');
+    }, { timeout: 5000 });
+    await waitForDraftStorage(0);
     return win;
+  }
+
+  async function waitForMobileElement(win: any, selector: string) {
+    return vi.waitFor(() => {
+      const element = win.document.querySelector(selector);
+      if (!element) throw new Error('Mobile element not ready: ' + selector);
+      return element;
+    }, { timeout: 5000 });
   }
 
   it('shows courier collection separately and submits optional evidence with saved tracking', async () => {
@@ -383,7 +439,7 @@ describe('mobile bootstrap', () => {
     return { win, view: win.document.getElementById('m-view'), punches, selfies, scans };
   }
   const tile = (view: any, slot: string) => view.querySelector(`[data-slot="${slot}"]`);
-  const settle = () => new Promise((r) => setTimeout(r, 20));
+  const settle = () => waitForDraftStorage(20);
 
   it('time clock: the four kiosk slots are tiles, the suggested one marked Next, filled ones showing their time', async () => {
     const { view } = await bootClock({ slots: { in: '08:02', lunchOut: null, lunchIn: null, out: null }, next_slot: 'lunchOut', clocked_in: true });
@@ -514,7 +570,7 @@ describe('mobile bootstrap', () => {
     const BASE = { id: 184, number: 'JO-2026-184', product_name: 'K4 Electric Bike', qty_ordered: 12, status: 'draft',
       approved_at: 'approved', warehouse_accepted_at: null, prepared_at: null, source_location_name: 'Main Parts' };
     const line = { component_item_id: 1, component_name: 'Controller 60 V', need: 12, have: 30, held_elsewhere: 8, available: 22, short: 0, picked: 0 };
-    const wait = () => new Promise((r) => setTimeout(r, 80));
+    const wait = () => waitForDraftStorage(80);
     const click = (win: any, id: string) => (win.document.getElementById(id) as HTMLButtonElement).click();
     const ack = (win: any) => { const el = win.document.getElementById('kr-ack'); el.checked = true; el.dispatchEvent(new win.Event('change')); };
     function fixture(start: Record<string, any> = {}, options: { lost?: string; local?: string; refusal?: any } = {}) {
@@ -675,7 +731,7 @@ describe('mobile bootstrap', () => {
     const BASE = { id: 184, number: 'JO-2026-184', product_name: 'K4 Electric Bike', qty_ordered: 12, qty_done: 0, qty_scrapped: 0,
       qc_stages: 2, status: 'released', released_at: '2026-09-28 01:42:00', released_by_name: 'Ana Alvarez', accepted_at: null,
       units_summary: {}, components: [{ component_name: 'Controller 60 V', qty_planned: 12 }] };
-    const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+    const wait = waitForDraftStorage;
 
     const APPROVER = { ...MGR, permissions: [...MGR.permissions, 'production.approve', 'production.view'] };
     const DRAFT = { ...BASE, status: 'draft', approved_at: null, released_at: null, approval_revision: 'a'.repeat(64), source_location_name: 'Parts A', output_location_name: 'Finished B', notes: 'Build for depot', team_name: 'Line 2',
@@ -880,7 +936,8 @@ describe('mobile bootstrap', () => {
         return undefined;
       };
       const win = await bootAs(LEAD, respond, factory);
-      win.location.hash = '#/job-orders?id=184' + (kind === 'accept' ? '' : '&step=' + kind); await wait();
+      win.location.hash = '#/job-orders?id=184' + (kind === 'accept' ? '' : '&step=' + kind);
+      await waitForMobileElement(win, kind === 'accept' ? '#jo-accept' : kind === 'output' ? '[data-done]' : '[data-n]');
       if (kind === 'accept') {
         const chk = win.document.getElementById('jo-counted'); chk.checked = true; chk.dispatchEvent(new win.Event('change'));
         win.document.querySelector('[data-note]').value = 'Original handover note';
@@ -890,16 +947,22 @@ describe('mobile bootstrap', () => {
         else { win.document.querySelector('[data-n]').value = '2'; win.document.querySelector('[data-reason]').value = 'Original scrap reason'; }
         win.document.getElementById('jo-save').click();
       }
-      await wait(100);
-      expect(win.document.getElementById('m-view').textContent).toContain('Confirmation unknown');
+      await vi.waitFor(() => {
+        expect(win.document.getElementById('m-view').textContent).toContain('Confirmation unknown');
+      }, { timeout: 5000 });
       const restarted = await bootAs(LEAD, respond, factory);
-      restarted.location.hash = '#/job-orders?id=184'; await wait();
+      restarted.location.hash = '#/job-orders?id=184'; await waitForMobileElement(restarted, '#jo-action-retry');
       expect(restarted.document.getElementById('jo-action-retry')).not.toBeNull();
-      restarted.document.getElementById('jo-action-retry').click(); await wait(120);
+      restarted.document.getElementById('jo-action-retry').click();
+      await vi.waitFor(() => {
+        if (!restarted.document.getElementById('m-view').textContent.includes('Confirmed by site authority')) throw new Error('Production retry is not confirmed');
+      }, { timeout: 5000 });
       expect(calls).toHaveLength(2); expect(calls[1]).toEqual(calls[0]); expect(applied.size).toBe(1);
       expect(restarted.document.getElementById('m-view').textContent).toContain('Confirmed by site authority');
-      restarted.document.getElementById('jo-action-back').click(); await wait();
-      expect(await restarted.mProductionDrafts.loadAction(184)).toBeNull();
+      restarted.document.getElementById('jo-action-back').click();
+      await vi.waitFor(async () => {
+        expect(await restarted.mProductionDrafts.loadAction(184)).toBeNull();
+      }, { timeout: 5000 });
     });
 
     it('rejects fractional, empty, negative and over-remaining production quantities', async () => {
@@ -1042,7 +1105,7 @@ describe('mobile bootstrap', () => {
   });
 
   describe('QC and QA inspection (Figma 69:*, 72:*)', () => {
-    const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+    const wait = waitForDraftStorage;
     const QC = { id: 21, username: 'qc1', full_name: 'Ramon Cruz', role: 'qc_inspector', employee: true, modules: null,
       permissions: ['inventory.view', 'inventory.mobile', 'production.inspect_qc', 'messages.view', 'messages.send'] };
     const QA = { ...QC, id: 22, username: 'qa1', full_name: 'Lea Santos', role: 'qa_inspector',
@@ -1213,20 +1276,27 @@ describe('mobile bootstrap', () => {
       });
       win.FormData = globalThis.FormData;
       win.mPhoto.picker = (opts: any) => { win.issuePicker = opts; return win.document.createElement('div'); };
-      win.location.hash = '#/unit-issues?unit=501&role=' + role; await wait(80);
+      win.location.hash = '#/unit-issues?unit=501&role=' + role; await waitForMobileElement(win, '#ui-new');
       for (const area of ['Chassis', 'Fairings']) {
         if (area === 'Chassis') win.document.getElementById('ui-new').click();
         else win.document.getElementById('ui-another').click();
-        await wait(80);
+        await waitForMobileElement(win, '[data-area]');
         const input = win.document.querySelector('[data-area]'); input.value = area; input.dispatchEvent(new win.Event('input'));
         const description = win.document.querySelector('[data-description]'); description.value = area + ' issue description'; description.dispatchEvent(new win.Event('input'));
-        win.issuePicker.onChange([new Blob([area + '-image-bytes'], { type: 'image/jpeg' })]); await wait(80);
-        win.document.getElementById('ui-send').click(); await wait(120);
-        expect(win.document.getElementById('m-view').textContent).toContain('Issue report confirmed');
+        win.issuePicker.onChange([new Blob([area + '-image-bytes'], { type: 'image/jpeg' })]);
+        await vi.waitFor(() => {
+          if (win.document.querySelector('[data-draft-status]').textContent !== 'Draft saved on this phone') throw new Error('Issue draft is not saved');
+        }, { timeout: 5000 });
+        win.document.getElementById('ui-send').click();
+        await vi.waitFor(() => {
+          expect(win.document.getElementById('m-view').textContent).toContain('Issue report confirmed');
+        }, { timeout: 5000 });
       }
       expect(reports.map(i => i.category)).toEqual(['Chassis', 'Fairings']); expect(photos.map(p => p.ref)).toEqual([1, 2]); expect(photos[0].key).not.toBe(photos[1].key);
-      win.document.getElementById('ui-back').click(); await wait(80);
-      expect(win.document.getElementById('m-view').textContent).toContain('Chassis'); expect(win.document.getElementById('m-view').textContent).toContain('Fairings');
+      win.document.getElementById('ui-back').click();
+      await vi.waitFor(() => {
+        expect(win.document.getElementById('m-view').textContent).toContain('Chassis'); expect(win.document.getElementById('m-view').textContent).toContain('Fairings');
+      }, { timeout: 5000 });
     });
 
     async function waitForIssueElement(win: any, selector: string) {
@@ -1502,7 +1572,7 @@ describe('mobile bootstrap', () => {
   });
 
 describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
-    const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+    const wait = waitForDraftStorage;
     const REL = { id: 41, username: 'rel1', full_name: 'Ana Dela Cruz', role: 'releasing_clerk', employee: true, modules: null,
       permissions: ['inventory.view', 'inventory.mobile', 'orders.view', 'orders.release', 'messages.view', 'messages.send'] };
     const AUTH = { state: 'valid', required: false, id: 5, mode: 'pickup', recipient_name: 'Jordan D.', id_reference: '••4821',
@@ -1680,23 +1750,26 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const win = await bootAs(REL, fake([]));
       const doc = win.document;
       win.location.hash = '#/so?id=302';
-      await wait();
       const view = doc.getElementById('m-view');
-      expect(view.getAttribute('data-figma-node')).toBe('78:68');
+      await vi.waitFor(() => {
+        expect(view.getAttribute('data-figma-node')).toBe('78:68');
+      }, { timeout: 5000 });
       expect(view.textContent).toContain('Jordan D. · ID reference ••4821');
       expect(view.textContent).toContain('PICKUP-••••');
       win.location.hash = '#/so?id=302&step=handoff';
-      await wait();
+      await relElement(win, '[data-token]');
       (doc.getElementById('rel-go') as HTMLButtonElement).click();
       await wait();
       expect(view.getAttribute('data-figma-node')).toBe('78:240'); // blocked until verified
       (view.querySelector('[data-token]') as HTMLInputElement).value = 'pickup-7f3q';
       (view.querySelector('[data-verify]') as HTMLButtonElement).click();
-      await wait();
-      expect(view.textContent).toContain('PICKUP-7F3Q · Valid');
+      await vi.waitFor(() => {
+        expect(view.textContent).toContain('PICKUP-7F3Q · Valid');
+      }, { timeout: 5000 });
       (doc.getElementById('rel-go') as HTMLButtonElement).click();
-      await wait();
-      expect(view.getAttribute('data-figma-node')).toBe('78:281');
+      await vi.waitFor(() => {
+        expect(view.getAttribute('data-figma-node')).toBe('78:281');
+      }, { timeout: 5000 });
     });
 
     it('needs every required package item before handoff', async () => {
@@ -1727,25 +1800,34 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const win = await bootAs(REL, fake(posts));
       const doc = win.document;
       win.location.hash = '#/so?id=302&step=handoff';
-      await wait();
+      await relElement(win, '[data-token]');
       (doc.querySelector('[data-token]') as HTMLInputElement).value = 'PICKUP-7F3Q';
       (doc.querySelector('[data-verify]') as HTMLButtonElement).click();
-      await wait();
+      await vi.waitFor(() => {
+        if (!doc.getElementById('m-view').textContent.includes('PICKUP-7F3Q · Valid')) throw new Error('Presented token is not verified');
+      }, { timeout: 5000 });
       win.location.hash = '#/so?id=302&step=package';
-      await wait();
+      await relElement(win, '[data-p="0"]');
       (doc.querySelector('[data-p="0"]') as HTMLButtonElement).click();
       // Proof: a photo is required before review / confirm.
+      // jsdom has no object-URL registry; emulate this native browser primitive for thumbnails.
+      win.URL.createObjectURL = (blob: unknown) => {
+        if (!(blob instanceof win.Blob)) throw new TypeError('A handoff photo must be a Blob');
+        return 'blob:synthetic-handoff-photo';
+      };
+      win.URL.revokeObjectURL = () => {};
       win.mPhoto.pickFile = () => Promise.resolve(new win.Blob(['x'], { type: 'image/jpeg' }));
       win.mPhoto.attachBlob = () => Promise.resolve({ id: 1 });
       win.mSignature = () => ({ el: win.document.createElement('div'), isEmpty: () => false, clear() {}, toBlob: (cb: any) => cb(new win.Blob(['signature'], { type: 'image/png' })) });
       win.location.hash = '#/so?id=302&step=proof';
-      await wait();
+      await relElement(win, '[data-cap]');
       (doc.querySelector('[data-cap]') as HTMLButtonElement).click();
-      await wait();
-      (doc.getElementById('rel-go') as HTMLButtonElement).click(); await wait();
+      await relElement(win, '[data-thumbs] img');
+      (doc.getElementById('rel-go') as HTMLButtonElement).click(); await relElement(win, '#m-view[data-figma-node="78:317"]');
       win.location.hash = '#/so?id=302&step=confirm';
-      await wait();
-      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('78:401');
+      await vi.waitFor(() => {
+        expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('78:401');
+      }, { timeout: 5000 });
       const ok = doc.getElementById('rel-ok') as HTMLInputElement;
       ok.checked = true; ok.dispatchEvent(new win.Event('change'));
       Object.defineProperty(win.navigator, 'onLine', { value: false, configurable: true });
@@ -1754,8 +1836,9 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       expect(posts).toEqual([]);
       Object.defineProperty(win.navigator, 'onLine', { value: true, configurable: true });
       (doc.getElementById('rel-post') as HTMLButtonElement).click();
-      await wait(80);
-      expect(posts).toHaveLength(1);
+      await vi.waitFor(() => {
+        expect(posts).toHaveLength(1);
+      }, { timeout: 5000 });
       expect(posts[0]!.url).toBe('/api/orders/302/release-slip');
       expect(posts[0]!.key).toMatch(/^handoff-/);
       expect(posts[0]!.body).toMatchObject({ collected_by: 'Jordan D.', authorization_token: 'PICKUP-7F3Q', handoff_area: 'Release Bay 1',
@@ -1785,13 +1868,15 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
         decided_by_name: 'Sam Supervisor', decision_note: 'ID checked in person' } } }));
       const doc = win.document;
       win.location.hash = '#/so?id=302&step=handoff';
-      await wait();
       const view = doc.getElementById('m-view');
-      expect(view.textContent).toContain('Supervisor override · Sam Supervisor');
+      await vi.waitFor(() => {
+        expect(view.textContent).toContain('Supervisor override · Sam Supervisor');
+      }, { timeout: 5000 });
       expect(view.querySelector('[data-token]')).toBeNull();
       (doc.getElementById('rel-go') as HTMLButtonElement).click();
-      await wait();
-      expect(view.getAttribute('data-figma-node')).toBe('78:281');
+      await vi.waitFor(() => {
+        expect(view.getAttribute('data-figma-node')).toBe('78:281');
+      }, { timeout: 5000 });
     });
 
     it('lets a supervisor approve a requested override on the phone', async () => {
@@ -1800,17 +1885,19 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const win = await bootAs(SUP, fake(posts, { authorization: { ...AUTH, override: { id: 3, status: 'requested', reason: 'Lost it', requested_by_name: 'Ana Dela Cruz' } } }));
       const doc = win.document;
       win.location.hash = '#/so?id=302&step=override';
-      await wait();
-      expect(doc.getElementById('m-view').textContent).toContain('Requested by Ana Dela Cruz');
+      await vi.waitFor(() => {
+        expect(doc.getElementById('m-view').textContent).toContain('Requested by Ana Dela Cruz');
+      }, { timeout: 5000 });
       (doc.querySelector('[data-reason]') as HTMLTextAreaElement).value = 'ID checked in person';
       (doc.getElementById('rel-approve') as HTMLButtonElement).click();
-      await wait();
-      expect(posts[0]).toMatchObject({ url: '/api/release-slips/orders/302/override', body: { approve: true, reason: 'ID checked in person' } });
+      await vi.waitFor(() => {
+        expect(posts[0]).toMatchObject({ url: '/api/release-slips/orders/302/override', body: { approve: true, reason: 'ID checked in person' } });
+      }, { timeout: 5000 });
     });
   });
 
   describe('Parts clerk repair-parts requests (Figma 83:*)', () => {
-    const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+    const wait = waitForDraftStorage;
     const PC = { id: 51, username: 'pc1', full_name: 'Carlo Reyes', role: 'parts_clerk', employee: true, modules: null,
       permissions: ['inventory.view', 'inventory.mobile', 'production.repairs', 'messages.view', 'messages.send'] };
     const REQ = { id: 81, number: 'RPR-00081', unit_id: 9, unit_identifier: 'K4-MTR-260924-0184-01', job_order_id: 184, job_order_number: 'JO-2026-184',
@@ -1971,7 +2058,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
   });
 
   describe('RTS clerk ready-to-sell intake (Figma 74:*)', () => {
-    const wait = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+    const wait = waitForDraftStorage;
     const RTS = { id: 31, username: 'rts1', full_name: 'Carlo Reyes', role: 'receiving_clerk', employee: true, modules: null,
       permissions: ['inventory.view', 'inventory.mobile', 'production.receive', 'messages.view', 'messages.send'] };
     const U = { id: 601, identifier: 'K4-01', updated_at: '2026-10-02 01:00:00', job_order_id: 184, job_order_number: 'JO-2026-184',

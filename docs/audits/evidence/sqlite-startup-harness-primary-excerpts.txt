@@ -1,0 +1,5 @@
+vitest-test-timeout
+owser.screenshotFailures browser.dependencySourcemaps browser.orchestratorScripts browser.commands browser.connectTimeout browser.trace browser.trackUnhandledErrors browser.expect On this page testTimeout ​ Type: number Default: 5_000 in Node.js, 15_000 if browser.enabled is true CLI: --test-timeout=5000 , --testTimeout=5000 Default timeout of a test in milliseconds. Use 0 to disable timeout completely. Suggest changes to this page Last updated: Pager Previous page maxWorkers Next page hookTimeout © 2026 VoidZero Inc. and Vitest contributors.
+
+vitest-hook-timeout
+owser.screenshotFailures browser.dependencySourcemaps browser.orchestratorScripts browser.commands browser.connectTimeout browser.trace browser.trackUnhandledErrors browser.expect On this page hookTimeout ​ Type: number Default: 10_000 in Node.js, 30_000 if browser.enabled is true CLI: --hook-timeout=10000 , --hookTimeout=10000 Default timeout of a hook in milliseconds. Use 0 to disable timeout completely. Suggest changes to this page Last updated: Pager Previous page testTimeout Next page teardownTimeout © 2026 VoidZero Inc. and Vitest contributors.

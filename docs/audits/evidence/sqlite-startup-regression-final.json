@@ -1,0 +1,14 @@
+{
+  "at_utc": "2026-10-24T04:02:55.406837+00:00",
+  "command": [
+    "npm",
+    "test"
+  ],
+  "node": "v24.19.0",
+  "source_freeze_sha256": "ad6f9696fc20417c76750a6d1fa3cd8ef97c24338bdeaf9473b5a4217565440d",
+  "source_files": 872,
+  "scheduling": "Canonical serial-file command;60000ms default hook/test harness budgets; validated storage-only fixture quiescence and window teardown;625 original mobile assertion expressions preserved; no additional experiments or Git operations during this full run",
+  "exit": 0,
+  "seconds": 1910.66,
+  "frozen_inputs_unchanged": true
+}

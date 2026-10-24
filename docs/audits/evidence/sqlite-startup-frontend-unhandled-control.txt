@@ -1,0 +1,38 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System/work/sqlite-startup/baseline
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯ Unhandled Rejection ⎯⎯⎯⎯⎯
+Error: AUDIT_UNHANDLED_STORAGE_PROBE
+ ❯ Object.win.mProductionDrafts.__audit_rejection_probe tests/frontend-unhandled-control.test.ts:174:74
+    172|       .join('\n;\n');
+    173|     win.eval(code);
+    174|     win.mProductionDrafts.__audit_rejection_probe = () => Promise.reje…
+       |                                                                          ^
+    175|     trackDraftStorage(win);
+    176|     void win.mProductionDrafts.__audit_rejection_probe();
+ ❯ Object.win.mProductionDrafts.<computed> [as __audit_rejection_probe] tests/frontend-unhandled-control.test.ts:33:31
+ ❯ bootAs tests/frontend-unhandled-control.test.ts:176:32
+ ❯ tests/frontend-unhandled-control.test.ts:200:23
+ ❯ ../../../node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+ ❯ ../../../node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+ ❯ ../../../node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+ ❯ runWithCancel ../../../node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10
+ ❯ ../../../node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+
+This error originated in "tests/frontend-unhandled-control.test.ts" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "shows courier collection separately and submits optional evidence with saved tracking". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 129 skipped (130)
+     Errors  1 error
+   Start at  03:53:02
+   Duration  1.57s (transform 255ms, setup 57ms, import 939ms, tests 407ms, environment 0ms)

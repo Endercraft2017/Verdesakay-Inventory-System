@@ -1,0 +1,11 @@
+[backup] FAILED "default": disk I/O error
+[backup] FAILED "default": disk I/O error
+[backup] PROBLEM: Snapshot of "default" failed: disk I/O error
+[backup] PROBLEM: Hourly snapshot of "default" failed: disk I/O error
+
+Otom is running (HTTP):
+   Local:   http://localhost:49065
+   Network: http://172.26.91.252:49065  (for other office devices)
+   Network: http://172.31.0.46:49065  (for other office devices)
+
+[platform-mail] outbox worker failed; inspect durable delivery state

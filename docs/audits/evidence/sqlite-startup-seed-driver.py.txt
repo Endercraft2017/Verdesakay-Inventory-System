@@ -1,0 +1,30 @@
+import json,os,shutil,sqlite3,subprocess,sys,time,hashlib
+from pathlib import Path
+root=Path.cwd();out=root/'work/sqlite-startup'/sys.argv[1];out.mkdir(parents=True,exist_ok=False)
+driver=out/'seed-worker.mts';shutil.copyfile(root/'work/sqlite-startup/seed-worker.mts',driver)
+env=os.environ.copy();env.update(NODE_ENV='test',DEPLOY_MODE='cloud',ADMIN_PASSWORD='Synthetic startup audit fixture',DB_PATH=str(out/'data.db'),DATA_DIR=str(out/'tenants'),PLATFORM_DB_PATH=str(out/'platform.db'),UPLOAD_DIR=str(out/'uploads'),BACKUP_DIR=str(out/'backups'))
+def start(mode,log):return subprocess.Popen(['node','--import','tsx',str(driver),mode,str(root),str(out)],env=env,stdout=log,stderr=subprocess.STDOUT)
+def wait(file,process):
+ deadline=time.monotonic()+20
+ while not file.exists():
+  if process.poll() is not None:raise RuntimeError('Child exited before barrier')
+  if time.monotonic()>deadline:raise RuntimeError('Barrier expired')
+  time.sleep(.01)
+with (out/'first.log').open('w') as la,(out/'second.log').open('w') as lb:
+ a=start('first',la)
+ try:
+  wait(out/'held',a);b=start('second',lb)
+  try:
+   wait(out/'second-started',b);deadline=time.monotonic()+2
+   while b.poll() is None and time.monotonic()<deadline:time.sleep(.01)
+   completed=b.poll() is not None;(out/'release').write_text('go');ae=a.wait(timeout=20);be=b.wait(timeout=20)
+  finally:
+   if b.poll() is None:b.kill();b.wait()
+ finally:
+  if a.poll() is None:a.kill();a.wait()
+d=sqlite3.connect(f'file:{out}/data.db?mode=ro',uri=True)
+result={'mode':sys.argv[1],'first_exit':ae,'second_exit':be,'both_read_empty':all((out/(mode+'-read-empty')).exists() for mode in ['first','second']),
+ 'second_completed_before_first_released':completed,'first':json.loads((out/'first.json').read_text()),'second':json.loads((out/'second.json').read_text()),
+ 'admin_count':d.execute("SELECT COUNT(*) FROM users WHERE username='admin'").fetchone()[0], 'integrity':d.execute('PRAGMA integrity_check').fetchall(),
+ 'driver_sha256':hashlib.sha256(driver.read_bytes()).hexdigest()}
+d.close();(out/'results.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps({k:result[k] for k in ['mode','first_exit','second_exit','both_read_empty','admin_count']}))

@@ -1,9 +1,10 @@
 # Dependency audit — second pass, 16 October 2026
 
-Latest review: 23 October — original dependencies are retained after upstream
-withdrawal of the formatter advisory. Fresh runtime/full-root scans report one high
-and zero moderate; no delivered fix caused the feed change. See the dated follow-up
-below and [decision/evidence](dependency-parser-contract.md). Earlier counts are historical.
+Latest runtime review: **24 October — four high and one moderate package entries**, exit 1.
+Seven active primary advisory records and available patch versions are documented in
+[the dated follow-up](runtime-advisories-2026-10-24.md). No packages changed in the SQLite
+startup fix; these are separate open engineering findings. The 23 October formatter withdrawal
+and one-high/zero-moderate results below remain historical snapshots, not the current gate.
 
 The user explicitly approved npm advisory lookups. All three lockfiles were scanned again after
 merging the newer source. Compatible patches were applied with `npm audit fix --ignore-scripts`;

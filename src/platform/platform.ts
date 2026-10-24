@@ -12,6 +12,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { hashPassword } from '../shared/password-hash';
 import { passwordPolicyError } from '../shared/password-policy';
 import { DEFAULT_TENANT, hashLegacySessionTokens } from '../shared/db';
+import { INITIALIZATION_WAIT_MS, withDatabaseInitialization } from '../shared/sqlite-initialization';
 
 const ROOT = path.join(import.meta.dirname, '..', '..');
 
@@ -74,8 +75,14 @@ export interface TenantRow {
 let _db: DatabaseSync | null = null;
 function pdb(): DatabaseSync {
   if (_db) return _db;
+  return withDatabaseInitialization(PLATFORM_DB_PATH, initializePlatformDb);
+}
+
+function initializePlatformDb(): DatabaseSync {
   fs.mkdirSync(path.dirname(PLATFORM_DB_PATH), { recursive: true });
   const d = new DatabaseSync(PLATFORM_DB_PATH);
+  try {
+  d.exec(`PRAGMA busy_timeout = ${INITIALIZATION_WAIT_MS};`);
   d.exec('PRAGMA journal_mode = WAL;');
   d.exec(`
     CREATE TABLE IF NOT EXISTS tenants (
@@ -202,7 +209,13 @@ function pdb(): DatabaseSync {
   _db = d;
   hashLegacySessionTokens(d, 'platform_sessions'); // stored as digests, like tenant sessions
   seedPlatformUserFromEnv();
+  d.exec('PRAGMA busy_timeout = 0;');
   return d;
+  } catch (error) {
+    if (_db === d) _db = null;
+    try { d.close(); } catch { /* preserve initialization failure */ }
+    throw error;
+  }
 }
 
 /** Human-facing login ID. Allocation is permanent, including after rename or purge. */

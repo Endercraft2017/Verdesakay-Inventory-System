@@ -1,0 +1,23 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {pathToFileURL} from 'node:url';
+const [mode,rootArg,outArg]=process.argv.slice(2),root=path.resolve(rootArg),out=path.resolve(outArg);
+const prepare=DatabaseSync.prototype.prepare;let paused=false;
+DatabaseSync.prototype.prepare=function(sql:string){
+ const statement=prepare.call(this,sql);
+ if(sql==='SELECT COUNT(*) AS c FROM users'){
+  const get=statement.get.bind(statement);statement.get=(...args:any[])=>{const value=get(...args);if(value?.c===0)fs.writeFileSync(path.join(out,mode+'-read-empty'),'empty');return value;};
+ }
+ if(mode==='first'&&sql.includes('INSERT INTO users (username, full_name, password_hash')){
+  const run=statement.run.bind(statement);statement.run=(...args:any[])=>{
+   if(!paused){paused=true;fs.writeFileSync(path.join(out,'held'),'held');const deadline=Date.now()+15000;
+    while(!fs.existsSync(path.join(out,'release'))){if(Date.now()>deadline)throw new Error('Seed barrier expired');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);}}
+   return run(...args);
+  };
+ }
+ return statement;
+};
+const source=await import(pathToFileURL(path.join(root,'src/shared/db.ts')).href);
+try{if(mode==='second')fs.writeFileSync(path.join(out,'second-started'),'started');source.getDb();fs.writeFileSync(path.join(out,mode+'.json'),JSON.stringify({ok:true})+'\n');source.closeAllConnections();}
+catch(error:any){fs.writeFileSync(path.join(out,mode+'.json'),JSON.stringify({ok:false,errcode:error.errcode,message:error.message,stack:error.stack},null,2)+'\n');try{source.closeAllConnections();}catch{}process.exitCode=1;}

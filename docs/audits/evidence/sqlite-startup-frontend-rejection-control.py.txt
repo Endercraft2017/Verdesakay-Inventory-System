@@ -1,0 +1,29 @@
+from pathlib import Path
+import hashlib
+import json
+import subprocess
+
+root = Path.cwd()
+out = root / 'work/sqlite-startup'
+source = (out / 'frontend-mobile-scheduler-candidate.ts').read_text()
+start = source.index('async function bootAs(')
+position = source.index('    trackDraftStorage(win);', start)
+definition = "    win.mProductionDrafts.__audit_rejection_probe = () => Promise.reject(new Error('AUDIT_UNHANDLED_STORAGE_PROBE'));\n"
+source = source[:position] + definition + source[position:]
+position = source.index('    trackDraftStorage(win);', start) + len('    trackDraftStorage(win);\n')
+source = source[:position] + '    void win.mProductionDrafts.__audit_rejection_probe();\n' + source[position:]
+baseline = out / 'baseline'
+test = baseline / 'tests/frontend-unhandled-control.test.ts'
+test.write_text(source)
+(out / 'frontend-unhandled-control-source.ts').write_text(source)
+cmd = ['node', str(root / 'node_modules/vitest/vitest.mjs'), 'run', str(test.relative_to(baseline)), '-t', 'shows courier collection separately']
+with (out / 'frontend-unhandled-control.log').open('w') as log:
+    result = subprocess.run(cmd, cwd=baseline, stdout=log, stderr=subprocess.STDOUT)
+text = (out / 'frontend-unhandled-control.log').read_text()
+detected = result.returncode == 1 and 'AUDIT_UNHANDLED_STORAGE_PROBE' in text and 'Unhandled Rejection' in text
+record = {'command': cmd, 'exit': result.returncode, 'expected_negative_control': True,
+          'unhandled_storage_rejection_detected': detected, 'source_sha256': hashlib.sha256(source.encode()).hexdigest(),
+          'method': 'A diagnostic-only extra storage API returns a rejected promise without an application catch. The shared fixture must not swallow it; the normal courier assertions still run.'}
+(out / 'frontend-unhandled-control.json').write_text(json.dumps(record, indent=2) + '\n')
+print(json.dumps(record))
+assert detected, text

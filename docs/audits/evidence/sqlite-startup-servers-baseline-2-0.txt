@@ -1,0 +1,7 @@
+[backup] "default" is being upgraded to schema v85; snapshot saved to /workspace/Verdesakay-Inventory-System/work/sqlite-startup/servers-baseline/2/backups/default/pre-migrate/default-v0-to-v85-20261024-092655.db
+[backup] daily snapshot for 2026-10-24: 2 database(s) → /workspace/Verdesakay-Inventory-System/work/sqlite-startup/servers-baseline/2/backups
+
+Otom is running (HTTP):
+   Local:   http://localhost:55995
+   Network: http://172.26.91.252:55995  (for other office devices)
+   Network: http://172.31.0.46:55995  (for other office devices)

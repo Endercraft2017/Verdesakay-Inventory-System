@@ -1,0 +1,50 @@
+
+> otom@1.0.0 test
+> vitest run
+
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+stdout | tests/qa-hold.test.ts
+{"timestamp":"2026-10-24T02:35:37.450Z","level":"info","event":"http_request","request_id":"cbd45a25-4e2b-493f-b174-ac94a0ed8120","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":613}
+
+stdout | tests/qa-hold.test.ts
+{"timestamp":"2026-10-24T02:35:49.243Z","level":"info","event":"http_request","request_id":"9a1ce6ec-475c-409f-86b7-5f1305a46ba9","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":11785}
+
+stdout | tests/qa-hold.test.ts
+{"timestamp":"2026-10-24T02:35:52.285Z","level":"info","event":"http_request","request_id":"6239f030-9d83-4a4b-ad5f-12b82750fa07","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":3029}
+
+stdout | tests/qa-hold.test.ts
+{"timestamp":"2026-10-24T02:35:53.866Z","level":"info","event":"http_request","request_id":"5a2c11f2-4897-47d6-950b-6587b1b7e4df","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":1574}
+
+stdout | tests/qa-hold.test.ts
+{"timestamp":"2026-10-24T02:35:54.304Z","level":"info","event":"http_request","request_id":"1558bd6a-0bc7-4449-9562-1b4f5668ff6b","tenant":"default","method":"POST","path":"/api/auth/login","status":200,"duration_ms":433}
+
+stdout | tests/qa-hold.test.ts
+{"timestamp":"2026-10-24T02:35:54.723Z","level":"info","event":"http_request","request_id":"d06bd36d-7b69-4266-b0ca-18863a8d2285","tenant":"default","method":"POST","path":"/api/users","status":201,"duration_ms":415}
+
+ ❯ tests/qa-hold.test.ts (7 tests | 7 skipped) 20049ms
+(node:24730) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:24730) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/qa-hold.test.ts [ tests/qa-hold.test.ts ]
+Error: Hook timed out in 20000ms.
+If this is a long-running hook, pass a timeout value as the last argument or configure it globally with "hookTimeout".
+ ❯ tests/qa-hold.test.ts:23:1
+     21| const phone = (t: string) => ({ ...bearer(t), 'X-Client': 'mobile' });
+     22|
+     23| beforeAll(async () => {
+       | ^
+     24|   ctx = await setupApp();
+     25|   token = await login(ctx.api);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 325 passed (326)
+      Tests  3512 passed | 7 skipped (3519)
+   Start at  02:16:14
+   Duration  1921.87s (transform 12.91s, setup 4.24s, import 61.56s, tests 1792.95s, environment 2.95s)

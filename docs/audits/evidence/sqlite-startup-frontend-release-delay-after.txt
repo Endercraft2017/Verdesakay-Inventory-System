@@ -1,0 +1,26 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System/work/sqlite-startup/baseline
+
+ ❯ tests/frontend-release-delay-proof.test.ts (130 tests | 1 failed | 126 skipped) 8343ms
+       × records warehouse-out online only, with the token, package and an idempotency key 3786ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend-release-delay-proof.test.ts > mobile bootstrap > Releasing personnel warehouse-out (Figma 78:*) > records warehouse-out online only, with the token, package and an idempotency key
+Error: Missing releasing element: [data-thumbs] img ⇥ReleasingCapture handoff proofRecord only evidence required by policyUnit and release-bay proofAvoid capturing unrelated people or documents.Recipient acknowledgementPrivacy-minimized evidenceCapture the unit, serial context and handoff — not phone screens, full IDs or bystanders.Capture and continueRetake
+ ❯ relElement tests/frontend-release-delay-proof.test.ts:1604:13
+    1602|     async function relElement(win: any, selector: string) {
+    1603|       for (let i = 0; i < 100; i++) { const e = win.document.querySele…
+    1604|       throw new Error('Missing releasing element: ' + selector + ' ' +…
+       |             ^
+    1605|     }
+    1606|     async function allocateLabel(win:any,quantity?:number) {
+ ❯ tests/frontend-release-delay-proof.test.ts:1785:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 passed | 126 skipped (130)
+   Start at  03:32:30
+   Duration  9.44s (transform 198ms, setup 39ms, import 885ms, tests 8.34s, environment 0ms)

@@ -1,0 +1,12 @@
+{
+  "jsdom": {
+    "createObjectURL": "undefined",
+    "revokeObjectURL": "undefined"
+  },
+  "chromium_version": "156.0.8078.4",
+  "chromium": {
+    "createObjectURL": "function",
+    "revokeObjectURL": "function",
+    "blob_round_trip": true
+  }
+}

@@ -1,0 +1,47 @@
+from pathlib import Path
+import hashlib
+import json
+import subprocess
+import sys
+import time
+
+root = Path.cwd()
+out = root / 'work/sqlite-startup'
+label = sys.argv[1]
+baseline = out / 'baseline'
+source = (root / sys.argv[2] if len(sys.argv) > 2 else root / 'tests/frontend-mobile.test.ts').read_text()
+trace = out / ('frontend-delay-' + label + '.jsonl')
+trace.write_text('')
+position = source.index('    return win;', source.index('async function bootAs('))
+injection = '''    // Disposable diagnostic only: preserve the real IndexedDB operation, delay its acknowledgement.
+    const actualSave = win.mProductionDrafts.save;
+    win.mProductionDrafts.save = async (...args: any[]) => {
+      const value = await actualSave(...args);
+      fs.appendFileSync(TRACE, JSON.stringify({ event: 'committed', at: Date.now(), kind: args[0]?.operation?.kind, state: args[0]?.operation?.state }) + '\\n');
+      await new Promise(resolve => setTimeout(resolve, 250));
+      fs.appendFileSync(TRACE, JSON.stringify({ event: 'acknowledged', at: Date.now(), kind: args[0]?.operation?.kind, state: args[0]?.operation?.state }) + '\\n');
+      return value;
+    };
+'''.replace('TRACE', json.dumps(str(trace)))
+diagnostic = baseline / 'tests/frontend-mobile-delay-proof.test.ts'
+diagnostic.write_text(source[:position] + injection + source[position:])
+snapshot = out / ('frontend-delay-' + label + '-source.ts')
+snapshot.write_bytes(diagnostic.read_bytes())
+original = out / 'frontend-mobile-original.ts'
+patch = subprocess.run(['git', 'diff', '--no-index', '--', str(original), str(snapshot)], capture_output=True, text=True)
+(out / ('frontend-delay-' + label + '.patch')).write_text(patch.stdout)
+cmd = ['node', str(root / 'node_modules/vitest/vitest.mjs'), 'run', str(diagnostic.relative_to(baseline)),
+       '-t', r'recovers scrap after|creates separate.*\(qa\)']
+start = time.monotonic()
+with (out / ('frontend-delay-' + label + '.log')).open('w') as log:
+    result = subprocess.run(cmd, cwd=baseline, stdout=log, stderr=subprocess.STDOUT)
+record = {'label': label, 'application_source': 'Unchanged baseline mobile app at 0c2ed900239ce50db297ebd957d9f34b6ec0b0cc',
+          'source_test_sha256': hashlib.sha256(source.encode()).hexdigest(), 'command': cmd,
+          'exit': result.returncode, 'seconds': round(time.monotonic() - start, 2),
+          'method': 'Real mProductionDrafts.save runs unchanged; its successful promise acknowledgement is delayed 250ms in the disposable test copy only',
+          'trace': trace.name, 'diagnostic_source': str(diagnostic.relative_to(root))}
+record['diagnostic_sha256'] = hashlib.sha256(snapshot.read_bytes()).hexdigest()
+record['source_snapshot'] = snapshot.name
+record['diagnostic_diff_against_pinned_original'] = 'frontend-delay-' + label + '.patch'
+(out / ('frontend-delay-' + label + '.json')).write_text(json.dumps(record, indent=2) + '\n')
+print(json.dumps(record))

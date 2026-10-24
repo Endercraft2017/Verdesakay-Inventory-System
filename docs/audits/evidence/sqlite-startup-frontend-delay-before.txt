@@ -1,0 +1,33 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System/work/sqlite-startup/baseline
+
+ ❯ tests/frontend-mobile-delay-proof.test.ts (130 tests | 2 failed | 128 skipped) 749ms
+       × recovers scrap after commit/response loss and restart with the original payload and key 440ms
+       × creates separate chassis and fairings reports with their own photos (qa) 305ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/frontend-mobile-delay-proof.test.ts > mobile bootstrap > production lead and manager (Figma 66:*) > recovers scrap after commit/response loss and restart with the original payload and key
+TypeError: Cannot set properties of null (setting 'value')
+ ❯ tests/frontend-mobile-delay-proof.test.ts:899:55
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/frontend-mobile-delay-proof.test.ts > mobile bootstrap > QC and QA inspection (Figma 69:*, 72:*) > creates separate chassis and fairings reports with their own photos (qa)
+TypeError: Cannot set properties of null (setting 'value')
+ ❯ tests/frontend-mobile-delay-proof.test.ts:1230:72
+    1228|         else win.document.getElementById('ui-another').click();
+    1229|         await wait(80);
+    1230|         const input = win.document.querySelector('[data-area]'); input…
+       |                                                                        ^
+    1231|         const description = win.document.querySelector('[data-descript…
+    1232|         win.issuePicker.onChange([new Blob([area + '-image-bytes'], { …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 128 skipped (130)
+   Start at  03:11:41
+   Duration  2.12s (transform 278ms, setup 40ms, import 1.14s, tests 749ms, environment 0ms)

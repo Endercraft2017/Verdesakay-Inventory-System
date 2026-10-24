@@ -1,0 +1,6 @@
+
+> otom@1.0.0 typecheck
+> tsc --noEmit
+
+tests/sqlite-initialization.test.ts(11,7): error TS2502: 'children' is referenced directly or indirectly in its own type annotation.
+tests/sqlite-initialization.test.ts(19,10): error TS7023: 'launch' implicitly has return type 'any' because it does not have a return type annotation and is referenced directly or indirectly in one of its return expressions.

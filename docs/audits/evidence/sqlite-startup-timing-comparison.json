@@ -1,0 +1,28 @@
+[
+  {
+    "source": "baseline",
+    "command": [
+      "node",
+      "/workspace/Verdesakay-Inventory-System/node_modules/vitest/vitest.mjs",
+      "run",
+      "tests/qa-hold.test.ts",
+      "tests/signup-budget.test.ts"
+    ],
+    "exit": 0,
+    "seconds": 43.41,
+    "original_test_and_hook_budgets_ms": 20000
+  },
+  {
+    "source": "candidate",
+    "command": [
+      "node",
+      "/workspace/Verdesakay-Inventory-System/node_modules/vitest/vitest.mjs",
+      "run",
+      "tests/qa-hold.test.ts",
+      "tests/signup-budget.test.ts"
+    ],
+    "exit": 0,
+    "seconds": 38.53,
+    "original_test_and_hook_budgets_ms": 20000
+  }
+]

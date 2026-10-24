@@ -1,0 +1,19 @@
+// Repeatable form of the JavaScript originally executed via Node stdin.
+import fs from 'node:fs';
+import { JSDOM } from 'jsdom';
+import { chromium } from 'playwright';
+const dom = new JSDOM('');
+const result = { jsdom: { createObjectURL: typeof dom.window.URL.createObjectURL, revokeObjectURL: typeof dom.window.URL.revokeObjectURL } };
+dom.window.close();
+const browser = await chromium.launch({ headless: true });
+try {
+  result.chromium_version = browser.version();
+  const page = await browser.newPage();
+  result.chromium = await page.evaluate(async () => {
+    const url = URL.createObjectURL(new Blob(['synthetic-object-url-probe'], { type: 'image/jpeg' }));
+    const text = await (await fetch(url)).text(); URL.revokeObjectURL(url);
+    return { createObjectURL: typeof URL.createObjectURL, revokeObjectURL: typeof URL.revokeObjectURL, blob_round_trip: text === 'synthetic-object-url-probe' };
+  });
+} finally { await browser.close(); }
+fs.writeFileSync('work/sqlite-startup/native-object-url-probe.json', JSON.stringify(result, null, 2) + '\n');
+console.log(JSON.stringify(result));

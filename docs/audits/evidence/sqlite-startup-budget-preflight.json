@@ -1,0 +1,34 @@
+{
+  "at_utc": "2026-10-24T03:00:22.806434+00:00",
+  "source_freeze_sha256": "82332c00f81d83c3dd1875b5fde3eca64a74649c9c9495722862baed10f2d0fe",
+  "source_files": 872,
+  "steps": [
+    {
+      "name": "typecheck-budget-final",
+      "command": [
+        "npm",
+        "run",
+        "typecheck"
+      ],
+      "exit": 0,
+      "seconds": 22.07
+    },
+    {
+      "name": "focused-budget-final",
+      "command": [
+        "node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/sqlite-initialization.test.ts",
+        "tests/restore-app-drill.test.ts",
+        "tests/mfa.test.ts",
+        "tests/qa-hold.test.ts",
+        "tests/signup-budget.test.ts",
+        "--fileParallelism",
+        "--maxWorkers=2"
+      ],
+      "exit": 0,
+      "seconds": 66.7
+    }
+  ]
+}

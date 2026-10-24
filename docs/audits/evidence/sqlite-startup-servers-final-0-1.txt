@@ -1,0 +1,9 @@
+[backup] daily snapshot for 2026-10-24: 2 database(s) → /workspace/Verdesakay-Inventory-System/work/sqlite-startup/servers-fixed-final/0/backups
+[backup] FAILED "default": database is locked
+[backup] PROBLEM: Hourly snapshot of "default" failed: disk I/O error
+[backup] PROBLEM: Hourly snapshots have not succeeded in the last 3 hours
+
+Otom is running (HTTP):
+   Local:   http://localhost:54779
+   Network: http://172.26.91.252:54779  (for other office devices)
+   Network: http://172.31.0.46:54779  (for other office devices)

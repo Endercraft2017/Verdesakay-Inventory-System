@@ -1,0 +1,48 @@
+{
+  "baseline_or_fixed": "after",
+  "node": "v24.19.0",
+  "driver_sha256": "9906f7a515990440f7421c682b7996697b179bab393cf6f257e07eee66ab907f",
+  "first_exit": 0,
+  "second_exit": 0,
+  "second_completed_before_first_released": false,
+  "first": {
+    "ok": true,
+    "elapsed_ms": 775,
+    "busy_timeout": {
+      "timeout": 0
+    },
+    "transaction_open": false
+  },
+  "second": {
+    "ok": true,
+    "elapsed_ms": 667,
+    "busy_timeout": {
+      "timeout": 0
+    },
+    "transaction_open": false
+  },
+  "saved_data_unchanged": true,
+  "snapshot_after": {
+    "payroll": [
+      [
+        17,
+        "STARTUP-PAYROLL-1",
+        "{\"employee_id\":1,\"employee_name\":\"Synthetic Startup Employee\",\"cutoff_id\":1,\"payroll_period\":\"STARTUP-1\",\"total_earnings\":1000,\"net_pay\":1000}",
+        "paid",
+        1
+      ]
+    ],
+    "setting": [
+      [
+        "\"Synthetic saved setting\""
+      ]
+    ],
+    "admin_count": 1,
+    "integrity": [
+      [
+        "ok"
+      ]
+    ],
+    "foreign_keys": []
+  }
+}

@@ -1,0 +1,27 @@
+from pathlib import Path
+import hashlib
+import json
+import sqlite3
+
+root = Path.cwd()
+out = root / 'work/sqlite-startup'
+query = 'SELECT type,name,tbl_name,sql FROM sqlite_master ORDER BY type,name,tbl_name,sql'
+result = {'baseline_commit': '0c2ed900239ce50db297ebd957d9f34b6ec0b0cc',
+          'query': query, 'serialization': 'json.dumps(rows, ensure_ascii=True, separators=(comma,colon)); UTF-8'}
+for label, filename in [('tenant', 'data.db'), ('catalog', 'platform.db')]:
+    observations = []
+    for version in ['baseline', 'fixed-final']:
+        file = out / ('servers-' + version) / '0' / filename
+        db = sqlite3.connect(file.resolve().as_uri() + '?mode=ro', uri=True)
+        rows = db.execute(query).fetchall()
+        db.close()
+        observations.append(rows)
+    assert observations[0] == observations[1], label
+    result[label] = {'same_sqlite_master': True, 'objects': len(observations[1]),
+                     'sha256': hashlib.sha256(json.dumps(observations[1], separators=(',', ':')).encode()).hexdigest()}
+gate = out / 'servers-fixed-final/0/data.db.startup-lock'
+db = sqlite3.connect(gate.resolve().as_uri() + '?mode=ro', uri=True)
+result['technical_gate'] = {'bytes': gate.stat().st_size, 'schema_objects': len(db.execute(query).fetchall())}
+db.close()
+(out / 'schema-final.json').write_text(json.dumps(result, indent=2) + '\n')
+print(json.dumps(result))

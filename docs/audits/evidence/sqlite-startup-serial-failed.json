@@ -1,0 +1,14 @@
+{
+  "at_utc": "2026-10-24T02:16:14.062489+00:00",
+  "command": [
+    "npm",
+    "test"
+  ],
+  "node": "v24.19.0",
+  "source_freeze_sha256": "0cc86e570cf6bb91ca82e6cfdf40bf4246e6f76644b77c92f26bc94b9525b438",
+  "source_files": 872,
+  "scheduling": "Repository default fileParallelism=false; no test/config edits",
+  "exit": 1,
+  "seconds": 1922.65,
+  "frozen_inputs_unchanged": true
+}

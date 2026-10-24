@@ -1,0 +1,24 @@
+{
+  "baseline": "0c2ed900239ce50db297ebd957d9f34b6ec0b0cc",
+  "existing_test_and_config_files_compared": 363,
+  "changed_existing_files": [
+    "tests/frontend-mobile.test.ts",
+    "vitest.config.ts"
+  ],
+  "unchanged_existing_files": 361,
+  "frontend_original_assertion_expressions_preserved": 625,
+  "frontend_expressions_identical_in_order": true,
+  "test_changes": "Mobile fixture waits for the supplied cached actor, forwards draft-storage promise values/errors, polls local-storage quiescence without consuming rejections or awaiting network, closes each test window, and retains bounded positive-state waits at demonstrated transitions. A typed object-URL fixture supplies a native browser primitive missing from JSDOM. All625 original matcher expressions/order remain intact.",
+  "only_noncomment_config_changes": {
+    "hookTimeout": {
+      "before_ms": 20000,
+      "after_ms": 60000
+    },
+    "testTimeout": {
+      "before_ms": 20000,
+      "after_ms": 60000
+    }
+  },
+  "existing_explicit_it_budgets_and_product_deadlines_unchanged": true,
+  "production_latency": "Observed long requests and cause remain unresolved. Test-harness corrections are not a production performance fix."
+}

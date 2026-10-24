@@ -1,0 +1,15 @@
+{
+  "command": [
+    "node",
+    "/workspace/Verdesakay-Inventory-System/node_modules/vitest/vitest.mjs",
+    "run",
+    "tests/frontend-unhandled-control.test.ts",
+    "-t",
+    "shows courier collection separately"
+  ],
+  "exit": 1,
+  "expected_negative_control": true,
+  "unhandled_storage_rejection_detected": false,
+  "source_sha256": "b7d3ad67748b7b0e32ca276969c3753d90cbe24b84a5662cd3d5b6a65e67374c",
+  "method": "A diagnostic-only extra storage API returns a rejected promise without an application catch. The shared fixture must not swallow it; the normal courier assertions still run."
+}

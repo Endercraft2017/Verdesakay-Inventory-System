@@ -1,0 +1,61 @@
+{
+  "source": "/workspace/Verdesakay-Inventory-System",
+  "label": "fixed",
+  "rounds": [
+    {
+      "round": 0,
+      "health_ready": [
+        true,
+        true
+      ],
+      "early_exit_codes": [
+        null,
+        null
+      ],
+      "admin_count": 1,
+      "integrity": [
+        [
+          "ok"
+        ]
+      ],
+      "operator_count": 1
+    },
+    {
+      "round": 1,
+      "health_ready": [
+        true,
+        true
+      ],
+      "early_exit_codes": [
+        null,
+        null
+      ],
+      "admin_count": 1,
+      "integrity": [
+        [
+          "ok"
+        ]
+      ],
+      "operator_count": 1
+    },
+    {
+      "round": 2,
+      "health_ready": [
+        true,
+        true
+      ],
+      "early_exit_codes": [
+        null,
+        null
+      ],
+      "admin_count": 1,
+      "integrity": [
+        [
+          "ok"
+        ]
+      ],
+      "operator_count": 1
+    }
+  ],
+  "readiness_passes": 3
+}

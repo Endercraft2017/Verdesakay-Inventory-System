@@ -1459,6 +1459,15 @@ Multi-database/filesystem provisioning crash recovery is a separate, still-open 
 
 ## Core workspace preparation, publication and interrupted attempts (2026-10-19)
 
+Cold tenant/catalog open now passes through the per-database initialization gate described in
+[SQLite startup](../operations/sqlite-startup.md): acquire bounded SQLite ownership on the adjacent
+technical lock file → preserve the existing backup/schema/migration/seed sequence → restore
+zero-wait runtime writes → release ownership → return the ready connection. Cached connections
+bypass the gate. Exceptions evict/close failed initialization; process death releases OS ownership.
+This does not make old migrations crash-atomic, alter offline payroll authority, or certify
+mixed-build/shared-filesystem deployment. Local concurrency/recovery evidence is separate from
+hosted/device/restore acceptance.
+
 Validate → exclusively reserve a database slot → prepare chosen owner credentials (create)
 or validate a private source copy, strip old sessions and migrate (import) → atomically publish
 catalog/company ID/core audit. Only the published workspace is tenant-routable. A caught failure

@@ -1,0 +1,1752 @@
+{
+  "scope": "Cold tenant/catalog SQLite initialization ownership on the same configured local file-backed paths; broader release remains on hold",
+  "date_manila": "2026-10-24",
+  "baseline": "0c2ed900239ce50db297ebd957d9f34b6ec0b0cc",
+  "source_freeze": "docs/audits/evidence/sqlite-startup-inputs-final.json",
+  "source_files_checked": 872,
+  "frozen_inputs_unchanged": true,
+  "final": {
+    "full": {
+      "files": 326,
+      "tests": 3519,
+      "command": [
+        "npm",
+        "test"
+      ],
+      "exit": 0,
+      "wrapper_seconds": 1910.66,
+      "scheduling": "Canonical serial-file command;60000ms default hook/test harness budgets; validated storage-only fixture quiescence and window teardown;625 original mobile assertion expressions preserved; no additional experiments or Git operations during this full run"
+    },
+    "playwright": {
+      "startTime": "2026-10-24T02:07:16.150Z",
+      "duration": 298738.97199999995,
+      "expected": 78,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "node22": {
+      "version": "22.22.0",
+      "files": 2,
+      "tests": 9,
+      "exit": 0,
+      "wrapper_seconds": 30.78
+    },
+    "node24_startup_restore_before_validation_only_changes": {
+      "version": "24.19.0",
+      "files": 2,
+      "tests": 9,
+      "exit": 0,
+      "vitest_seconds": 23.86
+    },
+    "validation_evidence_reuse_basis": "freeze-delta.json: runtime/assets/packages/e2e/Playwright config identical; only Vitest/mobile fixture differs. Node22 subset passed stricter original default budget.",
+    "project_typecheck_exit": 0,
+    "actual_servers": {
+      "paired_rounds": 3,
+      "healthy_servers": 6,
+      "administrators_per_db": 1,
+      "operators_per_catalog": 1
+    },
+    "existing_test_and_config_files_unchanged": 361,
+    "existing_files_changed": [
+      "tests/frontend-mobile.test.ts",
+      "vitest.config.ts"
+    ],
+    "existing_mobile_assertion_expressions_preserved_in_order": 625,
+    "test_harness_changes": "Vitest defaults20000->60000ms; mobile actor readiness, storage-only quiescence, window teardown, demonstrated positive-state waits and a typed native-URL fixture. Original625 matcher expressions, other test files, explicit it budgets, product deadlines and KDF cost unchanged.",
+    "new_tests": 8
+  },
+  "original_failure_detection": {
+    "controlled_trigger_collision": {
+      "before_exit": 1,
+      "before_sqlite_error": 5,
+      "after_exit": 0,
+      "driver_bytes_identical": true,
+      "saved_paid_payroll_and_settings_unchanged": true
+    },
+    "first_run_seed_race": {
+      "before_exit": 1,
+      "before_sqlite_error": 2067,
+      "after_exit": 0,
+      "driver_bytes_identical": true,
+      "one_administrator": true
+    },
+    "permanent_tests_against_baseline": {
+      "selected": 2,
+      "failed": 2,
+      "deselected": 6,
+      "same_test_and_worker": true
+    },
+    "actual_servers_baseline": {
+      "paired_rounds": 3,
+      "early_failed_servers": 3,
+      "note": "Repeated schedules, not three independent defects"
+    },
+    "catalog_failure_retry": {
+      "before_operator_count": 0,
+      "after_operator_count": 1,
+      "chronology": "Additional old-source check after the candidate; not a pre-edit reproduction"
+    }
+  },
+  "failed_and_intermediate_experiments": [
+    "First two test-driver typechecks failed; explicit types/fixture guard corrected them without compiler flag changes.",
+    "First candidate created an unnecessary :memory:.startup-lock. Baseline/candidate/final probes and permanent tenant/catalog memory checks retain and cover the patch-introduced regression.",
+    "Initial complete parallel suite: 325 files/3517 tests passed, one restore test timed out at unchanged 20000ms; isolated baseline/candidate pass unchanged budget in 9.96/8.48 wrapper seconds. Root cause/performance fix unestablished.",
+    "Second parallel attempt: existing signup rate-limit test timed out at unchanged 20000ms. Run deliberately stopped after failure, exit 143; incomplete selection, not a complete full-suite result.",
+    "Standard serial run: existing QA beforeAll fixture timed out at unchanged 20000ms and its seven cases were skipped. Parallelism alone does not explain the failures. No root cause or performance fix established.",
+    "Unchanged QA/signup fixtures were repeated against pinned baseline and final candidate before the last full run; exact original budgets and results retained separately.",
+    "A 22-second heartbeat during protected Git staging had no scheduling gap above 200ms; that limited experiment did not support the tooling-pause hypothesis.",
+    "Hands-off two-file run also hit an existing MFA test at 22449ms and was stopped incomplete (exit 143). Removing concurrent audit work did not eliminate timing failures.",
+    "Vitest default harness budgets were relaxed20000->60000ms; this is not a production performance fix. All625 existing mobile matcher expressions and other test files are retained; temporal fixture changes are explicit.",
+    "The first60-second full run passed3517 tests and failed2 premature mobile field accesses. Additional local-wait attempts passed controlled cases but exposed4 then1 other premature-render failures. The shared storage/boot/window fixture addresses the demonstrated class without changing application code.",
+    "Controlled250ms storage delays reproduce premature render access. Final shared fixture passes9 selected cases including2deliberately pending-network controls. An unhandled storage-rejection negative control still produces1error/exit1 even though its normal assertions pass.",
+    "The initial shared candidate duplicatedhtml/srcs declarations:0tests ran, including the initial negative-control attempt. Corrected before applying; no pass inferred from the invalid input. The first assertion-comparator child Git call failedEPERM; a pure parser using the saved pinned Git blob later proves625 identical expressions.",
+    "Final full verification uses canonical serial npm test with no additional experiments/Git operations. Earlier failed run metadata describing isolation was an intention; bounded diagnostics ran after its first failure. Do not claim that failed run was isolated throughout.",
+    "First 822-file extension-filtered freeze omitted 50 unchanged inputs; supplemental comparison retained. Final freeze includes all 872 selected inputs.",
+    "Web-search connector returned an empty error. Direct TLS-verified official documentation used; optional HTML parser absent, stdlib extraction used."
+  ],
+  "classification": {
+    "implemented": [
+      "Per-file initialization gate",
+      "Initialization-only busy waits; runtime zero-wait policy",
+      "Failed catalog cache eviction/connection close",
+      "In-memory compatibility guard"
+    ],
+    "locally_demonstrated": [
+      "Original race reproductions and permanent test detection",
+      "Process kill/retry and persistent lock refusal/recovery",
+      "Saved payroll/settings, schema and integrity checks",
+      "Actual paired server readiness",
+      "Final Node22/Node24/Vitest/Playwright results"
+    ],
+    "independently_verified": [],
+    "still_unverified": [
+      "Real hosting/storage/Windows behavior",
+      "Physical power-loss guarantees",
+      "Arbitrary interrupted historical migrations",
+      "Mixed-build and filesystem-alias coordination",
+      "Real-backup restore acceptance",
+      "Independent security/operations review",
+      "Full-app minimum-runtime compatibility and financial consequences of the demonstrated 22.13 isTransaction API mismatch",
+      "Production latency/capacity and the cause of observed long authenticated requests"
+    ]
+  },
+  "validation_only_changes": {
+    "harness_default_ms": {
+      "before": 20000,
+      "after": 60000
+    },
+    "mobile_assertion_expressions_retained": 625,
+    "storage_delay_positive_cases": 9,
+    "pending_network_controls_included": 2,
+    "unhandled_rejection_negative_control_exit": 1,
+    "normal_assertions_in_negative_control_passed": true,
+    "mobile_full_file_tests": 130,
+    "mobile_full_file_exit": 0,
+    "production_behavior_changed_by_fixture": false
+  },
+  "runtime_minimum_probe": {
+    "versions": [
+      "22.13.0",
+      "22.22.0",
+      "24.19.0"
+    ],
+    "startup_gate_callback_succeeds_all": true,
+    "existing_isTransaction_missing_on_22_13": true,
+    "source_predates_patch": true,
+    "end_to_end_business_impact": "Not reproduced; separate engineering follow-up"
+  },
+  "npm_runtime": {
+    "exit": 1,
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 1,
+      "high": 4,
+      "critical": 0,
+      "total": 5
+    },
+    "active_primary_advisories": 7,
+    "manifests_changed": false,
+    "disposition": "Open engineering follow-up; no patch or approved exception in this increment"
+  },
+  "secrets": {
+    "scanner_version": "8.24.3",
+    "staged_exit": 0,
+    "exported_directory_exit": 0,
+    "staged_files_in_recorded_scans": 198,
+    "scope": "Staged changes and an exact index export, before appending these scan records/status. Final staged recheck and mandatory commit hook cover the final index; command outcomes are retained in the session/commit transcript.",
+    "history": "Existing historical-secret findings remain open; no new allowlist or hook bypass."
+  },
+  "sensitive_data_excluded": [
+    "Application databases",
+    "Private keys and credentials",
+    "Authenticated traces",
+    "Downloaded toolchain binaries"
+  ],
+  "normalization": "Text exports remove ANSI sequences, trailing whitespace and extra EOF blank lines; raw and retained SHA-256/bytes recorded. JSON retained byte-for-byte.",
+  "artifacts": [
+    {
+      "source": "work/sqlite-startup/before/results.json",
+      "file": "docs/audits/evidence/sqlite-startup-before.json",
+      "sha256": "861b6663bd77892bd12d6105fdf8309a3e51824ae8c8daf31e60eea81cf4eb3c",
+      "bytes": 1577,
+      "raw_sha256": "861b6663bd77892bd12d6105fdf8309a3e51824ae8c8daf31e60eea81cf4eb3c",
+      "raw_bytes": 1577
+    },
+    {
+      "source": "work/sqlite-startup/before/hold.log",
+      "file": "docs/audits/evidence/sqlite-startup-before-first.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_bytes": 0
+    },
+    {
+      "source": "work/sqlite-startup/before/second.log",
+      "file": "docs/audits/evidence/sqlite-startup-before-second.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_bytes": 0
+    },
+    {
+      "source": "work/sqlite-startup/before/seed.log",
+      "file": "docs/audits/evidence/sqlite-startup-before-seed-setup.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_bytes": 0
+    },
+    {
+      "source": "work/sqlite-startup/before/worker.mts",
+      "file": "docs/audits/evidence/sqlite-startup-collision-worker.mts.txt",
+      "sha256": "9906f7a515990440f7421c682b7996697b179bab393cf6f257e07eee66ab907f",
+      "bytes": 2396,
+      "raw_sha256": "9906f7a515990440f7421c682b7996697b179bab393cf6f257e07eee66ab907f",
+      "raw_bytes": 2396
+    },
+    {
+      "source": "work/sqlite-startup/reproduce.py",
+      "file": "docs/audits/evidence/sqlite-startup-collision-driver.py.txt",
+      "sha256": "15a52c44cdc33c5f7e7339ea8c20abe7a3c6d318abaf14feb5d64329ef6f0da6",
+      "bytes": 3074,
+      "raw_sha256": "15a52c44cdc33c5f7e7339ea8c20abe7a3c6d318abaf14feb5d64329ef6f0da6",
+      "raw_bytes": 3074
+    },
+    {
+      "source": "work/sqlite-startup/after/results.json",
+      "file": "docs/audits/evidence/sqlite-startup-after.json",
+      "sha256": "337d2fa5edc41f49c584d96345919600c35a1e14ee7df7b0b69e0488225729db",
+      "bytes": 1019,
+      "raw_sha256": "337d2fa5edc41f49c584d96345919600c35a1e14ee7df7b0b69e0488225729db",
+      "raw_bytes": 1019
+    },
+    {
+      "source": "work/sqlite-startup/after/hold.log",
+      "file": "docs/audits/evidence/sqlite-startup-after-first.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_bytes": 0
+    },
+    {
+      "source": "work/sqlite-startup/after/second.log",
+      "file": "docs/audits/evidence/sqlite-startup-after-second.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_bytes": 0
+    },
+    {
+      "source": "work/sqlite-startup/seed-before/results.json",
+      "file": "docs/audits/evidence/sqlite-startup-seed-before.json",
+      "sha256": "e62fb1c9ef6d5f76349ce1021df8e0be97e9d9b7b05926dabaa91d4e2e58fea7",
+      "bytes": 1184,
+      "raw_sha256": "e62fb1c9ef6d5f76349ce1021df8e0be97e9d9b7b05926dabaa91d4e2e58fea7",
+      "raw_bytes": 1184
+    },
+    {
+      "source": "work/sqlite-startup/seed-before/first.log",
+      "file": "docs/audits/evidence/sqlite-startup-seed-before-first.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_bytes": 0
+    },
+    {
+      "source": "work/sqlite-startup/seed-before/second.log",
+      "file": "docs/audits/evidence/sqlite-startup-seed-before-second.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_bytes": 0
+    },
+    {
+      "source": "work/sqlite-startup/seed-before/seed-worker.mts",
+      "file": "docs/audits/evidence/sqlite-startup-seed-worker.mts.txt",
+      "sha256": "5d0f4e87b8d10fc790a4c4e7a938869d2a9e63865a0ecdc5cc84c769775947c4",
+      "bytes": 1661,
+      "raw_sha256": "5d0f4e87b8d10fc790a4c4e7a938869d2a9e63865a0ecdc5cc84c769775947c4",
+      "raw_bytes": 1661
+    },
+    {
+      "source": "work/sqlite-startup/seed-race.py",
+      "file": "docs/audits/evidence/sqlite-startup-seed-driver.py.txt",
+      "sha256": "423391d26654923d88d9c1cd29a6d7e7dc6fc5948db7d9dd13a7cc6359ac6a79",
+      "bytes": 2218,
+      "raw_sha256": "423391d26654923d88d9c1cd29a6d7e7dc6fc5948db7d9dd13a7cc6359ac6a79",
+      "raw_bytes": 2218
+    },
+    {
+      "source": "work/sqlite-startup/seed-after/results.json",
+      "file": "docs/audits/evidence/sqlite-startup-seed-after.json",
+      "sha256": "94e1f8bce1b8f0ebb3b5e254973883bcf9c72f6f2945e5c9b38b9bbca4a69d9f",
+      "bytes": 364,
+      "raw_sha256": "94e1f8bce1b8f0ebb3b5e254973883bcf9c72f6f2945e5c9b38b9bbca4a69d9f",
+      "raw_bytes": 364
+    },
+    {
+      "source": "work/sqlite-startup/seed-after/first.log",
+      "file": "docs/audits/evidence/sqlite-startup-seed-after-first.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_bytes": 0
+    },
+    {
+      "source": "work/sqlite-startup/seed-after/second.log",
+      "file": "docs/audits/evidence/sqlite-startup-seed-after-second.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_bytes": 0
+    },
+    {
+      "source": "work/sqlite-startup/servers.py",
+      "file": "docs/audits/evidence/sqlite-startup-server-driver.py.txt",
+      "sha256": "337c295ab737e1c9128082f4b4e7df1175107f3afa0c7a807b36d7619e882c26",
+      "bytes": 2910,
+      "raw_sha256": "337c295ab737e1c9128082f4b4e7df1175107f3afa0c7a807b36d7619e882c26",
+      "raw_bytes": 2910
+    },
+    {
+      "source": "work/sqlite-startup/servers-baseline/results.json",
+      "file": "docs/audits/evidence/sqlite-startup-server-baseline.json",
+      "sha256": "4191d0e1ce909e4393d0f356cbc2f1e4bd6ebac89eaeacd8feb48ee786116a3d",
+      "bytes": 956,
+      "raw_sha256": "4191d0e1ce909e4393d0f356cbc2f1e4bd6ebac89eaeacd8feb48ee786116a3d",
+      "raw_bytes": 956
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed/results.json",
+      "file": "docs/audits/evidence/sqlite-startup-server-first-fixed.json",
+      "sha256": "500a41a15775d396ce4c5d6967cfa395c1d061b118e63bff56c13ad306e332b7",
+      "bytes": 930,
+      "raw_sha256": "500a41a15775d396ce4c5d6967cfa395c1d061b118e63bff56c13ad306e332b7",
+      "raw_bytes": 930
+    },
+    {
+      "source": "work/sqlite-startup/typecheck-first.log",
+      "file": "docs/audits/evidence/sqlite-startup-typecheck-first.txt",
+      "sha256": "de4ff6a51db70eb89a2bb3d08fc798d92989f3f6e7f0c6dd1fc5d1dea28bb449",
+      "bytes": 398,
+      "raw_sha256": "de4ff6a51db70eb89a2bb3d08fc798d92989f3f6e7f0c6dd1fc5d1dea28bb449",
+      "raw_bytes": 398
+    },
+    {
+      "source": "work/sqlite-startup/typecheck-second.log",
+      "file": "docs/audits/evidence/sqlite-startup-typecheck-second.txt",
+      "sha256": "babdf298dcf015697efa438075d56532489aed1c6b50f3ba6f9aa3783ebebd02",
+      "bytes": 790,
+      "raw_sha256": "babdf298dcf015697efa438075d56532489aed1c6b50f3ba6f9aa3783ebebd02",
+      "raw_bytes": 790
+    },
+    {
+      "source": "work/sqlite-startup/typecheck-third.log",
+      "file": "docs/audits/evidence/sqlite-startup-typecheck-third.txt",
+      "sha256": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+      "bytes": 39,
+      "raw_sha256": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+      "raw_bytes": 40
+    },
+    {
+      "source": "work/sqlite-startup/focused-first.log",
+      "file": "docs/audits/evidence/sqlite-startup-focused-first.txt",
+      "sha256": "87f2996e120d65f450804da0082a60f801de53e3a97ce138f246e846dd462819",
+      "bytes": 229,
+      "raw_sha256": "d9f013e64c90c614ad7715ee498e8c44f4524427d41e9078858dac8d50edbcff",
+      "raw_bytes": 230
+    },
+    {
+      "source": "work/sqlite-startup/node22-focused.log",
+      "file": "docs/audits/evidence/sqlite-startup-node22-first.txt",
+      "sha256": "fe21e88ea853c9b3301d1fa94d644673eed8ee0335af9f4f05234448bf1c2357",
+      "bytes": 736,
+      "raw_sha256": "56fa6b58453627efec4b4760b70063e7eda10d71803416fb76c4c76807097be2",
+      "raw_bytes": 737
+    },
+    {
+      "source": "work/sqlite-startup/node22/verified.json",
+      "file": "docs/audits/evidence/sqlite-startup-node22-toolchain.json",
+      "sha256": "407320d2160e3f8241457f9d46adc2d45ce89a77d78b2831c18c60e24eeb3ece",
+      "bytes": 218,
+      "raw_sha256": "407320d2160e3f8241457f9d46adc2d45ce89a77d78b2831c18c60e24eeb3ece",
+      "raw_bytes": 218
+    },
+    {
+      "source": "work/sqlite-startup/research-record.json",
+      "file": "docs/audits/evidence/sqlite-startup-research.json",
+      "sha256": "88ecd422fc53e2cdb3bf1f03f04af5b0807ba127284030c8e933e94530d3ea8f",
+      "bytes": 1165,
+      "raw_sha256": "88ecd422fc53e2cdb3bf1f03f04af5b0807ba127284030c8e933e94530d3ea8f",
+      "raw_bytes": 1165
+    },
+    {
+      "source": "work/sqlite-startup/schema-comparison.json",
+      "file": "docs/audits/evidence/sqlite-startup-schema-comparison.json",
+      "sha256": "02a845ef6185f5cf42ef7a56bb123ac4da05270488eab59a658ebbcfe4a593bb",
+      "bytes": 564,
+      "raw_sha256": "02a845ef6185f5cf42ef7a56bb123ac4da05270488eab59a658ebbcfe4a593bb",
+      "raw_bytes": 564
+    },
+    {
+      "source": "work/sqlite-startup/npm-runtime.json",
+      "file": "docs/audits/evidence/sqlite-startup-npm-runtime.json",
+      "sha256": "6120255dbbc0142abe9d342d8ce8abfab0b29290458515d27835e8b1178b9b16",
+      "bytes": 5732,
+      "raw_sha256": "6120255dbbc0142abe9d342d8ce8abfab0b29290458515d27835e8b1178b9b16",
+      "raw_bytes": 5732
+    },
+    {
+      "source": "work/sqlite-startup/npm-runtime-status.json",
+      "file": "docs/audits/evidence/sqlite-startup-npm-runtime-status.json",
+      "sha256": "a4f9b51c62c9a6294a8e0c4db05e12cf8d242918df452c636d298ce5df9fae6c",
+      "bytes": 46,
+      "raw_sha256": "a4f9b51c62c9a6294a8e0c4db05e12cf8d242918df452c636d298ce5df9fae6c",
+      "raw_bytes": 46
+    },
+    {
+      "source": "work/sqlite-startup/advisory-primary-summary.json",
+      "file": "docs/audits/evidence/sqlite-startup-advisory-primary-summary.json",
+      "sha256": "1a213a97855a24ba899ffbb7bae7c56f3d67ecb3a2ce2d85de566cfa230880b1",
+      "bytes": 2971,
+      "raw_sha256": "1a213a97855a24ba899ffbb7bae7c56f3d67ecb3a2ce2d85de566cfa230880b1",
+      "raw_bytes": 2971
+    },
+    {
+      "source": "work/sqlite-startup/source-freeze.json",
+      "file": "docs/audits/evidence/sqlite-startup-inputs-first.json",
+      "sha256": "d3278ded68ddb79c30a2c2553710131db5245d8fa4793fedea02cd03a6b21ca4",
+      "bytes": 119158,
+      "raw_sha256": "d3278ded68ddb79c30a2c2553710131db5245d8fa4793fedea02cd03a6b21ca4",
+      "raw_bytes": 119158
+    },
+    {
+      "source": "work/sqlite-startup/unchanged-baseline-inputs.json",
+      "file": "docs/audits/evidence/sqlite-startup-supplemental-first.json",
+      "sha256": "1ad554bc212bfbb97fb08222b51dc040a63d1decb299d3b7e8144c7c1aa1ac7e",
+      "bytes": 8205,
+      "raw_sha256": "1ad554bc212bfbb97fb08222b51dc040a63d1decb299d3b7e8144c7c1aa1ac7e",
+      "raw_bytes": 8205
+    },
+    {
+      "source": "work/sqlite-startup/regression-run.json",
+      "file": "docs/audits/evidence/sqlite-startup-regression-first.json",
+      "sha256": "bb3abbdef0ca7ff4fed6e50098c0a712c12df60796f220573bf6540ac478b86e",
+      "bytes": 498,
+      "raw_sha256": "bb3abbdef0ca7ff4fed6e50098c0a712c12df60796f220573bf6540ac478b86e",
+      "raw_bytes": 498
+    },
+    {
+      "source": "work/sqlite-startup/playwright-final.log",
+      "file": "docs/audits/evidence/sqlite-startup-playwright-first.txt",
+      "sha256": "2e4ccb7386b65986b165936dc2618a3f7eeafac91b09c0d82449e9ddaf3753c2",
+      "bytes": 12029,
+      "raw_sha256": "2e4ccb7386b65986b165936dc2618a3f7eeafac91b09c0d82449e9ddaf3753c2",
+      "raw_bytes": 12029
+    },
+    {
+      "source": "work/sqlite-startup/full-final.log",
+      "file": "docs/audits/evidence/sqlite-startup-full-first.txt",
+      "sha256": "dd9c31b224767c2e7eb6346ba95181871aeba42a5af5f1b06fb503c485d63bb6",
+      "bytes": 3677,
+      "raw_sha256": "29342579e4b9b2c633a2ba28233ec9d048354b0cc46f9928a7b6f99c2a169b0b",
+      "raw_bytes": 3678
+    },
+    {
+      "source": "work/sqlite-startup/restore-baseline-isolated.log",
+      "file": "docs/audits/evidence/sqlite-startup-restore-baseline.txt",
+      "sha256": "d0349927967928fda531ab122bb49b31a6e56e80b00d7f4bf0e1c38060637d59",
+      "bytes": 252,
+      "raw_sha256": "2e06ccb41ae5015a818c4cc63a7273433e016a9dc2d584344315605beff654b4",
+      "raw_bytes": 253
+    },
+    {
+      "source": "work/sqlite-startup/restore-candidate-isolated.log",
+      "file": "docs/audits/evidence/sqlite-startup-restore-candidate.txt",
+      "sha256": "9c3cebb1fdf497e5f0775f40e0416dc948f9eb26b7588c7dfa056460cfa1b3a4",
+      "bytes": 223,
+      "raw_sha256": "39da19da377650e5e0576ee1212be82a95bfba96c3fe84acbeb099c3549a5b5b",
+      "raw_bytes": 224
+    },
+    {
+      "source": "work/sqlite-startup/restore-comparison.json",
+      "file": "docs/audits/evidence/sqlite-startup-restore-comparison.json",
+      "sha256": "dae5e8896a7b3722ca308abfa97273b04813fe7d1969f75a784f799b4cc2e260",
+      "bytes": 222,
+      "raw_sha256": "dae5e8896a7b3722ca308abfa97273b04813fe7d1969f75a784f799b4cc2e260",
+      "raw_bytes": 222
+    },
+    {
+      "source": "work/sqlite-startup/memory-probe.mts",
+      "file": "docs/audits/evidence/sqlite-startup-memory-driver.mts.txt",
+      "sha256": "82ea694c96f41778925ff0406ba9a2fa0054cf34812fe48e9c3b3fc9958ab65b",
+      "bytes": 956,
+      "raw_sha256": "82ea694c96f41778925ff0406ba9a2fa0054cf34812fe48e9c3b3fc9958ab65b",
+      "raw_bytes": 956
+    },
+    {
+      "source": "work/sqlite-startup/memory-baseline.json",
+      "file": "docs/audits/evidence/sqlite-startup-memory-baseline.json",
+      "sha256": "26bdf042acf8556257bc4a2a865d41910e45e050d8cdb8ad00706549cc09b0c9",
+      "bytes": 164,
+      "raw_sha256": "26bdf042acf8556257bc4a2a865d41910e45e050d8cdb8ad00706549cc09b0c9",
+      "raw_bytes": 164
+    },
+    {
+      "source": "work/sqlite-startup/memory-candidate.json",
+      "file": "docs/audits/evidence/sqlite-startup-memory-candidate.json",
+      "sha256": "5dbf3c6b93217ac3150e2a5a01958cec64afdfd8fc082fd94cb3048174ec3b6f",
+      "bytes": 166,
+      "raw_sha256": "5dbf3c6b93217ac3150e2a5a01958cec64afdfd8fc082fd94cb3048174ec3b6f",
+      "raw_bytes": 166
+    },
+    {
+      "source": "work/sqlite-startup/memory-fixed.json",
+      "file": "docs/audits/evidence/sqlite-startup-memory-fixed.json",
+      "sha256": "9aba06c29155486b2810bfbf69e8d6080d829bc0793bfa3401acfca3ae57d1d3",
+      "bytes": 135,
+      "raw_sha256": "9aba06c29155486b2810bfbf69e8d6080d829bc0793bfa3401acfca3ae57d1d3",
+      "raw_bytes": 135
+    },
+    {
+      "source": "work/sqlite-startup/typecheck-final.log",
+      "file": "docs/audits/evidence/sqlite-startup-typecheck-final.txt",
+      "sha256": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+      "bytes": 39,
+      "raw_sha256": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+      "raw_bytes": 40
+    },
+    {
+      "source": "work/sqlite-startup/focused-final.log",
+      "file": "docs/audits/evidence/sqlite-startup-focused-final.txt",
+      "sha256": "980a58d2d213b98ec3ddd10b9d07af003c24d30c7e63dea03a1560991041191b",
+      "bytes": 225,
+      "raw_sha256": "363a808393eb2e68457a44d8ceb7ea68d71e390541475791a3d35a4ef96885fb",
+      "raw_bytes": 226
+    },
+    {
+      "source": "work/sqlite-startup/remote-before.txt",
+      "file": "docs/audits/evidence/sqlite-startup-remote-before.txt",
+      "sha256": "2530ad25964f3612fac653a0e853c665cbdc90329c6bc4ac1f3d6c182d2a4a90",
+      "bytes": 63,
+      "raw_sha256": "2530ad25964f3612fac653a0e853c665cbdc90329c6bc4ac1f3d6c182d2a4a90",
+      "raw_bytes": 63
+    },
+    {
+      "source": "work/sqlite-startup/servers-baseline/0/0.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-baseline-0-0.txt",
+      "sha256": "c27f115b6b03f624bd2255cb92c665b753acc8cfc0163b9ddf2e83d5e06a5074",
+      "bytes": 1403,
+      "raw_sha256": "c27f115b6b03f624bd2255cb92c665b753acc8cfc0163b9ddf2e83d5e06a5074",
+      "raw_bytes": 1403
+    },
+    {
+      "source": "work/sqlite-startup/servers-baseline/0/1.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-baseline-0-1.txt",
+      "sha256": "94f9c6260ae52d8f6f49526cdc2c8182b5832968f4a2c395526a7e7037287e09",
+      "bytes": 336,
+      "raw_sha256": "9dc92c1e41faea8d72ba9f56808e95df5726059b292fc4c5ba4d983e60fa9a9e",
+      "raw_bytes": 337
+    },
+    {
+      "source": "work/sqlite-startup/servers-baseline/2/0.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-baseline-2-0.txt",
+      "sha256": "e4410ccd0b0ac6090a483c3262c194c6af561240983cdcdc73bdacc6fcd15d6c",
+      "bytes": 549,
+      "raw_sha256": "300e4ef80d060e5c426a4dff92e5211f3dad19930cbc473e665312ca6fa262ac",
+      "raw_bytes": 550
+    },
+    {
+      "source": "work/sqlite-startup/servers-baseline/2/1.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-baseline-2-1.txt",
+      "sha256": "753a3115c3b7520bcc9aecd1c9be9fad6c2651b0e1c571ec0ceea3a131121e92",
+      "bytes": 1185,
+      "raw_sha256": "753a3115c3b7520bcc9aecd1c9be9fad6c2651b0e1c571ec0ceea3a131121e92",
+      "raw_bytes": 1185
+    },
+    {
+      "source": "work/sqlite-startup/servers-baseline/1/0.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-baseline-1-0.txt",
+      "sha256": "9eaa5b41d05ceae73c0f6db3efb7dd7b840ffa360d08d90c645c0a94320b540c",
+      "bytes": 336,
+      "raw_sha256": "8c84db7b45603abe723358d7c13453d8b69502308371c9488c4e92568c9f4724",
+      "raw_bytes": 337
+    },
+    {
+      "source": "work/sqlite-startup/servers-baseline/1/1.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-baseline-1-1.txt",
+      "sha256": "4a6cacb97f11ae3b62111bbeeea30c9cd3c377a3878906b471e01271094a0cf5",
+      "bytes": 1403,
+      "raw_sha256": "4a6cacb97f11ae3b62111bbeeea30c9cd3c377a3878906b471e01271094a0cf5",
+      "raw_bytes": 1403
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed/0/0.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-fixed-0-0.txt",
+      "sha256": "5e5c0b539b0a809dd009b55b5b74ce76f5b8d4429659f1ead6a403bfa0f123c6",
+      "bytes": 549,
+      "raw_sha256": "5e5c0b539b0a809dd009b55b5b74ce76f5b8d4429659f1ead6a403bfa0f123c6",
+      "raw_bytes": 549
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed/0/1.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-fixed-0-1.txt",
+      "sha256": "101b12694aa96eb46108e92a0edb1f32d7a2e564d12ba9cdbafeebcd24107c53",
+      "bytes": 262,
+      "raw_sha256": "101b12694aa96eb46108e92a0edb1f32d7a2e564d12ba9cdbafeebcd24107c53",
+      "raw_bytes": 262
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed/2/0.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-fixed-2-0.txt",
+      "sha256": "91ea16a35e9d4189a17e1b338139e0bee790ca92f22dc09ae55de7bf01c4efe9",
+      "bytes": 513,
+      "raw_sha256": "91ea16a35e9d4189a17e1b338139e0bee790ca92f22dc09ae55de7bf01c4efe9",
+      "raw_bytes": 513
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed/2/1.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-fixed-2-1.txt",
+      "sha256": "b7e1896f6465ee8d09b5a4353028a9306fa197b61a8979d1b5577c665539eed0",
+      "bytes": 612,
+      "raw_sha256": "b7e1896f6465ee8d09b5a4353028a9306fa197b61a8979d1b5577c665539eed0",
+      "raw_bytes": 612
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed/1/0.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-fixed-1-0.txt",
+      "sha256": "4a8610e7252ea912bb4891b574d1da09bebc988803cfc5237623da0263600807",
+      "bytes": 682,
+      "raw_sha256": "4a8610e7252ea912bb4891b574d1da09bebc988803cfc5237623da0263600807",
+      "raw_bytes": 682
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed/1/1.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-fixed-1-1.txt",
+      "sha256": "768dabdc3ee86fcf8432ef7befb3b859c8c0fcdac7746d575ff4a97173263e2f",
+      "bytes": 479,
+      "raw_sha256": "768dabdc3ee86fcf8432ef7befb3b859c8c0fcdac7746d575ff4a97173263e2f",
+      "raw_bytes": 479
+    },
+    {
+      "source": "work/sqlite-startup/sqlite-busy-timeout.html",
+      "file": "docs/audits/evidence/sqlite-startup-primary-sqlite-busy-timeout.html.txt",
+      "sha256": "c60fee17e9d5edfc143bf6cb5507c1edff9d631b91e73bc6a5fda0b7d72775c7",
+      "bytes": 4888,
+      "raw_sha256": "751a6ae8d5a18975af74dbf88f08ce99e0af11e21ba52be879ee11824025d1d1",
+      "raw_bytes": 4889
+    },
+    {
+      "source": "work/sqlite-startup/sqlite-transactions.html",
+      "file": "docs/audits/evidence/sqlite-startup-primary-sqlite-transactions.html.txt",
+      "sha256": "a2ca74c8364ed96aa7547d105356c5e57c23553692f84166c4ef97b41d777797",
+      "bytes": 27067,
+      "raw_sha256": "b65dc308fd9e0ce471844c97366a4f5ad3a1f42833a3b19486ad7d6555a8e24e",
+      "raw_bytes": 27068
+    },
+    {
+      "source": "work/sqlite-startup/sqlite-locking.html",
+      "file": "docs/audits/evidence/sqlite-startup-primary-sqlite-locking.html.txt",
+      "sha256": "0933e9b6c6d2c293732c2e7a197a68f523fe29d3c6d3b399f45910f46ad4bb89",
+      "bytes": 29864,
+      "raw_sha256": "fa67031159fc0658b6e3fcfa4e446c140838c75cb813ff9fafd47fdae927936f",
+      "raw_bytes": 29892
+    },
+    {
+      "source": "work/sqlite-startup/node22-sqlite.html",
+      "file": "docs/audits/evidence/sqlite-startup-primary-node22-sqlite.html.txt",
+      "sha256": "4a5ec8b0bda959902e75f0b54780ea51a167324f552179cc023afc9ed11e69a2",
+      "bytes": 95453,
+      "raw_sha256": "ce0c0578f7da5fca4d1136db35fadd41fdeca707f9b0b3ad2c8747b3f8536e41",
+      "raw_bytes": 95509
+    },
+    {
+      "source": "work/sqlite-startup/source-freeze-before-budget.json",
+      "file": "docs/audits/evidence/sqlite-startup-inputs-before-budget.json",
+      "raw_sha256": "0cc86e570cf6bb91ca82e6cfdf40bf4246e6f76644b77c92f26bc94b9525b438",
+      "raw_bytes": 127021,
+      "sha256": "0cc86e570cf6bb91ca82e6cfdf40bf4246e6f76644b77c92f26bc94b9525b438",
+      "bytes": 127021
+    },
+    {
+      "source": "work/sqlite-startup/regression-final-run.json",
+      "file": "docs/audits/evidence/sqlite-startup-regression-parallel-second.json",
+      "raw_sha256": "bbd57096bb0ae9921aa6690d6b86674422d87a479dc75ce43f024c6987ee5d56",
+      "raw_bytes": 1224,
+      "sha256": "bbd57096bb0ae9921aa6690d6b86674422d87a479dc75ce43f024c6987ee5d56",
+      "bytes": 1224
+    },
+    {
+      "source": "work/sqlite-startup/parallel-stop.json",
+      "file": "docs/audits/evidence/sqlite-startup-parallel-stop.json",
+      "raw_sha256": "75820821b95441da0d93fb40c9d143afa13cf2e32bf31c4c0d4a30de1fed00bb",
+      "raw_bytes": 368,
+      "sha256": "75820821b95441da0d93fb40c9d143afa13cf2e32bf31c4c0d4a30de1fed00bb",
+      "bytes": 368
+    },
+    {
+      "source": "work/sqlite-startup/test-integrity.json",
+      "file": "docs/audits/evidence/sqlite-startup-test-integrity.json",
+      "raw_sha256": "60b0a3b4832fe35310b2226b91ccb4d7d41dda35a9ab8c00457dc0f83d1bc576",
+      "raw_bytes": 521,
+      "sha256": "60b0a3b4832fe35310b2226b91ccb4d7d41dda35a9ab8c00457dc0f83d1bc576",
+      "bytes": 521
+    },
+    {
+      "source": "work/sqlite-startup/baseline-permanent-tests.log",
+      "file": "docs/audits/evidence/sqlite-startup-baseline-permanent-tests.txt",
+      "raw_sha256": "8280ddf7edb9456f2b5a9e75f6e805f875172f3bf2c8d648753b14646070c794",
+      "raw_bytes": 2150,
+      "sha256": "fe5a88f71f5c4ba6ae18becea7b5ce4eb53cec4e636f12db06c563c9130f2823",
+      "bytes": 2149
+    },
+    {
+      "source": "work/sqlite-startup/baseline-permanent-tests.json",
+      "file": "docs/audits/evidence/sqlite-startup-baseline-permanent-tests.json",
+      "raw_sha256": "074445676e36dac9463c16e34cd88834e166ea4311cbaba859fc224f0eeea2ab",
+      "raw_bytes": 402,
+      "sha256": "074445676e36dac9463c16e34cd88834e166ea4311cbaba859fc224f0eeea2ab",
+      "bytes": 402
+    },
+    {
+      "source": "work/sqlite-startup/node22-final.log",
+      "file": "docs/audits/evidence/sqlite-startup-node22-final.txt",
+      "raw_sha256": "4712b271d38c27d7c3e4520b54b78d824ceb0b849582aadeceec122055d1bc67",
+      "raw_bytes": 564,
+      "sha256": "fd2d7f7ccc50d00bd3a9b41a3a189687531d359b044852c91abc78ea8feb68c3",
+      "bytes": 563
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed-final/results.json",
+      "file": "docs/audits/evidence/sqlite-startup-server-final.json",
+      "raw_sha256": "c92ff54d272cf1453ea9bd5e508b6d5ff6e8c8261b4c59726c616e86bcdc31c9",
+      "raw_bytes": 936,
+      "sha256": "c92ff54d272cf1453ea9bd5e508b6d5ff6e8c8261b4c59726c616e86bcdc31c9",
+      "bytes": 936
+    },
+    {
+      "source": "work/sqlite-startup/playwright-final2.log",
+      "file": "docs/audits/evidence/sqlite-startup-playwright-final.txt",
+      "raw_sha256": "08493f30b7e94ab4fe9cfe4a969da06d1c56f7b5cbdaecba46d2110eb886f5d8",
+      "raw_bytes": 12030,
+      "sha256": "08493f30b7e94ab4fe9cfe4a969da06d1c56f7b5cbdaecba46d2110eb886f5d8",
+      "bytes": 12030
+    },
+    {
+      "source": "work/sqlite-startup/full-final2.log",
+      "file": "docs/audits/evidence/sqlite-startup-parallel-second-incomplete.txt",
+      "raw_sha256": "428c875236f97fcc3406b973d3a731d9211b4c5bf7f4a2036527877fafed7c7b",
+      "raw_bytes": 2179,
+      "sha256": "428c875236f97fcc3406b973d3a731d9211b4c5bf7f4a2036527877fafed7c7b",
+      "bytes": 2179
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed-final/0/0.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-final-0-0.txt",
+      "raw_sha256": "d79189b2562d72b19b548fc010ce24fb9d42899e61e37109e7de5248e6f1634b",
+      "raw_bytes": 595,
+      "sha256": "d79189b2562d72b19b548fc010ce24fb9d42899e61e37109e7de5248e6f1634b",
+      "bytes": 595
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed-final/0/1.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-final-0-1.txt",
+      "raw_sha256": "6902e89e72483b3b77aaaa41c75b01c44d0695e98914dedabdb3fb3115b13786",
+      "raw_bytes": 530,
+      "sha256": "41e1d859f9a5f7966718e5cadfd8da30af33f8cce25e4e04e7eac376aa030cf6",
+      "bytes": 529
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed-final/1/0.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-final-1-0.txt",
+      "raw_sha256": "4af3fead9ab1e192359e5b0ae00a3c680ab19316d1fa70247b2ab53d32f634f3",
+      "raw_bytes": 981,
+      "sha256": "4af3fead9ab1e192359e5b0ae00a3c680ab19316d1fa70247b2ab53d32f634f3",
+      "bytes": 981
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed-final/1/1.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-final-1-1.txt",
+      "raw_sha256": "95cde74acd2c0787942fbe370478aa9aa5327e6f6ddafbfb6e2e26347a1b6097",
+      "raw_bytes": 753,
+      "sha256": "1c7db01b96d233bf661f3c846b693df818a023f19c16514f68800790d6027664",
+      "bytes": 752
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed-final/2/0.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-final-2-0.txt",
+      "raw_sha256": "fef568b00c0e27bd834ad2fd0cb9fe0fa7e2828b9409da947ec9b992ef4d4bbc",
+      "raw_bytes": 598,
+      "sha256": "fef568b00c0e27bd834ad2fd0cb9fe0fa7e2828b9409da947ec9b992ef4d4bbc",
+      "bytes": 598
+    },
+    {
+      "source": "work/sqlite-startup/servers-fixed-final/2/1.log",
+      "file": "docs/audits/evidence/sqlite-startup-servers-final-2-1.txt",
+      "raw_sha256": "6641c2a0baedb66c2da38e95d51e82bc32f22772d9dd52a881ef24b605a6fa41",
+      "raw_bytes": 749,
+      "sha256": "6641c2a0baedb66c2da38e95d51e82bc32f22772d9dd52a881ef24b605a6fa41",
+      "bytes": 749
+    },
+    {
+      "source": "work/sqlite-startup/playwright-stats-final.json",
+      "file": "docs/audits/evidence/sqlite-startup-playwright-stats-final.json",
+      "raw_sha256": "75437197043ea97508e57571bd6d64a3d2e4d4be0401056c7187f3ea640d90f8",
+      "raw_bytes": 147,
+      "sha256": "75437197043ea97508e57571bd6d64a3d2e4d4be0401056c7187f3ea640d90f8",
+      "bytes": 147
+    },
+    {
+      "source": "work/sqlite-startup/schema-final.json",
+      "file": "docs/audits/evidence/sqlite-startup-schema-final.json",
+      "raw_sha256": "45e80434565f6ba846983d859301e217c4ca65bea5e1c79884a9030f36748cb0",
+      "raw_bytes": 625,
+      "sha256": "45e80434565f6ba846983d859301e217c4ca65bea5e1c79884a9030f36748cb0",
+      "bytes": 625
+    },
+    {
+      "source": "work/sqlite-startup/compare-final-schema.py",
+      "file": "docs/audits/evidence/sqlite-startup-schema-driver.py.txt",
+      "raw_sha256": "836f340a5fa328d723a4b17888c165091d14e93d8125626d364c4b01f9a560b5",
+      "raw_bytes": 1387,
+      "sha256": "836f340a5fa328d723a4b17888c165091d14e93d8125626d364c4b01f9a560b5",
+      "bytes": 1387
+    },
+    {
+      "source": "work/sqlite-startup/installed-runtime-versions.json",
+      "file": "docs/audits/evidence/sqlite-startup-installed-runtime-versions.txt",
+      "raw_sha256": "b288dfd85d7ca202546700df5595fbb19db36240269d5be8c7308e35a954715e",
+      "raw_bytes": 1052,
+      "sha256": "b288dfd85d7ca202546700df5595fbb19db36240269d5be8c7308e35a954715e",
+      "bytes": 1052
+    },
+    {
+      "source": "work/sqlite-startup/installed-runtime-versions-status.json",
+      "file": "docs/audits/evidence/sqlite-startup-installed-runtime-versions-status.json",
+      "raw_sha256": "706fd697ec8f720cce10a3ebaff6b990a10f7c6a06c87d827533f42cca1c5bce",
+      "raw_bytes": 184,
+      "sha256": "706fd697ec8f720cce10a3ebaff6b990a10f7c6a06c87d827533f42cca1c5bce",
+      "bytes": 184
+    },
+    {
+      "source": "work/sqlite-startup/runtime-api-probe.json",
+      "file": "docs/audits/evidence/sqlite-startup-runtime-api-probe.json",
+      "raw_sha256": "27e117edc0505fc60cf8373ab63a7536c1a9daf91879da2dc31a71f2567dea49",
+      "raw_bytes": 1406,
+      "sha256": "27e117edc0505fc60cf8373ab63a7536c1a9daf91879da2dc31a71f2567dea49",
+      "bytes": 1406
+    },
+    {
+      "source": "work/sqlite-startup/probe-runtime-api.mjs",
+      "file": "docs/audits/evidence/sqlite-startup-runtime-api-driver.mjs.txt",
+      "raw_sha256": "8aadf04d9126be094cfc7164b2af9f6041fe0e14d3193849191ce2fb1f0fe8e6",
+      "raw_bytes": 980,
+      "sha256": "8aadf04d9126be094cfc7164b2af9f6041fe0e14d3193849191ce2fb1f0fe8e6",
+      "bytes": 980
+    },
+    {
+      "source": "work/sqlite-startup/node-minimum/verified.json",
+      "file": "docs/audits/evidence/sqlite-startup-node2213-toolchain.json",
+      "raw_sha256": "d0a457f377e7e5272099aa0fded019247521e2eeb48763169a97e995c6ff646e",
+      "raw_bytes": 218,
+      "sha256": "d0a457f377e7e5272099aa0fded019247521e2eeb48763169a97e995c6ff646e",
+      "bytes": 218
+    },
+    {
+      "source": "work/sqlite-startup/runtime-api-source-leads.json",
+      "file": "docs/audits/evidence/sqlite-startup-runtime-api-source-leads.json",
+      "raw_sha256": "d09a25e55a7ee8dd5ed2c6a388908dbfef5c9fdc6851f7ec0368927a82bfe180",
+      "raw_bytes": 2209,
+      "sha256": "d09a25e55a7ee8dd5ed2c6a388908dbfef5c9fdc6851f7ec0368927a82bfe180",
+      "bytes": 2209
+    },
+    {
+      "source": "work/sqlite-startup/tooling-heartbeat.json",
+      "file": "docs/audits/evidence/sqlite-startup-tooling-heartbeat.json",
+      "raw_sha256": "f7f0974118fa242abd084275ed28fc25de87f3c277e4f8e64b85ace127f24e48",
+      "raw_bytes": 142,
+      "sha256": "f7f0974118fa242abd084275ed28fc25de87f3c277e4f8e64b85ace127f24e48",
+      "bytes": 142
+    },
+    {
+      "source": "work/sqlite-startup/hands-off-regression.json",
+      "file": "docs/audits/evidence/sqlite-startup-hands-off-incomplete.json",
+      "raw_sha256": "01c0fd4511710c3004ebc2e4667fe24074302cd1cf1a7c22633a2978bd532fef",
+      "raw_bytes": 499,
+      "sha256": "01c0fd4511710c3004ebc2e4667fe24074302cd1cf1a7c22633a2978bd532fef",
+      "bytes": 499
+    },
+    {
+      "source": "work/sqlite-startup/hands-off-failed.log",
+      "file": "docs/audits/evidence/sqlite-startup-hands-off-incomplete.txt",
+      "raw_sha256": "cd0c42b33b79f9c68cbb6babeb0a1c777fcc7d94494fbb69846fa4ad37a3ad2c",
+      "raw_bytes": 2427,
+      "sha256": "cd0c42b33b79f9c68cbb6babeb0a1c777fcc7d94494fbb69846fa4ad37a3ad2c",
+      "bytes": 2427
+    },
+    {
+      "source": "work/sqlite-startup/hands-off-stop.json",
+      "file": "docs/audits/evidence/sqlite-startup-hands-off-stop.json",
+      "raw_sha256": "e26521fb72d3a158e73d67e665d4eed60eb787d699c73793c48e1b64fec3793e",
+      "raw_bytes": 433,
+      "sha256": "e26521fb72d3a158e73d67e665d4eed60eb787d699c73793c48e1b64fec3793e",
+      "bytes": 433
+    },
+    {
+      "source": "work/sqlite-startup/harness-research.json",
+      "file": "docs/audits/evidence/sqlite-startup-harness-research.json",
+      "raw_sha256": "6b800ae60f220b0aa6d29c89246b85f49742827d91b3c3cb39d94a7bd750b019",
+      "raw_bytes": 918,
+      "sha256": "6b800ae60f220b0aa6d29c89246b85f49742827d91b3c3cb39d94a7bd750b019",
+      "bytes": 918
+    },
+    {
+      "source": "work/sqlite-startup/first-invalid-frontend-unhandled-control-source.patch",
+      "file": "docs/audits/evidence/sqlite-startup-first-invalid-frontend-unhandled-control-source.patch.json",
+      "raw_sha256": "5316874d4a8ce328409133a2448c94af2c17fbffa048f4d41edada9ec2c9f6e2",
+      "raw_bytes": 21448,
+      "sha256": "73641625b8a33fbd44e342401ceccec47829a53cb718e0e8454b5b7cc9ddcae8",
+      "bytes": 24991,
+      "representation": "Lossless JSON line array; reconstruct and check raw_sha256 before applying"
+    },
+    {
+      "source": "work/sqlite-startup/first-invalid-frontend-unhandled-control.json",
+      "file": "docs/audits/evidence/sqlite-startup-first-invalid-frontend-unhandled-control.json",
+      "raw_sha256": "2d1e8e89e2b100898fb88b6e2449d20cbdcd681d7c26855892b3f66faf852118",
+      "raw_bytes": 598,
+      "sha256": "2d1e8e89e2b100898fb88b6e2449d20cbdcd681d7c26855892b3f66faf852118",
+      "bytes": 598,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/first-invalid-frontend-unhandled-control.log",
+      "file": "docs/audits/evidence/sqlite-startup-first-invalid-frontend-unhandled-control.txt",
+      "raw_sha256": "8d515017c025582856a81a023cfb5be2188e37b064430f0ac6cc887b41d46ac1",
+      "raw_bytes": 7791,
+      "sha256": "a9064e339e866cdc698fe9096bcc35ad2e10a58a0959252389a767efa08dd447",
+      "bytes": 2152,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-after-retained.json",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-after-retained.json",
+      "raw_sha256": "47de95abf5376d3194d26e7cd3931f3fb24ecfad99fbd5f3952919aee67fe681",
+      "raw_bytes": 1024,
+      "sha256": "47de95abf5376d3194d26e7cd3931f3fb24ecfad99fbd5f3952919aee67fe681",
+      "bytes": 1024,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-after-retained.jsonl",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-after-retained.jsonl",
+      "raw_sha256": "e9d4199c53c1d37ef393e7e8ba25efa76e5073f8577e36dff0cfb35148cdebfe",
+      "raw_bytes": 3176,
+      "sha256": "e9d4199c53c1d37ef393e7e8ba25efa76e5073f8577e36dff0cfb35148cdebfe",
+      "bytes": 3176,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-after-retained.log",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-after-retained.txt",
+      "raw_sha256": "4bd9cbf0d8c7ec33ba8ba8a16a5100ce2341f5be62a99ae348a428b6ded42458",
+      "raw_bytes": 269,
+      "sha256": "ab896a7491fd97fc7f801a7d2ec84a801a5ddc43896eebd746304e6db19ef2a4",
+      "bytes": 268,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-after-retained.patch",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-after-retained.patch.json",
+      "raw_sha256": "3fb8a6670d93a2081a9f5aad3d4e05f8f810d366c4847e30b27aa9d7207fd529",
+      "raw_bytes": 7497,
+      "sha256": "e82c95f30e46c0406776c9d5a73a372b8e0e83af83831baef34522672d2df361",
+      "bytes": 8655,
+      "representation": "Lossless JSON line array; reconstruct and check raw_sha256 before applying"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-after.json",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-after.json",
+      "raw_sha256": "8013bf33c0394170512617980652f1d6d83c85b0f3d9ac09af1dd01b2ae0e457",
+      "raw_bytes": 767,
+      "sha256": "8013bf33c0394170512617980652f1d6d83c85b0f3d9ac09af1dd01b2ae0e457",
+      "bytes": 767,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-after.jsonl",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-after.jsonl",
+      "raw_sha256": "b5f2a98ee8e4f637541209ec8e86d78c457ec11a5ee203e0cf074ad9fb0ec41c",
+      "raw_bytes": 3176,
+      "sha256": "b5f2a98ee8e4f637541209ec8e86d78c457ec11a5ee203e0cf074ad9fb0ec41c",
+      "bytes": 3176,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-after.log",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-after.txt",
+      "raw_sha256": "dcb8a3d27830b854579c79c2b66e240767d7b0a875525b6aa0dc9551bea89aac",
+      "raw_bytes": 270,
+      "sha256": "4af1b25f73ef443b2ca055c34cf18934a0cfeaaff8f0aa4cbab17ef439e7d6ef",
+      "bytes": 269,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-before-retained.json",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-before-retained.json",
+      "raw_sha256": "2e6dd6cbc68b05793855008325eaf2a5b6a074a96c3ae4db9edaa3152bffa12b",
+      "raw_bytes": 1028,
+      "sha256": "2e6dd6cbc68b05793855008325eaf2a5b6a074a96c3ae4db9edaa3152bffa12b",
+      "bytes": 1028,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-before-retained.jsonl",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-before-retained.jsonl",
+      "raw_sha256": "570ae7a2a9f2448f193612535bb8b39b26d4f5c46576744c2c5316dc71211a0e",
+      "raw_bytes": 302,
+      "sha256": "570ae7a2a9f2448f193612535bb8b39b26d4f5c46576744c2c5316dc71211a0e",
+      "bytes": 302,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-before-retained.log",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-before-retained.txt",
+      "raw_sha256": "1769ec7615bf07701b9e93e23a89c91f642748b3734042c3b7624321bb5345c5",
+      "raw_bytes": 2544,
+      "sha256": "c541ff9d1ac8216ce8bd81641a3244295c195fcecb8b5075103878c26385618f",
+      "bytes": 2543,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-before-retained.patch",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-before-retained.patch.json",
+      "raw_sha256": "0cf1e0c74c5e15a738ebeb040bb7c55330d1147a252ec95cb84670c18b2db6b6",
+      "raw_bytes": 1568,
+      "sha256": "bbdad797d51de564d7be0528245f61e395992ca38931e2f3f75e9397c4baca68",
+      "bytes": 1961,
+      "representation": "Lossless JSON line array; reconstruct and check raw_sha256 before applying"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-before.json",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-before.json",
+      "raw_sha256": "1071e2abb584871c65feaa3d476a2768a0c2a7a1d3157a78a80f26208266b2ae",
+      "raw_bytes": 769,
+      "sha256": "1071e2abb584871c65feaa3d476a2768a0c2a7a1d3157a78a80f26208266b2ae",
+      "bytes": 769,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-before.jsonl",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-before.jsonl",
+      "raw_sha256": "a5a48111a413c03606e921c2dfd391cf70ac670842dce9329ded00e0337d17fb",
+      "raw_bytes": 77,
+      "sha256": "a5a48111a413c03606e921c2dfd391cf70ac670842dce9329ded00e0337d17fb",
+      "bytes": 77,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-before.log",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-before.txt",
+      "raw_sha256": "ee0b1ea025a071e8a21eece64292c2fee19e451cc7289c923683bdfe1c5aec19",
+      "raw_bytes": 1835,
+      "sha256": "c02e03579898ac5171c98a2f1de4512ebfd827b02c38e23a1e242dde57f2d3a9",
+      "bytes": 1834,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-final.json",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-final.json",
+      "raw_sha256": "ef2a016533291263c688aca31a52fb110f6b84426ccc2b90f7ec87cea11fe7b6",
+      "raw_bytes": 988,
+      "sha256": "ef2a016533291263c688aca31a52fb110f6b84426ccc2b90f7ec87cea11fe7b6",
+      "bytes": 988,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-final.jsonl",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-final.jsonl",
+      "raw_sha256": "ee03ef099cdb06b1e7f17721ba42625c48288a37e3dcd10dae102bdcf4f57887",
+      "raw_bytes": 3180,
+      "sha256": "ee03ef099cdb06b1e7f17721ba42625c48288a37e3dcd10dae102bdcf4f57887",
+      "bytes": 3180,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-final.log",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-final.txt",
+      "raw_sha256": "ea7314fe08e950a4861104b50aff1d9184cdd285cc6bbf932bd863444d3ee839",
+      "raw_bytes": 269,
+      "sha256": "98d53cf779254c32738418663b598c70412e8e93c670e7327afc213b0a6d767e",
+      "bytes": 268,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-final.patch",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-final.patch.json",
+      "raw_sha256": "5bb91ecc562b1935a39705400a4fa63dcd97b74841fcbdaaac6be6f3f4982240",
+      "raw_bytes": 14748,
+      "sha256": "7774f6b074b75ef9fdfc3003631473f2ae0daf8ab81f0539b5c3c3e0ed064e7e",
+      "bytes": 17106,
+      "representation": "Lossless JSON line array; reconstruct and check raw_sha256 before applying"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after-object-url.json",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after-object-url.json",
+      "raw_sha256": "e43fe1e8dbc27601f06a5a1b16f5ca6706ee72f74502dd1997df01c668ae3f5e",
+      "raw_bytes": 1009,
+      "sha256": "e43fe1e8dbc27601f06a5a1b16f5ca6706ee72f74502dd1997df01c668ae3f5e",
+      "bytes": 1009,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after-object-url.jsonl",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after-object-url.jsonl",
+      "raw_sha256": "9d8cae7deb466e3df64a738a9155b9a7f5f1f676c926d1041aae8cdd9a848578",
+      "raw_bytes": 4518,
+      "sha256": "9d8cae7deb466e3df64a738a9155b9a7f5f1f676c926d1041aae8cdd9a848578",
+      "bytes": 4518,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after-object-url.log",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after-object-url.txt",
+      "raw_sha256": "bd67d2e234f51cac7a3ce6000922f238941e1484287c2569050f48ac6ba40e75",
+      "raw_bytes": 270,
+      "sha256": "c9aa092a9d88adfc6766b6555aec11861a6c5d3ccf4f51ac701c93aac525e963",
+      "bytes": 269,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after-object-url.patch",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after-object-url.patch.json",
+      "raw_sha256": "942417d916308118265226a32759ea79d57960ef81d067931bfe243dcad28fac",
+      "raw_bytes": 15188,
+      "sha256": "c66ae0fa66780b65f3500eda4fd35d2970bc88e779f190be716150ed4c6fa39a",
+      "bytes": 17630,
+      "representation": "Lossless JSON line array; reconstruct and check raw_sha256 before applying"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after-shared-fixed.json",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after-shared-fixed.json",
+      "raw_sha256": "437e13ef883711f9e0432ed99c6088c05c31f2c8be4c531b00726e03d3f4eb8f",
+      "raw_bytes": 1197,
+      "sha256": "437e13ef883711f9e0432ed99c6088c05c31f2c8be4c531b00726e03d3f4eb8f",
+      "bytes": 1197,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after-shared-fixed.jsonl",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after-shared-fixed.jsonl",
+      "raw_sha256": "fc7e18255710cfd9dc105b436722a83ea42d75f424ba9755925d9ee48b316132",
+      "raw_bytes": 10284,
+      "sha256": "fc7e18255710cfd9dc105b436722a83ea42d75f424ba9755925d9ee48b316132",
+      "bytes": 10284,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after-shared-fixed.log",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after-shared-fixed.txt",
+      "raw_sha256": "bf7d6b10e942bae30ea766c579a6c738f3c43abc5d40f49d69761259375ce873",
+      "raw_bytes": 271,
+      "sha256": "b06e63264045891914dff1f6428c9de11ba762e0e7d3988aa4c629924624966f",
+      "bytes": 270,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after-shared-fixed.patch",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after-shared-fixed.patch.json",
+      "raw_sha256": "f692b2568c90690fda9644bf9ca4beb3bb2de896a901ee13eff105a633f0da92",
+      "raw_bytes": 23958,
+      "sha256": "1fd5450c6545823619874ccd399779c603e76fe5a31698faaceebd6932e35bc9",
+      "bytes": 27703,
+      "representation": "Lossless JSON line array; reconstruct and check raw_sha256 before applying"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after-shared.json",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after-shared.json",
+      "raw_sha256": "83beb58d159f1f63f59efcb4d7a788766220f9599d60427a58affc315a4e7db9",
+      "raw_bytes": 1178,
+      "sha256": "83beb58d159f1f63f59efcb4d7a788766220f9599d60427a58affc315a4e7db9",
+      "bytes": 1178,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after-shared.jsonl",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after-shared.jsonl",
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "raw_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after-shared.log",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after-shared.txt",
+      "raw_sha256": "46b7da3e7e8a2954fb71039faec25a1ae8f5d2598ead153fc95e06e151a6912a",
+      "raw_bytes": 7803,
+      "sha256": "e909bb34c00593fd28af34b6f305db96a31d47bfb5edd6ccd6882c08614d57af",
+      "bytes": 2164,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after-shared.patch",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after-shared.patch.json",
+      "raw_sha256": "bb853caf8caa0cc577e247d9cfe06287c586573b2d13a9189a3ccf912d3d402e",
+      "raw_bytes": 23613,
+      "sha256": "2d7c10d564a932428e7ba836daa53817a97b7eddb1ad46b6f59c41a603bf311d",
+      "bytes": 27297,
+      "representation": "Lossless JSON line array; reconstruct and check raw_sha256 before applying"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after.json",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after.json",
+      "raw_sha256": "a8c66e345495645bfb0c375516411e67fd3f27aec45abcbcd897e8e9066e2fa5",
+      "raw_bytes": 975,
+      "sha256": "a8c66e345495645bfb0c375516411e67fd3f27aec45abcbcd897e8e9066e2fa5",
+      "bytes": 975,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after.jsonl",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after.jsonl",
+      "raw_sha256": "ce75a875b24ec4821cef18b39e4168f1c847a65fe5c80e3656c057d0f7eef50c",
+      "raw_bytes": 3324,
+      "sha256": "ce75a875b24ec4821cef18b39e4168f1c847a65fe5c80e3656c057d0f7eef50c",
+      "bytes": 3324,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after.log",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after.txt",
+      "raw_sha256": "31d0ec1b4a1b80f1116fb6a762b3d252a9f8863ef9cb0cd67140b73997a9eefe",
+      "raw_bytes": 1652,
+      "sha256": "1d3ab05874f2e28238e8f69036980fd70a2f55734ae142ef205f1c7b7fe3b452",
+      "bytes": 1651,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-after.patch",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-after.patch.json",
+      "raw_sha256": "526396bd1ae2e5bb15da01c7b0f08587637455a80aa8fd51639e9e1b344d3f5b",
+      "raw_bytes": 14794,
+      "sha256": "9e9aa8595ec68f83d70b7073a9cc4aed65d5c0ff8a3ed11465d1ddf2e5500af7",
+      "bytes": 17182,
+      "representation": "Lossless JSON line array; reconstruct and check raw_sha256 before applying"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-before-shared.json",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-before-shared.json",
+      "raw_sha256": "77a25bdc8eed3e837e9151731216a67dfa86ddf77cec3dd93c58eabc6ef56788",
+      "raw_bytes": 923,
+      "sha256": "77a25bdc8eed3e837e9151731216a67dfa86ddf77cec3dd93c58eabc6ef56788",
+      "bytes": 923,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-before-shared.jsonl",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-before-shared.jsonl",
+      "raw_sha256": "d76cbde9f64eebb980ab276d6af1cd0070c8999ea1513f3922ecb2cb1cad6b64",
+      "raw_bytes": 640,
+      "sha256": "d76cbde9f64eebb980ab276d6af1cd0070c8999ea1513f3922ecb2cb1cad6b64",
+      "bytes": 640,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-before-shared.log",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-before-shared.txt",
+      "raw_sha256": "29412eaa2f7dc3df8140ebbf776af4c946402dd3cb74dbf092d8650c4a787a9f",
+      "raw_bytes": 1327,
+      "sha256": "9507a125bf5bcbed754fbf2a37a6553ebc34ef67f092e4f908f2219f55308394",
+      "bytes": 1326,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-before-shared.patch",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-before-shared.patch.json",
+      "raw_sha256": "ccd4eaae2d10ed2ae0a270a2be04732ac5815a333e5ed734b9320791ba62d52c",
+      "raw_bytes": 15176,
+      "sha256": "f4a4965194cdd8992485051614262b7e1f6146ab2c95e898810eac88fab909a7",
+      "bytes": 17618,
+      "representation": "Lossless JSON line array; reconstruct and check raw_sha256 before applying"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-before.json",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-before.json",
+      "raw_sha256": "4db60a1e2d5bebd49cd27aa37498bafb8c7660c1cd63de8b97a9ab95a6fbd49f",
+      "raw_bytes": 978,
+      "sha256": "4db60a1e2d5bebd49cd27aa37498bafb8c7660c1cd63de8b97a9ab95a6fbd49f",
+      "bytes": 978,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-before.jsonl",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-before.jsonl",
+      "raw_sha256": "e2879925b70cfde6147372068f814fbb7f6df0052180a0b04d79075ecb1c81ad",
+      "raw_bytes": 639,
+      "sha256": "e2879925b70cfde6147372068f814fbb7f6df0052180a0b04d79075ecb1c81ad",
+      "bytes": 639,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-before.log",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-before.txt",
+      "raw_sha256": "2e147c80e4f96b250bb33ec643f39233de1edd5d2231b98039f7b7bc5c758d43",
+      "raw_bytes": 4039,
+      "sha256": "18460b8fbc915aeef0808edd9d694b7f700976c5ec5d0bc3422d3b0d5569e971",
+      "bytes": 4038,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-before.patch",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-before.patch.json",
+      "raw_sha256": "53f75c7f43716f2726f5a41fa6febe7ba591db897ccccfb5ffdae10337ec7830",
+      "raw_bytes": 7861,
+      "sha256": "9622d9f52e8b7e97e9e9a8852d94c0e6b75fd9596cf36eb14a1db35e8aad5e6d",
+      "bytes": 9103,
+      "representation": "Lossless JSON line array; reconstruct and check raw_sha256 before applying"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-unhandled-control-source.patch",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-unhandled-control-source.patch.json",
+      "raw_sha256": "0cf8a3d088e1171b2a29e30f8d3025afdb5727684f446cee71642febb2395413",
+      "raw_bytes": 21652,
+      "sha256": "62a960489eb92c80c8f5d71208dc50e616608aba0ab801699c6edbab7c1c7c86",
+      "bytes": 25238,
+      "representation": "Lossless JSON line array; reconstruct and check raw_sha256 before applying"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-unhandled-control.json",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-unhandled-control.json",
+      "raw_sha256": "9529ca14773f90658d97e73927cfac682b777654bc78c286e6b20e2cce6614bf",
+      "raw_bytes": 597,
+      "sha256": "9529ca14773f90658d97e73927cfac682b777654bc78c286e6b20e2cce6614bf",
+      "bytes": 597,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-unhandled-control.log",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-unhandled-control.txt",
+      "raw_sha256": "7dfee5442a4ff36c43c6adf738ab17f78109b358357eae8b09231aa035979a5d",
+      "raw_bytes": 2250,
+      "sha256": "69d7fc3ad516f6cd6c88a53f59bb9e0f8cdea85f690143099ffba00689425b9f",
+      "bytes": 2249,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-delay-proof.py",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-delay-proof.py.txt",
+      "raw_sha256": "b3078e3e8fbe06ce8264c0ab44420b641b0388cc01ff61579f1ac589f59ad668",
+      "raw_bytes": 2907,
+      "sha256": "b3078e3e8fbe06ce8264c0ab44420b641b0388cc01ff61579f1ac589f59ad668",
+      "bytes": 2907,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-release-delay-proof.py",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-release-delay-proof.py.txt",
+      "raw_sha256": "bfea4fa9fcea39de693dfef7a7e11fadb9fa58bc6b071635ffc7a12bddaaa514",
+      "raw_bytes": 3090,
+      "sha256": "bfea4fa9fcea39de693dfef7a7e11fadb9fa58bc6b071635ffc7a12bddaaa514",
+      "bytes": 3090,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-rejection-control.py",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-rejection-control.py.txt",
+      "raw_sha256": "c394f628c3f6674a3dd7e3e3c40a624294fe0f8448aca6dbaa5a45eec526a44e",
+      "raw_bytes": 1901,
+      "sha256": "c394f628c3f6674a3dd7e3e3c40a624294fe0f8448aca6dbaa5a45eec526a44e",
+      "bytes": 1901,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/compare-frontend-assertions.mjs",
+      "file": "docs/audits/evidence/sqlite-startup-compare-frontend-assertions.mjs.txt",
+      "raw_sha256": "5587c286e7f72004776b5762c0f2c6ebd6d0abd1db4f61080e0f9481cdb9b33f",
+      "raw_bytes": 2086,
+      "sha256": "5587c286e7f72004776b5762c0f2c6ebd6d0abd1db4f61080e0f9481cdb9b33f",
+      "bytes": 2086,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/frontend-assertion-integrity.json",
+      "file": "docs/audits/evidence/sqlite-startup-frontend-assertion-integrity.json",
+      "raw_sha256": "643df1401bdc8d8d76791720a3fb09eb701300376120f0ce373f549d5d017b64",
+      "raw_bytes": 784,
+      "sha256": "643df1401bdc8d8d76791720a3fb09eb701300376120f0ce373f549d5d017b64",
+      "bytes": 784,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/native-object-url-probe.json",
+      "file": "docs/audits/evidence/sqlite-startup-native-object-url-probe.json",
+      "raw_sha256": "2a6e3a2964d97250ac4fe3905af9318c47c2cd25e3bcdba4157e1a8da2499d93",
+      "raw_bytes": 249,
+      "sha256": "2a6e3a2964d97250ac4fe3905af9318c47c2cd25e3bcdba4157e1a8da2499d93",
+      "bytes": 249,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/harness-primary-excerpts.txt",
+      "file": "docs/audits/evidence/sqlite-startup-harness-primary-excerpts.txt",
+      "raw_sha256": "4f3cb1830606df0dc3e477356c527074c891257b6beb609eae4b5ca4ce1a2ac5",
+      "raw_bytes": 1155,
+      "sha256": "341e451e604ada8976bd63728344faa0a7062f754f95a7e7218a7a8d9a15ff80",
+      "bytes": 1153,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/waitfor-research.json",
+      "file": "docs/audits/evidence/sqlite-startup-waitfor-research.json",
+      "raw_sha256": "d38455881c1abd16da2915845545d5a4f3586250622e3b8e65a7dde48b005b7d",
+      "raw_bytes": 452,
+      "sha256": "d38455881c1abd16da2915845545d5a4f3586250622e3b8e65a7dde48b005b7d",
+      "bytes": 452,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/waitfor-primary-excerpt.txt",
+      "file": "docs/audits/evidence/sqlite-startup-waitfor-primary-excerpt.txt",
+      "raw_sha256": "b80c16ef9741290280c5473f932648a252120660e518cd9cab95735222015fab",
+      "raw_bytes": 1258,
+      "sha256": "b80c16ef9741290280c5473f932648a252120660e518cd9cab95735222015fab",
+      "bytes": 1258,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/test-integrity-final.json",
+      "file": "docs/audits/evidence/sqlite-startup-test-integrity-final.json",
+      "raw_sha256": "13042509e0b4ea95725bde2aa28f8ac4290173ab9b16ca3fb3bf028fe4f808f7",
+      "raw_bytes": 1199,
+      "sha256": "13042509e0b4ea95725bde2aa28f8ac4290173ab9b16ca3fb3bf028fe4f808f7",
+      "bytes": 1199,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/freeze-delta.json",
+      "file": "docs/audits/evidence/sqlite-startup-freeze-delta.json",
+      "raw_sha256": "223c1fb66a02e6a45c084b30abccc728f5769ce7e3e8f6ecf64271f2ae55adf5",
+      "raw_bytes": 477,
+      "sha256": "223c1fb66a02e6a45c084b30abccc728f5769ce7e3e8f6ecf64271f2ae55adf5",
+      "bytes": 477,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/baseline-budget-tests.log",
+      "file": "docs/audits/evidence/sqlite-startup-baseline-budget-tests.txt",
+      "raw_sha256": "967b4ec2fc5ddace95435e293e21b857ce0d27d77d776c16de65d12a79fdfab7",
+      "raw_bytes": 2587,
+      "sha256": "8afc8bf754b054f090a5075d221827ba9afd467a90de07637ff6ea5c0247d71b",
+      "bytes": 2577,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/baseline-budget-tests.json",
+      "file": "docs/audits/evidence/sqlite-startup-baseline-budget-tests.json",
+      "raw_sha256": "76e9535588229fd354d368e07541adc26dbd15bd702b4d18512e2eda9a257bba",
+      "raw_bytes": 474,
+      "sha256": "76e9535588229fd354d368e07541adc26dbd15bd702b4d18512e2eda9a257bba",
+      "bytes": 474,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/budget-preflight.json",
+      "file": "docs/audits/evidence/sqlite-startup-budget-preflight.json",
+      "raw_sha256": "d53e388c56b1a7eb04ca500ce5a14aef745c46ca0379bdc883ef41169a3b078f",
+      "raw_bytes": 792,
+      "sha256": "d53e388c56b1a7eb04ca500ce5a14aef745c46ca0379bdc883ef41169a3b078f",
+      "bytes": 792,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/typecheck-budget-final.log",
+      "file": "docs/audits/evidence/sqlite-startup-typecheck-budget-final.txt",
+      "raw_sha256": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+      "raw_bytes": 40,
+      "sha256": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+      "bytes": 39,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/focused-budget-final.log",
+      "file": "docs/audits/evidence/sqlite-startup-focused-budget-final.txt",
+      "raw_sha256": "10e86bc029d2c1614230dc21842388ed2c0f364782a168ea483fee558b1be533",
+      "raw_bytes": 230,
+      "sha256": "bc2cd6f02ac7f08783c37cddd3181cb68faced5134674fffd1c8b7b296a14f53",
+      "bytes": 229,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/preflight-before-release-waits.json",
+      "file": "docs/audits/evidence/sqlite-startup-preflight-before-release-waits.json",
+      "raw_sha256": "f385784f383cca5c1b08ab786de6e91ac83f6c50ef8ee98401f0bba00913c5f5",
+      "raw_bytes": 588,
+      "sha256": "f385784f383cca5c1b08ab786de6e91ac83f6c50ef8ee98401f0bba00913c5f5",
+      "bytes": 588,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/focused-before-release-waits.log",
+      "file": "docs/audits/evidence/sqlite-startup-focused-before-release-waits.txt",
+      "raw_sha256": "43057e1dc7969e3e0eaf197646710831e97e355276590b4e3de1597e65557776",
+      "raw_bytes": 3897,
+      "sha256": "a2ac3a7ad73fe5a24e67b4a1936d54beb7150ad38c5ba256fdb048fdbf070812",
+      "bytes": 3896,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/preflight-before-shared-storage.json",
+      "file": "docs/audits/evidence/sqlite-startup-preflight-before-shared-storage.json",
+      "raw_sha256": "4de23722e4779ae3ebdd100629917db7863fb5bd484890b787f650020a594419",
+      "raw_bytes": 766,
+      "sha256": "4de23722e4779ae3ebdd100629917db7863fb5bd484890b787f650020a594419",
+      "bytes": 766,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/focused-before-shared-storage.log",
+      "file": "docs/audits/evidence/sqlite-startup-focused-before-shared-storage.txt",
+      "raw_sha256": "fd833d9da798aa89a56ad7dcb12f75ece4e55edda411cd848965dfcec156cf7c",
+      "raw_bytes": 1262,
+      "sha256": "99927d414cc3475198867faaf52594251ae6a7d3215dbd55ada780f7c093d3ff",
+      "bytes": 1261,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/shared-preflight.json",
+      "file": "docs/audits/evidence/sqlite-startup-shared-preflight.json",
+      "raw_sha256": "fe86e21dc74c998340f8542ffe11816f0300fe8ccf5f2796f7173e25b72e521a",
+      "raw_bytes": 363,
+      "sha256": "fe86e21dc74c998340f8542ffe11816f0300fe8ccf5f2796f7173e25b72e521a",
+      "bytes": 363,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/typecheck-shared-final.log",
+      "file": "docs/audits/evidence/sqlite-startup-typecheck-shared-final.txt",
+      "raw_sha256": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+      "raw_bytes": 40,
+      "sha256": "868b2bf2be0cafb615561743452ffa19b2d529410a2a84188f685cfe5d0fec95",
+      "bytes": 39,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/mobile-shared-final.log",
+      "file": "docs/audits/evidence/sqlite-startup-mobile-shared-final.txt",
+      "raw_sha256": "0297e6764212286425c9a34b489f350a070043325e142a7b1d3898b9d2074644",
+      "raw_bytes": 230,
+      "sha256": "5b30e5d36455910a53ffaf5fca33d68b783dae6fef4110a1b5a945223f1d36f4",
+      "bytes": 229,
+      "representation": "ANSI/trailing whitespace/extra EOF blank lines removed"
+    },
+    {
+      "source": "work/sqlite-startup/source-freeze-final.json",
+      "file": "docs/audits/evidence/sqlite-startup-inputs-final.json",
+      "raw_sha256": "ad6f9696fc20417c76750a6d1fa3cd8ef97c24338bdeaf9473b5a4217565440d",
+      "raw_bytes": 127021,
+      "sha256": "ad6f9696fc20417c76750a6d1fa3cd8ef97c24338bdeaf9473b5a4217565440d",
+      "bytes": 127021,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/source-freeze-harness.json",
+      "file": "docs/audits/evidence/sqlite-startup-inputs-harness.json",
+      "raw_sha256": "82332c00f81d83c3dd1875b5fde3eca64a74649c9c9495722862baed10f2d0fe",
+      "raw_bytes": 127021,
+      "sha256": "82332c00f81d83c3dd1875b5fde3eca64a74649c9c9495722862baed10f2d0fe",
+      "bytes": 127021,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/source-freeze-local-waits.json",
+      "file": "docs/audits/evidence/sqlite-startup-inputs-local-waits.json",
+      "raw_sha256": "f6680e5ca23ecc2c8ce8155367f972d70ff611f906ff8d2690229ff378651d9e",
+      "raw_bytes": 127021,
+      "sha256": "f6680e5ca23ecc2c8ce8155367f972d70ff611f906ff8d2690229ff378651d9e",
+      "bytes": 127021,
+      "representation": "Original bytes"
+    },
+    {
+      "source": "work/sqlite-startup/native-object-url-probe.mjs",
+      "file": "docs/audits/evidence/sqlite-startup-native-object-url-probe.mjs.txt",
+      "raw_sha256": "509a13e0952e730fc70e1c90264d14a4c1bc86ec1e5fabacb47be219592e9143",
+      "raw_bytes": 1094,
+      "sha256": "509a13e0952e730fc70e1c90264d14a4c1bc86ec1e5fabacb47be219592e9143",
+      "bytes": 1094
+    },
+    {
+      "source": "work/sqlite-startup/jsdom-close-primary-excerpt.txt",
+      "file": "docs/audits/evidence/sqlite-startup-jsdom-close-primary-excerpt.txt",
+      "raw_sha256": "032960ce58204147fc51661a960077f663f24d59620250ec7b1cda54aeafabd2",
+      "raw_bytes": 724,
+      "sha256": "032960ce58204147fc51661a960077f663f24d59620250ec7b1cda54aeafabd2",
+      "bytes": 724
+    },
+    {
+      "source": "work/sqlite-startup/jsdom-close-research.json",
+      "file": "docs/audits/evidence/sqlite-startup-jsdom-close-research.json",
+      "raw_sha256": "6b12d0a406876744b6824ab33173502b38d279c1fa04b2cb85d206125c40c5b7",
+      "raw_bytes": 429,
+      "sha256": "6b12d0a406876744b6824ab33173502b38d279c1fa04b2cb85d206125c40c5b7",
+      "bytes": 429
+    },
+    {
+      "source": "work/sqlite-startup/full-delivery.log",
+      "file": "docs/audits/evidence/sqlite-startup-full-final.txt",
+      "raw_sha256": "ffe5e48afc34cc32b68b1e5617dce8395f47940dfc760b3d6ad6f6ea0e1957a4",
+      "raw_bytes": 604,
+      "sha256": "b7c43f8ae84f03de64d4214bdd857759ea00a378686c2e5bd49ccf957026c801",
+      "bytes": 603
+    },
+    {
+      "source": "work/sqlite-startup/delivery-regression.json",
+      "file": "docs/audits/evidence/sqlite-startup-regression-final.json",
+      "raw_sha256": "6735f8a6369535ed666e70bbfadaec4fcdea41f6fd7ec9af12f457c187f2b89a",
+      "raw_bytes": 574,
+      "sha256": "6735f8a6369535ed666e70bbfadaec4fcdea41f6fd7ec9af12f457c187f2b89a",
+      "bytes": 574
+    },
+    {
+      "source": "work/sqlite-startup/full-budget-final.log",
+      "file": "docs/audits/evidence/sqlite-startup-harness-before-fixture-full.txt",
+      "raw_sha256": "ea38fffd2ffdd5e561e73d9c748f5a1e62cb51ad01659a990582f35dd5cc3b69",
+      "raw_bytes": 2153,
+      "sha256": "f96d061b568004bbbe381f07948e0c38a0e7df96807a851270642a98b488da0f",
+      "bytes": 2152
+    },
+    {
+      "source": "work/sqlite-startup/budget-regression.json",
+      "file": "docs/audits/evidence/sqlite-startup-harness-before-fixture-full.json",
+      "raw_sha256": "7597a3b56913f16ec6c6a829dd5d84fd6100b3f01bd4efea95b28a3f2a6f2ada",
+      "raw_bytes": 578,
+      "sha256": "7597a3b56913f16ec6c6a829dd5d84fd6100b3f01bd4efea95b28a3f2a6f2ada",
+      "bytes": 578
+    },
+    {
+      "source": "work/sqlite-startup/full-serial-final.log",
+      "file": "docs/audits/evidence/sqlite-startup-serial-failed.txt",
+      "raw_sha256": "b425398a7e0e3a5441d57a16c7e60adf4c8e47fabce88ba61e4c4329d38debb2",
+      "raw_bytes": 2788,
+      "sha256": "d4da5ee4f02577fd5098c9bcef6f0e3af8e2ba374c5a7561747d672320164dfa",
+      "bytes": 2787
+    },
+    {
+      "source": "work/sqlite-startup/serial-regression.json",
+      "file": "docs/audits/evidence/sqlite-startup-serial-failed.json",
+      "raw_sha256": "629a114920d5b50e31a4dc21fd316e960c7d30f1b39c14ec43fa41e6e06167ad",
+      "raw_bytes": 384,
+      "sha256": "629a114920d5b50e31a4dc21fd316e960c7d30f1b39c14ec43fa41e6e06167ad",
+      "bytes": 384
+    },
+    {
+      "source": "work/sqlite-startup/baseline-timing-cases.log",
+      "file": "docs/audits/evidence/sqlite-startup-timing-baseline.txt",
+      "raw_sha256": "47e13ab731a676d7bd7947f22b631713856f1653f79e9f2d6b8b1fed29531a47",
+      "raw_bytes": 257,
+      "sha256": "66f18a1edf5e8f22e0f174503e322f7f3ae2ca40fe38b1c797e2ae5e5e5bbd6f",
+      "bytes": 256
+    },
+    {
+      "source": "work/sqlite-startup/candidate-timing-cases.log",
+      "file": "docs/audits/evidence/sqlite-startup-timing-candidate.txt",
+      "raw_sha256": "06c106e29358a0e4eaae2e76df9f3d6494e94ac5c1f786e3f04817ee8f32b9f6",
+      "raw_bytes": 228,
+      "sha256": "225a887ce5590d738a35da4b8a48c07e6de4bb04c171b89193b45a646e8b2ddc",
+      "bytes": 227
+    },
+    {
+      "source": "work/sqlite-startup/timing-cases-comparison.json",
+      "file": "docs/audits/evidence/sqlite-startup-timing-comparison.json",
+      "raw_sha256": "bcd1812ec37895709f7343b6deb6f7e6971f5929bf070fadfbc949af9c9bb58a",
+      "raw_bytes": 636,
+      "sha256": "bcd1812ec37895709f7343b6deb6f7e6971f5929bf070fadfbc949af9c9bb58a",
+      "bytes": 636
+    },
+    {
+      "source": "work/sqlite-startup/baseline-catalog-failure.log",
+      "file": "docs/audits/evidence/sqlite-startup-baseline-catalog-failure.txt",
+      "raw_sha256": "938b7a677d38585f50b36a5803def4c16ca29f3407c7212572b0c79ab855cddb",
+      "raw_bytes": 1325,
+      "sha256": "af85afb7f117cca39f707908141d380bdac0f4f6011c6536750e69aa12842ad8",
+      "bytes": 1324
+    },
+    {
+      "source": "work/sqlite-startup/baseline-catalog-failure.json",
+      "file": "docs/audits/evidence/sqlite-startup-baseline-catalog-failure.json",
+      "raw_sha256": "b3579fd41ebf70028f2e10d258536a0e1a203f150020da7e489cf76dd34494f4",
+      "raw_bytes": 679,
+      "sha256": "b3579fd41ebf70028f2e10d258536a0e1a203f150020da7e489cf76dd34494f4",
+      "bytes": 679
+    },
+    {
+      "source": "work/sqlite-startup/check-baseline-catalog.py",
+      "file": "docs/audits/evidence/sqlite-startup-baseline-catalog-driver.py.txt",
+      "raw_sha256": "6ed34440030419b2a2a242f526b952482bcd7b6e85771faac0b06c4961cbcc35",
+      "raw_bytes": 1459,
+      "sha256": "6ed34440030419b2a2a242f526b952482bcd7b6e85771faac0b06c4961cbcc35",
+      "bytes": 1459
+    },
+    {
+      "source": "work/sqlite-startup/secret-staged.log",
+      "file": "docs/audits/evidence/sqlite-startup-secret-staged.txt",
+      "raw_sha256": "7d457035c7f5e6bbf5bc578fa935808e0c994876144d5b8353834d983e04c4eb",
+      "raw_bytes": 109,
+      "sha256": "7d457035c7f5e6bbf5bc578fa935808e0c994876144d5b8353834d983e04c4eb",
+      "bytes": 109
+    },
+    {
+      "source": "work/sqlite-startup/secret-staged.json",
+      "file": "docs/audits/evidence/sqlite-startup-secret-staged.json",
+      "raw_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "raw_bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "bytes": 3
+    },
+    {
+      "source": "work/sqlite-startup/secret-exported.log",
+      "file": "docs/audits/evidence/sqlite-startup-secret-exported.txt",
+      "raw_sha256": "d91279fd3811e947f34ec132c697c581f4b8a59f506c5727fcd2618a6200846f",
+      "raw_bytes": 79,
+      "sha256": "d91279fd3811e947f34ec132c697c581f4b8a59f506c5727fcd2618a6200846f",
+      "bytes": 79
+    },
+    {
+      "source": "work/sqlite-startup/secret-exported.json",
+      "file": "docs/audits/evidence/sqlite-startup-secret-exported.json",
+      "raw_sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "raw_bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "bytes": 3
+    },
+    {
+      "source": "work/sqlite-startup/secret-scans.json",
+      "file": "docs/audits/evidence/sqlite-startup-secret-scans.json",
+      "raw_sha256": "f7f8a396d9ac1feed55b6885ba6e202698d193b11be1160f34eb05a70716981e",
+      "raw_bytes": 737,
+      "sha256": "f7f8a396d9ac1feed55b6885ba6e202698d193b11be1160f34eb05a70716981e",
+      "bytes": 737
+    }
+  ]
+}

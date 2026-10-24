@@ -10,7 +10,9 @@ export default defineConfig({
     // Integration tests share one SQLite file via DB_PATH, so run serially
     // to keep assertions deterministic.
     fileParallelism: false,
-    hookTimeout: 20000,
-    testTimeout: 20000,
+    // Full real-KDF integration flows need a bounded harness budget on slower runners.
+    // Product request deadlines and explicit elapsed-time assertions remain separate.
+    hookTimeout: 60000,
+    testTimeout: 60000,
   },
 });

@@ -1499,3 +1499,114 @@ simultaneous startup, physical power-loss, Windows/hosting/storage/restore/mixed
 acceptance and independent accounting/security/accessibility review remain. Complete
 control totals and the broader release hold are unchanged; no new owner engineering task
 is required for this increment.
+
+## 24 October 2026 — bounded cross-process SQLite startup
+
+Increment baseline `production`: `0c2ed900239ce50db297ebd957d9f34b6ec0b0cc`, matched to the live
+remote before edits. See the [contract](sqlite-startup-contract.md),
+[recovery](../operations/sqlite-startup.md) and [verification/hash manifest](evidence/sqlite-startup-verification.json).
+Final complete-run commands/results belong to that manifest; failed/intermediate attempts remain below.
+
+Two local availability defects were reproduced before runtime edits. Real trigger initialization
+exits with SQLite error 5 under a controlled short writer. First-run seed read-before-insert
+exits with extended error 2067 when both processes see zero users. Identical driver bytes then
+show both processes completing after serialization, with the synthetic paid payslip/revision and sentinel setting
+unchanged, integrity `ok`, empty foreign-key checks, no open transaction and runtime timeout 0.
+The originals did not demonstrate duplicate administrators or lost payroll.
+
+The adjacent technical SQLite gate covers cold tenant/catalog schema, migration, history and
+seed work. Existing backup/legacy migration transactions and offline payroll authority remain.
+Private memory skips filesystem coordination. Final actual-server schema equals baseline at
+413 tenant/33 catalog objects; the technical gate contains zero objects/bytes. No package,
+business schema version or general runtime write policy changed. An additional old-source
+catalog fault check performed after the candidate demonstrates zero operators on retry from
+an incomplete cached handle; the updated initializer closes/evicts it and retries to one operator.
+That check is retrospective, not a pre-edit reproduction.
+
+| Completed scoped check | Observed result |
+|---|---|
+| Final canonical `npm test` | **326 files / 3,519 tests passed**, exit 0; 1,910.00s Vitest / 1,910.66s wrapper. All 872 selected frozen input hashes unchanged. |
+| Original-race permanent tests against old app source | Both intended state assertions fail with original 20 s and updated 60 s harness defaults; test/worker bytes identical. Six cases deliberately deselected only in the small detector runs. |
+| Startup + unchanged restore, Node 24 before harness changes | 2 files /9 tests passed,23.86 s. |
+| Same subset on official checksum-verified Node 22.22.0 | 2 files /9 tests passed,30.14 s Vitest /30.78 s wrapper, original stricter default budget. |
+| Actual `server.ts`,3 paired cold starts | Baseline loses 1 process per pair; final 6 processes healthy, one administrator/operator per DB, integrity `ok`. |
+| Complete Playwright | 78 passed,0 skipped/unexpected/flaky;298.74 s reporter /299.81 s wrapper. Runtime/e 2 e/config bytes unchanged by later fixture changes; retained input delta establishes reuse. |
+| Final mobile file + project typecheck | All 130 mobile tests pass,46.35 s wrapper; normal typecheck passes,21.59 s. |
+| Delayed-storage shared-fixture controls | 9 selected cases pass with real storage API acknowledgements delayed 250 ms, including 2 intentionally stuck-network cases. |
+| Unhandled-storage negative control | Normal courier assertions pass;1 unhandled synthetic rejection yields exit 1, as required. First invalid-input attempt is not credited. |
+| Assertion/config integrity | 625 original mobile matcher/helper expressions match in order. Of 363 existing test/config files,361 remain byte-identical. Vitest budgets and the mobile fixture are the changed files. |
+| Declared-minimum Node 22.13 API probe | New gate callback succeeds, but pre-existing payroll/sync `isTransaction` dependency is absent during an actual open transaction.22.22/24.19 expose it. End-to-end financial impact not reproduced. |
+| Runtime dependency audit | Exit 1:4 high/1 moderate/0 critical vulnerable-package entries;7 active primary records. Installed selected runtime versions match; manifests/lockfiles unchanged. |
+
+### Validation changes and their meaning
+
+The default Vitest test/hook execution budgets are relaxed 20 → 60 seconds. That relaxes a test
+execution limit; it does not fix product latency or establish acceptable response time. Real
+password cost, application deadlines, existing explicit `it` budgets and business elapsed-time
+assertions remain. One authenticated user creation took 11.785 s and one MFA setup 15.545 s on this
+host. Their cause/production relevance remain open. Official Vitest timeout semantics are
+retained;60 seconds is our harness choice, not a framework/industry production SLA.
+
+Fixed 40–120 ms mobile fixture sleeps sometimes resume before local storage and route rendering.
+Real-storage 250 ms acknowledgement delays reproduce these failures on unchanged baseline mobile
+source. The final fixture checks its supplied cached actor, forwards draft-storage promise
+values/errors, polls only storage quiescence with a 5 s bound, and closes each window after the
+case. It does not await network requests or consume promise rejections. Explicit positive-state
+waits remain at demonstrated transitions. The 9 positive controls and expected unhandled-error
+control check these distinctions. No production mobile behavior or global error handler changed.
+
+A typed Blob object-URL mock fills a required native-browser primitive missing in JSDOM.
+Chromium 156.0.8078.4 exposes both functions and completes a Blob round trip; JSDOM exposes neither.
+This is fixture completeness, not real-device/photo acceptance. A TypeScript parser/printer proves
+all 625 original matcher expressions/expected values remain, in the same order. Temporal fixture
+semantics changed; expression identity is not a claim that all timing behavior is identical.
+
+### Retained failed and intermediate attempts
+
+1. First two new-worker typechecks failed; explicit typing/fixture checks corrected them.
+2. The first runtime candidate created `:memory:.startup-lock`. Baseline/candidate/final probes
+   and the eighth permanent startup test cover this patch-introduced compatibility regression.
+3. First complete parallel run:325 files/3,517 tests passed,1 restore test failed at 20 s, before
+   the eighth startup test. Baseline/candidate isolated restore passes in 9.96/8.48 wrapper seconds
+   with original 20 s budget. No root cause or restore performance fix established.
+4. Second parallel attempt: signup 20 s timeout, stopped after failure, exit 143,198.88 s. Incomplete.
+5. Standard serial run:325 files/3,512 tests passed,7 QA cases skipped after its 20 s setup failure;
+   exit 1,1,922.65 s wrapper. Parallelism alone does not explain the timing failures.
+6. Unchanged QA/signup checks: baseline and candidate both pass original 20 s budgets,
+  43.41/38.53 s wrapper. A 22 s heartbeat during protected staging found no > 200 ms scheduling gap;
+   it did not support the tooling-pause hypothesis.
+7. A further initially hands-off run hit MFA's 20 s limit at 22.449 s and was stopped incomplete,
+   exit 143,428.92 s. Removing concurrent audit work did not eliminate the timing failures.
+8. With 60 s defaults, a complete run passed 325 files/3,517 tests and failed 2 mobile null-field
+   accesses; exit 1,1,035.68 s wrapper. Input hashes remained unchanged. After its first failure,
+   bounded diagnostics ran alongside it: its metadata's isolation wording describes the initial
+   intention, not the entire observed interval.
+9. Local state-wait candidates passed controlled cases but subsequent 6-file focused runs exposed
+  4 release renders (165 passed) and then 1 RTS render (168 passed). The shared fixture addresses
+   the demonstrated class. Application mobile files remained unchanged throughout.
+10. First shared candidate duplicated `html`/`srcs`:0 tests ran, including its first rejection
+    control. Retained as invalid input, not successful error detection. Corrected candidate
+    passes 9 delayed cases; corrected negative control produces the required unhandled error.
+11. First assertion-comparator child Git call failed `EPERM` with partial output in the session
+    transcript. The later pure parser from an explicitly saved pinned Git blob supplies the
+   625-expression proof; no success is inferred from the failed command.
+
+The final full run uses canonical serial `npm test` with the final fixture/budgets and no more
+experiments or Git operations during execution. Final input freeze contains 872 selected
+code/assets/test/script/config files. An initial 822-file extension filter omitted 50 unchanged
+inputs; that earlier supplemental comparison remains. Later snapshots/delta distinguish
+harness variants and reuse only byte-identical runtime/browser evidence.
+
+Text evidence removes ANSI, trailing whitespace and extra EOF blank lines, with raw/retained
+hashes. Diagnostic patches use JSON line arrays to retain exact context whitespace; reconstruct
+and verify their raw SHA-256 before applying to a disposable checkout. Actual databases,
+private/session material, binaries and authenticated traces are excluded. Read final staged/export
+scan results in the manifest; historical-secret findings remain open.
+
+The observations locally demonstrate the scoped ownership/recovery and validation contracts.
+They are not independent assurance. Physical power loss, arbitrary historical migration crashes,
+long migrations, filesystem aliases/mixed builds, Windows/real hosting/storage/restore, production
+latency/capacity, minimum-runtime consequences and independent review remain open. The
+[fresh dependency findings](runtime-advisories-2026-10-24.md) remain separate engineering work.
+No new owner implementation task or whole-control PASS is claimed; the broader release hold
+and historical control totals remain unchanged.

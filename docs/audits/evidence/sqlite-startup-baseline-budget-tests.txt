@@ -1,0 +1,58 @@
+[PLUGIN_TIMINGS] JavaScript callbacks ran for 2.5s of this 3.6s build (70%).
+The slowest callbacks, timed inside each callback (the wait before a callback starts is excluded, the time it awaits is included):
+  - plugin vite:native-config-compat-check transform (39%, 1.4s, 1 call)
+  - plugin externalize-deps resolveId (32%, 1.1s, 3 calls)
+See https://rolldown.rs/reference/InputOptions.checks#bundlertimings for more details.
+
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System/work/sqlite-startup/baseline
+
+ ❯ tests/sqlite-initialization.test.ts (8 tests | 2 failed | 6 skipped) 4301ms
+   × waits for competing cold initialization and preserves saved payroll/settings 2858ms
+   × serializes first-run read-before-insert and creates one administrator 1440ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/sqlite-initialization.test.ts > waits for competing cold initialization and preserves saved payroll/settings
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/sqlite-initialization.test.ts:59:59
+     57|   const second = launch(f, 'open', 'second'); await waitFor(path.join(…
+     58|   await new Promise(resolve => setTimeout(resolve, 150));
+     59|   expect(fs.existsSync(path.join(f.root, 'second.json'))).toBe(false);…
+       |                                                           ^
+     60|   await success(first); await success(second); expect(snapshot(f)).toE…
+     61|   expect(read(f, 'second')).toMatchObject({ ok: true, busy_timeout: 0,…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/sqlite-initialization.test.ts > serializes first-run read-before-insert and creates one administrator
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ tests/sqlite-initialization.test.ts:68:60
+     66|   const second = launch(f, 'open', 'second'); await waitFor(path.join(…
+     67|   await new Promise(resolve => setTimeout(resolve, 150));
+     68|   expect(fs.existsSync(path.join(f.root, 'second-empty'))).toBe(false)…
+       |                                                            ^
+     69|   await success(first); await success(second); expect(snapshot(f).admi…
+     70| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 6 skipped (8)
+   Start at  03:00:39
+   Duration  8.26s (transform 59ms, setup 45ms, import 39ms, tests 4.30s, environment 0ms)

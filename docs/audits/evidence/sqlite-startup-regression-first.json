@@ -1,0 +1,28 @@
+{
+  "source_freeze_sha256": "d3278ded68ddb79c30a2c2553710131db5245d8fa4793fedea02cd03a6b21ca4",
+  "node": "v24.19.0",
+  "steps": [
+    {
+      "name": "playwright",
+      "command": [
+        "npm",
+        "run",
+        "test:e2e"
+      ],
+      "exit": 0,
+      "seconds": 258.71
+    },
+    {
+      "name": "full",
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--fileParallelism",
+        "--maxWorkers=2"
+      ],
+      "exit": 1,
+      "seconds": 1117.9
+    }
+  ]
+}

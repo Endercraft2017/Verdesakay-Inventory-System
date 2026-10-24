@@ -1,0 +1,12 @@
+{
+  "baseline": "0c2ed900239ce50db297ebd957d9f34b6ec0b0cc",
+  "file": "tests/frontend-mobile.test.ts",
+  "method": "TypeScript parser/printer compares every expect-rooted matcher/helper call in source order, comments removed",
+  "assertions_before": 625,
+  "assertions_after": 625,
+  "expressions_identical_in_order": true,
+  "original_source_sha256": "8b697a334d5318386ffc3696428315ca296a55360a1ff7c7ea4d047cf79394bc",
+  "candidate_source_sha256": "ee6838789b48d6865f286d3111f3f3eb39316fdcda3db48b495e0ee829db96de",
+  "assertion_expressions_sha256": "92afe980a42b35ad6b490aae64dd2e5e36981b145c3ca571af8eef2997b1f51d",
+  "limits": "This proves assertion-expression preservation, not that test scheduling or harness deadlines are unchanged; those changes are explicitly documented."
+}

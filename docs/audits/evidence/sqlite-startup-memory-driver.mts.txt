@@ -1,0 +1,11 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {pathToFileURL} from 'node:url';
+const source=path.resolve(process.argv[2]),result=path.resolve(process.argv[3]);
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'startup-memory-'));process.chdir(temp);
+Object.assign(process.env,{NODE_ENV:'test',DEPLOY_MODE:'cloud',ADMIN_PASSWORD:'Synthetic in-memory startup fixture',DB_PATH:':memory:',
+ DATA_DIR:path.join(temp,'tenants'),UPLOAD_DIR:path.join(temp,'uploads'),BACKUP_DIR:path.join(temp,'backups'),PLATFORM_DB_PATH:path.join(temp,'platform.db')});
+const d=await import(pathToFileURL(path.join(source,'src/shared/db.ts')).href);const conn=d.getDb();
+fs.writeFileSync(result,JSON.stringify({source,healthy:conn.prepare('PRAGMA integrity_check').get(),
+ technical_lock_files:fs.readdirSync(temp).filter(n=>n.endsWith('.startup-lock'))},null,2)+'\n');d.closeAllConnections();fs.rmSync(temp,{recursive:true,force:true});

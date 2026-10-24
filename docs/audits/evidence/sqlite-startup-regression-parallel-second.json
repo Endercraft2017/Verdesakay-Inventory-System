@@ -1,0 +1,53 @@
+{
+  "source_freeze": "source-freeze-final.json",
+  "source_freeze_sha256": "0cc86e570cf6bb91ca82e6cfdf40bf4246e6f76644b77c92f26bc94b9525b438",
+  "source_files": 872,
+  "steps": [
+    {
+      "name": "node22-final",
+      "command": [
+        "/workspace/Verdesakay-Inventory-System/work/sqlite-startup/node22/node-v22.22.0-linux-x64/bin/node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "tests/sqlite-initialization.test.ts",
+        "tests/restore-app-drill.test.ts",
+        "--fileParallelism",
+        "--maxWorkers=2"
+      ],
+      "exit": 0,
+      "seconds": 30.78
+    },
+    {
+      "name": "servers-fixed-final",
+      "command": [
+        "python3",
+        "/workspace/Verdesakay-Inventory-System/work/sqlite-startup/servers.py",
+        "fixed-final"
+      ],
+      "exit": 0,
+      "seconds": 13.46
+    },
+    {
+      "name": "playwright-final2",
+      "command": [
+        "npm",
+        "run",
+        "test:e2e"
+      ],
+      "exit": 0,
+      "seconds": 299.81
+    },
+    {
+      "name": "full-final2",
+      "command": [
+        "npm",
+        "test",
+        "--",
+        "--fileParallelism",
+        "--maxWorkers=2"
+      ],
+      "exit": 143,
+      "seconds": 198.88
+    }
+  ]
+}

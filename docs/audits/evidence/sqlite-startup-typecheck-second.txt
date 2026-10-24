@@ -1,0 +1,11 @@
+
+> otom@1.0.0 typecheck
+> tsc --noEmit
+
+tests/helpers/sqlite-startup-worker.ts(69,14): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(...anonymousParameters: SQLInputValue[]): StatementResultingChanges', gave the following error.
+    Argument of type 'SQLOutputValue | undefined' is not assignable to parameter of type 'SQLInputValue'.
+      Type 'undefined' is not assignable to type 'SQLInputValue'.
+  Overload 2 of 2, '(namedParameters: Record<string, SQLInputValue>, ...anonymousParameters: SQLInputValue[]): StatementResultingChanges', gave the following error.
+    Argument of type 'SQLOutputValue | undefined' is not assignable to parameter of type 'Record<string, SQLInputValue>'.
+      Type 'undefined' is not assignable to type 'Record<string, SQLInputValue>'.

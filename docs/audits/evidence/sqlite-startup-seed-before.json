@@ -1,0 +1,23 @@
+{
+  "mode": "seed-before",
+  "first_exit": 1,
+  "second_exit": 0,
+  "both_read_empty": true,
+  "second_completed_before_first_released": true,
+  "first": {
+    "ok": false,
+    "errcode": 2067,
+    "message": "UNIQUE constraint failed: users.username",
+    "stack": "Error: UNIQUE constraint failed: users.username\n    at StatementSync.statement.run (/workspace/Verdesakay-Inventory-System/work/sqlite-startup/seed-before/seed-worker.mts:16:11)\n    at seed (/workspace/Verdesakay-Inventory-System/src/shared/db.ts:3576:7)\n    at <anonymous> (/workspace/Verdesakay-Inventory-System/src/shared/db.ts:295:5)\n    at AsyncLocalStorage.run (node:internal/async_local_storage/async_context_frame:63:14)\n    at tenantConnection (/workspace/Verdesakay-Inventory-System/src/shared/db.ts:281:21)\n    at Module.getDb (/workspace/Verdesakay-Inventory-System/src/shared/db.ts:246:10)\n    at <anonymous> (/workspace/Verdesakay-Inventory-System/work/sqlite-startup/seed-before/seed-worker.mts:22:91)"
+  },
+  "second": {
+    "ok": true
+  },
+  "admin_count": 1,
+  "integrity": [
+    [
+      "ok"
+    ]
+  ],
+  "driver_sha256": "5d0f4e87b8d10fc790a4c4e7a938869d2a9e63865a0ecdc5cc84c769775947c4"
+}

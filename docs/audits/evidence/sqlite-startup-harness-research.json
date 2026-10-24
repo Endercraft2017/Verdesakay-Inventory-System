@@ -1,0 +1,22 @@
+{
+  "at_utc": "2026-10-24T02:57:09.957244+00:00",
+  "sources": [
+    {
+      "name": "vitest-test-timeout",
+      "url": "https://vitest.dev/config/testtimeout.html",
+      "response_url": "https://vitest.dev/config/testtimeout.html",
+      "bytes": 60388,
+      "sha256": "44f58d0ca9565ecfe0bcefa5ad6f46aabb7b9355a1029bba7821328ebf30139e",
+      "ok": true
+    },
+    {
+      "name": "vitest-hook-timeout",
+      "url": "https://vitest.dev/config/hooktimeout.html",
+      "response_url": "https://vitest.dev/config/hooktimeout.html",
+      "bytes": 60401,
+      "sha256": "7f347cfcb836103a78496057461e9c0a77dfe29639374d86497b4725263f749f",
+      "ok": true
+    }
+  ],
+  "interpretation": "Vitest limits each test/hook execution by a configurable harness budget. Raising this budget relaxes the harness limit, not an application deadline or measured performance assertion. Observed slow requests remain unresolved."
+}

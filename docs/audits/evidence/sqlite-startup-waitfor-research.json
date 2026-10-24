@@ -1,0 +1,7 @@
+{
+  "at_utc": "2026-10-24T03:21:56.817877+00:00",
+  "url": "https://vitest.dev/api/vi.html#vi-waitfor",
+  "bytes": 357994,
+  "sha256": "8421f62c20bc27620f5c2c6e94d7059203f31acbed14d554bb6d00fee3666c61",
+  "interpretation": "Retry the original assertion or state predicate until observable completion, with a bounded 5-second readiness timeout. Fixed sleeps are not completion evidence. This is test synchronization, not a product-latency guarantee."
+}

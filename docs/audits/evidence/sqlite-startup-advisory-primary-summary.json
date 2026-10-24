@@ -1,0 +1,105 @@
+[
+  {
+    "id": "GHSA-27r3-jxmh-p828",
+    "severity": "high",
+    "published_at": "2026-10-23T20:53:11Z",
+    "withdrawn_at": null,
+    "summary": "body-parser vulnerable to Denial of Service via trailing bytes after a compressed request body",
+    "packages": [
+      {
+        "name": "body-parser",
+        "range": ">= 2.0.0, < 2.4.0",
+        "first_patched_version": "2.4.0"
+      },
+      {
+        "name": "body-parser",
+        "range": "< 1.20.9",
+        "first_patched_version": "1.20.9"
+      }
+    ]
+  },
+  {
+    "id": "GHSA-85x2-q946-cp5h",
+    "severity": "medium",
+    "published_at": "2026-10-23T21:51:18Z",
+    "withdrawn_at": null,
+    "summary": "Nodemailer: A \">\" inside a quoted local part ends an angle-addr early in addressparser, delivering to a domain the header does not name",
+    "packages": [
+      {
+        "name": "nodemailer",
+        "range": ">= 3.0.0, < 10.1.4",
+        "first_patched_version": "10.1.4"
+      }
+    ]
+  },
+  {
+    "id": "GHSA-86w9-cpqp-85rv",
+    "severity": "high",
+    "published_at": "2026-09-03T21:31:15Z",
+    "withdrawn_at": null,
+    "summary": "node-forge RSA PKCS#1 v1.5 signature verification accepts extra nested DigestAlgorithm elements",
+    "packages": [
+      {
+        "name": "node-forge",
+        "range": "<= 1.4.0",
+        "first_patched_version": null
+      }
+    ]
+  },
+  {
+    "id": "GHSA-8c8m-p3m8-cjg8",
+    "severity": "medium",
+    "published_at": "2026-10-23T21:53:04Z",
+    "withdrawn_at": null,
+    "summary": "Nodemailer: A nested comment ends early in addressparser, releasing the rest of the comment as a recipient",
+    "packages": [
+      {
+        "name": "nodemailer",
+        "range": ">= 3.0.0, < 10.1.4",
+        "first_patched_version": "10.1.4"
+      }
+    ]
+  },
+  {
+    "id": "GHSA-m943-m63m-w62w",
+    "severity": "medium",
+    "published_at": "2026-10-23T21:51:52Z",
+    "withdrawn_at": null,
+    "summary": "Nodemailer: A \";\" inside a quoted string or comment ends an address group early in addressparser, turning display text into a recipient",
+    "packages": [
+      {
+        "name": "nodemailer",
+        "range": ">= 3.0.0, < 10.1.4",
+        "first_patched_version": "10.1.4"
+      }
+    ]
+  },
+  {
+    "id": "GHSA-mrhx-c7xc-m3w5",
+    "severity": "high",
+    "published_at": "2026-10-01T18:32:46Z",
+    "withdrawn_at": null,
+    "summary": "Zod can exhaust memory while validating oversized constrained collections",
+    "packages": [
+      {
+        "name": "zod",
+        "range": "< 4.6.6",
+        "first_patched_version": "4.6.6"
+      }
+    ]
+  },
+  {
+    "id": "GHSA-q7qp-rjg7-q26m",
+    "severity": "high",
+    "published_at": "2026-10-23T22:08:22Z",
+    "withdrawn_at": null,
+    "summary": "multer vulnerable to Denial of Service via a pending asynchronous fileFilter after request teardown",
+    "packages": [
+      {
+        "name": "multer",
+        "range": ">= 2.0.0, < 2.5.0",
+        "first_patched_version": "2.5.0"
+      }
+    ]
+  }
+]

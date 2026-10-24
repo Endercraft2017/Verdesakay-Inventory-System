@@ -1,0 +1,6 @@
+[backup] daily snapshot for 2026-10-24: 2 database(s) → /workspace/Verdesakay-Inventory-System/work/sqlite-startup/servers-baseline/1/backups
+
+Otom is running (HTTP):
+   Local:   http://localhost:47213
+   Network: http://172.26.91.252:47213  (for other office devices)
+   Network: http://172.31.0.46:47213  (for other office devices)

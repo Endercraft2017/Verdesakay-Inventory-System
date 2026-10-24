@@ -1,0 +1,14 @@
+
+ RUN  v4.1.12 /workspace/Verdesakay-Inventory-System
+
+(node:11285) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:11286) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:11376) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  3 passed (3)
+      Tests  27 passed (27)
+   Start at  01:29:41
+   Duration  62.94s (transform 5.01s, setup 137ms, import 465ms, tests 114.87s, environment 0ms)

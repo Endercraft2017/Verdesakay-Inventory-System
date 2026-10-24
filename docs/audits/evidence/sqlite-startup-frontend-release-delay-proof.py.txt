@@ -1,0 +1,48 @@
+from pathlib import Path
+import hashlib
+import json
+import subprocess
+import sys
+import time
+
+root = Path.cwd()
+out = root / 'work/sqlite-startup'
+label, filename = sys.argv[1:3]
+source = (root / filename).read_text()
+baseline = out / 'baseline'
+trace = out / ('frontend-release-delay-' + label + '.jsonl')
+trace.write_text('')
+position = source.index('    win.eval(code);', source.index('async function bootAs(')) + len('    win.eval(code);\n')
+injection = '''    // Disposable diagnostic: delay fulfilled real storage API promises, preserving results/errors.
+    for (const method of Object.keys(win.mProductionDrafts)) {
+      const actual = win.mProductionDrafts[method];
+      win.mProductionDrafts[method] = function (...args: any[]) {
+        const result = actual.apply(this, args);
+        if (!result || typeof result.then !== 'function') return result;
+        return result.then(async (value: any) => {
+          fs.appendFileSync(TRACE, JSON.stringify({ method, event: 'fulfilled', at: Date.now() }) + '\\n');
+          await new Promise(resolve => setTimeout(resolve, 250));
+          fs.appendFileSync(TRACE, JSON.stringify({ method, event: 'acknowledged', at: Date.now() }) + '\\n');
+          return value;
+        });
+      };
+    }
+'''.replace('TRACE', json.dumps(str(trace)))
+diagnostic = baseline / 'tests/frontend-release-delay-proof.test.ts'
+diagnostic.write_text(source[:position] + injection + source[position:])
+snapshot = out / ('frontend-release-delay-' + label + '-source.ts')
+snapshot.write_bytes(diagnostic.read_bytes())
+patch = subprocess.run(['git', 'diff', '--no-index', '--', str(out / 'frontend-mobile-original.ts'), str(snapshot)], capture_output=True, text=True)
+(out / ('frontend-release-delay-' + label + '.patch')).write_text(patch.stdout)
+selection = sys.argv[3] if len(sys.argv) > 3 else 'never shows the token|records warehouse-out online only|takes an approved supervisor override|lets a supervisor approve'
+cmd = ['node', str(root / 'node_modules/vitest/vitest.mjs'), 'run', str(diagnostic.relative_to(baseline)), '-t', selection]
+start = time.monotonic()
+with (out / ('frontend-release-delay-' + label + '.log')).open('w') as log:
+    result = subprocess.run(cmd, cwd=baseline, stdout=log, stderr=subprocess.STDOUT)
+record = {'label': label, 'application_source': 'Unchanged baseline mobile app at 0c2ed900239ce50db297ebd957d9f34b6ec0b0cc',
+          'source_test_sha256': hashlib.sha256(source.encode()).hexdigest(), 'diagnostic_sha256': hashlib.sha256(snapshot.read_bytes()).hexdigest(),
+          'command': cmd, 'exit': result.returncode, 'seconds': round(time.monotonic() - start, 2),
+          'method': 'Before DOMContentLoaded, each fulfilled real mProductionDrafts asynchronous API acknowledgement is delayed 250ms. Values/errors and application source remain unchanged.',
+          'source_snapshot': snapshot.name, 'diagnostic_diff_against_pinned_original': 'frontend-release-delay-' + label + '.patch'}
+(out / ('frontend-release-delay-' + label + '.json')).write_text(json.dumps(record, indent=2) + '\n')
+print(json.dumps(record))

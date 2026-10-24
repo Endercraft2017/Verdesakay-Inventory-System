@@ -1,6 +1,6 @@
 # Production audit evidence index
 
-Updated 23 October 2026. Start here to review engineering progress and limits. Work is on
+Updated 24 October 2026. Start here to review engineering progress and limits. Work is on
 production, derived from restructure/module-architecture. Branch pushes do not establish successful deployments.
 The uploaded production-audit-guide.md is the audit reference, not a separate authorization
 source. User instructions define the task and permitted actions.
@@ -14,6 +14,7 @@ source. User instructions define the task and permitted actions.
 | validation-results.md | Dated commands, exact outcomes, failures/corrections, evidence paths and limitations |
 | standards-research.md | Primary standards/research mapping and evidence limits |
 | dependency-audit.md | Runtime advisory findings, disposition and release gates |
+| runtime-advisories-2026-10-24.md | Fresh 4-high/1-moderate runtime package findings, active primary records and separate engineering follow-up |
 | evidence/ | Raw or whitespace-normalized test/scan output, verification JSON and scoped findings |
 | ../operations/owner-alert-outbox.md | Shared owner-alert worker, uncertainty/retry and payload retention |
 | ../operations/inquiry-retries.md | Public inquiry retries, private intent binding, bounded work and recovery |
@@ -32,6 +33,7 @@ legal approval or independent assurance. The complete release remains on hold.
 
 | Prefix in evidence/ | Scope |
 |---|---|
+| sqlite-startup-* | Cold tenant/catalog initialization ownership, trigger/seed reproductions, bounded waits, kill/retry, actual server readiness and separate validation-fixture controls; [contract](sqlite-startup-contract.md), [recovery](../operations/sqlite-startup.md) |
 | payroll-replay-* | Cloud payroll journal/effect/verdict transaction, immutable inbox markers, legacy holds, real process/concurrency and replica convergence; [contract](payroll-replay-contract.md), [research](payroll-replay-research.md), [recovery](../operations/payroll-cloud-replay.md) |
 | payroll-post-* | Payroll GL keyed retry transactions, originating-node source/command atomicity, tenant/access checks, real competing processes and kill/restart/browser recovery; [contract](payroll-post-retry-contract.md), [recovery](../operations/payroll-post-retries.md) |
 | dependency-parser-* | Runtime dependency review, withdrawn advisory, discarded parser candidate, clean-install/CLI experiments and real Word-import recovery; [contract](dependency-parser-contract.md), [re-evaluation procedure](../operations/dependency-parser-upgrade.md) |

@@ -1,0 +1,15 @@
+{
+  "command": [
+    "npm",
+    "ls",
+    "--omit=dev",
+    "body-parser",
+    "multer",
+    "zod",
+    "node-forge",
+    "nodemailer",
+    "--json"
+  ],
+  "exit": 0,
+  "stderr": ""
+}

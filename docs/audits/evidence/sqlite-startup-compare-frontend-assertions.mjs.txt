@@ -1,0 +1,33 @@
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import ts from 'typescript';
+
+const original = fs.readFileSync('work/sqlite-startup/frontend-mobile-original.ts', 'utf8');
+const candidate = fs.readFileSync(process.argv[2] || 'work/sqlite-startup/frontend-mobile-candidate.ts', 'utf8');
+const printer = ts.createPrinter({ removeComments: true });
+function expectRoot(node) {
+  if (ts.isIdentifier(node)) return node.text === 'expect';
+  if (ts.isCallExpression(node) || ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) return expectRoot(node.expression);
+  return false;
+}
+function assertions(text) {
+  const source = ts.createSourceFile('comparison.ts', text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const result = [];
+  function visit(node) {
+    if (ts.isCallExpression(node) && !ts.isIdentifier(node.expression) && expectRoot(node.expression))
+      result.push(printer.printNode(ts.EmitHint.Unspecified, node, source));
+    ts.forEachChild(node, visit);
+  }
+  visit(source); return result;
+}
+const before = assertions(original), after = assertions(candidate);
+const hash = text => crypto.createHash('sha256').update(text).digest('hex');
+const equal = JSON.stringify(before) === JSON.stringify(after);
+const record = { baseline: '0c2ed900239ce50db297ebd957d9f34b6ec0b0cc', file: 'tests/frontend-mobile.test.ts',
+  method: 'TypeScript parser/printer compares every expect-rooted matcher/helper call in source order, comments removed',
+  assertions_before: before.length, assertions_after: after.length, expressions_identical_in_order: equal,
+  original_source_sha256: hash(original), candidate_source_sha256: hash(candidate), assertion_expressions_sha256: hash(JSON.stringify(before)),
+  limits: 'This proves assertion-expression preservation, not that test scheduling or harness deadlines are unchanged; those changes are explicitly documented.' };
+fs.writeFileSync('work/sqlite-startup/frontend-assertion-integrity.json', JSON.stringify(record, null, 2) + '\n');
+console.log(JSON.stringify(record));
+if (!equal) process.exitCode = 1;

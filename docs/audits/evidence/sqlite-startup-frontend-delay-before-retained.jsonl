@@ -1,0 +1,4 @@
+{"event":"committed","at":1792811812936,"kind":"scrap","state":"sending"}
+{"event":"acknowledged","at":1792811813187,"kind":"scrap","state":"sending"}
+{"event":"committed","at":1792811813190,"kind":"scrap","state":"unknown"}
+{"event":"committed","at":1792811813229,"kind":"unit-issue","state":"draft"}

@@ -1,0 +1,15 @@
+{
+  "baseline": "0c2ed900239ce50db297ebd957d9f34b6ec0b0cc",
+  "command": [
+    "node",
+    "/workspace/Verdesakay-Inventory-System/node_modules/vitest/vitest.mjs",
+    "run",
+    "tests/sqlite-initialization.test.ts",
+    "-t",
+    "waits for competing cold|serializes first-run read-before-insert"
+  ],
+  "exit": 1,
+  "seconds": 5.86,
+  "expected_failure": true,
+  "identical_test_and_worker": true
+}
