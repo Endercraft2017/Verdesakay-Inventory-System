@@ -9,7 +9,7 @@
     'upc_a', 'upc_e', 'itf', 'codabar', 'data_matrix', 'aztec', 'pdf417',
   ];
 
-  var active = null;
+  var active = null, sequence = 0;
 
   function secureCamera() {
     return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -20,6 +20,8 @@
       the X button or the returned `.close()`. */
   function open(opts) {
     opts = opts || {};
+    if (active?.current && !active.current()) active = null;
+    var inputId = 'm-scanner-code-' + (++sequence), owner = window.mReadScope?.identity();
     if (active && opts.key && active.key === opts.key) { active.focus(); return active; }
     if (active) active.close();
     var openingHash = location.hash, reason = 'cancelled';
@@ -28,7 +30,7 @@
       '  <div class="m-scan-head">' +
       '    <span>' + mEsc(opts.title || 'Scan barcode or QR') + '</span>' +
       '    <span class="m-scan-head-btns">' +
-      '      <button class="m-scan-torch" aria-label="Toggle light" hidden>&#9728;</button>' +
+      '      <button class="m-scan-torch" aria-label="Toggle light" aria-pressed="false" hidden>&#9728;</button>' +
       '      <button class="m-scan-x" aria-label="Close">&times;</button>' +
       '    </span>' +
       '  </div>' +
@@ -38,9 +40,9 @@
       '  </div>' +
       '  <div class="m-scan-msg" role="status" hidden></div>' +
       '  <form class="m-scan-manual">' +
-      '    <input type="text" aria-label="' + mEsc(opts.manualLabel || 'Barcode or QR code') + '" placeholder="Or type the code" autocomplete="off" autocapitalize="characters" />' +
+      '    <label for="' + inputId + '">' + mEsc(opts.manualLabel || 'Barcode or QR code') + '<input id="' + inputId + '" type="text" placeholder="Or type the code" autocomplete="off" autocapitalize="characters" value="' + mEsc(opts.initialCode || '') + '" /></label>' +
       '    <button class="m-btn" type="submit">Use code</button>' +
-      '  </form>' +
+      '  </form><div class="m-scanner-error" role="alert"></div><button type="button" class="m-camera-retry" hidden>Retry camera</button>' +
       '</div>'
     );
     (document.getElementById('m-overlay-root') || document.body).appendChild(overlay);
@@ -50,15 +52,19 @@
     var stream = null;
     var timer = null;
     var zx = null;
-    var done = false;
+    var done = false, cameraVersion = 0, cameraTimer;
+    var retryCamera = overlay.querySelector('.m-camera-retry');
 
-    function usable() { if (done) return false; if (!overlay.isConnected || (opts.isCurrent && !opts.isCurrent())) { stop('navigation'); return false; } return true; }
+    function usable() { if (done) return false; if (!overlay.isConnected || document.getElementById('m-app')?.matches('.hidden,[hidden]') || (owner && owner !== window.mReadScope?.identity()) || (opts.isCurrent && !opts.isCurrent())) { stop('navigation'); return false; } return true; }
     function say(text) { if (usable()) { msg.hidden = false; msg.textContent = text; } }
     if (opts.allowManual === false) overlay.querySelector('.m-scan-manual').remove();
 
     function manualOnly(text) {
       if (!usable()) return;
-      stopStream();
+      cameraVersion++; clearTimeout(cameraTimer); clearInterval(timer);
+      if (zx) { try { zx.reset(); } catch (ignore) {} zx = null; }
+      stopStream(); retryCamera.hidden = false; retryCamera.disabled = false;
+      overlay.querySelector('.m-scan-torch').hidden = true;
       if (opts.allowManual === false) { say('Camera scanning is required. Enable camera access and use HTTPS, then try again.'); overlay.querySelector('.m-scan-stage').hidden = true; return; }
       say(text);
       overlay.querySelector('.m-scan-stage').hidden = true;
@@ -72,19 +78,20 @@
     }
     function cleanup() {
       if (done) return;
-      done = true;
+      done = true; cameraVersion++; clearTimeout(cameraTimer);
       if (timer) clearInterval(timer);
       if (zx) { try { zx.reset(); } catch (e) {} }
-      stopStream(); observer.disconnect(); window.removeEventListener('hashchange', departed);
+      stopStream(); observer.disconnect(); window.removeEventListener('hashchange', departed); window.removeEventListener('pagehide', pageLeft);
       if (active === control) active = null;
       if (opts.onClose) opts.onClose(reason);
     }
     function stop(why) { reason = typeof why === 'string' ? why : 'cancelled'; control.close(); }
     function departed() { queueMicrotask(function () { if (location.hash !== openingHash || (opts.isCurrent && !opts.isCurrent())) stop('navigation'); }); }
-    var observer = new MutationObserver(function () { if (!overlay.isConnected || (opts.isCurrent && !opts.isCurrent())) stop('navigation'); });
+    function pageLeft() { stop('navigation'); }
+    var observer = new MutationObserver(function () { if (!overlay.isConnected || document.getElementById('m-app')?.matches('.hidden,[hidden]') || (owner && owner !== window.mReadScope?.identity()) || (opts.isCurrent && !opts.isCurrent())) stop('navigation'); });
     var control = MessageOverlay.mount(overlay, { initialFocus: '.m-scan-x', onClose: cleanup });
-    control.key = opts.key; active = control;
-    observer.observe(document.body, { childList: true, subtree: true }); window.addEventListener('hashchange', departed);
+    control.key = opts.key; control.current = usable; active = control;
+    observer.observe(document.body, { childList: true, subtree: true, attributes:true, attributeFilter:['class','hidden'] }); window.addEventListener('hashchange', departed); window.addEventListener('pagehide', pageLeft);
 
     var lastCode = null, lastAt = 0;
     function finish(text) {
@@ -112,13 +119,14 @@
       var track = src && src.getVideoTracks && src.getVideoTracks()[0];
       var caps = track && track.getCapabilities ? track.getCapabilities() : {};
       if (!track || !caps.torch) return;
-      var btn = overlay.querySelector('.m-scan-torch');
-      btn.hidden = false;
+      var btn = overlay.querySelector('.m-scan-torch'), version = cameraVersion;
+      btn.hidden = false; btn.disabled = false;
       btn.onclick = function () {
-        if (!usable()) return;
-        torchOn = !torchOn;
-        btn.classList.toggle('on', torchOn);
-        track.applyConstraints({ advanced: [{ torch: torchOn }] }).catch(function () {});
+        if (!usable() || btn.disabled) return;
+        var desired = !torchOn; btn.disabled = true;
+        Promise.resolve().then(function () { return track.applyConstraints({advanced:[{torch:desired}]}); }).then(function () {
+          if (!cameraCurrent(version)) return; torchOn = desired; btn.classList.toggle('on',torchOn); btn.setAttribute('aria-pressed',String(torchOn)); say('Camera light ' + (torchOn ? 'on.' : 'off.'));
+        }).catch(function () { if (cameraCurrent(version)) say('The camera light could not be changed. Try again.'); }).finally(function () { if (cameraCurrent(version)) btn.disabled = false; });
       };
     }
 
@@ -127,13 +135,16 @@
       if (!usable() || opts.allowManual === false) return;
       var inp = e.target.querySelector('input');
       var v = inp.value.trim();
-      if (!v) return;
+      if (!v) { overlay.querySelector('.m-scanner-error').textContent = 'Enter a barcode or QR code.'; inp.setAttribute('aria-invalid','true'); inp.focus(); return; }
       if (opts.continuous) { lastCode = null; opts.onResult(v); inp.value = ''; inp.focus(); }
       else finish(v);
     };
 
-    function camError(err) {
-      if (!usable()) return;
+    overlay.querySelector('input')?.addEventListener('input',function () { this.removeAttribute('aria-invalid'); overlay.querySelector('.m-scanner-error').textContent = ''; });
+    function cameraCurrent(version) { return usable() && version === cameraVersion; }
+    function cameraReady(version) { if (!cameraCurrent(version)) return; clearTimeout(cameraTimer); say('Align the barcode or QR code inside the frame, or use the controls below.'); wireTorch(); }
+    function camError(err, version) {
+      if (!cameraCurrent(version)) return;
       var denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
       manualOnly(denied
         ? 'Camera permission denied. Type the code below instead.'
@@ -141,64 +152,73 @@
     }
 
     /* ---- Native BarcodeDetector: our own stream + a polling loop ---- */
-    function startNative(formats) {
-      if (!usable()) return;
+    function startNative(formats,version) {
+      if (!cameraCurrent(version)) return;
       var detecting = false;
       var detector = new BarcodeDetector({ formats: formats });
       navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false })
-        .then(function (s) { if (!usable()) { s.getTracks().forEach(function (t) { t.stop(); }); return; } stream = s; video.srcObject = s; return video.play(); })
+        .then(function (s) { if (!cameraCurrent(version)) { s.getTracks().forEach(function (t) { t.stop(); }); return; } stream = s; video.srcObject = s; return video.play(); })
         .then(function () {
-          if (!usable()) return;
-          wireTorch();
+          if (!cameraCurrent(version)) return;
+          cameraReady(version);
           var firstTry = true;
           timer = setInterval(function () {
-            if (!usable() || detecting) return;
+            if (!cameraCurrent(version) || detecting) return;
             detecting = true;
             Promise.resolve().then(function () { return detector.detect(video); })
-              .then(function (codes) { if (usable() && codes && codes.length) finish(codes[0].rawValue); })
+              .then(function (codes) { if (cameraCurrent(version) && codes && codes.length) finish(codes[0].rawValue); })
               .catch(function () {
                 // Some engines declare BarcodeDetector but throw on detect() —
                 // bail to ZXing on the very first failure.
-                if (usable() && firstTry && window.ZXing) { clearInterval(timer); timer = null; stopStream(); startZXing(); }
+                if (cameraCurrent(version) && firstTry) { clearInterval(timer); timer = null; stopStream(); if (window.ZXing) startZXing(version); else manualOnly('This browser could not read camera frames. Use the code entry below instead.'); }
               })
               .finally(function () { firstTry = false; detecting = false; });
           }, 300);
         })
-        .catch(camError);
+        .catch(function (error) { camError(error,version); });
     }
 
     /* ---- ZXing fallback: the reader owns the camera; reset() tears it down ---- */
-    function startZXing() {
-      if (!usable()) return;
-      var reader = zx = new ZXing.BrowserMultiFormatReader();
+    function startZXing(version) {
+      if (!cameraCurrent(version)) return;
+      var reader = zx = new ZXing.BrowserMultiFormatReader(), readerVideo = video;
+      function stopReader() {
+        var media = readerVideo.srcObject;
+        reader.reset();
+        if (media?.getTracks) media.getTracks().forEach(function (track) { track.stop(); });
+        readerVideo.srcObject = null;
+      }
       reader.decodeFromConstraints(
         { video: { facingMode: { ideal: 'environment' } } },
-        video,
-        function (result) { if (!usable()) { reader.reset(); stopStream(); return; } if (result) finish(result.getText ? result.getText() : result.text); }
-      ).then(function () { if (!usable()) { reader.reset(); stopStream(); return; } setTimeout(wireTorch, 400); }).catch(camError);
+        readerVideo,
+        function (result) { if (!cameraCurrent(version)) { stopReader(); return; } if (result) finish(result.getText ? result.getText() : result.text); }
+      ).then(function () { if (!cameraCurrent(version)) { stopReader(); return; } cameraReady(version); }).catch(function (error) { camError(error,version); });
     }
 
-    if (!secureCamera()) {
-      manualOnly('Camera needs a secure (HTTPS) connection. Type the code below instead.');
-      return control;
-    }
-
-    if (window.BarcodeDetector && BarcodeDetector.getSupportedFormats) {
-      BarcodeDetector.getSupportedFormats()
-        .then(function (supported) {
-          if (!usable()) return;
-          var use = WANT_FORMATS.filter(function (f) { return supported.indexOf(f) !== -1; });
-          if (use.length) startNative(use);
-          else if (window.ZXing) startZXing();
+    function startCamera() {
+      if (!usable() || retryCamera.disabled) return;
+      retryCamera.disabled = true;
+      var version = ++cameraVersion;
+      // A late ZXing reader owns its original element, never a replacement camera.
+      var nextVideo = video.cloneNode(false); video.replaceWith(nextVideo); video = nextVideo;
+      torchOn = false; var light = overlay.querySelector('.m-scan-torch'); light.hidden = true; light.disabled = false; light.setAttribute('aria-pressed','false'); light.classList.remove('on');
+      retryCamera.hidden = true; overlay.querySelector('.m-scan-stage').hidden = false;
+      say(opts.allowManual === false ? 'Starting camera…' : 'Starting camera… You can type a code below while it opens.');
+      cameraTimer = setTimeout(function () { if (cameraCurrent(version)) manualOnly('The camera did not start in time. Retry camera or type the code below.'); },15000);
+      if (!secureCamera()) { manualOnly('Camera needs a secure (HTTPS) connection. Type the code below instead.'); return; }
+      if (window.BarcodeDetector && BarcodeDetector.getSupportedFormats) {
+        BarcodeDetector.getSupportedFormats().then(function (supported) {
+          if (!cameraCurrent(version)) return;
+          var use = WANT_FORMATS.filter(function (format) { return supported.indexOf(format) !== -1; });
+          if (use.length) startNative(use,version);
+          else if (window.ZXing) startZXing(version);
           else manualOnly('This browser can’t scan. Type the code below instead.');
-        })
-        .catch(function () { if (!usable()) return; if (window.ZXing) startZXing(); else manualOnly('This browser can’t scan. Type the code below instead.'); });
-    } else if (window.ZXing) {
-      startZXing();
-    } else {
-      manualOnly('This browser can’t scan. Type the code below instead.');
+        }).catch(function (error) { if (!cameraCurrent(version)) return; if (window.ZXing) startZXing(version); else camError(error,version); });
+      } else if (window.ZXing) startZXing(version);
+      else manualOnly('This browser can’t scan. Type the code below instead.');
     }
-
+    retryCamera.onclick = startCamera;
+    startCamera();
     return control;
   }
 

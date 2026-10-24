@@ -1,201 +1,152 @@
-/* Offline write queue. When a POST fails because the device is offline, the
-   operation is stashed in IndexedDB and replayed (with a stable Idempotency-Key,
-   so the server de-dupes) when the connection returns or the app is reopened.
-
-   mSubmit(path, body, {label}) -> Promise<{ok:true,response} | {queued:true}>
-   mQueue.count() / .all() / .retry(key) / .discard(key) / .flush() / .onChange(cb)
-   mQueue.setToken(token, user) / .clearToken() / .foreignCount()
-
-   Every queued op is stamped with the account that made it (user_id), and is only ever
-   replayed under that same account — here and in the service worker (sw.js replayQueue).
-   On a shared phone, one person's unsent action must never be sent as the next person.
-   count()/all() cover the signed-in user's ops (plus pre-stamp legacy ops); foreignCount()
-   is how many belong to someone else on this phone — they wait for that person.
-*/
+/* Durable, account-owned phone writes. Page and service worker share atomic leases
+   (queue-store.js); uncertain retries retain their original request key and body. */
 (function () {
-  var DB_NAME = 'vds_mobile' + (window.VDS_BASE_PATH || '');
-  var STORE = 'ops';
-  var META = 'meta'; // { k, v, user_id } — the bearer token + its account, for the service worker
-  var dbP = null;
-  var currentUser = null; // { id, name } of the signed-in account, set by setToken
-
-  /** Whether an op may be sent by the signed-in account. Legacy ops (queued before ops were
-      stamped) have no user_id and keep the old behaviour. */
-  function mine(op) { return op.user_id == null || (!!currentUser && op.user_id === currentUser.id); }
-
-  function db() {
-    if (dbP) return dbP;
-    dbP = new Promise(function (resolve, reject) {
-      var req = indexedDB.open(DB_NAME, 2);
-      req.onupgradeneeded = function () {
-        if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE, { keyPath: 'key' });
-        if (!req.result.objectStoreNames.contains(META)) req.result.createObjectStore(META, { keyPath: 'k' });
-      };
-      req.onsuccess = function () { resolve(req.result); };
-      req.onerror = function () { reject(req.error); };
-    });
-    return dbP;
+  var store, owner = null, sessionWrite = Promise.resolve(), jobs = new Map(), listeners = [], channel;
+  function storage() { return store || (store = MobileQueueStore.create(window.VDS_BASE_PATH || '')); }
+  function uuid() { return crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2); }
+  function emit() { listeners.slice().forEach(function (cb) { try { cb(); } catch (ignore) {} }); }
+  function changed() { emit(); channel?.postMessage('changed'); }
+  try { if (window.BroadcastChannel) { channel = new BroadcastChannel('vds-queue' + (window.VDS_BASE_PATH || '')); channel.onmessage = emit; } } catch (ignore) {}
+  function current(who) { return !!who && owner === who && (!API.getToken || API.getToken() === who.apiToken) && (!API.base || API.base() === who.api_base); }
+  function cancellation() { return Object.assign(new Error('The sign-in changed. Reopen Pending sync.'), {cancelled:true}); }
+  function changeOwner(next) {
+    if (owner && next && owner.v === next.v && owner.user_id === next.user_id && owner.api_base === next.api_base) return owner;
+    owner = next; jobs.forEach(function (job) { job.abort?.(); }); changed(); return next;
   }
-
-  function tx(mode, fn, storeName) {
-    return db().then(function (d) {
-      return new Promise(function (resolve, reject) {
-        var t = d.transaction(storeName || STORE, mode);
-        var store = t.objectStore(storeName || STORE);
-        var out = fn(store);
-        t.oncomplete = function () { resolve(out && out.result !== undefined ? out.result : out); };
-        t.onerror = function () { reject(t.error); };
-        t.onabort = function () { reject(t.error); };
-      });
-    });
+  function ownedJob(key, who, run) {
+    var existing = jobs.get(key);
+    if (existing && existing.owner === who) return existing.promise;
+    var job = {owner:who};
+    job.promise = Promise.resolve().then(function () { if (!current(who)) throw cancellation(); return run(job); }).finally(function () { if (jobs.get(key) === job) jobs.delete(key); });
+    jobs.set(key,job); return job.promise;
   }
-
-  var listeners = [];
-  function emit() { listeners.forEach(function (cb) { try { cb(); } catch (e) {} }); }
-
-  function uuid() {
-    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-    return 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-      var r = (Math.random() * 16) | 0;
-      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-    });
+  function bounded(job, who, invoke) {
+    var controller = new AbortController(), timer, timedOut = false;
+    job.abort = function () { controller.abort(); };
+    var opts = {signal:controller.signal,isCurrent:function () { return current(who) && !controller.signal.aborted; }};
+    return new Promise(function (resolve,reject) {
+      controller.signal.addEventListener('abort',function () { reject(timedOut ? Object.assign(new Error('The server result was not confirmed. Retry the same saved request.'),{uncertain:true}) : cancellation()); },{once:true});
+      timer = setTimeout(function () { timedOut = true; controller.abort(); },15000);
+      Promise.resolve().then(function () { if (!opts.isCurrent()) throw cancellation(); return invoke(opts); }).then(resolve,reject);
+    }).finally(function () { clearTimeout(timer); delete job.abort; });
   }
-
-  /** Ask the browser to replay us in the background once it has connectivity. */
-  function requestBackgroundSync() {
+  function backgroundSync() {
     if (!('serviceWorker' in navigator) || !('SyncManager' in window)) return;
-    navigator.serviceWorker.ready.then(function (reg) {
-      if (reg.sync) reg.sync.register('vds-flush').catch(function () {});
-    }).catch(function () {});
+    navigator.serviceWorker.ready.then(function (reg) { return reg.sync?.register('vds-flush'); }).catch(function () {});
   }
-
-  var mQueue = {
-    /** Mirror the bearer token (and whose it is) into IndexedDB so the service worker can replay. */
-    setToken: function (t, user) {
-      currentUser = user && user.id != null ? { id: user.id, name: user.full_name || user.name || '' } : null;
-      emit(); // counts depend on who is signed in
-      if (navigator.onLine) setTimeout(function () { mQueue.flush().catch(function () {}); }, 0);
-      return tx('readwrite', function (s) {
-        s.put({
-          k: 'token', v: t, user_id: currentUser ? currentUser.id : null,
-          device_id: window.API && API.deviceId ? API.deviceId() : null, // sw.js has no localStorage
+  function send(key, force, who) {
+    return ownedJob(key,who,function (job) {
+      var lease = uuid(), claimed;
+      return sessionWrite.then(function () {
+        if (!current(who)) throw cancellation();
+        return storage().claim(key,who,lease,force);
+      }).then(function (op) {
+        if (!op) return false;
+        claimed = op; changed();
+        return bounded(job,who,function (opts) { opts.idempotencyKey = op.key; return API.post(op.path,op.body,opts); }).then(function (result) {
+          var local = API.syncLocal?.(result);
+          return storage().settle(key,lease,local ? {local_command:local,local_state:'local',uncertain:false,error:null}
+            : result?.applied === false ? {error:result.message || 'The server did not apply this action. Review the existing record.',uncertain:false} : null).then(function () { changed(); return false; });
+        }).catch(function (error) {
+          var uncertain = !!(error.offline || error.uncertain || error.cancelled || !error.status || error.status >= 500 || error.status === 429);
+          return storage().settle(key,lease,{error:uncertain ? null : error.message || 'The server rejected this action.',uncertain:uncertain,attempts:(op.attempts || 0)+1,last_error:error.message || 'Result not confirmed'}).then(function () { changed(); return uncertain; });
         });
-      }, META).catch(function () {});
-    },
-    /** Forget the token on sign-out — nothing replays in the background until the next sign-in. */
-    clearToken: function () {
-      currentUser = null;
-      return tx('readwrite', function (s) { s.delete('token'); }, META).catch(function () {});
-    },
-    enqueue: function (op) {
-      op.created = op.created || Date.now();
-      op.attempts = 0;
-      if (currentUser) { op.user_id = currentUser.id; op.user_name = currentUser.name; }
-      return tx('readwrite', function (s) { s.put(op); }).then(function () {
-        emit();
-        requestBackgroundSync();
-        return op.key;
+      }).catch(function (error) {
+        // A storage failure must reach the screen; it must not manufacture success.
+        if (claimed) changed(); throw error;
       });
-    },
-    _every: function () {
-      return tx('readonly', function (s) { return s.getAll(); }).then(function (rows) {
-        return (rows || []).sort(function (a, b) { return a.created - b.created; });
-      });
-    },
-    /** The signed-in account's queued ops, oldest first. */
-    all: function () { return mQueue._every().then(function (rows) { return rows.filter(mine); }); },
-    count: function () { return mQueue.all().then(function (rows) { return rows.length; }); },
-    /** Queued ops on this phone that belong to another account. */
-    foreignCount: function () {
-      return mQueue._every().then(function (rows) { return rows.filter(function (o) { return !mine(o); }).length; });
-    },
-    _remove: function (key) { return tx('readwrite', function (s) { s.delete(key); }).then(emit); },
-    _put: function (op) { return tx('readwrite', function (s) { s.put(op); }).then(emit); },
-
-    discard: function (key) {
-      return mQueue.all().then(function (rows) {
-        if (rows.some(function (o) { return o.key === key; })) return mQueue._remove(key);
-      });
-    },
-
-    retry: function (key) {
-      return mQueue.all().then(function (rows) {
-        var op = rows.filter(function (o) { return o.key === key; })[0];
-        if (!op) return;
-        op.error = null;
-        return mQueue._put(op).then(function () { return sendOne(op); });
-      });
-    },
-
-    /** Try to send every queued op. Stops early if the device is still offline. */
-    flush: function () {
-      if (mQueue._flushing) return mQueue._flushing;
-      mQueue._flushing = mQueue.all().then(function (rows) {
-        return rows.reduce(function (p, op) {
-          return p.then(function (stop) {
-            if (stop) return true;
-            return sendOne(op);
-          });
-        }, Promise.resolve(false));
-      }).finally(function () { mQueue._flushing = null; });
-      return mQueue._flushing;
-    },
-
-    onChange: function (cb) { listeners.push(cb); return function () { listeners = listeners.filter(function (x) { return x !== cb; }); }; },
-  };
-
-  /** @returns true if we should stop the flush (still offline). */
-  function sendOne(op) {
-    if (!mine(op)) return Promise.resolve(false); // someone else's — wait for them
-    return API.post(op.path, op.body, { idempotencyKey: op.key })
-      .then(function () { return mQueue._remove(op.key).then(function () { return false; }); })
-      .catch(function (err) {
-        if (err && err.offline) return true; // still no connection — stop, keep the queue
-        op.attempts = (op.attempts || 0) + 1;
-        op.error = err && err.message ? err.message : 'Failed';
-        return mQueue._put(op).then(function () { return false; }); // move on to the next op
-      });
-  }
-
-  /** Submit a write, falling back to the offline queue on a network failure. */
-  function mSubmit(path, body, opts) {
-    opts = opts || {};
-    var key = opts.idempotencyKey || 'idem-' + uuid();
-    var request = { idempotencyKey: key };
-    if (opts.signal) request.signal = opts.signal;
-    return API.post(path, body, request)
-      .then(function (response) { return { ok: true, response: response, local: API.syncLocal(response) }; })
-      .catch(function (err) {
-        if (err && err.offline && (!opts.isCurrent || opts.isCurrent())) {
-          return mQueue.enqueue({ key: key, method: 'POST', path: path, body: body, label: opts.label || path })
-            .then(function () { return { queued: true }; });
-        }
-        throw err;
-      });
-  }
-
-  // Auto-flush: on reconnect, on a slow timer while online, and once now.
-  // Background flushes: never let a storage failure (no IndexedDB, blocked site data) surface
-  // as an unhandled rejection — the queue screen reports problems when it's opened.
-  function autoFlush() { mQueue.flush().catch(function () {}); }
-  window.addEventListener('online', autoFlush);
-  setInterval(function () { if (navigator.onLine) autoFlush(); }, 25000);
-  if (navigator.onLine) setTimeout(autoFlush, 1500);
-
-  // The service worker tells us when it drained the queue in the background.
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.addEventListener('message', function (ev) {
-      if (ev.data === 'queue-changed') emit();
     });
   }
-
-  window.mQueue = mQueue;
-  window.mSubmit = mSubmit;
-
-  // Served by an installed site PC: an action it saved but the cloud hasn't confirmed is not final
-  // (docs/OFFLINE-FIRST.md §2.4). Role result screens follow it (RoleUI.syncWatch); everywhere
-  // else this toast says so.
-  window.addEventListener('vds:sync-local', function () {
-    if (window.mToast) mToast('Saved on the site PC — not final until it syncs with the cloud.');
-  });
+  var mQueue = {
+    setToken:function (token,user) {
+      var who = changeOwner({v:token,user_id:user?.id ?? null,api_base:API.base?.() || '',apiToken:API.getToken?.(),device_id:API.deviceId?.()});
+      sessionWrite = sessionWrite.catch(function () {}).then(function () {
+        if (!current(who)) return;
+        return storage().request('meta','readwrite',function (s) { s.put({k:'token',v:who.v,user_id:who.user_id,api_base:who.api_base,device_id:who.device_id}); });
+      });
+      return sessionWrite.then(function () { if (current(who) && navigator.onLine) autoFlush(); }).catch(function () { emit(); });
+    },
+    clearToken:function () {
+      changeOwner(null);
+      sessionWrite = sessionWrite.catch(function () {}).then(function () {
+        if (!owner) return storage().request('meta','readwrite',function (s) { s.delete('token'); });
+      });
+      return sessionWrite.catch(function () { emit(); });
+    },
+    enqueue:function (op) {
+      var who = owner;
+      if (!current(who) || who.user_id == null) return Promise.reject(cancellation());
+      op = Object.assign({},op,{created:op.created || Date.now(),attempts:0,user_id:who.user_id,server_base:who.api_base});
+      return storage().request('ops','readwrite',function (s) { if (!current(who)) throw cancellation(); s.put(op); }).then(function () { changed(); backgroundSync(); return op.key; });
+    },
+    _every:function () { return storage().all(); },
+    _remove:function (key) { return storage().request('ops','readwrite',function (s) { s.delete(key); }).then(changed); },
+    _put:function (op) { return storage().request('ops','readwrite',function (s) { s.put(op); }).then(changed); },
+    snapshot:function () {
+      var who = owner;
+      return storage().all().then(function (rows) {
+        if (!current(who)) throw cancellation();
+        return {ops:rows.filter(function (row) { return storage().owns(row,who); }),foreign:rows.filter(function (row) { return !storage().owns(row,who); }).length};
+      });
+    },
+    all:function () { return mQueue.snapshot().then(function (r) { return r.ops; }); },
+    count:function () { return mQueue.all().then(function (rows) { return rows.length; }); },
+    // A site-PC acknowledgement is tracked, but is no longer an unsent phone write.
+    unsentCount:function () { return mQueue.all().then(function (rows) { return rows.filter(function (row) { return !row.local_command; }).length; }); },
+    foreignCount:function () { return mQueue.snapshot().then(function (r) { return r.foreign; }); },
+    busy:function (op) { return storage().busy(op); },
+    discard:function (key) {
+      var who = owner;
+      return ownedJob('discard:'+key,who,function () { return storage().discard(key,who,function () { return current(who); }).then(changed); });
+    },
+    retry:function (key) { return send(key,true,owner); },
+    checkLocal:function (key) {
+      var who = owner;
+      return ownedJob('check:'+key,who,async function (job) {
+        var op = (await mQueue.all()).find(function (row) { return row.key === key; });
+        if (!op?.local_command) return;
+        var result = await bounded(job,who,function (opts) { return API.get('/sync/command/'+encodeURIComponent(op.local_command),opts); });
+        if (!result || typeof result.state !== 'string') throw new Error('The cloud confirmation could not be read. Try again.');
+        await storage().edit(key,function (row) {
+          if (!current(who) || !row || !storage().owns(row,who) || row.local_command !== op.local_command) return {};
+          if (result.state === 'confirmed') return {remove:true};
+          row.local_state = result.state; row.local_error = result.error || null; return {row:row};
+        }); changed();
+      });
+    },
+    flush:function (options) {
+      var who = owner;
+      if (!current(who)) return Promise.resolve();
+      return ownedJob('flush',who,async function () {
+        var rows = await mQueue.all();
+        for (var row of rows) {
+          if (!current(who)) return;
+          if (row.local_command) { await mQueue.checkLocal(row.key).catch(function () {}); continue; }
+          if (options?.automatic && row.error) continue;
+          if (await send(row.key,!options?.automatic,who)) break;
+        }
+      });
+    },
+    onChange:function (cb) { listeners.push(cb); return function () { listeners = listeners.filter(function (fn) { return fn !== cb; }); }; }
+  };
+  function mSubmit(path,body,opts) {
+    opts = opts || {};
+    var key = opts.idempotencyKey || 'idem-'+uuid(), who = owner;
+    var request = {idempotencyKey:key};
+    if (opts.signal) request.signal = opts.signal;
+    if (opts.isCurrent) request.isCurrent = opts.isCurrent;
+    return API.post(path,body,request).then(function (response) { return {ok:true,response:response,local:API.syncLocal(response)}; }).catch(function (error) {
+      if (error.offline && current(who) && (!opts.isCurrent || opts.isCurrent())) {
+        return mQueue.enqueue({key:key,method:'POST',path:path,body:body,label:opts.label || path}).then(function () { return {queued:true}; });
+      }
+      throw error;
+    });
+  }
+  function autoFlush() { if (owner) mQueue.flush({automatic:true}).catch(function () {}); }
+  window.addEventListener('online',autoFlush);
+  setInterval(function () { if (navigator.onLine) autoFlush(); },25000);
+  if (navigator.onLine) setTimeout(autoFlush,1500);
+  if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message',function (e) { if (e.data === 'queue-changed') emit(); });
+  window.mQueue = mQueue; window.mSubmit = mSubmit;
+  window.addEventListener('vds:sync-local',function () { if (window.mToast) mToast('Saved on the site PC — not final until it syncs with the cloud.'); });
 })();

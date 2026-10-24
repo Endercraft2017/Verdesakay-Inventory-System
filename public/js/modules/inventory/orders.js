@@ -3,6 +3,9 @@
 App.register('orders', async (view, filter) => {
   const type = filter && filter.type === 'job' ? 'job' : filter && filter.type === 'purchase' ? 'purchase' : 'sale';
   const tracking = filter && filter.mode === 'track' && type !== 'purchase';
+  // Customer JO documents are legacy records to inspect from Sales. New build
+  // work is drafted from sale approval or planned under Production instead.
+  const readOnlyJob = type === 'job';
   const noun = type === 'sale' ? 'Sale Order' : type === 'job' ? 'Customer Job Order' : 'Supplier Purchase Order';
   const state = { q: String(filter?.search || ''), backorder: false };
   const qbDoc = type === 'purchase' ? 'Bill' : 'Invoice';
@@ -10,11 +13,12 @@ App.register('orders', async (view, filter) => {
   try { qb = await API.get('/quickbooks/status'); } catch { /* not configured */ }
   // Purchase orders are purchasing's (purchasing.manage), sale / job orders the orders module's —
   // the server checks the same per order (src/modules/inventory/order-access.ts).
-  const canWrite = (action) => App.hasPermission(type === 'purchase' ? 'purchasing.manage' : 'orders.' + action);
-  const canCreate = !tracking && canWrite('create');
-  const canEdit = !tracking && canWrite('edit');
-  const canDelete = !tracking && canWrite('delete');
-  const canQbPush = qb.connected && App.hasPermission(type === 'purchase' ? 'purchasing.approve_bills' : 'orders.approve');
+  const canWrite = (action) => App.hasPermission(type === 'purchase' ? 'purchasing.manage' : 'orders.' + action)
+    && (type !== 'job' || action === 'view' || App.hasPermission('production.plan'));
+  const canCreate = !tracking && !readOnlyJob && canWrite('create');
+  const canEdit = !tracking && !readOnlyJob && canWrite('edit');
+  const canDelete = !tracking && !readOnlyJob && canWrite('delete');
+  const canQbPush = !readOnlyJob && qb.connected && App.hasPermission(type === 'purchase' ? 'purchasing.approve_bills' : 'orders.approve');
 
   let suppliers = [];
   if (type === 'purchase') { try { suppliers = await API.get('/suppliers'); } catch { /* optional */ } }
@@ -31,7 +35,7 @@ App.register('orders', async (view, filter) => {
 
   view.innerHTML = `
     <div class="topbar">
-      <h2>${tracking ? noun + 's · Fulfillment tracking' : noun + 's'}</h2>
+      <h2>${tracking ? noun + 's · Fulfillment tracking' : noun + 's' + (readOnlyJob ? ' · View only' : '')}</h2>
       <div class="grow"></div>
       <div class="search-box search">${UI.icon('search', 16)}<input id="ord-search" aria-label="Search orders by number or ${partyLabel.toLowerCase()}" placeholder="Search number, ${partyLabel.toLowerCase()}…" value="${UI.esc(state.q)}" /></div>
       ${type === 'sale' ? `<button class="btn secondary" id="ord-backorder" title="Show firm orders with stock lines still awaiting picking">${UI.icon('alert', 15)} Awaiting release</button>` : ''}
@@ -94,11 +98,8 @@ App.register('orders', async (view, filter) => {
             ${tracking ? '' : `<td class="right">${UI.esc(o.currency || '')} ${money(o.total)}</td>`}
             <td><span class="badge-pill status-${UI.esc(o.status)}">${UI.esc(o.status)}</span>${o.release_slip_number ? ` <span class="badge-pill" title="Goods left on release slip ${UI.esc(o.release_slip_number)}">Shipped · ${UI.esc(o.release_slip_number)}</span>` : ''}${o.backordered ? ' <span class="badge-pill low" title="Stock lines still await picking">⚠ awaiting pick</span>' : ''}</td>
             <td class="actions">
-              ${type === 'job' && !tracking && App.hasPermission('production.plan')
-                ? (o.job_order_id
-                  ? `<button class="icon-btn" title="View in Production — ${UI.esc(o.job_order_number)}" data-view-jo="${o.job_order_id}">${UI.icon('eye')}</button>`
-                  : `<button class="icon-btn" title="Start production" data-produce="${o.id}">${UI.icon('adjust')}</button>`)
-                : ''}
+              ${type === 'job' && o.job_order_id && App.hasPermission('production.view')
+                ? `<button class="icon-btn" title="View in Production — ${UI.esc(o.job_order_number)}" data-view-jo="${o.job_order_id}">${UI.icon('eye')}</button>` : ''}
               ${type === 'purchase' ? `<button class="icon-btn" title="Receiving & bills" data-purch="${o.id}">${UI.icon('inbox')}</button>` : ''}
               ${type === 'sale' && !tracking && ['approved', 'released'].includes(String(o.status).toLowerCase()) && App.hasPermission('orders.authorize') && window.ReleaseAuth
                 ? `<button class="icon-btn" title="Release authorization (who may collect)" data-relauth="${o.id}" data-num="${UI.esc(o.number)}">${UI.icon('key')}</button>` : ''}
@@ -197,7 +198,7 @@ App.register('orders', async (view, filter) => {
         <div class="order-review-summary"><div><strong>${UI.esc(order.number)}</strong> · ${UI.esc(status)}
           <p>Ship from <strong>${UI.esc(av.location_name || 'No stock location')}</strong>${av.uses_default_location ? ' (default)' : ''}</p></div>
           <span class="badge-pill ${av.ok ? 'ok' : 'low'}">${av.ok ? 'Stock covers this order' : av.short_lines + ' stock line(s) short'}</span></div>
-        <p class="muted">${av.lines.some((l) => l.elsewhere_on_hand > 0) ? 'Stock at other locations needs a transfer. ' : ''}Available RTS stock can be picked now; draft production covers only the remaining shortage and becomes stock after QC and Products In. A separate job order can also build RTS buffer stock without a sales order. ${av.non_stock_lines || 0} non-stock line(s) have no stock requirement.</p>
+        <p class="muted">${av.lines.some((l) => l.elsewhere_on_hand > 0) ? 'Stock at other locations needs a transfer. ' : ''}Approval automatically drafts production only for finished-product quantities RTS cannot cover. Production must still approve, kit, inspect and receive those jobs before release. CKD parts and aftersales parts remain warehouse or purchasing demand. ${av.non_stock_lines || 0} non-stock line(s) have no stock requirement.</p>
         <div class="order-review-lines">${av.lines.map((l) => `<article class="order-stock-line">
           <div><strong>${UI.esc(l.name)}</strong> <span class="muted">${l.fulfillment_mode === 'semi_built' ? 'Semi-built' : l.fulfillment_mode === 'ckd_component' ? 'CKD part' : l.is_finished_product ? 'Fully built' : 'Part'}</span><span class="badge-pill ${l.shortfall > 0 ? 'low' : 'ok'}">${l.shortfall > 0 ? 'Short ' + l.shortfall : 'Covered'}</span></div>
           ${l.is_finished_product && l.shortfall > 0 && l.available > l.covered_here ? `<p class="muted">Split fulfillment: pick up to ${Math.max(0, l.available - l.covered_here)} available RTS unit(s); plan ${l.shortfall} remaining unit(s) for production.</p>` : ''}
@@ -206,7 +207,7 @@ App.register('orders', async (view, filter) => {
           ${l.shortfall > 0 && l.is_finished_product ? `<p>${!l.has_bom ? 'No BOM for a new CKD-parts build. Define the recipe first; an existing complete semi-built package may still be finished.' : l.buildable ? 'Outstanding CKD production materials are covered; approval and kit release are still required.' : 'CKD materials short: ' + (l.component_shortfalls || []).map((c) => `${UI.esc(c.name)} (need ${c.need}, free ${c.have})`).join('; ')}</p>` : ''}
           ${l.shortfall > 0 && l.fulfillment_mode === 'assembled' && l.semi_built_available > 0 ? `<p class="order-notice" role="status">${l.semi_built_available} complete semi-built package(s) available here. A production manager can choose to finish one of these for this fully built order${l.component_shortfalls?.length ? ' even though CKD parts are short' : ' instead of starting from CKD parts'}. Its loose parts are already included; no BOM components are issued again.</p>${!tracking && plannable && (App.hasPermission('production.approve') || App.hasPermission('production.manage')) ? `<button type="button" class="btn secondary small" data-convert="${l.item_id}">Finish a semi-built RTS unit</button>` : ''}` : ''}
           ${(l.linked_job_orders || []).reduce((n, j) => n + j.remaining, 0) > l.shortfall ? '<p class="order-notice">Planned production exceeds this shortage. Review existing job quantities before buying more materials.</p>' : ''}
-          ${(l.linked_job_orders || []).length ? `<p class="muted">Production planned: ${l.linked_job_orders.map((j) => `${UI.esc(j.number)} · ${UI.esc(j.status)} · ${j.remaining} not yet received`).join('; ')}</p>` : ''}
+          ${(l.linked_job_orders || []).length ? `<p class="muted">Production planned: ${l.linked_job_orders.map((j) => `${UI.esc(j.number)} · ${UI.esc(j.status)} · ${j.remaining} not yet received`).join('; ')}</p><div class="order-linked-actions">${l.linked_job_orders.map((j) => `<button type="button" class="btn secondary small" data-linked-jo="${j.id}">View ${UI.esc(j.number)}</button>`).join('')}</div>` : ''}
         </article>`).join('') || '<p class="muted">This order has only non-stock lines.</p>'}</div>
         ${(av.linked_purchase_orders || []).length ? `<div class="order-notice">Linked purchase supply: ${av.linked_purchase_orders.map((p) => `${UI.esc(p.number)} · ${p.outstanding} outstanding`).join('; ')}. Receipt is still required.</div>` : ''}
         ${toBuy.length ? `<p>Still to purchase: ${toBuy.map((p) => `${UI.esc(p.name)} × ${p.to_purchase}`).join('; ')}</p>` : ''}
@@ -214,9 +215,9 @@ App.register('orders', async (view, filter) => {
         <div class="order-review-actions">
           <button type="button" class="btn secondary" data-refresh>Refresh stock</button>
           ${open && canEdit ? '<button type="button" class="btn secondary" data-edit-order>Edit quantities or ship-from</button>' : ''}
-          ${make && short.some((l) => l.is_finished_product && l.has_bom) ? '<button type="button" class="btn secondary" data-make>Draft CKD-parts production</button>' : ''}
+          ${make && short.some((l) => l.is_finished_product && l.has_bom) && !open ? '<button type="button" class="btn secondary" data-make>Plan new shortage</button>' : ''}
           ${buy && toBuy.length ? '<button type="button" class="btn secondary" data-buy>Draft missing purchases</button>' : ''}
-          ${open && App.hasPermission('orders.approve') && (av.location_id != null || !av.lines.length) ? `<button type="button" class="btn${av.ok ? '' : ' secondary danger'}" data-approve>${av.ok ? 'Approve for warehouse' : 'Review backorder approval'}</button>` : ''}
+          ${open && App.hasPermission('orders.approve') && (av.location_id != null || !av.lines.length) ? `<button type="button" class="btn${av.ok ? '' : ' secondary'}" data-approve>${av.ok ? 'Approve for warehouse' : 'Approve & plan shortage'}</button>` : ''}
         </div>
         ${open ? '<p class="muted">Approval locks quantities and prices and sends the order to warehouse acceptance. It does not pick or ship goods.</p>' : '<p class="muted">This review does not change an existing approval, release or delivery.</p>'}`;
       panel.querySelector('[data-refresh]').onclick = () => refresh();
@@ -227,6 +228,18 @@ App.register('orders', async (view, filter) => {
         finally { busy = false; controls(false); }
       });
       panel.querySelector('[data-make]')?.addEventListener('click', () => action('produce-shortfall'));
+      panel.querySelectorAll('[data-linked-jo]').forEach((button) => button.addEventListener('click', () => {
+        const found = av.lines.flatMap((line) => (line.linked_job_orders || []).map((job) => ({ line, job })))
+          .find((entry) => String(entry.job.id) === button.dataset.linkedJo);
+        if (!found) return;
+        const { line, job } = found;
+        UI.modal({ title: `Linked production · ${job.number}`, confirmText: null, cancelText: 'Close',
+          bodyHTML: `<p><strong>${UI.esc(line.name)}</strong> · ${line.fulfillment_mode === 'semi_built' ? 'Semi-built' : 'Fully built'}</p>
+            <p>Job status: <strong>${UI.esc(job.status.replaceAll('_', ' '))}</strong></p>
+            <p>Planned: ${Number(job.qty_ordered)} · Progress recorded: ${Number(job.qty_done || 0)} · Not yet received: ${Number(job.remaining)}</p>
+            <p class="muted">Production owns approval, kit release, inspections and Products In. This sale can use the finished units only after receipt at the ship-from location.</p>`,
+        });
+      }));
       panel.querySelectorAll('[data-convert]').forEach((button) => button.addEventListener('click', () => convertSemi(av.lines.find((l) => String(l.item_id) === button.dataset.convert))));
       panel.querySelector('[data-buy]')?.addEventListener('click', () => action('purchase-shortfall'));
       panel.querySelector('[data-approve]')?.addEventListener('click', approve);
@@ -302,11 +315,13 @@ App.register('orders', async (view, filter) => {
       if (busy) return;
       busy = true; controls(true);
       try {
-        const force = !snapshot.ok;
-        if (force && !(await UI.confirmDialog('Approve with ' + snapshot.short_lines + ' stock line(s) short? The warehouse must still accept, pick and release goods. Draft supply does not remove the shortage.', 'Approve backorder'))) return;
+        const backorders = snapshot.lines.filter((l) => l.shortfall > 0 && (!l.is_finished_product || l.fulfillment_mode === 'ckd_component'));
+        const force = backorders.length > 0;
+        if (force && !(await UI.confirmDialog('Approve with ' + backorders.length + ' part/CKD stock line(s) short? This is an explicit backorder. Transfer or purchase those goods before release. Finished-product shortages will get linked draft production jobs.', 'Approve backorder'))) return;
         const result = await API.post(`/orders/${id}/status`, { status: 'approved', force, expected_revision: snapshot.revision || order.revision });
         const local = API.syncLocal ? API.syncLocal(result) : result.__syncCommand;
-        UI.toast(local ? 'Approval saved on this PC; sync confirmation pending' : force ? 'Approved with a stock shortage' : 'Approved for warehouse acceptance');
+        UI.toast(local ? 'Approval saved on this PC; sync confirmation pending' : result.production_drafts?.length ? `Approved; ${result.production_drafts.length} draft production job(s) linked` : force ? 'Approved with a parts backorder' : 'Approved for warehouse acceptance');
+        controls(false);
         review.close(); load();
       } catch (e) { await refresh(e.message + ' Review the refreshed stock before deciding.'); }
       finally { busy = false; controls(false); }
@@ -376,9 +391,7 @@ App.register('orders', async (view, filter) => {
 
     // Sale orders get the release lifecycle: open → approved (unlocks warehouse
     // release) → released (auto once fully picked) → confirmed/completed (stock out).
-    const STATUS_VALUES = type === 'sale' && !App.hasPermission('orders.approve') ? [get('status','open')] : type === 'sale'
-      ? (editing ? (shipped ? (order.fulfillment&&order.fulfillment.remaining>0?['approved','released']:['confirmed', 'completed', 'fulfilled', 'invoiced', 'paid']) : ['open', 'cancelled'].includes(String(order.status).toLowerCase()) ? ['open', 'approved', 'cancelled'] : ['open', 'approved', 'confirmed', 'completed', 'cancelled']) : ['open'])
-      : ['open', 'confirmed', 'completed', 'cancelled'];
+    const STATUS_VALUES = ['open', 'confirmed', 'completed', 'cancelled'];
     const curStatus = get('status', 'open');
     const statusOpts = (STATUS_VALUES.includes(curStatus) ? STATUS_VALUES : STATUS_VALUES.concat(curStatus))
       .map((s) => `<option value="${s}" ${curStatus === s ? 'selected' : ''}>${s}</option>`).join('');
@@ -391,11 +404,17 @@ App.register('orders', async (view, filter) => {
           <p>${readOnly ? 'You have view access to this order.' : !editing && type === 'sale' ? 'Save an open order first. Approval checks stock and hands the order to the warehouse.' : 'Review the customer, stock links, quantities, and totals before saving.'}</p></div>
         ${lookupWarnings.length ? `<p class="order-notice" role="status">${lookupWarnings.map(UI.esc).join(' ')}</p>` : ''}
         ${editing&&type==='sale'&&order.fulfillment ? `<p class="order-notice">Shipped ${order.fulfillment.dispatched} · Customer delivered ${order.fulfillment.delivered} · Held ${order.fulfillment.held} · Still owed ${order.fulfillment.remaining}</p>${!readOnly&&App.hasPermission('orders.approve')&&order.fulfillment.remaining>0?'<button type="button" class="btn secondary" id="order-cancel-remainder">Cancel customer remainder</button>':''}`:''}
+        ${type === 'sale' ? `<p class="order-notice" role="status"><strong>Stage:</strong> ${editing ? UI.esc(({ open: 'Awaiting approval', approved: 'Approved · warehouse action needed', released: 'Released · delivery in progress', completed: 'Completed', cancelled: 'Cancelled' })[String(order.status).toLowerCase()] || String(order.status).replaceAll('_', ' ')) : 'Draft capture · awaiting approval'}. Approval is a separate stock review by an authorized person.</p>
+          ${editing ? `<p class="muted">Target delivery: ${UI.esc(get('expected_date', '') || 'Not set')}. ${((order.delivery_events || []).filter((d) => d.status === 'delivered' && d.delivered_at).map((d) => `${d.delivery_mode === 'courier' ? 'Courier pickup / handoff' : 'Customer delivery'}${d.release_slip_number ? ' · ' + d.release_slip_number : ''}: ${UI.fmtDate(d.delivered_at)}`).map(UI.esc).join(' · ') || 'Actual delivery / courier handoff: not recorded yet.')}</p>` : ''}` : ''}
         ${shipped ? `<p class="order-notice" role="status">Goods left on release slip ${UI.esc(order.release_slip_number)}. Reopening, cancelling or deleting this sale cannot restore physical stock. Record a return or correction separately.</p>` : ''}
         <section class="order-section"><h4>${partyLabel} &amp; order details</h4>
         ${type === 'sale' ? `<div class="field-row">
-          <div><label>Customer (on file)</label><select data-f="customer_id"><option value="">— none / walk-in —</option>
-            ${customers.map((c) => `<option value="${c.id}" ${String(get('customer_id', '')) === String(c.id) ? 'selected' : ''}>${UI.esc(c.name)}</option>`).join('')}</select></div>
+          <div class="order-customer-picker"><label for="ord-customer-search">Find an existing customer</label>
+            <input id="ord-customer-search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="ord-customer-options" autocomplete="off" placeholder="Type customer name or contact" value="${UI.esc(customers.find((c) => String(c.id) === String(get('customer_id', '')))?.name || '')}" />
+            <input type="hidden" data-f="customer_id" value="${UI.esc(get('customer_id', ''))}" />
+            <div id="ord-customer-options" role="listbox" hidden></div>
+            <div class="order-customer-choice" role="status">${get('customer_id', '') ? 'Existing customer selected' : 'Walk-in · not linked to a customer record'}</div>
+            <button type="button" class="order-link-btn" id="ord-walk-in">Use as walk-in</button></div>
           ${taxCodes.length ? `<div><label>Tax code</label><select data-f="tax_code_id"><option value="">— unclassified —</option>
             ${preservedOption(get('tax_code_id', null), taxCodes, 'Existing tax code')}
             ${taxCodes.map((t) => `<option value="${t.id}" ${String(get('tax_code_id', '')) === String(t.id) ? 'selected' : ''}>${UI.esc(t.code)} — ${UI.esc(t.name)}</option>`).join('')}</select></div>` : ''}
@@ -414,7 +433,7 @@ App.register('orders', async (view, filter) => {
         </div>` : ''}
         <div class="field-row">
           <div><label>Order date</label><input data-f="order_date" type="date" value="${UI.esc(get('order_date', ''))}" /></div>
-          <div><label>Status</label><select data-f="status">${statusOpts}</select></div>
+          ${type === 'sale' ? `<div><label>Target delivery date <span class="muted">(optional)</span></label><input data-f="expected_date" type="date" value="${UI.esc(get('expected_date', ''))}" /></div>` : `<div><label>Status</label><select data-f="status">${statusOpts}</select></div>`}
           <div><label>Currency</label><input data-f="currency" maxlength="3" placeholder="PHP" value="${UI.esc(get('currency', 'PHP'))}" /></div>
         </div>
         </section><section class="order-section"><h4>Items to supply</h4>
@@ -433,7 +452,7 @@ App.register('orders', async (view, filter) => {
         <div class="order-totals">
           <div class="row"><span>Subtotal (including fees)</span><strong id="ord-subtotal">0.00</strong></div>
           ${type === 'sale' ? '<div class="row"><span>Additional fees within subtotal</span><span id="ord-fees">0.00</span></div>' : ''}
-          <div class="row"><label for="ord-tax-percent">Tax %</label><input id="ord-tax-percent" data-f="tax_percent" type="number" min="0" max="100" step="0.01" value="${UI.esc(String(get('tax_percent', 0)))}" style="width:90px" /></div>
+          <div class="row"><label id="ord-tax-label" for="ord-tax-percent">Tax %</label><input id="ord-tax-percent" aria-labelledby="ord-tax-label" data-f="tax_percent" type="number" min="0" max="100" step="0.01" value="${UI.esc(String(get('tax_percent', 0)))}" style="width:90px" /></div>
           <div class="row"><span>Tax amount</span><span id="ord-tax">0.00</span></div>
           <div class="row grand"><span>Total</span><strong id="ord-total">0.00</strong></div>
         </div>
@@ -450,7 +469,7 @@ App.register('orders', async (view, filter) => {
         const taxEl = ov.querySelector('[data-f="tax_percent"]');
         ov.classList.add('order-editor');
         // Associate visible labels with their controls, including keyboard/screen-reader use.
-        ov.querySelectorAll('[data-f]').forEach((el) => {
+        ov.querySelectorAll('[data-f]:not([type="hidden"])').forEach((el) => {
           el.id = el.id || 'ord-' + el.dataset.f;
           const label = el.parentElement.querySelector('label');
           if (label) label.htmlFor = el.id;
@@ -467,11 +486,59 @@ App.register('orders', async (view, filter) => {
         const shipFrom = ov.querySelector('[data-f="location_id"]');
         if (shipFrom && editing && (order.released_at || order.fulfilled_at)) shipFrom.disabled = true;
         const customerEl = ov.querySelector('[data-f="customer_id"]');
-        if (customerEl && !readOnly) customerEl.onchange = () => {
-          const customer = customers.find((c) => String(c.id) === customerEl.value);
-          ov.querySelector('[data-f="customer_name"]').value = customer ? customer.name : '';
-          ov.querySelector('[data-f="customer_contact"]').value = customer ? customer.contact_person || customer.phone || '' : '';
-        };
+        const customerSearch = ov.querySelector('#ord-customer-search');
+        if (customerSearch) {
+          const choices = ov.querySelector('#ord-customer-options');
+          const choiceState = ov.querySelector('.order-customer-choice');
+          if (readOnly) { customerSearch.disabled = true; ov.querySelector('#ord-walk-in').hidden = true; }
+          else {
+            let matches = [], active = -1;
+            const close = () => { choices.hidden = true; customerSearch.setAttribute('aria-expanded', 'false'); customerSearch.removeAttribute('aria-activedescendant'); };
+            const select = (customer) => {
+              customerEl.value = String(customer.id); customerSearch.value = customer.name;
+              ov.querySelector('[data-f="customer_name"]').value = customer.name;
+              ov.querySelector('[data-f="customer_contact"]').value = customer.contact_person || customer.phone || '';
+              choiceState.textContent = `Existing customer selected: ${customer.name}`; close(); ov.__markDirty?.();
+            };
+            const renderChoices = () => {
+              const q = customerSearch.value.trim().toLocaleLowerCase();
+              matches = customers.filter((c) => [c.name, c.contact_person, c.phone].some((v) => String(v || '').toLocaleLowerCase().includes(q))).slice(0, 8);
+              active = -1;
+              if (!matches.length) { close(); choiceState.textContent = 'Walk-in · no matching customer record'; return; }
+              choices.innerHTML = matches.map((c, i) => `<button type="button" role="option" id="ord-customer-option-${i}" aria-selected="false" data-customer-option="${i}"><strong>${UI.esc(c.name)}</strong><span>${UI.esc(c.contact_person || c.phone || 'Customer record #' + c.id)}</span></button>`).join('');
+              choices.hidden = false; customerSearch.setAttribute('aria-expanded', 'true');
+              choices.querySelectorAll('[data-customer-option]').forEach((button) => button.onclick = () => select(matches[Number(button.dataset.customerOption)]));
+            };
+            customerSearch.addEventListener('input', () => {
+              customerEl.value = ''; choiceState.textContent = 'Walk-in · not linked to a customer record';
+              ov.querySelector('[data-f="customer_name"]').value = customerSearch.value;
+              renderChoices();
+            });
+            customerSearch.addEventListener('focus', renderChoices);
+            customerSearch.addEventListener('keydown', (event) => {
+              if (event.key === 'Escape') { close(); return; }
+              if (event.key === 'Tab') { close(); return; }
+              if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
+              if (event.key === 'Enter') { event.preventDefault(); event.stopImmediatePropagation(); }
+              if (choices.hidden) renderChoices();
+              if (event.key === 'Enter' && active >= 0 && matches[active]) { select(matches[active]); return; }
+              if (!matches.length) return;
+              if (event.key !== 'Enter') { event.preventDefault(); active = (active + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length;
+                choices.querySelectorAll('[role="option"]').forEach((option, i) => option.setAttribute('aria-selected', String(i === active)));
+                customerSearch.setAttribute('aria-activedescendant', `ord-customer-option-${active}`); }
+            }, true);
+            ov.querySelector('[data-f="customer_name"]').addEventListener('input', (event) => {
+              const selected = customers.find((c) => String(c.id) === customerEl.value);
+              if (selected && event.target.value !== selected.name) {
+                customerEl.value = ''; customerSearch.value = event.target.value;
+                choiceState.textContent = 'Walk-in · not linked to a customer record'; close();
+              }
+            });
+            customerSearch.addEventListener('blur', () => setTimeout(() => { if (!choices.contains(document.activeElement)) close(); }, 0));
+            ov.querySelector('#ord-walk-in').onclick = () => { customerEl.value = ''; choiceState.textContent = 'Walk-in · not linked to a customer record';
+              ov.querySelector('[data-f="customer_name"]').value = customerSearch.value.trim(); close(); customerSearch.focus(); ov.__markDirty?.(); };
+          }
+        }
 
         function recompute() {
           let subtotal = 0;
@@ -690,7 +757,7 @@ App.register('orders', async (view, filter) => {
         const fOpt = (k) => { const el = ov.querySelector(`[data-f="${k}"]`); return el ? el.value : null; };
         const body = {
           customer_name: f('customer_name'), customer_contact: f('customer_contact'),
-          order_date: f('order_date'), status: f('status'), currency: f('currency'),
+          order_date: f('order_date'), status: type === 'sale' ? (editing ? order.status : 'open') : f('status'), currency: f('currency'),
           tax_percent: Number(f('tax_percent')) || 0, notes: f('notes'), items: cleaned,
         };
         if (editing && order.revision) body.expected_revision = order.revision;
@@ -700,12 +767,11 @@ App.register('orders', async (view, filter) => {
         }
         if (type === 'sale') {
           body.customer_id = fOpt('customer_id') || null;
+          body.expected_date = fOpt('expected_date') || null;
           if (locations.length) body.location_id = fOpt('location_id') || null;
         }
         body.tax_code_id = taxCodes.length ? fOpt('tax_code_id') || null : get('tax_code_id', null);
 
-        const needsApprovalReview = type === 'sale' && editing && ['open', 'cancelled'].includes(String(order.status).toLowerCase()) && body.status === 'approved';
-        if (needsApprovalReview) body.status = 'open';
         const payload = editing ? body : { type, ...body };
         const signature = JSON.stringify(payload);
         if (!saveAttempt || saveAttempt.signature !== signature) saveAttempt = { signature, key: 'order:' + (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)) };
@@ -736,7 +802,6 @@ App.register('orders', async (view, filter) => {
         } finally {
           saveControls.forEach((el) => el.disabled = false);
         }
-        if (needsApprovalReview) { m.close(); await reviewStock(order.id); load(); return true; }
         UI.toast(editing ? 'Order saved' : 'Order created');
         load();
       },

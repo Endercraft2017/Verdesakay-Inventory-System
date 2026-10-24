@@ -71,11 +71,24 @@ describe('sales order intake UI', () => {
     expect(doc.querySelector('[data-confirm]')?.textContent).toBe('Create order');
     expect((doc.querySelector('[data-f="currency"]') as HTMLInputElement).disabled).toBe(false);
   });
+  it('keeps customer JO records read-only in Sales even for an administrator', async () => {
+    const permissions = ['orders.view', 'orders.create', 'orders.edit', 'orders.delete', 'orders.approve', 'production.plan', 'production.view'];
+    const order = { id: 1, number: 'JO-00001', type: 'job', status: 'open', items: [{ name: 'Legacy work', quantity: 1, unit_price: 100 }] };
+    const { doc, api, click } = await setup(permissions, order, {}, 'job');
+    expect(doc.querySelector('.topbar h2')?.textContent).toContain('View only');
+    expect(doc.querySelector('#ord-new')).toBeNull();
+    expect(doc.querySelector('#ord-empty-new')).toBeNull();
+    expect(doc.querySelector('[data-edit], [data-del], [data-produce], [data-qbpush]')).toBeNull();
+    click('tr[data-open="1"]'); await flush();
+    expect(doc.querySelector('.order-editor [data-confirm]')).toBeNull();
+    expect(api.post).not.toHaveBeenCalled();
+  });
   it('starts with an open order and explains the next checkpoint', async () => {
     const { doc, click } = await setup();
     click('#ord-new');
     expect(doc.querySelector('[data-confirm]')?.textContent).toBe('Save open order');
-    expect(doc.querySelectorAll('[data-f="status"] option')).toHaveLength(1);
+    expect(doc.querySelector('[data-f="status"]')).toBeNull();
+    expect(doc.querySelector('[data-f="expected_date"]')).not.toBeNull();
     expect(doc.querySelector('.order-editor-intro')?.textContent).toContain('Approval checks stock');
   });
   it('does not discard an unnamed line when another line is valid', async () => {
@@ -115,7 +128,7 @@ describe('sales order intake UI', () => {
     expect((doc.querySelector('[data-f="customer_name"]') as HTMLInputElement).disabled).toBe(false);
     expect(doc.querySelector('#ord-add-inv')).toBeNull();
     expect(doc.querySelector('#ord-allocate')).toBeNull();
-    expect(doc.querySelector('.order-notice')?.textContent).toContain('clears warehouse reservations');
+    expect(doc.querySelector('.order-editor')?.textContent).toContain('Line items and tax are locked after approval');
   });
   it('provides a view-only order without mutation controls', async () => {
     const { doc } = await setup([], { id: 1, number: 'SO-00001', status: 'open', items: [{ name: 'Charge', quantity: 1, unit_price: 10 }] });
@@ -123,15 +136,22 @@ describe('sales order intake UI', () => {
     expect(doc.querySelector('[data-edit]')).toBeNull();
     expect(doc.querySelector('[data-del]')).toBeNull();
     expect(doc.querySelector('[data-confirm]')).toBeNull();
-    expect((doc.querySelector('[data-f="status"]') as HTMLSelectElement).disabled).toBe(true);
+    expect((doc.querySelector('#ord-customer-search') as HTMLInputElement).disabled).toBe(true);
   });
   it('fills customer fields from the selected record', async () => {
     const { doc, win, click } = await setup();
     click('#ord-new');
-    const select = doc.querySelector('[data-f="customer_id"]') as HTMLSelectElement;
-    select.value = '3'; select.dispatchEvent(new win.Event('change'));
+    const search = doc.querySelector('#ord-customer-search') as HTMLInputElement;
+    search.value = 'Customer'; search.dispatchEvent(new win.Event('input', { bubbles: true }));
+    search.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    search.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect((doc.querySelector('[data-f="customer_id"]') as HTMLInputElement).value).toBe('3');
     expect((doc.querySelector('[data-f="customer_name"]') as HTMLInputElement).value).toBe('Customer A');
     expect((doc.querySelector('[data-f="customer_contact"]') as HTMLInputElement).value).toBe('0912');
+    expect(doc.querySelector('[data-modal-error]')?.textContent).toBe('');
+    search.value = 'Different walk-in'; search.dispatchEvent(new win.Event('input', { bubbles: true }));
+    expect((doc.querySelector('[data-f="customer_id"]') as HTMLInputElement).value).toBe('');
+    expect((doc.querySelector('[data-f="customer_name"]') as HTMLInputElement).value).toBe('Different walk-in');
   });
   it('matches the server rounding of each line before summing', async () => {
     const { doc, click, input } = await setup();
@@ -252,6 +272,16 @@ const stockReview = (short = false) => ({ ok: !short, short_lines: short ? 1 : 0
   purchase_requirements: short ? [{ name: 'Frame', to_purchase: 2 }] : [], linked_purchase_orders: [] });
 
 describe('stock review UI', () => {
+  it('shows linked production details read-only to Sales without production permissions', async () => {
+    const availability: any = stockReview(true);
+    availability.lines[0].linked_job_orders = [{ id: 99, number: 'MO-00099', status: 'draft', qty_ordered: 2, qty_done: 0, remaining: 2 }];
+    const { doc, click } = await setup(['orders.view'], reviewOrder, { '/orders/1/availability': availability });
+    click('.order-editor [data-close]'); click('[data-stock]'); await flush(); await flush();
+    click('[data-linked-jo]');
+    expect(doc.querySelector('.modal-overlay:last-child')?.textContent).toContain('Linked production · MO-00099');
+    expect(doc.querySelector('.modal-overlay:last-child')?.textContent).toContain('Planned: 2');
+    expect(doc.querySelector('.modal-overlay:last-child [data-confirm]')).toBeNull();
+  });
   it('lets view-only users inspect stock without mutation controls', async () => {
     const { doc, click } = await setup([], reviewOrder, { '/orders/1/availability': stockReview(true) });
     click('.order-editor [data-close]'); click('[data-stock]'); await flush(); await flush();
@@ -263,29 +293,28 @@ describe('stock review UI', () => {
     click('.order-editor [data-close]'); click('[data-stock]'); await flush(); await flush();
     expect(doc.querySelector('.order-review')?.textContent).toContain('10 on hand at other locations');
     expect(doc.querySelector('[data-make]')).toBeNull(); expect(doc.querySelector('[data-buy]')).toBeNull();
-    expect(doc.querySelector('[data-approve]')?.textContent).toBe('Review backorder approval');
+    expect(doc.querySelector('[data-approve]')?.textContent).toBe('Approve & plan shortage');
   });
-  it('saves proposed approval open first and reviews the saved stock picture', async () => {
+  it('keeps capture open and requires a separate stock review for approval', async () => {
     const { doc, api, click } = await setup(['orders.edit','orders.approve'], reviewOrder, { '/orders/1/availability': stockReview() });
-    (doc.querySelector('[data-f="status"]') as HTMLSelectElement).value = 'approved';
+    expect(doc.querySelector('[data-f="status"]')).toBeNull();
     click('.order-editor [data-confirm]'); await flush(); await flush();
     expect(api.put).toHaveBeenCalledWith('/orders/1', expect.objectContaining({ status: 'open' }), expect.any(Object));
     expect(api.post).not.toHaveBeenCalled();
-    expect(doc.querySelector('.order-editor')).toBeNull();
+    click('[data-stock]'); await flush(); await flush();
     expect(doc.querySelector('[data-approve]')?.textContent).toBe('Approve for warehouse');
     click('[data-approve]'); await flush();
     expect(api.post).toHaveBeenCalledWith('/orders/1/status', { status: 'approved', force: false, expected_revision: 'a'.repeat(64) });
   });
-  it('requires explicit backorder confirmation and only approves, never completes', async () => {
+  it('approves a buildable finished-product shortage without treating it as a parts backorder', async () => {
     const { doc, api, click } = await setup(['orders.edit','orders.approve'], reviewOrder, { '/orders/1/availability': stockReview(true) });
     click('.order-editor [data-close]'); click('[data-stock]'); await flush(); await flush();
-    click('[data-approve]'); await flush(); expect(api.post).not.toHaveBeenCalled();
-    expect(doc.querySelector('.modal-overlay:last-child')?.textContent).toContain('warehouse must still accept');
-    click('.modal-overlay:last-child [data-confirm]'); await flush(); await flush();
-    expect(api.post).toHaveBeenCalledWith('/orders/1/status', { status: 'approved', force: true, expected_revision: 'a'.repeat(64) });
+    click('[data-approve]'); await flush();
+    expect(api.post).toHaveBeenCalledWith('/orders/1/status', { status: 'approved', force: false, expected_revision: 'a'.repeat(64) });
   });
   it('holds the review open and freezes actions while a supply request is pending', async () => {
-    const { doc, api, click, win } = await setup(['orders.edit','orders.approve','production.plan','purchasing.manage'], reviewOrder, { '/orders/1/availability': stockReview(true) });
+    const approved = { ...reviewOrder, status: 'approved' };
+    const { doc, api, click, win } = await setup(['orders.edit','orders.approve','production.plan','purchasing.manage'], approved, { '/orders/1/availability': { ...stockReview(true), order_status: 'approved' } });
     click('.order-editor [data-close]'); click('[data-stock]'); await flush(); await flush();
     let resolve!: (r: { id: number; number: string; created: { number: string }[] }) => void;
     api.post.mockImplementationOnce(() => new Promise((r) => { resolve = r; }));
@@ -299,7 +328,8 @@ describe('stock review UI', () => {
   });
   it('does not offer the completion shortcut on an open sale', async () => {
     const { doc } = await setup(['orders.edit','orders.approve'], reviewOrder);
-    expect([...doc.querySelectorAll('[data-f="status"] option')].map((o) => (o as HTMLOptionElement).value)).toEqual(['open', 'approved', 'cancelled']);
+    expect(doc.querySelector('[data-f="status"]')).toBeNull();
+    expect(doc.querySelector('.order-editor')?.textContent).toContain('Awaiting approval');
   });
 });
 

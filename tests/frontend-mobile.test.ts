@@ -90,6 +90,13 @@ describe('mobile bootstrap', () => {
       exercised under a specific account's actual permissions, not just route registration. */
   /** `respond(url, init)` may return a JSON body for a URL; anything it doesn't answer (returns
    *  undefined) rejects like a dead network, which is the default for every call. */
+  async function waitForMobileElement(win: any, selector: string) {
+    for (let n = 0; n < 100; n++) {
+      const element = win.document.querySelector(selector); if (element) return element;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    throw new Error('Missing mobile element ' + selector + ': ' + win.document.getElementById('m-view').textContent);
+  }
   async function scanStickers(win: any, codes: string[]) {
     const original = win.mScanner.open;
     win.mScanner.open = (opts: any) => {
@@ -186,6 +193,28 @@ describe('mobile bootstrap', () => {
     expect(text).not.toContain('Job Orders');
     expect(text).not.toContain('Repairs');
     expect(text).not.toContain('Products In');
+  });
+
+  it('shares a fresh access check between Work callers and propagates required failures', async () => {
+    const me={id:188,role:'employee',permissions:['mobile.access'],modules:null};
+    const win=await bootAs(me);let reject!:(error:Error)=>void,calls=0;
+    win.fetch=()=>{calls++;return new Promise((_resolve,fail)=>{reject=fail;});};
+    const background=win.MApp.refreshAccess(),required=win.MApp.refreshAccess({required:true});
+    const failed=expect(required).rejects.toThrow('Network unavailable');
+    reject(new Error('Fictional connection failure'));await failed;expect(await background).toBe(false);expect(calls).toBe(1);expect(win.MApp.getMe().id).toBe(188);win.close();
+  });
+
+  it('does not let an earlier access-profile 401 clear a newer sign-in', async () => {
+    const win=await bootAs({id:189,role:'employee',permissions:['mobile.access'],modules:null});let finish!:(response:any)=>void;
+    win.fetch=()=>new Promise(resolve=>{finish=resolve;});const old=win.MApp.refreshAccess();win.API.setToken('fictional-next-sign-in');
+    finish({status:401,ok:false,headers:{get:()=> 'application/json'},json:async()=>({error:'Old session expired'})});
+    expect(await old).toBe(false);expect(win.API.getToken()).toBe('fictional-next-sign-in');win.close();
+  });
+
+  it('confirms a fresh access profile to a required workflow check', async () => {
+    const me={id:190,role:'employee',permissions:['mobile.access'],modules:null};const win=await bootAs(me);let calls=0;
+    win.fetch=()=>{calls++;return Promise.resolve({status:200,ok:true,headers:{get:()=> 'application/json'},json:async()=>({user:me})});};
+    expect(await win.MApp.refreshAccess({required:true})).toBe(true);expect(calls).toBe(1);win.close();
   });
 
   it('a floor desk without the warehouse phone tools (inventory.mobile) still gets its own desk', async () => {
@@ -505,14 +534,7 @@ describe('mobile bootstrap', () => {
     expect(win.document.body.textContent).toContain('a selfie is needed to finish');
   });
 
-  it('maps the Schedule route to approved Figma node 46:606 and keeps its live API/request flow', () => {
-    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/hr/schedule.js'), 'utf8');
-    expect(source).toContain("view.setAttribute('data-figma-node', '46:606')");
-    expect(source).toContain("API.get('/me/schedule')");
-    expect(source).toContain("MApp.go('requests', { type: 'schedule_change', date: target })");
-    expect(source).toContain('Request schedule change');
-  });
-
+  // Schedule API/date behavior is exercised in frontend-mobile-pay-schedule-ux.test.ts.
 
   it('maps universal Requests to the approved center, form, and detail Figma nodes', () => {
     const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/hr/requests.js'), 'utf8');
@@ -971,7 +993,8 @@ describe('mobile bootstrap', () => {
         return undefined;
       };
       const win = await bootAs(LEAD, respond, factory);
-      win.location.hash = '#/job-orders?id=184' + (kind === 'accept' ? '' : '&step=' + kind); await wait();
+      win.location.hash = '#/job-orders?id=184' + (kind === 'accept' ? '' : '&step=' + kind);
+      await waitForMobileElement(win, kind === 'accept' ? '#jo-counted' : kind === 'output' ? '[data-done]' : '[data-n]');
       if (kind === 'accept') {
         const chk = win.document.getElementById('jo-counted'); chk.checked = true; chk.dispatchEvent(new win.Event('change'));
         win.document.querySelector('[data-note]').value = 'Original handover note';
@@ -1000,7 +1023,7 @@ describe('mobile bootstrap', () => {
         if (url === '/api/job-orders/184') return { ...BASE, accepted_at: 'accepted', qc_stages: 0 };
         return undefined;
       });
-      win.location.hash = '#/job-orders?id=184&step=output'; await wait();
+      win.location.hash = '#/job-orders?id=184&step=output'; await waitForMobileElement(win, '[data-done]');
       for (const value of ['1.5', '', '-1', '13']) {
         win.document.querySelector('[data-done]').value = value;
         win.document.getElementById('jo-save').click(); await wait(10);
@@ -1786,7 +1809,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const win = await bootAs(REL, fake([]));
       const doc = win.document;
       win.location.hash = '#/so?id=302';
-      await wait();
+      await relElement(win, '#rel-go');
       const view = doc.getElementById('m-view');
       expect(view.getAttribute('data-figma-node')).toBe('78:68');
       expect(view.textContent).toContain('Jordan D. · ID reference ••4821');
@@ -2364,23 +2387,8 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
   });
 
 
-  it('maps Payslips and Payslip Detail to Figma with a fail-closed download gate', () => {
-    const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/hr/payslips.js'), 'utf8');
-    expect(source).toContain("shell(view, '46:895'");
-    expect(source).toContain("shell(view, '46:924'");
-    expect(source).toContain("API.get('/me/payslips')");
-    expect(source).toContain("record.finalized === true");
-    expect(source).toContain("typeof record.download_url === 'string'");
-    expect(source).toContain('API.download(record.download_url');
-    expect(source).toContain('Payroll is still being finalized');
-    expect(source).toContain('DRAFT · NOT FINALIZED');
-    expect(source).toContain("classList.add('is-draft')");
-    expect(source).toContain("API.get('/me/payslips/' + record.id + '/timekeeping')");
-    const css = fs.readFileSync(path.join(ROOT, 'public/mobile/mobile-v2.css'), 'utf8');
-    expect(css).toContain('.m-payslip-v2.is-draft::after');
-    expect(css).toContain('.m-payslip-time-panel.is-draft::after');
-  });
-
+  // Payslip gates, Figma markers and timekeeping behavior have runtime coverage
+  // in frontend-mobile-pay-schedule-ux.test.ts (rather than source-spelling checks).
 
   it('maps Profile & Settings to Figma and preserves employee-safe controls', () => {
     const source = fs.readFileSync(path.join(ROOT, 'public/mobile/modules/core/settings.js'), 'utf8');

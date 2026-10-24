@@ -43,6 +43,7 @@
     "test:inventory:ckd-courier": "node scripts/test-inventory-ckd-courier-ux.mjs",
     "test:inventory:count-faults": "node scripts/test-inventory-count-faults-ux.mjs",
     "test:inventory:permissions": "node scripts/test-inventory-permissions-ux.mjs",
+    "test:sales:handoff:ux": "node scripts/test-sales-order-handoff-ux.mjs",
     "test:mobile:ckd-edge": "node scripts/test-mobile-ckd-edge-ux.mjs",
     "test:forms:connected:ux": "node scripts/test-connected-forms-ux.mjs",
     "test:invoice:ux": "node scripts/test-invoice-ux.mjs"

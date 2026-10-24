@@ -48,9 +48,16 @@ existing customized role retains its grants until an administrator reviews it.
 
 1. **Intake** (`sales`) — the desktop order editor (also responsive at phone
    widths) saves new sales in `open` status; approval is a subsequent action.
-   Inventory links are explicit selections, while services/charges remain non-stock
+   Customer selection is an accessible type-to-search lookup with an explicit walk-in
+   path. The optional sale target delivery date is `orders.expected_date`; actual own
+   delivery or courier handoff is read from the recorded delivery event. Inventory links
+   are explicit selections, while services/charges remain non-stock
    even when their name matches an inventory item. Positive quantities, valid dates,
    existing linked records, and one line per stock item are validated before saving.
+   Sales can inspect linked production summaries and earlier customer JO documents. The
+   Sales customer-JO list is view-only even for administrators; new production work comes
+   from sale approval or Production planning. The backend still requires `production.plan`
+   for any legacy customer-JO API write, so Sales-only roles cannot author either JO type.
    The editor identifies stock/non-stock lines, reports field errors without dropping
    unnamed lines, and visibly locks lines/tax after approval. New/edit/delete controls
    follow their respective permissions; view-only users can still inspect orders.
@@ -69,8 +76,8 @@ existing customized role retains its grants until an administrator reviews it.
    status is assigned by warehouse picking, not manual intake/status edits.
 2. **Stock review and approval** (`sales`, `order-availability.ts`) — the desktop row's
    stock review shows the ship-from warehouse, stock elsewhere, other sale commitments,
-   draft kit/repair holds, own coverage and shortages. Choosing approved in an open editor
-   first saves open details, then opens this review; the approval decision is separate.
+   draft kit/repair holds, own coverage and shortages. Capture has no status selector;
+   an authorized approver makes a separate decision from this live review.
    A sale line marked **CKD** keeps its product SKU, unit price and quantity, but snapshots
    the product's direct BOM as zero-price child pick lines. Stock review checks those parts
    at ship-from instead of built-unit stock. The commercial CKD parent never adds a
@@ -89,8 +96,14 @@ existing customized role retains its grants until an administrator reviews it.
    `GET /orders/:id/availability` retains the ATP contract and adds source/planning fields.
    Approval rechecks current stock and accepts an optional review revision; stale interactive
    decisions return 409, while validated owning-site decisions retain D6 on replay.
-   - **Branch — shortfall:** `POST /orders/:id/produce-shortfall` creates only additional
-     linked draft MOs; completed output awaiting receipt still covers planned demand.
+   - **Branch — shortfall:** Firm sale approval automatically creates linked draft MOs
+     only for uncovered finished-product quantities, grouping duplicate lines and
+     subtracting existing linked work. Suitable ship-from RTS creates none. Missing
+     BOM/location/Production setup returns an actionable 409 and rolls back approval.
+     Parts and CKD components retain explicit backorder/purchase handling; fees need
+     no stock. `POST /orders/:id/produce-shortfall` remains a Production planner action
+     for incremental shortage after approval; completed output awaiting receipt still
+     covers planned demand.
      Components follow direct BOM/job snapshots, use each job's source and share one free pool.
      `POST /orders/:id/purchase-shortfall` creates only purchasing demand not already covered
      by live linked POs, factoring receipts/cancellations/edited quantities. Durable

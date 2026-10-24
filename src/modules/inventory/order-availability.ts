@@ -14,7 +14,7 @@ export interface LineAvailability {
   is_finished_product: boolean; has_bom: boolean; buildable: boolean;
   semi_built_available: number;
   component_shortfalls: { component_item_id: number; name: string; need: number; have: number }[];
-  linked_job_orders: { id: number; number: string; status: string; remaining: number; output_location_id: number | null; source_location_id: number | null }[];
+  linked_job_orders: { id: number; number: string; status: string; qty_ordered: number; qty_done: number; remaining: number; output_location_id: number | null; source_location_id: number | null }[];
 }
 // Remove floating-point noise without discarding valid small measured quantities.
 const qty = (n: number) => Number(n.toPrecision(15));
@@ -85,7 +85,7 @@ export function orderAvailability(orderId: number) {
     const hasBom = !!inv.is_finished_product && !!queryOne('SELECT id FROM bom_components WHERE product_item_id = ? LIMIT 1', oi.item_id);
     // QC done isn't stock received. Keep completed jobs with unreceived output in planning
     // cover, excluding scrapped output and jobs targeting a different location.
-    const jobs = queryAll<{ id: number; number: string; status: string; remaining: number; output_location_id: number | null; source_location_id: number | null }>(`SELECT j.id, j.number, j.status, j.output_location_id, j.source_location_id,
+    const jobs = queryAll<{ id: number; number: string; status: string; qty_ordered: number; qty_done: number; remaining: number; output_location_id: number | null; source_location_id: number | null }>(`SELECT j.id, j.number, j.status, j.qty_ordered, j.qty_done, j.output_location_id, j.source_location_id,
       MAX(0, j.qty_ordered - j.qty_scrapped - COALESCE((SELECT SUM(ri.quantity)
         FROM production_receipt_items ri JOIN production_receipts r ON r.id = ri.receipt_id
         WHERE r.job_order_id = j.id), 0)) AS remaining

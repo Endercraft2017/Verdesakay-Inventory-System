@@ -332,7 +332,7 @@ window.MApp = (function () {
     signOutPending = Promise.resolve().then(async function () {
       var q = window.mQueue, shared = API.isSharedSession(), count = null;
       if (q && navigator.onLine) { try { await q.flush(); } catch (ignore) {} }
-      try { count = q ? await q.count() : 0; } catch (ignore) {}
+      try { count = q ? await (q.unsentCount ? q.unsentCount() : q.count()) : 0; } catch (ignore) {}
       if ((count === null || count > 0) && !await confirmUnsent(count, shared)) return false;
       if (window.mPush && mPush.release) { try { await mPush.release(); } catch (ignore) {} }
       try { await API.post('/auth/logout'); } catch (ignore) {}
@@ -590,20 +590,37 @@ window.MApp = (function () {
     };
   }
 
-  var refreshingAccess = false;
-  async function refreshAccess() {
-    if (refreshingAccess || authFlow || !me || !API.getToken() || navigator.onLine === false || document.visibilityState === 'hidden') return;
-    var token = API.getToken(), server = API.base(), userId = me.id;
-    refreshingAccess = true;
-    try {
-      var profile = await API.get('/auth/me');
-      if (authFlow || token !== API.getToken() || server !== API.base() || !me || me.id !== userId) return;
-      var current = profile.user;
-      if (!current || current.id !== userId) return;
-      if (JSON.stringify([me.permissions, me.modules, me.can_approve, me.employee, me.password_change_required, me.mfa_setup_required]) !==
-          JSON.stringify([current.permissions, current.modules, current.can_approve, current.employee, current.password_change_required, current.mfa_setup_required])) enterApp(current);
-    } catch (err) { /* Network failure retains the scoped offline profile; APIs still enforce current rights. */ }
-    finally { refreshingAccess = false; }
+  var refreshingAccess = null;
+  async function refreshAccess(options) {
+    var required=options?.required;
+    if (authFlow || !me || !API.getToken() || navigator.onLine === false || document.visibilityState === 'hidden') {
+      if(required)throw new Error('Current access could not be checked. Reconnect and retry.');
+      return;
+    }
+    var token=API.getToken(),server=API.base(),userId=me.id;
+    function current(){return !authFlow&&token===API.getToken()&&server===API.base()&&me&&me.id===userId;}
+    var job=refreshingAccess;
+    if(!job||job.token!==token||job.server!==server||job.userId!==userId){
+      job={token:token,server:server,userId:userId};refreshingAccess=job;
+      job.promise=(async function(){
+        var controller=new AbortController(),timer=setTimeout(function(){controller.abort();},12000);
+        try {
+          var profile=await API.get('/auth/me',{signal:controller.signal,isCurrent:current});
+          if(!current())return {error:new Error('The sign-in changed while access was checked.')};
+          var next=profile?.user;
+          if(!next||next.id!==userId)throw new Error('The current access response could not be verified.');
+          if(JSON.stringify([me.role,me.department_id,me.permissions,me.modules,me.can_approve,me.employee,me.password_change_required,me.mfa_setup_required])!==
+             JSON.stringify([next.role,next.department_id,next.permissions,next.modules,next.can_approve,next.employee,next.password_change_required,next.mfa_setup_required]))enterApp(next);
+          return {ok:true};
+        } catch(error){return {error:error};}
+        finally{clearTimeout(timer);if(refreshingAccess===job)refreshingAccess=null;}
+      })();
+    }
+    var result=await job.promise;
+    // Ordinary background failures keep the scoped offline profile. Workflow openings
+    // require a fresh check and show a retry instead of treating that failure as success.
+    if(required&&result.error)throw result.error;
+    return !!result.ok;
   }
 
   function enterApp(user) {

@@ -1,6 +1,6 @@
 /** Approval and shortage planning must use the same warehouse, holds and durable demand. */
 import { beforeAll, afterAll, describe, expect, it } from 'vitest';
-import { setupApp, cleanup, login, type TestContext } from './helpers';
+import { setupApp, cleanup, login, createEmployee, type TestContext } from './helpers';
 let ctx: TestContext, token: string;
 let db: typeof import('../src/shared/db');
 let home: number, other: number;
@@ -25,6 +25,97 @@ const produce = (id: number, body = {}) => ctx.api.post(`/api/orders/${id}/produ
 const purchase = (id: number, body = {}) => ctx.api.post(`/api/orders/${id}/purchase-shortfall`).set(H()).send(body);
 
 describe('location-scoped approval and planning', () => {
+  it('uses RTS stock first and creates one linked draft for the uncovered quantity on approval', async () => {
+    const part = await item('Approval raw', 10), product = await item('Approval product', 2); await bom(product, part);
+    const stocked = await sale([{ item_id: product, name: 'Approval product', quantity: 1 }]);
+    const full = await ctx.api.post(`/api/orders/${stocked}/status`).set(H()).send({ status: 'approved' });
+    expect(full.status).toBe(200); expect(full.body.production_drafts).toEqual([]);
+    const id = await sale([{ item_id: product, name: 'Approval product', quantity: 3 }]);
+    const result = await ctx.api.post(`/api/orders/${id}/status`).set(H()).send({ status: 'approved' });
+    expect(result.status).toBe(200);
+    expect(result.body.production_drafts).toMatchObject([{ qty: 2 }]);
+    const jobs = db.queryAll<{ qty_ordered: number; status: string; order_id: number }>('SELECT qty_ordered,status,order_id FROM job_orders WHERE order_id=?', id);
+    expect(jobs).toMatchObject([{ qty_ordered: 2, status: 'draft', order_id: id }]);
+    expect((await ctx.api.post(`/api/orders/${id}/status`).set(H()).send({ status: 'approved' })).body.production_drafts).toEqual([]);
+    expect(db.queryAll('SELECT id FROM job_orders WHERE order_id=?', id)).toHaveLength(1);
+  });
+  it('uses the same atomic planning rule for direct firm creation and PUT approval', async () => {
+    const raw = await item('Other entry raw', 10), product = await item('Other entry product'); await bom(product, raw);
+    const direct = await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', status: 'approved', items: [{ item_id: product, name: 'Other entry product', quantity: 2 }] });
+    expect(direct.status).toBe(201);
+    expect(db.queryAll<{ qty_ordered: number; status: string }>('SELECT qty_ordered,status FROM job_orders WHERE order_id=?', direct.body.id))
+      .toMatchObject([{ qty_ordered: 2, status: 'draft' }]);
+    const open = await sale([{ item_id: product, name: 'Other entry product', quantity: 3 }]);
+    const edited = await ctx.api.put(`/api/orders/${open}`).set(H()).send({ status: 'approved' });
+    expect(edited.status).toBe(200);
+    expect(db.queryAll<{ qty_ordered: number; status: string }>('SELECT qty_ordered,status FROM job_orders WHERE order_id=?', open))
+      .toMatchObject([{ qty_ordered: 3, status: 'draft' }]);
+  });
+  it('subtracts pre-linked work, handles duplicate sale lines once, and blocks a missing recipe atomically', async () => {
+    const part = await item('Repeated raw', 20), product = await item('Repeated product'); await bom(product, part);
+    const id = await sale([{ item_id: product, name: 'Repeated product', quantity: 2 }, { item_id: product, name: 'Repeated product', quantity: 2 }]);
+    expect((await ctx.api.post('/api/job-orders').set(H()).send({ product_item_id: product, qty_ordered: 2, order_id: id, build_mode: 'assembled' })).status).toBe(201);
+    const result = await ctx.api.post(`/api/orders/${id}/status`).set(H()).send({ status: 'approved' });
+    expect(result.status).toBe(200);
+    expect(result.body.production_drafts).toMatchObject([{ qty: 2 }]);
+    expect(db.queryOne<{ n: number }>('SELECT SUM(qty_ordered) AS n FROM job_orders WHERE order_id=?', id)?.n).toBe(4);
+    const manual = await sale([{ item_id: product, name: 'Repeated product', quantity: 1 }, { item_id: product, name: 'Repeated product', quantity: 1 }]);
+    expect((await produce(manual)).body.created).toMatchObject([{ qty: 2 }]);
+    const noBom = await item('No recipe'); db.run('UPDATE inventory_items SET is_finished_product=1 WHERE id=?', noBom);
+    const blocked = await sale([{ item_id: noBom, name: 'No recipe', quantity: 1 }, { item_id: product, name: 'Repeated product', quantity: 1 }]);
+    const bad = await ctx.api.post(`/api/orders/${blocked}/status`).set(H()).send({ status: 'approved', force: true });
+    expect(bad.status).toBe(409); expect(bad.body.code).toBe('build_unplannable');
+    expect(bad.body.error).toContain('Production → Finished Products');
+    expect(db.queryAll('SELECT id FROM job_orders WHERE order_id=?', blocked)).toHaveLength(0);
+    expect((await ctx.api.get(`/api/orders/${blocked}`).set(H())).body.status).toBe('open');
+  });
+  it('leaves part, CKD component, and fee shortages on their existing path', async () => {
+    const component = await item('CKD shipped component');
+    const id = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', items: [
+      { item_id: component, name: 'CKD shipped component', quantity: 1 }, { name: 'Shipping fee', quantity: 1 },
+    ] })).body.id;
+    const blocked = await ctx.api.post(`/api/orders/${id}/status`).set(H()).send({ status: 'approved' });
+    expect(blocked.status).toBe(409); expect(blocked.body.code).toBe('stock_shortage');
+    const approved = await ctx.api.post(`/api/orders/${id}/status`).set(H()).send({ status: 'approved', force: true });
+    expect(approved.status).toBe(200); expect(approved.body.production_drafts).toEqual([]);
+  });
+  it('rolls back a finished-product draft if a mixed order still needs explicit parts backorder approval', async () => {
+    const raw = await item('Mixed approval raw', 3), product = await item('Mixed approval product'), spare = await item('Mixed approval spare');
+    await bom(product, raw);
+    const id = await sale([{ item_id: product, name: 'Mixed approval product', quantity: 1 }, { item_id: spare, name: 'Mixed approval spare', quantity: 1 }]);
+    const blocked = await ctx.api.post(`/api/orders/${id}/status`).set(H()).send({ status: 'approved' });
+    expect(blocked.status).toBe(409); expect(blocked.body.code).toBe('stock_shortage');
+    expect(db.queryAll('SELECT id FROM job_orders WHERE order_id=?', id)).toHaveLength(0);
+    const approved = await ctx.api.post(`/api/orders/${id}/status`).set(H()).send({ status: 'approved', force: true });
+    expect(approved.status).toBe(200); expect(approved.body.production_drafts).toMatchObject([{ qty: 1 }]);
+  });
+  it('persists a target date and reads actual dates only from recorded own-delivery or courier events', async () => {
+    const id = (await ctx.api.post('/api/orders').set(H()).send({ type: 'sale', expected_date: '2026-12-15', items: [{ name: 'Service fee', quantity: 1 }] })).body.id;
+    let detail = (await ctx.api.get(`/api/orders/${id}`).set(H())).body;
+    expect(detail.expected_date).toBe('2026-12-15'); expect(detail.delivery_events).toEqual([]);
+    db.run("INSERT INTO deliveries(number,order_id,delivery_mode,status,delivered_at) VALUES('OWN-TEST',?,'own','delivered','2026-12-14 10:30:00')", id);
+    db.run("INSERT INTO deliveries(number,order_id,delivery_mode,status,delivered_at) VALUES('COURIER-TEST',?,'courier','delivered','2026-12-14 11:45:00')", id);
+    detail = (await ctx.api.get(`/api/orders/${id}`).set(H())).body;
+    expect(detail.delivery_events).toMatchObject([{ delivery_mode: 'own', delivered_at: '2026-12-14 10:30:00' }, { delivery_mode: 'courier', delivered_at: '2026-12-14 11:45:00' }]);
+    expect((await ctx.api.put(`/api/orders/${id}`).set(H()).send({ expected_date: '2026-12-20' })).status).toBe(200);
+    expect((await ctx.api.get(`/api/orders/${id}`).set(H())).body.expected_date).toBe('2026-12-20');
+  });
+  it('lets Sales read linked jobs but forbids customer and production JO creation', async () => {
+    const part = await item('CSR part', 2), product = await item('CSR product'); await bom(product, part);
+    const id = await sale([{ item_id: product, name: 'CSR product', quantity: 1 }]);
+    expect((await ctx.api.post(`/api/orders/${id}/status`).set(H()).send({ status: 'approved' })).status).toBe(200);
+    const staff = await createEmployee(ctx.api, token, { username: 'csr_order_handoff', role: 'csr' });
+    const C = { Authorization: `Bearer ${staff.token}` };
+    expect((await ctx.api.get(`/api/orders/${id}/availability`).set(C)).body.lines[0].linked_job_orders).toHaveLength(1);
+    expect((await ctx.api.post('/api/orders').set(C).send({ type: 'job', items: [{ name: 'Customer JO', quantity: 1 }] })).status).toBe(403);
+    const customerJob = await ctx.api.post('/api/orders').set(H()).send({ type: 'job', items: [{ name: 'Customer JO', quantity: 1 }] });
+    expect(customerJob.status).toBe(201);
+    expect((await ctx.api.get(`/api/orders/${customerJob.body.id}`).set(C)).status).toBe(200);
+    expect((await ctx.api.put(`/api/orders/${customerJob.body.id}`).set(C).send({ notes: 'Unauthorized edit' })).status).toBe(403);
+    expect((await ctx.api.post('/api/job-orders').set(C).send({ product_item_id: product, qty_ordered: 1 })).status).toBe(403);
+    expect((await ctx.api.post(`/api/orders/${id}/produce-shortfall`).set(C).send({})).status).toBe(403);
+    expect((await ctx.api.post(`/api/orders/${id}/status`).set(C).send({ status: 'cancelled' })).status).toBe(403);
+  });
   it('refuses to promise another warehouse stock and does not subtract its sales commitments', async () => {
     const i = await item('Location proof', 12);
     const remoteSale = await sale([{ item_id: i, name: 'Location proof', quantity: 8 }]);
