@@ -1,0 +1,76 @@
+
+ RUN  v4.1.9 /workspace/Verdesakay-Inventory-System
+
+ ❯ tests/auth.test.ts (18 tests | 3 failed) 4709ms
+     × fresh sign-in includes the linked employee and HR approval access before any reload 320ms
+     × fresh sign-in grants the approval entry point to department heads without HR permission 323ms
+     × fresh sign-in explicitly reports an unlinked non-approver without another employee context 305ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/auth.test.ts > auth > fresh sign-in includes the linked employee and HR approval access before any reload
+AssertionError: expected undefined to deeply equal { id: 1, …(2) }
+
+- Expected:
+{
+  "employee_no": "QA-AUTH-01",
+  "id": 1,
+  "name": "Linked HR Tester",
+}
+
++ Received:
+undefined
+
+ ❯ tests/auth.test.ts:57:38
+     55|       .send({ username: acc.username, password: acc.password });
+     56|     expect(fresh.status).toBe(200);
+     57|     expect(fresh.body.user.employee).toEqual({
+       |                                      ^
+     58|       id: employee.body.id, name: 'Linked HR Tester', employee_no: 'QA…
+     59|     });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/auth.test.ts > auth > fresh sign-in grants the approval entry point to department heads without HR permission
+AssertionError: expected undefined to be null
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/auth.test.ts:80:38
+     78|       .send({ username: acc.username, password: acc.password });
+     79|     expect(fresh.body.user.permissions).not.toContain('hr.manage');
+     80|     expect(fresh.body.user.employee).toBeNull();
+       |                                      ^
+     81|     expect(fresh.body.user.can_approve).toBe(true);
+     82|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/auth.test.ts > auth > fresh sign-in explicitly reports an unlinked non-approver without another employee context
+AssertionError: expected undefined to be null
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ tests/auth.test.ts:89:38
+     87|     const fresh = await ctx.api.post('/api/auth/login')
+     88|       .send({ username: acc.username, password: acc.password });
+     89|     expect(fresh.body.user.employee).toBeNull();
+       |                                      ^
+     90|     expect(fresh.body.user.can_approve).toBe(false);
+     91|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 15 passed (18)
+   Start at  21:28:49
+   Duration  4.92s (transform 1.11s, setup 26ms, import 80ms, tests 4.71s, environment 0ms)

@@ -632,6 +632,7 @@ or with "I'm using someone else's phone" / "shared or borrowed computer" ticked.
    else's (`hr/clock.ts`, `device_flag`).
 3. **End** — one of: sign out (`POST /auth/logout`; mobile `MApp.signOut` first sends or warns
    about this person's queued actions and releases their push subscription on this device;
+   entered from the Profile footer, Account & security or the borrowed-phone banner;
    borrowed ⇒ their local data is cleared), revoked from another of their devices
    (`/auth/sessions/...`) or by an admin (`/users/:id/sessions/...`), password change/reset
    (others end), account disabled, idle timeout (borrowed only), or expiry (12 h / 4 h).

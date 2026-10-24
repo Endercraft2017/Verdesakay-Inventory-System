@@ -1,0 +1,499 @@
+{
+  "url": "https://otom.afkcube.com/sandbox/m",
+  "testedAt": "2026-10-23T22:05:21.838Z",
+  "browser": "151.0.7922.173",
+  "viewport": "390x844",
+  "account": {
+    "username": "sandbox",
+    "role": "admin",
+    "roleLabel": "Administrator",
+    "employeeLinked": false,
+    "canApprove": true
+  },
+  "cases": [
+    {
+      "id": "M01-01",
+      "status": "pass",
+      "detail": "Empty fields blocked locally; no sign-in request."
+    },
+    {
+      "id": "M01-02",
+      "status": "pass",
+      "detail": {
+        "message": "Invalid username or password",
+        "signedOut": true
+      }
+    },
+    {
+      "id": "M01-03",
+      "status": "pass",
+      "detail": {
+        "message": "You appear to be offline. Reconnect and try again. Your details are still here.",
+        "retryEnabled": true
+      }
+    },
+    {
+      "id": "M01-04",
+      "status": "pass",
+      "detail": {
+        "identityMatchesResume": true,
+        "approvalVisible": true,
+        "username": "sandbox",
+        "role": "admin",
+        "roleLabel": "Administrator",
+        "employeeLinked": false,
+        "canApprove": true
+      }
+    },
+    {
+      "id": "M01-05",
+      "status": "pass",
+      "detail": "Own session retained on reload and independent new tab."
+    },
+    {
+      "id": "M01-06",
+      "status": "pass",
+      "detail": "Own logout cleared browser token, old token rejected 401; back/deep-link/reload remain signed out."
+    },
+    {
+      "id": "M01-07",
+      "status": "pass",
+      "detail": "Borrowed session marked shared; tab storage only; reload retained; fresh and closed/reopened tabs signed out."
+    },
+    {
+      "id": "M01-08a",
+      "status": "pass",
+      "detail": "Borrowed sign-out removes a disposable personal-cache marker and browser token."
+    },
+    {
+      "id": "M01-08b",
+      "status": "not tested",
+      "detail": "A second account has not been supplied for cross-account identity isolation on the hosted build."
+    }
+  ],
+  "pageErrors": [],
+  "console": [
+    {
+      "type": "warning",
+      "text": "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_INTERNET_DISCONNECTED"
+    },
+    {
+      "type": "warning",
+      "text": "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'."
+    },
+    {
+      "type": "warning",
+      "text": "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'."
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 ()"
+    },
+    {
+      "type": "warning",
+      "text": "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'."
+    },
+    {
+      "type": "warning",
+      "text": "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'."
+    },
+    {
+      "type": "warning",
+      "text": "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'."
+    },
+    {
+      "type": "warning",
+      "text": "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'."
+    },
+    {
+      "type": "warning",
+      "text": "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'."
+    },
+    {
+      "type": "warning",
+      "text": "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'."
+    },
+    {
+      "type": "warning",
+      "text": "WebSocket connection to 'wss://otom.afkcube.com/sandbox/ws?token=6a81470193841f7c3ead8826a7e7b3a536ef417fab5913f1c44b5b75a6a1bc12' failed: WebSocket is closed before the connection is established."
+    },
+    {
+      "type": "warning",
+      "text": "Error with Permissions-Policy header: Unrecognized feature: 'bluetooth'."
+    }
+  ],
+  "network": [
+    {
+      "method": "POST",
+      "path": "/sandbox/api/auth/login",
+      "status": 401
+    },
+    {
+      "method": "POST",
+      "path": "/sandbox/api/auth/login",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/messages/unread-count",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/me/today",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/job-orders",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/production/repairs",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/rts/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/holds",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/sessions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/messages/unread-count",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/job-orders",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/me/today",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/production/repairs",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/holds",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/rts/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/tenant",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/sessions",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/sandbox/api/auth/logout",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/me/today",
+      "status": 401
+    },
+    {
+      "method": "POST",
+      "path": "/sandbox/api/auth/login",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/messages/unread-count",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/me/today",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/job-orders",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/holds",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/production/repairs",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/rts/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/sessions",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/messages/unread-count",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/me/today",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/job-orders",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/rts/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/production/repairs",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/holds",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/sandbox/api/auth/login",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/messages/unread-count",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/me/today",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/production/repairs",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/auth/me",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/queue",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/job-orders",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/qc/holds",
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/sandbox/api/rts/queue",
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/sandbox/api/auth/logout",
+      "status": 200
+    }
+  ],
+  "requestFailures": [
+    {
+      "path": "/sandbox/api/auth/login",
+      "error": "net::ERR_INTERNET_DISCONNECTED"
+    }
+  ],
+  "cleanup": [
+    {
+      "status": 401,
+      "endedOrAlreadyEnded": true
+    },
+    {
+      "status": 200,
+      "endedOrAlreadyEnded": true
+    },
+    {
+      "status": 401,
+      "endedOrAlreadyEnded": true
+    }
+  ],
+  "buildBefore": {
+    "mobile/app.js": "d06af0870b5c6c4da2a3f5025ce7a5d45076ea0eb72148ab9638a4fd7c0eac65",
+    "js/api.js": "650631d0549a5aa1e18e432de6a300250fe3edc04b11315ac92bd921f3348f26",
+    "mobile/modules/core/settings.js": "7d7ce667aa3c946e09a3db8e44519764afa205df675aa4e0fc9bc8eaa9d4faae",
+    "mobile/modules/core/home.js": "cdc8386ac2dbe131e1553676c92e098d75cf02dd56f76332373608b63de8f9ac"
+  },
+  "serverLogoutHistoryVerified": true,
+  "layout": {
+    "viewport": 390,
+    "document": 390
+  },
+  "buildAfter": {
+    "mobile/app.js": "d06af0870b5c6c4da2a3f5025ce7a5d45076ea0eb72148ab9638a4fd7c0eac65",
+    "js/api.js": "650631d0549a5aa1e18e432de6a300250fe3edc04b11315ac92bd921f3348f26",
+    "mobile/modules/core/settings.js": "7d7ce667aa3c946e09a3db8e44519764afa205df675aa4e0fc9bc8eaa9d4faae",
+    "mobile/modules/core/home.js": "cdc8386ac2dbe131e1553676c92e098d75cf02dd56f76332373608b63de8f9ac"
+  },
+  "buildStable": true,
+  "matchesCheckout": true
+}

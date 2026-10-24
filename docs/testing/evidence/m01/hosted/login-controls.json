@@ -1,0 +1,18 @@
+{
+  "url": "https://otom.afkcube.com/sandbox/m",
+  "passwordToggle": {
+    "shownType": "text",
+    "hiddenType": "password",
+    "status": "pass"
+  },
+  "assets": {
+    "app": {
+      "status": 200,
+      "sha256": "d06af0870b5c6c4da2a3f5025ce7a5d45076ea0eb72148ab9638a4fd7c0eac65"
+    },
+    "authClient": {
+      "status": 200,
+      "sha256": "650631d0549a5aa1e18e432de6a300250fe3edc04b11315ac92bd921f3348f26"
+    }
+  }
+}

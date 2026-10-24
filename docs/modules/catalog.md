@@ -1128,7 +1128,10 @@ screen gets a toast. Tests: `tests/sync-status.test.ts`, `tests/frontend-mobile.
 and only lists/sends/discards the signed-in account's ops (the service worker's replay checks the
 same, against the account stored with its token); another account's ops wait for that person.
 `app.js` `MApp.signOut()` is the one sign-out path — flushes, warns about unsent actions,
-`mPush.release()`s this browser's subscription if it is the user's, `POST /auth/logout`. Every
+`mPush.release()`s this browser's subscription if it is the user's, `POST /auth/logout`.
+Profile (`modules/core/settings.js`) now offers a direct footer Sign out above the dock, as well
+as the existing Account & security action; both use that same guarded flow. Account forms reuse
+the shared mobile form layout with separated actions and theme-aware autofill styling. Every
 non-device `vds_*` localStorage key (cached profile, recents, all drafts incl. the anonymous-report
 draft) belongs to `vds_m_owner`; a different person signing in clears them first, and a
 borrowed-phone sign-out clears them too. Borrowed-phone sign-in ("I'm using someone else's

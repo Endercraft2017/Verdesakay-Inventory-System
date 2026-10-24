@@ -616,6 +616,12 @@ body.m-chat-thread-active .m-tabbar,body.m-chat-thread-active .v2-orbit{display:
 .profile-note,.profile-info{font-size:12px;line-height:1.55;color:var(--muted)}.profile-note{margin:12px 0 16px}.profile-info{padding:16px 18px;border-radius:20px;background:color-mix(in srgb,var(--brand) 8%,var(--card));border:1px solid color-mix(in srgb,var(--brand) 14%,transparent)}
 .profile-setting-list{padding-top:6px;padding-bottom:6px}.profile-setting{display:flex;justify-content:space-between;align-items:center;gap:18px;padding:16px 0;border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent)}.profile-setting:last-child{border-bottom:0}.profile-setting>div{display:flex;flex-direction:column;gap:4px}.profile-setting b{font-size:14px}.profile-setting small{color:var(--muted);font-size:12px}.profile-setting-value{color:var(--muted);font-size:13px}
 .profile-full-button{display:flex;width:100%;justify-content:center;margin-top:10px;box-sizing:border-box}.m-btn-danger{color:var(--danger,#b33a3a);border-color:color-mix(in srgb,var(--danger,#b33a3a) 32%,var(--line))}
+.profile-signout{min-height:48px;margin-top:20px;border:1px solid color-mix(in srgb,var(--v2-danger) 35%,var(--v2-line));background:color-mix(in srgb,var(--v2-danger) 8%,var(--v2-surface));color:var(--v2-danger)}
+.profile-signout:focus-visible{outline:2px solid var(--v2-danger);outline-offset:3px}
+.profile-account-form{gap:16px}
+.profile-account-form>.profile-note,.profile-account-form>.m-auth-error,.profile-account-form>[role=status]{margin:0}
+.profile-account-form>[role=status]:empty{display:none}
+.profile-page .m-input:is(:autofill,:-webkit-autofill){box-shadow:0 0 0 1000px var(--v2-surface-soft) inset;-webkit-text-fill-color:var(--v2-text);caret-color:var(--v2-text)}
 @media(max-width:380px){.profile-page{padding-left:12px;padding-right:12px}.profile-identity{padding:17px}.profile-avatar{flex-basis:56px;height:56px;border-radius:19px}.profile-menu-row{padding:15px 14px}}
 
 
