@@ -1,0 +1,5 @@
+{
+  "tests/dependency-advisories.test.ts": "3fb03d22d397832b54413a2fc8adf775df41afa5612b333bd9d4a646eb0dfbf0",
+  "tests/helpers/dependency-advisory-child.ts": "9ea1a5e06bfe4e615698b3292ba2aefdfea4b1a71bcc98f614276f473df069cc",
+  "tests/helpers/smtp-capture.ts": "16f41a05d80806944b1436ac67cf088b5e49dbf6350d1665be0849aa9f713d73"
+}

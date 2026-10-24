@@ -1,0 +1,206 @@
+[
+  {
+    "ghsa_id": "GHSA-27r3-jxmh-p828",
+    "summary": "body-parser vulnerable to Denial of Service via trailing bytes after a compressed request body",
+    "html_url": "https://github.com/advisories/GHSA-27r3-jxmh-p828",
+    "published_at": "2026-10-23T20:53:11Z",
+    "updated_at": "2026-10-23T20:53:12Z",
+    "withdrawn_at": null,
+    "severity": "high",
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "npm",
+          "name": "body-parser"
+        },
+        "vulnerable_version_range": ">= 2.0.0, < 2.4.0",
+        "first_patched_version": "2.4.0",
+        "vulnerable_functions": []
+      },
+      {
+        "package": {
+          "ecosystem": "npm",
+          "name": "body-parser"
+        },
+        "vulnerable_version_range": "< 1.20.9",
+        "first_patched_version": "1.20.9",
+        "vulnerable_functions": []
+      }
+    ],
+    "references": [
+      "https://github.com/expressjs/body-parser/security/advisories/GHSA-27r3-jxmh-p828",
+      "https://nvd.nist.gov/vuln/detail/CVE-2026-111181",
+      "https://github.com/expressjs/body-parser/commit/1260c3845f54502a05a87594f09a334786bb34d7",
+      "https://github.com/expressjs/body-parser/commit/f7075eae3a84c3473ab4bf0a777da28db208e916",
+      "https://cna.openjsf.org/security-advisories.html",
+      "https://github.com/expressjs/body-parser/releases/tag/1.20.9",
+      "https://github.com/expressjs/body-parser/releases/tag/v2.4.0",
+      "https://github.com/advisories/GHSA-27r3-jxmh-p828"
+    ]
+  },
+  {
+    "ghsa_id": "GHSA-85x2-q946-cp5h",
+    "summary": "Nodemailer: A \">\" inside a quoted local part ends an angle-addr early in addressparser, delivering to a domain the header does not name",
+    "html_url": "https://github.com/advisories/GHSA-85x2-q946-cp5h",
+    "published_at": "2026-10-23T21:51:18Z",
+    "updated_at": "2026-10-23T21:51:19Z",
+    "withdrawn_at": null,
+    "severity": "medium",
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "npm",
+          "name": "nodemailer"
+        },
+        "vulnerable_version_range": ">= 3.0.0, < 10.1.4",
+        "first_patched_version": "10.1.4",
+        "vulnerable_functions": []
+      }
+    ],
+    "references": [
+      "https://github.com/nodemailer/nodemailer/security/advisories/GHSA-85x2-q946-cp5h",
+      "https://github.com/nodemailer/nodemailer/commit/1cd57d2b8c49dff048c21cdbafdb54439a7f07e2",
+      "https://github.com/nodemailer/nodemailer/releases/tag/v10.1.4",
+      "https://github.com/advisories/GHSA-85x2-q946-cp5h"
+    ]
+  },
+  {
+    "ghsa_id": "GHSA-86w9-cpqp-85rv",
+    "summary": "node-forge RSA PKCS#1 v1.5 signature verification accepts extra nested DigestAlgorithm elements",
+    "html_url": "https://github.com/advisories/GHSA-86w9-cpqp-85rv",
+    "published_at": "2026-09-03T21:31:15Z",
+    "updated_at": "2026-10-01T21:09:10Z",
+    "withdrawn_at": null,
+    "severity": "high",
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "npm",
+          "name": "node-forge"
+        },
+        "vulnerable_version_range": "<= 1.4.0",
+        "first_patched_version": null,
+        "vulnerable_functions": []
+      }
+    ],
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2026-85393",
+      "https://github.com/digitalbazaar/forge/issues/1149",
+      "https://github.com/advisories/GHSA-ppp5-5v6c-4jwp",
+      "https://github.com/digitalbazaar/forge/blob/v1.4.0/lib/asn1.js",
+      "https://github.com/digitalbazaar/forge/blob/v1.4.0/lib/rsa.js",
+      "https://www.vulncheck.com/advisories/node-forge-through-1.4.0-rsa-pkcs-1-1.5-signature-forgery-via-nested-digestalgorithm-padding",
+      "https://github.com/digitalbazaar/forge/pull/1152",
+      "https://github.com/advisories/GHSA-86w9-cpqp-85rv"
+    ]
+  },
+  {
+    "ghsa_id": "GHSA-8c8m-p3m8-cjg8",
+    "summary": "Nodemailer: A nested comment ends early in addressparser, releasing the rest of the comment as a recipient",
+    "html_url": "https://github.com/advisories/GHSA-8c8m-p3m8-cjg8",
+    "published_at": "2026-10-23T21:53:04Z",
+    "updated_at": "2026-10-23T21:53:05Z",
+    "withdrawn_at": null,
+    "severity": "medium",
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "npm",
+          "name": "nodemailer"
+        },
+        "vulnerable_version_range": ">= 3.0.0, < 10.1.4",
+        "first_patched_version": "10.1.4",
+        "vulnerable_functions": []
+      }
+    ],
+    "references": [
+      "https://github.com/nodemailer/nodemailer/security/advisories/GHSA-8c8m-p3m8-cjg8",
+      "https://github.com/nodemailer/nodemailer/commit/0a8761762ac78f2db2ba37f712f2a52a404ce011",
+      "https://github.com/nodemailer/nodemailer/releases/tag/v10.1.4",
+      "https://github.com/advisories/GHSA-8c8m-p3m8-cjg8"
+    ]
+  },
+  {
+    "ghsa_id": "GHSA-m943-m63m-w62w",
+    "summary": "Nodemailer: A \";\" inside a quoted string or comment ends an address group early in addressparser, turning display text into a recipient",
+    "html_url": "https://github.com/advisories/GHSA-m943-m63m-w62w",
+    "published_at": "2026-10-23T21:51:52Z",
+    "updated_at": "2026-10-23T21:51:54Z",
+    "withdrawn_at": null,
+    "severity": "medium",
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "npm",
+          "name": "nodemailer"
+        },
+        "vulnerable_version_range": ">= 3.0.0, < 10.1.4",
+        "first_patched_version": "10.1.4",
+        "vulnerable_functions": []
+      }
+    ],
+    "references": [
+      "https://github.com/nodemailer/nodemailer/security/advisories/GHSA-m943-m63m-w62w",
+      "https://github.com/nodemailer/nodemailer/commit/1cd57d2b8c49dff048c21cdbafdb54439a7f07e2",
+      "https://github.com/nodemailer/nodemailer/releases/tag/v10.1.4",
+      "https://github.com/advisories/GHSA-m943-m63m-w62w"
+    ]
+  },
+  {
+    "ghsa_id": "GHSA-mrhx-c7xc-m3w5",
+    "summary": "Zod can exhaust memory while validating oversized constrained collections",
+    "html_url": "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5",
+    "published_at": "2026-10-01T18:32:46Z",
+    "updated_at": "2026-10-23T18:26:52Z",
+    "withdrawn_at": null,
+    "severity": "high",
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "npm",
+          "name": "zod"
+        },
+        "vulnerable_version_range": "< 4.6.6",
+        "first_patched_version": "4.6.6",
+        "vulnerable_functions": []
+      }
+    ],
+    "references": [
+      "https://nvd.nist.gov/vuln/detail/CVE-2023-54404",
+      "https://github.com/colinhacks/zod/issues/1872",
+      "https://github.com/colinhacks/zod/pull/6475",
+      "https://www.vulncheck.com/advisories/zod-uncontrolled-resource-consumption-via-array-validation",
+      "https://github.com/colinhacks/zod/pull/6652",
+      "https://github.com/colinhacks/zod/commit/a0ebf970f2d752e5f58527cd2942ff48be4f46bd",
+      "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"
+    ]
+  },
+  {
+    "ghsa_id": "GHSA-q7qp-rjg7-q26m",
+    "summary": "multer vulnerable to Denial of Service via a pending asynchronous fileFilter after request teardown",
+    "html_url": "https://github.com/advisories/GHSA-q7qp-rjg7-q26m",
+    "published_at": "2026-10-23T22:08:22Z",
+    "updated_at": "2026-10-23T22:08:22Z",
+    "withdrawn_at": null,
+    "severity": "high",
+    "vulnerabilities": [
+      {
+        "package": {
+          "ecosystem": "npm",
+          "name": "multer"
+        },
+        "vulnerable_version_range": ">= 2.0.0, < 2.5.0",
+        "first_patched_version": "2.5.0",
+        "vulnerable_functions": []
+      }
+    ],
+    "references": [
+      "https://github.com/expressjs/multer/security/advisories/GHSA-q7qp-rjg7-q26m",
+      "https://nvd.nist.gov/vuln/detail/CVE-2026-113872",
+      "https://github.com/expressjs/multer/commit/80a2d9df1dfd63b5fab631b8b9966164ed647adf",
+      "https://cna.openjsf.org/security-advisories.html",
+      "https://github.com/expressjs/multer/releases/tag/v2.5.0",
+      "https://github.com/advisories/GHSA-q7qp-rjg7-q26m"
+    ]
+  }
+]

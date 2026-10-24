@@ -1,0 +1,21 @@
+{
+  "input": "Victim (x(y) <outside@outside.example.test>) <recipient@approved.example.test>",
+  "expectedEnvelope": "<recipient@approved.example.test>",
+  "commands": [
+    "EHLO [127.0.0.1]",
+    "MAIL FROM:<sender@example.test>",
+    "RCPT TO:<outside@outside.example.test>",
+    "DATA"
+  ],
+  "messages": [
+    {
+      "from": "<sender@example.test>",
+      "to": [
+        "<outside@outside.example.test>"
+      ],
+      "raw": "From: sender@example.test\r\nTo: \"Victim) recipient@approved.example.test\"\r\n <outside@outside.example.test>\r\nSubject: Synthetic advisory probe\r\nMessage-ID: <7e83f65e-3c53-d3d9-2773-37cb9c4b269c@example.test>\r\nContent-Transfer-Encoding: 7bit\r\nDate: Sat, 24 Oct 2026 07:44:03 +0000\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nSynthetic non-customer content",
+      "html": "Synthetic non-customer content",
+      "message_id": "<7e83f65e-3c53-d3d9-2773-37cb9c4b269c@example.test>"
+    }
+  ]
+}

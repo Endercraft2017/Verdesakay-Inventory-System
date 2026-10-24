@@ -1,0 +1,302 @@
+{
+  "algorithm": "SHA-256",
+  "utc": "2026-10-24T08:32:10.484690+00:00",
+  "excludes": "This manifest itself; Git records its committed bytes.",
+  "artifacts": [
+    {
+      "sha256": "389556b080e031337375ce83c86189353c149e5a6c0981fdac17bea4a9171192",
+      "path": "runtime-deps-after-http.json",
+      "bytes": 922
+    },
+    {
+      "sha256": "1eda67aeb6cbb4b754cdadd72b0c14b56be7f1d35a992930906df55dd073447e",
+      "path": "runtime-deps-after-multer.json",
+      "bytes": 116
+    },
+    {
+      "sha256": "445bb4377b65086cd5224b64ab1c7f3656b6482756bcf19b9310a701d5f7a3a4",
+      "path": "runtime-deps-after-smtp-group-comment.json",
+      "bytes": 965
+    },
+    {
+      "sha256": "0257072692aa7d5dd7e973393378794908b2b01468fec1417b200441864eab8f",
+      "path": "runtime-deps-after-smtp-nested-comment.json",
+      "bytes": 932
+    },
+    {
+      "sha256": "db6ee0abb38500170032c76e6ad351494853190d7a2a451e95170163d70abb40",
+      "path": "runtime-deps-after-smtp-quoted-group.json",
+      "bytes": 971
+    },
+    {
+      "sha256": "25704917ba3588548831aee9691380791d18954d716f3f6a450f130943186850",
+      "path": "runtime-deps-after-zod.json",
+      "bytes": 94
+    },
+    {
+      "sha256": "bb4107cf8437d25d8fe47915534f883599318d8389c3e6f6ae7ef0925ef84ea4",
+      "path": "runtime-deps-assertion-integrity.json",
+      "bytes": 372
+    },
+    {
+      "sha256": "cd7d2c7d4b38c065dc19bd58fde4be0ee3f182de11eb0835005bcd41de0cad0d",
+      "path": "runtime-deps-before-http.json",
+      "bytes": 1286
+    },
+    {
+      "sha256": "95b6ff682a2a0f3885bcd64bb958eb3e629ad03f442c8b5efa899bb21bfcf0bf",
+      "path": "runtime-deps-before-multer.json",
+      "bytes": 1191
+    },
+    {
+      "sha256": "442ebb4b4c27498737a8bf1253b302ff9e796a5e73b256bd793e8ba3373b676e",
+      "path": "runtime-deps-before-smtp-group-comment.json",
+      "bytes": 954
+    },
+    {
+      "sha256": "556e6fee7bf515c60293445f5d440f558be67b7698a0348ff14b8ddadea40f11",
+      "path": "runtime-deps-before-smtp-nested-comment.json",
+      "bytes": 964
+    },
+    {
+      "sha256": "f6ce723687badfdfa43c3ec8d2f2cea7f3eb2f5ff2bc7859dd108bbada7f9dc4",
+      "path": "runtime-deps-before-smtp-quoted-group.json",
+      "bytes": 965
+    },
+    {
+      "sha256": "9cfdbc61dc98b566b822bb623081549826e91e15e35dc45ee2f0bdf0f4d264e0",
+      "path": "runtime-deps-before-zod.json",
+      "bytes": 14114
+    },
+    {
+      "sha256": "a817ae229981885e9c387bfba11e48c24e434727bc1ee4d4989ed2bc7fbf72fc",
+      "path": "runtime-deps-body-parser-1x-upstream.patch.json",
+      "bytes": 13830
+    },
+    {
+      "sha256": "6b0f214463e9bf18af69bd22b83692d1479d28690dbfcd92d31f3d7306b06918",
+      "path": "runtime-deps-body-parser-upstream.patch.json",
+      "bytes": 13245
+    },
+    {
+      "sha256": "f4f12dc8b87e1dec346289defde2a04e2c799278103ee11d9938097eaa37e134",
+      "path": "runtime-deps-browser-email-axe.json",
+      "bytes": 10923
+    },
+    {
+      "sha256": "be526209f07fa7e04f637605f94fe0f15a153ab296faebc05599dba4c6a8319e",
+      "path": "runtime-deps-browser-smtp-wire.json",
+      "bytes": 27489
+    },
+    {
+      "sha256": "5eda42e210d57b2a423a6bc7a8e795f1c589b104e8dde06ebff50a766236fae4",
+      "path": "runtime-deps-captured-exploratory-tests.json",
+      "bytes": 10897
+    },
+    {
+      "sha256": "63c695c9602b42d70d9b738014b3e1ece2174c4cc6724b1103b43b5bdda4684c",
+      "path": "runtime-deps-clean-install-commands.json",
+      "bytes": 854
+    },
+    {
+      "sha256": "f2772b22abfd955e2f9de7f6a5b4a4d88df51526dd30a62b4f116705d551f9df",
+      "path": "runtime-deps-exact-baseline-tests.json",
+      "bytes": 10277
+    },
+    {
+      "sha256": "30d43199e66d9294a9b62468918b509f562aacdeed798cbbd64fa27dbab5cdf0",
+      "path": "runtime-deps-exact-baseline-tests.log.gz",
+      "bytes": 116
+    },
+    {
+      "sha256": "91f558bfb876330171d9c8576b008327ff86e8392db4206fbbe41d8f4b754074",
+      "path": "runtime-deps-focused-tests.json",
+      "bytes": 34435
+    },
+    {
+      "sha256": "e3745b7ea501c80190b19eea69cf64bf720bf3c9b3a7edcac35944f0700f1301",
+      "path": "runtime-deps-focused-tests.log.gz",
+      "bytes": 114
+    },
+    {
+      "sha256": "6dcc685940540e742bf5170c4e84e32e4d01131a9849358e29bb97cf00a80aa8",
+      "path": "runtime-deps-full-run.json",
+      "bytes": 326
+    },
+    {
+      "sha256": "4edf9a790ae49d7bb274590d45641e03a1fee38da313cad46a85cacb55eba2f2",
+      "path": "runtime-deps-full-tests.json",
+      "bytes": 1201600
+    },
+    {
+      "sha256": "4770ef7e2e2e9e82c1dc3e242d95aefa4da3213be4131f1da25b35426555b726",
+      "path": "runtime-deps-full-tests.log.gz",
+      "bytes": 561835
+    },
+    {
+      "sha256": "3c71ae3f5d2acd4d1c5f0f67af35b9aaa8cde33741d63aa6606f569d590cfdf2",
+      "path": "runtime-deps-graph-checks.json",
+      "bytes": 609
+    },
+    {
+      "sha256": "62d3ec1eab037e1a7790098ce3cedd8bd483ed5c1ffb9e28e147ae6efe61b515",
+      "path": "runtime-deps-independent-mailbox-parser.json",
+      "bytes": 742
+    },
+    {
+      "sha256": "2134114d1ad99b188f234f347866e69e3c48059347d04e1d70cc71e052215e08",
+      "path": "runtime-deps-initial-exploratory-tests.json",
+      "bytes": 10904
+    },
+    {
+      "sha256": "2c5d1cfbade745bc7ec9afb642f909fcf1554de2bfd52d6023e0726ccc219bcf",
+      "path": "runtime-deps-initial-secret-scan-findings.json",
+      "bytes": 22630
+    },
+    {
+      "sha256": "bc0d9229d503d1d1e61728c4255f2d0534dc55f33cfc87f7d5aab617b12a57e9",
+      "path": "runtime-deps-installed-graph.json",
+      "bytes": 51393
+    },
+    {
+      "sha256": "89b84dd0a01f6f612d4832d6964eb963d0662a8b96285749dba0b89eefcf823d",
+      "path": "runtime-deps-lockfile-diff.json",
+      "bytes": 7388
+    },
+    {
+      "sha256": "072f9bacee3f82ee41d735eb1ca504a10ed2733ae5838434c6cd7466840177c1",
+      "path": "runtime-deps-multer-upstream.patch.json",
+      "bytes": 5054
+    },
+    {
+      "sha256": "f278120e64261a32cac9ca7acc3f90400e0bdde892d290cf8c801bc271518e40",
+      "path": "runtime-deps-node22-tests.json",
+      "bytes": 3551
+    },
+    {
+      "sha256": "dac467bce68534846bebd52f755728d3f40fdc8ba5fcabd80e555df7037442c7",
+      "path": "runtime-deps-nodemailer-nested-comment-upstream.patch.json",
+      "bytes": 8364
+    },
+    {
+      "sha256": "3c688d212f815c42719dd209f7c855e6be39891396f5ca0d6c644da817fc9012",
+      "path": "runtime-deps-nodemailer-upstream.patch.json",
+      "bytes": 20117
+    },
+    {
+      "sha256": "1b4a1f5e3db118f617382b764f884124cdd1b598b01e2f5b927787268fdf222d",
+      "path": "runtime-deps-npm-root-after.json",
+      "bytes": 4525
+    },
+    {
+      "sha256": "a271398b8e32ec39afb62a536a01dd615fb27a76479003c8920e689db95670ba",
+      "path": "runtime-deps-npm-root-before.json",
+      "bytes": 9077
+    },
+    {
+      "sha256": "0d3348e8276fdbd67a119ecf6550b9fb54fffbfa50761073dbb4fe1f0e4d6712",
+      "path": "runtime-deps-npm-runtime-after.json",
+      "bytes": 1180
+    },
+    {
+      "sha256": "6120255dbbc0142abe9d342d8ce8abfab0b29290458515d27835e8b1178b9b16",
+      "path": "runtime-deps-npm-runtime-before.json",
+      "bytes": 5732
+    },
+    {
+      "sha256": "5265fd5b108e30458848a87b7c3d85e461e366ad5f8c4d9afa9085f229c211ea",
+      "path": "runtime-deps-original-exploratory-tests.txt",
+      "bytes": 4089
+    },
+    {
+      "sha256": "8eeab89252b285173e5d4b6fdcb85440e912e896afc111093c4779176b4df78a",
+      "path": "runtime-deps-original-input-hashes.json",
+      "bytes": 405
+    },
+    {
+      "sha256": "06091cde5ec8717d729f9c45b7cca7e764c1b7290b649254f0875bfb8695af0f",
+      "path": "runtime-deps-permanent-test-hashes.json",
+      "bytes": 331
+    },
+    {
+      "sha256": "32aeda601d1b7feff26980a24f5e8a2bb61ddf339b641f42f5e7f926f8c54bb7",
+      "path": "runtime-deps-playwright-run.json",
+      "bytes": 195
+    },
+    {
+      "sha256": "99aa9851a9944fea62dccea887830b90ba05937d1f4eef1bccd8a242ee2a8b2f",
+      "path": "runtime-deps-playwright.json",
+      "bytes": 90883
+    },
+    {
+      "sha256": "7962c7638f4d91ec5e7d34f66ad35d3ff4098a1b5934eedda9b05d0cc452efdf",
+      "path": "runtime-deps-playwright.log.gz",
+      "bytes": 3709
+    },
+    {
+      "sha256": "b1c5a5c385814ed17e90b1ba508299f3b84a5061311f5a439151a795fececd8e",
+      "path": "runtime-deps-primary-summary.json",
+      "bytes": 7979
+    },
+    {
+      "sha256": "4644113136f94c42df696c41b558e92fa941dd2ce5944fc373888927034b9416",
+      "path": "runtime-deps-quoted-fixed-quoted-mailbox-experiment.json",
+      "bytes": 954
+    },
+    {
+      "sha256": "4e0749d78a61c8a91bc6bde78ab0a81c7d64e3d364f30d5d8ef2a73d0a56990e",
+      "path": "runtime-deps-quoted-fixed.log.gz",
+      "bytes": 780
+    },
+    {
+      "sha256": "c5b1071bc63e806854e0d734d25fa40a303929530ef4439c41ac106b28683325",
+      "path": "runtime-deps-quoted-original-quoted-mailbox-experiment.json",
+      "bytes": 951
+    },
+    {
+      "sha256": "26d8931152d01621999c4c3365746bc04fd290004f4ac44e5fda303e0fcb0a22",
+      "path": "runtime-deps-quoted-original.log.gz",
+      "bytes": 794
+    },
+    {
+      "sha256": "b4f94913104c30b06fbdafefd07b88e892233630f2b38a652b81a7eb26dda544",
+      "path": "runtime-deps-secret-scan-classification.json",
+      "bytes": 653
+    },
+    {
+      "sha256": "bb4f7c26db80987b63fd0832e162c9b2960af3d8773973ed7a49d02c5fc4168c",
+      "path": "runtime-deps-secret-scans.json",
+      "bytes": 1518
+    },
+    {
+      "sha256": "f3f9f8b89aa3c49234ed66735bfa56318145cea153cdcbad2523117657eec578",
+      "path": "runtime-deps-source-freeze.json",
+      "bytes": 127949
+    },
+    {
+      "sha256": "795c5e53f86da87fac61d0626c20ec4c0c115da08901dc7f90c5f4277392a7ef",
+      "path": "runtime-deps-superseded-candidate-tests.json",
+      "bytes": 4182
+    },
+    {
+      "sha256": "b6922e7ca7cec0bfb27eb254d1dd03bd9170622204e205b4183525970ac8abce",
+      "path": "runtime-deps-superseded-candidate-tests.log.gz",
+      "bytes": 112
+    },
+    {
+      "sha256": "df3b789f43e1697adba5f2b34015f4a94b91fd90c73995e885f3b9d1a08d2e37",
+      "path": "runtime-deps-typecheck.json",
+      "bytes": 162
+    },
+    {
+      "sha256": "bdc35c59e094b10d5ac67c82f997b44ce6a813b63d0a9752304483aaffec9b2e",
+      "path": "runtime-deps-verification.json",
+      "bytes": 1518
+    },
+    {
+      "sha256": "aa8ea4fe15df9585d6bcf16802672566bc0330b01ceb1653bbbf5dd6cccbf4f0",
+      "path": "runtime-deps-zod-upstream.patch.json",
+      "bytes": 12043
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "input": "<\"a@outside.example.test>\"@approved.example.test>",
+  "expectedEnvelope": "<\"a@outside.example.test>\"@approved.example.test>",
+  "commands": [
+    "EHLO [127.0.0.1]",
+    "MAIL FROM:<sender@example.test>",
+    "RCPT TO:<\"\\\"a\"@outside.example.test>",
+    "DATA"
+  ],
+  "messages": [
+    {
+      "from": "<sender@example.test>",
+      "to": [
+        "<\"\\\"a\"@outside.example.test>"
+      ],
+      "raw": "From: sender@example.test\r\nTo: \"@approved.example.test>\" <\"\\\"a\"@outside.example.test>\r\nSubject: Synthetic exact-mailbox experiment\r\nMessage-ID: <2a86a45b-535b-d598-1840-bea97492bf8d@example.test>\r\nContent-Transfer-Encoding: 7bit\r\nDate: Sat, 24 Oct 2026 07:44:04 +0000\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nSynthetic non-customer content",
+      "html": "Synthetic non-customer content",
+      "message_id": "<2a86a45b-535b-d598-1840-bea97492bf8d@example.test>"
+    }
+  ]
+}

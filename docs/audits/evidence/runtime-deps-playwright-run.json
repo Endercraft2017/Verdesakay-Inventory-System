@@ -1,0 +1,12 @@
+{
+  "command": [
+    "npm",
+    "run",
+    "test:e2e"
+  ],
+  "startedUtc": "2026-10-24T08:19:59.956238+00:00",
+  "selectedInputs": 879,
+  "exit": 0,
+  "seconds": 294.812,
+  "changedInputs": []
+}

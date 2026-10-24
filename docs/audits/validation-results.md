@@ -1,7 +1,8 @@
 # Second-pass validation — 16 October 2026
 
-Latest dated dependency evidence: see the 23 October follow-up at the end of this
-record. Candidate and final original-dependency runs are distinguished there.
+Latest dependency evidence: [24 October runtime remediation](dependency-remediation-2026-10-24.md)
+and the dated entry at the end of this record. Earlier 23 October candidate/original-dependency
+runs remain distinguished at their original cutoff.
 The subsequent 23 October payroll GL retry follow-up records the newer application
 tree and complete regression; broader release holds are unchanged. The latest cloud
 payroll replay/status follow-up at the end records the final transaction/retention tree.
@@ -1610,3 +1611,45 @@ latency/capacity, minimum-runtime consequences and independent review remain ope
 [fresh dependency findings](runtime-advisories-2026-10-24.md) remain separate engineering work.
 No new owner implementation task or whole-control PASS is claimed; the broader release hold
 and historical control totals remain unchanged.
+
+## Runtime dependency remediation — 24 October 2026
+
+Source baseline and starting remote production: **06179a8fb022ef54bd45c1b9d88d140c1afdcf63**.
+Read the [contract, primary research, raw evidence and failed experiments](dependency-remediation-2026-10-24.md)
+and [recovery procedure](../operations/runtime-dependency-updates.md). This follows, rather than
+relabels, the earlier same-day dependency observation. Only four runtime package entries change:
+body-parser 1.20.8→1.20.9, Multer 2.4.0→2.5.0, Zod 4.4.3→4.6.6, Nodemailer 10.1.1→10.1.4.
+No application runtime source/schema/trigger/authority or existing `.test.ts` assertions change.
+
+| Check | Observed result |
+|---|---|
+| Original exploratory suite | 7 failures / 4 passes, then same result with retained captures before package changes |
+| First superseded candidate (10.2.1 / 4.6.7) | 10/11 pass; strict quoted-mailbox preservation still fails; not final-graph validation |
+| Final permanent drivers on exact original lockfile, clean npm ci | 6 failures / 4 passes; actual app process crash, schema overwork, async-filter dependency crash, three wrong-domain SMTP destinations |
+| Final fixed clean graph, focused functional/adversarial run | 8 files / 121 tests pass; same permanent drivers/assertions; actual reviewed/platform transport and upload checks included |
+| Checksum-verified Node 22.22 run | 10 permanent regressions pass; default full-suite runtime is Node 24.19.0 |
+| TypeScript | npm run typecheck exits 0 |
+| Full serial npm test | 327 files / 3,529 tests pass, zero failed/pending; 1,933.64s Vitest / 1,934.388s wrapper; all 879 selected inputs unchanged |
+| Playwright | 78 pass, zero unexpected/flaky/skipped; 294.812s wrapper; same 879 inputs unchanged; all seven payslip email scenarios pass with actual local TLS SMTP wire evidence |
+| Strict quoted-mailbox experiment | **Exit 1 on original and fixed graphs**, retained separately and not counted as a passed regression: patched library restores domain but replaces local-part `>` with a space. Tested public compose/reviewed payroll validators already refuse this syntax. |
+| Runtime npm audit | 4 high / 1 moderate → 1 high / 0 moderate; final exit 1, node-forge remains |
+| Complete-root npm audit | 5 high / 2 moderate → 2 high / 1 moderate; final exit 1, node-forge plus separate Electron/fast-uri findings |
+
+All seven reviewed runtime advisory records remain active. This increment's advisory reduction
+is credited to package changes, not an upstream withdrawal. Earlier formatter-advisory withdrawal
+credit stays in its own dated record. The initial stronger quoted-angle failure remains visible
+in the original 11-case source/report and in an executable standalone experiment; the green
+permanent gate does not establish exactness for arbitrary RFC mailboxes. The temporary no-save
+graph comparison changed unrelated installed packages and is not used as the exact-baseline proof;
+both exact graphs were subsequently installed from their own unchanged lockfiles.
+
+Gitleaks 8.24.3 staged and exported-content gates pass, zero findings, default rules, with all
+seven compressed logs expanded for scanning. Initial 36 flags on each gate are verified file
+digests in source-freeze metadata; lossless digest/path records resolve the format ambiguity,
+without new allowlists or detection suppression. Initial findings, classification, round-trip
+proof, final receipts and artifact hashes are retained in the linked verification record.
+The final staged index and mandatory commit hook also cover publication metadata. Local results
+are not independent review, hosted/native acceptance,
+real inbox delivery or release approval. Existing Node minimum mismatch, auth latency, historical
+secret findings and broader release blockers stay open. Historical whole-control totals do not
+change in this scoped increment.

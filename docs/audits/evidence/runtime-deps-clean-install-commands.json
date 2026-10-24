@@ -1,0 +1,48 @@
+[
+  {
+    "name": "exact-baseline-ci",
+    "command": [
+      "npm",
+      "ci",
+      "--ignore-scripts",
+      "--no-audit"
+    ],
+    "exit": 0,
+    "seconds": 6.217
+  },
+  {
+    "name": "exact-before-tests",
+    "command": [
+      "npx",
+      "vitest",
+      "run",
+      "tests/dependency-advisories.test.ts",
+      "--reporter=json",
+      "--outputFile=work/dependency-remediation/exact-before-tests.json"
+    ],
+    "exit": 1,
+    "seconds": 4.491
+  },
+  {
+    "name": "exact-original-quoted-experiment",
+    "command": [
+      "node",
+      "--import",
+      "tsx",
+      "scripts/audits/nodemailer-mailbox-experiment.ts"
+    ],
+    "exit": 1,
+    "seconds": 0.355
+  },
+  {
+    "name": "exact-candidate-ci",
+    "command": [
+      "npm",
+      "ci",
+      "--ignore-scripts",
+      "--no-audit"
+    ],
+    "exit": 0,
+    "seconds": 5.717
+  }
+]

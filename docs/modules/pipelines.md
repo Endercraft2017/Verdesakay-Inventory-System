@@ -732,6 +732,11 @@ for the internet (it uses the company's mail server, which only the cloud has).
    duplicate-risk acknowledgement. Acceptance is not delivery. Offline source changes invalidate
    queued cloud email when synchronized; email intents/events never replicate. See
    `docs/operations/payroll-email-release.md`.
+   **24 October transport update:** Nodemailer 10.1.4 fixes the reviewed package findings;
+   this does not change plain-mailbox review/explicit-envelope ownership, retry policy or offline
+   authority. Arbitrary RFC quoted-local-part preservation remains a failed standalone experiment;
+   the application continues to refuse that syntax. See the
+   [dependency contract](../audits/dependency-remediation-2026-10-24.md).
 3b. **Recover a missing/invalid cutoff ID** (`hr`) — online payroll managers verify original
    records and review/confirm a consistent unique existing label destination with fresh proof.
    Only the ID changes under mandatory revision history. Paid/released, duplicate/unresolved,

@@ -1,0 +1,16 @@
+{
+  "command": [
+    "npm",
+    "test",
+    "--",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile=work/dependency-remediation/full-tests.json"
+  ],
+  "startedUtc": "2026-10-24T07:47:11.756210+00:00",
+  "node": "v24.19.0",
+  "selectedInputs": 879,
+  "exit": 0,
+  "seconds": 1934.388,
+  "changedInputs": []
+}

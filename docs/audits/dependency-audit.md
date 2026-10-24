@@ -1,10 +1,13 @@
 # Dependency audit — second pass, 16 October 2026
 
-Latest runtime review: **24 October — four high and one moderate package entries**, exit 1.
-Seven active primary advisory records and available patch versions are documented in
-[the dated follow-up](runtime-advisories-2026-10-24.md). No packages changed in the SQLite
-startup fix; these are separate open engineering findings. The 23 October formatter withdrawal
-and one-high/zero-moderate results below remain historical snapshots, not the current gate.
+Latest remediation: **24 October — one high runtime entry**, exit 1 (node-forge).
+The separate complete-root scan has **two high / one moderate**, including Electron/fast-uri.
+[Four compatible updates, original failures and limits](dependency-remediation-2026-10-24.md)
+are documented separately from the [earlier same-day observation](runtime-advisories-2026-10-24.md).
+All seven runtime primary advisory records remain active; this count reduction comes from the
+package changes, not a withdrawal. Exact quoted-mailbox preservation still fails a retained
+standalone experiment; public/reviewed validation refuses that syntax. The release remains held.
+The 23 October formatter withdrawal and one-high/zero-moderate results below are historical.
 
 The user explicitly approved npm advisory lookups. All three lockfiles were scanned again after
 merging the newer source. Compatible patches were applied with `npm audit fix --ignore-scripts`;

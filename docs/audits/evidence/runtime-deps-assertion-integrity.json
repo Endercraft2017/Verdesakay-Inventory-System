@@ -1,0 +1,9 @@
+{
+  "baseline": "06179a8fb022ef54bd45c1b9d88d140c1afdcf63",
+  "changedExistingTestFiles": [
+    "tests/helpers/smtp-capture.ts"
+  ],
+  "unchangedExistingTestAssertions": true,
+  "reason": "Only the SMTP peer gains complete command recording and reset; every existing .test.ts file is byte-for-byte unchanged from the baseline.",
+  "permanentDriverHashesUnchanged": true
+}

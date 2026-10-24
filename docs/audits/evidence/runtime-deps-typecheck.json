@@ -1,0 +1,5 @@
+{
+  "exit": 0,
+  "stdoutSha256": "6f9956c8d7a28913f45114bd1a90690925873dae49ffb7e2179b2d674410fff0",
+  "stdout": "\n> otom@1.0.0 typecheck\n> tsc --noEmit\n\n"
+}

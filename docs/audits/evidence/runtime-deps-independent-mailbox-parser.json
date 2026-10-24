@@ -1,0 +1,30 @@
+[
+  {
+    "input": "G: (a; <outside@outside.example.test>) <recipient@approved.example.test>;",
+    "mailboxes": [
+      "recipient@approved.example.test"
+    ],
+    "defects": []
+  },
+  {
+    "input": "Victim (x(y) <outside@outside.example.test>) <recipient@approved.example.test>",
+    "mailboxes": [
+      "recipient@approved.example.test"
+    ],
+    "defects": []
+  },
+  {
+    "input": "<\"a@outside.example.test>\"@approved.example.test>",
+    "mailboxes": [
+      "\"a@outside.example.test>\"@approved.example.test"
+    ],
+    "defects": []
+  },
+  {
+    "input": "G: \"a;\" \"<outside@outside.example.test>\" <recipient@approved.example.test>;",
+    "mailboxes": [
+      "recipient@approved.example.test"
+    ],
+    "defects": []
+  }
+]

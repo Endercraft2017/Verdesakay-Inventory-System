@@ -1,0 +1,56 @@
+{
+  "baseline": "06179a8fb022ef54bd45c1b9d88d140c1afdcf63",
+  "utc": "2026-10-24T08:25:20.270158+00:00",
+  "implementedPackages": {
+    "body-parser": "1.20.9",
+    "multer": "2.5.0",
+    "zod": "4.6.6",
+    "nodemailer": "10.1.4"
+  },
+  "finalPermanentTestsOnOriginalLockfile": {
+    "failed": 6,
+    "passed": 4
+  },
+  "focused": {
+    "passed": 121,
+    "failed": 0
+  },
+  "node22": {
+    "passed": 10,
+    "failed": 0
+  },
+  "fullVitest": {
+    "files": 327,
+    "passed": 3529,
+    "failed": 0,
+    "pending": 0
+  },
+  "playwright": {
+    "startTime": "2026-10-24T08:20:00.990Z",
+    "duration": 293629.247,
+    "expected": 78,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "selectedInputs": 879,
+  "changedInputs": [],
+  "strictQuotedMailboxExperiment": {
+    "originalExit": 1,
+    "fixedExit": 1,
+    "status": "OPEN; exact local part changes, tested application validators refuse syntax; not counted as a passing regression"
+  },
+  "independentApplicationReview": "NOT PERFORMED",
+  "releaseApproval": false,
+  "secretScans": {
+    "defaultGitleaksVersion": "8.24.3",
+    "stagedExit": 0,
+    "expandedExportExit": 0,
+    "findings": 0,
+    "compressedLogsExpanded": 7,
+    "initialFlags": 36,
+    "initialFlagsClassification": "Verified source-file SHA-256 digests; reversible metadata normalization; no allowlist changes",
+    "receipt": "runtime-deps-secret-scans.json"
+  },
+  "sourceFreezePublishedFormat": "SHA-256 digest/path records; exactly reversible to the original hash-map bytes"
+}

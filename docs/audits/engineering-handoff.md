@@ -1,5 +1,22 @@
 # Engineering handoff and release hold
 
+Latest dependency remediation: 24 October 2026 — body-parser 1.20.9, Multer 2.5.0,
+Zod 4.6.6 and Nodemailer 10.1.4 replace four affected versions. The actual public app
+compressed-body crash, attendance bound overwork, async-filter dependency crash and three
+wrong-domain SMTP cases are reproduced before/fixed after. Multer's current app filters
+are synchronous; no public compose/reviewed-mail validation bypass is claimed. The stronger
+quoted-mailbox experiment **still fails** after the domain fix and remains executable;
+the tested application validators already reject this syntax. No application runtime code,
+schema, business authority or existing assertions change. Focused 121 tests and Node 22.22's
+ten permanent regressions pass. Full serial validation passes **327 files / 3,529 tests**
+with 879 selected inputs unchanged. Playwright passes **78 cases**, zero skipped/flaky/unexpected,
+on those same inputs, including all seven payslip email scenarios. Final publication checks
+are recorded in the [contract/evidence](dependency-remediation-2026-10-24.md). Runtime audit
+remains exit 1: **one high** node-forge. Complete-root audit: **two high / one moderate**,
+including separate Electron/fast-uri findings. These are not approved exceptions. Recovery
+is in [runtime dependency updates](../operations/runtime-dependency-updates.md). Broader
+release blockers, historical whole-control totals and independent review remain open.
+
 Latest SQLite startup follow-up: 24 October 2026 — reproduced cold-start trigger contention
 and a first-run administrator seed race at `0c2ed900239ce50db297ebd957d9f34b6ec0b0cc`.
 Updated tenant/catalog initializers now coordinate through an adjacent technical SQLite
@@ -30,12 +47,13 @@ Final canonical validation passes 326 files / 3,519 tests with all 872 selected 
 the retained 78-case Playwright run has identical runtime/e2e inputs. This is local scoped evidence,
 not release approval or independent assurance.
 
-Latest dependency observation: 24 October 2026 — a fresh runtime npm scan reports
+Earlier dependency observation before the same-day remediation: a runtime npm scan reports
 **four high / one moderate / zero critical vulnerable-package entries**, with seven active
 primary advisory records. Manifests and lockfiles are unchanged. Earlier one-high results
 below are historical snapshots. Compatible parser/upload/validator/mail package updates,
 application-specific reproductions and final-graph regression are separate engineering
-follow-up; no approved risk exception or owner implementation task is implied. See
+follow-up at that cutoff; the newer scoped remediation above supplies the delivered work and
+remaining limits. No approved risk exception or owner implementation task is implied. See
 [current findings](runtime-advisories-2026-10-24.md). The broader release hold and historical
 whole-control totals remain unchanged.
 

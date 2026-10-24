@@ -1,0 +1,6 @@
+{
+  "tests/dependency-advisories.test.ts": "5265fd5b108e30458848a87b7c3d85e461e366ad5f8c4d9afa9085f229c211ea",
+  "tests/helpers/dependency-advisory-child.ts": "9ea1a5e06bfe4e615698b3292ba2aefdfea4b1a71bcc98f614276f473df069cc",
+  "package.json": "23e2f22b7df1d08d86d2d56b378b9b19c404d060e9d997cbfd82aebfea234f4f",
+  "package-lock.json": "28736bcfdeb7197f61fbebfb2b553115e7b503bff9016ded4d75d578c790b51c"
+}

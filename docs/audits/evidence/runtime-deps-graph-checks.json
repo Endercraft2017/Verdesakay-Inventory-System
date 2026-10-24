@@ -1,0 +1,44 @@
+[
+  {
+    "name": "typecheck",
+    "command": [
+      "npm",
+      "run",
+      "typecheck"
+    ],
+    "exit": 0,
+    "seconds": 26.714
+  },
+  {
+    "name": "npm-runtime-final",
+    "command": [
+      "npm",
+      "audit",
+      "--omit=dev",
+      "--json"
+    ],
+    "exit": 1,
+    "seconds": 0.917
+  },
+  {
+    "name": "npm-root-final",
+    "command": [
+      "npm",
+      "audit",
+      "--json"
+    ],
+    "exit": 1,
+    "seconds": 1.245
+  },
+  {
+    "name": "installed-graph",
+    "command": [
+      "npm",
+      "ls",
+      "--omit=dev",
+      "--json"
+    ],
+    "exit": 0,
+    "seconds": 1.126
+  }
+]

@@ -1,9 +1,15 @@
 # Runtime findings observed 24 October 2026
 
+This is the **pre-remediation observation** from the SQLite startup increment. The subsequent
+[dependency remediation](dependency-remediation-2026-10-24.md) installs four compatible fixes
+and reduces the runtime gate to **one high / zero moderate**, still exit 1. The table below
+retains the original installed versions and findings; it is not the final dependency graph.
+
 The runtime npm audit performed during SQLite startup verification exits **1** and reports
 **4 high / 1 moderate / 0 critical vulnerable-package entries**. There are seven linked advisory
 records because three affect Nodemailer. Package manifests and lockfiles are unchanged by the
-startup fix. Earlier one-high/zero-moderate results are dated snapshots, not the current gate.
+startup fix. Earlier one-high/zero-moderate results are dated snapshots; the newer remediation
+record identifies the current gate.
 The installed runtime graph was also read with `npm ls --omit=dev` (exit 0); its
 [selected actual versions](evidence/sqlite-startup-installed-runtime-versions.txt) match the
 affected versions below, including Express's transitive body-parser.

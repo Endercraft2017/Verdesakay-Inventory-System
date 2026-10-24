@@ -95,6 +95,12 @@ desk-only role per desk against every area's read). `tests/route-permissions.tes
 with no permission check unless it is listed with its reason (own data, checked inside, open by design).
 The phone shell refuses a screen the role doesn't permit (`public/mobile/app.js` ROUTE_NEEDS) before
 it renders — warehouse screens need inventory.adjust / .create / .view, the unit record a desk.
+**Runtime dependency follow-up (24 October 2026):** Express's body-parser resolves to 1.20.9;
+Multer 2.5.0, Zod 4.6.6 and Nodemailer 10.1.4 receive scoped malformed-input/SMTP regressions
+in `tests/dependency-advisories.test.ts`. Existing mail/review/offline authority APIs are unchanged.
+The separate strict quoted-mailbox experiment remains failed; complex syntax is still refused
+by public compose and reviewed payroll validation. Runtime node-forge and desktop/build findings
+remain held. [Evidence and limits](../audits/dependency-remediation-2026-10-24.md).
 **Dependencies:** none on business modules. **Known wart:** `shared/db.ts` imports
 `modules/payroll/ph-statutory.ts` (`SSS_2026`/`PHILHEALTH_2026`/etc.) and
 `modules/accounting/ledger.ts` (`DEFAULT_COA`) for first-run seed data — a real,

@@ -14,7 +14,7 @@ export async function smtpCapture(){
  // Trust this ephemeral test CA; verification remains enabled in the production transport.
  const previous=tls.getCACertificates('default');tls.setDefaultCACertificates([...previous,pem]);
  const sockets=new Set<tls.TLSSocket>(),messages:CapturedMessage[]=[],connections:{count:number}={count:0};let mode:SmtpMode='accept';const recipientModes=new Map<string,SmtpMode>();
- const held:Array<()=>void>=[];
+ const held:Array<()=>void>=[],commands:string[]=[];
  const server=tls.createServer({key:fs.readFileSync(key),cert:pem},socket=>{
   sockets.add(socket);connections.count++;socket.on('error',()=>{});socket.on('close',()=>sockets.delete(socket));
   if(mode==='hold-greeting')held.push(()=>socket.write('220 capture.example.test ESMTP\r\n'));else socket.write('220 capture.example.test ESMTP\r\n');
@@ -29,7 +29,7 @@ export async function smtpCapture(){
      messages.push({from,to:[...to],raw,html,message_id:raw.match(/^Message-ID:\s*(.+)$/mi)?.[1]?.trim()??null});
      if(transactionMode==='disconnect'){socket.destroy();return;}if(transactionMode==='hold-data')held.push(()=>socket.write('250 2.0.0 stored by capture\r\n'));else if(transactionMode==='reject-data')socket.write('550 5.7.1 synthetic DATA rejection\r\n');else socket.write('250 2.0.0 stored by capture\r\n');continue;
     }
-    const end=buffer.indexOf('\r\n');if(end<0)return;const line=buffer.slice(0,end);buffer=buffer.slice(end+2);
+    const end=buffer.indexOf('\r\n');if(end<0)return;const line=buffer.slice(0,end);buffer=buffer.slice(end+2);commands.push(line);
     if(/^(EHLO|HELO)\b/i.test(line))socket.write('250-capture.example.test\r\n250 SIZE 2097152\r\n');
     else if(/^MAIL FROM:/i.test(line)){from=line.replace(/^MAIL FROM:\s*/i,'').split(' ')[0]!;to=[];transactionMode=mode;socket.write('250 Sender OK\r\n');}
     else if(/^RCPT TO:/i.test(line)){transactionMode=recipientModes.get(line.replace(/^RCPT TO:\s*</i,'').replace(/>.*/,''))??transactionMode;if(transactionMode==='reject'||transactionMode==='reject-temporary')socket.write(transactionMode==='reject'?'550 5.1.1 synthetic recipient rejected\r\n':'451 4.3.0 synthetic temporary rejection\r\n');else{to.push(line.replace(/^RCPT TO:\s*/i,'').split(' ')[0]!);socket.write('250 Recipient OK\r\n');}}
@@ -41,5 +41,5 @@ export async function smtpCapture(){
  });
  await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
  const address=server.address();if(!address||typeof address==='string')throw new Error('No SMTP port');
- return {port:address.port,cert,dir,messages,connections,activeConnections:()=>sockets.size,setRecipientMode:(recipient:string,value:SmtpMode)=>{recipientModes.set(recipient,value);},setMode:(value:SmtpMode)=>{mode=value;},release:()=>{for(const send of held.splice(0))send();},reset:()=>{messages.length=0;connections.count=0;mode='accept';},close:async()=>{for(const socket of sockets)socket.destroy();await new Promise<void>(resolve=>server.close(()=>resolve()));tls.setDefaultCACertificates(previous);fs.rmSync(dir,{recursive:true,force:true});}};
+ return {port:address.port,cert,dir,messages,connections,commands,activeConnections:()=>sockets.size,setRecipientMode:(recipient:string,value:SmtpMode)=>{recipientModes.set(recipient,value);},setMode:(value:SmtpMode)=>{mode=value;},release:()=>{for(const send of held.splice(0))send();},reset:()=>{messages.length=0;commands.length=0;connections.count=0;mode='accept';},close:async()=>{for(const socket of sockets)socket.destroy();await new Promise<void>(resolve=>server.close(()=>resolve()));tls.setDefaultCACertificates(previous);fs.rmSync(dir,{recursive:true,force:true});}};
 }
