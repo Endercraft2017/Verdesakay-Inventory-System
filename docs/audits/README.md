@@ -33,6 +33,7 @@ legal approval or independent assurance. The complete release remains on hold.
 
 | Prefix in evidence/ | Scope |
 |---|---|
+| runtime-support-* | Qualified Node ranges, private SQLite capability admission, real old-runtime/file-access/rollback observations, npm oracle and explicit failed tracing/CI evidence limits; [contract](runtime-support-contract.md), [recovery](../operations/runtime-support.md) |
 | runtime-deps-* | Exact original/fixed lockfile comparisons, public compressed-body crash, collection-work bound, async-filter dependency teardown and actual SMTP destinations; strict quoted-mailbox experiment remains failed. [Contract](dependency-remediation-2026-10-24.md), [rollback](../operations/runtime-dependency-updates.md) |
 | sqlite-startup-* | Cold tenant/catalog initialization ownership, trigger/seed reproductions, bounded waits, kill/retry, actual server readiness and separate validation-fixture controls; [contract](sqlite-startup-contract.md), [recovery](../operations/sqlite-startup.md) |
 | payroll-replay-* | Cloud payroll journal/effect/verdict transaction, immutable inbox markers, legacy holds, real process/concurrency and replica convergence; [contract](payroll-replay-contract.md), [research](payroll-replay-research.md), [recovery](../operations/payroll-cloud-replay.md) |

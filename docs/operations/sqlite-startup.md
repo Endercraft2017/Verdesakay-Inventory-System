@@ -69,7 +69,8 @@ on the test host remain an open investigation.
 Production hosting/storage, Windows filesystem/installer acceptance, power loss, mixed-version
 rollout and full restore remain separate evidence. There is no new owner engineering task or
 required configuration variable for this local fix. Keep wider production-release holds open.
-The app-level checks here use Node 22.22.0 and 24.19.0. The declared `>=22.13` minimum has a
-demonstrated pre-existing SQLite API mismatch in payroll/sync guards; see the contract's
-runtime probe. Treat minimum-runtime support as open engineering work, and use a tested,
-supported patched runtime for subsequent staging acceptance.
+The original app-level checks here use Node 22.22.0 and 24.19.0. At that cutoff the declared
+`>=22.13` minimum had a demonstrated SQLite API mismatch; the subsequent
+[runtime admission fix](runtime-support.md) removes that declaration and refuses unsupported
+versions/capabilities before application data access. Use a maintained patch and its preflight
+for subsequent staging acceptance. Actual host/Windows capability verification remains separate.

@@ -1,0 +1,34 @@
+{
+  "entry": "server",
+  "version": "22.13.0",
+  "status": 1,
+  "signal": null,
+  "result": {
+    "state": "refused",
+    "node": "22.13.0",
+    "code": "RUNTIME_TEST_LISTENER_REACHED",
+    "message": "HTTP binding was reached"
+  },
+  "before": {
+    "platform.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17",
+    "tenant.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17"
+  },
+  "after": {
+    "backups/_platform/daily/_platform-2026-10-24.db": "a7936773448b3d4980bb28fba7c0deaf56d6f0d8ae5816cd4c0febf6fa35c726",
+    "backups/_platform/hourly/_platform-2026-10-24-17.db": "a7936773448b3d4980bb28fba7c0deaf56d6f0d8ae5816cd4c0febf6fa35c726",
+    "backups/default/daily/default-2026-10-24.db": "c28088ed818d453f11c22fe3fc1dc8a86adbe1cc1df42db894de9a69e0e5b2fe",
+    "backups/default/hourly/default-2026-10-24-17.db": "c28088ed818d453f11c22fe3fc1dc8a86adbe1cc1df42db894de9a69e0e5b2fe",
+    "backups/default/pre-migrate/default-v0-to-v85-20261024-171424.db": "40ce5bcad08797ed6b0457497809a84ca1bb7026f1ed55a86cb45231d811e76a",
+    "backups/status.json": "29608d84eb7161b6eeb574a46fc747e6466c13dd6ad496f99274887b57652fda",
+    "platform.db": "e2ca88c1b384f05a3a08cf10c2c30288edd1e72334e60665fad663e1a8da194d",
+    "platform.db-shm": "1995018ab9f2d6999ffa0f55a20feca8f7be9dad450864651edbbbbc5b5021b3",
+    "platform.db-wal": "3e3ec5aa9e0bc1a9b328059218634b2b4a98a9df762f15f1eda7fa164f34ccfa",
+    "platform.db.startup-lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tenant.db": "b72952d06a6861a02116ba18918dd0d5dfa8749e10c6bd56c492237742d2744b",
+    "tenant.db-shm": "0675bb0fe056c4ce00aa72e604b83f1bf360e7e48a9c136d8806c0cd9524580b",
+    "tenant.db-wal": "7681683d9f42baea2df2c7e22d4a6a54d48bd8fce48b46b84ee803abc9e1c7a7",
+    "tenant.db.startup-lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stdout": "[backup] \"default\" is being upgraded to schema v85; snapshot saved to /tmp/runtime-admission-K27Lvh/backups/default/pre-migrate/default-v0-to-v85-20261024-171424.db\n[backup] daily snapshot for 2026-10-24: 2 database(s) → /tmp/runtime-admission-K27Lvh/backups\nRUNTIME_RESULT {\"state\":\"refused\",\"node\":\"22.13.0\",\"code\":\"RUNTIME_TEST_LISTENER_REACHED\",\"message\":\"HTTP binding was reached\"}\n",
+  "stderr": "[sync] round failed: \"default\" is not an installed copy.\n"
+}

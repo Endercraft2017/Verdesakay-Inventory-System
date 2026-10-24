@@ -1,0 +1,24 @@
+{
+  "entry": "maintenance",
+  "version": "22.13.0",
+  "status": 0,
+  "signal": null,
+  "result": null,
+  "before": {
+    "platform.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17",
+    "tenant.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17"
+  },
+  "after": {
+    "backups/default/pre-migrate/default-v0-to-v85-20261024-171425.db": "40ce5bcad08797ed6b0457497809a84ca1bb7026f1ed55a86cb45231d811e76a",
+    "platform.db": "e2ca88c1b384f05a3a08cf10c2c30288edd1e72334e60665fad663e1a8da194d",
+    "platform.db-shm": "a1099cc96b0b9f9655f71fe2f9be48b05c95161275f73dbbe90b5cfcbd36ca82",
+    "platform.db-wal": "977bad6e7b49b835789d3b701aed8c1483f7d1ea2ab025c92a8d57c13d46255d",
+    "platform.db.startup-lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tenant.db": "c229993a3fe83de85d51da0f375f8941201877e44fa2a6881a0fa99d7bb2ff65",
+    "tenant.db-shm": "581923860c59fb2623968de9e1883fc7b69d5863349bc7bdcac9b7143022b3c6",
+    "tenant.db-wal": "2a15aae14a25cf307354a26a2113c4e2e2c58ed0526c5ceb4e722efcd58c76ae",
+    "tenant.db.startup-lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stdout": "Migrating 1 tenant DB(s) to schema v85…\n[backup] \"default\" is being upgraded to schema v85; snapshot saved to /tmp/runtime-admission-clyRHk/backups/default/pre-migrate/default-v0-to-v85-20261024-171425.db\n  ✓ default\nDone — 1/1 migrated.\n",
+  "stderr": ""
+}

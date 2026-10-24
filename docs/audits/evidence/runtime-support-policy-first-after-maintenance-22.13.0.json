@@ -1,0 +1,22 @@
+{
+  "entry": "maintenance",
+  "version": "22.13.0",
+  "status": 1,
+  "signal": null,
+  "result": {
+    "state": "refused",
+    "node": "22.13.0",
+    "code": "UNSUPPORTED_NODE_RUNTIME",
+    "message": "Cannot start: Node.js 22.13.0 is not a qualified runtime. Supported Node.js versions: ^22.22.0 || ^24.19.0. Install a maintained patch in a supported range (or update the desktop build), then run npm run runtime:check before retrying. Application databases have not been opened by this check."
+  },
+  "before": {
+    "platform.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17",
+    "tenant.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17"
+  },
+  "after": {
+    "platform.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17",
+    "tenant.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17"
+  },
+  "stdout": "RUNTIME_RESULT {\"state\":\"refused\",\"node\":\"22.13.0\",\"code\":\"UNSUPPORTED_NODE_RUNTIME\",\"message\":\"Cannot start: Node.js 22.13.0 is not a qualified runtime. Supported Node.js versions: ^22.22.0 || ^24.19.0. Install a maintained patch in a supported range (or update the desktop build), then run npm run runtime:check before retrying. Application databases have not been opened by this check.\"}\n",
+  "stderr": ""
+}

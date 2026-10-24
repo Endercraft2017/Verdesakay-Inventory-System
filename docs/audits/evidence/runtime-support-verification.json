@@ -1,0 +1,50 @@
+{
+  "baseline": "e077a494547a35e0919711c8739bc46d874d03f4",
+  "utc": "2026-10-24T10:16:37.120945+00:00",
+  "supportedRanges": "^22.22.0 || ^24.19.0",
+  "compatibilityVersusSecurity": "Floors are compatibility promises; current maintained patches and actual build selection require review.",
+  "newLibraryVersions": false,
+  "changedLockEntries": [
+    ""
+  ],
+  "originalAdmissionSuite": {
+    "failed": 10,
+    "passed": 1
+  },
+  "fullMinimumRuntime": {
+    "node": "22.22.0",
+    "files": 328,
+    "passed": 3540,
+    "failed": 0,
+    "pending": 0
+  },
+  "currentNodeFocused": {
+    "22.23.4": 41,
+    "24.22.1": 41
+  },
+  "playwright": {
+    "node": "24.22.1",
+    "startTime": "2026-10-24T10:06:30.995Z",
+    "duration": 375627.203,
+    "expected": 78,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "selectedInputs": 888,
+  "changedInputs": [],
+  "originalNewTestDriversUnchanged": true,
+  "independentBaselineCI": "Both Node test jobs and secrets success; browser/dependencies failure; candidate CI not inferred.",
+  "traceEvidenceGap": "First failed positive-control detail overwritten; original counts, repeat diagnostic and corrected triple retained.",
+  "historicalFinancialCorruption": "Not demonstrated; real old app fails FTS5 setup before payroll.",
+  "independentHumanReview": false,
+  "releaseApproval": false,
+  "secretScans": {
+    "version": "8.24.3",
+    "stagedExit": 0,
+    "expandedExportExit": 0,
+    "findings": 0,
+    "compressedLogsExpanded": 13,
+    "newAllowlistsOrSuppression": false
+  }
+}

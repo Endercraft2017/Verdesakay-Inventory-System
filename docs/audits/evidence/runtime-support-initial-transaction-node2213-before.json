@@ -1,0 +1,25 @@
+{
+  "node": "22.13.0",
+  "isTransactionType": "undefined",
+  "housekeeping": {
+    "called": true,
+    "error": null,
+    "valueInsideTransaction": {
+      "body": "changed"
+    },
+    "transactionOpen": true
+  },
+  "replay": {
+    "error": "NOT NULL constraint failed: sync_commands.allocation_plan",
+    "transactionOpen": true,
+    "inboxRows": {
+      "n": 0
+    },
+    "markerRows": {
+      "n": 0
+    }
+  },
+  "afterExplicitRollback": {
+    "n": 0
+  }
+}

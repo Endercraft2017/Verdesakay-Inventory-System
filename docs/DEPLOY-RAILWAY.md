@@ -18,7 +18,10 @@ How the app supports this:
 - **Console host.** `PLATFORM_HOST=admin.app.afkcube.com` serves only the console, and the
   console is served nowhere else. (`admin` is a reserved slug, so no tenant can take it.)
 - **Repo config.** `railway.json` sets the Railpack build, `npm start`, and a healthcheck on
-  `/api/health`. `.node-version` pins Node 22 (`node:sqlite` needs ≥ 22.13).
+  `/api/health`. `.node-version` recommends Node 24.22.1. Compatibility floors are
+  22.22 within 22.x or 24.19 within 24.x, with required SQLite capabilities checked before
+  app data access. Run `npm run runtime:check` on the built host; this file does not prove the
+  host selected the pin. See [runtime support](operations/runtime-support.md).
 
 ---
 

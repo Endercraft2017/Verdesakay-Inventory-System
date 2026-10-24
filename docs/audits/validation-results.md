@@ -1,6 +1,7 @@
 # Second-pass validation — 16 October 2026
 
-Latest dependency evidence: [24 October runtime remediation](dependency-remediation-2026-10-24.md)
+Latest runtime support evidence: [24 October runtime admission](runtime-support-contract.md),
+with the dated entry at the end. Latest dependency evidence: [24 October runtime remediation](dependency-remediation-2026-10-24.md)
 and the dated entry at the end of this record. Earlier 23 October candidate/original-dependency
 runs remain distinguished at their original cutoff.
 The subsequent 23 October payroll GL retry follow-up records the newer application
@@ -1653,3 +1654,44 @@ are not independent review, hosted/native acceptance,
 real inbox delivery or release approval. Existing Node minimum mismatch, auth latency, historical
 secret findings and broader release blockers stay open. Historical whole-control totals do not
 change in this scoped increment.
+
+## Runtime admission and actual supported versions — 24 October 2026
+
+Baseline/starting remote production: **e077a494547a35e0919711c8739bc46d874d03f4**.
+[Contract and raw evidence](runtime-support-contract.md), [operator recovery](../operations/runtime-support.md).
+The inaccurate `>=22.13` support declaration is replaced by `^22.22.0 || ^24.19.0`;
+normal installs enforce engines and actual entry points probe native SQLite in private memory
+before application data access. Current maintained pins are 22.23.4/24.22.1, with floor versions
+retained in CI. This does not change an installed host/Electron binary automatically.
+
+| Check | Observed result |
+|---|---|
+| Official Node 22.13 on unchanged payroll integration fixture | Setup fails `no such module: fts5`; eight pending tests, no payroll assertions executed |
+| Isolated actual production transaction functions | Old runtime executes forbidden housekeeping inside a transaction and leaves one uncommitted inbox row after marker abort; supported 24.19 control refuses/rolls back; no committed financial corruption demonstrated |
+| Real baseline versus fixed 22.13 entry points | Baseline tenant/catalog/server/maintenance all touch app paths; fixed runtime refusal creates zero app files; eight fixed cases include deliberately inconsistent supported version identity |
+| Unchanged admission test/worker | 10 failures / 1 positive control before → 11 passes afterward; synthetic existing-file hashes and HTTP tripwire are mandatory |
+| OS file-access witness | Corrected `strace` comparison: 37 data-path operations before → zero after refusal; supported control exits 0 and sees 45 operations |
+| npm engine oracle | Ordinary old-policy offline install accepts 22.13; actual new engine/config fields refuse with EBADENGINE |
+| Current runtimes | 41 focused tests each on checksum-verified 22.23.4 and 24.22.1; real capability and strict engine dry-runs pass at 22.22 and both current patches |
+| TypeScript | Exits 0 on Node 24.22.1 |
+| Full serial npm test | Node 22.22.0, 328 files / 3,540 passed, zero failed/pending; 2,036.83s Vitest / 2,037.652s wrapper; all 888 selected inputs unchanged |
+| Full local Playwright | Node 24.22.1, 78 passed, zero unexpected/flaky/skipped; 377.181s wrapper; same 888 inputs unchanged, actual SMTP capture retained |
+| Independent baseline CI | e077a49's two Node test jobs and secrets job succeed; dependency and browser jobs fail. Browser fails at npm run test:e2e, detailed log destination denied by proxy; annotations do not establish cause. Candidate CI is not inferred from baseline results. |
+| Current advisory gates | Runtime 1 high; complete root 2 high / 1 moderate, both exit 1; no dependency version changes or remediation credit |
+
+No existing `.test.ts` assertion, test timeout, CI job budget, password cost, business schema,
+ledger/authority/retry logic changes. Initial invalid marker input is retained separately from
+the corrected trigger experiment. The first failed positive tracing control's raw detail was
+overwritten during diagnosis: its original result/counts, repeat failure for the missing synthetic
+bootstrap fixture, and corrected successful comparison are documented explicitly. It is not
+counted as passing evidence. Browser CI failure remains open as separate engineering work; OS
+migration/action deprecation notices alone are not blamed as causes.
+
+Gitleaks 8.24.3 default staged/exported-content scans pass with zero findings; all 13 compressed
+logs are expanded for scanning. Final metadata is covered by the staged scan and mandatory commit
+hook. Verification/secret receipts and artifact SHA-256 hashes are linked in the contract.
+Runtime declaration and
+admission are implemented/locally demonstrated, not independent human assurance. Actual host,
+Windows/Electron build/capabilities, historical financial consequences, browser CI diagnosis,
+dependency/quoted-mailbox findings and broader release holds remain open. No owner coding task,
+whole-control PASS, production deployment or release approval is implied.

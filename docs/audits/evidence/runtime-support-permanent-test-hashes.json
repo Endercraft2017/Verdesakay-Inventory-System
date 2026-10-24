@@ -1,0 +1,10 @@
+[
+  {
+    "sha256": "be680f19f8c681e904b4b97261d78aff8ba53391e3e6d4dc03458ad961443d6e",
+    "path": "tests/runtime-support.test.ts"
+  },
+  {
+    "sha256": "c8b93f13267bdecab4320b10903df0c2722ab7f325fee5bae1746af26b874dbd",
+    "path": "tests/helpers/runtime-startup-worker.ts"
+  }
+]

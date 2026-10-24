@@ -1,0 +1,23 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'runtime-transaction-'));
+Object.assign(process.env,{NODE_ENV:'test',DB_PATH:path.join(dir,'tenant.db'),DATA_DIR:path.join(dir,'tenants'),PLATFORM_DB_PATH:path.join(dir,'platform.db'),UPLOAD_DIR:path.join(dir,'uploads')});
+const {withoutReplicating}=await import('../../src/sync/authority');
+const {enableSync}=await import('../../src/sync/node');
+const {preparePayrollReplay}=await import('../../src/sync/payroll-replay');
+const conn=new DatabaseSync(':memory:');
+const transactionOpen=()=>{try{conn.exec('BEGIN');conn.exec('ROLLBACK');return false;}catch(e){if((e as Error).message.includes('within a transaction'))return true;throw e;}};
+try{
+ conn.exec('CREATE TABLE notes(id INTEGER PRIMARY KEY,body TEXT); INSERT INTO notes VALUES(1,\'original\'); BEGIN');
+ let called=false,housekeepingError:string|null=null;
+ try{withoutReplicating(conn,()=>{called=true;conn.exec("UPDATE notes SET body='changed'");});}catch(e){housekeepingError=(e as Error).message;}
+ const housekeeping={called,error:housekeepingError,valueInsideTransaction:conn.prepare('SELECT body FROM notes').get(),transactionOpen:transactionOpen()};conn.exec('ROLLBACK');
+ enableSync(conn,{role:'cloud',nodeNo:0});
+ conn.exec("CREATE TRIGGER runtime_inbox_fault BEFORE INSERT ON sync_payroll_replays BEGIN SELECT RAISE(ABORT,'synthetic inbox marker fault'); END");
+ const cmd={id:'runtime-inbox-fault',node_no:1,node_seq:1,hlc:'2026-10-24T00:00:00.000Z-0000-0001',occurred_at:'2026-10-24T00:00:00.000Z',occurred_date:'2026-10-24',actor_user_id:1,device_id:null,method:'POST',path:'/api/hr/periods/1/post-payroll-gl',body:'{}',sync_class:'claim' as const,allocation_plan:'[]',app_version:'synthetic-runtime-probe',unattributed:0};
+ let replayError:string|null=null;try{preparePayrollReplay(conn,cmd as any);}catch(e){replayError=(e as Error).message;}
+ const open=transactionOpen();const replay={error:replayError,transactionOpen:open,inboxRows:conn.prepare('SELECT COUNT(*) AS n FROM sync_commands').get(),markerRows:conn.prepare('SELECT COUNT(*) AS n FROM sync_payroll_replays').get()};if(open)conn.exec('ROLLBACK');
+ console.log(JSON.stringify({node:process.versions.node,isTransactionType:typeof conn.isTransaction,housekeeping,replay,afterExplicitRollback:conn.prepare('SELECT COUNT(*) AS n FROM sync_commands').get()},null,2));
+}finally{conn.close();fs.rmSync(dir,{recursive:true,force:true});}

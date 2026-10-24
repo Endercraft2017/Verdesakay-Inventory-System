@@ -1,0 +1,22 @@
+{
+  "firstIncompleteTraceRun": {
+    "oldBeforeExit": 1,
+    "oldBeforeDataPathOperations": 37,
+    "oldAfterExit": 1,
+    "oldAfterDataPathOperations": 0,
+    "supportedControlExit": 1,
+    "supportedControlDataPathOperations": 45,
+    "observedFrom": "Original tool result; first positive-control raw trace overwritten during diagnosis",
+    "rawPositiveTraceRetained": false
+  },
+  "repeatedDiagnostic": {
+    "exit": 1,
+    "result": "Missing synthetic bootstrap password; exact diagnostic JSON and repeated raw trace retained."
+  },
+  "correctedTrace": "All three cases use VDS_TEST_ADMIN_PASSWORD fixture; supported control exit 0. No inference based on a failed positive control.",
+  "ciLogAccess": {
+    "job": 120827586468,
+    "logRedirect": "Proxy tunnel HTTP 403; no denied-host bypass attempted",
+    "availableEvidence": "GitHub job/check annotations show npm run test:e2e failure, no detailed cause; notices are not attributed as causes."
+  }
+}

@@ -46,10 +46,13 @@ same network open it in a browser — no installation needed on the other machin
 
 ## Running it
 
-1. Make sure **Node.js 22+** is installed (`node --version`).
+1. Install a maintained supported Node patch (`node --version`). The compatibility ranges are
+   **22.22+ within 22.x** or **24.19+ within 24.x**; `.node-version` currently recommends
+   **24.22.1**. Other majors and prereleases need qualification before use.
 2. In this folder, install dependencies once:
    ```
-   npm install
+   npm ci
+   npm run runtime:check
    ```
 3. Set `ADMIN_PASSWORD` to a strong initial password in the host environment, then start the
    server — either run `start.cmd` (double-click) or:

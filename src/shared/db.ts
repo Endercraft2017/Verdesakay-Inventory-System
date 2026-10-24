@@ -9,6 +9,7 @@
  * so the many existing `db.prepare(...)` / `db.exec(...)` call sites stay unchanged.
  * With a single tenant (the default), everything behaves exactly as before.
  */
+import './runtime-support';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 const {field:printFormField}=createRequire(import.meta.url)('../../public/js/lib/form-print.js') as {field:(field:{key:string;label:string;type?:string;source?:string;format?:string;currency?:string},classes:{row:string;label:string;value:string})=>string};

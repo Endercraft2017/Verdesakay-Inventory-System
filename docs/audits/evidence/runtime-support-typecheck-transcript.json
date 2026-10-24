@@ -1,0 +1,5 @@
+{
+  "exit": 0,
+  "node": "24.22.1",
+  "stdout": "\n> otom@1.0.0 typecheck\n> tsc --noEmit\n\n"
+}

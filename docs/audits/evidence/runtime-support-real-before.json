@@ -1,0 +1,103 @@
+{
+  "baseline": "e077a494547a35e0919711c8739bc46d874d03f4",
+  "sourceArchiveSha256": "f6cbb0ad6f778256cbf4ef3f9a29c3573b49bd987aaacd48d0c83fbde87c37e1",
+  "runtimeLibraries": "Same locked dependency versions; node_modules linked read-only by convention, no package graph mutation.",
+  "observations": [
+    {
+      "entry": "tenant",
+      "node": "22.13.0",
+      "exit": 1,
+      "stdout": "RUNTIME_RESULT {\"state\":\"refused\",\"node\":\"22.13.0\",\"code\":\"ERR_SQLITE_ERROR\",\"message\":\"no such module: fts5\"}\n",
+      "stderr": "(node:54776) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "filesAfter": [
+        {
+          "sha256": "8ecfaa0cc101c903273dd498cd01db1de72253c8a71e23271b97ae9d4fb3a562",
+          "path": "tenant.db",
+          "bytes": 1245184
+        },
+        {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "path": "tenant.db.startup-lock",
+          "bytes": 0
+        }
+      ]
+    },
+    {
+      "entry": "catalog",
+      "node": "22.13.0",
+      "exit": 0,
+      "stdout": "RUNTIME_RESULT {\"state\":\"admitted\",\"node\":\"22.13.0\"}\n",
+      "stderr": "(node:54798) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "filesAfter": [
+        {
+          "sha256": "a5313cd8673e4e4294151171a1ec392889b2b3b4897f77bc9510b90ea6c8f037",
+          "path": "platform.db",
+          "bytes": 147456
+        },
+        {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "path": "platform.db.startup-lock",
+          "bytes": 0
+        }
+      ]
+    },
+    {
+      "entry": "server",
+      "node": "22.13.0",
+      "exit": 1,
+      "stdout": "RUNTIME_RESULT {\"state\":\"refused\",\"node\":\"22.13.0\",\"code\":\"ERR_SQLITE_ERROR\",\"message\":\"no such module: fts5\"}\n",
+      "stderr": "(node:54815) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "filesAfter": [
+        {
+          "sha256": "8ecfaa0cc101c903273dd498cd01db1de72253c8a71e23271b97ae9d4fb3a562",
+          "path": "tenant.db",
+          "bytes": 1245184
+        },
+        {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "path": "tenant.db.startup-lock",
+          "bytes": 0
+        }
+      ]
+    },
+    {
+      "entry": "maintenance",
+      "node": "22.13.0",
+      "exit": 1,
+      "stdout": "Migrating 1 tenant DB(s) to schema v85\u2026\nDone \u2014 0/1 migrated.\n",
+      "stderr": "(node:54836) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n  \u2717 default: no such module: fts5\n",
+      "filesAfter": [
+        {
+          "sha256": "d872a52e869261dc4cf51c6a70fd85736916c38e14fc5d704cd8f74a406c4942",
+          "path": "platform.db",
+          "bytes": 4096
+        },
+        {
+          "sha256": "68b994de36293a5676c576cee38601c00ed288adb46adc9c9d49ceaaf7aad537",
+          "path": "platform.db-shm",
+          "bytes": 32768
+        },
+        {
+          "sha256": "750170320c55e6e85c96e084b31e7f50c20b90b390a462d44f8949c543d22588",
+          "path": "platform.db-wal",
+          "bytes": 309032
+        },
+        {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "path": "platform.db.startup-lock",
+          "bytes": 0
+        },
+        {
+          "sha256": "8ecfaa0cc101c903273dd498cd01db1de72253c8a71e23271b97ae9d4fb3a562",
+          "path": "tenant.db",
+          "bytes": 1245184
+        },
+        {
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "path": "tenant.db.startup-lock",
+          "bytes": 0
+        }
+      ]
+    }
+  ]
+}

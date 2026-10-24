@@ -1,0 +1,22 @@
+{
+  "entry": "tenant",
+  "version": "24.18.9",
+  "status": 0,
+  "signal": null,
+  "result": {
+    "state": "admitted",
+    "node": "24.18.9"
+  },
+  "before": {
+    "platform.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17",
+    "tenant.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17"
+  },
+  "after": {
+    "backups/default/pre-migrate/default-v0-to-v85-20261024-171427.db": "40ce5bcad08797ed6b0457497809a84ca1bb7026f1ed55a86cb45231d811e76a",
+    "platform.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17",
+    "tenant.db": "5900ba55b31d99ff8a297584c4f626ead3abf6ea14f2b9d6244382cb218f05dc",
+    "tenant.db.startup-lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stdout": "[backup] \"default\" is being upgraded to schema v85; snapshot saved to /tmp/runtime-admission-V4fOhR/backups/default/pre-migrate/default-v0-to-v85-20261024-171427.db\nRUNTIME_RESULT {\"state\":\"admitted\",\"node\":\"24.18.9\"}\n",
+  "stderr": ""
+}

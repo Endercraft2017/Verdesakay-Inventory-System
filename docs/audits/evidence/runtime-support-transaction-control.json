@@ -1,0 +1,25 @@
+{
+  "node": "24.19.0",
+  "isTransactionType": "boolean",
+  "housekeeping": {
+    "called": false,
+    "error": "withoutReplicating cannot run inside a transaction",
+    "valueInsideTransaction": {
+      "body": "original"
+    },
+    "transactionOpen": true
+  },
+  "replay": {
+    "error": "synthetic inbox marker fault",
+    "transactionOpen": false,
+    "inboxRows": {
+      "n": 0
+    },
+    "markerRows": {
+      "n": 0
+    }
+  },
+  "afterExplicitRollback": {
+    "n": 0
+  }
+}

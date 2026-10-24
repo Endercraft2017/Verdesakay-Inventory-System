@@ -1,0 +1,14 @@
+{
+  "command": [
+    "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/lib/node_modules/npm/bin/npm-cli.js",
+    "run",
+    "test:e2e"
+  ],
+  "node": "v24.22.1",
+  "startedUtc": "2026-10-24T10:06:29.715821+00:00",
+  "selectedInputs": 888,
+  "exit": 0,
+  "seconds": 377.181,
+  "changedInputs": []
+}

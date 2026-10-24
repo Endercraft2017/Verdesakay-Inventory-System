@@ -1,0 +1,20 @@
+{
+  "command": [
+    "/workspace/Verdesakay-Inventory-System/work/sqlite-startup/node22/node-v22.22.0-linux-x64/bin/node",
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/lib/node_modules/npm/bin/npm-cli.js",
+    "test",
+    "--",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile=work/runtime-support/full-tests.json"
+  ],
+  "node": "v22.22.0",
+  "startedUtc": "2026-10-24T09:31:02.631725+00:00",
+  "selectedInputs": 888,
+  "originalAdmissionDriversUnchanged": true,
+  "typecheckNode": "24.22.1",
+  "typecheckExit": 0,
+  "exit": 0,
+  "seconds": 2037.652,
+  "changedInputs": []
+}

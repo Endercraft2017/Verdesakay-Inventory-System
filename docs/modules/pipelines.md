@@ -793,6 +793,10 @@ Pipelines offline so far (phase 4): time clock (4a), production run with site nu
 sales order fulfillment (4c), purchase-to-pay (4d), HR requests, approvals
 and records (4e), confidential reports (4f), payroll (4g), accounting (4h); every business
 pipeline above now runs offline.
+Before these pipelines run, `shared/runtime-support.ts` admits only the declared qualified
+Node ranges and checks transaction-state, FTS5 and session capabilities in private memory.
+Unsupported processes stop before opening tenant/catalog/startup-lock paths; this changes no
+business authority or command rules. See [runtime admission](../operations/runtime-support.md).
 Every mutating route is classed or listed with a reason (phase 4i; guard test
 `tests/sync-route-classes.test.ts`). **Not built:** mobile sync UI. This pipeline wraps the
 business pipelines above: every stage in them whose route is classed `merge` / `physical` /

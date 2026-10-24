@@ -1,3 +1,4 @@
+import './src/shared/runtime-support';
 import {processOnePayrollEmail} from './src/modules/hr/payroll-email';
 import {pruneInquiryReceipts} from './src/platform/inquiry-receipts';
 import { prunePaymentReportReceipts } from './src/platform/payment-report-receipts';

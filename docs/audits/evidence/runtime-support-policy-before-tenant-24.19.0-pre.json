@@ -1,0 +1,22 @@
+{
+  "entry": "tenant",
+  "version": "24.19.0-pre",
+  "status": 0,
+  "signal": null,
+  "result": {
+    "state": "admitted",
+    "node": "24.19.0-pre"
+  },
+  "before": {
+    "platform.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17",
+    "tenant.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17"
+  },
+  "after": {
+    "backups/default/pre-migrate/default-v0-to-v85-20261024-171431.db": "40ce5bcad08797ed6b0457497809a84ca1bb7026f1ed55a86cb45231d811e76a",
+    "platform.db": "fdb73bfdb9914ca514a1bcd3cda430c87a416d24fe6aa3ee55788bffde8d2d17",
+    "tenant.db": "9c9204ab92e0c64f492238f96acec7a2fd53acb65152a4fe8725718e5a5d96a3",
+    "tenant.db.startup-lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stdout": "[backup] \"default\" is being upgraded to schema v85; snapshot saved to /tmp/runtime-admission-ScRxQN/backups/default/pre-migrate/default-v0-to-v85-20261024-171431.db\nRUNTIME_RESULT {\"state\":\"admitted\",\"node\":\"24.19.0-pre\"}\n",
+  "stderr": ""
+}

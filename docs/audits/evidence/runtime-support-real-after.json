@@ -1,0 +1,74 @@
+[
+  {
+    "actualRuntime": "22.13.0",
+    "advertisedVersion": null,
+    "entry": "tenant",
+    "exit": 1,
+    "filesAfter": [],
+    "stdout": "RUNTIME_RESULT {\"state\":\"refused\",\"node\":\"22.13.0\",\"code\":\"UNSUPPORTED_NODE_RUNTIME\",\"message\":\"Cannot start: Node.js 22.13.0 is not a qualified runtime. Supported Node.js versions: ^22.22.0 || ^24.19.0. Install a maintained patch in a supported range (or update the desktop build), then run npm run runtime:check before retrying. Application databases have not been opened by this check.\"}\n",
+    "stderr": "(node:53954) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+  },
+  {
+    "actualRuntime": "22.13.0",
+    "advertisedVersion": null,
+    "entry": "catalog",
+    "exit": 1,
+    "filesAfter": [],
+    "stdout": "RUNTIME_RESULT {\"state\":\"refused\",\"node\":\"22.13.0\",\"code\":\"UNSUPPORTED_NODE_RUNTIME\",\"message\":\"Cannot start: Node.js 22.13.0 is not a qualified runtime. Supported Node.js versions: ^22.22.0 || ^24.19.0. Install a maintained patch in a supported range (or update the desktop build), then run npm run runtime:check before retrying. Application databases have not been opened by this check.\"}\n",
+    "stderr": "(node:53974) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+  },
+  {
+    "actualRuntime": "22.13.0",
+    "advertisedVersion": null,
+    "entry": "server",
+    "exit": 1,
+    "filesAfter": [],
+    "stdout": "RUNTIME_RESULT {\"state\":\"refused\",\"node\":\"22.13.0\",\"code\":\"UNSUPPORTED_NODE_RUNTIME\",\"message\":\"Cannot start: Node.js 22.13.0 is not a qualified runtime. Supported Node.js versions: ^22.22.0 || ^24.19.0. Install a maintained patch in a supported range (or update the desktop build), then run npm run runtime:check before retrying. Application databases have not been opened by this check.\"}\n",
+    "stderr": "(node:53993) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+  },
+  {
+    "actualRuntime": "22.13.0",
+    "advertisedVersion": null,
+    "entry": "maintenance",
+    "exit": 1,
+    "filesAfter": [],
+    "stdout": "RUNTIME_RESULT {\"state\":\"refused\",\"node\":\"22.13.0\",\"code\":\"UNSUPPORTED_NODE_RUNTIME\",\"message\":\"Cannot start: Node.js 22.13.0 is not a qualified runtime. Supported Node.js versions: ^22.22.0 || ^24.19.0. Install a maintained patch in a supported range (or update the desktop build), then run npm run runtime:check before retrying. Application databases have not been opened by this check.\"}\n",
+    "stderr": "(node:54014) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+  },
+  {
+    "actualRuntime": "22.13.0",
+    "advertisedVersion": "24.19.0",
+    "entry": "tenant",
+    "exit": 1,
+    "filesAfter": [],
+    "stdout": "RUNTIME_RESULT {\"state\":\"refused\",\"node\":\"24.19.0\",\"code\":\"UNSUPPORTED_SQLITE_RUNTIME\",\"message\":\"Cannot start: SQLite runtime capabilities are unavailable: SQLite transaction-state API is missing or incorrect. Supported Node.js versions: ^22.22.0 || ^24.19.0. Install a maintained patch in a supported range (or update the desktop build), then run npm run runtime:check before retrying. Application databases have not been opened by this check.\"}\n",
+    "stderr": "(node:54032) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+  },
+  {
+    "actualRuntime": "22.13.0",
+    "advertisedVersion": "24.19.0",
+    "entry": "catalog",
+    "exit": 1,
+    "filesAfter": [],
+    "stdout": "RUNTIME_RESULT {\"state\":\"refused\",\"node\":\"24.19.0\",\"code\":\"UNSUPPORTED_SQLITE_RUNTIME\",\"message\":\"Cannot start: SQLite runtime capabilities are unavailable: SQLite transaction-state API is missing or incorrect. Supported Node.js versions: ^22.22.0 || ^24.19.0. Install a maintained patch in a supported range (or update the desktop build), then run npm run runtime:check before retrying. Application databases have not been opened by this check.\"}\n",
+    "stderr": "(node:54044) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+  },
+  {
+    "actualRuntime": "22.13.0",
+    "advertisedVersion": "24.19.0",
+    "entry": "server",
+    "exit": 1,
+    "filesAfter": [],
+    "stdout": "RUNTIME_RESULT {\"state\":\"refused\",\"node\":\"24.19.0\",\"code\":\"UNSUPPORTED_SQLITE_RUNTIME\",\"message\":\"Cannot start: SQLite runtime capabilities are unavailable: SQLite transaction-state API is missing or incorrect. Supported Node.js versions: ^22.22.0 || ^24.19.0. Install a maintained patch in a supported range (or update the desktop build), then run npm run runtime:check before retrying. Application databases have not been opened by this check.\"}\n",
+    "stderr": "(node:54056) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+  },
+  {
+    "actualRuntime": "22.13.0",
+    "advertisedVersion": "24.19.0",
+    "entry": "maintenance",
+    "exit": 1,
+    "filesAfter": [],
+    "stdout": "RUNTIME_RESULT {\"state\":\"refused\",\"node\":\"24.19.0\",\"code\":\"UNSUPPORTED_SQLITE_RUNTIME\",\"message\":\"Cannot start: SQLite runtime capabilities are unavailable: SQLite transaction-state API is missing or incorrect. Supported Node.js versions: ^22.22.0 || ^24.19.0. Install a maintained patch in a supported range (or update the desktop build), then run npm run runtime:check before retrying. Application databases have not been opened by this check.\"}\n",
+    "stderr": "(node:54068) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+  }
+]

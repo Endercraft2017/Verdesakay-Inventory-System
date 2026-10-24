@@ -1,0 +1,51 @@
+{
+  "jobId": 120827586468,
+  "jobConclusion": "failure",
+  "checkRunUrl": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/check-runs/120827586468",
+  "logDownload": "Redirect destination denied by proxy; no bypass attempted.",
+  "output": {
+    "title": null,
+    "summary": null,
+    "text": null,
+    "annotations_count": 3,
+    "annotations_url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/check-runs/120827586468/annotations"
+  },
+  "annotations": [
+    {
+      "path": ".github",
+      "blob_href": "https://github.com/Endercraft2017/Verdesakay-Inventory-System/blob/e077a494547a35e0919711c8739bc46d874d03f4/.github",
+      "start_line": 2,
+      "start_column": null,
+      "end_line": 2,
+      "end_column": null,
+      "annotation_level": "warning",
+      "title": "",
+      "message": "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/",
+      "raw_details": ""
+    },
+    {
+      "path": ".github",
+      "blob_href": "https://github.com/Endercraft2017/Verdesakay-Inventory-System/blob/e077a494547a35e0919711c8739bc46d874d03f4/.github",
+      "start_line": 25,
+      "start_column": null,
+      "end_line": 25,
+      "end_column": null,
+      "annotation_level": "failure",
+      "title": "",
+      "message": "Process completed with exit code 1.",
+      "raw_details": ""
+    },
+    {
+      "path": ".github",
+      "blob_href": "https://github.com/Endercraft2017/Verdesakay-Inventory-System/blob/e077a494547a35e0919711c8739bc46d874d03f4/.github",
+      "start_line": 1,
+      "start_column": null,
+      "end_line": 1,
+      "end_column": null,
+      "annotation_level": "notice",
+      "title": "",
+      "message": "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\"",
+      "raw_details": ""
+    }
+  ]
+}

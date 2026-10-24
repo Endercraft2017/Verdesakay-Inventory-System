@@ -1,0 +1,83 @@
+[
+  {
+    "label": "floor22",
+    "kind": "runtime",
+    "command": [
+      "work/sqlite-startup/node22/node-v22.22.0-linux-x64/bin/node",
+      "--import",
+      "tsx",
+      "scripts/check-runtime.ts"
+    ],
+    "exit": 0,
+    "seconds": 0.318
+  },
+  {
+    "label": "floor22",
+    "kind": "engine-dry-run",
+    "command": [
+      "work/sqlite-startup/node22/node-v22.22.0-linux-x64/bin/node",
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/lib/node_modules/npm/bin/npm-cli.js",
+      "ci",
+      "--dry-run",
+      "--ignore-scripts",
+      "--offline",
+      "--no-audit"
+    ],
+    "exit": 0,
+    "seconds": 0.997
+  },
+  {
+    "label": "current22",
+    "kind": "runtime",
+    "command": [
+      "work/runtime-support/node-v22.23.4-linux-x64/bin/node",
+      "--import",
+      "tsx",
+      "scripts/check-runtime.ts"
+    ],
+    "exit": 0,
+    "seconds": 0.3
+  },
+  {
+    "label": "current22",
+    "kind": "engine-dry-run",
+    "command": [
+      "work/runtime-support/node-v22.23.4-linux-x64/bin/node",
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/lib/node_modules/npm/bin/npm-cli.js",
+      "ci",
+      "--dry-run",
+      "--ignore-scripts",
+      "--offline",
+      "--no-audit"
+    ],
+    "exit": 0,
+    "seconds": 0.827
+  },
+  {
+    "label": "current24",
+    "kind": "runtime",
+    "command": [
+      "work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+      "--import",
+      "tsx",
+      "scripts/check-runtime.ts"
+    ],
+    "exit": 0,
+    "seconds": 0.217
+  },
+  {
+    "label": "current24",
+    "kind": "engine-dry-run",
+    "command": [
+      "work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/lib/node_modules/npm/bin/npm-cli.js",
+      "ci",
+      "--dry-run",
+      "--ignore-scripts",
+      "--offline",
+      "--no-audit"
+    ],
+    "exit": 0,
+    "seconds": 0.963
+  }
+]

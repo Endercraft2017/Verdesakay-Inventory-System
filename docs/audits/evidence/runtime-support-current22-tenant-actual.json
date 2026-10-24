@@ -1,0 +1,22 @@
+{
+  "entry": "tenant",
+  "version": "22.23.4",
+  "status": 0,
+  "signal": null,
+  "result": {
+    "state": "admitted",
+    "node": "22.23.4"
+  },
+  "before": {
+    "platform.db": "87651abc1b5c34763c09d0e24c9f695038226c03257de4ec0bebdaea7032ba98",
+    "tenant.db": "87651abc1b5c34763c09d0e24c9f695038226c03257de4ec0bebdaea7032ba98"
+  },
+  "after": {
+    "backups/default/pre-migrate/default-v0-to-v85-20261024-172625.db": "5f270ff4fca4f03a191caebf34b3677984057412715414fb5eaee768fd6d9242",
+    "platform.db": "87651abc1b5c34763c09d0e24c9f695038226c03257de4ec0bebdaea7032ba98",
+    "tenant.db": "3ddce1a24017ca0a0d7f3ffccb16a856f5f528f595f54a1370d64c740e4e3921",
+    "tenant.db.startup-lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "stdout": "[backup] \"default\" is being upgraded to schema v85; snapshot saved to /tmp/runtime-admission-MV6jkR/backups/default/pre-migrate/default-v0-to-v85-20261024-172625.db\nRUNTIME_RESULT {\"state\":\"admitted\",\"node\":\"22.23.4\"}\n",
+  "stderr": ""
+}

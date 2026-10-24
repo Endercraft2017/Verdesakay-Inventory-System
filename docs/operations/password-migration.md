@@ -15,8 +15,9 @@ derived bytes use constant-time comparison. Passwords are not trimmed or truncat
 
 [OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
 recommends Argon2id first, and scrypt at these parameters when Argon2id is unavailable.
-The app supports Node 22.13 and Electron's Node 24; scrypt is available in the supported
-runtime without introducing a native password-hashing package or requiring an experimental
+The app's compatibility floors are Node 22.22 in 22.x and 24.19 in 24.x; use a maintained patch
+and the [runtime preflight](runtime-support.md). Scrypt is available in those runtimes without
+introducing a native password-hashing package or requiring an experimental
 Argon2 API. The implementation uses the [Node crypto API](https://nodejs.org/api/crypto.html#cryptoscryptsyncpassword-salt-keylen-options).
 
 Existing bcrypt hashes remain verifiable for inputs up to 72 UTF-8 bytes. A successful

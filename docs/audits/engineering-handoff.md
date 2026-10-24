@@ -1,5 +1,27 @@
 # Engineering handoff and release hold
 
+Latest runtime admission follow-up: 24 October 2026, baseline e077a49. The old declared
+22.13 minimum fails FTS5 setup; isolated transaction guards also misbehave with its missing
+`isTransaction` API. The app now admits only `^22.22.0 || ^24.19.0` and checks required SQLite
+behavior in private memory before application data access. Ordinary npm installs enforce that
+policy. Standalone/CI current pins are 22.23.4/24.22.1 alongside the existing tested floors;
+embedded Electron is unchanged. No transaction algorithm, business schema, authority rule or
+existing assertion is changed. Ten reproduced admission failures become eleven passes;
+real 22.13 refusal, kernel file-access tracing, npm's engine oracle and 41 focused tests on
+each current patch are retained. Full minimum-runtime validation passes **328 files / 3,540 tests**
+on Node 22.22.0; current-Node 24.22.1 Playwright passes **78 cases**, zero skipped/flaky/unexpected.
+All 888 selected inputs stay unchanged. Final publication checks are recorded in the
+[runtime contract](runtime-support-contract.md); [recovery](../operations/runtime-support.md)
+requires upgrading the actual running host/build, not editing a pin alone. Native/host support,
+historical financial consequences and independent review remain open.
+
+Independent CI evidence now distinguishes the prior e077a49 run: both Node test jobs and
+the secrets job succeed, dependency scan fails, browser fails at `npm run test:e2e`.
+Detailed browser logs redirect to a proxy-denied destination; annotations do not establish a
+cause. Read the contract's retained metadata before changing assertions or blaming its OS/action
+notices. **Diagnosing that browser CI failure remains separate engineering work.** A local browser
+pass does not close it. No new owner coding task or release approval is implied.
+
 Latest dependency remediation: 24 October 2026 — body-parser 1.20.9, Multer 2.5.0,
 Zod 4.6.6 and Nodemailer 10.1.4 replace four affected versions. The actual public app
 compressed-body crash, attendance bound overwork, async-filter dependency crash and three
@@ -30,11 +52,12 @@ This supersedes the prior simultaneous cold-start availability limitation for co
 updated processes on the tested local file paths only. Mixed builds, arbitrary historical
 migration interruption, other runtime writers, Windows/hosting/shared-storage acceptance
 and independent review remain open; bounded waits do not establish a startup SLA.
-The same check found a pre-existing runtime-support mismatch: declared Node `>=22.13`, but
+At that earlier cutoff the check found a runtime-support mismatch: declared Node `>=22.13`, but
 payroll/sync guards use `isTransaction` added in 22.16. An official 22.13 API probe demonstrates
 the missing property during a real transaction; full financial impact is untested. Aligning
-runtime declarations/CI and verifying those guards remains engineering work; Node 22.22 and
-24.19 are the tested app versions for this increment. See the contract's retained probe.
+runtime declarations/admission is delivered by the subsequent runtime follow-up above; Node
+22.22 and 24.19 are the tested app versions for the original startup increment. Historical
+financial consequences and real host/native acceptance remain unverified.
 
 Validation-only corrections are recorded separately: Vitest's default execution budgets
 relax 20 → 60 seconds; the mobile fixture waits for its cached actor/local storage and closes each

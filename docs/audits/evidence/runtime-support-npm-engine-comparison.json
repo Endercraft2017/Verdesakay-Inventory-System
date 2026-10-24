@@ -1,0 +1,22 @@
+[
+  {
+    "graph": "before",
+    "node": "22.13.0",
+    "engines": {
+      "node": ">=22.13"
+    },
+    "exit": 0,
+    "stdout": "\nup to date in 370ms\n",
+    "stderr": ""
+  },
+  {
+    "graph": "after",
+    "node": "22.13.0",
+    "engines": {
+      "node": "^22.22.0 || ^24.19.0"
+    },
+    "exit": 1,
+    "stdout": "",
+    "stderr": "npm error code EBADENGINE\nnpm error engine Unsupported engine\nnpm error engine Not compatible with your version of node/npm: runtime-engine-fixture@1.0.0\nnpm error notsup Not compatible with your version of node/npm: runtime-engine-fixture@1.0.0\nnpm error notsup Required: {\"node\":\"^22.22.0 || ^24.19.0\"}\nnpm error notsup Actual:   {\"node\":\"v22.13.0\",\"npm\":\"11.9.0\"}\nnpm error A complete log of this run can be found in: /home/agent/.npm/_logs/2026-10-24T09_25_43_457Z-debug-0.log\n"
+  }
+]
