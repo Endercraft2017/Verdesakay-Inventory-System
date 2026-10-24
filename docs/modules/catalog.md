@@ -123,7 +123,9 @@ above the tenant-facing app, not one of its features. Single-tenant/self-hosted
 installs never touch this.
 **Owned files:** `owner-alert-monitor.ts` (queue-wide read-only health/history and guarded persistent worker heartbeat), `inquiry-receipts.ts` (public inquiry binding, constant acknowledgement, expiry/tombstones), `payment-report-receipts.ts` (tenant/actor-scoped payment acknowledgement, attachment binding, expiry/tombstones), `owner-alert-outbox.ts` (signup and separate inquiry/payment intent, guarded claim/worker/status and logical payload expiry), `onboarding-receipts.ts` (durable scoped create/signup responses, async public signup verifier/live rechecks, expiry/tombstones), `plans.ts`, `quota.ts`, `provisioning.ts`, `adopt-default.ts` (offline,
 verified adoption of the original company, preserving source DB/uploads; CLI
-`scripts/adopt-default-tenant.ts`), `tenant-path.ts` (optional host-bound path routing), `platform.ts` (tenant
+`scripts/adopt-default-tenant.ts`; current-Node copies retain exclusive directory
+claim and per-file `COPYFILE_EXCL`, with interruption/collision controls; see
+`docs/audits/adoption-runtime-contract.md` and `docs/operations/adoption-copy-recovery.md`), `tenant-path.ts` (optional host-bound path routing), `platform.ts` (tenant
 catalog in `platform.db`; permanent company login IDs with pair-scoped counters,
 backfilled for existing tenants), `platform-users.ts` (operator accounts, separate auth from
 `shared/auth.ts`; self-service password and username changes `POST /_platform/api/password` / `POST /_platform/api/username`), `backups.ts` (daily + hourly backup jobs over every tenant DB + `platform.db` +

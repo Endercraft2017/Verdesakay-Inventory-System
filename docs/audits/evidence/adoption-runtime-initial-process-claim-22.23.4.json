@@ -1,0 +1,25 @@
+{
+  "node": "22.23.4",
+  "mode": "claim",
+  "fixture": "/tmp/adoption-process-control-t4ldii0l",
+  "observed_at": "2026-10-24T12:22:52.415682+00:00",
+  "original_source": "62fe170926a8b13db666a8b61e7a9fdc0d91eb5497f3364e4d41cf9d498a238b",
+  "original_uploads": {
+    "a.bin": "6380e654b1bf32222bc0628c106cdeaf034f511b1361bcccab695c50997f4039",
+    "nested/b.bin": "d3b3424c10d2ae0c9bc1972eb32d2f15fd1bb5dbe60bcd09f1b02559dae955a8"
+  },
+  "processes": [
+    {
+      "exit_code": 0,
+      "stdout": "{\"event\":\"barrier\",\"stage\":\"before-exclusive-directory-claim\"}\n{\"event\":\"result\",\"applied\":true,\"recovery\":\"/tmp/adoption-process-control-t4ldii0l/tenants/.adopt-default-TEuZmL\"}\n",
+      "stderr": "(node:64157) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    },
+    {
+      "exit_code": 1,
+      "stdout": "{\"event\":\"barrier\",\"stage\":\"before-exclusive-directory-claim\"}\n{\"event\":\"error\",\"name\":\"Error\",\"code\":\"EEXIST\",\"message\":\"EEXIST: file already exists, mkdir '/tmp/adoption-process-control-t4ldii0l/uploads/synthetic-process'\"}\n",
+      "stderr": "(node:64158) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n"
+    }
+  ],
+  "passed": false,
+  "failure": "AssertionError({'exit_code': 1, 'stdout': '{\"event\":\"barrier\",\"stage\":\"before-exclusive-directory-claim\"}\\n{\"event\":\"error\",\"name\":\"Error\",\"code\":\"EEXIST\",\"message\":\"EEXIST: file already exists, mkdir \\'/tmp/adoption-process-control-t4ldii0l/uploads/synthetic-process\\'\"}\\n', 'stderr': '(node:64158) ExperimentalWarning: SQLite is an experimental feature and might change at any time\\n(Use `node --trace-warnings ...` to show where the warning was created)\\n'})"
+}

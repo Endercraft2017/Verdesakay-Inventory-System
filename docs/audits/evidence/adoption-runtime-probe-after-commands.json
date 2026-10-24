@@ -1,0 +1,50 @@
+[
+  {
+    "phase": "after",
+    "node": "24.22.1",
+    "command": [
+      "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+      "--import",
+      "tsx",
+      "work/browser-ci/adoption-probe.ts"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.7184504960023332,
+    "observed_at": "2026-10-24T12:19:35.578855+00:00",
+    "source_unchanged": true,
+    "registered": true,
+    "target_database_exists": true
+  },
+  {
+    "phase": "after",
+    "node": "22.23.4",
+    "command": [
+      "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v22.23.4-linux-x64/bin/node",
+      "--import",
+      "tsx",
+      "work/browser-ci/adoption-probe.ts"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 1.2426813810016029,
+    "observed_at": "2026-10-24T12:19:36.103747+00:00",
+    "source_unchanged": true,
+    "registered": true,
+    "target_database_exists": true
+  },
+  {
+    "phase": "after",
+    "node": "24.19.0",
+    "command": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+      "--import",
+      "tsx",
+      "work/browser-ci/adoption-probe.ts"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.7971522079969873,
+    "observed_at": "2026-10-24T12:19:35.659066+00:00",
+    "source_unchanged": true,
+    "registered": true,
+    "target_database_exists": true
+  }
+]

@@ -1,0 +1,462 @@
+[
+  {
+    "sha256": "a3aad344e627f1a3c9c92c6d23a67a12ab9a65fcca602cde77c7c48d97bbe1a5",
+    "path": "docs/audits/evidence/adoption-runtime-after-adoption-22.22.0.log.gz",
+    "bytes": 883
+  },
+  {
+    "sha256": "cf59177a86a167d1403e5922e2bc2d28c6bb1d740f70b92d608f9201d4f400ed",
+    "path": "docs/audits/evidence/adoption-runtime-after-adoption-22.23.4.log.gz",
+    "bytes": 886
+  },
+  {
+    "sha256": "c996cf120d9284565d51d603e0a5831bfa96d50d3ffa7b07f1d7bdcdcdc2a143",
+    "path": "docs/audits/evidence/adoption-runtime-after-adoption-24.19.0.log.gz",
+    "bytes": 765
+  },
+  {
+    "sha256": "fb378bfe9cbb95600dc9fbc3a559e8558d87eca3967c23434273a1149f4e1524",
+    "path": "docs/audits/evidence/adoption-runtime-after-adoption-24.22.1.log.gz",
+    "bytes": 768
+  },
+  {
+    "sha256": "2c3e26029680648ecb07950d0460ef8dd40b8fb9508dc450ffef015c11dfb220",
+    "path": "docs/audits/evidence/adoption-runtime-after-reporter.log.gz",
+    "bytes": 141
+  },
+  {
+    "sha256": "e949497eb1cd3dc9573da21f06bbe4c098626edb838af24aa815b0302913c345",
+    "path": "docs/audits/evidence/adoption-runtime-baseline-browser-annotations.json",
+    "bytes": 1350
+  },
+  {
+    "sha256": "ed56e6530d425c814b47d9188c27f5df4a4945f03cfa18eda46ad100a54c5885",
+    "path": "docs/audits/evidence/adoption-runtime-baseline-ci-artifacts.json",
+    "bytes": 1841
+  },
+  {
+    "sha256": "2a2593d32d317b05018e942140b5b73480736eb5ae518777bab9c4ec28476c78",
+    "path": "docs/audits/evidence/adoption-runtime-baseline-ci-jobs.json",
+    "bytes": 24753
+  },
+  {
+    "sha256": "8acee46116f63baaf771321c042c8a0871a4339640252078c56aea10ee654429",
+    "path": "docs/audits/evidence/adoption-runtime-baseline-ci-run.json",
+    "bytes": 16568
+  },
+  {
+    "sha256": "549c1373dd55621f98db11d9f13535615e4ff93dcd12b3b18342055814331d4a",
+    "path": "docs/audits/evidence/adoption-runtime-baseline-node24-annotations.json",
+    "bytes": 3290
+  },
+  {
+    "sha256": "a20b6be58b7a9e76d55daee7bede2726632ccf34fb62ae8526106828730a03f8",
+    "path": "docs/audits/evidence/adoption-runtime-before-adoption.log.gz",
+    "bytes": 1305
+  },
+  {
+    "sha256": "2feb1e3e8013f49d1af3d96fb29084e7334149ffd3165889e5bdd59a1223ff2d",
+    "path": "docs/audits/evidence/adoption-runtime-before-copy-controls.log.gz",
+    "bytes": 1038
+  },
+  {
+    "sha256": "6e4e9f968cbb02d97bb3035a45588b72f33a1d5b8414841ef30a05f292958522",
+    "path": "docs/audits/evidence/adoption-runtime-before-final-copy-controls.log.gz",
+    "bytes": 1044
+  },
+  {
+    "sha256": "c52afbab79b429b68de088a2df27e0ba39820ec470e5e985182ce84219de8392",
+    "path": "docs/audits/evidence/adoption-runtime-before-final-reporter.log.gz",
+    "bytes": 92
+  },
+  {
+    "sha256": "27244c7a6da92747742556334aa346dde178cc90a805d84a10cd0b954d79b683",
+    "path": "docs/audits/evidence/adoption-runtime-before-inputs.json",
+    "bytes": 667
+  },
+  {
+    "sha256": "301140a7697da1c61117759816c6e782b14d0384eb196e94fa20da2d16e45563",
+    "path": "docs/audits/evidence/adoption-runtime-browser-builds.json",
+    "bytes": 353
+  },
+  {
+    "sha256": "18fda6c0b5b00671ccf5aeb319cf63a98aa4c408a895095c65611c3901b660a6",
+    "path": "docs/audits/evidence/adoption-runtime-bundled-browser-smtp-wire.json",
+    "bytes": 27489
+  },
+  {
+    "sha256": "1a7b671b5632889da8b3d766db837e083ab44bd5a79e3a36d6d3e35110dd13fb",
+    "path": "docs/audits/evidence/adoption-runtime-bundled-playwright-run.json",
+    "bytes": 712
+  },
+  {
+    "sha256": "79aab109b1d702d723426484aea70ecf3650e374ada0d7eba687305701bbb0d9",
+    "path": "docs/audits/evidence/adoption-runtime-bundled-playwright.json",
+    "bytes": 96073
+  },
+  {
+    "sha256": "ae72a538cad35b38be8e1c4d7bb69d8012593adc55dee38c5e58bf32667984e9",
+    "path": "docs/audits/evidence/adoption-runtime-bundled-playwright.log.gz",
+    "bytes": 3731
+  },
+  {
+    "sha256": "94b26b61badee5ac44d1eb65967a01a4c399648781a23d19c455469cd40bbb4f",
+    "path": "docs/audits/evidence/adoption-runtime-ci-download-attempts.json",
+    "bytes": 4290
+  },
+  {
+    "sha256": "9de82c966980d1685b85b9d71bda868f603ae06472a6aac872cb6d36fdba2ef0",
+    "path": "docs/audits/evidence/adoption-runtime-controls-before.json",
+    "bytes": 4090
+  },
+  {
+    "sha256": "be3f6373130073390570f461721e28a70ef859bb505b7807c4377e69d3e817fd",
+    "path": "docs/audits/evidence/adoption-runtime-final-content-secrets.log.gz",
+    "bytes": 91
+  },
+  {
+    "sha256": "a491316fea2c57ed9eb858643c55ad50a14c8d7e05043412ffae65cbc0d13b86",
+    "path": "docs/audits/evidence/adoption-runtime-focused-22.22.0.json",
+    "bytes": 3529
+  },
+  {
+    "sha256": "e2f14176c4e8486b9768802726e31f3298200108a87183bf8a7dc7a7d19dfed6",
+    "path": "docs/audits/evidence/adoption-runtime-focused-22.23.4.json",
+    "bytes": 3529
+  },
+  {
+    "sha256": "b440452fe2beb33afd72d7fd732e661984478d31a1d63a194c90aa406a67af1f",
+    "path": "docs/audits/evidence/adoption-runtime-focused-24.19.0.json",
+    "bytes": 3536
+  },
+  {
+    "sha256": "ac62d997470c7f0685dbdb3f1c62021cb235fce5a048c4deccc3cfd83a249b73",
+    "path": "docs/audits/evidence/adoption-runtime-focused-24.22.1.json",
+    "bytes": 3538
+  },
+  {
+    "sha256": "f5a328276f52a9ed601bccec5bc9883e7b5bcd2802f26ec9219bf115a13d8dd8",
+    "path": "docs/audits/evidence/adoption-runtime-focused-commands.json",
+    "bytes": 2773
+  },
+  {
+    "sha256": "96dfd2522ef3dcb668e07c14d45ab26745cb3fa0108acaa4129e7cdb83de535b",
+    "path": "docs/audits/evidence/adoption-runtime-full-run.json",
+    "bytes": 556
+  },
+  {
+    "sha256": "73a8f544412f0f3875906545476d024ce53d4fa8f9c4ab2c6c14ac11573175a5",
+    "path": "docs/audits/evidence/adoption-runtime-full-tests.json",
+    "bytes": 1206159
+  },
+  {
+    "sha256": "27a5d22977d96f6de35a784b3637d72dbce96fd31312eaaafc5133fbf74e87d5",
+    "path": "docs/audits/evidence/adoption-runtime-full.log.gz",
+    "bytes": 560183
+  },
+  {
+    "sha256": "fa7de8e07089d542206a6607866a7d9498e462c232d13fe890b8c395f683c893",
+    "path": "docs/audits/evidence/adoption-runtime-initial-controls-before.json",
+    "bytes": 4092
+  },
+  {
+    "sha256": "8fd9270b867069fd56534de7898c80f41a3c77100f4e17950b36e89004421531",
+    "path": "docs/audits/evidence/adoption-runtime-initial-invalid-reporter-config.txt",
+    "bytes": 770
+  },
+  {
+    "sha256": "a28243bf8efb3d43f407aa3d714da067d749c02329d9d352f960fcb518777e81",
+    "path": "docs/audits/evidence/adoption-runtime-initial-invalid-reporter.json",
+    "bytes": 440
+  },
+  {
+    "sha256": "b887f712a02a7c79d3d49901a9f2ada9ee67ebc34fd866f0cd8162de7b910eb8",
+    "path": "docs/audits/evidence/adoption-runtime-initial-invalid-reporter.log.gz",
+    "bytes": 648
+  },
+  {
+    "sha256": "ff4e3bbe617f9c6c9df787b7d4ef17755cab96854009ec0bb2996d3fe8e3fba1",
+    "path": "docs/audits/evidence/adoption-runtime-initial-playwright-config-typecheck.log.gz",
+    "bytes": 135
+  },
+  {
+    "sha256": "0d98c0b737ba7675bc9fa99901d42becb81361249568fd2dcb124c6f90647537",
+    "path": "docs/audits/evidence/adoption-runtime-initial-process-claim-22.23.4.json",
+    "bytes": 1926
+  },
+  {
+    "sha256": "978770acefa1c5643adbc1f867962d625fe0ab0909261ba47492179606f53773",
+    "path": "docs/audits/evidence/adoption-runtime-initial-process-claim-24.22.1.json",
+    "bytes": 1411
+  },
+  {
+    "sha256": "c63032766f6af0f3287b59a6f8f9077b849e8d0de5dc6302f9c1edb39796bb82",
+    "path": "docs/audits/evidence/adoption-runtime-initial-process-controller.txt",
+    "bytes": 7275
+  },
+  {
+    "sha256": "9edf17ec2fede802c6ca4adbd1f78a2f44250fd05895ae9b7441529337a11081",
+    "path": "docs/audits/evidence/adoption-runtime-initial-process-summary.json",
+    "bytes": 291
+  },
+  {
+    "sha256": "e717a7de8df474f55f357aa37c7d4affc73b6ec5ae872c22312d9301a34cf348",
+    "path": "docs/audits/evidence/adoption-runtime-initial-typecheck.log.gz",
+    "bytes": 143
+  },
+  {
+    "sha256": "251a068de18e5b9b2d11ccc55199704ea3b252bf7355348d52b720271802e7ce",
+    "path": "docs/audits/evidence/adoption-runtime-new-test-before-type-correction.txt",
+    "bytes": 5899
+  },
+  {
+    "sha256": "aa319122233471970e59078eb4c371c67c1c82876994f92322e6241e05e544d7",
+    "path": "docs/audits/evidence/adoption-runtime-new-test-type-correction.json",
+    "bytes": 431
+  },
+  {
+    "sha256": "ba1553c02e3e48ecf2075033f38d6a6307a579410fdfa878c7750ed7dd15376a",
+    "path": "docs/audits/evidence/adoption-runtime-node-fs-selected.json",
+    "bytes": 9145
+  },
+  {
+    "sha256": "6a24c5f51d450e1d1b22deeac5f72cdd4e39d34f04fa995a11dfe230acb524f3",
+    "path": "docs/audits/evidence/adoption-runtime-node24-current-cp-source.txt",
+    "bytes": 7432
+  },
+  {
+    "sha256": "cfa9592d9d11b1791282373a1de86d422ec4562203e7edf5b5a72abcc979dfc6",
+    "path": "docs/audits/evidence/adoption-runtime-node24-prior-cp-source.txt",
+    "bytes": 7031
+  },
+  {
+    "sha256": "a105b699d351a917c863039ecf939e6f869c776a2b91ffcb85d23d3768643087",
+    "path": "docs/audits/evidence/adoption-runtime-original-assertion-integrity.json",
+    "bytes": 819
+  },
+  {
+    "sha256": "1be53ce3479e59da084df641ce169d728fabee316e6cce39cc11c680e9c3d31a",
+    "path": "docs/audits/evidence/adoption-runtime-original-tests-before-command.json",
+    "bytes": 1242
+  },
+  {
+    "sha256": "626c6e963fe493bbf385432b1434ddcc1b527e458ae123a8d6013e33f0f47a7e",
+    "path": "docs/audits/evidence/adoption-runtime-original-tests-before.json",
+    "bytes": 3430
+  },
+  {
+    "sha256": "d449dba8e4dddf8c08021e7f239c1110beb7d31b7be7007ae562d68c3ed619fa",
+    "path": "docs/audits/evidence/adoption-runtime-playwright-config-after.txt",
+    "bytes": 898
+  },
+  {
+    "sha256": "8d85887903253df800bac4d1d2d641aeb0dec661af503077a9261b2e605559e4",
+    "path": "docs/audits/evidence/adoption-runtime-playwright-config-before.txt",
+    "bytes": 779
+  },
+  {
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec",
+    "path": "docs/audits/evidence/adoption-runtime-playwright-config-typecheck-final.log.gz",
+    "bytes": 20
+  },
+  {
+    "sha256": "03402d7abedfe35bdca60fdf36380a6c630abd774f1bc24fbc73e2d1a384a3d8",
+    "path": "docs/audits/evidence/adoption-runtime-playwright-run.json",
+    "bytes": 563
+  },
+  {
+    "sha256": "6ab9f81f26cc8178f0f0b10065548ff69dd2745914e6a418c1161f60382b5d2a",
+    "path": "docs/audits/evidence/adoption-runtime-playwright.json",
+    "bytes": 96136
+  },
+  {
+    "sha256": "4617e7b31aed5e8cfaa15e5d2b8290fecd3939a76d276357939b6d95ae9cf8c8",
+    "path": "docs/audits/evidence/adoption-runtime-playwright.log.gz",
+    "bytes": 3726
+  },
+  {
+    "sha256": "a055414b653dfc470ba8fbac4848de968f01db156905fed61ecd729160bb135e",
+    "path": "docs/audits/evidence/adoption-runtime-pre-fix-test-freeze.json",
+    "bytes": 564
+  },
+  {
+    "sha256": "a9cf481a8608a77fd09e31603279949433260f47e2976eaedd8379185e366b71",
+    "path": "docs/audits/evidence/adoption-runtime-preexisting-captures-quarantined.json",
+    "bytes": 628
+  },
+  {
+    "sha256": "acdf82afcf884f5b657b1b1846fbb20acd09397f9beed384d2994a57f95b8982",
+    "path": "docs/audits/evidence/adoption-runtime-primary-retrievals.json",
+    "bytes": 1305
+  },
+  {
+    "sha256": "d9a888bd9317a6a53c269a362ff1cf554edbae833ac69e79a4a0722bf5c78b62",
+    "path": "docs/audits/evidence/adoption-runtime-prior-ci-artifacts.json",
+    "bytes": 1841
+  },
+  {
+    "sha256": "9bb29d5220fa4413004d8b70d03346696f07e8ff6e418abc2777773bfb85fb28",
+    "path": "docs/audits/evidence/adoption-runtime-probe-after-22.23.4.json",
+    "bytes": 1581
+  },
+  {
+    "sha256": "20ff4a0368c96860a672194ddea4f65bc8a30022a59c40c6a523adf972bebde7",
+    "path": "docs/audits/evidence/adoption-runtime-probe-after-24.19.0.json",
+    "bytes": 1581
+  },
+  {
+    "sha256": "15072c53b4fc2075d8db90a1d8ca07cb6b3c08bc86f735a3d1e519681dd87b1f",
+    "path": "docs/audits/evidence/adoption-runtime-probe-after-24.22.1.json",
+    "bytes": 1581
+  },
+  {
+    "sha256": "1e651572b4961c0dd77171de78e9c0401d0ce6fae4c6e230d27c8f7d096478ac",
+    "path": "docs/audits/evidence/adoption-runtime-probe-after-commands.json",
+    "bytes": 1359
+  },
+  {
+    "sha256": "6bca86469c4eb77049781ff9aa31368b134b672490079828947d3a78f5fce27d",
+    "path": "docs/audits/evidence/adoption-runtime-probe-before-22.23.4.json",
+    "bytes": 1581
+  },
+  {
+    "sha256": "351cd13e3ee848c2003afc5b7092e5ad4439c077dea19fb3c0e41dc161206396",
+    "path": "docs/audits/evidence/adoption-runtime-probe-before-24.19.0.json",
+    "bytes": 1581
+  },
+  {
+    "sha256": "3f4635bf14a3e2a9f93ed44ac8ececc32787c997f008362a5fcdbe60fc2fced0",
+    "path": "docs/audits/evidence/adoption-runtime-probe-before-24.22.1.json",
+    "bytes": 1248
+  },
+  {
+    "sha256": "00016095d78b7f79d40a8af56eebf6cbe6fe61c0ba85a900f116995a3487fc14",
+    "path": "docs/audits/evidence/adoption-runtime-probe-before-commands.json",
+    "bytes": 1681
+  },
+  {
+    "sha256": "e117a68f8004b9f53befdf8fbc37bfda4bbcd9918971bb3e16654d508a86ce50",
+    "path": "docs/audits/evidence/adoption-runtime-probe-source.txt",
+    "bytes": 2733
+  },
+  {
+    "sha256": "890991b54527ed35f57cd4d176469ed1b9c2e3cf2c8819f07ae018b8c0f946cd",
+    "path": "docs/audits/evidence/adoption-runtime-process-claim-22.23.4.json",
+    "bytes": 3453
+  },
+  {
+    "sha256": "288674b0b5b52be6497650526feb2a333e36837155bfd127f7620dba4da22cc2",
+    "path": "docs/audits/evidence/adoption-runtime-process-claim-24.22.1.json",
+    "bytes": 3111
+  },
+  {
+    "sha256": "6fef20fbfdc0c31e90508e087ab230a7687aee0918c67dd48d901f1523f7d1d7",
+    "path": "docs/audits/evidence/adoption-runtime-process-claim-final.log.gz",
+    "bytes": 90
+  },
+  {
+    "sha256": "56688b9fa917bd0562d5e301f3a8a4d57e8a81065fa493fcb29b0d072741a180",
+    "path": "docs/audits/evidence/adoption-runtime-process-controller-source.txt",
+    "bytes": 7383
+  },
+  {
+    "sha256": "c8007a9ec61535900309a35e0f616d1d4e035aad5cc16a53589fc6e7776a68aa",
+    "path": "docs/audits/evidence/adoption-runtime-process-copy-22.23.4.json",
+    "bytes": 3058
+  },
+  {
+    "sha256": "99eecd81f594a1c06c9cfadd11fb120c106069f862fc937222bdb97ce75ac0be",
+    "path": "docs/audits/evidence/adoption-runtime-process-copy-24.22.1.json",
+    "bytes": 2887
+  },
+  {
+    "sha256": "11cbed365dc233ebfd280ef3394c04f04f5b9b60932b256f7936373e72184dc5",
+    "path": "docs/audits/evidence/adoption-runtime-process-worker-source.txt",
+    "bytes": 1530
+  },
+  {
+    "sha256": "499d9fed24f973ae5d6586d81ede1e516701f60516ec49421bc2da5276e04081",
+    "path": "docs/audits/evidence/adoption-runtime-reporter-after.json",
+    "bytes": 436
+  },
+  {
+    "sha256": "4f82bbe9706fa3cbb29ece320dc247775790ff6cc9032533f6a6f38cf323a9d0",
+    "path": "docs/audits/evidence/adoption-runtime-reporter-before.json",
+    "bytes": 445
+  },
+  {
+    "sha256": "e20ad851012ce4439e5663c281d3dfa654ffdb2476745682c6bc01cb11bfb10c",
+    "path": "docs/audits/evidence/adoption-runtime-reporter-fixture-config.txt",
+    "bytes": 775
+  },
+  {
+    "sha256": "48065eaad4d997bbf2bc96882fd1cab107266c300b3e6e9a24aa8e288f759087",
+    "path": "docs/audits/evidence/adoption-runtime-reporter-fixture-freeze.json",
+    "bytes": 442
+  },
+  {
+    "sha256": "6fe6d47e84c2d2922f8688fa34a0e36965ceed93cedbe1a2fb9492f341eadf58",
+    "path": "docs/audits/evidence/adoption-runtime-reporter-fixture-spec.txt",
+    "bytes": 142
+  },
+  {
+    "sha256": "5e7845a55d71810ed4c5ab3a9dcc47e52615717ba3d8b8fa668ac8c793d73f05",
+    "path": "docs/audits/evidence/adoption-runtime-secret-scans.json",
+    "bytes": 5838
+  },
+  {
+    "sha256": "57b1687951f70d343ec01c9de30094fc87b74b1865f9a11c5d5c2aa57934285e",
+    "path": "docs/audits/evidence/adoption-runtime-source-after.txt",
+    "bytes": 6125
+  },
+  {
+    "sha256": "5fb5c560847e984507a63e994dad32dc40a1de563a95379bbe9b17901f3062b5",
+    "path": "docs/audits/evidence/adoption-runtime-source-before.txt",
+    "bytes": 5820
+  },
+  {
+    "sha256": "1b422208f87344b3fa1ab3f5ad1eef0e9ed54798ea655a8c9fe6a56b8a3c86d5",
+    "path": "docs/audits/evidence/adoption-runtime-source-freeze.json",
+    "bytes": 122191
+  },
+  {
+    "sha256": "6ae9c88b4ed58b508ade7ae23b9167d4e8cd5b61cde13a8e2222dd39f536bfdb",
+    "path": "docs/audits/evidence/adoption-runtime-system-browser-smtp-wire.json",
+    "bytes": 27489
+  },
+  {
+    "sha256": "f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec",
+    "path": "docs/audits/evidence/adoption-runtime-typecheck-final.log.gz",
+    "bytes": 20
+  },
+  {
+    "sha256": "0f23fbbeb84ac3fb78357bbf97a05da0649799499daf47b8104b8f948a9dacaf",
+    "path": "docs/audits/evidence/adoption-runtime-typechecks.json",
+    "bytes": 1246
+  },
+  {
+    "sha256": "105ba46a4c0e1cf0cbc644230d4e4226c6e70a15f5f0007f552a63568f9f5e02",
+    "path": "docs/audits/evidence/adoption-runtime-verification.json",
+    "bytes": 2696
+  },
+  {
+    "sha256": "897086c04957033c858bf5b21e39add392a5b6a1ef3cf1303ff1f91f402f1752",
+    "path": "docs/audits/evidence/adoption-runtime-wal-22.23.4.json",
+    "bytes": 1494
+  },
+  {
+    "sha256": "ebb6b36fcc8a0f8b7913ccb14d40b0dd698f1b6292f44657c73b2e3fbe125a71",
+    "path": "docs/audits/evidence/adoption-runtime-wal-24.22.1.json",
+    "bytes": 1323
+  },
+  {
+    "sha256": "f34262e6266ed3c5a2dc0341159d097c883cdbe56b4c15fb559cff94d167ddeb",
+    "path": "docs/audits/evidence/adoption-runtime-wal-controller-source.txt",
+    "bytes": 3500
+  },
+  {
+    "sha256": "7e00730847f583acfc45938fb2fe656f46feaeff94c478a0e0b56b2da20b9c91",
+    "path": "docs/audits/evidence/adoption-runtime-wal-experiment.log.gz",
+    "bytes": 116
+  }
+]

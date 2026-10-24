@@ -1,0 +1,29 @@
+import fs from 'node:fs';
+import path from 'node:path';
+const target = path.join(process.env.UPLOAD_DIR!, 'synthetic-process');
+function barrier(stage: string) {
+  fs.writeSync(1, JSON.stringify({ event: 'barrier', stage }) + '\n');
+  const byte = Buffer.alloc(1);
+  if (fs.readSync(0, byte, 0, 1, null) !== 1) throw new Error('Barrier not released');
+}
+if (process.env.ADOPTION_PROCESS_MODE === 'claim') {
+  const mkdir = fs.mkdirSync;
+  fs.mkdirSync = ((directory: fs.PathLike, options?: fs.MakeDirectoryOptions) => {
+    if (String(directory) === target && !options?.recursive) barrier('before-exclusive-directory-claim');
+    return mkdir(directory, options);
+  }) as typeof fs.mkdirSync;
+} else if (process.env.ADOPTION_PROCESS_MODE === 'copy') {
+  const copy = fs.copyFileSync;
+  fs.copyFileSync = (source, destination, mode) => {
+    if (String(destination) === path.join(target, 'nested/b.bin')) barrier('before-second-destination-copy');
+    return copy(source, destination, mode);
+  };
+}
+const { adoptDefaultTenant } = await import('../../src/platform/adopt-default');
+try {
+  const result = adoptDefaultTenant({ slug: 'synthetic-process', name: 'Synthetic process control', apply: true, serverStopped: true });
+  console.log(JSON.stringify({ event: 'result', applied: result.applied, recovery: result.recovery }));
+} catch (error) {
+  console.log(JSON.stringify({ event: 'error', name: (error as Error).name, code: (error as NodeJS.ErrnoException).code, message: (error as Error).message }));
+  process.exitCode = 1;
+}

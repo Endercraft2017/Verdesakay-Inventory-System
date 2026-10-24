@@ -1,0 +1,37 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'adoption-runtime-probe-'));
+Object.assign(process.env, {
+  NODE_ENV: 'test', DB_PATH: path.join(root, 'source.db'),
+  DATA_DIR: path.join(root, 'tenants'), UPLOAD_DIR: path.join(root, 'uploads'),
+  PLATFORM_DB_PATH: path.join(root, 'platform.db'),
+});
+const source = new DatabaseSync(process.env.DB_PATH!);
+source.exec("CREATE TABLE users(id INTEGER PRIMARY KEY, username TEXT, password_hash TEXT); INSERT INTO users VALUES(1,'synthetic-owner','synthetic-existing-hash'); CREATE TABLE records(id INTEGER PRIMARY KEY, data TEXT); INSERT INTO records VALUES(1,'synthetic-existing-history');");
+source.close();
+fs.mkdirSync(path.join(process.env.UPLOAD_DIR!, 'nested'), { recursive: true });
+fs.writeFileSync(path.join(process.env.UPLOAD_DIR!, 'nested/document.bin'), Buffer.from([0,255,16,9]));
+const hash = (p: string) => createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+const original = { database: hash(process.env.DB_PATH!), upload: hash(path.join(process.env.UPLOAD_DIR!, 'nested/document.bin')) };
+const { adoptDefaultTenant } = await import('../../src/platform/adopt-default');
+const { getTenant } = await import('../../src/platform/platform');
+let result: unknown, error: unknown;
+try { result = adoptDefaultTenant({ slug: 'synthetic-copy', name: 'Synthetic Copy', apply: true, serverStopped: true }); }
+catch (e) { error = { name: (e as Error).name, code: (e as NodeJS.ErrnoException).code, message: (e as Error).message }; }
+const targetDb = path.join(process.env.DATA_DIR!, 'synthetic-copy.db');
+const targetUploads = path.join(process.env.UPLOAD_DIR!, 'synthetic-copy');
+const recovery = fs.readdirSync(process.env.DATA_DIR!).filter(n => n.startsWith('.adopt-default-')).map(n => path.join(process.env.DATA_DIR!, n));
+const observations = {
+  node: process.versions.node, root, original, result, error,
+  source_after: { database: hash(process.env.DB_PATH!), upload: hash(path.join(process.env.UPLOAD_DIR!, 'nested/document.bin')) },
+  registered: getTenant('synthetic-copy') !== null,
+  target_database: fs.existsSync(targetDb) ? { sha256: hash(targetDb) } : null,
+  target_upload_files: fs.existsSync(targetUploads) ? fs.readdirSync(targetUploads, { recursive: true }) : null,
+  recovery: recovery.map(dir => ({ directory: dir, files: fs.readdirSync(dir, { recursive: true }), snapshot_hash: hash(path.join(dir, 'source.db')), upload_hash: hash(path.join(dir, 'uploads/nested/document.bin')) })),
+};
+console.log(JSON.stringify(observations, null, 2));
+process.exitCode = error ? 1 : 0;

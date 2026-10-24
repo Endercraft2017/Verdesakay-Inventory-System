@@ -1,0 +1,57 @@
+[
+  {
+    "phase": "before",
+    "node": "24.22.1",
+    "command": [
+      "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+      "--import",
+      "tsx",
+      "work/browser-ci/adoption-probe.ts"
+    ],
+    "exit_code": 1,
+    "elapsed_seconds": 0.5181196679986897,
+    "observed_at": "2026-10-24T12:14:18.779418+00:00",
+    "registered": false,
+    "source_unchanged": true,
+    "error": {
+      "name": "SystemError",
+      "code": "ERR_FS_CP_EEXIST",
+      "message": "Target already exists: cp returned EEXIST (/tmp/adoption-runtime-probe-UI4D9B/uploads/synthetic-copy already exists) /tmp/adoption-runtime-probe-UI4D9B/uploads/synthetic-copy"
+    },
+    "target_database_exists": false
+  },
+  {
+    "phase": "before",
+    "node": "22.23.4",
+    "command": [
+      "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v22.23.4-linux-x64/bin/node",
+      "--import",
+      "tsx",
+      "work/browser-ci/adoption-probe.ts"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.7095501299991156,
+    "observed_at": "2026-10-24T12:14:18.971433+00:00",
+    "registered": true,
+    "source_unchanged": true,
+    "error": null,
+    "target_database_exists": true
+  },
+  {
+    "phase": "before",
+    "node": "24.19.0",
+    "command": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+      "--import",
+      "tsx",
+      "work/browser-ci/adoption-probe.ts"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.7603977530015982,
+    "observed_at": "2026-10-24T12:14:19.022871+00:00",
+    "registered": true,
+    "source_unchanged": true,
+    "error": null,
+    "target_database_exists": true
+  }
+]

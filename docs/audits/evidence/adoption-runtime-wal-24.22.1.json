@@ -1,0 +1,51 @@
+{
+  "node": "24.22.1",
+  "fixture": "/tmp/adoption-committed-wal-iasej2j2",
+  "observed_at": "2026-10-24T12:29:41.035014+00:00",
+  "command": [
+    "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+    "--import",
+    "tsx",
+    "work/browser-ci/copy-process-worker.ts"
+  ],
+  "exit_code": 0,
+  "stdout": "{\"event\":\"result\",\"applied\":true,\"recovery\":\"/tmp/adoption-committed-wal-iasej2j2/tenants/.adopt-default-IFdZtb\"}\n",
+  "stderr": "",
+  "before": {
+    "source": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+    "wal": "816d52143c8b5ca4ef8126841cd63515c6a5ac27ba9b1df90d83efa67231a86c",
+    "wal_bytes": 24752
+  },
+  "after": {
+    "source": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+    "wal": "816d52143c8b5ca4ef8126841cd63515c6a5ac27ba9b1df90d83efa67231a86c",
+    "wal_bytes": 24752
+  },
+  "parent_sqlite_version": "3.53.1",
+  "anchor_transaction_open": false,
+  "target_integrity": [
+    [
+      "ok"
+    ]
+  ],
+  "target_users": [
+    [
+      1,
+      "synthetic-wal-owner",
+      "synthetic-wal-hash"
+    ]
+  ],
+  "target_records": [
+    [
+      1,
+      "synthetic-history-in-wal"
+    ]
+  ],
+  "registration": [
+    [
+      "synthetic-process",
+      "active"
+    ]
+  ],
+  "snapshot_equals_target": true
+}

@@ -1,0 +1,19 @@
+{
+  "command": [
+    "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/lib/node_modules/npm/bin/npm-cli.js",
+    "run",
+    "test:e2e"
+  ],
+  "node": "v24.22.1",
+  "started_at": "2026-10-24T12:53:52.055509+00:00",
+  "selected_inputs": 889,
+  "explicit_environment": {
+    "CI": "true",
+    "GITHUB_ACTIONS": "true",
+    "PLAYWRIGHT_CHROMIUM_EXECUTABLE": "/usr/bin/chromium"
+  },
+  "exit_code": 0,
+  "elapsed_seconds": 323.044,
+  "changed_inputs": []
+}

@@ -1,0 +1,180 @@
+[
+  {
+    "textRaw": "`fs.copyFileSync(src, dest[, mode])`",
+    "type": "method",
+    "name": "copyFileSync",
+    "meta": {
+      "added": [
+        "v8.5.0"
+      ],
+      "changes": [
+        {
+          "version": "v14.0.0",
+          "pr-url": "https://github.com/nodejs/node/pull/27044",
+          "description": "Changed `flags` argument to `mode` and imposed stricter type validation."
+        }
+      ]
+    },
+    "signatures": [
+      {
+        "params": [
+          {
+            "textRaw": "`src` {string|Buffer|URL} source filename to copy",
+            "name": "src",
+            "type": "string|Buffer|URL",
+            "desc": "source filename to copy"
+          },
+          {
+            "textRaw": "`dest` {string|Buffer|URL} destination filename of the copy operation",
+            "name": "dest",
+            "type": "string|Buffer|URL",
+            "desc": "destination filename of the copy operation"
+          },
+          {
+            "textRaw": "`mode` {integer} modifiers for copy operation. **Default:** `0`.",
+            "name": "mode",
+            "type": "integer",
+            "default": "`0`",
+            "desc": "modifiers for copy operation."
+          }
+        ]
+      }
+    ],
+    "desc": "<p>Synchronously copies <code>src</code> to <code>dest</code>. By default, <code>dest</code> is overwritten if it\nalready exists. Returns <code>undefined</code>. Node.js makes no guarantees about the\natomicity of the copy operation. If an error occurs after the destination file\nhas been opened for writing, Node.js will attempt to remove the destination.</p>\n<p>Symbolic links are followed. If <code>src</code> is a symbolic link, the target file is\ncopied. If <code>dest</code> is a symbolic link, the target file is overwritten unless\n<code>mode</code> contains <code>fs.constants.COPYFILE_EXCL</code>.</p>\n<p><code>mode</code> is an optional integer that specifies the behavior\nof the copy operation. It is possible to create a mask consisting of the bitwise\nOR of two or more values (e.g.\n<code>fs.constants.COPYFILE_EXCL | fs.constants.COPYFILE_FICLONE</code>).</p>\n<ul>\n<li><code>fs.constants.COPYFILE_EXCL</code>: The copy operation will fail if <code>dest</code> already\nexists.</li>\n<li><code>fs.constants.COPYFILE_FICLONE</code>: The copy operation will attempt to create a\ncopy-on-write reflink. If the platform does not support copy-on-write, then a\nfallback copy mechanism is used.</li>\n<li><code>fs.constants.COPYFILE_FICLONE_FORCE</code>: The copy operation will attempt to\ncreate a copy-on-write reflink. If the platform does not support\ncopy-on-write, then the operation will fail.</li>\n</ul>\n<pre><code class=\"language-mjs\">import { copyFileSync, constants } from 'node:fs';\n\n// destination.txt will be created or overwritten by default.\ncopyFileSync('source.txt', 'destination.txt');\nconsole.log('source.txt was copied to destination.txt');\n\n// By using COPYFILE_EXCL, the operation will fail if destination.txt exists.\ncopyFileSync('source.txt', 'destination.txt', constants.COPYFILE_EXCL);\n</code></pre>"
+  },
+  {
+    "textRaw": "`fs.cpSync(src, dest[, options])`",
+    "type": "method",
+    "name": "cpSync",
+    "meta": {
+      "added": [
+        "v16.7.0"
+      ],
+      "changes": [
+        {
+          "version": "v22.3.0",
+          "pr-url": "https://github.com/nodejs/node/pull/53127",
+          "description": "This API is no longer experimental."
+        },
+        {
+          "version": [
+            "v20.1.0",
+            "v18.17.0"
+          ],
+          "pr-url": "https://github.com/nodejs/node/pull/47084",
+          "description": "Accept an additional `mode` option to specify the copy behavior as the `mode` argument of `fs.copyFile()`."
+        },
+        {
+          "version": [
+            "v17.6.0",
+            "v16.15.0"
+          ],
+          "pr-url": "https://github.com/nodejs/node/pull/41819",
+          "description": "Accepts an additional `verbatimSymlinks` option to specify whether to perform path resolution for symlinks."
+        }
+      ]
+    },
+    "signatures": [
+      {
+        "params": [
+          {
+            "textRaw": "`src` {string|URL} source path to copy.",
+            "name": "src",
+            "type": "string|URL",
+            "desc": "source path to copy."
+          },
+          {
+            "textRaw": "`dest` {string|URL} destination path to copy to.",
+            "name": "dest",
+            "type": "string|URL",
+            "desc": "destination path to copy to."
+          },
+          {
+            "textRaw": "`options` {Object}",
+            "name": "options",
+            "type": "Object",
+            "options": [
+              {
+                "textRaw": "`dereference` {boolean} dereference symlinks. **Default:** `false`.",
+                "name": "dereference",
+                "type": "boolean",
+                "default": "`false`",
+                "desc": "dereference symlinks."
+              },
+              {
+                "textRaw": "`errorOnExist` {boolean} when `force` is `false`, and the destination exists, throw an error. **Default:** `false`.",
+                "name": "errorOnExist",
+                "type": "boolean",
+                "default": "`false`",
+                "desc": "when `force` is `false`, and the destination exists, throw an error."
+              },
+              {
+                "textRaw": "`filter` {Function} Function to filter copied files/directories. Return `true` to copy the item, `false` to ignore it. When ignoring a directory, all of its contents will be skipped as well. **Default:** `undefined`",
+                "name": "filter",
+                "type": "Function",
+                "default": "`undefined`",
+                "desc": "Function to filter copied files/directories. Return `true` to copy the item, `false` to ignore it. When ignoring a directory, all of its contents will be skipped as well.",
+                "options": [
+                  {
+                    "textRaw": "`src` {string} source path to copy.",
+                    "name": "src",
+                    "type": "string",
+                    "desc": "source path to copy."
+                  },
+                  {
+                    "textRaw": "`dest` {string} destination path to copy to.",
+                    "name": "dest",
+                    "type": "string",
+                    "desc": "destination path to copy to."
+                  },
+                  {
+                    "textRaw": "Returns: {boolean} Any non-`Promise` value that is coercible to `boolean`.",
+                    "name": "return",
+                    "type": "boolean",
+                    "desc": "Any non-`Promise` value that is coercible to `boolean`."
+                  }
+                ]
+              },
+              {
+                "textRaw": "`force` {boolean} overwrite existing file or directory. The copy operation will ignore errors if you set this to false and the destination exists. Use the `errorOnExist` option to change this behavior. **Default:** `true`.",
+                "name": "force",
+                "type": "boolean",
+                "default": "`true`",
+                "desc": "overwrite existing file or directory. The copy operation will ignore errors if you set this to false and the destination exists. Use the `errorOnExist` option to change this behavior."
+              },
+              {
+                "textRaw": "`mode` {integer} modifiers for copy operation. **Default:** `0`. See `mode` flag of [`fs.copyFileSync()`][].",
+                "name": "mode",
+                "type": "integer",
+                "default": "`0`. See `mode` flag of [`fs.copyFileSync()`][]",
+                "desc": "modifiers for copy operation."
+              },
+              {
+                "textRaw": "`preserveTimestamps` {boolean} When `true` timestamps from `src` will be preserved. **Default:** `false`.",
+                "name": "preserveTimestamps",
+                "type": "boolean",
+                "default": "`false`",
+                "desc": "When `true` timestamps from `src` will be preserved."
+              },
+              {
+                "textRaw": "`recursive` {boolean} copy directories recursively **Default:** `false`",
+                "name": "recursive",
+                "type": "boolean",
+                "default": "`false`",
+                "desc": "copy directories recursively"
+              },
+              {
+                "textRaw": "`verbatimSymlinks` {boolean} When `true`, path resolution for symlinks will be skipped. **Default:** `false`",
+                "name": "verbatimSymlinks",
+                "type": "boolean",
+                "default": "`false`",
+                "desc": "When `true`, path resolution for symlinks will be skipped."
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "desc": "<p>Synchronously copies the entire directory structure from <code>src</code> to <code>dest</code>,\nincluding subdirectories and files.</p>\n<p>When copying a directory to another directory, globs are not supported and\nbehavior is similar to <code>cp dir1/ dir2/</code>.</p>"
+  }
+]

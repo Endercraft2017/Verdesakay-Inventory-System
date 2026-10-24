@@ -1,5 +1,9 @@
 # Second-pass validation — 16 October 2026
 
+Latest current-Node adoption evidence: [24 October copy compatibility](adoption-runtime-contract.md),
+with the dated entry at the end. The historical browser CI failure remains unexplained;
+local passes on both browser builds do not close that independent gate.
+
 Latest runtime support evidence: [24 October runtime admission](runtime-support-contract.md),
 with the dated entry at the end. Latest dependency evidence: [24 October runtime remediation](dependency-remediation-2026-10-24.md)
 and the dated entry at the end of this record. Earlier 23 October candidate/original-dependency
@@ -1695,3 +1699,42 @@ admission are implemented/locally demonstrated, not independent human assurance.
 Windows/Electron build/capabilities, historical financial consequences, browser CI diagnosis,
 dependency/quoted-mailbox findings and broader release holds remain open. No owner coding task,
 whole-control PASS, production deployment or release approval is implied.
+
+## Current-Node adoption copy — 24 October 2026
+
+Baseline **b451ce6** exact-commit CI has three passing Node jobs, one failing current
+24.22.1 job with original-company adoption errors, plus failing browser/dependency
+jobs. The unchanged original adoption suite reproduces two failures / one pass on
+real 24.22.1. Earlier 24.19 and current 22.23 are successful controls. Current Node
+rejects recursive `cpSync(errorOnExist)` onto the helper's already claimed directory.
+
+The fix retains exclusive directory claim, copies the verified manifest with
+per-file `COPYFILE_EXCL`, then runs the existing byte/hash checks and catalog
+transaction. **Six focused cases pass on all four CI runtime versions**. Actual
+competing processes, SIGKILL/restart refusal and independent SQLite/WAL observations
+pass on both current families. Existing registered companies do not need another
+adoption; partial destinations remain blocked for manual recovery review.
+
+Final local checks:
+
+- **329 files / 3,543 Vitest tests pass**, zero failed/pending, actual Node 24.22.1,
+  **1,957.69 seconds** Vitest / **1,958.518 seconds** wrapper; no full-suite retry.
+- **78 distinct Playwright cases pass on each of two browsers**, system Chromium
+  151 (**323.044 seconds**) and Playwright-managed Chromium 156/revision 1248
+  (**280.209 seconds**), with CI/GitHub flags. Zero unexpected/flaky/skipped/global
+  errors. Separate fresh local TLS SMTP captures record three submissions per run;
+  delivery and exactly-once guarantees are not inferred.
+- All **889 selected inputs remain unchanged**. Original adoption test files,
+  Vitest budgets and workflow remain byte-identical; the new test's type-only
+  correction emits identical JavaScript. Root and explicit config typechecks pass.
+- GitHub reporter diagnostics preserve deliberate startup failure while adding
+  annotations; this does not explain the inaccessible historical browser error.
+
+[Contract, raw evidence and failed experiments](adoption-runtime-contract.md);
+[copy recovery](../operations/adoption-copy-recovery.md). Gitleaks scans explicitly
+expand compressed logs and retain default rules; final metadata is checked again
+in the index/mandatory hook. Source/candidate snapshots, runtime/browser differences,
+invalid fixture/checker attempts and artifact hashes are retained. No business schema,
+dependency, payroll authority, existing assertions or test/CI timeout changes occur.
+Actual Windows/host behavior, power-loss/all-stage interruption, independent migration
+review, browser CI cause and broader dependency/release blockers remain open.

@@ -1,5 +1,11 @@
 # Runtime admission contract — 24 October 2026
 
+Later evidence at **b451ce6** is tracked separately in the
+[current-Node adoption follow-up](adoption-runtime-contract.md): three Node CI jobs
+pass; current 24.22.1 reports adoption-copy failures, while browser and dependency
+jobs fail. The local results below retain their original runtime/scope; they do
+not claim that later exact-commit CI passed.
+
 Starting production/remote baseline: **e077a494547a35e0919711c8739bc46d874d03f4**.
 This follows the dependency increment; its runtime node-forge, Electron/fast-uri,
 quoted-mailbox and broader release holds remain open. Scope is runtime compatibility/admission,

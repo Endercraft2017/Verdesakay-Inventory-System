@@ -9,6 +9,9 @@
 3. **Preserve and verify** (`platform`): SQLite/WAL snapshot, platform snapshot,
    recursive upload backup/copy, file-hash and database-byte verification. Original
    DB/uploads remain untouched. Other tenants' upload folders are excluded.
+   Claim the destination directory exclusively, then copy manifest files with
+   `COPYFILE_EXCL`; do not recursively copy onto the claimed root with `errorOnExist`.
+   Copy failure retains an unregistered partial destination and recovery snapshots.
 4. **Register** (`platform`): catalog row and provisioning log in one transaction;
    preserve existing users/passwords/business records and default to unlimited entitlements.
 5. **Cut over** (`app`, shared clients): configure path host and default redirect;
@@ -21,6 +24,8 @@ Failure: refuse missing/corrupt sources, collisions, symlinks, changed files and
 unstopped-writer assertions; retain originals and recovery artifacts for diagnosis.
 Do not roll back to the original after new writes without reconciling them.
 Runbook: `docs/VERDESAKAY-TENANT-CUTOVER.md`.
+Interrupted-copy diagnosis: `docs/operations/adoption-copy-recovery.md`. This is
+an offline original-company cutover; no payroll authority or normal sync stage changes.
 
 Real end-to-end business processes, as ordered module stages. See
 `docs/modules/catalog.md` for what each module owns. Written per the "Mapping

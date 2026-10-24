@@ -79,7 +79,13 @@ export function adoptDefaultTenant(input: { slug: string; name: string; plan?: s
     }
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
     fs.mkdirSync(targetUploads); // fails rather than overwriting a concurrent destination
-    fs.cpSync(uploadsBackup, targetUploads, { recursive: true, errorOnExist: true, force: false });
+    // The root is already exclusively ours. cpSync(errorOnExist) also refuses
+    // existing directories on current Node; preserve no-overwrite per file.
+    for (const file of files) {
+      const dest = path.join(targetUploads, file.name);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(path.join(uploadsBackup, file.name), dest, fs.constants.COPYFILE_EXCL);
+    }
     fs.copyFileSync(snapshot, targetDb, fs.constants.COPYFILE_EXCL);
     if (!fs.readFileSync(snapshot).equals(fs.readFileSync(targetDb))
       || JSON.stringify(manifest(targetUploads)) !== JSON.stringify(files)) {

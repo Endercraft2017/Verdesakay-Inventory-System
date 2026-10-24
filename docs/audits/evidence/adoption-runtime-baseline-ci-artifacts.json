@@ -1,0 +1,45 @@
+{
+  "total_count": 2,
+  "artifacts": [
+    {
+      "id": 12557242318,
+      "node_id": "MDg6QXJ0aWZhY3QxMjU1NzI0MjMxOA==",
+      "name": "browser-audit",
+      "size_in_bytes": 195365,
+      "url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/artifacts/12557242318",
+      "archive_download_url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/artifacts/12557242318/zip",
+      "expired": false,
+      "digest": "sha256:a2e622461613605ce92cfc3aceffbf7e18a041897106f63e85fc243fc247ab13",
+      "created_at": "2026-10-24T10:32:26Z",
+      "updated_at": "2026-10-24T10:32:26Z",
+      "expires_at": "2026-11-07T10:32:25Z",
+      "workflow_run": {
+        "id": 40086250363,
+        "repository_id": 1273936735,
+        "head_repository_id": 1273936735,
+        "head_branch": "production",
+        "head_sha": "b451ce66d522c249431b2df21fd95766b5bcfc13"
+      }
+    },
+    {
+      "id": 12556864150,
+      "node_id": "MDg6QXJ0aWZhY3QxMjU1Njg2NDE1MA==",
+      "name": "gitleaks-results.sarif",
+      "size_in_bytes": 6840,
+      "url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/artifacts/12556864150",
+      "archive_download_url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/artifacts/12556864150/zip",
+      "expired": false,
+      "digest": "sha256:c3263fa91fc2cfcf00e5ff5c7fad7364760e58d423c66e8f10c1e2b2ca2b772a",
+      "created_at": "2026-10-24T10:31:35Z",
+      "updated_at": "2026-10-24T10:31:35Z",
+      "expires_at": "2027-01-22T10:31:24Z",
+      "workflow_run": {
+        "id": 40086250363,
+        "repository_id": 1273936735,
+        "head_repository_id": 1273936735,
+        "head_branch": "production",
+        "head_sha": "b451ce66d522c249431b2df21fd95766b5bcfc13"
+      }
+    }
+  ]
+}

@@ -1,5 +1,24 @@
 # Engineering handoff and release hold
 
+Current-Node adoption follow-up, 24 October 2026, baseline **b451ce6**:
+the subsequent exact-commit CI has three passing Node jobs, but Node 24.22.1
+reports original-company adoption failures; browser and dependency jobs also fail.
+The adoption failure is reproduced with unchanged existing tests: a claimed
+directory conflicts with current Node's `cpSync(errorOnExist)` behavior. The fix
+keeps exclusive directory claim and per-file exclusive copies; all six focused
+cases pass on each of the four CI runtimes. Actual competing processes and
+SIGKILL/restart checks preserve sources/recovery and refuse partial destinations;
+committed WAL-copy checks also pass on both current families. Complete Node 24.22.1
+regression passes **329 files / 3,543 tests**. The same **78 distinct Playwright cases**
+pass on both system Chromium 151 and Playwright-managed Chromium 156, zero
+unexpected/flaky/skipped/global errors, with separate fresh TLS SMTP captures.
+All 889 selected inputs remain unchanged. See [contract/evidence](adoption-runtime-contract.md)
+and [recovery](../operations/adoption-copy-recovery.md). Existing registered companies
+do not need another adoption. Browser cause remains unverified because log/artifact
+downloads are proxy-denied; an independently exercised built-in GitHub reporter
+now preserves failure while exposing future diagnostic annotations. Neither that
+reporter nor this copy fix closes the browser gate, dependencies or native/host review.
+
 Latest runtime admission follow-up: 24 October 2026, baseline e077a49. The old declared
 22.13 minimum fails FTS5 setup; isolated transaction guards also misbehave with its missing
 `isTransaction` API. The app now admits only `^22.22.0 || ^24.19.0` and checks required SQLite

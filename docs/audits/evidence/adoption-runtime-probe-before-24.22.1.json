@@ -1,0 +1,34 @@
+{
+  "node": "24.22.1",
+  "root": "/tmp/adoption-runtime-probe-UI4D9B",
+  "original": {
+    "database": "243bb6518c4fb3c2218b8710c5a837562679b6870d1f1c8051b7e972a989501c",
+    "upload": "6380e654b1bf32222bc0628c106cdeaf034f511b1361bcccab695c50997f4039"
+  },
+  "error": {
+    "name": "SystemError",
+    "code": "ERR_FS_CP_EEXIST",
+    "message": "Target already exists: cp returned EEXIST (/tmp/adoption-runtime-probe-UI4D9B/uploads/synthetic-copy already exists) /tmp/adoption-runtime-probe-UI4D9B/uploads/synthetic-copy"
+  },
+  "source_after": {
+    "database": "243bb6518c4fb3c2218b8710c5a837562679b6870d1f1c8051b7e972a989501c",
+    "upload": "6380e654b1bf32222bc0628c106cdeaf034f511b1361bcccab695c50997f4039"
+  },
+  "registered": false,
+  "target_database": null,
+  "target_upload_files": [],
+  "recovery": [
+    {
+      "directory": "/tmp/adoption-runtime-probe-UI4D9B/tenants/.adopt-default-4tlp0C",
+      "files": [
+        "platform.db",
+        "source.db",
+        "uploads",
+        "uploads/nested",
+        "uploads/nested/document.bin"
+      ],
+      "snapshot_hash": "bb4d1ac7cab05b2c92ba1499af8077ee0ceb4f272acc0591c6f1e08711c74367",
+      "upload_hash": "6380e654b1bf32222bc0628c106cdeaf034f511b1361bcccab695c50997f4039"
+    }
+  ]
+}

@@ -73,6 +73,10 @@ A repeated apply refuses to overwrite an existing tenant/destination. If a run
 fails, keep the source and recovery files, inspect the failure, and do not blindly
 delete partial destinations or retry over them. The helper never deletes them.
 
+For the 24 October current-Node copy compatibility fix and interrupted/competing
+destination review, see [adoption copy recovery](operations/adoption-copy-recovery.md).
+This does not authorize repeating the completed historical cutover.
+
 ## Activate the new URL
 
 Only after the helper succeeds, configure:

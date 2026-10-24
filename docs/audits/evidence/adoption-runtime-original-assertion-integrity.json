@@ -1,0 +1,23 @@
+{
+  "baseline": "b451ce66d522c249431b2df21fd95766b5bcfc13",
+  "unchanged_files": [
+    {
+      "sha256": "cb572d1b4e8f40860aac284e4da51d274e52746de7dded678d72305cae06fe15",
+      "path": "tests/adopt-default-tenant.test.ts"
+    },
+    {
+      "sha256": "d86bea027c04d85e7e23792c5b7a05f4ba69eeb0485db624e0bd42ebc7412f67",
+      "path": "tests/adopt-default-tenant-api.test.ts"
+    },
+    {
+      "sha256": "dfdb54106c7f4e2fad7b1d3b80f3cef0f7db18b6c66cdc03e3fd9fa007b6b10e",
+      "path": "vitest.config.ts"
+    }
+  ],
+  "new_test_type_correction": "new-test-type-correction.json",
+  "production_changes": [
+    "src/platform/adopt-default.ts: exclusive file copies into claimed destination",
+    "playwright.config.ts: add built-in GitHub reporter only in GitHub Actions"
+  ],
+  "dependency_and_schema_changes": false
+}

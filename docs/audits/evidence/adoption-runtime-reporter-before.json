@@ -1,0 +1,14 @@
+{
+  "phase": "before-final",
+  "command": [
+    "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+    "node_modules/playwright/cli.js",
+    "test",
+    "--config=work/browser-ci/reporter-fixture/playwright.config.ts"
+  ],
+  "exit_code": 1,
+  "elapsed_seconds": 1.7246732380008325,
+  "github_error_annotation": false,
+  "contains_exit_17": true,
+  "observed_at": "2026-10-24T12:18:28.137898+00:00"
+}

@@ -1,0 +1,20 @@
+import { defineConfig } from '@playwright/test';
+import path from 'node:path';
+import base from '../../../playwright.config';
+
+const phase = process.env.ADOPTION_REPORT_PHASE!;
+export default defineConfig({
+  ...base,
+  testDir: import.meta.dirname,
+  testMatch: 'failure.spec.ts',
+  webServer: {
+    command: `"${process.execPath}" -e "process.exit(17)"`,
+    port: Number(process.env.ADOPTION_REPORT_PORT),
+    reuseExistingServer: false,
+    timeout: 30000,
+  },
+  reporter: (base.reporter as [string, any?][]).map(([name, options]) => [name,
+    name === 'html' ? { ...options, outputFolder: path.join(import.meta.dirname, phase + '-html') }
+    : name === 'json' ? { ...options, outputFile: path.join(import.meta.dirname, phase + '-results.json') }
+    : options]),
+});

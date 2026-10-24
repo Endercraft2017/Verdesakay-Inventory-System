@@ -1,0 +1,37 @@
+{
+  "started_at": "2026-10-24T12:11:51.090956+00:00",
+  "command": [
+    "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "tests/adopt-default-tenant.test.ts",
+    "tests/adopt-default-tenant-api.test.ts",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile.json=/workspace/Verdesakay-Inventory-System/work/browser-ci/before-adoption.json"
+  ],
+  "exit_code": 1,
+  "elapsed_seconds": 11.085528803996567,
+  "inputs": [
+    {
+      "sha256": "5fb5c560847e984507a63e994dad32dc40a1de563a95379bbe9b17901f3062b5",
+      "path": "src/platform/adopt-default.ts"
+    },
+    {
+      "sha256": "cb572d1b4e8f40860aac284e4da51d274e52746de7dded678d72305cae06fe15",
+      "path": "tests/adopt-default-tenant.test.ts"
+    },
+    {
+      "sha256": "d86bea027c04d85e7e23792c5b7a05f4ba69eeb0485db624e0bd42ebc7412f67",
+      "path": "tests/adopt-default-tenant-api.test.ts"
+    },
+    {
+      "sha256": "dfdb54106c7f4e2fad7b1d3b80f3cef0f7db18b6c66cdc03e3fd9fa007b6b10e",
+      "path": "vitest.config.ts"
+    },
+    {
+      "sha256": "b068089bce8a8fda2efcb819c6c6998db3b8e115fcf384a93d5723fed5df7082",
+      "path": "package-lock.json"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "node": "22.23.4",
+  "fixture": "/tmp/adoption-committed-wal-_6bfi1gi",
+  "observed_at": "2026-10-24T12:29:41.486154+00:00",
+  "command": [
+    "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v22.23.4-linux-x64/bin/node",
+    "--import",
+    "tsx",
+    "work/browser-ci/copy-process-worker.ts"
+  ],
+  "exit_code": 0,
+  "stdout": "{\"event\":\"result\",\"applied\":true,\"recovery\":\"/tmp/adoption-committed-wal-_6bfi1gi/tenants/.adopt-default-J7MGwi\"}\n",
+  "stderr": "(node:64724) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+  "before": {
+    "source": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+    "wal": "461c4fa0c4b420fb0f74ff648e94a57b9b3d1d05d7466767f4641b9a7f1ca12e",
+    "wal_bytes": 24752
+  },
+  "after": {
+    "source": "0ab48b25cba617ed3a4acca0161813b314c095ef63544bb4af60769eb1012977",
+    "wal": "461c4fa0c4b420fb0f74ff648e94a57b9b3d1d05d7466767f4641b9a7f1ca12e",
+    "wal_bytes": 24752
+  },
+  "parent_sqlite_version": "3.53.1",
+  "anchor_transaction_open": false,
+  "target_integrity": [
+    [
+      "ok"
+    ]
+  ],
+  "target_users": [
+    [
+      1,
+      "synthetic-wal-owner",
+      "synthetic-wal-hash"
+    ]
+  ],
+  "target_records": [
+    [
+      1,
+      "synthetic-history-in-wal"
+    ]
+  ],
+  "registration": [
+    [
+      "synthetic-process",
+      "active"
+    ]
+  ],
+  "snapshot_equals_target": true
+}

@@ -1,0 +1,8 @@
+{
+  "initial_typecheck_exit": 2,
+  "correction": "Non-null type assertion after the unchanged toHaveLength(1) check",
+  "before_sha256": "251a068de18e5b9b2d11ccc55199704ea3b252bf7355348d52b720271802e7ce",
+  "after_sha256": "d1a0071f7b67d4dc71b296c0e363238e757d2aa18547bbe5806eaa9e0714a9e2",
+  "emitted_javascript_identical": true,
+  "emitted_javascript_sha256": "eda9a164ae0e4d4085751b746ec6fcd57b2331897b53567a6d555b93d97b654b"
+}

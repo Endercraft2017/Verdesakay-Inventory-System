@@ -1,0 +1,16 @@
+{
+  "observed_at": "2026-10-24T12:34:36.939444+00:00",
+  "purpose": "Separate previous-run captures before the pending final Playwright process starts",
+  "retained": [
+    {
+      "sha256": "1d009df82685a1669802662334de843891afc6d11a3f5a6302a610b8a577f6ac",
+      "original": "work/payroll-email-browser-wire.json",
+      "retained": "work/browser-ci/preexisting-payroll-email-browser-wire.json"
+    },
+    {
+      "sha256": "67a860c27e2f3940f9e5a6aee8162cf2566e9264114b67f3cf794dde29bca871",
+      "original": "work/playwright-results.json",
+      "retained": "work/browser-ci/preexisting-playwright-results.json"
+    }
+  ]
+}

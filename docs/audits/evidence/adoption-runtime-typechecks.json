@@ -1,0 +1,46 @@
+{
+  "node": "24.22.1",
+  "root": {
+    "command": [
+      "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+      "node_modules/typescript/bin/tsc",
+      "--noEmit"
+    ],
+    "exit_code": 0,
+    "log": "adoption-runtime-typecheck-final.log.gz"
+  },
+  "playwright_config": {
+    "command": [
+      "/workspace/Verdesakay-Inventory-System/work/runtime-support/node-v24.22.1-linux-x64/bin/node",
+      "node_modules/typescript/bin/tsc",
+      "--ignoreConfig",
+      "--noEmit",
+      "--strict",
+      "--esModuleInterop",
+      "--skipLibCheck",
+      "--moduleResolution",
+      "bundler",
+      "--module",
+      "esnext",
+      "--target",
+      "es2022",
+      "--types",
+      "node",
+      "playwright.config.ts"
+    ],
+    "exit_code": 0,
+    "log": "adoption-runtime-playwright-config-typecheck-final.log.gz"
+  },
+  "initial_failures": {
+    "root": {
+      "exit_code": 2,
+      "reason": "new test optional array index type",
+      "log": "adoption-runtime-initial-typecheck.log.gz"
+    },
+    "explicit_config_command": {
+      "exit_code": 1,
+      "reason": "TS5112 requires explicit ignoreConfig",
+      "log": "adoption-runtime-initial-playwright-config-typecheck.log.gz"
+    }
+  }
+}

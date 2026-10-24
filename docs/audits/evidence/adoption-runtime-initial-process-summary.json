@@ -1,0 +1,22 @@
+[
+  {
+    "node": "24.22.1",
+    "mode": "claim",
+    "passed": false
+  },
+  {
+    "node": "24.22.1",
+    "mode": "copy",
+    "passed": true
+  },
+  {
+    "node": "22.23.4",
+    "mode": "claim",
+    "passed": false
+  },
+  {
+    "node": "22.23.4",
+    "mode": "copy",
+    "passed": true
+  }
+]

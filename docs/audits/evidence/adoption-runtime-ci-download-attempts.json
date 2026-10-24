@@ -1,0 +1,80 @@
+[
+  {
+    "name": "current-browser-artifact",
+    "url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/artifacts/12557242318/zip",
+    "observed_at": "2026-10-24T12:11:05.841470+00:00",
+    "error": "URLError",
+    "reason": "proxy CONNECT 403"
+  },
+  {
+    "name": "baseline-browser-artifact",
+    "url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/artifacts/12554581135/zip",
+    "observed_at": "2026-10-24T12:11:05.842828+00:00",
+    "error": "URLError",
+    "reason": "proxy CONNECT 403"
+  },
+  {
+    "name": "current-browser-log",
+    "url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/jobs/120849680628/logs",
+    "observed_at": "2026-10-24T12:11:05.843706+00:00",
+    "error": "URLError",
+    "reason": "proxy CONNECT 403"
+  },
+  {
+    "name": "current-node24-log",
+    "url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/actions/jobs/120849680688/logs",
+    "observed_at": "2026-10-24T12:11:05.844323+00:00",
+    "error": "URLError",
+    "reason": "proxy CONNECT 403"
+  },
+  {
+    "name": "current-browser-annotations",
+    "url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/check-runs/120849680628/annotations?per_page=100",
+    "observed_at": "2026-10-24T12:11:05.844920+00:00",
+    "status": 200,
+    "bytes": 1350,
+    "annotations": [
+      {
+        "level": "warning",
+        "message": "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/"
+      },
+      {
+        "level": "failure",
+        "message": "Process completed with exit code 1."
+      },
+      {
+        "level": "notice",
+        "message": "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\""
+      }
+    ]
+  },
+  {
+    "name": "current-node24-annotations",
+    "url": "https://api.github.com/repos/Endercraft2017/Verdesakay-Inventory-System/check-runs/120849680688/annotations?per_page=100",
+    "observed_at": "2026-10-24T12:11:05.847120+00:00",
+    "status": 200,
+    "bytes": 3290,
+    "annotations": [
+      {
+        "level": "warning",
+        "message": "Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-node@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/"
+      },
+      {
+        "level": "failure",
+        "message": "Process completed with exit code 1."
+      },
+      {
+        "level": "failure",
+        "message": "SystemError: Target already exists: cp returned EEXIST (/tmp/vds-test-guard-6r0SKy/uploads/verdesakay already exists) /tmp/vds-test-guard-6r0SKy/uploads/verdesakay\n \u276f adoptDefaultTenant src/platform/adopt-default.ts:82:8\n \u276f tests/adopt-default-tenant.test.ts:26:20\n\n\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\u23af\nSerialized Error: { code: 'ERR_FS_CP_EEXIST', info: { message: '/tmp/vds-test-guard-6r0SKy/uploads/verdesakay already exists', path: '/tmp/vds-test-guard-6r0SKy/uploads/verdesakay', syscall: 'cp', errno: 17, code: 'EEXIST' }, errno: 17, syscall: 'cp', path: '/tmp/vds-test-guard-6r0SKy/uploads/verdesakay' }\n"
+      },
+      {
+        "level": "failure",
+        "message": "AssertionError: Target already exists: cp returned EEXIST (/tmp/vds-test-NjlboG/uploads/verdesakay already exists) /tmp/vds-test-NjlboG/uploads/verdesakay\n: expected 1 to be +0 // Object.is equality\n\n- Expected\n+ Received\n\n- 0\n+ 1\n\n \u276f tests/adopt-default-tenant-api.test.ts:31:44\n\n"
+      },
+      {
+        "level": "notice",
+        "message": "\"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748\""
+      }
+    ]
+  }
+]

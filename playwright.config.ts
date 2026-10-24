@@ -1,8 +1,9 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, type ReporterDescription } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/e2e', testMatch: '**/*.spec.ts',
   fullyParallel: false, workers: 1, retries: 0, timeout: 30000,
-  reporter: [['list'], ['html', { open: 'never', outputFolder: 'work/playwright-report' }], ['json', { outputFile: 'work/playwright-results.json' }]],
+  reporter: [['list'], ['html', { open: 'never', outputFolder: 'work/playwright-report' }], ['json', { outputFile: 'work/playwright-results.json' }],
+    ...(process.env.GITHUB_ACTIONS === 'true' ? [['github']] as ReporterDescription[] : [])],
   outputDir: 'work/playwright-artifacts',
   use: {
     baseURL: 'http://127.0.0.1:4173', trace: 'retain-on-failure', screenshot: 'only-on-failure',

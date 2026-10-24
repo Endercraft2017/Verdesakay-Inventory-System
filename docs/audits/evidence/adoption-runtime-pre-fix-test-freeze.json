@@ -1,0 +1,18 @@
+[
+  {
+    "sha256": "251a068de18e5b9b2d11ccc55199704ea3b252bf7355348d52b720271802e7ce",
+    "path": "tests/adopt-default-copy.test.ts"
+  },
+  {
+    "sha256": "cb572d1b4e8f40860aac284e4da51d274e52746de7dded678d72305cae06fe15",
+    "path": "tests/adopt-default-tenant.test.ts"
+  },
+  {
+    "sha256": "d86bea027c04d85e7e23792c5b7a05f4ba69eeb0485db624e0bd42ebc7412f67",
+    "path": "tests/adopt-default-tenant-api.test.ts"
+  },
+  {
+    "sha256": "e117a68f8004b9f53befdf8fbc37bfda4bbcd9918971bb3e16654d508a86ce50",
+    "path": "work/browser-ci/adoption-probe.ts"
+  }
+]

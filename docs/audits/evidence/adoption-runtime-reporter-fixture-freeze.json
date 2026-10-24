@@ -1,0 +1,14 @@
+[
+  {
+    "sha256": "8d85887903253df800bac4d1d2d641aeb0dec661af503077a9261b2e605559e4",
+    "path": "playwright.config.ts"
+  },
+  {
+    "sha256": "e20ad851012ce4439e5663c281d3dfa654ffdb2476745682c6bc01cb11bfb10c",
+    "path": "work/browser-ci/reporter-fixture/playwright.config.ts"
+  },
+  {
+    "sha256": "6fe6d47e84c2d2922f8688fa34a0e36965ceed93cedbe1a2fb9492f341eadf58",
+    "path": "work/browser-ci/reporter-fixture/failure.spec.ts"
+  }
+]

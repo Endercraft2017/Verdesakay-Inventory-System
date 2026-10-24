@@ -1,0 +1,46 @@
+{
+  "node": "24.19.0",
+  "root": "/tmp/adoption-runtime-probe-uaH4Of",
+  "original": {
+    "database": "2b2a292d8d1a6cb39f4cb5c521772a8b6301b62ad597542ed692d677a8c230db",
+    "upload": "6380e654b1bf32222bc0628c106cdeaf034f511b1361bcccab695c50997f4039"
+  },
+  "result": {
+    "slug": "synthetic-copy",
+    "users": 1,
+    "files": 1,
+    "upload_bytes": 4,
+    "source_database": "/tmp/adoption-runtime-probe-uaH4Of/source.db",
+    "target_database": "/tmp/adoption-runtime-probe-uaH4Of/tenants/synthetic-copy.db",
+    "target_uploads": "/tmp/adoption-runtime-probe-uaH4Of/uploads/synthetic-copy",
+    "applied": true,
+    "recovery": "/tmp/adoption-runtime-probe-uaH4Of/tenants/.adopt-default-flNbxc"
+  },
+  "source_after": {
+    "database": "2b2a292d8d1a6cb39f4cb5c521772a8b6301b62ad597542ed692d677a8c230db",
+    "upload": "6380e654b1bf32222bc0628c106cdeaf034f511b1361bcccab695c50997f4039"
+  },
+  "registered": true,
+  "target_database": {
+    "sha256": "1909de3084e750a8595f85f17b88591f70d6d731c29f74564801bc9cef949af3"
+  },
+  "target_upload_files": [
+    "nested",
+    "nested/document.bin"
+  ],
+  "recovery": [
+    {
+      "directory": "/tmp/adoption-runtime-probe-uaH4Of/tenants/.adopt-default-flNbxc",
+      "files": [
+        "platform.db",
+        "source.db",
+        "uploads",
+        "verification.json",
+        "uploads/nested",
+        "uploads/nested/document.bin"
+      ],
+      "snapshot_hash": "1909de3084e750a8595f85f17b88591f70d6d731c29f74564801bc9cef949af3",
+      "upload_hash": "6380e654b1bf32222bc0628c106cdeaf034f511b1361bcccab695c50997f4039"
+    }
+  ]
+}

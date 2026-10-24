@@ -1,0 +1,46 @@
+{
+  "node": "24.22.1",
+  "root": "/tmp/adoption-runtime-probe-5Yvacq",
+  "original": {
+    "database": "243bb6518c4fb3c2218b8710c5a837562679b6870d1f1c8051b7e972a989501c",
+    "upload": "6380e654b1bf32222bc0628c106cdeaf034f511b1361bcccab695c50997f4039"
+  },
+  "result": {
+    "slug": "synthetic-copy",
+    "users": 1,
+    "files": 1,
+    "upload_bytes": 4,
+    "source_database": "/tmp/adoption-runtime-probe-5Yvacq/source.db",
+    "target_database": "/tmp/adoption-runtime-probe-5Yvacq/tenants/synthetic-copy.db",
+    "target_uploads": "/tmp/adoption-runtime-probe-5Yvacq/uploads/synthetic-copy",
+    "applied": true,
+    "recovery": "/tmp/adoption-runtime-probe-5Yvacq/tenants/.adopt-default-eO4hho"
+  },
+  "source_after": {
+    "database": "243bb6518c4fb3c2218b8710c5a837562679b6870d1f1c8051b7e972a989501c",
+    "upload": "6380e654b1bf32222bc0628c106cdeaf034f511b1361bcccab695c50997f4039"
+  },
+  "registered": true,
+  "target_database": {
+    "sha256": "bb4d1ac7cab05b2c92ba1499af8077ee0ceb4f272acc0591c6f1e08711c74367"
+  },
+  "target_upload_files": [
+    "nested",
+    "nested/document.bin"
+  ],
+  "recovery": [
+    {
+      "directory": "/tmp/adoption-runtime-probe-5Yvacq/tenants/.adopt-default-eO4hho",
+      "files": [
+        "platform.db",
+        "source.db",
+        "uploads",
+        "verification.json",
+        "uploads/nested",
+        "uploads/nested/document.bin"
+      ],
+      "snapshot_hash": "bb4d1ac7cab05b2c92ba1499af8077ee0ceb4f272acc0591c6f1e08711c74367",
+      "upload_hash": "6380e654b1bf32222bc0628c106cdeaf034f511b1361bcccab695c50997f4039"
+    }
+  ]
+}

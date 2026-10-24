@@ -1,0 +1,38 @@
+[
+  {
+    "name": "node24-fs-api",
+    "url": "https://nodejs.org/download/release/v24.22.1/docs/api/fs.json",
+    "bytes": 723509,
+    "sha256": "6314af6d5377165e455e791db1826e4d9b4b983b3c3f59788101770b56891bed"
+  },
+  {
+    "name": "node24-cp-current",
+    "url": "https://raw.githubusercontent.com/nodejs/node/v24.22.1/lib/internal/fs/cp/cp-sync.js",
+    "bytes": 7432,
+    "sha256": "6a24c5f51d450e1d1b22deeac5f72cdd4e39d34f04fa995a11dfe230acb524f3"
+  },
+  {
+    "name": "node24-cp-prior",
+    "url": "https://raw.githubusercontent.com/nodejs/node/v24.19.0/lib/internal/fs/cp/cp-sync.js",
+    "bytes": 7031,
+    "sha256": "cfa9592d9d11b1791282373a1de86d422ec4562203e7edf5b5a72abcc979dfc6"
+  },
+  {
+    "name": "node24-release",
+    "url": "https://nodejs.org/en/blog/release/v24.22.1",
+    "bytes": 295733,
+    "sha256": "993b5df8daa98090ca23eab138967011f788edfcf44fcde7a4d35f0a2080d448"
+  },
+  {
+    "name": "playwright-webserver",
+    "url": "https://playwright.dev/docs/test-webserver",
+    "bytes": 69899,
+    "sha256": "2e0a92950d939f42f429fabf49ea07bfea3dd6857ff52fceddfa95afeaf4d95e"
+  },
+  {
+    "name": "playwright-reporters",
+    "url": "https://playwright.dev/docs/test-reporters",
+    "bytes": 157531,
+    "sha256": "b646e2426d1ffe3fc2e41be6ed971e8f23eddfe718cc44283fa864e1b3d0bec9"
+  }
+]

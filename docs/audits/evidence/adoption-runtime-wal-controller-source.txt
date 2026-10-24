@@ -1,0 +1,44 @@
+import datetime
+import hashlib
+import json
+import os
+from pathlib import Path
+import sqlite3
+import subprocess
+import tempfile
+
+root=Path.cwd();out=root/'work/browser-ci'
+versions={'24.22.1':root/'work/runtime-support/node-v24.22.1-linux-x64/bin/node',
+          '22.23.4':root/'work/runtime-support/node-v22.23.4-linux-x64/bin/node'}
+def digest(p):return hashlib.sha256(p.read_bytes()).hexdigest()
+for version,node in versions.items():
+    p=Path(tempfile.mkdtemp(prefix='adoption-committed-wal-'))
+    source=p/'source.db';anchor=sqlite3.connect(source)
+    anchor.execute('PRAGMA journal_mode=WAL');anchor.execute('PRAGMA wal_autocheckpoint=0')
+    anchor.executescript("CREATE TABLE users(id INTEGER PRIMARY KEY, username TEXT, password_hash TEXT); INSERT INTO users VALUES(1,'synthetic-wal-owner','synthetic-wal-hash'); CREATE TABLE records(id INTEGER PRIMARY KEY, data TEXT); INSERT INTO records VALUES(1,'synthetic-history-in-wal');")
+    anchor.commit()
+    wal=p/'source.db-wal';assert wal.stat().st_size>0
+    (p/'uploads/nested').mkdir(parents=True);(p/'uploads/a.bin').write_bytes(bytes([0,255,16,9]));(p/'uploads/nested/b.bin').write_text('synthetic wal upload')
+    before={'source':digest(source),'wal':digest(wal),'wal_bytes':wal.stat().st_size}
+    env={**os.environ,'PATH':str(node.parent)+':'+os.environ['PATH'],'NODE_ENV':'test','DB_PATH':str(source),'DATA_DIR':str(p/'tenants'),'UPLOAD_DIR':str(p/'uploads'),'PLATFORM_DB_PATH':str(p/'platform.db'),'ADOPTION_PROCESS_MODE':'none'}
+    command=[str(node),'--import','tsx','work/browser-ci/copy-process-worker.ts']
+    child=subprocess.run(command,env=env,cwd=root,capture_output=True,text=True,timeout=30)
+    after={'source':digest(source),'wal':digest(wal),'wal_bytes':wal.stat().st_size}
+    record={'node':version,'fixture':str(p),'observed_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'command':command,'exit_code':child.returncode,'stdout':child.stdout,'stderr':child.stderr,'before':before,'after':after,'parent_sqlite_version':sqlite3.sqlite_version,'anchor_transaction_open':anchor.in_transaction}
+    with sqlite3.connect(p/'tenants/synthetic-process.db') as target:
+        record['target_integrity']=target.execute('PRAGMA integrity_check').fetchall()
+        record['target_users']=target.execute('SELECT * FROM users').fetchall()
+        record['target_records']=target.execute('SELECT * FROM records').fetchall()
+    with sqlite3.connect(p/'platform.db') as catalog:record['registration']=catalog.execute("SELECT slug,status FROM tenants WHERE slug='synthetic-process'").fetchall()
+    recovery=next((p/'tenants').glob('.adopt-default-*'))
+    record['snapshot_equals_target']=digest(recovery/'source.db')==digest(p/'tenants/synthetic-process.db')
+    # Record every observation before assertions/anchor close, including a failure.
+    (out/f'wal-{version}.json').write_text(json.dumps(record,indent=2)+'\n')
+    try:
+        assert child.returncode==0 and before==after and not anchor.in_transaction
+        assert record['target_integrity']==[('ok',)] and record['snapshot_equals_target']
+        assert record['target_users']==[(1,'synthetic-wal-owner','synthetic-wal-hash')]
+        assert record['target_records']==[(1,'synthetic-history-in-wal')]
+        assert record['registration']==[('synthetic-process','active')]
+    finally:anchor.close()
+    print(json.dumps({'node':version,'passed':True,'committed_wal_bytes':before['wal_bytes'],'source_and_wal_unchanged':before==after}),flush=True)

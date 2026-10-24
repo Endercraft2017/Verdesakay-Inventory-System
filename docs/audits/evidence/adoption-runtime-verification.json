@@ -1,0 +1,96 @@
+{
+  "baseline": "b451ce66d522c249431b2df21fd95766b5bcfc13",
+  "observed_at": "2026-10-24T13:05:36.645494+00:00",
+  "selected_inputs": 889,
+  "all_selected_inputs_unchanged": true,
+  "full": {
+    "node": "v24.22.1",
+    "files": 329,
+    "passed": 3543,
+    "failed": 0,
+    "pending": 0,
+    "elapsed_seconds": 1958.518
+  },
+  "playwright": {
+    "node": "v24.22.1",
+    "stats": {
+      "startTime": "2026-10-24T12:53:52.978Z",
+      "duration": 321918.981,
+      "expected": 78,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "errors": [],
+    "elapsed_seconds": 323.044,
+    "CI": true,
+    "GITHUB_ACTIONS": true
+  },
+  "playwright_managed_browser": {
+    "node": "v24.22.1",
+    "stats": {
+      "startTime": "2026-10-24T12:59:56.340Z",
+      "duration": 278975.05,
+      "expected": 78,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "errors": [],
+    "elapsed_seconds": 280.209,
+    "CI": true,
+    "GITHUB_ACTIONS": true,
+    "browser_build": "156.0.8078.4 / revision 1248"
+  },
+  "smtp": {
+    "captured_messages": 3,
+    "recipient_message_counts": {
+      "browser-good@example.test": 1,
+      "browser-lost@example.test": 1,
+      "browser-unknown@example.test": 1
+    },
+    "sha256": "6ae9c88b4ed58b508ade7ae23b9167d4e8cd5b61cde13a8e2222dd39f536bfdb",
+    "fresh_since_playwright_start": true,
+    "delivery_confirmation": "not established by captured local SMTP"
+  },
+  "managed_browser_smtp": {
+    "captured_messages": 3,
+    "recipient_message_counts": {
+      "browser-good@example.test": 1,
+      "browser-lost@example.test": 1,
+      "browser-unknown@example.test": 1
+    },
+    "sha256": "18fda6c0b5b00671ccf5aeb319cf63a98aa4c408a895095c65611c3901b660a6",
+    "fresh_since_playwright_start": true,
+    "delivery_confirmation": "not established by captured local SMTP"
+  },
+  "original_tests_and_vitest_config_unchanged": true,
+  "new_test_type_correction_emits_identical_javascript": true,
+  "dependency_and_workflow_changes": false,
+  "focused": {
+    "actual_node_versions": [
+      "22.22.0",
+      "22.23.4",
+      "24.19.0",
+      "24.22.1"
+    ],
+    "passed_per_version": 6
+  },
+  "process_experiments": {
+    "actual_node_versions": [
+      "22.23.4",
+      "24.22.1"
+    ],
+    "competing_claims": true,
+    "SIGKILL_before_second_copy_and_restart_refusal": true,
+    "committed_WAL_copy": true
+  },
+  "scope_limits": [
+    "Synthetic local Linux fixtures",
+    "Historical browser CI cause unresolved",
+    "Exact candidate CI not yet established",
+    "No Windows/live-host cutover or power-loss verification",
+    "No independent human migration/security review",
+    "Broader release blockers remain open"
+  ]
+}
