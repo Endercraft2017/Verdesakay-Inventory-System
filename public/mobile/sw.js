@@ -9,7 +9,7 @@ var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
 importScripts(TENANT_BASE + '/mobile/lib/queue-store.js');
 var queueStore = MobileQueueStore.create(TENANT_BASE);
 var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
-var CACHE_VERSION = CACHE_PREFIX + 'v155';
+var CACHE_VERSION = CACHE_PREFIX + 'v156';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -23,6 +23,7 @@ var SHELL = [
   '/mobile/mobile.css',
   '/mobile/mobile-v2.css',
   '/mobile/stock.css',
+  '/mobile/item-setup.css',
   '/mobile/stock-actions.css',
   '/mobile/counts.css',
   '/css/photo-viewer.css',
@@ -77,6 +78,8 @@ var SHELL = [
   '/mobile/lib/queue.js',
   '/mobile/lib/production-drafts.js',
   '/mobile/lib/workflow-attempt.js',
+  '/mobile/lib/item-setup-ui.js',
+  '/mobile/lib/item-setup-result.js',
   '/mobile/lib/stock-action-ui.js',
   '/mobile/lib/stock-action-form.js',
   '/mobile/lib/stock-action-result.js',

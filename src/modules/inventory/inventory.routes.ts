@@ -1,3 +1,5 @@
+import { z } from 'zod';
+import { replayIdempotentResult, persistIdempotentResult } from '../../shared/idempotency';
 import stockOutRoutes from './stock-out.routes';
 import { movementStock } from './movement-stock';
 import { saleHeld } from './sale-holds';
@@ -733,24 +735,20 @@ router.get('/:id', viewGate, (req, res) => {
 
 // POST /api/inventory — create item
 router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req, res) => {
-  enforceQuota('inventory_items');
   const input = parseBody(createItemSchema, req.body);
   if (input.quantity && !req.user!.permissions.includes('inventory.adjust')) { res.status(403).json({error:'Starting stock requires inventory.adjust'}); return; }
   if (!req.user!.permissions.includes('inventory.costs') && (input.unit_cost || Object.keys(input.attributes || {}).some(k => /cost|purchase_price/.test(k)))) { res.status(403).json({error:'Cost entry requires inventory.costs'}); return; }
-  if (input.sku) {
-    const dupe = queryOne('SELECT id FROM inventory_items WHERE sku = ?', input.sku);
-    if (dupe) {
-      res.status(409).json({ error: 'An item with that SKU already exists' });
-      return;
-    }
-  }
-
-  // Create optional child locations and the item in one transaction: a failed item
-  // save must not leave empty shelves behind. Existing callers can omit location_id.
-  db.exec('BEGIN');
+  // Persist keyed receipts with the item and initial stock. An interrupted response
+  // must not let a retry create another item, including an item without a SKU.
+  db.exec('BEGIN IMMEDIATE');
   let itemId: number | bigint;
   let startLoc: number;
   try {
+    if (req.get('Idempotency-Key') && replayIdempotentResult(res)) { db.exec('COMMIT'); return; }
+    enforceQuota('inventory_items');
+    if (input.sku && queryOne('SELECT id FROM inventory_items WHERE sku = ?', input.sku)) {
+      throw Object.assign(new Error('An item with that SKU already exists'), { status: 409 });
+    }
     if (input.new_location_levels?.length && input.location_id == null) {
       throw new ValidationError('Choose the parent location before adding sublocations');
     }
@@ -809,12 +807,38 @@ router.post('/', requirePermission('inventory.create'), syncClass('merge'), (req
         userId: req.user!.id,
       });
     }
+    if (req.get('Idempotency-Key')) { res.status(201); persistIdempotentResult(res, { id: Number(itemId), preferred_location_id: startLoc }); }
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
   }
   res.status(201).json({ id: itemId, preferred_location_id: startLoc });
+});
+
+// A generated label changes only the barcode. Existing labels remain authoritative.
+const barcodeSchema = z.object({ barcode: z.string().trim().min(1).max(80) }).strict();
+router.put('/:id/barcode', requirePermission('inventory.edit'), syncClass('claim'), (req, res) => {
+  const id = Number(req.params.id), { barcode } = parseBody(barcodeSchema, req.body);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (req.get('Idempotency-Key') && replayIdempotentResult(res)) { db.exec('COMMIT'); return; }
+    const item = queryOne<InventoryItem>('SELECT * FROM inventory_items WHERE id = ?', id);
+    if (!item) throw Object.assign(new Error('Item not found'), { status: 404 });
+    let attributes: Record<string, unknown> = {};
+    try { const parsed = typeof item.attributes === 'string' ? JSON.parse(item.attributes) : item.attributes; if (parsed != null) { if (typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid attributes'); attributes = parsed; } } catch { throw Object.assign(new Error('Item attributes could not be read. Review the item before saving its barcode.'), { status: 409 }); }
+    const existing = String(attributes.barcode || item.sku || '').trim();
+    if (existing && existing !== barcode) throw Object.assign(new Error('This item already has a label code. Load the current item before printing.'), { status: 409 });
+    if (!existing) {
+      const duplicate = queryOne("SELECT id FROM inventory_items WHERE id != ? AND (LOWER(sku) = LOWER(?) OR LOWER(json_extract(CASE WHEN json_valid(attributes) THEN attributes ELSE '{}' END, '$.barcode')) = LOWER(?))", id, barcode, barcode);
+      if (duplicate) throw Object.assign(new Error('Another item already uses this label code'), { status: 409 });
+      run("UPDATE inventory_items SET attributes = ?, updated_at = datetime('now') WHERE id = ?", JSON.stringify({ ...attributes, barcode }), id);
+    }
+    const result = { id, barcode: existing || barcode };
+    if (req.get('Idempotency-Key')) persistIdempotentResult(res, result);
+    db.exec('COMMIT');
+    res.json(result);
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
 });
 
 // PUT /api/inventory/:id — update details (not quantity; use /adjust)

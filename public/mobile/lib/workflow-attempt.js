@@ -47,9 +47,13 @@
         if(result?.applied===false)throw Object.assign(new Error(result.message||'The server refused this count decision.'),{status:409});
         if(!mCountUI.validResult(a,result))throw new Error('The response was incomplete. Retry the original saved request.');
       }
+      else if(a.itemSetup&&window.mItemSetup){
+        result=await stockRequest(s,function(opts){return API[a.method||'post'](a.path,a.payload,opts);});
+        if(!mItemSetup.validResult(a,result))throw new Error('The response was incomplete. Check the original saved request.');
+      }
       else result=await API[a.method||'post'](a.path,a.payload,{idempotencyKey:a.key});
       guard(s);a.result=result;a.local=API.syncLocal(result);a.state='confirmed';a.error=null;await save(s);
-    }catch(e){if(!owns(s))throw e;a.state=classify(e);a.error=e.message;await save(s);}finally{delete busy[s.key];}
+    }catch(e){if(!owns(s))throw e;a.state=a.itemSetup&&e.status===409&&e.data?.code==='saved_access_changed'?'conflict':classify(e);a.error=e.message;await save(s);}finally{delete busy[s.key];}
   }
   async function start(s,options){
     guard(s);if(s.operation.state!=='draft')throw new Error('Recover the original decision first.');
@@ -57,6 +61,7 @@
     await save(s);await send(s);return s;
   }
   function paint(view,s,afterPaint){
+    if(s.operation.itemSetup&&window.mItemSetupResult){guard(s);mItemSetupResult(view,s);return;}
     if(s.operation.route==='stock-counts'&&window.mCountResult){guard(s);mCountResult(view,s);return;}
     guard(s);if(s.operation.stockAction&&window.mStockActionResult){mStockActionResult(view,s);return;}var a=s.operation,hash=location.hash;
     function visible(){return view.isConnected&&body&&body.isConnected&&hash===location.hash&&owns(s);}
