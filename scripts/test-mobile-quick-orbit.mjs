@@ -7,7 +7,7 @@ const server=spawn(process.execPath,['--import','tsx','scripts/browser/editor-ux
 try{
  const port=await new Promise((resolve,reject)=>{let s='';server.stdout.on('data',d=>{s+=d;const m=s.match(/EDITOR_UX_PORT=(\d+)/);if(m)resolve(m[1]);});server.on('exit',n=>reject(Error('Fixture server exited '+n)));});const base='http://127.0.0.1:'+port;
  const login=await fetch(base+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'admin123'})});const token=(await login.json()).token;assert(token);
- browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox'],headless:true});const c=await browser.newContext({viewport:{width:390,height:780},isMobile:true,hasTouch:true,serviceWorkers:'block',timezoneId:'Asia/Manila'});await c.addInitScript(t=>localStorage.setItem('vds_token',t),token);const p=await c.newPage();p.setDefaultTimeout(8000);p.on('pageerror',e=>report.errors.push(e.message));
+ browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox'],headless:true});const c=await browser.newContext({viewport:{width:390,height:780},isMobile:true,hasTouch:true,serviceWorkers:'block',timezoneId:'Asia/Manila'});await c.tracing.start({screenshots:true,snapshots:true,sources:true});await c.addInitScript(t=>localStorage.setItem('vds_token',t),token);const p=await c.newPage();p.setDefaultTimeout(8000);p.on('pageerror',e=>report.errors.push(e.message));
  const orbit=p.locator('.v2-orbit'),handle=p.locator('.v2-orbit-handle');
  async function check(name,fn){await fn();report.checks.push(name);console.log('PASS '+name);}
  async function open(){await handle.tap();await expect(p.locator('.v2-orbit-overlay')).toBeVisible();await p.waitForTimeout(230);}
@@ -37,6 +37,33 @@ try{
  await check('Very small windows retain reachable actions without clipping',async()=>{await p.setViewportSize({width:320,height:320});await open();assert.equal((await geometry('Compact 320x320')).compact,true);await axe('Compact small window');await close();});
  await check('Larger action labels reflow and keep their full touch targets',async()=>{await p.setViewportSize({width:390,height:780});await open();await p.locator('.v2-orbit-label').evaluateAll(bs=>bs.forEach(b=>b.style.fontSize='22px'));await p.evaluate(()=>window.dispatchEvent(new Event('resize')));await p.waitForTimeout(230);await geometry('Large labels');await p.locator('.v2-orbit-label').evaluateAll(bs=>bs.forEach(b=>b.style.fontSize=''));await close();});
  await check('Reduced motion keeps the fan usable without animation',async()=>{await p.setViewportSize({width:390,height:780});await p.emulateMedia({reducedMotion:'reduce'});await open();assert.equal(await p.locator('.v2-orbit-action').first().evaluate(e=>getComputedStyle(e).transitionDuration),'0s');await geometry('Reduced motion');await close();});
+ await check('Close fades actions and blur before removal, then restores focus and resting position',async()=>{
+   await p.emulateMedia({reducedMotion:'no-preference'});report.exitSamples=[];
+   for(const viewport of [{width:390,height:780},{width:1440,height:900},{width:320,height:320}]){
+     await p.setViewportSize(viewport);const resting=await handle.boundingBox();await open();
+     const frames=await p.evaluate(async()=>{
+       const root=document.querySelector('.v2-orbit'),layer=document.querySelector('.v2-orbit-overlay'),backdrop=layer.querySelector('.v2-orbit-backdrop'),action=layer.querySelector('.v2-orbit-action');
+       const snapshot=()=>({attached:layer.isConnected,closing:layer.classList.contains('is-closing'),opacity:Number(getComputedStyle(action).opacity),backdropOpacity:Number(getComputedStyle(backdrop).opacity),blur:getComputedStyle(backdrop).backdropFilter,backgroundInert:document.querySelector('#m-app').inert,menuInert:root.querySelector('.v2-orbit-menu').inert,actionsDisabled:[...root.querySelectorAll('.v2-orbit-action')].every(b=>b.disabled),editDisabled:layer.querySelector('.v2-orbit-edit').disabled,expanded:root.querySelector('.v2-orbit-handle').getAttribute('aria-expanded')});
+       root.querySelector('.v2-orbit-handle').click();const animations=layer.getAnimations({subtree:true});animations.forEach(a=>{a.pause();a.currentTime=0;});const start=snapshot();animations.forEach(a=>a.currentTime=Number(a.effect.getTiming().duration)*.4);const middle=snapshot();animations.forEach(a=>a.play());return {mode:'Controlled browser animation timeline at 40% duration',animations:animations.length,start,middle};
+     });
+     report.exitSamples.push({viewport,...frames});assert(frames.animations>0);assert(frames.start.attached&&frames.start.closing&&frames.start.backgroundInert&&frames.start.menuInert&&frames.start.actionsDisabled&&frames.start.editDisabled);assert.equal(frames.start.expanded,'false');
+     assert(frames.middle.attached&&frames.middle.opacity>0&&frames.middle.opacity<frames.start.opacity);assert(frames.middle.backdropOpacity>0&&frames.middle.backdropOpacity<frames.start.backdropOpacity);assert.notEqual(frames.middle.blur,'blur(10px)');
+     await expect(p.locator('.v2-orbit-overlay')).toHaveCount(0);await expect(handle).toBeFocused();assert.equal(await p.locator('#m-app').evaluate(e=>e.inert),false);const restored=await handle.boundingBox();assert(Math.abs(restored.x-resting.x)<1&&Math.abs(restored.y-resting.y)<1);
+   }
+ });
+ await check('Rapid close and reopen reverses the transition without an orphan timer or extra overlay',async()=>{
+   await p.setViewportSize({width:390,height:780});await open();await p.evaluate(()=>document.querySelector('.v2-orbit-handle').click());await expect(p.locator('.v2-orbit-overlay.is-closing')).toHaveCount(1);
+   await p.evaluate(()=>document.querySelector('.v2-orbit-handle').click());await p.waitForTimeout(300);await expect(p.locator('.v2-orbit-overlay')).toHaveCount(1);await expect(orbit).toHaveClass(/open/);assert.equal(await p.locator('.v2-orbit-menu').evaluate(e=>e.inert),false);await close();
+ });
+ await check('Repeated Escape and backdrop dismissal settle once and leave no focus or scrolling lock',async()=>{
+   await open();await p.keyboard.press('Escape');await p.keyboard.press('Escape');await p.locator('.v2-orbit-backdrop').dispatchEvent('click');await expect(p.locator('.v2-orbit-overlay')).toHaveCount(0);await expect(handle).toBeFocused();assert.equal(await p.locator('body').evaluate(e=>e.style.overflow),'');
+ });
+ await check('Leaving the route during closing removes the outgoing layer and cannot close a newer menu',async()=>{
+   await open();await p.evaluate(()=>{document.querySelector('.v2-orbit-handle').click();MApp.go('work');});await p.waitForURL(u=>u.hash==='#/work');await expect(p.locator('.v2-orbit-overlay')).toHaveCount(0);await open();await p.waitForTimeout(300);await expect(p.locator('.v2-orbit-overlay')).toHaveCount(1);await close();
+ });
+ await check('Reduced motion removes the menu synchronously instead of keeping an invisible focus trap',async()=>{
+   await p.emulateMedia({reducedMotion:'reduce'});await open();const removed=await p.evaluate(()=>{document.querySelector('.v2-orbit-handle').click();return !document.querySelector('.v2-orbit-overlay')&&!document.querySelector('#m-app').inert;});assert.equal(removed,true);await p.emulateMedia({reducedMotion:'no-preference'});
+ });
  await check('A chosen action preserves route parameters and dismisses the layer',async()=>{await open();await p.locator('.v2-orbit-action[data-route="inbox"]').click();await p.waitForURL(url=>url.hash==='#/inbox?new=1');await expect(p.locator('.v2-orbit-overlay')).toHaveCount(0);assert.equal(await handle.getAttribute('aria-expanded'),'false');});
- assert.deepEqual(report.errors,[]);await c.close();
+ assert.deepEqual(report.errors,[]);await c.tracing.stop({path:out+'/trace.zip'});await c.close();
 }catch(e){report.failure=e.stack;console.error(e);process.exitCode=1;}finally{await browser?.close();server.kill();clearTimeout(watchdog);fs.writeFileSync(out+'/report.json',JSON.stringify(report,null,2));}

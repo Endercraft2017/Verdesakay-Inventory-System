@@ -194,6 +194,14 @@ body { background: var(--v2-bg); color: var(--v2-text); }
 .v2-orbit-settings-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
 .v2-orbit-settings-buttons button { flex: 1; min-width: 110px; min-height: 48px; }
 .v2-orbit-hint { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) {
+  .v2-orbit-overlay:not(.v2-orbit-settings) > .v2-orbit-backdrop { transition: opacity .18s ease-out, backdrop-filter .18s ease-out, -webkit-backdrop-filter .18s ease-out; }
+  .v2-orbit-overlay:not(.v2-orbit-settings) > .v2-orbit-edit { transition: opacity .16s ease-out; }
+  .v2-orbit-overlay.is-closing > .v2-orbit-backdrop { opacity: 0; backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); }
+  .v2-orbit-overlay.is-closing > .v2-orbit-edit { opacity: 0; pointer-events: none; }
+  .v2-orbit-overlay.is-closing > .v2-orbit { transition: left .18s ease-out, top .18s ease-out; }
+  .v2-orbit-overlay.is-closing .v2-orbit-action, .v2-orbit-overlay.is-closing .v2-orbit-plus { transition-timing-function: ease-out; }
+}
 @media (prefers-reduced-motion: reduce) { .v2-orbit-action { transition: none; } }
 .v2-role-chip {
   display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px;

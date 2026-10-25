@@ -2,6 +2,7 @@
 (function(){
   var KEY='vds_m_orbit_v2',orbit,dialog=null,resting=null,pointer=null,moved=false;
   var setup=null,profileOwner=null,selection=null,profileRead=null;
+  var closing=false,exitTimer=null,exitToken=0,afterClose=null;
   var startX=0,startY=0,baseX=0,baseY=0,oldOverflow='',appWasInert=false;
   var icon = function (body) {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + body + '</svg>';
@@ -52,19 +53,29 @@
     var options=workOptions(),chosen=selection===null?options.slice(0,1):selection.filter(function(id){return options.includes(id);});
     return ids.concat(chosen).map(function(id){return Object.assign({id:id},ACTIONS[id]);});
   }
-  function close(){if(setup)setup.close();if(dialog)dialog.close();}
+  function close(immediate,done){
+    if(setup)setup.close();if(!dialog)return;
+    if(typeof done==='function')afterClose=done;
+    if(immediate===true){afterClose=null;dialog.finish();}else dialog.close();
+  }
+  function reopen(){
+    if(!dialog||!closing)return;exitToken++;clearTimeout(exitTimer);exitTimer=null;closing=false;afterClose=null;
+    dialog.overlay.classList.remove('is-closing');orbit.classList.add('open');
+    orbit.querySelector('.v2-orbit-menu').inert=false;orbit.querySelectorAll('.v2-orbit-action').forEach(function(b){b.disabled=false;});dialog.overlay.querySelector('.v2-orbit-edit').disabled=false;
+    var handle=orbit.querySelector('.v2-orbit-handle');handle.setAttribute('aria-expanded','true');handle.setAttribute('aria-label','Close quick actions');layout();dialog.focus();
+  }
   function renderActions(){
-    if(!orbit||!window.MApp)return;close();loadProfile();
+    if(!orbit||!window.MApp)return;close(true);loadProfile();
     orbit.querySelector('.v2-orbit-menu').innerHTML=available().map(function(a){return '<button class="v2-orbit-action" type="button" data-action="'+a.id+'" data-route="'+a.route+'"'+(a.params?' data-params=\''+JSON.stringify(a.params)+'\'':'')+'><span class="v2-orbit-icon" aria-hidden="true">'+a.icon+'</span><span class="v2-orbit-label">'+a.label+'</span></button>';}).join('');
     orbit.querySelectorAll('.v2-orbit-action').forEach(function(button){button.onclick=function(){
-      if(!dialog)return;
+      if(!dialog||closing)return;
       var action=available().find(function(a){return a.id===button.dataset.action;});
       if(!action||!MApp.canOpen(action.route)){close();renderActions();return;}
-      close();MApp.go(action.route,action.params||null);
+      var captured=identity();close(false,function(){if(captured===identity()&&available().some(function(a){return a.id===action.id;})&&MApp.canOpen(action.route))MApp.go(action.route,action.params||null);});
     };});syncVisibility();
   }
   function editShortcuts(){
-    close();var options=workOptions(),captured=identity(),app=document.getElementById('m-app'),wasInert=!!app?.inert,overflow=document.body.style.overflow;
+    close(true);var options=workOptions(),captured=identity(),app=document.getElementById('m-app'),wasInert=!!app?.inert,overflow=document.body.style.overflow;
     var layer=document.createElement('div');layer.className='v2-orbit-overlay v2-orbit-settings';layer.setAttribute('aria-labelledby','orbit-settings-title');
     layer.innerHTML='<div class="v2-orbit-backdrop" aria-hidden="true"></div><form class="v2-orbit-settings-card"><h2 id="orbit-settings-title">Your work shortcuts</h2><p>Keep the common actions. Add one or two shortcuts for the work you do most.</p><label for="orbit-first">First shortcut</label><select id="orbit-first" required></select><label for="orbit-second">Second shortcut <span>(optional)</span></label><select id="orbit-second"><option value="">None</option></select><p class="v2-orbit-settings-status" role="status" aria-live="polite"></p><div class="v2-orbit-settings-buttons"><button type="button" class="m-btn m-btn-secondary" data-cancel>Cancel</button><button type="submit" class="m-btn">Save shortcuts</button></div></form>';
     var first=layer.querySelector('#orbit-first'),second=layer.querySelector('#orbit-second'),status=layer.querySelector('[role="status"]'),save=layer.querySelector('[type="submit"]');
@@ -149,12 +160,32 @@
     menu.hidden=false;oldOverflow=document.body.style.overflow;document.body.style.overflow='hidden';appWasInert=!!app?.inert;if(app)app.inert=true;
     handle.setAttribute('aria-expanded','true');handle.setAttribute('aria-label','Close quick actions');layout();
     handle.focus({preventScroll:true});
-    dialog=MessageOverlay.mount(layer,{initialFocus:'.v2-orbit-action',onClose:function(){
-      dialog=null;document.body.appendChild(orbit);orbit.classList.remove('open','is-compact','is-horizontal');menu.hidden=true;menu.removeAttribute('style');
+    var removing=false,control;
+    function finish(){removing=true;control.close();}
+    function allowClose(){
+      if(removing)return true;
+      if(closing)return false;
+      var duration=parseFloat(getComputedStyle(orbit.querySelector('.v2-orbit-action')).transitionDuration)||0;
+      if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches||!duration||!orbit.classList.contains('open'))return true;
+      closing=true;var token=++exitToken;
+      layer.classList.add('is-closing');orbit.classList.remove('open');menu.inert=true;menu.querySelectorAll('button').forEach(function(b){b.disabled=true;});
+      layer.querySelector('.v2-orbit-edit').disabled=true;
+      handle.setAttribute('aria-expanded','false');handle.setAttribute('aria-label','Reopen quick actions');handle.focus({preventScroll:true});
+      if(resting){var p=clamp(resting.x,resting.y);position(p.x,p.y);}
+      function complete(){if(dialog===control&&closing&&token===exitToken)finish();}
+      // Wait for the real CSS transitions; the timeout also covers interrupted/absent events.
+      var animations=layer.getAnimations?.({subtree:true})||[];
+      if(animations.length)Promise.allSettled(animations.map(function(a){return a.finished;})).then(complete);
+      exitTimer=setTimeout(complete,Math.max(220,duration*1000+60));return false;
+    }
+    control=MessageOverlay.mount(layer,{initialFocus:'.v2-orbit-action',canClose:allowClose,onClose:function(){
+      exitToken++;clearTimeout(exitTimer);exitTimer=null;closing=false;var done=afterClose;afterClose=null;
+      dialog=null;document.body.appendChild(orbit);orbit.classList.remove('open','is-compact','is-horizontal');menu.hidden=true;menu.inert=false;menu.querySelectorAll('button').forEach(function(b){b.disabled=false;});menu.removeAttribute('style');
       handle.setAttribute('aria-expanded','false');handle.setAttribute('aria-label','Open or move quick actions');
       document.body.style.overflow=oldOverflow;if(app)app.inert=appWasInert;
       if(resting){var p=clamp(resting.x,resting.y);position(p.x,p.y);}resting=null;
-    }});
+      if(done)done();
+    }});control.finish=finish;dialog=control;
     layer.querySelector('.v2-orbit-backdrop').onclick=close;layer.querySelector('.v2-orbit-edit').onclick=editShortcuts;
     layer.addEventListener('keydown',function(e){if(e.altKey||e.target.closest('.v2-orbit-edit'))return;var buttons=Array.from(menu.querySelectorAll('button')),index=buttons.indexOf(document.activeElement),next;
       if(['ArrowDown','ArrowRight'].includes(e.key))next=(index+1)%buttons.length;
@@ -162,12 +193,12 @@
       if(e.key==='Home')next=0;if(e.key==='End')next=buttons.length-1;
       if(next!=null){e.preventDefault();buttons[next].focus();}
     });
-    requestAnimationFrame(function(){if(dialog){orbit.classList.add('open');positionEditor();}});
+    requestAnimationFrame(function(){if(dialog===control&&!closing){orbit.classList.add('open');positionEditor();}});
   }
   function syncVisibility(){
-    if(!orbit)return;if(setup){if(profileOwner!==owner()||document.getElementById('m-app')?.matches('.hidden,[hidden]'))close();else return;}var app=document.getElementById('m-app'),entry=document.activeElement,keyboard=!!(entry&&/^(INPUT|TEXTAREA|SELECT)$/.test(entry.tagName))||!!(window.visualViewport&&window.visualViewport.height<window.innerHeight*.72);
+    if(!orbit)return;if(setup){if(profileOwner!==owner()||document.getElementById('m-app')?.matches('.hidden,[hidden]'))close(true);else return;}var app=document.getElementById('m-app'),entry=document.activeElement,keyboard=!!(entry&&/^(INPUT|TEXTAREA|SELECT)$/.test(entry.tagName))||!!(window.visualViewport&&window.visualViewport.height<window.innerHeight*.72);
     var hidden=keyboard||!!app?.matches('.hidden,[hidden]')||document.body.classList.contains('m-chat-thread-active')||document.body.classList.contains('personal-editor-open');
-    if(hidden)close();orbit.classList.toggle('is-keyboard',keyboard);if(orbit.hidden!==hidden)orbit.hidden=hidden;
+    if(hidden)close(true);orbit.classList.toggle('is-keyboard',keyboard);if(orbit.hidden!==hidden)orbit.hidden=hidden;
   }
   function init(){
     if(document.getElementById('v2-quick-orbit'))return;
@@ -178,13 +209,13 @@
     handle.addEventListener('pointermove',function(e){if(pointer!==e.pointerId)return;var dx=e.clientX-startX,dy=e.clientY-startY;if(Math.hypot(dx,dy)>6)moved=true;if(moved){orbit.classList.add('is-dragging');place(baseX+dx,baseY+dy,false);}});
     function end(e){if(pointer!==e.pointerId)return;if(moved)snap();pointer=null;orbit.classList.remove('is-dragging');}
     handle.addEventListener('pointerup',end);handle.addEventListener('pointercancel',function(e){end(e);moved=true;});handle.addEventListener('lostpointercapture',end);
-    handle.addEventListener('click',function(e){if(moved&&e.detail!==0){moved=false;return;}moved=false;if(dialog)close();else open();});
+    handle.addEventListener('click',function(e){if(moved&&e.detail!==0){moved=false;return;}moved=false;if(closing)reopen();else if(dialog)close();else open();});
     handle.addEventListener('keydown',function(e){if(!e.altKey||!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))return;e.preventDefault();var r=orbit.getBoundingClientRect(),v=viewport();place(e.key==='ArrowLeft'?v.x+8:e.key==='ArrowRight'?v.x+v.w-r.width-8:r.left,r.top+(e.key==='ArrowUp'?-24:e.key==='ArrowDown'?24:0),true);});
     document.addEventListener('focusin',syncVisibility);document.addEventListener('focusout',function(){setTimeout(syncVisibility,0);});
     window.addEventListener('resize',function(){if(dialog){resting=clamp(resting.x,resting.y);layout();}else restore();syncVisibility();});
     window.visualViewport?.addEventListener('resize',function(){if(dialog)layout();syncVisibility();});
-    window.addEventListener('hashchange',function(){close();renderActions();});window.addEventListener('pagehide',close);
-    document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')close();});
+    window.addEventListener('hashchange',function(){close(true);renderActions();});window.addEventListener('pagehide',function(){close(true);});
+    document.addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden')close(true);});
     var observer=new MutationObserver(syncVisibility);observer.observe(document.body,{attributes:true,attributeFilter:['class']});var app=document.getElementById('m-app');if(app)observer.observe(app,{attributes:true,attributeFilter:['class','hidden']});
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
