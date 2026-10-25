@@ -33,3 +33,49 @@ For every substantive UI/UX audit, proposal, mock, implementation or review in t
 - If a tool or skill is unavailable, report the specific limitation and use an available equivalent where possible. Do not claim it ran. Additional plugins are optional when existing capabilities suffice; never claim a suggested plugin is installed or connected without verification.
 
 This standing workflow supplements each chunk's specific brief without expanding its screen count or adding unrelated features. Simple questions, status replies and prompt-only rewrites do not require rendering or implementation checks.
+
+## UI/UX review: disposable scratch preview (user preference)
+
+For UI/UX investigation, design, implementation and review, use a local interactive
+scratch preview instead of MagicPath unless the user explicitly requests otherwise.
+Put the proposed change and its visual explanation in the preview early so the
+user can see, try and iterate on it; do not substitute a long chat plan.
+
+- Rebuild the preview from the current working-tree app code plus the changes
+  being reviewed. Reuse the real markup, styles, components, handlers and motion;
+  do not maintain a separately styled mockup that can drift from the app.
+- Use the project command `npm run ui:scratch`. The generated scratch entry is
+  `work/ui-scratch/index.html`. Keep the reusable builder and template outside
+  that output directory. Update the fixture scenarios and in-preview notes for the
+  screen currently under review; do not reuse stale task-specific explanations.
+  Give the user a clickable entry file, not just a screenshot. If direct-file
+  preview is blocked, use `npm run ui:scratch:serve` for the same HTML on loopback
+  and report that limitation without replacing the UI with a mock.
+- If a checkout does not yet contain the scratch helper commands, create the
+  equivalent local builder/runner first. This instruction does not install them;
+  do not claim a preview or command is available without verifying it.
+- Deliver a preview the user can actually reach. A localhost server inside a
+  remote workspace is not reachable at localhost on the user’s computer. Use a
+  supported forwarded preview URL or a downloadable self-contained artifact.
+  Verify the delivery path; if the interface is unknown, clarify it. Do not
+  describe a workspace-only URL as a working user-facing preview.
+- Start each rebuild from a clean slate: wipe only the designated generated
+  `work/ui-scratch/` directory, then recreate it. Guard the exact path and ownership;
+  never delete source, user files, other work evidence, or other scratch folders.
+  Generated scratch output is ignored by Git.
+- Include a short in-preview change explanation and iteration notes. For
+  substantive UI/UX work, put the four deeper-work points and rewritten brief
+  from the standing preference in the scratch preview as well, unless the user
+  explicitly asks to see them in chat.
+- Preserve real animation timing, reduced-motion behavior, focus, disclosures,
+  routes and interaction checks. Label simulated records, transport, persistence
+  and unsupported actions accurately. Use disposable data and isolate all preview
+  writes from real stock, employee records, sessions and external systems.
+- Verify the preview in Playwright, including relevant interactions, motion and
+  clean rebuild behavior. Keep explanations, screenshots and results inside the
+  scratch preview/evidence, and distinguish it from live-backend or physical tests.
+- During UI/UX updates, chat should be limited to detailed architecture explanations
+  and necessary clarification/questions, plus the minimal preview link and status
+  needed to deliver it. Put routine plans, design rationale and iteration reports
+  in the scratch preview. Follow system/developer requirements for brief progress
+  updates, while avoiding a long duplicated explanation in chat.
