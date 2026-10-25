@@ -1367,12 +1367,12 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 .m-select-menu [role=option].is-active:not([aria-selected=true]){background-color:var(--v2-surface-soft)}
 .m-select-menu [role=option][aria-disabled=true]{opacity:.5;cursor:default}
 @media(hover:hover){.m-select-menu [role=option]:not([aria-selected=true]):not([aria-disabled=true]):hover{background-color:var(--v2-surface-soft)}}
-:is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary){border-radius:var(--m-ux-control-radius);min-height:44px}
+:is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.m-ux-action){border-radius:var(--m-ux-control-radius);min-height:44px}
 #m-view[data-role-screen] .m-actions .m-btn{border-radius:var(--m-ux-control-radius)}
-:is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.sales-order,.rk-job,.v2-work-row){transition:transform var(--m-ux-press) var(--m-ux-ease)}
-html[data-input-method=pointer] :is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.sales-order,.rk-job,.v2-work-row):not(:disabled):active{transform:scale(.985)}
-html[data-input-method=keyboard] :is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.sales-order,.rk-job,.v2-work-row){transition:none}
-html[data-input-method=keyboard] :is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.sales-order,.rk-job,.v2-work-row):active{transform:none}
+:is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.m-ux-action,.sales-order,.rk-job,.v2-work-row){transition:transform var(--m-ux-press) var(--m-ux-ease)}
+html[data-input-method=pointer] :is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.m-ux-action,.sales-order,.rk-job,.v2-work-row):not(:disabled):active{transform:scale(.985)}
+html[data-input-method=keyboard] :is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.m-ux-action,.sales-order,.rk-job,.v2-work-row){transition:none}
+html[data-input-method=keyboard] :is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.m-ux-action,.sales-order,.rk-job,.v2-work-row):active{transform:none}
 .m-screen-refresh{position:fixed;top:8px;left:8px;z-index:1200;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .m-screen-refresh:focus-visible{clip-path:none;width:auto;height:44px;padding:0 16px;border-radius:14px;border:2px solid var(--v2-green);background:var(--v2-surface);color:var(--v2-text);outline:none}
 .m-pull-refresh{position:fixed;top:var(--m-topbar-h,74px);left:50%;z-index:1100;display:grid;place-items:center;width:44px;height:44px;border:1px solid var(--v2-line);border-radius:50%;background:var(--v2-surface);color:var(--v2-muted);box-shadow:var(--v2-shadow-float);opacity:0;transform:translate(-50%,-12px);pointer-events:none;transition:opacity 130ms var(--m-ux-ease),transform 160ms var(--m-ux-ease)}
@@ -1383,7 +1383,7 @@ html[data-input-method=keyboard] :is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondar
 html:has(.m-pull-refresh.is-visible){overscroll-behavior-y:contain}
 .v2-work .work-live-status:has([data-work-freshness][hidden]):not(:has(.work-recovery,.work-feedback)){display:none}
 .v2-work .work-desk:first-child .work-desk-heading{margin-top:0}
-@media(prefers-reduced-motion:reduce){.m-pull-refresh,:is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.sales-order,.rk-job,.v2-work-row){transition:none!important}:is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.sales-order,.rk-job,.v2-work-row):active{transform:none!important}.m-pull-refresh.is-busy svg{animation:none}.m-pull-refresh{transform:translate(-50%,0)!important}}
+@media(prefers-reduced-motion:reduce){.m-pull-refresh,:is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.m-ux-action,.sales-order,.rk-job,.v2-work-row){transition:none!important}:is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.m-ux-action,.sales-order,.rk-job,.v2-work-row):active{transform:none!important}.m-pull-refresh.is-busy svg{animation:none}.m-pull-refresh{transform:translate(-50%,0)!important}}
 .m-notification-dot{right:-3px;top:-3px;width:auto;min-width:20px;height:20px;padding:0 4px;box-sizing:border-box;display:grid;place-items:center;border:1px solid var(--v2-bg);border-radius:999px;background:var(--v2-danger);color:white;font-size:10px;font-weight:750;line-height:1}
 :root[data-theme=dark] .m-notification-dot{color:var(--v2-bg)}
 .m-notification-dot.hidden{display:none}

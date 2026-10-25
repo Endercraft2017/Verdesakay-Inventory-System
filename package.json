@@ -5,9 +5,9 @@
   "type": "module",
   "main": "server.ts",
   "scripts": {
-    "ui:scratch": "node scripts/ui-scratch.mjs",
-    "ui:scratch:serve": "node scripts/serve-ui-scratch.mjs",
-    "test:ui:scratch": "node scripts/test-ui-scratch.mjs",
+    "ui:scratch": "node scripts/ui-scratch/build.mjs",
+    "ui:scratch:serve": "node scripts/ui-scratch/serve.mjs",
+    "test:ui:scratch": "node scripts/ui-scratch/verify.mjs",
     "start": "tsx server.ts",
     "dev": "tsx watch server.ts",
     "typecheck": "tsc --noEmit",
@@ -49,7 +49,10 @@
     "test:sales:handoff:ux": "node scripts/test-sales-order-handoff-ux.mjs",
     "test:mobile:ckd-edge": "node scripts/test-mobile-ckd-edge-ux.mjs",
     "test:forms:connected:ux": "node scripts/test-connected-forms-ux.mjs",
-    "test:invoice:ux": "node scripts/test-invoice-ux.mjs"
+    "test:invoice:ux": "node scripts/test-invoice-ux.mjs",
+    "ui:scratch:shared": "node scripts/ui-scratch.mjs",
+    "ui:scratch:shared:serve": "node scripts/serve-ui-scratch.mjs",
+    "test:ui:scratch:shared": "node scripts/test-ui-scratch.mjs"
   },
   "build": {
     "appId": "com.afkcube.otom.desktop",
@@ -112,6 +115,7 @@
     "@types/ws": "^8.18.1",
     "electron": "^44.5.1",
     "electron-builder": "^26.15.3",
+    "esbuild": "0.28.1",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1",
     "playwright": "^1.64.0",

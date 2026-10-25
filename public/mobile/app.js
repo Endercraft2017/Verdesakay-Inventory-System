@@ -79,7 +79,7 @@ window.MApp = (function () {
     history.replaceState(Object.assign({},history.state,{vdsMobileNav:{owner:String(me?.id),id:++navigationId,route:navigationKey(destination),back:parent}}),'');
   }
   function backFallback(parsed) {
-    if(isWorkDetail(parsed))return '#/work';
+    if(isWorkDetail(parsed)||parsed.name==='batch')return '#/work';
     if(Object.keys(parsed.params).length)return hashFor(parsed.name,parsed.params.step&&parsed.params.id?{id:parsed.params.id}:{});
     var parent=parsed.name==='notifications'?'home':TAB_OF[parsed.name]||'home';
     return hashFor(parent==='profile'?'settings':parent);

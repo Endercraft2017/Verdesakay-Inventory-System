@@ -9,7 +9,7 @@ var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
 importScripts(TENANT_BASE + '/mobile/lib/queue-store.js');
 var queueStore = MobileQueueStore.create(TENANT_BASE);
 var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
-var CACHE_VERSION = CACHE_PREFIX + 'v161';
+var CACHE_VERSION = CACHE_PREFIX + 'v162';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -25,6 +25,7 @@ var SHELL = [
   '/mobile/stock.css',
   '/mobile/item-setup.css',
   '/mobile/stock-actions.css',
+  '/mobile/batch.css',
   '/mobile/counts.css',
   '/css/photo-viewer.css',
   '/css/select-controls.css',
@@ -51,6 +52,9 @@ var SHELL = [
   '/js/leave-dates.js',
   '/js/lib/image-compress.js',
   '/js/lib/photo-viewer.js',
+  '/js/lib/production-steps.js',
+  '/js/lib/chat-ws.js',
+  '/js/doc-template.js',
   '/js/lib/pdf-pages.js', // pdf.js itself (/js/vendor/pdfjs) loads on first PDF pick, not precached
   '/mobile/vendor/qrcode.js',
   '/mobile/vendor/zxing.js',
@@ -79,6 +83,7 @@ var SHELL = [
   '/mobile/lib/queue.js',
   '/mobile/lib/production-drafts.js',
   '/mobile/lib/workflow-attempt.js',
+  '/mobile/lib/production-print.js',
   '/mobile/lib/item-setup-ui.js',
   '/mobile/lib/item-setup-result.js',
   '/mobile/lib/stock-action-ui.js',
@@ -112,6 +117,10 @@ var SHELL = [
   '/mobile/modules/inventory/stock-count-tasks.js',
   '/mobile/modules/inventory/orders-fulfil.js',
   '/mobile/modules/inventory/sales.js',
+  '/mobile/lib/batch-attempt.js',
+  '/mobile/lib/batch-ui.js',
+  '/mobile/lib/quantity-focus.js',
+  '/mobile/lib/batch-carousel.js',
   '/mobile/modules/inventory/batch-move.js',
   '/mobile/modules/manufacturing/job-orders.js',
   '/mobile/modules/manufacturing/kit-release.js',

@@ -1,0 +1,110 @@
+{
+  "title": "Chunk 28 · consistent stock-limit feedback in List and Photos",
+  "scope": "Optional photo carousel for the existing Batch Stock In and Batch Stock Out entry; Batch Results retains its existing recovery flow. Original rounded green design, shared navigation, permissions and stock rules.",
+  "deeperWork": [
+    "A professional highlights the visible stock consequence in the active view, replaces repeated feedback rather than stacking it, and distinguishes exhausted stock from a completed SO/JO requirement.",
+    "Start from the real row’s After value, Plus handler, source availability, current layout and existing feedback/cancellation path.",
+    "Apply the installed Motion Principles restraint and reduced-motion guidance to the existing 200ms rejection effect. Use Playwright/Chromium to verify red text, the actual animation target, repeated presses, keyboard use and unchanged quantities/requests.",
+    "Independent evidence is the full 0 pcs value turning red and shaking in List, unchanged stock and draft quantities, no stacked motion, and red-only keyboard/reduced-motion feedback. Physical-device testing remains unverified."
+  ],
+  "brief": "Extend only the existing stock-limit rejection feedback: when Plus would make source stock negative in List view, turn the full visible After value, including 0 pcs, red and shake it alongside the quantity field. Reuse the shared semantic red and existing cancellable 200ms feedback. Keep photo feedback, stock guards, quantities and recording behavior unchanged. Repeated presses replace existing feedback; keyboard and reduced-motion users receive red text and a live message without shaking. Keep requirement-only limits distinct from exhausted stock, verify both themes, and update the same private scratch preview.",
+  "decisions": [
+    "Only the image rail scrolls. Name, SKU, warehouse, quantity and other metadata change when the image settles; they never translate sideways. Arrows, gradients and the single stock badge are children of the stationary photo frame, rather than independent page-positioned overlays.",
+    "After and Available use a high-contrast angled background boundary. A literal slash divider is removed. The projected value remains labeled and turns red for negative stock; unavailable data stays Unknown.",
+    "Main means the selected stock warehouse. It stays beside the item name because these quantities belong to that location. Extra on-hand context appears on the SKU line when reservations mean on-hand differs from available stock.",
+    "The repeated quantity caption is removed visually. The unit sits at the value panel’s lower-right corner. SO/JO preparation retains the real prepared / needed denominator; the user confirmed that free inventory movements keep a plain quantity.",
+    "A required-total limit and a stock limit are distinguished: reaching a requirement highlights the quantity only; exhausting available stock highlights both quantity and After. Valid maximum quantities remain recordable.",
+    "Existing assembled SO / CKD / JO grouping policy, shared-stock budgeting, permissions and stock commands remain unchanged. Preparation examples are draft-only design proposals, and their reservation/release integration remains pending.",
+    "The original input and target form a tight centered pair instead of a fixed 55% input. List controls give the ratio its own minimum width; all step buttons retain 44px or larger targets. Standalone movements remain plain quantities.",
+    "Loaded images use zero inset and object-fit: cover. This fills the frame but may crop photo edges; missing-photo and loading messages keep safe padding. Original catalogue photos are unavailable; fixtures remain explicitly fictional.",
+    "Compared a separate build row with a fixed metadata slot. The fixed 44px metadata slot wins: SKU stays on the left and the finished-product-only selector occupies the right. Parts never show build controls; all items use the same photo height. This trades a modest metadata reserve for stable navigation.",
+    "Add/source and QR scan now form an adjacent pair with a 6px gap.",
+    "The settled active circle again shows the selected item index. Only the number is hidden during scroll-linked stretch/squash or a pointer jump. Every small dot remains drawn; the circle covers the current dot at rest, so leaving it never produces a hole. Keyboard and reduced-motion navigation immediately show the final number.",
+    "Compared keeping a disabled preview action versus a compact summary: the preview has no stock-posting handler, so the footer now shows Prepared lines and a short preview-only note. A real Save action is rendered only if a committing workflow supplies its handler. No new stock-posting capability is added.",
+    "The global quick-action control is independent of the form again. No slot or column is reserved inside Record. It retains its own draggable position and is moved above the footer only when they would overlap; leaving the screen restores its prior position. Drag and keyboard placement continue to keep the task footer clear.",
+    "The warning uses an SVG shape with the same slanted edge as the ordinary After panel. Its non-scaling stroke is drawn above Available and outside its own SVG bounds, so it keeps the original shape without clipping or a rectangular box. It uses the documented shared red badge color.",
+    "Photo height is restored from 128px to 160px at 390 × 780. The floating shortcut no longer determines image size. Where it would cover Add a note, only that secondary disclosure reserves horizontal space; its 44px target, existing handler and text remain accessible. That reservation stays stable through body-locking overlays.",
+    "Available → After and Quantity captions remain as visually hidden semantic labels. Stock numbers and their arrow remain visible in List view. Every real quantity input displays its unit inside the value panel’s lower-right corner; SO/JO denominators retain their authoritative requirements.",
+    "The sync fast-forwarded to origin commit 4aba7149. All uncommitted work was restored; a named stash and binary patch were retained as backups. Two skill-metadata conflicts were reconciled, preserving the previous local motion-skill folder and adopting the new canonical skill/resources. No dependency installation was needed.",
+    "The preview now executes the current shared screen-ux.js and RoleUI source, bundles original icon bytes and hashes, and keeps underlying native select values/events. Standard controls use the global radius, status colors and popup design; page-local disclosure timing was removed. The explicit source-stock check is purpose-labeled and remains draft-safe.",
+    "A direct Batch Stock Out link previously dropped its mode and could land on Stock In. The shared Back fallback now returns that route to Work; owned history still returns to the permitted predecessor. No page-specific Back handler was added.",
+    "The updated AGENTS.md explicitly selects the existing private verdesakay-ui-scratch Site. This review uses that shared destination and preserves its owner-only audience; the older Chunk 28 Site is left intact.",
+    "A blocked Plus press now targets the visible After display: the slanted stock panel in Photos, or the complete number-and-unit text in List. List feedback uses the existing semantic red and 200ms shake with no extra box or label. Cleanup removes the transient red text from every row. A completed request with available stock still highlights only its quantity control."
+  ],
+  "isolation": "Actual candidate source components run in the phone frames. Records, labeled demo illustrations, transport and storage are fixtures; no original catalogue photo or real token is bundled. The SO/JO examples read fixture responses with the real API field shapes and keep draft tallies in memory. Their stock-posting action is deliberately unavailable pending integration with the existing order workflows. Reset/reload starts a fresh fixture session. Normal batch writes remain isolated, with native persistence and stock rules checked separately against a disposable backend.",
+  "iterations": [
+    "The previous whole-card rail reproduced the user’s broken-overlay problem. Replaced it with one stationary photo frame and an image-only rail using the same row fields.",
+    "Compared active dot fading, a sliding shared indicator and stretch/worm feedback against the productivity motion guidance. Selected restrained scroll-linked stretching.",
+    "Condensed the location and unit rows, added diagonal stock panels, and separated blocked Plus feedback from valid maximum-stock recording.",
+    "Confirmed with the user: keep a plain quantity outside SO/JO preparation.",
+    "All current evidence is regenerated for this revision; previous whole-card motion measurements do not describe this proposal.",
+    "The image rail received a proper keyboard focus target after axe identified a scrollable-region accessibility failure. Mid-gesture tests now assert that metadata and every overlay stay anchored.",
+    "The previous revision removed the number entirely; the user clarified that only the moving number should disappear. The current proposal restores the settled index while retaining the corrected ratio input, full-frame images and stable category layout.",
+    "Corrected the prior interpretation: the user wants no number during movement, with the correct selected number restored after settling. Removed the selected-dot opacity rule that caused a disappearing position.",
+    "Removed the footer’s reserved Quick Orbit slot and the large inert preparation action. New browser checks cover overlap, warning stacking, all dot visibility, and interrupted numbering.",
+    "Reversed the earlier rectangular warning and image-height reduction after user feedback. Reused the existing slanted shape and restored the prior photo measurement.",
+    "Read the newer AGENTS.md and complete shared mobile design contract; synchronized the repo without a reset, preserved local work, and integrated the current shared interaction primitives before verification.",
+    "Added the missing List-view feedback to the same rejection path; previously that path animated the hidden photo panel while the visible 0 pcs stayed neutral."
+  ],
+  "tasks": [
+    {
+      "view": "Batch Stock In / Out · List",
+      "task": "Scan and edit several draft movements quickly.",
+      "hierarchy": "Source → picker → compact rows and stock consequences → shared totals and Record."
+    },
+    {
+      "view": "Batch Stock In / Out · Photos",
+      "task": "Identify one selected item visually and edit its draft quantity.",
+      "hierarchy": "View / add controls → name and SKU → source and stock → photo and item navigation → large draft quantity → shared review / Record."
+    },
+    {
+      "view": "Batch Results",
+      "task": "Understand confirmed, refused and pending outcomes.",
+      "hierarchy": "Outcome → unresolved items and safe action → confirmed records. Presentation preference does not change recovery."
+    }
+  ],
+  "states": [
+    {
+      "state": "First / middle / last item",
+      "signal": "Current index inside the settled circle; the label is hidden during movement. All small dots remain present.",
+      "action": "Swipe, tap an edge, click a dot or use arrow/Home/End keys."
+    },
+    {
+      "state": "Insufficient source/request stock",
+      "signal": "Red After estimate and inline validation; Available remains labeled.",
+      "action": "Recording remains blocked; Review reveals the row."
+    },
+    {
+      "state": "Focused quantity / keyboard",
+      "signal": "The original numeric input remains fully visible above fixed controls.",
+      "action": "Focus/viewport changes scroll the page; quantity and selected item stay intact."
+    },
+    {
+      "state": "SO / CKD / JO preparation examples",
+      "signal": "Prepared / needed and a product/request selector. Shared-part demand remains visible.",
+      "action": "Edit draft tallies and switch groups; no reservation or stock posting in this review."
+    },
+    {
+      "state": "Missing/failed photo, pending/refused/confirmed movement",
+      "signal": "Existing explicit text, icons and semantic colors.",
+      "action": "Existing image retry and batch recovery remain separate from quantity editing."
+    }
+  ],
+  "research": [
+    {
+      "title": "MDN Element.animate",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/API/Element/animate",
+      "finding": "Creates and plays an animation and returns the Animation object; used for bounded rejection feedback."
+    },
+    {
+      "title": "MDN Animation.cancel",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/API/Animation/cancel",
+      "finding": "Clears effects and aborts playback; prior feedback is canceled without relying on animation completion for state."
+    },
+    {
+      "title": "MDN Element.scrollTo",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/API/Element/scrollTo",
+      "finding": "Native smooth/instant scrolling supports the image rail, while keyboard and reduced-motion navigation remain immediate."
+    }
+  ]
+}
