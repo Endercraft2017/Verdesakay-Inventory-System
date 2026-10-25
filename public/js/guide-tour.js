@@ -12,6 +12,16 @@
     if (state.isCurrent && !state.isCurrent()) { close(false,false); return false; }
     return true;
   }
+  function revealSection(el) {
+    if(!el?.isConnected||el.closest('[hidden],.hidden'))return false;
+    for(let node=el;node;node=node.parentElement){const css=getComputedStyle(node);if(css.display==='none'||css.visibility==='hidden'||css.visibility==='collapse')return false;}
+    // Native disclosure state is presentation only. Never click a target or a
+    // workflow button to expose it, and do not unhide conditional form fields.
+    for(let node=el.parentElement;node;node=node.parentElement){
+      if(node.tagName==='DETAILS'&&!node.open){const summary=Array.from(node.children).find(child=>child.tagName==='SUMMARY');if(!summary?.contains(el))node.open=true;}
+    }
+    return true;
+  }
   function position() {
     if (!current()) return;
     const step=state.p.steps[state.i], loc=guideApp().currentLocation?.(), correctScreen=step.to?.route && loc?.route===step.to.route && Object.entries(step.to.filter||{}).every(([k,v])=>String(loc.filter?.[k])===String(v));
@@ -19,8 +29,9 @@
     if(state.p.kind==='feature' && correctScreen && view?.dataset.route===step.to.route && !/Loading…/.test(view.textContent) && window.GuideCenter) { start(GuideCenter.contextual(view),0,{root:view}); return; }
     const selector=step.spot||(correctScreen?'#view .topbar h2':null);
     const el=step.target?.isConnected ? step.target : selector ? query(selector) : null;
-    if(el && state.lastScrolledTarget!==el){state.lastScrolledTarget=el;try{el.scrollIntoView({block:'nearest',inline:'nearest',behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches?'auto':'smooth'});}catch{}}
-    const rect=el?.getBoundingClientRect(), visible=!!rect && rect.width>0 && rect.height>0 && !el.closest('[hidden], .hidden');
+    const revealable=revealSection(el);
+    if(revealable && state.lastScrolledTarget!==el){state.lastScrolledTarget=el;try{el.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});}catch{}}
+    const rect=el?.getBoundingClientRect(), visible=revealable && !!rect && rect.width>0 && rect.height>0 && (!el.checkVisibility||el.checkVisibility({checkVisibilityCSS:true})) && rect.bottom>0 && rect.top<innerHeight && rect.right>0 && rect.left<innerWidth;
     state.target=visible?el:null;
     const locator=state.coach.querySelector('.guide-locator');
     if(state.ring.hidden===visible)state.ring.hidden=!visible;
@@ -28,7 +39,12 @@
     if(locator.textContent!==message)locator.textContent=message;
     if(visible){const pad=5;Object.assign(state.ring.style,{left:(rect.left-pad)+'px',top:(rect.top-pad)+'px',width:(rect.width+pad*2)+'px',height:(rect.height+pad*2)+'px'});state.ring.dataset.step=String(state.i+1);}
     const r=visible?rect:{left:-1000,right:-999,top:-1000,bottom:-999};
-    const viewport=window.visualViewport,offset=viewport?.offsetTop||0;state.coach.style.maxHeight=Math.max(140,(viewport?.height||innerHeight)-24)+'px';const box=state.coach.getBoundingClientRect(), gap=12, width=viewport?.width||innerWidth, height=viewport?Math.min(innerHeight,viewport.height+offset):innerHeight;
+    const viewport=window.visualViewport,offset=viewport?.offsetTop||0,gap=12,width=viewport?.width||innerWidth,height=viewport?Math.min(innerHeight,viewport.height+offset):innerHeight;
+    let maxHeight=Math.max(140,height-offset-gap*2);
+    // On phones the coach cannot sit beside the target. Keep its instructions
+    // scrollable above or below the centered control instead of covering it.
+    if(visible && width<state.coach.getBoundingClientRect().width*2+gap*3){maxHeight=Math.min(maxHeight,Math.max(220,Math.max(r.top-offset-gap*2,height-r.bottom-gap*2)));}
+    state.coach.style.maxHeight=maxHeight+'px';const box=state.coach.getBoundingClientRect();
     const spots=[{left:Math.max(gap,width-box.width-gap),top:Math.max(gap,height-box.height-gap)},{left:gap,top:Math.max(gap,height-box.height-gap)},{left:Math.max(gap,width-box.width-gap),top:offset+gap},{left:gap,top:offset+gap}];
     const overlap=p=>Math.max(0,Math.min(p.left+box.width,r.right)-Math.max(p.left,r.left))*Math.max(0,Math.min(p.top+box.height,r.bottom)-Math.max(p.top,r.top));
     spots.sort((a,b)=>overlap(a)-overlap(b));Object.assign(state.coach.style,{left:spots[0].left+'px',top:spots[0].top+'px',bottom:'auto',right:'auto'});
@@ -46,6 +62,7 @@
   }
   function render() {
     if(!current())return;const {p,i,coach}=state,step=p.steps[i],available=!step.to?.route||!guideApp().canAccessRoute||guideApp().canAccessRoute(step.to.route,step.to.filter);remember(p.id,i);
+    state.ring.hidden=true;
     const restoreCoachFocus=coach.contains(document.activeElement);
     coach.innerHTML=`<div class="guide-coach-bar"><span style="width:${Math.round((i+1)/p.steps.length*100)}%"></span></div><div class="guide-coach-head"><strong class="guide-coach-title">${guideUI().esc(p.title)}</strong><span class="guide-coach-count">${i+1} / ${p.steps.length}</span><button type="button" class="icon-btn" data-act="minimize" aria-label="Minimize or expand guide" aria-expanded="true">${guideUI().icon('adjust',14)}</button><button type="button" class="icon-btn" data-act="close" aria-label="Exit walkthrough">${guideUI().icon('close',14)}</button></div><div class="guide-coach-body"${p.keyboardBody?' tabindex="0" role="region" aria-label="Guide instructions"':''} aria-live="polite"><h4>${guideUI().esc(step.title)}</h4>${step.role?`<div class="guide-coach-role">${guideUI().esc(step.role)}</div>`:''}<div class="guide-coach-text">${step.body||''}</div>${step.tip?`<div class="guide-tip">${step.tip}</div>`:''}<p class="guide-locator muted"></p>${!available?'<p class="tool-note">This step belongs to another role or a module unavailable in this workspace. Read it for context, or skip it.</p>':''}${step.to?.external?`<p class="muted">${guideUI().esc(step.to.label)} · phone app</p>`:''}</div><div class="guide-coach-foot">${p.stepPicker?`<label class="guide-step-picker"><span>${guideUI().esc(p.stepPicker)}</span><select data-act="jump" aria-label="${guideUI().esc(p.stepPicker)}">${p.steps.map((s,index)=>`<option value="${index}" ${index===i?'selected':''}>${index+1}. ${guideUI().esc(s.title)}</option>`).join('')}</select></label>`:''}${p.variants?`<label class="guide-depth"><span>Guide depth</span><select data-act="depth" aria-label="Guide depth"><option value="detailed" ${state.depth==='detailed'?'selected':''}>Detailed walkthrough</option><option value="brief" ${state.depth==='brief'?'selected':''}>Brief overview</option></select></label>`:''}<button class="btn secondary small" type="button" data-act="back" ${i===0?'disabled':''}>Back</button>${step.to?.route?`<button class="btn secondary small" type="button" data-act="open" ${available?'':'disabled'}>Open screen</button>`:''}${i+1<p.steps.length?'<button class="btn secondary small" type="button" data-act="skip">Skip</button>':''}<button class="btn small" type="button" data-act="next">${i+1===p.steps.length?'Finish':'Next'}</button></div><p class="guide-coach-keys">${window.GuideTourPlatform?.keys || '← / → change steps outside fields · Esc exits · no action is submitted automatically'}</p>`;
     const owner=state;
@@ -59,7 +76,7 @@
   function start(id,index=0,options={}) {
     let p=typeof id==='object'?id:window.GUIDE?.byId[id];if(!p?.steps.length)return;const loc=guideApp().currentLocation?.();if(p.kind==='feature'&&loc?.route===p.route&&Object.entries(p.filter||{}).every(([k,v])=>String(loc.filter?.[k])===String(v))&&window.GuideCenter){p=GuideCenter.contextual(document.querySelector('#view'));options={...options,root:document.querySelector('#view')};}close(false);
     let depth='detailed';if(p.variants){try{if(localStorage.getItem(key(p.id)+':depth')==='brief')depth='brief';}catch{}p={...p,steps:p.variants[depth]};}
-    const coach=document.createElement('section'),ring=document.createElement('div');coach.className='guide-coach open';coach.tabIndex=-1;coach.setAttribute('role','dialog');coach.setAttribute('aria-label',p.title+' walkthrough');ring.className='guide-focus-ring';ring.setAttribute('aria-hidden','true');document.body.append(ring,coach);
+    const coach=document.createElement('section'),ring=document.createElement('div');coach.className='guide-coach open';coach.tabIndex=-1;coach.setAttribute('role','dialog');coach.setAttribute('aria-label',p.title+' walkthrough');ring.className='guide-focus-ring';ring.hidden=true;ring.setAttribute('aria-hidden','true');document.body.append(ring,coach);
     const onKey=e=>{if(!current())return;if(e.defaultPrevented||e.isComposing)return;if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close(false);return;}if(/INPUT|TEXTAREA|SELECT/.test(e.target?.tagName)||e.target?.isContentEditable||e.ctrlKey||e.metaKey||e.altKey)return;if(e.key==='ArrowRight'){e.preventDefault();go(1);}else if(e.key==='ArrowLeft'){e.preventDefault();go(-1);}};
     const onClick=e=>{if(!current())return;const step=state.p.steps[state.i];if(step.advanceOn==='click'&&state.target?.contains(e.target)){state.pendingAdvance=true;}};
     const observer=new MutationObserver(()=>{if(!current())return;if(state.root&&!state.root.isConnected){close(false);return;}const step=state.p.steps[state.i];if(state.pendingAdvance&&step.nextSpot&&query(step.nextSpot)){go(1);return;}position();});

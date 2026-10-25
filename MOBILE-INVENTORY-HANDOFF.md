@@ -1,5 +1,64 @@
 # Mobile inventory, production, and Sales handoff
 
+## Guide targets, shared rails and tab widths — v163 (2026-10-26)
+
+The guide previously outlined blank space when Work & tools was closed: native
+closed details descendants still reported bounding boxes. The shared runtime now
+opens only native presentation ancestors, checks actual visibility, hides stale
+rings, and centers new targets without animated scrolling. On narrow screens,
+the scrollable coach fits above or below the target. Nine hit-tested points prove
+the Release orders control stays clear of both coach and dock. It never clicks
+business actions or unhides conditional fields. Work guide copy reflects this.
+
+A later role-kit stylesheet reset the card grid/padding after mobile-v2 rules,
+creating inset skinny arrow strips. Shared card selectors now win that cascade;
+Customers and Recent sales rails fill the card height/right edge in both themes.
+Sales and RoleUI use the same 52px rail token, and customer collections use the
+existing 12px list gap. Primary tab roots now use one 560px shell canvas and normal
+gutters; Profile loses doubled padding and Home/Work/Clock lose narrower caps.
+The floating dock and workflow-specific capture/thread layouts are preserved.
+Shell cache is v163 after integration with the newer batch-stock commit. These
+changes are approved for commit and push.
+
+Validation: the three new regressions failed before the fixes (closed guide
+section, inset rail, unequal tab widths). An additional hit-test caught a row
+hidden under the dock; it failed before coach/scroll placement was corrected.
+Final browser coverage: 42 checks, 137 source/asset hashes, no external requests or
+browser errors; 248 tests in seven guide/mobile suites and TypeScript pass.
+Width evidence covers all five tabs at 320, 390, 768 and 1280px (20 content-bound
+measurements). Disposable real customer records and their sales feed both rail
+screens. Existing cache, permission, failure, motion and accessibility checks run
+alongside these checks. Chromium automation is not physical-device testing or
+observed first-time employee usability.
+
+Push integration: rebased onto 325f6f0, preserving the newer batch-stock work and
+its default scratch commands. This review remains reproducible through the
+ui:scratch:shared aliases. The combined tree passes all 42 browser checks against
+142 current source/asset hashes and TypeScript. Six unit suites passed together;
+the mobile suite initially hit four fixed-delay timing failures under concurrent
+load and passed all 146 tests when rerun separately (248 tests total across the
+seven suites). The published private preview remains the reviewed pre-integration
+snapshot identified in ui-scratch-hosting.json.
+
+Relevant resources used: Taste Skill app-screen guidance retained the established
+app hierarchy/tokens and required screenshot review; UI UX Pro Max's focused
+"focus not obscured" query informed keeping the target clear of persistent UI.
+Design Motion Principles' restraint/frequency guidance supports immediate guide
+position changes rather than animating the highlight through invisible content.
+Actual tools: source/cascade inspection, disposable API fixtures, Playwright
+geometry/hit tests/screenshots, existing axe checks, Vitest and TypeScript.
+
+Reproduce: UI_SCRATCH_REBUILD=1 npm run test:ui:scratch:shared; npx vitest run
+ tests/frontend-guide-runtime.test.ts tests/frontend-guide.test.ts
+ tests/frontend-guide-search.test.ts tests/frontend-mobile-personal.test.ts
+ tests/frontend-mobile.test.ts tests/frontend-mobile-work-navigation-ux.test.ts
+ tests/frontend-mobile-refresh-contract.test.ts; npm run typecheck.
+Evidence: work/ui-scratch/verification.json, guide-revealed-work.png,
+customers-{dark,light}.png and customer-recent-sales-{dark,light}.png. Rebuild
+cleans the generated scratch folder; hosting identity remains in
+ docs/design/ui-scratch-hosting.json. Same private Site; no live app writes.
+
+
 ## Fast overview returns — v161 (2026-10-25)
 
 The service worker already caches the shell and static assets; API requests remain

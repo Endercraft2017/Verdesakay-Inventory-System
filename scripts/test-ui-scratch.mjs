@@ -5,6 +5,7 @@ import {chromium,expect} from 'playwright/test';import axe from 'axe-core';
 import {verifyQuickOrbitLayout} from './browser/quick-orbit-layout-check.mjs';
 import {verifyTabLoading} from './browser/tab-loading-check.mjs';
 import {verifyTabCache} from './browser/tab-cache-check.mjs';
+import {verifyGuideReveal,verifyCustomerRails,verifyTabWidths} from './browser/guide-card-width-check.mjs';
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');process.chdir(repo);
 const out=path.join(repo,'work/ui-scratch'),entry=path.join(out,'index.html'),report={environment:'Chromium, self-contained HTML served on loopback with sandboxed actual app code, fixture replay and memory storage; managed browser blocks file:// navigation',checks:[],errors:[],network:[],motion:{},sourceHashesVerified:0};
 let sibling;
@@ -29,6 +30,9 @@ async function scenario(value){await page.locator('#scenario').selectOption(valu
 async function check(name,fn){if(process.env.UI_SCRATCH_ONLY&&!name.includes(process.env.UI_SCRATCH_ONLY))return;await fn();report.checks.push(name);console.log('PASS '+name);}
 try{
  await page.goto(origin);await ready();await scenario('sales');
+ await check('Guide reveals closed sections and never highlights hidden or removed controls',async()=>{report.guideReveal=await verifyGuideReveal({page,frame,ready,scenario,out});});
+ await check('Customer and recent-sales cards use full-height shared arrow rails',async()=>{report.customerRails=await verifyCustomerRails({page,frame,ready,scenario,out});});
+ await check('Primary tabs retain identical content widths at phone tablet and desktop sizes',async()=>{report.tabWidths=await verifyTabWidths({page,frame,ready,scenario,out});});
  await check('Warm Home and Work preview immediately while fresh responses reconcile changes',async()=>{report.tabCache=await verifyTabCache({page,frame,ready,scenario,out});});
  await check('Tab changes never flash loading-only queue sections or open popups',async()=>{report.tabLoading=await verifyTabLoading({page,frame,ready,scenario});});
  await check('Home queue disclosures close on the first click after automatic opening',async()=>{
@@ -114,7 +118,10 @@ try{
  const tabSummary=report.tabLoading?.length?' Tab navigation: '+report.tabLoading.length+' fast/delayed/failed sample combinations; zero transient loading-only desks, open popups or false empty states in sampled frames. Home first-tap collapse passes.':'';
  const motionSummary=report.motion.duration?' Real quick-action transition: '+report.motion.duration+'. Reduced motion closes immediately.':'';
  const cloudSummary=report.cloudIcon?.length?' Cloud outline and header bounds pass '+report.cloudIcon.length+' width/theme/Back-button cases. The Sync queue link and return navigation pass.':'';
- const insertion='document.querySelector("#results").textContent='+JSON.stringify(report.checks.length+' checks passed. '+report.sourceHashesVerified+' app source hashes verified.'+cacheSummary+tabSummary+layoutSummary+motionSummary+cloudSummary+' No external HTTP requests. Browser simulation only.').replace(/</g,'\\u003c')+';';
+ const guideSummary=report.guideReveal?' Guide opens closed sections; its real target stays clear of the coach and dock; hidden and removed controls lose their ring.':'';
+ const cardSummary=report.customerRails?.length?' Full-height 52px arrow rails verified on Customers and Recent sales in both themes.':'';
+ const widthSummary=report.tabWidths?.length?' Matching tab content widths verified in '+report.tabWidths.length+' measurements across Home, Work, Clock, Inbox and Profile at 320, 390, 768 and 1280px.':'';
+ const insertion='document.querySelector("#results").textContent='+JSON.stringify(report.checks.length+' checks passed. '+report.sourceHashesVerified+' app source hashes verified.'+guideSummary+cardSummary+widthSummary+cacheSummary+tabSummary+layoutSummary+motionSummary+cloudSummary+' No external HTTP requests. Browser simulation only.').replace(/</g,'\\u003c')+';';
  fs.writeFileSync(entry,fs.readFileSync(entry,'utf8').replace('/* __SCRATCH_VERIFICATION__ */',insertion));
  console.log('PASS '+report.checks.length+' checks; '+report.sourceHashesVerified+' source files match; no external requests');
 }catch(error){report.failure=error.stack;fs.writeFileSync(path.join(out,'verification.json'),JSON.stringify(report,null,2));await page.screenshot({path:path.join(out,'failure.png'),fullPage:true}).catch(()=>{});console.error(error);process.exitCode=1;}
