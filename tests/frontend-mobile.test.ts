@@ -942,15 +942,14 @@ describe('mobile bootstrap', () => {
         return undefined;
       });
       win.location.hash = '#/job-orders?id=184';
-      await wait();
       const doc = win.document;
-      expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:79');
+      await expect.poll(() => doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:79');
       const accept = doc.getElementById('jo-accept') as HTMLButtonElement;
       expect(accept.disabled).toBe(true);
       const chk = doc.getElementById('jo-counted') as HTMLInputElement;
       chk.checked = true; chk.dispatchEvent(new win.Event('change'));
       accept.click();
-      await wait(120);
+      await expect.poll(() => doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:185');
       expect(posts.map((p) => p.url)).toEqual(['/api/job-orders/184/accept']);
       expect(doc.getElementById('m-view').getAttribute('data-figma-node')).toBe('66:185');
     });

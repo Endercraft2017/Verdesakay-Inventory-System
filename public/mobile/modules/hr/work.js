@@ -492,7 +492,7 @@
     function openQueue(source){if(sourceCurrent(source))MApp.go(source.route,queueParams(source));}
     function group(source) {
       var g=groups.get(source.key);
-      if(!g){g={source:source,rows:[],held:0,loaded:false,pending:true,error:'',el:mEl('<section class="work-desk" data-work-desk="'+mEsc(source.key)+'"></section>')};groups.set(source.key,g);host.appendChild(g.el);}
+      if(!g){g={source:source,rows:[],held:0,loaded:false,pending:true,error:'',el:mEl('<section class="work-desk" data-work-desk="'+mEsc(source.key)+'"></section>')};groups.set(source.key,g);}
       return g;
     }
     function sortRows(g){return g.rows.slice().sort(function(a,b){var x=homeWorkTime(g.source,a),y=homeWorkTime(g.source,b);return (x<y?-1:x>y?1:0)||Number(a.id)-Number(b.id);});}
@@ -501,7 +501,9 @@
       var focus=document.activeElement,resumeFocus=focus?.dataset.workResume,all=Array.from(groups.values()),work=all.filter(function(g){return g.source.key!=='notice';}),priority=function(g){return g.rows.length||g.held?0:g.error?1:g.pending?2:3;};
       work.sort(function(a,b){var x=sortRows(a)[0],y=sortRows(b)[0],at=x?homeWorkTime(a.source,x):Infinity,bt=y?homeWorkTime(b.source,y):Infinity;return priority(a)-priority(b)||(at<bt?-1:at>bt?1:0)||a.source.key.localeCompare(b.source.key);});
       var position=0;
-      work.forEach(function(g){var empty=g.loaded&&!g.pending&&!g.error&&!g.rows.length&&!g.held;if(empty){g.el.remove();return;}if(host.children[position]!==g.el)host.insertBefore(g.el,host.children[position]||null);position++;});
+      // Unchecked queues belong in the aggregate loading status. Mount only
+      // actual work or an error; otherwise tab entry flashes every empty desk.
+      work.forEach(function(g){if(!g.rows.length&&!g.held&&!g.error){g.el.remove();return;}if(host.children[position]!==g.el)host.insertBefore(g.el,host.children[position]||null);position++;});
       var checking=all.some(function(g){return g.pending;})||recoveryPending||countRows.some(function(e){return e.pending;}),unknown=all.some(function(g){return !!g.error;})||recoveryError||countRows.some(function(e){return e.error;}),extra=countRows.filter(function(e){var key=opSource(e.op),g=groups.get(key);return !e.error&&!e.pending&&e.value>0&&(!g||!g.pending&&!g.error&&e.value>g.rows.length+g.held);});
       recovery.innerHTML='';
       if(recoveryError)recovery.appendChild(mEl('<p class="work-feedback error" role="status">Saved work could not be checked. Refresh before starting another attempt.</p>'));

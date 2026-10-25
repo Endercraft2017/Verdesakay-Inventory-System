@@ -71,7 +71,10 @@
     if(disclosures.has(details))return;var summary=details.querySelector(':scope>summary');if(!summary)return;var animations=[],target=details.open,version=0;
     disclosures.set(details,true);
     summary.addEventListener('click',function(e){
-      if(e.target.closest('a,button,input,select'))return;e.preventDefault();var run=++version;target=!target;animations.forEach(function(a){a.cancel();});animations=[];
+      if(e.target.closest('a,button,input,select'))return;e.preventDefault();var run=++version;
+      // Queue reads can change open after enhancement. Start from that real
+      // state when idle; retain the intended target while reversing motion.
+      target=!(animations.length?target:details.open);animations.forEach(function(a){a.cancel();});animations=[];
       if(target)details.open=true;
       var children=Array.from(details.children).filter(function(child){return child!==summary;});
       children.forEach(function(child){var a=animate(child,target?[{opacity:0,transform:'translateY(-3px)'},{opacity:1,transform:'translateY(0)'}]:[{opacity:1,transform:'translateY(0)'},{opacity:0,transform:'translateY(-2px)'}],target?140:90,e.detail===0);if(a)animations.push(a);});

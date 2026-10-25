@@ -1,5 +1,42 @@
 # Mobile inventory, production, and Sales handoff
 
+## Tab-switch loading flash corrected — v160 (2026-10-25)
+
+Work mounted every authorized desk while its initial read was pending, then
+removed empty desks. Per-frame capture on the empty warehouse fixture showed
+8 loading sections and content at 1,274.56px before settling around 295.8px.
+Native disclosure states stayed closed; the queue loading sections caused the
+apparent open/close flash. Work now mounts desks only for actual rows, held work
+or errors. One aggregate Checking current work status covers unchecked queues.
+Known records remain visible through refresh; errors and unknown checks still
+surface. Checked-empty queues also stay compact during a new read.
+
+A related shared-disclosure state defect is corrected: Home's data read can open
+a category after enhancement, so an idle tap now reads details.open rather than
+its captured initialization state. The intended target still controls interrupted
+animation. Pending Home categories still auto-open; one tap now closes them.
+The offline shell cache is v160. This fix is approved for commit and push.
+
+Both new browser regressions fail against the previous generated source: Work
+paints loading-only desks; an automatically opened Home category ignores its first
+collapse tap. Current verification passes 38 browser checks, 137 source/asset
+hashes, 209 tests in 4 affected suites, and TypeScript. Tab frame sampling covers
+empty/pending queues with fast, 2.5-second delayed and failed reads, real dock
+navigation away/return, both themes and no false empty claims. Existing layout,
+cloud, guarded refresh, accessibility and reduced-motion checks remain green.
+
+Reproduce: UI_SCRATCH_REBUILD=1 npm run test:ui:scratch;
+npx vitest run tests/frontend-mobile.test.ts
+ tests/frontend-mobile-work-navigation-ux.test.ts
+ tests/frontend-mobile-refresh-contract.test.ts
+ tests/frontend-mobile-personal.test.ts --reporter=dot (one command).
+A pre-existing fixed-sleep test raced screen loading during the first run; it now
+waits for its actual kit-acceptance screen states. Payload and gate assertions
+are unchanged. Evidence: work/ui-scratch/verification.json and traces;
+work/tab-flash/ holds original-source frame data, red-test logs and before/after
+loading screenshots. Browser simulation only; physical-device testing remains
+unverified. Review uses the same owner-private HTTPS scratch Site.
+
 ## Approved mobile design release — v159 (2026-10-25)
 
 The reviewed Work UX, shared dropdowns/disclosure motion, status rails, Back,

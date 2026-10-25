@@ -24,6 +24,14 @@ function search(value:string){const el=view.querySelector('#m-dir-q') as HTMLInp
 beforeEach(()=>vi.useFakeTimers());
 afterEach(()=>{w?.GuideTour?.close();dom?.window.close();vi.useRealTimers();});
 
+it('keeps unchecked and checked-empty queues compact until actual work or an error arrives',async()=>{
+ await boot();let read=defer();get.mockImplementation((p:string)=>p==='/release-slips/queue'?read.promise:Promise.resolve(p==='/tasks'?[]:p.startsWith('/notifications')?{items:[]}:[]));
+ routes.work(view,{});await tick();expect(view.querySelector('[data-work-attention] [data-work-desk]')).toBeNull();expect(view.querySelector('[data-work-freshness]')?.textContent).toBe('Checking current work…');expect(view.querySelector('[data-work-empty]')?.hasAttribute('hidden')).toBe(true);
+ read.resolve(release([]));await tick();expect(view.querySelector('[data-work-attention] [data-work-desk]')).toBeNull();expect(view.querySelector('[data-work-empty]')?.hasAttribute('hidden')).toBe(false);
+ read=defer();click('[data-attention-refresh]');await tick();expect(view.querySelector('[data-work-attention] [data-work-desk]')).toBeNull();expect(view.querySelector('[data-work-empty]')?.hasAttribute('hidden')).toBe(true);
+ read.resolve(release());await tick();expect(view.querySelector('[data-work-desk=release]')?.textContent).toContain('SO-11');
+});
+
 it('shares the same queue read for records and badges, updates both, and rejects repeated Refresh',async()=>{
  await boot();expect(get.mock.calls.filter((c:any)=>c[0]==='/release-slips/queue')).toHaveLength(1);expect(badge()).toBe('1');
  const slow=defer();get.mockImplementation((p:string)=>p==='/release-slips/queue'?slow.promise:Promise.resolve(p.startsWith('/notifications')?{items:[]}:[]));

@@ -269,3 +269,18 @@ those classes now use the same radius, feedback duration and keyboard/reduced-
 motion treatment. The approved visual design is retained. Automated coverage is
 representative across HR, sales, inventory and production, not a claim that every
 screen, physical device or employee task has been observed.
+
+
+## Stable initial loading and disclosure state — 2026-10-25
+
+Do not mount full Work desk sections until they contain known rows, held work or
+an actual error. Use one aggregate loading status for unchecked queues, including
+rechecks of a known-empty queue. This prevents empty categories from expanding
+and disappearing at tab entry. Keep known records during refresh and continue to
+expose errors/unknown states; never substitute a false empty message.
+
+Shared disclosures must read their actual open state when idle because authorized
+queue responses can set it programmatically after enhancement. During an active
+transition, use its intended target to support rapid reversal. Data arrival and
+route entry must not perform decorative disclosure animations. Preserve automatic
+opening for genuinely pending Home work and first-tap manual collapse.
