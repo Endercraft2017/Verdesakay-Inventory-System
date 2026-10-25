@@ -1,0 +1,10 @@
+{
+  "project_id": "appgprj_6add8ad5d3cc81919a5e4ebe9b8d0ef4",
+  "url": "https://verdesakay-ui-scratch.wavylion256.chatgpt.site",
+  "audience": "owner-only",
+  "source_checkout": "/workspace/sites/verdesakay-ui-scratch",
+  "generated_entry": "work/ui-scratch/index.html",
+  "source_commit": "1233a0ffe85e67cb86806392fa5cc0239d0eb3fe",
+  "deployment_id": "appgdep_6ade0f8036f88191b9ca58ad5f57efff",
+  "instructions": "Reuse this Site identity and audience for later scratch updates. Rebuild and verify the scratch entry, update the existing Site source checkout, and use the official Sites source/package/private publishing workflow. No production app API or live data is connected."
+}

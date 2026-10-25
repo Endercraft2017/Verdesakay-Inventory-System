@@ -36,7 +36,7 @@ describe('mobile bootstrap', () => {
   it('maps Work to the approved Figma V2 frame and permission-driven queues', () => {
     const source = fs.readFileSync(path.join(PUBLIC, 'mobile', 'modules', 'hr', 'work.js'), 'utf8');
     expect(source).toContain('data-figma-node="46:548"');
-    expect(source).toContain('What do I need to do now?');
+    expect(source).toContain('aria-label="Pending work"');
     expect(source).toContain('Report a blocker');
     expect(source).toContain("MApp.can(op.permission)");
   });
@@ -144,6 +144,35 @@ describe('mobile bootstrap', () => {
     return win;
   }
 
+  it('shows Back on Work attention details and returns to their in-app origin', async () => {
+    const win=await bootAs({id:311,role:'employee',permissions:['mobile.access','orders.view','orders.edit'],modules:null});
+    win.MApp.go('work',{task:'csr',record:'record:1'});await new Promise(r=>setTimeout(r,25));win.document.querySelector('#m-back').click();await new Promise(r=>setTimeout(r,30));expect(win.MApp.currentLocation().name).toBe('home');
+    win.MApp.go('work');await new Promise(r=>setTimeout(r,25));expect(win.document.querySelector('#m-back').classList.contains('hidden')).toBe(true);
+    win.MApp.go('work',{task:'csr',record:'record:1'});await new Promise(r=>setTimeout(r,25));expect(win.document.querySelector('#m-back').classList.contains('hidden')).toBe(false);
+    win.document.querySelector('#m-back').click();await new Promise(r=>setTimeout(r,30));expect(win.location.hash).toBe('#/work');
+    win.MApp.go('home');await new Promise(r=>setTimeout(r,25));win.MApp.go('work',{task:'csr',record:'record:1'});await new Promise(r=>setTimeout(r,25));win.document.querySelector('#m-back').click();await new Promise(r=>setTimeout(r,30));expect(win.location.hash).toBe('#/home');win.close();
+  });
+  it('uses Work as Back fallback for an attention deep link without a proven in-app predecessor', async () => {
+    const win=await bootAs({id:312,role:'employee',permissions:['mobile.access'],modules:null});
+    win.history.replaceState(null,'','#/work?task=csr&record=record%3A1');win.MApp.render();expect(win.document.querySelector('#m-back').classList.contains('hidden')).toBe(false);
+    win.document.querySelector('#m-back').click();await new Promise(r=>setTimeout(r,25));expect(win.location.hash).toBe('#/work');win.close();
+  });
+
+  it('shows Back on Notifications and safely falls back from an untracked direct entry', async () => {
+    const win=await bootAs({id:313,role:'employee',permissions:['mobile.access'],modules:null});win.history.replaceState(null,'','#/notifications');win.MApp.render();expect(win.document.querySelector('#m-back').classList.contains('hidden')).toBe(false);win.document.querySelector('#m-back').click();await new Promise(r=>setTimeout(r,30));expect(win.MApp.currentLocation().name).toBe('home');win.close();
+  });
+  it('does not create an extra entry when navigating to the same canonical screen', async () => {
+    const win=await bootAs({id:314,role:'employee',permissions:['mobile.access'],modules:null});win.MApp.go('notifications');await new Promise(r=>setTimeout(r,25));const before=win.history.length;win.MApp.go('notifications');await new Promise(r=>setTimeout(r,25));expect(win.history.length).toBe(before);win.document.querySelector('#m-back').click();await new Promise(r=>setTimeout(r,30));expect(win.MApp.currentLocation().name).toBe('home');win.close();
+  });
+  it('honors a workflow same-record refresh without adding a duplicate Back entry', async () => {
+    const win=await bootAs({id:315,role:'employee',permissions:['mobile.access'],modules:null});let renders=0;win.MApp.route('tasks',(view:any,p:any)=>{renders++;view.textContent='Latest task '+(p.t||'initial');});win.MApp.go('tasks');await new Promise(r=>setTimeout(r,25));const count=win.history.length;win.MApp.go('tasks',{t:123});await new Promise(r=>setTimeout(r,25));expect(renders).toBe(2);expect(win.document.querySelector('#m-view').textContent).toBe('Latest task 123');expect(win.history.length).toBe(count);win.document.querySelector('#m-back').click();await new Promise(r=>setTimeout(r,30));expect(win.MApp.currentLocation().name).toBe('home');win.close();
+  });
+  it('keeps the real Back parent when a screen replaces its filter query in the current entry', async () => {
+    const win=await bootAs({id:316,role:'employee',permissions:['mobile.access'],modules:null});win.MApp.go('tasks');await new Promise(r=>setTimeout(r,25));win.history.replaceState(win.history.state,'','#/tasks?tab=archived');win.MApp.back();await new Promise(r=>setTimeout(r,30));expect(win.MApp.currentLocation().name).toBe('home');win.close();
+  });
+  it('uses the Profile route as a safe Back fallback for a direct Sync queue link', async () => {
+    const win=await bootAs({id:317,role:'employee',permissions:['mobile.access'],modules:null});win.history.replaceState(null,'','#/queue');win.MApp.render();win.MApp.back();await new Promise(r=>setTimeout(r,30));expect(win.MApp.currentLocation().name).toBe('settings');win.close();
+  });
   it('shows courier collection separately and submits optional evidence with saved tracking', async () => {
     const posts: any[] = [];
     const d = { id: 71, number: 'DEL-71', status: 'pending', delivery_mode: 'courier', courier_name: 'Swift Cargo', tracking_number: 'OLD-TRACK', items: [] };
@@ -280,10 +309,10 @@ describe('mobile bootstrap', () => {
       permissions: ['mobile.access', 'messages.view', 'messages.send'] }, (url: string) => { asked.push(url); return url === '/api/auth/me' ? undefined : url === '/api/messages/unread-count' ? { count: 0 } : {}; });
     win.location.hash = '#/work'; win.MApp.render();
     const text = win.document.getElementById('m-view').textContent;
-    expect(text).toContain('My personal work'); expect(text).toContain('Report a blocker');
+    expect(text).toContain('Work & tools'); expect(text).toContain('Report a blocker');
     expect(text).not.toContain('Release orders'); expect(text).not.toContain('Deliveries'); expect(text).not.toContain('QC technical inspection');
     win.mQuickOrbit.refresh();
-    expect([...win.document.querySelectorAll('.v2-orbit-action')].map((b: any) => b.dataset.route)).toEqual(['requests','report-problem','inbox']);
+    expect([...win.document.querySelectorAll('.v2-orbit-action')].map((b: any) => b.dataset.route)).toEqual(['requests','report-problem']);
     for (const route of ['production','job-orders','kit-release','unit-issues','qc','repairs','receiving','so','deliveries','record','scan','my-log','stock-move','allocate','confidential-reports']) {
       win.location.hash = '#/' + route; win.MApp.render();
       expect(win.document.querySelector('[data-no-permission]'), route).not.toBeNull();
@@ -1541,7 +1570,7 @@ describe('mobile bootstrap', () => {
       if (outcome === 'rectify') win.document.querySelector('[data-station]').value = 'Paint';
       win.document.getElementById('qc-decide').click(); await wait(80);
       expect(win.document.querySelector('[data-o]')).toBeNull(); expect(win.document.getElementById('qc-hold-retry')).toBeTruthy(); win.close();
-      win = await bootAs(QA, respond, factory); win.location.hash = '#/qc?role=qa&tab=hold'; await wait(80);
+      win = await bootAs(QA, respond, factory); win.location.hash = '#/qc?role=qa&tab=hold'; await waitForMobileElement(win,'[data-hold="503"]');
       expect(win.document.getElementById('m-view').textContent).toContain('Review saved decision');
       win.document.querySelector('[data-hold="503"]').click(); await wait(80); expect(win.document.getElementById('m-view').textContent).toContain('Original hold decision reason');
       win.document.getElementById('qc-hold-retry').click(); await wait(80);
@@ -1815,7 +1844,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       expect(view.textContent).toContain('Jordan D. · ID reference ••4821');
       expect(view.textContent).toContain('PICKUP-••••');
       win.location.hash = '#/so?id=302&step=handoff';
-      await wait();
+      await waitForMobileElement(win,'#m-view[data-figma-node="78:240"] [data-verify], #m-view[data-figma-node="78:240"] #rel-go');
       (await relElement(win, '#rel-go') as HTMLButtonElement).click();
       await wait();
       expect(view.getAttribute('data-figma-node')).toBe('78:240'); // blocked until verified
@@ -1856,7 +1885,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const win = await bootAs(REL, fake(posts));
       const doc = win.document;
       win.location.hash = '#/so?id=302&step=handoff';
-      await wait();
+      await waitForMobileElement(win,'#m-view[data-figma-node="78:240"] [data-verify], #m-view[data-figma-node="78:240"] #rel-go');
       (doc.querySelector('[data-token]') as HTMLInputElement).value = 'PICKUP-7F3Q';
       (doc.querySelector('[data-verify]') as HTMLButtonElement).click();
       await wait();
@@ -1896,7 +1925,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const win = await bootAs(REL, fake(posts));
       const doc = win.document;
       win.location.hash = '#/so?id=302&step=handoff';
-      await wait();
+      await waitForMobileElement(win,'#m-view[data-figma-node="78:240"] [data-verify], #m-view[data-figma-node="78:240"] #rel-go');
       (doc.querySelector('[data-notoken]') as HTMLButtonElement).click();
       await wait();
       const view = doc.getElementById('m-view');
@@ -1915,7 +1944,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
         decided_by_name: 'Sam Supervisor', decision_note: 'ID checked in person' } } }));
       const doc = win.document;
       win.location.hash = '#/so?id=302&step=handoff';
-      await wait();
+      await waitForMobileElement(win,'#m-view[data-figma-node="78:240"] [data-verify], #m-view[data-figma-node="78:240"] #rel-go');
       const view = doc.getElementById('m-view');
       expect(view.textContent).toContain('Supervisor override · Sam Supervisor');
       expect(view.querySelector('[data-token]')).toBeNull();
@@ -1930,7 +1959,7 @@ describe('Releasing personnel warehouse-out (Figma 78:*)', () => {
       const win = await bootAs(SUP, fake(posts, { authorization: { ...AUTH, override: { id: 3, status: 'requested', reason: 'Lost it', requested_by_name: 'Ana Dela Cruz' } } }));
       const doc = win.document;
       win.location.hash = '#/so?id=302&step=override';
-      await wait();
+      await waitForMobileElement(win,'#rel-approve');
       expect(doc.getElementById('m-view').textContent).toContain('Requested by Ana Dela Cruz');
       (doc.querySelector('[data-reason]') as HTMLTextAreaElement).value = 'ID checked in person';
       (doc.getElementById('rel-approve') as HTMLButtonElement).click();

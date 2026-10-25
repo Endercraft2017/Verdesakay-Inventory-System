@@ -117,8 +117,8 @@
       host.querySelectorAll('[data-id]').forEach(function (b) { b.onclick = function () { go(rows.find(function (s) { return s.operation.slot === b.dataset.id; })); }; });
     }).catch(function (err) { if (host.isConnected) { host.innerHTML = ''; host.appendChild(R.error(err, function () { cards(host); })); } });
   }
-  async function count(q) {
-    var ids = new Set((q.units || []).filter(function (u) { return !u.hold; }).map(function (u) { return 'u:' + u.id; }).concat((q.batches || []).map(function (b) { return 'b:' + b.id; })));
+  async function count(q, options) {
+    var ids = new Set((q.units || []).filter(function (u) { return options?.includeHeld || !u.hold; }).map(function (u) { return 'u:' + u.id; }).concat((q.batches || []).map(function (b) { return 'b:' + b.id; })));
     (await saved()).forEach(function (s) { s.operation.entries.filter(function (a) { return a.state !== 'confirmed' || a.local; }).forEach(function (a) { if (a.payload.unit_ids) a.payload.unit_ids.forEach(function (id) { ids.add('u:' + id); }); else ids.add('b:' + a.payload.batch_id); }); });
     return ids.size;
   }

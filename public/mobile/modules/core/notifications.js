@@ -35,7 +35,7 @@
   function markRead(n) {
     if (n.read_at) return Promise.resolve();
     if (n.readPending) return n.readPending;
-    n.readPending = API.post('/notifications/' + n.id + '/read', {}).then(function () { n.read_at = 'now'; }).finally(function () { n.readPending = null; });
+    n.readPending = API.post('/notifications/' + n.id + '/read', {}).then(function () { n.read_at = 'now';MApp.refreshNotificationBadge?.(); }).finally(function () { n.readPending = null; });
     return n.readPending;
   }
   /** One stored notification: tap opens its record (or, desktop-only, the notification itself). */
@@ -94,7 +94,7 @@
     function soft(p, fallback) {
       return p.catch(function (ex) { failed++; lastError = ex; return fallback; });
     }
-    Promise.all([
+    return Promise.all([
       soft(API.get('/notifications'), { items: [], unread: 0 }),
       soft(API.get('/me/requests'), []),
       soft(API.get('/me/payslips'), []),
@@ -131,19 +131,13 @@
         markRead(focused).catch(function () { if (card.isConnected) card.appendChild(mEl('<p class="m-error" role="alert">Could not save read status. This notification remains unread. Reopen it to retry.</p>')); });
       }
 
-      var intro = mEl(
-        '<div class="m-card v2-notification-intro"><span class="v2-role-chip">Updates</span>' +
-        '<h2>What needs your attention</h2><p>Requests, payroll, messages and official notices appear here.</p></div>'
-      );
-      view.appendChild(intro);
-
       var count = 0;
       if (ledger.length) {
         var head = mEl('<div class="m-sectitle" style="display:flex;align-items:center;gap:8px">Recent' +
           (ledger.some(function (n) { return !n.read_at; }) ? '<button type="button" class="m-btn m-btn-sm" data-readall style="margin-left:auto">Mark all read</button>' : '') + '</div>');
         view.appendChild(head);
         var ra = head.querySelector('[data-readall]');
-        if (ra) ra.onclick = function () { if (ra.disabled) return; ra.disabled = true; API.post('/notifications/read-all', {}).then(function () { if (active()) render(view, params); }).catch(function () { ra.disabled = false; if (head.isConnected) { var error = head.querySelector('[role=alert]'); if (!error) { error = mEl('<span role="alert"></span>'); head.appendChild(error); } error.textContent = 'Could not mark all read. Reconnect and retry.'; } }); };
+        if (ra) ra.onclick = function () { if (ra.disabled) return; ra.disabled = true; API.post('/notifications/read-all', {}).then(function () { if (active()) {MApp.refreshNotificationBadge?.();render(view, params);} }).catch(function () { ra.disabled = false; if (head.isConnected) { var error = head.querySelector('[role=alert]'); if (!error) { error = mEl('<span role="alert"></span>'); head.appendChild(error); } error.textContent = 'Could not mark all read. Reconnect and retry.'; } }); };
         ledger.slice(0, 30).forEach(function (n) { count++; view.appendChild(ledgerRow(n, view)); });
       }
       var recentRequests = requests.filter(function (r) {

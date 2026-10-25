@@ -6,14 +6,29 @@
   function page(view,title,sub){return R.page(view,{role:'Sales',title:title,subtitle:sub});}
   function field(label,key,value,type){return '<label class="rk-card rk-field"><small>'+mEsc(label)+'</small><input class="rk-input" data-'+key+' type="'+(type||'text')+'" value="'+mEsc(value==null?'':value)+'"></label>';}
   function stage(r,q){if((r.release_slip_number&&!r.backordered)||['completed','fulfilled'].includes(r.status))return 3;if((q.releasing||[]).some(function(x){return x.id===r.id;})||r.status==='released')return 2;if((q.to_accept||[]).some(function(x){return x.id===r.id;})||r.status==='approved')return 1;return 0;}
-  var stages=['CSR review','Awaiting warehouse','Picking / release','Shipped / complete'];
+  var stages=['Sales review','Awaiting warehouse','Picking / release','Shipped / complete'];
+  // The rail reflects facts returned by the existing order/queue reads. It does
+  // not infer shortages from an open order or change workflow eligibility.
+  function orderCue(r,q){
+    if(r.status==='cancelled')return {tone:'neutral',label:'Cancelled'};
+    if(r.backordered)return {tone:'attention',label:'Needs attention: outstanding goods'};
+    if(stage(r,q)===3)return {tone:'neutral',label:'Shipped / complete'};
+    if(r.status==='open')return {tone:'open',label:'Open'};
+    return {tone:'pending',label:'Pending · '+String(r.status||'status not provided').replace(/_/g,' ')};
+  }
+  function orderCard(r,q){
+    var cue=orderCue(r,q),name=r.customer_name||'No customer';
+    return '<button type="button" class="rk-card sales-order" data-id="'+mEsc(r.id)+'" aria-label="'+mEsc(r.number+' · '+name+' · '+cue.label)+'">'+
+      '<span class="sales-order-number">'+mEsc(r.number)+'</span><span class="sales-order-customer" title="'+mEsc(name)+'">'+mEsc(name)+'</span>'+
+      '<span class="sales-order-rail m-status-rail '+cue.tone+'" title="'+mEsc(cue.label)+'" aria-hidden="true"><img class="rk-go" src="/mobile/icons/v2/open-chevron.svg" alt=""></span></button>';
+  }
   async function list(view,tracking){
-    var body=page(view,tracking?'Order tracking':'Sales pipeline',tracking?'Read-only stock and fulfilment progress':'Customer service · actual order and trip records');body.innerHTML=R.skeleton(3);
+    var body=page(view,tracking?'Order tracking':'Sales pipeline',tracking?'Read-only stock and fulfilment progress':'Customer service · actual order and trip records'),screen=body.closest('.rk-page');screen.classList.add('sales-pipeline');var head=screen.querySelector('.rk-head');head.replaceChildren(head.querySelector('h1'));head.classList.add('sales-sr-only');body.innerHTML=R.skeleton(3);
     var result=await Promise.all([API.get('/orders?type=sale'),API.get('/release-slips/queue')]);if(!body.isConnected)return;var rows=result[0],q=result[1];
-    body.innerHTML='<label class="rk-card rk-field"><small>Customer or order</small><input type="search" class="rk-input" data-search></label><label class="rk-card rk-field"><small>Stage</small><select data-stage><option value="">All active stages</option>'+stages.map(function(s,i){return '<option value="'+i+'">'+s+'</option>';}).join('')+'<option value="cancelled">Cancelled</option></select></label>'+R.actions((!tracking&&MApp.can('orders.create')?[{id:'sale-new',label:'New sale order',kind:'primary'}]:[]).concat(!tracking?[{id:'sale-customers',label:'Customers',kind:'secondary'}]:[]))+'<div data-sales-list></div>';
+    body.innerHTML='<label class="rk-card rk-field sales-search"><small>Customer or Order Number</small><input type="search" class="rk-input" data-search></label><label class="rk-card rk-field sales-stage-filter"><small>Stage</small><select data-stage><option value="">All active stages</option>'+stages.map(function(s,i){return '<option value="'+i+'">'+s+'</option>';}).join('')+'<option value="cancelled">Cancelled</option></select></label>'+R.actions((!tracking&&MApp.can('orders.create')?[{id:'sale-new',label:'New sale order',kind:'primary'}]:[]).concat(!tracking?[{id:'sale-customers',label:'Customers',kind:'secondary'}]:[]))+'<div data-sales-list></div>';
     function paint(){var text=body.querySelector('[data-search]').value.toLowerCase(),filter=body.querySelector('[data-stage]').value,host=body.querySelector('[data-sales-list]');host.innerHTML='';
       var filtered=rows.filter(function(r){return (r.number+' '+r.customer_name).toLowerCase().includes(text)&&(filter==='cancelled'?r.status==='cancelled':r.status!=='cancelled'&&(filter===''||stage(r,q)===Number(filter)));});
-      (filter==='cancelled'?['Cancelled']:stages).forEach(function(title,i){var group=filtered.filter(function(r){return filter==='cancelled'||stage(r,q)===i;});if(!group.length)return;host.insertAdjacentHTML('beforeend',R.section(title+' · '+group.length)+group.map(function(r){return R.jobCard({id:r.id,number:r.number,name:r.customer_name||'No customer',meta:r.status+(r.backordered?' · Outstanding / shortage':''),pill:{text:title}});}).join(''));});
+      (filter==='cancelled'?['Cancelled']:stages).forEach(function(title,i){var group=filtered.filter(function(r){return filter==='cancelled'||stage(r,q)===i;});if(!group.length)return;host.insertAdjacentHTML('beforeend','<section class="sales-stage">'+R.section(title+' · '+group.length)+'<div class="rk-list">'+group.map(function(r){return orderCard(r,q);}).join('')+'</div></section>');});
       if(!filtered.length)host.innerHTML=R.note('info','No orders match this view.');host.querySelectorAll('[data-id]').forEach(function(b){b.onclick=function(){MApp.go(tracking?'order-tracking':'sales',{id:b.dataset.id});};});
     }
     body.querySelector('[data-search]').oninput=paint;body.querySelector('[data-stage]').onchange=paint;paint();
@@ -51,14 +66,14 @@
     var result=await Promise.all([API.get('/orders/'+id),API.get('/orders/'+id+'/availability')]);if(!body.isConnected)return;
     var order=result[0],av=result[1];if(order.type!=='sale')throw Error('Customer JO records are read-only in Sales.');
     if(!['open','draft'].includes(order.status)){body.innerHTML=R.note('info','This sale is already '+mEsc(order.status)+'. Review its current record instead of repeating approval.')+mSaleUI.productionJobs(av)+R.actions([{id:'sale-approval-open',label:'Open sale order',kind:'primary'}]);body.querySelector('button').onclick=function(){go({id:id});};return;}
-    if(order.revision!==av.revision){body.innerHTML=R.note('warn','The order changed while loading. Refresh before reviewing approval.')+R.actions([{id:'sale-approval-refresh',label:'Refresh stock review',kind:'primary'}]);body.querySelector('button').onclick=function(){approve(view,id);};return;}
+    if(order.revision!==av.revision){body.innerHTML=R.note('warn','The order changed while loading. Refresh before reviewing approval.')+R.actions([{id:'sale-approval-refresh',label:'Check latest stock',kind:'primary'}]);body.querySelector('button').onclick=function(){approve(view,id);};return;}
     var shortages=(av.lines||[]).filter(function(l){return l.shortfall>0;}),backorder=shortages.some(function(l){return !l.is_finished_product||l.fulfillment_mode==='ckd_component';});
     body.innerHTML=R.jobHead({number:order.number,name:order.customer_name||'Walk-in',meta:'Ship from '+(av.location_name||'No source location')})+mSaleUI.deliveryFacts(order)+
       R.lines((av.lines||[]).map(function(l){return {name:l.name,qty:'Short '+l.shortfall,detail:'Available '+l.available+(l.is_finished_product&&l.shortfall>0?' · Production plans uncovered demand':'')+(l.is_finished_product&&!l.has_bom&&l.shortfall>0?' · BOM/setup needs review':''),ok:l.shortfall<=0};}))+mSaleUI.productionJobs(av)+
       R.note('info','Approval drafts Production jobs for uncovered finished-product demand. Production still approves, kits, builds, inspects and receives them. Approval does not add RTS stock or authorize a partial vehicle trip.')+
       (backorder?R.check('sale-backorder','Approve the missing parts / CKD goods explicitly as a backorder.'): '')+
       R.check('sale-reviewed','I reviewed the order, source stock and production handoff.')+
-      R.actions([{id:'sale-approve-confirm',label:'Approve order',kind:'primary'},{id:'sale-approval-refresh',label:'Refresh stock review',kind:'secondary'},{id:'sale-approve-back',label:'Back to order',kind:'secondary'}]);
+      R.actions([{id:'sale-approve-confirm',label:'Approve order',kind:'primary'},{id:'sale-approval-refresh',label:'Check latest stock',kind:'secondary'},{id:'sale-approve-back',label:'Back to order',kind:'secondary'}]);
     var button=body.querySelector('#sale-approve-confirm');button.disabled=true;
     function ready(){button.disabled=!body.querySelector('#sale-reviewed').checked||(backorder&&!body.querySelector('#sale-backorder').checked);}
     body.querySelectorAll('input[type=checkbox]').forEach(function(el){el.onchange=ready;});

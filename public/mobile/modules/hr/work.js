@@ -229,18 +229,18 @@
 
   var OPS = [
     { label: 'Receive supplier delivery', sub: 'Goods arriving against supplier orders', route: 'receive', permission: 'inventory.receive', count: function (read) { return openCount('/orders?type=purchase',read); } },
-    { label: 'Release orders', sub: 'Allocated units ready for handoff', route: 'so', permission: 'orders.release',
+    { label: 'Release orders', sub: 'Accept, pick and release approved sales orders', route: 'so', permission: 'orders.release',
       count: function (read) { return (read || API.get)('/release-slips/queue').then(function (q) {
         return (q.to_accept || []).length + (q.releasing || []).length;
       }); } },
-    { label: 'Customer service', sub: 'Search and follow up sale orders', route: 'sales-service', all: ['orders.view'], any: ['orders.create','orders.edit','orders.approve'], action: true },
+    { label: 'Find a sale', sub: 'Search by customer name or sales order number', route: 'sales-service', all: ['orders.view'], any: ['orders.create','orders.edit','orders.approve'], action: true },
     { label: 'New sale order', sub: 'Prepare an open customer order', route: 'sales-new', all: ['orders.view','orders.create'], action: true },
     { label: 'Kit releases', sub: 'Pick and release job-order kits', route: 'kit-release', permission: 'production.kit_release',
       count: function (read) { return (read || API.get)('/job-orders?stage=awaiting_release').then(function (rows) { return (rows || []).length; }); } },
     { label: 'Allocate units', sub: 'Assign passed units to orders', route: 'allocate', any: ['inventory.transfer','orders.direct_sale'] },
     { label: 'Parts requests', sub: 'Issue parts for repair or rework', route: 'repairs', permission: 'production.repairs',
       count: function (read) { return (read || API.get)('/production/repairs?status=requested').then(function (r) { return (r || []).length; }); } },
-    { label: 'RTS recording', sub: 'Record QA-passed finished goods', route: 'receiving', permission: 'production.receive',
+    { label: 'RTS recording', sub: 'Record finished goods after required inspections', route: 'receiving', permission: 'production.receive',
       count: function (read) { return readyToReceive(read); } },
     { label: 'Awaiting production approval', sub: 'Review draft quantities, components and stock', route: 'job-orders', params: { view: 'approval' }, permission: 'production.approve',
       count: function (read) { return (read || API.get)('/job-orders?stage=awaiting_approval').then(function (rows) { return mProductionDrafts.approvalCount(rows || []); }); } },
@@ -271,12 +271,12 @@
   OPS.push({label:'My planned checks',sub:'Assigned physical counts and overdue shelves',route:'stock-count-tasks',permission:'inventory.count',count:function(read){return (read || API.get)('/inventory/stock-counts/tasks?status=open&mine=1').then(function(rows){return rows.length;});}});
 
   OPS.push(
-    {label:'Make PR',sub:'Request a budget for any purchase',route:'purchase-requests',params:{step:'new'},permission:'purchasing.request',strict:true},
+    {label:'New purchase request',sub:'Request a budget for a purchase',route:'purchase-requests',params:{step:'new'},permission:'purchasing.request',strict:true},
     {label:'Review PRs',sub:'Approve budgets, cash and liquidation',route:'purchase-requests',params:{view:'review'},any:['purchasing.approve_requests','purchasing.issue_cash','purchasing.settle_requests'],strict:true},
     {label:'My assigned purchases',sub:'Upload receipts and liquidate your purchases',route:'purchase-requests',params:{view:'assigned'},any:['purchasing.request','purchasing.manage'],strict:true}
   );
 
-  OPS.push({label:'Sales pipeline',sub:'CSR review, customer follow-up and real order stages',route:'sales',all:['orders.view'],any:['orders.create','orders.edit','orders.approve']},
+  OPS.push({label:'Sales pipeline',sub:'Customer follow-up and order progress',route:'sales',all:['orders.view'],any:['orders.create','orders.edit','orders.approve']},
     {label:'Customers',sub:'Customer registry and recent sales',route:'customers',permission:'orders.view'},
     {label:'Order tracking',sub:'Read-only sales and warehouse progress',route:'order-tracking',permission:'orders.view'});
 
@@ -305,7 +305,7 @@
   }
   function readyToReceive(read) {
     return (read || API.get)('/rts/queue').then(function (q) {
-      return mRtsRecovery.count(q);
+      return mRtsRecovery.count(q,{includeHeld:true});
     });
   }
   function allowed(op) {
@@ -319,20 +319,27 @@
     var me = MApp.getMe() || {};
     return String(me.role_label || me.role || 'employee').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
   }
+  function workIndicator(value,label){
+    var state=typeof value==='number'?(value>0?'pending':'empty'):value==='checking'?'checking':'unknown';
+    return '<span class="work-indicator '+state+'" role="img" aria-label="'+mEsc(label|| (state==='pending'?value+' pending item'+(value===1?'':'s'):state==='empty'?'No pending work':state==='checking'?'Checking current work':'Could not check current work'))+'">'+(state==='pending'?value:state==='unknown'?'!':state==='checking'?'…':'')+'</span>';
+  }
+  function paintWorkCount(el,value,label){if(!el)return;el.dataset.state=typeof value==='number'?(value>0?'pending':'empty'):value;el.innerHTML=workIndicator(value,label);}
   function opRow(op, scope, deferredCount) {
     var owner=mReadScope.identity();
     var row = mEl(
       '<button type="button" class="v2-work-row"><span><b>' + mEsc(op.label) + '</b>' +
-      '<small>' + mEsc(op.sub) + '</small></span><em data-count>' + (op.action ? 'GO' : 'OPEN') + '</em>' +
+      '<small>' + mEsc(op.sub) + '</small></span><span class="work-row-status" data-count>' + (op.count?workIndicator('checking'):'') + '</span>' +
       '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button>'
     );
+    row.dataset.workRoute=op.route;row.dataset.workParams=JSON.stringify(op.params||{});
+    if(!op.count)row.querySelector('[data-count]').hidden=true;
     explain(row,helpKey(op),op.label);
     row.onclick = function () { if (row.isConnected && !row.closest('.hidden,[hidden]') && owner===mReadScope.identity() && (!scope || scope.current()) && allowed(op)) MApp.go(op.route, op.params); };
     if (op.count && !deferredCount) op.count().then(function (n) {
       var e = row.querySelector('[data-count]');
-      if (e) e.textContent = n ? n + ' WAITING' : 'CLEAR';
+      paintWorkCount(e,n);
     }).catch(function () {
-      var e = row.querySelector('[data-count]'); if (e) e.textContent = 'UNKNOWN';
+      var e = row.querySelector('[data-count]');paintWorkCount(e,'unknown');
     });
     return row;
   }
@@ -373,7 +380,6 @@
         (r.status==='liquidation_submitted'&&MApp.can('purchasing.settle_requests')&&(r.buyer_id!==user.id||user.role==='admin'))||
         (r.status==='approved'&&r.buyer_id===user.id);
     });});
-    add('notice','Unread update','notifications',['mobile.access'],'/notifications?unread=1&limit=200',function(q){return (q.items||[]).filter(function(n){var match=/^#\/([a-z-]+)/.exec(n.url||'');return !n.read_at&&(!match||MApp.canOpen(match[1]));}).map(function(n){return Object.assign({},n,{title:n.title,name:n.body});});});
     add('personal','Personal task','tasks',['mobile.access'],'/tasks',function(q){return (q||[]).filter(function(r){return !r.done;});});
     return sources;
   }
@@ -473,23 +479,15 @@
   }
   var workChevron='<svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg>';
   function queueParams(source){return source.key==='qc'||source.key==='qa'?{role:source.key}:source.key==='holds'?{role:'qa',tab:'hold'}:{};}
-  // A record identity, never a repeated title, is the grouping boundary.
-  function updateIdentity(n){
-    var target=noticeTarget(n.url);if(target)return target.task+':'+target.record;
-    var match=/^#\/([a-z-]+)(?:\?(.*))?$/.exec(n.url||''),p=new URLSearchParams(match?.[2]||'');
-    if(match&&match[1]!=='notifications'&&['id','unit','batch','job'].some(function(k){return p.has(k);})){p.sort();return match[1]+'?'+p.toString();}
-    if(n.link&&n.link.route&&n.link.params&&Object.keys(n.link.params).length)return n.link.route+':'+JSON.stringify(Object.keys(n.link.params).sort().map(function(k){return [k,n.link.params[k]];}));
-    return 'notice:'+n.id;
-  }
   function attentionFeed(page) {
-    page.appendChild(mEl('<section class="work-live-status"><div class="v2-work-title"><h2>Needs action</h2><button type="button" class="rk-back" data-attention-refresh>Refresh</button></div><p class="work-freshness" data-work-freshness role="status">Checking current work…</p><div data-work-recovery></div></section>'));
-    var host=mEl('<div class="v2-work-list" data-work-attention></div>');page.appendChild(host);
-    page.appendChild(mEl('<div class="work-overflow"><p class="v2-work-empty" data-work-empty hidden>No action needed right now. Your checked work queues are clear.</p><details class="work-disclosure" data-work-clear><summary><span data-work-clear-label>Other queues</span>'+workChevron+'</summary><div data-work-clear-list></div></details><details class="work-disclosure" data-work-updates><summary><span data-work-updates-label>Updates · Checking…</span>'+workChevron+'</summary><div data-work-update-list></div></details></div>'));
+    page.appendChild(mEl('<section class="work-live-status"><button type="button" data-attention-refresh hidden tabindex="-1" aria-hidden="true">Refresh</button><p class="work-freshness" data-work-freshness role="status">Checking current work…</p><div data-work-recovery></div></section>'));
+    var host=mEl('<div class="v2-work-list" data-work-attention role="region" aria-label="Pending work"></div>');page.appendChild(host);
+    page.appendChild(mEl('<div class="work-overflow"><p class="v2-work-empty" data-work-empty hidden></p></div>'));
     return host;
   }
   function startWorkFeed(page,host,countRows,scope,personalDirect) {
-    var groups=new Map(),running=false,poll,recoveryPending=false,recoveryError='',recoveryRows=[],noticeBusy=new Set();
-    var clearBox=page.querySelector('[data-work-clear]'),clearHost=page.querySelector('[data-work-clear-list]'),updates=page.querySelector('[data-work-updates]'),updateHost=page.querySelector('[data-work-update-list]'),tracking=page.querySelector('[data-work-tracking]'),recovery=page.querySelector('[data-work-recovery]');
+    var groups=new Map(),running=false,poll,recoveryPending=false,recoveryError='',recoveryRows=[];
+    var recovery=page.querySelector('[data-work-recovery]');
     function sourceCurrent(source){return scope.current()&&attentionSources().some(function(s){return s.key===source.key;});}
     function openQueue(source){if(sourceCurrent(source))MApp.go(source.route,queueParams(source));}
     function group(source) {
@@ -498,71 +496,42 @@
       return g;
     }
     function sortRows(g){return g.rows.slice().sort(function(a,b){var x=homeWorkTime(g.source,a),y=homeWorkTime(g.source,b);return (x<y?-1:x>y?1:0)||Number(a.id)-Number(b.id);});}
-    function drawUpdates(g){
-      var sig=JSON.stringify([g.rows,g.pending,g.error,g.more,g.showAll,Array.from(groups.values()).map(function(x){return [x.source.key,x.loaded,x.pending,x.error,x.rows.map(attentionId)];})]);if(g.updateSignature===sig)return;g.updateSignature=sig;
-      var focused=g.el.contains(document.activeElement),focusKey=document.activeElement?.dataset.updateGroup;
-      var combined=new Map();g.rows.forEach(function(n){var key=updateIdentity(n);if(!combined.has(key))combined.set(key,[]);combined.get(key).push(n);});
-      g.el.innerHTML=g.error?'<p class="work-feedback error" role="status">Updates could not be refreshed. '+(g.loaded?'Last loaded updates are shown.':'Unread count unknown.')+'</p>':'';
-      Array.from(combined.values()).slice(0,g.showAll?combined.size:3).forEach(function(records){
-        var n=records[0],target=noticeTarget(n.url),live=target&&groups.get(target.task),active=live?.rows.some(function(r){return attentionId(r)===target.record;});
-        var hint=live?.loaded&&!live.error&&!live.pending?(active?'Current work · Opens checked record':'No longer pending here · Check current record'):'Update · Check current record';
-        if(!target)hint='Information / history';
-        var row=mEl('<button type="button" class="v2-work-row work-update" data-attention="notice"><span><b>'+mEsc(n.title)+'</b><small>'+mEsc(n.body||'')+'</small><small>'+mEsc(hint)+' · '+records.length+' unread update'+(records.length===1?'':'s')+'</small></span>'+workChevron+'</button>');
-        row.dataset.updateGroup=updateIdentity(n);
-        row.onclick=async function(){
-          var key=updateIdentity(n);if(!row.isConnected||!sourceCurrent(g.source)||noticeBusy.has(key))return;noticeBusy.add(key);row.disabled=true;
-          async function navigate(){if(!scope.current()||!row.isConnected||!sourceCurrent(g.source))return;if(n.url&&n.url.indexOf('#/notifications')!==0)MApp.go('work',{notice:n.url});else MApp.go('notifications',{id:n.id});}
-          try {await scope.run(function(opts){return Promise.all(records.map(function(item){return API.post('/notifications/'+item.id+'/read',{},opts);}));});await navigate();}
-          catch(e){if(e.cancelled||!scope.current())return;var error=g.el.querySelector('[data-update-error]');if(error)error.remove();error=mEl('<div class="work-feedback error" data-update-error role="alert">Could not save read status. Retry the update or <button type="button" class="work-text-button">open without marking read</button>.</div>');error.querySelector('button').onclick=navigate;g.el.appendChild(error);}
-          finally{noticeBusy.delete(key);if(row.isConnected)row.disabled=false;}
-        };g.el.appendChild(row);
-      });
-      if(!g.pending&&!g.error&&!g.rows.length)g.el.appendChild(mEl('<p class="m-hint">No unread updates.</p>'));
-      if(combined.size>3){var more=mEl('<button type="button" class="work-view-all">'+(g.showAll?'Show fewer updates':'Show all '+combined.size+' update groups')+workChevron+'</button>');more.onclick=function(){g.showAll=!g.showAll;drawUpdates(g);g.el.querySelector('.work-view-all').focus({preventScroll:true});};g.el.appendChild(more);}
-      if(g.more)g.el.appendChild(mEl('<p class="m-hint">Showing the newest 200 unread updates. Older updates appear as these are read.</p>'));
-      var history=commonTool('View notification history','notifications',scope);g.el.appendChild(history);
-      page.querySelector('[data-work-updates-label]').textContent='Updates · '+(g.pending?'Checking…':g.error?'Unknown':g.rows.length+(g.more?'+':'')+' unread');
-      if(g.error)updates.open=true;
-      if(focused){var next=Array.from(g.el.querySelectorAll('[data-update-group]')).find(function(row){return row.dataset.updateGroup===focusKey;});(next||updates.querySelector('summary')).focus({preventScroll:true});}
-    }
     function arrange(){
       if(!scope.current())return;
-      var focus=document.activeElement,resumeFocus=focus?.dataset.workResume,all=Array.from(groups.values()),work=all.filter(function(g){return !['notice','csr'].includes(g.source.key);}),priority=function(g){return g.rows.length||g.held?0:g.error?1:g.pending?2:3;};
+      var focus=document.activeElement,resumeFocus=focus?.dataset.workResume,all=Array.from(groups.values()),work=all.filter(function(g){return g.source.key!=='notice';}),priority=function(g){return g.rows.length||g.held?0:g.error?1:g.pending?2:3;};
       work.sort(function(a,b){var x=sortRows(a)[0],y=sortRows(b)[0],at=x?homeWorkTime(a.source,x):Infinity,bt=y?homeWorkTime(b.source,y):Infinity;return priority(a)-priority(b)||(at<bt?-1:at>bt?1:0)||a.source.key.localeCompare(b.source.key);});
-      var position=0,clearPosition=0;
-      work.forEach(function(g){var empty=g.loaded&&!g.pending&&!g.error&&!g.rows.length&&!g.held,target=empty?clearHost:host,index=empty?clearPosition++:position++;if(target.children[index]!==g.el)target.insertBefore(g.el,target.children[index]||null);});
-      var clear=work.filter(function(g){return g.loaded&&!g.pending&&!g.error&&!g.rows.length&&!g.held;});
-      clearBox.hidden=!clear.length;page.querySelector('[data-work-clear-label]').textContent='Other queues · '+clear.length+' clear';
-      var checking=all.some(function(g){return g.pending;})||recoveryPending||countRows.some(function(e){return e.pending;}),unknown=all.some(function(g){return !!g.error;})||recoveryError||countRows.some(function(e){return e.error;}),extra=countRows.filter(function(e){var key=opSource(e.op),g=groups.get(key);return !e.error&&e.value>0&&(!g||e.value>g.rows.length);});
+      var position=0;
+      work.forEach(function(g){var empty=g.loaded&&!g.pending&&!g.error&&!g.rows.length&&!g.held;if(empty){g.el.remove();return;}if(host.children[position]!==g.el)host.insertBefore(g.el,host.children[position]||null);position++;});
+      var checking=all.some(function(g){return g.pending;})||recoveryPending||countRows.some(function(e){return e.pending;}),unknown=all.some(function(g){return !!g.error;})||recoveryError||countRows.some(function(e){return e.error;}),extra=countRows.filter(function(e){var key=opSource(e.op),g=groups.get(key);return !e.error&&!e.pending&&e.value>0&&(!g||!g.pending&&!g.error&&e.value>g.rows.length+g.held);});
       recovery.innerHTML='';
       if(recoveryError)recovery.appendChild(mEl('<p class="work-feedback error" role="status">Saved work could not be checked. Refresh before starting another attempt.</p>'));
       recoveryRows.forEach(function(entry){var row=mEl('<button type="button" class="v2-work-row work-recovery"><span><b>'+mEsc(entry.title)+'</b><small>'+mEsc(entry.sub)+'</small></span><em>RESUME</em>'+workChevron+'</button>');row.dataset.workResume=JSON.stringify([entry.source.key,entry.params]);row.onclick=function(){if(row.isConnected&&sourceCurrent(entry.source))MApp.go(entry.source.route,entry.params);};recovery.appendChild(row);});
-      extra.forEach(function(entry){var row=opRow(entry.op,scope,true);row.classList.add('work-recovery');row.dataset.workResume=entry.op.label;row.querySelector('[data-count]').textContent=entry.value+' TO REVIEW';recovery.appendChild(row);});
-      countRows.filter(function(e){return e.error;}).forEach(function(entry){var row=opRow(entry.op,scope,true);row.classList.add('work-recovery');row.dataset.workResume=entry.op.label;row.querySelector('[data-count]').textContent='UNKNOWN';recovery.appendChild(row);});
+      extra.forEach(function(entry){var g=groups.get(opSource(entry.op)),n=g?entry.value-g.rows.length-g.held:entry.value,op=g?Object.assign({},entry.op,{label:'Saved work: '+entry.op.label,sub:'Review original attempts before starting another action'}):entry.op;var row=opRow(op,scope,true);row.classList.add('work-recovery');row.dataset.workResume=entry.op.label;paintWorkCount(row.querySelector('[data-count]'),n,n+' item'+(n===1?'':'s')+' to review'+(g?' from saved work':''));recovery.appendChild(row);});
+      countRows.filter(function(e){return e.error;}).forEach(function(entry){var row=opRow(entry.op,scope,true);row.classList.add('work-recovery');row.dataset.workResume=entry.op.label;paintWorkCount(row.querySelector('[data-count]'),'unknown');recovery.appendChild(row);});
       var active=work.some(function(g){return g.rows.length||g.held;}),allClear=!checking&&!unknown&&!active&&!extra.length&&!recoveryRows.length;
-      page.querySelector('[data-work-empty]').hidden=!allClear;
-      page.querySelector('[data-work-freshness]').textContent=checking?'Checking current work…':unknown?'Some work could not be checked · Refresh to retry':'Oldest first · Checked just now';
-      var notice=groups.get('notice');if(notice){drawUpdates(notice);page.querySelectorAll('[data-work-record]').forEach(function(row){var n=notice.rows.filter(function(update){var t=noticeTarget(update.url);return t&&t.task===row.dataset.attention&&t.record===row.dataset.workRecord;}).length,badge=row.querySelector('.work-update-badge');if(!n){if(badge)badge.remove();}else if(!badge){badge=mEl('<span class="work-update-badge"></span>');badge.textContent=n+' new';row.querySelector('b').appendChild(badge);}else if(badge.textContent!==n+' new')badge.textContent=n+' new';});}
+      var emptyMessage=page.querySelector('[data-work-empty]');emptyMessage.hidden=!allClear;emptyMessage.textContent='No pending work in your checked areas.';
+      var freshness=page.querySelector('[data-work-freshness]');freshness.textContent=checking?'Checking current work…':unknown?'Some work could not be checked. Pull down to retry.':'';freshness.hidden=!checking&&!unknown;
+      syncDirectory();
       if(focus?.isConnected&&document.activeElement!==focus)focus.focus({preventScroll:true});
       else if(resumeFocus){var saved=Array.from(recovery.querySelectorAll('[data-work-resume]')).find(function(row){return row.dataset.workResume===resumeFocus;});(saved||page.querySelector('[data-attention-refresh]')).focus({preventScroll:true});}
     }
     function draw(g) {
       if(!scope.current())return;
-      if(g.source.key==='notice'){if(g.el.parentNode!==updateHost)updateHost.appendChild(g.el);drawUpdates(g);arrange();return;}
-      if(g.source.key==='csr'&&tracking&&g.el.parentNode!==tracking)tracking.appendChild(g.el);
       var focused=g.el.contains(document.activeElement),focusedRecord=document.activeElement?.dataset.workRecord;
       var empty=g.loaded&&!g.pending&&!g.error&&!g.rows.length&&!g.held;
-      g.el.innerHTML='<div class="work-desk-heading"><h3>'+mEsc(g.source.title)+'</h3><span>'+mEsc(g.pending?'Checking…':g.error?'Unknown':homeCount(g.source,g.rows)+(g.held?' · '+g.held+' on hold':''))+'</span></div>'+
+      var count=g.rows.length+g.held,value=g.pending?'checking':g.error?'unknown':count,caption=g.pending?'Checking…':g.error?'Check needed':g.source.key==='rts'?(count===1?'entry':'entries'):homeCount(g.source,g.rows).replace(/^\d+ /,'');
+      g.el.innerHTML='<div class="work-desk-heading"><h3>'+mEsc(g.source.title)+'</h3><span class="work-group-count">'+workIndicator(value,g.source.title+': '+(typeof value==='number'?homeCount(g.source,g.rows)+(g.held?' · '+g.held+' on hold':''):caption))+' '+mEsc(caption)+'</span></div>'+(g.source.key==='rts'&&!g.pending&&!g.error?'<p class="work-group-detail">'+mEsc(homeCount(g.source,g.rows)+(g.held?' · '+g.held+' on hold':''))+'</p>':'')+
         (g.error?'<p class="work-feedback error" role="status">'+mEsc(g.error)+' '+(g.loaded?'Last loaded · Not refreshed. Open a record to check current status.':'Pending work could not be checked.')+'</p>':'')+
         (!g.loaded&&g.pending?'<p class="m-hint" role="status">Loading this queue…</p>':'');
       if(!empty)sortRows(g).slice(0,2).forEach(function(r){g.el.appendChild(attentionRow(g.source,r,scope,personalDirect,true));});
       if(g.held){var held=mEl('<button type="button" class="work-held">'+g.held+' unit'+(g.held===1?'':'s')+' on hold · View RTS issues '+workChevron+'</button>');held.onclick=function(){if(sourceCurrent(g.source))MApp.go('receiving',{tab:'issues'});};g.el.appendChild(held);}
       var more=mEl('<button type="button" class="work-view-all">'+(empty?'Open queue':g.rows.length?'View all '+mEsc(homeCount(g.source,g.rows)):'View queue')+' '+workChevron+'</button>');more.onclick=function(){if(more.isConnected)openQueue(g.source);};g.el.appendChild(more);
       arrange();
-      if(focused){var next=Array.from(g.el.querySelectorAll('[data-work-record]')).find(function(r){return r.dataset.workRecord===focusedRecord;});(empty?clearBox.querySelector('summary'):next||g.el.querySelector('button')||page.querySelector('[data-attention-refresh]')).focus({preventScroll:true});}
+      if(focused){var next=Array.from(g.el.querySelectorAll('[data-work-record]')).find(function(r){return r.dataset.workRecord===focusedRecord;});(empty?page.querySelector('[data-work-tools]>summary'):next||g.el.querySelector('button')||page.querySelector('[data-attention-refresh]')).focus({preventScroll:true});}
     }
-    function opSource(op){return op.route==='qc'?(op.params.tab==='hold'?'holds':op.params.role):op.route==='job-orders'?(op.params?.view==='approval'?'approval':'production'):({'so':'release','kit-release':'kits','repairs':'parts','receiving':'rts','deliveries':'delivery'})[op.route];}
-    function count(entry,text){var label=entry.row.querySelector('[data-count]');if(label&&scope.current())label.textContent=text;}
+    function opSource(op){return op.route==='sales'?'csr':op.route==='qc'?(op.params.tab==='hold'?'holds':op.params.role):op.route==='job-orders'?(op.params?.view==='approval'?'approval':'production'):({'so':'release','kit-release':'kits','repairs':'parts','receiving':'rts','deliveries':'delivery'})[op.route];}
+    function count(entry,value){var label=entry.row.querySelector('[data-count]');if(label&&scope.current()){label.hidden=false;paintWorkCount(label,value);}}
+    function syncDirectory(){countRows.forEach(function(entry){var g=groups.get(opSource(entry.op));if(entry.op.count){var n=entry.error||g?.error?'unknown':entry.pending||g?.pending?'checking':entry.value;if(n!=null)count(entry,n);}else if(g)count(entry,g.pending?'checking':g.error?'unknown':g.rows.length+g.held);});}
     async function savedWork(){
       recoveryPending=true;recoveryError='';
       try{
@@ -576,7 +545,7 @@
     async function refresh() {
       if(running||!scope.current())return;scope.cancelTimer(poll);running=true;
       var button=page.querySelector('[data-attention-refresh]');button.disabled=true;button.textContent='Refreshing…';
-      var sources=attentionSources();
+      var sources=attentionSources().filter(function(source){return source.key!=='notice';});
       if(personalDirect&&!sources.some(function(s){return s.key==='personal';}))sources.push({key:'personal',title:'Personal task',route:'tasks',path:'/tasks',select:function(rows){return rows.filter(function(r){return !r.done;});}});
       var read=workReader(scope),keys=sources.map(function(s){return s.key;});
       groups.forEach(function(g,key){if(!keys.includes(key)){g.el.remove();groups.delete(key);}});
@@ -595,16 +564,17 @@
       });
       jobs.push(savedWork());
       countRows.forEach(function(entry){
-        if(!entry.op.count)return;entry.pending=true;entry.error=false;count(entry,'CHECKING');
+        if(!entry.op.count)return;entry.pending=true;entry.error=false;count(entry,'checking');
         jobs.push(scope.run(function(){return entry.op.count(read);}).then(function(n){
           if(!Number.isInteger(n)||n<0)throw new Error('Count unavailable');
-          if(!allowed(entry.op)){entry.row.remove();return;}entry.value=n;count(entry,n?n+' WAITING':'CLEAR');
-        }).catch(function(){entry.error=true;entry.value=null;count(entry,'UNKNOWN');}).finally(function(){entry.pending=false;}));
+          if(!allowed(entry.op)){entry.row.remove();return;}entry.value=n;count(entry,n);
+        }).catch(function(){entry.error=true;entry.value=null;count(entry,'unknown');}).finally(function(){entry.pending=false;}));
       });
       await Promise.allSettled(jobs);
       if(!scope.current())return;running=false;button.disabled=false;button.textContent='Refresh';arrange();poll=scope.later(refresh,30000);
+      return {ok:!Array.from(groups.values()).some(function(g){return !!g.error;})&&!recoveryError&&!countRows.some(function(entry){return entry.error;})};
     }
-    page.querySelector('[data-attention-refresh]').onclick=refresh;refresh();
+    page.querySelector('[data-attention-refresh]').onclick=refresh;window.mScreenUX?.bindRefresh(page,refresh,function(){return scope.current()&&!running;});refresh();
   }
 
   // Reads are bounded and validated: a successful HTTP response is not proof of a valid queue.
@@ -654,7 +624,7 @@
     if (!sources().length) return;
     var owner = mReadScope.identity(), run = 0, timer, groups = new Map();
     var chevron = '<svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 5 7 7-7 7"/></svg>';
-    var section = mEl('<section class="v2-home-work" aria-label="Pending work"><div class="v2-work-title"><h2>Pending work</h2><button type="button" class="rk-back" data-home-work-refresh>Refresh</button></div><p class="v2-home-work-context" data-home-work-context>Checking current work…</p><div class="v2-home-work-empty" data-home-work-empty hidden><span aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg></span><div><b>No pending warehouse work</b><small data-home-work-checked></small></div></div><div data-home-work-list></div><div data-home-work-pending hidden></div><details class="v2-home-work-other" data-home-work-other hidden><summary><span data-home-work-other-label>Other queues</span>'+chevron+'</summary><div data-home-work-clear-list></div></details><p class="work-sr-only" role="status" data-home-work-status></p></section>');
+    var section = mEl('<section class="v2-home-work" aria-label="Pending work"><div class="v2-work-title"><h2>Pending work</h2><button type="button" class="rk-back" data-home-work-refresh hidden tabindex="-1" aria-hidden="true">Refresh</button></div><p class="v2-home-work-context" data-home-work-context>Checking current work…</p><div class="v2-home-work-empty" data-home-work-empty hidden><span aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg></span><div><b>No pending warehouse work</b><small data-home-work-checked></small></div></div><div data-home-work-list></div><div data-home-work-pending hidden></div><details class="v2-home-work-other" data-home-work-other hidden><summary><span data-home-work-other-label>Other queues</span>'+chevron+'</summary><div data-home-work-clear-list></div></details><p class="work-sr-only" role="status" data-home-work-status></p></section>');
     page.appendChild(section);
     var host = section.querySelector('[data-home-work-list]'), clearHost=section.querySelector('[data-home-work-clear-list]'), pendingHost=section.querySelector('[data-home-work-pending]');
     var titles={kits:'Kit release',parts:'Parts requests',holds:'QA holds'};
@@ -693,7 +663,7 @@
       section.querySelector('[data-home-work-checked]').textContent='All '+sorted.length+' queue'+(sorted.length===1?'':'s')+' checked';
       var context=section.querySelector('[data-home-work-context]');
       context.hidden=allClear;
-      context.textContent=checking.length?'Checking '+checking.length+' queue'+(checking.length===1?'':'s')+'…':work.length?work.length+' queue'+(work.length===1?'':'s')+' need'+(work.length===1?'s':'')+' attention · Oldest first':unknown.length+' queue'+(unknown.length===1?'':'s')+' could not be checked';
+      context.textContent=checking.length?'Checking '+checking.length+' queue'+(checking.length===1?'':'s')+'…':work.length?work.length+' queue'+(work.length===1?'':'s')+' need'+(work.length===1?'s':'')+' attention':unknown.length+' queue'+(unknown.length===1?'':'s')+' could not be checked';
       var other=section.querySelector('[data-home-work-other]');other.hidden=!clear.length;
       section.querySelector('[data-home-work-other-label]').textContent=allClear?'View all '+clear.length+' queue'+(clear.length===1?'':'s'):'Other queues · '+clear.length+' clear';
       if(focus&&focus.isConnected&&document.activeElement!==focus){
@@ -780,20 +750,15 @@
     var ops = OPS.filter(allowed), stockTools = STOCK_TOOLS.filter(function(op){return MApp.canOpen(op.route)&&MApp.can(op.permission);});
     view.innerHTML = '';
     var page = mEl('<section class="v2-work" data-figma-node="46:548"></section>');
-    page.appendChild(mEl('<header class="v2-work-heading"><h1>Work</h1><p>What do I need to do now?</p></header>'));
-    page.appendChild(mEl('<p class="work-role">'+mEsc(roleName())+(me.department_name?' · '+mEsc(me.department_name):'')+'</p>'));
+    page.appendChild(mEl('<h1 class="work-sr-only">Work</h1>'));
 
     var feed=attentionFeed(page);
-    var directory=mEl('<details class="work-disclosure work-tools-disclosure" data-work-tools><summary><span>All queues &amp; tools</span>'+workChevron+'</summary><div data-work-tools-body><div data-work-tracking></div></div></details>');page.appendChild(directory);
+    var directory=mEl('<details class="work-disclosure work-tools-disclosure" data-work-tools><summary><span>Work &amp; tools</span>'+workChevron+'</summary><div data-work-tools-body></div></details>');page.appendChild(directory);
     var toolsBody=directory.querySelector('[data-work-tools-body]');
-    var taskHead = mEl('<div class="v2-work-title"><h2>' + (ops.length ? 'My authorized queues' : 'My personal work') + '</h2><span>' + (ops.length ? ops.length + ' authorized queue' + (ops.length === 1 ? '' : 's') : 'Today') + '</span></div>');
-    toolsBody.appendChild(taskHead);
-    var list = mEl('<div class="v2-work-list"></div>');
+    var list = mEl('<div class="work-directory-list"></div>');
     toolsBody.appendChild(list);
     var countRows=[];
     if (ops.length) ops.forEach(function(op){var row=opRow(op,null,true);list.appendChild(row);countRows.push({op:op,row:row});});
-    else list.innerHTML='<p class="m-hint">Open a personal task above, or use Tasks &amp; reminders below.</p>';
-    var notices=commonTool('Notifications & history','notifications');notices.classList.add('v2-work-wide-tool');toolsBody.appendChild(notices);
 
     var blocker = mEl(
       '<button type="button" class="v2-work-row blocker"><span><b>Report a blocker</b>' +
@@ -803,13 +768,10 @@
     explain(blocker,'report-problem','Report a blocker');
     blocker.onclick = function () { if (blocker.isConnected && scope.current()) MApp.go('report-problem'); };
     toolsBody.appendChild(blocker);
-    if(stockTools.length){
-      toolsBody.appendChild(mEl('<div class="v2-work-title"><h2>Inventory tools</h2><span>From your assigned access</span></div>'));
-      var stockList=mEl('<div class="v2-work-list"></div>');stockTools.forEach(function(op){stockList.appendChild(opRow(op,null,true));});toolsBody.appendChild(stockList);
-    }
+    stockTools.forEach(function(op){list.appendChild(opRow(op,null,true));});
 
-    toolsBody.appendChild(mEl('<div class="v2-work-title tools"><h2>My tools</h2></div>'));
-    var tools = mEl('<div class="v2-work-tools"></div>');
+    toolsBody.appendChild(mEl('<h3 class="work-directory-heading">Personal</h3>'));
+    var tools = mEl('<div class="work-personal-tools"></div>');
     tools.appendChild(commonTool('Tasks & reminders', 'tasks'));
     tools.appendChild(commonTool('Notes / checklists', 'notes'));
     tools.appendChild(commonTool('Guides', 'guides'));

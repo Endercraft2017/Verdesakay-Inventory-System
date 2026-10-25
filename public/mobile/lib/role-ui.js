@@ -29,7 +29,6 @@
       view.innerHTML = '<section class="rk-page' + (role.accent ? ' rk-accent-' + role.accent : '') + (warehouseTask ? ' rk-warehouse-task' : '') + '">' +
         '<header class="rk-head">' +
           (opts.back ? '<button class="rk-back" type="button">‹ ' + e(opts.backLabel || 'Back') + '</button><br>' : '') +
-          '<span class="rk-chip">' + (role.icon ? '<img src="' + role.icon + '" alt="">' : role.glyph ? '<span class="glyph" aria-hidden="true">' + role.glyph + '</span>' : '') + e(opts.label || role.label) + '</span>' +
           '<h1>' + e(opts.title) + '</h1>' + (opts.subtitle ? '<p>' + e(opts.subtitle) + '</p>' : '') +
         '</header><div class="rk-body"></div></section>';
       if (opts.back) view.querySelector('.rk-back').onclick = opts.back;
@@ -77,7 +76,7 @@
         (o.pill ? '<span class="rk-pill ' + (o.pill.tone || '') + '">' + e(o.pill.text) + '</span>' : '<span></span>') +
         '<span class="rk-name">' + e(o.name) + '</span>' +
         '<span class="rk-meta">' + e(o.meta) + '</span>' +
-        '<img class="rk-go" src="/mobile/icons/v2/open-chevron.svg" alt=""></button>';
+        '<span class="m-status-rail' + (o.warn ? ' attention' : o.pill?.tone === 'warn' ? ' pending' : '') + '" aria-hidden="true"><img class="rk-go" src="/mobile/icons/v2/open-chevron.svg" alt=""></span></button>';
     },
     jobHead: function (o) {
       return '<div class="rk-jobhead' + (o.tone ? ' ' + o.tone : '') + '"><span class="rk-no">' + e(o.number) + '</span>' +

@@ -73,7 +73,8 @@ it('Work guide explains only displayed account tasks and distinguishes receipts 
  await go('work');
  const visible=[...view.querySelectorAll('[data-work-guide]')].map((e:any)=>e.dataset.workGuideTitle);
  const steps=w.MobileGuide.steps(view);
- expect(steps.slice(1).map((s:any)=>s.title)).toEqual(visible);
+ expect(steps.filter((s:any)=>visible.includes(s.title)).map((s:any)=>s.title)).toEqual(visible);
+ expect(steps.some((s:any)=>s.title==='Find all queues and tools')).toBe(true);
  const pr=steps.find((s:any)=>s.title==='Receive supplier delivery');expect(pr.body).toContain('supplier');expect(pr.body).toContain('vendor bill');
  const rts=steps.find((s:any)=>s.title==='RTS recording');expect(rts.body).toContain('final-passed');expect(rts.body).toContain('separate from Receive supplier delivery');
  expect(steps.find((s:any)=>s.title==='Release orders').body).toContain('Picking holds stock');
@@ -113,7 +114,7 @@ it('a personal-only account gets its own task and tools explained without wareho
  expect(steps.some((s:any)=>s.title==='Receive supplier delivery')).toBe(false);
  expect(steps.some((s:any)=>s.title==='Release orders')).toBe(false);
  const personal=steps.find((s:any)=>s.title==='<Review customer email>');expect(personal.body).toContain('personal task');
- w.MobileGuide.start();w.document.querySelector('[data-act=next]').click();
+ w.MobileGuide.start();for(let i=0;i<steps.findIndex((s:any)=>s.title==='<Review customer email>');i++)w.document.querySelector('[data-act=next]').click();
  expect(w.document.querySelector('.guide-coach h4').textContent).toBe('<Review customer email>');
  expect(w.document.querySelector('.guide-coach h4 review')).toBeNull();
  expect(steps.some((s:any)=>s.title==='Notes / checklists')).toBe(true);

@@ -19,5 +19,5 @@ MApp.route('low-stock',function(view) {
     } catch(error) { if (scope.current() && !error.cancelled) mStockUI.failure(out,error,load); }
     finally { busy=false; if (scope.current()) { refresh.disabled=false; out.removeAttribute('aria-busy'); } }
   }
-  input.oninput=function() { state.q=input.value; if (items) render(); }; refresh.onclick=load; load();
+  input.oninput=function() { state.q=input.value; if (items) render(); }; refresh.onclick=load;window.mScreenUX?.bindRefresh(root,async function(){await load();return {ok:!!items};},function(){return scope.current()&&!busy;}); load();
 });

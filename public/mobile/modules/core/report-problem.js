@@ -622,7 +622,7 @@
       if (record) { number.value = record.credentials.number; code.value = record.credentials.access_code; }
       number.disabled = code.disabled = busy || !!record;
       form.querySelector('[type="submit"]').disabled = busy;
-      form.querySelector('[type="submit"]').textContent = ctx.pending?.kind === 'lookup' ? 'Checking…' : record ? 'Refresh status' : 'Open report';
+      form.querySelector('[type="submit"]').textContent = ctx.pending?.kind === 'lookup' ? 'Checking…' : record ? 'Check report status' : 'Open report';
       host.querySelector('[data-change-report]').hidden = !record; host.querySelector('[data-change-report]').disabled = busy;
       view.querySelector('.m-report-back').disabled = busy;
       host.querySelector('[data-lookup-status]').textContent = record ? 'Viewing ' + record.credentials.number + '. Your access code stays only in this open app.' : 'Use your saved number and code. They are not saved on this device.';

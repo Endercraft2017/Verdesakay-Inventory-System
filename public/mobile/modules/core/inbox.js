@@ -158,7 +158,7 @@
       '<button class="m-chat-send-button" id="m-chat-send" type="button" aria-label="Send message">➤</button>' +
       '</div></section>';
     state.container = view.querySelector('.m-chat-v2');
-    view.querySelector('[data-back]').onclick = function () { MApp.go('inbox'); };
+    view.querySelector('[data-back]').onclick = function () { MApp.back(); };
     wireComposer();
     fitThreadToViewport();
     view.querySelector('#m-chat-load-older button').onclick = loadOlder;

@@ -12,6 +12,18 @@ function boot(factory = new IDBFactory(), post: any = async () => ({ id: 1, numb
 }
 const entry = (jo = 184, unit = 601) => ({ jobId: jo, path: '/job-orders/' + jo + '/products-in', payload: { location_id: 2, unit_ids: [unit] }, labels: ['K4-' + unit] });
 describe('durable RTS receipts', () => {
+  it('can include held entries for Work without double-counting saved identities or changing the default count',async()=>{
+    let posts=0;const {recovery}=boot(undefined,async()=>{posts++;return {id:1,number:'PI-1'};});
+    const q={units:[{id:601,hold:{id:7}},{id:602}],batches:[{id:81,remaining_qty:3}]};
+    expect(await recovery.count(q)).toBe(2);
+    expect(await recovery.count(q,{includeHeld:true})).toBe(3);
+    await recovery.begin('rts-unit:601',[entry()],'FG-A03');
+    expect(await recovery.count(q)).toBe(3);
+    expect(await recovery.count(q,{includeHeld:true})).toBe(3);
+    await recovery.begin('rts-unit:603',[entry(184,603)],'FG-A03');
+    expect(await recovery.count(q,{includeHeld:true})).toBe(4);
+    expect(posts).toBe(0);
+  });
   it('replays the exact batch quantity, location and notes after a committed response is lost', async () => {
     const factory = new IDBFactory(), requests: any[] = [], applied = new Map(); let lost = true;
     const post = async (path: string, payload: any, opts: any) => {

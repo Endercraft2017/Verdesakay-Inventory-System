@@ -53,7 +53,7 @@
     mWorkflow.paint(view,s,async function(body,saved,visible){
       if(saved.operation.state!=='confirmed'||saved.operation.local)return;
       var host=mEl('<section data-sale-production-result></section>');body.appendChild(host);
-      async function refresh(){try{var av=await API.get('/orders/'+id+'/availability');if(!visible())return;host.innerHTML=productionJobs(av)||RoleUI.note('info','Review the current sale for its warehouse handoff. No linked production job is listed.');}catch(e){if(!visible())return;host.innerHTML=RoleUI.note('warn','Production handoff details are unavailable. Refresh before assuming there is no production work.')+RoleUI.actions([{id:'sale-result-refresh',label:'Refresh production details',kind:'secondary'}]);host.querySelector('button').onclick=refresh;}}
+      async function refresh(){try{var av=await API.get('/orders/'+id+'/availability');if(!visible())return;host.innerHTML=productionJobs(av)||RoleUI.note('info','Review the current sale for its warehouse handoff. No linked production job is listed.');}catch(e){if(!visible())return;host.innerHTML=RoleUI.note('warn','Production handoff details are unavailable. Refresh before assuming there is no production work.')+RoleUI.actions([{id:'sale-result-refresh',label:'Retry production details',kind:'secondary'}]);host.querySelector('button').onclick=refresh;}}
       await refresh();
     });
   }

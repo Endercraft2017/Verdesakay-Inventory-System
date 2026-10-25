@@ -207,7 +207,7 @@
       job = { controller: controller },
       timer;
     ctx.jobs[key] = job;
-    new Promise(function (resolve, reject) {
+    job.promise = new Promise(function (resolve, reject) {
       controller.signal.addEventListener(
         'abort',
         function () {
@@ -357,7 +357,7 @@
           ? '<div class="m-empty" role="status">No payslips are available yet.</div>'
           : '') +
       '</div>' +
-      '<button class="m-v2-secondary m-payslip-refresh" id="m-pay-refresh" type="button" ' +
+      '<button class="m-v2-secondary m-payslip-refresh" id="m-pay-refresh" type="button" ' + (ctx.errors.rows ? '' : 'hidden tabindex="-1" aria-hidden="true" ') +
       (ctx.jobs.rows ? 'disabled' : '') +
       '>' +
       (ctx.jobs.rows ? 'Refreshing…' : ctx.errors.rows ? 'Retry payslips' : 'Refresh payslips') +
@@ -375,6 +375,7 @@
         }
       };
     });
+    window.mScreenUX?.bindRefresh(root,async function(){refreshRows(ctx);await ctx.jobs.rows?.promise;return {ok:!ctx.errors.rows};},function(){return alive(ctx)&&!ctx.jobs.rows&&!ctx.pdf&&!ctx.modal;});
     root.querySelector('#m-pay-refresh').onclick = function () {
       refreshRows(ctx);
     };
@@ -491,7 +492,7 @@
           '</span></aside>') +
       errorHTML(ctx.pdfError) +
       (ctx.pdfNote ? statusHTML(ctx.pdfNote) : '') +
-      '<button class="m-v2-secondary m-payslip-refresh" id="m-pay-refresh" type="button" ' +
+      '<button class="m-v2-secondary m-payslip-refresh" id="m-pay-refresh" type="button" hidden tabindex="-1" aria-hidden="true" ' +
       (ctx.jobs.rows || ctx.pdf ? 'disabled' : '') +
       '>' +
       (ctx.jobs.rows ? 'Refreshing…' : 'Refresh payslip') +
@@ -499,6 +500,7 @@
     root.querySelector('.m-payslip-back').onclick = function () {
       if (alive(ctx)) showList(ctx, ctx.active.view, r.id);
     };
+    window.mScreenUX?.bindRefresh(root,async function(){refreshRows(ctx);await ctx.jobs.rows?.promise;return {ok:!ctx.errors.rows};},function(){return alive(ctx)&&!ctx.jobs.rows&&!ctx.pdf&&!ctx.modal;});
     root.querySelector('#m-pay-refresh').onclick = function () {
       refreshRows(ctx);
     };

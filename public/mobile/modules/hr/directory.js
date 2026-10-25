@@ -1,7 +1,7 @@
 /* Active colleagues, grouped as before. Reads belong to this visible sign-in only. */
 MApp.route('directory', function(view) {
   MApp.setTitle('Directory');
-  var root=mEl('<section class="m-directory"><h1 class="work-sr-only">Directory</h1><div class="directory-heading"><p class="m-hint">Find a colleague and open your conversation.</p><button type="button" class="work-text-button" data-directory-refresh>Refresh</button></div><label class="m-field" for="m-dir-q"><span class="m-label">Search colleagues</span></label><div class="directory-search"><input type="search" class="m-input" id="m-dir-q" placeholder="Search name, department or role"><button type="button" class="work-text-button" data-directory-clear disabled>Clear</button></div><p class="m-hint" data-directory-count role="status"></p><div data-directory-feedback></div><div id="m-dir-list"></div></section>');
+  var root=mEl('<section class="m-directory"><h1 class="work-sr-only">Directory</h1><div class="directory-heading"><p class="m-hint">Find a colleague and open your conversation.</p><button type="button" class="work-text-button" data-directory-refresh hidden tabindex="-1" aria-hidden="true">Refresh</button></div><label class="m-field" for="m-dir-q"><span class="m-label">Search colleagues</span></label><div class="directory-search"><input type="search" class="m-input" id="m-dir-q" placeholder="Search name, department or role"><button type="button" class="work-text-button" data-directory-clear disabled>Clear</button></div><p class="m-hint" data-directory-count role="status"></p><div data-directory-feedback></div><div id="m-dir-list"></div></section>');
   view.replaceChildren(root);
   var scope=mReadScope.create(root),me=MApp.getMe()||{},q=root.querySelector('#m-dir-q'),list=root.querySelector('#m-dir-list');
   var all=[],loaded=false,loading=false,error='',status='',opening=null;
@@ -47,5 +47,5 @@ MApp.route('directory', function(view) {
   }
   q.addEventListener('input',render);
   root.querySelector('[data-directory-clear]').onclick=function(){if(!present())return;q.value='';render();q.focus();};
-  root.querySelector('[data-directory-refresh]').onclick=load;load();
+  root.querySelector('[data-directory-refresh]').onclick=load;window.mScreenUX?.bindRefresh(root,async function(){await load();return {ok:!error};},function(){return present()&&!loading&&opening===null;});load();
 });

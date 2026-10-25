@@ -21,6 +21,7 @@
       } catch(error) { if (scope.current() && !error.cancelled) mStockUI.failure(out,error,load); }
       finally { busy=false; if (scope.current()) out.removeAttribute('aria-busy'); }
     }
+    window.mScreenUX?.bindRefresh(root,async function(){await load();return {ok:!out.querySelector('[role=alert]')};},function(){return scope.current()&&!busy&&!action&&!upload;});
     function render(own) {
       var uom=typeof item.unit==='string'?item.unit:'', q=function(value) { return mStockUI.quantity(value,uom); };
       out.innerHTML='<div class="m-stock-identity"><div class="m-sr-photo" data-item-photo>No photo</div><div><h1 class="m-sr-name">'+mEsc(item.name)+'</h1><p class="m-sr-sku">SKU <b>'+mEsc(item.sku||'—')+'</b>'+(item.category?' · '+mEsc(item.category):'')+'</p></div>'+mStockUI.refresh('item detail')+'</div>';

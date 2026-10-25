@@ -143,9 +143,12 @@
       if (!same(ctx) || ex.cancelled) return;
       ctx.statusError = errorText(ex, 'Could not load your clock.'); if (ex.status === 401 || ex.status === 403) ctx.status = null;
     }).finally(function () { ctx.statusJob = null; if (alive(ctx) && !ctx.attempt) paint(ctx); });
+    return ctx.statusJob;
   }
   function paint(ctx) {
     if (!alive(ctx)) return;
+    var refreshRoot=ctx.active.root;
+    window.mScreenUX?.bindRefresh(refreshRoot,async function(){var job=refresh(ctx,true);paint(ctx);await job;return {ok:!ctx.statusError};},function(){var replacement=refreshRoot.querySelector('.v2-clock-replace');return alive(ctx)&&!ctx.attempt&&!ctx.recovery&&!ctx.statusJob&&(!replacement||replacement.hidden);});
     var a = ctx.attempt;
     if (!a || a.phase === 'qr') drawDashboard(ctx);
     else if (a.phase === 'receipt') drawReceipt(ctx, a);
@@ -168,7 +171,7 @@
       '<h2>Record</h2><div class="v2-clock-slots">' + SLOTS.map(function (d) { return '<button type="button" class="v2-clock-slot' + (slots[d.key] ? ' is-filled' : '') + (s.next_slot === d.key ? ' is-next' : '') + '" data-slot="' + d.key + '"' + (ctx.statusJob || ctx.statusError || ctx.attempt || ctx.recovery ? ' disabled' : '') + '><span>' + mEsc(d.label) + (s.next_slot === d.key ? ' <i>Next</i>' : '') + '</span><b>' + mEsc(slots[d.key] || '–') + '</b></button>'; }).join('') + '</div>' +
       '<div class="v2-clock-replace" role="group" aria-label="Confirm replacement" hidden></div><section class="v2-clock-notice"><p></p></section><button type="button" class="v2-clock-fix">Fix a missed or incorrect punch on another day</button>' +
       '<h2 class="v2-clock-log-title">' + (day ? 'Shift log · ' + mEsc(displayDate(day)) : 'Today’s log') + '</h2>' + ((s.punches || []).length ? '<ul class="v2-clock-log">' + s.punches.map(logRow).join('') + '</ul>' : '<div class="v2-clock-empty"><span><b>No entries yet</b><small>Tap Time in to begin this shift’s record</small></span></div>') +
-      '<button type="button" class="m-btn m-btn-secondary m-clock-refresh" data-refresh-status' + (ctx.statusJob || ctx.attempt ? ' disabled' : '') + '>' + (ctx.statusJob ? 'Refreshing…' : ctx.statusError ? 'Retry status' : 'Refresh status') + '</button></section>';
+      '<button type="button" class="m-btn m-btn-secondary m-clock-refresh" data-refresh-status' + (ctx.statusError ? '' : ' hidden tabindex="-1" aria-hidden="true"') + (ctx.statusJob || ctx.attempt ? ' disabled' : '') + '>' + (ctx.statusJob ? 'Refreshing…' : ctx.statusError ? 'Retry status' : 'Refresh status') + '</button></section>';
     var page = root.firstElementChild, where = s.can_clock_anywhere ? getWhere(ctx) : 'office';
     function canStart() { return alive(ctx) && !ctx.attempt && !ctx.recovery && !ctx.statusJob && !ctx.statusError; }
     function paintWhere() { page.querySelector('.v2-clock-notice p').textContent = noticeText(s, where === 'outside'); page.querySelectorAll('[data-where]').forEach(function (button) { var on = button.dataset.where === where; button.classList.toggle('on', on); button.setAttribute('aria-pressed', String(on)); button.disabled = !!ctx.attempt; }); }
@@ -177,6 +180,7 @@
     page.querySelector('.v2-clock-fix').onclick = function () { if (alive(ctx) && !ctx.attempt) MApp.go('time-fix'); };
     root.querySelector('[data-open-recovery]')?.addEventListener('click', function () { if (alive(ctx) && !ctx.attempt) { ctx.attempt = ctx.recovery; paint(ctx); } });
     page.querySelector('[data-refresh-status]').onclick = function () { if (alive(ctx) && !ctx.attempt && !ctx.statusJob) { refresh(ctx, true); paint(ctx); } };
+
     page.querySelectorAll('[data-slot]').forEach(function (tile) { tile.onclick = function () {
       if (!canStart()) return;
       var d = slotDef(tile.dataset.slot), at = slots[d.key], replace = page.querySelector('.v2-clock-replace');

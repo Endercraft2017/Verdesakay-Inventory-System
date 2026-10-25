@@ -9,7 +9,7 @@ var TENANT_BASE = typeof TENANT_BASE === 'string' ? TENANT_BASE : '';
 importScripts(TENANT_BASE + '/mobile/lib/queue-store.js');
 var queueStore = MobileQueueStore.create(TENANT_BASE);
 var CACHE_PREFIX = 'vds-m:' + (TENANT_BASE || '/') + ':';
-var CACHE_VERSION = CACHE_PREFIX + 'v158';
+var CACHE_VERSION = CACHE_PREFIX + 'v159';
 
 // Keep in sync with the <script>/<link> list in public/mobile/index.html.
 var SHELL = [
@@ -57,6 +57,7 @@ var SHELL = [
   '/js/auth-controls.js',
   '/mobile/app.js',
   '/mobile/lib/dom.js',
+  '/mobile/lib/screen-ux.js',
   '/mobile/lib/read-scope.js',
   '/mobile/lib/stock-ui.js',
   '/mobile/lib/personal.js',

@@ -5,6 +5,9 @@
   "type": "module",
   "main": "server.ts",
   "scripts": {
+    "ui:scratch": "node scripts/ui-scratch.mjs",
+    "ui:scratch:serve": "node scripts/serve-ui-scratch.mjs",
+    "test:ui:scratch": "node scripts/test-ui-scratch.mjs",
     "start": "tsx server.ts",
     "dev": "tsx watch server.ts",
     "typecheck": "tsc --noEmit",

@@ -5,6 +5,7 @@ window.MApp = (function () {
   var routes = {};
   var me = null;
   var authFlow = null; // Keep one-time auth screens stable until explicitly completed.
+  var lastNavigation = null, navigationOwner = null, backTraversal = null, navigationId = 0;
 
   var loginScreen = function () { return document.getElementById('m-login'); };
   var appScreen = function () { return document.getElementById('m-app'); };
@@ -50,8 +51,65 @@ window.MApp = (function () {
     }
     return '#/' + name + q;
   }
-  function go(name, params) { var destination = hashFor(name, params); if(window.mPersonalDraft && !mPersonalDraft.allow(destination)) return; location.hash = destination; }
-  function back() { if (history.length > 1) history.back(); else go('home'); }
+  function isWorkDetail(parsed) { return parsed.name === 'work' && !!(parsed.params.notice || parsed.params.task && parsed.params.record); }
+  function navigationKey(hash) {
+    var match=/^#\/?([a-z-]*)(?:\?(.*))?$/.exec(hash||'#/home');
+    if(!match)return null;var query=new URLSearchParams(match[2]||'');query.delete('t');query.sort();
+    return '#/'+(match[1]||'home')+(query.size?'?'+query.toString():'');
+  }
+  function safeDestination(hash) { var match=/^#\/([a-z-]+)(?:\?.*)?$/.exec(hash||'');return !!(match&&routes[match[1]]&&canOpen(match[1])); }
+  function rememberNavigation(changed) {
+    var owner=String(me?.id),key=navigationKey(location.hash),state=history.state||{},entry=state.vdsMobileNav;
+    if(navigationOwner!==owner){navigationOwner=owner;lastNavigation=null;backTraversal=null;}
+    if(!entry||entry.owner!==owner){entry={owner:owner,id:++navigationId,route:key,back:changed?lastNavigation?.route||null:null};}
+    else if(entry.route!==key)entry=Object.assign({},entry,{route:key}); // Filters may replace this entry.
+    history.replaceState(Object.assign({},state,{vdsMobileNav:entry}),'');lastNavigation=entry;
+  }
+  function go(name, params) {
+    var destination = hashFor(name, params);
+    if(window.mPersonalDraft && !mPersonalDraft.allow(destination)) return;
+    if(navigationKey(destination)===navigationKey(location.hash)){
+      // Existing workflow completions use t to reload their current record. Do
+      // that in-place instead of adding a same-screen Back destination.
+      if(params?.t!==undefined&&destination!==location.hash){history.replaceState(history.state,'',destination);return render();}
+      return;
+    }
+    var previous = navigationKey(location.hash), parent=safeDestination(previous)?previous:null;
+    location.hash = destination;
+    history.replaceState(Object.assign({},history.state,{vdsMobileNav:{owner:String(me?.id),id:++navigationId,route:navigationKey(destination),back:parent}}),'');
+  }
+  function backFallback(parsed) {
+    if(isWorkDetail(parsed))return '#/work';
+    if(Object.keys(parsed.params).length)return hashFor(parsed.name,parsed.params.step&&parsed.params.id?{id:parsed.params.id}:{});
+    var parent=parsed.name==='notifications'?'home':TAB_OF[parsed.name]||'home';
+    return hashFor(parent==='profile'?'settings':parent);
+  }
+  function replaceDestination(destination){
+    if(!safeDestination(destination))destination='#/home';
+    if(window.mPersonalDraft&&!mPersonalDraft.allow(destination))return;
+    history.replaceState(Object.assign({},history.state,{vdsMobileNav:null}),'',destination);lastNavigation=null;render();
+  }
+  function back() {
+    if(backTraversal)return;
+    var parsed=parseHash(),key=navigationKey(location.hash),entry=history.state?.vdsMobileNav,target=entry?.back;
+    // A filter may replace the URL without replacing this owned history entry.
+    if(entry?.owner===String(me?.id)&&safeDestination(target)&&target!==key&&history.length>1){
+      if(window.mPersonalDraft&&!mPersonalDraft.allow(target))return;
+      backTraversal={from:key,target:target,attempts:0};history.back();
+    }else replaceDestination(backFallback(parsed));
+  }
+  function navigationEvent(event){
+    if(backTraversal&&event?.type==='hashchange')return;
+    var key=navigationKey(location.hash);
+    if(backTraversal){
+      if(key===backTraversal.from&&backTraversal.attempts++<16){history.back();return;}
+      var traversal=backTraversal;backTraversal=null;
+      if(!safeDestination(key)){replaceDestination(safeDestination(traversal.target)?traversal.target:'#/home');return;}
+    }
+    // popstate + hashchange can describe the same traversal. Render it once.
+    if(lastNavigation?.route===key)return;
+    render(true);
+  }
 
   function parseHash() {
     var h = location.hash.replace(/^#\/?/, '');
@@ -71,7 +129,7 @@ window.MApp = (function () {
   function setTitle(t) { document.getElementById('m-title').textContent = t || 'Home'; }
 
   /* ---------- chrome: tabs + segments ---------- */
-  var TAB_ROOTS = { home: 1, work: 1, clock: 1, inbox: 1, settings: 1, notifications: 1 };
+  var TAB_ROOTS = { home: 1, work: 1, clock: 1, inbox: 1, settings: 1 };
   // Which stable bottom destination owns each route.
   var TAB_OF = {
     home: 'home',
@@ -114,7 +172,7 @@ window.MApp = (function () {
 
   function paintChrome(parsed) {
     var name = parsed.name;
-    var isRoot = !!TAB_ROOTS[name];
+    var isRoot = !!TAB_ROOTS[name] && !isWorkDetail(parsed) && !(name==='inbox'&&(parsed.params.thread||parsed.params.user));
     document.getElementById('m-back').classList.toggle('hidden', isRoot);
 
     // V2 uses one employee-first Home. Approvals, People and role work have
@@ -134,6 +192,16 @@ window.MApp = (function () {
     document.getElementById('m-ctx-role').textContent = role || (isWarehouse() ? 'Warehouse' : 'Employee');
     document.getElementById('m-ctx-place').textContent = (me && me.department_name) || 'Main';
     setOnline(navigator.onLine);
+    refreshNotificationBadge();
+  }
+
+  var notificationRead=0;
+  async function refreshNotificationBadge(){
+    var run=++notificationRead,owner=me?.id,token=API.getToken?.(),badge=document.getElementById('m-notification-dot'),button=document.getElementById('m-notifications-top');
+    if(!owner||!badge||!button)return;
+    try{var data=await API.get('/notifications/unread-count');if(run!==notificationRead||me?.id!==owner||API.getToken?.()!==token)return;
+      if(!Number.isInteger(data?.count)||data.count<0)throw Error('Unread count unavailable');badge.classList.remove('unknown');badge.classList.toggle('hidden',!data.count);badge.textContent=data.count>99?'99+':String(data.count);button.setAttribute('aria-label',data.count?'Notifications, '+data.count+' unread':'Notifications');
+    }catch(e){if(run!==notificationRead||me?.id!==owner||API.getToken?.()!==token)return;badge.classList.remove('hidden');badge.classList.add('unknown');badge.textContent='!';button.setAttribute('aria-label','Notifications, unread count unavailable');}
   }
 
   function setOnline(on) {
@@ -190,7 +258,7 @@ window.MApp = (function () {
     return routeEnabled(name) && (!needs || needs.some(can));
   }
 
-  function render() {
+  function render(navigationChange) {
     if (authFlow) return;
     if(window.mPersonalDraft && !mPersonalDraft.allow()) return;
     if (window.mChatNavigation && !mChatNavigation.allow()) return;
@@ -202,6 +270,8 @@ window.MApp = (function () {
     if (!hasAccess()) { showBlocked(); return; }
     var parsed = parseHash();
     var fn = routes[parsed.name] || routes.home;
+    rememberNavigation(navigationChange===true);
+    window.mScreenUX?.navigation();
     paintChrome(parsed);
     var v = viewEl();
     v.innerHTML = '';
@@ -219,7 +289,7 @@ window.MApp = (function () {
       return;
     }
     try {
-      fn(v, parsed.params);
+      return fn(v, parsed.params);
     } catch (e) {
       v.innerHTML = '<div class="m-error">' + (e && e.message ? e.message : 'Something went wrong') + '</div>';
     }
@@ -771,7 +841,8 @@ window.MApp = (function () {
         });
     });
 
-    window.addEventListener('hashchange', render);
+    window.addEventListener('hashchange', navigationEvent);
+    window.addEventListener('popstate', navigationEvent);
 
     if (API.getToken()) {
       API.get('/auth/me').then(function (res) { enterApp(res.user); }).catch(function (ex) {
@@ -807,7 +878,7 @@ window.MApp = (function () {
     route: route, go: go, back: back, nav: hashFor,
     getMe: getMe, setMe: setMe, can: can, hasModule: hasModule, isEmployee: isEmployee, isWarehouse: isWarehouse,
     hasProductionAccess: hasProductionAccess, canApprove: canApprove, canOpen: canOpen, routeEnabled: routeEnabled,
-    seg: seg, setTitle: setTitle, render: render, currentLocation: parseHash, refreshInboxBadge: refreshInboxBadge,
+    seg: seg, setTitle: setTitle, render: render, currentLocation: parseHash, refreshInboxBadge: refreshInboxBadge, refreshNotificationBadge: refreshNotificationBadge,
     signOut: signOut, isSharedSession: function () { return API.isSharedSession(); },
     refreshAccess: refreshAccess,
     routes: function () { return Object.keys(routes); },

@@ -34,10 +34,25 @@ For every substantive UI/UX audit, proposal, mock, implementation or review in t
 
 This standing workflow supplements each chunk's specific brief without expanding its screen count or adding unrelated features. Simple questions, status replies and prompt-only rewrites do not require rendering or implementation checks.
 
+## Mobile design decisions are shared
+
+Apply approved mobile design decisions through the shared shell, tokens and
+components in `public/mobile/mobile-v2.css`, `lib/screen-ux.js`, `lib/role-ui.js`
+and shared navigation. New and existing mobile routes must use those patterns;
+do not leave page-specific copies of dropdowns, button radius/press effects,
+status rails, ordinary refresh controls or Back behavior. Follow the current
+contract in `docs/design/mobile-work.md`, including its superseding revisions.
+Preserve workflow-specific confirmations, draft protection, real error Retry and
+explicit stock checks. Native multi-selects keep their selection behavior. Verify
+shared changes across representative HR, inventory and production screens in
+both themes and reduced motion; describe browser coverage honestly instead of
+claiming every page or physical device was tested.
+
 ## UI/UX review: disposable scratch preview (user preference)
 
-For UI/UX investigation, design, implementation and review, use a local interactive
-scratch preview instead of MagicPath unless the user explicitly requests otherwise.
+For UI/UX investigation, design, implementation and review, generate an interactive
+scratch preview from local app code and deliver it through the confirmed private
+HTTPS Sites workflow below instead of MagicPath, unless the user requests otherwise.
 Put the proposed change and its visual explanation in the preview early so the
 user can see, try and iterate on it; do not substitute a long chat plan.
 
@@ -48,17 +63,16 @@ user can see, try and iterate on it; do not substitute a long chat plan.
   `work/ui-scratch/index.html`. Keep the reusable builder and template outside
   that output directory. Update the fixture scenarios and in-preview notes for the
   screen currently under review; do not reuse stale task-specific explanations.
-  Give the user a clickable entry file, not just a screenshot. If direct-file
-  preview is blocked, use `npm run ui:scratch:serve` for the same HTML on loopback
-  and report that limitation without replacing the UI with a mock.
+  Use `npm run ui:scratch:serve` for internal browser verification when needed.
+  Deliver the private HTTPS link to the user; the generated file remains the source.
 - If a checkout does not yet contain the scratch helper commands, create the
   equivalent local builder/runner first. This instruction does not install them;
   do not claim a preview or command is available without verifying it.
 - Deliver a preview the user can actually reach. A localhost server inside a
-  remote workspace is not reachable at localhost on the user’s computer. Use a
-  supported forwarded preview URL or a downloadable self-contained artifact.
-  Verify the delivery path; if the interface is unknown, clarify it. Do not
-  describe a workspace-only URL as a working user-facing preview.
+  remote workspace is not reachable at localhost on the user’s computer. The
+  private Sites link is the confirmed delivery method. Do not describe a
+  workspace-only URL as a working user-facing preview. If hosting is unavailable,
+  explain the limitation and use a verified alternative without changing the UI.
 - Start each rebuild from a clean slate: wipe only the designated generated
   `work/ui-scratch/` directory, then recreate it. Guard the exact path and ownership;
   never delete source, user files, other work evidence, or other scratch folders.
@@ -79,3 +93,31 @@ user can see, try and iterate on it; do not substitute a long chat plan.
   needed to deliver it. Put routine plans, design rationale and iteration reports
   in the scratch preview. Follow system/developer requirements for brief progress
   updates, while avoiding a long duplicated explanation in chat.
+
+### Private HTTPS delivery (confirmed by the user)
+
+- Reuse the existing scratch Site; do not create a new Site for each iteration.
+  Project ID: `appgprj_6add8ad5d3cc81919a5e4ebe9b8d0ef4`.
+  URL: `https://verdesakay-ui-scratch.wavylion256.chatgpt.site`.
+  Its audience is owner-only. Preserve that audience and check current access
+  before publishing; never make it public to resolve a viewing problem.
+- Read the installed Sites skill and use its supported source, packaging and
+  private publishing tools. The Site checkout is separate from the application
+  repository, currently `/workspace/sites/verdesakay-ui-scratch`. If that checkout
+  is missing, reopen this same Site through its source-repository workflow.
+  Preserve its `.openai/hosting.json`, project identity and Git metadata.
+- After rebuilding and verifying the scratch file, replace the Site's generated
+  static content with that exact HTML and its required assets/licenses. Verify
+  the package matches the tested scratch output. Publish the updated version to
+  the same URL as part of UI/UX review; do not require another routine confirmation.
+  Publishing the preview does not authorize deploying or pushing app changes.
+- Keep hosting identity outside the wiped scratch output. Additional metadata may
+  be recorded in `docs/design/ui-scratch-hosting.json`; the ID above also allows
+  another session to recover the Site without that optional file.
+- Keep disposable records and isolated preview transport/storage. Do not connect
+  production APIs, embed live credentials or enable real business writes for review.
+  Clearly label simulated behavior and any unsupported actions inside the preview.
+- Confirm publication through the returned deployment result; poll only while
+  pending. Return the literal successful HTTPS URL, with change explanations and
+  verification results inside the preview. Report any publishing/access failure
+  accurately; a local HTTP success or expected URL alone does not prove delivery.

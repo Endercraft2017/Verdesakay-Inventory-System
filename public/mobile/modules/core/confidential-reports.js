@@ -112,6 +112,7 @@
     function controls() {
       if (!alive()) return;
       view.querySelector('.m-report-back').disabled = !!state.pending;
+      window.mScreenUX?.bindRefresh(host,async function(){await load();return {ok:!state.loadError};},function(){return alive()&&!state.pending&&!state.loadJob&&!ctx.viewer;});
       host.querySelectorAll('[data-refresh-case]').forEach(function (button) { button.disabled = !!state.pending || !!state.loadJob; button.textContent = state.loadJob ? 'Refreshing case…' : state.report ? state.loadError ? 'Retry case' : 'Refresh case' : 'Retry case'; });
       var status = host.querySelector('#m-cr-status'), reply = host.querySelector('#m-cr-reply');
       if (status) { status.querySelector('select').disabled = !!state.pending; status.querySelector('[type="submit"]').disabled = !!state.pending || state.selected === state.report.status; status.querySelector('[type="submit"]').textContent = state.pending === 'status' ? 'Updating status…' : 'Update status'; status.querySelector('[data-close-warning]').hidden = state.selected !== 'closed'; }
@@ -128,7 +129,7 @@
         else if (focus.dataset.crFeedback) selector = '[data-cr-feedback="' + focus.dataset.crFeedback + '"]';
       }
       var r = state.report;
-      var loadStatus = (state.loadJob ? '<p class="m-hint" role="status">' + (r ? 'Refreshing case…' : 'Loading report…') + '</p>' : '') + (state.loadError ? '<p class="m-error" data-cr-load-error role="alert">' + mEsc(state.loadError) + (r ? ' Your reply and last loaded case details are still here.' : '') + '</p>' : '') + (r || state.loadError ? '<button class="m-v2-secondary m-cr-refresh" type="button" data-refresh-case>Refresh case</button>' : '');
+      var loadStatus = (state.loadJob ? '<p class="m-hint" role="status">' + (r ? 'Refreshing case…' : 'Loading report…') + '</p>' : '') + (state.loadError ? '<p class="m-error" data-cr-load-error role="alert">' + mEsc(state.loadError) + (r ? ' Your reply and last loaded case details are still here.' : '') + '</p>' : '') + (r || state.loadError ? '<button class="m-v2-secondary m-cr-refresh" type="button" data-refresh-case'+(state.loadError?'':' hidden tabindex="-1" aria-hidden="true"')+'>Refresh case</button>' : '');
       if (!r) { host.innerHTML = loadStatus; host.querySelector('[data-refresh-case]')?.addEventListener('click', function () { load(); }); controls(); return; }
       host.innerHTML = '<span class="m-report-status m-cr-status-badge">' + mEsc(label(r.status)) + '</span><section class="m-report-review">' +
         '<div><span>' + mEsc(r.number) + '</span><b>' + mEsc(r.subject || r.category) + '</b></div><div><span>Category</span><b>' + mEsc(r.category) + '</b></div><div><span>Incident</span><b>' + mEsc([r.incident_date, r.location].filter(Boolean).join(' · ') || 'Not provided') + '</b></div><div><span>Filed · updated</span><b>' + mEsc(r.created_on) + ' · ' + mEsc(r.updated_on) + '</b></div></section>' +

@@ -335,7 +335,7 @@
           R.check('jo-plan-reviewed', 'I reviewed the quantity, locations and planned components.') +
           (short.length ? R.check('jo-shortage-reviewed', 'I understand the shortage needs warehouse follow-up.') : '') +
           R.actions([{ id: 'jo-approve', label: 'Approve plan', kind: 'primary' }]) : '') +
-        R.actions([{ id: 'jo-refresh-draft', label: 'Refresh review', kind: 'secondary' }].concat(canAdjust() && jo.approved_at ? [{ id: 'jo-kit', label: 'Open kit release', kind: 'primary' }] : []));
+        R.actions([{ id: 'jo-refresh-draft', label: 'Check latest plan', kind: 'secondary' }].concat(canAdjust() && jo.approved_at ? [{ id: 'jo-kit', label: 'Open kit release', kind: 'primary' }] : []));
       body.querySelector('#jo-refresh-draft').onclick = function () { reopen(jo.id); };
       var ap = body.querySelector('#jo-approve');
       if (ap) {

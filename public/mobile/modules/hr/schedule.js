@@ -136,7 +136,7 @@
       job = { controller: controller },
       timer;
     ctx.job = job;
-    new Promise(function (resolve, reject) {
+    job.promise = new Promise(function (resolve, reject) {
       controller.signal.addEventListener(
         'abort',
         function () {
@@ -350,7 +350,7 @@
         ? 'Opens the existing request form for this date. HR must approve the change.'
         : 'Choose a future published working day to request a change.') +
       '</p>' +
-      '<button class="m-v2-secondary m-schedule-refresh" id="scheduleRefresh" type="button" ' +
+      '<button class="m-v2-secondary m-schedule-refresh" id="scheduleRefresh" type="button" ' + (ctx.error ? '' : 'hidden tabindex="-1" aria-hidden="true" ') +
       (ctx.job ? 'disabled' : '') +
       '>' +
       (ctx.job ? 'Refreshing…' : ctx.error ? 'Retry schedule' : 'Refresh schedule') +
@@ -372,6 +372,7 @@
     root.querySelector('#scheduleRequest').onclick = function () {
       if (alive(ctx) && eligible(ctx)) MApp.go('requests', { type: 'schedule_change', date: ctx.selected });
     };
+    window.mScreenUX?.bindRefresh(root,async function(){load(ctx,true);var job=ctx.job;paint(ctx);await job?.promise;return {ok:!ctx.error};},function(){return alive(ctx)&&!ctx.job;});
     root.querySelector('#scheduleRefresh').onclick = function () {
       if (alive(ctx) && !ctx.job) {
         load(ctx, true);

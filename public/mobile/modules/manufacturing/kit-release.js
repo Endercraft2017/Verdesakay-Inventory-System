@@ -269,7 +269,7 @@
     }).join('') + '<div id="kr-pick-status" class="rk-note" role="status"></div>' +
       R.note('info', 'Enter the total physically picked so far, not an additional quantity. Saving picks reserves parts; only final release deducts stock. A partial kit cannot be released.') +
       (accepted ? R.actions([{ id: 'kr-save-pick', label: 'Save progress', kind: 'primary' }]) : '') +
-      R.actions((shorts.length ? [{ id: 'kr-short', label: 'Shortage details / report', kind: 'secondary' }] : []).concat([{ id: 'kr-refresh', label: 'Refresh stock and purchasing', kind: 'secondary' }]));
+      R.actions((shorts.length ? [{ id: 'kr-short', label: 'Shortage details / report', kind: 'secondary' }] : []).concat([{ id: 'kr-refresh', label: 'Check stock and purchasing', kind: 'secondary' }]));
     function picks() {
       var state = { lines: [], valid: true, complete: true, changed: false, savedComplete: 0 };
       Array.prototype.forEach.call(body.querySelectorAll('[data-pick]'), function (el) {

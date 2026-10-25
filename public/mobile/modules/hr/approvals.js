@@ -71,7 +71,7 @@
   function read(ctx, reconcile) {
     if (!alive(ctx) || ctx.readJob || (reconcile ? ctx.phase !== 'uncertain' : ctx.phase !== 'idle')) return;
     var job = ctx.readJob = {}, selected = ctx.selected; ctx.readError = '';
-    bounded(job,20000,function(signal) { return API.get('/me/approvals',{signal:signal,isCurrent:function() { return alive(ctx) && ctx.readJob === job && !signal.aborted; }}); }).then(function(inbox) {
+    job.promise = bounded(job,20000,function(signal) { return API.get('/me/approvals',{signal:signal,isCurrent:function() { return alive(ctx) && ctx.readJob === job && !signal.aborted; }}); }).then(function(inbox) {
       if (!alive(ctx) || ctx.readJob !== job || job.controller.signal.aborted) return;
       if (!inbox || !Array.isArray(inbox.requests) || !Array.isArray(inbox.time_corrections)) throw new Error('The approvals response could not be read. Try again.');
       ctx.inbox = inbox; ctx.items = pending(inbox); ctx.needsFresh = false;
@@ -91,6 +91,7 @@
       paint(ctx); if (ctx.readError) focus(ctx,'[role=alert]');
     });
     paint(ctx);
+    return job.promise.then(function(){return {ok:!ctx.readError};});
   }
   function reconcileResult(ctx,inbox) {
     var intent = ctx.intent; if (!intent) return;
@@ -205,7 +206,7 @@
     var root = ctx.active.root, item = currentItem(ctx), active = document.activeElement;
     var restore = root.contains(active) ? {id:active.id,start:active.selectionStart,end:active.selectionEnd} : null;
     var busy = !idle(ctx), enabled = canDecide(ctx), at = ctx.items.findIndex(function(it) { return it.key === item?.key; });
-    var content = '<h1 class="m-appr-sr-only">Approvals</h1><div class="m-appr-intro"><p>Review one request at a time.</p><button id="m-appr-refresh" class="m-appr-link"' + (busy ? ' disabled' : '') + '>Refresh</button></div>';
+    var content = '<h1 class="m-appr-sr-only">Approvals</h1><div class="m-appr-intro"><p>Review one request at a time.</p><button id="m-appr-refresh" hidden tabindex="-1" aria-hidden="true" class="m-appr-link"' + (busy ? ' disabled' : '') + '>Refresh</button></div>';
     content += message(ctx.readError,true) + message(ctx.error,true) + message(ctx.notice,false);
     if (ctx.readJob) content += message(ctx.inbox ? 'Checking latest approvals…' : 'Loading approvals…',false);
     if (ctx.inbox?.can_approve === false) content += '<div class="m-card m-appr-empty"><h2>No approval access</h2><p>Your account does not currently have permission to review approvals.</p></div>';
@@ -226,6 +227,7 @@
     if (ctx.last && ctx.phase !== 'receipt') content += '<button class="m-appr-link" data-last>View last decision result</button>';
     root.innerHTML = content;
     bind(ctx,'#m-appr-refresh, #m-appr-retry',function() { read(ctx,false); });
+    window.mScreenUX?.bindRefresh(root,function(){return read(ctx,false);},function(){return alive(ctx)&&idle(ctx);});
     bind(ctx,'[data-prev]',function() { move(ctx,-1); }); bind(ctx,'[data-next]',function() { move(ctx,1); });
     bind(ctx,'#m-appr-note-toggle',function() { if (!idle(ctx) || currentItem(ctx)?.key !== item.key) return; ctx.expanded[item.key] = !expanded; paint(ctx); focus(ctx,expanded ? '#m-appr-note-toggle' : '#m-appr-note'); });
     bind(ctx,'#m-appr-note',function(e,el) { if (idle(ctx) && currentItem(ctx)?.key === item.key) ctx.notes[item.key] = el.value; },'input');

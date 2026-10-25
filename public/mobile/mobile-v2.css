@@ -50,6 +50,9 @@
   --text: var(--v2-text);
   --danger: var(--v2-danger);
 }
+/* Preserve the page and fixed dock width when an overlay locks body scrolling.
+   Overlay scrollbars reserve no space; classic scrollbars keep their existing lane. */
+html { scrollbar-gutter: stable; }
 body { background: var(--v2-bg); color: var(--v2-text); }
 #m-app { min-height: 100dvh; background: var(--v2-bg); }
 .m-topbar {
@@ -59,6 +62,8 @@ body { background: var(--v2-bg); color: var(--v2-text); }
   border-bottom: 0;
   backdrop-filter: blur(10px);
 }
+.m-topbar #m-back { width:44px; height:44px; flex:none; color:var(--v2-text); }
+.m-topbar #m-back:focus-visible { outline:3px solid var(--v2-green); outline-offset:2px; }
 .m-topbar .m-title { color: var(--v2-text); font-weight: 750; letter-spacing: -.02em; }
 .m-ctx-line { color: var(--v2-muted); }
 .m-top-notifications {
@@ -1223,16 +1228,16 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 @media(max-width:360px){.work-desk-heading{flex-wrap:wrap;gap:4px}.v2-work .v2-work-row em{max-width:70px}.v2-work .v2-work-title>span{max-width:105px;text-align:right}}
 .m-directory [data-directory-feedback]>.m-hint{color:var(--v2-muted);font-size:12px;line-height:1.65}
 
-/* Work: active records first; empty desks, updates and tools use native disclosure. */
+/* Work: live attention first, unread notices and one compact destination directory. */
 .work-role{margin:0 6px 12px;color:var(--v2-muted);font-size:12px;line-height:1.6;overflow-wrap:anywhere}
 .v2-work .v2-work-heading{padding-bottom:5px}.v2-work .v2-work-heading>p{display:none}
 .work-live-status>.v2-work-title{margin-top:10px;margin-bottom:0}
 .work-freshness{margin:0 6px 12px;color:var(--v2-muted);font-size:12px;line-height:1.6}
 .v2-work [data-work-attention]{gap:14px}
 .v2-work .work-compact-record{min-height:76px;border-radius:14px;padding:12px 14px;grid-template-columns:minmax(0,1fr) auto;align-items:center}
-.v2-work .work-compact-record>em{font-size:11px;font-weight:500;max-width:85px;color:var(--v2-muted)}
-.v2-work .work-compact-record small{margin-top:5px;font-size:12px;line-height:1.5}
-.work-desk-heading{min-height:32px}.work-desk-heading h3{font-size:13px;line-height:1.5}
+.v2-work .work-compact-record>em{font-size:12px;font-weight:500;max-width:85px;color:var(--v2-muted)}
+.v2-work .work-compact-record small{margin-top:5px;font-size:13px;line-height:1.5}
+.work-desk-heading{min-height:32px}.work-desk-heading h3{font-size:14px;line-height:1.5}
 .work-desk-heading>span{font-size:12px;line-height:1.5}
 .work-view-all,.work-held{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:44px;padding:10px 6px;background:transparent;border:0;color:var(--v2-green-deep);font:inherit;font-size:12px;text-align:left}
 :root[data-theme=dark] .work-view-all,:root[data-theme=dark] .work-held{color:var(--v2-green)}
@@ -1243,18 +1248,31 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 .work-disclosure[open]>summary>svg{transform:rotate(90deg)}
 .work-disclosure>summary:focus-visible{outline:3px solid var(--v2-green);outline-offset:2px}
 .work-disclosure>div{padding:0 3px 8px}
-[data-work-clear-list]>.work-desk{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;margin:0;border-top:1px solid var(--v2-line);gap:8px}
-[data-work-clear-list] .work-desk-heading{display:block;padding:8px 3px}
-[data-work-clear-list] .work-desk-heading>span{display:none}
-[data-work-clear-list] .work-view-all{width:auto;white-space:nowrap}
 .v2-work .work-update{grid-template-columns:minmax(0,1fr) 18px;border:0;border-top:1px solid var(--v2-line);border-radius:0;background:transparent;min-height:88px;padding:12px 4px;margin-top:0}
-.v2-work .work-update small{font-size:12px;line-height:1.5}
+.v2-work .work-update small{font-size:13px;line-height:1.5}
 .work-update-badge{display:inline-block;margin-left:8px;padding:2px 6px;border:1px solid var(--v2-line);border-radius:5px;font-size:10px;line-height:1.4;font-weight:500;color:var(--v2-muted);vertical-align:middle}
 .v2-work .work-recovery{margin:8px 0;border-color:var(--v2-warn-line);background:var(--v2-warn-soft)}
 .work-tools-disclosure .v2-work-title{margin-top:12px}.work-tools-disclosure .v2-work-row{border-radius:14px}
-.work-tools-disclosure [data-work-tracking]:empty{display:none}
-.v2-work [data-work-empty]{padding:14px 16px;line-height:1.6;margin:6px 0 12px}
+.v2-work [data-work-empty]{padding:14px 16px;font-size:13px;line-height:1.6;margin:6px 0 12px}
 .v2-work [hidden]{display:none!important}
+/* Work status is data, not a second navigation command. */
+.v2-work{--work-attention-bg:#b5473c;--work-attention-text:#fff}
+.work-indicator{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;vertical-align:middle;min-width:24px;height:24px;padding:0 5px;border-radius:999px;font-size:12px;font-weight:750;line-height:1;font-variant-numeric:tabular-nums;font-style:normal}
+.work-indicator.pending{background:var(--work-attention-bg);color:var(--work-attention-text)}
+.work-indicator.empty{min-width:10px;width:10px;height:10px;padding:0;background:var(--v2-green);box-shadow:0 0 0 3px var(--v2-green-soft)}
+.work-indicator.unknown{color:var(--v2-warn-text);background:var(--v2-warn-soft);border:1px solid var(--v2-warn-line)}
+.work-indicator.checking{color:var(--v2-muted);background:var(--v2-surface-soft)}
+.work-group-count{display:flex;align-items:center;justify-content:flex-end;gap:6px}.work-group-detail{margin:0 5px 5px;color:var(--v2-muted);font-size:12px;line-height:1.6}
+.work-summary-label{display:flex;flex:1;flex-direction:column;gap:3px}.work-summary-label>b{font-size:14px}.work-summary-label>small{font-size:12px;font-weight:400;color:var(--v2-muted)}
+.work-directory-list{display:grid;gap:0}
+.v2-work .work-directory-list>.v2-work-row{min-height:66px;grid-template-columns:minmax(0,1fr) auto 18px;gap:12px;padding:12px 5px;border:0;border-top:1px solid var(--v2-line);border-radius:0;background:transparent;box-shadow:none}
+.v2-work .work-directory-list>.v2-work-row:first-child{border-top:0}
+.v2-work .work-directory-list .v2-work-row b{font-size:14px;line-height:1.5}.v2-work .work-directory-list .v2-work-row small{font-size:12px;margin-top:4px}
+.work-row-status{display:inline-flex!important;align-items:center;justify-content:center;min-width:24px}
+.v2-work .work-row-status[hidden]{display:none!important}
+.work-directory-heading{margin:18px 5px 7px;font-size:13px;color:var(--v2-muted)}
+.work-personal-tools{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}.v2-work .work-personal-tools>.v2-work-tool{border:0;border-top:1px solid var(--v2-line);border-radius:0;min-height:48px;background:transparent;text-align:left;justify-content:flex-start;padding:10px 5px;font-size:14px}
+.v2-work .work-update-badge{margin-left:8px;padding:0 4px;min-width:20px;height:20px;border:0;font-size:11px;font-weight:700;line-height:1;vertical-align:middle}
 @media(max-width:360px){.v2-work .work-compact-record{padding:12px 10px}.work-desk-heading>span{max-width:125px}}
 
 /* Scan and Pending sync retain the existing scanner, picked item and queue cards. */
@@ -1304,3 +1322,82 @@ button.m-chat-reaction{font:inherit;cursor:pointer;color:inherit}.m-chat-remove-
 .sale-order-form .rk-field>small{font-size:12px;line-height:1.5;}
 
 :root[data-theme=dark] .sale-order-form .m-btn:not(.m-btn-secondary){color:var(--v2-bg);}
+
+/* Sales follow-up groups: one stage label and clearly separated order targets. */
+[data-sales-list] .sales-stage{display:grid;gap:10px}
+[data-sales-list] .sales-stage+.sales-stage{margin-top:20px}
+[data-sales-list] .rk-job .rk-name{font-size:14px;line-height:1.5}
+[data-sales-list] .rk-job .rk-meta{font-size:12px;line-height:1.5}
+
+.sales-pipeline .rk-field>small{font-size:12px;line-height:1.5;color:var(--v2-muted)}
+/* Sales list: full-width filter, compact two-line orders and one status rail. */
+.sales-pipeline>.rk-head.sales-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.sales-pipeline>.rk-body{margin-top:0}
+.sales-pipeline .sales-search{display:block;padding:12px 18px}
+.sales-pipeline .sales-search input{min-height:28px;margin-top:4px}
+.sales-order{appearance:none;width:100%;min-height:82px;padding:0;display:grid;grid-template-columns:minmax(0,1fr) 60px;grid-template-rows:auto auto;gap:4px 0;text-align:left;font:inherit;color:var(--v2-text);cursor:pointer;overflow:hidden}
+.sales-order-number{grid-column:1;grid-row:1;align-self:end;padding:14px 18px 0;font-size:15px;font-weight:750;line-height:1.5;overflow-wrap:anywhere}
+.sales-order-customer{grid-column:1;grid-row:2;padding:0 18px 14px;font-size:14px;font-weight:500;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--v2-text-2)}
+.m-status-rail{grid-column:2;grid-row:1 / 3;position:relative;display:flex;align-items:center;justify-content:center;align-self:stretch;background:var(--v2-surface-soft);border-left:1px solid var(--v2-line);color:var(--v2-muted)}
+.m-status-rail.open{background:var(--v2-green-soft);border-color:color-mix(in srgb,var(--v2-green) 45%,var(--v2-line));color:var(--rk-pill-ok)}
+.m-status-rail.pending{background:var(--v2-warn-soft);border-color:var(--v2-warn-line);color:var(--v2-warn-text)}
+.m-status-rail.attention{background:color-mix(in srgb,var(--v2-danger) 14%,var(--v2-surface));border-color:color-mix(in srgb,var(--v2-danger) 45%,var(--v2-line));color:var(--v2-danger)}
+.sales-order-rail .rk-go{width:18px;height:18px;opacity:.85}
+
+/* Mobile interaction tokens and shared native-select enhancement. */
+:root{--m-ux-gap:8px;--m-ux-inset:16px;--m-ux-control-radius:14px;--m-ux-menu-radius:18px;--m-ux-ease:cubic-bezier(.22,1,.36,1);--m-ux-press:110ms}
+[hidden]:not([hidden="until-found"]){display:none!important}
+.m-ux-sr,.m-ux-duplicate-title{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.m-select-anchor{position:relative;min-width:0}
+.m-select-wrap{display:block;position:relative;width:100%;min-width:0}
+.m-select-wrap>select.m-select-control{display:block;width:100%;box-sizing:border-box;min-height:44px;border-radius:var(--m-ux-control-radius);font:inherit;font-size:14px;line-height:1.5;padding:10px 34px 10px 14px;color:var(--v2-text);background-color:var(--v2-surface-soft);border:1px solid var(--v2-line);cursor:pointer}
+.rk-field.m-select-anchor{padding:12px 18px}
+.rk-field.m-select-anchor>small{font-size:12px;line-height:1.5;color:var(--v2-muted)}
+.rk-field.m-select-anchor .m-select-wrap>select.m-select-control{margin:4px 0 0;border:0;background-color:transparent;padding:4px 24px 4px 0;min-height:32px;font-size:15px;line-height:1.5}
+.m-select-control:focus-visible{outline:2px solid var(--v2-green);outline-offset:3px}
+.rk-field.m-select-anchor .m-select-control:focus-visible{outline:none} /* Field supplies the focus ring. */
+.m-select-control:disabled{cursor:default;opacity:.6}
+.m-select-menu{position:fixed;z-index:12000;box-sizing:border-box;padding:8px;display:flex;flex-direction:column;gap:6px;background:var(--v2-surface);border:1px solid var(--v2-line);border-radius:var(--m-ux-menu-radius);box-shadow:var(--v2-shadow-float);overflow-y:auto;overscroll-behavior:contain;scroll-padding:8px;transform-origin:top center}
+.m-select-menu[hidden]{display:none}
+.rk-field.m-select-anchor>.m-select-menu{left:-1px;right:-1px;width:calc(100% + 2px)}
+.m-select-menu.opens-above{top:auto;bottom:calc(100% + 6px);transform-origin:bottom center}
+.m-select-menu.is-closing{pointer-events:none}
+.m-select-menu [role=option]{flex:none;display:flex;align-items:center;min-height:44px;box-sizing:border-box;padding:7px 13px;border:3px solid transparent;background-clip:padding-box;border-radius:12px;font-size:14px;line-height:1.5;color:var(--v2-text);cursor:pointer;overflow-wrap:anywhere}
+.m-select-menu [role=option][aria-selected=true]{background-color:var(--v2-green-soft);font-weight:650}
+.m-select-menu [role=option].is-active:not([aria-selected=true]){background-color:var(--v2-surface-soft)}
+.m-select-menu [role=option][aria-disabled=true]{opacity:.5;cursor:default}
+@media(hover:hover){.m-select-menu [role=option]:not([aria-selected=true]):not([aria-disabled=true]):hover{background-color:var(--v2-surface-soft)}}
+:is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary){border-radius:var(--m-ux-control-radius);min-height:44px}
+#m-view[data-role-screen] .m-actions .m-btn{border-radius:var(--m-ux-control-radius)}
+:is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.sales-order,.rk-job,.v2-work-row){transition:transform var(--m-ux-press) var(--m-ux-ease)}
+html[data-input-method=pointer] :is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.sales-order,.rk-job,.v2-work-row):not(:disabled):active{transform:scale(.985)}
+html[data-input-method=keyboard] :is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.sales-order,.rk-job,.v2-work-row){transition:none}
+html[data-input-method=keyboard] :is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.sales-order,.rk-job,.v2-work-row):active{transform:none}
+.m-screen-refresh{position:fixed;top:8px;left:8px;z-index:1200;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.m-screen-refresh:focus-visible{clip-path:none;width:auto;height:44px;padding:0 16px;border-radius:14px;border:2px solid var(--v2-green);background:var(--v2-surface);color:var(--v2-text);outline:none}
+.m-pull-refresh{position:fixed;top:var(--m-topbar-h,74px);left:50%;z-index:1100;display:grid;place-items:center;width:44px;height:44px;border:1px solid var(--v2-line);border-radius:50%;background:var(--v2-surface);color:var(--v2-muted);box-shadow:var(--v2-shadow-float);opacity:0;transform:translate(-50%,-12px);pointer-events:none;transition:opacity 130ms var(--m-ux-ease),transform 160ms var(--m-ux-ease)}
+.m-pull-refresh.is-visible{opacity:1}
+.m-pull-refresh.is-ready,.m-pull-refresh.is-busy{color:var(--v2-green);border-color:var(--v2-green)}
+.m-pull-refresh.is-busy svg{animation:m-refresh-turn 800ms linear infinite}
+@keyframes m-refresh-turn{to{transform:rotate(360deg)}}
+html:has(.m-pull-refresh.is-visible){overscroll-behavior-y:contain}
+.v2-work .work-live-status:has([data-work-freshness][hidden]):not(:has(.work-recovery,.work-feedback)){display:none}
+.v2-work .work-desk:first-child .work-desk-heading{margin-top:0}
+@media(prefers-reduced-motion:reduce){.m-pull-refresh,:is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.sales-order,.rk-job,.v2-work-row){transition:none!important}:is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary,.sales-order,.rk-job,.v2-work-row):active{transform:none!important}.m-pull-refresh.is-busy svg{animation:none}.m-pull-refresh{transform:translate(-50%,0)!important}}
+.m-notification-dot{right:-3px;top:-3px;width:auto;min-width:20px;height:20px;padding:0 4px;box-sizing:border-box;display:grid;place-items:center;border:1px solid var(--v2-bg);border-radius:999px;background:var(--v2-danger);color:white;font-size:10px;font-weight:750;line-height:1}
+:root[data-theme=dark] .m-notification-dot{color:var(--v2-bg)}
+.m-notification-dot.hidden{display:none}
+.m-notification-dot.unknown{background:var(--v2-warn-soft);color:var(--v2-warn-text);border-color:var(--v2-warn-line)}
+
+/* The same full-height navigation rail on shared workflow cards. Unknown status
+   stays neutral; existing warning facts supply pending/attention colors. */
+.rk-job{grid-template-columns:minmax(0,1fr) auto 52px;padding:0;gap:6px 10px;overflow:hidden}
+.rk-job .rk-no{grid-column:1;grid-row:1;padding:14px 0 0 18px;overflow-wrap:anywhere}
+.rk-job .rk-pill{grid-column:2;grid-row:1;margin-top:14px;background:var(--v2-surface-soft);color:var(--v2-text-2)}
+.rk-job .rk-pill.warn{background:var(--v2-warn-soft);color:var(--v2-warn-text)}
+.rk-job .rk-name{grid-column:1 / 3;padding-left:18px;overflow-wrap:anywhere}
+.rk-job .rk-meta{grid-column:1 / 3;padding:0 0 14px 18px;overflow-wrap:anywhere}
+.rk-job>.m-status-rail{grid-column:3;grid-row:1 / 4}
+.rk-job .m-status-rail .rk-go{grid-column:auto;grid-row:auto;justify-self:auto;align-self:auto;width:18px;height:18px}
+.m-status-rail .rk-go{opacity:1}
+:root[data-theme=dark] .m-status-rail .rk-go{filter:brightness(1.8)}

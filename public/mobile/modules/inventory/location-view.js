@@ -30,8 +30,8 @@ MApp.route('location',function(view) {
       if (locations.some(function(l) { return Number(l.id)===Number(state.location); })) select.select.value=state.location;
       select.select.onchange=load; await load();
     } catch(error) { if (scope.current() && !error.cancelled) mStockUI.failure(out,error,function() { registry(true); }); }
-    finally { reading=false; if (scope.current()) refresh.disabled=false; }
+    finally { reading=false; if (scope.current()) {refresh.disabled=false;window.mScreenUX?.sync();} }
   }
   input.oninput=function() { state.q=input.value; if (record) render(); };
-  refresh.onclick=function() { if (!refresh.disabled) registry(true); }; registry(false);
+  refresh.onclick=function() { if (!refresh.disabled) registry(true); };window.mScreenUX?.bindRefresh(root,async function(){await registry(true);return {ok:!!record||!locations.length};},function(){return scope.current()&&!reading&&!refresh.disabled;}); registry(false);
 });

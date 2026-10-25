@@ -123,7 +123,7 @@
     MApp.setTitle('Today');
     var shell=render(view,{todayLoading:true});
     function preview(){return shell.querySelector('.v2-home-work');}
-    API.get('/me/today')
+    return API.get('/me/today')
       .then(function (t) { if(current())render(view, t || {},preview()); })
       .catch(function (ex) {
         if(!current())return;

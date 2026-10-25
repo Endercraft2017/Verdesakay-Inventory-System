@@ -10,7 +10,6 @@
   var ACTIONS = {
     request: { label: 'New request', route: 'requests', params: { new: '1' }, icon: icon('<path d="M12 5v14M5 12h14"/>') },
     report: { label: 'Report issue', route: 'report-problem', icon: icon('<path d="M12 3 2.8 19h18.4L12 3Z"/><path d="M12 9v4M12 17h.01"/>') },
-    message: { label: 'New message', route: 'inbox', params: { new: '1' }, icon: icon('<path d="M4 5h16v12H8l-4 4V5Z"/><path d="M8 9h8M8 13h5"/>') },
     scan: { label: 'Scan item', route: 'scan', icon: icon('<path d="M4 8V5h3M17 5h3v3M20 16v3h-3M7 19H4v-3M4 12h16"/>') },
     jobs: { label: 'Job orders', route: 'job-orders', icon: icon('<path d="M9 4h6l1 3H8l1-3Z"/><rect x="3" y="7" width="18" height="13" rx="2"/>') },
     qc: { label: 'QC inspection', route: 'qc', params: {role:'qc'}, icon: icon('<path d="m5 12 4 4L19 6"/><circle cx="12" cy="12" r="9"/>') },
@@ -20,12 +19,14 @@
     release: { label: 'Release order', route: 'so', icon: icon('<path d="M3 6h13v11H3zM16 10h3l2 3v4h-5M7 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4ZM18 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/>') }
   };
 
+  ACTIONS.sales={label:'Sales follow-up',route:'sales',icon:ACTIONS.jobs.icon};
   ACTIONS.qa={label:'QA inspection',route:'qc',params:{role:'qa'},icon:ACTIONS.qc.icon};
   ACTIONS.counts={label:'Stock counts',route:'stock-counts',icon:ACTIONS.jobs.icon};
   ACTIONS.purchasing={label:'Purchase requests',route:'purchase-requests',icon:ACTIONS.request.icon};
   ACTIONS.purchaseReceive={label:'Receive purchases',route:'receive',icon:ACTIONS.receiving.icon};
   ACTIONS.deliveries={label:'My deliveries',route:'deliveries',icon:ACTIONS.release.icon};
   var WORK={
+    sales:['orders.create','orders.edit','orders.approve'],
     qc:['production.inspect_qc'],qa:['production.inspect_qa','production.qa_review'],
     repairs:['production.repairs'],jobs:['production.record','production.manage','production.pause','production.approve'],
     receiving:['production.receive'],kitscan:['production.kit_release'],release:['orders.release'],scan:['inventory.mobile'],counts:['inventory.count'],
@@ -35,7 +36,7 @@
   function owner(){var me=MApp.getMe?.();return me?.id!=null&&window.API?JSON.stringify([API.base?.(),me.id,API.isSharedSession?.()]):null;}
   function identity(){return window.mReadScope?mReadScope.identity():JSON.stringify([owner(),window.API?.getToken?.(),MApp.getMe?.()?.permissions,MApp.getMe?.()?.modules]);}
   function storage(){return API.isSharedSession?.()?sessionStorage:localStorage;}
-  function valid(ids){return Array.isArray(ids)&&ids.length>=1&&ids.length<=2&&new Set(ids).size===ids.length&&ids.every(function(id){return Object.prototype.hasOwnProperty.call(WORK,id);});}
+  function valid(ids){return Array.isArray(ids)&&ids.length>=1&&ids.length<=3&&new Set(ids).size===ids.length&&ids.every(function(id){return Object.prototype.hasOwnProperty.call(WORK,id);});}
   function cache(ids){try{storage().setItem('vds_m_work_shortcuts:'+profileOwner,JSON.stringify(ids));}catch(e){}}
   function loadProfile(){
     var next=owner();if(next===profileOwner)return;
@@ -49,8 +50,8 @@
     }).catch(function(){/* Cached choices or the permitted recommendation remain usable offline. */}).finally(function(){clearTimeout(timer);if(profileRead===controller)profileRead=null;});
   }
   function available(){
-    var ids=['request','report'];if(MApp.can('messages.send')&&MApp.canOpen('inbox'))ids.push('message');
-    var options=workOptions(),chosen=selection===null?options.slice(0,1):selection.filter(function(id){return options.includes(id);});
+    var ids=['request','report'];
+    var options=workOptions(),chosen=selection===null?options.slice(0,3):selection.filter(function(id){return options.includes(id);});
     return ids.concat(chosen).map(function(id){return Object.assign({id:id},ACTIONS[id]);});
   }
   function close(immediate,done){
@@ -77,22 +78,23 @@
   function editShortcuts(){
     close(true);var options=workOptions(),captured=identity(),app=document.getElementById('m-app'),wasInert=!!app?.inert,overflow=document.body.style.overflow;
     var layer=document.createElement('div');layer.className='v2-orbit-overlay v2-orbit-settings';layer.setAttribute('aria-labelledby','orbit-settings-title');
-    layer.innerHTML='<div class="v2-orbit-backdrop" aria-hidden="true"></div><form class="v2-orbit-settings-card"><h2 id="orbit-settings-title">Your work shortcuts</h2><p>Keep the common actions. Add one or two shortcuts for the work you do most.</p><label for="orbit-first">First shortcut</label><select id="orbit-first" required></select><label for="orbit-second">Second shortcut <span>(optional)</span></label><select id="orbit-second"><option value="">None</option></select><p class="v2-orbit-settings-status" role="status" aria-live="polite"></p><div class="v2-orbit-settings-buttons"><button type="button" class="m-btn m-btn-secondary" data-cancel>Cancel</button><button type="submit" class="m-btn">Save shortcuts</button></div></form>';
-    var first=layer.querySelector('#orbit-first'),second=layer.querySelector('#orbit-second'),status=layer.querySelector('[role="status"]'),save=layer.querySelector('[type="submit"]');
-    options.forEach(function(id){[first,second].forEach(function(select){var o=document.createElement('option');o.value=id;o.textContent=ACTIONS[id].label;select.appendChild(o);});});
-    var chosen=available().map(function(a){return a.id;}).filter(function(id){return options.includes(id);});first.value=chosen[0]||options[0]||'';second.value=chosen[1]||'';
-    function distinct(){Array.from(second.options).forEach(function(o){o.disabled=o.value!==''&&o.value===first.value;});if(second.value===first.value)second.value='';}
-    first.onchange=distinct;distinct();
-    if(!options.length){status.textContent='No work shortcuts are available for your current access.';save.disabled=true;first.disabled=true;second.disabled=true;}
+    layer.innerHTML='<div class="v2-orbit-backdrop" aria-hidden="true"></div><form class="v2-orbit-settings-card"><h2 id="orbit-settings-title">Your work shortcuts</h2><p>Choose up to three shortcuts for your work. Inbox stays in the bottom navigation.</p><label for="orbit-first">First shortcut</label><select id="orbit-first" required></select><label for="orbit-second">Second shortcut <span>(optional)</span></label><select id="orbit-second"><option value="">None</option></select><label for="orbit-third">Third shortcut <span>(optional)</span></label><select id="orbit-third"><option value="">None</option></select><p class="v2-orbit-settings-status" role="status" aria-live="polite"></p><div class="v2-orbit-settings-buttons"><button type="button" class="m-btn m-btn-secondary" data-cancel>Cancel</button><button type="submit" class="m-btn">Save shortcuts</button></div></form>';
+    var first=layer.querySelector('#orbit-first'),second=layer.querySelector('#orbit-second'),third=layer.querySelector('#orbit-third'),status=layer.querySelector('[role="status"]'),save=layer.querySelector('[type="submit"]');
+    options.forEach(function(id){[first,second,third].forEach(function(select){var o=document.createElement('option');o.value=id;o.textContent=ACTIONS[id].label;select.appendChild(o);});});
+    var chosen=available().map(function(a){return a.id;}).filter(function(id){return options.includes(id);});first.value=chosen[0]||options[0]||'';second.value=chosen[1]||'';third.value=chosen[2]||'';
+    function distinct(){var selects=[first,second,third];selects.forEach(function(select){Array.from(select.options).forEach(function(o){o.disabled=o.value!==''&&selects.some(function(other){return other!==select&&other.value===o.value;});});});}
+    first.onchange=second.onchange=third.onchange=distinct;distinct();
+    if(!options.length){status.textContent='No work shortcuts are available for your current access.';save.disabled=true;first.disabled=true;second.disabled=true;third.disabled=true;}
     else if(!owner()){status.textContent='Sign in to save your work shortcuts.';save.disabled=true;}
     document.body.appendChild(layer);document.body.style.overflow='hidden';if(app)app.inert=true;
     setup=MessageOverlay.mount(layer,{initialFocus:options.length?'#orbit-first':'[data-cancel]',onClose:function(){setup=null;document.body.style.overflow=overflow;if(app)app.inert=wasInert;syncVisibility();}});
     layer.querySelector('[data-cancel]').onclick=close;layer.querySelector('.v2-orbit-backdrop').onclick=close;
     layer.querySelector('form').onsubmit=async function(e){
       e.preventDefault();if(save.disabled)return;
-      var ids=[first.value];if(second.value)ids.push(second.value);
-      if(!valid(ids)||ids.some(function(id){return !workOptions().includes(id);})||captured!==identity()){status.textContent='Your access changed. Close this window and choose again.';return;}
-      profileRead?.abort();profileRead=null;save.disabled=true;first.disabled=true;second.disabled=true;status.textContent='Saving shortcuts…';
+      var ids=[first.value];if(second.value)ids.push(second.value);if(third.value)ids.push(third.value);
+      if(!valid(ids)){status.textContent='Choose up to three different work shortcuts.';return;}
+      if(ids.some(function(id){return !workOptions().includes(id);})||captured!==identity()){status.textContent='Your access changed. Close this window and choose again.';return;}
+      profileRead?.abort();profileRead=null;save.disabled=true;first.disabled=true;second.disabled=true;third.disabled=true;status.textContent='Saving shortcuts…';
       var controller=new AbortController(),timer=setTimeout(function(){controller.abort();},12000);
       try{
         var result=await API.put('/mobile/quick-actions',{shortcuts:ids},{signal:controller.signal,isCurrent:function(){return captured===identity();}});
@@ -102,7 +104,7 @@
         if(!layer.isConnected){renderActions();return;}
         if(API.syncLocal?.(result)){status.textContent='Saved on this site PC. Sync to your other devices is pending.';save.textContent='Saved';layer.querySelector('[data-cancel]').textContent='Done';}
         else{close();renderActions();}
-      }catch(error){if(captured!==identity()||!layer.isConnected)return;status.textContent=error.message||'Could not save. Check your connection and try again.';save.disabled=false;first.disabled=false;second.disabled=false;}finally{clearTimeout(timer);}
+      }catch(error){if(captured!==identity()||!layer.isConnected)return;status.textContent=error.message||'Could not save. Check your connection and try again.';save.disabled=false;first.disabled=false;second.disabled=false;third.disabled=false;distinct();}finally{clearTimeout(timer);}
     };
   }
   function positionEditor(){

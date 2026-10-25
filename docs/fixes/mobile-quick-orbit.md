@@ -29,3 +29,38 @@ controlled browser-timeline sampling of intermediate action/backdrop opacity and
 320×320, rapid reversal, repeated dismissal, route replacement and reduced motion.
 Trace and measured frames are in ignored `work/mobile-orbit-exit-final/`. This is
 local Chromium verification, not a physical-device or deployed-site result.
+
+
+## Stable background width — 2026-10-25
+
+The Quick Actions scroll lock removed the classic root scrollbar. In the private
+warehouse preview, QC cards and the fixed dock widened by 10 CSS pixels on open
+and shrank on close. Settled before/after geometry was identical, so checking
+only those endpoints missed the movement. Playwright's default `--hide-scrollbars`
+also concealed the defect.
+
+The shared mobile stylesheet now uses `html { scrollbar-gutter: stable; }`.
+This reserves the existing classic scrollbar lane while body scrolling is locked,
+including the handoff into Edit shortcuts. Overlay-scrollbar devices reserve no
+lane. Root-level reservation also keeps other body-locking overlays consistent;
+per-dialog padding compensation would risk moving the fixed dock separately.
+The tradeoff is a reserved lane on short pages in classic-scrollbar browsers.
+The Quick Orbit handlers, blur, exit timing, focus trap and permissions are unchanged.
+
+`UI_SCRATCH_ONLY='Quick Actions keeps background geometry stable with classic'
+npm run test:ui:scratch` failed against the previous generated source with
+`background moved 10px`. The regression samples background geometry every frame,
+not the intentionally moving action fan. It covers 390×844, 320×640 and 780×390,
+both appearances, normal/reduced motion, and classic/mobile overlay scrollbars.
+Each combination dismisses through the handle, Escape, backdrop and shortcut
+editor. It checks scroll position, restored focus/scrolling and no sideways overflow.
+The landscape review grid is resized with the phone so the harness does not push
+the iframe outside its containing browser viewport.
+
+The source change is limited to a root layout rule; no new animation or design
+system was added. Taste app-screen guidance informed consistent shell/card edges;
+UI UX Pro Max's Content Jumping result informed reserving layout space; the motion
+skill's accessibility reference informed reduced-motion verification. Evidence is
+in the ignored scratch output and the same owner-private HTTPS preview. This is
+Chromium verification with disposable backend fixture replay, not a physical-device
+or human-usability result.

@@ -1,5 +1,245 @@
 # Mobile inventory, production, and Sales handoff
 
+## Approved mobile design release — v159 (2026-10-25)
+
+The reviewed Work UX, shared dropdowns/disclosure motion, status rails, Back,
+ordinary read refresh, three work shortcuts, Quick Actions layout stability and
+cloud outline are finalized for the existing branch. These are actual application
+source changes, not just a scratch mock. Shared code is loaded once by the mobile
+bootstrap and included in the v159 offline shell. The audit found HR's older
+primary/secondary button pills outside the shared button selectors; they now use
+the same radius, press token and keyboard/reduced-motion behavior. AGENTS.md makes
+the shared mobile design requirement persistent for future routes and sessions.
+
+Workflow-specific forms, pending writes, explicit Retry and stock/recount checks
+retain their safeguards; multi-select lists retain native selection. No ordinary
+visible Refresh controls remain in the mobile source-wide guard. Earlier design
+notes are historical where the current shared interaction contract supersedes them.
+
+Validation: 525 tests across 18 frontend/API suites, TypeScript, 36 Playwright
+checks and 137 matching source/asset hashes. Browser checks include 24 layout
+combinations (zero background drift), eight cloud/header cases, HR shared button
+styles, roles/access/failure states, keyboard and reduced motion. API tests cover
+three shortcut slots, ownership and effective permissions. An initial sandboxed
+test attempt could not bind API sockets; the supported rerun passed all 525 tests.
+Existing jsdom canvas/teardown warnings do not establish physical-device behavior.
+Generated previews, traces, database fixtures and Python caches are excluded from
+Git. Pinned requested design resources and their licenses are included.
+
+Reproduce: npx vitest run tests/frontend-mobile*.test.ts
+ tests/mobile-quick-actions.test.ts tests/rts-recovery.test.ts
+ tests/mobile-approval-balance.test.ts tests/me-approvals.test.ts --reporter=dot
+(as one command); npm run typecheck; UI_SCRATCH_REBUILD=1 npm run test:ui:scratch.
+Evidence: ignored work/ui-scratch/verification.json, trace.zip and screenshots.
+This is automated browser verification and disposable fixture/API testing; physical
+phones, assistive-technology sessions and first-time employee understanding remain
+unverified. Review uses the same owner-private HTTPS scratch Site.
+
+## Header cloud clipping corrected — candidate v159 (2026-10-25)
+
+The Sync queue SVG path extended to x=-1.006 outside its 0–24 frame, before
+adding half of its two-unit stroke. Corrected the path in the shared mobile
+header; the full outline now fits within the original frame. Button dimensions,
+color, existing queue route and all behavior are unchanged.
+
+Targeted Playwright verifies stroked bounds and viewport/button containment in
+eight cases: 320/390 widths, both themes, with/without Back. The cloud opens
+#/queue (its actual existing destination) and Back returns to Work. All 137
+source/asset hashes match; no page errors or external requests. Header screenshots
+and trace are in ignored work/ui-scratch/. Run UI_SCRATCH_REBUILD=1
+UI_SCRATCH_ONLY='Cloud sync icon' npm run test:ui:scratch. This check was added
+to the reusable scratch suite; unrelated tests were not rerun for this path-only
+change. Browser simulation only; physical devices remain unverified. App changes
+remain uncommitted.
+
+## Quick Actions width shift fixed — candidate v159 (2026-10-25)
+
+Classic scrollbar removal made the Work cards and fixed dock widen by 10 CSS
+pixels while Quick Actions was open, then shrink on exit. The shared mobile root
+now reserves the scrollbar lane with scrollbar-gutter: stable. Overlay-scrollbar
+devices reserve no extra space. Existing animation, scroll lock, focus and action
+checks are unchanged.
+
+A new per-frame Playwright regression failed on the defective implementation with
+10-pixel drift. It now passes across 24 combinations of 390×844, 320×640 and
+780×390, light/dark, normal/reduced motion, and classic/mobile overlay scrollbars.
+Each covers handle, Escape, backdrop and shortcut-editor dismissal. Maximum
+measured background drift: 0 CSS pixels. Scroll position, focus restoration,
+unlocked scrolling and no sideways overflow are also checked.
+
+Final validation: 34 scratch browser checks; 137 source/asset hashes; 22 focused
+Quick Orbit tests; syntax and diff checks pass. Evidence: work/ui-scratch/
+verification.json, trace.zip, quick-actions-mobile-trace.zip, and
+quick-actions-width-{before,open,after}.png. Baseline evidence is retained in
+ignored work/quick-orbit-width/. Run UI_SCRATCH_REBUILD=1 npm run test:ui:scratch
+and npx vitest run tests/frontend-mobile-quick-orbit.test.ts --reporter=dot.
+
+This is actual-app Chromium verification with disposable fixture replay, not
+physical-device or employee-usability testing. The private preview starts in
+Warehouse for this review. App changes remain uncommitted.
+
+## Ordinary refresh coverage completed — candidate v159 (2026-10-25)
+
+The earlier shared refresh implementation did not migrate every existing HR and
+stock controller. This follow-up removes their ordinary visible Refresh controls
+and registers their existing in-place reads with mScreenUX.bindRefresh(root, read,
+available). Availability blocks pending decisions, capture, cancellation, PDFs and
+other protected phases without falling back to a destructive page rerender.
+
+Coverage: Approvals, Directory, Clock, Requests list/detail, Schedule, Payslips
+list/detail, time-correction history, confidential case details, low stock,
+locations, item detail and planned-check detail. Existing Work/Home use the same
+pattern. The native hidden attribute has a shared display rule so a component's
+display style cannot expose its hidden read control. Location registry completion
+notifies the shared control after its nested read settles. Work also explicitly
+blocks refresh while its own check is running.
+
+Genuine error Retry actions remain. Stock-review/recount/credential checks retain
+their original safeguards and now use specific labels such as Check latest stock,
+Check latest plan, Start a new count, and Check report status. The production
+handoff error action says Retry production details.
+
+The scratch builder captures the actual employee-scoped HR read contracts, not
+just whichever responses happen to finish during hash navigation. Sales gets
+can_approve=false. A separate HR manager has linked employee data and one real
+pending request created through disposable backend APIs. Its inventory quantities
+are unchanged before/after read capture. Preview controls include View Approvals.
+
+Validation: 32 Playwright checks, 137 current source/asset hashes, 410 tests across
+12 frontend/API suites, and TypeScript pass. The source-wide refresh regression
+check detects ordinary Refresh markup/action labels returning. Browser checks
+cover the screenshot, approval-note preservation/Undo protection, failed reads,
+and shared reads with no ordinary visible Refresh across nine further HR/stock
+screens. Browser simulation only; no physical-device or real screen-reader claim.
+App edits remain uncommitted. Use the existing private scratch URL for review.
+
+## Shared mobile UX and navigation correction — candidate v159 (2026-10-25)
+
+Supersedes the earlier Work Updates disclosure and Sales-only dropdown approach.
+`mobile/lib/screen-ux.js` now supplies shared, native-select-based dropdowns,
+inset/separated highlights without ticks, interruptible menu/disclosure motion,
+duplicate-title suppression and safe pull-to-refresh on read-only overviews/lists.
+It is included in the mobile entry and offline shell. Native values, required
+validation, disabled options, form events and serialization are preserved. Floating
+menus escape editor clipping; Escape dismisses the menu before its parent dialog.
+Keyboard/reduced-motion interactions are immediate.
+
+Work removes its duplicate title/role, Needs attention/Oldest first introduction,
+visible section Refresh buttons and notification-history directory. Notifications
+is available through the existing bell with its employee-scoped unread count;
+failed counts stay unknown. Customer or Order Number is the Sales search label.
+Sales rails have no extra marks; the whole background carries state color, with
+full accessible labels/details retained. RoleUI cards share the same rail and
+mobile field/button spacing, radius and motion tokens.
+
+Back uses owned app-history entries and permitted parents, skips duplicate entries
+and deduplicates popstate/hashchange rendering. Notifications now shows Back.
+Replacing a filter query retains the real parent. Existing workflow `t` refreshes
+reload the current record in place without a duplicate history entry. Direct
+links have safe fallbacks, including Sync queue → Profile. Inbox uses shared Back.
+
+Pull refresh starts at the top, has a threshold, cancels short/horizontal drags
+and is single-flight. Forms, details/actions and dialogs are excluded. A focusable
+keyboard/screen-reader alternative and Alt+R use the same handler without taking
+ordinary screen space. Sales search/stage values survive refresh. Existing work
+polling, unknown states, saved recovery, action permissions and stock checks stay.
+
+Validation: 28 clean-rebuild Playwright scratch checks with 137 matching current
+source/asset hashes; 226 focused frontend/API tests; TypeScript; syntax and diff
+checks, plus 18 real-backend quick-action Playwright scenarios. Evidence includes native form
+validation, unsaved edit protection, Chromium touch input, both themes, narrow and
+short screens, nested Escape and motion interruption. Browser simulation, not a
+physical phone or real employee/screen-reader usability session. Application
+changes remain local until separately committed; use the existing private scratch
+URL for review.
+
+## Sales filter and compact cards — candidate cache v159 (2026-10-25)
+
+The existing Sales/order-tracking list keeps Customer or order as its search
+label. It removes the redundant role pill and second visible page title. Cards
+now have two rows (order/customer), with a full-height bordered arrow/status rail.
+Open is green, pending yellow, outstanding goods red; symbols and accessible
+status names preserve meaning without color. The API's backordered flag denotes
+outstanding coverage, not proof that warehouse stock is short. Completed/cancelled
+orders stay neutral. Exact detail routes and action safeguards are unchanged.
+
+The Stage filter is a full-width rounded combobox with padded options, muted
+selection, checkmark and restrained focus glow. It supports keyboard navigation,
+typeahead, touch selection, outside/Escape/Tab dismissal, and placement above the
+dock on short screens. Scratch captures every sample order's detail reads and
+adds a separate real-backend status-example snapshot. The private preview has a
+View Sales pipeline shortcut outside the app for review.
+
+Validation: clean rebuild passes 20 Playwright checks, 136 matching source/asset
+hashes, light/dark axe checks, 320/390px layouts and short-screen touch selection.
+Measured field/menu widths 360/360px, option inset 23px, option height 44px, card
+height 82px and rail height 80px inside its border. Browser simulation only.
+Extreme CSS zoom inside a 320px phone frame exposes existing global header/dock
+overlap at about 160 effective pixels; that shell limitation remains outside this
+Sales-list change. Application edits remain uncommitted.
+
+## Sales queue screenshot correction — candidate cache v159 (2026-10-25)
+
+Sales pipeline cards now use the existing 12px list gap and a single stage heading
+with the plain-language label Sales review. Repeated per-row stage pills are
+removed; customer/status/filter text is more readable. Workflow stages, ordering,
+filters and permissions are unchanged. The scratch preview now bundles its 18
+original image/icon assets, fixing missing open-arrow squares. A failing-before
+Playwright probe measured 0px gaps and two unloaded icons; the clean rebuilt
+preview passes 16 browser checks with 136 matching source/asset hashes and
+light/dark accessibility. The existing private preview URL was updated.
+
+## Attention Back and three work shortcuts — candidate cache v159 (2026-10-25)
+
+Work attention detail routes now reveal the top Back button, with a 44×44px
+target and focus outline. In-app entry preserves the previous app screen; an
+untagged deep link falls back to Work. The existing bottom Back to Work remains.
+Quick actions remove New message and support up to three distinct work shortcuts
+plus New request and Report issue. Existing one/two-slot preferences remain valid;
+frontend and backend restrict choices by effective permissions/modules. Sales
+follow-up is available under the existing Sales route's combined permission check.
+No stock behavior changes. The preference schema is a setting, so no DB migration
+is required. The same private scratch Site carries the interactive review.
+
+Validation: 213 focused frontend/API tests and 18 real-backend Playwright shortcut
+scenarios pass, with TypeScript. Existing jsdom signature/canvas warnings remain
+unrelated to these passing assertions. Scratch tests additionally cover Back from
+Work/Home, direct links, three optional slots, permission states and real motion.
+
+## Work scratch preview follow-up — candidate cache v159 (2026-10-25)
+
+Removed the permanent status legend as requested; accessible indicator names and
+Guide retain its meanings. AGENTS.md preserves the latest skill/tool requirement
+and now defaults UI/UX reviews to a clean, project-local interactive scratch file.
+Run `npm run ui:scratch` and `npm run ui:scratch:serve`. The generated entry uses
+current app code and real motion with disposable API snapshots and memory-only
+preview storage; business writes are blocked. `UI_SCRATCH_REBUILD=1 npm run
+test:ui:scratch` verifies the rebuild boundary and browser interactions. This
+preview does not claim live-backend, physical-device or human-usability testing.
+
+## Work first-use UX correction — candidate cache v159 (2026-10-25)
+
+Replaces ambiguous CLEAR/GO/OPEN badges with checked-empty green dots, pending
+record counts in red, and unknown checks in amber. Unread notices retain their
+own labelled count. Sales follow-up appears in Needs attention, and the blanket
+“No action needed” message is removed. The former authorized-queue and inventory
+tool lists are consolidated in one compact Work & tools directory. Existing
+permissions, stock checks, counts/recovery and detail/action routes are preserved.
+
+With the same two open sales and 43 unread notices, Playwright reproduces the
+old contradiction and verifies the corrected view. Sales follow-up takes two
+taps instead of three. Fifteen Work/browser/design cases, eleven Home layout
+regressions, 178 focused tests and TypeScript pass locally. See
+`docs/reviews/mobile-work-first-use-validation.md` for commands, design resources,
+evidence and limits; `docs/design/mobile-work.md` defines the status/layout rules.
+The full-brief recheck additionally fixes overlapping held/saved RTS counts,
+stale unread badges, truncated-window error markers and malformed receiving
+counts. Final local coverage is 19 Work/browser/design scenarios, 11 Home
+regressions, 196 focused tests and TypeScript. Work explicitly includes held
+entries when counting distinct receiving identities; the shared counter's default
+behavior is retained. See the same validation report for failing-before evidence.
+No deployed-site, physical-phone or first-time employee usability pass is implied.
+
 ## Approved compact Work layout — cache v157 (2026-10-25)
 
 Work now follows the approved MagicPath Before/After: a slim role context,

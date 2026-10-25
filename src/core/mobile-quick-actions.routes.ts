@@ -8,7 +8,8 @@ import { parseBody } from '../shared/validation';
 import { syncClass } from '../sync';
 import type { AuthUser, Permission } from '../shared/types';
 
-export const WORK_SHORTCUTS: Record<string,{permissions:Permission[];modules:ModuleName[]}>={
+export const WORK_SHORTCUTS: Record<string,{permissions:Permission[];all?:Permission[];modules:ModuleName[]}>={
+  sales:{permissions:['orders.create','orders.edit','orders.approve'],all:['orders.view'],modules:['sales','inventory']},
   qc:{permissions:['production.inspect_qc'],modules:['manufacturing']},
   qa:{permissions:['production.inspect_qa','production.qa_review'],modules:['manufacturing']},
   repairs:{permissions:['production.repairs'],modules:['manufacturing']},
@@ -29,6 +30,7 @@ function allowed(user: AuthUser) {
   return Object.keys(WORK_SHORTCUTS).filter(id => {
     const choice = WORK_SHORTCUTS[id]!;
     return choice.permissions.some(permission => user.permissions.includes(permission))
+      && (!choice.all || choice.all.every(permission => user.permissions.includes(permission)))
       && choice.modules.every(module => moduleEnabled(module));
   });
 }
@@ -38,13 +40,13 @@ function allowed(user: AuthUser) {
 function key(user: AuthUser) { return 'mobile.quick-actions.user.' + user.id; }
 function profile(user: AuthUser) {
   const saved = getSetting<string[] | null>(key(user));
-  const valid = Array.isArray(saved) && saved.length >= 1 && saved.length <= 2
+  const valid = Array.isArray(saved) && saved.length >= 1 && saved.length <= 3
     && new Set(saved).size === saved.length
     && saved.every(id => typeof id === 'string' && Object.prototype.hasOwnProperty.call(WORK_SHORTCUTS, id));
   return { shortcuts: valid ? saved : null, options: allowed(user) };
 }
 const selection = z.object({
-  shortcuts: z.array(z.string().min(1).max(40)).min(1).max(2)
+  shortcuts: z.array(z.string().min(1).max(40)).min(1).max(3)
     .refine(ids => new Set(ids).size === ids.length, 'Choose different work shortcuts'),
 }).strict();
 

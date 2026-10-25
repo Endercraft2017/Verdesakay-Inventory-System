@@ -54,6 +54,11 @@
       "repository": "https://github.com/vercel-labs/agent-skills",
       "commit": "063bee94c3f4df8453406c830b0a7df0f2860278",
       "skills": 9
+    },
+    {
+      "repository": "https://github.com/kylezantos/design-motion-principles",
+      "commit": "4a9ca879f24a361f4dca4174fe2da0f67b5ddee3",
+      "skills": 1
     }
   ],
   "local_changes": [
@@ -61,6 +66,14 @@
       "path": ".agents/skills/obra--superpowers--test-driven-development/SKILL.md",
       "original_name": "test-driven-development",
       "installed_name": "obra-test-driven-development"
+    },
+    {
+      "path": ".agents/design-references/VoltAgent--awesome-claude-design/README.md",
+      "change": "Trailing whitespace removed; source commit and license retained."
+    },
+    {
+      "path": ".agents/design-tools/bergside--design-md-chrome/popup/popup.js",
+      "change": "Trailing whitespace removed; source commit and license retained."
     }
   ],
   "skills": [
@@ -718,6 +731,25 @@
       "collection": "vercel-labs--agent-skills",
       "path": ".agents/skills/vercel-labs--agent-skills--writing-guidelines",
       "name": "writing-guidelines"
+    },
+    {
+      "collection": "kylezantos--design-motion-principles",
+      "path": ".agents/skills/kylezantos--design-motion-principles",
+      "name": "design-motion-principles"
+    }
+  ],
+  "design_resources": [
+    {
+      "repository": "https://github.com/VoltAgent/awesome-claude-design",
+      "commit": "8f746b5bbb69cc7544fa850c126a71f754091951",
+      "path": ".agents/design-references/VoltAgent--awesome-claude-design",
+      "type": "Reference collection; not an executable skill"
+    },
+    {
+      "repository": "https://github.com/bergside/design-md-chrome",
+      "commit": "8e07614fb18752ab1ee14dd65a8ff93e63c9b13b",
+      "path": ".agents/design-tools/bergside--design-md-chrome",
+      "type": "Unpacked Chrome extension; not activated in a browser profile"
     }
   ]
 }
