@@ -417,10 +417,18 @@
     if (!Array.isArray(rows) || rows.some(function(r){return !r || !Number.isInteger(Number(r.id)) || Number(r.id)<=0;})) throw new Error('The server returned an invalid queue. Refresh to check current work.');
     return value;
   }
-  function workReader(scope) {
-    var reads=new Map();
+  function previewRead(path, options, owner) {
+    return API.get(path,Object.assign({},options,{remember:true,rememberScope:owner,rememberValid:function(value){workResponse(path,value);if(path==='/rts/queue'&&value.batches.some(function(b){return !Number.isFinite(Number(b.remaining_qty))||Number(b.remaining_qty)<=0;}))return false;return true;}}));
+  }
+  function previewResult(source, owner) {
+    var value=API.peek?.(source.path,{scope:owner,maxAge:60000});
+    if(value==null)return null;
+    try { workResponse(source.path,value);return attentionResult(source,value); } catch(e) { return null; }
+  }
+  function workReader(scope, remember) {
+    var reads=new Map(),owner=mReadScope.identity();
     return function(path) {
-      if (!reads.has(path)) reads.set(path,scope.run(function(opts){return API.get(path,opts);}).then(function(value){return workResponse(path,value);}));
+      if (!reads.has(path)) reads.set(path,scope.run(function(opts){return remember?previewRead(path,opts,owner):API.get(path,opts);}).then(function(value){return workResponse(path,value);}));
       return reads.get(path);
     };
   }
@@ -549,9 +557,9 @@
       var button=page.querySelector('[data-attention-refresh]');button.disabled=true;button.textContent='Refreshing…';
       var sources=attentionSources().filter(function(source){return source.key!=='notice';});
       if(personalDirect&&!sources.some(function(s){return s.key==='personal';}))sources.push({key:'personal',title:'Personal task',route:'tasks',path:'/tasks',select:function(rows){return rows.filter(function(r){return !r.done;});}});
-      var read=workReader(scope),keys=sources.map(function(s){return s.key;});
+      var read=workReader(scope,true),keys=sources.map(function(s){return s.key;}),owner=mReadScope.identity();
       groups.forEach(function(g,key){if(!keys.includes(key)){g.el.remove();groups.delete(key);}});
-      sources.forEach(function(source){var g=group(source);g.pending=true;g.error='';});
+      sources.forEach(function(source){var g=group(source),seen=!g.loaded&&previewResult(source,owner);if(seen){g.rows=seen.rows;g.held=seen.held;g.more=seen.more;g.loaded=true;}g.pending=true;g.error='';});
       var jobs=sources.map(async function(source){
         var g=group(source);draw(g);
         try {
@@ -580,9 +588,8 @@
   }
 
   // Reads are bounded and validated: a successful HTTP response is not proof of a valid queue.
-  function readAttention(source, context, reader) {
-    var strict=['kits','parts','qc','qa','holds','rts'].includes(source.key),timer;
-    var request=Promise.resolve().then(function(){return (reader || API.get)(source.path);}).then(function(q){
+  function attentionResult(source,q) {
+      var strict=['kits','parts','qc','qa','holds','rts'].includes(source.key);
       if(strict){
         var valid=source.key==='qc'||source.key==='qa'?q&&Array.isArray(q.units):source.key==='rts'?q&&Array.isArray(q.units)&&Array.isArray(q.batches):Array.isArray(q);
         if(!valid)throw new Error('The server returned an invalid queue. Refresh to check current work.');
@@ -591,8 +598,11 @@
       var rows=source.select(q);
       if(strict&&(!Array.isArray(rows)||rows.some(function(r){return !r||!Number.isInteger(Number(r.id))||Number(r.id)<=0;})))throw new Error('The queue records could not be verified.');
       var held=source.key==='rts'?q.units.filter(function(u){return !!u.hold;}):[];
-      return context?{rows:rows,held:held.length,heldRows:held,more:source.key==='notice'&&!!q.has_more}:rows;
-    });
+      return {rows:rows,held:held.length,heldRows:held,more:source.key==='notice'&&!!q.has_more};
+  }
+  function readAttention(source, context, reader) {
+    var strict=['kits','parts','qc','qa','holds','rts'].includes(source.key),timer;
+    var request=Promise.resolve().then(function(){return (reader || API.get)(source.path);}).then(function(q){var result=attentionResult(source,q);return context?result:result.rows;});
     if(!strict)return request;
     return Promise.race([request,new Promise(function(resolve,reject){timer=setTimeout(function(){reject(new Error('Queue check timed out. Reconnect and refresh.'));},12000);})]).finally(function(){clearTimeout(timer);});
   }
@@ -720,17 +730,19 @@
       groups.forEach(function(g,key){if(!available.includes(key)){g.el.remove();groups.delete(key);}});
       if (!desks.length) { section.remove(); return; }
       desks.forEach(function(source){
-        var g=group(source);g.pending=true;
+        var g=group(source),seen=!g.fingerprint&&previewResult(source,owner);
+        if(seen)fill(g,seen,null);
+        g.pending=true;
         if(g.state==='empty'){g.state='loading';g.el.dataset.state='loading';}
-        g.count.textContent='Loading…';
-        var body=g.el.querySelector('[data-home-work-body]');if(body.contains(document.activeElement))g.details.querySelector('summary').focus({preventScroll:true});body.innerHTML='<p class="m-hint">Checking current work…</p>';
+        if(!g.fingerprint)g.count.textContent='Loading…';
+        var body=g.el.querySelector('[data-home-work-body]');if(body.contains(document.activeElement))g.details.querySelector('summary').focus({preventScroll:true});if(!g.fingerprint)body.innerHTML='<p class="m-hint">Checking current work…</p>';
       });
       arrange();
       await Promise.all(desks.map(async function(source) {
         var g=group(source);
         function active(){return current()&&token===run&&g.el.isConnected;}
         try {
-          var result=await readAttention(source,true); if(!active())return;
+          var result=await readAttention(source,true,function(path){return previewRead(path,{isCurrent:active},owner);}); if(!active())return;
           if(!sources().some(function(s){return s.key===source.key;})){g.el.remove();groups.delete(source.key);return;}
           fill(g,result,null);
         } catch(e) { if(active())fill(g,null,e); }
@@ -741,7 +753,7 @@
       }
     }
     section.querySelector('[data-home-work-refresh]').onclick=refresh;
-    setTimeout(refresh,0); return section;
+    Promise.resolve().then(refresh); return section;
   };
 
   MApp.route('work', function (view,params) {

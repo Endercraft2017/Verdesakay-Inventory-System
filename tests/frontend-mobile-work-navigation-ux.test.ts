@@ -32,6 +32,15 @@ it('keeps unchecked and checked-empty queues compact until actual work or an err
  read.resolve(release());await tick();expect(view.querySelector('[data-work-desk=release]')?.textContent).toContain('SO-11');
 });
 
+it('renders authorized overview snapshots immediately while checking fresh records',async()=>{
+ await boot();const owner=w.mReadScope.identity(),pending=defer();
+ w.API.peek=(path:string,opts:any)=>path==='/release-slips/queue'&&opts.scope===owner?release():null;
+ get.mockImplementation((p:string)=>p==='/release-slips/queue'?pending.promise:Promise.resolve(p==='/tasks'?[]:{items:[]}));
+ routes.work(view,{});expect(text()).toContain('SO-11');expect(view.querySelector('[data-work-freshness]')?.textContent).toBe('Checking current work…');
+ await tick();pending.resolve(release([]));await tick();expect(text()).not.toContain('SO-11');expect(view.querySelector('[data-work-empty]')?.hasAttribute('hidden')).toBe(false);
+ token='another-session';get.mockImplementation(()=>new Promise(()=>{}));routes.work(view,{});await tick();expect(text()).not.toContain('SO-11');
+});
+
 it('shares the same queue read for records and badges, updates both, and rejects repeated Refresh',async()=>{
  await boot();expect(get.mock.calls.filter((c:any)=>c[0]==='/release-slips/queue')).toHaveLength(1);expect(badge()).toBe('1');
  const slow=defer();get.mockImplementation((p:string)=>p==='/release-slips/queue'?slow.promise:Promise.resolve(p.startsWith('/notifications')?{items:[]}:[]));

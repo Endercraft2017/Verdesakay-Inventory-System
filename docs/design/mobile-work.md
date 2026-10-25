@@ -284,3 +284,21 @@ queue responses can set it programmatically after enhancement. During an active
 transition, use its intended target to support rapid reversal. Data arrival and
 route entry must not perform decorative disclosure animations. Preserve automatic
 opening for genuinely pending Home work and first-tap manual collapse.
+
+
+## Overview snapshots and warm navigation — 2026-10-25
+
+Use the existing API memory preview cache only for opted-in, validated overview
+reads. Home/Work snapshots may render for at most 60 seconds while fresh requests
+run; they are not HTTP/service-worker API caching or workflow action authority.
+Scope previews to server, token/shared session and mReadScope's full employee/grant
+identity. Keep data out of persistent storage, preserve a bounded cache, and fence
+late responses against writes, sign-in changes and endpoint access denial.
+
+A denied endpoint loses its own snapshot. Do not discard unrelated permitted
+queues for a legitimate denied Inbox badge read. Current permissions must filter
+restored sources. Never restore cached zero as a current successfully checked
+empty queue. Keep known records and counts visible during checks; reconcile fresh
+completion/error states. Details and actions continue to read/check live state.
+Measure cold and warm readiness independently from network response completion;
+label injected-delay browser timings accurately and retain physical-device limits.

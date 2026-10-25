@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';import {execFileSync} from 'node:child_pr
 import {chromium,expect} from 'playwright/test';import axe from 'axe-core';
 import {verifyQuickOrbitLayout} from './browser/quick-orbit-layout-check.mjs';
 import {verifyTabLoading} from './browser/tab-loading-check.mjs';
+import {verifyTabCache} from './browser/tab-cache-check.mjs';
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');process.chdir(repo);
 const out=path.join(repo,'work/ui-scratch'),entry=path.join(out,'index.html'),report={environment:'Chromium, self-contained HTML served on loopback with sandboxed actual app code, fixture replay and memory storage; managed browser blocks file:// navigation',checks:[],errors:[],network:[],motion:{},sourceHashesVerified:0};
 let sibling;
@@ -28,6 +29,7 @@ async function scenario(value){await page.locator('#scenario').selectOption(valu
 async function check(name,fn){if(process.env.UI_SCRATCH_ONLY&&!name.includes(process.env.UI_SCRATCH_ONLY))return;await fn();report.checks.push(name);console.log('PASS '+name);}
 try{
  await page.goto(origin);await ready();await scenario('sales');
+ await check('Warm Home and Work preview immediately while fresh responses reconcile changes',async()=>{report.tabCache=await verifyTabCache({page,frame,ready,scenario,out});});
  await check('Tab changes never flash loading-only queue sections or open popups',async()=>{report.tabLoading=await verifyTabLoading({page,frame,ready,scenario});});
  await check('Home queue disclosures close on the first click after automatic opening',async()=>{
    await scenario('warehouse');const f=frame();await f.locator('#m-tabbar [data-tab=home]').click();
@@ -108,10 +110,11 @@ try{
  assert.deepEqual(report.errors,[]);assert.deepEqual(report.network,[]);
  const summary={checkedAt:new Date().toISOString(),...report};fs.writeFileSync(path.join(out,'verification.json'),JSON.stringify(summary,null,2));
  const layoutSummary=report.quickActionLayout?.length?' Quick Actions: '+report.quickActionLayout.length+' size/theme/motion/scrollbar combinations; maximum background drift '+Math.max(...report.quickActionLayout.map(sample=>sample.maxDrift))+' CSS pixels across all sampled frames and dismissal/editor paths. Previous code failed with 10 pixels of drift.':'';
+ const cacheSummary=report.tabCache?.length?' Overview cache: cold Work '+report.tabCache[0].coldWorkMs+'ms; warm Work '+report.tabCache[0].workRecordsMs+'ms; warm Home '+report.tabCache[0].homeAttendanceAndQueuesMs+'ms with a 2500ms simulated network delay. Fresh completion removes stale cards; stale details cannot offer an action.':'';
  const tabSummary=report.tabLoading?.length?' Tab navigation: '+report.tabLoading.length+' fast/delayed/failed sample combinations; zero transient loading-only desks, open popups or false empty states in sampled frames. Home first-tap collapse passes.':'';
  const motionSummary=report.motion.duration?' Real quick-action transition: '+report.motion.duration+'. Reduced motion closes immediately.':'';
  const cloudSummary=report.cloudIcon?.length?' Cloud outline and header bounds pass '+report.cloudIcon.length+' width/theme/Back-button cases. The Sync queue link and return navigation pass.':'';
- const insertion='document.querySelector("#results").textContent='+JSON.stringify(report.checks.length+' checks passed. '+report.sourceHashesVerified+' app source hashes verified.'+tabSummary+layoutSummary+motionSummary+cloudSummary+' No external HTTP requests. Browser simulation only.').replace(/</g,'\\u003c')+';';
+ const insertion='document.querySelector("#results").textContent='+JSON.stringify(report.checks.length+' checks passed. '+report.sourceHashesVerified+' app source hashes verified.'+cacheSummary+tabSummary+layoutSummary+motionSummary+cloudSummary+' No external HTTP requests. Browser simulation only.').replace(/</g,'\\u003c')+';';
  fs.writeFileSync(entry,fs.readFileSync(entry,'utf8').replace('/* __SCRATCH_VERIFICATION__ */',insertion));
  console.log('PASS '+report.checks.length+' checks; '+report.sourceHashesVerified+' source files match; no external requests');
 }catch(error){report.failure=error.stack;fs.writeFileSync(path.join(out,'verification.json'),JSON.stringify(report,null,2));await page.screenshot({path:path.join(out,'failure.png'),fullPage:true}).catch(()=>{});console.error(error);process.exitCode=1;}

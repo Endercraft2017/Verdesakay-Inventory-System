@@ -20,7 +20,7 @@
   const keyFor=value=>{const u=new URL(typeof value==='string'?value:value.url,'https://scratch.invalid');u.searchParams.sort();return u.pathname+u.search;};
   window.fetch=async function(input,options={}){
     const key=keyFor(input),method=(options.method||'GET').toUpperCase();
-    const queue=/\/api\/(?:job-orders|qc|rts|production\/repairs|release-slips|orders|stock-count-tasks|tasks|me\/approvals|me\/requests|me\/schedule|me\/time-corrections|hr\/clock\/my-status|users|inventory|locations)/.test(key);
+    const queue=/\/api\/(?:job-orders|qc|rts|production\/repairs|release-slips|orders|stock-count-tasks|tasks|me\/today|me\/approvals|me\/requests|me\/schedule|me\/time-corrections|hr\/clock\/my-status|users|inventory|locations)/.test(key);
     if(options.signal?.aborted)throw new DOMException('Cancelled','AbortError');
     if(state.network==='slow'&&queue)await new Promise((resolve,reject)=>{const timeout=setTimeout(resolve,2500);options.signal?.addEventListener('abort',()=>{clearTimeout(timeout);reject(new DOMException('Cancelled','AbortError'));},{once:true});});
     if(options.signal?.aborted)throw new DOMException('Cancelled','AbortError');

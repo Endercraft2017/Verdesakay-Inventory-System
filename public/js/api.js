@@ -19,15 +19,26 @@ const API = (() => {
      nothing personal stays on a shared PC — and emptied on sign-in/out and after any change
      (POST/PUT/PATCH/DELETE), which may have made it out of date. */
   const remembered = new Map();
+  const rememberedDenials = new Map();
   const REMEMBER_MAX = 30;
-  function peek(path) { return remembered.has(path) ? remembered.get(path) : null; }
+  let rememberGeneration = 0;
+  const rememberOwner = () => JSON.stringify([base(), getToken(), isSharedSession()]);
+  function forgetRemembered() { rememberGeneration++; remembered.clear(); rememberedDenials.clear(); }
+  function peek(path, opts) {
+    const entry = remembered.get(path);
+    if (!entry) return null;
+    if (entry.owner !== rememberOwner()) { forgetRemembered(); return null; }
+    if (opts?.scope !== undefined && entry.scope !== opts.scope) return null;
+    if (opts?.maxAge !== undefined && Date.now() - entry.at > opts.maxAge) { remembered.delete(path); return null; }
+    return entry.data;
+  }
 
   function setToken(t, opts) {
     clearToken();
     try { ((opts && opts.shared) ? sessionStorage : localStorage).setItem(TOKEN_KEY, t); } catch (e) { /* storage blocked */ }
   }
   function clearToken() {
-    remembered.clear();
+    forgetRemembered();
     try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
     try { sessionStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ }
   }
@@ -81,13 +92,15 @@ const API = (() => {
   }
 
   async function request(method, path, body, isForm, opts) {
+    const requestOwner = rememberOwner();
     const finished = window.SlowLoading?.request(method, path, opts);
     try { return await performRequest(method, path, body, isForm, opts); }
-    finally { finished?.(); }
+    finally { if (method !== 'GET' && requestOwner === rememberOwner()) forgetRemembered(); finished?.(); }
   }
 
   async function performRequest(method, path, body, isForm, opts) {
-    if (method !== 'GET') remembered.clear();
+    if (method !== 'GET') forgetRemembered();
+    const cacheGeneration = rememberGeneration, cacheOwner = rememberOwner(), cachePathGeneration = rememberedDenials.get(path) || 0;
     const headers = {};
     const token = getToken();
     // Employee views opt in so a response from a previous sign-in cannot clear
@@ -164,14 +177,23 @@ const API = (() => {
     }
 
     if (!res.ok) {
+      if (res.status === 403 && cacheOwner === rememberOwner()) {
+        // An employee may legitimately lack Inbox access. Do not discard their
+        // permitted warehouse previews for that unrelated denial.
+        remembered.delete(path);
+        rememberedDenials.set(path,(rememberedDenials.get(path)||0)+1);
+        if (rememberedDenials.size > REMEMBER_MAX * 2) forgetRemembered();
+      }
       const err = new Error((data && data.error) || ('Request failed (' + res.status + ')'));
       err.status = res.status;
       err.data = data;   // full parsed body — callers can inspect extra fields (e.g. a 409's details)
       throw err;
     }
-    if (method === 'GET' && opts && opts.remember) {
+    let rememberValid = true;
+    if (opts?.rememberValid) { try { rememberValid = !!opts.rememberValid(data); } catch (_) { rememberValid = false; } }
+    if (method === 'GET' && opts?.remember && rememberValid && cacheGeneration === rememberGeneration && cacheOwner === rememberOwner() && cachePathGeneration === (rememberedDenials.get(path)||0)) {
       remembered.delete(path); // re-insert at the end: the Map's order is oldest first
-      remembered.set(path, data);
+      remembered.set(path, {data, owner:cacheOwner, scope:opts.rememberScope, at:Date.now()});
       if (remembered.size > REMEMBER_MAX) remembered.delete(remembered.keys().next().value);
     }
     return data;
@@ -222,7 +244,8 @@ const API = (() => {
 
   return {
     getToken, setToken, clearToken, isSharedSession, deviceId, base,
-    /** opts.remember: keep the response for API.peek(p) (see `remembered`). */
+    /** Opt-in memory previews: rememberScope isolates grants; rememberValid validates
+        the snapshot. peek(p,{scope,maxAge}) never replaces a fresh workflow read. */
     get: (p, opts) => request('GET', p, undefined, false, opts),
     peek,
     post: (p, b, opts) => request('POST', p, b, false, opts),

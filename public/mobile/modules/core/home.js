@@ -118,12 +118,13 @@
 
   var homeRender=0;
   MApp.route('home', function (view) {
-    var generation=++homeRender,hash=location.hash,owner=MApp.getMe().id;
-    function current(){return generation===homeRender&&hash===location.hash&&MApp.getMe()&&MApp.getMe().id===owner;}
+    var generation=++homeRender,hash=location.hash,owner=window.mReadScope?.identity(),user=MApp.getMe().id;
+    function current(){return generation===homeRender&&hash===location.hash&&MApp.getMe()&&MApp.getMe().id===user&&owner===window.mReadScope?.identity();}
     MApp.setTitle('Today');
-    var shell=render(view,{todayLoading:true});
+    var seen=owner&&API.peek?.('/me/today',{scope:owner,maxAge:60000});
+    var shell=render(view,seen||{todayLoading:true});
     function preview(){return shell.querySelector('.v2-home-work');}
-    return API.get('/me/today')
+    return API.get('/me/today',{remember:true,rememberScope:owner,isCurrent:current,rememberValid:function(t){return !!t&&typeof t==='object'&&!Array.isArray(t);}})
       .then(function (t) { if(current())render(view, t || {},preview()); })
       .catch(function (ex) {
         if(!current())return;

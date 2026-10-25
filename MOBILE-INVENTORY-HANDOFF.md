@@ -1,5 +1,49 @@
 # Mobile inventory, production, and Sales handoff
 
+## Fast overview returns — v161 (2026-10-25)
+
+The service worker already caches the shell and static assets; API requests remain
+network-only. Home and Work had not opted into the API client's existing memory
+preview cache, so tab entry discarded displayed records and waited for new reads.
+They now draw validated snapshots immediately, then revalidate in the background.
+Snapshots are bounded to 30 responses and expire after 60 seconds when used by
+mobile overviews. Nothing personal is added to persistent browser storage.
+
+API.peek now checks server/token/shared-session ownership plus an optional grant
+scope and max age. Mobile uses mReadScope.identity() for account/employee/grant
+isolation. Writes invalidate at start and completion; generation fencing prevents
+late GETs from repopulating snapshots after a write or sign-in change. A 403 evicts
+its own endpoint and fences older responses to that endpoint. Unrelated denied
+Inbox reads must not clear permitted warehouse previews. Denial revisions are
+bounded. Invalid queue responses cannot replace a valid snapshot. Existing desktop
+remembered-GET callers keep their API.peek contract.
+
+Home attendance and queue previews, and Work queues, use this pattern. Cached
+records/counts stay visible while fresh checks run. Cached empty results never
+become a checked-clear claim before the current read. Permission/identity changes
+stop old renders. Detail/action reads do not use the snapshot as authorization;
+they still check current records/access. The offline shell cache is v161.
+These changes are approved for commit and push.
+
+Validation: 39 browser checks and 137 source/asset hashes, 206 tests in four
+API/mobile suites, and TypeScript pass. With 2.5-second simulated responses,
+cold Work took 3,153ms; warm Home queues 95ms, Work 99ms and Home attendance/queues
+90ms. These are Chromium automation timings, not physical-device/network results.
+The prior generated app fails the warm preview deadline. Tests cover TTL/scope,
+account/server changes, writes/late replies, endpoint denial, unrelated denied
+reads, stale card reconciliation and live detail rejection after completion.
+A stale cached card cannot offer its completed action. Fresh reads still occur;
+this removes the repeated visible wait, not backend/network latency itself.
+
+Reproduce: UI_SCRATCH_REBUILD=1 npm run test:ui:scratch;
+npx vitest run tests/frontend-api-client.test.ts
+ tests/frontend-mobile-work-navigation-ux.test.ts tests/frontend-mobile.test.ts
+ tests/frontend-mobile-refresh-contract.test.ts --reporter=dot (one command).
+Evidence: work/ui-scratch/verification.json, traces and warm-home-checking.png;
+work/tab-cache/ retains the prior generated app and red timing test. Preview
+transport simulates completion/denial; actual employee completion and physical
+phones are not claimed by those cases. Use the same owner-private HTTPS Site.
+
 ## Tab-switch loading flash corrected — v160 (2026-10-25)
 
 Work mounted every authorized desk while its initial read was pending, then

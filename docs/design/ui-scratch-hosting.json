@@ -4,7 +4,7 @@
   "audience": "owner-only",
   "source_checkout": "/workspace/sites/verdesakay-ui-scratch",
   "generated_entry": "work/ui-scratch/index.html",
-  "source_commit": "d9a58113b584d6d33eb7b9a5a5c0cf52f8887bba",
-  "deployment_id": "appgdep_6ade157535448191be360a49b01101ea",
+  "source_commit": "18f52b6e80f2a600ca47cc83db3b7ca3a93dc16f",
+  "deployment_id": "appgdep_6ade217058848191bba18ffccfeeda18",
   "instructions": "Reuse this Site identity and audience for later scratch updates. Rebuild and verify the scratch entry, update the existing Site source checkout, and use the official Sites source/package/private publishing workflow. No production app API or live data is connected."
 }
