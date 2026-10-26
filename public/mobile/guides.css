@@ -40,3 +40,59 @@
 .guide-coach.work-task-guide button:focus-visible,.guide-coach.work-task-guide select:focus-visible{outline:3px solid var(--v2-green);outline-offset:2px}
 :root[data-theme=dark] .guide-coach.work-task-guide .btn:not(.secondary){color:var(--v2-bg);background:var(--v2-green)}
 .guide-coach.work-task-guide .guide-coach-body:focus-visible{outline:3px solid var(--v2-green);outline-offset:-3px}
+
+/* Workflow library: two equal columns inside the shared mobile canvas. */
+.m-guide-library{color:var(--v2-text);padding:4px 0 18px}
+.m-guide-filters{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.m-guide-library .m-field{margin:0;min-width:0}
+.m-guide-library .m-label{color:var(--v2-muted);font-size:13px;margin-bottom:6px}
+.m-guide-library .m-input{box-sizing:border-box;width:100%;min-height:48px;padding:12px 14px;border:1px solid var(--v2-line);border-radius:var(--m-ux-control-radius);background:var(--v2-surface);color:var(--v2-text);font:inherit;font-size:14px}
+.m-guide-library .m-input::placeholder{color:var(--v2-muted);opacity:1}
+.m-guide-count{margin:10px 2px 0;font-size:12px}
+.m-guide-group{margin-top:24px}
+.m-guide-group h2{margin:0 2px 10px;font-size:16px;line-height:1.4;letter-spacing:0}
+.m-guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.m-guide-card{appearance:none;display:flex;flex-direction:column;gap:8px;min-width:0;min-height:146px;padding:15px;text-align:left;font:inherit;color:var(--v2-text);background:var(--v2-surface);border:1px solid var(--v2-line);border-radius:18px;cursor:pointer;transition:transform var(--m-ux-press) var(--m-ux-ease),background-color 140ms var(--m-ux-ease)}
+.m-guide-card strong{font-size:14px;line-height:1.4;overflow-wrap:anywhere;text-wrap:balance}
+.m-guide-card>span{font-size:12px;line-height:1.5;color:var(--v2-muted);overflow-wrap:anywhere}
+.m-guide-card small{display:flex;justify-content:space-between;gap:8px;margin-top:auto;padding-top:4px;font-size:12px;color:var(--v2-muted)}
+.m-guide-card:active{transform:scale(.985)}
+@media(hover:hover){.m-guide-card:hover{background:var(--v2-surface-soft)}}
+.m-guide-choices{display:flex;flex-wrap:wrap;gap:8px}.m-guide-choices p{width:100%;margin-bottom:0}
+.m-workflow-dialog{width:calc(100% - 24px);max-width:560px;max-height:calc(100dvh - 32px);box-sizing:border-box;overflow:auto;overscroll-behavior:contain;margin:auto;padding:0;color:var(--v2-text);background:var(--v2-surface);border:1px solid var(--v2-line);border-radius:20px;box-shadow:var(--v2-shadow-float);font:inherit;font-size:14px;line-height:1.55}
+.m-workflow-dialog::backdrop{background:#0007}
+.m-workflow-dialog>header{position:sticky;top:0;z-index:1;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 18px 14px;background:var(--v2-surface);border-bottom:1px solid var(--v2-line)}
+.m-workflow-dialog header small{font-size:12px;color:var(--v2-muted)}
+.m-workflow-dialog h2{margin:4px 0 0;font-size:19px;line-height:1.35;overflow-wrap:anywhere}
+.m-workflow-close{appearance:none;flex:none;display:grid;place-items:center;width:44px;height:44px;border:1px solid var(--v2-line);border-radius:var(--m-ux-control-radius);background:var(--v2-surface-soft);color:var(--v2-text);font:inherit;font-size:26px;cursor:pointer}
+.m-workflow-content{padding:14px 18px 18px}
+.m-workflow-intro{margin:0 0 10px}.m-workflow-status:empty{display:none}.m-workflow-status{border-left:2px solid var(--v2-green);padding-left:10px}
+.m-workflow-steps{list-style:none;padding:0;margin:20px 0 0;counter-reset:none}
+.m-workflow-steps>li{margin:0;padding:14px 0;border-top:1px solid var(--v2-line)}
+.m-workflow-step{appearance:none;display:grid;grid-template-columns:28px minmax(0,1fr) 16px;gap:10px;align-items:start;width:100%;min-height:44px;padding:4px 0;text-align:left;font:inherit;color:var(--v2-text);background:transparent;border:0;border-radius:8px;cursor:pointer}
+.m-workflow-step strong{display:block;font-size:14px;line-height:1.5}.m-workflow-step small{display:block;color:var(--v2-muted);font-size:12px;margin-top:3px}.m-workflow-step>span:last-child{font-size:22px;line-height:1.1}.m-workflow-number{display:grid;place-items:center;width:26px;height:26px;border:1px solid var(--v2-line);border-radius:50%;font-size:12px;color:var(--v2-text-2)}
+.m-workflow-instructions{margin:8px 0 0 38px;font-size:13px;line-height:1.6;color:var(--v2-text-2);overflow-wrap:anywhere}.m-workflow-instructions p{margin:8px 0}.m-workflow-instructions aside{margin-top:10px;padding:10px;border-left:2px solid var(--v2-line);background:var(--v2-surface-soft);border-radius:8px}.m-workflow-instructions .m-hint{font-size:12px;color:var(--v2-muted)}
+.m-workflow-gotchas{padding:12px;background:var(--v2-surface-soft);border-radius:12px;font-size:13px}.m-workflow-gotchas h3{font-size:14px;margin:0}.m-workflow-gotchas ul{padding-left:18px;margin:8px 0}
+.m-workflow-dialog>footer{position:sticky;bottom:0;padding:12px 18px 16px;background:var(--v2-surface);border-top:1px solid var(--v2-line)}
+.m-workflow-dialog footer p{margin:0 0 10px;font-size:12px;color:var(--v2-muted)}
+.m-workflow-dialog footer .m-btn{width:100%;margin:0;background:var(--v2-green);color:var(--v2-bg)}
+.m-workflow-dialog footer .m-btn:disabled{opacity:1;background:var(--v2-surface-soft);color:var(--v2-muted)}
+.guide-coach.guide-compact{width:min(420px,calc(100vw - 24px));display:flex;flex-direction:row;align-items:center;gap:10px;padding:12px;border-radius:var(--m-ux-control-radius);box-sizing:border-box}
+.guide-compact-copy{flex:1;min-width:0}.guide-compact-copy small{display:block;font-size:11px;line-height:1.4;color:var(--v2-muted);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.guide-compact-copy strong{display:block;font-size:13px;margin:4px 0;line-height:1.4}.guide-compact-copy p{margin:4px 0 0;font-size:12px;line-height:1.4}.guide-compact-copy .guide-locator{color:var(--v2-muted)}.guide-compact-copy .guide-locator:empty{display:none}
+.guide-compact-controls{display:flex;gap:4px;flex-shrink:0}.guide-compact-controls button{appearance:none;width:44px;height:44px;padding:0;background:var(--v2-surface-soft);color:var(--v2-text);border:1px solid var(--v2-line);border-radius:12px;font:inherit;font-size:22px;cursor:pointer}.guide-compact-controls button:disabled{color:var(--v2-muted);opacity:.55}
+.guide-focus-ring.guide-focus-subtle{box-shadow:none;outline:0}
+:is(.m-guide-card,.m-workflow-dialog button,.guide-compact button):focus-visible{outline:3px solid var(--v2-green);outline-offset:3px}
+@media(min-width:480px){.m-guide-filters{grid-template-columns:minmax(0,1fr) 160px}}
+@media(max-width:359px){.m-guide-card{padding:12px}.m-guide-grid{gap:10px}.guide-coach.guide-compact{flex-wrap:wrap}.guide-compact-controls{margin-left:auto}}
+@media(max-width:299px){.m-guide-grid{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){.m-guide-card{transition:none}.m-guide-card:active{transform:none}}
+html[data-input-method=keyboard] .m-guide-card{transition:none}html[data-input-method=keyboard] .m-guide-card:active{transform:none}
+
+.m-workflow-dialog{scroll-padding-block:125px 145px}
+:root[data-theme=dark] .m-workflow-dialog footer .m-btn:not(:disabled){color:var(--v2-bg)}
+.m-guide-library .m-hint,.m-workflow-dialog .m-hint{color:var(--v2-muted)}
+
+.guide-compact-copy>p:first-of-type{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+@media(max-height:480px){.guide-compact-copy>p:first-of-type{display:none}.guide-coach.guide-compact{padding:8px}.guide-compact-copy strong{font-size:12px}}
+
+.m-workflow-step{text-decoration:none}.m-workflow-step-feedback{margin:8px 0 8px 38px;padding:10px;border-left:2px solid var(--v2-green);color:var(--v2-text-2);background:var(--v2-surface-soft);border-radius:8px;font-size:13px}

@@ -1,5 +1,5 @@
 /* Chunk 24: existing stock lookup views, using the shared mobile V2 tokens. */
-#m-view:has(> .m-stock-page) { padding:12px 14px calc(116px + env(safe-area-inset-bottom)); }
+#m-view:has(> .m-stock-page) { padding:12px var(--m-ux-page-gutter) calc(116px + env(safe-area-inset-bottom)); }
 #m-view:has(.m-stock-detail .m-arc-dock) { padding-bottom:calc(212px + env(safe-area-inset-bottom)); }
 body:has(.m-stock-page) .m-topbar .m-icbtn { min-width:44px; min-height:44px; }
 .m-stock-page, .m-stock-picker { color:var(--v2-text); }

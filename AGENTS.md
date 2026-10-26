@@ -42,6 +42,14 @@ and shared navigation. New and existing mobile routes must use those patterns;
 do not leave page-specific copies of dropdowns, button radius/press effects,
 status rails, ordinary refresh controls or Back behavior. Follow the current
 contract in `docs/design/mobile-work.md`, including its superseding revisions.
+Shared page/card/field layout is owned by `public/mobile/layout.css`. Use the
+common gutter and default card inset; give specialized full-bleed rows explicit
+layouts. Verify text does not touch card borders and that every audited route
+fits its canvas. Do not hide overflow to mask a broken width or grid.
+Standard action typography and geometry are owned by `public/mobile/controls.css`,
+loaded last. Do not redefine action fonts, padding, label alignment, minimum hit
+height or radius in page/role CSS. Verify visible label bounds in real pages and
+body-mounted dialogs; token checks alone do not establish visual consistency.
 Preserve workflow-specific confirmations, draft protection, real error Retry and
 explicit stock checks. Native multi-selects keep their selection behavior. Verify
 shared changes across representative HR, inventory and production screens in
@@ -111,6 +119,15 @@ user can see, try and iterate on it; do not substitute a long chat plan.
   the package matches the tested scratch output. Publish the updated version to
   the same URL as part of UI/UX review; do not require another routine confirmation.
   Publishing the preview does not authorize deploying or pushing app changes.
+- Give different review topics separate paths under `dist/reviews/<topic>/`.
+  The main Site URL is the canonical Work entry and must open the full Work review
+  at `/reviews/work-guides/?screen=work`. Keep the preparation review under
+  `/reviews/preparation/`, with its Work tab handing off to the full Work review.
+  Preserve other topic directories. After opening Site source, run
+  `node scripts/prepare-ui-scratch-site.mjs` before packaging; it verifies source
+  hashes, preserves the preparation review and writes the canonical root entry.
+  Test the exact root URL and the preparation page's Work tab, as well as the
+  dedicated topic URL. Do not restore an isolated placeholder review at root.
 - Keep hosting identity outside the wiped scratch output. Additional metadata may
   be recorded in `docs/design/ui-scratch-hosting.json`; the ID above also allows
   another session to recover the Site without that optional file.

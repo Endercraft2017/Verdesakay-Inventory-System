@@ -4,7 +4,10 @@
   "audience": "owner-only",
   "source_checkout": "/workspace/sites/verdesakay-ui-scratch",
   "generated_entry": "work/ui-scratch/index.html",
-  "source_commit": "46ba9aae8f8b3f8ee5369418b06d63e2934b3878",
-  "deployment_id": "appgdep_6ade2b68c0f481918e3392d706b05ea2",
-  "instructions": "Reuse this Site identity and audience for later scratch updates. Rebuild and verify the scratch entry, update the existing Site source checkout, and use the official Sites source/package/private publishing workflow. No production app API or live data is connected."
+  "source_commit": "60a08899895dbcf3f43eff87724dd6f05e98b132",
+  "deployment_id": "appgdep_6adf1d3e64d8819181c390613acfc70c",
+  "instructions": "Reuse this Site identity and owner-only audience. The main URL must open Work. Keep topic reviews under dist/reviews/<topic>/. After opening source, run node scripts/prepare-ui-scratch-site.mjs from the application repository, verify root and preparation Work-tab entry, then package and publish privately. Preserve all other review paths; no live business APIs.",
+  "work_review_path": "/reviews/work-guides/",
+  "work_review_url": "https://verdesakay-ui-scratch.wavylion256.chatgpt.site/reviews/work-guides/?screen=work",
+  "preparation_review_path": "/reviews/preparation/"
 }

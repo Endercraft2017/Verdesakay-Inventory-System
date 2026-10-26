@@ -6,6 +6,11 @@ import {verifyQuickOrbitLayout} from './browser/quick-orbit-layout-check.mjs';
 import {verifyTabLoading} from './browser/tab-loading-check.mjs';
 import {verifyTabCache} from './browser/tab-cache-check.mjs';
 import {verifyGuideReveal,verifyCustomerRails,verifyTabWidths} from './browser/guide-card-width-check.mjs';
+import {auditMobileRoutes,verifyKitLayout} from './browser/mobile-layout-check.mjs';
+import {verifyMobileButtonAlignment} from './browser/button-alignment-check.mjs';
+import {verifyMobileBomLive} from './browser/mobile-bom-live-check.mjs';
+import {verifyGlobalMobileTheme,verifyProductionGuideLinks} from './browser/global-mobile-theme-check.mjs';
+import {verifyWorkflowLibrary,verifyWorkflowDestinations,verifyWorkflowGuidance,verifyWorkflowLifecycle} from './browser/workflow-library-check.mjs';
 const repo=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');process.chdir(repo);
 const out=path.join(repo,'work/ui-scratch'),entry=path.join(out,'index.html'),report={environment:'Chromium, self-contained HTML served on loopback with sandboxed actual app code, fixture replay and memory storage; managed browser blocks file:// navigation',checks:[],errors:[],network:[],motion:{},sourceHashesVerified:0};
 let sibling;
@@ -17,7 +22,7 @@ if(process.env.UI_SCRATCH_REBUILD==='1'){
 const manifest=JSON.parse(fs.readFileSync(path.join(out,'source-manifest.json'),'utf8'));
 for(const file of manifest.files){assert.equal(createHash('sha256').update(fs.readFileSync(path.join(repo,file.path))).digest('hex'),file.sha256,file.path+' differs from generated preview');report.sourceHashesVerified++;}
 report.checks.push('Every copied app source and image asset matches current working-tree source hash');
-const server=http.createServer((req,res)=>{if(req.url!=='/'&&req.url!=='/index.html'){res.writeHead(404);return res.end();}res.setHeader('Content-Type','text/html; charset=utf-8');res.end(fs.readFileSync(entry));});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http://scratch.invalid').pathname;if(pathname==='/before.html'){res.setHeader('Content-Type','text/html; charset=utf-8');return res.end(fs.readFileSync(path.join(repo,'work/button-alignment/before.html')));}if(!['/','/index.html'].includes(pathname)){res.writeHead(404);return res.end();}res.setHeader('Content-Type','text/html; charset=utf-8');res.end(fs.readFileSync(entry));});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const origin='http://127.0.0.1:'+server.address().port;
 // Playwright hides scrollbars by default, masking scroll-lock layout regressions.
 const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,ignoreDefaultArgs:['--hide-scrollbars'],args:['--no-sandbox']});
@@ -25,11 +30,25 @@ const context=await browser.newContext({viewport:{width:1160,height:1000},timezo
 await context.tracing.start({screenshots:true,snapshots:true,sources:true});const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>report.errors.push(e.message));page.on('request',request=>{if(/^https?:/.test(request.url())&&!request.url().startsWith(origin+'/'))report.network.push({method:request.method(),url:request.url()});});
 await page.addInitScript(()=>{if(window.top!==window)return;window.__scratchEvidence=[];window.addEventListener('message',event=>{if(event.data?.type==='ui-scratch-event')window.__scratchEvidence.push(event.data);});document.addEventListener('change',event=>{if(['scenario','network','theme'].includes(event.target.id))window.__scratchEvidence=[];},true);document.addEventListener('click',event=>{if(event.target.closest('#reset'))window.__scratchEvidence=[];},true);});
 const frame=()=>page.frames().find(f=>f!==page.mainFrame());
-const ready=async()=>{await expect.poll(()=>frame()?.locator('[data-attention-refresh]').count()||0).toBe(1);await expect(frame().locator('[data-attention-refresh]')).toBeEnabled();};
+const ready=async()=>{await expect.poll(async()=>{const src=await page.locator('iframe').getAttribute('src'),f=frame();return f?.url().split('#')[0]===src?.split('#')[0]&&await f.evaluate(()=>typeof MApp!=='undefined'&&!!MApp.getMe()&&!!document.querySelector('[data-attention-refresh]')&&!document.querySelector('[data-attention-refresh]').disabled).catch(()=>false);}).toBe(true);await page.locator('iframe').scrollIntoViewIfNeeded();};
 async function scenario(value){await page.locator('#scenario').selectOption(value);await ready();}
-async function check(name,fn){if(process.env.UI_SCRATCH_ONLY&&!name.includes(process.env.UI_SCRATCH_ONLY))return;await fn();report.checks.push(name);console.log('PASS '+name);}
+async function check(name,fn){if(process.env.UI_SCRATCH_ONLY&&!name.toLowerCase().includes(process.env.UI_SCRATCH_ONLY.toLowerCase()))return;await fn();report.checks.push(name);console.log('PASS '+name);}
 try{
- await page.goto(origin);await ready();await scenario('sales');
+ await page.goto(origin+'?screen=work');await ready();await scenario('sales');
+ await check('All mobile destinations and the populated kit use contained aligned layouts',async()=>{
+  report.mobileLayoutAudit=await auditMobileRoutes({page,frame,scenario,ready});
+  report.kitLayout=await verifyKitLayout({page,frame,scenario,ready,out,axe});
+  const findings=report.mobileLayoutAudit.flatMap(s=>s.issues.map(i=>({route:s.requested,width:s.width,theme:s.theme,...i}))).concat(report.kitLayout.flatMap(s=>[...s.normal.issues,...s.long.issues].map(i=>({route:'kit detail',width:s.width,theme:s.theme,...i}))));
+  assert.deepEqual(findings,[]);
+ });
+ await check('Shared mobile action labels are centered in pages and body dialogs',async()=>{report.buttonAlignment=await verifyMobileButtonAlignment({page,frame,scenario,ready,out,origin,axe,beforeAvailable:fs.existsSync(path.join(repo,'work/button-alignment/before.html'))});});
+ await check('Mobile themes stay global across production warehouse inventory and employee routes',async()=>{report.globalMobileTheme=await verifyGlobalMobileTheme({page,frame,scenario,ready,out,axe});});
+ await check('Native BOM editor saves and recovers against a disposable backend',async()=>{report.nativeBomLive=await verifyMobileBomLive(out);});
+ await check('Production guide opens Overview and the native mobile BOM editor',async()=>{report.productionGuideLinks=await verifyProductionGuideLinks({page,frame,scenario,ready,out,axe});});
+ await check('Workflow catalog has themed two-column department groups and a focus-contained modal',async()=>{report.workflowLibrary=await verifyWorkflowLibrary({page,frame,scenario,ready,out,axe});});
+ await check('Workflow steps open real destinations and distinguish web-only and denied access',async()=>{report.workflowDestinations=await verifyWorkflowDestinations({page,frame,scenario,ready,out});});
+ await check('Optional workflow guidance preserves drafts, action control and reduced motion',async()=>{report.workflowGuidance=await verifyWorkflowGuidance({page,frame,scenario,ready,out,axe});});
+ await check('Workflow guidance clears missing targets and exits on departure or revoked access',async()=>{report.workflowLifecycle=await verifyWorkflowLifecycle({page,frame,scenario,ready,out});});
  await check('Guide reveals closed sections and never highlights hidden or removed controls',async()=>{report.guideReveal=await verifyGuideReveal({page,frame,ready,scenario,out});});
  await check('Customer and recent-sales cards use full-height shared arrow rails',async()=>{report.customerRails=await verifyCustomerRails({page,frame,ready,scenario,out});});
  await check('Primary tabs retain identical content widths at phone tablet and desktop sizes',async()=>{report.tabWidths=await verifyTabWidths({page,frame,ready,scenario,out});});
@@ -105,7 +124,7 @@ try{
  await check('Quick Actions keeps background geometry stable with classic scrollbars',async()=>{report.quickActionLayout=await verifyQuickOrbitLayout({page,frame,ready,scenario,out,mode:'classic'});});
  await check('Quick Actions keeps background geometry stable with mobile overlay scrollbars',async()=>{
    const mobile=await browser.newContext({viewport:{width:1160,height:1000},isMobile:true,hasTouch:true,serviceWorkers:'block'});await mobile.tracing.start({screenshots:true,snapshots:true,sources:true});
-   try{const p=await mobile.newPage();p.on('pageerror',e=>report.errors.push(e.message));p.on('request',r=>{if(/^https?:/.test(r.url())&&!r.url().startsWith(origin+'/'))report.network.push({method:r.method(),url:r.url()});});await p.goto(origin);
+   try{const p=await mobile.newPage();p.on('pageerror',e=>report.errors.push(e.message));p.on('request',r=>{if(/^https?:/.test(r.url())&&!r.url().startsWith(origin+'/'))report.network.push({method:r.method(),url:r.url()});});await p.goto(origin+'?screen=work');
      const f=()=>p.frames().find(f=>f!==p.mainFrame());const wait=async()=>{await expect.poll(()=>f()?.locator('[data-attention-refresh]').count()||0).toBe(1);await expect(f().locator('[data-attention-refresh]')).toBeEnabled();};
      const choose=async value=>{await p.locator('#scenario').selectOption(value);await wait();};
      report.quickActionLayout.push(...await verifyQuickOrbitLayout({page:p,frame:f,ready:wait,scenario:choose,out,mode:'overlay'}));
@@ -121,8 +140,12 @@ try{
  const guideSummary=report.guideReveal?' Guide opens closed sections; its real target stays clear of the coach and dock; hidden and removed controls lose their ring.':'';
  const cardSummary=report.customerRails?.length?' Full-height 52px arrow rails verified on Customers and Recent sales in both themes.':'';
  const widthSummary=report.tabWidths?.length?' Matching tab content widths verified in '+report.tabWidths.length+' measurements across Home, Work, Clock, Inbox and Profile at 320, 390, 768 and 1280px.':'';
- const insertion='document.querySelector("#results").textContent='+JSON.stringify(report.checks.length+' checks passed. '+report.sourceHashesVerified+' app source hashes verified.'+guideSummary+cardSummary+widthSummary+cacheSummary+tabSummary+layoutSummary+motionSummary+cloudSummary+' No external HTTP requests. Browser simulation only.').replace(/</g,'\\u003c')+';';
- fs.writeFileSync(entry,fs.readFileSync(entry,'utf8').replace('/* __SCRATCH_VERIFICATION__ */',insertion));
+ const globalThemeSummary=report.globalMobileTheme?' Global theme: '+report.globalMobileTheme.length+' real route/theme measurements; legacy and role tokens, primary controls, hero surfaces and dock colors share the mobile palette. Overview navigation and native BOM editing, review and sample save pass.':'';
+ const workflowSummary=report.workflowLibrary?' Workflow review: two-column department groups in 6 width/theme combinations; modal focus/return, direct navigation, reference/access labels, compact guidance with preserved drafts, hidden/failed targets and revoked-access cleanup pass. No automatic writes.':'';
+ const insertion='document.querySelector("#results").textContent='+JSON.stringify(report.checks.length+' checks passed. '+report.sourceHashesVerified+' app source hashes verified.'+(report.nativeBomLive?' Native BOM: real disposable API/SQLite checks pass for draft reload, lost-response recovery, stale save refusal, empty-definition confirmation and unchanged stock/job plans.':'')+(report.buttonAlignment?' Shared actions: 12 width/theme/motion cases and 10 real route/theme checks; maximum horizontal label drift '+report.buttonAlignment.maxHorizontalDrift+' CSS pixels. Actual BOM draft dialog, long labels, icons, disabled controls and keyboard focus pass.':'')+(report.mobileLayoutAudit?' Mobile layout: '+new Set(report.mobileLayoutAudit.map(s=>s.requested)).size+' registered destinations in '+report.mobileLayoutAudit.length+' width/theme cases, plus '+report.kitLayout.length+' populated kit cases. No measured page overflow, edge-touching card copy or shifted role section edges; long component/product names and real count controls pass.':'')+globalThemeSummary+workflowSummary+guideSummary+cardSummary+widthSummary+cacheSummary+tabSummary+layoutSummary+motionSummary+cloudSummary+' No external HTTP requests from the preview; disposable-backend checks are reported separately.').replace(/</g,'\\u003c')+';';
+ const verificationPattern=/\/\* __SCRATCH_VERIFICATION__ \*\/|document\.querySelector\("#results"\)\.textContent="(?:\\.|[^"\\])*";/;
+ assert(verificationPattern.test(fs.readFileSync(entry,'utf8')),'Verification insertion point missing');
+ fs.writeFileSync(entry,fs.readFileSync(entry,'utf8').replace(verificationPattern,insertion));
  console.log('PASS '+report.checks.length+' checks; '+report.sourceHashesVerified+' source files match; no external requests');
 }catch(error){report.failure=error.stack;fs.writeFileSync(path.join(out,'verification.json'),JSON.stringify(report,null,2));await page.screenshot({path:path.join(out,'failure.png'),fullPage:true}).catch(()=>{});console.error(error);process.exitCode=1;}
 finally{await context.tracing.stop({path:path.join(out,'trace.zip')});await browser.close();server.close();}

@@ -252,7 +252,7 @@
       });
       var count = function (k) { return ex.filter(function (x) { return x.kind === k; }).length; };
       body.innerHTML =
-        R.hero('Action required', ex.length ? ex.length + ' exception' + (ex.length === 1 ? '' : 's') : 'On track',
+        R.hero(ex.length ? 'Needs attention' : 'Production status', ex.length ? ex.length + ' exception' + (ex.length === 1 ? '' : 's') : 'On track',
           [count('paused') + ' paused', count('overdue') + ' overdue', count('blocked') + ' kit issue' + (count('blocked') === 1 ? '' : 's')].join(' · ')) +
         '<div class="rk-list" data-list></div>' +
         R.actions((MApp.can('production.approve') ? [{ id: 'pm-approvals', label: 'Awaiting approval' + (approvals != null ? ' · ' + approvals : ''), kind: 'primary' }] : [])

@@ -256,7 +256,7 @@
     body.innerHTML += supplyContext(jo, av);
     if (!accepted) body.innerHTML += R.note('info', 'Accept this job to record who is preparing its kit. Acceptance does not reserve or deduct parts.') +
       R.actions([{ id: 'kr-accept', label: 'Accept for picking', kind: 'primary' }]);
-    body.innerHTML += R.section('Components · ' + av.lines.length + ' lines') + av.lines.map(function (l) {
+    body.innerHTML += R.section('Components · ' + av.lines.length + (av.lines.length===1?' line':' lines')) + av.lines.map(function (l) {
       var id = 'kr-picked-' + l.component_item_id, max = Math.floor(Math.max(0, Math.min(l.need, l.available)));
       return '<div class="rk-card kr-component"><label for="' + id + '">' + mEsc(l.component_name) + '</label>' +
         '<p class="kr-stock">Need ' + l.need + ' · On hand ' + l.have + ' · Held elsewhere ' + l.held_elsewhere + ' · Available to this kit ' + l.available + '</p>' +

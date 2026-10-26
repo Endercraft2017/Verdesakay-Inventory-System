@@ -32,7 +32,7 @@
           '<h1>' + e(opts.title) + '</h1>' + (opts.subtitle ? '<p>' + e(opts.subtitle) + '</p>' : '') +
         '</header><div class="rk-body"></div></section>';
       if (opts.back) view.querySelector('.rk-back').onclick = opts.back;
-      // Tint the shell (Quick Orbit, active dock tab) for this role; app.js clears it per route.
+      // Role identity is metadata only. All roles use the shared mobile theme.
       if (role.accent) document.documentElement.setAttribute('data-role-accent', role.accent);
       else document.documentElement.removeAttribute('data-role-accent');
       var body = view.querySelector('.rk-body');

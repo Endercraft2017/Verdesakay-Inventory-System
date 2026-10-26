@@ -47,11 +47,15 @@
         if(result?.applied===false)throw Object.assign(new Error(result.message||'The server refused this count decision.'),{status:409});
         if(!mCountUI.validResult(a,result))throw new Error('The response was incomplete. Retry the original saved request.');
       }
+      else if(a.bomSetup){
+        result=await stockRequest(s,function(opts){return API[a.method||'put'](a.path,a.payload,opts);});
+      }
       else if(a.itemSetup&&window.mItemSetup){
         result=await stockRequest(s,function(opts){return API[a.method||'post'](a.path,a.payload,opts);});
         if(!mItemSetup.validResult(a,result))throw new Error('The response was incomplete. Check the original saved request.');
       }
       else result=await API[a.method||'post'](a.path,a.payload,{idempotencyKey:a.key});
+      if(a.bomSetup&&(!result?.ok||!Array.isArray(result.bom)||!window.mBomData?.same(result.bom,a.payload.components)))throw new Error('The BOM response was incomplete. Retry the original saved request.');
       guard(s);a.result=result;a.local=API.syncLocal(result);a.state='confirmed';a.error=null;await save(s);
     }catch(e){if(!owns(s))throw e;a.state=a.itemSetup&&e.status===409&&e.data?.code==='saved_access_changed'?'conflict':classify(e);a.error=e.message;await save(s);}finally{delete busy[s.key];}
   }

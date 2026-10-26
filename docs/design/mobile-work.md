@@ -331,3 +331,131 @@ workflow capture forms and active message threads retain their specific layouts.
 Verify all five tab content bounds at 320, 390, 768 and 1280px. Tests exercise
 ordinary UI navigation, current real components and disposable captured records;
 they do not establish physical-device or first-time employee usability.
+
+
+## Workflow library and optional guidance — 2026-10-26
+
+Guides are published workflow references, not live progress. Render the current
+GUIDE.pipelines catalog in two equal columns within the shared mobile canvas,
+grouped into Production, HR, Sales, Inventory, Purchasing, Accounting and My work.
+Use existing v2 surface/text/control tokens; do not reuse the legacy navy cards.
+Short catalog labels may clarify long roadmap titles, but preserve the authored
+workflow title, steps, conditions, handoffs and cautions in the reference modal.
+One search field covers published content and local intent clarification; the
+department filter is the shared single-select control. No AI service is involved.
+
+Workflow cards open native dialogs instead of inline details. Keep the catalog's
+flow unchanged, contain keyboard focus, restore its opener on close, and support
+Escape. Available step buttons open related real phone screens; reference and
+other-team buttons explain the unavailable destination without navigating. An
+available screen does not authorize the business action: record state, employee
+link, effective grants and server action checks still apply. Strip internal
+permission identifiers from the compact role metadata.
+
+Guide me is optional and modeless. MobileWorkflow owns destination mapping and
+session lifetime; GuideTour remains the single highlight/positioning engine. Its
+compact mode uses one small previous/next/close bar, a static real-target outline,
+and no page-wide dimming. Start at the first available phone checkpoint. Web-only
+and inaccessible checkpoints remain explicit references, never completed tasks.
+Users choose the actual record; highlight a known control or record entry only
+when it is present, painted and enabled. Loading, empty/missing targets and read
+failures must never leave a ghost ring. Never click, fill, save, approve, post
+stock, or record completion automatically.
+
+Keep normal input keys and focus. Preserve the focused guide control across a
+step change and connect its accessible description to the current step. Escape
+closes guidance without navigation.
+Pause behind confirmation dialogs, and position the bar clear of the bottom dock
+and known fixed form action areas. Scope the session to the full read identity;
+stop on account/access changes, logout, departure and unrelated navigation.
+When a guide step stays on the same form, do not call the router again. Preserve
+selected records/drafts on that screen. A requested route change uses the normal
+draft guard; keeping the draft leaves the guide step unchanged. Confirmed
+replaceState/render departures resume only their explicitly requested checkpoint.
+
+Pointer modal motion uses a restrained 180ms entrance and 100ms exit, with no
+keyboard or reduced-motion animation. Frequent guide-step positioning is instant.
+Verify both themes, phone widths, modal focus/return, real destinations, denied
+and web-only references, field editing, draft keep/discard, asynchronous targets,
+missing/failed reads, scope revocation and absence of automatic business writes.
+Browser/axe checks are not observed employee usability or physical-phone testing.
+
+## Shared palette and native BOM editor — 2026-10-26
+
+Supersedes departmental tints: legacy --m-* and role --rk-* tokens resolve to
+--v2-* in both themes. Role identity is metadata; it does not tint screens,
+buttons or navigation. Primary buttons use the shared control radius and brand
+foreground. Paused/pending uses amber, errors use red, neutral information uses
+surface/text tokens, and verified positive states use accessible green text.
+Preserve photographic/signature colors and explicit business check/recovery actions.
+
+Production Overview guide checkpoints open mobile Production control. Products &
+BOM checkpoints open the native product-setup route. Other permitted web-only
+steps use tenant-relative new-tab links checked against the canonical NAV rules.
+Unavailable/reference feedback appears beside the pressed step. A missing
+employee profile cannot be bypassed through a web fallback.
+
+The mobile BOM editor reads the existing catalog with production.view or
+inventory.view and requires production.configure to edit. Choosing new product
+items or adding components additionally uses the existing inventory.view catalog
+boundary. Quantities are positive whole components per one finished unit; notes
+are optional. Reject self/duplicate components, retain local drafts, protect
+navigation, and require Review followed by Save. An empty definition needs its
+own explicit acknowledgment. Costs, checklist assignments, stock and existing
+job-order component plans are preserved.
+
+Mobile saves supply expected_components. The server compares the reviewed
+component definition in the same transaction before replacing it. A changed
+baseline returns 409; an identical already-applied definition can be confirmed
+without rewriting it. This supports explicit recovery after a lost response,
+without replaying over a newer BOM. Older web callers remain compatible, so they
+can still replace definitions without this optional check. This compares BOM
+content, not an immutable revision history.
+
+The owner-private scratch preview allows sample BOM saves only in isolated
+memory; all other business writes remain blocked. Separate Chromium/API/SQLite
+checks exercise actual mobile saves, draft reload, lost-response recovery and
+stale-save refusal against disposable data. Neither establishes physical-device
+or first-time employee usability.
+
+## Standard action geometry and type — 2026-10-26
+
+`public/mobile/controls.css`, loaded after component styles, owns the geometry and
+type of rk-btn, m-btn, m-v2-primary and m-v2-secondary actions, including dialogs
+mounted directly under body. Use one 14px/20px, 600-weight label, centered on both
+axes, 12px vertical / 16px horizontal padding, the shared 14px radius and a 44px
+minimum hit height. Labels may wrap; paired actions stretch to equal heights.
+RoleUI trailing icons reserve equal space on both sides of the centered label.
+
+Page files may set action layout (width, flex and container spacing) and semantic
+state colors. They must not redefine action alignment, fonts, padding, minimum
+hit height or corner radius. Intentional list/navigation rows, dropdown options,
+icon-only controls and dock tabs retain their existing layouts; they are separate
+components. Shared pointer/keyboard/reduced-motion behavior is retained.
+
+This supersedes the old RoleUI left-aligned action default and local HR, batch,
+stock, item and authentication button font/padding overrides. A shared palette
+alone did not enforce these properties; browser checks now measure rendered label
+centers and typography, including the real BOM discard dialog.
+
+## Mobile spatial alignment — 2026-10-26
+
+`public/mobile/layout.css` owns the common page gutter (16px), plain role-card
+inset (16px), block field panels and shrinkable content constraints. Structured
+list rows, full-height arrow rails and compact fields retain explicit geometry;
+the plain-card inset is a low-specificity fallback, not a blanket overwrite.
+Section headings and page introductions align with the outer content column.
+Nested card/field content must never touch the border. Long identifiers may wrap
+instead of enlarging the page. Shared action geometry remains in controls.css.
+
+Production uses real wrapping description markup and the normal shared canvas;
+CSS-generated non-wrapping duplicate headings must not return. Item-filter select
+wrappers flex within their row. The kit count control uses equal side columns,
+keeps its 44px+ targets, and preserves required/available/saved/unsaved distinctions.
+
+Validate all registered route entries, distinguishing aliases, empty/selection
+states and access restrictions from populated record workflows. Add relevant
+record details such as an accepted, unpicked kit; inspect narrow/wider widths,
+both themes, long names, actual text bounds and functional controls. Do not hide
+page overflow to suppress a broken layout or claim record-state/physical-device
+coverage that was not demonstrated.

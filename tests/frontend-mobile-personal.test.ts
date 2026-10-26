@@ -6,9 +6,10 @@ const flush=async()=>{for(let i=0;i<8;i++)await new Promise(r=>setTimeout(r,0));
 async function boot(api:any){
   const dom=new JSDOM('<button id="m-guide-start">Guide</button><div id="m-title"></div><div id="m-view"></div><div id="m-toasts"></div>',{runScripts:'outside-only',url:'https://localhost/sandbox/m#/work'}),w=dom.window as any;await flush();
   const routes:any={},navigations:any[]=[];let loc={name:'work',params:{}};const view=w.document.querySelector('#m-view');
-  w.API=api;w.confirm=()=>true;w.VDS_BASE_PATH='/sandbox';w.MApp={route:(n:string,f:any)=>routes[n]=f,setTitle:(t:string)=>w.document.querySelector('#m-title').textContent=t,getMe:()=>({id:1,role:'employee'}),can:()=>false,canOpen:()=>false,hasModule:()=>true,canApprove:()=>false,refreshAccess:async()=>{},currentLocation:()=>loc,go:(n:string,p:any={})=>{if(w.mPersonalDraft&&!w.mPersonalDraft.allow('#/'+n))return;navigations.push([n,p]);loc={name:n,params:p};w.location.hash='#/'+n;view.dataset.route=n;if(routes[n])routes[n](view,p);},render:()=>{view.dataset.route=loc.name;if(routes[loc.name])routes[loc.name](view,loc.params);}};
+  w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new w.Event('close'));};
+  w.API=api;w.confirm=()=>true;w.VDS_BASE_PATH='/sandbox';w.MApp={nav:(n:string,p:any={})=>'#/'+n+(Object.keys(p).length?'?'+new URLSearchParams(p).toString():''),routes:()=>Object.keys(routes),route:(n:string,f:any)=>routes[n]=f,setTitle:(t:string)=>w.document.querySelector('#m-title').textContent=t,getMe:()=>({id:1,role:'employee'}),can:()=>false,canOpen:()=>false,hasModule:()=>true,canApprove:()=>false,refreshAccess:async()=>{},currentLocation:()=>loc,go:(n:string,p:any={})=>{if(w.mPersonalDraft&&!w.mPersonalDraft.allow('#/'+n))return;navigations.push([n,p]);loc={name:n,params:p};w.location.hash='#/'+n;view.dataset.route=n;if(routes[n])routes[n](view,p);},render:()=>{view.dataset.route=loc.name;if(routes[loc.name])routes[loc.name](view,loc.params);}};
   w.requestAnimationFrame=(f:any)=>{f();return 1;};w.HTMLElement.prototype.getBoundingClientRect=()=>({left:30,top:100,right:230,bottom:140,width:200,height:40});
-  for(const file of ['mobile/lib/dom.js','mobile/lib/read-scope.js','js/lib/photo-viewer.js','js/personal-ux.js','mobile/lib/personal.js','js/guide-data.js','js/guide-search.js','mobile/lib/guides.js','js/guide-tour.js','mobile/modules/core/tasks.js','mobile/modules/core/notes.js','mobile/modules/core/guides.js','mobile/modules/hr/work.js'])w.eval(fs.readFileSync(path.join(import.meta.dirname,'../public',file),'utf8'));
+  for(const file of ['mobile/lib/dom.js','mobile/lib/read-scope.js','js/lib/photo-viewer.js','js/personal-ux.js','mobile/lib/personal.js','js/nav-config.js','js/guide-data.js','js/guide-search.js','mobile/lib/guides.js','js/guide-tour.js','mobile/lib/workflow-guide.js','mobile/modules/core/tasks.js','mobile/modules/core/notes.js','mobile/modules/core/guides.js','mobile/modules/hr/work.js'])w.eval(fs.readFileSync(path.join(import.meta.dirname,'../public',file),'utf8'));
   await flush();return {dom,w,view,navigations,routes,go:async(n:string,p:any={})=>{w.MApp.go(n,p);await flush();}};
 }
 it('Work reads shared tasks and opens the selected task and linked note',async()=>{
@@ -31,9 +32,15 @@ it('protects unsaved notes and task schedules and does not mutate a linked note 
 it('does not overwrite another screen when an earlier note fetch finishes late',async()=>{
   let resolve:any;const {dom,w,view,go}=await boot({get:()=>new Promise(r=>resolve=r)});await go('notes');w.mPersonalDraft.clear();view.innerHTML='<p>Another screen</p>';resolve([{id:1,title:'Old note',body:'Old'}]);await flush();expect(view.textContent).toBe('Another screen');dom.window.close();
 });
-it('offers a searchable shared phone guide library without navigating from search or losing a draft',async()=>{
-  const {dom,w,view,navigations,go}=await boot({get:async()=>[]});await go('guides');const search=view.querySelector('#m-guide-search');search.value='checklist';search.dispatchEvent(new w.Event('input'));expect(view.textContent).toContain('Turn a note');search.value='no-such-guide';search.dispatchEvent(new w.Event('input'));expect(view.textContent).toContain('No matching guides');search.value='';search.dispatchEvent(new w.Event('input'));const count=navigations.length;expect(view.querySelectorAll('details').length).toBeGreaterThan(5);expect(navigations).toHaveLength(count);view.querySelector('[data-open-notes]').click();await flush();expect(navigations.at(-1)[0]).toBe('notes');dom.window.close();
+it('offers one searchable workflow library and opens a phone step only after an explicit choice',async()=>{
+ const {dom,w,view,navigations,go}=await boot({get:async()=>[]});await go('guides');
+ const search=view.querySelector('#m-guide-search');search.value='checklist';search.dispatchEvent(new w.Event('input'));expect(view.textContent).toContain('Turn a note');
+ search.value='no-such-guide';search.dispatchEvent(new w.Event('input'));expect(view.textContent).toContain('No matching workflows');
+ search.value='';search.dispatchEvent(new w.Event('input'));const count=navigations.length;expect(view.querySelectorAll('[data-guide-id]').length).toBeGreaterThan(5);expect(view.querySelectorAll('details')).toHaveLength(0);expect(navigations).toHaveLength(count);
+ w.MApp.canOpen=(route:string)=>route==='notes';view.querySelector('[data-guide-id="notes-scheduler"]').click();
+ w.document.querySelector('[data-workflow-step="0"]').click();await flush();expect(navigations.at(-1)[0]).toBe('notes');dom.window.close();
 });
+
 it('offers relative reminders, visible dirty/saving status, and a brief guide without writes',async()=>{
   const calls:any[]=[];let complete:any;const {dom,w,view,go}=await boot({get:async()=>[],post:(p:string,b:any)=>{calls.push([p,b]);return new Promise(r=>complete=r);}});await go('notes',{new:1});expect(view.querySelector('[data-save-status]').textContent).toBe('Not saved yet');view.querySelector('#m-note-body').value='Remember this';view.querySelector('#m-note-body').dispatchEvent(new w.Event('input',{bubbles:true}));expect(view.querySelector('[data-save-status]').textContent).toBe('Unsaved changes');expect(view.querySelector('.personal-editor-actions #m-note-save')).not.toBeNull();
   view.querySelector('#m-note-scheduled').checked=true;view.querySelector('#m-note-scheduled').dispatchEvent(new w.Event('change'));const due=view.querySelector('#m-note-due');due.value='2026-11-04T10:00';due.dispatchEvent(new w.Event('input',{bubbles:true}));const preset=view.querySelector('.personal-reminder-choice select');preset.value='30';preset.dispatchEvent(new w.Event('change',{bubbles:true}));expect(view.querySelector('#m-note-remind').value).toBe('2026-11-04T09:30');due.value='2026-11-05T11:00';due.dispatchEvent(new w.Event('input',{bubbles:true}));expect(view.querySelector('#m-note-remind').value).toBe('2026-11-05T10:30');
@@ -51,17 +58,18 @@ it('preserves date-only deadlines in the editor without silently writing a new s
   const calls:any[]=[];const {dom,w,view,go}=await boot({get:async()=>[{id:1,title:'All-day task',due_date:'2026-11-05'}],put:async(...a:any[])=>calls.push(a)});await go('tasks',{id:1});expect(view.querySelector('[data-due]').value).toBe('2026-11-05T09:00');expect(calls).toHaveLength(0);view.querySelector('[data-title]').value='Updated title';view.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await flush();expect(calls[0][1].due_date).toBe('2026-11-05');dom.window.close();
 });
 
-it('shows current workflow handoffs and conditional recovery branches in the phone guide library',async()=>{
+it('groups workflow buttons and opens authored handoffs in a dialog rather than expanding the catalog',async()=>{
  const {dom,w,view,go}=await boot({get:async()=>[]});
  await go('guides');
- const section=view.querySelector('#m-guide-section');section.value='pipelines';section.dispatchEvent(new w.Event('change'));
- expect(view.querySelectorAll('.m-guide-reference').length).toBe(w.GUIDE.pipelines.filter((p:any)=>p.pipeline).length);
- const search=view.querySelector('#m-guide-search');search.value='rejected on inspection';search.dispatchEvent(new w.Event('input'));
- // Search the stage and handoff, not just the compact guide title.
- search.value='customer return';search.dispatchEvent(new w.Event('input'));
- expect(view.textContent).toContain('Result / handoff:');
- expect(view.textContent).toContain('Rejected on inspection?');
- expect(view.querySelector('.m-pipeline-path')).not.toBeNull();
+ expect(view.querySelector('.m-guide-reference')).toBeNull();
+ expect(view.querySelectorAll('.m-guide-group').length).toBe(7);
+ const search=view.querySelector('#m-guide-search');search.value='customer return';search.dispatchEvent(new w.Event('input'));
+ const card=view.querySelector('[data-guide-id="customer-return"]');expect(card).not.toBeNull();card.click();
+ const dialog=w.document.querySelector('.m-workflow-dialog');expect(dialog.open).toBe(true);
+ expect(dialog.textContent).toContain('Rejected on inspection?');expect(dialog.textContent).toContain('Result:');
+ expect(dialog.querySelectorAll('[data-workflow-step]').length).toBe(w.GUIDE.byId['customer-return'].steps.length);
+ expect(dialog.querySelector('[data-workflow-start]').disabled).toBe(true);
+ dialog.querySelector('.m-workflow-close').click();await flush();expect(w.document.querySelector('.m-workflow-dialog')).toBeNull();expect(w.document.activeElement).toBe(card);
  dom.window.close();
 });
 
@@ -154,12 +162,11 @@ it('explains physical identity before QC and the legacy-intake/sticker gates bef
  dom.window.close();
 });
 
-it('clarifies a mobile task description and opens the selected authored workflow without performing work',async()=>{
+it('clarifies an ambiguous task in the same search and opens its published workflow modal',async()=>{
  const {dom,w,view,go,navigations}=await boot({get:async()=>[]});await go('guides');const before=navigations.length;
- view.querySelector('[data-intent-input]').value='receive goods';view.querySelector('[data-intent-form]').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
- expect(view.querySelectorAll('[data-intent-choice]')).toHaveLength(3);
- view.querySelector('[data-intent-choice="0"]').click();expect(view.querySelector('.guide-retrieval-source').textContent).toContain('Purchasing');
- view.querySelector('[data-intent-select]').click();
- expect(view.querySelector('[data-guide-id="purchase-to-pay"]').open).toBe(true);
+ const search=view.querySelector('#m-guide-search');search.value='receive goods';search.dispatchEvent(new w.Event('input'));
+ expect(view.querySelectorAll('[data-workflow-query]')).toHaveLength(3);
+ view.querySelector('[data-workflow-query="0"]').click();view.querySelector('[data-guide-id="purchase-to-pay"]').click();
+ expect(w.document.querySelector('.m-workflow-dialog').textContent).toContain('Purchasing');
  expect(navigations).toHaveLength(before);dom.window.close();
 });

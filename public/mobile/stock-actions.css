@@ -17,7 +17,7 @@
 .m-stock-serials label{display:flex;align-items:center;gap:10px;min-height:44px;padding:8px 0;font-size:13px;overflow-wrap:anywhere}.m-stock-serials input{width:20px;height:20px;flex:none;accent-color:var(--v2-green)}
 .m-stock-action-error{margin:0;font-size:13px;line-height:1.5;color:var(--v2-warn-text);overflow-wrap:anywhere}
 .m-stock-action [aria-invalid=true]{border-color:var(--v2-warn-text)}
-.m-stock-action .m-btn,.m-stock-result .m-btn{min-height:48px;margin:0;font-size:14px;line-height:1.5}
+.m-stock-action .m-btn,.m-stock-result .m-btn{margin:0}
 .m-stock-action .m-btn-warn{background:var(--v2-warn-soft);color:var(--v2-warn-text);border:1px solid var(--v2-warn-line)}
 .m-stock-action button:disabled,.m-stock-result button:disabled{opacity:.6;cursor:default}
 .m-stock-action :is(button,input,select):focus-visible,.m-stock-result :is(button,summary):focus-visible{outline:3px solid var(--v2-green);outline-offset:2px}

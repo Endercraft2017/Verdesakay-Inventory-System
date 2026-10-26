@@ -12,7 +12,7 @@ import { IDBFactory } from 'fake-indexeddb';
 const ROOT = path.join(import.meta.dirname, '..');
 const PUBLIC = path.join(ROOT, 'public');
 const EXPECTED_ROUTES = [
-  'sales', 'order-tracking', 'customers', 'purchase-requests', 'home', 'work', 'production', 'stock-move', 'damage', 'transfer', 'new-item', 'assign-qr', 'scan',
+  'sales', 'order-tracking', 'customers', 'purchase-requests', 'home', 'work', 'product-setup', 'production', 'stock-move', 'damage', 'transfer', 'new-item', 'assign-qr', 'scan',
   'item', 'low-stock', 'location', 'my-log', 'cycle-count', 'stock-counts', 'stock-count-tasks', 'receive', 'pick',
   'batch', 'job-orders', 'kit-release', 'unit-issues', 'qc', 'repairs', 'record', 'receiving', 'so', 'report-problem', 'anonymous-report', 'settings', 'queue', 'clock',
   'returns', 'semi-finishing', 'inbox', 'directory', 'payslips', 'schedule', 'requests', 'tasks', 'notes', 'guides',

@@ -401,8 +401,8 @@
     var body = page(view, desk, desk.nodes.verify, desk.verifyTitle, desk.verifySub);
     var cl = inspectionStage(u, desk) === 1 ? jo.qc_checklist_qc : jo.qc_checklist_qa;
     body.innerHTML =
-      '<div class="rk-jobhead"><span class="rk-no" style="font-size:14px">' + mEsc(label(u)) + '</span><span class="rk-pill" style="background:#fff;color:' +
-        (desk.role === 'qa' ? '#14803d' : 'var(--rk-chip-text)') + '">' + mEsc(desk.verifyPill) + '</span>' +
+      '<div class="rk-jobhead"><span class="rk-no" style="font-size:14px">' + mEsc(label(u)) + '</span><span class="rk-pill" style="background:var(--v2-surface-soft);color:' +
+        (desk.role === 'qa' ? 'var(--v2-positive-text)' : 'var(--rk-chip-text)') + '">' + mEsc(desk.verifyPill) + '</span>' +
         '<span class="rk-name">' + mEsc(u.product_name) + '</span><span class="rk-meta">' + mEsc([u.job_order_number, u.team_name].filter(Boolean).join(' · ')) + '</span></div>' +
       (desk.role === 'qa' && u.last_pass && u.last_pass.stage === 1
         ? R.field('QC record', (u.last_pass.inspector_name || '—') + ' · Passed ' + clock(u.last_pass.created_at).replace('Today, ', 'today, ')) +
@@ -678,7 +678,7 @@
     var outcomes = (desk.role === 'qa' ? [['hold', 'Hold for review (QA decides)']] : []).concat([
       ['scrap', 'Reject — scrap'], ['dispose', 'Reject — dispose'], ['recycle', 'Reject — recycle']]);
     body.innerHTML =
-      '<div class="rk-alert"><b style="grid-column:1/-1;font-size:16px;color:#c72e1a">! ' + mEsc(desk.failAlert) + '</b>' +
+      '<div class="rk-alert"><b style="grid-column:1/-1;font-size:16px;color:var(--v2-danger)">! ' + mEsc(desk.failAlert) + '</b>' +
         '<span style="grid-column:1/-1;font-size:12px;font-weight:600;color:var(--rk-title)">' + mEsc(label(u)) + '</span>' +
         '<span style="grid-column:1/-1">' + (desk.role === 'qa' ? 'Inventory remains blocked pending the recorded outcome.' : 'It remains traceable under the job order and QC record.') + '</span></div>' +
       (desk.role === 'qa' ? '<label class="rk-card rk-field"><small>Outcome</small><select data-out>' + outcomes.map(function (o) {

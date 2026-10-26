@@ -281,6 +281,7 @@
     {label:'Order tracking',sub:'Read-only sales and warehouse progress',route:'order-tracking',permission:'orders.view'});
 
   var STOCK_TOOLS = [
+    {label:'Products & BOM',sub:'Define finished products and their required components',route:'product-setup',any:['production.view','inventory.view']},
     {label:'Physical stock counts',sub:'Scan an exact shelf and submit for review',route:'stock-counts',permission:'inventory.count'},
     {label:'Inventory stock',sub:'Search items, quantities and locations',route:'item',permission:'inventory.view'},
     {label:'Low stock',sub:'Items at or below their reorder point',route:'low-stock',permission:'inventory.view'},
@@ -761,7 +762,7 @@
     if(params&&params.task)return attentionDetail(view,params);
     MApp.setTitle('Work');
     var me = MApp.getMe() || {};
-    var ops = OPS.filter(allowed), stockTools = STOCK_TOOLS.filter(function(op){return MApp.canOpen(op.route)&&MApp.can(op.permission);});
+    var ops = OPS.filter(allowed), stockTools = STOCK_TOOLS.filter(allowed);
     view.innerHTML = '';
     var page = mEl('<section class="v2-work" data-figma-node="46:548"></section>');
     page.appendChild(mEl('<h1 class="work-sr-only">Work</h1>'));

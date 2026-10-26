@@ -1,0 +1,42 @@
+/* Standard mobile actions. Load last: page/role files own layout and state colors,
+   this file owns action alignment, type and hit-box geometry, including body dialogs. */
+:root {
+  --m-ux-action-font-size: 14px;
+  --m-ux-action-line-height: 20px;
+  --m-ux-action-font-weight: 600;
+  --m-ux-action-min-height: 44px;
+  --m-ux-action-padding-block: 12px;
+  --m-ux-action-padding-inline: 16px;
+  --m-ux-action-icon-size: 22px;
+}
+:is(button,a):is(.rk-btn,.m-btn,.m-v2-primary,.m-v2-secondary) {
+  box-sizing: border-box;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: var(--m-ux-action-min-height);
+  padding: var(--m-ux-action-padding-block) var(--m-ux-action-padding-inline);
+  border-radius: var(--m-ux-control-radius);
+  font-family: inherit;
+  font-size: var(--m-ux-action-font-size);
+  font-weight: var(--m-ux-action-font-weight);
+  line-height: var(--m-ux-action-line-height);
+  letter-spacing: normal;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* RoleUI trailing icons get equal space on both sides of the centered label. */
+.rk-btn:has(>img) {
+  padding-inline: calc(var(--m-ux-action-padding-inline) + var(--m-ux-action-icon-size) + 8px);
+}
+.rk-btn>img {
+  position: absolute;
+  inset-inline-end: var(--m-ux-action-padding-inline);
+  top: 50%;
+  width: var(--m-ux-action-icon-size);
+  height: var(--m-ux-action-icon-size);
+  transform: translateY(-50%);
+}

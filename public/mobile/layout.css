@@ -1,0 +1,22 @@
+/* Mobile layout foundations. Content cards have an inset by default; structured
+   rows/fields keep their explicit layouts. Avoid hiding overflow to mask a bad grid. */
+:root {
+  --m-ux-page-gutter: 16px;
+  --m-ux-card-inset: 16px;
+}
+:where(.rk-card) {
+  padding: var(--m-ux-card-inset);
+  overflow-wrap: anywhere;
+}
+:where(.rk-card)>:first-child { margin-block-start: 0; }
+:where(.rk-card)>:last-child { margin-block-end: 0; }
+.rk-page,.rk-body,.rk-body>*,.m-view>*,.m-stock-page,.m-stock-picker { min-width: 0; }
+.rk-head { padding-inline: 0; overflow-wrap: anywhere; }
+.rk-jobhead { grid-template-columns: minmax(0,1fr) auto; overflow-wrap: anywhere; }
+.rk-section { margin-inline: 0; overflow-wrap: anywhere; }
+.rk-field { display: block; min-width: 0; padding-inline: var(--m-ux-card-inset); }
+.rk-field.m-select-anchor { padding-inline: var(--m-ux-card-inset); }
+.rk-field>b:first-child { margin-top: 0; }
+.rk-page :is(input,textarea,select) { min-width: 0; max-width: 100%; }
+.m-stock-kind,.m-stock-kind>* { min-width: 0; }
+.m-stock-kind>.m-select-wrap { flex: 1; width: auto; }

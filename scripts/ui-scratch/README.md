@@ -3,9 +3,9 @@
 Run from the repository root after `npm ci`:
 
 ```sh
-npm run ui:scratch
-npm run ui:scratch:serve
-npm run test:ui:scratch
+npm run ui:scratch:batch
+npm run ui:scratch:batch:serve
+npm run test:ui:scratch:batch
 ```
 
 The builder recreates `work/ui-scratch/index.html` from the current app source.
@@ -47,3 +47,15 @@ bootstrap and v162 shell cache. The SO/CKD/JO preparation examples remain draft-
 review helpers; they are not imported into production routes and do not post stock.
 Publishing this scratch Site never deploys the application. The original shared
 Work review helper remains available through the ui:scratch:shared commands.
+
+The default ui:scratch commands now review the current workflow Guides task.
+Use the explicit batch aliases above to recreate this retained batch review.
+The batch cleanup guard intentionally refuses output owned by another builder;
+preserve unowned work and follow its ownership checks when switching reviews.
+
+Current review: workflow step destinations, shared mobile palette and native
+Products & BOM editor. Sample BOM PUTs change only isolated iframe memory; reset
+clears them. `scripts/browser/mobile-bom-live-check.mjs` separately runs the actual
+mobile editor against a throwaway SQLite/API server, including durable reload,
+unknown-result retry, stale-definition refusal, empty BOM confirmation and new
+product setup. Stock and existing job component plans are compared before/after.

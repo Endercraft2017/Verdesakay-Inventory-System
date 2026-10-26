@@ -398,10 +398,10 @@
       (hasAuth
         ? R.field('Approved recipient', a.recipient_name + (a.id_reference ? ' · ID reference ' + a.id_reference : '')) +
           (overrideOk(a) && !s.tokenOk
-            ? '<div class="rk-card rk-field"><small>Token verification</small><b style="color:#14803d">Supervisor override · ' + mEsc(a.override.decided_by_name || 'approved') + '</b>' +
+            ? '<div class="rk-card rk-field"><small>Token verification</small><b style="color:var(--v2-positive-text)">Supervisor override · ' + mEsc(a.override.decided_by_name || 'approved') + '</b>' +
               '<span>' + mEsc(a.override.decision_note || a.override.reason) + '</span></div>'
             : '<div class="rk-card rk-field"><small>Token verification</small>' + (s.tokenOk
-              ? '<b style="color:#14803d">' + mEsc(s.token) + ' · Valid</b>'
+              ? '<b style="color:var(--v2-positive-text)">' + mEsc(s.token) + ' · Valid</b>'
               : '<div class="rk-search" style="margin-top:8px"><input class="rk-input" style="margin:0;text-transform:uppercase" data-token placeholder="Token the recipient presents" autocomplete="off">' +
                 '<button type="button" class="rk-back" data-verify style="padding:0">Verify</button></div>' +
                 '<button type="button" class="rk-back" data-notoken style="padding:0;margin-top:10px">' +

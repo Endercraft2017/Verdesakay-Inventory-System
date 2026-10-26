@@ -299,18 +299,16 @@ export const transferStockSchema = z.object({
 });
 
 // ---- Bill of materials (finished products) ----
+const bomComponentsSchema = z.array(z.object({
+  component_item_id: z.coerce.number().int().positive(),
+  quantity: z.coerce.number().int().positive('Component quantity must be a whole number above 0'),
+  notes: trimmed.max(300).optional().nullable(),
+})).max(200);
 export const saveBomSchema = z.object({
-  // An empty list is allowed — a finished product may have no BOM yet and still be
-  // built (a job order for it just consumes nothing unless components are added ad hoc).
-  components: z
-    .array(
-      z.object({
-        component_item_id: z.coerce.number().int().positive(),
-        quantity: z.coerce.number().int().positive('Component quantity must be a whole number above 0'),
-        notes: trimmed.max(300).optional().nullable(),
-      })
-    )
-    .max(200),
+  // Empty definitions are allowed; the mobile editor explicitly confirms them.
+  components: bomComponentsSchema,
+  // Optional for older web clients. Mobile compares the definition it reviewed.
+  expected_components: bomComponentsSchema.optional(),
   // Which QA/QC checklist this product uses at each stage. Absent = leave unchanged;
   // '' / null = clear (falls back to that stage's default).
   qc_checklist_qa_id: optionalId.optional(),

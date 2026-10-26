@@ -178,7 +178,7 @@ router.put('/:id', requirePermission('production.configure'), syncClass('claim')
     res.status(404).json({ error: 'Item not found' });
     return;
   }
-  const { components, qc_checklist_qa_id, qc_checklist_qc_id, std_labor_cost, std_overhead_cost, selling_markup_percent } = parseBody(saveBomSchema, req.body);
+  const { components, expected_components, qc_checklist_qa_id, qc_checklist_qc_id, std_labor_cost, std_overhead_cost, selling_markup_percent } = parseBody(saveBomSchema, req.body);
   if (!req.user!.permissions.includes('inventory.costs') && [std_labor_cost,std_overhead_cost,selling_markup_percent].some(v=>v!==undefined)) {res.status(403).json({error:'Cost and markup changes require inventory.costs'});return;}
   if (!req.user!.permissions.includes('qc.configure') && (qc_checklist_qa_id!==undefined || qc_checklist_qc_id!==undefined)) {res.status(403).json({error:'Checklist assignment requires qc.configure'});return;}
 
@@ -208,6 +208,20 @@ router.put('/:id', requirePermission('production.configure'), syncClass('claim')
 
   db.exec('BEGIN');
   try {
+    if (expected_components !== undefined) {
+      const canonical = (rows: { component_item_id: number; quantity: number; notes?: string | null }[]) =>
+        JSON.stringify(rows.map(c => ({ component_item_id: c.component_item_id, quantity: c.quantity, notes: c.notes?.trim() || null })));
+      const current = bomRows(id);
+      if (canonical(current) !== canonical(expected_components)) {
+        db.exec('ROLLBACK');
+        // A lost mobile response can be recovered without overwriting a newer BOM.
+        // Metadata-bearing requests must be reviewed again instead of being skipped.
+        const definitionOnly = [qc_checklist_qa_id, qc_checklist_qc_id, std_labor_cost, std_overhead_cost, selling_markup_percent].every(v => v === undefined);
+        if (definitionOnly && canonical(current) === canonical(components) && queryOne<{ is_finished_product: number }>('SELECT is_finished_product FROM inventory_items WHERE id = ?', id)?.is_finished_product) res.json({ ok: true, bom: current });
+        else res.status(409).json({ code: 'bom_changed', error: 'The BOM changed. Reload the current BOM before saving.' });
+        return;
+      }
+    }
     run("UPDATE inventory_items SET is_finished_product = 1, updated_at = datetime('now') WHERE id = ?", id);
     if (qc_checklist_qa_id !== undefined) {
       run('UPDATE inventory_items SET qc_checklist_qa_id = ? WHERE id = ?', qc_checklist_qa_id, id);

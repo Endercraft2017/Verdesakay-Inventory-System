@@ -5,9 +5,9 @@
   "type": "module",
   "main": "server.ts",
   "scripts": {
-    "ui:scratch": "node scripts/ui-scratch/build.mjs",
-    "ui:scratch:serve": "node scripts/ui-scratch/serve.mjs",
-    "test:ui:scratch": "node scripts/ui-scratch/verify.mjs",
+    "ui:scratch": "node scripts/ui-scratch.mjs",
+    "ui:scratch:serve": "node scripts/serve-ui-scratch.mjs",
+    "test:ui:scratch": "node scripts/test-ui-scratch.mjs",
     "start": "tsx server.ts",
     "dev": "tsx watch server.ts",
     "typecheck": "tsc --noEmit",
@@ -50,6 +50,9 @@
     "test:mobile:ckd-edge": "node scripts/test-mobile-ckd-edge-ux.mjs",
     "test:forms:connected:ux": "node scripts/test-connected-forms-ux.mjs",
     "test:invoice:ux": "node scripts/test-invoice-ux.mjs",
+    "ui:scratch:batch": "node scripts/ui-scratch/build.mjs",
+    "ui:scratch:batch:serve": "node scripts/ui-scratch/serve.mjs",
+    "test:ui:scratch:batch": "node scripts/ui-scratch/verify.mjs",
     "ui:scratch:shared": "node scripts/ui-scratch.mjs",
     "ui:scratch:shared:serve": "node scripts/serve-ui-scratch.mjs",
     "test:ui:scratch:shared": "node scripts/test-ui-scratch.mjs"

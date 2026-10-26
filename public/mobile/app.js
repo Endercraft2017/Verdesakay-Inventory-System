@@ -137,7 +137,7 @@ window.MApp = (function () {
     sales:'work',customers:'work','order-tracking':'work','purchase-requests':'work', batch: 'work', 'cycle-count': 'work', receive: 'work', pick: 'work',
     allocate: 'work', 'assign-qr': 'work', 'low-stock': 'work', location: 'work',
     returns:'work','semi-finishing':'work','my-log': 'work', item: 'work', scan: 'work', deliveries: 'work', so: 'work',
-    production: 'work', 'job-orders': 'work', 'kit-release': 'work', 'unit-issues': 'work', qc: 'work', repairs: 'work', record: 'work', receiving: 'work',
+    'product-setup':'work', production: 'work', 'job-orders': 'work', 'kit-release': 'work', 'unit-issues': 'work', qc: 'work', repairs: 'work', record: 'work', receiving: 'work',
     inbox: 'inbox', directory: 'inbox',
     settings: 'profile', queue: 'profile',
     clock: 'clock', 'time-fix': 'home', requests: 'home', payslips: 'home', schedule: 'home', notifications: 'home',
@@ -216,7 +216,7 @@ window.MApp = (function () {
       same). Routes not listed are for everyone, or check their own desk permission (qc, repairs,
       receiving, so, job-orders, kit-release, scan …). tests/frontend-mobile.test.ts walks every route. */
   var ROUTE_NEEDS = {
-    sales:['orders.view'], 'order-tracking':['orders.view'], customers:['orders.view'],
+    'product-setup':['production.view','inventory.view'], sales:['orders.view'], 'order-tracking':['orders.view'], customers:['orders.view'],
     'purchase-requests':['purchasing.request','purchasing.manage','purchasing.approve_requests','purchasing.issue_cash','purchasing.settle_requests'],
     returns: ['returns.receive','returns.inspect','returns.dispose','inventory.view','orders.release','orders.view','production.inspect_qc','production.inspect_qa'], 'semi-finishing':['production.approve','production.manage'], allocate: ['inventory.transfer','orders.direct_sale'], batch: ['inventory.adjust'], 'cycle-count': ['inventory.count'], 'stock-counts': ['inventory.count'], 'stock-count-tasks':['inventory.count'],
     damage: ['inventory.adjust'], receive: ['inventory.receive'],
@@ -233,7 +233,7 @@ window.MApp = (function () {
   var ROUTE_MODULES = {
     sales:['sales','inventory'], customers:['sales','inventory'], 'order-tracking':['inventory'],
     'purchase-requests':['purchasing'],
-    'semi-finishing':['manufacturing'], returns:['sales'], allocate: ['manufacturing'], production: ['manufacturing'], 'job-orders': ['manufacturing'], 'kit-release': ['manufacturing'],
+    'semi-finishing':['manufacturing'], returns:['sales'], 'product-setup':['manufacturing'], allocate: ['manufacturing'], production: ['manufacturing'], 'job-orders': ['manufacturing'], 'kit-release': ['manufacturing'],
     'unit-issues': ['manufacturing'], qc: ['manufacturing'], repairs: ['manufacturing'], record: ['manufacturing'], receiving: ['manufacturing'],
     batch: ['inventory'], 'cycle-count': ['inventory'], 'stock-counts': ['inventory'], 'stock-count-tasks':['inventory'], damage: ['inventory'], receive: ['inventory', 'purchasing'],
     'stock-move': ['inventory'], transfer: ['inventory'], 'assign-qr': ['inventory'], 'new-item': ['inventory'],

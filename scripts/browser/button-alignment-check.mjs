@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';import {expect} from 'playwright/test';
+async function measures(f,selector){return f.evaluate(selector=>[...document.querySelectorAll(selector)].map(button=>{
+ const bounds=button.getBoundingClientRect(),css=getComputedStyle(button),walker=document.createTreeWalker(button,NodeFilter.SHOW_TEXT),rects=[];let node;
+ while(node=walker.nextNode()){if(!node.textContent.trim()||node.parentElement.closest('[hidden],[aria-hidden=true]'))continue;const range=document.createRange();range.selectNodeContents(node);rects.push(...[...range.getClientRects()].filter(r=>r.width&&r.height));}
+ if(!rects.length||!bounds.width||!bounds.height)return null;
+ const text={left:Math.min(...rects.map(r=>r.left)),right:Math.max(...rects.map(r=>r.right)),top:Math.min(...rects.map(r=>r.top)),bottom:Math.max(...rects.map(r=>r.bottom))};
+ return {label:button.textContent.trim(),width:bounds.width,height:bounds.height,xDrift:Math.abs((text.left+text.right)/2-(bounds.left+bounds.right)/2),yDrift:Math.abs((text.top+text.bottom)/2-(bounds.top+bounds.bottom)/2),contained:text.left>=bounds.left&&text.right<=bounds.right&&text.top>=bounds.top&&text.bottom<=bounds.bottom,fontSize:css.fontSize,lineHeight:css.lineHeight,weight:css.fontWeight,align:css.textAlign,radius:css.borderRadius};
+}).filter(Boolean),selector);}
+function centered(rows){assert(rows.length);for(const b of rows){assert(b.xDrift<=1,b.label+' horizontal drift '+b.xDrift);assert(b.yDrift<=2,b.label+' vertical drift '+b.yDrift);assert(b.contained,b.label+' overflowed');assert(b.height>=44,b.label+' hit target');assert.equal(b.fontSize,'14px',b.label);assert.equal(b.lineHeight,'20px',b.label);assert.equal(b.weight,'600',b.label);assert.equal(b.align,'center',b.label);assert.equal(b.radius,'14px',b.label);}}
+async function editor(f){await f.evaluate(()=>MApp.go('product-setup'));await f.locator('[data-bom-products] [data-id]').first().click();await expect(f.locator('#bom-review')).toBeVisible();await f.locator('#bom-review').scrollIntoViewIfNeeded();}
+export async function verifyMobileButtonAlignment({page,frame,scenario,ready,out,origin,axe,beforeAvailable}){
+ const layout=await page.locator('.layout').getAttribute('style'),phone=await page.locator('.phone').getAttribute('style'),samples=[];
+ let before=null,f;if(beforeAvailable){await page.goto(origin+'/before.html?screen=work');await ready();await scenario('administrator');f=frame();await editor(f);before=await measures(f,'#bom-review,#bom-cancel');assert(before.some(r=>r.xDrift>10),'Before evidence must reproduce left-aligned labels');await page.locator('.phone').screenshot({path:out+'/buttons-before.png'});}
+ await page.goto(origin+'?screen=work');await ready();
+ try{
+  for(const motion of ['no-preference','reduce'])for(const theme of ['light','dark'])for(const width of [320,390,560]){
+   await page.emulateMedia({reducedMotion:motion});await page.locator('#theme').selectOption(theme);await ready();await scenario('administrator');await page.locator('.layout').evaluate((el,width)=>el.style.gridTemplateColumns='minmax(0,1fr) '+(width+2)+'px',width);await page.locator('.phone').evaluate((el,width)=>el.style.width=(width+2)+'px',width);f=frame();await editor(f);
+   const actions=await measures(f,'#bom-review,#bom-cancel');centered(actions);await f.locator('[data-bom-qty="0"]').fill('2');await f.locator('#bom-cancel').click();await expect(f.locator('.m-bom-confirm')).toBeVisible();const dialog=await measures(f,'.m-bom-confirm .rk-btn');centered(dialog);await expect(f.locator('[data-keep]')).toBeFocused();await page.keyboard.press('Tab');await expect(f.locator('[data-discard]')).toBeFocused();await page.keyboard.press('Tab');await expect(f.locator('[data-keep]')).toBeFocused();
+   await f.locator('[data-keep]').evaluate(el=>el.textContent='Keep editing this unfinished component definition');const long=await measures(f,'.m-bom-confirm .rk-btn');centered(long);assert(Math.abs(long[0].height-long[1].height)<=1||width===320,'Paired action heights must match');await f.locator('[data-keep]').evaluate(el=>el.textContent='Keep editing');
+   await f.addScriptTag({content:axe.source});const scan=await f.evaluate(async()=>axe.run(document.querySelector('.m-bom-confirm'),{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa','wcag22aa']}}));assert.deepEqual(scan.violations.map(v=>v.id),[]);
+   if(width===390&&motion==='no-preference')await page.locator('.phone').screenshot({path:out+'/buttons-dialog-'+theme+'.png'});
+   await f.locator('[data-keep]').press('Space');await expect(f.locator('.m-bom-confirm')).toHaveCount(0);await expect(f.locator('[data-bom-qty="0"]')).toHaveValue('2');await f.locator('#bom-review').click();await expect(f.locator('.m-bom-review')).toBeVisible();const review=await measures(f,'#bom-save,#bom-edit');centered(review);
+   await f.evaluate(()=>document.querySelector('#m-view').insertAdjacentHTML('beforeend',RoleUI.actions([{id:'measure-icon',label:'Review components',icon:'/mobile/icons/v2/check-ok.svg'}])+'<button class="m-btn" disabled id="measure-disabled">Unavailable action</button>'));const extras=await measures(f,'#measure-icon,#measure-disabled');centered(extras);if(width===390&&motion==='no-preference')await page.locator('.phone').screenshot({path:out+'/buttons-review-'+theme+'.png'});
+   samples.push({theme,motion,width,actions,dialog,long,review,extras});
+  }
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  const routes=[];for(const theme of ['light','dark']){
+   await page.locator('#theme').selectOption(theme);await ready();await scenario('administrator');f=frame();
+   for(const [route,params,selector] of [['job-orders',{},'#pm-all'],['notes',{new:1},'#m-note-save'],['new-item',{},'.setup-form .m-btn'],['batch',{},'[data-batch-record]']]){await f.evaluate(({route,params})=>MApp.go(route,params),{route,params});await f.locator(selector).first().waitFor();const rows=await measures(f,selector);centered(rows);routes.push({theme,route,rows});}
+   await scenario('manager');f=frame();await f.evaluate(()=>MApp.go('requests'));await f.locator('.m-v2-primary,.m-v2-secondary').first().waitFor();const rows=await measures(f,'.m-v2-primary,.m-v2-secondary');centered(rows);routes.push({theme,route:'requests',rows});
+  }
+  return {before,samples,routes,maxHorizontalDrift:Math.max(...samples.flatMap(s=>[...s.actions,...s.dialog,...s.long,...s.review,...s.extras]).map(b=>b.xDrift)),axeDialogViolations:0,draftKept:true,keyboardFocusContained:true};
+ }finally{await page.emulateMedia({reducedMotion:'no-preference'});await page.locator('.layout').evaluate((el,s)=>s===null?el.removeAttribute('style'):el.setAttribute('style',s),layout);await page.locator('.phone').evaluate((el,s)=>s===null?el.removeAttribute('style'):el.setAttribute('style',s),phone);await scenario('sales');}
+}

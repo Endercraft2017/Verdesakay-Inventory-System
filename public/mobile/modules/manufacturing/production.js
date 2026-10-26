@@ -4,9 +4,9 @@
 (function () {
   // Each tile requires its explicit task permission.
   var ROWS = [
-    { icon: '🏭', label: 'Awaiting approval', sub: 'review draft production plans', route: 'job-orders', params: { view: 'approval' }, color: '#6d4a91', perm: 'production.approve', strict: true,
+    { icon: '🏭', label: 'Awaiting approval', sub: 'review draft production plans', route: 'job-orders', params: { view: 'approval' }, color: 'var(--v2-green)', perm: 'production.approve', strict: true,
       count: function () { return API.get('/job-orders?stage=awaiting_approval').then(function (rows) { return mProductionDrafts.approvalCount(rows || []); }); } },
-    { icon: '🏭', label: 'Job Orders', sub: 'shop floor', route: 'job-orders', color: '#7c3aed', perm: 'production.record',
+    { icon: '🏭', label: 'Job Orders', sub: 'shop floor', route: 'job-orders', color: 'var(--v2-green)', perm: 'production.record',
       count: function () {
         return API.get('/job-orders').then(function (j) {
           return (j || []).filter(function (x) { return ['released', 'in_progress', 'paused'].indexOf(x.status) !== -1; }).length;
@@ -20,11 +20,11 @@
       count: function () {
         return API.get('/qc/queue').then(function (q) { return ((q && q.units) || []).length; });
       } },
-    { icon: '🔧', label: 'Repairs', sub: 'parts requests to accept', route: 'repairs', color: '#d97706', perm: 'production.repairs',
+    { icon: '🔧', label: 'Repairs', sub: 'parts requests to accept', route: 'repairs', color: 'var(--v2-green)', perm: 'production.repairs',
       count: function () {
         return API.get('/production/repairs?status=requested').then(function (r) { return (r || []).length; }).catch(function () { return 0; });
       } },
-    { icon: '📦', label: 'Products In', sub: 'passed units/batches to receive', route: 'receiving', color: '#0ea5e9', perm: 'production.receive',
+    { icon: '📦', label: 'Products In', sub: 'passed units/batches to receive', route: 'receiving', color: 'var(--v2-green)', perm: 'production.receive',
       // Counted from the RTS desk's own queue (a floor desk can't list every job order).
       count: function () {
         return API.get('/rts/queue').then(function (q) {
@@ -62,7 +62,7 @@
     view.setAttribute('data-role-screen', 'production-manager');
     view.setAttribute('data-role-title', 'Production control');
     view.setAttribute('data-role-subtitle', 'Job orders, inspection handoffs and finished output');
-    MApp.setTitle('Production');
-    view.appendChild(mProductionQueue());
+    var body=RoleUI.page(view,{role:'manager',title:'Production',subtitle:'Job orders, inspection handoffs and finished output'});
+    body.appendChild(mProductionQueue());
   });
 })();

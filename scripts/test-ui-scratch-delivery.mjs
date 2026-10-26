@@ -1,0 +1,22 @@
+// Test every real entry: main URL, topic URL and the preserved preparation Work tab.
+import fs from 'node:fs';import path from 'node:path';import http from 'node:http';import assert from 'node:assert/strict';import {createHash} from 'node:crypto';import {chromium,expect} from 'playwright/test';
+const repo=process.cwd(),hosting=JSON.parse(fs.readFileSync('docs/design/ui-scratch-hosting.json')),dist=path.join(hosting.source_checkout,'dist'),review=hosting.work_review_path,prep=hosting.preparation_review_path,entry=path.join(dist,review,'index.html'),evidence=path.join(repo,'work/global-mobile-theme');
+assert.equal(createHash('sha256').update(fs.readFileSync(entry)).digest('hex'),createHash('sha256').update(fs.readFileSync('work/ui-scratch/index.html')).digest('hex'));
+const files=new Map([['/',path.join(dist,'index.html')],['/index.html',path.join(dist,'index.html')],[review,entry],[review+'index.html',entry],[prep,path.join(dist,prep,'index.html')]]),errors=[];
+const server=http.createServer((req,res)=>{const file=files.get(new URL(req.url,'http://preview.invalid').pathname);if(!file){res.writeHead(404);return res.end();}res.setHeader('Content-Type','text/html; charset=utf-8');res.setHeader('Cache-Control','no-store');res.end(fs.readFileSync(file));});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+const browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});const context=await browser.newContext({viewport:{width:1160,height:1000},hasTouch:true,serviceWorkers:'block'});const page=await context.newPage();page.setDefaultTimeout(10000);page.on('pageerror',e=>errors.push(e.message));const samples=[],origin='http://127.0.0.1:'+server.address().port;
+try{
+ for(const width of [320,390])for(const from of ['main URL','topic URL','preparation Work tab']){
+  if(from==='preparation Work tab'){
+   await page.setViewportSize({width:1200,height:1600});await page.goto(origin+prep);await page.frameLocator('#after').locator('#m-tabbar [data-tab=work]').click();
+  }else await page.goto(origin+(from==='main URL'?'/':review+'?screen=work'));
+  await page.waitForURL(origin+review+'?screen=work');await page.setViewportSize({width:1160,height:1000});await page.locator('.layout').evaluate((el,width)=>el.style.gridTemplateColumns='minmax(0,1fr) '+(width+2)+'px',width);await page.locator('.phone').evaluate((el,width)=>el.style.width=(width+2)+'px',width);
+  const f=page.frameLocator('iframe');await expect(f.locator('#m-title')).toHaveText('Work');await expect(f.locator('[data-work-tools]')).toBeVisible();await expect(f.locator('#m-view')).not.toContainText('Outside this review');
+  for(let i=0;i<3;i++){await f.locator('#m-tabbar [data-tab=home]').click();await expect(f.locator('.v2-home')).toBeVisible();await f.locator('#m-tabbar [data-tab=work]').click();await expect(f.locator('[data-work-tools]')).toBeVisible();await expect(f.locator('#m-title')).toHaveText('Work');}
+  await f.locator('[data-work-tools]>summary').click();await f.locator('[data-work-route=product-setup]').click();await expect(f.locator('[data-bom-products]')).toBeVisible();await f.locator('[data-bom-products] [data-id]').click();await expect(f.locator('#bom-review')).toBeVisible();
+  await f.locator('#m-tabbar [data-tab=work]').click();await expect(f.locator('[data-work-tools]')).toBeVisible();await f.locator('[data-work-tools]>summary').click();await f.locator('[data-work-route=job-orders]').filter({hasText:'Production job orders'}).click();await expect(f.locator('#pm-all')).toBeVisible();await expect(f.locator('#m-title')).toHaveText('Production control');
+  await page.locator('#home').click();await expect(f.locator('[data-work-tools]')).toBeVisible();await expect(f.locator('#m-title')).toHaveText('Work');await page.locator('.phone').screenshot({path:path.join(evidence,'work-entry-'+from.replace(/ /g,'-')+'-'+width+'.png')});samples.push({from,phoneCanvasWidth:width,initialScreen:'Work',homeToWorkCycles:3,nativeBom:true,productionControl:true,placeholder:false});
+ }
+ assert.deepEqual(errors,[]);const result={topic:review,canonicalRoot:'/',preparation:prep,artifactBytesMatch:true,samples,errors};fs.writeFileSync(path.join(evidence,'work-topic-delivery.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));
+}catch(error){await page.screenshot({path:path.join(evidence,'delivery-failure.png'),fullPage:true}).catch(()=>{});throw error;}
+finally{await browser.close();server.close();}

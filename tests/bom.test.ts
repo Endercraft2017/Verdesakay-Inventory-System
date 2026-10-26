@@ -246,3 +246,43 @@ describe('multi-level BOM: explode / cost / where-used', () => {
     expect((await ctx.api.get('/api/finished-products/999999/explode').set(authHdr())).status).toBe(404);
   });
 });
+
+it('rejects a stale reviewed definition and safely recovers an identical save', async () => {
+  const product = await mkItem('Concurrent mobile BOM');
+  const component = await mkItem('Concurrent part', 42);
+  const line = (quantity: number) => [{ component_item_id: component, quantity, notes: null }];
+  await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({ components: line(1), std_labor_cost: 7 });
+  const before = (await ctx.api.get(`/api/finished-products/${product}`).set(authHdr())).body;
+  const save = await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({ components: line(2), expected_components: line(1) });
+  expect(save.status).toBe(200);
+  const recovered = await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({ components: line(2), expected_components: line(1) });
+  expect(recovered.status).toBe(200);
+  const stale = await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({ components: line(3), expected_components: line(1) });
+  expect(stale.status).toBe(409); expect(stale.body.code).toBe('bom_changed');
+  const after = (await ctx.api.get(`/api/finished-products/${product}`).set(authHdr())).body;
+  expect(after.bom[0].quantity).toBe(2);
+  expect(after.quantity).toBe(before.quantity);expect(after.std_labor_cost).toBe(7);
+  expect(after.qc_checklist_qa_id).toBe(before.qc_checklist_qa_id);expect(after.qc_checklist_qc_id).toBe(before.qc_checklist_qc_id);
+  expect((await ctx.api.get(`/api/inventory/${component}`).set(authHdr())).body.quantity).toBe(42);
+  const metadata = await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({ components: line(2), expected_components: line(1), std_labor_cost: 99 });
+  expect(metadata.status).toBe(409);
+});
+
+it('requires current configuration access and validates reviewed component quantities', async () => {
+  const product = await mkItem('Protected mobile BOM');const c = await mkItem('Protected part', 5);
+  await ctx.api.post('/api/roles').set(authHdr()).send({key:'bom_reader',label:'BOM reader',permissions:['production.view']});
+  const reader=await createEmployee(ctx.api,token,{role:'bom_reader'});
+  expect((await ctx.api.get(`/api/finished-products/${product}`).set({Authorization:`Bearer ${reader.token}`})).status).toBe(200);
+  expect((await ctx.api.put(`/api/finished-products/${product}`).set({Authorization:`Bearer ${reader.token}`}).send({components:[],expected_components:[]})).status).toBe(403);
+  expect((await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({components:[{component_item_id:c,quantity:1.5}],expected_components:[]})).status).toBe(400);
+  expect((await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({components:[],expected_components:[{component_item_id:c,quantity:-1}]})).status).toBe(400);
+});
+
+
+it('does not confirm an empty save after a concurrent product removal', async () => {
+  const product=await mkItem('Removed product definition'),part=await mkItem('Removed definition part',8);
+  const original=[{component_item_id:part,quantity:1}];await setBom(product,original);
+  expect((await ctx.api.delete(`/api/finished-products/${product}`).set(authHdr())).status).toBe(200);
+  const retry=await ctx.api.put(`/api/finished-products/${product}`).set(authHdr()).send({components:[],expected_components:original});
+  expect(retry.status).toBe(409);expect(retry.body.code).toBe('bom_changed');
+});

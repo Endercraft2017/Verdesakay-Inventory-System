@@ -1,5 +1,65 @@
 # Mobile inventory, production, and Sales handoff
 
+## Workflow Guides review — v164 candidate (2026-10-26)
+
+The phone Guides page now groups published workflows in two-column department
+sections and uses the existing mobile theme. One search supports guide text and
+local task clarification. Short card labels clarify long roadmap titles without
+changing canonical workflow steps. Cards open focus-contained native modals;
+steps navigate to verified related phone screens or explain web/access boundaries.
+Read-only references retain prerequisites, branches, results and cautions.
+
+New MobileWorkflow maps phone destinations and owns the scoped optional session.
+GuideTour supplies its compact bar and existing real-target positioning; no second
+highlight engine was introduced. Previous/next/close does not take over the form,
+dim the page, select a business record, or perform a business action. The bar
+clears the dock and known Save/Cancel areas, pauses behind confirmations, respects
+normal field keys and ends on unrelated navigation or identity/access changes.
+Hidden, disabled, missing and failed targets do not receive a ring. Failed reads
+show a useful message. Employee-only routes require a linked employee profile.
+
+Same-form steps preserve drafts without invoking navigation again. Keep editing
+retains the draft/current step; confirmed departures that use replaceState/render
+resume their explicitly requested checkpoint. The modal uses 180ms/100ms pointer
+entrance/exit motion, with instant keyboard and reduced-motion paths. Internal
+permission identifiers are omitted from compact role metadata. Backend routes,
+permissions, confirmations and stock logic are unchanged. Shell cache is v164.
+Application changes are uncommitted for interactive review.
+
+Validation: 46 Playwright checks, 143 exact app source/asset hashes, 252 unit tests
+across eight guide/mobile suites, and TypeScript. The new checks cover catalog
+layout at 320/390/560px in both themes, modal focus/return and targeted axe scans,
+real step navigation, local search clarification, denied/web-only steps, 320px
+reduced-motion and 390px normal guidance, untouched drafts, keep/discard recovery,
+visible Save/Cancel, keyboard behavior, measured modal durations, delayed/hidden/
+failed targets, tab exit and access revocation. Guide controls issue no API writes.
+The full existing tab/cache/Back/dropdown/Quick Actions suite also runs. Browser
+coverage is representative, not every workflow stage on every physical device.
+
+Sources/tools actually used: canonical GUIDE records; mobile route/grant and
+employee checks; native details/dialog state; shared tokens and actual form
+handlers; disposable API responses. Taste Skill informed hierarchy, neutral
+surfaces and screenshot review; UI UX Pro Max's focused modal/focus search informed
+visible focus and the explicit focus loop; Design Motion Principles informed
+restrained pointer motion and instant keyboard/reduced-motion paths. Playwright,
+axe, Vitest, TypeScript and the existing owner-private Sites workflow were used.
+No new dependency, plugin installation, AI-generated instruction service or live
+business connection was added. User understanding and physical-device behavior
+still need observation; neither is implied by these automated results.
+
+Reproduce: UI_SCRATCH_REBUILD=1 npm run test:ui:scratch; npm run typecheck;
+run the eight frontend guide/mobile suites listed in the review evidence.
+Scratch defaults now open Guides; ?screen=work retains the Work test entry.
+Batch review commands remain as ui:scratch:batch, ui:scratch:batch:serve and
+ test:ui:scratch:batch; shared aliases are preserved. Batch cleanup intentionally
+refuses output owned by a different builder; preserve unowned work when switching.
+Evidence: work/ui-scratch/verification.json, workflow-library-{theme}-{width}.png,
+workflow-modal-{theme}.png, workflow-guidance-{motion}.png, access and failed-target
+screenshots, plus the existing trace. Rebuild removes generated output. The
+hosting identity and exact published preview revision remain in
+ docs/design/ui-scratch-hosting.json.
+
+
 ## Guide targets, shared rails and tab widths — v163 (2026-10-26)
 
 The guide previously outlined blank space when Work & tools was closed: native
